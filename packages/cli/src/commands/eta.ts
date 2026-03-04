@@ -87,6 +87,12 @@ export default defineCommand({
       ...compiled,
       run: {
         ...compiled.run,
+        eventLog: flags["include-run"]
+          ? compiled.run.eventLog
+          : {
+              enabled: false,
+              maxEvents: 0,
+            },
         fast: flags.fast
           ? { enabled: true, kind: "log-domain" as const, disableMoneyEvents: true }
           : compiled.run.fast,

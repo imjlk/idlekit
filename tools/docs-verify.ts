@@ -1,5 +1,7 @@
 import { existsSync } from "node:fs";
 import { mkdirSync, rmSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { execFileSync } from "node:child_process";
 
@@ -112,12 +114,28 @@ function verifyIntroTrack(): void {
 }
 
 function verifyPluginTrack(): void {
-  const plugin = "../../examples/plugins/custom-econ-plugin.ts";
+  const plugin = resolve(root, "examples/plugins/custom-econ-plugin.ts");
+  const pluginRoot = resolve(root, "examples/plugins");
+  const sha = createHash("sha256").update(readFileSync(plugin)).digest("hex");
+  const pluginShaArg = `${plugin}=${sha}`;
   const scenario = "../../examples/plugins/plugin-scenario.json";
   const tuneSpec = "../../examples/plugins/plugin-tune.json";
 
   const strategies = asRecord(
-    runCliJson(["strategies", "list", "--plugin", plugin, "--allow-plugin", "true", "--format", "json"]),
+    runCliJson([
+      "strategies",
+      "list",
+      "--plugin",
+      plugin,
+      "--allow-plugin",
+      "true",
+      "--plugin-root",
+      pluginRoot,
+      "--plugin-sha256",
+      pluginShaArg,
+      "--format",
+      "json",
+    ]),
   );
   const strategyRows = (strategies.strategies ?? []) as JSONValue[];
   assert(
@@ -126,7 +144,20 @@ function verifyPluginTrack(): void {
   );
 
   const objectives = asRecord(
-    runCliJson(["objectives", "list", "--plugin", plugin, "--allow-plugin", "true", "--format", "json"]),
+    runCliJson([
+      "objectives",
+      "list",
+      "--plugin",
+      plugin,
+      "--allow-plugin",
+      "true",
+      "--plugin-root",
+      pluginRoot,
+      "--plugin-sha256",
+      pluginShaArg,
+      "--format",
+      "json",
+    ]),
   );
   const objectiveRows = (objectives.objectives ?? []) as JSONValue[];
   assert(
@@ -134,7 +165,18 @@ function verifyPluginTrack(): void {
     "plugin.gemsAndWorthLog10 must be listed",
   );
 
-  const validateOut = runCli(["validate", scenario, "--plugin", plugin, "--allow-plugin", "true"]);
+  const validateOut = runCli([
+    "validate",
+    scenario,
+    "--plugin",
+    plugin,
+    "--allow-plugin",
+    "true",
+    "--plugin-root",
+    pluginRoot,
+    "--plugin-sha256",
+    pluginShaArg,
+  ]);
   assert(validateOut.includes("OK:"), "plugin validate should print OK");
 
   const tune = asRecord(
@@ -145,6 +187,10 @@ function verifyPluginTrack(): void {
       plugin,
       "--allow-plugin",
       "true",
+      "--plugin-root",
+      pluginRoot,
+      "--plugin-sha256",
+      pluginShaArg,
       "--tune",
       tuneSpec,
       "--format",

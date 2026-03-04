@@ -140,4 +140,41 @@ describe("runCandidateAndScore", () => {
     expect(scenario.initial.vars.counter).toBe(0);
     expect(scenario.initial.vars).toBeInstanceOf(Bag);
   });
+
+  it("disables event retention for tuning runs", () => {
+    const scenario = makeScenario();
+    const strategyRegistry = createStrategyRegistry([
+      {
+        id: "s",
+        create: () => ({
+          id: "s",
+          decide: (ctx: any, model: any, state: any) => {
+            const a = model.actions(ctx, state)[0];
+            return a ? [{ action: a }] : [];
+          },
+        }),
+      } satisfies StrategyFactory,
+    ]);
+    const objectiveRegistry = createObjectiveRegistry([
+      {
+        id: "obj.events",
+        create: () => ({
+          id: "obj.events",
+          score: ({ run }) => run.events.length,
+        }),
+      },
+    ]);
+
+    const out = runCandidateAndScore({
+      baseScenario: scenario,
+      params: {},
+      strategyId: "s",
+      objectiveId: "obj.events",
+      seeds: [1],
+      strategyRegistry,
+      objectiveRegistry,
+    });
+
+    expect(out.seedScores).toEqual([0]);
+  });
 });

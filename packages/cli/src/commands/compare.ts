@@ -116,6 +116,10 @@ export default defineCommand({
         strategy: overrideStrategy,
         run: {
           ...compiled.run,
+          eventLog: {
+            enabled: false,
+            maxEvents: 0,
+          },
           stepSec: flags.step ?? compiled.run.stepSec,
           durationSec: flags.duration ?? compiled.run.durationSec,
           fast: flags.fast

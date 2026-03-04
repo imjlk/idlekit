@@ -46,6 +46,11 @@ export function runCandidateAndScore(args: {
         ...args.baseScenario.run,
         stepSec: args.overrides?.stepSec ?? args.baseScenario.run.stepSec,
         durationSec: args.overrides?.durationSec ?? args.baseScenario.run.durationSec,
+        // Tuning executes many runs; keep event log disabled to bound memory.
+        eventLog: {
+          enabled: false,
+          maxEvents: 0,
+        },
         fast: args.overrides?.fast
           ? { enabled: true, kind: "log-domain", disableMoneyEvents: true }
           : args.baseScenario.run.fast,
