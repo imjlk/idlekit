@@ -1,0 +1,16 @@
+{
+  "name": "idlekit",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "bun run --cwd packages/core build && bun run --cwd packages/cli build",
+    "typecheck": "bun run --cwd packages/core typecheck && bun run --cwd packages/cli typecheck",
+    "dev:cli": "bun run --cwd packages/cli dev"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3"
+  }
+}
