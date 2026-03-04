@@ -9,7 +9,8 @@
     "dev": "bunli dev --entry src/main.ts",
     "build": "bunli build --entry src/main.ts --runtime bun --outdir dist --sourcemap",
     "build:bin": "bunli build --entry src/main.ts --outdir dist --targets native",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "bun test src"
   },
   "dependencies": {
     "@idlekit/core": "workspace:*",
