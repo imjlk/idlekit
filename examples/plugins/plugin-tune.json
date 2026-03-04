@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "meta": {
+    "id": "plugin-tune",
+    "title": "Tune Producer-First Strategy"
+  },
+  "strategy": {
+    "id": "plugin.producerFirst",
+    "baseParams": {
+      "schemaVersion": 1,
+      "allowUpgrade": true,
+      "preferUpgradeAtProducers": 12
+    },
+    "space": [
+      {
+        "path": "allowUpgrade",
+        "space": { "kind": "bool" }
+      },
+      {
+        "path": "preferUpgradeAtProducers",
+        "space": { "kind": "int", "min": 4, "max": 30 }
+      }
+    ]
+  },
+  "objective": {
+    "id": "plugin.gemsAndWorthLog10",
+    "params": {
+      "gemsWeight": 2.5
+    }
+  },
+  "runner": {
+    "seeds": [1, 2, 3, 11],
+    "budget": 24,
+    "overrideDurationSec": 900,
+    "topK": 5,
+    "stages": [
+      {
+        "budget": 12,
+        "durationSec": 300,
+        "keepTopK": 6,
+        "fast": true
+      },
+      {
+        "budget": 12,
+        "durationSec": 900,
+        "keepTopK": 5,
+        "fast": true
+      }
+    ]
+  }
+}

@@ -1,0 +1,77 @@
+{
+  "schemaVersion": 1,
+  "meta": {
+    "id": "plugin-scenario",
+    "title": "Plugin Generator Scenario"
+  },
+  "unit": {
+    "code": "COIN",
+    "symbol": "C"
+  },
+  "policy": {
+    "mode": "accumulate",
+    "maxLogGap": 14
+  },
+  "model": {
+    "id": "plugin.generators",
+    "version": 1,
+    "params": {
+      "baseIncome": "1",
+      "producerIncome": "1.25",
+      "producerBaseCost": "8",
+      "producerCostGrowth": 1.11,
+      "upgradeBaseCost": "90",
+      "upgradeGrowth": 1.7,
+      "upgradeIncomeBoost": 0.22,
+      "gemExchangeCost": "600"
+    }
+  },
+  "initial": {
+    "t": 0,
+    "wallet": {
+      "unit": "COIN",
+      "amount": "20",
+      "bucket": "0"
+    },
+    "vars": {
+      "producers": 0,
+      "upgrades": 0,
+      "gems": 0
+    },
+    "prestige": {
+      "count": 0,
+      "points": "0",
+      "multiplier": "1"
+    }
+  },
+  "clock": {
+    "stepSec": 1,
+    "durationSec": 1800
+  },
+  "strategy": {
+    "id": "plugin.producerFirst",
+    "params": {
+      "schemaVersion": 1,
+      "allowUpgrade": true,
+      "preferUpgradeAtProducers": 10
+    }
+  },
+  "analysis": {
+    "eta": {
+      "mode": "simulate"
+    },
+    "growth": {
+      "windowSec": 60
+    }
+  },
+  "outputs": {
+    "format": "json",
+    "report": {
+      "checkpointsSec": [60, 300, 900, 1800],
+      "includeTrace": true,
+      "traceEverySteps": 1,
+      "includeGrowth": true,
+      "includeUX": true
+    }
+  }
+}
