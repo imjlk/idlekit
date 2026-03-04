@@ -115,3 +115,9 @@
 - 수렴 확인 후 multi-stage로 확대
 - 시드 수(`runner.seeds`)는 3~7 정도 권장
 - 로그 스케일 objective(`*Log10`)를 우선 사용하면 큰 수 영역에서 안정적
+
+레벨 디자인 KPI용 내장 objective 예시:
+
+- `growthLog10PerHour`: 시간당 log 성장량
+- `etaToTargetWorthNegSec`: 목표 worth 도달 시간(빠를수록 점수 높음)
+- `pacingBalancedLog10`: endWorth + 액션빈도/드롭율 균형 점수

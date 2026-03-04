@@ -47,5 +47,5 @@ bun run --cwd packages/cli dev -- tune ../../examples/simple-linear.json --tune 
 ## 현재 구현 범위 메모
 
 - `planner` 전략은 `stepOnce` 기반 롤아웃을 사용합니다.
-- `compare` 명령은 현재 시뮬레이션 결과 비교가 아니라 시나리오 정적 값 기반 점수 비교입니다.
+- `compare` 명령은 현재 시나리오를 실제 실행한 측정값(endMoney/endNetWorth/droppedRate/etaToTargetWorth)으로 비교합니다.
 - `econ tune` 출력은 `json` 사용을 권장합니다. (`md/csv`는 중첩 객체 가독성이 낮을 수 있음)

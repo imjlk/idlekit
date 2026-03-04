@@ -124,9 +124,18 @@ bun run --cwd packages/cli dev -- compare ../../examples/simple-linear.json ../.
   --metric endNetWorth
 ```
 
+ETA 비교(목표 worth 지정):
+
+```bash
+bun run --cwd packages/cli dev -- compare ../../examples/simple-linear.json ../../examples/simple-linear.json \
+  --metric etaToTargetWorth \
+  --target-worth 1e6 \
+  --max-duration 86400
+```
+
 주의:
 
-- 현재 `compare`는 시뮬레이션 실행 기반이 아니라 시나리오 정적 값 기반 비교입니다.
+- `etaToTargetWorth` metric은 `--target-worth`가 필수입니다.
 
 ### 3.8 전략 튜닝
 
@@ -199,6 +208,9 @@ bun run --cwd packages/cli dev -- simulate ../../examples/simple-linear.json \
 - `endNetWorthLog10`
 - `netWorthPerHourLog10`
 - `prestigePointsPerHourLog10`
+- `growthLog10PerHour`
+- `etaToTargetWorthNegSec`
+- `pacingBalancedLog10`
 
 ## 7. 자주 겪는 문제
 
