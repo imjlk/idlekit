@@ -14,7 +14,7 @@
       "name": "@idlekit/cli",
       "version": "0.1.0",
       "bin": {
-        "econ": "./dist/main.js",
+        "idk": "./dist/main.js",
       },
       "dependencies": {
         "@bunli/core": "^0.8.0",

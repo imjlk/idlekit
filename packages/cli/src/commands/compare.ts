@@ -54,7 +54,7 @@ export default defineCommand({
     const bPath = positional[1];
     if (!aPath || !bPath) {
       throw new Error(
-        "Usage: econ compare <A> <B> [--metric ...] [--plugin ...] [--target-worth <NumStr>]",
+        "Usage: idk compare <A> <B> [--metric ...] [--plugin ...] [--target-worth <NumStr>]",
       );
     }
 

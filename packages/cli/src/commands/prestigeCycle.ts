@@ -34,7 +34,7 @@ export default defineCommand({
   async handler({ flags, positional }) {
     const scenarioPath = positional[0];
     if (!scenarioPath) {
-      throw new Error("Usage: econ prestige-cycle <scenario> [--scan 300..1800]");
+      throw new Error("Usage: idk prestige-cycle <scenario> [--scan 300..1800]");
     }
 
     const input = await readScenarioFile(scenarioPath);

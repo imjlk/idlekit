@@ -37,7 +37,7 @@ export default defineCommand({
   async handler({ flags, positional }) {
     const scenarioPath = positional[0];
     if (!scenarioPath) {
-      throw new Error("Usage: econ report <scenario> [--checkpoints 60,300,900,3600]");
+      throw new Error("Usage: idk report <scenario> [--checkpoints 60,300,900,3600]");
     }
 
     const input = await readScenarioFile(scenarioPath);

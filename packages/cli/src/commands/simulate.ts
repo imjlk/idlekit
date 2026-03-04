@@ -27,7 +27,7 @@ export default defineCommand({
   async handler({ flags, positional }) {
     const scenarioPath = positional[0];
     if (!scenarioPath) {
-      throw new Error("Usage: econ simulate <scenario> [--duration <sec>] [--step <sec>]");
+      throw new Error("Usage: idk simulate <scenario> [--duration <sec>] [--step <sec>]");
     }
 
     const input = await readScenarioFile(scenarioPath);

@@ -30,7 +30,7 @@ export default defineCommand({
   async handler({ flags, positional }) {
     const scenarioPath = positional[0];
     if (!scenarioPath) {
-      throw new Error("Usage: econ eta <scenario> --target-money <NumStr> | --target-worth <NumStr>");
+      throw new Error("Usage: idk eta <scenario> --target-money <NumStr> | --target-worth <NumStr>");
     }
 
     const targetMoney = flags["target-money"];

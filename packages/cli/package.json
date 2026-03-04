@@ -3,10 +3,11 @@
   "version": "0.1.0",
   "type": "module",
   "bin": {
-    "econ": "./dist/main.js"
+    "idk": "./dist/main.js"
   },
   "scripts": {
-    "dev": "bunli dev --entry src/main.ts",
+    "dev": "bun src/main.ts",
+    "dev:watch": "bunli dev --entry src/main.ts",
     "build": "bunli build --entry src/main.ts --runtime bun --outdir dist --sourcemap",
     "build:bin": "bunli build --entry src/main.ts --outdir dist --targets native",
     "typecheck": "tsc -p tsconfig.json --noEmit",

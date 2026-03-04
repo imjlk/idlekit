@@ -1,7 +1,7 @@
 import { defineConfig } from "bunli";
 
 export default defineConfig({
-  name: "econ",
+  name: "idk",
   version: "0.1.0",
   description: "Generic economy simulation CLI",
   commands: {

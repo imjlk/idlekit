@@ -81,7 +81,7 @@ export default defineCommand({
   async handler({ flags, positional }) {
     const scenarioPath = positional[0];
     if (!scenarioPath) {
-      throw new Error("Usage: econ tune <scenario> --tune <tunespec>");
+      throw new Error("Usage: idk tune <scenario> --tune <tunespec>");
     }
 
     const [scenarioInput, tuneSpecInput] = await Promise.all([

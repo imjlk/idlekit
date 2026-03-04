@@ -15,7 +15,7 @@ export default defineCommand({
   async handler({ flags, positional }) {
     const scenarioPath = positional[0];
     if (!scenarioPath) {
-      throw new Error("Usage: econ validate <scenario.(json|yaml)> [--plugin <path,...>]");
+      throw new Error("Usage: idk validate <scenario.(json|yaml)> [--plugin <path,...>]");
     }
 
     const input = await readScenarioFile(scenarioPath);

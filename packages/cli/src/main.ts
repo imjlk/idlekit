@@ -31,7 +31,7 @@ const objectivesGroup = defineGroup({
 });
 
 const cli = await createCLI({
-  name: "econ",
+  name: "idk",
   version: "0.1.0",
   description: "Generic economy simulation CLI",
   commands: {
