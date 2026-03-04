@@ -23,6 +23,9 @@ export default defineCommand({
       description: "Compare with another mode",
     }),
     "max-duration": option(z.coerce.number().default(86400), { description: "Max simulate duration" }),
+    "include-run": option(z.coerce.boolean().default(false), {
+      description: "Include detailed run payload in simulate mode output",
+    }),
     fast: option(z.coerce.boolean().default(false), { description: "Fast simulation mode" }),
     out: option(z.string().optional(), { description: "Output path" }),
     format: option(z.enum(["json", "md", "csv"]).default("json"), { description: "Output format" }),
@@ -78,14 +81,24 @@ export default defineCommand({
     const primary =
       flags.mode === "analytic"
         ? etaAnalytic({ scenario: scenarioInput, target })
-        : etaSimulate({ scenario: scenarioInput, target, maxDurationSec: maxDuration });
+        : etaSimulate({
+            scenario: scenarioInput,
+            target,
+            maxDurationSec: maxDuration,
+            includeRun: flags["include-run"],
+          });
 
     let output: typeof primary = primary;
     if (flags.diff) {
       const secondary =
         flags.diff === "analytic"
           ? etaAnalytic({ scenario: scenarioInput, target })
-          : etaSimulate({ scenario: scenarioInput, target, maxDurationSec: maxDuration });
+          : etaSimulate({
+              scenario: scenarioInput,
+              target,
+              maxDurationSec: maxDuration,
+              includeRun: false,
+            });
 
       const diffSec = secondary.seconds - primary.seconds;
       output = {

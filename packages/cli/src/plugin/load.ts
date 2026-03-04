@@ -1,4 +1,5 @@
-import { resolve } from "node:path";
+import { stat } from "node:fs/promises";
+import { extname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
   builtinObjectiveFactories,
@@ -17,6 +18,8 @@ import {
 } from "@idlekit/core";
 import { z } from "zod";
 import type { EconPluginModule } from "./types";
+
+const ALLOWED_PLUGIN_EXTENSIONS = new Set([".js", ".mjs", ".cjs", ".ts", ".mts", ".cts"]);
 
 type LinearParams = {
   incomePerSec?: string;
@@ -230,7 +233,7 @@ export async function loadRegistries(pluginPaths: string[] = []): Promise<Loaded
   const objectiveFactories: ObjectiveFactory[] = [...builtinObjectiveFactories];
 
   for (const p of pluginPaths) {
-    const abs = resolve(p);
+    const abs = await resolveAndValidatePluginPath(p);
     const mod = (await import(pathToFileURL(abs).href)) as PluginModule;
     const parsed = parsePluginModule(mod);
 
@@ -244,6 +247,25 @@ export async function loadRegistries(pluginPaths: string[] = []): Promise<Loaded
     strategyRegistry: createStrategyRegistry(strategyFactories),
     objectiveRegistry: createObjectiveRegistry(objectiveFactories),
   };
+}
+
+async function resolveAndValidatePluginPath(input: string): Promise<string> {
+  if (input.includes("://")) {
+    throw new Error(`Plugin path must be a local file path: ${input}`);
+  }
+
+  const abs = resolve(input);
+  const ext = extname(abs).toLowerCase();
+  if (!ALLOWED_PLUGIN_EXTENSIONS.has(ext)) {
+    throw new Error(`Unsupported plugin extension '${ext}' for ${input}`);
+  }
+
+  const info = await stat(abs).catch(() => null);
+  if (!info || !info.isFile()) {
+    throw new Error(`Plugin file not found: ${input}`);
+  }
+
+  return abs;
 }
 
 // Backward compatible helper.

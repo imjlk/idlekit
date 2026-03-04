@@ -3,6 +3,7 @@ import {
   compareScenarios,
   compileScenario,
   createNumberEngine,
+  deepClonePreservingPrototype,
   parseMoney,
   runScenario,
   validateScenarioV1,
@@ -14,10 +15,6 @@ import { loadRegistries, parsePluginPaths } from "../plugin/load";
 
 const strategySchema = z.enum(["greedy", "planner", "scripted"]).optional();
 
-function deepClone<T>(x: T): T {
-  return JSON.parse(JSON.stringify(x));
-}
-
 function formatEtaLabel(seconds: number, reached: boolean): string {
   if (!reached) return "unreached";
   return Number.isFinite(seconds) ? `${seconds}` : "unreached";
@@ -25,6 +22,11 @@ function formatEtaLabel(seconds: number, reached: boolean): string {
 
 function etaPenalty(maxDuration: number): number {
   return maxDuration + 1_000_000_000;
+}
+
+function betterFromCmp(cmp: -1 | 0 | 1): "a" | "b" | "tie" {
+  if (cmp === 0) return "tie";
+  return cmp > 0 ? "a" : "b";
 }
 
 export default defineCommand({
@@ -114,7 +116,7 @@ export default defineCommand({
     const measure = (compiled: typeof aCompiled) => {
       const runInput = {
         ...compiled,
-        initial: deepClone(compiled.initial),
+        initial: deepClonePreservingPrototype(compiled.initial),
       };
       const run = runScenario(runInput);
       const endWorth = runInput.model.netWorth?.(runInput.ctx, run.end) ?? run.end.wallet.money;
@@ -132,7 +134,7 @@ export default defineCommand({
 
         const etaRun = runScenario({
           ...runInput,
-          initial: deepClone(compiled.initial),
+          initial: deepClonePreservingPrototype(compiled.initial),
           run: {
             ...runInput.run,
             durationSec: flags["max-duration"],
@@ -164,8 +166,8 @@ export default defineCommand({
       metric: flags.metric,
       measured: {
         a: {
-          endMoney: E.toNumber(ma.endMoney),
-          endNetWorth: E.toNumber(ma.endNetWorth),
+          endMoney: E.absLog10(ma.endMoney),
+          endNetWorth: E.absLog10(ma.endNetWorth),
           droppedRate: ma.droppedRate,
           etaToTargetWorth:
             ma.etaToTargetWorth === undefined
@@ -173,14 +175,36 @@ export default defineCommand({
               : (Number.isFinite(ma.etaToTargetWorth) ? ma.etaToTargetWorth : etaPenalty(flags["max-duration"])),
         },
         b: {
-          endMoney: E.toNumber(mb.endMoney),
-          endNetWorth: E.toNumber(mb.endNetWorth),
+          endMoney: E.absLog10(mb.endMoney),
+          endNetWorth: E.absLog10(mb.endNetWorth),
           droppedRate: mb.droppedRate,
           etaToTargetWorth:
             mb.etaToTargetWorth === undefined
               ? undefined
               : (Number.isFinite(mb.etaToTargetWorth) ? mb.etaToTargetWorth : etaPenalty(flags["max-duration"])),
         },
+      },
+      measuredDecision: (metric) => {
+        switch (metric) {
+          case "endMoney":
+            return betterFromCmp(E.cmp(ma.endMoney, mb.endMoney));
+          case "endNetWorth":
+            return betterFromCmp(E.cmp(ma.endNetWorth, mb.endNetWorth));
+          case "droppedRate":
+            return betterFromCmp(ma.droppedRate < mb.droppedRate ? 1 : ma.droppedRate > mb.droppedRate ? -1 : 0);
+          case "etaToTargetWorth": {
+            const aEta = ma.etaToTargetWorth === undefined
+              ? undefined
+              : (Number.isFinite(ma.etaToTargetWorth) ? ma.etaToTargetWorth : etaPenalty(flags["max-duration"]));
+            const bEta = mb.etaToTargetWorth === undefined
+              ? undefined
+              : (Number.isFinite(mb.etaToTargetWorth) ? mb.etaToTargetWorth : etaPenalty(flags["max-duration"]));
+            if (aEta === undefined || bEta === undefined) return undefined;
+            return betterFromCmp(aEta < bEta ? 1 : aEta > bEta ? -1 : 0);
+          }
+          default:
+            return undefined;
+        }
       },
     });
 
