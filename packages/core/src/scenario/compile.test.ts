@@ -105,4 +105,48 @@ describe("compileScenario", () => {
 
     expect(receivedParams).toEqual({ schemaVersion: 1, objective: "maximizeIncome" });
   });
+
+  it("passes stepSec hint in context and keeps money event collection runtime-configurable", () => {
+    const modelFactory: ModelFactory = {
+      id: "m",
+      version: 1,
+      create: () => ({
+        id: "m",
+        version: 1,
+        income: (ctx: any) => ({ unit: ctx.unit, amount: 0 }),
+        actions: () => [],
+      }),
+    };
+
+    const strategyFactory: StrategyFactory = {
+      id: "s",
+      create: () => ({
+        id: "s",
+        decide: () => [],
+      }),
+    };
+
+    const scenario: ScenarioV1 = {
+      ...makeScenario(),
+      clock: {
+        stepSec: 7,
+        durationSec: 70,
+      },
+      sim: {
+        fast: true,
+      },
+    };
+
+    const sc = compileScenario<number, "COIN", Record<string, unknown>>({
+      E: createNumberEngine(),
+      scenario,
+      registry: createModelRegistry([modelFactory]),
+      strategyRegistry: createStrategyRegistry([strategyFactory]),
+      unitFactory: (code) => ({ code: code as "COIN" }),
+    });
+
+    expect(sc.ctx.stepSec).toBe(7);
+    expect(sc.ctx.collectMoneyEvents).toBeUndefined();
+    expect(sc.run.fast?.disableMoneyEvents).toBeTrue();
+  });
 });

@@ -138,11 +138,11 @@ export function compileScenario<N, U extends string, Vars>(args: {
   const ctx = {
     E,
     unit,
+    stepSec: scenario.clock.stepSec,
     tickPolicy: {
       mode: scenario.policy.mode,
       maxLogGap: scenario.policy.maxLogGap,
     },
-    collectMoneyEvents: true,
   };
 
   const run = {

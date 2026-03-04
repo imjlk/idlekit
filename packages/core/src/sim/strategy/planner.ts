@@ -38,18 +38,22 @@ function worthAmount<N, U extends string, Vars>(
   return state.wallet.money.amount;
 }
 
-function safeParseTarget<N, U extends string, Vars>(
+function parseTargetOrThrow<N, U extends string, Vars>(
   params: PlannerStrategyParamsV1,
   ctx: SimContext<N, U, Vars>,
 ): N | undefined {
-  if (params.objective !== "minTimeToTargetWorth" || !params.targetWorth) return undefined;
+  if (params.objective !== "minTimeToTargetWorth") return undefined;
+  if (!params.targetWorth) {
+    throw new Error("planner objective=minTimeToTargetWorth requires targetWorth");
+  }
   try {
     return parseMoney(ctx.E, params.targetWorth, {
       unit: ctx.unit,
       suffix: { kind: "alphaInfinite", minLen: 2 },
     }).amount;
-  } catch {
-    return undefined;
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : "parse failed";
+    throw new Error(`invalid planner targetWorth '${params.targetWorth}': ${reason}`);
   }
 }
 
@@ -117,22 +121,29 @@ function buildStepCandidates<N, U extends string, Vars>(
   const actions = stableActions(model.actions(ctx, state)).filter((action) => action.canApply(ctx, state));
   const decisions = actions.map((action) => {
     const quote = selectBulkQuote(params, action, ctx, state);
+    const score = scoreQuote(params, ctx, quote);
     return {
-      action,
-      bulkSize: quote.size > 1 ? quote.size : undefined,
-    } satisfies Decision<N, U, Vars>;
+      score: Number.isFinite(score) ? score : Number.NEGATIVE_INFINITY,
+      decision: {
+        action,
+        bulkSize: quote.size > 1 ? quote.size : undefined,
+      } satisfies Decision<N, U, Vars>,
+    };
   });
 
   decisions.sort((a, b) => {
-    if (a.action.id !== b.action.id) return a.action.id < b.action.id ? -1 : 1;
-    const ab = a.bulkSize ?? 1;
-    const bb = b.bulkSize ?? 1;
+    if (a.score !== b.score) return a.score > b.score ? -1 : 1;
+    if (a.decision.action.id !== b.decision.action.id) {
+      return a.decision.action.id < b.decision.action.id ? -1 : 1;
+    }
+    const ab = a.decision.bulkSize ?? 1;
+    const bb = b.decision.bulkSize ?? 1;
     if (ab !== bb) return ab - bb;
     return 0;
   });
 
   const maxBranchingActions = Math.max(1, params.maxBranchingActions ?? 8);
-  return decisions.slice(0, maxBranchingActions);
+  return decisions.slice(0, maxBranchingActions).map((x) => x.decision);
 }
 
 function scoreNode<N, U extends string, Vars>(
@@ -186,10 +197,11 @@ export function createPlannerStrategy<N, U extends string, Vars>(
     decide(ctx, model, state) {
       const horizonSteps = Math.max(1, params.horizonSteps);
       const beamWidth = Math.max(1, params.beamWidth ?? 1);
+      const previewStepSec = Math.max(1e-9, ctx.stepSec ?? 1);
       const previewFast = params.useFastPreview
         ? { enabled: true as const, kind: "log-domain" as const, disableMoneyEvents: true }
         : undefined;
-      const target = safeParseTarget(params, ctx);
+      const target = parseTargetOrThrow(params, ctx);
       const series = params.series ?? "netWorth";
 
       let beam: PlannerNode<N, U, Vars>[] = [
@@ -213,12 +225,12 @@ export function createPlannerStrategy<N, U extends string, Vars>(
               ctx,
               model,
               state: node.state,
-              dt: 1,
+              dt: previewStepSec,
               decisions: decision ? [decision] : [],
               fast: previewFast,
             });
 
-            const elapsedSec = depth + 1;
+            const elapsedSec = (depth + 1) * previewStepSec;
             let reachedTargetAtSec = node.reachedTargetAtSec;
             if (reachedTargetAtSec === undefined && target) {
               const amount = worthAmount(ctx, model, step.next, series);

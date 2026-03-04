@@ -48,6 +48,9 @@ export type SimContext<N, U extends string, Vars> = Readonly<{
   E: Engine<N>;
   unit: Unit<U>;
 
+  // Optional runtime hint for strategies requiring time-scale aware preview.
+  stepSec?: number;
+
   tickPolicy: TickPolicy;
   collectMoneyEvents?: boolean;
 
