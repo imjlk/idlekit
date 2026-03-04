@@ -22,8 +22,11 @@ export * from "./scenario/compile";
 export * from "./sim/types";
 export * from "./sim/simulator";
 export * from "./sim/step";
+export * from "./sim/stepTypes";
 
 export * from "./sim/strategy/types";
+export * from "./sim/strategy/contracts";
+export * from "./sim/strategy/stability";
 export * from "./sim/strategy/scripted";
 export * from "./sim/strategy/greedy";
 export * from "./sim/strategy/planner";

@@ -51,6 +51,12 @@ function quoteScore<N, U extends string>(
 export function createGreedyStrategy<N, U extends string, Vars>(
   params: GreedyStrategyParamsV1,
 ): Strategy<N, U, Vars> {
+  /**
+   * Greedy Strategy should:
+   * - stabilize action ordering
+   * - use BulkQuote.equivalentCost/deltaIncomePerSec when available
+   * - for maximizeNetWorth objective, prefer stepOnce-based short preview (not full runScenario)
+   */
   const objective = params.objective;
   const maxPicksPerStep = params.maxPicksPerStep ?? 1;
 

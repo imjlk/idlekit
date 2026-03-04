@@ -1,4 +1,6 @@
 import type { Strategy } from "./types";
+import { stepOnce } from "../step";
+import type { StepOnceFn } from "../stepTypes";
 import { createGreedyStrategy } from "./greedy";
 import type { PlannerObjectiveId, PlannerStrategyParamsV1 } from "./params";
 
@@ -15,9 +17,21 @@ function asGreedy(objective: PlannerObjectiveId): "maximizeIncome" | "minPayback
   }
 }
 
+/**
+ * Planner MUST use stepOnce for rollouts.
+ * Do NOT re-implement simulator tick/payment logic inside planner.
+ */
+export type PlannerDeps<N, U extends string, Vars> = Readonly<{
+  stepOnce: StepOnceFn<N, U, Vars>;
+}>;
+
 export function createPlannerStrategy<N, U extends string, Vars>(
   params: PlannerStrategyParamsV1,
+  deps?: PlannerDeps<N, U, Vars>,
 ): Strategy<N, U, Vars> {
+  const d: PlannerDeps<N, U, Vars> = deps ?? ({ stepOnce } as PlannerDeps<N, U, Vars>);
+  void d;
+
   const greedy = createGreedyStrategy<N, U, Vars>({
     schemaVersion: 1,
     objective: asGreedy(params.objective),
