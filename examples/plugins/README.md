@@ -58,3 +58,4 @@ bun run --cwd packages/cli dev -- tune ../../examples/plugins/plugin-scenario.js
 - `models/strategies/objectives` 배열을 export(default 또는 named)
 - `paramsSchema`와 `defaultParams`를 함께 제공하면 UX가 안정적
 - 전략/모델은 결정론을 유지해야 planner/tuner 재현성이 보장됨
+- 운영 환경에서는 `--plugin-root`/`--plugin-sha256`로 로드 범위와 무결성을 함께 제한 권장

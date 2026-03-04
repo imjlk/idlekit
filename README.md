@@ -43,6 +43,12 @@ bun run --cwd packages/cli dev -- report ../../examples/simple-linear.json --inc
 bun run --cwd packages/cli dev -- tune ../../examples/simple-linear.json --tune ../../examples/tune-simple.json
 ```
 
+튜닝 회귀 비교(artifact 기반):
+
+```bash
+bun run tune:regress --baseline ./tmp/tune-baseline.json --current ./tmp/tune-latest.json --tolerance 0.05
+```
+
 ## 문서
 
 - [사용 가이드](./docs/usage-guide.md)

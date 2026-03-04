@@ -60,6 +60,17 @@ bun run --cwd packages/cli dev -- validate ../../examples/simple-linear.json
 bun run --cwd packages/cli dev -- validate ../../examples/simple-linear.json --plugin ./my-plugin.ts --allow-plugin true
 ```
 
+플러그인 신뢰 정책(권장):
+
+```bash
+SHA=$(shasum -a 256 ../../examples/plugins/custom-econ-plugin.ts | awk '{print $1}')
+bun run --cwd packages/cli dev -- validate ../../examples/plugins/plugin-scenario.json \
+  --plugin ../../examples/plugins/custom-econ-plugin.ts \
+  --allow-plugin true \
+  --plugin-root ../../examples/plugins \
+  --plugin-sha256 ../../examples/plugins/custom-econ-plugin.ts=$SHA
+```
+
 ### 3.2 시뮬레이션
 
 ```bash
@@ -74,6 +85,8 @@ bun run --cwd packages/cli dev -- simulate ../../examples/simple-linear.json \
   --step 1 \
   --strategy greedy \
   --fast true \
+  --event-log-enabled true \
+  --event-log-max 2000 \
   --format json
 ```
 
@@ -161,12 +174,27 @@ bun run --cwd packages/cli dev -- compare ../../examples/simple-linear.json ../.
 ```bash
 bun run --cwd packages/cli dev -- tune ../../examples/simple-linear.json \
   --tune ../../examples/tune-simple.json \
+  --artifact-out ../../tmp/tune-latest.json \
   --format json
 ```
 
 주의:
 
 - `tune` 결과는 구조상 중첩 객체가 많으므로 `json` 출력 권장
+
+회귀 비교:
+
+```bash
+bun run --cwd packages/cli dev -- tune ../../examples/simple-linear.json \
+  --tune ../../examples/tune-simple.json \
+  --baseline-artifact ../../tmp/tune-baseline.json \
+  --regression-tolerance 0.05 \
+  --fail-on-regression true \
+  --artifact-out ../../tmp/tune-latest.json \
+  --format json
+
+bun run tune:regress --baseline ../../tmp/tune-baseline.json --current ../../tmp/tune-latest.json --tolerance 0.05
+```
 
 ## 4. 레지스트리 조회 명령
 

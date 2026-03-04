@@ -2,7 +2,7 @@ import { defineCommand, option } from "@bunli/core";
 import { validateScenarioV1 } from "@idlekit/core";
 import { z } from "zod";
 import { readScenarioFile } from "../io/readScenario";
-import { loadRegistries, parsePluginPaths } from "../plugin/load";
+import { loadRegistries, parsePluginPaths, parsePluginSecurityOptions } from "../plugin/load";
 
 export default defineCommand({
   name: "validate",
@@ -14,6 +14,12 @@ export default defineCommand({
     "allow-plugin": option(z.coerce.boolean().default(false), {
       description: "Allow loading local plugin modules",
     }),
+    "plugin-root": option(z.string().default(""), {
+      description: "Comma-separated allowed plugin root directories",
+    }),
+    "plugin-sha256": option(z.string().default(""), {
+      description: "Comma-separated '<path>=<sha256>' plugin integrity map",
+    }),
   },
   async handler({ flags, positional }) {
     const scenarioPath = positional[0];
@@ -22,7 +28,13 @@ export default defineCommand({
     }
 
     const input = await readScenarioFile(scenarioPath);
-    const { modelRegistry } = await loadRegistries(parsePluginPaths(flags.plugin, flags["allow-plugin"]));
+    const { modelRegistry } = await loadRegistries(
+      parsePluginPaths(flags.plugin, flags["allow-plugin"]),
+      parsePluginSecurityOptions({
+        roots: flags["plugin-root"],
+        sha256: flags["plugin-sha256"],
+      }),
+    );
 
     const r = validateScenarioV1(input, modelRegistry);
     if (!r.ok) {

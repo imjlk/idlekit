@@ -11,7 +11,8 @@
     "dev:cli": "bun run --cwd packages/cli dev",
     "test": "bun run --cwd packages/core test && bun run --cwd packages/cli test",
     "docs:verify": "bun tools/docs-verify.ts",
-    "docs:verify:quick": "bun tools/docs-verify.ts --quick"
+    "docs:verify:quick": "bun tools/docs-verify.ts --quick",
+    "tune:regress": "bun tools/tune-regress.ts"
   },
   "devDependencies": {
     "@types/bun": "^1.3.9",

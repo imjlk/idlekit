@@ -1,5 +1,6 @@
-import { stat } from "node:fs/promises";
-import { extname, resolve } from "node:path";
+import { createHash } from "node:crypto";
+import { readFile, stat } from "node:fs/promises";
+import { extname, isAbsolute, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
   builtinObjectiveFactories,
@@ -228,19 +229,101 @@ export function parsePluginPaths(input: unknown, allowPlugin = false): string[] 
   return paths;
 }
 
+function parseCommaSeparated(input: unknown): string[] {
+  if (typeof input !== "string" || input.trim().length === 0) return [];
+  return input
+    .split(",")
+    .map((x) => x.trim())
+    .filter(Boolean);
+}
+
+function normalizeSha256(input: string): string {
+  const x = input.trim().toLowerCase();
+  if (!/^[a-f0-9]{64}$/.test(x)) {
+    throw new Error(`Invalid sha256 value '${input}'. Expected 64 lowercase/uppercase hex chars.`);
+  }
+  return x;
+}
+
+export function parsePluginRoots(input: unknown): string[] {
+  const list = parseCommaSeparated(input).map((x) => resolve(x));
+  return [...new Set(list)];
+}
+
+export function parsePluginSha256(input: unknown): Record<string, string> {
+  const entries = parseCommaSeparated(input);
+  const out: Record<string, string> = {};
+
+  for (const entry of entries) {
+    const idx = entry.indexOf("=");
+    if (idx <= 0 || idx === entry.length - 1) {
+      throw new Error(
+        `Invalid --plugin-sha256 entry '${entry}'. Use '<path>=<sha256>' and separate multiple entries with commas.`,
+      );
+    }
+
+    const key = entry.slice(0, idx)!.trim();
+    const value = entry.slice(idx + 1)!.trim();
+    const abs = resolve(key);
+    const digest = normalizeSha256(value);
+
+    if (out[abs] && out[abs] !== digest) {
+      throw new Error(`Conflicting sha256 values for plugin path: ${key}`);
+    }
+    out[abs] = digest;
+  }
+
+  return out;
+}
+
+export type PluginSecurityOptions = Readonly<{
+  allowedRoots?: readonly string[];
+  requiredSha256?: Readonly<Record<string, string>>;
+}>;
+
+export function parsePluginSecurityOptions(input: {
+  roots?: unknown;
+  sha256?: unknown;
+}): PluginSecurityOptions {
+  const allowedRoots = parsePluginRoots(input.roots);
+  const requiredSha256 = parsePluginSha256(input.sha256);
+  return {
+    allowedRoots,
+    requiredSha256,
+  };
+}
+
 export type LoadedRegistries = Readonly<{
   modelRegistry: ModelRegistry;
   strategyRegistry: StrategyRegistry;
   objectiveRegistry: ObjectiveRegistry;
 }>;
 
-export async function loadRegistries(pluginPaths: string[] = []): Promise<LoadedRegistries> {
+export async function loadRegistries(
+  pluginPaths: string[] = [],
+  securityOptions: PluginSecurityOptions = {},
+): Promise<LoadedRegistries> {
   const modelFactories: ModelFactory[] = [createLinearFactory()];
   const strategyFactories: StrategyFactory[] = [...builtinStrategyFactories];
   const objectiveFactories: ObjectiveFactory[] = [...builtinObjectiveFactories];
+  const allowedRoots = (securityOptions.allowedRoots ?? []).map((x) => resolve(x));
+  const requiredSha256 = securityOptions.requiredSha256 ?? {};
+  const hasShaPolicy = Object.keys(requiredSha256).length > 0;
 
   for (const p of pluginPaths) {
-    const abs = await resolveAndValidatePluginPath(p);
+    const abs = await resolveAndValidatePluginPath(p, allowedRoots);
+    if (hasShaPolicy) {
+      const expected = requiredSha256[abs];
+      if (!expected) {
+        throw new Error(
+          `Missing sha256 for plugin path '${p}'. Add it via --plugin-sha256 '${p}=<sha256>'`,
+        );
+      }
+      const actual = await sha256File(abs);
+      if (actual !== expected) {
+        throw new Error(`Plugin sha256 mismatch for '${p}'. expected=${expected} actual=${actual}`);
+      }
+    }
     const mod = (await import(pathToFileURL(abs).href)) as PluginModule;
     const parsed = parsePluginModule(mod);
 
@@ -256,7 +339,17 @@ export async function loadRegistries(pluginPaths: string[] = []): Promise<Loaded
   };
 }
 
-async function resolveAndValidatePluginPath(input: string): Promise<string> {
+function isPathInsideRoot(pathAbs: string, rootAbs: string): boolean {
+  const rel = relative(rootAbs, pathAbs);
+  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+}
+
+async function sha256File(pathAbs: string): Promise<string> {
+  const buffer = await readFile(pathAbs);
+  return createHash("sha256").update(buffer).digest("hex");
+}
+
+async function resolveAndValidatePluginPath(input: string, allowedRoots: readonly string[]): Promise<string> {
   if (input.includes("://")) {
     throw new Error(`Plugin path must be a local file path: ${input}`);
   }
@@ -270,6 +363,13 @@ async function resolveAndValidatePluginPath(input: string): Promise<string> {
   const info = await stat(abs).catch(() => null);
   if (!info || !info.isFile()) {
     throw new Error(`Plugin file not found: ${input}`);
+  }
+
+  if (allowedRoots.length > 0) {
+    const allowed = allowedRoots.some((root) => isPathInsideRoot(abs, root));
+    if (!allowed) {
+      throw new Error(`Plugin path is outside allowed roots: ${input}`);
+    }
   }
 
   return abs;

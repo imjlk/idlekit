@@ -8,7 +8,7 @@ import {
 import { z } from "zod";
 import { readScenarioFile } from "../io/readScenario";
 import { writeOutput } from "../io/writeOutput";
-import { loadRegistries, parsePluginPaths } from "../plugin/load";
+import { loadRegistries, parsePluginPaths, parsePluginSecurityOptions } from "../plugin/load";
 
 function parseRange(input: string): { from: number; to: number } {
   const m = input.match(/^(\d+)\.\.(\d+)$/);
@@ -23,6 +23,12 @@ export default defineCommand({
     plugin: option(z.string().default(""), { description: "Comma-separated plugin paths" }),
     "allow-plugin": option(z.coerce.boolean().default(false), {
       description: "Allow loading local plugin modules",
+    }),
+    "plugin-root": option(z.string().default(""), {
+      description: "Comma-separated allowed plugin root directories",
+    }),
+    "plugin-sha256": option(z.string().default(""), {
+      description: "Comma-separated '<path>=<sha256>' plugin integrity map",
     }),
     scan: option(z.string().default("300..1800"), { description: "Scan range (from..to)" }),
     step: option(z.coerce.number().default(60), { description: "Scan step sec" }),
@@ -41,7 +47,13 @@ export default defineCommand({
     }
 
     const input = await readScenarioFile(scenarioPath);
-    const loaded = await loadRegistries(parsePluginPaths(flags.plugin, flags["allow-plugin"]));
+    const loaded = await loadRegistries(
+      parsePluginPaths(flags.plugin, flags["allow-plugin"]),
+      parsePluginSecurityOptions({
+        roots: flags["plugin-root"],
+        sha256: flags["plugin-sha256"],
+      }),
+    );
     const valid = validateScenarioV1(input, loaded.modelRegistry);
     if (!valid.ok || !valid.scenario) {
       throw new Error(

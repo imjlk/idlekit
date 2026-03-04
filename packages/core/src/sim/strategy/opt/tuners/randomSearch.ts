@@ -110,7 +110,12 @@ export const RandomSearchTunerV1: StrategyTuner = {
       });
     };
 
-    const candidates: Array<{ params: unknown; score: number; seedScores: number[] }> = [];
+    const candidates: Array<{
+      params: unknown;
+      score: number;
+      seedScores: number[];
+      seedResults?: ReturnType<typeof evalOne>["seedResults"];
+    }> = [];
 
     const sampleParams = () => {
       const p = deepClone(tuneSpec.strategy.baseParams ?? stratFactory.defaultParams ?? {});
@@ -147,7 +152,12 @@ export const RandomSearchTunerV1: StrategyTuner = {
           fast: st.fast,
         });
 
-        local.push({ params: mutated, score: r.score, seedScores: [...r.seedScores] });
+        local.push({
+          params: mutated,
+          score: r.score,
+          seedScores: [...r.seedScores],
+          seedResults: r.seedResults ? [...r.seedResults] : undefined,
+        });
       }
 
       local.sort((a, b) => b.score - a.score);

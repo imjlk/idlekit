@@ -95,6 +95,8 @@ describe("runCandidateAndScore", () => {
 
     expect(out.seedScores).toEqual([7, 11]);
     expect(out.score).toBe(9);
+    expect(out.seedResults.map((x) => x.seed)).toEqual([7, 11]);
+    expect(out.seedResults.every((x) => !Number.isNaN(x.endMoneyLog10))).toBeTrue();
   });
 
   it("clones initial state per seed while preserving class prototype", () => {
@@ -133,6 +135,8 @@ describe("runCandidateAndScore", () => {
 
     expect(out.seedScores).toEqual([1, 1]);
     expect(out.score).toBe(1);
+    expect(out.seedResults.length).toBe(2);
+    expect(out.seedResults[0]?.actionsApplied).toBe(1);
     expect(scenario.initial.vars.counter).toBe(0);
     expect(scenario.initial.vars).toBeInstanceOf(Bag);
   });

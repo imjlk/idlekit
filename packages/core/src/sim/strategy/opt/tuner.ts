@@ -3,10 +3,21 @@ import type { StrategyRegistry } from "../registry";
 import type { ObjectiveRegistry } from "./registry";
 import type { TuneSpecV1 } from "./tuneSpec";
 
+export type TuneSeedResult = Readonly<{
+  seed: number;
+  score: number;
+  durationSec: number;
+  endMoneyLog10: number;
+  endNetWorthLog10: number;
+  droppedRate: number;
+  actionsApplied: number;
+}>;
+
 export type TuneCandidate = Readonly<{
   params: unknown;
   score: number;
   seedScores: readonly number[];
+  seedResults?: readonly TuneSeedResult[];
 }>;
 
 export type TuneReport = Readonly<{
@@ -42,6 +53,10 @@ export interface StrategyTuner {
       params: unknown;
       seeds: readonly number[];
       overrides?: Readonly<{ stepSec?: number; durationSec?: number; fast?: boolean }>;
-    }) => Readonly<{ score: number; seedScores: readonly number[] }>;
+    }) => Readonly<{
+      score: number;
+      seedScores: readonly number[];
+      seedResults?: readonly TuneSeedResult[];
+    }>;
   }) => TuneReport;
 }

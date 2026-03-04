@@ -28,6 +28,19 @@ export default plugin;
 bun run --cwd packages/cli dev -- models list --plugin ./my-plugin.ts --allow-plugin true
 ```
 
+보안 로드(권장):
+
+```bash
+SHA=$(shasum -a 256 ./my-plugin.ts | awk '{print $1}')
+bun run --cwd packages/cli dev -- models list \
+  --plugin ./my-plugin.ts \
+  --allow-plugin true \
+  --plugin-root . \
+  --plugin-sha256 ./my-plugin.ts=$SHA
+```
+
+`--plugin-root`를 지정하면 허용 디렉터리 밖 플러그인은 거부되고, `--plugin-sha256`을 지정하면 해시 불일치 시 로딩이 실패합니다.
+
 ## 2. Engine 어댑터(핵심)
 
 `@idlekit/core`는 `Engine<N>` 인터페이스로 숫자 엔진을 추상화합니다.

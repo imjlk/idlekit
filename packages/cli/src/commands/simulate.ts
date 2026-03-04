@@ -8,7 +8,7 @@ import {
 import { z } from "zod";
 import { readScenarioFile } from "../io/readScenario";
 import { writeOutput } from "../io/writeOutput";
-import { loadRegistries, parsePluginPaths } from "../plugin/load";
+import { loadRegistries, parsePluginPaths, parsePluginSecurityOptions } from "../plugin/load";
 
 const strategySchema = z.enum(["greedy", "planner", "scripted"]).optional();
 
@@ -20,10 +20,22 @@ export default defineCommand({
     "allow-plugin": option(z.coerce.boolean().default(false), {
       description: "Allow loading local plugin modules",
     }),
+    "plugin-root": option(z.string().default(""), {
+      description: "Comma-separated allowed plugin root directories",
+    }),
+    "plugin-sha256": option(z.string().default(""), {
+      description: "Comma-separated '<path>=<sha256>' plugin integrity map",
+    }),
     duration: option(z.coerce.number().optional(), { description: "Override durationSec" }),
     step: option(z.coerce.number().optional(), { description: "Override stepSec" }),
     strategy: option(strategySchema, { description: "greedy|planner|scripted" }),
     fast: option(z.coerce.boolean().default(false), { description: "Enable fast(log-domain) mode" }),
+    "event-log-enabled": option(z.coerce.boolean().optional(), {
+      description: "Override event log retention enabled flag",
+    }),
+    "event-log-max": option(z.coerce.number().int().nonnegative().optional(), {
+      description: "Retain only latest N events in memory",
+    }),
     out: option(z.string().optional(), { description: "Output path" }),
     format: option(z.enum(["json", "md", "csv"]).default("json"), { description: "Output format" }),
   },
@@ -34,7 +46,13 @@ export default defineCommand({
     }
 
     const input = await readScenarioFile(scenarioPath);
-    const loaded = await loadRegistries(parsePluginPaths(flags.plugin, flags["allow-plugin"]));
+    const loaded = await loadRegistries(
+      parsePluginPaths(flags.plugin, flags["allow-plugin"]),
+      parsePluginSecurityOptions({
+        roots: flags["plugin-root"],
+        sha256: flags["plugin-sha256"],
+      }),
+    );
     const valid = validateScenarioV1(input, loaded.modelRegistry);
     if (!valid.ok || !valid.scenario) {
       throw new Error(
@@ -60,6 +78,14 @@ export default defineCommand({
       return factory.create(params) as typeof compiled.strategy;
     })();
 
+    const eventLog =
+      flags["event-log-enabled"] !== undefined || flags["event-log-max"] !== undefined
+        ? {
+            enabled: flags["event-log-enabled"] ?? compiled.run.eventLog?.enabled,
+            maxEvents: flags["event-log-max"] ?? compiled.run.eventLog?.maxEvents,
+          }
+        : compiled.run.eventLog;
+
     const runScenarioInput = {
       ...compiled,
       strategy,
@@ -74,6 +100,7 @@ export default defineCommand({
               disableMoneyEvents: true,
             }
           : compiled.run.fast,
+        eventLog,
       },
     };
 
@@ -97,6 +124,7 @@ export default defineCommand({
         },
         stats: run.stats,
         uxFlags: run.uxFlags,
+        eventLog: run.eventLog,
       },
     });
   },

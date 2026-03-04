@@ -9,7 +9,7 @@ import {
 import { z } from "zod";
 import { readScenarioFile } from "../io/readScenario";
 import { writeOutput } from "../io/writeOutput";
-import { loadRegistries, parsePluginPaths } from "../plugin/load";
+import { loadRegistries, parsePluginPaths, parsePluginSecurityOptions } from "../plugin/load";
 
 export default defineCommand({
   name: "eta",
@@ -18,6 +18,12 @@ export default defineCommand({
     plugin: option(z.string().default(""), { description: "Comma-separated plugin paths" }),
     "allow-plugin": option(z.coerce.boolean().default(false), {
       description: "Allow loading local plugin modules",
+    }),
+    "plugin-root": option(z.string().default(""), {
+      description: "Comma-separated allowed plugin root directories",
+    }),
+    "plugin-sha256": option(z.string().default(""), {
+      description: "Comma-separated '<path>=<sha256>' plugin integrity map",
     }),
     "target-money": option(z.string().optional(), { description: "Target money NumStr" }),
     "target-worth": option(z.string().optional(), { description: "Target net worth NumStr" }),
@@ -54,7 +60,13 @@ export default defineCommand({
       : ({ kind: "netWorth", value: targetWorth! } as const);
 
     const input = await readScenarioFile(scenarioPath);
-    const loaded = await loadRegistries(parsePluginPaths(flags.plugin, flags["allow-plugin"]));
+    const loaded = await loadRegistries(
+      parsePluginPaths(flags.plugin, flags["allow-plugin"]),
+      parsePluginSecurityOptions({
+        roots: flags["plugin-root"],
+        sha256: flags["plugin-sha256"],
+      }),
+    );
     const valid = validateScenarioV1(input, loaded.modelRegistry);
     if (!valid.ok || !valid.scenario) {
       throw new Error(

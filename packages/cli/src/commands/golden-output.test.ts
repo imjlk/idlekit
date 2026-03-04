@@ -1,5 +1,8 @@
 import { describe, expect, it } from "bun:test";
 import { execFileSync } from "node:child_process";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { resolve } from "node:path";
 
 const BASELINE = "../../examples/tutorials/01-cafe-baseline.json";
 const COMPARE_B = "../../examples/tutorials/03-cafe-compare-b.json";
@@ -83,5 +86,63 @@ describe("CLI golden outputs", () => {
 
     expect(out.ok).toBeTrue();
     expect(out.report?.best).toBeDefined();
+  });
+
+  it("simulate supports event log overrides", () => {
+    const out = runCliJson([
+      "simulate",
+      BASELINE,
+      "--duration",
+      "30",
+      "--event-log-enabled",
+      "true",
+      "--event-log-max",
+      "2",
+      "--format",
+      "json",
+    ]);
+
+    expect(out.eventLog).toBeDefined();
+    expect(out.eventLog.retained).toBeLessThanOrEqual(2);
+    expect(out.stats).toBeDefined();
+  });
+
+  it("tune can write artifact and compare baseline artifact", async () => {
+    const dir = await mkdtemp(resolve(tmpdir(), "idlekit-tune-artifact-"));
+    try {
+      const baselinePath = resolve(dir, "baseline.json");
+      runCliJson([
+        "tune",
+        BASELINE,
+        "--tune",
+        TUNE,
+        "--artifact-out",
+        baselinePath,
+        "--format",
+        "json",
+      ]);
+
+      const currentPath = resolve(dir, "current.json");
+      const out = runCliJson([
+        "tune",
+        BASELINE,
+        "--tune",
+        TUNE,
+        "--artifact-out",
+        currentPath,
+        "--baseline-artifact",
+        baselinePath,
+        "--format",
+        "json",
+      ]);
+
+      const raw = JSON.parse(await readFile(currentPath, "utf8"));
+      expect(raw.v).toBe(1);
+      expect(raw.result?.report?.best).toBeDefined();
+      expect(out.regression).toBeDefined();
+      expect(typeof out.regression.currentBestScore).toBe("number");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });

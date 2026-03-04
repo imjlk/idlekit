@@ -11,7 +11,7 @@ import {
 import { z } from "zod";
 import { readScenarioFile } from "../io/readScenario";
 import { writeOutput } from "../io/writeOutput";
-import { loadRegistries, parsePluginPaths } from "../plugin/load";
+import { loadRegistries, parsePluginPaths, parsePluginSecurityOptions } from "../plugin/load";
 
 const strategySchema = z.enum(["greedy", "planner", "scripted"]).optional();
 
@@ -36,6 +36,12 @@ export default defineCommand({
     plugin: option(z.string().default(""), { description: "Comma-separated plugin paths" }),
     "allow-plugin": option(z.coerce.boolean().default(false), {
       description: "Allow loading local plugin modules",
+    }),
+    "plugin-root": option(z.string().default(""), {
+      description: "Comma-separated allowed plugin root directories",
+    }),
+    "plugin-sha256": option(z.string().default(""), {
+      description: "Comma-separated '<path>=<sha256>' plugin integrity map",
     }),
     duration: option(z.coerce.number().optional(), { description: "Override durationSec" }),
     step: option(z.coerce.number().optional(), { description: "Override stepSec" }),
@@ -64,7 +70,13 @@ export default defineCommand({
     }
 
     const [aInput, bInput] = await Promise.all([readScenarioFile(aPath), readScenarioFile(bPath)]);
-    const loaded = await loadRegistries(parsePluginPaths(flags.plugin, flags["allow-plugin"]));
+    const loaded = await loadRegistries(
+      parsePluginPaths(flags.plugin, flags["allow-plugin"]),
+      parsePluginSecurityOptions({
+        roots: flags["plugin-root"],
+        sha256: flags["plugin-sha256"],
+      }),
+    );
 
     const va = validateScenarioV1(aInput, loaded.modelRegistry);
     const vb = validateScenarioV1(bInput, loaded.modelRegistry);

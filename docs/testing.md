@@ -10,6 +10,7 @@ bun run test
 bun run build
 bun run docs:verify:quick
 bun run docs:verify
+bun run tune:regress --baseline ./tmp/tune-baseline.json --current ./tmp/tune-latest.json --tolerance 0.05
 ```
 
 패키지별:

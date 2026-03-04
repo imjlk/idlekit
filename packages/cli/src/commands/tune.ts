@@ -11,10 +11,47 @@ import {
   type ObjectiveRegistry,
   type StrategyRegistry,
 } from "@idlekit/core";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
 import { z } from "zod";
 import { readScenarioFile } from "../io/readScenario";
 import { writeOutput } from "../io/writeOutput";
-import { loadRegistries, parsePluginPaths } from "../plugin/load";
+import { loadRegistries, parsePluginPaths, parsePluginSecurityOptions } from "../plugin/load";
+
+type TuneRegression = Readonly<{
+  baselinePath: string;
+  baselineBestScore: number;
+  currentBestScore: number;
+  delta: number;
+  deltaPct: number;
+  tolerance: number;
+  regressed: boolean;
+}>;
+
+type TuneArtifactV1 = Readonly<{
+  v: 1;
+  generatedAt: string;
+  scenarioPath: string;
+  tuneSpecPath: string;
+  result: unknown;
+  regression?: TuneRegression;
+}>;
+
+function readBestScoreFromTuneResult(x: unknown): number {
+  const score = (x as any)?.report?.best?.score;
+  if (typeof score !== "number" || !Number.isFinite(score)) {
+    throw new Error("Unable to read best score from tune result.");
+  }
+  return score;
+}
+
+function readBestScoreFromArtifact(x: unknown): number {
+  const score = (x as any)?.result?.report?.best?.score;
+  if (typeof score !== "number" || !Number.isFinite(score)) {
+    throw new Error("Invalid baseline artifact: result.report.best.score(number) is required.");
+  }
+  return score;
+}
 
 export async function cmdTune(args: {
   E: Engine<any>;
@@ -77,7 +114,23 @@ export default defineCommand({
     "allow-plugin": option(z.coerce.boolean().default(false), {
       description: "Allow loading local plugin modules",
     }),
+    "plugin-root": option(z.string().default(""), {
+      description: "Comma-separated allowed plugin root directories",
+    }),
+    "plugin-sha256": option(z.string().default(""), {
+      description: "Comma-separated '<path>=<sha256>' plugin integrity map",
+    }),
     tune: option(z.string().min(1), { description: "TuneSpec file path (.json|.yaml)" }),
+    "artifact-out": option(z.string().optional(), { description: "Write tune artifact JSON to path" }),
+    "baseline-artifact": option(z.string().optional(), {
+      description: "Compare current best score against baseline artifact",
+    }),
+    "regression-tolerance": option(z.coerce.number().default(0), {
+      description: "Allowed score decrease before regression is flagged",
+    }),
+    "fail-on-regression": option(z.coerce.boolean().default(false), {
+      description: "Exit with error when regression is detected",
+    }),
     out: option(z.string().optional(), { description: "Output path" }),
     format: option(z.enum(["json", "md", "csv"]).default("json"), { description: "Output format" }),
   },
@@ -92,7 +145,13 @@ export default defineCommand({
       readScenarioFile(flags.tune),
     ]);
 
-    const loaded = await loadRegistries(parsePluginPaths(flags.plugin, flags["allow-plugin"]));
+    const loaded = await loadRegistries(
+      parsePluginPaths(flags.plugin, flags["allow-plugin"]),
+      parsePluginSecurityOptions({
+        roots: flags["plugin-root"],
+        sha256: flags["plugin-sha256"],
+      }),
+    );
     const result = await cmdTune({
       E: createNumberEngine(),
       scenarioInput,
@@ -102,10 +161,54 @@ export default defineCommand({
       objectiveRegistry: loaded.objectiveRegistry,
     });
 
+    let regression: TuneRegression | undefined;
+    if (flags["baseline-artifact"]) {
+      const baselinePath = resolve(flags["baseline-artifact"]);
+      const baselineRaw = JSON.parse(await readFile(baselinePath, "utf8"));
+      const baselineBest = readBestScoreFromArtifact(baselineRaw);
+      const currentBest = readBestScoreFromTuneResult(result);
+      const delta = currentBest - baselineBest;
+      const deltaPct = baselineBest === 0 ? (delta === 0 ? 0 : Number.POSITIVE_INFINITY) : (delta / baselineBest) * 100;
+      const tolerance = flags["regression-tolerance"];
+      const regressed = currentBest + tolerance < baselineBest;
+
+      regression = {
+        baselinePath,
+        baselineBestScore: baselineBest,
+        currentBestScore: currentBest,
+        delta,
+        deltaPct,
+        tolerance,
+        regressed,
+      };
+
+      if (regressed && flags["fail-on-regression"]) {
+        throw new Error(
+          `Tune regression detected: current=${currentBest}, baseline=${baselineBest}, tolerance=${tolerance}`,
+        );
+      }
+    }
+
+    const output = regression ? { ...(result as Record<string, unknown>), regression } : result;
+
+    if (flags["artifact-out"]) {
+      const artifactPath = resolve(flags["artifact-out"]);
+      const artifact: TuneArtifactV1 = {
+        v: 1,
+        generatedAt: new Date().toISOString(),
+        scenarioPath: resolve(scenarioPath),
+        tuneSpecPath: resolve(flags.tune),
+        result,
+        regression,
+      };
+      await mkdir(dirname(artifactPath), { recursive: true });
+      await writeFile(artifactPath, JSON.stringify(artifact, null, 2) + "\n", "utf8");
+    }
+
     await writeOutput({
       format: flags.format,
       outPath: flags.out,
-      data: result,
+      data: output,
     });
   },
 });
