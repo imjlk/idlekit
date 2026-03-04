@@ -2,6 +2,7 @@ import type { Engine } from "../engine/types";
 import type { Unit } from "../money/types";
 import { parseMoney } from "../notation/parseMoney";
 import type { CompiledScenario, Model } from "../sim/types";
+import type { StrategyRegistry } from "../sim/strategy/registry";
 import type { ModelRegistry } from "./registry";
 import type { ScenarioV1 } from "./types";
 
@@ -25,10 +26,11 @@ export function compileScenario<N, U extends string, Vars>(args: {
   E: Engine<N>;
   scenario: ScenarioV1;
   registry: ModelRegistry;
+  strategyRegistry?: StrategyRegistry;
   unitFactory?: (code: string) => Unit<U>;
   opts?: CompileOptions;
 }): CompiledScenario<N, U, Vars> {
-  const { E, scenario, registry } = args;
+  const { E, scenario, registry, strategyRegistry } = args;
 
   const modelFactory = registry.get(scenario.model.id, scenario.model.version);
   if (!modelFactory) {
@@ -75,6 +77,38 @@ export function compileScenario<N, U extends string, Vars>(args: {
     : E.from(1);
 
   const model = modelFactory.create(scenario.model.params) as Model<N, U, Vars>;
+
+  let strategy: CompiledScenario<N, U, Vars>["strategy"] | undefined;
+  if (scenario.strategy) {
+    if (!strategyRegistry) {
+      throw new Error(`StrategyRegistry is required to compile strategy: ${scenario.strategy.id}`);
+    }
+
+    const factory = strategyRegistry.get(scenario.strategy.id);
+    if (!factory) {
+      throw new Error(`Unknown strategy: ${scenario.strategy.id}`);
+    }
+
+    if (factory.paramsSchema) {
+      const result = factory.paramsSchema["~standard"].validate(scenario.strategy.params ?? {});
+      const hasSuccess = !!result && typeof result === "object" && "success" in result;
+      if (hasSuccess) {
+        const r = result as { success: boolean; issues?: Array<{ message: string }> };
+        if (!r.success) {
+          const issues = (r.issues ?? []).map((x) => x.message).join("; ");
+          throw new Error(`Invalid strategy params: ${issues || "unknown issues"}`);
+        }
+      } else {
+        const r = result as { issues?: Array<{ message: string }> };
+        if (Array.isArray(r.issues) && r.issues.length > 0) {
+          const issues = r.issues.map((x) => x.message).join("; ");
+          throw new Error(`Invalid strategy params: ${issues}`);
+        }
+      }
+    }
+
+    strategy = factory.create(scenario.strategy.params ?? {}) as CompiledScenario<N, U, Vars>["strategy"];
+  }
 
   const initial = {
     t: scenario.initial.t ?? 0,
@@ -126,5 +160,6 @@ export function compileScenario<N, U extends string, Vars>(args: {
     initial,
     constraints: scenario.constraints,
     run,
+    strategy,
   };
 }
