@@ -11,7 +11,20 @@ export type MeasuredDecision = "a" | "b" | "tie";
 
 function safeNum(input: unknown): number {
   if (typeof input === "number") return input;
-  if (typeof input === "string") return Number(input);
+  if (typeof input === "string") {
+    const n = Number(input);
+    if (Number.isFinite(n)) return n;
+
+    const m = /^\s*([+-]?\d+(?:\.\d+)?)e([+-]?\d+)\s*$/i.exec(input);
+    if (m) {
+      const mantissa = Number(m[1]);
+      const exp = Number(m[2]);
+      if (mantissa === 0) return 0;
+      if (Number.isFinite(mantissa) && Number.isFinite(exp)) {
+        return Math.log10(Math.abs(mantissa)) + exp;
+      }
+    }
+  }
   return Number.NaN;
 }
 

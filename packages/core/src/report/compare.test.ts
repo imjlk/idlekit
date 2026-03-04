@@ -71,4 +71,15 @@ describe("compareScenarios", () => {
     expect(out.better).toBe("a");
     expect((out.detail as any).source).toBe("measured");
   });
+
+  it("compares huge scientific notation safely in static fallback", () => {
+    const out = compareScenarios({
+      a: scenario("1e10000"),
+      b: scenario("1e9999"),
+      metric: "endMoney",
+    });
+
+    expect(out.better).toBe("a");
+    expect((out.detail as any).source).toBe("static");
+  });
 });

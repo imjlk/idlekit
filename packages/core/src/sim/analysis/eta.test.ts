@@ -38,6 +38,28 @@ function makeScenario(): CompiledScenario<number, "COIN", Record<string, unknown
 }
 
 describe("etaSimulate", () => {
+  it("returns first reached time instead of maxDuration", () => {
+    const out = etaSimulate({
+      scenario: makeScenario(),
+      target: { kind: "money", value: "3" },
+      maxDurationSec: 10,
+    });
+
+    expect(out.reached).toBeTrue();
+    expect(out.seconds).toBe(3);
+  });
+
+  it("returns maxDuration when target is not reached", () => {
+    const out = etaSimulate({
+      scenario: makeScenario(),
+      target: { kind: "money", value: "999" },
+      maxDurationSec: 10,
+    });
+
+    expect(out.reached).toBeFalse();
+    expect(out.seconds).toBe(10);
+  });
+
   it("omits run payload by default", () => {
     const out = etaSimulate({
       scenario: makeScenario(),

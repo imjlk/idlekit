@@ -272,4 +272,89 @@ describe("compileScenario", () => {
     expect(sc.run.until?.(sc.initial)).toBeFalse();
     expect(sc.run.until?.({ ...sc.initial, t: 1 })).toBeTrue();
   });
+
+  it("rejects invalid numeric right-value at compile time for known paths", () => {
+    const modelFactory: ModelFactory = {
+      id: "m",
+      version: 1,
+      create: () => ({
+        id: "m",
+        version: 1,
+        income: (ctx: any) => ({ unit: ctx.unit, amount: 0 }),
+        actions: () => [],
+      }),
+    };
+
+    const strategyFactory: StrategyFactory = {
+      id: "s",
+      create: () => ({
+        id: "s",
+        decide: () => [],
+      }),
+    };
+
+    const scenario: ScenarioV1 = {
+      ...makeScenario(),
+      clock: {
+        stepSec: 1,
+        durationSec: 10,
+        untilExpr: "t >= nope",
+      },
+    };
+
+    expect(() =>
+      compileScenario<number, "COIN", Record<string, unknown>>({
+        E: createNumberEngine(),
+        scenario,
+        registry: createModelRegistry([modelFactory]),
+        strategyRegistry: createStrategyRegistry([strategyFactory]),
+        unitFactory: (code) => ({ code: code as "COIN" }),
+      }),
+    ).toThrow();
+  });
+
+  it("does not throw at runtime for unknown-path type mismatch in untilExpr", () => {
+    const modelFactory: ModelFactory = {
+      id: "m",
+      version: 1,
+      create: () => ({
+        id: "m",
+        version: 1,
+        income: (ctx: any) => ({ unit: ctx.unit, amount: 0 }),
+        actions: () => [],
+      }),
+    };
+
+    const strategyFactory: StrategyFactory = {
+      id: "s",
+      create: () => ({
+        id: "s",
+        decide: () => [],
+      }),
+    };
+
+    const scenario: ScenarioV1 = {
+      ...makeScenario(),
+      initial: {
+        ...makeScenario().initial,
+        vars: { flag: true },
+      },
+      clock: {
+        stepSec: 1,
+        durationSec: 10,
+        untilExpr: "vars.flag >= nope",
+      },
+    };
+
+    const sc = compileScenario<number, "COIN", Record<string, unknown>>({
+      E: createNumberEngine(),
+      scenario,
+      registry: createModelRegistry([modelFactory]),
+      strategyRegistry: createStrategyRegistry([strategyFactory]),
+      unitFactory: (code) => ({ code: code as "COIN" }),
+    });
+
+    expect(() => sc.run.until?.(sc.initial)).not.toThrow();
+    expect(sc.run.until?.(sc.initial)).toBeFalse();
+  });
 });

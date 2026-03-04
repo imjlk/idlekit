@@ -1,5 +1,6 @@
 import { runScenario } from "../simulator";
 import type { CompiledScenario, RunResult } from "../types";
+import { parseMoney } from "../../notation/parseMoney";
 
 export type ETATarget = Readonly<
   | { kind: "money"; value: string }
@@ -23,13 +24,13 @@ export type ETAResult = Readonly<{
 
 function targetReached<N, U extends string, Vars>(
   scenario: CompiledScenario<N, U, Vars>,
-  target: ETATarget,
+  targetKind: ETATarget["kind"],
+  threshold: N,
   run: RunResult<N, U, Vars>,
 ): boolean {
   const { E } = scenario.ctx;
-  const threshold = E.from(target.value);
 
-  if (target.kind === "money") {
+  if (targetKind === "money") {
     return E.cmp(run.end.wallet.money.amount, threshold) >= 0;
   }
 
@@ -43,21 +44,35 @@ export function etaSimulate<N, U extends string, Vars>(args: {
   maxDurationSec: number;
   includeRun?: boolean;
 }): ETAResult {
+  const threshold = parseMoney(args.scenario.ctx.E, args.target.value, {
+    unit: args.scenario.ctx.unit,
+    suffix: { kind: "alphaInfinite", minLen: 2 },
+  }).amount;
+
+  const until = (s: RunResult<N, U, Vars>["end"]) => {
+    if (args.target.kind === "money") {
+      return args.scenario.ctx.E.cmp(s.wallet.money.amount, threshold) >= 0;
+    }
+    const worth = args.scenario.model.netWorth?.(args.scenario.ctx, s) ?? s.wallet.money;
+    return args.scenario.ctx.E.cmp(worth.amount, threshold) >= 0;
+  };
+
   const scenario: CompiledScenario<N, U, Vars> = {
     ...args.scenario,
     run: {
       ...args.scenario.run,
       durationSec: args.maxDurationSec,
       trace: undefined,
+      until,
     },
   };
 
   const run = runScenario(scenario);
-  const reached = targetReached(scenario, args.target, run);
+  const reached = targetReached(scenario, args.target.kind, threshold, run);
 
   return {
     reached,
-    seconds: run.end.t - run.start.t,
+    seconds: reached ? run.end.t - run.start.t : args.maxDurationSec,
     mode: "simulate",
     confidence: "high",
     assumptions: ["Direct simulation over maxDurationSec"],

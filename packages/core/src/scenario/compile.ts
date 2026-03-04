@@ -20,6 +20,20 @@ type ExprTerm = Readonly<{
   rawRight: string;
 }>;
 
+const UNTIL_NUMBER_PATHS = new Set<string>(["t", "prestige.count"]);
+const UNTIL_BOOLEAN_PATHS = new Set<string>([]);
+const UNTIL_AMOUNT_PATHS = new Set<string>([
+  "money",
+  "wallet.money",
+  "wallet.money.amount",
+  "bucket",
+  "wallet.bucket",
+  "maxMoneyEver",
+  "maxMoneyEver.amount",
+  "prestige.points",
+  "prestige.multiplier",
+]);
+
 function unsafeCompileUntilExpr(expr: string): (s: any) => boolean {
   const fn = new Function("s", `return Boolean(${expr});`) as (s: any) => boolean;
   return (s: any) => {
@@ -140,6 +154,38 @@ function compareByOp(cmp: -1 | 0 | 1, op: ExprOp): boolean {
   }
 }
 
+function prevalidateUntilTerm<N, U extends string>(args: {
+  term: ExprTerm;
+  E: Engine<N>;
+  unit: Unit<U>;
+  allowSuffixNotation: boolean;
+}): void {
+  const { term } = args;
+  if (UNTIL_NUMBER_PATHS.has(term.path)) {
+    const n = Number(term.rawRight);
+    if (!Number.isFinite(n)) {
+      throw new Error(`untilExpr numeric comparison requires finite number: ${term.rawRight}`);
+    }
+    return;
+  }
+
+  if (UNTIL_BOOLEAN_PATHS.has(term.path)) {
+    if (term.rawRight !== "true" && term.rawRight !== "false") {
+      throw new Error(`untilExpr boolean comparison requires true/false: ${term.rawRight}`);
+    }
+    return;
+  }
+
+  if (UNTIL_AMOUNT_PATHS.has(term.path)) {
+    parseRightAsAmount({
+      E: args.E,
+      unit: args.unit,
+      rawRight: term.rawRight,
+      allowSuffixNotation: args.allowSuffixNotation,
+    });
+  }
+}
+
 function compileUntilExpr<N, U extends string>(args: {
   expr: string | undefined;
   E: Engine<N>;
@@ -152,6 +198,17 @@ function compileUntilExpr<N, U extends string>(args: {
 
   try {
     const parsed = parseUntilTerms(expr);
+    for (const conjunction of parsed) {
+      for (const term of conjunction) {
+        prevalidateUntilTerm({
+          term,
+          E,
+          unit,
+          allowSuffixNotation: args.allowSuffixNotation,
+        });
+      }
+    }
+
     return (state: any) => {
       for (const conjunction of parsed) {
         let matched = true;
@@ -165,7 +222,8 @@ function compileUntilExpr<N, U extends string>(args: {
           if (typeof left === "number") {
             const rightNum = Number(term.rawRight);
             if (!Number.isFinite(rightNum)) {
-              throw new Error(`untilExpr numeric comparison requires finite number: ${term.rawRight}`);
+              matched = false;
+              break;
             }
             const cmp: -1 | 0 | 1 = left === rightNum ? 0 : left < rightNum ? -1 : 1;
             if (!compareByOp(cmp, term.op)) {
@@ -177,7 +235,8 @@ function compileUntilExpr<N, U extends string>(args: {
 
           if (typeof left === "boolean") {
             if (term.rawRight !== "true" && term.rawRight !== "false") {
-              throw new Error(`untilExpr boolean comparison requires true/false: ${term.rawRight}`);
+              matched = false;
+              break;
             }
             const rightBool = term.rawRight === "true";
             const cmp: -1 | 0 | 1 = left === rightBool ? 0 : left ? 1 : -1;
@@ -190,7 +249,8 @@ function compileUntilExpr<N, U extends string>(args: {
 
           if (typeof left === "string") {
             if (term.op !== "==" && term.op !== "!=") {
-              throw new Error("untilExpr string values support == and != only");
+              matched = false;
+              break;
             }
             const ok = term.op === "==" ? left === term.rawRight : left !== term.rawRight;
             if (!ok) {
@@ -200,12 +260,18 @@ function compileUntilExpr<N, U extends string>(args: {
             continue;
           }
 
-          const rightAmount = parseRightAsAmount({
-            E,
-            unit,
-            rawRight: term.rawRight,
-            allowSuffixNotation: args.allowSuffixNotation,
-          });
+          let rightAmount: N;
+          try {
+            rightAmount = parseRightAsAmount({
+              E,
+              unit,
+              rawRight: term.rawRight,
+              allowSuffixNotation: args.allowSuffixNotation,
+            });
+          } catch {
+            matched = false;
+            break;
+          }
           const cmp = E.cmp(E.from(left as any), rightAmount);
           if (!compareByOp(cmp, term.op)) {
             matched = false;
