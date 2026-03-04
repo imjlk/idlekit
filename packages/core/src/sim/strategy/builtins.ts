@@ -1,60 +1,53 @@
-import { z } from "zod";
-import type { StandardSchema } from "../../scenario/validate";
-import { createGreedyStrategy, type GreedyObjective } from "./greedy";
-import { createPlannerStrategy, type PlannerObjective } from "./planner";
-import { createScriptedStrategy } from "./scripted";
 import type { StrategyFactory } from "./registry";
+import {
+  GreedyStrategyParamsV1Schema,
+  PlannerStrategyParamsV1Schema,
+  ScriptedStrategyParamsV1Schema,
+} from "./params";
 
-function asStandard<T>(schema: z.ZodType<T>): StandardSchema<T> {
-  return schema as unknown as StandardSchema<T>;
-}
+import { createGreedyStrategy } from "./greedy";
+import { createPlannerStrategy } from "./planner";
+import { createScriptedStrategy } from "./scripted";
 
 export const builtinStrategyFactories: readonly StrategyFactory[] = [
   {
-    id: "greedy",
-    paramsSchema: asStandard(
-      z
-        .object({
-          objective: z.enum(["maximizeIncome", "minPayback", "maximizeNetWorth"]).optional(),
-        })
-        .partial(),
-    ),
-    create(params: { objective?: GreedyObjective }) {
-      return createGreedyStrategy(params ?? {});
+    id: "scripted",
+    defaultParams: {
+      schemaVersion: 1,
+      program: [],
+      onCannotApply: "skip",
+      loop: true,
     },
+    paramsSchema: ScriptedStrategyParamsV1Schema,
+    create: (params) => createScriptedStrategy(params),
+  },
+  {
+    id: "greedy",
+    defaultParams: {
+      schemaVersion: 1,
+      objective: "minPayback",
+      maxPicksPerStep: 1,
+      bulk: { mode: "bestQuote" },
+      payback: { capSec: 365 * 24 * 3600, useEquivalentCost: true, preferQuotedDeltaIncome: true },
+      netWorth: { horizonSec: 900, series: "netWorth", useFastPreview: true },
+      tieBreak: { preferLowerCost: true, preferBulk: true },
+    },
+    paramsSchema: GreedyStrategyParamsV1Schema,
+    create: (params) => createGreedyStrategy(params),
   },
   {
     id: "planner",
-    paramsSchema: asStandard(
-      z
-        .object({
-          objective: z.enum(["maximizeNetWorthAtEnd", "minTimeToTargetWorth", "maximizePrestigePerHour"]).optional(),
-          horizonSteps: z.coerce.number().int().positive().optional(),
-        })
-        .partial(),
-    ),
-    create(params: { objective?: PlannerObjective; horizonSteps?: number }) {
-      return createPlannerStrategy(params ?? {});
+    defaultParams: {
+      schemaVersion: 1,
+      horizonSteps: 6,
+      beamWidth: 1,
+      objective: "maximizeNetWorthAtEnd",
+      series: "netWorth",
+      maxBranchingActions: 8,
+      useFastPreview: true,
+      bulk: { mode: "bestQuote" },
     },
-  },
-  {
-    id: "scripted",
-    paramsSchema: asStandard(
-      z
-        .object({
-          plan: z
-            .array(
-              z.object({
-                actionId: z.string(),
-                bulkSize: z.coerce.number().int().positive().optional(),
-              }),
-            )
-            .optional(),
-        })
-        .partial(),
-    ),
-    create(params: { plan?: Array<{ actionId: string; bulkSize?: number }> }) {
-      return createScriptedStrategy(params?.plan ?? []);
-    },
+    paramsSchema: PlannerStrategyParamsV1Schema,
+    create: (params) => createPlannerStrategy(params),
   },
 ];

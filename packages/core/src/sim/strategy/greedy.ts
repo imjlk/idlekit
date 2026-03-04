@@ -1,11 +1,8 @@
 import type { Action, BulkQuote, Model, SimContext, SimState } from "../types";
+import type { GreedyStrategyParamsV1 } from "./params";
 import type { Strategy } from "./types";
 
-export type GreedyObjective = "maximizeIncome" | "minPayback" | "maximizeNetWorth";
-
-export type GreedyOptions = Readonly<{
-  objective?: GreedyObjective;
-}>;
+export type GreedyObjective = GreedyStrategyParamsV1["objective"];
 
 function bestQuote<N, U extends string>(
   action: Action<N, U, any>,
@@ -52,9 +49,10 @@ function quoteScore<N, U extends string>(
 }
 
 export function createGreedyStrategy<N, U extends string, Vars>(
-  opts?: GreedyOptions,
+  params: GreedyStrategyParamsV1,
 ): Strategy<N, U, Vars> {
-  const objective = opts?.objective ?? "maximizeIncome";
+  const objective = params.objective;
+  const maxPicksPerStep = params.maxPicksPerStep ?? 1;
 
   return {
     id: "greedy",
@@ -78,7 +76,8 @@ export function createGreedyStrategy<N, U extends string, Vars>(
         }
       }
 
-      return best ? [{ action: best.action, bulkSize: best.bulkSize }] : [];
+      if (!best) return [];
+      return [{ action: best.action, bulkSize: best.bulkSize }].slice(0, Math.max(1, maxPicksPerStep));
     },
   };
 }

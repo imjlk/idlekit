@@ -28,13 +28,13 @@ export function runCandidateAndScore(args: {
   const objFactory = args.objectiveRegistry.get(args.objectiveId);
   if (!objFactory) throw new Error(`Unknown objective: ${args.objectiveId}`);
 
-  const objective = objFactory.create(args.objectiveParams ?? {});
+  const objective = objFactory.create(args.objectiveParams ?? objFactory.defaultParams ?? {});
   const seedScores: number[] = [];
 
   for (const _seed of args.seeds) {
     const sc: CompiledScenario<any, any, any> = {
       ...args.baseScenario,
-      strategy: stratFactory.create(args.params) as any,
+      strategy: stratFactory.create(args.params ?? stratFactory.defaultParams ?? {}) as any,
       run: {
         ...args.baseScenario.run,
         stepSec: args.overrides?.stepSec ?? args.baseScenario.run.stepSec,

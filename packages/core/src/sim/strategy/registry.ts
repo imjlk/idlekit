@@ -3,6 +3,8 @@ import type { StandardSchema } from "../../scenario/validate";
 export type StrategyFactory = Readonly<{
   id: string;
 
+  defaultParams?: unknown;
+
   paramsSchema?: StandardSchema<any>;
 
   create: (params: any) => unknown;

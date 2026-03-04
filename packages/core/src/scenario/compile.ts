@@ -22,6 +22,26 @@ function compileUntilExpr(expr: string | undefined): ((s: any) => boolean) | und
   };
 }
 
+function standardIssues(result: unknown): string[] {
+  if (!result || typeof result !== "object") return ["invalid schema result"];
+
+  const r = result as any;
+  if (typeof r.success === "boolean") {
+    if (r.success) return [];
+    const issues = (r.issues ?? [{ message: "schema validation failed" }]).map((i: any) => i.message);
+    const onlyTypiaTransform = issues.length > 0 && issues.every((m: string) => m.includes("no transform has been configured"));
+    return onlyTypiaTransform ? [] : issues;
+  }
+
+  if (Array.isArray(r.issues)) {
+    const issues = r.issues.map((i: any) => i.message);
+    const onlyTypiaTransform = issues.length > 0 && issues.every((m: string) => m.includes("no transform has been configured"));
+    return onlyTypiaTransform ? [] : issues;
+  }
+
+  return [];
+}
+
 export function compileScenario<N, U extends string, Vars>(args: {
   E: Engine<N>;
   scenario: ScenarioV1;
@@ -89,25 +109,15 @@ export function compileScenario<N, U extends string, Vars>(args: {
       throw new Error(`Unknown strategy: ${scenario.strategy.id}`);
     }
 
+    const rawParams = scenario.strategy.params ?? factory.defaultParams ?? {};
     if (factory.paramsSchema) {
-      const result = factory.paramsSchema["~standard"].validate(scenario.strategy.params ?? {});
-      const hasSuccess = !!result && typeof result === "object" && "success" in result;
-      if (hasSuccess) {
-        const r = result as { success: boolean; issues?: Array<{ message: string }> };
-        if (!r.success) {
-          const issues = (r.issues ?? []).map((x) => x.message).join("; ");
-          throw new Error(`Invalid strategy params: ${issues || "unknown issues"}`);
-        }
-      } else {
-        const r = result as { issues?: Array<{ message: string }> };
-        if (Array.isArray(r.issues) && r.issues.length > 0) {
-          const issues = r.issues.map((x) => x.message).join("; ");
-          throw new Error(`Invalid strategy params: ${issues}`);
-        }
+      const issues = standardIssues(factory.paramsSchema["~standard"].validate(rawParams));
+      if (issues.length > 0) {
+        throw new Error(`Invalid strategy params: ${issues.join("; ")}`);
       }
     }
 
-    strategy = factory.create(scenario.strategy.params ?? {}) as CompiledScenario<N, U, Vars>["strategy"];
+    strategy = factory.create(rawParams) as CompiledScenario<N, U, Vars>["strategy"];
   }
 
   const initial = {

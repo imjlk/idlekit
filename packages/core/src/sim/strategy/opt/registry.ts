@@ -3,8 +3,9 @@ import type { OptimizationObjective } from "./objective";
 
 export type ObjectiveFactory = Readonly<{
   id: string;
-  create: (params: any) => OptimizationObjective<any, any, any>;
+  defaultParams?: unknown;
   paramsSchema?: StandardSchema<any>;
+  create: (params: any) => OptimizationObjective<any, any, any>;
 }>;
 
 export type ObjectiveRegistry = Readonly<{

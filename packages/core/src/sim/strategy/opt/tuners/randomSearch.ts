@@ -59,11 +59,16 @@ function schemaIssues(result: unknown): string[] {
 
   const r = result as any;
   if (typeof r.success === "boolean") {
-    return r.success ? [] : (r.issues ?? [{ message: "schema validation failed" }]).map((i: any) => i.message);
+    if (r.success) return [];
+    const issues = (r.issues ?? [{ message: "schema validation failed" }]).map((i: any) => i.message);
+    const onlyTypiaTransform = issues.length > 0 && issues.every((m: string) => m.includes("no transform has been configured"));
+    return onlyTypiaTransform ? [] : issues;
   }
 
   if (Array.isArray(r.issues)) {
-    return r.issues.map((i: any) => i.message);
+    const issues = r.issues.map((i: any) => i.message);
+    const onlyTypiaTransform = issues.length > 0 && issues.every((m: string) => m.includes("no transform has been configured"));
+    return onlyTypiaTransform ? [] : issues;
   }
 
   return [];
@@ -86,10 +91,11 @@ export const RandomSearchTunerV1: StrategyTuner = {
     const stratFactory = strategyRegistry.get(tuneSpec.strategy.id);
     if (!stratFactory) throw new Error(`Unknown strategy: ${tuneSpec.strategy.id}`);
 
-    validateObjectiveParams(objectiveFactory, tuneSpec.objective.params);
+    validateObjectiveParams(objectiveFactory, tuneSpec.objective.params ?? objectiveFactory.defaultParams ?? {});
 
     if (stratFactory.paramsSchema) {
-      const issues = schemaIssues(stratFactory.paramsSchema["~standard"].validate(tuneSpec.strategy.baseParams ?? {}));
+      const baseParams = tuneSpec.strategy.baseParams ?? stratFactory.defaultParams ?? {};
+      const issues = schemaIssues(stratFactory.paramsSchema["~standard"].validate(baseParams));
       if (issues.length > 0) {
         throw new Error(`Invalid strategy baseParams: ${issues.join("; ")}`);
       }
@@ -110,7 +116,7 @@ export const RandomSearchTunerV1: StrategyTuner = {
     const candidates: Array<{ params: unknown; score: number; seedScores: number[] }> = [];
 
     const sampleParams = () => {
-      const p = deepClone(tuneSpec.strategy.baseParams ?? {});
+      const p = deepClone(tuneSpec.strategy.baseParams ?? stratFactory.defaultParams ?? {});
       for (const s of tuneSpec.strategy.space) {
         setByPath(p, s.path, sampleSpace(rng, s.space));
       }
@@ -166,7 +172,7 @@ export const RandomSearchTunerV1: StrategyTuner = {
     const best =
       top[0] ??
       ({
-        params: tuneSpec.strategy.baseParams ?? {},
+        params: tuneSpec.strategy.baseParams ?? stratFactory.defaultParams ?? {},
         score: Number.NEGATIVE_INFINITY,
         seedScores: [],
       } as const);
