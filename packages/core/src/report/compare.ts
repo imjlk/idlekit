@@ -6,6 +6,8 @@ export type CompareMetric =
   | "etaToTargetWorth"
   | "droppedRate";
 
+export type MeasuredCompareMetrics = Readonly<Partial<Record<CompareMetric, number>>>;
+
 function safeNum(input: unknown): number {
   if (typeof input === "number") return input;
   if (typeof input === "string") return Number(input);
@@ -27,20 +29,54 @@ function score(s: ScenarioV1, metric: CompareMetric): number {
   }
 }
 
+function measuredScore(
+  measured: MeasuredCompareMetrics | undefined,
+  metric: CompareMetric,
+): number | undefined {
+  if (!measured) return undefined;
+  const v = measured[metric];
+  return typeof v === "number" ? v : undefined;
+}
+
 export function compareScenarios(args: {
   a: ScenarioV1;
   b: ScenarioV1;
   metric: CompareMetric;
+  measured?: Readonly<{
+    a?: MeasuredCompareMetrics;
+    b?: MeasuredCompareMetrics;
+  }>;
 }): Readonly<{ better: "a" | "b" | "tie"; detail: unknown }> {
-  const aScore = score(args.a, args.metric);
-  const bScore = score(args.b, args.metric);
+  const measuredA = measuredScore(args.measured?.a, args.metric);
+  const measuredB = measuredScore(args.measured?.b, args.metric);
+  const useMeasured = measuredA !== undefined && measuredB !== undefined;
+
+  const aScore = useMeasured ? measuredA : score(args.a, args.metric);
+  const bScore = useMeasured ? measuredB : score(args.b, args.metric);
+
+  const higherBetter = args.metric === "endMoney" || args.metric === "endNetWorth";
 
   if (aScore === bScore) {
-    return { better: "tie", detail: { aScore, bScore, metric: args.metric } };
+    return {
+      better: "tie",
+      detail: {
+        aScore,
+        bScore,
+        metric: args.metric,
+        source: useMeasured ? "measured" : "static",
+      },
+    };
   }
 
   return {
-    better: aScore > bScore ? "a" : "b",
-    detail: { aScore, bScore, metric: args.metric },
+    better: higherBetter
+      ? (aScore > bScore ? "a" : "b")
+      : (aScore < bScore ? "a" : "b"),
+    detail: {
+      aScore,
+      bScore,
+      metric: args.metric,
+      source: useMeasured ? "measured" : "static",
+    },
   };
 }
