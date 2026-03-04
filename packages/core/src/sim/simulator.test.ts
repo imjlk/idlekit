@@ -159,4 +159,47 @@ describe("runScenario", () => {
     // 2/sec * 10 sec total
     expect(run.end.wallet.money.amount).toBe(20);
   });
+
+  it("throws when no stop condition is provided", () => {
+    const ctx = makeContext();
+    const model: Model<number, UnitCode, Vars> = {
+      id: "m",
+      version: 1,
+      income: () => ({ unit: { code: "COIN" }, amount: 1 }),
+      actions: () => [],
+    };
+
+    const scenario: CompiledScenario<number, UnitCode, Vars> = {
+      ctx,
+      model,
+      initial: makeState(0),
+      run: {
+        stepSec: 1,
+      },
+    };
+
+    expect(() => runScenario(scenario)).toThrow("runScenario requires at least one stop condition");
+  });
+
+  it("throws when maxSteps is exceeded without meeting stop condition", () => {
+    const ctx = makeContext();
+    const model: Model<number, UnitCode, Vars> = {
+      id: "m",
+      version: 1,
+      income: () => ({ unit: { code: "COIN" }, amount: 1 }),
+      actions: () => [],
+    };
+
+    const scenario: CompiledScenario<number, UnitCode, Vars> = {
+      ctx,
+      model,
+      initial: makeState(0),
+      run: {
+        stepSec: 1,
+        maxSteps: 3,
+      },
+    };
+
+    expect(() => runScenario(scenario)).toThrow("runScenario exceeded maxSteps (3)");
+  });
 });

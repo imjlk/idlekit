@@ -164,6 +164,8 @@ export type SimRunOptions = Readonly<{
   stepSec: number;
   durationSec?: number;
   until?: (s: any) => boolean;
+  // Hard guard against accidental unbounded runs.
+  maxSteps?: number;
 
   trace?: Readonly<{
     everySteps?: number;

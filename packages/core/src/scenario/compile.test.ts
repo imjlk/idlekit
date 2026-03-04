@@ -357,4 +357,71 @@ describe("compileScenario", () => {
     expect(() => sc.run.until?.(sc.initial)).not.toThrow();
     expect(sc.run.until?.(sc.initial)).toBeFalse();
   });
+
+  it("rejects scenario compile without durationSec and untilExpr", () => {
+    const modelFactory: ModelFactory = {
+      id: "m",
+      version: 1,
+      create: () => ({
+        id: "m",
+        version: 1,
+        income: (ctx: any) => ({ unit: ctx.unit, amount: 0 }),
+        actions: () => [],
+      }),
+    };
+    const strategyFactory: StrategyFactory = {
+      id: "s",
+      create: () => ({ id: "s", decide: () => [] }),
+    };
+    const scenario: ScenarioV1 = {
+      ...makeScenario(),
+      clock: {
+        stepSec: 1,
+      },
+    };
+
+    expect(() =>
+      compileScenario<number, "COIN", Record<string, unknown>>({
+        E: createNumberEngine(),
+        scenario,
+        registry: createModelRegistry([modelFactory]),
+        strategyRegistry: createStrategyRegistry([strategyFactory]),
+        unitFactory: (code) => ({ code: code as "COIN" }),
+      }),
+    ).toThrow("clock requires at least one stop condition");
+  });
+
+  it("rejects non-positive durationSec in compile", () => {
+    const modelFactory: ModelFactory = {
+      id: "m",
+      version: 1,
+      create: () => ({
+        id: "m",
+        version: 1,
+        income: (ctx: any) => ({ unit: ctx.unit, amount: 0 }),
+        actions: () => [],
+      }),
+    };
+    const strategyFactory: StrategyFactory = {
+      id: "s",
+      create: () => ({ id: "s", decide: () => [] }),
+    };
+    const scenario: ScenarioV1 = {
+      ...makeScenario(),
+      clock: {
+        stepSec: 1,
+        durationSec: 0,
+      },
+    };
+
+    expect(() =>
+      compileScenario<number, "COIN", Record<string, unknown>>({
+        E: createNumberEngine(),
+        scenario,
+        registry: createModelRegistry([modelFactory]),
+        strategyRegistry: createStrategyRegistry([strategyFactory]),
+        unitFactory: (code) => ({ code: code as "COIN" }),
+      }),
+    ).toThrow("clock.durationSec must be > 0");
+  });
 });

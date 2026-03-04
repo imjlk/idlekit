@@ -25,6 +25,7 @@
 - `clock.stepSec`: 틱 간격(초)
 - `clock.durationSec`: 총 시뮬레이션 시간
 - `clock.untilExpr`: 조기 종료 조건식(안전 파서 문법: `<path> <op> <value>` + `&&`, `||`)
+- `clock` 종료 조건: `durationSec` 또는 `untilExpr` 중 최소 1개는 필수
 - `strategy`: 전략 id + params
 - `analysis`: ETA/성장/프레스티지 분석 옵션
 - `sim.fast`: log-domain fast 모드 사용 여부

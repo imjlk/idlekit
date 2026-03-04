@@ -419,6 +419,15 @@ export function compileScenario<N, U extends string, Vars>(args: {
     },
   };
 
+  const hasDuration = typeof scenario.clock.durationSec === "number";
+  const hasUntilExpr = typeof scenario.clock.untilExpr === "string" && scenario.clock.untilExpr.trim().length > 0;
+  if (hasDuration && !(scenario.clock.durationSec! > 0)) {
+    throw new Error("clock.durationSec must be > 0 when provided");
+  }
+  if (!hasDuration && !hasUntilExpr) {
+    throw new Error("clock requires at least one stop condition: durationSec or untilExpr");
+  }
+
   const run = {
     stepSec: scenario.clock.stepSec,
     durationSec: scenario.clock.durationSec,

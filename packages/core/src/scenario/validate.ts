@@ -111,6 +111,23 @@ function validateBaseScenario(input: unknown): StandardResult<ScenarioV1> {
   const clock = input.clock;
   if (!isRecord(clock) || typeof clock.stepSec !== "number" || !(clock.stepSec > 0)) {
     pushIssue(issues, "clock.stepSec(number > 0) is required", "clock.stepSec", clock);
+  } else {
+    const durationSec = clock.durationSec;
+    const untilExpr = clock.untilExpr;
+    const hasDuration = typeof durationSec === "number";
+    const hasUntilExpr = typeof untilExpr === "string" && untilExpr.trim().length > 0;
+
+    if (hasDuration && !(durationSec > 0)) {
+      pushIssue(issues, "clock.durationSec must be > 0 when provided", "clock.durationSec", durationSec);
+    }
+    if (!hasDuration && !hasUntilExpr) {
+      pushIssue(
+        issues,
+        "clock requires at least one stop condition: durationSec or untilExpr",
+        "clock",
+        clock,
+      );
+    }
   }
 
   if (issues.length > 0) return { success: false, issues };

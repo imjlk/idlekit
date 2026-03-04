@@ -14,13 +14,25 @@ export function runScenario<N, U extends string, Vars>(
 
   const stepSec = sc.run.stepSec;
   const durationSec = sc.run.durationSec;
+  const maxSteps = sc.run.maxSteps;
   const maxActionsPerStep = sc.constraints?.maxActionsPerStep ?? Infinity;
   const everySteps = sc.run.trace?.everySteps ?? 1;
 
   const startT = state.t;
   let steps = 0;
 
+  if (durationSec === undefined && !sc.run.until && maxSteps === undefined) {
+    throw new Error("runScenario requires at least one stop condition: durationSec, until, or maxSteps");
+  }
+
+  if (maxSteps !== undefined && maxSteps < 0) {
+    throw new Error("runScenario maxSteps must be >= 0");
+  }
+
   while (true) {
+    if (maxSteps !== undefined && steps >= maxSteps) {
+      throw new Error(`runScenario exceeded maxSteps (${maxSteps}) without meeting stop condition`);
+    }
     if (durationSec !== undefined && state.t - startT >= durationSec) break;
     if (sc.run.until?.(state)) break;
 
