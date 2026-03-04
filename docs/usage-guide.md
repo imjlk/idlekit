@@ -96,6 +96,16 @@ bun run --cwd packages/cli dev -- eta ../../examples/simple-linear.json \
   --diff simulate
 ```
 
+simulate 상세 run payload가 필요할 때만:
+
+```bash
+bun run --cwd packages/cli dev -- eta ../../examples/simple-linear.json \
+  --target-worth 1e6 \
+  --mode simulate \
+  --include-run true \
+  --format json
+```
+
 ### 3.4 성장 구간 분석
 
 ```bash

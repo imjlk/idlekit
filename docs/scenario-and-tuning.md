@@ -24,6 +24,7 @@
 - `initial.vars`: 모델 상태(모델별 스키마)
 - `clock.stepSec`: 틱 간격(초)
 - `clock.durationSec`: 총 시뮬레이션 시간
+- `clock.untilExpr`: 조기 종료 조건식(안전 파서 문법: `<path> <op> <value>` + `&&`, `||`)
 - `strategy`: 전략 id + params
 - `analysis`: ETA/성장/프레스티지 분석 옵션
 - `sim.fast`: log-domain fast 모드 사용 여부
@@ -38,6 +39,13 @@
 3. 검증 통과 시 `factory.create(rawParams)`
 
 즉, 시나리오에 `strategy.params`를 생략해도 내장 `defaultParams`로 실행됩니다.
+
+`untilExpr` 보안 노트:
+
+- 기본값은 안전 파서만 허용합니다.
+- 허용 문법: `t >= 600 && money >= 1e6`
+- JS 표현식(삼항/함수호출 등)은 기본 차단됩니다.
+- 레거시 호환이 필요하면 `compileScenario(..., opts: { allowUnsafeUntilExpr: true })`를 명시해야 합니다.
 
 ## 4. 내장 전략 파라미터
 
