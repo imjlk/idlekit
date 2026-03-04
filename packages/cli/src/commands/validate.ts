@@ -2,7 +2,7 @@ import { defineCommand, option } from "@bunli/core";
 import { validateScenarioV1 } from "@idlekit/core";
 import { z } from "zod";
 import { readScenarioFile } from "../io/readScenario";
-import { loadRegistry, parsePluginPaths } from "../plugin/load";
+import { loadRegistries, parsePluginPaths } from "../plugin/load";
 
 export default defineCommand({
   name: "validate",
@@ -19,9 +19,9 @@ export default defineCommand({
     }
 
     const input = await readScenarioFile(scenarioPath);
-    const registry = await loadRegistry(parsePluginPaths(flags.plugin));
+    const { modelRegistry } = await loadRegistries(parsePluginPaths(flags.plugin));
 
-    const r = validateScenarioV1(input, registry);
+    const r = validateScenarioV1(input, modelRegistry);
     if (!r.ok) {
       for (const issue of r.issues) {
         const where = issue.path ? `${issue.path}: ` : "";

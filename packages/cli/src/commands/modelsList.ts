@@ -1,6 +1,6 @@
 import { defineCommand, option } from "@bunli/core";
 import { z } from "zod";
-import { loadRegistry, parsePluginPaths } from "../plugin/load";
+import { loadRegistries, parsePluginPaths } from "../plugin/load";
 
 export default defineCommand({
   name: "list",
@@ -9,8 +9,8 @@ export default defineCommand({
     plugin: option(z.string().default(""), { description: "Comma-separated plugin paths" }),
   },
   async handler({ flags }) {
-    const registry = await loadRegistry(parsePluginPaths(flags.plugin));
-    const rows = registry.list();
+    const { modelRegistry } = await loadRegistries(parsePluginPaths(flags.plugin));
+    const rows = modelRegistry.list();
     if (rows.length === 0) {
       console.log("No models registered");
       return;

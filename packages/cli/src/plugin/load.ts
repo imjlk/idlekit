@@ -1,13 +1,22 @@
-import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import {
+  builtinObjectiveFactories,
+  builtinStrategyFactories,
   createModelRegistry,
+  createObjectiveRegistry,
+  createStrategyRegistry,
   defineModelFactory,
   type ModelFactory,
   type ModelRegistry,
+  type ObjectiveFactory,
+  type ObjectiveRegistry,
   type StandardSchema,
+  type StrategyFactory,
+  type StrategyRegistry,
 } from "@idlekit/core";
 import { z } from "zod";
+import type { EconPluginModule } from "./types";
 
 type LinearParams = {
   incomePerSec?: string;
@@ -91,7 +100,7 @@ function createLinearFactory(): ModelFactory {
                 amount: ctx.E.from(String(c)),
               };
             },
-            equivalentCost(_ctx: any, _state: any) {
+            equivalentCost() {
               const c = base * Math.pow(growth, owned);
               return {
                 unit: ctx.unit,
@@ -169,16 +178,36 @@ function createLinearFactory(): ModelFactory {
 
 type PluginModule = {
   models?: ModelFactory[];
-  default?: ModelFactory[] | { models?: ModelFactory[] };
+  strategies?: StrategyFactory[];
+  objectives?: ObjectiveFactory[];
+  default?:
+    | EconPluginModule
+    | ModelFactory[]
+    | {
+        models?: ModelFactory[];
+        strategies?: StrategyFactory[];
+        objectives?: ObjectiveFactory[];
+      };
 };
 
-function parsePluginModule(mod: PluginModule): ModelFactory[] {
-  if (Array.isArray(mod.models)) return mod.models;
-  if (Array.isArray(mod.default)) return mod.default;
-  if (mod.default && Array.isArray((mod.default as any).models)) {
-    return (mod.default as any).models;
-  }
-  return [];
+function parsePluginModule(mod: PluginModule): EconPluginModule {
+  const fromDefault = (() => {
+    if (Array.isArray(mod.default)) {
+      return { models: mod.default } satisfies EconPluginModule;
+    }
+
+    if (mod.default && typeof mod.default === "object") {
+      return mod.default as EconPluginModule;
+    }
+
+    return {};
+  })();
+
+  return {
+    models: mod.models ?? fromDefault.models,
+    strategies: mod.strategies ?? fromDefault.strategies,
+    objectives: mod.objectives ?? fromDefault.objectives,
+  };
 }
 
 export function parsePluginPaths(input: unknown): string[] {
@@ -189,14 +218,36 @@ export function parsePluginPaths(input: unknown): string[] {
     .filter(Boolean);
 }
 
-export async function loadRegistry(pluginPaths: string[] = []): Promise<ModelRegistry> {
-  const factories: ModelFactory[] = [createLinearFactory()];
+export type LoadedRegistries = Readonly<{
+  modelRegistry: ModelRegistry;
+  strategyRegistry: StrategyRegistry;
+  objectiveRegistry: ObjectiveRegistry;
+}>;
+
+export async function loadRegistries(pluginPaths: string[] = []): Promise<LoadedRegistries> {
+  const modelFactories: ModelFactory[] = [createLinearFactory()];
+  const strategyFactories: StrategyFactory[] = [...builtinStrategyFactories];
+  const objectiveFactories: ObjectiveFactory[] = [...builtinObjectiveFactories];
 
   for (const p of pluginPaths) {
     const abs = resolve(p);
     const mod = (await import(pathToFileURL(abs).href)) as PluginModule;
-    factories.push(...parsePluginModule(mod));
+    const parsed = parsePluginModule(mod);
+
+    if (parsed.models) modelFactories.push(...parsed.models);
+    if (parsed.strategies) strategyFactories.push(...parsed.strategies);
+    if (parsed.objectives) objectiveFactories.push(...parsed.objectives);
   }
 
-  return createModelRegistry(factories);
+  return {
+    modelRegistry: createModelRegistry(modelFactories),
+    strategyRegistry: createStrategyRegistry(strategyFactories),
+    objectiveRegistry: createObjectiveRegistry(objectiveFactories),
+  };
+}
+
+// Backward compatible helper.
+export async function loadRegistry(pluginPaths: string[] = []): Promise<ModelRegistry> {
+  const loaded = await loadRegistries(pluginPaths);
+  return loaded.modelRegistry;
 }

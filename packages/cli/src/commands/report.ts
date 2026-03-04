@@ -11,7 +11,7 @@ import {
 import { z } from "zod";
 import { readScenarioFile } from "../io/readScenario";
 import { writeOutput } from "../io/writeOutput";
-import { loadRegistry, parsePluginPaths } from "../plugin/load";
+import { loadRegistries, parsePluginPaths } from "../plugin/load";
 
 function parseCheckpoints(raw: string): number[] {
   return raw
@@ -41,8 +41,8 @@ export default defineCommand({
     }
 
     const input = await readScenarioFile(scenarioPath);
-    const registry = await loadRegistry(parsePluginPaths(flags.plugin));
-    const valid = validateScenarioV1(input, registry);
+    const loaded = await loadRegistries(parsePluginPaths(flags.plugin));
+    const valid = validateScenarioV1(input, loaded.modelRegistry);
     if (!valid.ok || !valid.scenario) {
       throw new Error(
         `Scenario invalid: ${valid.issues.map((i) => `${i.path ?? "root"}: ${i.message}`).join("; ")}`,
@@ -53,7 +53,8 @@ export default defineCommand({
     const compiled = compileScenario<number, string, Record<string, unknown>>({
       E,
       scenario: valid.scenario,
-      registry,
+      registry: loaded.modelRegistry,
+      strategyRegistry: loaded.strategyRegistry,
       opts: { allowSuffixNotation: true },
     });
 

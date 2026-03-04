@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "meta": {
+    "id": "tune-simple",
+    "title": "Simple Greedy Tune"
+  },
+  "strategy": {
+    "id": "greedy",
+    "baseParams": {
+      "objective": "maximizeIncome"
+    },
+    "space": [
+      {
+        "path": "objective",
+        "space": {
+          "kind": "choice",
+          "values": ["maximizeIncome", "minPayback", "maximizeNetWorth"]
+        }
+      }
+    ]
+  },
+  "objective": {
+    "id": "endNetWorthLog10"
+  },
+  "runner": {
+    "seeds": [1, 2, 3],
+    "budget": 8,
+    "overrideDurationSec": 600,
+    "topK": 3
+  }
+}

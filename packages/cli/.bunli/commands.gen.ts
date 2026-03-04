@@ -10,10 +10,11 @@ import Growth from '../src/commands/growth.js'
 import PrestigeCycle from '../src/commands/prestigeCycle.js'
 import Report from '../src/commands/report.js'
 import Simulate from '../src/commands/simulate.js'
+import Tune from '../src/commands/tune.js'
 import Validate from '../src/commands/validate.js'
 
 // Narrow list of command names to avoid typeof-cycles in types
-const names = ['compare', 'eta', 'growth', 'prestige-cycle', 'report', 'simulate', 'validate'] as const
+const names = ['compare', 'eta', 'growth', 'prestige-cycle', 'report', 'simulate', 'tune', 'validate'] as const
 type GeneratedNames = typeof names[number]
 
 const modules: Record<GeneratedNames, Command<any>> = {
@@ -23,6 +24,7 @@ const modules: Record<GeneratedNames, Command<any>> = {
   'prestige-cycle': PrestigeCycle,
   'report': Report,
   'simulate': Simulate,
+  'tune': Tune,
   'validate': Validate
 } as const
 
@@ -46,8 +48,8 @@ const metadata: Record<GeneratedNames, GeneratedCommandMeta> = {
         'target-worth': { type: 'z.string.optional', required: false, hasDefault: false, description: 'Target net worth NumStr', schema: {"type":"zod","method":"optional","args":[]}, validator: '(val) => true' },
         'mode': { type: 'z.enum.default', required: true, hasDefault: true, default: "simulate", description: 'ETA mode', enumValues: ["simulate","analytic"], schema: {"type":"zod","method":"default","args":[{"type":"literal","value":"simulate"}]}, validator: '(val) => true' },
         'diff': { type: 'z.enum.optional', required: false, hasDefault: false, description: 'Compare with another mode', enumValues: ["simulate","analytic"], schema: {"type":"zod","method":"optional","args":[]}, validator: '(val) => true' },
-        'max-duration': { type: 'z.coerce.number.default', required: true, hasDefault: true, default: 86400, description: 'Max simulate duration', schema: {"type":"zod","method":"default","args":[{"type":"unknown","raw":{"type":"NumericLiteral","start":1047,"end":1052,"loc":{"start":{"line":25,"column":53,"index":1047},"end":{"line":25,"column":58,"index":1052}},"extra":{"rawValue":86400,"raw":"86400"},"value":86400}}]}, validator: '(val) => true' },
-        'fast': { type: 'z.coerce.boolean.default', required: true, hasDefault: true, default: false, description: 'Fast simulation mode', schema: {"type":"zod","method":"default","args":[{"type":"unknown","raw":{"type":"BooleanLiteral","start":1142,"end":1147,"loc":{"start":{"line":26,"column":44,"index":1142},"end":{"line":26,"column":49,"index":1147}},"value":false}}]}, validator: '(val) => true' },
+        'max-duration': { type: 'z.coerce.number.default', required: true, hasDefault: true, default: 86400, description: 'Max simulate duration', schema: {"type":"zod","method":"default","args":[{"type":"unknown","raw":{"type":"NumericLiteral","start":1049,"end":1054,"loc":{"start":{"line":25,"column":53,"index":1049},"end":{"line":25,"column":58,"index":1054}},"extra":{"rawValue":86400,"raw":"86400"},"value":86400}}]}, validator: '(val) => true' },
+        'fast': { type: 'z.coerce.boolean.default', required: true, hasDefault: true, default: false, description: 'Fast simulation mode', schema: {"type":"zod","method":"default","args":[{"type":"unknown","raw":{"type":"BooleanLiteral","start":1144,"end":1149,"loc":{"start":{"line":26,"column":44,"index":1144},"end":{"line":26,"column":49,"index":1149}},"value":false}}]}, validator: '(val) => true' },
         'out': { type: 'z.string.optional', required: false, hasDefault: false, description: 'Output path', fileType: 'path', schema: {"type":"zod","method":"optional","args":[]}, validator: '(val) => true' },
         'format': { type: 'z.enum.default', required: true, hasDefault: true, default: "json", description: 'Output format', enumValues: ["json","md","csv"], schema: {"type":"zod","method":"default","args":[{"type":"literal","value":"json"}]}, validator: '(val) => true' }
       },
@@ -58,9 +60,9 @@ const metadata: Record<GeneratedNames, GeneratedCommandMeta> = {
       description: 'Analyze growth regime from simulation trace',
       options: {
         'plugin': { type: 'z.string.default', required: true, hasDefault: true, default: "", description: 'Comma-separated plugin paths', fileType: 'path', schema: {"type":"zod","method":"default","args":[{"type":"literal","value":""}]}, validator: '(val) => true' },
-        'window': { type: 'z.coerce.number.default', required: true, hasDefault: true, default: 60, description: 'Window sec', schema: {"type":"zod","method":"default","args":[{"type":"unknown","raw":{"type":"NumericLiteral","start":638,"end":640,"loc":{"start":{"line":19,"column":45,"index":638},"end":{"line":19,"column":47,"index":640}},"extra":{"rawValue":60,"raw":"60"},"value":60}}]}, validator: '(val) => true' },
+        'window': { type: 'z.coerce.number.default', required: true, hasDefault: true, default: 60, description: 'Window sec', schema: {"type":"zod","method":"default","args":[{"type":"unknown","raw":{"type":"NumericLiteral","start":640,"end":642,"loc":{"start":{"line":19,"column":45,"index":640},"end":{"line":19,"column":47,"index":642}},"extra":{"rawValue":60,"raw":"60"},"value":60}}]}, validator: '(val) => true' },
         'series': { type: 'z.enum.default', required: true, hasDefault: true, default: "money", description: 'Series type', enumValues: ["money","netWorth"], schema: {"type":"zod","method":"default","args":[{"type":"literal","value":"money"}]}, validator: '(val) => true' },
-        'trace-every': { type: 'z.coerce.number.default', required: true, hasDefault: true, default: 1, description: 'Trace every N steps', schema: {"type":"zod","method":"default","args":[{"type":"unknown","raw":{"type":"NumericLiteral","start":827,"end":828,"loc":{"start":{"line":21,"column":52,"index":827},"end":{"line":21,"column":53,"index":828}},"extra":{"rawValue":1,"raw":"1"},"value":1}}]}, validator: '(val) => true' },
+        'trace-every': { type: 'z.coerce.number.default', required: true, hasDefault: true, default: 1, description: 'Trace every N steps', schema: {"type":"zod","method":"default","args":[{"type":"unknown","raw":{"type":"NumericLiteral","start":829,"end":830,"loc":{"start":{"line":21,"column":52,"index":829},"end":{"line":21,"column":53,"index":830}},"extra":{"rawValue":1,"raw":"1"},"value":1}}]}, validator: '(val) => true' },
         'out': { type: 'z.string.optional', required: false, hasDefault: false, description: 'Output path', fileType: 'path', schema: {"type":"zod","method":"optional","args":[]}, validator: '(val) => true' },
         'format': { type: 'z.enum.default', required: true, hasDefault: true, default: "json", description: 'Output format', enumValues: ["json","md","csv"], schema: {"type":"zod","method":"default","args":[{"type":"literal","value":"json"}]}, validator: '(val) => true' }
       },
@@ -72,9 +74,9 @@ const metadata: Record<GeneratedNames, GeneratedCommandMeta> = {
       options: {
         'plugin': { type: 'z.string.default', required: true, hasDefault: true, default: "", description: 'Comma-separated plugin paths', fileType: 'path', schema: {"type":"zod","method":"default","args":[{"type":"literal","value":""}]}, validator: '(val) => true' },
         'scan': { type: 'z.string.default', required: true, hasDefault: true, default: "300..1800", description: 'Scan range (from..to)', schema: {"type":"zod","method":"default","args":[{"type":"literal","value":"300..1800"}]}, validator: '(val) => true' },
-        'step': { type: 'z.coerce.number.default', required: true, hasDefault: true, default: 60, description: 'Scan step sec', schema: {"type":"zod","method":"default","args":[{"type":"unknown","raw":{"type":"NumericLiteral","start":963,"end":965,"loc":{"start":{"line":25,"column":43,"index":963},"end":{"line":25,"column":45,"index":965}},"extra":{"rawValue":60,"raw":"60"},"value":60}}]}, validator: '(val) => true' },
-        'horizon': { type: 'z.coerce.number.default', required: true, hasDefault: true, default: 3600, description: 'Horizon sec', schema: {"type":"zod","method":"default","args":[{"type":"unknown","raw":{"type":"NumericLiteral","start":1049,"end":1053,"loc":{"start":{"line":26,"column":46,"index":1049},"end":{"line":26,"column":50,"index":1053}},"extra":{"rawValue":3600,"raw":"3600"},"value":3600}}]}, validator: '(val) => true' },
-        'cycles': { type: 'z.coerce.number.default', required: true, hasDefault: true, default: 10, description: 'Cycle count', schema: {"type":"zod","method":"default","args":[{"type":"unknown","raw":{"type":"NumericLiteral","start":1134,"end":1136,"loc":{"start":{"line":27,"column":45,"index":1134},"end":{"line":27,"column":47,"index":1136}},"extra":{"rawValue":10,"raw":"10"},"value":10}}]}, validator: '(val) => true' },
+        'step': { type: 'z.coerce.number.default', required: true, hasDefault: true, default: 60, description: 'Scan step sec', schema: {"type":"zod","method":"default","args":[{"type":"unknown","raw":{"type":"NumericLiteral","start":965,"end":967,"loc":{"start":{"line":25,"column":43,"index":965},"end":{"line":25,"column":45,"index":967}},"extra":{"rawValue":60,"raw":"60"},"value":60}}]}, validator: '(val) => true' },
+        'horizon': { type: 'z.coerce.number.default', required: true, hasDefault: true, default: 3600, description: 'Horizon sec', schema: {"type":"zod","method":"default","args":[{"type":"unknown","raw":{"type":"NumericLiteral","start":1051,"end":1055,"loc":{"start":{"line":26,"column":46,"index":1051},"end":{"line":26,"column":50,"index":1055}},"extra":{"rawValue":3600,"raw":"3600"},"value":3600}}]}, validator: '(val) => true' },
+        'cycles': { type: 'z.coerce.number.default', required: true, hasDefault: true, default: 10, description: 'Cycle count', schema: {"type":"zod","method":"default","args":[{"type":"unknown","raw":{"type":"NumericLiteral","start":1136,"end":1138,"loc":{"start":{"line":27,"column":45,"index":1136},"end":{"line":27,"column":47,"index":1138}},"extra":{"rawValue":10,"raw":"10"},"value":10}}]}, validator: '(val) => true' },
         'objective': { type: 'z.enum.default', required: true, hasDefault: true, default: "netWorthPerHour", description: 'Optimization objective', enumValues: ["netWorthPerHour","pointsPerHour"], schema: {"type":"zod","method":"default","args":[{"type":"literal","value":"netWorthPerHour"}]}, validator: '(val) => true' },
         'out': { type: 'z.string.optional', required: false, hasDefault: false, description: 'Output path', fileType: 'path', schema: {"type":"zod","method":"optional","args":[]}, validator: '(val) => true' },
         'format': { type: 'z.enum.default', required: true, hasDefault: true, default: "json", description: 'Output format', enumValues: ["json","md","csv"], schema: {"type":"zod","method":"default","args":[{"type":"literal","value":"json"}]}, validator: '(val) => true' }
@@ -87,8 +89,8 @@ const metadata: Record<GeneratedNames, GeneratedCommandMeta> = {
       options: {
         'plugin': { type: 'z.string.default', required: true, hasDefault: true, default: "", description: 'Comma-separated plugin paths', fileType: 'path', schema: {"type":"zod","method":"default","args":[{"type":"literal","value":""}]}, validator: '(val) => true' },
         'checkpoints': { type: 'z.string.default', required: true, hasDefault: true, default: "60,300,900,3600", description: 'Comma-separated checkpoint seconds', schema: {"type":"zod","method":"default","args":[{"type":"literal","value":"60,300,900,3600"}]}, validator: '(val) => true' },
-        'include-growth': { type: 'z.coerce.boolean.default', required: true, hasDefault: true, default: false, description: 'Include growth report', schema: {"type":"zod","method":"default","args":[{"type":"unknown","raw":{"type":"BooleanLiteral","start":986,"end":991,"loc":{"start":{"line":32,"column":56,"index":986},"end":{"line":32,"column":61,"index":991}},"value":false}}]}, validator: '(val) => true' },
-        'include-ux': { type: 'z.coerce.boolean.default', required: true, hasDefault: true, default: false, description: 'Include UX flags', schema: {"type":"zod","method":"default","args":[{"type":"unknown","raw":{"type":"BooleanLiteral","start":1089,"end":1094,"loc":{"start":{"line":33,"column":52,"index":1089},"end":{"line":33,"column":57,"index":1094}},"value":false}}]}, validator: '(val) => true' },
+        'include-growth': { type: 'z.coerce.boolean.default', required: true, hasDefault: true, default: false, description: 'Include growth report', schema: {"type":"zod","method":"default","args":[{"type":"unknown","raw":{"type":"BooleanLiteral","start":988,"end":993,"loc":{"start":{"line":32,"column":56,"index":988},"end":{"line":32,"column":61,"index":993}},"value":false}}]}, validator: '(val) => true' },
+        'include-ux': { type: 'z.coerce.boolean.default', required: true, hasDefault: true, default: false, description: 'Include UX flags', schema: {"type":"zod","method":"default","args":[{"type":"unknown","raw":{"type":"BooleanLiteral","start":1091,"end":1096,"loc":{"start":{"line":33,"column":52,"index":1091},"end":{"line":33,"column":57,"index":1096}},"value":false}}]}, validator: '(val) => true' },
         'out': { type: 'z.string.optional', required: false, hasDefault: false, description: 'Output path', fileType: 'path', schema: {"type":"zod","method":"optional","args":[]}, validator: '(val) => true' },
         'format': { type: 'z.enum.default', required: true, hasDefault: true, default: "md", description: 'Output format', enumValues: ["md","json"], schema: {"type":"zod","method":"default","args":[{"type":"literal","value":"md"}]}, validator: '(val) => true' }
       },
@@ -102,11 +104,22 @@ const metadata: Record<GeneratedNames, GeneratedCommandMeta> = {
         'duration': { type: 'z.coerce.number.optional', required: false, hasDefault: false, description: 'Override durationSec', schema: {"type":"zod","method":"optional","args":[]}, validator: '(val) => true' },
         'step': { type: 'z.coerce.number.optional', required: false, hasDefault: false, description: 'Override stepSec', schema: {"type":"zod","method":"optional","args":[]}, validator: '(val) => true' },
         'strategy': { type: 'strategySchema', required: true, hasDefault: false, description: 'greedy|planner|scripted', schema: {"type":"zod","name":"strategySchema"}, validator: '(val) => true' },
-        'fast': { type: 'z.coerce.boolean.default', required: true, hasDefault: true, default: false, description: 'Enable fast(log-domain) mode', schema: {"type":"zod","method":"default","args":[{"type":"unknown","raw":{"type":"BooleanLiteral","start":1020,"end":1025,"loc":{"start":{"line":26,"column":44,"index":1020},"end":{"line":26,"column":49,"index":1025}},"value":false}}]}, validator: '(val) => true' },
+        'fast': { type: 'z.coerce.boolean.default', required: true, hasDefault: true, default: false, description: 'Enable fast(log-domain) mode', schema: {"type":"zod","method":"default","args":[{"type":"unknown","raw":{"type":"BooleanLiteral","start":1022,"end":1027,"loc":{"start":{"line":26,"column":44,"index":1022},"end":{"line":26,"column":49,"index":1027}},"value":false}}]}, validator: '(val) => true' },
         'out': { type: 'z.string.optional', required: false, hasDefault: false, description: 'Output path', fileType: 'path', schema: {"type":"zod","method":"optional","args":[]}, validator: '(val) => true' },
         'format': { type: 'z.enum.default', required: true, hasDefault: true, default: "json", description: 'Output format', enumValues: ["json","md","csv"], schema: {"type":"zod","method":"default","args":[{"type":"literal","value":"json"}]}, validator: '(val) => true' }
       },
       path: './src/commands/simulate'
+    },
+  'tune': {
+      name: 'tune',
+      description: 'Tune strategy parameters with objective scoring',
+      options: {
+        'plugin': { type: 'z.string.default', required: true, hasDefault: true, default: "", description: 'Comma-separated plugin paths', fileType: 'path', schema: {"type":"zod","method":"default","args":[{"type":"literal","value":""}]}, validator: '(val) => true' },
+        'tune': { type: 'z.string.min', required: true, hasDefault: false, description: 'TuneSpec file path (.json|.yaml)', min: 1, minLength: 1, fileType: 'file', schema: {"type":"zod","method":"min","args":[{"type":"unknown","raw":{"type":"NumericLiteral","start":2269,"end":2270,"loc":{"start":{"line":77,"column":32,"index":2269},"end":{"line":77,"column":33,"index":2270}},"extra":{"rawValue":1,"raw":"1"},"value":1}}]}, validator: '(val) => true' },
+        'out': { type: 'z.string.optional', required: false, hasDefault: false, description: 'Output path', fileType: 'path', schema: {"type":"zod","method":"optional","args":[]}, validator: '(val) => true' },
+        'format': { type: 'z.enum.default', required: true, hasDefault: true, default: "json", description: 'Output format', enumValues: ["json","md","csv"], schema: {"type":"zod","method":"default","args":[{"type":"literal","value":"json"}]}, validator: '(val) => true' }
+      },
+      path: './src/commands/tune'
     },
   'validate': {
       name: 'validate',
