@@ -1,0 +1,21 @@
+{
+  "name": "@idlekit/cli",
+  "version": "0.1.0",
+  "type": "module",
+  "bin": {
+    "econ": "./dist/main.js"
+  },
+  "scripts": {
+    "dev": "bunli dev --entry src/main.ts",
+    "build": "bunli build --entry src/main.ts --runtime bun --outdir dist --sourcemap",
+    "build:bin": "bunli build --entry src/main.ts --outdir dist --targets native",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@idlekit/core": "workspace:*",
+    "@bunli/core": "^0.8.0",
+    "bunli": "^0.7.1",
+    "yaml": "^2.8.1",
+    "zod": "^4.1.12"
+  }
+}

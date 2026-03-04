@@ -11,6 +11,8 @@
     "dev:cli": "bun run --cwd packages/cli dev"
   },
   "devDependencies": {
+    "@types/bun": "^1.3.9",
+    "@types/node": "^24.3.0",
     "typescript": "^5.8.3"
   }
 }
