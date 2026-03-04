@@ -60,14 +60,15 @@ function schemaIssues(result: unknown): string[] {
   const r = result as any;
   if (typeof r.success === "boolean") {
     if (r.success) return [];
-    return (r.issues ?? [{ message: "schema validation failed" }]).map((i: any) => i.message);
+    if (!Array.isArray(r.issues)) return ["schema validation failed: missing issues"];
+    return r.issues.map((i: any) => String(i?.message ?? "schema validation failed"));
   }
 
   if (Array.isArray(r.issues)) {
-    return r.issues.map((i: any) => i.message);
+    return r.issues.map((i: any) => String(i?.message ?? "schema validation failed"));
   }
 
-  return [];
+  return ["invalid schema result shape"];
 }
 
 function validateObjectiveParams(factory: ObjectiveFactory, params: unknown): void {

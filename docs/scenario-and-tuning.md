@@ -29,6 +29,8 @@
 - `strategy`: 전략 id + params
 - `analysis`: ETA/성장/프레스티지 분석 옵션
 - `sim.fast`: log-domain fast 모드 사용 여부
+- `sim.eventLog.enabled`: `false`면 이벤트 저장 비활성화(통계는 계속 계산)
+- `sim.eventLog.maxEvents`: 최근 N개 이벤트만 보관(ring buffer)
 - `outputs.report`: trace/checkpoint/UX 포함 여부
 
 ## 3. 전략 파라미터 기본 주입 규칙

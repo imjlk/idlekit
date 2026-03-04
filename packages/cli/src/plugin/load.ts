@@ -15,6 +15,7 @@ import {
   type StandardSchema,
   type StrategyFactory,
   type StrategyRegistry,
+  zodStandardSchema,
 } from "@idlekit/core";
 import { z } from "zod";
 import type { EconPluginModule } from "./types";
@@ -40,7 +41,7 @@ function geometricCost(base: number, growth: number, start: number, count: numbe
 }
 
 function asStandard<T>(schema: z.ZodType<T>): StandardSchema<T> {
-  return schema as unknown as StandardSchema<T>;
+  return zodStandardSchema(schema);
 }
 
 function createLinearFactory(): ModelFactory {

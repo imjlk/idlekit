@@ -24,69 +24,103 @@ export type UXFlag = Readonly<{
   detail?: unknown;
 }>;
 
-export function buildSimStats<N>(events: readonly SimEvent<N>[]): SimStats {
-  let applied = 0;
-  let dropped = 0;
-  let queued = 0;
-  let flushed = 0;
-  let blocked = 0;
+type SimStatsMutable = {
+  applied: number;
+  dropped: number;
+  queued: number;
+  flushed: number;
+  blocked: number;
+  actionApplied: number;
+  skippedCannotApply: number;
+  skippedInsufficientFunds: number;
+};
 
-  let actionApplied = 0;
-  let skippedCannotApply = 0;
-  let skippedInsufficientFunds = 0;
-
-  for (const e of events) {
-    if (e.type === "money") {
-      for (const me of e.events as readonly MoneyEvent<N>[]) {
-        switch (me.type) {
-          case "applied":
-            applied += 1;
-            break;
-          case "dropped":
-            dropped += 1;
-            break;
-          case "queued":
-            queued += 1;
-            break;
-          case "flushed":
-            flushed += 1;
-            break;
-          case "blocked":
-            blocked += 1;
-            break;
-          default:
-            break;
-        }
+function applySimEvent<N>(m: SimStatsMutable, e: SimEvent<N>): void {
+  if (e.type === "money") {
+    for (const me of e.events as readonly MoneyEvent<N>[]) {
+      switch (me.type) {
+        case "applied":
+          m.applied += 1;
+          break;
+        case "dropped":
+          m.dropped += 1;
+          break;
+        case "queued":
+          m.queued += 1;
+          break;
+        case "flushed":
+          m.flushed += 1;
+          break;
+        case "blocked":
+          m.blocked += 1;
+          break;
+        default:
+          break;
       }
-    }
-
-    if (e.type === "action.applied") actionApplied += 1;
-    if (e.type === "action.skipped") {
-      if (e.reason === "cannotApply") skippedCannotApply += 1;
-      if (e.reason === "insufficientFunds") skippedInsufficientFunds += 1;
     }
   }
 
-  const totalMoney = applied + dropped + queued;
-  const droppedRate = totalMoney > 0 ? dropped / totalMoney : 0;
-  const flushRate = queued > 0 ? flushed / queued : 0;
+  if (e.type === "action.applied") m.actionApplied += 1;
+  if (e.type === "action.skipped") {
+    if (e.reason === "cannotApply") m.skippedCannotApply += 1;
+    if (e.reason === "insufficientFunds") m.skippedInsufficientFunds += 1;
+  }
+}
+
+function toSimStats(m: SimStatsMutable): SimStats {
+  const totalMoney = m.applied + m.dropped + m.queued;
+  const droppedRate = totalMoney > 0 ? m.dropped / totalMoney : 0;
+  const flushRate = m.queued > 0 ? m.flushed / m.queued : 0;
 
   return {
     money: {
-      applied,
-      dropped,
-      queued,
-      flushed,
-      blocked,
+      applied: m.applied,
+      dropped: m.dropped,
+      queued: m.queued,
+      flushed: m.flushed,
+      blocked: m.blocked,
       droppedRate,
       flushRate,
     },
     actions: {
-      applied: actionApplied,
-      skippedCannotApply,
-      skippedInsufficientFunds,
+      applied: m.actionApplied,
+      skippedCannotApply: m.skippedCannotApply,
+      skippedInsufficientFunds: m.skippedInsufficientFunds,
     },
   };
+}
+
+export type SimStatsAccumulator = Readonly<{
+  push: <N>(events: readonly SimEvent<N>[]) => void;
+  snapshot: () => SimStats;
+}>;
+
+export function createSimStatsAccumulator(): SimStatsAccumulator {
+  const mutable: SimStatsMutable = {
+    applied: 0,
+    dropped: 0,
+    queued: 0,
+    flushed: 0,
+    blocked: 0,
+    actionApplied: 0,
+    skippedCannotApply: 0,
+    skippedInsufficientFunds: 0,
+  };
+
+  return {
+    push<N>(events: readonly SimEvent<N>[]) {
+      for (const e of events) applySimEvent(mutable, e);
+    },
+    snapshot() {
+      return toSimStats(mutable);
+    },
+  };
+}
+
+export function buildSimStats<N>(events: readonly SimEvent<N>[]): SimStats {
+  const acc = createSimStatsAccumulator();
+  acc.push(events);
+  return acc.snapshot();
 }
 
 export function analyzeUX(stats: SimStats): UXFlag[] {

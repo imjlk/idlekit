@@ -150,6 +150,42 @@ describe("compileScenario", () => {
     expect(sc.run.fast?.disableMoneyEvents).toBeTrue();
   });
 
+  it("passes sim.eventLog options into run config", () => {
+    const modelFactory: ModelFactory = {
+      id: "m",
+      version: 1,
+      create: () => ({
+        id: "m",
+        version: 1,
+        income: (ctx: any) => ({ unit: ctx.unit, amount: 0 }),
+        actions: () => [],
+      }),
+    };
+    const strategyFactory: StrategyFactory = {
+      id: "s",
+      create: () => ({ id: "s", decide: () => [] }),
+    };
+    const scenario: ScenarioV1 = {
+      ...makeScenario(),
+      sim: {
+        eventLog: {
+          enabled: false,
+          maxEvents: 10,
+        },
+      },
+    };
+
+    const sc = compileScenario<number, "COIN", Record<string, unknown>>({
+      E: createNumberEngine(),
+      scenario,
+      registry: createModelRegistry([modelFactory]),
+      strategyRegistry: createStrategyRegistry([strategyFactory]),
+      unitFactory: (code) => ({ code: code as "COIN" }),
+    });
+
+    expect(sc.run.eventLog).toEqual({ enabled: false, maxEvents: 10 });
+  });
+
   it("compiles safe untilExpr with &&/|| grammar", () => {
     const modelFactory: ModelFactory = {
       id: "m",
@@ -423,5 +459,37 @@ describe("compileScenario", () => {
         unitFactory: (code) => ({ code: code as "COIN" }),
       }),
     ).toThrow("clock.durationSec must be > 0");
+  });
+
+  it("fails closed when strategy params schema returns invalid shape", () => {
+    const modelFactory: ModelFactory = {
+      id: "m",
+      version: 1,
+      create: () => ({
+        id: "m",
+        version: 1,
+        income: (ctx: any) => ({ unit: ctx.unit, amount: 0 }),
+        actions: () => [],
+      }),
+    };
+    const strategyFactory: StrategyFactory = {
+      id: "s",
+      paramsSchema: {
+        "~standard": {
+          validate: () => ({}) as any,
+        },
+      },
+      create: () => ({ id: "s", decide: () => [] }),
+    };
+
+    expect(() =>
+      compileScenario<number, "COIN", Record<string, unknown>>({
+        E: createNumberEngine(),
+        scenario: makeScenario(),
+        registry: createModelRegistry([modelFactory]),
+        strategyRegistry: createStrategyRegistry([strategyFactory]),
+        unitFactory: (code) => ({ code: code as "COIN" }),
+      }),
+    ).toThrow("Invalid strategy params");
   });
 });

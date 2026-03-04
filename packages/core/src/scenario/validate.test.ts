@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { createModelRegistry, type ModelFactory } from "./registry";
 import { validateScenarioV1 } from "./validate";
 import type { ScenarioV1 } from "./types";
 
@@ -59,5 +60,42 @@ describe("validateScenarioV1 clock stop conditions", () => {
     const out = validateScenarioV1(sc);
     expect(out.ok).toBeFalse();
     expect(out.issues.some((i) => i.path === "clock.durationSec")).toBeTrue();
+  });
+
+  it("rejects invalid sim.eventLog.maxEvents", () => {
+    const sc: ScenarioV1 = {
+      ...baseScenario(),
+      sim: {
+        eventLog: {
+          maxEvents: -1,
+        },
+      },
+    };
+    const out = validateScenarioV1(sc);
+    expect(out.ok).toBeFalse();
+    expect(out.issues.some((i) => i.path === "sim.eventLog.maxEvents")).toBeTrue();
+  });
+
+  it("fails closed when model params schema returns unknown shape", () => {
+    const badModelFactory: ModelFactory = {
+      id: "m",
+      version: 1,
+      paramsSchema: {
+        "~standard": {
+          validate: () => ({}) as any,
+        },
+      },
+      create: () => ({
+        id: "m",
+        version: 1,
+        income: (ctx: any) => ({ unit: ctx.unit, amount: 0 }),
+        actions: () => [],
+      }),
+    };
+
+    const out = validateScenarioV1(baseScenario(), createModelRegistry([badModelFactory]));
+    expect(out.ok).toBeFalse();
+    expect(out.issues.some((i) => i.path === "model.params")).toBeTrue();
+    expect(out.issues.some((i) => i.message.includes("invalid result shape"))).toBeTrue();
   });
 });

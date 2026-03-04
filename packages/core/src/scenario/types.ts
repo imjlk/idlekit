@@ -75,6 +75,10 @@ export type ScenarioV1 = Readonly<{
 
   sim?: Readonly<{
     fast?: boolean;
+    eventLog?: Readonly<{
+      enabled?: boolean;
+      maxEvents?: number;
+    }>;
   }>;
 
   outputs?: Readonly<{

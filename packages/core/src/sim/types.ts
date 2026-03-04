@@ -167,6 +167,14 @@ export type SimRunOptions = Readonly<{
   // Hard guard against accidental unbounded runs.
   maxSteps?: number;
 
+  // Event retention policy for long-running simulations.
+  eventLog?: Readonly<{
+    // false => do not retain events in RunResult.events (stats are still computed).
+    enabled?: boolean;
+    // Keep only the latest N events (ring-buffer style). Undefined => unbounded.
+    maxEvents?: number;
+  }>;
+
   trace?: Readonly<{
     everySteps?: number;
     keepActionsLog?: boolean;
@@ -204,4 +212,11 @@ export type RunResult<N, U extends string, Vars> = Readonly<{
 
   stats?: import("./analysis/ux").SimStats;
   uxFlags?: import("./analysis/ux").UXFlag[];
+  eventLog?: Readonly<{
+    enabled: boolean;
+    maxEvents?: number;
+    totalSeen: number;
+    dropped: number;
+    retained: number;
+  }>;
 }>;

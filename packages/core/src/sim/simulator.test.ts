@@ -202,4 +202,87 @@ describe("runScenario", () => {
 
     expect(() => runScenario(scenario)).toThrow("runScenario exceeded maxSteps (3)");
   });
+
+  it("can disable event retention while keeping stats", () => {
+    const ctx = makeContext();
+    const model: Model<number, UnitCode, Vars> = {
+      id: "m",
+      version: 1,
+      income: () => ({ unit: { code: "COIN" }, amount: 1 }),
+      actions: () => [],
+    };
+
+    const scenario: CompiledScenario<number, UnitCode, Vars> = {
+      ctx,
+      model,
+      initial: makeState(0),
+      run: {
+        stepSec: 1,
+        durationSec: 5,
+        eventLog: {
+          enabled: false,
+        },
+      },
+    };
+
+    const run = runScenario(scenario);
+    expect(run.events.length).toBe(0);
+    expect(run.stats?.money.applied).toBe(5);
+    expect(run.eventLog?.totalSeen).toBeGreaterThan(0);
+    expect(run.eventLog?.retained).toBe(0);
+  });
+
+  it("retains only latest N events when maxEvents is set", () => {
+    const ctx = makeContext();
+    const model: Model<number, UnitCode, Vars> = {
+      id: "m",
+      version: 1,
+      income: () => ({ unit: { code: "COIN" }, amount: 1 }),
+      actions: () => [],
+    };
+
+    const scenario: CompiledScenario<number, UnitCode, Vars> = {
+      ctx,
+      model,
+      initial: makeState(0),
+      run: {
+        stepSec: 1,
+        durationSec: 8,
+        eventLog: {
+          maxEvents: 3,
+        },
+      },
+    };
+
+    const run = runScenario(scenario);
+    expect(run.events.length).toBe(3);
+    expect(run.eventLog?.retained).toBe(3);
+    expect((run.eventLog?.dropped ?? 0) > 0).toBeTrue();
+    expect(run.stats?.money.applied).toBe(8);
+  });
+
+  it("rejects invalid eventLog.maxEvents", () => {
+    const ctx = makeContext();
+    const model: Model<number, UnitCode, Vars> = {
+      id: "m",
+      version: 1,
+      income: () => ({ unit: { code: "COIN" }, amount: 1 }),
+      actions: () => [],
+    };
+
+    const scenario: CompiledScenario<number, UnitCode, Vars> = {
+      ctx,
+      model,
+      initial: makeState(0),
+      run: {
+        stepSec: 1,
+        durationSec: 1,
+        eventLog: {
+          maxEvents: -1,
+        },
+      },
+    };
+
+    expect(() => runScenario(scenario)).toThrow("eventLog.maxEvents must be an integer >= 0");
+  });
 });

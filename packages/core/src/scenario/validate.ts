@@ -153,6 +153,41 @@ function validateBaseScenario(input: unknown): StandardResult<ScenarioV1> {
     }
   }
 
+  const sim = input.sim;
+  if (sim !== undefined) {
+    if (!isRecord(sim)) {
+      pushIssue(issues, "sim must be an object when provided", "sim", sim);
+    } else if (sim.eventLog !== undefined) {
+      const eventLog = sim.eventLog;
+      if (!isRecord(eventLog)) {
+        pushIssue(issues, "sim.eventLog must be an object when provided", "sim.eventLog", eventLog);
+      } else {
+        if (eventLog.enabled !== undefined && typeof eventLog.enabled !== "boolean") {
+          pushIssue(
+            issues,
+            "sim.eventLog.enabled must be boolean when provided",
+            "sim.eventLog.enabled",
+            eventLog.enabled,
+          );
+        }
+        if (eventLog.maxEvents !== undefined) {
+          if (
+            typeof eventLog.maxEvents !== "number" ||
+            !Number.isInteger(eventLog.maxEvents) ||
+            eventLog.maxEvents < 0
+          ) {
+            pushIssue(
+              issues,
+              "sim.eventLog.maxEvents must be an integer >= 0 when provided",
+              "sim.eventLog.maxEvents",
+              eventLog.maxEvents,
+            );
+          }
+        }
+      }
+    }
+  }
+
   if (issues.length > 0) return { success: false, issues };
   return { success: true, value: input as ScenarioV1 };
 }
@@ -180,11 +215,7 @@ export function validateScenarioV1(
       return r.issues;
     }
 
-    if ("issues" in r && r.issues == null) {
-      return [];
-    }
-
-    return [];
+    return [{ message: "Schema returned invalid result shape" }];
   };
 
   if (registry) {
