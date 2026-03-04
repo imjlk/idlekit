@@ -26,6 +26,9 @@ export default defineCommand({
   description: "Generate timeline report",
   options: {
     plugin: option(z.string().default(""), { description: "Comma-separated plugin paths" }),
+    "allow-plugin": option(z.coerce.boolean().default(false), {
+      description: "Allow loading local plugin modules",
+    }),
     checkpoints: option(z.string().default("60,300,900,3600"), {
       description: "Comma-separated checkpoint seconds",
     }),
@@ -41,7 +44,7 @@ export default defineCommand({
     }
 
     const input = await readScenarioFile(scenarioPath);
-    const loaded = await loadRegistries(parsePluginPaths(flags.plugin));
+    const loaded = await loadRegistries(parsePluginPaths(flags.plugin, flags["allow-plugin"]));
     const valid = validateScenarioV1(input, loaded.modelRegistry);
     if (!valid.ok || !valid.scenario) {
       throw new Error(

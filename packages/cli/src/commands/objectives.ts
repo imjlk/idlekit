@@ -31,11 +31,14 @@ export default defineCommand({
   description: "List optimization objectives",
   options: {
     plugin: option(z.string().default(""), { description: "Comma-separated plugin paths" }),
+    "allow-plugin": option(z.coerce.boolean().default(false), {
+      description: "Allow loading local plugin modules",
+    }),
     format: option(z.enum(["json", "md", "csv"]).default("md"), { description: "Output format" }),
     out: option(z.string().optional(), { description: "Output file path" }),
   },
   async handler({ flags }) {
-    const { objectiveRegistry } = await loadRegistries(parsePluginPaths(flags.plugin));
+    const { objectiveRegistry } = await loadRegistries(parsePluginPaths(flags.plugin, flags["allow-plugin"]));
     const output = cmdObjectivesList({ objectiveRegistry });
     const body = renderObjectivesList(output, flags.format);
 

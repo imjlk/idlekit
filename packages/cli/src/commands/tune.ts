@@ -74,6 +74,9 @@ export default defineCommand({
   description: "Tune strategy parameters with objective scoring",
   options: {
     plugin: option(z.string().default(""), { description: "Comma-separated plugin paths" }),
+    "allow-plugin": option(z.coerce.boolean().default(false), {
+      description: "Allow loading local plugin modules",
+    }),
     tune: option(z.string().min(1), { description: "TuneSpec file path (.json|.yaml)" }),
     out: option(z.string().optional(), { description: "Output path" }),
     format: option(z.enum(["json", "md", "csv"]).default("json"), { description: "Output format" }),
@@ -89,7 +92,7 @@ export default defineCommand({
       readScenarioFile(flags.tune),
     ]);
 
-    const loaded = await loadRegistries(parsePluginPaths(flags.plugin));
+    const loaded = await loadRegistries(parsePluginPaths(flags.plugin, flags["allow-plugin"]));
     const result = await cmdTune({
       E: createNumberEngine(),
       scenarioInput,

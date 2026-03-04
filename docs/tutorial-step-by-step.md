@@ -179,15 +179,15 @@ idk compare examples/tutorials/01-cafe-baseline.json examples/tutorials/03-cafe-
 ## 8) 실전 트랙: 플러그인 로딩 확인
 
 ```bash
-bun run --cwd packages/cli dev -- models list --plugin ../../examples/plugins/custom-econ-plugin.ts --format json
-bun run --cwd packages/cli dev -- strategies list --plugin ../../examples/plugins/custom-econ-plugin.ts --format json
-bun run --cwd packages/cli dev -- objectives list --plugin ../../examples/plugins/custom-econ-plugin.ts --format json
+bun run --cwd packages/cli dev -- models list --plugin ../../examples/plugins/custom-econ-plugin.ts --allow-plugin true --format json
+bun run --cwd packages/cli dev -- strategies list --plugin ../../examples/plugins/custom-econ-plugin.ts --allow-plugin true --format json
+bun run --cwd packages/cli dev -- objectives list --plugin ../../examples/plugins/custom-econ-plugin.ts --allow-plugin true --format json
 ```
 
 동등 명령:
 
 ```bash
-idk models list --plugin examples/plugins/custom-econ-plugin.ts --format json
+idk models list --plugin examples/plugins/custom-econ-plugin.ts --allow-plugin true --format json
 ```
 
 성공 조건:
@@ -203,6 +203,7 @@ idk models list --plugin examples/plugins/custom-econ-plugin.ts --format json
 ```bash
 bun run --cwd packages/cli dev -- tune ../../examples/plugins/plugin-scenario.json \
   --plugin ../../examples/plugins/custom-econ-plugin.ts \
+  --allow-plugin true \
   --tune ../../examples/plugins/plugin-tune.json \
   --format json
 ```
@@ -212,6 +213,7 @@ bun run --cwd packages/cli dev -- tune ../../examples/plugins/plugin-scenario.js
 ```bash
 idk tune examples/plugins/plugin-scenario.json \
   --plugin examples/plugins/custom-econ-plugin.ts \
+  --allow-plugin true \
   --tune examples/plugins/plugin-tune.json \
   --format json
 ```

@@ -25,7 +25,7 @@ export default plugin;
 로드:
 
 ```bash
-bun run --cwd packages/cli dev -- models list --plugin ./my-plugin.ts
+bun run --cwd packages/cli dev -- models list --plugin ./my-plugin.ts --allow-plugin true
 ```
 
 ## 2. Engine 어댑터(핵심)

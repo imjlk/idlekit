@@ -34,6 +34,9 @@ export default defineCommand({
   description: "Compare two scenarios via measured simulation metrics",
   options: {
     plugin: option(z.string().default(""), { description: "Comma-separated plugin paths" }),
+    "allow-plugin": option(z.coerce.boolean().default(false), {
+      description: "Allow loading local plugin modules",
+    }),
     duration: option(z.coerce.number().optional(), { description: "Override durationSec" }),
     step: option(z.coerce.number().optional(), { description: "Override stepSec" }),
     strategy: option(strategySchema, { description: "Override strategy id (greedy|planner|scripted)" }),
@@ -61,7 +64,7 @@ export default defineCommand({
     }
 
     const [aInput, bInput] = await Promise.all([readScenarioFile(aPath), readScenarioFile(bPath)]);
-    const loaded = await loadRegistries(parsePluginPaths(flags.plugin));
+    const loaded = await loadRegistries(parsePluginPaths(flags.plugin, flags["allow-plugin"]));
 
     const va = validateScenarioV1(aInput, loaded.modelRegistry);
     const vb = validateScenarioV1(bInput, loaded.modelRegistry);

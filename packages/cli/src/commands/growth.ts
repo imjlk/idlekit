@@ -16,6 +16,9 @@ export default defineCommand({
   description: "Analyze growth regime from simulation trace",
   options: {
     plugin: option(z.string().default(""), { description: "Comma-separated plugin paths" }),
+    "allow-plugin": option(z.coerce.boolean().default(false), {
+      description: "Allow loading local plugin modules",
+    }),
     window: option(z.coerce.number().default(60), { description: "Window sec" }),
     series: option(z.enum(["money", "netWorth"]).default("money"), { description: "Series type" }),
     "trace-every": option(z.coerce.number().default(1), { description: "Trace every N steps" }),
@@ -29,7 +32,7 @@ export default defineCommand({
     }
 
     const input = await readScenarioFile(scenarioPath);
-    const loaded = await loadRegistries(parsePluginPaths(flags.plugin));
+    const loaded = await loadRegistries(parsePluginPaths(flags.plugin, flags["allow-plugin"]));
     const valid = validateScenarioV1(input, loaded.modelRegistry);
     if (!valid.ok || !valid.scenario) {
       throw new Error(

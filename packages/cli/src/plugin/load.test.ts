@@ -6,8 +6,12 @@ import { loadRegistries, parsePluginPaths } from "./load";
 
 describe("plugin load", () => {
   it("parses comma-separated plugin paths", () => {
-    const out = parsePluginPaths(" ./a.ts, ./b.ts ,, ./c.ts ");
+    const out = parsePluginPaths(" ./a.ts, ./b.ts ,, ./c.ts ", true);
     expect(out).toEqual(["./a.ts", "./b.ts", "./c.ts"]);
+  });
+
+  it("requires explicit allow flag for plugin paths", () => {
+    expect(() => parsePluginPaths("./a.ts")).toThrow("Plugin loading is disabled by default");
   });
 
   it("loads model/strategy/objective factories from plugin module", async () => {

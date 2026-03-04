@@ -57,7 +57,7 @@ bun run --cwd packages/cli dev -- validate ../../examples/simple-linear.json
 플러그인 포함 검증:
 
 ```bash
-bun run --cwd packages/cli dev -- validate ../../examples/simple-linear.json --plugin ./my-plugin.ts
+bun run --cwd packages/cli dev -- validate ../../examples/simple-linear.json --plugin ./my-plugin.ts --allow-plugin true
 ```
 
 ### 3.2 시뮬레이션
@@ -258,9 +258,11 @@ ETA analytic 정확도:
 
 ```bash
 bun run --cwd packages/cli dev -- validate ../../examples/plugins/plugin-scenario.json \
-  --plugin ../../examples/plugins/custom-econ-plugin.ts
+  --plugin ../../examples/plugins/custom-econ-plugin.ts \
+  --allow-plugin true
 
 bun run --cwd packages/cli dev -- simulate ../../examples/plugins/plugin-scenario.json \
   --plugin ../../examples/plugins/custom-econ-plugin.ts \
+  --allow-plugin true \
   --format json
 ```

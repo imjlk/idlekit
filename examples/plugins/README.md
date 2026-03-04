@@ -17,27 +17,29 @@
 루트에서 실행:
 
 ```bash
-bun run --cwd packages/cli dev -- models list --plugin ../../examples/plugins/custom-econ-plugin.ts
-bun run --cwd packages/cli dev -- strategies list --plugin ../../examples/plugins/custom-econ-plugin.ts
-bun run --cwd packages/cli dev -- objectives list --plugin ../../examples/plugins/custom-econ-plugin.ts
+bun run --cwd packages/cli dev -- models list --plugin ../../examples/plugins/custom-econ-plugin.ts --allow-plugin true
+bun run --cwd packages/cli dev -- strategies list --plugin ../../examples/plugins/custom-econ-plugin.ts --allow-plugin true
+bun run --cwd packages/cli dev -- objectives list --plugin ../../examples/plugins/custom-econ-plugin.ts --allow-plugin true
 ```
 
 설치형 동등 명령:
 
 ```bash
-idk models list --plugin examples/plugins/custom-econ-plugin.ts
-idk strategies list --plugin examples/plugins/custom-econ-plugin.ts
-idk objectives list --plugin examples/plugins/custom-econ-plugin.ts
+idk models list --plugin examples/plugins/custom-econ-plugin.ts --allow-plugin true
+idk strategies list --plugin examples/plugins/custom-econ-plugin.ts --allow-plugin true
+idk objectives list --plugin examples/plugins/custom-econ-plugin.ts --allow-plugin true
 ```
 
 ## 2) 시나리오 검증/실행
 
 ```bash
 bun run --cwd packages/cli dev -- validate ../../examples/plugins/plugin-scenario.json \
-  --plugin ../../examples/plugins/custom-econ-plugin.ts
+  --plugin ../../examples/plugins/custom-econ-plugin.ts \
+  --allow-plugin true
 
 bun run --cwd packages/cli dev -- simulate ../../examples/plugins/plugin-scenario.json \
   --plugin ../../examples/plugins/custom-econ-plugin.ts \
+  --allow-plugin true \
   --format json
 ```
 
@@ -46,6 +48,7 @@ bun run --cwd packages/cli dev -- simulate ../../examples/plugins/plugin-scenari
 ```bash
 bun run --cwd packages/cli dev -- tune ../../examples/plugins/plugin-scenario.json \
   --plugin ../../examples/plugins/custom-econ-plugin.ts \
+  --allow-plugin true \
   --tune ../../examples/plugins/plugin-tune.json \
   --format json
 ```

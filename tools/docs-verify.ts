@@ -116,21 +116,25 @@ function verifyPluginTrack(): void {
   const scenario = "../../examples/plugins/plugin-scenario.json";
   const tuneSpec = "../../examples/plugins/plugin-tune.json";
 
-  const strategies = asRecord(runCliJson(["strategies", "list", "--plugin", plugin, "--format", "json"]));
+  const strategies = asRecord(
+    runCliJson(["strategies", "list", "--plugin", plugin, "--allow-plugin", "true", "--format", "json"]),
+  );
   const strategyRows = (strategies.strategies ?? []) as JSONValue[];
   assert(
     strategyRows.some((x) => asRecord(x).id === "plugin.producerFirst"),
     "plugin.producerFirst must be listed",
   );
 
-  const objectives = asRecord(runCliJson(["objectives", "list", "--plugin", plugin, "--format", "json"]));
+  const objectives = asRecord(
+    runCliJson(["objectives", "list", "--plugin", plugin, "--allow-plugin", "true", "--format", "json"]),
+  );
   const objectiveRows = (objectives.objectives ?? []) as JSONValue[];
   assert(
     objectiveRows.some((x) => asRecord(x).id === "plugin.gemsAndWorthLog10"),
     "plugin.gemsAndWorthLog10 must be listed",
   );
 
-  const validateOut = runCli(["validate", scenario, "--plugin", plugin]);
+  const validateOut = runCli(["validate", scenario, "--plugin", plugin, "--allow-plugin", "true"]);
   assert(validateOut.includes("OK:"), "plugin validate should print OK");
 
   const tune = asRecord(
@@ -139,6 +143,8 @@ function verifyPluginTrack(): void {
       scenario,
       "--plugin",
       plugin,
+      "--allow-plugin",
+      "true",
       "--tune",
       tuneSpec,
       "--format",

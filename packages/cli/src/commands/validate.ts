@@ -11,6 +11,9 @@ export default defineCommand({
     plugin: option(z.string().default(""), {
       description: "Comma-separated plugin module paths",
     }),
+    "allow-plugin": option(z.coerce.boolean().default(false), {
+      description: "Allow loading local plugin modules",
+    }),
   },
   async handler({ flags, positional }) {
     const scenarioPath = positional[0];
@@ -19,7 +22,7 @@ export default defineCommand({
     }
 
     const input = await readScenarioFile(scenarioPath);
-    const { modelRegistry } = await loadRegistries(parsePluginPaths(flags.plugin));
+    const { modelRegistry } = await loadRegistries(parsePluginPaths(flags.plugin, flags["allow-plugin"]));
 
     const r = validateScenarioV1(input, modelRegistry);
     if (!r.ok) {

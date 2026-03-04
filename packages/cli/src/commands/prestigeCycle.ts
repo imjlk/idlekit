@@ -21,6 +21,9 @@ export default defineCommand({
   description: "Analyze optimal prestige cycle",
   options: {
     plugin: option(z.string().default(""), { description: "Comma-separated plugin paths" }),
+    "allow-plugin": option(z.coerce.boolean().default(false), {
+      description: "Allow loading local plugin modules",
+    }),
     scan: option(z.string().default("300..1800"), { description: "Scan range (from..to)" }),
     step: option(z.coerce.number().default(60), { description: "Scan step sec" }),
     horizon: option(z.coerce.number().default(3600), { description: "Horizon sec" }),
@@ -38,7 +41,7 @@ export default defineCommand({
     }
 
     const input = await readScenarioFile(scenarioPath);
-    const loaded = await loadRegistries(parsePluginPaths(flags.plugin));
+    const loaded = await loadRegistries(parsePluginPaths(flags.plugin, flags["allow-plugin"]));
     const valid = validateScenarioV1(input, loaded.modelRegistry);
     if (!valid.ok || !valid.scenario) {
       throw new Error(

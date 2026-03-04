@@ -213,12 +213,18 @@ function parsePluginModule(mod: PluginModule): EconPluginModule {
   };
 }
 
-export function parsePluginPaths(input: unknown): string[] {
+export function parsePluginPaths(input: unknown, allowPlugin = false): string[] {
   if (typeof input !== "string" || input.trim().length === 0) return [];
-  return input
+  const paths = input
     .split(",")
     .map((x) => x.trim())
     .filter(Boolean);
+
+  if (paths.length > 0 && !allowPlugin) {
+    throw new Error("Plugin loading is disabled by default. Pass --allow-plugin true to enable local plugin modules.");
+  }
+
+  return paths;
 }
 
 export type LoadedRegistries = Readonly<{

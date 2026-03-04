@@ -17,6 +17,9 @@ export default defineCommand({
   description: "Run simulation with scenario",
   options: {
     plugin: option(z.string().default(""), { description: "Comma-separated plugin paths" }),
+    "allow-plugin": option(z.coerce.boolean().default(false), {
+      description: "Allow loading local plugin modules",
+    }),
     duration: option(z.coerce.number().optional(), { description: "Override durationSec" }),
     step: option(z.coerce.number().optional(), { description: "Override stepSec" }),
     strategy: option(strategySchema, { description: "greedy|planner|scripted" }),
@@ -31,7 +34,7 @@ export default defineCommand({
     }
 
     const input = await readScenarioFile(scenarioPath);
-    const loaded = await loadRegistries(parsePluginPaths(flags.plugin));
+    const loaded = await loadRegistries(parsePluginPaths(flags.plugin, flags["allow-plugin"]));
     const valid = validateScenarioV1(input, loaded.modelRegistry);
     if (!valid.ok || !valid.scenario) {
       throw new Error(

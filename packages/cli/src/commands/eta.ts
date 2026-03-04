@@ -16,6 +16,9 @@ export default defineCommand({
   description: "Estimate time to target money or net worth",
   options: {
     plugin: option(z.string().default(""), { description: "Comma-separated plugin paths" }),
+    "allow-plugin": option(z.coerce.boolean().default(false), {
+      description: "Allow loading local plugin modules",
+    }),
     "target-money": option(z.string().optional(), { description: "Target money NumStr" }),
     "target-worth": option(z.string().optional(), { description: "Target net worth NumStr" }),
     mode: option(z.enum(["simulate", "analytic"]).default("simulate"), { description: "ETA mode" }),
@@ -51,7 +54,7 @@ export default defineCommand({
       : ({ kind: "netWorth", value: targetWorth! } as const);
 
     const input = await readScenarioFile(scenarioPath);
-    const loaded = await loadRegistries(parsePluginPaths(flags.plugin));
+    const loaded = await loadRegistries(parsePluginPaths(flags.plugin, flags["allow-plugin"]));
     const valid = validateScenarioV1(input, loaded.modelRegistry);
     if (!valid.ok || !valid.scenario) {
       throw new Error(
