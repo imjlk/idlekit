@@ -59,6 +59,8 @@ PR/커밋 전에:
 3. `bun run build`
 4. `bun run docs:verify:quick`
 
+CI(`.github/workflows/ci.yml`)도 같은 순서(typecheck/test/build/docs quick)로 검증합니다.
+
 ## 5. 권장 커밋 단위
 
 - `feat(core): ...` 구현
