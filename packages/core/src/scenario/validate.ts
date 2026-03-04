@@ -1,4 +1,5 @@
 import typia from "typia";
+import type { ZodType } from "zod";
 import type { ScenarioV1 } from "./types";
 
 export type StandardIssue = Readonly<{
@@ -47,6 +48,28 @@ export function typiaStandardSchema<T>(): StandardSchema<T> {
           ];
           return { success: false, issues };
         }
+      },
+    },
+  };
+}
+
+export function zodStandardSchema<T>(schema: ZodType<T>): StandardSchema<T> {
+  return {
+    "~standard": {
+      validate(input) {
+        const parsed = schema.safeParse(input);
+        if (parsed.success) {
+          return { success: true, value: parsed.data };
+        }
+
+        const issues: StandardIssue[] = parsed.error.issues.map((issue) => ({
+          path: issue.path.join("."),
+          message: issue.message,
+          expected: issue.code,
+          value: input,
+        }));
+
+        return { success: false, issues };
       },
     },
   };

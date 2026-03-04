@@ -1,8 +1,11 @@
 import type { StandardSchema } from "../../../../scenario/validate";
-import { typiaStandardSchema } from "../../../../scenario/validate";
+import { zodStandardSchema } from "../../../../scenario/validate";
+import { z } from "zod";
 
 export type ObjectiveEmptyObject = Record<string, never>;
-export const ObjectiveEmptyObjectSchema: StandardSchema<ObjectiveEmptyObject> = typiaStandardSchema<ObjectiveEmptyObject>();
+export const ObjectiveEmptyObjectSchema: StandardSchema<ObjectiveEmptyObject> = zodStandardSchema(
+  z.object({}).strict(),
+);
 
 export type ObjectiveEtaToWorthParams = Readonly<{
   targetWorth: string;
@@ -10,7 +13,12 @@ export type ObjectiveEtaToWorthParams = Readonly<{
 }>;
 
 export const ObjectiveEtaToWorthParamsSchema: StandardSchema<ObjectiveEtaToWorthParams> =
-  typiaStandardSchema<ObjectiveEtaToWorthParams>();
+  zodStandardSchema(
+    z.object({
+      targetWorth: z.string().min(1),
+      unreachedPenaltySec: z.number().positive().optional(),
+    }),
+  );
 
 export type ObjectivePacingParams = Readonly<{
   targetActionsPerHour?: number;
@@ -19,4 +27,10 @@ export type ObjectivePacingParams = Readonly<{
 }>;
 
 export const ObjectivePacingParamsSchema: StandardSchema<ObjectivePacingParams> =
-  typiaStandardSchema<ObjectivePacingParams>();
+  zodStandardSchema(
+    z.object({
+      targetActionsPerHour: z.number().positive().optional(),
+      actionRateWeight: z.number().nonnegative().optional(),
+      droppedRateWeight: z.number().nonnegative().optional(),
+    }),
+  );

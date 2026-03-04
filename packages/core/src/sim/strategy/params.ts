@@ -1,5 +1,6 @@
 import type { StandardSchema } from "../../scenario/validate";
-import { typiaStandardSchema } from "../../scenario/validate";
+import { zodStandardSchema } from "../../scenario/validate";
+import { z } from "zod";
 
 export type EmptyObject = Record<string, never>;
 
@@ -84,10 +85,70 @@ export type PlannerStrategyParamsV1 = Readonly<{
 }>;
 
 export const ScriptedStrategyParamsV1Schema: StandardSchema<ScriptedStrategyParamsV1> =
-  typiaStandardSchema<ScriptedStrategyParamsV1>();
+  zodStandardSchema(
+    z.object({
+      schemaVersion: z.literal(1),
+      program: z.array(
+        z.object({
+          actionId: z.string().min(1),
+          bulkSize: z.number().int().positive().optional(),
+        }),
+      ),
+      onCannotApply: z.enum(["skip", "stop"]).optional(),
+      loop: z.boolean().optional(),
+    }),
+  );
 
 export const GreedyStrategyParamsV1Schema: StandardSchema<GreedyStrategyParamsV1> =
-  typiaStandardSchema<GreedyStrategyParamsV1>();
+  zodStandardSchema(
+    z.object({
+      schemaVersion: z.literal(1),
+      objective: z.enum(["maximizeIncome", "minPayback", "maximizeNetWorth"]),
+      maxPicksPerStep: z.number().int().positive().optional(),
+      bulk: z
+        .object({
+          mode: z.enum(["size1", "bestQuote", "maxAffordable"]).optional(),
+          maxSizeCap: z.number().int().positive().optional(),
+        })
+        .optional(),
+      payback: z
+        .object({
+          capSec: z.number().positive().optional(),
+          useEquivalentCost: z.boolean().optional(),
+          preferQuotedDeltaIncome: z.boolean().optional(),
+        })
+        .optional(),
+      netWorth: z
+        .object({
+          horizonSec: z.number().positive().optional(),
+          series: z.enum(["netWorth", "money"]).optional(),
+          useFastPreview: z.boolean().optional(),
+        })
+        .optional(),
+      tieBreak: z
+        .object({
+          preferLowerCost: z.boolean().optional(),
+          preferBulk: z.boolean().optional(),
+        })
+        .optional(),
+    }),
+  );
 
 export const PlannerStrategyParamsV1Schema: StandardSchema<PlannerStrategyParamsV1> =
-  typiaStandardSchema<PlannerStrategyParamsV1>();
+  zodStandardSchema(
+    z.object({
+      schemaVersion: z.literal(1),
+      horizonSteps: z.number().int().positive(),
+      beamWidth: z.number().int().positive().optional(),
+      objective: z.enum(["maximizeNetWorthAtEnd", "minTimeToTargetWorth", "maximizePrestigePerHour"]),
+      targetWorth: z.string().optional(),
+      series: z.enum(["netWorth", "money"]).optional(),
+      maxBranchingActions: z.number().int().positive().optional(),
+      useFastPreview: z.boolean().optional(),
+      bulk: z
+        .object({
+          mode: z.enum(["size1", "bestQuote"]).optional(),
+        })
+        .optional(),
+    }),
+  );

@@ -302,15 +302,11 @@ function standardIssues(result: unknown): string[] {
   const r = result as any;
   if (typeof r.success === "boolean") {
     if (r.success) return [];
-    const issues = (r.issues ?? [{ message: "schema validation failed" }]).map((i: any) => i.message);
-    const onlyTypiaTransform = issues.length > 0 && issues.every((m: string) => m.includes("no transform has been configured"));
-    return onlyTypiaTransform ? [] : issues;
+    return (r.issues ?? [{ message: "schema validation failed" }]).map((i: any) => i.message);
   }
 
   if (Array.isArray(r.issues)) {
-    const issues = r.issues.map((i: any) => i.message);
-    const onlyTypiaTransform = issues.length > 0 && issues.every((m: string) => m.includes("no transform has been configured"));
-    return onlyTypiaTransform ? [] : issues;
+    return r.issues.map((i: any) => i.message);
   }
 
   return [];
