@@ -216,3 +216,20 @@ bun run --cwd packages/cli dev -- simulate ../../examples/simple-linear.json \
 ETA analytic 정확도:
 
 - 모델이 `analytic()` 힌트를 충분히 제공하지 않으면 simulate 대비 오차가 커질 수 있습니다.
+
+## 8. 플러그인 실전 예제
+
+아래 예제로 커스텀 model/strategy/objective를 한 번에 확인할 수 있습니다.
+
+- [examples/plugins/README.md](../examples/plugins/README.md)
+
+빠른 실행:
+
+```bash
+bun run --cwd packages/cli dev -- validate ../../examples/plugins/plugin-scenario.json \
+  --plugin ../../examples/plugins/custom-econ-plugin.ts
+
+bun run --cwd packages/cli dev -- simulate ../../examples/plugins/plugin-scenario.json \
+  --plugin ../../examples/plugins/custom-econ-plugin.ts \
+  --format json
+```

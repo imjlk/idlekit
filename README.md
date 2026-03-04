@@ -42,6 +42,7 @@ bun run --cwd packages/cli dev -- tune ../../examples/simple-linear.json --tune 
 - [플러그인/어댑터 패턴 가이드](./docs/plugin-and-adapter.md)
 - [테스트 운영 가이드](./docs/testing.md)
 - [어댑터 예제 프로젝트](./examples/adapter-pattern/README.md)
+- [플러그인 예제 프로젝트](./examples/plugins/README.md)
 
 ## 현재 구현 범위 메모
 
