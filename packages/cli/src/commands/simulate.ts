@@ -1,10 +1,7 @@
 import { defineCommand, option } from "@bunli/core";
 import {
   compileScenario,
-  createGreedyStrategy,
   createNumberEngine,
-  createPlannerStrategy,
-  createScriptedStrategy,
   runScenario,
   validateScenarioV1,
 } from "@idlekit/core";
@@ -52,14 +49,13 @@ export default defineCommand({
     });
 
     const strategyId = flags.strategy ?? valid.scenario.strategy?.id;
-    const strategy =
-      strategyId === "greedy"
-        ? createGreedyStrategy<number, string, Record<string, unknown>>()
-        : strategyId === "planner"
-          ? createPlannerStrategy<number, string, Record<string, unknown>>()
-          : strategyId === "scripted"
-            ? createScriptedStrategy<number, string, Record<string, unknown>>([])
-            : compiled.strategy;
+    const strategy = (() => {
+      if (!strategyId) return compiled.strategy;
+      const factory = loaded.strategyRegistry.get(strategyId);
+      if (!factory) throw new Error(`Unknown strategy: ${strategyId}`);
+      const params = factory.defaultParams ?? {};
+      return factory.create(params) as typeof compiled.strategy;
+    })();
 
     const runScenarioInput = {
       ...compiled,
