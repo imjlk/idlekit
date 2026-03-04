@@ -8,10 +8,19 @@ import type { ScenarioV1 } from "./types";
 
 export type CompileOptions = Readonly<{
   allowSuffixNotation?: boolean;
+  // Fallback to legacy Function-based evaluator when safe parser rejects expression.
+  // Default false for security reasons.
+  allowUnsafeUntilExpr?: boolean;
 }>;
 
-function compileUntilExpr(expr: string | undefined): ((s: any) => boolean) | undefined {
-  if (!expr || expr.trim().length === 0) return undefined;
+type ExprOp = "<" | "<=" | "==" | "!=" | ">=" | ">";
+type ExprTerm = Readonly<{
+  path: string;
+  op: ExprOp;
+  rawRight: string;
+}>;
+
+function unsafeCompileUntilExpr(expr: string): (s: any) => boolean {
   const fn = new Function("s", `return Boolean(${expr});`) as (s: any) => boolean;
   return (s: any) => {
     try {
@@ -20,6 +29,205 @@ function compileUntilExpr(expr: string | undefined): ((s: any) => boolean) | und
       return false;
     }
   };
+}
+
+function parseUntilTerms(expr: string): ExprTerm[][] {
+  const disj = expr
+    .split("||")
+    .map((x) => x.trim())
+    .filter(Boolean);
+  if (disj.length === 0) throw new Error("untilExpr is empty");
+
+  const termRegex = /^([A-Za-z_][A-Za-z0-9_.]*)\s*(<=|>=|==|!=|<|>)\s*([^\s&|]+)$/;
+  const allTerms: ExprTerm[][] = [];
+
+  for (const clause of disj) {
+    const conj = clause
+      .split("&&")
+      .map((x) => x.trim())
+      .filter(Boolean);
+    if (conj.length === 0) throw new Error(`Invalid untilExpr clause: ${clause}`);
+
+    const terms: ExprTerm[] = [];
+    for (const raw of conj) {
+      const m = termRegex.exec(raw);
+      if (!m) {
+        throw new Error(`Invalid term: '${raw}'. Use '<path> <op> <value>' with &&/|| only.`);
+      }
+
+      const path = m[1]!;
+      const op = m[2]! as ExprOp;
+      const rawRight = m[3]!;
+      terms.push({ path, op, rawRight });
+    }
+    allTerms.push(terms);
+  }
+
+  return allTerms;
+}
+
+function readPath(obj: unknown, path: string): unknown {
+  if (!obj || typeof obj !== "object") return undefined;
+  const parts = path.split(".");
+  let cur: any = obj;
+  for (const part of parts) {
+    if (!part || part === "__proto__" || part === "prototype" || part === "constructor") return undefined;
+    cur = cur?.[part];
+    if (cur === undefined || cur === null) break;
+  }
+  return cur;
+}
+
+function resolveUntilLeft(state: any, path: string): unknown {
+  switch (path) {
+    case "t":
+      return state.t;
+    case "money":
+    case "wallet.money":
+    case "wallet.money.amount":
+      return state.wallet?.money?.amount;
+    case "bucket":
+    case "wallet.bucket":
+      return state.wallet?.bucket;
+    case "maxMoneyEver":
+    case "maxMoneyEver.amount":
+      return state.maxMoneyEver?.amount;
+    case "prestige.points":
+      return state.prestige?.points;
+    case "prestige.count":
+      return state.prestige?.count;
+    case "prestige.multiplier":
+      return state.prestige?.multiplier;
+    default:
+      if (path.startsWith("vars.")) {
+        return readPath(state.vars, path.slice("vars.".length));
+      }
+      return readPath(state, path);
+  }
+}
+
+function parseRightAsAmount<N, U extends string>(args: {
+  E: Engine<N>;
+  unit: Unit<U>;
+  rawRight: string;
+  allowSuffixNotation: boolean;
+}): N {
+  const hasSuffix = /[A-DF-Za-df-z]/.test(args.rawRight);
+  if (hasSuffix && args.allowSuffixNotation) {
+    return parseMoney(args.E, args.rawRight, {
+      unit: args.unit,
+      suffix: { kind: "alphaInfinite", minLen: 2 },
+    }).amount;
+  }
+
+  return args.E.from(args.rawRight);
+}
+
+function compareByOp(cmp: -1 | 0 | 1, op: ExprOp): boolean {
+  switch (op) {
+    case "<":
+      return cmp < 0;
+    case "<=":
+      return cmp <= 0;
+    case "==":
+      return cmp === 0;
+    case "!=":
+      return cmp !== 0;
+    case ">=":
+      return cmp >= 0;
+    case ">":
+      return cmp > 0;
+  }
+}
+
+function compileUntilExpr<N, U extends string>(args: {
+  expr: string | undefined;
+  E: Engine<N>;
+  unit: Unit<U>;
+  allowSuffixNotation: boolean;
+  allowUnsafe: boolean;
+}): ((s: any) => boolean) | undefined {
+  const { expr, E, unit } = args;
+  if (!expr || expr.trim().length === 0) return undefined;
+
+  try {
+    const parsed = parseUntilTerms(expr);
+    return (state: any) => {
+      for (const conjunction of parsed) {
+        let matched = true;
+        for (const term of conjunction) {
+          const left = resolveUntilLeft(state, term.path);
+          if (left === undefined) {
+            matched = false;
+            break;
+          }
+
+          if (typeof left === "number") {
+            const rightNum = Number(term.rawRight);
+            if (!Number.isFinite(rightNum)) {
+              throw new Error(`untilExpr numeric comparison requires finite number: ${term.rawRight}`);
+            }
+            const cmp: -1 | 0 | 1 = left === rightNum ? 0 : left < rightNum ? -1 : 1;
+            if (!compareByOp(cmp, term.op)) {
+              matched = false;
+              break;
+            }
+            continue;
+          }
+
+          if (typeof left === "boolean") {
+            if (term.rawRight !== "true" && term.rawRight !== "false") {
+              throw new Error(`untilExpr boolean comparison requires true/false: ${term.rawRight}`);
+            }
+            const rightBool = term.rawRight === "true";
+            const cmp: -1 | 0 | 1 = left === rightBool ? 0 : left ? 1 : -1;
+            if (!compareByOp(cmp, term.op)) {
+              matched = false;
+              break;
+            }
+            continue;
+          }
+
+          if (typeof left === "string") {
+            if (term.op !== "==" && term.op !== "!=") {
+              throw new Error("untilExpr string values support == and != only");
+            }
+            const ok = term.op === "==" ? left === term.rawRight : left !== term.rawRight;
+            if (!ok) {
+              matched = false;
+              break;
+            }
+            continue;
+          }
+
+          const rightAmount = parseRightAsAmount({
+            E,
+            unit,
+            rawRight: term.rawRight,
+            allowSuffixNotation: args.allowSuffixNotation,
+          });
+          const cmp = E.cmp(E.from(left as any), rightAmount);
+          if (!compareByOp(cmp, term.op)) {
+            matched = false;
+            break;
+          }
+        }
+
+        if (matched) return true;
+      }
+
+      return false;
+    };
+  } catch (error) {
+    if (args.allowUnsafe) {
+      return unsafeCompileUntilExpr(expr);
+    }
+
+    const reason = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      `Invalid untilExpr '${expr}'. Supported grammar: <path> <op> <value> with &&/||. Reason: ${reason}`,
+    );
+  }
 }
 
 function standardIssues(result: unknown): string[] {
@@ -148,7 +356,13 @@ export function compileScenario<N, U extends string, Vars>(args: {
   const run = {
     stepSec: scenario.clock.stepSec,
     durationSec: scenario.clock.durationSec,
-    until: compileUntilExpr(scenario.clock.untilExpr),
+    until: compileUntilExpr({
+      expr: scenario.clock.untilExpr,
+      E,
+      unit,
+      allowSuffixNotation: allowSuffix,
+      allowUnsafe: args.opts?.allowUnsafeUntilExpr ?? false,
+    }),
     trace: scenario.outputs?.report?.includeTrace
       ? {
           everySteps: scenario.outputs.report.traceEverySteps ?? 1,

@@ -55,4 +55,20 @@ describe("compareScenarios", () => {
 
     expect(out.better).toBe("a");
   });
+
+  it("uses measuredDecision comparator when provided", () => {
+    const out = compareScenarios({
+      a: scenario("1e3000"),
+      b: scenario("1e2000"),
+      metric: "endMoney",
+      measuredDecision: () => "a",
+      measured: {
+        a: { endMoney: 3000 },
+        b: { endMoney: 2000 },
+      },
+    });
+
+    expect(out.better).toBe("a");
+    expect((out.detail as any).source).toBe("measured");
+  });
 });

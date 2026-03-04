@@ -1,11 +1,8 @@
 import { runScenario } from "../../simulator";
 import type { CompiledScenario } from "../../types";
+import { deepClonePreservingPrototype } from "../../../utils/deepClone";
 import type { StrategyRegistry } from "../registry";
 import type { ObjectiveRegistry } from "./registry";
-
-function deepClone<T>(x: T): T {
-  return JSON.parse(JSON.stringify(x));
-}
 
 export function runCandidateAndScore(args: {
   baseScenario: CompiledScenario<any, any, any>;
@@ -31,9 +28,13 @@ export function runCandidateAndScore(args: {
   const objective = objFactory.create(args.objectiveParams ?? objFactory.defaultParams ?? {});
   const seedScores: number[] = [];
 
-  for (const _seed of args.seeds) {
+  for (const seed of args.seeds) {
     const sc: CompiledScenario<any, any, any> = {
       ...args.baseScenario,
+      ctx: {
+        ...args.baseScenario.ctx,
+        seed,
+      },
       strategy: stratFactory.create(args.params ?? stratFactory.defaultParams ?? {}) as any,
       run: {
         ...args.baseScenario.run,
@@ -43,7 +44,7 @@ export function runCandidateAndScore(args: {
           ? { enabled: true, kind: "log-domain", disableMoneyEvents: true }
           : args.baseScenario.run.fast,
       },
-      initial: deepClone(args.baseScenario.initial),
+      initial: deepClonePreservingPrototype(args.baseScenario.initial),
     };
 
     const run = runScenario(sc);

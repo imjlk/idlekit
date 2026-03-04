@@ -149,4 +149,127 @@ describe("compileScenario", () => {
     expect(sc.ctx.collectMoneyEvents).toBeUndefined();
     expect(sc.run.fast?.disableMoneyEvents).toBeTrue();
   });
+
+  it("compiles safe untilExpr with &&/|| grammar", () => {
+    const modelFactory: ModelFactory = {
+      id: "m",
+      version: 1,
+      create: () => ({
+        id: "m",
+        version: 1,
+        income: (ctx: any) => ({ unit: ctx.unit, amount: 0 }),
+        actions: () => [],
+      }),
+    };
+
+    const strategyFactory: StrategyFactory = {
+      id: "s",
+      create: () => ({
+        id: "s",
+        decide: () => [],
+      }),
+    };
+
+    const scenario: ScenarioV1 = {
+      ...makeScenario(),
+      clock: {
+        stepSec: 1,
+        durationSec: 10,
+        untilExpr: "t >= 5 && money >= 10",
+      },
+    };
+
+    const sc = compileScenario<number, "COIN", Record<string, unknown>>({
+      E: createNumberEngine(),
+      scenario,
+      registry: createModelRegistry([modelFactory]),
+      strategyRegistry: createStrategyRegistry([strategyFactory]),
+      unitFactory: (code) => ({ code: code as "COIN" }),
+    });
+
+    expect(sc.run.until?.(sc.initial)).toBeFalse();
+    expect(sc.run.until?.({ ...sc.initial, t: 5 })).toBeTrue();
+  });
+
+  it("rejects unsafe untilExpr by default", () => {
+    const modelFactory: ModelFactory = {
+      id: "m",
+      version: 1,
+      create: () => ({
+        id: "m",
+        version: 1,
+        income: (ctx: any) => ({ unit: ctx.unit, amount: 0 }),
+        actions: () => [],
+      }),
+    };
+
+    const strategyFactory: StrategyFactory = {
+      id: "s",
+      create: () => ({
+        id: "s",
+        decide: () => [],
+      }),
+    };
+
+    const scenario: ScenarioV1 = {
+      ...makeScenario(),
+      clock: {
+        stepSec: 1,
+        durationSec: 10,
+        untilExpr: "s.t >= 1 ? true : false",
+      },
+    };
+
+    expect(() =>
+      compileScenario<number, "COIN", Record<string, unknown>>({
+        E: createNumberEngine(),
+        scenario,
+        registry: createModelRegistry([modelFactory]),
+        strategyRegistry: createStrategyRegistry([strategyFactory]),
+        unitFactory: (code) => ({ code: code as "COIN" }),
+      }),
+    ).toThrow();
+  });
+
+  it("allows unsafe untilExpr only when explicitly enabled", () => {
+    const modelFactory: ModelFactory = {
+      id: "m",
+      version: 1,
+      create: () => ({
+        id: "m",
+        version: 1,
+        income: (ctx: any) => ({ unit: ctx.unit, amount: 0 }),
+        actions: () => [],
+      }),
+    };
+
+    const strategyFactory: StrategyFactory = {
+      id: "s",
+      create: () => ({
+        id: "s",
+        decide: () => [],
+      }),
+    };
+
+    const scenario: ScenarioV1 = {
+      ...makeScenario(),
+      clock: {
+        stepSec: 1,
+        durationSec: 10,
+        untilExpr: "s.t >= 1 ? true : false",
+      },
+    };
+
+    const sc = compileScenario<number, "COIN", Record<string, unknown>>({
+      E: createNumberEngine(),
+      scenario,
+      registry: createModelRegistry([modelFactory]),
+      strategyRegistry: createStrategyRegistry([strategyFactory]),
+      unitFactory: (code) => ({ code: code as "COIN" }),
+      opts: { allowUnsafeUntilExpr: true },
+    });
+
+    expect(sc.run.until?.(sc.initial)).toBeFalse();
+    expect(sc.run.until?.({ ...sc.initial, t: 1 })).toBeTrue();
+  });
 });

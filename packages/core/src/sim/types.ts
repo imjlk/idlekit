@@ -50,6 +50,8 @@ export type SimContext<N, U extends string, Vars> = Readonly<{
 
   // Optional runtime hint for strategies requiring time-scale aware preview.
   stepSec?: number;
+  // Optional deterministic seed for stochastic strategy/model extensions.
+  seed?: number;
 
   tickPolicy: TickPolicy;
   collectMoneyEvents?: boolean;

@@ -7,6 +7,7 @@ export type CompareMetric =
   | "droppedRate";
 
 export type MeasuredCompareMetrics = Readonly<Partial<Record<CompareMetric, number>>>;
+export type MeasuredDecision = "a" | "b" | "tie";
 
 function safeNum(input: unknown): number {
   if (typeof input === "number") return input;
@@ -46,7 +47,23 @@ export function compareScenarios(args: {
     a?: MeasuredCompareMetrics;
     b?: MeasuredCompareMetrics;
   }>;
+  measuredDecision?: (metric: CompareMetric) => MeasuredDecision | undefined;
 }): Readonly<{ better: "a" | "b" | "tie"; detail: unknown }> {
+  const decision = args.measuredDecision?.(args.metric);
+  if (decision) {
+    const measuredA = measuredScore(args.measured?.a, args.metric);
+    const measuredB = measuredScore(args.measured?.b, args.metric);
+    return {
+      better: decision,
+      detail: {
+        aScore: measuredA,
+        bScore: measuredB,
+        metric: args.metric,
+        source: "measured",
+      },
+    };
+  }
+
   const measuredA = measuredScore(args.measured?.a, args.metric);
   const measuredB = measuredScore(args.measured?.b, args.metric);
   const useMeasured = measuredA !== undefined && measuredB !== undefined;

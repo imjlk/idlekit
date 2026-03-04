@@ -50,3 +50,5 @@ export * from "./sim/analysis/ux";
 
 export * from "./report/timeline";
 export * from "./report/compare";
+
+export * from "./utils/deepClone";

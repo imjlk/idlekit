@@ -41,6 +41,7 @@ export function etaSimulate<N, U extends string, Vars>(args: {
   scenario: CompiledScenario<N, U, Vars>;
   target: ETATarget;
   maxDurationSec: number;
+  includeRun?: boolean;
 }): ETAResult {
   const scenario: CompiledScenario<N, U, Vars> = {
     ...args.scenario,
@@ -60,7 +61,7 @@ export function etaSimulate<N, U extends string, Vars>(args: {
     mode: "simulate",
     confidence: "high",
     assumptions: ["Direct simulation over maxDurationSec"],
-    run,
+    run: args.includeRun ? run : undefined,
   };
 }
 
