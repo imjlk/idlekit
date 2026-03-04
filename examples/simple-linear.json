@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "meta": {
+    "id": "simple-linear",
+    "title": "Simple Linear Growth"
+  },
+  "unit": {
+    "code": "COIN",
+    "symbol": "C"
+  },
+  "policy": {
+    "mode": "accumulate",
+    "maxLogGap": 14
+  },
+  "model": {
+    "id": "linear",
+    "version": 1,
+    "params": {
+      "incomePerSec": "1",
+      "buyCostBase": "15",
+      "buyCostGrowth": 1.12,
+      "buyIncomeDelta": "1.5"
+    }
+  },
+  "initial": {
+    "t": 0,
+    "wallet": {
+      "unit": "COIN",
+      "amount": "0",
+      "bucket": "0"
+    },
+    "vars": {
+      "owned": 0
+    },
+    "prestige": {
+      "count": 0,
+      "points": "0",
+      "multiplier": "1"
+    }
+  },
+  "clock": {
+    "stepSec": 1,
+    "durationSec": 3600
+  },
+  "strategy": {
+    "id": "greedy"
+  },
+  "analysis": {
+    "eta": {
+      "mode": "simulate"
+    },
+    "growth": {
+      "windowSec": 60
+    }
+  },
+  "outputs": {
+    "format": "json",
+    "report": {
+      "checkpointsSec": [60, 300, 900, 3600],
+      "includeTrace": true,
+      "traceEverySteps": 1,
+      "includeGrowth": true,
+      "includeUX": true
+    }
+  }
+}
