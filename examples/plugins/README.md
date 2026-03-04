@@ -22,6 +22,14 @@ bun run --cwd packages/cli dev -- strategies list --plugin ../../examples/plugin
 bun run --cwd packages/cli dev -- objectives list --plugin ../../examples/plugins/custom-econ-plugin.ts
 ```
 
+설치형 동등 명령:
+
+```bash
+idk models list --plugin examples/plugins/custom-econ-plugin.ts
+idk strategies list --plugin examples/plugins/custom-econ-plugin.ts
+idk objectives list --plugin examples/plugins/custom-econ-plugin.ts
+```
+
 ## 2) 시나리오 검증/실행
 
 ```bash

@@ -121,3 +121,17 @@
 - `growthLog10PerHour`: 시간당 log 성장량
 - `etaToTargetWorthNegSec`: 목표 worth 도달 시간(빠를수록 점수 높음)
 - `pacingBalancedLog10`: endWorth + 액션빈도/드롭율 균형 점수
+
+## 8. 튜토리얼 예제 파일 참조
+
+튜토리얼용 가상 시나리오/튜닝 파일:
+
+- `examples/tutorials/01-cafe-baseline.json`
+- `examples/tutorials/02-cafe-fast.json`
+- `examples/tutorials/03-cafe-compare-b.json`
+- `examples/tutorials/04-cafe-tune.json`
+
+실전 플러그인 트랙은 아래 예제를 재사용합니다:
+
+- `examples/plugins/plugin-scenario.json`
+- `examples/plugins/plugin-tune.json`

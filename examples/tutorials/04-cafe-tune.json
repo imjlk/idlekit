@@ -1,0 +1,70 @@
+{
+  "schemaVersion": 1,
+  "meta": {
+    "id": "cafe-tune",
+    "title": "Cafe Baseline Tune"
+  },
+  "strategy": {
+    "id": "greedy",
+    "baseParams": {
+      "schemaVersion": 1,
+      "objective": "minPayback",
+      "maxPicksPerStep": 1,
+      "bulk": {
+        "mode": "bestQuote"
+      }
+    },
+    "space": [
+      {
+        "path": "objective",
+        "space": {
+          "kind": "choice",
+          "values": ["maximizeIncome", "minPayback", "maximizeNetWorth"]
+        }
+      },
+      {
+        "path": "maxPicksPerStep",
+        "space": {
+          "kind": "int",
+          "min": 1,
+          "max": 2
+        }
+      },
+      {
+        "path": "bulk.mode",
+        "space": {
+          "kind": "choice",
+          "values": ["size1", "bestQuote", "maxAffordable"]
+        }
+      }
+    ]
+  },
+  "objective": {
+    "id": "pacingBalancedLog10",
+    "params": {
+      "targetActionsPerHour": 140,
+      "actionRateWeight": 1,
+      "droppedRateWeight": 2
+    }
+  },
+  "runner": {
+    "seeds": [1, 2, 3],
+    "budget": 12,
+    "overrideDurationSec": 900,
+    "topK": 3,
+    "stages": [
+      {
+        "budget": 6,
+        "durationSec": 300,
+        "keepTopK": 4,
+        "fast": true
+      },
+      {
+        "budget": 6,
+        "durationSec": 900,
+        "keepTopK": 3,
+        "fast": true
+      }
+    ]
+  }
+}

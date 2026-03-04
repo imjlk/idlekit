@@ -8,6 +8,8 @@
 bun run typecheck
 bun run test
 bun run build
+bun run docs:verify:quick
+bun run docs:verify
 ```
 
 패키지별:
@@ -55,7 +57,7 @@ PR/커밋 전에:
 1. `bun run typecheck`
 2. `bun run test`
 3. `bun run build`
-4. 문서 예제 명령 1개 이상 실제 실행
+4. `bun run docs:verify:quick`
 
 ## 5. 권장 커밋 단위
 

@@ -1,5 +1,7 @@
 # idlekit 사용 가이드
 
+권장 학습 순서: [tutorial-step-by-step.md](./tutorial-step-by-step.md) 먼저 진행 후, 이 문서를 레퍼런스로 사용하세요.
+
 ## 1. 개발 환경 준비
 
 필수:
@@ -29,6 +31,13 @@ bun run --cwd packages/cli dev -- --help
 ```bash
 bun run --cwd packages/cli build
 bun packages/cli/dist/main.js --help
+```
+
+설치형 실행:
+
+```bash
+bun link --cwd packages/cli
+idk --help
 ```
 
 네이티브 바이너리 빌드:
