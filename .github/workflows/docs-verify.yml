@@ -1,0 +1,34 @@
+name: Docs Verify
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  docs-verify:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [quick, full]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.9"
+
+      - name: Install
+        run: bun install --frozen-lockfile
+
+      - name: Verify Docs (quick)
+        if: matrix.mode == 'quick'
+        run: bun run docs:verify:quick
+
+      - name: Verify Docs (full)
+        if: matrix.mode == 'full'
+        run: bun run docs:verify
