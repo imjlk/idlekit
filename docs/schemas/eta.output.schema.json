@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "idlekit/eta-output-v1",
+  "type": "object",
+  "required": ["reached", "seconds", "mode", "_meta"],
+  "properties": {
+    "reached": { "type": "boolean" },
+    "seconds": { "type": "number" },
+    "mode": { "type": "string" },
+    "_meta": {
+      "type": "object",
+      "required": ["command", "scenarioHash"],
+      "properties": {
+        "command": { "const": "eta" },
+        "scenarioHash": { "type": "string" }
+      }
+    }
+  }
+}

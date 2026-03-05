@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "idlekit/tune-output-v1",
+  "type": "object",
+  "required": ["ok", "report", "_meta"],
+  "properties": {
+    "ok": { "type": "boolean" },
+    "report": {
+      "type": "object",
+      "required": ["best", "top", "tried"],
+      "properties": {
+        "best": { "type": "object" },
+        "top": { "type": "array" },
+        "tried": { "type": "number" }
+      }
+    },
+    "_meta": {
+      "type": "object",
+      "required": ["command", "scenarioHash", "tuneSpecHash"],
+      "properties": {
+        "command": { "const": "tune" },
+        "scenarioHash": { "type": "string" },
+        "tuneSpecHash": { "type": "string" }
+      }
+    }
+  }
+}

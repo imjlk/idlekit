@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "idlekit/ltv-output-v1",
+  "type": "object",
+  "required": ["scenario", "horizons", "summary", "_meta"],
+  "properties": {
+    "scenario": { "type": "string" },
+    "horizons": { "type": "array" },
+    "summary": {
+      "type": "object",
+      "required": ["at30m", "at90d"],
+      "properties": {
+        "at30m": { "type": ["object", "null"] },
+        "at90d": { "type": ["object", "null"] }
+      }
+    },
+    "_meta": {
+      "type": "object",
+      "required": ["command", "scenarioHash"],
+      "properties": {
+        "command": { "const": "ltv" },
+        "scenarioHash": { "type": "string" }
+      }
+    }
+  }
+}

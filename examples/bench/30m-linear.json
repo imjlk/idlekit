@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "meta": { "id": "bench-30m", "title": "Bench 30m linear" },
+  "unit": { "code": "COIN" },
+  "policy": { "mode": "drop", "maxLogGap": 12 },
+  "model": {
+    "id": "linear",
+    "version": 1,
+    "params": {
+      "incomePerSec": "1.2",
+      "buyCostBase": "9",
+      "buyCostGrowth": 1.14,
+      "buyIncomeDelta": "0.9"
+    }
+  },
+  "initial": {
+    "wallet": { "unit": "COIN", "amount": "25", "bucket": "0" },
+    "vars": { "owned": 0 },
+    "prestige": { "count": 0, "points": "0", "multiplier": "1" }
+  },
+  "clock": { "stepSec": 1, "durationSec": 1800 },
+  "strategy": { "id": "greedy" }
+}

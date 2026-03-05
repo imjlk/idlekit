@@ -24,6 +24,9 @@ export type SimStateJSON = Readonly<{
     savedAt?: string;
     runId?: string;
     seed?: number;
+    cliVersion?: string;
+    gitSha?: string;
+    scenarioHash?: string;
   }>;
   strategy?: Readonly<{
     id: string;
@@ -59,6 +62,9 @@ const SimStateJSONSchema = z
         savedAt: z.string().optional(),
         runId: z.string().optional(),
         seed: z.number().finite().optional(),
+        cliVersion: z.string().optional(),
+        gitSha: z.string().optional(),
+        scenarioHash: z.string().optional(),
       })
       .passthrough()
       .optional(),
@@ -96,6 +102,9 @@ export function serializeSimState<N, U extends string, Vars>(
     savedAt?: string;
     runId?: string;
     seed?: number;
+    cliVersion?: string;
+    gitSha?: string;
+    scenarioHash?: string;
     strategy?: {
       id: string;
       state?: unknown;
@@ -123,12 +132,22 @@ export function serializeSimState<N, U extends string, Vars>(
           version: meta.engineVersion,
         }
       : undefined,
-    meta: meta?.scenarioPath || meta?.savedAt || meta?.runId || meta?.seed !== undefined
+    meta:
+      meta?.scenarioPath ||
+      meta?.savedAt ||
+      meta?.runId ||
+      meta?.seed !== undefined ||
+      meta?.cliVersion ||
+      meta?.gitSha ||
+      meta?.scenarioHash
       ? {
           scenarioPath: meta.scenarioPath,
           savedAt: meta.savedAt,
           runId: meta.runId,
           seed: meta.seed,
+          cliVersion: meta.cliVersion,
+          gitSha: meta.gitSha,
+          scenarioHash: meta.scenarioHash,
         }
       : undefined,
     strategy: meta?.strategy

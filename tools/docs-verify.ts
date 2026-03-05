@@ -61,6 +61,9 @@ function verifyIntroTrack(): void {
   assert(has(simulate, "endMoney"), "simulate must include endMoney");
   assert(has(simulate, "endNetWorth"), "simulate must include endNetWorth");
   assert(has(simulate, "stats"), "simulate must include stats");
+  const simMeta = asRecord(simulate._meta as JSONValue);
+  assert(simMeta.command === "simulate", "simulate _meta.command must be simulate");
+  assert(has(simMeta, "scenarioHash"), "simulate _meta must include scenarioHash");
 
   const statePath = resolve(tmpDir, "intro-state.json");
   const firstRun = asRecord(
@@ -91,6 +94,7 @@ function verifyIntroTrack(): void {
   assert(has(eta, "reached"), "eta must include reached");
   assert(has(eta, "seconds"), "eta must include seconds");
   assert(has(eta, "mode"), "eta must include mode");
+  assert(asRecord(eta._meta as JSONValue).command === "eta", "eta _meta.command must be eta");
 
   const reportMd = resolve(tmpDir, "intro-report.md");
   const reportJson = resolve(tmpDir, "intro-report.json");
@@ -116,11 +120,13 @@ function verifyIntroTrack(): void {
   );
   const detail = asRecord(compare.detail as JSONValue);
   assert(detail.source === "measured", "compare detail.source must be measured");
+  assert(asRecord(compare._meta as JSONValue).command === "compare", "compare _meta.command must be compare");
 
   const tune = asRecord(runCliJson(["tune", baseline, "--tune", tuneSpec, "--format", "json"]));
   assert(tune.ok === true, "tune result must be ok=true");
   const report = asRecord(tune.report as JSONValue);
   assert(has(report, "best"), "tune report must include best");
+  assert(asRecord(tune._meta as JSONValue).command === "tune", "tune _meta.command must be tune");
 
   const ltv = asRecord(
     runCliJson([
@@ -141,6 +147,7 @@ function verifyIntroTrack(): void {
   const summary = asRecord(ltv.summary as JSONValue);
   assert(has(summary, "at30m"), "ltv summary must include at30m");
   assert(has(summary, "at90d"), "ltv summary must include at90d");
+  assert(asRecord(ltv._meta as JSONValue).command === "ltv", "ltv _meta.command must be ltv");
 }
 
 function verifyPluginTrack(): void {
@@ -148,6 +155,8 @@ function verifyPluginTrack(): void {
   const pluginRoot = resolve(root, "examples/plugins");
   const sha = createHash("sha256").update(readFileSync(plugin)).digest("hex");
   const pluginShaArg = `${plugin}=${sha}`;
+  const trustFile = resolve(tmpDir, "plugin-trust.json");
+  writeFileSync(trustFile, JSON.stringify({ plugins: { [plugin]: sha } }, null, 2), "utf8");
   const scenario = "../../examples/plugins/plugin-scenario.json";
   const tuneSpec = "../../examples/plugins/plugin-tune.json";
   const designV1 = "../../examples/tutorials/05-idle-design-v1.json";
@@ -166,6 +175,8 @@ function verifyPluginTrack(): void {
       pluginRoot,
       "--plugin-sha256",
       pluginShaArg,
+      "--plugin-trust-file",
+      trustFile,
       "--format",
       "json",
     ]),
@@ -188,6 +199,8 @@ function verifyPluginTrack(): void {
       pluginRoot,
       "--plugin-sha256",
       pluginShaArg,
+      "--plugin-trust-file",
+      trustFile,
       "--format",
       "json",
     ]),
@@ -209,6 +222,8 @@ function verifyPluginTrack(): void {
     pluginRoot,
     "--plugin-sha256",
     pluginShaArg,
+    "--plugin-trust-file",
+    trustFile,
   ]);
   assert(validateOut.includes("OK:"), "plugin validate should print OK");
 
@@ -224,6 +239,8 @@ function verifyPluginTrack(): void {
       pluginRoot,
       "--plugin-sha256",
       pluginShaArg,
+      "--plugin-trust-file",
+      trustFile,
       "--tune",
       tuneSpec,
       "--format",
@@ -245,6 +262,8 @@ function verifyPluginTrack(): void {
     pluginRoot,
     "--plugin-sha256",
     pluginShaArg,
+    "--plugin-trust-file",
+    trustFile,
   ]);
   assert(designValidate.includes("OK:"), "design track validate should print OK");
 
@@ -260,6 +279,8 @@ function verifyPluginTrack(): void {
       pluginRoot,
       "--plugin-sha256",
       pluginShaArg,
+      "--plugin-trust-file",
+      trustFile,
       "--format",
       "json",
     ]),
@@ -283,6 +304,8 @@ function verifyPluginTrack(): void {
       pluginRoot,
       "--plugin-sha256",
       pluginShaArg,
+      "--plugin-trust-file",
+      trustFile,
       "--format",
       "json",
     ]),
@@ -304,6 +327,8 @@ function verifyPluginTrack(): void {
       pluginRoot,
       "--plugin-sha256",
       pluginShaArg,
+      "--plugin-trust-file",
+      trustFile,
       "--format",
       "json",
     ]),
@@ -365,6 +390,7 @@ function verifyPluginTrack(): void {
   const calibUncertainty = asRecord(calibMonetization.uncertainty as JSONValue);
   const calibCorrelation = asRecord(calibUncertainty.correlation as JSONValue);
   assert(has(calibCorrelation, "retentionConversion"), "calibrate must include uncertainty.correlation.retentionConversion");
+  assert(asRecord(calibrated._meta as JSONValue).command === "calibrate", "calibrate _meta.command must be calibrate");
 }
 
 function main(): void {

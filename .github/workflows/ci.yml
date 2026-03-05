@@ -33,5 +33,11 @@ jobs:
       - name: Perf Check (simulate benchmark)
         run: bun run bench:sim:check
 
+      - name: Perf Check (simulate benchmark suite)
+        run: bun run bench:sim:suite:check
+
       - name: Docs Verify (quick)
         run: bun run docs:verify:quick
+
+      - name: KPI AB Report
+        run: bun run kpi:report

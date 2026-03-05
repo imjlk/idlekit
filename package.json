@@ -11,10 +11,12 @@
     "dev:cli": "bun run --cwd packages/cli dev",
     "test": "bun run --cwd packages/money test && bun run --cwd packages/core test && bun run --cwd packages/cli test",
     "bench:sim": "bun tools/bench-sim.ts",
-    "bench:sim:suite": "bun tools/bench-sim.ts --scenarios examples/simple-linear.json,examples/tutorials/01-cafe-baseline.json",
+    "bench:sim:suite": "bun tools/bench-sim.ts --scenarios examples/tutorials/01-cafe-baseline.json,examples/bench/30m-linear.json,examples/bench/2h-linear.json,examples/bench/24h-linear.json,examples/bench/90d-linear.json",
+    "bench:sim:suite:check": "bun tools/bench-sim.ts --assert --iterations 4 --warmup 1 --scenarios examples/tutorials/01-cafe-baseline.json,examples/bench/30m-linear.json,examples/bench/2h-linear.json,examples/bench/24h-linear.json,examples/bench/90d-linear.json --threshold-ms 700 --threshold-p95-ms 1200 --threshold-rss-delta-bytes 134217728",
     "bench:sim:check": "bun tools/bench-sim.ts --assert --threshold-ms 500 --threshold-p95-ms 900",
     "docs:verify": "bun tools/docs-verify.ts",
     "docs:verify:quick": "bun tools/docs-verify.ts --quick",
+    "kpi:report": "bun tools/kpi-report.ts --out tmp/kpi-report.json",
     "tune:regress": "bun tools/tune-regress.ts"
   },
   "devDependencies": {

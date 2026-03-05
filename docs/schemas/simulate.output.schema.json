@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "idlekit/simulate-output-v1",
+  "type": "object",
+  "required": ["run", "scenario", "startT", "endT", "durationSec", "endMoney", "endNetWorth", "stats", "_meta"],
+  "properties": {
+    "run": {
+      "type": "object",
+      "required": ["id", "generatedAt"],
+      "properties": {
+        "id": { "type": "string" },
+        "seed": { "type": ["number", "null"] },
+        "generatedAt": { "type": "string" }
+      }
+    },
+    "scenario": { "type": "string" },
+    "startT": { "type": "number" },
+    "endT": { "type": "number" },
+    "durationSec": { "type": "number" },
+    "endMoney": { "type": "string" },
+    "endNetWorth": { "type": "string" },
+    "stats": { "type": "object" },
+    "_meta": {
+      "type": "object",
+      "required": ["command", "generatedAt", "cliVersion", "scenarioHash"],
+      "properties": {
+        "command": { "const": "simulate" },
+        "generatedAt": { "type": "string" },
+        "cliVersion": { "type": "string" },
+        "scenarioHash": { "type": "string" }
+      }
+    }
+  }
+}

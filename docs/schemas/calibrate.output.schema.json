@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "idlekit/calibrate-output-v1",
+  "type": "object",
+  "required": ["ok", "source", "sample", "monetization", "scenarioPatch", "_meta"],
+  "properties": {
+    "ok": { "const": true },
+    "source": { "type": "string" },
+    "sample": {
+      "type": "object",
+      "required": ["rows", "users"],
+      "properties": {
+        "rows": { "type": "number" },
+        "users": { "type": "number" }
+      }
+    },
+    "monetization": {
+      "type": "object",
+      "required": ["retention", "revenue", "acquisition", "uncertainty"],
+      "properties": {
+        "uncertainty": {
+          "type": "object",
+          "required": ["correlation"],
+          "properties": {
+            "correlation": { "type": "object" }
+          }
+        }
+      }
+    },
+    "scenarioPatch": { "type": "object" },
+    "_meta": {
+      "type": "object",
+      "required": ["command", "telemetryHash"],
+      "properties": {
+        "command": { "const": "calibrate" },
+        "telemetryHash": { "type": "string" }
+      }
+    }
+  }
+}

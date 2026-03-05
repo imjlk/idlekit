@@ -13,6 +13,7 @@ import { randomUUID } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { z } from "zod";
+import { buildOutputMeta } from "../io/outputMeta";
 import { readScenarioFile } from "../io/readScenario";
 import { writeOutput } from "../io/writeOutput";
 import { loadRegistries, parsePluginPaths, parsePluginSecurityOptions } from "../plugin/load";
@@ -32,6 +33,9 @@ export default defineCommand({
     }),
     "plugin-sha256": option(z.string().default(""), {
       description: "Comma-separated '<path>=<sha256>' plugin integrity map",
+    }),
+    "plugin-trust-file": option(z.string().default(""), {
+      description: "Plugin trust policy json file path",
     }),
     duration: option(z.coerce.number().optional(), { description: "Override durationSec" }),
     step: option(z.coerce.number().optional(), { description: "Override stepSec" }),
@@ -67,6 +71,7 @@ export default defineCommand({
       parsePluginSecurityOptions({
         roots: flags["plugin-root"],
         sha256: flags["plugin-sha256"],
+        trustFile: flags["plugin-trust-file"],
       }),
     );
     const valid = validateScenarioV1(input, loaded.modelRegistry);
@@ -183,6 +188,13 @@ export default defineCommand({
     const runId = flags["run-id"] ?? randomUUID();
     const seed = effectiveScenario.ctx.seed;
     const generatedAt = new Date().toISOString();
+    const outputMeta = buildOutputMeta({
+      command: "simulate",
+      scenarioPath,
+      scenario: valid.scenario,
+      runId,
+      seed,
+    });
     const offlineEndWorth =
       offlineRun && (runScenarioInput.model.netWorth?.(runScenarioInput.ctx, offlineRun.end) ?? offlineRun.end.wallet.money);
 
@@ -195,6 +207,9 @@ export default defineCommand({
         savedAt: generatedAt,
         runId,
         seed,
+        cliVersion: outputMeta.cliVersion,
+        gitSha: outputMeta.gitSha,
+        scenarioHash: typeof outputMeta.scenarioHash === "string" ? outputMeta.scenarioHash : undefined,
         strategy: strategy
           ? {
               id: strategy.id,
@@ -261,6 +276,7 @@ export default defineCommand({
         uxFlags: run.uxFlags,
         eventLog: run.eventLog,
       },
+      meta: outputMeta,
     });
   },
 });

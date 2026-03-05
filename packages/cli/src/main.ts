@@ -4,6 +4,7 @@ import calibrateCommand from "./commands/calibrate";
 import compareCommand from "./commands/compare";
 import etaCommand from "./commands/eta";
 import growthCommand from "./commands/growth";
+import initScenarioCommand from "./commands/initScenario";
 import ltvCommand from "./commands/ltv";
 import modelsListCommand from "./commands/modelsList";
 import objectivesListCommand from "./commands/objectives";
@@ -32,6 +33,12 @@ const objectivesGroup = defineGroup({
   commands: [objectivesListCommand],
 });
 
+const initGroup = defineGroup({
+  name: "init",
+  description: "Scaffold templates",
+  commands: [initScenarioCommand],
+});
+
 const cli = await createCLI({
   name: "idk",
   version: "0.1.0",
@@ -54,6 +61,7 @@ cli.command(validateCommand);
 cli.command(modelsGroup);
 cli.command(strategiesGroup);
 cli.command(objectivesGroup);
+cli.command(initGroup);
 cli.command(simulateCommand);
 cli.command(etaCommand);
 cli.command(prestigeCycleCommand);

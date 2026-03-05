@@ -9,6 +9,7 @@ import {
   validateScenarioV1,
 } from "@idlekit/core";
 import { z } from "zod";
+import { buildOutputMeta } from "../io/outputMeta";
 import { readScenarioFile } from "../io/readScenario";
 import { writeOutput } from "../io/writeOutput";
 import { loadRegistries, parsePluginPaths, parsePluginSecurityOptions } from "../plugin/load";
@@ -43,6 +44,9 @@ export default defineCommand({
     "plugin-sha256": option(z.string().default(""), {
       description: "Comma-separated '<path>=<sha256>' plugin integrity map",
     }),
+    "plugin-trust-file": option(z.string().default(""), {
+      description: "Plugin trust policy json file path",
+    }),
     duration: option(z.coerce.number().optional(), { description: "Override durationSec" }),
     step: option(z.coerce.number().optional(), { description: "Override stepSec" }),
     strategy: option(strategySchema, { description: "Override strategy id (greedy|planner|scripted)" }),
@@ -75,6 +79,7 @@ export default defineCommand({
       parsePluginSecurityOptions({
         roots: flags["plugin-root"],
         sha256: flags["plugin-sha256"],
+        trustFile: flags["plugin-trust-file"],
       }),
     );
 
@@ -255,6 +260,14 @@ export default defineCommand({
           },
         },
       },
+      meta: buildOutputMeta({
+        command: "compare",
+        scenarioPath: [aPath, bPath],
+        scenarios: {
+          a: va.scenario,
+          b: vb.scenario,
+        },
+      }),
     });
   },
 });

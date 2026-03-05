@@ -20,6 +20,9 @@ export default defineCommand({
     "plugin-sha256": option(z.string().default(""), {
       description: "Comma-separated '<path>=<sha256>' plugin integrity map",
     }),
+    "plugin-trust-file": option(z.string().default(""), {
+      description: "Plugin trust policy json file path",
+    }),
   },
   async handler({ flags, positional }) {
     const scenarioPath = positional[0];
@@ -33,6 +36,7 @@ export default defineCommand({
       parsePluginSecurityOptions({
         roots: flags["plugin-root"],
         sha256: flags["plugin-sha256"],
+        trustFile: flags["plugin-trust-file"],
       }),
     );
 

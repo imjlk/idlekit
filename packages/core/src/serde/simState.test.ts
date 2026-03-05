@@ -28,6 +28,9 @@ describe("simState serde", () => {
       scenarioPath: "../../examples/simple-linear.json",
       runId: "run-123",
       seed: 7,
+      cliVersion: "0.1.0",
+      gitSha: "abc123",
+      scenarioHash: "deadbeef",
       strategy: {
         id: "scripted",
         state: {
@@ -38,6 +41,9 @@ describe("simState serde", () => {
 
     expect(json.meta?.runId).toBe("run-123");
     expect(json.meta?.seed).toBe(7);
+    expect(json.meta?.cliVersion).toBe("0.1.0");
+    expect(json.meta?.gitSha).toBe("abc123");
+    expect(json.meta?.scenarioHash).toBe("deadbeef");
     expect(json.strategy?.id).toBe("scripted");
     expect((json.strategy?.state as Record<string, unknown>)?.cursor).toBe(3);
 

@@ -6,6 +6,7 @@ import {
   validateScenarioV1,
 } from "@idlekit/core";
 import { z } from "zod";
+import { buildOutputMeta } from "../io/outputMeta";
 import { readScenarioFile } from "../io/readScenario";
 import { writeOutput } from "../io/writeOutput";
 import { loadRegistries, parsePluginPaths, parsePluginSecurityOptions } from "../plugin/load";
@@ -30,6 +31,9 @@ export default defineCommand({
     "plugin-sha256": option(z.string().default(""), {
       description: "Comma-separated '<path>=<sha256>' plugin integrity map",
     }),
+    "plugin-trust-file": option(z.string().default(""), {
+      description: "Plugin trust policy json file path",
+    }),
     scan: option(z.string().default("300..1800"), { description: "Scan range (from..to)" }),
     step: option(z.coerce.number().default(60), { description: "Scan step sec" }),
     horizon: option(z.coerce.number().default(3600), { description: "Horizon sec" }),
@@ -52,6 +56,7 @@ export default defineCommand({
       parsePluginSecurityOptions({
         roots: flags["plugin-root"],
         sha256: flags["plugin-sha256"],
+        trustFile: flags["plugin-trust-file"],
       }),
     );
     const valid = validateScenarioV1(input, loaded.modelRegistry);
@@ -88,6 +93,11 @@ export default defineCommand({
       format: flags.format,
       outPath: flags.out,
       data: result,
+      meta: buildOutputMeta({
+        command: "prestige-cycle",
+        scenarioPath,
+        scenario: valid.scenario,
+      }),
     });
   },
 });

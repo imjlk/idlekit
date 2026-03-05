@@ -1,5 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
+import type { OutputMeta } from "./outputMeta";
 
 export type OutputFormat = "json" | "md" | "csv";
 
@@ -70,8 +71,20 @@ export async function writeOutput(args: {
   format: OutputFormat;
   data: unknown;
   outPath?: string;
+  meta?: OutputMeta;
 }): Promise<void> {
-  const body = renderOutput(args.format, args.data);
+  const dataWithMeta =
+    args.meta &&
+    args.format === "json" &&
+    typeof args.data === "object" &&
+    args.data !== null &&
+    !Array.isArray(args.data)
+      ? {
+          ...(args.data as Record<string, unknown>),
+          _meta: args.meta,
+        }
+      : args.data;
+  const body = renderOutput(args.format, dataWithMeta);
 
   if (!args.outPath) {
     console.log(body);

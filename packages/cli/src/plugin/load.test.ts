@@ -2,8 +2,8 @@ import { describe, expect, it } from "bun:test";
 import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { resolve } from "node:path";
-import { loadRegistries, parsePluginPaths, parsePluginRoots, parsePluginSha256 } from "./load";
+import { relative, resolve } from "node:path";
+import { loadRegistries, parsePluginPaths, parsePluginRoots, parsePluginSecurityOptions, parsePluginSha256 } from "./load";
 
 describe("plugin load", () => {
   it("parses comma-separated plugin paths", () => {
@@ -91,5 +91,59 @@ describe("plugin load", () => {
       },
     });
     expect(loaded.strategyRegistry.get("plugin.producerFirst")).toBeDefined();
+  });
+
+  it("loads plugin trust policy file and enforces sha256", async () => {
+    const pluginPath = resolve(process.cwd(), "../../examples/plugins/custom-econ-plugin.ts");
+    const buf = await readFile(pluginPath);
+    const digest = createHash("sha256").update(buf).digest("hex");
+
+    const dir = await mkdtemp(resolve(tmpdir(), "idlekit-plugin-trust-"));
+    try {
+      const trustPath = resolve(dir, "trust.json");
+      await writeFile(
+        trustPath,
+        JSON.stringify({
+          plugins: {
+            [pluginPath]: digest,
+          },
+        }),
+        "utf8",
+      );
+
+      const parsed = parsePluginSecurityOptions({
+        trustFile: trustPath,
+      });
+      const loaded = await loadRegistries([pluginPath], parsed);
+      expect(loaded.strategyRegistry.get("plugin.producerFirst")).toBeDefined();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("trust file supports relative paths resolved from trust file directory", async () => {
+    const pluginPath = resolve(process.cwd(), "../../examples/plugins/custom-econ-plugin.ts");
+    const buf = await readFile(pluginPath);
+    const digest = createHash("sha256").update(buf).digest("hex");
+
+    const dir = await mkdtemp(resolve(tmpdir(), "idlekit-plugin-trust-relative-"));
+    try {
+      const trustPath = resolve(dir, "trust.json");
+      const relToPlugin = relative(dir, pluginPath);
+      await writeFile(
+        trustPath,
+        JSON.stringify({
+          plugins: {
+            [relToPlugin]: digest,
+          },
+        }),
+        "utf8",
+      );
+
+      const loaded = await loadRegistries([pluginPath], { trustFile: trustPath });
+      expect(loaded.modelRegistry.get("plugin.generators", 1)).toBeDefined();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });

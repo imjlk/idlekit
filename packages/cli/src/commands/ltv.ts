@@ -1,6 +1,7 @@
 import { defineCommand, option } from "@bunli/core";
 import { compileScenario, createNumberEngine, runScenario, validateScenarioV1 } from "@idlekit/core";
 import { z } from "zod";
+import { buildOutputMeta } from "../io/outputMeta";
 import { readScenarioFile } from "../io/readScenario";
 import { writeOutput } from "../io/writeOutput";
 import {
@@ -154,6 +155,9 @@ export default defineCommand({
     "plugin-sha256": option(z.string().default(""), {
       description: "Comma-separated '<path>=<sha256>' plugin integrity map",
     }),
+    "plugin-trust-file": option(z.string().default(""), {
+      description: "Plugin trust policy json file path",
+    }),
     horizons: option(z.string().default("30m,2h,24h,7d,30d,90d"), {
       description: "Comma-separated duration tokens (s|m|h|d)",
     }),
@@ -187,6 +191,7 @@ export default defineCommand({
       parsePluginSecurityOptions({
         roots: flags["plugin-root"],
         sha256: flags["plugin-sha256"],
+        trustFile: flags["plugin-trust-file"],
       }),
     );
     const valid = validateScenarioV1(input, loaded.modelRegistry);
@@ -386,6 +391,12 @@ export default defineCommand({
               summary,
             }
           : rows,
+      meta: buildOutputMeta({
+        command: "ltv",
+        scenarioPath,
+        scenario: valid.scenario,
+        seed: flags.seed ?? compiled.ctx.seed,
+      }),
     });
   },
 });

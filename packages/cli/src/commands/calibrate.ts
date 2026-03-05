@@ -2,35 +2,57 @@ import { defineCommand, option } from "@bunli/core";
 import { readFile } from "node:fs/promises";
 import { extname, resolve } from "node:path";
 import { z } from "zod";
+import { buildOutputMeta } from "../io/outputMeta";
 import { writeOutput } from "../io/writeOutput";
 import { calibrateMonetization, type TelemetryRow } from "../lib/ltvModel";
 
-function splitCsvLine(line: string): string[] {
-  const out: string[] = [];
-  let cur = "";
+function parseCsvRows(raw: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = "";
   let inQuotes = false;
 
-  for (let i = 0; i < line.length; i++) {
-    const ch = line[i];
+  for (let i = 0; i < raw.length; i++) {
+    const ch = raw[i]!;
     if (ch === '"') {
-      const next = line[i + 1];
+      const next = raw[i + 1];
       if (inQuotes && next === '"') {
-        cur += '"';
+        cell += '"';
         i += 1;
         continue;
       }
       inQuotes = !inQuotes;
       continue;
     }
+
     if (ch === "," && !inQuotes) {
-      out.push(cur.trim());
-      cur = "";
+      row.push(cell.trim());
+      cell = "";
       continue;
     }
-    cur += ch;
+
+    if ((ch === "\n" || ch === "\r") && !inQuotes) {
+      if (ch === "\r" && raw[i + 1] === "\n") i += 1;
+      row.push(cell.trim());
+      cell = "";
+      if (row.some((x) => x.length > 0)) rows.push(row);
+      row = [];
+      continue;
+    }
+
+    cell += ch;
   }
-  out.push(cur.trim());
-  return out;
+
+  if (inQuotes) {
+    throw new Error("CSV parse error: unterminated quoted field");
+  }
+
+  if (cell.length > 0 || row.length > 0) {
+    row.push(cell.trim());
+    if (row.some((x) => x.length > 0)) rows.push(row);
+  }
+
+  return rows;
 }
 
 function normalizeHeader(s: string): string {
@@ -44,20 +66,31 @@ function pick(obj: Record<string, string>, aliases: string[]): string | undefine
   return undefined;
 }
 
-function parseCsvTelemetry(raw: string): TelemetryRow[] {
-  const lines = raw
-    .split(/\r?\n/)
-    .map((x) => x.trim())
-    .filter(Boolean);
-  if (lines.length < 2) {
+function parseNumeric(raw: string, row: number, field: string, opts?: { allowEmpty?: boolean }): number | undefined {
+  const input = raw.trim();
+  if (input.length === 0) {
+    if (opts?.allowEmpty) return undefined;
+    throw new Error(`Invalid numeric value in csv row ${row} field '${field}': empty`);
+  }
+  const normalized = input.replaceAll(",", "");
+  const n = Number(normalized);
+  if (!Number.isFinite(n)) {
+    throw new Error(`Invalid numeric value in csv row ${row} field '${field}': ${raw}`);
+  }
+  return n;
+}
+
+export function parseCsvTelemetry(raw: string): TelemetryRow[] {
+  const rows2d = parseCsvRows(raw);
+  if (rows2d.length < 2) {
     throw new Error("CSV telemetry requires a header and at least one data row");
   }
 
-  const headers = splitCsvLine(lines[0] ?? "").map(normalizeHeader);
+  const headers = (rows2d[0] ?? []).map(normalizeHeader);
   const rows: TelemetryRow[] = [];
 
-  for (let i = 1; i < lines.length; i++) {
-    const cols = splitCsvLine(lines[i] ?? "");
+  for (let i = 1; i < rows2d.length; i++) {
+    const cols = rows2d[i] ?? [];
     const rec: Record<string, string> = {};
     headers.forEach((h, idx) => {
       rec[h] = cols[idx] ?? "";
@@ -72,18 +105,14 @@ function parseCsvTelemetry(raw: string): TelemetryRow[] {
     const activeRaw = pick(rec, ["active", "is_active"]);
     const acqRaw = pick(rec, ["acquisition_cost", "ua_cost", "cpi"]);
 
-    const day = Number(dayRaw);
-    const iapRevenue = Number(iapRaw);
-    const adRevenue = Number(adRaw);
-    const acquisitionCost = acqRaw !== undefined && acqRaw.length > 0 ? Number(acqRaw) : undefined;
+    const day = parseNumeric(dayRaw, i + 1, "day")!;
+    const iapRevenue = parseNumeric(iapRaw, i + 1, "revenue")!;
+    const adRevenue = parseNumeric(adRaw, i + 1, "ad_revenue")!;
+    const acquisitionCost = acqRaw !== undefined ? parseNumeric(acqRaw, i + 1, "acquisition_cost", { allowEmpty: true }) : undefined;
     const active =
       activeRaw === undefined
         ? true
         : /^(1|true|yes|y)$/i.test(activeRaw);
-
-    if (!Number.isFinite(day) || !Number.isFinite(iapRevenue) || !Number.isFinite(adRevenue)) {
-      throw new Error(`Invalid numeric value in csv row ${i + 1}`);
-    }
 
     rows.push({
       userId,
@@ -162,6 +191,10 @@ export default defineCommand({
         : parseJsonTelemetry(raw);
 
     const calibrated = calibrateMonetization(rows);
+    const outputMeta = buildOutputMeta({
+      command: "calibrate",
+      telemetry: rows,
+    });
     await writeOutput({
       format: flags.format,
       outPath: flags.out,
@@ -195,6 +228,7 @@ export default defineCommand({
                 cpi: (calibrated.monetization?.acquisition?.cpi ?? 0).toFixed(4),
               },
             ],
+      meta: outputMeta,
     });
   },
 });

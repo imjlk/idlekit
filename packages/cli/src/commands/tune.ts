@@ -14,6 +14,7 @@ import {
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { z } from "zod";
+import { buildOutputMeta } from "../io/outputMeta";
 import { readScenarioFile } from "../io/readScenario";
 import { writeOutput } from "../io/writeOutput";
 import { loadRegistries, parsePluginPaths, parsePluginSecurityOptions } from "../plugin/load";
@@ -31,6 +32,7 @@ type TuneRegression = Readonly<{
 type TuneArtifactV1 = Readonly<{
   v: 1;
   generatedAt: string;
+  meta: ReturnType<typeof buildOutputMeta>;
   scenarioPath: string;
   tuneSpecPath: string;
   result: unknown;
@@ -120,6 +122,9 @@ export default defineCommand({
     "plugin-sha256": option(z.string().default(""), {
       description: "Comma-separated '<path>=<sha256>' plugin integrity map",
     }),
+    "plugin-trust-file": option(z.string().default(""), {
+      description: "Plugin trust policy json file path",
+    }),
     tune: option(z.string().min(1), { description: "TuneSpec file path (.json|.yaml)" }),
     "artifact-out": option(z.string().optional(), { description: "Write tune artifact JSON to path" }),
     "baseline-artifact": option(z.string().optional(), {
@@ -144,12 +149,19 @@ export default defineCommand({
       readScenarioFile(scenarioPath),
       readScenarioFile(flags.tune),
     ]);
+    const outputMeta = buildOutputMeta({
+      command: "tune",
+      scenarioPath,
+      scenario: scenarioInput,
+      tuneSpec: tuneSpecInput,
+    });
 
     const loaded = await loadRegistries(
       parsePluginPaths(flags.plugin, flags["allow-plugin"]),
       parsePluginSecurityOptions({
         roots: flags["plugin-root"],
         sha256: flags["plugin-sha256"],
+        trustFile: flags["plugin-trust-file"],
       }),
     );
     const result = await cmdTune({
@@ -196,6 +208,7 @@ export default defineCommand({
       const artifact: TuneArtifactV1 = {
         v: 1,
         generatedAt: new Date().toISOString(),
+        meta: outputMeta,
         scenarioPath: resolve(scenarioPath),
         tuneSpecPath: resolve(flags.tune),
         result,
@@ -209,6 +222,7 @@ export default defineCommand({
       format: flags.format,
       outPath: flags.out,
       data: output,
+      meta: outputMeta,
     });
   },
 });

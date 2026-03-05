@@ -7,6 +7,7 @@ import {
   validateScenarioV1,
 } from "@idlekit/core";
 import { z } from "zod";
+import { buildOutputMeta } from "../io/outputMeta";
 import { readScenarioFile } from "../io/readScenario";
 import { writeOutput } from "../io/writeOutput";
 import { loadRegistries, parsePluginPaths, parsePluginSecurityOptions } from "../plugin/load";
@@ -24,6 +25,9 @@ export default defineCommand({
     }),
     "plugin-sha256": option(z.string().default(""), {
       description: "Comma-separated '<path>=<sha256>' plugin integrity map",
+    }),
+    "plugin-trust-file": option(z.string().default(""), {
+      description: "Plugin trust policy json file path",
     }),
     window: option(z.coerce.number().default(60), { description: "Window sec" }),
     series: option(z.enum(["money", "netWorth"]).default("money"), { description: "Series type" }),
@@ -43,6 +47,7 @@ export default defineCommand({
       parsePluginSecurityOptions({
         roots: flags["plugin-root"],
         sha256: flags["plugin-sha256"],
+        trustFile: flags["plugin-trust-file"],
       }),
     );
     const valid = validateScenarioV1(input, loaded.modelRegistry);
@@ -81,6 +86,11 @@ export default defineCommand({
       format: flags.format,
       outPath: flags.out,
       data: report,
+      meta: buildOutputMeta({
+        command: "growth",
+        scenarioPath,
+        scenario: valid.scenario,
+      }),
     });
   },
 });

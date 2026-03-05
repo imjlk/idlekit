@@ -39,6 +39,9 @@ describe("CLI golden outputs", () => {
     expect(out.detail?.source).toBe("measured");
     expect(out.measured?.a).toBeDefined();
     expect(out.measured?.b).toBeDefined();
+    expect(out._meta?.command).toBe("compare");
+    expect(typeof out._meta?.scenarioHash?.a).toBe("string");
+    expect(typeof out._meta?.scenarioHash?.b).toBe("string");
   });
 
   it("eta simulate excludes run by default and includes it on demand", () => {
@@ -56,6 +59,7 @@ describe("CLI golden outputs", () => {
     ]);
     expect(withoutRun.mode).toBe("simulate");
     expect(withoutRun.run).toBeUndefined();
+    expect(withoutRun._meta?.command).toBe("eta");
 
     const withRun = runCliJson([
       "eta",
@@ -73,6 +77,7 @@ describe("CLI golden outputs", () => {
     ]);
     expect(withRun.mode).toBe("simulate");
     expect(withRun.run).toBeDefined();
+    expect(withRun._meta?.command).toBe("eta");
   });
 
   it("tune returns report.best", () => {
@@ -87,6 +92,8 @@ describe("CLI golden outputs", () => {
 
     expect(out.ok).toBeTrue();
     expect(out.report?.best).toBeDefined();
+    expect(out._meta?.command).toBe("tune");
+    expect(typeof out._meta?.tuneSpecHash).toBe("string");
   });
 
   it("ltv returns default horizon summary and optional economyValueProxy", () => {
@@ -116,6 +123,8 @@ describe("CLI golden outputs", () => {
     expect(out.summary?.at90d).toBeDefined();
     expect(out.horizons[0]?.economyValueProxy).toBeDefined();
     expect(out.horizons[0]?.monetization?.cumulativeLtvPerUser).toBeDefined();
+    expect(out._meta?.command).toBe("ltv");
+    expect(typeof out._meta?.scenarioHash).toBe("string");
   });
 
   it("ltv uncertainty is deterministic for fixed seed", () => {
@@ -163,6 +172,10 @@ describe("CLI golden outputs", () => {
     expect(out.run.id).toBe("golden-run");
     expect(out.run.seed).toBe(42);
     expect(typeof out.run.generatedAt).toBe("string");
+    expect(out._meta?.command).toBe("simulate");
+    expect(out._meta?.runId).toBe("golden-run");
+    expect(out._meta?.seed).toBe(42);
+    expect(typeof out._meta?.scenarioHash).toBe("string");
     expect(out.summaries?.eventLog).toBeDefined();
     expect(out.eventLog).toBeDefined();
     expect(out.eventLog.retained).toBeLessThanOrEqual(2);
@@ -209,6 +222,8 @@ describe("CLI golden outputs", () => {
       expect(savedRaw.t).toBe(first.endT);
       expect(savedRaw.meta?.runId).toBeDefined();
       expect(savedRaw.meta?.seed).toBeUndefined();
+      expect(savedRaw.meta?.cliVersion).toBeDefined();
+      expect(savedRaw.meta?.scenarioHash).toBeDefined();
       expect(savedRaw.strategy?.id).toBe("greedy");
 
       const resumed = runCliJson([
@@ -378,7 +393,10 @@ describe("CLI golden outputs", () => {
       expect(out.ok).toBeTrue();
       expect(out.monetization?.retention?.d1).toBeDefined();
       expect(out.monetization?.revenue?.payerConversion).toBeDefined();
+      expect(out.monetization?.uncertainty?.correlation).toBeDefined();
       expect(out.scenarioPatch?.monetization).toBeDefined();
+      expect(out._meta?.command).toBe("calibrate");
+      expect(typeof out._meta?.telemetryHash).toBe("string");
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

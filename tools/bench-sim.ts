@@ -12,6 +12,7 @@ type Args = Readonly<{
   warmup: number;
   thresholdMs: number;
   thresholdP95Ms?: number;
+  thresholdRssDeltaBytes?: number;
   assert: boolean;
   out?: string;
 }>;
@@ -22,6 +23,7 @@ function parseArgs(argv: string[]): Args {
   let warmup = 2;
   let thresholdMs = 500;
   let thresholdP95Ms: number | undefined;
+  let thresholdRssDeltaBytes: number | undefined;
   let assert = false;
   let out: string | undefined;
 
@@ -33,6 +35,7 @@ function parseArgs(argv: string[]): Args {
     else if (a === "--warmup") warmup = Number(argv[++i] ?? warmup);
     else if (a === "--threshold-ms") thresholdMs = Number(argv[++i] ?? thresholdMs);
     else if (a === "--threshold-p95-ms") thresholdP95Ms = Number(argv[++i] ?? thresholdP95Ms);
+    else if (a === "--threshold-rss-delta-bytes") thresholdRssDeltaBytes = Number(argv[++i] ?? thresholdRssDeltaBytes);
     else if (a === "--assert") assert = true;
     else if (a === "--out") out = argv[++i];
   }
@@ -49,6 +52,12 @@ function parseArgs(argv: string[]): Args {
   if (thresholdP95Ms !== undefined && (!Number.isFinite(thresholdP95Ms) || thresholdP95Ms <= 0)) {
     throw new Error("--threshold-p95-ms must be a finite number > 0");
   }
+  if (
+    thresholdRssDeltaBytes !== undefined &&
+    (!Number.isFinite(thresholdRssDeltaBytes) || thresholdRssDeltaBytes < 0)
+  ) {
+    throw new Error("--threshold-rss-delta-bytes must be a finite number >= 0");
+  }
   if (scenarios.length === 0) {
     throw new Error("--scenarios must include at least one path");
   }
@@ -59,6 +68,7 @@ function parseArgs(argv: string[]): Args {
     warmup,
     thresholdMs,
     thresholdP95Ms,
+    thresholdRssDeltaBytes,
     assert,
     out,
   };
@@ -143,6 +153,8 @@ async function main(): Promise<void> {
   }
 
   const memoryEnd = process.memoryUsage().rss;
+  const rssDelta = memoryEnd - memoryStart;
+  const memoryPass = args.thresholdRssDeltaBytes === undefined ? true : rssDelta <= args.thresholdRssDeltaBytes;
   const overallPass = scenarioResults.every((x) => x.pass);
   const result = {
     scenarios: args.scenarios.map(resolveScenarioPath),
@@ -151,14 +163,16 @@ async function main(): Promise<void> {
     threshold: {
       meanMs: args.thresholdMs,
       p95Ms: args.thresholdP95Ms,
+      rssDeltaBytes: args.thresholdRssDeltaBytes,
     },
     perScenario: scenarioResults,
     memory: {
       rssStart: memoryStart,
       rssEnd: memoryEnd,
-      rssDelta: memoryEnd - memoryStart,
+      rssDelta,
+      pass: memoryPass,
     },
-    pass: overallPass,
+    pass: overallPass && memoryPass,
   };
 
   const json = `${JSON.stringify(result, null, 2)}\n`;
@@ -168,7 +182,7 @@ async function main(): Promise<void> {
     await writeFile(resolve(args.out), json, "utf8");
   }
 
-  if (args.assert && !overallPass) {
+  if (args.assert && !(overallPass && memoryPass)) {
     process.exit(2);
   }
 }

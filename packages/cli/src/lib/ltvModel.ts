@@ -382,6 +382,33 @@ export type TelemetryRow = Readonly<{
   active?: boolean;
 }>;
 
+function mean(values: readonly number[]): number {
+  if (values.length === 0) return 0;
+  return values.reduce((a, b) => a + b, 0) / values.length;
+}
+
+function pearsonCorrelation(x: readonly number[], y: readonly number[]): number {
+  const n = Math.min(x.length, y.length);
+  if (n < 3) return 0;
+  const sx = x.slice(0, n);
+  const sy = y.slice(0, n);
+  const mx = mean(sx);
+  const my = mean(sy);
+
+  let cov = 0;
+  let vx = 0;
+  let vy = 0;
+  for (let i = 0; i < n; i++) {
+    const dx = (sx[i] ?? 0) - mx;
+    const dy = (sy[i] ?? 0) - my;
+    cov += dx * dy;
+    vx += dx * dx;
+    vy += dy * dy;
+  }
+  if (vx <= 1e-12 || vy <= 1e-12) return 0;
+  return clampCorrelation(cov / Math.sqrt(vx * vy));
+}
+
 export function calibrateMonetization(rows: readonly TelemetryRow[]): Readonly<{
   monetization: ScenarioV1["monetization"];
   diagnostics: Record<string, unknown>;
@@ -441,6 +468,33 @@ export function calibrateMonetization(rows: readonly TelemetryRow[]): Readonly<{
   const adArpDau = totalAd / Math.max(1, activeUserDays);
   const cpi = totalAcq / Math.max(1, acqUsers);
 
+  const userRetention: number[] = [];
+  const userConversion: number[] = [];
+  const userArppu: number[] = [];
+  const userAdArpDau: number[] = [];
+
+  for (const user of users.values()) {
+    const activeDays = Math.max(1, user.days.size);
+    const retentionScore = clamp01(activeDays / 30);
+    const conversionScore = user.iap > 0 ? 1 : 0;
+    const arppuScore = user.iap > 0 ? user.iap / activeDays : 0;
+    const adScore = user.ad / activeDays;
+
+    userRetention.push(retentionScore);
+    userConversion.push(conversionScore);
+    userArppu.push(arppuScore);
+    userAdArpDau.push(adScore);
+  }
+
+  const estimatedCorrelation = {
+    retentionConversion: pearsonCorrelation(userRetention, userConversion),
+    retentionArppu: pearsonCorrelation(userRetention, userArppu),
+    retentionAd: pearsonCorrelation(userRetention, userAdArpDau),
+    conversionArppu: pearsonCorrelation(userConversion, userArppu),
+    conversionAd: pearsonCorrelation(userConversion, userAdArpDau),
+    arppuAd: pearsonCorrelation(userArppu, userAdArpDau),
+  } as const;
+
   return {
     monetization: {
       cohorts: {
@@ -474,12 +528,12 @@ export function calibrateMonetization(rows: readonly TelemetryRow[]): Readonly<{
           ad: 0.15,
         },
         correlation: {
-          retentionConversion: 0.25,
-          retentionArppu: 0.2,
-          retentionAd: 0.15,
-          conversionArppu: 0.35,
-          conversionAd: 0.2,
-          arppuAd: 0.3,
+          retentionConversion: estimatedCorrelation.retentionConversion,
+          retentionArppu: estimatedCorrelation.retentionArppu,
+          retentionAd: estimatedCorrelation.retentionAd,
+          conversionArppu: estimatedCorrelation.conversionArppu,
+          conversionAd: estimatedCorrelation.conversionAd,
+          arppuAd: estimatedCorrelation.arppuAd,
         },
       },
     },
@@ -497,6 +551,7 @@ export function calibrateMonetization(rows: readonly TelemetryRow[]): Readonly<{
         d30,
         d90,
       },
+      estimatedCorrelation,
     },
   };
 }

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
-import { extname, isAbsolute, relative, resolve } from "node:path";
+import { dirname, extname, isAbsolute, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
   builtinObjectiveFactories,
@@ -279,18 +279,57 @@ export function parsePluginSha256(input: unknown): Record<string, string> {
 export type PluginSecurityOptions = Readonly<{
   allowedRoots?: readonly string[];
   requiredSha256?: Readonly<Record<string, string>>;
+  trustFile?: string;
 }>;
+
+type PluginTrustFilePayload = {
+  plugins?: Record<string, string>;
+  [k: string]: unknown;
+};
 
 export function parsePluginSecurityOptions(input: {
   roots?: unknown;
   sha256?: unknown;
+  trustFile?: unknown;
 }): PluginSecurityOptions {
   const allowedRoots = parsePluginRoots(input.roots);
   const requiredSha256 = parsePluginSha256(input.sha256);
+  const trustFile =
+    typeof input.trustFile === "string" && input.trustFile.trim().length > 0
+      ? resolve(input.trustFile)
+      : undefined;
   return {
     allowedRoots,
     requiredSha256,
+    trustFile,
   };
+}
+
+async function loadPluginTrustFile(pathAbs: string): Promise<Record<string, string>> {
+  const raw = await readFile(pathAbs, "utf8");
+  const parsed = JSON.parse(raw) as unknown;
+  const baseDir = dirname(pathAbs);
+
+  const root =
+    parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as PluginTrustFilePayload)
+      : (() => {
+          throw new Error(`Invalid plugin trust file format: ${pathAbs}`);
+        })();
+
+  const source = root.plugins && typeof root.plugins === "object" && !Array.isArray(root.plugins)
+    ? root.plugins
+    : (root as Record<string, unknown>);
+
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(source)) {
+    if (k === "plugins") continue;
+    if (typeof v !== "string") continue;
+    const digest = normalizeSha256(v);
+    const absPath = isAbsolute(k) ? resolve(k) : resolve(baseDir, k);
+    out[absPath] = digest;
+  }
+  return out;
 }
 
 export type LoadedRegistries = Readonly<{
@@ -307,7 +346,11 @@ export async function loadRegistries(
   const strategyFactories: StrategyFactory[] = [...builtinStrategyFactories];
   const objectiveFactories: ObjectiveFactory[] = [...builtinObjectiveFactories];
   const allowedRoots = (securityOptions.allowedRoots ?? []).map((x) => resolve(x));
-  const requiredSha256 = securityOptions.requiredSha256 ?? {};
+  const trustFileSha256 =
+    securityOptions.trustFile !== undefined
+      ? await loadPluginTrustFile(securityOptions.trustFile)
+      : {};
+  const requiredSha256 = { ...trustFileSha256, ...(securityOptions.requiredSha256 ?? {}) };
   const hasShaPolicy = Object.keys(requiredSha256).length > 0;
 
   for (const p of pluginPaths) {

@@ -4,6 +4,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { z } from "zod";
 import type { ObjectivesListOutput } from "./list/types";
+import { buildOutputMeta } from "../io/outputMeta";
 import { renderObjectivesList } from "../io/renderList";
 import { loadRegistries, parsePluginPaths, parsePluginSecurityOptions } from "../plugin/load";
 
@@ -40,6 +41,9 @@ export default defineCommand({
     "plugin-sha256": option(z.string().default(""), {
       description: "Comma-separated '<path>=<sha256>' plugin integrity map",
     }),
+    "plugin-trust-file": option(z.string().default(""), {
+      description: "Plugin trust policy json file path",
+    }),
     format: option(z.enum(["json", "md", "csv"]).default("md"), { description: "Output format" }),
     out: option(z.string().optional(), { description: "Output file path" }),
   },
@@ -49,10 +53,19 @@ export default defineCommand({
       parsePluginSecurityOptions({
         roots: flags["plugin-root"],
         sha256: flags["plugin-sha256"],
+        trustFile: flags["plugin-trust-file"],
       }),
     );
     const output = cmdObjectivesList({ objectiveRegistry });
-    const body = renderObjectivesList(output, flags.format);
+    const outputForRender = (
+      flags.format === "json"
+        ? {
+            ...output,
+            _meta: buildOutputMeta({ command: "objectives.list" }),
+          }
+        : output
+    ) as any;
+    const body = renderObjectivesList(outputForRender, flags.format);
 
     if (!flags.out) {
       process.stdout.write(body);
