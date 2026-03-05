@@ -31,6 +31,10 @@
 - `sim.fast`: log-domain fast 모드 사용 여부
 - `sim.eventLog.enabled`: `false`면 이벤트 저장 비활성화(통계는 계속 계산)
 - `sim.eventLog.maxEvents`: 최근 N개 이벤트만 보관(ring buffer)
+- `sim.offline.maxSec`: 오프라인 보상 최대 반영 초
+- `sim.offline.overflowPolicy`: `clamp | reject`
+- `sim.offline.decay.kind`: `none | linear`
+- `sim.offline.decay.floorRatio`: linear decay 하한 비율(0..1)
 - `outputs.report`: trace/checkpoint/UX 포함 여부
 
 ## 3. 전략 파라미터 기본 주입 규칙

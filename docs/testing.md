@@ -10,6 +10,8 @@ bun run test
 bun run build
 bun run docs:verify:quick
 bun run docs:verify
+bun run bench:sim
+bun run bench:sim:check
 bun run tune:regress --baseline ./tmp/tune-baseline.json --current ./tmp/tune-latest.json --tolerance 0.05
 ```
 
@@ -61,6 +63,8 @@ PR/커밋 전에:
 4. `bun run docs:verify:quick`
 
 CI(`.github/workflows/ci.yml`)도 같은 순서(typecheck/test/build/docs quick)로 검증합니다.
+
+성능 리그레션은 `bench:sim:check`에서 평균 실행시간 임계값으로 추가 검증합니다.
 
 ## 5. 권장 커밋 단위
 

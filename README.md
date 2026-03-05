@@ -14,6 +14,7 @@ bun run typecheck
 bun run test
 bun run build
 bun run docs:verify:quick
+bun run bench:sim:check
 ```
 
 CLI 도움말:
