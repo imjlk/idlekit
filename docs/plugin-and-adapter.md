@@ -43,7 +43,7 @@ bun run --cwd packages/cli dev -- models list \
 
 ## 2. Engine 어댑터(핵심)
 
-`@idlekit/core`는 `Engine<N>` 인터페이스로 숫자 엔진을 추상화합니다.
+`@idlekit/money`(및 `@idlekit/core` re-export)는 `Engine<N>` 인터페이스로 숫자 엔진을 추상화합니다.
 
 ```ts
 export interface Engine<N> {
@@ -68,6 +68,8 @@ export interface Engine<N> {
 - `toNumber`는 분석/휴리스틱용 보조값으로만 사용
 - 결제/누적/상태 업데이트는 항상 `N` 타입 연산으로 처리
 - `absLog10` 품질이 strategy/objective 안정성에 중요
+
+머니 처리만 독립 사용하려면 `@idlekit/money`를 직접 import 하고, 시뮬레이터까지 쓰려면 `@idlekit/core`를 사용하면 됩니다.
 
 ## 3. 결정론 규약
 

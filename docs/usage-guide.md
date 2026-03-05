@@ -294,3 +294,17 @@ bun run --cwd packages/cli dev -- simulate ../../examples/plugins/plugin-scenari
   --allow-plugin true \
   --format json
 ```
+
+## 9. 화폐 라이브러리 단독 사용(@idlekit/money)
+
+시뮬레이터(`@idlekit/core`)와 분리해서 화폐 처리만 사용할 수 있습니다.
+
+```bash
+bun run --cwd packages/money typecheck
+bun run --cwd packages/money test
+bun examples/money-package/run.ts
+```
+
+상세 API/정책 설명:
+
+- [money-library.md](./money-library.md)
