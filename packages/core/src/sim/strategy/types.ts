@@ -17,4 +17,8 @@ export interface Strategy<N, U extends string, Vars> {
     model: Model<N, U, Vars>,
     state: SimState<N, U, Vars>,
   ) => readonly Readonly<{ action: Action<N, U, Vars>; bulkSize?: number }>[];
+
+  // Optional state hooks for deterministic resume/replay.
+  snapshotState?: () => unknown;
+  restoreState?: (state: unknown) => void;
 }

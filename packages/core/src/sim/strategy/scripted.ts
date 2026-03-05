@@ -33,5 +33,20 @@ export function createScriptedStrategy<N, U extends string, Vars>(
       cursor += 1;
       return [{ action, bulkSize: target.bulkSize }];
     },
+    snapshotState() {
+      return {
+        cursor,
+      };
+    },
+    restoreState(state) {
+      if (!state || typeof state !== "object") {
+        throw new Error("scripted strategy state must be an object");
+      }
+      const nextCursor = (state as Record<string, unknown>).cursor;
+      if (!Number.isInteger(nextCursor) || (nextCursor as number) < 0) {
+        throw new Error("scripted strategy state cursor must be an integer >= 0");
+      }
+      cursor = nextCursor as number;
+    },
   };
 }

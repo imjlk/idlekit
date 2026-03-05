@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { createNumberEngine } from "../engine/breakInfinity";
-import { deserializeSimState, serializeSimState } from "./simState";
+import { deserializeSimState, parseSimStateJSON, serializeSimState } from "./simState";
 
 const E = createNumberEngine();
 
@@ -26,7 +26,20 @@ describe("simState serde", () => {
     const json = serializeSimState(E, state, {
       engineName: "number",
       scenarioPath: "../../examples/simple-linear.json",
+      runId: "run-123",
+      seed: 7,
+      strategy: {
+        id: "scripted",
+        state: {
+          cursor: 3,
+        },
+      },
     });
+
+    expect(json.meta?.runId).toBe("run-123");
+    expect(json.meta?.seed).toBe(7);
+    expect(json.strategy?.id).toBe("scripted");
+    expect((json.strategy?.state as Record<string, unknown>)?.cursor).toBe(3);
 
     const restored = deserializeSimState(E, json);
     expect(restored.t).toBe(123);
@@ -57,5 +70,17 @@ describe("simState serde", () => {
     });
 
     expect(() => deserializeSimState(E, json, { expectedUnit: "GEM" })).toThrow("Sim state unit mismatch");
+  });
+
+  it("rejects malformed sim state payload with clear error", () => {
+    const malformed = {
+      v: 1,
+      unit: "COIN",
+      // missing wallet/maxMoneyEver/prestige/vars
+      t: 0,
+    };
+
+    expect(() => deserializeSimState(E, malformed)).toThrow("Invalid sim state json");
+    expect(() => parseSimStateJSON(malformed)).toThrow("Invalid sim state json");
   });
 });

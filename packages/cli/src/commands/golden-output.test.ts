@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { execFileSync } from "node:child_process";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
@@ -155,6 +155,9 @@ describe("CLI golden outputs", () => {
       const savedRaw = JSON.parse(await readFile(statePath, "utf8"));
       expect(savedRaw.v).toBe(1);
       expect(savedRaw.t).toBe(first.endT);
+      expect(savedRaw.meta?.runId).toBeDefined();
+      expect(savedRaw.meta?.seed).toBeUndefined();
+      expect(savedRaw.strategy?.id).toBe("greedy");
 
       const resumed = runCliJson([
         "simulate",
@@ -171,6 +174,85 @@ describe("CLI golden outputs", () => {
       expect(resumed.durationSec).toBe(15);
       expect(resumed.endT).toBe(first.endT + 15);
       expect(resumed.resumedFrom).toContain("sim-state.json");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("resume keeps scripted strategy cursor continuity", async () => {
+    const dir = await mkdtemp(resolve(tmpdir(), "idlekit-scripted-resume-"));
+    try {
+      const baselineRaw = JSON.parse(await readFile(resolve(process.cwd(), BASELINE), "utf8"));
+      const scenario = {
+        ...baselineRaw,
+        initial: {
+          ...baselineRaw.initial,
+          wallet: {
+            ...baselineRaw.initial.wallet,
+            amount: "1e6",
+          },
+        },
+        clock: {
+          ...baselineRaw.clock,
+          stepSec: 1,
+          durationSec: 20,
+        },
+        strategy: {
+          id: "scripted",
+          params: {
+            schemaVersion: 1,
+            program: [
+              { actionId: "missing.action" },
+              { actionId: "buy.generator" },
+            ],
+            onCannotApply: "skip",
+            loop: true,
+          },
+        },
+      };
+      const scenarioPath = resolve(dir, "scripted-scenario.json");
+      await writeFile(scenarioPath, `${JSON.stringify(scenario, null, 2)}\n`, "utf8");
+
+      const full = runCliJson([
+        "simulate",
+        scenarioPath,
+        "--duration",
+        "20",
+        "--format",
+        "json",
+      ]);
+
+      const splitStatePath = resolve(dir, "split-state.json");
+      const split = runCliJson([
+        "simulate",
+        scenarioPath,
+        "--duration",
+        "7",
+        "--state-out",
+        splitStatePath,
+        "--format",
+        "json",
+      ]);
+      expect(split.endT).toBe(7);
+
+      const splitStateRaw = JSON.parse(await readFile(splitStatePath, "utf8"));
+      expect(splitStateRaw.strategy?.id).toBe("scripted");
+      expect(splitStateRaw.strategy?.state?.cursor).toBe(1);
+
+      const resumed = runCliJson([
+        "simulate",
+        scenarioPath,
+        "--resume",
+        splitStatePath,
+        "--duration",
+        "13",
+        "--format",
+        "json",
+      ]);
+
+      expect(resumed.endT).toBe(20);
+      expect(resumed.endMoney).toBe(full.endMoney);
+      expect(resumed.endNetWorth).toBe(full.endNetWorth);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

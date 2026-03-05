@@ -4,6 +4,7 @@ import {
   compileScenario,
   createNumberEngine,
   deserializeSimState,
+  parseSimStateJSON,
   runScenario,
   serializeSimState,
   validateScenarioV1,
@@ -84,14 +85,32 @@ export default defineCommand({
       opts: { allowSuffixNotation: true },
     });
 
-    const strategyId = flags.strategy ?? valid.scenario.strategy?.id;
+    const resumedJson = flags.resume
+      ? parseSimStateJSON(JSON.parse(await readFile(resolve(process.cwd(), flags.resume), "utf8")))
+      : undefined;
+
     const strategy = (() => {
-      if (!strategyId) return compiled.strategy;
-      const factory = loaded.strategyRegistry.get(strategyId);
-      if (!factory) throw new Error(`Unknown strategy: ${strategyId}`);
+      // Without explicit override, keep the strategy compiled from scenario params/defaults.
+      if (!flags.strategy) return compiled.strategy;
+      const factory = loaded.strategyRegistry.get(flags.strategy);
+      if (!factory) throw new Error(`Unknown strategy: ${flags.strategy}`);
       const params = factory.defaultParams ?? {};
       return factory.create(params) as typeof compiled.strategy;
     })();
+
+    if (resumedJson?.strategy) {
+      if (!strategy) {
+        throw new Error(`Resume state contains strategy '${resumedJson.strategy.id}' but scenario has no strategy`);
+      }
+      if (strategy.id !== resumedJson.strategy.id) {
+        throw new Error(`Resume strategy mismatch: expected ${strategy.id}, got ${resumedJson.strategy.id}`);
+      }
+      if (strategy.restoreState) {
+        strategy.restoreState(resumedJson.strategy.state);
+      } else if (resumedJson.strategy.state !== undefined) {
+        throw new Error(`Strategy '${strategy.id}' does not support state restore`);
+      }
+    }
 
     const eventLog =
       flags["event-log-enabled"] !== undefined || flags["event-log-max"] !== undefined
@@ -101,15 +120,11 @@ export default defineCommand({
           }
         : compiled.run.eventLog;
 
-    const resumedState = flags.resume
-      ? deserializeSimState<number, string, Record<string, unknown>>(
-          E,
-          JSON.parse(await readFile(resolve(process.cwd(), flags.resume), "utf8")),
-          {
-            expectedUnit: compiled.ctx.unit.code,
-            unitFactory: (code) => ({ code }),
-          },
-        )
+    const resumedState = resumedJson
+      ? deserializeSimState<number, string, Record<string, unknown>>(E, resumedJson, {
+          expectedUnit: compiled.ctx.unit.code,
+          unitFactory: (code) => ({ code }),
+        })
       : undefined;
 
     const runScenarioInput = {
@@ -172,21 +187,22 @@ export default defineCommand({
       offlineRun && (runScenarioInput.model.netWorth?.(runScenarioInput.ctx, offlineRun.end) ?? offlineRun.end.wallet.money);
 
     if (stateOutPath) {
+      const strategyState = strategy?.snapshotState ? strategy.snapshotState() : undefined;
       const serialized = serializeSimState(E, run.end, {
         engineName: "number",
         engineVersion: "1",
         scenarioPath,
         savedAt: generatedAt,
+        runId,
+        seed,
+        strategy: strategy
+          ? {
+              id: strategy.id,
+              state: strategyState,
+            }
+          : undefined,
       });
-      const enriched = {
-        ...serialized,
-        meta: {
-          ...serialized.meta,
-          runId,
-          seed,
-        },
-      };
-      await writeFile(stateOutPath, `${JSON.stringify(enriched, null, 2)}\n`, "utf8");
+      await writeFile(stateOutPath, `${JSON.stringify(serialized, null, 2)}\n`, "utf8");
     }
 
     const offlineSummary =
