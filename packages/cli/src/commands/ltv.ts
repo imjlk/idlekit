@@ -3,6 +3,12 @@ import { compileScenario, createNumberEngine, runScenario, validateScenarioV1 } 
 import { z } from "zod";
 import { readScenarioFile } from "../io/readScenario";
 import { writeOutput } from "../io/writeOutput";
+import {
+  deriveMonetizationConfig,
+  estimateLtvDistribution,
+  estimateLtvPerUser,
+  progressionFactor,
+} from "../lib/ltvModel";
 import { loadRegistries, parsePluginPaths, parsePluginSecurityOptions } from "../plugin/load";
 
 const strategySchema = z.enum(["greedy", "planner", "scripted"]).optional();
@@ -54,7 +60,6 @@ function parseHorizons(raw: string): HorizonPoint[] {
   const map = new Map<number, HorizonPoint>();
   for (const token of tokens) {
     const p = parseHorizonToken(token);
-    // dedupe by seconds (keep first label)
     if (!map.has(p.seconds)) map.set(p.seconds, p);
   }
   return Array.from(map.values()).sort((a, b) => a.seconds - b.seconds);
@@ -64,9 +69,80 @@ function getSummaryBySeconds<T extends { seconds: number }>(rows: T[], seconds: 
   return rows.find((r) => r.seconds === seconds);
 }
 
+type StatsCounts = {
+  moneyApplied: number;
+  moneyDropped: number;
+  moneyQueued: number;
+  moneyFlushed: number;
+  moneyBlocked: number;
+  actionsApplied: number;
+  actionsSkippedCannot: number;
+  actionsSkippedFunds: number;
+};
+
+function emptyCounts(): StatsCounts {
+  return {
+    moneyApplied: 0,
+    moneyDropped: 0,
+    moneyQueued: 0,
+    moneyFlushed: 0,
+    moneyBlocked: 0,
+    actionsApplied: 0,
+    actionsSkippedCannot: 0,
+    actionsSkippedFunds: 0,
+  };
+}
+
+function mergeCounts(base: StatsCounts, runStats: any): StatsCounts {
+  if (!runStats) return base;
+  return {
+    moneyApplied: base.moneyApplied + Number(runStats.money?.applied ?? 0),
+    moneyDropped: base.moneyDropped + Number(runStats.money?.dropped ?? 0),
+    moneyQueued: base.moneyQueued + Number(runStats.money?.queued ?? 0),
+    moneyFlushed: base.moneyFlushed + Number(runStats.money?.flushed ?? 0),
+    moneyBlocked: base.moneyBlocked + Number(runStats.money?.blocked ?? 0),
+    actionsApplied: base.actionsApplied + Number(runStats.actions?.applied ?? 0),
+    actionsSkippedCannot: base.actionsSkippedCannot + Number(runStats.actions?.skippedCannotApply ?? 0),
+    actionsSkippedFunds: base.actionsSkippedFunds + Number(runStats.actions?.skippedInsufficientFunds ?? 0),
+  };
+}
+
+function buildGuardrailKpi(args: {
+  counts: StatsCounts;
+  actionCounts: Record<string, number>;
+  firstUpgradeSec: number | null;
+}): Readonly<{
+  timeToFirstUpgradeSec: number | null;
+  stallRatio: number;
+  droppedRate: number;
+  actionMix: Record<string, number>;
+}> {
+  const c = args.counts;
+  const totalActionAttempts = c.actionsApplied + c.actionsSkippedCannot + c.actionsSkippedFunds;
+  const stallRatio = totalActionAttempts > 0 ? c.actionsSkippedFunds / totalActionAttempts : 0;
+  const totalMoneyEvents = c.moneyApplied + c.moneyDropped + c.moneyQueued;
+  const droppedRate = totalMoneyEvents > 0 ? c.moneyDropped / totalMoneyEvents : 0;
+
+  const totalApplied = Math.max(
+    1,
+    Object.values(args.actionCounts).reduce((a, b) => a + b, 0),
+  );
+  const actionMix: Record<string, number> = {};
+  for (const [k, v] of Object.entries(args.actionCounts)) {
+    actionMix[k] = v / totalApplied;
+  }
+
+  return {
+    timeToFirstUpgradeSec: args.firstUpgradeSec,
+    stallRatio,
+    droppedRate,
+    actionMix,
+  };
+}
+
 export default defineCommand({
   name: "ltv",
-  description: "Compute long-horizon KPI snapshots for LTV conversion",
+  description: "Compute long-horizon LTV snapshots (30m..90d) and uncertainty bands",
   options: {
     plugin: option(z.string().default(""), { description: "Comma-separated plugin paths" }),
     "allow-plugin": option(z.coerce.boolean().default(false), {
@@ -91,6 +167,9 @@ export default defineCommand({
     seed: option(z.coerce.number().optional(), { description: "Deterministic seed passed to ctx.seed" }),
     "value-per-worth": option(z.coerce.number().nonnegative().optional(), {
       description: "Optional conversion factor from netWorth to business value",
+    }),
+    draws: option(z.coerce.number().int().positive().optional(), {
+      description: "Monte Carlo draws override (uses scenario.monetization.uncertainty.draws by default)",
     }),
     out: option(z.string().optional(), { description: "Output path" }),
     format: option(z.enum(["json", "md", "csv"]).default("json"), { description: "Output format" }),
@@ -142,9 +221,18 @@ export default defineCommand({
         }
       : compiled.run.fast;
 
+    const monetizationConfig = deriveMonetizationConfig(valid.scenario);
+    const uncertainEnabled = monetizationConfig.uncertainty.enabled || flags.draws !== undefined;
+    const draws = flags.draws ?? monetizationConfig.uncertainty.draws;
+
     let state = compiled.initial;
     let previousTargetSec = 0;
     let previousWorth = compiled.model.netWorth?.(compiled.ctx, compiled.initial) ?? compiled.initial.wallet.money;
+    const startWorthLog10 = E.absLog10(previousWorth.amount);
+
+    const actionCounts: Record<string, number> = {};
+    let firstUpgradeSec: number | null = null;
+    let counts = emptyCounts();
 
     const rows: Array<{
       horizon: string;
@@ -155,7 +243,19 @@ export default defineCommand({
       deltaNetWorth: string;
       netWorthPerHour: string;
       deltaPerDay: string;
-      ltvProxy?: string;
+      economyValueProxy?: string;
+      monetization: {
+        cumulativeGrossRevenuePerUser: number;
+        cumulativeNetRevenuePerUser: number;
+        cumulativeLtvPerUser: number;
+        cumulativeLtvQuantiles?: Record<string, number>;
+      };
+      guardrails: {
+        timeToFirstUpgradeSec: number | null;
+        stallRatio: number;
+        droppedRate: number;
+        actionMix: Record<string, number>;
+      };
     }> = [];
 
     for (const h of horizons) {
@@ -175,7 +275,10 @@ export default defineCommand({
           stepSec,
           durationSec: segmentSec,
           until: undefined,
-          trace: undefined,
+          trace: {
+            everySteps: Number.MAX_SAFE_INTEGER,
+            keepActionsLog: true,
+          },
           eventLog: {
             enabled: false,
             maxEvents: 0,
@@ -185,11 +288,40 @@ export default defineCommand({
       });
 
       state = run.end;
+      counts = mergeCounts(counts, run.stats);
+
+      for (const log of run.actionsLog ?? []) {
+        actionCounts[log.actionId] = (actionCounts[log.actionId] ?? 0) + 1;
+        if (firstUpgradeSec === null && /upgrade/i.test(log.actionId)) {
+          firstUpgradeSec = log.t;
+        }
+      }
+
       const worth = compiled.model.netWorth?.(compiled.ctx, state) ?? state.wallet.money;
+      const endWorthLog10 = E.absLog10(worth.amount);
+      const progression = progressionFactor(startWorthLog10, endWorthLog10, monetizationConfig.revenue.progressionLogSpan);
+      const horizonDays = h.seconds / 86400;
+      const point = estimateLtvPerUser({
+        config: monetizationConfig,
+        horizonDays,
+        progression,
+      });
+      const distribution =
+        uncertainEnabled && draws > 1
+          ? estimateLtvDistribution({
+              config: monetizationConfig,
+              horizonDays,
+              progression,
+              draws,
+              quantiles: monetizationConfig.uncertainty.quantiles,
+              seed: (flags.seed ?? monetizationConfig.uncertainty.seed ?? 1) + h.seconds,
+            })
+          : undefined;
+
       const deltaWorth = E.sub(worth.amount, previousWorth.amount);
       const perHour = E.mul(E.div(worth.amount, Math.max(1, h.seconds)), 3600);
       const deltaPerDay = E.mul(E.div(deltaWorth, Math.max(1, segmentSec)), 86400);
-      const ltvProxy =
+      const economyValueProxy =
         flags["value-per-worth"] !== undefined
           ? E.toString(E.mul(worth.amount, flags["value-per-worth"]))
           : undefined;
@@ -203,36 +335,57 @@ export default defineCommand({
         deltaNetWorth: E.toString(deltaWorth),
         netWorthPerHour: E.toString(perHour),
         deltaPerDay: E.toString(deltaPerDay),
-        ltvProxy,
+        economyValueProxy,
+        monetization: {
+          cumulativeGrossRevenuePerUser: distribution?.mean.cumulativeGrossRevenuePerUser ?? point.cumulativeGrossRevenuePerUser,
+          cumulativeNetRevenuePerUser: distribution?.mean.cumulativeNetRevenuePerUser ?? point.cumulativeNetRevenuePerUser,
+          cumulativeLtvPerUser: distribution?.mean.cumulativeLtvPerUser ?? point.cumulativeLtvPerUser,
+          cumulativeLtvQuantiles: distribution?.quantiles,
+        },
+        guardrails: buildGuardrailKpi({
+          counts,
+          actionCounts,
+          firstUpgradeSec,
+        }),
       });
 
       previousWorth = worth;
       previousTargetSec = h.seconds;
     }
 
-    const jsonData = {
-      scenario: scenarioPath,
-      run: {
-        stepSec,
-        fast: !!runFast?.enabled,
-        strategyId: strategy?.id ?? null,
-        valuePerWorth: flags["value-per-worth"],
-      },
-      horizons: rows,
-      summary: {
-        at30m: getSummaryBySeconds(rows, 1800),
-        at2h: getSummaryBySeconds(rows, 7200),
-        at24h: getSummaryBySeconds(rows, 86400),
-        at7d: getSummaryBySeconds(rows, 604800),
-        at30d: getSummaryBySeconds(rows, 2592000),
-        at90d: getSummaryBySeconds(rows, 7776000),
-      },
+    const summary = {
+      at30m: getSummaryBySeconds(rows, 1800),
+      at2h: getSummaryBySeconds(rows, 7200),
+      at24h: getSummaryBySeconds(rows, 86400),
+      at7d: getSummaryBySeconds(rows, 604800),
+      at30d: getSummaryBySeconds(rows, 2592000),
+      at90d: getSummaryBySeconds(rows, 7776000),
     };
 
     await writeOutput({
       format: flags.format,
       outPath: flags.out,
-      data: flags.format === "json" ? jsonData : rows,
+      data:
+        flags.format === "json"
+          ? {
+              scenario: scenarioPath,
+              run: {
+                stepSec,
+                fast: !!runFast?.enabled,
+                strategyId: strategy?.id ?? null,
+              },
+              monetization: {
+                config: monetizationConfig,
+                uncertainty: {
+                  enabled: uncertainEnabled,
+                  draws: uncertainEnabled ? draws : 0,
+                  quantiles: monetizationConfig.uncertainty.quantiles,
+                },
+              },
+              horizons: rows,
+              summary,
+            }
+          : rows,
     });
   },
 });

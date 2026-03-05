@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 import { createCLI, defineGroup } from "@bunli/core";
+import calibrateCommand from "./commands/calibrate";
 import compareCommand from "./commands/compare";
 import etaCommand from "./commands/eta";
 import growthCommand from "./commands/growth";
@@ -61,6 +62,7 @@ cli.command(ltvCommand);
 cli.command(reportCommand);
 cli.command(compareCommand);
 cli.command(tuneCommand);
+cli.command(calibrateCommand);
 
 if (import.meta.main) {
   await cli.run(process.argv.slice(2));

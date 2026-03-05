@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { mkdirSync, rmSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -310,6 +310,22 @@ function verifyPluginTrack(): void {
   assert(designTuneOut.ok === true, "design tune result must be ok=true");
   const designReport = asRecord(designTuneOut.report as JSONValue);
   assert(has(designReport, "best"), "design tune report must include best");
+
+  const telemetryCsv = resolve(tmpDir, "calibration-telemetry.csv");
+  writeFileSync(
+    telemetryCsv,
+    [
+      "user_id,day,revenue,ad_revenue,acquisition_cost,active",
+      "u1,1,0.6,0.02,1.2,true",
+      "u1,7,0.0,0.01,,true",
+      "u2,1,0.0,0.02,1.0,true",
+      "u3,1,0.0,0.01,1.1,true",
+    ].join("\n"),
+    "utf8",
+  );
+  const calibrated = asRecord(runCliJson(["calibrate", telemetryCsv, "--input-format", "csv", "--format", "json"]));
+  assert(calibrated.ok === true, "calibrate output must be ok=true");
+  assert(has(asRecord(calibrated.monetization as JSONValue), "retention"), "calibrate must include monetization.retention");
 }
 
 function main(): void {

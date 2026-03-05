@@ -89,7 +89,7 @@ describe("CLI golden outputs", () => {
     expect(out.report?.best).toBeDefined();
   });
 
-  it("ltv returns default horizon summary and optional ltvProxy", () => {
+  it("ltv returns default horizon summary and optional economyValueProxy", () => {
     const out = runCliJson([
       "ltv",
       BASELINE,
@@ -114,7 +114,31 @@ describe("CLI golden outputs", () => {
     expect(out.summary?.at7d).toBeDefined();
     expect(out.summary?.at30d).toBeDefined();
     expect(out.summary?.at90d).toBeDefined();
-    expect(out.horizons[0]?.ltvProxy).toBeDefined();
+    expect(out.horizons[0]?.economyValueProxy).toBeDefined();
+    expect(out.horizons[0]?.monetization?.cumulativeLtvPerUser).toBeDefined();
+  });
+
+  it("ltv uncertainty is deterministic for fixed seed", () => {
+    const args = [
+      "ltv",
+      BASELINE,
+      "--horizons",
+      "30m,2h,24h,7d,30d,90d",
+      "--step",
+      "600",
+      "--draws",
+      "120",
+      "--seed",
+      "77",
+      "--format",
+      "json",
+    ];
+    const a = runCliJson(args);
+    const b = runCliJson(args);
+    expect(a.summary?.at90d?.monetization?.cumulativeLtvPerUser).toBe(b.summary?.at90d?.monetization?.cumulativeLtvPerUser);
+    expect(a.summary?.at90d?.monetization?.cumulativeLtvQuantiles?.q90).toBe(
+      b.summary?.at90d?.monetization?.cumulativeLtvQuantiles?.q90,
+    );
   });
 
   it("simulate supports event log overrides", () => {
@@ -320,6 +344,41 @@ describe("CLI golden outputs", () => {
       expect(raw.result?.report?.best).toBeDefined();
       expect(out.regression).toBeDefined();
       expect(typeof out.regression.currentBestScore).toBe("number");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("calibrate derives monetization block from csv telemetry", async () => {
+    const dir = await mkdtemp(resolve(tmpdir(), "idlekit-calibrate-"));
+    try {
+      const csvPath = resolve(dir, "telemetry.csv");
+      await writeFile(
+        csvPath,
+        [
+          "user_id,day,revenue,ad_revenue,acquisition_cost,active",
+          "u1,1,0.5,0.02,1.2,true",
+          "u1,7,0.0,0.02,,true",
+          "u1,30,0.0,0.01,,true",
+          "u2,1,0.0,0.01,1.1,true",
+          "u2,7,0.0,0.01,,true",
+          "u3,1,0.0,0.01,1.3,true",
+        ].join("\n"),
+        "utf8",
+      );
+
+      const out = runCliJson([
+        "calibrate",
+        csvPath,
+        "--input-format",
+        "csv",
+        "--format",
+        "json",
+      ]);
+      expect(out.ok).toBeTrue();
+      expect(out.monetization?.retention?.d1).toBeDefined();
+      expect(out.monetization?.revenue?.payerConversion).toBeDefined();
+      expect(out.scenarioPatch?.monetization).toBeDefined();
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
