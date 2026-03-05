@@ -321,3 +321,16 @@ bun run --cwd packages/cli dev -- tune ../../examples/tutorials/05-idle-design-v
 상세 설계 설명:
 
 - [virtual-scenario-design.md](./virtual-scenario-design.md)
+
+LTV 구간 스냅샷(30m/2h/24h/7d/30d/90d):
+
+```bash
+bun run --cwd packages/cli dev -- ltv ../../examples/tutorials/05-idle-design-v1.json \
+  --horizons 30m,2h,24h,7d,30d,90d \
+  --step 600 \
+  --fast true \
+  --value-per-worth 0.001 \
+  --plugin ../../examples/plugins/custom-econ-plugin.ts \
+  --allow-plugin true \
+  --format json
+```

@@ -142,3 +142,31 @@ KPI 추천:
 - `endNetWorth`
 - `growthLog10PerHour`
 - `plugin.gemsAndWorthLog10`
+
+## 9. LTV용 장기 구간 스냅샷(30m/2h/24h/7d/30d/90d)
+
+`idk ltv` 명령으로 요청 구간을 한 번에 계산할 수 있습니다.
+
+```bash
+bun run --cwd packages/cli dev -- ltv ../../examples/tutorials/05-idle-design-v1.json \
+  --horizons 30m,2h,24h,7d,30d,90d \
+  --step 600 \
+  --fast true \
+  --value-per-worth 0.001 \
+  --plugin ../../examples/plugins/custom-econ-plugin.ts \
+  --allow-plugin true \
+  --format json
+```
+
+출력 해석:
+
+- `horizons[].endNetWorth`: 각 시점 누적 가치
+- `horizons[].deltaNetWorth`: 직전 구간 대비 증가분
+- `horizons[].deltaPerDay`: 해당 구간의 일 환산 증가 속도
+- `horizons[].ltvProxy`: `endNetWorth * valuePerWorth`
+- `summary.at30m/at2h/at24h/at7d/at30d/at90d`: 핵심 구간 빠른 참조
+
+운영 팁:
+
+- 장기 구간은 `--step 300` 또는 `--step 600`으로 coarse step을 권장
+- 정확도 검증이 필요하면 `--fast false`로 재실행해 차이를 비교

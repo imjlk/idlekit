@@ -243,6 +243,24 @@ bun run --cwd packages/cli dev -- tune ../../examples/simple-linear.json \
 bun run tune:regress --baseline ../../tmp/tune-baseline.json --current ../../tmp/tune-latest.json --tolerance 0.05
 ```
 
+### 3.9 LTV 구간 스냅샷
+
+요청 구간(30m/2h/24h/7d/30d/90d) KPI를 한 번에 계산:
+
+```bash
+bun run --cwd packages/cli dev -- ltv ../../examples/tutorials/05-idle-design-v1.json \
+  --horizons 30m,2h,24h,7d,30d,90d \
+  --step 600 \
+  --fast true \
+  --value-per-worth 0.001 \
+  --plugin ../../examples/plugins/custom-econ-plugin.ts \
+  --allow-plugin true \
+  --format json
+```
+
+`--value-per-worth`를 주면 `ltvProxy`가 함께 출력됩니다.
+값을 주지 않으면 `netWorth` 중심 KPI 테이블만 출력됩니다.
+
 ## 4. 레지스트리 조회 명령
 
 모델:
