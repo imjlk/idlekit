@@ -75,6 +75,8 @@ describe("applyOfflineSeconds", () => {
 
     expect(out.offline.fullSteps).toBe(2);
     expect(out.offline.remainderSec).toBeCloseTo(0.5, 8);
+    expect(out.offline.preDecaySec).toBeCloseTo(2.5, 8);
+    expect(out.offline.effectiveSec).toBeCloseTo(2.5, 8);
     expect(out.offline.simulatedSec).toBeCloseTo(2.5, 8);
     expect(out.end.t).toBeCloseTo(2.5, 8);
     expect(out.end.wallet.money.amount).toBeCloseTo(5, 8);
@@ -114,5 +116,75 @@ describe("applyOfflineSeconds", () => {
         options: { maxSteps: 5 },
       }),
     ).toThrow("offline run exceeded maxSteps");
+  });
+
+  it("applies clamp policy from scenario.run.offline", () => {
+    const scenario = {
+      ...makeScenario({ incomePerSec: 2 }),
+      run: {
+        ...makeScenario({ incomePerSec: 2 }).run,
+        offline: {
+          maxSec: 5,
+          overflowPolicy: "clamp" as const,
+        },
+      },
+    };
+
+    const out = applyOfflineSeconds({
+      scenario,
+      seconds: 10,
+    });
+
+    expect(out.offline.overflow).toBe("clamped");
+    expect(out.offline.preDecaySec).toBe(5);
+    expect(out.offline.effectiveSec).toBe(5);
+    expect(out.end.t).toBe(5);
+  });
+
+  it("rejects overflow when policy is reject", () => {
+    const scenario = {
+      ...makeScenario({ incomePerSec: 1 }),
+      run: {
+        ...makeScenario({ incomePerSec: 1 }).run,
+        offline: {
+          maxSec: 5,
+          overflowPolicy: "reject" as const,
+        },
+      },
+    };
+
+    expect(() =>
+      applyOfflineSeconds({
+        scenario,
+        seconds: 6,
+      }),
+    ).toThrow("offline seconds exceed policy maxSec");
+  });
+
+  it("applies linear decay ratio", () => {
+    const scenario = {
+      ...makeScenario({ incomePerSec: 1 }),
+      run: {
+        ...makeScenario({ incomePerSec: 1 }).run,
+        offline: {
+          maxSec: 10,
+          overflowPolicy: "clamp" as const,
+          decay: {
+            kind: "linear" as const,
+            floorRatio: 0.2,
+          },
+        },
+      },
+    };
+
+    const out = applyOfflineSeconds({
+      scenario,
+      seconds: 10,
+    });
+
+    expect(out.offline.decay.kind).toBe("linear");
+    expect(out.offline.decay.ratio).toBeCloseTo(0.2, 8);
+    expect(out.offline.effectiveSec).toBeCloseTo(2, 8);
+    expect(out.end.t).toBeCloseTo(2, 8);
   });
 });

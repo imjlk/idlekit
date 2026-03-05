@@ -186,6 +186,53 @@ describe("compileScenario", () => {
     expect(sc.run.eventLog).toEqual({ enabled: false, maxEvents: 10 });
   });
 
+  it("passes sim.offline policy into run config", () => {
+    const modelFactory: ModelFactory = {
+      id: "m",
+      version: 1,
+      create: () => ({
+        id: "m",
+        version: 1,
+        income: (ctx: any) => ({ unit: ctx.unit, amount: 0 }),
+        actions: () => [],
+      }),
+    };
+    const strategyFactory: StrategyFactory = {
+      id: "s",
+      create: () => ({ id: "s", decide: () => [] }),
+    };
+    const scenario: ScenarioV1 = {
+      ...makeScenario(),
+      sim: {
+        offline: {
+          maxSec: 3600,
+          overflowPolicy: "reject",
+          decay: {
+            kind: "linear",
+            floorRatio: 0.3,
+          },
+        },
+      },
+    };
+
+    const sc = compileScenario<number, "COIN", Record<string, unknown>>({
+      E: createNumberEngine(),
+      scenario,
+      registry: createModelRegistry([modelFactory]),
+      strategyRegistry: createStrategyRegistry([strategyFactory]),
+      unitFactory: (code) => ({ code: code as "COIN" }),
+    });
+
+    expect(sc.run.offline).toEqual({
+      maxSec: 3600,
+      overflowPolicy: "reject",
+      decay: {
+        kind: "linear",
+        floorRatio: 0.3,
+      },
+    });
+  });
+
   it("compiles safe untilExpr with &&/|| grammar", () => {
     const modelFactory: ModelFactory = {
       id: "m",

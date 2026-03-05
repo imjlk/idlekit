@@ -449,6 +449,7 @@ export function compileScenario<N, U extends string, Vars>(args: {
         }
       : undefined,
     eventLog: scenario.sim?.eventLog,
+    offline: scenario.sim?.offline,
   };
 
   return {

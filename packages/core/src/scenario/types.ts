@@ -79,6 +79,14 @@ export type ScenarioV1 = Readonly<{
       enabled?: boolean;
       maxEvents?: number;
     }>;
+    offline?: Readonly<{
+      maxSec?: number;
+      overflowPolicy?: "clamp" | "reject";
+      decay?: Readonly<{
+        kind: "none" | "linear";
+        floorRatio?: number;
+      }>;
+    }>;
   }>;
 
   outputs?: Readonly<{

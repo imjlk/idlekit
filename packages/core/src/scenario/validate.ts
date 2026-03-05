@@ -157,31 +157,94 @@ function validateBaseScenario(input: unknown): StandardResult<ScenarioV1> {
   if (sim !== undefined) {
     if (!isRecord(sim)) {
       pushIssue(issues, "sim must be an object when provided", "sim", sim);
-    } else if (sim.eventLog !== undefined) {
-      const eventLog = sim.eventLog;
-      if (!isRecord(eventLog)) {
-        pushIssue(issues, "sim.eventLog must be an object when provided", "sim.eventLog", eventLog);
-      } else {
-        if (eventLog.enabled !== undefined && typeof eventLog.enabled !== "boolean") {
-          pushIssue(
-            issues,
-            "sim.eventLog.enabled must be boolean when provided",
-            "sim.eventLog.enabled",
-            eventLog.enabled,
-          );
-        }
-        if (eventLog.maxEvents !== undefined) {
-          if (
-            typeof eventLog.maxEvents !== "number" ||
-            !Number.isInteger(eventLog.maxEvents) ||
-            eventLog.maxEvents < 0
-          ) {
+    } else {
+      if (sim.eventLog !== undefined) {
+        const eventLog = sim.eventLog;
+        if (!isRecord(eventLog)) {
+          pushIssue(issues, "sim.eventLog must be an object when provided", "sim.eventLog", eventLog);
+        } else {
+          if (eventLog.enabled !== undefined && typeof eventLog.enabled !== "boolean") {
             pushIssue(
               issues,
-              "sim.eventLog.maxEvents must be an integer >= 0 when provided",
-              "sim.eventLog.maxEvents",
-              eventLog.maxEvents,
+              "sim.eventLog.enabled must be boolean when provided",
+              "sim.eventLog.enabled",
+              eventLog.enabled,
             );
+          }
+          if (eventLog.maxEvents !== undefined) {
+            if (
+              typeof eventLog.maxEvents !== "number" ||
+              !Number.isInteger(eventLog.maxEvents) ||
+              eventLog.maxEvents < 0
+            ) {
+              pushIssue(
+                issues,
+                "sim.eventLog.maxEvents must be an integer >= 0 when provided",
+                "sim.eventLog.maxEvents",
+                eventLog.maxEvents,
+              );
+            }
+          }
+        }
+      }
+
+      if (sim.offline !== undefined) {
+        const offline = sim.offline;
+        if (!isRecord(offline)) {
+          pushIssue(issues, "sim.offline must be an object when provided", "sim.offline", offline);
+        } else {
+          if (offline.maxSec !== undefined) {
+            if (typeof offline.maxSec !== "number" || !Number.isFinite(offline.maxSec) || offline.maxSec < 0) {
+              pushIssue(
+                issues,
+                "sim.offline.maxSec must be a finite number >= 0 when provided",
+                "sim.offline.maxSec",
+                offline.maxSec,
+              );
+            }
+          }
+
+          if (offline.overflowPolicy !== undefined) {
+            if (offline.overflowPolicy !== "clamp" && offline.overflowPolicy !== "reject") {
+              pushIssue(
+                issues,
+                "sim.offline.overflowPolicy must be 'clamp' or 'reject' when provided",
+                "sim.offline.overflowPolicy",
+                offline.overflowPolicy,
+              );
+            }
+          }
+
+          if (offline.decay !== undefined) {
+            const decay = offline.decay;
+            if (!isRecord(decay)) {
+              pushIssue(issues, "sim.offline.decay must be an object when provided", "sim.offline.decay", decay);
+            } else {
+              if (decay.kind !== "none" && decay.kind !== "linear") {
+                pushIssue(
+                  issues,
+                  "sim.offline.decay.kind must be 'none' or 'linear'",
+                  "sim.offline.decay.kind",
+                  decay.kind,
+                );
+              }
+
+              if (decay.floorRatio !== undefined) {
+                if (
+                  typeof decay.floorRatio !== "number" ||
+                  !Number.isFinite(decay.floorRatio) ||
+                  decay.floorRatio < 0 ||
+                  decay.floorRatio > 1
+                ) {
+                  pushIssue(
+                    issues,
+                    "sim.offline.decay.floorRatio must be a number in [0, 1] when provided",
+                    "sim.offline.decay.floorRatio",
+                    decay.floorRatio,
+                  );
+                }
+              }
+            }
           }
         }
       }

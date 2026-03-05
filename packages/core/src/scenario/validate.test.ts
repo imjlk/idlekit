@@ -76,6 +76,44 @@ describe("validateScenarioV1 clock stop conditions", () => {
     expect(out.issues.some((i) => i.path === "sim.eventLog.maxEvents")).toBeTrue();
   });
 
+  it("rejects invalid sim.offline.decay.floorRatio", () => {
+    const sc: ScenarioV1 = {
+      ...baseScenario(),
+      sim: {
+        offline: {
+          maxSec: 3600,
+          overflowPolicy: "clamp",
+          decay: {
+            kind: "linear",
+            floorRatio: 1.5,
+          },
+        },
+      },
+    };
+
+    const out = validateScenarioV1(sc);
+    expect(out.ok).toBeFalse();
+    expect(out.issues.some((i) => i.path === "sim.offline.decay.floorRatio")).toBeTrue();
+  });
+
+  it("accepts valid sim.offline policy", () => {
+    const sc: ScenarioV1 = {
+      ...baseScenario(),
+      sim: {
+        offline: {
+          maxSec: 3600,
+          overflowPolicy: "reject",
+          decay: {
+            kind: "none",
+          },
+        },
+      },
+    };
+
+    const out = validateScenarioV1(sc);
+    expect(out.ok).toBeTrue();
+  });
+
   it("fails closed when model params schema returns unknown shape", () => {
     const badModelFactory: ModelFactory = {
       id: "m",

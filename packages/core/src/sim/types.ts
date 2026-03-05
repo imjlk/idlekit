@@ -167,6 +167,16 @@ export type SimRunOptions = Readonly<{
   // Hard guard against accidental unbounded runs.
   maxSteps?: number;
 
+  offline?: Readonly<{
+    maxSec?: number;
+    overflowPolicy?: "clamp" | "reject";
+    decay?: Readonly<{
+      kind: "none" | "linear";
+      // Only used when kind=linear. 0..1
+      floorRatio?: number;
+    }>;
+  }>;
+
   // Event retention policy for long-running simulations.
   eventLog?: Readonly<{
     // false => do not retain events in RunResult.events (stats are still computed).
