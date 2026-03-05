@@ -30,11 +30,14 @@ Core:
 - `runScenario` 루프/trace/actionsLog
 - `compileScenario` 전략 기본 파라미터 주입
 - `greedy`/`planner` 결정론과 기본 선택
+- `simState` 구조 검증/역직렬화 에러 매핑
+- `scripted` 전략 상태 snapshot/restore(재개 결정론)
 
 CLI:
 
 - list 명령 정렬/출력 스키마
 - md/json/csv 렌더링
+- `simulate` 저장/재개 + 오프라인/fast/strategy 조합 회귀
 
 ## 3. 변경 시 필수 테스트 추가 규칙
 
@@ -65,6 +68,7 @@ PR/커밋 전에:
 CI(`.github/workflows/ci.yml`)도 같은 순서(typecheck/test/build/docs quick)로 검증합니다.
 
 성능 리그레션은 `bench:sim:check`에서 평균/`p95` 실행시간 임계값으로 추가 검증합니다.
+`tools/bench-sim.ts`는 시나리오 경로를 저장소 루트 기준 절대경로로 정규화해 cwd 차이로 인한 오탐을 줄입니다.
 
 ## 5. 권장 커밋 단위
 

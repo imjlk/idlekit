@@ -106,6 +106,24 @@ bun run --cwd packages/cli dev -- simulate ../../examples/simple-linear.json \
   --format json
 ```
 
+상태 파일(`--state-out`) 표준 필드:
+
+- `v`, `unit`, `t`, `wallet`, `maxMoneyEver`, `prestige`, `vars`
+- `meta.scenarioPath`, `meta.savedAt`, `meta.runId`, `meta.seed`
+- `strategy.id`, `strategy.state` (전략이 상태 snapshot을 지원할 때)
+
+재개(`--resume`) 규칙:
+
+- state json은 실행 전에 구조 검증됩니다. 깨진 파일은 `Invalid sim state json: ...`으로 실패합니다.
+- 저장된 `unit`과 현재 시나리오 단위가 다르면 `Sim state unit mismatch`로 실패합니다.
+- state에 `strategy`가 있으면 현재 실행 전략과 `id`가 같아야 하며, 다르면 `Resume strategy mismatch`로 실패합니다.
+- state에 전략 상태가 있는데 해당 전략이 restore를 지원하지 않으면 실패합니다.
+
+권장:
+
+- 재현 가능한 리플레이/튜닝 비교가 필요하면 `--resume` 실행 시 `--strategy` override를 생략하고, 시나리오 기본 전략을 그대로 사용하세요.
+- 내장 `scripted` 전략은 cursor 상태를 저장/복원하므로 연속 실행과 분할 재개 결과를 맞출 수 있습니다.
+
 ### 3.3 ETA 분석
 
 돈 목표:

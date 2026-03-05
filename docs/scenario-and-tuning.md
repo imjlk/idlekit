@@ -150,3 +150,39 @@
 
 - `examples/plugins/plugin-scenario.json`
 - `examples/plugins/plugin-tune.json`
+
+## 9. SimState 저장/재개 계약
+
+`simulate --state-out`으로 저장되는 상태 포맷(v1):
+
+```json
+{
+  "v": 1,
+  "unit": "COIN",
+  "t": 1200,
+  "wallet": { "amount": "1.23e6", "bucket": "0" },
+  "maxMoneyEver": "1.24e6",
+  "prestige": { "count": 2, "points": "1e3", "multiplier": "2" },
+  "vars": { "owned": 42 },
+  "meta": {
+    "scenarioPath": "../../examples/simple-linear.json",
+    "savedAt": "2026-03-05T14:00:00.000Z",
+    "runId": "..."
+  },
+  "strategy": {
+    "id": "scripted",
+    "state": { "cursor": 3 }
+  }
+}
+```
+
+재개 시 검증/제약:
+
+- 구조 검증 실패 시 `Invalid sim state json: ...`
+- 단위 불일치 시 `Sim state unit mismatch`
+- 전략 id 불일치 시 `Resume strategy mismatch`
+- 전략 상태가 있는데 restore 미지원이면 실패
+
+결정론 노트:
+
+- `scripted` 전략은 cursor 상태를 저장/복원하므로 분할 실행 + 재개가 연속 실행과 동일한 결과를 유지합니다.

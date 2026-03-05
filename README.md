@@ -69,3 +69,4 @@ bun run tune:regress --baseline ./tmp/tune-baseline.json --current ./tmp/tune-la
 - `planner` 전략은 `stepOnce` 기반 롤아웃을 사용합니다.
 - `compare` 명령은 현재 시나리오를 실제 실행한 측정값(endMoney/endNetWorth/droppedRate/etaToTargetWorth)으로 비교합니다.
 - `idk tune` 출력은 `json` 사용을 권장합니다. (`md/csv`는 중첩 객체 가독성이 낮을 수 있음)
+- `simulate --state-out/--resume`는 state 구조를 검증하고, 전략 상태를 저장/복원해 재개 결정론을 강화합니다.

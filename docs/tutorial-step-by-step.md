@@ -86,13 +86,29 @@ bun run --cwd packages/cli dev -- simulate ../../examples/tutorials/01-cafe-base
 idk simulate examples/tutorials/01-cafe-baseline.json --format json
 ```
 
+선택(상태 저장/재개 확인):
+
+```bash
+bun run --cwd packages/cli dev -- simulate ../../examples/tutorials/01-cafe-baseline.json \
+  --duration 30 \
+  --state-out ../../tmp/tutorial-state.json \
+  --format json
+
+bun run --cwd packages/cli dev -- simulate ../../examples/tutorials/01-cafe-baseline.json \
+  --resume ../../tmp/tutorial-state.json \
+  --duration 10 \
+  --format json
+```
+
 성공 조건:
 
 - JSON에 `endMoney`, `endNetWorth`, `stats`가 존재
+- 상태 저장/재개 실행 시 두 번째 결과의 `startT`가 첫 실행의 `endT`와 일치
 
 실패 대응:
 
 - `Unknown strategy`면 scenario의 `strategy.id` 또는 plugin 옵션 확인
+- `Invalid sim state json`이면 state 파일 손상/수정 여부 확인 후 재생성
 
 ## 5) 입문 트랙: ETA 분석
 
