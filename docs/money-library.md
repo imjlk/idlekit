@@ -11,6 +11,11 @@
 - 상태 직렬화(`serializeMoneyState`/`deserializeMoneyState`)
 - 표시 변화 감지(`VisibilityTracker`)
 
+기본 엔진 선택:
+
+- `createBreakInfinityEngine()` / `breakInfinityEngine`: 대형 수 대응 기본값
+- `createNumberEngine()`: 경량 테스트/소규모 시뮬레이션용
+
 ## 1. 빠른 시작
 
 워크스페이스 기준:

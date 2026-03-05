@@ -29,6 +29,15 @@ describe("formatMoney/parseMoney", () => {
     expect(Number.isFinite(m.amount)).toBeTrue();
   });
 
+  it("parses unit-only token without treating it as suffix", () => {
+    const m = parseMoney(E, "10 COIN", {
+      unit,
+      allowUnitInString: true,
+    });
+    expect(m.amount).toBe(10);
+    expect(m.unit.code).toBe("COIN");
+  });
+
   it("rejects unknown suffix", () => {
     expect(() => parseMoney(E, "10zzzzq", { unit, suffix: { kind: "table", table: ["", "K"] } })).toThrow(
       "Unknown suffix",

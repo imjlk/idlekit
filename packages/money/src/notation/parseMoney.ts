@@ -29,17 +29,20 @@ export function parseMoney<N, U extends string>(
   opts: ParseMoneyOptions<U>,
 ): Money<N, U> {
   const text = input.trim();
+  const parts = text.split(/\s+/).filter(Boolean);
+  if (parts.length === 0 || parts.length > 2) {
+    throw new Error(`Invalid money string: ${input}`);
+  }
 
-  const m = text.match(
-    /^([+-]?(?:\d+(?:\.\d+)?|\.\d+)(?:e[+-]?\d+)?)\s*([A-Za-z]+)?(?:\s+([A-Za-z][A-Za-z0-9_]*))?$/i,
-  );
+  const left = parts[0];
+  if (!left) throw new Error(`Invalid money string: ${input}`);
+  const leftMatch = left.match(/^([+-]?(?:\d+(?:\.\d+)?|\.\d+)(?:e[+-]?\d+)?)([A-Za-z]+)?$/i);
+  if (!leftMatch) throw new Error(`Invalid money string: ${input}`);
 
-  if (!m) throw new Error(`Invalid money string: ${input}`);
-
-  const numeric = m[1];
+  const numeric = leftMatch[1];
   if (!numeric) throw new Error(`Invalid numeric part: ${input}`);
-  const suffixToken = m[2];
-  const inlineUnit = m[3] as U | undefined;
+  const suffixToken = leftMatch[2];
+  const inlineUnit = parts.length === 2 ? (parts[1] as U | undefined) : undefined;
 
   if (inlineUnit && !opts.allowUnitInString) {
     throw new Error("Unit in string is not allowed. Set allowUnitInString=true.");
