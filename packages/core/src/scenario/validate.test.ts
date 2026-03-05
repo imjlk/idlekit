@@ -136,4 +136,77 @@ describe("validateScenarioV1 clock stop conditions", () => {
     expect(out.issues.some((i) => i.path === "model.params")).toBeTrue();
     expect(out.issues.some((i) => i.message.includes("invalid result shape"))).toBeTrue();
   });
+
+  it("accepts valid monetization/LTV block", () => {
+    const sc: ScenarioV1 = {
+      ...baseScenario(),
+      monetization: {
+        cohorts: { baseUsers: 1000 },
+        retention: {
+          d1: 0.42,
+          d7: 0.2,
+          d30: 0.09,
+          d90: 0.04,
+          longTailDailyDecay: 0.02,
+        },
+        revenue: {
+          payerConversion: 0.03,
+          arppuDaily: 0.7,
+          adArpDau: 0.02,
+          platformFeeRate: 0.3,
+          grossMarginRate: 0.92,
+          progressionRevenueLift: 0.5,
+          progressionLogSpan: 5,
+        },
+        acquisition: { cpi: 1.8 },
+        uncertainty: {
+          enabled: true,
+          draws: 200,
+          quantiles: [0.5, 0.9],
+          seed: 11,
+          sigma: {
+            retention: 0.08,
+            conversion: 0.12,
+            arppu: 0.2,
+            ad: 0.1,
+          },
+        },
+      },
+    };
+
+    const out = validateScenarioV1(sc);
+    expect(out.ok).toBeTrue();
+  });
+
+  it("rejects invalid monetization retention ordering", () => {
+    const sc: ScenarioV1 = {
+      ...baseScenario(),
+      monetization: {
+        retention: {
+          d1: 0.2,
+          d7: 0.25,
+          d30: 0.1,
+          d90: 0.05,
+        },
+      },
+    };
+    const out = validateScenarioV1(sc);
+    expect(out.ok).toBeFalse();
+    expect(out.issues.some((i) => i.path === "monetization.retention")).toBeTrue();
+  });
+
+  it("rejects invalid monetization uncertainty quantile", () => {
+    const sc: ScenarioV1 = {
+      ...baseScenario(),
+      monetization: {
+        uncertainty: {
+          draws: 100,
+          quantiles: [0.5, 1],
+        },
+      },
+    };
+    const out = validateScenarioV1(sc);
+    expect(out.ok).toBeFalse();
+    expect(out.issues.some((i) => i.path === "monetization.uncertainty.quantiles.1")).toBeTrue();
+  });
 });

@@ -1,7 +1,7 @@
 import { defineCommand, option } from "@bunli/core";
 import { validateScenarioV1 } from "@idlekit/core";
 import { z } from "zod";
-import { readScenarioFile } from "../io/readScenario";
+import { readScenarioFileWithMeta } from "../io/readScenario";
 import { loadRegistries, parsePluginPaths, parsePluginSecurityOptions } from "../plugin/load";
 
 export default defineCommand({
@@ -27,7 +27,7 @@ export default defineCommand({
       throw new Error("Usage: idk validate <scenario.(json|yaml)> [--plugin <path,...>]");
     }
 
-    const input = await readScenarioFile(scenarioPath);
+    const { value: input, notices } = await readScenarioFileWithMeta(scenarioPath);
     const { modelRegistry } = await loadRegistries(
       parsePluginPaths(flags.plugin, flags["allow-plugin"]),
       parsePluginSecurityOptions({
@@ -46,6 +46,10 @@ export default defineCommand({
       return;
     }
 
+    for (const n of notices) {
+      const where = n.path ? `${n.path}: ` : "";
+      console.warn(`[${n.level}] ${where}${n.message}`);
+    }
     console.log(`OK: ${scenarioPath}`);
   },
 });

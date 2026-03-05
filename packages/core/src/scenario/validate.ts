@@ -79,6 +79,21 @@ function pushIssue(issues: StandardIssue[], message: string, path?: string, valu
   issues.push({ message, path, value });
 }
 
+function isFiniteNumber(x: unknown): x is number {
+  return typeof x === "number" && Number.isFinite(x);
+}
+
+function validateRate01(
+  issues: StandardIssue[],
+  value: unknown,
+  path: string,
+  fieldLabel: string,
+): void {
+  if (!isFiniteNumber(value) || value < 0 || value > 1) {
+    pushIssue(issues, `${fieldLabel} must be a finite number in [0, 1]`, path, value);
+  }
+}
+
 function isRecord(input: unknown): input is Record<string, unknown> {
   return typeof input === "object" && input !== null;
 }
@@ -241,6 +256,262 @@ function validateBaseScenario(input: unknown): StandardResult<ScenarioV1> {
                     "sim.offline.decay.floorRatio must be a number in [0, 1] when provided",
                     "sim.offline.decay.floorRatio",
                     decay.floorRatio,
+                  );
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  const monetization = input.monetization;
+  if (monetization !== undefined) {
+    if (!isRecord(monetization)) {
+      pushIssue(issues, "monetization must be an object when provided", "monetization", monetization);
+    } else {
+      if (monetization.cohorts !== undefined) {
+        const cohorts = monetization.cohorts;
+        if (!isRecord(cohorts)) {
+          pushIssue(issues, "monetization.cohorts must be an object when provided", "monetization.cohorts", cohorts);
+        } else if (cohorts.baseUsers !== undefined) {
+          if (
+            typeof cohorts.baseUsers !== "number" ||
+            !Number.isInteger(cohorts.baseUsers) ||
+            cohorts.baseUsers <= 0
+          ) {
+            pushIssue(
+              issues,
+              "monetization.cohorts.baseUsers must be a positive integer when provided",
+              "monetization.cohorts.baseUsers",
+              cohorts.baseUsers,
+            );
+          }
+        }
+      }
+
+      if (monetization.retention !== undefined) {
+        const retention = monetization.retention;
+        if (!isRecord(retention)) {
+          pushIssue(
+            issues,
+            "monetization.retention must be an object when provided",
+            "monetization.retention",
+            retention,
+          );
+        } else {
+          const d1 = retention.d1;
+          const d7 = retention.d7;
+          const d30 = retention.d30;
+          const d90 = retention.d90;
+          if (d1 !== undefined) validateRate01(issues, d1, "monetization.retention.d1", "monetization.retention.d1");
+          if (d7 !== undefined) validateRate01(issues, d7, "monetization.retention.d7", "monetization.retention.d7");
+          if (d30 !== undefined)
+            validateRate01(issues, d30, "monetization.retention.d30", "monetization.retention.d30");
+          if (d90 !== undefined)
+            validateRate01(issues, d90, "monetization.retention.d90", "monetization.retention.d90");
+          if (
+            isFiniteNumber(d1) &&
+            isFiniteNumber(d7) &&
+            isFiniteNumber(d30) &&
+            isFiniteNumber(d90) &&
+            !(d1 >= d7 && d7 >= d30 && d30 >= d90)
+          ) {
+            pushIssue(
+              issues,
+              "monetization.retention must satisfy d1 >= d7 >= d30 >= d90",
+              "monetization.retention",
+              retention,
+            );
+          }
+          if (retention.longTailDailyDecay !== undefined) {
+            if (!isFiniteNumber(retention.longTailDailyDecay) || retention.longTailDailyDecay < 0) {
+              pushIssue(
+                issues,
+                "monetization.retention.longTailDailyDecay must be a finite number >= 0",
+                "monetization.retention.longTailDailyDecay",
+                retention.longTailDailyDecay,
+              );
+            }
+          }
+        }
+      }
+
+      if (monetization.revenue !== undefined) {
+        const revenue = monetization.revenue;
+        if (!isRecord(revenue)) {
+          pushIssue(issues, "monetization.revenue must be an object when provided", "monetization.revenue", revenue);
+        } else {
+          if (revenue.payerConversion !== undefined) {
+            validateRate01(
+              issues,
+              revenue.payerConversion,
+              "monetization.revenue.payerConversion",
+              "monetization.revenue.payerConversion",
+            );
+          }
+          if (revenue.platformFeeRate !== undefined) {
+            validateRate01(
+              issues,
+              revenue.platformFeeRate,
+              "monetization.revenue.platformFeeRate",
+              "monetization.revenue.platformFeeRate",
+            );
+          }
+          if (revenue.grossMarginRate !== undefined) {
+            validateRate01(
+              issues,
+              revenue.grossMarginRate,
+              "monetization.revenue.grossMarginRate",
+              "monetization.revenue.grossMarginRate",
+            );
+          }
+          if (revenue.arppuDaily !== undefined) {
+            if (!isFiniteNumber(revenue.arppuDaily) || revenue.arppuDaily < 0) {
+              pushIssue(
+                issues,
+                "monetization.revenue.arppuDaily must be a finite number >= 0",
+                "monetization.revenue.arppuDaily",
+                revenue.arppuDaily,
+              );
+            }
+          }
+          if (revenue.adArpDau !== undefined) {
+            if (!isFiniteNumber(revenue.adArpDau) || revenue.adArpDau < 0) {
+              pushIssue(
+                issues,
+                "monetization.revenue.adArpDau must be a finite number >= 0",
+                "monetization.revenue.adArpDau",
+                revenue.adArpDau,
+              );
+            }
+          }
+          if (revenue.progressionRevenueLift !== undefined) {
+            if (!isFiniteNumber(revenue.progressionRevenueLift) || revenue.progressionRevenueLift < 0) {
+              pushIssue(
+                issues,
+                "monetization.revenue.progressionRevenueLift must be a finite number >= 0",
+                "monetization.revenue.progressionRevenueLift",
+                revenue.progressionRevenueLift,
+              );
+            }
+          }
+          if (revenue.progressionLogSpan !== undefined) {
+            if (!isFiniteNumber(revenue.progressionLogSpan) || revenue.progressionLogSpan <= 0) {
+              pushIssue(
+                issues,
+                "monetization.revenue.progressionLogSpan must be a finite number > 0",
+                "monetization.revenue.progressionLogSpan",
+                revenue.progressionLogSpan,
+              );
+            }
+          }
+        }
+      }
+
+      if (monetization.acquisition !== undefined) {
+        const acquisition = monetization.acquisition;
+        if (!isRecord(acquisition)) {
+          pushIssue(
+            issues,
+            "monetization.acquisition must be an object when provided",
+            "monetization.acquisition",
+            acquisition,
+          );
+        } else if (acquisition.cpi !== undefined) {
+          if (!isFiniteNumber(acquisition.cpi) || acquisition.cpi < 0) {
+            pushIssue(
+              issues,
+              "monetization.acquisition.cpi must be a finite number >= 0",
+              "monetization.acquisition.cpi",
+              acquisition.cpi,
+            );
+          }
+        }
+      }
+
+      if (monetization.uncertainty !== undefined) {
+        const uncertainty = monetization.uncertainty;
+        if (!isRecord(uncertainty)) {
+          pushIssue(
+            issues,
+            "monetization.uncertainty must be an object when provided",
+            "monetization.uncertainty",
+            uncertainty,
+          );
+        } else {
+          if (uncertainty.enabled !== undefined && typeof uncertainty.enabled !== "boolean") {
+            pushIssue(
+              issues,
+              "monetization.uncertainty.enabled must be boolean when provided",
+              "monetization.uncertainty.enabled",
+              uncertainty.enabled,
+            );
+          }
+          if (uncertainty.draws !== undefined) {
+            if (
+              typeof uncertainty.draws !== "number" ||
+              !Number.isInteger(uncertainty.draws) ||
+              uncertainty.draws <= 0
+            ) {
+              pushIssue(
+                issues,
+                "monetization.uncertainty.draws must be a positive integer when provided",
+                "monetization.uncertainty.draws",
+                uncertainty.draws,
+              );
+            }
+          }
+          if (uncertainty.seed !== undefined && !isFiniteNumber(uncertainty.seed)) {
+            pushIssue(
+              issues,
+              "monetization.uncertainty.seed must be a finite number when provided",
+              "monetization.uncertainty.seed",
+              uncertainty.seed,
+            );
+          }
+          if (uncertainty.quantiles !== undefined) {
+            if (!Array.isArray(uncertainty.quantiles) || uncertainty.quantiles.length === 0) {
+              pushIssue(
+                issues,
+                "monetization.uncertainty.quantiles must be a non-empty number array when provided",
+                "monetization.uncertainty.quantiles",
+                uncertainty.quantiles,
+              );
+            } else {
+              for (const [idx, q] of uncertainty.quantiles.entries()) {
+                if (!isFiniteNumber(q) || q <= 0 || q >= 1) {
+                  pushIssue(
+                    issues,
+                    "quantile must be in (0, 1)",
+                    `monetization.uncertainty.quantiles.${idx}`,
+                    q,
+                  );
+                }
+              }
+            }
+          }
+          if (uncertainty.sigma !== undefined) {
+            const sigma = uncertainty.sigma;
+            if (!isRecord(sigma)) {
+              pushIssue(
+                issues,
+                "monetization.uncertainty.sigma must be an object when provided",
+                "monetization.uncertainty.sigma",
+                sigma,
+              );
+            } else {
+              const sigmaFields: Array<keyof typeof sigma> = ["retention", "conversion", "arppu", "ad"];
+              for (const field of sigmaFields) {
+                const v = sigma[field];
+                if (v === undefined) continue;
+                if (!isFiniteNumber(v) || v < 0) {
+                  pushIssue(
+                    issues,
+                    `${String(field)} sigma must be a finite number >= 0`,
+                    `monetization.uncertainty.sigma.${String(field)}`,
+                    v,
                   );
                 }
               }

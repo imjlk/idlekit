@@ -73,6 +73,43 @@ export type ScenarioV1 = Readonly<{
     growth?: Readonly<{ windowSec?: number }>;
   }>;
 
+  monetization?: Readonly<{
+    cohorts?: Readonly<{
+      baseUsers?: number;
+    }>;
+    retention?: Readonly<{
+      d1?: number;
+      d7?: number;
+      d30?: number;
+      d90?: number;
+      longTailDailyDecay?: number;
+    }>;
+    revenue?: Readonly<{
+      payerConversion?: number;
+      arppuDaily?: number;
+      adArpDau?: number;
+      platformFeeRate?: number;
+      grossMarginRate?: number;
+      progressionRevenueLift?: number;
+      progressionLogSpan?: number;
+    }>;
+    acquisition?: Readonly<{
+      cpi?: number;
+    }>;
+    uncertainty?: Readonly<{
+      enabled?: boolean;
+      draws?: number;
+      quantiles?: number[];
+      seed?: number;
+      sigma?: Readonly<{
+        retention?: number;
+        conversion?: number;
+        arppu?: number;
+        ad?: number;
+      }>;
+    }>;
+  }>;
+
   sim?: Readonly<{
     fast?: boolean;
     eventLog?: Readonly<{

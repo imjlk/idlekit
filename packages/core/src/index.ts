@@ -19,6 +19,7 @@ export * from "./serde/simState";
 export * from "./scenario/types";
 export * from "./scenario/registry";
 export * from "./scenario/validate";
+export * from "./scenario/migrate";
 export * from "./scenario/compile";
 
 export * from "./sim/types";
