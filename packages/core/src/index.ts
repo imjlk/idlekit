@@ -11,6 +11,7 @@ export * from "./policy/tickMoney";
 export * from "./notation/suffixer";
 export * from "./notation/formatMoney";
 export * from "./notation/parseMoney";
+export * from "./notation/visibilityTracker";
 
 export * from "./serde/moneyState";
 

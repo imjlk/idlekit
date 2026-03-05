@@ -1,9 +1,1 @@
-export type Suffixer =
-  | {
-      kind: "alphaInfinite";
-      minLen?: number;
-    }
-  | {
-      kind: "table";
-      table: string[];
-    };
+export { alphaInfiniteIndex, alphaInfiniteSuffix, type Suffixer } from "@idlekit/money";

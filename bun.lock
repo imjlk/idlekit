@@ -28,9 +28,14 @@
       "name": "@idlekit/core",
       "version": "0.1.0",
       "dependencies": {
+        "@idlekit/money": "workspace:*",
         "typia": "^9.7.2",
         "zod": "^4.1.12",
       },
+    },
+    "packages/money": {
+      "name": "@idlekit/money",
+      "version": "0.1.0",
     },
   },
   "packages": {
@@ -71,6 +76,8 @@
     "@idlekit/cli": ["@idlekit/cli@workspace:packages/cli"],
 
     "@idlekit/core": ["@idlekit/core@workspace:packages/core"],
+
+    "@idlekit/money": ["@idlekit/money@workspace:packages/money"],
 
     "@inquirer/external-editor": ["@inquirer/external-editor@1.0.3", "", { "dependencies": { "chardet": "^2.1.1", "iconv-lite": "^0.7.0" }, "peerDependencies": { "@types/node": ">=18" }, "optionalPeers": ["@types/node"] }, "sha512-RWbSrDiYmO4LbejWY7ttpxczuwQyZLBUyygsA9Nsv95hpzUWwnNTVQmAq3xuh7vNwCp07UTmE5i11XAEExx4RA=="],
 
