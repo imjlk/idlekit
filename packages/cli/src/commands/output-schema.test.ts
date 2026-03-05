@@ -2,13 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
-
-type JsonSchema = {
-  type?: string | string[];
-  required?: string[];
-  properties?: Record<string, JsonSchema>;
-  const?: unknown;
-};
+import Ajv2020 from "ajv/dist/2020";
 
 function runCliJson(args: string[]): any {
   const out = execFileSync("bun", ["src/main.ts", ...args], {
@@ -20,52 +14,29 @@ function runCliJson(args: string[]): any {
   return JSON.parse(out);
 }
 
-function readSchema(name: string): JsonSchema {
+function readSchema(name: string): object {
   const path = resolve(process.cwd(), "../../docs/schemas", name);
-  return JSON.parse(readFileSync(path, "utf8")) as JsonSchema;
+  return JSON.parse(readFileSync(path, "utf8")) as object;
 }
 
-function isTypeMatch(value: unknown, typeName: string): boolean {
-  if (typeName === "null") return value === null;
-  if (typeName === "array") return Array.isArray(value);
-  if (typeName === "object") return !!value && typeof value === "object" && !Array.isArray(value);
-  return typeof value === typeName;
-}
-
-function validateBySchema(schema: JsonSchema, value: unknown, path = "root"): void {
-  if (schema.const !== undefined && value !== schema.const) {
-    throw new Error(`${path}: expected const ${JSON.stringify(schema.const)}, got ${JSON.stringify(value)}`);
-  }
-
-  if (schema.type !== undefined) {
-    const allowed = Array.isArray(schema.type) ? schema.type : [schema.type];
-    if (!allowed.some((t) => isTypeMatch(value, t))) {
-      throw new Error(`${path}: type mismatch, expected ${allowed.join("|")}`);
-    }
-  }
-
-  if (schema.required && (!value || typeof value !== "object" || Array.isArray(value))) {
-    throw new Error(`${path}: required fields declared for non-object schema`);
-  }
-
-  if (schema.required && schema.properties) {
-    const obj = value as Record<string, unknown>;
-    for (const key of schema.required) {
-      if (!(key in obj)) {
-        throw new Error(`${path}.${key}: missing required field`);
-      }
-    }
-    for (const [key, sub] of Object.entries(schema.properties)) {
-      if (!(key in obj)) continue;
-      validateBySchema(sub, obj[key], `${path}.${key}`);
-    }
-  }
+function validateBySchema(schema: object, value: unknown, name: string): void {
+  const ajv = new Ajv2020({
+    allErrors: true,
+    strict: false,
+  });
+  const validate = ajv.compile(schema);
+  const ok = validate(value);
+  if (ok) return;
+  const detail = (validate.errors ?? [])
+    .map((e) => `${e.instancePath || "/"} ${e.message ?? ""}`.trim())
+    .join("; ");
+  throw new Error(`Schema validation failed (${name}): ${detail}`);
 }
 
 describe("output schema contracts", () => {
   it("simulate output follows schema", () => {
     const out = runCliJson(["simulate", "../../examples/tutorials/01-cafe-baseline.json", "--format", "json"]);
-    validateBySchema(readSchema("simulate.output.schema.json"), out);
+    validateBySchema(readSchema("simulate.output.schema.json"), out, "simulate.output.schema.json");
     expect(out._meta.command).toBe("simulate");
   });
 
@@ -80,7 +51,7 @@ describe("output schema contracts", () => {
       "--format",
       "json",
     ]);
-    validateBySchema(readSchema("eta.output.schema.json"), out);
+    validateBySchema(readSchema("eta.output.schema.json"), out, "eta.output.schema.json");
   });
 
   it("compare output follows schema", () => {
@@ -97,7 +68,7 @@ describe("output schema contracts", () => {
       "--format",
       "json",
     ]);
-    validateBySchema(readSchema("compare.output.schema.json"), out);
+    validateBySchema(readSchema("compare.output.schema.json"), out, "compare.output.schema.json");
   });
 
   it("tune output follows schema", () => {
@@ -109,7 +80,7 @@ describe("output schema contracts", () => {
       "--format",
       "json",
     ]);
-    validateBySchema(readSchema("tune.output.schema.json"), out);
+    validateBySchema(readSchema("tune.output.schema.json"), out, "tune.output.schema.json");
   });
 
   it("ltv output follows schema", () => {
@@ -123,7 +94,7 @@ describe("output schema contracts", () => {
       "--format",
       "json",
     ]);
-    validateBySchema(readSchema("ltv.output.schema.json"), out);
+    validateBySchema(readSchema("ltv.output.schema.json"), out, "ltv.output.schema.json");
   });
 
   it("calibrate output follows schema", () => {
@@ -139,6 +110,6 @@ describe("output schema contracts", () => {
       ].join("\n"),
     );
     const out = runCliJson(["calibrate", telemetry, "--input-format", "csv", "--format", "json"]);
-    validateBySchema(readSchema("calibrate.output.schema.json"), out);
+    validateBySchema(readSchema("calibrate.output.schema.json"), out, "calibrate.output.schema.json");
   });
 });

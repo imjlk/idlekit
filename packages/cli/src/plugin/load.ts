@@ -332,6 +332,23 @@ async function loadPluginTrustFile(pathAbs: string): Promise<Record<string, stri
   return out;
 }
 
+function mergeShaPolicies(
+  trustFileSha256: Readonly<Record<string, string>>,
+  cliSha256: Readonly<Record<string, string>>,
+): Record<string, string> {
+  const out: Record<string, string> = { ...trustFileSha256 };
+  for (const [pathAbs, digest] of Object.entries(cliSha256)) {
+    const existing = out[pathAbs];
+    if (existing && existing !== digest) {
+      throw new Error(
+        `Conflicting sha256 policy for plugin path '${pathAbs}': trust-file=${existing}, cli=${digest}`,
+      );
+    }
+    out[pathAbs] = digest;
+  }
+  return out;
+}
+
 export type LoadedRegistries = Readonly<{
   modelRegistry: ModelRegistry;
   strategyRegistry: StrategyRegistry;
@@ -350,7 +367,7 @@ export async function loadRegistries(
     securityOptions.trustFile !== undefined
       ? await loadPluginTrustFile(securityOptions.trustFile)
       : {};
-  const requiredSha256 = { ...trustFileSha256, ...(securityOptions.requiredSha256 ?? {}) };
+  const requiredSha256 = mergeShaPolicies(trustFileSha256, securityOptions.requiredSha256 ?? {});
   const hasShaPolicy = Object.keys(requiredSha256).length > 0;
 
   for (const p of pluginPaths) {

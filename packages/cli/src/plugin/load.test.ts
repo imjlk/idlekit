@@ -146,4 +146,36 @@ describe("plugin load", () => {
       await rm(dir, { recursive: true, force: true });
     }
   });
+
+  it("fails closed when trust-file and cli sha policy conflict", async () => {
+    const pluginPath = resolve(process.cwd(), "../../examples/plugins/custom-econ-plugin.ts");
+    const buf = await readFile(pluginPath);
+    const digest = createHash("sha256").update(buf).digest("hex");
+    const wrongDigest = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+
+    const dir = await mkdtemp(resolve(tmpdir(), "idlekit-plugin-trust-conflict-"));
+    try {
+      const trustPath = resolve(dir, "trust.json");
+      await writeFile(
+        trustPath,
+        JSON.stringify({
+          plugins: {
+            [pluginPath]: digest,
+          },
+        }),
+        "utf8",
+      );
+
+      await expect(
+        loadRegistries([pluginPath], {
+          trustFile: trustPath,
+          requiredSha256: {
+            [pluginPath]: wrongDigest,
+          },
+        }),
+      ).rejects.toThrow("Conflicting sha256 policy");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
 });

@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
-import { readFileSync, mkdirSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, resolve } from "node:path";
 import { execFileSync } from "node:child_process";
 
@@ -46,9 +47,22 @@ function main(): void {
   const scenarioBAbs = resolve(args.scenarioB);
   const pluginAbs = args.plugin ? resolve(args.plugin) : undefined;
   const pluginRootAbs = args.pluginRoot ? resolve(args.pluginRoot) : undefined;
-  const pluginSha = pluginAbs
-    ? `${pluginAbs}=${createHash("sha256").update(readFileSync(pluginAbs)).digest("hex")}`
+  const pluginDigest = pluginAbs
+    ? createHash("sha256").update(readFileSync(pluginAbs)).digest("hex")
     : undefined;
+  const pluginSha = pluginAbs && pluginDigest
+    ? `${pluginAbs}=${pluginDigest}`
+    : undefined;
+  const trustFile = pluginAbs
+    ? resolve(mkdtempSync(resolve(tmpdir(), "idlekit-kpi-trust-")), "plugin-trust.json")
+    : undefined;
+  if (trustFile && pluginAbs) {
+    writeFileSync(
+      trustFile,
+      `${JSON.stringify({ plugins: { [pluginAbs]: pluginDigest } }, null, 2)}\n`,
+      "utf8",
+    );
+  }
 
   const pluginFlags = pluginAbs
     ? [
@@ -60,6 +74,8 @@ function main(): void {
         pluginRootAbs ?? resolve("."),
         "--plugin-sha256",
         pluginSha!,
+        "--plugin-trust-file",
+        trustFile!,
       ]
     : [];
 
@@ -147,10 +163,12 @@ function main(): void {
     mkdirSync(dirname(outPath), { recursive: true });
     writeFileSync(outPath, json, "utf8");
     process.stdout.write(`wrote kpi report: ${outPath}\n`);
+    if (trustFile) rmSync(dirname(trustFile), { recursive: true, force: true });
     return;
   }
 
   process.stdout.write(json);
+  if (trustFile) rmSync(dirname(trustFile), { recursive: true, force: true });
 }
 
 main();
