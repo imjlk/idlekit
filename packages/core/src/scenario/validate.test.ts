@@ -170,6 +170,14 @@ describe("validateScenarioV1 clock stop conditions", () => {
             arppu: 0.2,
             ad: 0.1,
           },
+          correlation: {
+            retentionConversion: 0.4,
+            retentionArppu: 0.2,
+            retentionAd: 0.1,
+            conversionArppu: 0.5,
+            conversionAd: 0.25,
+            arppuAd: 0.35,
+          },
         },
       },
     };
@@ -208,5 +216,23 @@ describe("validateScenarioV1 clock stop conditions", () => {
     const out = validateScenarioV1(sc);
     expect(out.ok).toBeFalse();
     expect(out.issues.some((i) => i.path === "monetization.uncertainty.quantiles.1")).toBeTrue();
+  });
+
+  it("rejects invalid monetization uncertainty correlation", () => {
+    const sc: ScenarioV1 = {
+      ...baseScenario(),
+      monetization: {
+        uncertainty: {
+          draws: 100,
+          quantiles: [0.5, 0.9],
+          correlation: {
+            retentionConversion: 1.5,
+          },
+        },
+      },
+    };
+    const out = validateScenarioV1(sc);
+    expect(out.ok).toBeFalse();
+    expect(out.issues.some((i) => i.path === "monetization.uncertainty.correlation.retentionConversion")).toBeTrue();
   });
 });

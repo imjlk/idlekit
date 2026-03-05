@@ -517,6 +517,39 @@ function validateBaseScenario(input: unknown): StandardResult<ScenarioV1> {
               }
             }
           }
+
+          if (uncertainty.correlation !== undefined) {
+            const corr = uncertainty.correlation;
+            if (!isRecord(corr)) {
+              pushIssue(
+                issues,
+                "monetization.uncertainty.correlation must be an object when provided",
+                "monetization.uncertainty.correlation",
+                corr,
+              );
+            } else {
+              const corrFields: Array<keyof typeof corr> = [
+                "retentionConversion",
+                "retentionArppu",
+                "retentionAd",
+                "conversionArppu",
+                "conversionAd",
+                "arppuAd",
+              ];
+              for (const field of corrFields) {
+                const v = corr[field];
+                if (v === undefined) continue;
+                if (!isFiniteNumber(v) || v < -1 || v > 1) {
+                  pushIssue(
+                    issues,
+                    `${String(field)} correlation must be a finite number in [-1, 1]`,
+                    `monetization.uncertainty.correlation.${String(field)}`,
+                    v,
+                  );
+                }
+              }
+            }
+          }
         }
       }
     }

@@ -107,6 +107,14 @@ export type ScenarioV1 = Readonly<{
         arppu?: number;
         ad?: number;
       }>;
+      correlation?: Readonly<{
+        retentionConversion?: number;
+        retentionArppu?: number;
+        retentionAd?: number;
+        conversionArppu?: number;
+        conversionAd?: number;
+        arppuAd?: number;
+      }>;
     }>;
   }>;
 

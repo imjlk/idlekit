@@ -287,7 +287,8 @@ function verifyPluginTrack(): void {
       "json",
     ]),
   );
-  assert(has(designCompare, "detail"), "design compare must include detail");
+  const designCompareDetail = asRecord(designCompare.detail as JSONValue);
+  assert(designCompareDetail.source === "measured", "design compare detail.source must be measured");
 
   const designTuneOut = asRecord(
     runCliJson([
@@ -311,6 +312,40 @@ function verifyPluginTrack(): void {
   const designReport = asRecord(designTuneOut.report as JSONValue);
   assert(has(designReport, "best"), "design tune report must include best");
 
+  const designLtv = asRecord(
+    runCliJson([
+      "ltv",
+      designV1,
+      "--horizons",
+      "30m,2h,24h,7d,30d,90d",
+      "--step",
+      "600",
+      "--fast",
+      "true",
+      "--value-per-worth",
+      "0.001",
+      "--plugin",
+      plugin,
+      "--allow-plugin",
+      "true",
+      "--plugin-root",
+      pluginRoot,
+      "--plugin-sha256",
+      pluginShaArg,
+      "--format",
+      "json",
+    ]),
+  );
+  const designSummary = asRecord(designLtv.summary as JSONValue);
+  assert(has(designSummary, "at30m"), "design ltv summary must include at30m");
+  assert(has(designSummary, "at90d"), "design ltv summary must include at90d");
+  const horizons = (designLtv.horizons ?? []) as JSONValue[];
+  assert(horizons.length >= 6, "design ltv must include full horizon rows");
+  const row90d = horizons.find((x) => asRecord(x).horizon === "90d");
+  assert(!!row90d, "design ltv must include 90d row");
+  const monetization = asRecord(asRecord(row90d as JSONValue).monetization as JSONValue);
+  assert(has(monetization, "cumulativeLtvPerUser"), "design ltv 90d row must include cumulativeLtvPerUser");
+
   const telemetryCsv = resolve(tmpDir, "calibration-telemetry.csv");
   writeFileSync(
     telemetryCsv,
@@ -325,7 +360,11 @@ function verifyPluginTrack(): void {
   );
   const calibrated = asRecord(runCliJson(["calibrate", telemetryCsv, "--input-format", "csv", "--format", "json"]));
   assert(calibrated.ok === true, "calibrate output must be ok=true");
-  assert(has(asRecord(calibrated.monetization as JSONValue), "retention"), "calibrate must include monetization.retention");
+  const calibMonetization = asRecord(calibrated.monetization as JSONValue);
+  assert(has(calibMonetization, "retention"), "calibrate must include monetization.retention");
+  const calibUncertainty = asRecord(calibMonetization.uncertainty as JSONValue);
+  const calibCorrelation = asRecord(calibUncertainty.correlation as JSONValue);
+  assert(has(calibCorrelation, "retentionConversion"), "calibrate must include uncertainty.correlation.retentionConversion");
 }
 
 function main(): void {

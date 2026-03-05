@@ -34,6 +34,14 @@ export type MonetizationConfig = Readonly<{
       arppu: number;
       ad: number;
     }>;
+    correlation: Readonly<{
+      retentionConversion: number;
+      retentionArppu: number;
+      retentionAd: number;
+      conversionArppu: number;
+      conversionAd: number;
+      arppuAd: number;
+    }>;
   }>;
 }>;
 
@@ -87,6 +95,14 @@ export function deriveMonetizationConfig(scenario: ScenarioV1): MonetizationConf
         arppu: m?.uncertainty?.sigma?.arppu ?? 0.2,
         ad: m?.uncertainty?.sigma?.ad ?? 0.15,
       },
+      correlation: {
+        retentionConversion: m?.uncertainty?.correlation?.retentionConversion ?? 0,
+        retentionArppu: m?.uncertainty?.correlation?.retentionArppu ?? 0,
+        retentionAd: m?.uncertainty?.correlation?.retentionAd ?? 0,
+        conversionArppu: m?.uncertainty?.correlation?.conversionArppu ?? 0,
+        conversionAd: m?.uncertainty?.correlation?.conversionAd ?? 0,
+        arppuAd: m?.uncertainty?.correlation?.arppuAd ?? 0,
+      },
     },
   };
 }
@@ -110,17 +126,129 @@ function randNormal(rng: Random): number {
   return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
 }
 
-function sampleLogNormalMean(mean: number, sigma: number, rng: Random): number {
+function clampCorrelation(v: number): number {
+  if (!Number.isFinite(v)) return 0;
+  if (v < -1) return -1;
+  if (v > 1) return 1;
+  return v;
+}
+
+function buildCorrelationMatrix(base: MonetizationConfig["uncertainty"]["correlation"]): number[][] {
+  const rc = clampCorrelation(base.retentionConversion);
+  const ra = clampCorrelation(base.retentionArppu);
+  const rd = clampCorrelation(base.retentionAd);
+  const ca = clampCorrelation(base.conversionArppu);
+  const cd = clampCorrelation(base.conversionAd);
+  const ad = clampCorrelation(base.arppuAd);
+  return [
+    [1, rc, ra, rd],
+    [rc, 1, ca, cd],
+    [ra, ca, 1, ad],
+    [rd, cd, ad, 1],
+  ];
+}
+
+function withOffDiagonalScale(matrix: number[][], alpha: number): number[][] {
+  return matrix.map((row, i) =>
+    row.map((v, j) => {
+      if (i === j) return 1;
+      return v * alpha;
+    }));
+}
+
+function cholesky4(matrix: number[][]): number[][] | null {
+  const n = 4;
+  const l: number[][] = Array.from({ length: n }, () => Array.from({ length: n }, () => 0));
+  for (let i = 0; i < n; i++) {
+    for (let j = 0; j <= i; j++) {
+      let sum = 0;
+      for (let k = 0; k < j; k++) {
+        sum += (l[i]?.[k] ?? 0) * (l[j]?.[k] ?? 0);
+      }
+      if (i === j) {
+        const val = (matrix[i]?.[i] ?? 0) - sum;
+        if (val <= 1e-9) return null;
+        l[i]![j] = Math.sqrt(val);
+      } else {
+        const denom = l[j]?.[j] ?? 0;
+        if (Math.abs(denom) < 1e-9) return null;
+        l[i]![j] = ((matrix[i]?.[j] ?? 0) - sum) / denom;
+      }
+    }
+  }
+  return l;
+}
+
+function multiplyLowerTriangular(l: number[][], z: number[]): number[] {
+  const out = [0, 0, 0, 0];
+  for (let i = 0; i < 4; i++) {
+    let sum = 0;
+    for (let j = 0; j <= i; j++) {
+      sum += (l[i]?.[j] ?? 0) * (z[j] ?? 0);
+    }
+    out[i] = sum;
+  }
+  return out;
+}
+
+function sampleCorrelatedNormals(
+  rng: Random,
+  corr: MonetizationConfig["uncertainty"]["correlation"],
+): Readonly<{
+  retention: number;
+  conversion: number;
+  arppu: number;
+  ad: number;
+}> {
+  const z = [randNormal(rng), randNormal(rng), randNormal(rng), randNormal(rng)];
+  const matrix = buildCorrelationMatrix(corr);
+  let l = cholesky4(matrix);
+
+  // If the provided correlation tuple is not positive-definite, keep shrinking
+  // off-diagonal terms toward 0 until Cholesky succeeds.
+  let alpha = 0.99;
+  while (!l && alpha > 1e-6) {
+    l = cholesky4(withOffDiagonalScale(matrix, alpha));
+    alpha *= 0.8;
+  }
+
+  if (!l) {
+    return {
+      retention: z[0] ?? 0,
+      conversion: z[1] ?? 0,
+      arppu: z[2] ?? 0,
+      ad: z[3] ?? 0,
+    };
+  }
+  const c = multiplyLowerTriangular(l, z);
+  return {
+    retention: c[0] ?? 0,
+    conversion: c[1] ?? 0,
+    arppu: c[2] ?? 0,
+    ad: c[3] ?? 0,
+  };
+}
+
+function applyLogNormalShock(mean: number, sigma: number, z: number): number {
   if (sigma <= 0) return mean;
-  const z = randNormal(rng);
   return mean * Math.exp(sigma * z - 0.5 * sigma * sigma);
 }
 
 export function makeUncertainConfig(base: MonetizationConfig, rng: Random): MonetizationConfig {
-  const d1 = clamp01(sampleLogNormalMean(base.retention.d1, base.uncertainty.sigma.retention, rng));
-  const d7 = Math.min(d1, clamp01(sampleLogNormalMean(base.retention.d7, base.uncertainty.sigma.retention, rng)));
-  const d30 = Math.min(d7, clamp01(sampleLogNormalMean(base.retention.d30, base.uncertainty.sigma.retention, rng)));
-  const d90 = Math.min(d30, clamp01(sampleLogNormalMean(base.retention.d90, base.uncertainty.sigma.retention, rng)));
+  const shock = sampleCorrelatedNormals(rng, base.uncertainty.correlation);
+  const d1 = clamp01(applyLogNormalShock(base.retention.d1, base.uncertainty.sigma.retention, shock.retention));
+  const d7 = Math.min(
+    d1,
+    clamp01(applyLogNormalShock(base.retention.d7, base.uncertainty.sigma.retention, shock.retention)),
+  );
+  const d30 = Math.min(
+    d7,
+    clamp01(applyLogNormalShock(base.retention.d30, base.uncertainty.sigma.retention, shock.retention)),
+  );
+  const d90 = Math.min(
+    d30,
+    clamp01(applyLogNormalShock(base.retention.d90, base.uncertainty.sigma.retention, shock.retention)),
+  );
   return {
     ...base,
     retention: {
@@ -132,9 +260,11 @@ export function makeUncertainConfig(base: MonetizationConfig, rng: Random): Mone
     },
     revenue: {
       ...base.revenue,
-      payerConversion: clamp01(sampleLogNormalMean(base.revenue.payerConversion, base.uncertainty.sigma.conversion, rng)),
-      arppuDaily: Math.max(0, sampleLogNormalMean(base.revenue.arppuDaily, base.uncertainty.sigma.arppu, rng)),
-      adArpDau: Math.max(0, sampleLogNormalMean(base.revenue.adArpDau, base.uncertainty.sigma.ad, rng)),
+      payerConversion: clamp01(
+        applyLogNormalShock(base.revenue.payerConversion, base.uncertainty.sigma.conversion, shock.conversion),
+      ),
+      arppuDaily: Math.max(0, applyLogNormalShock(base.revenue.arppuDaily, base.uncertainty.sigma.arppu, shock.arppu)),
+      adArpDau: Math.max(0, applyLogNormalShock(base.revenue.adArpDau, base.uncertainty.sigma.ad, shock.ad)),
     },
   };
 }
@@ -342,6 +472,14 @@ export function calibrateMonetization(rows: readonly TelemetryRow[]): Readonly<{
           conversion: 0.12,
           arppu: 0.2,
           ad: 0.15,
+        },
+        correlation: {
+          retentionConversion: 0.25,
+          retentionArppu: 0.2,
+          retentionAd: 0.15,
+          conversionArppu: 0.35,
+          conversionAd: 0.2,
+          arppuAd: 0.3,
         },
       },
     },
