@@ -8,6 +8,24 @@
 - `examples/tutorials/06-idle-design-balance-b.json`
 - `examples/tutorials/07-idle-design-tune.json`
 
+## 0. 가상 시나리오 캔버스 먼저 작성
+
+시나리오 JSON을 바로 수정하기 전에 아래 5칸을 먼저 채우면 설계 의도가 흔들리지 않습니다.
+
+- 재화: `COIN`(결제), `GEM`(장기가치)처럼 역할을 분리
+- 생산 루프: 어떤 액션이 분당/시간당 수입을 키우는지
+- 소비 싱크: 어떤 액션이 지출 압력을 만들고 선택을 강제하는지
+- 액션 우선순위: 초반/중반/후반에 무엇을 먼저 사게 만들지
+- KPI 구간: `30m/2h/24h/7d/30d/90d`에서 어떤 숫자를 목표로 볼지
+
+권장 매핑 템플릿:
+
+- 재화 `COIN`: `unit.code`, `wallet.money`, `Action.cost`
+- 재화 `GEM`: `vars.gems`, `exchange.gem` 결과, objective 가중치
+- 생산 요소: `vars.producers`
+- 배율 요소: `vars.upgrades`
+- 희귀 요소: `vars.gems`
+
 ## 1. 설계 목표부터 고정
 
 V1 목표:
@@ -164,12 +182,16 @@ bun run --cwd packages/cli dev -- ltv ../../examples/tutorials/05-idle-design-v1
 - `horizons[].deltaNetWorth`: 직전 구간 대비 증가분
 - `horizons[].deltaPerDay`: 해당 구간의 일 환산 증가 속도
 - `horizons[].ltvProxy`: `endNetWorth * valuePerWorth`
+- `horizons[].monetization.cumulativeLtvPerUser`: 유저당 누적 LTV 추정
+- `horizons[].monetization.cumulativeLtvQuantiles`: 불확실성 켠 경우 분위수(`q50/q90`)
 - `summary.at30m/at2h/at24h/at7d/at30d/at90d`: 핵심 구간 빠른 참조
 
 운영 팁:
 
 - 장기 구간은 `--step 300` 또는 `--step 600`으로 coarse step을 권장
 - 정확도 검증이 필요하면 `--fast false`로 재실행해 차이를 비교
+- 리스크 민감한 시뮬레이션이면 `monetization.uncertainty.correlation`을 설정해
+  retention/결제전환/ARPPU가 함께 움직이도록 모델링
 
 ## 10. 실데이터 캘리브레이션 (calibrate)
 
@@ -184,3 +206,6 @@ bun run --cwd packages/cli dev -- calibrate ./tmp/telemetry.csv \
 
 출력의 `scenarioPatch.monetization`을 시나리오에 붙인 뒤 `idk ltv`를 재실행하면
 실데이터 기반 LTV 추정치로 바로 갱신됩니다.
+
+캘리브레이션 기본 출력에는 `uncertainty.correlation` 기본값도 포함되므로,
+초기에는 그대로 사용하고 데이터가 쌓이면 상관계수를 교정하는 방식이 안전합니다.

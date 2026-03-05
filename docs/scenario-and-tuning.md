@@ -204,5 +204,18 @@
 - `monetization.revenue`: `progressionRevenueLift/progressionLogSpan`
 - `monetization.acquisition.cpi`
 - `monetization.uncertainty`: `enabled/draws/quantiles/sigma/*`
+- `monetization.uncertainty.correlation`: 지표 간 상관관계(`[-1, 1]`)
+  - `retentionConversion`
+  - `retentionArppu`
+  - `retentionAd`
+  - `conversionArppu`
+  - `conversionAd`
+  - `arppuAd`
 
 불확실성이 켜져 있으면(`enabled=true`) Monte Carlo 결과로 `q50/q90` 같은 분위수 필드가 출력됩니다.
+`correlation`을 지정하면 retention/결제전환/ARPPU/광고수익이 독립이 아니라 함께 움직이도록 샘플링됩니다.
+
+권장 시작값:
+
+- 보수적 시작: 모든 correlation을 `0`으로 두고 독립 가정
+- 실서비스 근사: `retentionConversion=0.2~0.4`, `conversionArppu=0.3~0.5`부터 탐색

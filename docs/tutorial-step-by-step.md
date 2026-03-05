@@ -26,6 +26,12 @@
 
 - 입문 트랙: compare 결과에서 `detail.source = "measured"` 확인
 - 실전 트랙: tune 결과에서 `report.best` 확인
+- 설계 트랙: `05-idle-design-v1`에서 재화/요소/액션 선택 이유를 설명할 수 있음
+
+사전 체크(권장 10분):
+
+- `docs/virtual-scenario-design.md`의 0번 섹션(가상 시나리오 캔버스) 먼저 작성
+- 최소 결정 항목: 재화 2종(`COIN/GEM`), 핵심 액션 3종(`buy.producer/buy.upgrade/exchange.gem`)
 
 성공 조건:
 

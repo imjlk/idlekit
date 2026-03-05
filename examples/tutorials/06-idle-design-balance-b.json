@@ -99,6 +99,14 @@
         "conversion": 0.12,
         "arppu": 0.2,
         "ad": 0.15
+      },
+      "correlation": {
+        "retentionConversion": 0.35,
+        "retentionArppu": 0.28,
+        "retentionAd": 0.18,
+        "conversionArppu": 0.48,
+        "conversionAd": 0.3,
+        "arppuAd": 0.4
       }
     }
   },
