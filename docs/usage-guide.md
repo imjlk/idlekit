@@ -50,6 +50,13 @@ idk --help
 bun run --cwd packages/cli build:bin
 ```
 
+시나리오 템플릿 생성:
+
+```bash
+bun run --cwd packages/cli dev -- init scenario --track intro --out ../../tmp/new-scenario.json
+bun run --cwd packages/cli dev -- init scenario --track design --out ../../tmp/design-scenario.json
+```
+
 ## 3. 기본 워크플로우
 
 ### 3.0 설계 우선(가상 시나리오) 시작점
@@ -84,6 +91,24 @@ bun run --cwd packages/cli dev -- validate ../../examples/plugins/plugin-scenari
   --plugin-sha256 ../../examples/plugins/custom-econ-plugin.ts=$SHA
 ```
 
+신뢰 파일 기반 정책(권장 2):
+
+```bash
+cat > ./tmp/plugin-trust.json <<'JSON'
+{
+  "plugins": {
+    "../../examples/plugins/custom-econ-plugin.ts": "<sha256>"
+  }
+}
+JSON
+
+bun run --cwd packages/cli dev -- validate ../../examples/plugins/plugin-scenario.json \
+  --plugin ../../examples/plugins/custom-econ-plugin.ts \
+  --allow-plugin true \
+  --plugin-root ../../examples/plugins \
+  --plugin-trust-file ./tmp/plugin-trust.json
+```
+
 ### 3.2 시뮬레이션
 
 ```bash
@@ -109,6 +134,7 @@ bun run --cwd packages/cli dev -- simulate ../../examples/simple-linear.json \
 오프라인 보상(catch-up)만 먼저 반영하고 이어서 시뮬레이션하려면 `--offline-seconds`를 사용합니다.
 출력에는 `offline` 요약과 `totalElapsedSec`가 함께 포함됩니다.
 또한 `run.id`, `run.seed`, `run.generatedAt`, `summaries.eventLog/offline`가 표준 관측 필드로 포함됩니다.
+JSON 출력에는 `_meta`가 추가되어 `cliVersion/gitSha/scenarioHash`를 함께 기록합니다.
 
 저장 상태에서 재개:
 
@@ -123,6 +149,7 @@ bun run --cwd packages/cli dev -- simulate ../../examples/simple-linear.json \
 
 - `v`, `unit`, `t`, `wallet`, `maxMoneyEver`, `prestige`, `vars`
 - `meta.scenarioPath`, `meta.savedAt`, `meta.runId`, `meta.seed`
+- `meta.cliVersion`, `meta.gitSha`, `meta.scenarioHash`
 - `strategy.id`, `strategy.state` (전략이 상태 snapshot을 지원할 때)
 
 재개(`--resume`) 규칙:
@@ -305,6 +332,17 @@ bun run --cwd packages/cli dev -- strategies list --format md
 ```bash
 bun run --cwd packages/cli dev -- objectives list --format md
 ```
+
+## 5. 출력 계약(JSON Schema)
+
+CLI JSON 출력 계약은 아래 스키마를 기준으로 관리됩니다.
+
+- `docs/schemas/simulate.output.schema.json`
+- `docs/schemas/eta.output.schema.json`
+- `docs/schemas/compare.output.schema.json`
+- `docs/schemas/tune.output.schema.json`
+- `docs/schemas/ltv.output.schema.json`
+- `docs/schemas/calibrate.output.schema.json`
 
 공통 규칙:
 

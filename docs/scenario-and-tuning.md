@@ -175,7 +175,10 @@
   "meta": {
     "scenarioPath": "../../examples/simple-linear.json",
     "savedAt": "2026-03-05T14:00:00.000Z",
-    "runId": "..."
+    "runId": "...",
+    "cliVersion": "0.1.0",
+    "gitSha": "abc1234",
+    "scenarioHash": "sha256..."
   },
   "strategy": {
     "id": "scripted",
@@ -219,3 +222,16 @@
 
 - 보수적 시작: 모든 correlation을 `0`으로 두고 독립 가정
 - 실서비스 근사: `retentionConversion=0.2~0.4`, `conversionArppu=0.3~0.5`부터 탐색
+
+## 11. JSON 출력 계약(_meta)
+
+`--format json` 출력에는 공통 `_meta` 필드가 포함됩니다.
+
+- `command`
+- `generatedAt`
+- `cliVersion`
+- `gitSha` (가능한 경우)
+- `scenarioHash` 또는 `telemetryHash`
+- 명령별 추가값(`runId`, `seed`, `tuneSpecHash` 등)
+
+공식 출력 스키마는 `docs/schemas/*.output.schema.json`를 기준으로 관리합니다.
