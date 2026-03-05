@@ -107,6 +107,25 @@ describe("CLI golden outputs", () => {
     expect(out.stats).toBeDefined();
   });
 
+  it("simulate applies offline catch-up before main run", () => {
+    const out = runCliJson([
+      "simulate",
+      BASELINE,
+      "--offline-seconds",
+      "120",
+      "--duration",
+      "30",
+      "--format",
+      "json",
+    ]);
+
+    expect(out.offline).toBeDefined();
+    expect(out.offline.requestedSec).toBe(120);
+    expect(out.startT).toBe(120);
+    expect(out.durationSec).toBe(30);
+    expect(out.totalElapsedSec).toBe(150);
+  });
+
   it("tune can write artifact and compare baseline artifact", async () => {
     const dir = await mkdtemp(resolve(tmpdir(), "idlekit-tune-artifact-"));
     try {

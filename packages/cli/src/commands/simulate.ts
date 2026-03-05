@@ -1,5 +1,6 @@
 import { defineCommand, option } from "@bunli/core";
 import {
+  applyOfflineSeconds,
   compileScenario,
   createNumberEngine,
   runScenario,
@@ -36,13 +37,18 @@ export default defineCommand({
     "event-log-max": option(z.coerce.number().int().nonnegative().optional(), {
       description: "Retain only latest N events in memory",
     }),
+    "offline-seconds": option(z.coerce.number().nonnegative().optional(), {
+      description: "Apply offline catch-up before simulation starts",
+    }),
     out: option(z.string().optional(), { description: "Output path" }),
     format: option(z.enum(["json", "md", "csv"]).default("json"), { description: "Output format" }),
   },
   async handler({ flags, positional }) {
     const scenarioPath = positional[0];
     if (!scenarioPath) {
-      throw new Error("Usage: idk simulate <scenario> [--duration <sec>] [--step <sec>]");
+      throw new Error(
+        "Usage: idk simulate <scenario> [--duration <sec>] [--step <sec>] [--offline-seconds <sec>]",
+      );
     }
 
     const input = await readScenarioFile(scenarioPath);
@@ -104,8 +110,36 @@ export default defineCommand({
       },
     };
 
-    const run = runScenario(runScenarioInput);
-    const netWorth = runScenarioInput.model.netWorth?.(runScenarioInput.ctx, run.end) ?? run.end.wallet.money;
+    const offlineSeconds = flags["offline-seconds"] ?? 0;
+    const offlineRun =
+      offlineSeconds > 0
+        ? applyOfflineSeconds({
+            scenario: runScenarioInput,
+            seconds: offlineSeconds,
+            options: {
+              useStrategy: !!strategy,
+              fast: runScenarioInput.run.fast,
+              // Offline catch-up does not need to retain all events by default.
+              eventLog: {
+                enabled: false,
+                maxEvents: 0,
+              },
+            },
+          })
+        : undefined;
+
+    const effectiveScenario = offlineRun
+      ? {
+          ...runScenarioInput,
+          initial: offlineRun.end,
+        }
+      : runScenarioInput;
+
+    const run = runScenario(effectiveScenario);
+    const netWorth = effectiveScenario.model.netWorth?.(effectiveScenario.ctx, run.end) ?? run.end.wallet.money;
+    const totalElapsedSec = run.end.t - compiled.initial.t;
+    const offlineEndWorth =
+      offlineRun && (runScenarioInput.model.netWorth?.(runScenarioInput.ctx, offlineRun.end) ?? offlineRun.end.wallet.money);
 
     await writeOutput({
       format: flags.format,
@@ -115,8 +149,24 @@ export default defineCommand({
         startT: run.start.t,
         endT: run.end.t,
         durationSec: run.end.t - run.start.t,
+        totalElapsedSec,
         endMoney: E.toString(run.end.wallet.money.amount),
         endNetWorth: E.toString(netWorth.amount),
+        offline:
+          offlineRun &&
+          ({
+            requestedSec: offlineRun.offline.requestedSec,
+            simulatedSec: offlineRun.offline.simulatedSec,
+            stepSec: offlineRun.offline.stepSec,
+            fullSteps: offlineRun.offline.fullSteps,
+            remainderSec: offlineRun.offline.remainderSec,
+            usedStrategy: offlineRun.offline.usedStrategy,
+            endT: offlineRun.end.t,
+            endMoney: E.toString(offlineRun.end.wallet.money.amount),
+            endNetWorth: offlineEndWorth ? E.toString(offlineEndWorth.amount) : undefined,
+            stats: offlineRun.stats,
+            uxFlags: offlineRun.uxFlags,
+          }),
         prestige: {
           count: run.end.prestige.count,
           points: E.toString(run.end.prestige.points),

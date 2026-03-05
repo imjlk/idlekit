@@ -84,11 +84,15 @@ bun run --cwd packages/cli dev -- simulate ../../examples/simple-linear.json \
   --duration 1800 \
   --step 1 \
   --strategy greedy \
+  --offline-seconds 3600 \
   --fast true \
   --event-log-enabled true \
   --event-log-max 2000 \
   --format json
 ```
+
+오프라인 보상(catch-up)만 먼저 반영하고 이어서 시뮬레이션하려면 `--offline-seconds`를 사용합니다.
+출력에는 `offline` 요약과 `totalElapsedSec`가 함께 포함됩니다.
 
 ### 3.3 ETA 분석
 
