@@ -3,9 +3,14 @@ import {
   applyOfflineSeconds,
   compileScenario,
   createNumberEngine,
+  deserializeSimState,
   runScenario,
+  serializeSimState,
   validateScenarioV1,
 } from "@idlekit/core";
+import { randomUUID } from "node:crypto";
+import { readFile, writeFile } from "node:fs/promises";
+import { resolve } from "node:path";
 import { z } from "zod";
 import { readScenarioFile } from "../io/readScenario";
 import { writeOutput } from "../io/writeOutput";
@@ -40,6 +45,10 @@ export default defineCommand({
     "offline-seconds": option(z.coerce.number().nonnegative().optional(), {
       description: "Apply offline catch-up before simulation starts",
     }),
+    resume: option(z.string().optional(), { description: "Resume simulation from saved state json" }),
+    "state-out": option(z.string().optional(), { description: "Write end simulation state json" }),
+    seed: option(z.coerce.number().optional(), { description: "Deterministic seed passed to ctx.seed" }),
+    "run-id": option(z.string().optional(), { description: "Optional run identifier (auto-generated if omitted)" }),
     out: option(z.string().optional(), { description: "Output path" }),
     format: option(z.enum(["json", "md", "csv"]).default("json"), { description: "Output format" }),
   },
@@ -47,7 +56,7 @@ export default defineCommand({
     const scenarioPath = positional[0];
     if (!scenarioPath) {
       throw new Error(
-        "Usage: idk simulate <scenario> [--duration <sec>] [--step <sec>] [--offline-seconds <sec>]",
+        "Usage: idk simulate <scenario> [--duration <sec>] [--step <sec>] [--offline-seconds <sec>] [--resume <state.json>]",
       );
     }
 
@@ -92,8 +101,24 @@ export default defineCommand({
           }
         : compiled.run.eventLog;
 
+    const resumedState = flags.resume
+      ? deserializeSimState<number, string, Record<string, unknown>>(
+          E,
+          JSON.parse(await readFile(resolve(process.cwd(), flags.resume), "utf8")),
+          {
+            expectedUnit: compiled.ctx.unit.code,
+            unitFactory: (code) => ({ code }),
+          },
+        )
+      : undefined;
+
     const runScenarioInput = {
       ...compiled,
+      initial: resumedState ?? compiled.initial,
+      ctx: {
+        ...compiled.ctx,
+        seed: flags.seed ?? compiled.ctx.seed,
+      },
       strategy,
       run: {
         ...compiled.run,
@@ -119,6 +144,7 @@ export default defineCommand({
             options: {
               useStrategy: !!strategy,
               fast: runScenarioInput.run.fast,
+              policy: runScenarioInput.run.offline,
               // Offline catch-up does not need to retain all events by default.
               eventLog: {
                 enabled: false,
@@ -138,35 +164,78 @@ export default defineCommand({
     const run = runScenario(effectiveScenario);
     const netWorth = effectiveScenario.model.netWorth?.(effectiveScenario.ctx, run.end) ?? run.end.wallet.money;
     const totalElapsedSec = run.end.t - compiled.initial.t;
+    const stateOutPath = flags["state-out"] ? resolve(process.cwd(), flags["state-out"]) : undefined;
+    const runId = flags["run-id"] ?? randomUUID();
+    const seed = effectiveScenario.ctx.seed;
+    const generatedAt = new Date().toISOString();
     const offlineEndWorth =
       offlineRun && (runScenarioInput.model.netWorth?.(runScenarioInput.ctx, offlineRun.end) ?? offlineRun.end.wallet.money);
+
+    if (stateOutPath) {
+      const serialized = serializeSimState(E, run.end, {
+        engineName: "number",
+        engineVersion: "1",
+        scenarioPath,
+        savedAt: generatedAt,
+      });
+      const enriched = {
+        ...serialized,
+        meta: {
+          ...serialized.meta,
+          runId,
+          seed,
+        },
+      };
+      await writeFile(stateOutPath, `${JSON.stringify(enriched, null, 2)}\n`, "utf8");
+    }
+
+    const offlineSummary =
+      offlineRun &&
+      ({
+        requestedSec: offlineRun.offline.requestedSec,
+        preDecaySec: offlineRun.offline.preDecaySec,
+        effectiveSec: offlineRun.offline.effectiveSec,
+        simulatedSec: offlineRun.offline.simulatedSec,
+        stepSec: offlineRun.offline.stepSec,
+        fullSteps: offlineRun.offline.fullSteps,
+        remainderSec: offlineRun.offline.remainderSec,
+        usedStrategy: offlineRun.offline.usedStrategy,
+        overflow: offlineRun.offline.overflow,
+        decay: offlineRun.offline.decay,
+      });
 
     await writeOutput({
       format: flags.format,
       outPath: flags.out,
       data: {
+        run: {
+          id: runId,
+          seed,
+          generatedAt,
+        },
         scenario: scenarioPath,
         startT: run.start.t,
         endT: run.end.t,
         durationSec: run.end.t - run.start.t,
         totalElapsedSec,
+        resumedFrom: flags.resume,
+        stateOut: stateOutPath,
         endMoney: E.toString(run.end.wallet.money.amount),
         endNetWorth: E.toString(netWorth.amount),
         offline:
           offlineRun &&
           ({
-            requestedSec: offlineRun.offline.requestedSec,
-            simulatedSec: offlineRun.offline.simulatedSec,
-            stepSec: offlineRun.offline.stepSec,
-            fullSteps: offlineRun.offline.fullSteps,
-            remainderSec: offlineRun.offline.remainderSec,
-            usedStrategy: offlineRun.offline.usedStrategy,
+            ...offlineSummary,
             endT: offlineRun.end.t,
             endMoney: E.toString(offlineRun.end.wallet.money.amount),
             endNetWorth: offlineEndWorth ? E.toString(offlineEndWorth.amount) : undefined,
             stats: offlineRun.stats,
             uxFlags: offlineRun.uxFlags,
           }),
+        summaries: {
+          eventLog: run.eventLog,
+          offline: offlineSummary,
+        },
         prestige: {
           count: run.end.prestige.count,
           points: E.toString(run.end.prestige.points),

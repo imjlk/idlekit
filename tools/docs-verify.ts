@@ -62,6 +62,16 @@ function verifyIntroTrack(): void {
   assert(has(simulate, "endNetWorth"), "simulate must include endNetWorth");
   assert(has(simulate, "stats"), "simulate must include stats");
 
+  const statePath = resolve(tmpDir, "intro-state.json");
+  const firstRun = asRecord(
+    runCliJson(["simulate", baseline, "--duration", "30", "--state-out", statePath, "--format", "json"]),
+  );
+  assert(existsSync(statePath), "simulate --state-out should create state json");
+  const resumed = asRecord(
+    runCliJson(["simulate", baseline, "--resume", statePath, "--duration", "10", "--format", "json"]),
+  );
+  assert(firstRun.endT === resumed.startT, "resumed run startT must match saved endT");
+
   const eta = asRecord(
     runCliJson([
       "eta",

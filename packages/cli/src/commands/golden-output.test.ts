@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { execFileSync } from "node:child_process";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 
@@ -98,10 +99,19 @@ describe("CLI golden outputs", () => {
       "true",
       "--event-log-max",
       "2",
+      "--run-id",
+      "golden-run",
+      "--seed",
+      "42",
       "--format",
       "json",
     ]);
 
+    expect(out.run).toBeDefined();
+    expect(out.run.id).toBe("golden-run");
+    expect(out.run.seed).toBe(42);
+    expect(typeof out.run.generatedAt).toBe("string");
+    expect(out.summaries?.eventLog).toBeDefined();
     expect(out.eventLog).toBeDefined();
     expect(out.eventLog.retained).toBeLessThanOrEqual(2);
     expect(out.stats).toBeDefined();
@@ -124,6 +134,46 @@ describe("CLI golden outputs", () => {
     expect(out.startT).toBe(120);
     expect(out.durationSec).toBe(30);
     expect(out.totalElapsedSec).toBe(150);
+  });
+
+  it("simulate can write and resume from state json", async () => {
+    const dir = await mkdtemp(resolve(tmpdir(), "idlekit-sim-state-"));
+    try {
+      const statePath = resolve(dir, "sim-state.json");
+      const first = runCliJson([
+        "simulate",
+        BASELINE,
+        "--duration",
+        "45",
+        "--state-out",
+        statePath,
+        "--format",
+        "json",
+      ]);
+
+      expect(existsSync(statePath)).toBeTrue();
+      const savedRaw = JSON.parse(await readFile(statePath, "utf8"));
+      expect(savedRaw.v).toBe(1);
+      expect(savedRaw.t).toBe(first.endT);
+
+      const resumed = runCliJson([
+        "simulate",
+        BASELINE,
+        "--resume",
+        statePath,
+        "--duration",
+        "15",
+        "--format",
+        "json",
+      ]);
+
+      expect(resumed.startT).toBe(first.endT);
+      expect(resumed.durationSec).toBe(15);
+      expect(resumed.endT).toBe(first.endT + 15);
+      expect(resumed.resumedFrom).toContain("sim-state.json");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 
   it("tune can write artifact and compare baseline artifact", async () => {

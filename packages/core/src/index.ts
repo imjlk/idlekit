@@ -14,6 +14,7 @@ export * from "./notation/parseMoney";
 export * from "./notation/visibilityTracker";
 
 export * from "./serde/moneyState";
+export * from "./serde/simState";
 
 export * from "./scenario/types";
 export * from "./scenario/registry";
