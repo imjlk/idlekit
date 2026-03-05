@@ -89,6 +89,34 @@ describe("CLI golden outputs", () => {
     expect(out.report?.best).toBeDefined();
   });
 
+  it("ltv returns default horizon summary and optional ltvProxy", () => {
+    const out = runCliJson([
+      "ltv",
+      BASELINE,
+      "--horizons",
+      "30m,2h,24h,7d,30d,90d",
+      "--step",
+      "600",
+      "--fast",
+      "true",
+      "--value-per-worth",
+      "0.001",
+      "--format",
+      "json",
+    ]);
+
+    expect(out.horizons).toBeDefined();
+    expect(Array.isArray(out.horizons)).toBeTrue();
+    expect(out.horizons.length).toBe(6);
+    expect(out.summary?.at30m).toBeDefined();
+    expect(out.summary?.at2h).toBeDefined();
+    expect(out.summary?.at24h).toBeDefined();
+    expect(out.summary?.at7d).toBeDefined();
+    expect(out.summary?.at30d).toBeDefined();
+    expect(out.summary?.at90d).toBeDefined();
+    expect(out.horizons[0]?.ltvProxy).toBeDefined();
+  });
+
   it("simulate supports event log overrides", () => {
     const out = runCliJson([
       "simulate",

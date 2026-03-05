@@ -121,6 +121,26 @@ function verifyIntroTrack(): void {
   assert(tune.ok === true, "tune result must be ok=true");
   const report = asRecord(tune.report as JSONValue);
   assert(has(report, "best"), "tune report must include best");
+
+  const ltv = asRecord(
+    runCliJson([
+      "ltv",
+      baseline,
+      "--horizons",
+      "30m,2h,24h,7d,30d,90d",
+      "--step",
+      "600",
+      "--fast",
+      "true",
+      "--value-per-worth",
+      "0.001",
+      "--format",
+      "json",
+    ]),
+  );
+  const summary = asRecord(ltv.summary as JSONValue);
+  assert(has(summary, "at30m"), "ltv summary must include at30m");
+  assert(has(summary, "at90d"), "ltv summary must include at90d");
 }
 
 function verifyPluginTrack(): void {

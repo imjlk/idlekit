@@ -7,6 +7,7 @@ import { createGeneratedHelpers, registerGeneratedStore } from '@bunli/core'
 import Compare from '../src/commands/compare.js'
 import Eta from '../src/commands/eta.js'
 import Growth from '../src/commands/growth.js'
+import Ltv from '../src/commands/ltv.js'
 import PrestigeCycle from '../src/commands/prestigeCycle.js'
 import Report from '../src/commands/report.js'
 import Simulate from '../src/commands/simulate.js'
@@ -14,13 +15,14 @@ import Tune from '../src/commands/tune.js'
 import Validate from '../src/commands/validate.js'
 
 // Narrow list of command names to avoid typeof-cycles in types
-const names = ['compare', 'eta', 'growth', 'prestige-cycle', 'report', 'simulate', 'tune', 'validate'] as const
+const names = ['compare', 'eta', 'growth', 'ltv', 'prestige-cycle', 'report', 'simulate', 'tune', 'validate'] as const
 type GeneratedNames = typeof names[number]
 
 const modules: Record<GeneratedNames, Command<any>> = {
   'compare': Compare,
   'eta': Eta,
   'growth': Growth,
+  'ltv': Ltv,
   'prestige-cycle': PrestigeCycle,
   'report': Report,
   'simulate': Simulate,
@@ -84,6 +86,25 @@ const metadata: Record<GeneratedNames, GeneratedCommandMeta> = {
         'format': { type: 'z.enum.default', required: true, hasDefault: true, default: "json", description: 'Output format', enumValues: ["json","md","csv"], schema: {"type":"zod","method":"default","args":[{"type":"literal","value":"json"}]}, validator: '(val) => true' }
       },
       path: './src/commands/growth'
+    },
+  'ltv': {
+      name: 'ltv',
+      description: 'Compute long-horizon KPI snapshots for LTV conversion',
+      options: {
+        'plugin': { type: 'z.string.default', required: true, hasDefault: true, default: "", description: 'Comma-separated plugin paths', fileType: 'path', schema: {"type":"zod","method":"default","args":[{"type":"literal","value":""}]}, validator: '(val) => true' },
+        'allow-plugin': { type: 'z.coerce.boolean.default', required: true, hasDefault: true, default: false, description: 'Allow loading local plugin modules', schema: {"type":"zod","method":"default","args":[{"type":"unknown","raw":{"type":"BooleanLiteral","start":2399,"end":2404,"loc":{"start":{"line":72,"column":54,"index":2399},"end":{"line":72,"column":59,"index":2404}},"value":false}}]}, validator: '(val) => true' },
+        'plugin-root': { type: 'z.string.default', required: true, hasDefault: true, default: "", description: 'Comma-separated allowed plugin root directories', fileType: 'directory', schema: {"type":"zod","method":"default","args":[{"type":"literal","value":""}]}, validator: '(val) => true' },
+        'plugin-sha256': { type: 'z.string.default', required: true, hasDefault: true, default: "", description: 'Comma-separated \'<path>=<sha256>\' plugin integrity map', schema: {"type":"zod","method":"default","args":[{"type":"literal","value":""}]}, validator: '(val) => true' },
+        'horizons': { type: 'z.string.default', required: true, hasDefault: true, default: "30m,2h,24h,7d,30d,90d", description: 'Comma-separated duration tokens (s|m|h|d)', schema: {"type":"zod","method":"default","args":[{"type":"literal","value":"30m,2h,24h,7d,30d,90d"}]}, validator: '(val) => true' },
+        'step': { type: 'z.coerce.number.positive.optional', required: false, hasDefault: false, description: 'Override stepSec for long-horizon runs', schema: {"type":"zod","method":"optional","args":[]}, validator: '(val) => true' },
+        'strategy': { type: 'strategySchema', required: true, hasDefault: false, description: 'Override strategy id (greedy|planner|scripted)', schema: {"type":"zod","name":"strategySchema"}, validator: '(val) => true' },
+        'fast': { type: 'z.coerce.boolean.default', required: true, hasDefault: true, default: false, description: 'Enable fast(log-domain) mode for long horizons', schema: {"type":"zod","method":"default","args":[{"type":"unknown","raw":{"type":"BooleanLiteral","start":3161,"end":3166,"loc":{"start":{"line":88,"column":44,"index":3161},"end":{"line":88,"column":49,"index":3166}},"value":false}}]}, validator: '(val) => true' },
+        'seed': { type: 'z.coerce.number.optional', required: false, hasDefault: false, description: 'Deterministic seed passed to ctx.seed', schema: {"type":"zod","method":"optional","args":[]}, validator: '(val) => true' },
+        'value-per-worth': { type: 'z.coerce.number.nonnegative.optional', required: false, hasDefault: false, description: 'Optional conversion factor from netWorth to business value', schema: {"type":"zod","method":"optional","args":[]}, validator: '(val) => true' },
+        'out': { type: 'z.string.optional', required: false, hasDefault: false, description: 'Output path', fileType: 'path', schema: {"type":"zod","method":"optional","args":[]}, validator: '(val) => true' },
+        'format': { type: 'z.enum.default', required: true, hasDefault: true, default: "json", description: 'Output format', enumValues: ["json","md","csv"], schema: {"type":"zod","method":"default","args":[{"type":"literal","value":"json"}]}, validator: '(val) => true' }
+      },
+      path: './src/commands/ltv'
     },
   'prestige-cycle': {
       name: 'prestige-cycle',
