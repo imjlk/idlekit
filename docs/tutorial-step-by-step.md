@@ -334,3 +334,9 @@ bun run --cwd packages/cli dev -- ltv ../../examples/tutorials/05-idle-design-v1
   --allow-plugin true \
   --format json
 ```
+
+실데이터가 있으면 캘리브레이션 후 재실행:
+
+```bash
+bun run --cwd packages/cli dev -- calibrate ./tmp/telemetry.csv --input-format csv --format json
+```

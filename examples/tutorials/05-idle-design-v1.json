@@ -66,6 +66,42 @@
       "windowSec": 60
     }
   },
+  "monetization": {
+    "cohorts": {
+      "baseUsers": 10000
+    },
+    "retention": {
+      "d1": 0.42,
+      "d7": 0.2,
+      "d30": 0.09,
+      "d90": 0.04,
+      "longTailDailyDecay": 0.02
+    },
+    "revenue": {
+      "payerConversion": 0.03,
+      "arppuDaily": 0.7,
+      "adArpDau": 0.02,
+      "platformFeeRate": 0.3,
+      "grossMarginRate": 0.92,
+      "progressionRevenueLift": 0.45,
+      "progressionLogSpan": 6
+    },
+    "acquisition": {
+      "cpi": 1.8
+    },
+    "uncertainty": {
+      "enabled": true,
+      "draws": 300,
+      "quantiles": [0.5, 0.9],
+      "seed": 11,
+      "sigma": {
+        "retention": 0.08,
+        "conversion": 0.12,
+        "arppu": 0.2,
+        "ad": 0.15
+      }
+    }
+  },
   "outputs": {
     "format": "json",
     "report": {

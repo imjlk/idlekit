@@ -17,9 +17,11 @@
 - `05-idle-design-v1.json`
   - 설계 중심 가상 시나리오(재화/요소/액션 의사결정 반영)
   - 플러그인 모델 `plugin.generators` + 전략 `plugin.producerFirst`
+  - `monetization` 블록 포함(실LTV/불확실성 계산)
 - `06-idle-design-balance-b.json`
   - `05`의 대조군 밸런스 프로파일
   - producer/upgrade/gem 파라미터만 다르게 설정
+  - `monetization` 파라미터도 대조군 값 포함
 - `07-idle-design-tune.json`
   - `05`를 대상으로 한 튜닝 스펙
   - 목표: `plugin.gemsAndWorthLog10`

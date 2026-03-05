@@ -28,6 +28,7 @@
 - `clock` 종료 조건: `durationSec` 또는 `untilExpr` 중 최소 1개는 필수
 - `strategy`: 전략 id + params
 - `analysis`: ETA/성장/프레스티지 분석 옵션
+- `monetization`: LTV 계산용 리텐션/수익/UA/CPI/불확실성 파라미터
 - `sim.fast`: log-domain fast 모드 사용 여부
 - `sim.eventLog.enabled`: `false`면 이벤트 저장 비활성화(통계는 계속 계산)
 - `sim.eventLog.maxEvents`: 최근 N개 이벤트만 보관(ring buffer)
@@ -193,3 +194,15 @@
 결정론 노트:
 
 - `scripted` 전략은 cursor 상태를 저장/복원하므로 분할 실행 + 재개가 연속 실행과 동일한 결과를 유지합니다.
+
+## 10. Monetization 블록(실LTV 모델) 요약
+
+`idk ltv`는 아래 필드를 사용해 LTV를 계산합니다.
+
+- `monetization.retention`: `d1/d7/d30/d90/longTailDailyDecay`
+- `monetization.revenue`: `payerConversion/arppuDaily/adArpDau/platformFeeRate/grossMarginRate`
+- `monetization.revenue`: `progressionRevenueLift/progressionLogSpan`
+- `monetization.acquisition.cpi`
+- `monetization.uncertainty`: `enabled/draws/quantiles/sigma/*`
+
+불확실성이 켜져 있으면(`enabled=true`) Monte Carlo 결과로 `q50/q90` 같은 분위수 필드가 출력됩니다.

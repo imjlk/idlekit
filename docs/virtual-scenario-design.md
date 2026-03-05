@@ -170,3 +170,17 @@ bun run --cwd packages/cli dev -- ltv ../../examples/tutorials/05-idle-design-v1
 
 - 장기 구간은 `--step 300` 또는 `--step 600`으로 coarse step을 권장
 - 정확도 검증이 필요하면 `--fast false`로 재실행해 차이를 비교
+
+## 10. 실데이터 캘리브레이션 (calibrate)
+
+텔레메트리 CSV/JSON에서 `monetization` 블록을 추정할 수 있습니다.
+
+```bash
+bun run --cwd packages/cli dev -- calibrate ./tmp/telemetry.csv \
+  --input-format csv \
+  --format json \
+  --out ./tmp/calibrated-monetization.json
+```
+
+출력의 `scenarioPatch.monetization`을 시나리오에 붙인 뒤 `idk ltv`를 재실행하면
+실데이터 기반 LTV 추정치로 바로 갱신됩니다.

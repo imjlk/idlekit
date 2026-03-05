@@ -258,8 +258,33 @@ bun run --cwd packages/cli dev -- ltv ../../examples/tutorials/05-idle-design-v1
   --format json
 ```
 
-`--value-per-worth`를 주면 `ltvProxy`가 함께 출력됩니다.
+`--value-per-worth`를 주면 `economyValueProxy`가 함께 출력됩니다.
 값을 주지 않으면 `netWorth` 중심 KPI 테이블만 출력됩니다.
+
+주요 출력 필드:
+
+- `horizons[].monetization.cumulativeLtvPerUser`
+- `horizons[].monetization.cumulativeLtvQuantiles` (uncertainty 활성 시)
+- `horizons[].guardrails.timeToFirstUpgradeSec`
+- `horizons[].guardrails.stallRatio`
+- `horizons[].guardrails.actionMix`
+
+### 3.10 실데이터 캘리브레이션
+
+```bash
+bun run --cwd packages/cli dev -- calibrate ./tmp/telemetry.csv \
+  --input-format csv \
+  --format json
+```
+
+CSV 권장 컬럼:
+
+- `user_id`
+- `day`
+- `revenue` (iap)
+- `ad_revenue`
+- `acquisition_cost` (선택)
+- `active` (선택)
 
 ## 4. 레지스트리 조회 명령
 
@@ -340,6 +365,10 @@ bun run --cwd packages/cli dev -- simulate ../../examples/simple-linear.json \
 ETA analytic 정확도:
 
 - 모델이 `analytic()` 힌트를 충분히 제공하지 않으면 simulate 대비 오차가 커질 수 있습니다.
+
+`validate`에서 migration notice가 출력될 수 있음:
+
+- `schemaVersion` 누락/legacy `ltv` 블록이 자동 정규화된 경우 안내 메시지가 출력됩니다.
 
 ## 8. 플러그인 실전 예제
 

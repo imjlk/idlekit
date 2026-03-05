@@ -38,6 +38,7 @@ bun run --cwd packages/cli dev -- simulate ../../examples/simple-linear.json --d
 bun run --cwd packages/cli dev -- eta ../../examples/simple-linear.json --target-worth 1e5 --mode analytic
 bun run --cwd packages/cli dev -- report ../../examples/simple-linear.json --include-growth true --include-ux true
 bun run --cwd packages/cli dev -- ltv ../../examples/tutorials/05-idle-design-v1.json --horizons 30m,2h,24h,7d,30d,90d --step 600 --fast true --value-per-worth 0.001 --plugin ../../examples/plugins/custom-econ-plugin.ts --allow-plugin true
+bun run --cwd packages/cli dev -- calibrate ./tmp/telemetry.csv --input-format csv --format json
 ```
 
 튜닝 실행:

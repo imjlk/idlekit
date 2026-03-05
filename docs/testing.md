@@ -11,6 +11,7 @@ bun run build
 bun run docs:verify:quick
 bun run docs:verify
 bun run bench:sim
+bun run bench:sim:suite
 bun run bench:sim:check
 bun run tune:regress --baseline ./tmp/tune-baseline.json --current ./tmp/tune-latest.json --tolerance 0.05
 ```
@@ -69,6 +70,7 @@ CI(`.github/workflows/ci.yml`)도 같은 순서(typecheck/test/build/docs quick)
 
 성능 리그레션은 `bench:sim:check`에서 평균/`p95` 실행시간 임계값으로 추가 검증합니다.
 `tools/bench-sim.ts`는 시나리오 경로를 저장소 루트 기준 절대경로로 정규화해 cwd 차이로 인한 오탐을 줄입니다.
+다중 시나리오 성능 스모크는 `bench:sim:suite`로 수행합니다.
 
 ## 5. 권장 커밋 단위
 
