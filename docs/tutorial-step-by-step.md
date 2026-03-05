@@ -5,6 +5,10 @@
 - 입문 트랙(약 15분): 내장 모델/전략으로 기본 분석 루프 체험
 - 실전 트랙(약 60분): 플러그인 + 튜닝 + KPI 비교 루프 체험
 
+설계 우선으로 시작하려면 먼저 아래 문서를 진행하세요:
+
+- [virtual-scenario-design.md](./virtual-scenario-design.md)
+
 기준 경로:
 
 - 명령은 **프로젝트 루트**에서 실행
@@ -16,6 +20,7 @@
 목표:
 
 - 시나리오를 검증하고, 실행하고, ETA/리포트/비교/튜닝까지 한 번에 수행
+- (설계 우선 트랙) 재화/요소/액션 의사결정을 시나리오 JSON으로 옮길 수 있다.
 
 완주 기준:
 
@@ -264,3 +269,55 @@ idk tune examples/plugins/plugin-scenario.json \
 실패 대응:
 
 - 수치가 흔들리면 `runner.seeds`를 늘리고 `budget`/`stages`를 단계적으로 확대
+
+## 부록) 설계 우선 가상 시나리오 트랙
+
+아래 3개 파일은 "아이들 게임 초기 기획(재화/요소/액션)"을 바로 실험하기 위한 세트입니다.
+
+- `examples/tutorials/05-idle-design-v1.json`
+- `examples/tutorials/06-idle-design-balance-b.json`
+- `examples/tutorials/07-idle-design-tune.json`
+
+설계 의도:
+
+- 재화
+  - `COIN`: 기본 결제/수입 재화
+  - `GEM`: 장기 가치 재화(`vars.gems`)
+- 요소
+  - `producers`: 기본 생산력
+  - `upgrades`: 배율 강화
+- 액션
+  - `buy.producer`
+  - `buy.upgrade`
+  - `exchange.gem`
+
+실행 순서:
+
+```bash
+bun run --cwd packages/cli dev -- validate ../../examples/tutorials/05-idle-design-v1.json \
+  --plugin ../../examples/plugins/custom-econ-plugin.ts \
+  --allow-plugin true
+
+bun run --cwd packages/cli dev -- simulate ../../examples/tutorials/05-idle-design-v1.json \
+  --plugin ../../examples/plugins/custom-econ-plugin.ts \
+  --allow-plugin true \
+  --format json
+
+bun run --cwd packages/cli dev -- compare \
+  ../../examples/tutorials/05-idle-design-v1.json \
+  ../../examples/tutorials/06-idle-design-balance-b.json \
+  --metric endNetWorth \
+  --plugin ../../examples/plugins/custom-econ-plugin.ts \
+  --allow-plugin true \
+  --format json
+
+bun run --cwd packages/cli dev -- tune ../../examples/tutorials/05-idle-design-v1.json \
+  --tune ../../examples/tutorials/07-idle-design-tune.json \
+  --plugin ../../examples/plugins/custom-econ-plugin.ts \
+  --allow-plugin true \
+  --format json
+```
+
+상세 설계 설명:
+
+- [virtual-scenario-design.md](./virtual-scenario-design.md)

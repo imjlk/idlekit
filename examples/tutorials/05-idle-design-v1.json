@@ -1,0 +1,79 @@
+{
+  "schemaVersion": 1,
+  "meta": {
+    "id": "idle-design-v1",
+    "title": "Idle Design V1 (Producer/Upgrade/Gem)",
+    "description": "Design-first virtual scenario for early idle game balancing",
+    "tags": ["design-first", "idle", "plugin", "producers", "gems"]
+  },
+  "unit": {
+    "code": "COIN",
+    "symbol": "C"
+  },
+  "policy": {
+    "mode": "accumulate",
+    "maxLogGap": 14
+  },
+  "model": {
+    "id": "plugin.generators",
+    "version": 1,
+    "params": {
+      "baseIncome": "0.8",
+      "producerIncome": "1.5",
+      "producerBaseCost": "10",
+      "producerCostGrowth": 1.12,
+      "upgradeBaseCost": "120",
+      "upgradeGrowth": 1.65,
+      "upgradeIncomeBoost": 0.18,
+      "gemExchangeCost": "900"
+    }
+  },
+  "initial": {
+    "t": 0,
+    "wallet": {
+      "unit": "COIN",
+      "amount": "40",
+      "bucket": "0"
+    },
+    "vars": {
+      "producers": 0,
+      "upgrades": 0,
+      "gems": 0
+    },
+    "prestige": {
+      "count": 0,
+      "points": "0",
+      "multiplier": "1"
+    }
+  },
+  "clock": {
+    "stepSec": 1,
+    "durationSec": 2400
+  },
+  "strategy": {
+    "id": "plugin.producerFirst",
+    "params": {
+      "schemaVersion": 1,
+      "allowUpgrade": true,
+      "preferUpgradeAtProducers": 8
+    }
+  },
+  "analysis": {
+    "eta": {
+      "mode": "simulate"
+    },
+    "growth": {
+      "windowSec": 60
+    }
+  },
+  "outputs": {
+    "format": "json",
+    "report": {
+      "checkpointsSec": [60, 300, 900, 1800, 2400],
+      "includeTrace": true,
+      "traceEverySteps": 1,
+      "includeGrowth": true,
+      "includeUX": true
+    }
+  }
+}

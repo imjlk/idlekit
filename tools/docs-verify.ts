@@ -130,6 +130,9 @@ function verifyPluginTrack(): void {
   const pluginShaArg = `${plugin}=${sha}`;
   const scenario = "../../examples/plugins/plugin-scenario.json";
   const tuneSpec = "../../examples/plugins/plugin-tune.json";
+  const designV1 = "../../examples/tutorials/05-idle-design-v1.json";
+  const designB = "../../examples/tutorials/06-idle-design-balance-b.json";
+  const designTune = "../../examples/tutorials/07-idle-design-tune.json";
 
   const strategies = asRecord(
     runCliJson([
@@ -210,6 +213,83 @@ function verifyPluginTrack(): void {
   assert(tune.ok === true, "plugin tune result must be ok=true");
   const report = asRecord(tune.report as JSONValue);
   assert(has(report, "best"), "plugin tune report must include best");
+
+  const designValidate = runCli([
+    "validate",
+    designV1,
+    "--plugin",
+    plugin,
+    "--allow-plugin",
+    "true",
+    "--plugin-root",
+    pluginRoot,
+    "--plugin-sha256",
+    pluginShaArg,
+  ]);
+  assert(designValidate.includes("OK:"), "design track validate should print OK");
+
+  const designSim = asRecord(
+    runCliJson([
+      "simulate",
+      designV1,
+      "--plugin",
+      plugin,
+      "--allow-plugin",
+      "true",
+      "--plugin-root",
+      pluginRoot,
+      "--plugin-sha256",
+      pluginShaArg,
+      "--format",
+      "json",
+    ]),
+  );
+  assert(has(designSim, "endMoney"), "design simulate must include endMoney");
+  assert(has(designSim, "endNetWorth"), "design simulate must include endNetWorth");
+  assert(has(designSim, "stats"), "design simulate must include stats");
+
+  const designCompare = asRecord(
+    runCliJson([
+      "compare",
+      designV1,
+      designB,
+      "--metric",
+      "endNetWorth",
+      "--plugin",
+      plugin,
+      "--allow-plugin",
+      "true",
+      "--plugin-root",
+      pluginRoot,
+      "--plugin-sha256",
+      pluginShaArg,
+      "--format",
+      "json",
+    ]),
+  );
+  assert(has(designCompare, "detail"), "design compare must include detail");
+
+  const designTuneOut = asRecord(
+    runCliJson([
+      "tune",
+      designV1,
+      "--tune",
+      designTune,
+      "--plugin",
+      plugin,
+      "--allow-plugin",
+      "true",
+      "--plugin-root",
+      pluginRoot,
+      "--plugin-sha256",
+      pluginShaArg,
+      "--format",
+      "json",
+    ]),
+  );
+  assert(designTuneOut.ok === true, "design tune result must be ok=true");
+  const designReport = asRecord(designTuneOut.report as JSONValue);
+  assert(has(designReport, "best"), "design tune report must include best");
 }
 
 function main(): void {

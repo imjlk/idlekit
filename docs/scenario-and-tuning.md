@@ -151,6 +151,13 @@
 - `examples/plugins/plugin-scenario.json`
 - `examples/plugins/plugin-tune.json`
 
+설계 우선 가상 시나리오 트랙:
+
+- `examples/tutorials/05-idle-design-v1.json`
+- `examples/tutorials/06-idle-design-balance-b.json`
+- `examples/tutorials/07-idle-design-tune.json`
+- 가이드: `docs/virtual-scenario-design.md`
+
 ## 9. SimState 저장/재개 계약
 
 `simulate --state-out`으로 저장되는 상태 포맷(v1):

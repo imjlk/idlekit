@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 1,
+  "meta": {
+    "id": "idle-design-tune-v1",
+    "title": "Idle Design V1 TuneSpec"
+  },
+  "strategy": {
+    "id": "plugin.producerFirst",
+    "baseParams": {
+      "schemaVersion": 1,
+      "allowUpgrade": true,
+      "preferUpgradeAtProducers": 8
+    },
+    "space": [
+      {
+        "path": "allowUpgrade",
+        "space": {
+          "kind": "bool"
+        }
+      },
+      {
+        "path": "preferUpgradeAtProducers",
+        "space": {
+          "kind": "int",
+          "min": 4,
+          "max": 20
+        }
+      }
+    ]
+  },
+  "objective": {
+    "id": "plugin.gemsAndWorthLog10",
+    "params": {
+      "gemsWeight": 2.2
+    }
+  },
+  "runner": {
+    "seeds": [11, 29, 47],
+    "budget": 80,
+    "overrideDurationSec": 1800,
+    "stages": [
+      {
+        "budget": 48,
+        "durationSec": 900,
+        "keepTopK": 12,
+        "fast": true
+      },
+      {
+        "budget": 32,
+        "durationSec": 1800,
+        "keepTopK": 8,
+        "fast": false
+      }
+    ],
+    "topK": 8
+  }
+}

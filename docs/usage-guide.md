@@ -1,6 +1,10 @@
 # idlekit 사용 가이드
 
-권장 학습 순서: [tutorial-step-by-step.md](./tutorial-step-by-step.md) 먼저 진행 후, 이 문서를 레퍼런스로 사용하세요.
+권장 학습 순서:
+
+1. 설계 우선: [virtual-scenario-design.md](./virtual-scenario-design.md)
+2. 실행 중심: [tutorial-step-by-step.md](./tutorial-step-by-step.md)
+3. 이후 이 문서를 레퍼런스로 사용
 
 ## 1. 개발 환경 준비
 
@@ -47,6 +51,15 @@ bun run --cwd packages/cli build:bin
 ```
 
 ## 3. 기본 워크플로우
+
+### 3.0 설계 우선(가상 시나리오) 시작점
+
+재화/요소/액션을 먼저 설계하려면 아래 트랙을 권장합니다.
+
+- 시나리오: `examples/tutorials/05-idle-design-v1.json`
+- 대조군: `examples/tutorials/06-idle-design-balance-b.json`
+- 튜닝: `examples/tutorials/07-idle-design-tune.json`
+- 설명 문서: [virtual-scenario-design.md](./virtual-scenario-design.md)
 
 ### 3.1 시나리오 검증
 

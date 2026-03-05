@@ -54,6 +54,7 @@ bun run tune:regress --baseline ./tmp/tune-baseline.json --current ./tmp/tune-la
 ## 문서
 
 - [사용 가이드](./docs/usage-guide.md)
+- [가상 시나리오 설계 가이드](./docs/virtual-scenario-design.md)
 - [머니 라이브러리 가이드](./docs/money-library.md)
 - [튜토리얼(2트랙) 스텝바이스텝](./docs/tutorial-step-by-step.md)
 - [시나리오/튜닝 명세 가이드](./docs/scenario-and-tuning.md)
