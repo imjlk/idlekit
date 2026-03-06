@@ -3,8 +3,9 @@ import { compileScenario, createNumberEngine, runScenario, validateScenarioV1 } 
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import { z } from "zod";
+import { loadRegistriesFromFlags, pluginOptions } from "./_shared/plugin";
 import { buildOutputMeta } from "../io/outputMeta";
-import { buildReplayArgs, writeReplayArtifact } from "../io/replayArtifact";
+import { writeCommandReplayArtifact } from "../io/replayPolicy";
 import { readScenarioFile } from "../io/readScenario";
 import { writeOutput } from "../io/writeOutput";
 import {
@@ -13,7 +14,6 @@ import {
   estimateLtvPerUser,
   progressionFactor,
 } from "../lib/ltvModel";
-import { loadRegistries, parsePluginPaths, parsePluginSecurityOptions } from "../plugin/load";
 
 const strategySchema = z.enum(["greedy", "planner", "scripted"]).optional();
 
@@ -148,19 +148,7 @@ export default defineCommand({
   name: "ltv",
   description: "Compute long-horizon LTV snapshots (30m..90d) and uncertainty bands",
   options: {
-    plugin: option(z.string().default(""), { description: "Comma-separated plugin paths" }),
-    "allow-plugin": option(z.coerce.boolean().default(false), {
-      description: "Allow loading local plugin modules",
-    }),
-    "plugin-root": option(z.string().default(""), {
-      description: "Comma-separated allowed plugin root directories",
-    }),
-    "plugin-sha256": option(z.string().default(""), {
-      description: "Comma-separated '<path>=<sha256>' plugin integrity map",
-    }),
-    "plugin-trust-file": option(z.string().default(""), {
-      description: "Plugin trust policy json file path",
-    }),
+    ...pluginOptions(),
     horizons: option(z.string().default("30m,2h,24h,7d,30d,90d"), {
       description: "Comma-separated duration tokens (s|m|h|d)",
     }),
@@ -193,14 +181,7 @@ export default defineCommand({
 
     const horizons = parseHorizons(flags.horizons);
     const input = await readScenarioFile(scenarioPath);
-    const loaded = await loadRegistries(
-      parsePluginPaths(flags.plugin, flags["allow-plugin"]),
-      parsePluginSecurityOptions({
-        roots: flags["plugin-root"],
-        sha256: flags["plugin-sha256"],
-        trustFile: flags["plugin-trust-file"],
-      }),
-    );
+    const loaded = await loadRegistriesFromFlags(flags);
     const valid = validateScenarioV1(input, loaded.modelRegistry);
     if (!valid.ok || !valid.scenario) {
       throw new Error(
@@ -405,23 +386,16 @@ export default defineCommand({
 
     if (flags["artifact-out"]) {
       const scenarioAbs = resolve(process.cwd(), scenarioPath);
-      const replayArgs = buildReplayArgs({
-        command: "ltv",
-        positional: [scenarioAbs],
-        flags: {
-          ...flags,
-          "run-id": runId,
-          seed: flags.seed ?? compiled.ctx.seed,
-          format: "json",
-        },
-        omitFlags: ["out", "artifact-out"],
-      });
-      await writeReplayArtifact({
+      await writeCommandReplayArtifact({
         outPath: flags["artifact-out"],
         command: "ltv",
         positional: [scenarioAbs],
         flags,
-        replayArgs,
+        forcedFlags: {
+          "run-id": runId,
+          seed: flags.seed ?? compiled.ctx.seed,
+          format: "json",
+        },
         result: jsonOutput,
         meta: outputMeta,
       });

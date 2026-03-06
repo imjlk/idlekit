@@ -15,11 +15,11 @@ import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { z } from "zod";
+import { loadRegistriesFromFlags, pluginOptions } from "./_shared/plugin";
 import { buildOutputMeta } from "../io/outputMeta";
-import { buildReplayArgs, writeReplayArtifact } from "../io/replayArtifact";
+import { writeCommandReplayArtifact } from "../io/replayPolicy";
 import { readScenarioFile } from "../io/readScenario";
 import { writeOutput } from "../io/writeOutput";
-import { loadRegistries, parsePluginPaths, parsePluginSecurityOptions } from "../plugin/load";
 
 type TuneRegression = Readonly<{
   baselinePath: string;
@@ -104,19 +104,7 @@ export default defineCommand({
   name: "tune",
   description: "Tune strategy parameters with objective scoring",
   options: {
-    plugin: option(z.string().default(""), { description: "Comma-separated plugin paths" }),
-    "allow-plugin": option(z.coerce.boolean().default(false), {
-      description: "Allow loading local plugin modules",
-    }),
-    "plugin-root": option(z.string().default(""), {
-      description: "Comma-separated allowed plugin root directories",
-    }),
-    "plugin-sha256": option(z.string().default(""), {
-      description: "Comma-separated '<path>=<sha256>' plugin integrity map",
-    }),
-    "plugin-trust-file": option(z.string().default(""), {
-      description: "Plugin trust policy json file path",
-    }),
+    ...pluginOptions(),
     tune: option(z.string().min(1), { description: "TuneSpec file path (.json|.yaml)" }),
     "artifact-out": option(z.string().optional(), { description: "Write tune artifact JSON to path" }),
     "baseline-artifact": option(z.string().optional(), {
@@ -153,14 +141,7 @@ export default defineCommand({
       runId,
     });
 
-    const loaded = await loadRegistries(
-      parsePluginPaths(flags.plugin, flags["allow-plugin"]),
-      parsePluginSecurityOptions({
-        roots: flags["plugin-root"],
-        sha256: flags["plugin-sha256"],
-        trustFile: flags["plugin-trust-file"],
-      }),
-    );
+    const loaded = await loadRegistriesFromFlags(flags);
     const result = await cmdTune({
       E: createNumberEngine(),
       scenarioInput,
@@ -203,23 +184,16 @@ export default defineCommand({
     if (flags["artifact-out"]) {
       const scenarioAbs = resolve(process.cwd(), scenarioPath);
       const tuneAbs = resolve(process.cwd(), flags.tune);
-      const replayArgs = buildReplayArgs({
-        command: "tune",
-        positional: [scenarioAbs],
-        flags: {
-          ...flags,
-          tune: tuneAbs,
-          "run-id": runId,
-          format: "json",
-        },
-        omitFlags: ["out", "artifact-out", "baseline-artifact", "fail-on-regression", "regression-tolerance"],
-      });
-      await writeReplayArtifact({
+      await writeCommandReplayArtifact({
         outPath: flags["artifact-out"],
         command: "tune",
         positional: [scenarioAbs],
         flags,
-        replayArgs,
+        forcedFlags: {
+          tune: tuneAbs,
+          "run-id": runId,
+          format: "json",
+        },
         result: output,
         meta: outputMeta,
         extra: {

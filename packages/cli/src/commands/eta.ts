@@ -7,28 +7,16 @@ import {
   validateScenarioV1,
 } from "@idlekit/core";
 import { z } from "zod";
+import { loadRegistriesFromFlags, pluginOptions } from "./_shared/plugin";
 import { buildOutputMeta } from "../io/outputMeta";
 import { readScenarioFile } from "../io/readScenario";
 import { writeOutput } from "../io/writeOutput";
-import { loadRegistries, parsePluginPaths, parsePluginSecurityOptions } from "../plugin/load";
 
 export default defineCommand({
   name: "eta",
   description: "Estimate time to target money or net worth",
   options: {
-    plugin: option(z.string().default(""), { description: "Comma-separated plugin paths" }),
-    "allow-plugin": option(z.coerce.boolean().default(false), {
-      description: "Allow loading local plugin modules",
-    }),
-    "plugin-root": option(z.string().default(""), {
-      description: "Comma-separated allowed plugin root directories",
-    }),
-    "plugin-sha256": option(z.string().default(""), {
-      description: "Comma-separated '<path>=<sha256>' plugin integrity map",
-    }),
-    "plugin-trust-file": option(z.string().default(""), {
-      description: "Plugin trust policy json file path",
-    }),
+    ...pluginOptions(),
     "target-money": option(z.string().optional(), { description: "Target money NumStr" }),
     "target-worth": option(z.string().optional(), { description: "Target net worth NumStr" }),
     mode: option(z.enum(["simulate", "analytic"]).default("simulate"), { description: "ETA mode" }),
@@ -64,14 +52,7 @@ export default defineCommand({
       : ({ kind: "netWorth", value: targetWorth! } as const);
 
     const input = await readScenarioFile(scenarioPath);
-    const loaded = await loadRegistries(
-      parsePluginPaths(flags.plugin, flags["allow-plugin"]),
-      parsePluginSecurityOptions({
-        roots: flags["plugin-root"],
-        sha256: flags["plugin-sha256"],
-        trustFile: flags["plugin-trust-file"],
-      }),
-    );
+    const loaded = await loadRegistriesFromFlags(flags);
     const valid = validateScenarioV1(input, loaded.modelRegistry);
     if (!valid.ok || !valid.scenario) {
       throw new Error(

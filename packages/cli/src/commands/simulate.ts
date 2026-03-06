@@ -13,31 +13,94 @@ import { randomUUID } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { z } from "zod";
+import { loadRegistriesFromFlags, pluginOptions } from "./_shared/plugin";
 import { buildOutputMeta } from "../io/outputMeta";
-import { buildReplayArgs, writeReplayArtifact } from "../io/replayArtifact";
+import { writeCommandReplayArtifact } from "../io/replayPolicy";
 import { readScenarioFile } from "../io/readScenario";
 import { writeOutput } from "../io/writeOutput";
-import { loadRegistries, parsePluginPaths, parsePluginSecurityOptions } from "../plugin/load";
 
 const strategySchema = z.enum(["greedy", "planner", "scripted"]).optional();
+
+function assertValidScenario(valid: ReturnType<typeof validateScenarioV1>) {
+  if (!valid.ok || !valid.scenario) {
+    throw new Error(
+      `Scenario invalid: ${valid.issues.map((i) => `${i.path ?? "root"}: ${i.message}`).join("; ")}`,
+    );
+  }
+  return valid.scenario;
+}
+
+function resolveStrategy(args: {
+  compiled: ReturnType<typeof compileScenario<number, string, Record<string, unknown>>>;
+  overrideId?: z.infer<typeof strategySchema>;
+  loaded: Awaited<ReturnType<typeof loadRegistriesFromFlags>>;
+}) {
+  if (!args.overrideId) return args.compiled.strategy;
+  const factory = args.loaded.strategyRegistry.get(args.overrideId);
+  if (!factory) throw new Error(`Unknown strategy: ${args.overrideId}`);
+  const params = factory.defaultParams ?? {};
+  return factory.create(params) as typeof args.compiled.strategy;
+}
+
+function restoreStrategyState(args: {
+  strategy: ReturnType<typeof resolveStrategy>;
+  resumedJson: ReturnType<typeof parseSimStateJSON> | undefined;
+}) {
+  if (!args.resumedJson?.strategy) return;
+  const resumed = args.resumedJson.strategy;
+  const strategy = args.strategy;
+  if (!strategy) {
+    throw new Error(`Resume state contains strategy '${resumed.id}' but scenario has no strategy`);
+  }
+  if (strategy.id !== resumed.id) {
+    throw new Error(`Resume strategy mismatch: expected ${strategy.id}, got ${resumed.id}`);
+  }
+  if (strategy.restoreState) {
+    strategy.restoreState(resumed.state);
+  } else if (resumed.state !== undefined) {
+    throw new Error(`Strategy '${strategy.id}' does not support state restore`);
+  }
+}
+
+function resolveEventLog(args: {
+  compiled: ReturnType<typeof compileScenario<number, string, Record<string, unknown>>>;
+  flags: {
+    "event-log-enabled"?: boolean;
+    "event-log-max"?: number;
+  };
+}) {
+  if (args.flags["event-log-enabled"] === undefined && args.flags["event-log-max"] === undefined) {
+    return args.compiled.run.eventLog;
+  }
+  return {
+    enabled: args.flags["event-log-enabled"] ?? args.compiled.run.eventLog?.enabled,
+    maxEvents: args.flags["event-log-max"] ?? args.compiled.run.eventLog?.maxEvents,
+  };
+}
+
+function buildOfflineSummary(offlineRun: ReturnType<typeof applyOfflineSeconds> | undefined) {
+  return (
+    offlineRun &&
+    ({
+      requestedSec: offlineRun.offline.requestedSec,
+      preDecaySec: offlineRun.offline.preDecaySec,
+      effectiveSec: offlineRun.offline.effectiveSec,
+      simulatedSec: offlineRun.offline.simulatedSec,
+      stepSec: offlineRun.offline.stepSec,
+      fullSteps: offlineRun.offline.fullSteps,
+      remainderSec: offlineRun.offline.remainderSec,
+      usedStrategy: offlineRun.offline.usedStrategy,
+      overflow: offlineRun.offline.overflow,
+      decay: offlineRun.offline.decay,
+    })
+  );
+}
 
 export default defineCommand({
   name: "simulate",
   description: "Run simulation with scenario",
   options: {
-    plugin: option(z.string().default(""), { description: "Comma-separated plugin paths" }),
-    "allow-plugin": option(z.coerce.boolean().default(false), {
-      description: "Allow loading local plugin modules",
-    }),
-    "plugin-root": option(z.string().default(""), {
-      description: "Comma-separated allowed plugin root directories",
-    }),
-    "plugin-sha256": option(z.string().default(""), {
-      description: "Comma-separated '<path>=<sha256>' plugin integrity map",
-    }),
-    "plugin-trust-file": option(z.string().default(""), {
-      description: "Plugin trust policy json file path",
-    }),
+    ...pluginOptions(),
     duration: option(z.coerce.number().optional(), { description: "Override durationSec" }),
     step: option(z.coerce.number().optional(), { description: "Override stepSec" }),
     strategy: option(strategySchema, { description: "greedy|planner|scripted" }),
@@ -68,25 +131,13 @@ export default defineCommand({
     }
 
     const input = await readScenarioFile(scenarioPath);
-    const loaded = await loadRegistries(
-      parsePluginPaths(flags.plugin, flags["allow-plugin"]),
-      parsePluginSecurityOptions({
-        roots: flags["plugin-root"],
-        sha256: flags["plugin-sha256"],
-        trustFile: flags["plugin-trust-file"],
-      }),
-    );
-    const valid = validateScenarioV1(input, loaded.modelRegistry);
-    if (!valid.ok || !valid.scenario) {
-      throw new Error(
-        `Scenario invalid: ${valid.issues.map((i) => `${i.path ?? "root"}: ${i.message}`).join("; ")}`,
-      );
-    }
+    const loaded = await loadRegistriesFromFlags(flags);
+    const scenario = assertValidScenario(validateScenarioV1(input, loaded.modelRegistry));
 
     const E = createNumberEngine();
     const compiled = compileScenario<number, string, Record<string, unknown>>({
       E,
-      scenario: valid.scenario,
+      scenario,
       registry: loaded.modelRegistry,
       strategyRegistry: loaded.strategyRegistry,
       opts: { allowSuffixNotation: true },
@@ -96,36 +147,20 @@ export default defineCommand({
       ? parseSimStateJSON(JSON.parse(await readFile(resolve(process.cwd(), flags.resume), "utf8")))
       : undefined;
 
-    const strategy = (() => {
-      // Without explicit override, keep the strategy compiled from scenario params/defaults.
-      if (!flags.strategy) return compiled.strategy;
-      const factory = loaded.strategyRegistry.get(flags.strategy);
-      if (!factory) throw new Error(`Unknown strategy: ${flags.strategy}`);
-      const params = factory.defaultParams ?? {};
-      return factory.create(params) as typeof compiled.strategy;
-    })();
+    const strategy = resolveStrategy({
+      compiled,
+      overrideId: flags.strategy,
+      loaded,
+    });
+    restoreStrategyState({
+      strategy,
+      resumedJson,
+    });
 
-    if (resumedJson?.strategy) {
-      if (!strategy) {
-        throw new Error(`Resume state contains strategy '${resumedJson.strategy.id}' but scenario has no strategy`);
-      }
-      if (strategy.id !== resumedJson.strategy.id) {
-        throw new Error(`Resume strategy mismatch: expected ${strategy.id}, got ${resumedJson.strategy.id}`);
-      }
-      if (strategy.restoreState) {
-        strategy.restoreState(resumedJson.strategy.state);
-      } else if (resumedJson.strategy.state !== undefined) {
-        throw new Error(`Strategy '${strategy.id}' does not support state restore`);
-      }
-    }
-
-    const eventLog =
-      flags["event-log-enabled"] !== undefined || flags["event-log-max"] !== undefined
-        ? {
-            enabled: flags["event-log-enabled"] ?? compiled.run.eventLog?.enabled,
-            maxEvents: flags["event-log-max"] ?? compiled.run.eventLog?.maxEvents,
-          }
-        : compiled.run.eventLog;
+    const eventLog = resolveEventLog({
+      compiled,
+      flags,
+    });
 
     const resumedState = resumedJson
       ? deserializeSimState<number, string, Record<string, unknown>>(E, resumedJson, {
@@ -193,7 +228,7 @@ export default defineCommand({
     const outputMeta = buildOutputMeta({
       command: "simulate",
       scenarioPath,
-      scenario: valid.scenario,
+      scenario,
       runId,
       seed,
     });
@@ -222,20 +257,7 @@ export default defineCommand({
       await writeFile(stateOutPath, `${JSON.stringify(serialized, null, 2)}\n`, "utf8");
     }
 
-    const offlineSummary =
-      offlineRun &&
-      ({
-        requestedSec: offlineRun.offline.requestedSec,
-        preDecaySec: offlineRun.offline.preDecaySec,
-        effectiveSec: offlineRun.offline.effectiveSec,
-        simulatedSec: offlineRun.offline.simulatedSec,
-        stepSec: offlineRun.offline.stepSec,
-        fullSteps: offlineRun.offline.fullSteps,
-        remainderSec: offlineRun.offline.remainderSec,
-        usedStrategy: offlineRun.offline.usedStrategy,
-        overflow: offlineRun.offline.overflow,
-        decay: offlineRun.offline.decay,
-      });
+    const offlineSummary = buildOfflineSummary(offlineRun);
 
     const output = {
       run: {
@@ -278,23 +300,16 @@ export default defineCommand({
 
     if (flags["artifact-out"]) {
       const scenarioAbs = resolve(process.cwd(), scenarioPath);
-      const replayArgs = buildReplayArgs({
-        command: "simulate",
-        positional: [scenarioAbs],
-        flags: {
-          ...flags,
-          seed,
-          "run-id": runId,
-          format: "json",
-        },
-        omitFlags: ["out", "artifact-out", "state-out"],
-      });
-      await writeReplayArtifact({
+      await writeCommandReplayArtifact({
         outPath: flags["artifact-out"],
         command: "simulate",
         positional: [scenarioAbs],
         flags,
-        replayArgs,
+        forcedFlags: {
+          seed,
+          "run-id": runId,
+          format: "json",
+        },
         result: output,
         meta: outputMeta,
       });

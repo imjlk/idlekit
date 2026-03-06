@@ -11,11 +11,11 @@ import {
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import { z } from "zod";
+import { loadRegistriesFromFlags, pluginOptions } from "./_shared/plugin";
 import { buildOutputMeta } from "../io/outputMeta";
-import { buildReplayArgs, writeReplayArtifact } from "../io/replayArtifact";
+import { writeCommandReplayArtifact } from "../io/replayPolicy";
 import { readScenarioFile } from "../io/readScenario";
 import { writeOutput } from "../io/writeOutput";
-import { loadRegistries, parsePluginPaths, parsePluginSecurityOptions } from "../plugin/load";
 
 const strategySchema = z.enum(["greedy", "planner", "scripted"]).optional();
 
@@ -33,23 +33,124 @@ function betterFromCmp(cmp: -1 | 0 | 1): "a" | "b" | "tie" {
   return cmp > 0 ? "a" : "b";
 }
 
+function assertValidScenario(
+  label: "A" | "B",
+  valid: ReturnType<typeof validateScenarioV1>,
+): NonNullable<ReturnType<typeof validateScenarioV1>["scenario"]> {
+  if (!valid.ok || !valid.scenario) {
+    throw new Error(`Scenario ${label} invalid: ${valid.issues.map((i) => i.message).join("; ")}`);
+  }
+  return valid.scenario;
+}
+
+function toComparableEta(seconds: number | undefined, maxDuration: number): number | undefined {
+  if (seconds === undefined) return undefined;
+  return Number.isFinite(seconds) ? seconds : etaPenalty(maxDuration);
+}
+
+function compileComparableScenario(args: {
+  scenario: any;
+  E: ReturnType<typeof createNumberEngine>;
+  loaded: Awaited<ReturnType<typeof loadRegistriesFromFlags>>;
+  flags: {
+    strategy?: string;
+    step?: number;
+    duration?: number;
+    fast: boolean;
+    seed?: number;
+  };
+}) {
+  const compiled = compileScenario<number, string, Record<string, unknown>>({
+    E: args.E,
+    scenario: args.scenario,
+    registry: args.loaded.modelRegistry,
+    strategyRegistry: args.loaded.strategyRegistry,
+    opts: { allowSuffixNotation: true },
+  });
+
+  const overrideStrategy = (() => {
+    if (!args.flags.strategy) return compiled.strategy;
+    const factory = args.loaded.strategyRegistry.get(args.flags.strategy);
+    if (!factory) throw new Error(`Unknown strategy: ${args.flags.strategy}`);
+    return factory.create(factory.defaultParams ?? {}) as typeof compiled.strategy;
+  })();
+
+  return {
+    ...compiled,
+    ctx: {
+      ...compiled.ctx,
+      seed: args.flags.seed ?? compiled.ctx.seed,
+    },
+    strategy: overrideStrategy,
+    run: {
+      ...compiled.run,
+      eventLog: {
+        enabled: false,
+        maxEvents: 0,
+      },
+      stepSec: args.flags.step ?? compiled.run.stepSec,
+      durationSec: args.flags.duration ?? compiled.run.durationSec,
+      fast: args.flags.fast
+        ? { enabled: true as const, kind: "log-domain" as const, disableMoneyEvents: true }
+        : compiled.run.fast,
+    },
+  };
+}
+
+function measureScenario(args: {
+  compiled: ReturnType<typeof compileComparableScenario>;
+  E: ReturnType<typeof createNumberEngine>;
+  targetWorth?: string;
+  maxDuration: number;
+}) {
+  const runInput = {
+    ...args.compiled,
+    initial: deepClonePreservingPrototype(args.compiled.initial),
+  };
+  const run = runScenario(runInput);
+  const endWorth = runInput.model.netWorth?.(runInput.ctx, run.end) ?? run.end.wallet.money;
+
+  let etaSeconds: number | undefined;
+  let etaReached: boolean | undefined;
+  if (args.targetWorth) {
+    const target = parseMoney(args.E, args.targetWorth, {
+      unit: runInput.ctx.unit,
+      suffix: { kind: "alphaInfinite", minLen: 2 },
+    }).amount;
+
+    const reachedFn = (s: typeof run.end) =>
+      args.E.cmp((runInput.model.netWorth?.(runInput.ctx, s) ?? s.wallet.money).amount, target) >= 0;
+
+    const etaRun = runScenario({
+      ...runInput,
+      initial: deepClonePreservingPrototype(args.compiled.initial),
+      run: {
+        ...runInput.run,
+        durationSec: args.maxDuration,
+        trace: undefined,
+        until: reachedFn,
+      },
+    });
+
+    etaReached = reachedFn(etaRun.end);
+    etaSeconds = etaReached ? etaRun.end.t - etaRun.start.t : Number.POSITIVE_INFINITY;
+  }
+
+  return {
+    run,
+    endMoney: run.end.wallet.money.amount,
+    endNetWorth: endWorth.amount,
+    droppedRate: run.stats?.money.droppedRate ?? 0,
+    etaToTargetWorth: etaSeconds,
+    etaReached,
+  };
+}
+
 export default defineCommand({
   name: "compare",
   description: "Compare two scenarios via measured simulation metrics",
   options: {
-    plugin: option(z.string().default(""), { description: "Comma-separated plugin paths" }),
-    "allow-plugin": option(z.coerce.boolean().default(false), {
-      description: "Allow loading local plugin modules",
-    }),
-    "plugin-root": option(z.string().default(""), {
-      description: "Comma-separated allowed plugin root directories",
-    }),
-    "plugin-sha256": option(z.string().default(""), {
-      description: "Comma-separated '<path>=<sha256>' plugin integrity map",
-    }),
-    "plugin-trust-file": option(z.string().default(""), {
-      description: "Plugin trust policy json file path",
-    }),
+    ...pluginOptions(),
     duration: option(z.coerce.number().optional(), { description: "Override durationSec" }),
     step: option(z.coerce.number().optional(), { description: "Override stepSec" }),
     strategy: option(strategySchema, { description: "Override strategy id (greedy|planner|scripted)" }),
@@ -82,24 +183,10 @@ export default defineCommand({
     }
 
     const [aInput, bInput] = await Promise.all([readScenarioFile(aPath), readScenarioFile(bPath)]);
-    const loaded = await loadRegistries(
-      parsePluginPaths(flags.plugin, flags["allow-plugin"]),
-      parsePluginSecurityOptions({
-        roots: flags["plugin-root"],
-        sha256: flags["plugin-sha256"],
-        trustFile: flags["plugin-trust-file"],
-      }),
-    );
+    const loaded = await loadRegistriesFromFlags(flags);
 
-    const va = validateScenarioV1(aInput, loaded.modelRegistry);
-    const vb = validateScenarioV1(bInput, loaded.modelRegistry);
-
-    if (!va.ok || !va.scenario) {
-      throw new Error(`Scenario A invalid: ${va.issues.map((i) => i.message).join("; ")}`);
-    }
-    if (!vb.ok || !vb.scenario) {
-      throw new Error(`Scenario B invalid: ${vb.issues.map((i) => i.message).join("; ")}`);
-    }
+    const aScenario = assertValidScenario("A", validateScenarioV1(aInput, loaded.modelRegistry));
+    const bScenario = assertValidScenario("B", validateScenarioV1(bInput, loaded.modelRegistry));
 
     if (flags.metric === "etaToTargetWorth" && !flags["target-worth"]) {
       throw new Error("metric=etaToTargetWorth requires --target-worth <NumStr>");
@@ -107,117 +194,48 @@ export default defineCommand({
 
     const E = createNumberEngine();
 
-    const compileOne = (scenario: typeof va.scenario) => {
-      const compiled = compileScenario<number, string, Record<string, unknown>>({
-        E,
-        scenario,
-        registry: loaded.modelRegistry,
-        strategyRegistry: loaded.strategyRegistry,
-        opts: { allowSuffixNotation: true },
-      });
+    const aCompiled = compileComparableScenario({
+      scenario: aScenario,
+      E,
+      loaded,
+      flags,
+    });
+    const bCompiled = compileComparableScenario({
+      scenario: bScenario,
+      E,
+      loaded,
+      flags,
+    });
 
-      const overrideStrategyId = flags.strategy;
-      const overrideStrategy = (() => {
-        if (!overrideStrategyId) return compiled.strategy;
-        const factory = loaded.strategyRegistry.get(overrideStrategyId);
-        if (!factory) throw new Error(`Unknown strategy: ${overrideStrategyId}`);
-        return factory.create(factory.defaultParams ?? {}) as typeof compiled.strategy;
-      })();
-
-      return {
-        ...compiled,
-        ctx: {
-          ...compiled.ctx,
-          seed: flags.seed ?? compiled.ctx.seed,
-        },
-        strategy: overrideStrategy,
-        run: {
-          ...compiled.run,
-          eventLog: {
-            enabled: false,
-            maxEvents: 0,
-          },
-          stepSec: flags.step ?? compiled.run.stepSec,
-          durationSec: flags.duration ?? compiled.run.durationSec,
-          fast: flags.fast
-            ? { enabled: true as const, kind: "log-domain" as const, disableMoneyEvents: true }
-            : compiled.run.fast,
-        },
-      };
-    };
-
-    const aCompiled = compileOne(va.scenario);
-    const bCompiled = compileOne(vb.scenario);
-
-    const measure = (compiled: typeof aCompiled) => {
-      const runInput = {
-        ...compiled,
-        initial: deepClonePreservingPrototype(compiled.initial),
-      };
-      const run = runScenario(runInput);
-      const endWorth = runInput.model.netWorth?.(runInput.ctx, run.end) ?? run.end.wallet.money;
-
-      let etaSeconds: number | undefined;
-      let etaReached: boolean | undefined;
-      if (flags["target-worth"]) {
-        const target = parseMoney(E, flags["target-worth"], {
-          unit: runInput.ctx.unit,
-          suffix: { kind: "alphaInfinite", minLen: 2 },
-        }).amount;
-
-        const reachedFn = (s: typeof run.end) =>
-          E.cmp((runInput.model.netWorth?.(runInput.ctx, s) ?? s.wallet.money).amount, target) >= 0;
-
-        const etaRun = runScenario({
-          ...runInput,
-          initial: deepClonePreservingPrototype(compiled.initial),
-          run: {
-            ...runInput.run,
-            durationSec: flags["max-duration"],
-            trace: undefined,
-            until: reachedFn,
-          },
-        });
-
-        etaReached = reachedFn(etaRun.end);
-        etaSeconds = etaReached ? etaRun.end.t - etaRun.start.t : Number.POSITIVE_INFINITY;
-      }
-
-      return {
-        run,
-        endMoney: run.end.wallet.money.amount,
-        endNetWorth: endWorth.amount,
-        droppedRate: run.stats?.money.droppedRate ?? 0,
-        etaToTargetWorth: etaSeconds,
-        etaReached,
-      };
-    };
-
-    const ma = measure(aCompiled);
-    const mb = measure(bCompiled);
+    const ma = measureScenario({
+      compiled: aCompiled,
+      E,
+      targetWorth: flags["target-worth"],
+      maxDuration: flags["max-duration"],
+    });
+    const mb = measureScenario({
+      compiled: bCompiled,
+      E,
+      targetWorth: flags["target-worth"],
+      maxDuration: flags["max-duration"],
+    });
 
     const result = compareScenarios({
-      a: va.scenario,
-      b: vb.scenario,
+      a: aScenario,
+      b: bScenario,
       metric: flags.metric,
       measured: {
         a: {
           endMoney: E.absLog10(ma.endMoney),
           endNetWorth: E.absLog10(ma.endNetWorth),
           droppedRate: ma.droppedRate,
-          etaToTargetWorth:
-            ma.etaToTargetWorth === undefined
-              ? undefined
-              : (Number.isFinite(ma.etaToTargetWorth) ? ma.etaToTargetWorth : etaPenalty(flags["max-duration"])),
+          etaToTargetWorth: toComparableEta(ma.etaToTargetWorth, flags["max-duration"]),
         },
         b: {
           endMoney: E.absLog10(mb.endMoney),
           endNetWorth: E.absLog10(mb.endNetWorth),
           droppedRate: mb.droppedRate,
-          etaToTargetWorth:
-            mb.etaToTargetWorth === undefined
-              ? undefined
-              : (Number.isFinite(mb.etaToTargetWorth) ? mb.etaToTargetWorth : etaPenalty(flags["max-duration"])),
+          etaToTargetWorth: toComparableEta(mb.etaToTargetWorth, flags["max-duration"]),
         },
       },
       measuredDecision: (metric) => {
@@ -229,12 +247,8 @@ export default defineCommand({
           case "droppedRate":
             return betterFromCmp(ma.droppedRate < mb.droppedRate ? 1 : ma.droppedRate > mb.droppedRate ? -1 : 0);
           case "etaToTargetWorth": {
-            const aEta = ma.etaToTargetWorth === undefined
-              ? undefined
-              : (Number.isFinite(ma.etaToTargetWorth) ? ma.etaToTargetWorth : etaPenalty(flags["max-duration"]));
-            const bEta = mb.etaToTargetWorth === undefined
-              ? undefined
-              : (Number.isFinite(mb.etaToTargetWorth) ? mb.etaToTargetWorth : etaPenalty(flags["max-duration"]));
+            const aEta = toComparableEta(ma.etaToTargetWorth, flags["max-duration"]);
+            const bEta = toComparableEta(mb.etaToTargetWorth, flags["max-duration"]);
             if (aEta === undefined || bEta === undefined) return undefined;
             return betterFromCmp(aEta < bEta ? 1 : aEta > bEta ? -1 : 0);
           }
@@ -251,8 +265,8 @@ export default defineCommand({
       seed: flags.seed ?? aCompiled.ctx.seed,
       scenarioPath: [aPath, bPath],
       scenarios: {
-        a: va.scenario,
-        b: vb.scenario,
+        a: aScenario,
+        b: bScenario,
       },
     });
     const output = {
@@ -284,23 +298,16 @@ export default defineCommand({
     if (flags["artifact-out"]) {
       const aAbs = resolve(process.cwd(), aPath);
       const bAbs = resolve(process.cwd(), bPath);
-      const replayArgs = buildReplayArgs({
-        command: "compare",
-        positional: [aAbs, bAbs],
-        flags: {
-          ...flags,
-          "run-id": runId,
-          seed: flags.seed ?? aCompiled.ctx.seed,
-          format: "json",
-        },
-        omitFlags: ["out", "artifact-out"],
-      });
-      await writeReplayArtifact({
+      await writeCommandReplayArtifact({
         outPath: flags["artifact-out"],
         command: "compare",
         positional: [aAbs, bAbs],
         flags,
-        replayArgs,
+        forcedFlags: {
+          "run-id": runId,
+          seed: flags.seed ?? aCompiled.ctx.seed,
+          format: "json",
+        },
         result: output,
         meta: outputMeta,
       });
