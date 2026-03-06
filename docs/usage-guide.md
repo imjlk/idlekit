@@ -64,6 +64,7 @@ bun run --cwd packages/cli build:bin
 bun run --cwd packages/cli dev -- init scenario --track intro --out ../../tmp/new-scenario.json
 bun run --cwd packages/cli dev -- init scenario --track design --out ../../tmp/design-scenario.json
 bun run --cwd packages/cli dev -- init scenario --track personal --out ../../tmp/my-game-v1.json
+bun run --cwd packages/cli dev -- init scenario --track personal --out ../../tmp/my-game-v1.json --name "Space Miner"
 ```
 
 ## 3. 기본 워크플로우

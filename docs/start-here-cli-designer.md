@@ -14,11 +14,19 @@
 bun run --cwd packages/cli dev -- init scenario --track personal --out ../../tmp/my-game-v1.json
 ```
 
+이름까지 같이 바꾸려면:
+
+```bash
+bun run --cwd packages/cli dev -- init scenario --track personal --out ../../tmp/my-game-v1.json --name "Space Miner"
+```
+
 이 명령은 아래 3개를 같이 만듭니다.
 
 - `../../tmp/my-game-v1.json`
 - `../../tmp/my-game-v1-compare-b.json`
 - `../../tmp/my-game-v1-tune.json`
+
+`--name`을 주면 파일 stem과 `meta.id/title`도 같이 바뀝니다. 위 예시는 `space-miner-v1*.json` 세트를 만듭니다.
 
 ## 1. 첫 실행
 

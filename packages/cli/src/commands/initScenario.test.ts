@@ -37,6 +37,24 @@ describe("init scenario command", () => {
       expect(personalCompare.model.params.buyCostGrowth).toBeGreaterThan(personalBase.model.params.buyCostGrowth);
       expect(personalTune.strategy.id).toBe("greedy");
       expect(personalTune.objective.id).toBe("endNetWorthLog10");
+
+      execFileSync(
+        "bun",
+        ["src/main.ts", "init", "scenario", "--track", "personal", "--out", personalBasePath, "--name", "Space Miner"],
+        {
+          cwd: process.cwd(),
+          encoding: "utf8",
+        },
+      );
+      const namedBase = JSON.parse(await readFile(resolve(dir, "space-miner-v1.json"), "utf8"));
+      const namedCompare = JSON.parse(await readFile(resolve(dir, "space-miner-v1-compare-b.json"), "utf8"));
+      const namedTune = JSON.parse(await readFile(resolve(dir, "space-miner-v1-tune.json"), "utf8"));
+      expect(namedBase.meta.id).toBe("space-miner-v1");
+      expect(namedBase.meta.title).toBe("Space Miner V1 Template");
+      expect(namedCompare.meta.id).toBe("space-miner-v1-compare-b");
+      expect(namedCompare.meta.title).toBe("Space Miner Compare Variant B");
+      expect(namedTune.meta.id).toBe("space-miner-v1-tune");
+      expect(namedTune.meta.title).toBe("Space Miner TuneSpec");
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

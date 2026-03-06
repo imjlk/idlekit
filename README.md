@@ -34,6 +34,7 @@ idk simulate examples/tutorials/11-my-game-v1.json --format json
 
 ```bash
 bun run --cwd packages/cli dev -- init scenario --track personal --out ../../tmp/my-game-v1.json
+bun run --cwd packages/cli dev -- init scenario --track personal --out ../../tmp/my-game-v1.json --name "Space Miner"
 ```
 
 ## 시작 경로

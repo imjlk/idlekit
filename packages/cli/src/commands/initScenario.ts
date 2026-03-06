@@ -328,6 +328,27 @@ function serializeTemplate(template: unknown): string {
   return `${JSON.stringify(template, null, 2)}\n`;
 }
 
+function slugifyName(input: string): string {
+  return input
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .replace(/-{2,}/g, "-");
+}
+
+function titleCaseSlug(slug: string): string {
+  return slug
+    .split("-")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function cloneTemplate<T>(template: T): T {
+  return structuredClone(template);
+}
+
 async function ensureWritable(path: string, force: boolean): Promise<void> {
   const exists = await stat(path).then(() => true).catch(() => false);
   if (exists && !force) {
@@ -335,18 +356,55 @@ async function ensureWritable(path: string, force: boolean): Promise<void> {
   }
 }
 
-function buildPersonalBundlePaths(outPath: string): Readonly<{
+function buildNamedPersonalBundle(name: string | undefined): Readonly<{
+  baseStem: string;
+  displayName: string;
+  templates: {
+    base: unknown;
+    compare: unknown;
+    tune: unknown;
+  };
+}> {
+  const normalized = name?.trim();
+  const slugBase = normalized ? slugifyName(normalized) : "my-game";
+  const slug = slugBase || "my-game";
+  const displayName = normalized && normalized.length > 0 ? normalized : titleCaseSlug(slug);
+  const baseStem = `${slug}-v1`;
+
+  const base = cloneTemplate(personalTemplate) as any;
+  base.meta.id = baseStem;
+  base.meta.title = `${displayName} V1 Template`;
+
+  const compare = cloneTemplate(personalCompareTemplate) as any;
+  compare.meta.id = `${baseStem}-compare-b`;
+  compare.meta.title = `${displayName} Compare Variant B`;
+
+  const tune = cloneTemplate(personalTuneTemplate) as any;
+  tune.meta.id = `${baseStem}-tune`;
+  tune.meta.title = `${displayName} TuneSpec`;
+
+  return {
+    baseStem,
+    displayName,
+    templates: { base, compare, tune },
+  };
+}
+
+function resolvePersonalBundlePaths(outPath: string, name: string | undefined): Readonly<{
   base: string;
   compare: string;
   tune: string;
+  displayName: string;
 }> {
+  const { baseStem, displayName } = buildNamedPersonalBundle(name);
   const parsed = parse(outPath);
   const ext = parsed.ext || ".json";
-  const baseName = parsed.ext ? parsed.name : parsed.base;
+  const base = resolve(parsed.dir, `${baseStem}${ext}`);
   return {
-    base: outPath,
-    compare: resolve(parsed.dir, `${baseName}-compare-b${ext}`),
-    tune: resolve(parsed.dir, `${baseName}-tune${ext}`),
+    base,
+    compare: resolve(parsed.dir, `${baseStem}-compare-b${ext}`),
+    tune: resolve(parsed.dir, `${baseStem}-tune${ext}`),
+    displayName,
   };
 }
 
@@ -360,6 +418,9 @@ export default defineCommand({
     track: option(z.enum(["intro", "design", "personal"]).default("intro"), {
       description: "Template track (intro|design|personal)",
     }),
+    name: option(z.string().optional(), {
+      description: "Optional personal track name. Changes generated file stem + meta id/title.",
+    }),
     force: option(z.coerce.boolean().default(false), {
       description: "Overwrite output file when already exists",
     }),
@@ -367,7 +428,8 @@ export default defineCommand({
   async handler({ flags }) {
     const outPath = resolve(process.cwd(), flags.out);
     if (flags.track === "personal") {
-      const bundle = buildPersonalBundlePaths(outPath);
+      const bundle = resolvePersonalBundlePaths(outPath, flags.name);
+      const namedBundle = buildNamedPersonalBundle(flags.name);
       await Promise.all([
         ensureWritable(bundle.base, flags.force),
         ensureWritable(bundle.compare, flags.force),
@@ -375,12 +437,12 @@ export default defineCommand({
       ]);
       await mkdir(dirname(bundle.base), { recursive: true });
       await Promise.all([
-        writeFile(bundle.base, serializeTemplate(personalTemplate), "utf8"),
-        writeFile(bundle.compare, serializeTemplate(personalCompareTemplate), "utf8"),
-        writeFile(bundle.tune, serializeTemplate(personalTuneTemplate), "utf8"),
+        writeFile(bundle.base, serializeTemplate(namedBundle.templates.base), "utf8"),
+        writeFile(bundle.compare, serializeTemplate(namedBundle.templates.compare), "utf8"),
+        writeFile(bundle.tune, serializeTemplate(namedBundle.templates.tune), "utf8"),
       ]);
 
-      console.log("Wrote personal scenario bundle:");
+      console.log(`Wrote personal scenario bundle (${bundle.displayName}):`);
       console.log(`- base: ${bundle.base}`);
       console.log(`- compare: ${bundle.compare}`);
       console.log(`- tune: ${bundle.tune}`);

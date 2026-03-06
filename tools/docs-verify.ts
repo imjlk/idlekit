@@ -191,14 +191,22 @@ function verifyIntroTrack(): void {
   assert(personalValidate.includes("OK:"), "personal template validate should print OK");
 
   const generatedPersonalBase = resolve(tmpDir, "generated-my-game-v1.json");
-  const generatedPersonalCompare = resolve(tmpDir, "generated-my-game-v1-compare-b.json");
-  const generatedPersonalTune = resolve(tmpDir, "generated-my-game-v1-tune.json");
-  runCli(["init", "scenario", "--track", "personal", "--out", generatedPersonalBase]);
-  assert(existsSync(generatedPersonalBase), "init personal should create base scenario");
-  assert(existsSync(generatedPersonalCompare), "init personal should create compare scenario");
-  assert(existsSync(generatedPersonalTune), "init personal should create tune spec");
-  const generatedValidate = runCli(["validate", generatedPersonalBase]);
+  runCli(["init", "scenario", "--track", "personal", "--out", generatedPersonalBase, "--name", "Docs Verify"]);
+  const namedGeneratedBase = resolve(tmpDir, "docs-verify-v1.json");
+  const namedGeneratedCompare = resolve(tmpDir, "docs-verify-v1-compare-b.json");
+  const namedGeneratedTune = resolve(tmpDir, "docs-verify-v1-tune.json");
+  assert(existsSync(namedGeneratedBase), "init personal --name should create renamed base scenario");
+  assert(existsSync(namedGeneratedCompare), "init personal --name should create renamed compare scenario");
+  assert(existsSync(namedGeneratedTune), "init personal --name should create renamed tune spec");
+  const generatedValidate = runCli(["validate", namedGeneratedBase]);
   assert(generatedValidate.includes("OK:"), "generated personal base validate should print OK");
+  const generatedCompare = asRecord(
+    runCliJson(["compare", namedGeneratedBase, namedGeneratedCompare, "--metric", "endNetWorth", "--format", "json"]),
+  );
+  assert(asRecord(generatedCompare.detail as JSONValue).source === "measured", "generated personal compare must be measured");
+  const generatedTuneOut = asRecord(runCliJson(["tune", namedGeneratedBase, "--tune", namedGeneratedTune, "--format", "json"]));
+  assert(generatedTuneOut.ok === true, "generated personal tune must be ok=true");
+  assert(has(asRecord(generatedTuneOut.report as JSONValue), "best"), "generated personal tune must include best");
 
   const personalSim = asRecord(runCliJson(["simulate", personalTemplate, "--format", "json"]));
   assert(has(personalSim, "endMoney"), "personal template simulate must include endMoney");
