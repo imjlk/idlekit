@@ -19,11 +19,12 @@ function readSchema(name: string): object {
   return JSON.parse(readFileSync(path, "utf8")) as object;
 }
 
+const ajv = new Ajv2020({
+  allErrors: true,
+  strict: true,
+});
+
 function validateBySchema(schema: object, value: unknown, name: string): void {
-  const ajv = new Ajv2020({
-    allErrors: true,
-    strict: false,
-  });
   const validate = ajv.compile(schema);
   const ok = validate(value);
   if (ok) return;

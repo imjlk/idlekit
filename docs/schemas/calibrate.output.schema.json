@@ -18,6 +18,9 @@
       "type": "object",
       "required": ["retention", "revenue", "acquisition", "uncertainty"],
       "properties": {
+        "retention": { "type": "object" },
+        "revenue": { "type": "object" },
+        "acquisition": { "type": "object" },
         "uncertainty": {
           "type": "object",
           "required": ["correlation"],
