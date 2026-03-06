@@ -14,6 +14,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { z } from "zod";
 import { loadRegistriesFromFlags, pluginOptions } from "./_shared/plugin";
+import { buildOfflineSummary, resolveEventLog } from "./_shared/simulateView";
 import { buildOutputMeta } from "../io/outputMeta";
 import { writeCommandReplayArtifact } from "../io/replayPolicy";
 import { readScenarioFile } from "../io/readScenario";
@@ -60,40 +61,6 @@ function restoreStrategyState(args: {
   } else if (resumed.state !== undefined) {
     throw new Error(`Strategy '${strategy.id}' does not support state restore`);
   }
-}
-
-function resolveEventLog(args: {
-  compiled: ReturnType<typeof compileScenario<number, string, Record<string, unknown>>>;
-  flags: {
-    "event-log-enabled"?: boolean;
-    "event-log-max"?: number;
-  };
-}) {
-  if (args.flags["event-log-enabled"] === undefined && args.flags["event-log-max"] === undefined) {
-    return args.compiled.run.eventLog;
-  }
-  return {
-    enabled: args.flags["event-log-enabled"] ?? args.compiled.run.eventLog?.enabled,
-    maxEvents: args.flags["event-log-max"] ?? args.compiled.run.eventLog?.maxEvents,
-  };
-}
-
-function buildOfflineSummary(offlineRun: ReturnType<typeof applyOfflineSeconds> | undefined) {
-  return (
-    offlineRun &&
-    ({
-      requestedSec: offlineRun.offline.requestedSec,
-      preDecaySec: offlineRun.offline.preDecaySec,
-      effectiveSec: offlineRun.offline.effectiveSec,
-      simulatedSec: offlineRun.offline.simulatedSec,
-      stepSec: offlineRun.offline.stepSec,
-      fullSteps: offlineRun.offline.fullSteps,
-      remainderSec: offlineRun.offline.remainderSec,
-      usedStrategy: offlineRun.offline.usedStrategy,
-      overflow: offlineRun.offline.overflow,
-      decay: offlineRun.offline.decay,
-    })
-  );
 }
 
 export default defineCommand({
@@ -158,8 +125,9 @@ export default defineCommand({
     });
 
     const eventLog = resolveEventLog({
-      compiled,
-      flags,
+      defaultEventLog: compiled.run.eventLog,
+      eventLogEnabled: flags["event-log-enabled"],
+      eventLogMax: flags["event-log-max"],
     });
 
     const resumedState = resumedJson

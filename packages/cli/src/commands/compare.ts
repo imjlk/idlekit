@@ -11,6 +11,7 @@ import {
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import { z } from "zod";
+import { betterFromCmp, formatEtaLabel, toComparableEta } from "./_shared/compareEval";
 import { loadRegistriesFromFlags, pluginOptions } from "./_shared/plugin";
 import { buildOutputMeta } from "../io/outputMeta";
 import { writeCommandReplayArtifact } from "../io/replayPolicy";
@@ -18,20 +19,6 @@ import { readScenarioFile } from "../io/readScenario";
 import { writeOutput } from "../io/writeOutput";
 
 const strategySchema = z.enum(["greedy", "planner", "scripted"]).optional();
-
-function formatEtaLabel(seconds: number, reached: boolean): string {
-  if (!reached) return "unreached";
-  return Number.isFinite(seconds) ? `${seconds}` : "unreached";
-}
-
-function etaPenalty(maxDuration: number): number {
-  return maxDuration + 1_000_000_000;
-}
-
-function betterFromCmp(cmp: -1 | 0 | 1): "a" | "b" | "tie" {
-  if (cmp === 0) return "tie";
-  return cmp > 0 ? "a" : "b";
-}
 
 function assertValidScenario(
   label: "A" | "B",
@@ -41,11 +28,6 @@ function assertValidScenario(
     throw new Error(`Scenario ${label} invalid: ${valid.issues.map((i) => i.message).join("; ")}`);
   }
   return valid.scenario;
-}
-
-function toComparableEta(seconds: number | undefined, maxDuration: number): number | undefined {
-  if (seconds === undefined) return undefined;
-  return Number.isFinite(seconds) ? seconds : etaPenalty(maxDuration);
 }
 
 function compileComparableScenario(args: {
