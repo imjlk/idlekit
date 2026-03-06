@@ -41,3 +41,6 @@ jobs:
 
       - name: KPI AB Report
         run: bun run kpi:report
+
+      - name: KPI Regression Gate
+        run: bun run kpi:regress

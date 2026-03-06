@@ -17,6 +17,7 @@
     "docs:verify": "bun tools/docs-verify.ts",
     "docs:verify:quick": "bun tools/docs-verify.ts --quick",
     "kpi:report": "bun tools/kpi-report.ts --out tmp/kpi-report.json",
+    "kpi:regress": "bun tools/kpi-regress.ts --baseline examples/bench/kpi-baseline.json --current tmp/kpi-report.json --out tmp/kpi-regress.json",
     "tune:regress": "bun tools/tune-regress.ts"
   },
   "devDependencies": {

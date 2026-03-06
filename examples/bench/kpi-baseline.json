@@ -1,0 +1,448 @@
+{
+  "generatedAt": "2026-03-06T01:42:32.769Z",
+  "input": {
+    "a": "/Users/imjlk/repos/imjlk/idlekit/examples/tutorials/05-idle-design-v1.json",
+    "b": "/Users/imjlk/repos/imjlk/idlekit/examples/tutorials/06-idle-design-balance-b.json",
+    "plugin": "/Users/imjlk/repos/imjlk/idlekit/examples/plugins/custom-econ-plugin.ts"
+  },
+  "compare": {
+    "endNetWorth": {
+      "metric": "endNetWorth",
+      "better": "b",
+      "detail": {
+        "aScore": 5.831162598514183,
+        "bScore": 5.912812975243817,
+        "metric": "endNetWorth",
+        "source": "measured"
+      },
+      "measured": {
+        "a": {
+          "endMoney": "40545.84752923632",
+          "endNetWorth": "677895.2619999999",
+          "droppedRate": 0
+        },
+        "b": {
+          "endMoney": "2604.6848903128666",
+          "endNetWorth": "818112.3999999993",
+          "droppedRate": 0
+        }
+      },
+      "_meta": {
+        "command": "compare",
+        "generatedAt": "2026-03-06T01:42:32.084Z",
+        "cliVersion": "0.1.0",
+        "gitSha": "523a510",
+        "runId": "6a29efe8-f5ad-46dd-9266-fae5c716cd3d",
+        "scenarioPath": [
+          "/Users/imjlk/repos/imjlk/idlekit/examples/tutorials/05-idle-design-v1.json",
+          "/Users/imjlk/repos/imjlk/idlekit/examples/tutorials/06-idle-design-balance-b.json"
+        ],
+        "scenarioHash": {
+          "a": "2469411bd787683b9ba589d2e4856479cceb7d50afdc92be47fe1682afcbfc58",
+          "b": "7af6ea325aef42d4b0778c13eee7835b6a6976f54d6a42419d444107ca10fb54"
+        }
+      }
+    },
+    "etaToTargetWorth": {
+      "metric": "etaToTargetWorth",
+      "better": "b",
+      "detail": {
+        "aScore": 3198,
+        "bScore": 2776,
+        "metric": "etaToTargetWorth",
+        "source": "measured"
+      },
+      "measured": {
+        "a": {
+          "endMoney": "40545.84752923632",
+          "endNetWorth": "677895.2619999999",
+          "droppedRate": 0,
+          "etaToTargetWorth": "3198"
+        },
+        "b": {
+          "endMoney": "2604.6848903128666",
+          "endNetWorth": "818112.3999999993",
+          "droppedRate": 0,
+          "etaToTargetWorth": "2776"
+        }
+      },
+      "_meta": {
+        "command": "compare",
+        "generatedAt": "2026-03-06T01:42:32.306Z",
+        "cliVersion": "0.1.0",
+        "gitSha": "523a510",
+        "runId": "2b9b14a1-e27c-462f-ac1b-3ddec0d0ca95",
+        "scenarioPath": [
+          "/Users/imjlk/repos/imjlk/idlekit/examples/tutorials/05-idle-design-v1.json",
+          "/Users/imjlk/repos/imjlk/idlekit/examples/tutorials/06-idle-design-balance-b.json"
+        ],
+        "scenarioHash": {
+          "a": "2469411bd787683b9ba589d2e4856479cceb7d50afdc92be47fe1682afcbfc58",
+          "b": "7af6ea325aef42d4b0778c13eee7835b6a6976f54d6a42419d444107ca10fb54"
+        }
+      }
+    }
+  },
+  "ltv": {
+    "a": {
+      "summary": {
+        "at30m": {
+          "horizon": "30m",
+          "seconds": 1800,
+          "segmentSec": 1800,
+          "endMoney": "6846.256",
+          "endNetWorth": "6880",
+          "deltaNetWorth": "6840",
+          "netWorthPerHour": "13760",
+          "deltaPerDay": "328320",
+          "monetization": {
+            "cumulativeGrossRevenuePerUser": 0.0004046301962078623,
+            "cumulativeNetRevenuePerUser": 0.00026058184635786337,
+            "cumulativeLtvPerUser": -1.7997394181536421,
+            "cumulativeLtvQuantiles": {
+              "q50": -1.7997470243401017,
+              "q90": -1.7996610788264447
+            }
+          },
+          "guardrails": {
+            "timeToFirstUpgradeSec": null,
+            "stallRatio": 0,
+            "droppedRate": 0,
+            "actionMix": {
+              "buy.producer": 1
+            }
+          }
+        },
+        "at2h": {
+          "horizon": "2h",
+          "seconds": 7200,
+          "segmentSec": 5400,
+          "endMoney": "79517.2480686421",
+          "endNetWorth": "80824",
+          "deltaNetWorth": "73944",
+          "netWorthPerHour": "40412",
+          "deltaPerDay": "1183104",
+          "monetization": {
+            "cumulativeGrossRevenuePerUser": 0.0017361530920514882,
+            "cumulativeNetRevenuePerUser": 0.0011180825912811589,
+            "cumulativeLtvPerUser": -1.7988819174087196,
+            "cumulativeLtvQuantiles": {
+              "q50": -1.7989114787149652,
+              "q90": -1.7985597050804554
+            }
+          },
+          "guardrails": {
+            "timeToFirstUpgradeSec": 4800,
+            "stallRatio": 0,
+            "droppedRate": 0,
+            "actionMix": {
+              "buy.producer": 0.6666666666666666,
+              "buy.upgrade": 0.3333333333333333
+            }
+          }
+        },
+        "at24h": {
+          "horizon": "24h",
+          "seconds": 86400,
+          "segmentSec": 79200,
+          "endMoney": "701625.0684727218",
+          "endNetWorth": "33562487.19999999",
+          "deltaNetWorth": "33481663.199999988",
+          "netWorthPerHour": "1398436.9666666663",
+          "deltaPerDay": "36525450.76363635",
+          "monetization": {
+            "cumulativeGrossRevenuePerUser": 0.02326654980445795,
+            "cumulativeNetRevenuePerUser": 0.014983658074070923,
+            "cumulativeLtvPerUser": -1.785016341925929,
+            "cumulativeLtvQuantiles": {
+              "q50": -1.7852858612419733,
+              "q90": -1.7804626854035073
+            }
+          },
+          "guardrails": {
+            "timeToFirstUpgradeSec": 4800,
+            "stallRatio": 0,
+            "droppedRate": 0,
+            "actionMix": {
+              "buy.producer": 0.8333333333333334,
+              "buy.upgrade": 0.16666666666666666
+            }
+          }
+        },
+        "at7d": {
+          "horizon": "7d",
+          "seconds": 604800,
+          "segmentSec": 518400,
+          "endMoney": "37737195.84832578",
+          "endNetWorth": "582062472.3999996",
+          "deltaNetWorth": "548499985.1999996",
+          "netWorthPerHour": "3464657.5738095213",
+          "deltaPerDay": "91416664.19999993",
+          "monetization": {
+            "cumulativeGrossRevenuePerUser": 0.12177146429210615,
+            "cumulativeNetRevenuePerUser": 0.07842082300411635,
+            "cumulativeLtvPerUser": -1.721579176995884,
+            "cumulativeLtvQuantiles": {
+              "q50": -1.7240036149672906,
+              "q90": -1.6956171058780438
+            }
+          },
+          "guardrails": {
+            "timeToFirstUpgradeSec": 4800,
+            "stallRatio": 0,
+            "droppedRate": 0,
+            "actionMix": {
+              "buy.producer": 0.8404907975460123,
+              "buy.upgrade": 0.15950920245398773
+            }
+          }
+        },
+        "at30d": {
+          "horizon": "30d",
+          "seconds": 2592000,
+          "segmentSec": 1987200,
+          "endMoney": "128386782.78580493",
+          "endNetWorth": "3269336670.399994",
+          "deltaNetWorth": "2687274197.9999943",
+          "netWorthPerHour": "4540745.375555547",
+          "deltaPerDay": "116838008.6086954",
+          "monetization": {
+            "cumulativeGrossRevenuePerUser": 0.30451898221922863,
+            "cumulativeNetRevenuePerUser": 0.19611022454918314,
+            "cumulativeLtvPerUser": -1.6038897754508168,
+            "cumulativeLtvQuantiles": {
+              "q50": -1.6094678998966705,
+              "q90": -1.5479803459124268
+            }
+          },
+          "guardrails": {
+            "timeToFirstUpgradeSec": 4800,
+            "stallRatio": 0,
+            "droppedRate": 0,
+            "actionMix": {
+              "buy.producer": 0.8351648351648352,
+              "buy.upgrade": 0.16483516483516483
+            }
+          }
+        },
+        "at90d": {
+          "horizon": "90d",
+          "seconds": 7776000,
+          "segmentSec": 5184000,
+          "endMoney": "1029588334.0549937",
+          "endNetWorth": "11488518864.399912",
+          "deltaNetWorth": "8219182193.999918",
+          "netWorthPerHour": "5318758.7335184775",
+          "deltaPerDay": "136986369.89999864",
+          "monetization": {
+            "cumulativeGrossRevenuePerUser": 0.5170474582062787,
+            "cumulativeNetRevenuePerUser": 0.3329785630848433,
+            "cumulativeLtvPerUser": -1.4670214369151564,
+            "cumulativeLtvQuantiles": {
+              "q50": -1.4698526794266786,
+              "q90": -1.379278022398705
+            }
+          },
+          "guardrails": {
+            "timeToFirstUpgradeSec": 4800,
+            "stallRatio": 0,
+            "droppedRate": 0,
+            "actionMix": {
+              "buy.producer": 0.8358974358974359,
+              "buy.upgrade": 0.1641025641025641
+            }
+          }
+        }
+      },
+      "meta": {
+        "command": "ltv",
+        "generatedAt": "2026-03-06T01:42:32.525Z",
+        "cliVersion": "0.1.0",
+        "gitSha": "523a510",
+        "runId": "7c199dc9-47b2-41e6-a0e8-8fd5e48a735b",
+        "scenarioPath": "/Users/imjlk/repos/imjlk/idlekit/examples/tutorials/05-idle-design-v1.json",
+        "scenarioHash": "2469411bd787683b9ba589d2e4856479cceb7d50afdc92be47fe1682afcbfc58"
+      }
+    },
+    "b": {
+      "summary": {
+        "at30m": {
+          "horizon": "30m",
+          "seconds": 1800,
+          "segmentSec": 1800,
+          "endMoney": "6302.5241000000005",
+          "endNetWorth": "6340.000000000001",
+          "deltaNetWorth": "6300.000000000001",
+          "netWorthPerHour": "12680.000000000002",
+          "deltaPerDay": "302400.00000000006",
+          "monetization": {
+            "cumulativeGrossRevenuePerUser": 0.00043112781295156756,
+            "cumulativeNetRevenuePerUser": 0.00027764631154080925,
+            "cumulativeLtvPerUser": -1.84972235368846,
+            "cumulativeLtvQuantiles": {
+              "q50": -1.8497325137133693,
+              "q90": -1.8496354260666772
+            }
+          },
+          "guardrails": {
+            "timeToFirstUpgradeSec": null,
+            "stallRatio": 0,
+            "droppedRate": 0,
+            "actionMix": {
+              "buy.producer": 1
+            }
+          }
+        },
+        "at2h": {
+          "horizon": "2h",
+          "seconds": 7200,
+          "segmentSec": 5400,
+          "endMoney": "76662.79635675409",
+          "endNetWorth": "77584.00000000001",
+          "deltaNetWorth": "71244.00000000001",
+          "netWorthPerHour": "38792.00000000001",
+          "deltaPerDay": "1139904.0000000002",
+          "monetization": {
+            "cumulativeGrossRevenuePerUser": 0.0018293137243157076,
+            "cumulativeNetRevenuePerUser": 0.0011780780384593157,
+            "cumulativeLtvPerUser": -1.8488219219615412,
+            "cumulativeLtvQuantiles": {
+              "q50": -1.8488494206174781,
+              "q90": -1.8484797106655877
+            }
+          },
+          "guardrails": {
+            "timeToFirstUpgradeSec": 4800,
+            "stallRatio": 0,
+            "droppedRate": 0,
+            "actionMix": {
+              "buy.producer": 0.6666666666666666,
+              "buy.upgrade": 0.3333333333333333
+            }
+          }
+        },
+        "at24h": {
+          "horizon": "24h",
+          "seconds": 86400,
+          "segmentSec": 79200,
+          "endMoney": "1847255.5206879342",
+          "endNetWorth": "41189400.400000006",
+          "deltaNetWorth": "41111816.400000006",
+          "netWorthPerHour": "1716225.016666667",
+          "deltaPerDay": "44849254.25454546",
+          "monetization": {
+            "cumulativeGrossRevenuePerUser": 0.02546919705679512,
+            "cumulativeNetRevenuePerUser": 0.016402162904576054,
+            "cumulativeLtvPerUser": -1.833597837095424,
+            "cumulativeLtvQuantiles": {
+              "q50": -1.8341752225997712,
+              "q90": -1.8281092379116315
+            }
+          },
+          "guardrails": {
+            "timeToFirstUpgradeSec": 4800,
+            "stallRatio": 0,
+            "droppedRate": 0,
+            "actionMix": {
+              "buy.producer": 0.7984496124031008,
+              "buy.upgrade": 0.20155038759689922
+            }
+          }
+        },
+        "at7d": {
+          "horizon": "7d",
+          "seconds": 604800,
+          "segmentSec": 518400,
+          "endMoney": "68985223.9030829",
+          "endNetWorth": "725661788.8",
+          "deltaNetWorth": "684472388.4",
+          "netWorthPerHour": "4319415.409523809",
+          "deltaPerDay": "114078731.39999999",
+          "monetization": {
+            "cumulativeGrossRevenuePerUser": 0.12712359922857505,
+            "cumulativeNetRevenuePerUser": 0.08186759790320233,
+            "cumulativeLtvPerUser": -1.768132402096797,
+            "cumulativeLtvQuantiles": {
+              "q50": -1.7691883342805566,
+              "q90": -1.7427541139995892
+            }
+          },
+          "guardrails": {
+            "timeToFirstUpgradeSec": 4800,
+            "stallRatio": 0,
+            "droppedRate": 0,
+            "actionMix": {
+              "buy.producer": 0.8050314465408805,
+              "buy.upgrade": 0.1949685534591195
+            }
+          }
+        },
+        "at30d": {
+          "horizon": "30d",
+          "seconds": 2592000,
+          "segmentSec": 1987200,
+          "endMoney": "44196835.679300494",
+          "endNetWorth": "4088504952.4",
+          "deltaNetWorth": "3362843163.6000004",
+          "netWorthPerHour": "5678479.100555556",
+          "deltaPerDay": "146210572.3304348",
+          "monetization": {
+            "cumulativeGrossRevenuePerUser": 0.32294420564202153,
+            "cumulativeNetRevenuePerUser": 0.2079760684334619,
+            "cumulativeLtvPerUser": -1.6420239315665377,
+            "cumulativeLtvQuantiles": {
+              "q50": -1.6492907837450828,
+              "q90": -1.5709672815760154
+            }
+          },
+          "guardrails": {
+            "timeToFirstUpgradeSec": 4800,
+            "stallRatio": 0,
+            "droppedRate": 0,
+            "actionMix": {
+              "buy.producer": 0.8033707865168539,
+              "buy.upgrade": 0.19662921348314608
+            }
+          }
+        },
+        "at90d": {
+          "horizon": "90d",
+          "seconds": 7776000,
+          "segmentSec": 5184000,
+          "endMoney": "420347648.9810221",
+          "endNetWorth": "14396248915.599989",
+          "deltaNetWorth": "10307743963.19999",
+          "netWorthPerHour": "6664930.053518513",
+          "deltaPerDay": "171795732.71999982",
+          "monetization": {
+            "cumulativeGrossRevenuePerUser": 0.5491487071290309,
+            "cumulativeNetRevenuePerUser": 0.3536517673910959,
+            "cumulativeLtvPerUser": -1.4963482326089046,
+            "cumulativeLtvQuantiles": {
+              "q50": -1.5076465692455399,
+              "q90": -1.381675844555776
+            }
+          },
+          "guardrails": {
+            "timeToFirstUpgradeSec": 4800,
+            "stallRatio": 0,
+            "droppedRate": 0,
+            "actionMix": {
+              "buy.producer": 0.8010471204188482,
+              "buy.upgrade": 0.19895287958115182
+            }
+          }
+        }
+      },
+      "meta": {
+        "command": "ltv",
+        "generatedAt": "2026-03-06T01:42:32.747Z",
+        "cliVersion": "0.1.0",
+        "gitSha": "523a510",
+        "runId": "94dde59b-4507-4d20-b456-55eda0e66383",
+        "scenarioPath": "/Users/imjlk/repos/imjlk/idlekit/examples/tutorials/06-idle-design-balance-b.json",
+        "scenarioHash": "7af6ea325aef42d4b0778c13eee7835b6a6976f54d6a42419d444107ca10fb54"
+      }
+    }
+  }
+}
