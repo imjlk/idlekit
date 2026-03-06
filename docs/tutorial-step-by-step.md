@@ -5,9 +5,11 @@
 - 입문 트랙(약 15분): 내장 모델/전략으로 기본 분석 루프 체험
 - 실전 트랙(약 60분): 플러그인 + 튜닝 + KPI 비교 루프 체험
 
-설계 우선으로 시작하려면 먼저 아래 문서를 진행하세요:
+빠른 선택:
 
-- [virtual-scenario-design.md](./virtual-scenario-design.md)
+- 처음 자기 게임을 만들기: [start-here-cli-designer.md](./start-here-cli-designer.md)
+- 명령 흐름만 익히기: `01-cafe-baseline.json` 기준으로 이 문서를 그대로 진행
+- 플러그인 설계 예시 보기: [virtual-scenario-design.md](./virtual-scenario-design.md) 또는 `05/06/07` 세트로 이동
 
 기준 경로:
 
@@ -276,6 +278,11 @@ idk tune examples/plugins/plugin-scenario.json \
 4. 필요 시 `tune` 재실행 후 `report.best` 갱신
 5. artifact 저장 후 `replay verify`로 재현성 확인
 6. `kpi regress`로 장기(7d/30d/90d) 가드레일 체크
+
+개인용 시작점:
+
+- 장르를 아직 못 정했으면 `examples/tutorials/11-my-game-v1.json`부터 수정하는 편이 빠릅니다.
+- 먼저 `unit`, `model.params`, `clock.durationSec`만 바꾸고 `simulate -> ltv -> compare` 순으로 반복하면 됩니다.
 
 추천 KPI objective:
 

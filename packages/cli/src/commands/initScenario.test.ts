@@ -24,6 +24,19 @@ describe("init scenario command", () => {
       const design = JSON.parse(await readFile(designPath, "utf8"));
       expect(design.model.id).toBe("plugin.generators");
       expect(design.monetization.uncertainty.correlation).toBeDefined();
+
+      const personalBasePath = resolve(dir, "my-game-v1.json");
+      execFileSync("bun", ["src/main.ts", "init", "scenario", "--track", "personal", "--out", personalBasePath], {
+        cwd: process.cwd(),
+        encoding: "utf8",
+      });
+      const personalBase = JSON.parse(await readFile(personalBasePath, "utf8"));
+      const personalCompare = JSON.parse(await readFile(resolve(dir, "my-game-v1-compare-b.json"), "utf8"));
+      const personalTune = JSON.parse(await readFile(resolve(dir, "my-game-v1-tune.json"), "utf8"));
+      expect(personalBase.model.id).toBe("linear");
+      expect(personalCompare.model.params.buyCostGrowth).toBeGreaterThan(personalBase.model.params.buyCostGrowth);
+      expect(personalTune.strategy.id).toBe("greedy");
+      expect(personalTune.objective.id).toBe("endNetWorthLog10");
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

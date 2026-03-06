@@ -1,10 +1,18 @@
 # idlekit 사용 가이드
 
-권장 학습 순서:
+이 문서는 모든 CLI 명령을 훑어보는 레퍼런스입니다.
 
-1. 설계 우선: [virtual-scenario-design.md](./virtual-scenario-design.md)
-2. 실행 중심: [tutorial-step-by-step.md](./tutorial-step-by-step.md)
-3. 이후 이 문서를 레퍼런스로 사용
+먼저 아래에서 출발점을 고르세요.
+
+1. 내 게임을 바로 시작하고 싶다: [start-here-cli-designer.md](./start-here-cli-designer.md)
+2. 명령 흐름만 빠르게 익히고 싶다: [tutorial-step-by-step.md](./tutorial-step-by-step.md)
+3. 플러그인/다중 요소 설계 예시가 먼저 필요하다: [virtual-scenario-design.md](./virtual-scenario-design.md)
+
+역할 기준 시작점:
+
+- 내 게임을 바로 시작: `examples/tutorials/11-my-game-v1.json`
+- 명령만 빠르게 체험: `examples/tutorials/01-cafe-baseline.json`
+- 플러그인 설계 예시: `examples/tutorials/05-idle-design-v1.json`, `06-idle-design-balance-b.json`, `07-idle-design-tune.json`
 
 ## 1. 개발 환경 준비
 
@@ -55,18 +63,23 @@ bun run --cwd packages/cli build:bin
 ```bash
 bun run --cwd packages/cli dev -- init scenario --track intro --out ../../tmp/new-scenario.json
 bun run --cwd packages/cli dev -- init scenario --track design --out ../../tmp/design-scenario.json
+bun run --cwd packages/cli dev -- init scenario --track personal --out ../../tmp/my-game-v1.json
 ```
 
 ## 3. 기본 워크플로우
 
-### 3.0 설계 우선(가상 시나리오) 시작점
+### 3.0 목적별 시작점
 
-재화/요소/액션을 먼저 설계하려면 아래 트랙을 권장합니다.
+무엇을 하려는지에 따라 시작 파일을 먼저 고르는 편이 빠릅니다.
 
-- 시나리오: `examples/tutorials/05-idle-design-v1.json`
-- 대조군: `examples/tutorials/06-idle-design-balance-b.json`
-- 튜닝: `examples/tutorials/07-idle-design-tune.json`
-- 설명 문서: [virtual-scenario-design.md](./virtual-scenario-design.md)
+- 내 게임 초안 바로 실행: `examples/tutorials/11-my-game-v1.json`
+- 개인용 대조군 비교: `examples/tutorials/12-my-game-compare-b.json`
+- 개인용 튜닝 시작점: `examples/tutorials/13-my-game-tune.json`
+- 명령 체험: `examples/tutorials/01-cafe-baseline.json`
+- 설계 예시 분석: `examples/tutorials/05-idle-design-v1.json`
+- 대조군 비교: `examples/tutorials/06-idle-design-balance-b.json`
+- 전략 파라미터 탐색: `examples/tutorials/07-idle-design-tune.json`
+- 설명 문서: [start-here-cli-designer.md](./start-here-cli-designer.md), [virtual-scenario-design.md](./virtual-scenario-design.md)
 
 ### 3.1 시나리오 검증
 

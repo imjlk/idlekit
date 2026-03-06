@@ -1,0 +1,130 @@
+{
+  "schemaVersion": 1,
+  "meta": {
+    "id": "my-game-v1",
+    "title": "My Game V1 Template",
+    "description": "Personal starter scenario. Rename the unit, adjust the growth curve, then compare and tune.",
+    "tags": ["template", "personal", "idle", "design-first"]
+  },
+  "unit": {
+    "code": "TOKEN",
+    "symbol": "T"
+  },
+  "policy": {
+    "mode": "accumulate",
+    "maxLogGap": 14
+  },
+  "model": {
+    "id": "linear",
+    "version": 1,
+    "params": {
+      "incomePerSec": "1.6",
+      "buyCostBase": "20",
+      "buyCostGrowth": 1.13,
+      "buyIncomeDelta": "1.2"
+    }
+  },
+  "initial": {
+    "t": 0,
+    "wallet": {
+      "unit": "TOKEN",
+      "amount": "35",
+      "bucket": "0"
+    },
+    "vars": {
+      "owned": 0
+    },
+    "prestige": {
+      "count": 0,
+      "points": "0",
+      "multiplier": "1"
+    }
+  },
+  "clock": {
+    "stepSec": 1,
+    "durationSec": 3600
+  },
+  "strategy": {
+    "id": "greedy",
+    "params": {
+      "schemaVersion": 1,
+      "objective": "maximizeNetWorth",
+      "maxPicksPerStep": 1,
+      "bulk": {
+        "mode": "bestQuote"
+      },
+      "netWorth": {
+        "horizonSec": 600,
+        "series": "netWorth",
+        "useFastPreview": true
+      }
+    }
+  },
+  "analysis": {
+    "eta": {
+      "mode": "analytic"
+    },
+    "growth": {
+      "windowSec": 60
+    }
+  },
+  "monetization": {
+    "cohorts": {
+      "baseUsers": 5000
+    },
+    "retention": {
+      "d1": 0.4,
+      "d7": 0.18,
+      "d30": 0.08,
+      "d90": 0.035,
+      "longTailDailyDecay": 0.02
+    },
+    "revenue": {
+      "payerConversion": 0.025,
+      "arppuDaily": 0.65,
+      "adArpDau": 0.018,
+      "platformFeeRate": 0.3,
+      "grossMarginRate": 0.92,
+      "progressionRevenueLift": 0.4,
+      "progressionLogSpan": 6
+    },
+    "acquisition": {
+      "cpi": 1.5
+    },
+    "uncertainty": {
+      "enabled": true,
+      "draws": 200,
+      "quantiles": [0.5, 0.9],
+      "seed": 13,
+      "sigma": {
+        "retention": 0.08,
+        "conversion": 0.12,
+        "arppu": 0.2,
+        "ad": 0.15
+      },
+      "correlation": {
+        "retentionConversion": 0.25,
+        "retentionArppu": 0.2,
+        "retentionAd": 0.12,
+        "conversionArppu": 0.4,
+        "conversionAd": 0.22,
+        "arppuAd": 0.3
+      }
+    }
+  },
+  "sim": {
+    "fast": true,
+    "eventLog": {
+      "enabled": false,
+      "maxEvents": 0
+    }
+  },
+  "outputs": {
+    "format": "json",
+    "report": {
+      "checkpointsSec": [60, 300, 900, 1800, 3600],
+      "includeGrowth": true,
+      "includeUX": true
+    }
+  }
+}

@@ -2,11 +2,14 @@
 
 이 문서는 "아이들 게임을 처음 설계할 때 무엇을 먼저 결정해야 하는지"를 시나리오 파일로 바로 연결하는 가이드입니다.
 
-대상 예제:
+추천 읽기 순서:
 
-- `examples/tutorials/05-idle-design-v1.json`
-- `examples/tutorials/06-idle-design-balance-b.json`
-- `examples/tutorials/07-idle-design-tune.json`
+- `examples/tutorials/11-my-game-v1.json` - 개인용 기본형
+- `examples/tutorials/12-my-game-compare-b.json` - 개인용 대조군
+- `examples/tutorials/13-my-game-tune.json` - 개인용 튜닝
+- `examples/tutorials/05-idle-design-v1.json` - worked example
+- `examples/tutorials/06-idle-design-balance-b.json` - worked example 대조군
+- `examples/tutorials/07-idle-design-tune.json` - worked example 튜닝
 - `examples/tutorials/08-idle-design-city-factory.json`
 - `examples/tutorials/09-idle-design-loot-camp.json`
 - `examples/tutorials/10-idle-design-space-port.json`
@@ -86,30 +89,50 @@ V1 목표:
   - 효과: `gems +1`
   - 이유: long-term 가치 축
 
-## 5. 시나리오 파일로 구체화
+## 5. 개인용 기본형부터 시작
 
 검증:
 
 ```bash
-bun run --cwd packages/cli dev -- validate ../../examples/tutorials/05-idle-design-v1.json \
-  --plugin ../../examples/plugins/custom-econ-plugin.ts \
-  --allow-plugin true
+bun run --cwd packages/cli dev -- validate ../../examples/tutorials/11-my-game-v1.json
 ```
 
 실행:
 
 ```bash
-bun run --cwd packages/cli dev -- simulate ../../examples/tutorials/05-idle-design-v1.json \
-  --plugin ../../examples/plugins/custom-econ-plugin.ts \
-  --allow-plugin true \
-  --format json
+bun run --cwd packages/cli dev -- simulate ../../examples/tutorials/11-my-game-v1.json --format json
 ```
 
 성공 조건:
 
 - `endMoney`, `endNetWorth`, `stats`가 존재
 
-## 6. 대조군 밸런스 작성 (A/B)
+먼저 바꿀 값:
+
+- `unit.code`, `unit.symbol`
+- `model.params.incomePerSec`
+- `model.params.buyCostBase`
+- `model.params.buyCostGrowth`
+- `clock.durationSec`
+
+첫 반복 루프:
+
+1. `11-my-game-v1.json` 수정
+2. `validate`
+3. `simulate`
+4. `ltv --horizons 30m,2h,24h,7d,30d,90d`
+5. `12-my-game-compare-b.json`으로 대조군 비교
+6. `13-my-game-tune.json`으로 전략 파라미터 탐색
+
+## 6. worked example 보기 (A/B)
+
+개인용 루프 기준:
+
+- `11-my-game-v1.json`: 기본안
+- `12-my-game-compare-b.json`: cost/growth 차이를 넣은 대조군
+- `13-my-game-tune.json`: `11`용 greedy preview 튜닝
+
+`05/06/07`은 "재화/요소/액션이 조금 더 구체적인 상태"를 보여주는 worked example입니다.
 
 `06-idle-design-balance-b.json`은 V1 대비 다음을 변경:
 
@@ -128,7 +151,7 @@ bun run --cwd packages/cli dev -- compare \
   --format json
 ```
 
-## 7. 튜닝으로 전략 파라미터 탐색
+## 7. worked example 튜닝
 
 `07-idle-design-tune.json`은 `plugin.producerFirst`의 임계값 탐색:
 
@@ -152,11 +175,12 @@ bun run --cwd packages/cli dev -- tune ../../examples/tutorials/05-idle-design-v
 ## 8. 설계 루프(권장)
 
 1. 재화/요소/액션 정의
-2. V1 시나리오 작성
-3. 대조군(B) 작성
-4. `simulate`/`compare`로 측정
-5. `tune`으로 전략 파라미터 탐색
-6. KPI 기반으로 다시 1~5 반복
+2. `11-my-game-v1.json` 수정
+3. `simulate`/`ltv`로 1차 측정
+4. `12-my-game-compare-b.json` 같은 대조군(B) 작성
+5. `compare`로 차이 측정
+6. `13-my-game-tune.json` 같은 TuneSpec으로 전략 파라미터 탐색
+7. KPI 기반으로 다시 1~6 반복
 
 KPI 추천:
 
@@ -164,11 +188,31 @@ KPI 추천:
 - `growthLog10PerHour`
 - `plugin.gemsAndWorthLog10`
 
-장르 템플릿 시작점:
+장르 분기 템플릿:
 
 - City/Factory(장기형): `08-idle-design-city-factory.json`
 - Loot/Camp(세션형): `09-idle-design-loot-camp.json`
 - Space/Port(초장기형): `10-idle-design-space-port.json`
+- 바로 개인용 초안 시작: `11-my-game-v1.json`
+- 개인용 대조군 시작: `12-my-game-compare-b.json`
+- 개인용 튜닝 시작: `13-my-game-tune.json`
+
+`11-my-game-v1.json`은 "장르 템플릿을 아직 못 골랐다"는 상황을 위한 개인용 기본형입니다.
+
+- 가장 먼저 바꿀 값:
+  - `unit.code`, `unit.symbol`
+  - `model.params.incomePerSec`
+  - `model.params.buyCostBase`
+  - `model.params.buyCostGrowth`
+  - `clock.durationSec`
+- 첫 검증 루프:
+  - `validate`
+  - `simulate`
+  - `ltv --horizons 30m,2h,24h,7d,30d,90d`
+- 이후 분기:
+  - 세션형이면 `09` 쪽으로 이동
+  - 장기 인프라형이면 `08` 쪽으로 이동
+  - 초장기 고성장이면 `10` 쪽으로 이동
 
 ## 9. LTV용 장기 구간 스냅샷(30m/2h/24h/7d/30d/90d)
 

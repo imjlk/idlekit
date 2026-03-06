@@ -1,68 +1,62 @@
-# Tutorials Example Set (2트랙)
+# Tutorials Example Set
 
-이 디렉터리는 `docs/tutorial-step-by-step.md`에서 사용하는 전용 예제 파일 모음입니다.
+이 디렉터리는 idlekit 문서에서 쓰는 예제 시나리오 모음입니다.
 
-## 파일 구성
+## Start Here
+
+- `11-my-game-v1.json`
+  - 자기 게임 V1을 바로 시작하는 개인용 기본형
+  - 플러그인 없이 `validate -> simulate -> ltv`가 바로 동작
+  - 먼저 바꿀 값: `unit`, `model.params`, `clock.durationSec`
+- `12-my-game-compare-b.json`
+  - `11`과 바로 비교하는 개인용 대조군
+  - `compare --metric endNetWorth` 첫 실험용
+- `13-my-game-tune.json`
+  - `11`을 대상으로 한 개인용 TuneSpec
+  - `tune`로 greedy preview 파라미터 탐색 시작점
+
+## Learn Commands
 
 - `01-cafe-baseline.json`
-  - 입문 트랙 기준 시나리오
-  - 내장 `linear@1` + `greedy`
+  - `validate`, `simulate`, `eta`, `report` 체험용
 - `02-cafe-fast.json`
-  - 같은 도메인에서 `sim.fast=true`, step/duration 변경
+  - `sim.fast=true`와 step/duration 차이 확인용
 - `03-cafe-compare-b.json`
-  - 비교용 대조군 시나리오
-  - baseline 대비 cost/income 파라미터만 변경
+  - `compare` 체험용 대조군
 - `04-cafe-tune.json`
-  - baseline 시나리오에 적용하는 튜닝 스펙
+  - `tune` 체험용 baseline 튜닝 스펙
+
+## Worked Design Example
+
 - `05-idle-design-v1.json`
-  - 설계 중심 가상 시나리오(재화/요소/액션 의사결정 반영)
-  - 플러그인 모델 `plugin.generators` + 전략 `plugin.producerFirst`
-  - `monetization` 블록 포함(실LTV/불확실성 계산, correlation 포함)
+  - 플러그인 기반 설계 예시 본편
+  - `COIN`, `GEM`, `producers`, `upgrades`, `exchange.gem`이 들어간 worked example
 - `06-idle-design-balance-b.json`
   - `05`의 대조군 밸런스 프로파일
-  - producer/upgrade/gem 파라미터만 다르게 설정
-  - `monetization` 파라미터도 대조군 값 포함(correlation 포함)
 - `07-idle-design-tune.json`
-  - `05`를 대상으로 한 튜닝 스펙
-  - 목표: `plugin.gemsAndWorthLog10`
+  - `05`를 대상으로 한 전략 파라미터 탐색 스펙
+
+## Genre Templates
+
 - `08-idle-design-city-factory.json`
-  - 장기 성장형(인프라 확장) 템플릿
-  - 2h 이상 구간에서 netWorth 성장 곡선 실험용
+  - 장기 성장형(인프라 확장)
 - `09-idle-design-loot-camp.json`
-  - 짧은 세션 반복형 템플릿
-  - 30m/2h KPI와 액션 페이백 압력 실험용
+  - 세션 반복형(30m/2h 중심)
 - `10-idle-design-space-port.json`
-  - 고비용-고성장 장기형 템플릿
-  - 7d/30d/90d 가드레일 튜닝 시작점
+  - 초장기 고성장형(7d/30d/90d 중심)
 
-## 권장 실행 순서
+## Recommended Order
 
-1. `01-cafe-baseline.json`으로 validate/simulate/eta/report
-2. `03-cafe-compare-b.json`와 baseline 비교(compare)
-3. `04-cafe-tune.json`으로 튜닝(tune)
-4. `02-cafe-fast.json`으로 fast 모드 해석
-5. 설계 중심 트랙: `05` -> `06` compare -> `07` tune
-6. 장르 템플릿 확장: `08/09/10` 중 하나를 복제해 자체 게임 설계 시작
+1. 내 게임을 바로 만들기: `11 -> 12 -> 13`
+2. 명령만 익히기: `01 -> 03 -> 04`
+3. 설계 예시 이해: `05 -> 06 -> 07`
+4. 장르 분기 찾기: `08/09/10`
 
-## 기대 관찰 포인트
+## What To Look At
 
-- baseline vs compare-b에서 `detail.source=measured` 기준 성능 차이
-- tune 결과에서 `report.best`와 `top` 후보군 비교
-- fast 모드에서 이벤트 수 감소/처리 속도 향상 경향
-- 설계 트랙에서 재화/요소/액션이 KPI(`endNetWorth`, `gemsAndWorthLog10`)에 주는 영향
-- 장르 템플릿별로 30m/2h/24h/7d/30d/90d 지표 곡선이 어떻게 달라지는지
-
-## 설계 중심 트랙 개요
-
-`05/06/07`은 "아이들 게임 초기 기획을 시나리오로 내리는 연습"을 위한 세트입니다.
-
-- 재화:
-  - `COIN`: 기본 지불/수입 재화(`wallet.money`)
-  - `GEM`: 고가치 2차 재화(`vars.gems`, `exchange.gem` 액션으로 획득)
-- 핵심 요소:
-  - `producers`: 기본 수입량 증가
-  - `upgrades`: 전체 수입 배율 강화
-- 액션:
-  - `buy.producer`
-  - `buy.upgrade`
-  - `exchange.gem`
+- `11`: 재화 이름과 성장 곡선만 바꿔도 자기 게임 초안이 바로 돌아가는지
+- `12`: cost/growth를 조금 바꿨을 때 compare 결과가 어떻게 달라지는지
+- `13`: greedy preview horizon/bulk 설정을 바꿨을 때 best params가 어떻게 나오는지
+- `01/03/04`: `simulate`, `compare`, `tune`의 기본 출력이 어떻게 생기는지
+- `05/06/07`: 재화/요소/액션 변경이 KPI와 objective에 어떤 차이를 만드는지
+- `08/09/10`: 30m/2h/24h/7d/30d/90d 지표 곡선이 장르별로 어떻게 달라지는지

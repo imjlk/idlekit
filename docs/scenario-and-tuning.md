@@ -160,6 +160,9 @@
 - `examples/tutorials/08-idle-design-city-factory.json`
 - `examples/tutorials/09-idle-design-loot-camp.json`
 - `examples/tutorials/10-idle-design-space-port.json`
+- `examples/tutorials/11-my-game-v1.json`
+- `examples/tutorials/12-my-game-compare-b.json`
+- `examples/tutorials/13-my-game-tune.json`
 - 가이드: `docs/virtual-scenario-design.md`
 
 ## 9. SimState 저장/재개 계약

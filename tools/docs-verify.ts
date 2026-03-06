@@ -53,6 +53,9 @@ function verifyIntroTrack(): void {
   const baseline = "../../examples/tutorials/01-cafe-baseline.json";
   const compareB = "../../examples/tutorials/03-cafe-compare-b.json";
   const tuneSpec = "../../examples/tutorials/04-cafe-tune.json";
+  const personalTemplate = "../../examples/tutorials/11-my-game-v1.json";
+  const personalCompareB = "../../examples/tutorials/12-my-game-compare-b.json";
+  const personalTuneSpec = "../../examples/tutorials/13-my-game-tune.json";
 
   const validateOut = runCli(["validate", baseline]);
   assert(validateOut.includes("OK:"), "validate should print OK");
@@ -183,6 +186,58 @@ function verifyIntroTrack(): void {
     ]),
   );
   assert(kpiRegress.pass === true, "kpi regress self-compare should pass");
+
+  const personalValidate = runCli(["validate", personalTemplate]);
+  assert(personalValidate.includes("OK:"), "personal template validate should print OK");
+
+  const generatedPersonalBase = resolve(tmpDir, "generated-my-game-v1.json");
+  const generatedPersonalCompare = resolve(tmpDir, "generated-my-game-v1-compare-b.json");
+  const generatedPersonalTune = resolve(tmpDir, "generated-my-game-v1-tune.json");
+  runCli(["init", "scenario", "--track", "personal", "--out", generatedPersonalBase]);
+  assert(existsSync(generatedPersonalBase), "init personal should create base scenario");
+  assert(existsSync(generatedPersonalCompare), "init personal should create compare scenario");
+  assert(existsSync(generatedPersonalTune), "init personal should create tune spec");
+  const generatedValidate = runCli(["validate", generatedPersonalBase]);
+  assert(generatedValidate.includes("OK:"), "generated personal base validate should print OK");
+
+  const personalSim = asRecord(runCliJson(["simulate", personalTemplate, "--format", "json"]));
+  assert(has(personalSim, "endMoney"), "personal template simulate must include endMoney");
+  assert(has(personalSim, "endNetWorth"), "personal template simulate must include endNetWorth");
+
+  const personalLtv = asRecord(
+    runCliJson([
+      "ltv",
+      personalTemplate,
+      "--horizons",
+      "30m,2h,24h,7d,30d,90d",
+      "--step",
+      "600",
+      "--fast",
+      "true",
+      "--format",
+      "json",
+    ]),
+  );
+  const personalSummary = asRecord(personalLtv.summary as JSONValue);
+  assert(has(personalSummary, "at7d"), "personal template ltv summary must include at7d");
+  assert(has(personalSummary, "at90d"), "personal template ltv summary must include at90d");
+
+  const personalCompare = asRecord(
+    runCliJson([
+      "compare",
+      personalTemplate,
+      personalCompareB,
+      "--metric",
+      "endNetWorth",
+      "--format",
+      "json",
+    ]),
+  );
+  assert(asRecord(personalCompare.detail as JSONValue).source === "measured", "personal compare must be measured");
+
+  const personalTune = asRecord(runCliJson(["tune", personalTemplate, "--tune", personalTuneSpec, "--format", "json"]));
+  assert(personalTune.ok === true, "personal tune result must be ok=true");
+  assert(has(asRecord(personalTune.report as JSONValue), "best"), "personal tune report must include best");
 }
 
 function verifyPluginTrack(): void {

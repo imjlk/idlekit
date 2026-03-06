@@ -2,18 +2,65 @@
 
 Bun workspace 기반의 범용 경제 시뮬레이터입니다.
 
-- `@idlekit/core`: 엔진 어댑터, 화폐 정책, 시나리오 컴파일, 시뮬레이션, 분석, 리포트
+- `@idlekit/core`: 엔진 어댑터, 시나리오 컴파일, 시뮬레이션, 분석, 리포트
 - `@idlekit/money`: 화폐/표기/정책/직렬화 전용 라이브러리
 - `@idlekit/cli`: `idk` CLI (`bunli` 기반)
 
-## 빠른 시작
+## 3분 시작
+
+처음 저장소를 열었다면 `11-my-game-v1.json`부터 실행하면 됩니다. 그 다음 단계는 `12-my-game-compare-b.json`, `13-my-game-tune.json` 순서로 이어집니다.
 
 ```bash
 bun install
+
+bun run --cwd packages/cli dev -- validate ../../examples/tutorials/11-my-game-v1.json
+bun run --cwd packages/cli dev -- simulate ../../examples/tutorials/11-my-game-v1.json --format json
+bun run --cwd packages/cli dev -- ltv ../../examples/tutorials/11-my-game-v1.json \
+  --horizons 30m,2h,24h,7d,30d,90d \
+  --step 600 \
+  --fast true \
+  --format json
+```
+
+설치형 실행(선택):
+
+```bash
+bun link --cwd packages/cli
+idk validate examples/tutorials/11-my-game-v1.json
+idk simulate examples/tutorials/11-my-game-v1.json --format json
+```
+
+내 파일 세트를 바로 만들고 싶다면:
+
+```bash
+bun run --cwd packages/cli dev -- init scenario --track personal --out ../../tmp/my-game-v1.json
+```
+
+## 시작 경로
+
+- 처음 자기 게임을 만들기: [CLI 디자이너 시작 문서](./docs/start-here-cli-designer.md)
+- 명령 흐름만 빠르게 익히기: [튜토리얼(2트랙) 스텝바이스텝](./docs/tutorial-step-by-step.md)
+- 재화/액션/KPI를 먼저 설계하기: [가상 시나리오 설계 가이드](./docs/virtual-scenario-design.md)
+- 모든 명령을 레퍼런스로 보기: [사용 가이드](./docs/usage-guide.md)
+
+## 예제 흐름
+
+- 기본 시작점: [11-my-game-v1.json](./examples/tutorials/11-my-game-v1.json)
+- 개인용 A/B 루프: [12-my-game-compare-b.json](./examples/tutorials/12-my-game-compare-b.json), [13-my-game-tune.json](./examples/tutorials/13-my-game-tune.json)
+- 명령 체험용: [01-cafe-baseline.json](./examples/tutorials/01-cafe-baseline.json)
+- 설계 예시용: [05-idle-design-v1.json](./examples/tutorials/05-idle-design-v1.json), [06-idle-design-balance-b.json](./examples/tutorials/06-idle-design-balance-b.json), [07-idle-design-tune.json](./examples/tutorials/07-idle-design-tune.json)
+- 장르 분기 템플릿: [08-idle-design-city-factory.json](./examples/tutorials/08-idle-design-city-factory.json), [09-idle-design-loot-camp.json](./examples/tutorials/09-idle-design-loot-camp.json), [10-idle-design-space-port.json](./examples/tutorials/10-idle-design-space-port.json)
+
+## 기여자/운영자 체크
+
+저장소 품질 게이트와 운영 확인은 아래 순서로 돌리면 됩니다.
+
+```bash
 bun run typecheck
 bun run test
 bun run build
 bun run docs:verify:quick
+bun run docs:verify
 bun run replay:verify
 bun run bench:sim:check
 bun run bench:sim:suite:check
@@ -22,72 +69,26 @@ bun run kpi:regress
 bun run release:dry-run
 ```
 
-CLI 도움말:
-
-```bash
-bun run --cwd packages/cli dev -- --help
-```
-
-설치형 실행(선택):
-
-```bash
-bun link --cwd packages/cli
-idk --help
-```
-
-## 가장 빠른 실행 예시
-
-```bash
-bun run --cwd packages/cli dev -- validate ../../examples/simple-linear.json
-bun run --cwd packages/cli dev -- simulate ../../examples/simple-linear.json --duration 600 --strategy greedy
-bun run --cwd packages/cli dev -- eta ../../examples/simple-linear.json --target-worth 1e5 --mode analytic
-bun run --cwd packages/cli dev -- report ../../examples/simple-linear.json --include-growth true --include-ux true
-bun run --cwd packages/cli dev -- init scenario --track intro --out ../../tmp/new-scenario.json
-bun run --cwd packages/cli dev -- ltv ../../examples/tutorials/05-idle-design-v1.json --horizons 30m,2h,24h,7d,30d,90d --step 600 --fast true --value-per-worth 0.001 --plugin ../../examples/plugins/custom-econ-plugin.ts --allow-plugin true
-bun run --cwd packages/cli dev -- calibrate ./tmp/telemetry.csv --input-format csv --format json
-```
-
-Replay artifact 저장(재실행 커맨드 자동 생성):
-
-```bash
-bun run --cwd packages/cli dev -- simulate ../../examples/simple-linear.json --seed 42 --run-id smoke-001 --artifact-out ../../tmp/sim.artifact.json --format json
-bun run --cwd packages/cli dev -- replay verify ../../tmp/sim.artifact.json --format json
-bun run --cwd packages/cli dev -- compare ../../examples/tutorials/01-cafe-baseline.json ../../examples/tutorials/03-cafe-compare-b.json --metric endNetWorth --artifact-out ../../tmp/compare.artifact.json --format json
-bun run --cwd packages/cli dev -- ltv ../../examples/tutorials/05-idle-design-v1.json --horizons 30m,2h,24h,7d,30d,90d --step 600 --fast true --artifact-out ../../tmp/ltv.artifact.json --format json
-```
-
-튜닝 실행:
-
-```bash
-bun run --cwd packages/cli dev -- tune ../../examples/simple-linear.json --tune ../../examples/tune-simple.json
-```
-
-튜닝 회귀 비교(artifact 기반):
-
-```bash
-bun run tune:regress --baseline ./tmp/tune-baseline.json --current ./tmp/tune-latest.json --tolerance 0.05
-bun run --cwd packages/cli dev -- kpi regress --baseline ./examples/bench/kpi-baseline.json --current ./tmp/kpi-report.json --format json
-```
-
 ## 문서
 
-- [사용 가이드](./docs/usage-guide.md)
-- [가상 시나리오 설계 가이드](./docs/virtual-scenario-design.md)
-- [머니 라이브러리 가이드](./docs/money-library.md)
+- [CLI 디자이너 시작 문서](./docs/start-here-cli-designer.md)
 - [튜토리얼(2트랙) 스텝바이스텝](./docs/tutorial-step-by-step.md)
-- [출력 JSON 스키마](./docs/schemas/)
+- [가상 시나리오 설계 가이드](./docs/virtual-scenario-design.md)
+- [사용 가이드](./docs/usage-guide.md)
 - [시나리오/튜닝 명세 가이드](./docs/scenario-and-tuning.md)
+- [머니 라이브러리 가이드](./docs/money-library.md)
 - [플러그인/어댑터 패턴 가이드](./docs/plugin-and-adapter.md)
+- [출력 JSON 스키마](./docs/schemas/)
 - [테스트 운영 가이드](./docs/testing.md)
 - [릴리즈 운영 규약](./docs/release-process.md)
+- [튜토리얼 예제 세트](./examples/tutorials/README.md)
+- [플러그인 예제 프로젝트](./examples/plugins/README.md)
 - [머니 라이브러리 예제](./examples/money-package/README.md)
 - [어댑터 예제 프로젝트](./examples/adapter-pattern/README.md)
-- [플러그인 예제 프로젝트](./examples/plugins/README.md)
-- [튜토리얼 예제 세트](./examples/tutorials/README.md)
 
 ## 현재 구현 범위 메모
 
 - `planner` 전략은 `stepOnce` 기반 롤아웃을 사용합니다.
-- `compare` 명령은 현재 시나리오를 실제 실행한 측정값(endMoney/endNetWorth/droppedRate/etaToTargetWorth)으로 비교합니다.
-- `idk tune` 출력은 `json` 사용을 권장합니다. (`md/csv`는 중첩 객체 가독성이 낮을 수 있음)
-- `simulate --state-out/--resume`는 state 구조를 검증하고, 전략 상태를 저장/복원해 재개 결정론을 강화합니다.
+- `compare`는 실제 실행한 측정값(`endMoney/endNetWorth/droppedRate/etaToTargetWorth`)으로 비교합니다.
+- `simulate --state-out/--resume`는 state 구조를 검증하고 전략 상태를 저장/복원합니다.
+- `replay verify`는 artifact의 `runId/seed/scenarioHash/gitSha/pluginDigest/resultHash`를 다시 확인합니다.

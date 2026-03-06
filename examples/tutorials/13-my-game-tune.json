@@ -1,0 +1,79 @@
+{
+  "schemaVersion": 1,
+  "meta": {
+    "id": "my-game-v1-tune",
+    "title": "My Game V1 TuneSpec",
+    "description": "Tune the greedy preview behavior for 11-my-game-v1.",
+    "tags": ["template", "personal", "idle", "tune"]
+  },
+  "strategy": {
+    "id": "greedy",
+    "baseParams": {
+      "schemaVersion": 1,
+      "objective": "maximizeNetWorth",
+      "maxPicksPerStep": 1,
+      "bulk": {
+        "mode": "bestQuote"
+      },
+      "netWorth": {
+        "horizonSec": 600,
+        "series": "netWorth",
+        "useFastPreview": true
+      }
+    },
+    "space": [
+      {
+        "path": "maxPicksPerStep",
+        "space": {
+          "kind": "int",
+          "min": 1,
+          "max": 2
+        }
+      },
+      {
+        "path": "bulk.mode",
+        "space": {
+          "kind": "choice",
+          "values": ["size1", "bestQuote", "maxAffordable"]
+        }
+      },
+      {
+        "path": "netWorth.horizonSec",
+        "space": {
+          "kind": "int",
+          "min": 300,
+          "max": 1200
+        }
+      },
+      {
+        "path": "netWorth.useFastPreview",
+        "space": {
+          "kind": "bool"
+        }
+      }
+    ]
+  },
+  "objective": {
+    "id": "endNetWorthLog10"
+  },
+  "runner": {
+    "seeds": [7, 13, 29],
+    "budget": 10,
+    "overrideDurationSec": 1800,
+    "topK": 4,
+    "stages": [
+      {
+        "budget": 5,
+        "durationSec": 600,
+        "keepTopK": 4,
+        "fast": true
+      },
+      {
+        "budget": 5,
+        "durationSec": 1800,
+        "keepTopK": 4,
+        "fast": true
+      }
+    ]
+  }
+}
