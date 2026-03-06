@@ -1,7 +1,10 @@
 import { defineCommand, option } from "@bunli/core";
 import { compileScenario, createNumberEngine, runScenario, validateScenarioV1 } from "@idlekit/core";
+import { randomUUID } from "node:crypto";
+import { resolve } from "node:path";
 import { z } from "zod";
 import { buildOutputMeta } from "../io/outputMeta";
+import { buildReplayArgs, writeReplayArtifact } from "../io/replayArtifact";
 import { readScenarioFile } from "../io/readScenario";
 import { writeOutput } from "../io/writeOutput";
 import {
@@ -175,6 +178,10 @@ export default defineCommand({
     draws: option(z.coerce.number().int().positive().optional(), {
       description: "Monte Carlo draws override (uses scenario.monetization.uncertainty.draws by default)",
     }),
+    "run-id": option(z.string().optional(), {
+      description: "Optional run identifier used in output metadata",
+    }),
+    "artifact-out": option(z.string().optional(), { description: "Write replay artifact JSON to path" }),
     out: option(z.string().optional(), { description: "Output path" }),
     format: option(z.enum(["json", "md", "csv"]).default("json"), { description: "Output format" }),
   },
@@ -367,36 +374,64 @@ export default defineCommand({
       at90d: getSummaryBySeconds(rows, 7776000),
     };
 
+    const runId = flags["run-id"] ?? randomUUID();
+    const outputMeta = buildOutputMeta({
+      command: "ltv",
+      runId,
+      scenarioPath,
+      scenario: valid.scenario,
+      seed: flags.seed ?? compiled.ctx.seed,
+    });
+    const jsonOutput = {
+      scenario: scenarioPath,
+      run: {
+        id: runId,
+        stepSec,
+        fast: !!runFast?.enabled,
+        strategyId: strategy?.id ?? null,
+      },
+      monetization: {
+        config: monetizationConfig,
+        uncertainty: {
+          enabled: uncertainEnabled,
+          draws: uncertainEnabled ? draws : 0,
+          quantiles: monetizationConfig.uncertainty.quantiles,
+        },
+      },
+      horizons: rows,
+      summary,
+    };
+    const output = flags.format === "json" ? jsonOutput : rows;
+
+    if (flags["artifact-out"]) {
+      const scenarioAbs = resolve(process.cwd(), scenarioPath);
+      const replayArgs = buildReplayArgs({
+        command: "ltv",
+        positional: [scenarioAbs],
+        flags: {
+          ...flags,
+          "run-id": runId,
+          seed: flags.seed ?? compiled.ctx.seed,
+          format: "json",
+        },
+        omitFlags: ["out", "artifact-out"],
+      });
+      await writeReplayArtifact({
+        outPath: flags["artifact-out"],
+        command: "ltv",
+        positional: [scenarioAbs],
+        flags,
+        replayArgs,
+        result: jsonOutput,
+        meta: outputMeta,
+      });
+    }
+
     await writeOutput({
       format: flags.format,
       outPath: flags.out,
-      data:
-        flags.format === "json"
-          ? {
-              scenario: scenarioPath,
-              run: {
-                stepSec,
-                fast: !!runFast?.enabled,
-                strategyId: strategy?.id ?? null,
-              },
-              monetization: {
-                config: monetizationConfig,
-                uncertainty: {
-                  enabled: uncertainEnabled,
-                  draws: uncertainEnabled ? draws : 0,
-                  quantiles: monetizationConfig.uncertainty.quantiles,
-                },
-              },
-              horizons: rows,
-              summary,
-            }
-          : rows,
-      meta: buildOutputMeta({
-        command: "ltv",
-        scenarioPath,
-        scenario: valid.scenario,
-        seed: flags.seed ?? compiled.ctx.seed,
-      }),
+      data: output,
+      meta: outputMeta,
     });
   },
 });

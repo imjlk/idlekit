@@ -11,10 +11,12 @@ import {
   type ObjectiveRegistry,
   type StrategyRegistry,
 } from "@idlekit/core";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import { randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
 import { z } from "zod";
 import { buildOutputMeta } from "../io/outputMeta";
+import { buildReplayArgs, writeReplayArtifact } from "../io/replayArtifact";
 import { readScenarioFile } from "../io/readScenario";
 import { writeOutput } from "../io/writeOutput";
 import { loadRegistries, parsePluginPaths, parsePluginSecurityOptions } from "../plugin/load";
@@ -27,16 +29,6 @@ type TuneRegression = Readonly<{
   deltaPct: number;
   tolerance: number;
   regressed: boolean;
-}>;
-
-type TuneArtifactV1 = Readonly<{
-  v: 1;
-  generatedAt: string;
-  meta: ReturnType<typeof buildOutputMeta>;
-  scenarioPath: string;
-  tuneSpecPath: string;
-  result: unknown;
-  regression?: TuneRegression;
 }>;
 
 function readBestScoreFromTuneResult(x: unknown): number {
@@ -130,6 +122,9 @@ export default defineCommand({
     "baseline-artifact": option(z.string().optional(), {
       description: "Compare current best score against baseline artifact",
     }),
+    "run-id": option(z.string().optional(), {
+      description: "Optional run identifier used in output metadata",
+    }),
     "regression-tolerance": option(z.coerce.number().default(0), {
       description: "Allowed score decrease before regression is flagged",
     }),
@@ -149,11 +144,13 @@ export default defineCommand({
       readScenarioFile(scenarioPath),
       readScenarioFile(flags.tune),
     ]);
+    const runId = flags["run-id"] ?? randomUUID();
     const outputMeta = buildOutputMeta({
       command: "tune",
       scenarioPath,
       scenario: scenarioInput,
       tuneSpec: tuneSpecInput,
+      runId,
     });
 
     const loaded = await loadRegistries(
@@ -204,18 +201,32 @@ export default defineCommand({
     const output = regression ? { ...(result as Record<string, unknown>), regression } : result;
 
     if (flags["artifact-out"]) {
-      const artifactPath = resolve(flags["artifact-out"]);
-      const artifact: TuneArtifactV1 = {
-        v: 1,
-        generatedAt: new Date().toISOString(),
+      const scenarioAbs = resolve(process.cwd(), scenarioPath);
+      const tuneAbs = resolve(process.cwd(), flags.tune);
+      const replayArgs = buildReplayArgs({
+        command: "tune",
+        positional: [scenarioAbs],
+        flags: {
+          ...flags,
+          tune: tuneAbs,
+          "run-id": runId,
+          format: "json",
+        },
+        omitFlags: ["out", "artifact-out", "baseline-artifact", "fail-on-regression", "regression-tolerance"],
+      });
+      await writeReplayArtifact({
+        outPath: flags["artifact-out"],
+        command: "tune",
+        positional: [scenarioAbs],
+        flags,
+        replayArgs,
+        result: output,
         meta: outputMeta,
-        scenarioPath: resolve(scenarioPath),
-        tuneSpecPath: resolve(flags.tune),
-        result,
-        regression,
-      };
-      await mkdir(dirname(artifactPath), { recursive: true });
-      await writeFile(artifactPath, JSON.stringify(artifact, null, 2) + "\n", "utf8");
+        extra: {
+          tuneSpecPath: tuneAbs,
+          regression,
+        },
+      });
     }
 
     await writeOutput({

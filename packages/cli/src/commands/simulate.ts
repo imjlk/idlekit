@@ -14,6 +14,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { z } from "zod";
 import { buildOutputMeta } from "../io/outputMeta";
+import { buildReplayArgs, writeReplayArtifact } from "../io/replayArtifact";
 import { readScenarioFile } from "../io/readScenario";
 import { writeOutput } from "../io/writeOutput";
 import { loadRegistries, parsePluginPaths, parsePluginSecurityOptions } from "../plugin/load";
@@ -52,6 +53,7 @@ export default defineCommand({
     }),
     resume: option(z.string().optional(), { description: "Resume simulation from saved state json" }),
     "state-out": option(z.string().optional(), { description: "Write end simulation state json" }),
+    "artifact-out": option(z.string().optional(), { description: "Write replay artifact JSON to path" }),
     seed: option(z.coerce.number().optional(), { description: "Deterministic seed passed to ctx.seed" }),
     "run-id": option(z.string().optional(), { description: "Optional run identifier (auto-generated if omitted)" }),
     out: option(z.string().optional(), { description: "Output path" }),
@@ -235,47 +237,73 @@ export default defineCommand({
         decay: offlineRun.offline.decay,
       });
 
+    const output = {
+      run: {
+        id: runId,
+        seed,
+        generatedAt,
+      },
+      scenario: scenarioPath,
+      startT: run.start.t,
+      endT: run.end.t,
+      durationSec: run.end.t - run.start.t,
+      totalElapsedSec,
+      resumedFrom: flags.resume,
+      stateOut: stateOutPath,
+      endMoney: E.toString(run.end.wallet.money.amount),
+      endNetWorth: E.toString(netWorth.amount),
+      offline:
+        offlineRun &&
+        ({
+          ...offlineSummary,
+          endT: offlineRun.end.t,
+          endMoney: E.toString(offlineRun.end.wallet.money.amount),
+          endNetWorth: offlineEndWorth ? E.toString(offlineEndWorth.amount) : undefined,
+          stats: offlineRun.stats,
+          uxFlags: offlineRun.uxFlags,
+        }),
+      summaries: {
+        eventLog: run.eventLog,
+        offline: offlineSummary,
+      },
+      prestige: {
+        count: run.end.prestige.count,
+        points: E.toString(run.end.prestige.points),
+        multiplier: E.toString(run.end.prestige.multiplier),
+      },
+      stats: run.stats,
+      uxFlags: run.uxFlags,
+      eventLog: run.eventLog,
+    };
+
+    if (flags["artifact-out"]) {
+      const scenarioAbs = resolve(process.cwd(), scenarioPath);
+      const replayArgs = buildReplayArgs({
+        command: "simulate",
+        positional: [scenarioAbs],
+        flags: {
+          ...flags,
+          seed,
+          "run-id": runId,
+          format: "json",
+        },
+        omitFlags: ["out", "artifact-out", "state-out"],
+      });
+      await writeReplayArtifact({
+        outPath: flags["artifact-out"],
+        command: "simulate",
+        positional: [scenarioAbs],
+        flags,
+        replayArgs,
+        result: output,
+        meta: outputMeta,
+      });
+    }
+
     await writeOutput({
       format: flags.format,
       outPath: flags.out,
-      data: {
-        run: {
-          id: runId,
-          seed,
-          generatedAt,
-        },
-        scenario: scenarioPath,
-        startT: run.start.t,
-        endT: run.end.t,
-        durationSec: run.end.t - run.start.t,
-        totalElapsedSec,
-        resumedFrom: flags.resume,
-        stateOut: stateOutPath,
-        endMoney: E.toString(run.end.wallet.money.amount),
-        endNetWorth: E.toString(netWorth.amount),
-        offline:
-          offlineRun &&
-          ({
-            ...offlineSummary,
-            endT: offlineRun.end.t,
-            endMoney: E.toString(offlineRun.end.wallet.money.amount),
-            endNetWorth: offlineEndWorth ? E.toString(offlineEndWorth.amount) : undefined,
-            stats: offlineRun.stats,
-            uxFlags: offlineRun.uxFlags,
-          }),
-        summaries: {
-          eventLog: run.eventLog,
-          offline: offlineSummary,
-        },
-        prestige: {
-          count: run.end.prestige.count,
-          points: E.toString(run.end.prestige.points),
-          multiplier: E.toString(run.end.prestige.multiplier),
-        },
-        stats: run.stats,
-        uxFlags: run.uxFlags,
-        eventLog: run.eventLog,
-      },
+      data: output,
       meta: outputMeta,
     });
   },

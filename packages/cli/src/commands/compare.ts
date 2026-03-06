@@ -8,8 +8,11 @@ import {
   runScenario,
   validateScenarioV1,
 } from "@idlekit/core";
+import { randomUUID } from "node:crypto";
+import { resolve } from "node:path";
 import { z } from "zod";
 import { buildOutputMeta } from "../io/outputMeta";
+import { buildReplayArgs, writeReplayArtifact } from "../io/replayArtifact";
 import { readScenarioFile } from "../io/readScenario";
 import { writeOutput } from "../io/writeOutput";
 import { loadRegistries, parsePluginPaths, parsePluginSecurityOptions } from "../plugin/load";
@@ -57,6 +60,11 @@ export default defineCommand({
     "max-duration": option(z.coerce.number().default(86400), {
       description: "Max duration for etaToTargetWorth metric simulation",
     }),
+    seed: option(z.coerce.number().optional(), { description: "Deterministic seed passed to ctx.seed" }),
+    "run-id": option(z.string().optional(), {
+      description: "Optional run identifier used in output metadata",
+    }),
+    "artifact-out": option(z.string().optional(), { description: "Write replay artifact JSON to path" }),
     metric: option(
       z.enum(["endMoney", "endNetWorth", "etaToTargetWorth", "droppedRate"]).default("endNetWorth"),
       { description: "Comparison metric" },
@@ -118,6 +126,10 @@ export default defineCommand({
 
       return {
         ...compiled,
+        ctx: {
+          ...compiled.ctx,
+          seed: flags.seed ?? compiled.ctx.seed,
+        },
         strategy: overrideStrategy,
         run: {
           ...compiled.run,
@@ -232,42 +244,73 @@ export default defineCommand({
       },
     });
 
+    const runId = flags["run-id"] ?? randomUUID();
+    const outputMeta = buildOutputMeta({
+      command: "compare",
+      runId,
+      seed: flags.seed ?? aCompiled.ctx.seed,
+      scenarioPath: [aPath, bPath],
+      scenarios: {
+        a: va.scenario,
+        b: vb.scenario,
+      },
+    });
+    const output = {
+      metric: flags.metric,
+      better: result.better,
+      detail: result.detail,
+      measured: {
+        a: {
+          endMoney: E.toString(ma.endMoney),
+          endNetWorth: E.toString(ma.endNetWorth),
+          droppedRate: ma.droppedRate,
+          etaToTargetWorth:
+            ma.etaToTargetWorth === undefined
+              ? undefined
+              : formatEtaLabel(ma.etaToTargetWorth, !!ma.etaReached),
+        },
+        b: {
+          endMoney: E.toString(mb.endMoney),
+          endNetWorth: E.toString(mb.endNetWorth),
+          droppedRate: mb.droppedRate,
+          etaToTargetWorth:
+            mb.etaToTargetWorth === undefined
+              ? undefined
+              : formatEtaLabel(mb.etaToTargetWorth, !!mb.etaReached),
+        },
+      },
+    };
+
+    if (flags["artifact-out"]) {
+      const aAbs = resolve(process.cwd(), aPath);
+      const bAbs = resolve(process.cwd(), bPath);
+      const replayArgs = buildReplayArgs({
+        command: "compare",
+        positional: [aAbs, bAbs],
+        flags: {
+          ...flags,
+          "run-id": runId,
+          seed: flags.seed ?? aCompiled.ctx.seed,
+          format: "json",
+        },
+        omitFlags: ["out", "artifact-out"],
+      });
+      await writeReplayArtifact({
+        outPath: flags["artifact-out"],
+        command: "compare",
+        positional: [aAbs, bAbs],
+        flags,
+        replayArgs,
+        result: output,
+        meta: outputMeta,
+      });
+    }
+
     await writeOutput({
       format: flags.format,
       outPath: flags.out,
-      data: {
-        metric: flags.metric,
-        better: result.better,
-        detail: result.detail,
-        measured: {
-          a: {
-            endMoney: E.toString(ma.endMoney),
-            endNetWorth: E.toString(ma.endNetWorth),
-            droppedRate: ma.droppedRate,
-            etaToTargetWorth:
-              ma.etaToTargetWorth === undefined
-                ? undefined
-                : formatEtaLabel(ma.etaToTargetWorth, !!ma.etaReached),
-          },
-          b: {
-            endMoney: E.toString(mb.endMoney),
-            endNetWorth: E.toString(mb.endNetWorth),
-            droppedRate: mb.droppedRate,
-            etaToTargetWorth:
-              mb.etaToTargetWorth === undefined
-                ? undefined
-                : formatEtaLabel(mb.etaToTargetWorth, !!mb.etaReached),
-          },
-        },
-      },
-      meta: buildOutputMeta({
-        command: "compare",
-        scenarioPath: [aPath, bPath],
-        scenarios: {
-          a: va.scenario,
-          b: vb.scenario,
-        },
-      }),
+      data: output,
+      meta: outputMeta,
     });
   },
 });

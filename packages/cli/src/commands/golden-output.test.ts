@@ -182,6 +182,38 @@ describe("CLI golden outputs", () => {
     expect(out.stats).toBeDefined();
   });
 
+  it("simulate can write standardized replay artifact", async () => {
+    const dir = await mkdtemp(resolve(tmpdir(), "idlekit-sim-artifact-"));
+    try {
+      const artifactPath = resolve(dir, "simulate.artifact.json");
+      const out = runCliJson([
+        "simulate",
+        BASELINE,
+        "--duration",
+        "20",
+        "--seed",
+        "101",
+        "--run-id",
+        "sim-artifact-run",
+        "--artifact-out",
+        artifactPath,
+        "--format",
+        "json",
+      ]);
+      const raw = JSON.parse(await readFile(artifactPath, "utf8"));
+      expect(raw.v).toBe(1);
+      expect(raw.kind).toBe("idk.replay.artifact");
+      expect(raw.command).toBe("simulate");
+      expect(raw.replay?.commandLine).toContain("simulate");
+      expect(raw.replay?.verify?.runId).toBe("sim-artifact-run");
+      expect(raw.replay?.verify?.seed).toBe(101);
+      expect(typeof raw.replay?.verify?.scenarioHash).toBe("string");
+      expect(raw.result?.endMoney).toBe(out.endMoney);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it("simulate applies offline catch-up before main run", () => {
     const out = runCliJson([
       "simulate",
@@ -356,6 +388,10 @@ describe("CLI golden outputs", () => {
 
       const raw = JSON.parse(await readFile(currentPath, "utf8"));
       expect(raw.v).toBe(1);
+      expect(raw.kind).toBe("idk.replay.artifact");
+      expect(raw.command).toBe("tune");
+      expect(raw.replay?.commandLine).toContain("tune");
+      expect(raw.extra?.tuneSpecPath).toBeDefined();
       expect(raw.result?.report?.best).toBeDefined();
       expect(out.regression).toBeDefined();
       expect(typeof out.regression.currentBestScore).toBe("number");
@@ -397,6 +433,74 @@ describe("CLI golden outputs", () => {
       expect(out.scenarioPatch?.monetization).toBeDefined();
       expect(out._meta?.command).toBe("calibrate");
       expect(typeof out._meta?.telemetryHash).toBe("string");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("compare can write standardized replay artifact", async () => {
+    const dir = await mkdtemp(resolve(tmpdir(), "idlekit-artifact-"));
+    try {
+      const compareArtifact = resolve(dir, "compare.artifact.json");
+
+      runCliJson([
+        "compare",
+        BASELINE,
+        COMPARE_B,
+        "--metric",
+        "endNetWorth",
+        "--seed",
+        "17",
+        "--run-id",
+        "cmp-artifact-run",
+        "--artifact-out",
+        compareArtifact,
+        "--format",
+        "json",
+      ]);
+      const compareRaw = JSON.parse(await readFile(compareArtifact, "utf8"));
+      expect(compareRaw.kind).toBe("idk.replay.artifact");
+      expect(compareRaw.command).toBe("compare");
+      expect(compareRaw.replay?.verify?.runId).toBe("cmp-artifact-run");
+      expect(compareRaw.replay?.verify?.seed).toBe(17);
+      expect(typeof compareRaw.replay?.verify?.scenarioHash?.a).toBe("string");
+      expect(typeof compareRaw.replay?.verify?.scenarioHash?.b).toBe("string");
+      expect(compareRaw.result?.detail?.source).toBe("measured");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("ltv can write standardized replay artifact", async () => {
+    const dir = await mkdtemp(resolve(tmpdir(), "idlekit-ltv-artifact-"));
+    try {
+      const ltvArtifact = resolve(dir, "ltv.artifact.json");
+
+      runCliJson([
+        "ltv",
+        BASELINE,
+        "--horizons",
+        "30m,2h,24h,7d,30d,90d",
+        "--step",
+        "600",
+        "--fast",
+        "true",
+        "--seed",
+        "19",
+        "--run-id",
+        "ltv-artifact-run",
+        "--artifact-out",
+        ltvArtifact,
+        "--format",
+        "json",
+      ]);
+      const ltvRaw = JSON.parse(await readFile(ltvArtifact, "utf8"));
+      expect(ltvRaw.kind).toBe("idk.replay.artifact");
+      expect(ltvRaw.command).toBe("ltv");
+      expect(ltvRaw.replay?.verify?.runId).toBe("ltv-artifact-run");
+      expect(ltvRaw.replay?.verify?.seed).toBe(19);
+      expect(typeof ltvRaw.replay?.verify?.scenarioHash).toBe("string");
+      expect(ltvRaw.result?.summary?.at90d).toBeDefined();
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
