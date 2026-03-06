@@ -42,6 +42,9 @@ jobs:
       - name: Docs Verify (quick)
         run: bun run docs:verify:quick
 
+      - name: Replay Verify Gate
+        run: bun run replay:verify
+
       - name: KPI AB Report
         run: bun run kpi:report
 

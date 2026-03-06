@@ -10,6 +10,7 @@ bun run test
 bun run build
 bun run docs:verify:quick
 bun run docs:verify
+bun run replay:verify
 bun run bench:sim
 bun run bench:sim:suite
 bun run bench:sim:check
@@ -75,7 +76,7 @@ PR/커밋 전에:
 3. `bun run build`
 4. `bun run docs:verify:quick`
 
-CI(`.github/workflows/ci.yml`)는 typecheck/test/build + docs quick + 성능 체크 + KPI A/B 리포트 + KPI 리그레션 게이트를 실행합니다.
+CI(`.github/workflows/ci.yml`)는 typecheck/test/build + docs quick + replay verify gate + 성능 체크 + KPI A/B 리포트 + KPI 리그레션 게이트를 실행합니다.
 
 성능 리그레션은 `bench:sim:check`에서 평균/`p95` 실행시간 임계값으로 추가 검증합니다.
 `tools/bench-sim.ts`는 시나리오 경로를 저장소 루트 기준 절대경로로 정규화해 cwd 차이로 인한 오탐을 줄입니다.

@@ -14,6 +14,7 @@ bun run typecheck
 bun run test
 bun run build
 bun run docs:verify:quick
+bun run replay:verify
 bun run bench:sim:check
 bun run bench:sim:suite:check
 bun run kpi:report

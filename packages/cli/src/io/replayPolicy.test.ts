@@ -116,4 +116,61 @@ describe("replay policy", () => {
       await rm(dir, { recursive: true, force: true });
     }
   });
+
+  it("normalizes path-like flags for stable replay args", async () => {
+    const dir = await mkdtemp(resolve(tmpdir(), "idlekit-replay-policy-paths-"));
+    try {
+      const outPath = resolve(dir, "tune.artifact.json");
+      const meta = buildOutputMeta({
+        command: "tune",
+        scenarioPath: "examples/tutorials/01-cafe-baseline.json",
+        scenario: { schemaVersion: 1 },
+        runId: "run-paths",
+        seed: 11,
+      });
+      const pluginRel = "examples/plugins/custom-econ-plugin.ts";
+      const pluginRootRel = "examples/plugins";
+      const pluginShaRel = `${pluginRel}=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef`;
+
+      await writeCommandReplayArtifact({
+        command: "tune",
+        outPath,
+        positional: [resolve("examples/tutorials/01-cafe-baseline.json")],
+        flags: {
+          plugin: pluginRel,
+          "plugin-root": pluginRootRel,
+          "plugin-sha256": pluginShaRel,
+          "plugin-trust-file": "tmp/plugin-trust.json",
+        },
+        forcedFlags: {
+          tune: "examples/tutorials/04-cafe-tune.json",
+          format: "json",
+        },
+        result: { ok: true },
+        meta,
+      });
+
+      const raw = JSON.parse(await readFile(outPath, "utf8"));
+      const replayArgs = raw.replay?.args as string[];
+      const map: Record<string, string> = {};
+      for (let i = 1; i < replayArgs.length; i++) {
+        const token = replayArgs[i] as string | undefined;
+        if (!token?.startsWith("--")) continue;
+        const value = replayArgs[i + 1] as string | undefined;
+        if (!value) continue;
+        map[token.slice(2)] = value;
+        i += 1;
+      }
+
+      expect(map.plugin).toBe(resolve(pluginRel));
+      expect(map["plugin-root"]).toBe(resolve(pluginRootRel));
+      expect(map["plugin-trust-file"]).toBe(resolve("tmp/plugin-trust.json"));
+      expect(map.tune).toBe(resolve("examples/tutorials/04-cafe-tune.json"));
+      expect(map["plugin-sha256"]).toBe(
+        `${resolve(pluginRel)}=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef`,
+      );
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
 });
