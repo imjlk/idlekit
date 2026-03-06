@@ -61,6 +61,8 @@ describe("calibrate command", () => {
       const parsed = JSON.parse(out);
       expect(parsed.ok).toBeTrue();
       expect(typeof parsed.monetization?.uncertainty?.correlation?.retentionConversion).toBe("number");
+      expect(typeof parsed.diagnostics?.estimatedCorrelationRaw?.retentionConversion).toBe("number");
+      expect(typeof parsed.diagnostics?.correlationConfidence?.retentionConversion).toBe("number");
       expect(typeof parsed._meta?.telemetryHash).toBe("string");
     } finally {
       await rm(dir, { recursive: true, force: true });

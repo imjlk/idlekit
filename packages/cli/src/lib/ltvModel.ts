@@ -387,9 +387,40 @@ function mean(values: readonly number[]): number {
   return values.reduce((a, b) => a + b, 0) / values.length;
 }
 
-function pearsonCorrelation(x: readonly number[], y: readonly number[]): number {
+function variance(values: readonly number[]): number {
+  if (values.length === 0) return 0;
+  const m = mean(values);
+  let acc = 0;
+  for (const v of values) {
+    const d = v - m;
+    acc += d * d;
+  }
+  return acc / values.length;
+}
+
+type CorrelationEstimate = Readonly<{
+  raw: number;
+  value: number;
+  confidence: number;
+  shrinkage: number;
+  sampleSize: number;
+  varianceX: number;
+  varianceY: number;
+}>;
+
+function estimateCorrelation(x: readonly number[], y: readonly number[]): CorrelationEstimate {
   const n = Math.min(x.length, y.length);
-  if (n < 3) return 0;
+  if (n < 3) {
+    return {
+      raw: 0,
+      value: 0,
+      confidence: 0,
+      shrinkage: 0,
+      sampleSize: n,
+      varianceX: 0,
+      varianceY: 0,
+    };
+  }
   const sx = x.slice(0, n);
   const sy = y.slice(0, n);
   const mx = mean(sx);
@@ -405,8 +436,38 @@ function pearsonCorrelation(x: readonly number[], y: readonly number[]): number 
     vx += dx * dx;
     vy += dy * dy;
   }
-  if (vx <= 1e-12 || vy <= 1e-12) return 0;
-  return clampCorrelation(cov / Math.sqrt(vx * vy));
+  const varianceX = vx / n;
+  const varianceY = vy / n;
+  if (vx <= 1e-12 || vy <= 1e-12) {
+    return {
+      raw: 0,
+      value: 0,
+      confidence: 0,
+      shrinkage: 0,
+      sampleSize: n,
+      varianceX,
+      varianceY,
+    };
+  }
+
+  const raw = clampCorrelation(cov / Math.sqrt(vx * vy));
+  const ci95 = 1.96 / Math.sqrt(Math.max(1, n - 3));
+  const sampleConfidence = clamp01(1 - ci95);
+  const varianceConfidenceX = varianceX / (varianceX + 0.01);
+  const varianceConfidenceY = varianceY / (varianceY + 0.01);
+  const varianceConfidence = Math.sqrt(varianceConfidenceX * varianceConfidenceY);
+  const confidence = clamp01(sampleConfidence * varianceConfidence);
+  const shrinkage = confidence;
+  const value = raw * shrinkage;
+  return {
+    raw,
+    value,
+    confidence,
+    shrinkage,
+    sampleSize: n,
+    varianceX,
+    varianceY,
+  };
 }
 
 export function calibrateMonetization(rows: readonly TelemetryRow[]): Readonly<{
@@ -486,13 +547,40 @@ export function calibrateMonetization(rows: readonly TelemetryRow[]): Readonly<{
     userAdArpDau.push(adScore);
   }
 
+  const estimatedCorrelationPair = {
+    retentionConversion: estimateCorrelation(userRetention, userConversion),
+    retentionArppu: estimateCorrelation(userRetention, userArppu),
+    retentionAd: estimateCorrelation(userRetention, userAdArpDau),
+    conversionArppu: estimateCorrelation(userConversion, userArppu),
+    conversionAd: estimateCorrelation(userConversion, userAdArpDau),
+    arppuAd: estimateCorrelation(userArppu, userAdArpDau),
+  } as const;
+
   const estimatedCorrelation = {
-    retentionConversion: pearsonCorrelation(userRetention, userConversion),
-    retentionArppu: pearsonCorrelation(userRetention, userArppu),
-    retentionAd: pearsonCorrelation(userRetention, userAdArpDau),
-    conversionArppu: pearsonCorrelation(userConversion, userArppu),
-    conversionAd: pearsonCorrelation(userConversion, userAdArpDau),
-    arppuAd: pearsonCorrelation(userArppu, userAdArpDau),
+    retentionConversion: estimatedCorrelationPair.retentionConversion.value,
+    retentionArppu: estimatedCorrelationPair.retentionArppu.value,
+    retentionAd: estimatedCorrelationPair.retentionAd.value,
+    conversionArppu: estimatedCorrelationPair.conversionArppu.value,
+    conversionAd: estimatedCorrelationPair.conversionAd.value,
+    arppuAd: estimatedCorrelationPair.arppuAd.value,
+  } as const;
+
+  const estimatedCorrelationRaw = {
+    retentionConversion: estimatedCorrelationPair.retentionConversion.raw,
+    retentionArppu: estimatedCorrelationPair.retentionArppu.raw,
+    retentionAd: estimatedCorrelationPair.retentionAd.raw,
+    conversionArppu: estimatedCorrelationPair.conversionArppu.raw,
+    conversionAd: estimatedCorrelationPair.conversionAd.raw,
+    arppuAd: estimatedCorrelationPair.arppuAd.raw,
+  } as const;
+
+  const correlationConfidence = {
+    retentionConversion: estimatedCorrelationPair.retentionConversion.confidence,
+    retentionArppu: estimatedCorrelationPair.retentionArppu.confidence,
+    retentionAd: estimatedCorrelationPair.retentionAd.confidence,
+    conversionArppu: estimatedCorrelationPair.conversionArppu.confidence,
+    conversionAd: estimatedCorrelationPair.conversionAd.confidence,
+    arppuAd: estimatedCorrelationPair.arppuAd.confidence,
   } as const;
 
   return {
@@ -551,7 +639,16 @@ export function calibrateMonetization(rows: readonly TelemetryRow[]): Readonly<{
         d30,
         d90,
       },
+      userFeatureVariance: {
+        retention: variance(userRetention),
+        conversion: variance(userConversion),
+        arppu: variance(userArppu),
+        adArpDau: variance(userAdArpDau),
+      },
       estimatedCorrelation,
+      estimatedCorrelationRaw,
+      correlationConfidence,
+      correlationDiagnostics: estimatedCorrelationPair,
     },
   };
 }
