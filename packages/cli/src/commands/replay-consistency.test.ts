@@ -1,9 +1,9 @@
 import { describe, expect, it } from "bun:test";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
-import { isAbsolute, resolve } from "node:path";
+import { isAbsolute, relative, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { hashReplayResult } from "../io/replayArtifact";
 
@@ -404,6 +404,60 @@ describe("replay consistency", () => {
           expect(isAbsolute(requiredFlag(replayFlags, "tune"))).toBeTrue();
         }
       }
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("normalizes root-cwd resume paths in simulate replay artifacts", async () => {
+    mkdirSync(resolve(REPO_ROOT, "tmp"), { recursive: true });
+    const dir = await mkdtemp(resolve(REPO_ROOT, "tmp", "idlekit-replay-root-resume-"));
+    try {
+      const baseline = "examples/tutorials/01-cafe-baseline.json";
+      const resumeAbs = resolve(dir, "resume-state.json");
+      const artifactPath = resolve(dir, "resume.artifact.json");
+
+      runCliJsonFromRepoRoot([
+        "simulate",
+        baseline,
+        "--duration",
+        "12",
+        "--seed",
+        "401",
+        "--run-id",
+        "root-resume-state",
+        "--state-out",
+        resumeAbs,
+        "--format",
+        "json",
+      ]);
+
+      runCliJsonFromRepoRoot([
+        "simulate",
+        baseline,
+        "--resume",
+        relative(REPO_ROOT, resumeAbs),
+        "--duration",
+        "18",
+        "--seed",
+        "401",
+        "--run-id",
+        "root-resume-artifact",
+        "--artifact-out",
+        artifactPath,
+        "--format",
+        "json",
+      ]);
+
+      const verified = runCliJson(["replay", "verify", artifactPath, "--format", "json"]);
+      expect(verified.ok).toBeTrue();
+
+      const raw = JSON.parse(await readFile(artifactPath, "utf8")) as {
+        replay: { args: string[] };
+      };
+      const replayFlags = replayArgsToFlagMap(raw.replay.args);
+      expect(isAbsolute(requiredFlag(replayFlags, "resume"))).toBeTrue();
+      expect(requiredFlag(replayFlags, "resume")).toBe(resumeAbs);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
