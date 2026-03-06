@@ -15,6 +15,7 @@ bun run bench:sim:suite
 bun run bench:sim:check
 bun run bench:sim:suite:check
 bun run kpi:report
+bun run kpi:regress
 bun run tune:regress --baseline ./tmp/tune-baseline.json --current ./tmp/tune-latest.json --tolerance 0.05
 ```
 
@@ -41,8 +42,9 @@ CLI:
 - list 명령 정렬/출력 스키마
 - md/json/csv 렌더링
 - `simulate` 저장/재개 + 오프라인/fast/strategy 조합 회귀
+- `simulate/compare/ltv/tune` replay artifact 표준 포맷 검증
 - 출력 계약(schema) 검증: `output-schema.test.ts`
-- `calibrate` CSV 파서 엣지 케이스 + correlation 추정
+- `calibrate` CSV 파서 엣지 케이스 + correlation 추정 + confidence/shrinkage 진단
 
 ## 3. 변경 시 필수 테스트 추가 규칙
 
@@ -70,7 +72,7 @@ PR/커밋 전에:
 3. `bun run build`
 4. `bun run docs:verify:quick`
 
-CI(`.github/workflows/ci.yml`)는 typecheck/test/build + docs quick + 성능 체크 + KPI A/B 리포트를 실행합니다.
+CI(`.github/workflows/ci.yml`)는 typecheck/test/build + docs quick + 성능 체크 + KPI A/B 리포트 + KPI 리그레션 게이트를 실행합니다.
 
 성능 리그레션은 `bench:sim:check`에서 평균/`p95` 실행시간 임계값으로 추가 검증합니다.
 `tools/bench-sim.ts`는 시나리오 경로를 저장소 루트 기준 절대경로로 정규화해 cwd 차이로 인한 오탐을 줄입니다.

@@ -217,6 +217,9 @@
 
 불확실성이 켜져 있으면(`enabled=true`) Monte Carlo 결과로 `q50/q90` 같은 분위수 필드가 출력됩니다.
 `correlation`을 지정하면 retention/결제전환/ARPPU/광고수익이 독립이 아니라 함께 움직이도록 샘플링됩니다.
+`idk calibrate`는 telemetry 기반 상관 추정 시 샘플 수/분산 기반 confidence를 계산하고,
+데이터가 부족하면 correlation을 0 쪽으로 shrinkage한 값을 `monetization.uncertainty.correlation`에 채웁니다.
+원시값은 `diagnostics.estimatedCorrelationRaw`, shrinkage 적용값은 `diagnostics.estimatedCorrelation`에서 확인할 수 있습니다.
 
 권장 시작값:
 
@@ -235,3 +238,20 @@
 - 명령별 추가값(`runId`, `seed`, `tuneSpecHash` 등)
 
 공식 출력 스키마는 `docs/schemas/*.output.schema.json`를 기준으로 관리합니다.
+
+## 12. Replay Artifact 표준
+
+다음 명령은 공통 아티팩트 포맷(`idk.replay.artifact`)으로 저장할 수 있습니다.
+
+- `simulate --artifact-out`
+- `compare --artifact-out`
+- `ltv --artifact-out`
+- `tune --artifact-out`
+
+artifact에는 아래 재현 정보가 공통 포함됩니다.
+
+- `replay.commandLine`: 바로 재실행 가능한 개발 커맨드
+- `replay.verify.runId`
+- `replay.verify.seed`
+- `replay.verify.scenarioHash`
+- `replay.verify.gitSha`

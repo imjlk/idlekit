@@ -131,6 +131,19 @@ bun run --cwd packages/cli dev -- simulate ../../examples/simple-linear.json \
   --format json
 ```
 
+리플레이 아티팩트 저장(표준 포맷):
+
+```bash
+bun run --cwd packages/cli dev -- simulate ../../examples/simple-linear.json \
+  --duration 1800 \
+  --seed 42 \
+  --run-id sim-run-001 \
+  --artifact-out ../../tmp/sim.artifact.json \
+  --format json
+```
+
+artifact에는 재실행 커맨드(`replay.commandLine`)와 검증 키(`runId/seed/scenarioHash/gitSha`)가 함께 기록됩니다.
+
 오프라인 보상(catch-up)만 먼저 반영하고 이어서 시뮬레이션하려면 `--offline-seconds`를 사용합니다.
 출력에는 `offline` 요약과 `totalElapsedSec`가 함께 포함됩니다.
 또한 `run.id`, `run.seed`, `run.generatedAt`, `summaries.eventLog/offline`가 표준 관측 필드로 포함됩니다.
@@ -239,6 +252,17 @@ bun run --cwd packages/cli dev -- compare ../../examples/simple-linear.json ../.
   --max-duration 86400
 ```
 
+재현성 고정 + artifact 저장:
+
+```bash
+bun run --cwd packages/cli dev -- compare ../../examples/tutorials/01-cafe-baseline.json ../../examples/tutorials/03-cafe-compare-b.json \
+  --metric endNetWorth \
+  --seed 17 \
+  --run-id compare-run-001 \
+  --artifact-out ../../tmp/compare.artifact.json \
+  --format json
+```
+
 주의:
 
 - `etaToTargetWorth` metric은 `--target-worth`가 필수입니다.
@@ -270,6 +294,8 @@ bun run --cwd packages/cli dev -- tune ../../examples/simple-linear.json \
 bun run tune:regress --baseline ../../tmp/tune-baseline.json --current ../../tmp/tune-latest.json --tolerance 0.05
 ```
 
+`tune --artifact-out`도 동일한 replay artifact 표준(`idk.replay.artifact`)을 사용합니다.
+
 ### 3.9 LTV 구간 스냅샷
 
 요청 구간(30m/2h/24h/7d/30d/90d) KPI를 한 번에 계산:
@@ -282,6 +308,19 @@ bun run --cwd packages/cli dev -- ltv ../../examples/tutorials/05-idle-design-v1
   --value-per-worth 0.001 \
   --plugin ../../examples/plugins/custom-econ-plugin.ts \
   --allow-plugin true \
+  --format json
+```
+
+artifact 저장:
+
+```bash
+bun run --cwd packages/cli dev -- ltv ../../examples/tutorials/05-idle-design-v1.json \
+  --horizons 30m,2h,24h,7d,30d,90d \
+  --step 600 \
+  --fast true \
+  --seed 19 \
+  --run-id ltv-run-001 \
+  --artifact-out ../../tmp/ltv.artifact.json \
   --format json
 ```
 
@@ -303,6 +342,28 @@ bun run --cwd packages/cli dev -- calibrate ./tmp/telemetry.csv \
   --input-format csv \
   --format json
 ```
+
+캘리브레이션 결과의 `diagnostics`에는 아래 상관 진단이 포함됩니다.
+
+- `estimatedCorrelationRaw`: 원시 상관 추정치
+- `estimatedCorrelation`: 신뢰도 기반 shrinkage(0으로 수축) 적용값
+- `correlationConfidence`: 샘플 수/분산 기반 신뢰도(0~1)
+- `correlationDiagnostics`: pair별 `raw/value/confidence/sampleSize/variance`
+
+## 3.11 KPI 리그레션 게이트
+
+`kpi:report` 생성물과 baseline을 비교해 장기 지표 회귀를 CI에서 막습니다.
+
+```bash
+bun run kpi:report
+bun run kpi:regress
+```
+
+기본 게이트 항목:
+
+- `at7d/at30d/at90d.endNetWorth` 최소 비율(`--min-worth-ratio`, 기본 `0.97`)
+- `stallRatio` 증가 한계(`--max-stall-delta`, 기본 `0.03`)
+- `droppedRate` 증가 한계(`--max-dropped-delta`, 기본 `0.03`)
 
 CSV 권장 컬럼:
 
