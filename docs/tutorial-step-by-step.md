@@ -115,11 +115,24 @@ bun run --cwd packages/cli dev -- simulate ../../examples/tutorials/01-cafe-base
 
 - JSON에 `endMoney`, `endNetWorth`, `stats`가 존재
 - 상태 저장/재개 실행 시 두 번째 결과의 `startT`가 첫 실행의 `endT`와 일치
+- `simulate --artifact-out` 후 `replay verify`가 `ok=true`
 
 실패 대응:
 
 - `Unknown strategy`면 scenario의 `strategy.id` 또는 plugin 옵션 확인
 - `Invalid sim state json`이면 state 파일 손상/수정 여부 확인 후 재생성
+
+추가(artifact 재현성 검사):
+
+```bash
+bun run --cwd packages/cli dev -- simulate ../../examples/tutorials/01-cafe-baseline.json \
+  --seed 99 \
+  --run-id tutorial-intro \
+  --artifact-out ../../tmp/tutorial-sim.artifact.json \
+  --format json
+
+bun run --cwd packages/cli dev -- replay verify ../../tmp/tutorial-sim.artifact.json --format json
+```
 
 ## 5) 입문 트랙: ETA 분석
 
@@ -261,6 +274,8 @@ idk tune examples/plugins/plugin-scenario.json \
 2. `simulate` 재실행
 3. `compare --metric endNetWorth` 또는 `--metric etaToTargetWorth` 재확인
 4. 필요 시 `tune` 재실행 후 `report.best` 갱신
+5. artifact 저장 후 `replay verify`로 재현성 확인
+6. `kpi regress`로 장기(7d/30d/90d) 가드레일 체크
 
 추천 KPI objective:
 
@@ -275,6 +290,15 @@ idk tune examples/plugins/plugin-scenario.json \
 실패 대응:
 
 - 수치가 흔들리면 `runner.seeds`를 늘리고 `budget`/`stages`를 단계적으로 확대
+
+장기 가드레일 명령:
+
+```bash
+bun run --cwd packages/cli dev -- kpi regress \
+  --baseline ../../examples/bench/kpi-baseline.json \
+  --current ../../tmp/kpi-report.json \
+  --format json
+```
 
 ## 부록) 설계 우선 가상 시나리오 트랙
 

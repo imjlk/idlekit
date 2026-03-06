@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { createNumberEngine } from "../engine/breakInfinity";
-import { deserializeSimState, parseSimStateJSON, serializeSimState } from "./simState";
+import { deserializeSimState, parseSimStateJSON, serializeSimState, SimStateError } from "./simState";
 
 const E = createNumberEngine();
 
@@ -33,6 +33,7 @@ describe("simState serde", () => {
       scenarioHash: "deadbeef",
       strategy: {
         id: "scripted",
+        version: 1,
         state: {
           cursor: 3,
         },
@@ -45,6 +46,7 @@ describe("simState serde", () => {
     expect(json.meta?.gitSha).toBe("abc123");
     expect(json.meta?.scenarioHash).toBe("deadbeef");
     expect(json.strategy?.id).toBe("scripted");
+    expect(json.strategy?.version).toBe(1);
     expect((json.strategy?.state as Record<string, unknown>)?.cursor).toBe(3);
 
     const restored = deserializeSimState(E, json);
@@ -76,6 +78,12 @@ describe("simState serde", () => {
     });
 
     expect(() => deserializeSimState(E, json, { expectedUnit: "GEM" })).toThrow("Sim state unit mismatch");
+    try {
+      deserializeSimState(E, json, { expectedUnit: "GEM" });
+    } catch (error) {
+      expect(error).toBeInstanceOf(SimStateError);
+      expect((error as SimStateError).code).toBe("SIM_STATE_UNIT_MISMATCH");
+    }
   });
 
   it("rejects malformed sim state payload with clear error", () => {
@@ -88,5 +96,11 @@ describe("simState serde", () => {
 
     expect(() => deserializeSimState(E, malformed)).toThrow("Invalid sim state json");
     expect(() => parseSimStateJSON(malformed)).toThrow("Invalid sim state json");
+    try {
+      parseSimStateJSON(malformed);
+    } catch (error) {
+      expect(error).toBeInstanceOf(SimStateError);
+      expect((error as SimStateError).code).toBe("SIM_STATE_INVALID_JSON");
+    }
   });
 });

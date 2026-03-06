@@ -16,6 +16,7 @@ export function createScriptedStrategy<N, U extends string, Vars>(
 
   return {
     id: "scripted",
+    stateVersion: 1,
     decide(ctx, model, state) {
       if (plan.length === 0) return [];
       if (cursor >= plan.length) {

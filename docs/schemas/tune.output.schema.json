@@ -14,13 +14,33 @@
         "tried": { "type": "number" }
       }
     },
+    "insights": { "type": "object" },
     "_meta": {
       "type": "object",
-      "required": ["command", "scenarioHash", "tuneSpecHash"],
+      "required": [
+        "command",
+        "contractVersion",
+        "schemaRef",
+        "cliVersion",
+        "gitSha",
+        "scenarioHash",
+        "tuneSpecHash",
+        "pluginDigest"
+      ],
       "properties": {
         "command": { "const": "tune" },
+        "contractVersion": { "type": "string" },
+        "schemaRef": { "const": "docs/schemas/tune.output.schema.json" },
+        "cliVersion": { "type": "string" },
+        "gitSha": { "type": "string" },
+        "runId": { "type": "string" },
+        "seed": { "type": "number" },
         "scenarioHash": { "type": "string" },
-        "tuneSpecHash": { "type": "string" }
+        "tuneSpecHash": { "type": "string" },
+        "pluginDigest": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        }
       }
     }
   }

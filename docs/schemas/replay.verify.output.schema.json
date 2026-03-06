@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "idlekit/replay-verify-output-v1",
+  "type": "object",
+  "required": ["ok", "artifact", "command", "replay", "checks", "missingFields", "drift", "_meta"],
+  "properties": {
+    "ok": { "type": "boolean" },
+    "artifact": { "type": "string" },
+    "command": { "type": "string" },
+    "replay": {
+      "type": "object",
+      "required": ["commandLine", "args"],
+      "properties": {
+        "commandLine": { "type": "string" },
+        "args": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "checks": {
+      "type": "object",
+      "required": ["required", "semantic"],
+      "properties": {
+        "required": { "type": "object" },
+        "semantic": { "type": "object" }
+      }
+    },
+    "missingFields": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "drift": {
+      "type": "object",
+      "required": ["detected", "expectedHash", "actualHash"],
+      "properties": {
+        "detected": { "type": "boolean" },
+        "expectedHash": { "type": "string" },
+        "actualHash": { "type": "string" }
+      }
+    },
+    "_meta": {
+      "type": "object",
+      "required": ["command", "contractVersion", "schemaRef", "cliVersion", "gitSha", "pluginDigest"],
+      "properties": {
+        "command": { "const": "replay.verify" },
+        "contractVersion": { "type": "string" },
+        "schemaRef": { "const": "docs/schemas/replay.verify.output.schema.json" },
+        "cliVersion": { "type": "string" },
+        "gitSha": { "type": "string" },
+        "pluginDigest": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        }
+      }
+    }
+  }
+}

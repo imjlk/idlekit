@@ -1,10 +1,14 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
+import { hashContent } from "./outputMeta";
 import type { OutputMeta } from "./outputMeta";
 
 export type ReplayArtifactV1 = Readonly<{
   v: 1;
   kind: "idk.replay.artifact";
+  artifactVersion: 1;
+  contractVersion: string;
+  schemaRef: string;
   command: string;
   generatedAt: string;
   meta: OutputMeta;
@@ -17,15 +21,42 @@ export type ReplayArtifactV1 = Readonly<{
     args: readonly string[];
     commandLine: string;
     verify: Readonly<{
-      runId?: string;
-      seed?: number;
-      scenarioHash?: string | Readonly<Record<string, string>>;
-      gitSha?: string;
+      runId: string;
+      seed: number;
+      scenarioHash: string | Readonly<Record<string, string>>;
+      gitSha: string;
+      pluginDigest: Readonly<Record<string, string>>;
+      resultHash: string;
     }>;
   }>;
   result: unknown;
   extra?: Readonly<Record<string, unknown>>;
 }>;
+
+const REDACTED_KEYS = new Set([
+  "generatedAt",
+  "scenario",
+  "scenarioPath",
+  "resumedFrom",
+  "stateOut",
+  "_meta",
+]);
+
+export function canonicalizeReplayResult(value: unknown): unknown {
+  if (value === null || typeof value !== "object") return value;
+  if (Array.isArray(value)) return value.map((x) => canonicalizeReplayResult(x));
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+    if (REDACTED_KEYS.has(k)) continue;
+    if (v === undefined) continue;
+    out[k] = canonicalizeReplayResult(v);
+  }
+  return out;
+}
+
+export function hashReplayResult(value: unknown): string {
+  return hashContent(canonicalizeReplayResult(value));
+}
 
 function quoteArg(x: string): string {
   if (/^[a-zA-Z0-9_./:@+-]+$/.test(x)) return x;
@@ -34,6 +65,8 @@ function quoteArg(x: string): string {
 
 function appendFlag(out: string[], key: string, value: unknown): void {
   if (value === undefined || value === null) return;
+  if (value === false) return;
+  if (value === "") return;
   if (Array.isArray(value)) {
     for (const entry of value) appendFlag(out, key, entry);
     return;
@@ -79,9 +112,18 @@ export async function writeReplayArtifact(args: {
   extra?: Readonly<Record<string, unknown>>;
 }): Promise<string> {
   const abs = resolve(args.outPath);
+  const runId = args.meta.runId;
+  const seed = args.meta.seed;
+  const scenarioHash = args.meta.scenarioHash;
+  if (!runId) throw new Error("Replay artifact requires meta.runId");
+  if (seed === undefined) throw new Error("Replay artifact requires meta.seed");
+  if (!scenarioHash) throw new Error("Replay artifact requires meta.scenarioHash");
   const artifact: ReplayArtifactV1 = {
     v: 1,
     kind: "idk.replay.artifact",
+    artifactVersion: 1,
+    contractVersion: args.meta.contractVersion,
+    schemaRef: "docs/schemas/artifact.v1.schema.json",
     command: args.command,
     generatedAt: new Date().toISOString(),
     meta: args.meta,
@@ -94,10 +136,12 @@ export async function writeReplayArtifact(args: {
       args: [...args.replayArgs],
       commandLine: toReplayCommandLine(args.replayArgs),
       verify: {
-        runId: args.meta.runId,
-        seed: args.meta.seed,
-        scenarioHash: args.meta.scenarioHash,
+        runId,
+        seed,
+        scenarioHash,
         gitSha: args.meta.gitSha,
+        pluginDigest: args.meta.pluginDigest,
+        resultHash: hashReplayResult(args.result),
       },
     },
     result: args.result,

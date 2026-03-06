@@ -142,7 +142,13 @@ bun run --cwd packages/cli dev -- simulate ../../examples/simple-linear.json \
   --format json
 ```
 
-artifact에는 재실행 커맨드(`replay.commandLine`)와 검증 키(`runId/seed/scenarioHash/gitSha`)가 함께 기록됩니다.
+artifact에는 재실행 커맨드(`replay.commandLine`)와 검증 키(`runId/seed/scenarioHash/gitSha/pluginDigest/resultHash`)가 함께 기록됩니다.
+
+artifact 재현성 검사:
+
+```bash
+bun run --cwd packages/cli dev -- replay verify ../../tmp/sim.artifact.json --format json
+```
 
 오프라인 보상(catch-up)만 먼저 반영하고 이어서 시뮬레이션하려면 `--offline-seconds`를 사용합니다.
 출력에는 `offline` 요약과 `totalElapsedSec`가 함께 포함됩니다.
@@ -334,6 +340,7 @@ bun run --cwd packages/cli dev -- ltv ../../examples/tutorials/05-idle-design-v1
 - `horizons[].guardrails.timeToFirstUpgradeSec`
 - `horizons[].guardrails.stallRatio`
 - `horizons[].guardrails.actionMix`
+- `horizons[].guardrails.growthLog10PerDay`
 
 ### 3.10 실데이터 캘리브레이션
 
@@ -357,6 +364,15 @@ bun run --cwd packages/cli dev -- calibrate ./tmp/telemetry.csv \
 ```bash
 bun run kpi:report
 bun run kpi:regress
+```
+
+CLI 명령(동등 동작):
+
+```bash
+bun run --cwd packages/cli dev -- kpi regress \
+  --baseline ../../examples/bench/kpi-baseline.json \
+  --current ../../tmp/kpi-report.json \
+  --format json
 ```
 
 기본 게이트 항목:
@@ -394,6 +410,18 @@ bun run --cwd packages/cli dev -- strategies list --format md
 bun run --cwd packages/cli dev -- objectives list --format md
 ```
 
+Replay:
+
+```bash
+bun run --cwd packages/cli dev -- replay verify ../../tmp/sim.artifact.json --format json
+```
+
+KPI:
+
+```bash
+bun run --cwd packages/cli dev -- kpi regress --baseline ../../examples/bench/kpi-baseline.json --current ../../tmp/kpi-report.json --format json
+```
+
 ## 5. 출력 계약(JSON Schema)
 
 CLI JSON 출력 계약은 아래 스키마를 기준으로 관리됩니다.
@@ -404,6 +432,9 @@ CLI JSON 출력 계약은 아래 스키마를 기준으로 관리됩니다.
 - `docs/schemas/tune.output.schema.json`
 - `docs/schemas/ltv.output.schema.json`
 - `docs/schemas/calibrate.output.schema.json`
+- `docs/schemas/artifact.v1.schema.json`
+- `docs/schemas/replay.verify.output.schema.json`
+- `docs/schemas/kpi.regress.output.schema.json`
 
 공통 규칙:
 

@@ -353,6 +353,7 @@ export type LoadedRegistries = Readonly<{
   modelRegistry: ModelRegistry;
   strategyRegistry: StrategyRegistry;
   objectiveRegistry: ObjectiveRegistry;
+  pluginDigest: Readonly<Record<string, string>>;
 }>;
 
 export async function loadRegistries(
@@ -369,9 +370,12 @@ export async function loadRegistries(
       : {};
   const requiredSha256 = mergeShaPolicies(trustFileSha256, securityOptions.requiredSha256 ?? {});
   const hasShaPolicy = Object.keys(requiredSha256).length > 0;
+  const pluginDigest: Record<string, string> = {};
 
   for (const p of pluginPaths) {
     const abs = await resolveAndValidatePluginPath(p, allowedRoots);
+    const actualDigest = await sha256File(abs);
+    pluginDigest[abs] = actualDigest;
     if (hasShaPolicy) {
       const expected = requiredSha256[abs];
       if (!expected) {
@@ -379,9 +383,8 @@ export async function loadRegistries(
           `Missing sha256 for plugin path '${p}'. Add it via --plugin-sha256 '${p}=<sha256>'`,
         );
       }
-      const actual = await sha256File(abs);
-      if (actual !== expected) {
-        throw new Error(`Plugin sha256 mismatch for '${p}'. expected=${expected} actual=${actual}`);
+      if (actualDigest !== expected) {
+        throw new Error(`Plugin sha256 mismatch for '${p}'. expected=${expected} actual=${actualDigest}`);
       }
     }
     const mod = (await import(pathToFileURL(abs).href)) as PluginModule;
@@ -396,6 +399,7 @@ export async function loadRegistries(
     modelRegistry: createModelRegistry(modelFactories),
     strategyRegistry: createStrategyRegistry(strategyFactories),
     objectiveRegistry: createObjectiveRegistry(objectiveFactories),
+    pluginDigest,
   };
 }
 

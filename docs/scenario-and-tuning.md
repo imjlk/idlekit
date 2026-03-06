@@ -157,6 +157,9 @@
 - `examples/tutorials/05-idle-design-v1.json`
 - `examples/tutorials/06-idle-design-balance-b.json`
 - `examples/tutorials/07-idle-design-tune.json`
+- `examples/tutorials/08-idle-design-city-factory.json`
+- `examples/tutorials/09-idle-design-loot-camp.json`
+- `examples/tutorials/10-idle-design-space-port.json`
 - 가이드: `docs/virtual-scenario-design.md`
 
 ## 9. SimState 저장/재개 계약
@@ -182,6 +185,7 @@
   },
   "strategy": {
     "id": "scripted",
+    "version": 1,
     "state": { "cursor": 3 }
   }
 }
@@ -189,9 +193,11 @@
 
 재개 시 검증/제약:
 
-- 구조 검증 실패 시 `Invalid sim state json: ...`
-- 단위 불일치 시 `Sim state unit mismatch`
+- 구조 검증 실패 시 `SimStateError(code=SIM_STATE_INVALID_JSON)`
+- 단위 불일치 시 `SimStateError(code=SIM_STATE_UNIT_MISMATCH)`
+- 지원하지 않는 버전이면 `SimStateError(code=SIM_STATE_UNSUPPORTED_VERSION)`
 - 전략 id 불일치 시 `Resume strategy mismatch`
+- 전략 state version 불일치 시 `Resume strategy state version mismatch`
 - 전략 상태가 있는데 restore 미지원이면 실패
 
 결정론 노트:
@@ -255,3 +261,11 @@ artifact에는 아래 재현 정보가 공통 포함됩니다.
 - `replay.verify.seed`
 - `replay.verify.scenarioHash`
 - `replay.verify.gitSha`
+- `replay.verify.pluginDigest`
+- `replay.verify.resultHash`
+
+검증 명령:
+
+```bash
+bun run --cwd packages/cli dev -- replay verify ../../tmp/sim.artifact.json --format json
+```

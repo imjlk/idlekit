@@ -8,12 +8,11 @@ import {
   runScenario,
   validateScenarioV1,
 } from "@idlekit/core";
-import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import { z } from "zod";
 import { betterFromCmp, formatEtaLabel, toComparableEta } from "./_shared/compareEval";
 import { loadRegistriesFromFlags, pluginOptions } from "./_shared/plugin";
-import { buildOutputMeta } from "../io/outputMeta";
+import { buildOutputMeta, deriveDeterministicRunId, deriveDeterministicSeed } from "../io/outputMeta";
 import { writeCommandReplayArtifact } from "../io/replayPolicy";
 import { readScenarioFile } from "../io/readScenario";
 import { writeOutput } from "../io/writeOutput";
@@ -128,6 +127,50 @@ function measureScenario(args: {
   };
 }
 
+function buildCompareInsights(args: {
+  metric: string;
+  a: {
+    endNetWorth: string;
+    droppedRate: number;
+    etaToTargetWorth?: string;
+  };
+  b: {
+    endNetWorth: string;
+    droppedRate: number;
+    etaToTargetWorth?: string;
+  };
+  better: "a" | "b" | "tie";
+}): Readonly<{ summary: string; improved: string[]; regressed: string[] }> {
+  const improved: string[] = [];
+  const regressed: string[] = [];
+  const betterLabel = args.better === "tie" ? "none" : args.better.toUpperCase();
+
+  const aDropped = args.a.droppedRate;
+  const bDropped = args.b.droppedRate;
+  if (aDropped !== bDropped) {
+    const improvedSide = aDropped < bDropped ? "A" : "B";
+    improved.push(`${improvedSide} has lower droppedRate (${Math.min(aDropped, bDropped).toFixed(4)})`);
+    const regressedSide = improvedSide === "A" ? "B" : "A";
+    regressed.push(`${regressedSide} has higher droppedRate (${Math.max(aDropped, bDropped).toFixed(4)})`);
+  }
+
+  if (args.metric === "etaToTargetWorth" && args.a.etaToTargetWorth && args.b.etaToTargetWorth) {
+    const aEta = Number(args.a.etaToTargetWorth.replace("*maxDuration", ""));
+    const bEta = Number(args.b.etaToTargetWorth.replace("*maxDuration", ""));
+    if (Number.isFinite(aEta) && Number.isFinite(bEta) && aEta !== bEta) {
+      const faster = aEta < bEta ? "A" : "B";
+      improved.push(`${faster} reaches target worth faster`);
+      regressed.push(`${faster === "A" ? "B" : "A"} reaches target worth slower`);
+    }
+  }
+
+  return {
+    summary: `Measured comparison winner: ${betterLabel}`,
+    improved,
+    regressed,
+  };
+}
+
 export default defineCommand({
   name: "compare",
   description: "Compare two scenarios via measured simulation metrics",
@@ -174,19 +217,44 @@ export default defineCommand({
       throw new Error("metric=etaToTargetWorth requires --target-worth <NumStr>");
     }
 
+    const effectiveSeed =
+      flags.seed ??
+      deriveDeterministicSeed({
+        command: "compare",
+        scenarios: {
+          a: aScenario,
+          b: bScenario,
+        },
+        options: {
+          metric: flags.metric,
+          duration: flags.duration,
+          step: flags.step,
+          strategy: flags.strategy,
+          fast: flags.fast,
+          targetWorth: flags["target-worth"],
+          maxDuration: flags["max-duration"],
+        },
+      });
+
     const E = createNumberEngine();
 
     const aCompiled = compileComparableScenario({
       scenario: aScenario,
       E,
       loaded,
-      flags,
+      flags: {
+        ...flags,
+        seed: effectiveSeed,
+      },
     });
     const bCompiled = compileComparableScenario({
       scenario: bScenario,
       E,
       loaded,
-      flags,
+      flags: {
+        ...flags,
+        seed: effectiveSeed,
+      },
     });
 
     const ma = measureScenario({
@@ -240,16 +308,28 @@ export default defineCommand({
       },
     });
 
-    const runId = flags["run-id"] ?? randomUUID();
+    const seed = effectiveSeed;
+    const runId =
+      flags["run-id"] ??
+      deriveDeterministicRunId({
+        command: "compare",
+        seed,
+        scope: {
+          aPath: resolve(process.cwd(), aPath),
+          bPath: resolve(process.cwd(), bPath),
+          metric: flags.metric,
+        },
+      });
     const outputMeta = buildOutputMeta({
       command: "compare",
       runId,
-      seed: flags.seed ?? aCompiled.ctx.seed,
+      seed,
       scenarioPath: [aPath, bPath],
       scenarios: {
         a: aScenario,
         b: bScenario,
       },
+      pluginDigest: loaded.pluginDigest,
     });
     const output = {
       metric: flags.metric,
@@ -275,6 +355,26 @@ export default defineCommand({
               : formatEtaLabel(mb.etaToTargetWorth, !!mb.etaReached),
         },
       },
+      insights: buildCompareInsights({
+        metric: flags.metric,
+        better: result.better,
+        a: {
+          endNetWorth: E.toString(ma.endNetWorth),
+          droppedRate: ma.droppedRate,
+          etaToTargetWorth:
+            ma.etaToTargetWorth === undefined
+              ? undefined
+              : formatEtaLabel(ma.etaToTargetWorth, !!ma.etaReached),
+        },
+        b: {
+          endNetWorth: E.toString(mb.endNetWorth),
+          droppedRate: mb.droppedRate,
+          etaToTargetWorth:
+            mb.etaToTargetWorth === undefined
+              ? undefined
+              : formatEtaLabel(mb.etaToTargetWorth, !!mb.etaReached),
+        },
+      }),
     };
 
     if (flags["artifact-out"]) {
@@ -287,7 +387,7 @@ export default defineCommand({
         flags,
         forcedFlags: {
           "run-id": runId,
-          seed: flags.seed ?? aCompiled.ctx.seed,
+          seed,
           format: "json",
         },
         result: output,

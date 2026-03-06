@@ -8,11 +8,18 @@
     "better": { "type": "string" },
     "detail": { "type": "object" },
     "measured": { "type": "object" },
+    "insights": { "type": "object" },
     "_meta": {
       "type": "object",
-      "required": ["command", "scenarioHash"],
+      "required": ["command", "contractVersion", "schemaRef", "cliVersion", "gitSha", "scenarioHash", "pluginDigest"],
       "properties": {
         "command": { "const": "compare" },
+        "contractVersion": { "type": "string" },
+        "schemaRef": { "const": "docs/schemas/compare.output.schema.json" },
+        "cliVersion": { "type": "string" },
+        "gitSha": { "type": "string" },
+        "runId": { "type": "string" },
+        "seed": { "type": "number" },
         "scenarioHash": {
           "type": "object",
           "required": ["a", "b"],
@@ -20,6 +27,10 @@
             "a": { "type": "string" },
             "b": { "type": "string" }
           }
+        },
+        "pluginDigest": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
         }
       }
     }

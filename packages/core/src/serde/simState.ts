@@ -3,6 +3,20 @@ import type { Unit } from "../money/types";
 import type { SimState } from "../sim/types";
 import { z } from "zod";
 
+export type SimStateErrorCode =
+  | "SIM_STATE_INVALID_JSON"
+  | "SIM_STATE_UNSUPPORTED_VERSION"
+  | "SIM_STATE_UNIT_MISMATCH";
+
+export class SimStateError extends Error {
+  readonly code: SimStateErrorCode;
+  constructor(code: SimStateErrorCode, message: string) {
+    super(message);
+    this.name = "SimStateError";
+    this.code = code;
+  }
+}
+
 export type SimStateJSON = Readonly<{
   v: 1;
   unit: string;
@@ -30,6 +44,7 @@ export type SimStateJSON = Readonly<{
   }>;
   strategy?: Readonly<{
     id: string;
+    version?: number;
     state?: unknown;
   }>;
 }>;
@@ -71,6 +86,7 @@ const SimStateJSONSchema = z
     strategy: z
       .object({
         id: z.string().min(1),
+        version: z.number().int().positive().optional(),
         state: z.unknown().optional(),
       })
       .passthrough()
@@ -89,7 +105,7 @@ export function parseSimStateJSON(input: unknown): SimStateJSON {
       return `${path}: ${issue.message}`;
     })
     .join("; ");
-  throw new Error(`Invalid sim state json: ${detail}`);
+  throw new SimStateError("SIM_STATE_INVALID_JSON", `Invalid sim state json: ${detail}`);
 }
 
 export function serializeSimState<N, U extends string, Vars>(
@@ -107,6 +123,7 @@ export function serializeSimState<N, U extends string, Vars>(
     scenarioHash?: string;
     strategy?: {
       id: string;
+      version?: number;
       state?: unknown;
     };
   },
@@ -153,6 +170,7 @@ export function serializeSimState<N, U extends string, Vars>(
     strategy: meta?.strategy
       ? {
           id: meta.strategy.id,
+          version: meta.strategy.version,
           state: meta.strategy.state,
         }
       : undefined,
@@ -171,11 +189,14 @@ export function deserializeSimState<N, U extends string, Vars>(
   const parsed = parseSimStateJSON(json);
 
   if (parsed.v !== 1 && !opts?.allowFutureVersions) {
-    throw new Error(`Unsupported sim state version: ${parsed.v}`);
+    throw new SimStateError("SIM_STATE_UNSUPPORTED_VERSION", `Unsupported sim state version: ${parsed.v}`);
   }
 
   if (opts?.expectedUnit && parsed.unit !== opts.expectedUnit) {
-    throw new Error(`Sim state unit mismatch: expected ${opts.expectedUnit}, got ${parsed.unit}`);
+    throw new SimStateError(
+      "SIM_STATE_UNIT_MISMATCH",
+      `Sim state unit mismatch: expected ${opts.expectedUnit}, got ${parsed.unit}`,
+    );
   }
 
   const unit = opts?.unitFactory ? opts.unitFactory(parsed.unit) : ({ code: parsed.unit as U } as Unit<U>);

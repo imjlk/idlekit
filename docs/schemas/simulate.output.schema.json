@@ -22,12 +22,30 @@
     "stats": { "type": "object" },
     "_meta": {
       "type": "object",
-      "required": ["command", "generatedAt", "cliVersion", "scenarioHash"],
+      "required": [
+        "command",
+        "generatedAt",
+        "contractVersion",
+        "schemaRef",
+        "cliVersion",
+        "gitSha",
+        "scenarioHash",
+        "pluginDigest"
+      ],
       "properties": {
         "command": { "const": "simulate" },
         "generatedAt": { "type": "string" },
+        "contractVersion": { "type": "string" },
+        "schemaRef": { "const": "docs/schemas/simulate.output.schema.json" },
         "cliVersion": { "type": "string" },
-        "scenarioHash": { "type": "string" }
+        "gitSha": { "type": "string" },
+        "runId": { "type": "string" },
+        "seed": { "type": "number" },
+        "scenarioHash": { "type": "string" },
+        "pluginDigest": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        }
       }
     }
   }

@@ -18,6 +18,7 @@ bun run bench:sim:check
 bun run bench:sim:suite:check
 bun run kpi:report
 bun run kpi:regress
+bun run release:dry-run
 ```
 
 CLI 도움말:
@@ -49,6 +50,7 @@ Replay artifact 저장(재실행 커맨드 자동 생성):
 
 ```bash
 bun run --cwd packages/cli dev -- simulate ../../examples/simple-linear.json --seed 42 --run-id smoke-001 --artifact-out ../../tmp/sim.artifact.json --format json
+bun run --cwd packages/cli dev -- replay verify ../../tmp/sim.artifact.json --format json
 bun run --cwd packages/cli dev -- compare ../../examples/tutorials/01-cafe-baseline.json ../../examples/tutorials/03-cafe-compare-b.json --metric endNetWorth --artifact-out ../../tmp/compare.artifact.json --format json
 bun run --cwd packages/cli dev -- ltv ../../examples/tutorials/05-idle-design-v1.json --horizons 30m,2h,24h,7d,30d,90d --step 600 --fast true --artifact-out ../../tmp/ltv.artifact.json --format json
 ```
@@ -63,6 +65,7 @@ bun run --cwd packages/cli dev -- tune ../../examples/simple-linear.json --tune 
 
 ```bash
 bun run tune:regress --baseline ./tmp/tune-baseline.json --current ./tmp/tune-latest.json --tolerance 0.05
+bun run --cwd packages/cli dev -- kpi regress --baseline ./examples/bench/kpi-baseline.json --current ./tmp/kpi-report.json --format json
 ```
 
 ## 문서
@@ -75,6 +78,7 @@ bun run tune:regress --baseline ./tmp/tune-baseline.json --current ./tmp/tune-la
 - [시나리오/튜닝 명세 가이드](./docs/scenario-and-tuning.md)
 - [플러그인/어댑터 패턴 가이드](./docs/plugin-and-adapter.md)
 - [테스트 운영 가이드](./docs/testing.md)
+- [릴리즈 운영 규약](./docs/release-process.md)
 - [머니 라이브러리 예제](./examples/money-package/README.md)
 - [어댑터 예제 프로젝트](./examples/adapter-pattern/README.md)
 - [플러그인 예제 프로젝트](./examples/plugins/README.md)

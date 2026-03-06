@@ -7,6 +7,9 @@
 - `examples/tutorials/05-idle-design-v1.json`
 - `examples/tutorials/06-idle-design-balance-b.json`
 - `examples/tutorials/07-idle-design-tune.json`
+- `examples/tutorials/08-idle-design-city-factory.json`
+- `examples/tutorials/09-idle-design-loot-camp.json`
+- `examples/tutorials/10-idle-design-space-port.json`
 
 ## 0. 가상 시나리오 캔버스 먼저 작성
 
@@ -160,6 +163,12 @@ KPI 추천:
 - `endNetWorth`
 - `growthLog10PerHour`
 - `plugin.gemsAndWorthLog10`
+
+장르 템플릿 시작점:
+
+- City/Factory(장기형): `08-idle-design-city-factory.json`
+- Loot/Camp(세션형): `09-idle-design-loot-camp.json`
+- Space/Port(초장기형): `10-idle-design-space-port.json`
 
 ## 9. LTV용 장기 구간 스냅샷(30m/2h/24h/7d/30d/90d)
 

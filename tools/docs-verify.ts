@@ -63,6 +63,9 @@ function verifyIntroTrack(): void {
   assert(has(simulate, "stats"), "simulate must include stats");
   const simMeta = asRecord(simulate._meta as JSONValue);
   assert(simMeta.command === "simulate", "simulate _meta.command must be simulate");
+  assert(has(simMeta, "contractVersion"), "simulate _meta must include contractVersion");
+  assert(has(simMeta, "schemaRef"), "simulate _meta must include schemaRef");
+  assert(has(simMeta, "pluginDigest"), "simulate _meta must include pluginDigest");
   assert(has(simMeta, "scenarioHash"), "simulate _meta must include scenarioHash");
 
   const statePath = resolve(tmpDir, "intro-state.json");
@@ -128,6 +131,24 @@ function verifyIntroTrack(): void {
   assert(has(report, "best"), "tune report must include best");
   assert(asRecord(tune._meta as JSONValue).command === "tune", "tune _meta.command must be tune");
 
+  const replayArtifact = resolve(tmpDir, "intro-sim.artifact.json");
+  runCli([
+    "simulate",
+    baseline,
+    "--duration",
+    "20",
+    "--seed",
+    "99",
+    "--run-id",
+    "docs-verify-intro",
+    "--artifact-out",
+    replayArtifact,
+    "--format",
+    "json",
+  ]);
+  const replayVerify = asRecord(runCliJson(["replay", "verify", replayArtifact, "--format", "json"]));
+  assert(replayVerify.ok === true, "replay verify should pass");
+
   const ltv = asRecord(
     runCliJson([
       "ltv",
@@ -148,6 +169,20 @@ function verifyIntroTrack(): void {
   assert(has(summary, "at30m"), "ltv summary must include at30m");
   assert(has(summary, "at90d"), "ltv summary must include at90d");
   assert(asRecord(ltv._meta as JSONValue).command === "ltv", "ltv _meta.command must be ltv");
+
+  const kpiRegress = asRecord(
+    runCliJson([
+      "kpi",
+      "regress",
+      "--baseline",
+      "../../examples/bench/kpi-baseline.json",
+      "--current",
+      "../../examples/bench/kpi-baseline.json",
+      "--format",
+      "json",
+    ]),
+  );
+  assert(kpiRegress.pass === true, "kpi regress self-compare should pass");
 }
 
 function verifyPluginTrack(): void {

@@ -11,12 +11,11 @@ import {
   type ObjectiveRegistry,
   type StrategyRegistry,
 } from "@idlekit/core";
-import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { z } from "zod";
 import { loadRegistriesFromFlags, pluginOptions } from "./_shared/plugin";
-import { buildOutputMeta } from "../io/outputMeta";
+import { buildOutputMeta, deriveDeterministicRunId, deriveDeterministicSeed } from "../io/outputMeta";
 import { writeCommandReplayArtifact } from "../io/replayPolicy";
 import { readScenarioFile } from "../io/readScenario";
 import { writeOutput } from "../io/writeOutput";
@@ -106,6 +105,9 @@ export default defineCommand({
   options: {
     ...pluginOptions(),
     tune: option(z.string().min(1), { description: "TuneSpec file path (.json|.yaml)" }),
+    seed: option(z.coerce.number().optional(), {
+      description: "Optional deterministic seed exposed in metadata/replay verification",
+    }),
     "artifact-out": option(z.string().optional(), { description: "Write tune artifact JSON to path" }),
     "baseline-artifact": option(z.string().optional(), {
       description: "Compare current best score against baseline artifact",
@@ -132,16 +134,38 @@ export default defineCommand({
       readScenarioFile(scenarioPath),
       readScenarioFile(flags.tune),
     ]);
-    const runId = flags["run-id"] ?? randomUUID();
+    const loaded = await loadRegistriesFromFlags(flags);
+    const seed =
+      flags.seed ??
+      deriveDeterministicSeed({
+        command: "tune",
+        scenario: scenarioInput,
+        tuneSpec: tuneSpecInput,
+        options: {
+          baselineArtifact: flags["baseline-artifact"] ? resolve(flags["baseline-artifact"]) : undefined,
+          regressionTolerance: flags["regression-tolerance"],
+        },
+      });
+    const runId =
+      flags["run-id"] ??
+      deriveDeterministicRunId({
+        command: "tune",
+        seed,
+        scope: {
+          scenarioPath: resolve(process.cwd(), scenarioPath),
+          tunePath: resolve(process.cwd(), flags.tune),
+        },
+      });
     const outputMeta = buildOutputMeta({
       command: "tune",
       scenarioPath,
       scenario: scenarioInput,
       tuneSpec: tuneSpecInput,
       runId,
+      seed,
+      pluginDigest: loaded.pluginDigest,
     });
 
-    const loaded = await loadRegistriesFromFlags(flags);
     const result = await cmdTune({
       E: createNumberEngine(),
       scenarioInput,
@@ -179,7 +203,26 @@ export default defineCommand({
       }
     }
 
-    const output = regression ? { ...(result as Record<string, unknown>), regression } : result;
+    const outputBase = regression ? { ...(result as Record<string, unknown>), regression } : result;
+    const output = (() => {
+      if ((outputBase as any)?.ok !== true) return outputBase;
+      const topScores = Array.isArray((outputBase as any).report?.top)
+        ? (outputBase as any).report.top.map((x: any) => Number(x?.score)).filter((x: number) => Number.isFinite(x))
+        : [];
+      const bestScore = readBestScoreFromTuneResult(outputBase);
+      const medianScore = topScores.length > 0 ? topScores[Math.floor(topScores.length / 2)]! : bestScore;
+      return {
+        ...(outputBase as Record<string, unknown>),
+        insights: {
+          summary:
+            bestScore - medianScore > 0.5
+              ? "Top candidate is clearly separated from median candidates."
+              : "Top candidates are clustered; keep exploring parameter space.",
+          bestScore,
+          medianTopScore: medianScore,
+        },
+      };
+    })();
 
     if (flags["artifact-out"]) {
       const scenarioAbs = resolve(process.cwd(), scenarioPath);
@@ -192,6 +235,7 @@ export default defineCommand({
         forcedFlags: {
           tune: tuneAbs,
           "run-id": runId,
+          seed,
           format: "json",
         },
         result: output,

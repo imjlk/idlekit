@@ -113,4 +113,18 @@ describe("output schema contracts", () => {
     const out = runCliJson(["calibrate", telemetry, "--input-format", "csv", "--format", "json"]);
     validateBySchema(readSchema("calibrate.output.schema.json"), out, "calibrate.output.schema.json");
   });
+
+  it("kpi regress output follows schema", () => {
+    const out = runCliJson([
+      "kpi",
+      "regress",
+      "--baseline",
+      "../../examples/bench/kpi-baseline.json",
+      "--current",
+      "../../examples/bench/kpi-baseline.json",
+      "--format",
+      "json",
+    ]);
+    validateBySchema(readSchema("kpi.regress.output.schema.json"), out, "kpi.regress.output.schema.json");
+  });
 });

@@ -9,10 +9,20 @@
     "mode": { "type": "string" },
     "_meta": {
       "type": "object",
-      "required": ["command", "scenarioHash"],
+      "required": ["command", "contractVersion", "schemaRef", "cliVersion", "gitSha", "scenarioHash", "pluginDigest"],
       "properties": {
         "command": { "const": "eta" },
-        "scenarioHash": { "type": "string" }
+        "contractVersion": { "type": "string" },
+        "schemaRef": { "const": "docs/schemas/eta.output.schema.json" },
+        "cliVersion": { "type": "string" },
+        "gitSha": { "type": "string" },
+        "runId": { "type": "string" },
+        "seed": { "type": "number" },
+        "scenarioHash": { "type": "string" },
+        "pluginDigest": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        }
       }
     }
   }

@@ -6,6 +6,7 @@
   "properties": {
     "scenario": { "type": "string" },
     "horizons": { "type": "array" },
+    "insights": { "type": "object" },
     "summary": {
       "type": "object",
       "required": ["at30m", "at90d"],
@@ -16,10 +17,20 @@
     },
     "_meta": {
       "type": "object",
-      "required": ["command", "scenarioHash"],
+      "required": ["command", "contractVersion", "schemaRef", "cliVersion", "gitSha", "scenarioHash", "pluginDigest"],
       "properties": {
         "command": { "const": "ltv" },
-        "scenarioHash": { "type": "string" }
+        "contractVersion": { "type": "string" },
+        "schemaRef": { "const": "docs/schemas/ltv.output.schema.json" },
+        "cliVersion": { "type": "string" },
+        "gitSha": { "type": "string" },
+        "runId": { "type": "string" },
+        "seed": { "type": "number" },
+        "scenarioHash": { "type": "string" },
+        "pluginDigest": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        }
       }
     }
   }

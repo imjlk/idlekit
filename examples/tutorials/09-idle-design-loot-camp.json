@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "meta": {
+    "id": "idle-loot-camp",
+    "title": "Loot Camp Idle Template",
+    "description": "Template: 짧은 세션 반복(30m/2h) 중심 설계"
+  },
+  "unit": {
+    "code": "GOLD",
+    "symbol": "G"
+  },
+  "policy": {
+    "mode": "drop",
+    "maxLogGap": 12
+  },
+  "model": {
+    "id": "linear",
+    "version": 1,
+    "params": {
+      "incomePerSec": "0.9",
+      "buyCostBase": "8",
+      "buyCostGrowth": 1.1,
+      "buyIncomeDelta": "0.8"
+    }
+  },
+  "initial": {
+    "wallet": {
+      "unit": "GOLD",
+      "amount": "15",
+      "bucket": "0"
+    },
+    "vars": {
+      "owned": 0
+    },
+    "prestige": {
+      "count": 0,
+      "points": "0",
+      "multiplier": "1"
+    }
+  },
+  "clock": {
+    "stepSec": 1,
+    "durationSec": 1800
+  },
+  "strategy": {
+    "id": "greedy",
+    "params": {
+      "schemaVersion": 1,
+      "objective": "minPayback",
+      "maxPicksPerStep": 2,
+      "bulk": {
+        "mode": "bestQuote"
+      }
+    }
+  },
+  "outputs": {
+    "format": "json"
+  }
+}

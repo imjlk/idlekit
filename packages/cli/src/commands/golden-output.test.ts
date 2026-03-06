@@ -40,6 +40,10 @@ describe("CLI golden outputs", () => {
     expect(out.measured?.a).toBeDefined();
     expect(out.measured?.b).toBeDefined();
     expect(out._meta?.command).toBe("compare");
+    expect(out._meta?.contractVersion).toBeDefined();
+    expect(out._meta?.schemaRef).toBe("docs/schemas/compare.output.schema.json");
+    expect(typeof out._meta?.gitSha).toBe("string");
+    expect(out._meta?.pluginDigest).toBeDefined();
     expect(typeof out._meta?.scenarioHash?.a).toBe("string");
     expect(typeof out._meta?.scenarioHash?.b).toBe("string");
   });
@@ -124,6 +128,9 @@ describe("CLI golden outputs", () => {
     expect(out.horizons[0]?.economyValueProxy).toBeDefined();
     expect(out.horizons[0]?.monetization?.cumulativeLtvPerUser).toBeDefined();
     expect(out._meta?.command).toBe("ltv");
+    expect(out._meta?.schemaRef).toBe("docs/schemas/ltv.output.schema.json");
+    expect(typeof out._meta?.gitSha).toBe("string");
+    expect(out._meta?.pluginDigest).toBeDefined();
     expect(typeof out._meta?.scenarioHash).toBe("string");
   });
 
@@ -203,11 +210,16 @@ describe("CLI golden outputs", () => {
       const raw = JSON.parse(await readFile(artifactPath, "utf8"));
       expect(raw.v).toBe(1);
       expect(raw.kind).toBe("idk.replay.artifact");
+      expect(raw.artifactVersion).toBe(1);
+      expect(raw.schemaRef).toBe("docs/schemas/artifact.v1.schema.json");
       expect(raw.command).toBe("simulate");
       expect(raw.replay?.commandLine).toContain("simulate");
       expect(raw.replay?.verify?.runId).toBe("sim-artifact-run");
       expect(raw.replay?.verify?.seed).toBe(101);
       expect(typeof raw.replay?.verify?.scenarioHash).toBe("string");
+      expect(typeof raw.replay?.verify?.gitSha).toBe("string");
+      expect(raw.replay?.verify?.pluginDigest).toBeDefined();
+      expect(typeof raw.replay?.verify?.resultHash).toBe("string");
       expect(raw.result?.endMoney).toBe(out.endMoney);
     } finally {
       await rm(dir, { recursive: true, force: true });
@@ -253,7 +265,7 @@ describe("CLI golden outputs", () => {
       expect(savedRaw.v).toBe(1);
       expect(savedRaw.t).toBe(first.endT);
       expect(savedRaw.meta?.runId).toBeDefined();
-      expect(savedRaw.meta?.seed).toBeUndefined();
+      expect(typeof savedRaw.meta?.seed).toBe("number");
       expect(savedRaw.meta?.cliVersion).toBeDefined();
       expect(savedRaw.meta?.scenarioHash).toBeDefined();
       expect(savedRaw.strategy?.id).toBe("greedy");

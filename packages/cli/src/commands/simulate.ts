@@ -9,13 +9,12 @@ import {
   serializeSimState,
   validateScenarioV1,
 } from "@idlekit/core";
-import { randomUUID } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { z } from "zod";
 import { loadRegistriesFromFlags, pluginOptions } from "./_shared/plugin";
 import { buildOfflineSummary, resolveEventLog } from "./_shared/simulateView";
-import { buildOutputMeta } from "../io/outputMeta";
+import { buildOutputMeta, deriveDeterministicRunId, deriveDeterministicSeed, hashContent } from "../io/outputMeta";
 import { writeCommandReplayArtifact } from "../io/replayPolicy";
 import { readScenarioFile } from "../io/readScenario";
 import { writeOutput } from "../io/writeOutput";
@@ -55,6 +54,15 @@ function restoreStrategyState(args: {
   }
   if (strategy.id !== resumed.id) {
     throw new Error(`Resume strategy mismatch: expected ${strategy.id}, got ${resumed.id}`);
+  }
+  if (
+    resumed.version !== undefined &&
+    strategy.stateVersion !== undefined &&
+    resumed.version !== strategy.stateVersion
+  ) {
+    throw new Error(
+      `Resume strategy state version mismatch: expected ${strategy.stateVersion}, got ${resumed.version}`,
+    );
   }
   if (strategy.restoreState) {
     strategy.restoreState(resumed.state);
@@ -137,12 +145,48 @@ export default defineCommand({
         })
       : undefined;
 
+    const deterministicSeed =
+      flags.seed ??
+      deriveDeterministicSeed({
+        command: "simulate",
+        scenario,
+        scenarioPath: resolve(process.cwd(), scenarioPath),
+        resumeHash: resumedJson ? hashContent(resumedJson) : null,
+        options: {
+          duration: flags.duration ?? compiled.run.durationSec,
+          step: flags.step ?? compiled.run.stepSec,
+          strategy: flags.strategy ?? strategy?.id,
+          fast: flags.fast,
+          offlineSeconds: flags["offline-seconds"] ?? 0,
+        },
+      });
+    const runId =
+      flags["run-id"] ??
+      deriveDeterministicRunId({
+        command: "simulate",
+        seed: deterministicSeed,
+        scope: {
+          scenarioPath: resolve(process.cwd(), scenarioPath),
+          resumeHash: resumedJson ? hashContent(resumedJson) : null,
+          strategyId: strategy?.id,
+        },
+      });
+    const outputMeta = buildOutputMeta({
+      command: "simulate",
+      scenarioPath,
+      scenario,
+      runId,
+      seed: deterministicSeed,
+      pluginDigest: loaded.pluginDigest,
+    });
+    const generatedAt = outputMeta.generatedAt;
+
     const runScenarioInput = {
       ...compiled,
       initial: resumedState ?? compiled.initial,
       ctx: {
         ...compiled.ctx,
-        seed: flags.seed ?? compiled.ctx.seed,
+        seed: deterministicSeed,
       },
       strategy,
       run: {
@@ -190,16 +234,7 @@ export default defineCommand({
     const netWorth = effectiveScenario.model.netWorth?.(effectiveScenario.ctx, run.end) ?? run.end.wallet.money;
     const totalElapsedSec = run.end.t - compiled.initial.t;
     const stateOutPath = flags["state-out"] ? resolve(process.cwd(), flags["state-out"]) : undefined;
-    const runId = flags["run-id"] ?? randomUUID();
-    const seed = effectiveScenario.ctx.seed;
-    const generatedAt = new Date().toISOString();
-    const outputMeta = buildOutputMeta({
-      command: "simulate",
-      scenarioPath,
-      scenario,
-      runId,
-      seed,
-    });
+    const seed = deterministicSeed;
     const offlineEndWorth =
       offlineRun && (runScenarioInput.model.netWorth?.(runScenarioInput.ctx, offlineRun.end) ?? offlineRun.end.wallet.money);
 
@@ -218,6 +253,7 @@ export default defineCommand({
         strategy: strategy
           ? {
               id: strategy.id,
+              version: strategy.stateVersion,
               state: strategyState,
             }
           : undefined,

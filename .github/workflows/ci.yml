@@ -30,6 +30,9 @@ jobs:
       - name: Build
         run: bun run build
 
+      - name: Release Dry Run
+        run: bun run release:dry-run
+
       - name: Perf Check (simulate benchmark)
         run: bun run bench:sim:check
 

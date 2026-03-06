@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "idlekit/kpi-regress-output-v1",
+  "type": "object",
+  "required": ["baselinePath", "currentPath", "generatedAt", "thresholds", "pass", "checks", "_meta"],
+  "properties": {
+    "baselinePath": { "type": "string" },
+    "currentPath": { "type": "string" },
+    "generatedAt": { "type": "string" },
+    "thresholds": {
+      "type": "object",
+      "required": ["minWorthRatio", "maxStallDelta", "maxDroppedDelta"],
+      "properties": {
+        "minWorthRatio": { "type": "number" },
+        "maxStallDelta": { "type": "number" },
+        "maxDroppedDelta": { "type": "number" }
+      }
+    },
+    "pass": { "type": "boolean" },
+    "checks": { "type": "array", "items": { "type": "object" } },
+    "_meta": {
+      "type": "object",
+      "required": ["command", "contractVersion", "schemaRef", "cliVersion", "gitSha", "pluginDigest"],
+      "properties": {
+        "command": { "const": "kpi.regress" },
+        "contractVersion": { "type": "string" },
+        "schemaRef": { "const": "docs/schemas/kpi.regress.output.schema.json" },
+        "cliVersion": { "type": "string" },
+        "gitSha": { "type": "string" },
+        "pluginDigest": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        }
+      }
+    }
+  }
+}

@@ -43,7 +43,10 @@ CLI:
 - md/json/csv 렌더링
 - `simulate` 저장/재개 + 오프라인/fast/strategy 조합 회귀
 - `simulate/compare/ltv/tune` replay artifact 표준 포맷 검증
+- `replay verify` 재실행 드리프트 검증
 - 출력 계약(schema) 검증: `output-schema.test.ts`
+- artifact 계약(schema) 검증: `artifact-schema.test.ts`
+- contract 호환성 검증: `outputMeta.compat.test.ts`
 - `calibrate` CSV 파서 엣지 케이스 + correlation 추정 + confidence/shrinkage 진단
 
 ## 3. 변경 시 필수 테스트 추가 규칙
@@ -78,6 +81,7 @@ CI(`.github/workflows/ci.yml`)는 typecheck/test/build + docs quick + 성능 체
 `tools/bench-sim.ts`는 시나리오 경로를 저장소 루트 기준 절대경로로 정규화해 cwd 차이로 인한 오탐을 줄입니다.
 다중 시나리오 성능 스모크는 `bench:sim:suite`로 수행하며,
 `bench:sim:suite:check`는 평균/p95 + RSS delta 임계값까지 게이트합니다.
+suite는 `30m/2h/24h/7d/30d/90d` 장기 구간 시나리오를 포함합니다.
 
 ## 5. 권장 커밋 단위
 

@@ -1,0 +1,70 @@
+{
+  "schemaVersion": 1,
+  "meta": {
+    "id": "idle-space-port",
+    "title": "Space Port Idle Template",
+    "description": "Template: 고비용-고성장 7d/30d/90d 지향 설계"
+  },
+  "unit": {
+    "code": "CREDIT",
+    "symbol": "Cr"
+  },
+  "policy": {
+    "mode": "accumulate",
+    "maxLogGap": 16
+  },
+  "model": {
+    "id": "linear",
+    "version": 1,
+    "params": {
+      "incomePerSec": "3.2",
+      "buyCostBase": "140",
+      "buyCostGrowth": 1.18,
+      "buyIncomeDelta": "4.6"
+    }
+  },
+  "initial": {
+    "wallet": {
+      "unit": "CREDIT",
+      "amount": "300",
+      "bucket": "0"
+    },
+    "vars": {
+      "owned": 0
+    },
+    "prestige": {
+      "count": 0,
+      "points": "0",
+      "multiplier": "1"
+    }
+  },
+  "clock": {
+    "stepSec": 10,
+    "durationSec": 86400
+  },
+  "strategy": {
+    "id": "planner",
+    "params": {
+      "schemaVersion": 1,
+      "horizonSteps": 5,
+      "beamWidth": 2,
+      "objective": "maximizeNetWorthAtEnd",
+      "series": "netWorth",
+      "maxBranchingActions": 6,
+      "useFastPreview": true,
+      "bulk": {
+        "mode": "bestQuote"
+      }
+    }
+  },
+  "sim": {
+    "fast": true,
+    "eventLog": {
+      "enabled": false,
+      "maxEvents": 0
+    }
+  },
+  "outputs": {
+    "format": "json"
+  }
+}

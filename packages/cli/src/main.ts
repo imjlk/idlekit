@@ -5,11 +5,13 @@ import compareCommand from "./commands/compare";
 import etaCommand from "./commands/eta";
 import growthCommand from "./commands/growth";
 import initScenarioCommand from "./commands/initScenario";
+import kpiRegressCommand from "./commands/kpiRegress";
 import ltvCommand from "./commands/ltv";
 import modelsListCommand from "./commands/modelsList";
 import objectivesListCommand from "./commands/objectives";
 import prestigeCycleCommand from "./commands/prestigeCycle";
 import reportCommand from "./commands/report";
+import replayVerifyCommand from "./commands/replayVerify";
 import simulateCommand from "./commands/simulate";
 import strategiesListCommand from "./commands/strategies";
 import tuneCommand from "./commands/tune";
@@ -39,6 +41,18 @@ const initGroup = defineGroup({
   commands: [initScenarioCommand],
 });
 
+const replayGroup = defineGroup({
+  name: "replay",
+  description: "Replay artifact commands",
+  commands: [replayVerifyCommand],
+});
+
+const kpiGroup = defineGroup({
+  name: "kpi",
+  description: "KPI guardrail commands",
+  commands: [kpiRegressCommand],
+});
+
 const cli = await createCLI({
   name: "idk",
   version: "0.1.0",
@@ -62,6 +76,8 @@ cli.command(modelsGroup);
 cli.command(strategiesGroup);
 cli.command(objectivesGroup);
 cli.command(initGroup);
+cli.command(replayGroup);
+cli.command(kpiGroup);
 cli.command(simulateCommand);
 cli.command(etaCommand);
 cli.command(prestigeCycleCommand);

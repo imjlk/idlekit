@@ -25,6 +25,15 @@
 - `07-idle-design-tune.json`
   - `05`를 대상으로 한 튜닝 스펙
   - 목표: `plugin.gemsAndWorthLog10`
+- `08-idle-design-city-factory.json`
+  - 장기 성장형(인프라 확장) 템플릿
+  - 2h 이상 구간에서 netWorth 성장 곡선 실험용
+- `09-idle-design-loot-camp.json`
+  - 짧은 세션 반복형 템플릿
+  - 30m/2h KPI와 액션 페이백 압력 실험용
+- `10-idle-design-space-port.json`
+  - 고비용-고성장 장기형 템플릿
+  - 7d/30d/90d 가드레일 튜닝 시작점
 
 ## 권장 실행 순서
 
@@ -33,6 +42,7 @@
 3. `04-cafe-tune.json`으로 튜닝(tune)
 4. `02-cafe-fast.json`으로 fast 모드 해석
 5. 설계 중심 트랙: `05` -> `06` compare -> `07` tune
+6. 장르 템플릿 확장: `08/09/10` 중 하나를 복제해 자체 게임 설계 시작
 
 ## 기대 관찰 포인트
 
@@ -40,6 +50,7 @@
 - tune 결과에서 `report.best`와 `top` 후보군 비교
 - fast 모드에서 이벤트 수 감소/처리 속도 향상 경향
 - 설계 트랙에서 재화/요소/액션이 KPI(`endNetWorth`, `gemsAndWorthLog10`)에 주는 영향
+- 장르 템플릿별로 30m/2h/24h/7d/30d/90d 지표 곡선이 어떻게 달라지는지
 
 ## 설계 중심 트랙 개요
 

@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "idlekit/replay-artifact-v1",
+  "type": "object",
+  "required": [
+    "v",
+    "kind",
+    "artifactVersion",
+    "contractVersion",
+    "schemaRef",
+    "command",
+    "generatedAt",
+    "meta",
+    "input",
+    "replay",
+    "result"
+  ],
+  "properties": {
+    "v": { "const": 1 },
+    "kind": { "const": "idk.replay.artifact" },
+    "artifactVersion": { "const": 1 },
+    "contractVersion": { "type": "string" },
+    "schemaRef": { "const": "docs/schemas/artifact.v1.schema.json" },
+    "command": { "type": "string" },
+    "generatedAt": { "type": "string" },
+    "meta": {
+      "type": "object",
+      "required": ["command", "generatedAt", "contractVersion", "cliVersion", "gitSha", "pluginDigest"],
+      "properties": {
+        "command": { "type": "string" },
+        "generatedAt": { "type": "string" },
+        "contractVersion": { "type": "string" },
+        "schemaRef": { "type": "string" },
+        "cliVersion": { "type": "string" },
+        "gitSha": { "type": "string" },
+        "pluginDigest": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        }
+      }
+    },
+    "input": {
+      "type": "object",
+      "required": ["positional", "flags"],
+      "properties": {
+        "positional": { "type": "array", "items": { "type": "string" } },
+        "flags": { "type": "object" }
+      }
+    },
+    "replay": {
+      "type": "object",
+      "required": ["cwd", "args", "commandLine", "verify"],
+      "properties": {
+        "cwd": { "type": "string" },
+        "args": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+        "commandLine": { "type": "string" },
+        "verify": {
+          "type": "object",
+          "required": ["runId", "seed", "scenarioHash", "gitSha", "pluginDigest", "resultHash"],
+          "properties": {
+            "runId": { "type": "string", "minLength": 1 },
+            "seed": { "type": "number" },
+            "scenarioHash": {
+              "oneOf": [
+                { "type": "string" },
+                { "type": "object", "additionalProperties": { "type": "string" } }
+              ]
+            },
+            "gitSha": { "type": "string", "minLength": 1 },
+            "pluginDigest": {
+              "type": "object",
+              "additionalProperties": { "type": "string" }
+            },
+            "resultHash": { "type": "string", "minLength": 1 }
+          }
+        }
+      }
+    },
+    "result": {}
+  }
+}

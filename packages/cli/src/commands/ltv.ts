@@ -1,10 +1,9 @@
 import { defineCommand, option } from "@bunli/core";
 import { compileScenario, createNumberEngine, runScenario, validateScenarioV1 } from "@idlekit/core";
-import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import { z } from "zod";
 import { loadRegistriesFromFlags, pluginOptions } from "./_shared/plugin";
-import { buildOutputMeta } from "../io/outputMeta";
+import { buildOutputMeta, deriveDeterministicRunId, deriveDeterministicSeed } from "../io/outputMeta";
 import { writeCommandReplayArtifact } from "../io/replayPolicy";
 import { readScenarioFile } from "../io/readScenario";
 import { writeOutput } from "../io/writeOutput";
@@ -115,11 +114,13 @@ function buildGuardrailKpi(args: {
   counts: StatsCounts;
   actionCounts: Record<string, number>;
   firstUpgradeSec: number | null;
+  growthLog10PerDay: number;
 }): Readonly<{
   timeToFirstUpgradeSec: number | null;
   stallRatio: number;
   droppedRate: number;
   actionMix: Record<string, number>;
+  growthLog10PerDay: number;
 }> {
   const c = args.counts;
   const totalActionAttempts = c.actionsApplied + c.actionsSkippedCannot + c.actionsSkippedFunds;
@@ -141,6 +142,7 @@ function buildGuardrailKpi(args: {
     stallRatio,
     droppedRate,
     actionMix,
+    growthLog10PerDay: args.growthLog10PerDay,
   };
 }
 
@@ -213,6 +215,20 @@ export default defineCommand({
           disableMoneyEvents: true,
         }
       : compiled.run.fast;
+    const baseSeed =
+      flags.seed ??
+      deriveDeterministicSeed({
+        command: "ltv",
+        scenario: valid.scenario,
+        options: {
+          horizons: flags.horizons,
+          step: stepSec,
+          strategy: flags.strategy,
+          fast: flags.fast,
+          draws: flags.draws,
+          valuePerWorth: flags["value-per-worth"],
+        },
+      });
 
     const monetizationConfig = deriveMonetizationConfig(valid.scenario);
     const uncertainEnabled = monetizationConfig.uncertainty.enabled || flags.draws !== undefined;
@@ -261,7 +277,7 @@ export default defineCommand({
         strategy,
         ctx: {
           ...compiled.ctx,
-          seed: flags.seed ?? compiled.ctx.seed,
+          seed: baseSeed,
         },
         run: {
           ...compiled.run,
@@ -285,9 +301,9 @@ export default defineCommand({
 
       for (const log of run.actionsLog ?? []) {
         actionCounts[log.actionId] = (actionCounts[log.actionId] ?? 0) + 1;
-        if (firstUpgradeSec === null && /upgrade/i.test(log.actionId)) {
-          firstUpgradeSec = log.t;
-        }
+      if (firstUpgradeSec === null && /upgrade/i.test(log.actionId)) {
+        firstUpgradeSec = log.t;
+      }
       }
 
       const worth = compiled.model.netWorth?.(compiled.ctx, state) ?? state.wallet.money;
@@ -307,13 +323,19 @@ export default defineCommand({
               progression,
               draws,
               quantiles: monetizationConfig.uncertainty.quantiles,
-              seed: (flags.seed ?? monetizationConfig.uncertainty.seed ?? 1) + h.seconds,
+              seed: (baseSeed ?? monetizationConfig.uncertainty.seed ?? 1) + h.seconds,
             })
           : undefined;
 
       const deltaWorth = E.sub(worth.amount, previousWorth.amount);
       const perHour = E.mul(E.div(worth.amount, Math.max(1, h.seconds)), 3600);
       const deltaPerDay = E.mul(E.div(deltaWorth, Math.max(1, segmentSec)), 86400);
+      const growthLog10PerDay = (() => {
+        const prevLog = E.absLog10(previousWorth.amount);
+        const nextLog = E.absLog10(worth.amount);
+        const days = Math.max(segmentSec / 86400, 1e-12);
+        return (nextLog - prevLog) / days;
+      })();
       const economyValueProxy =
         flags["value-per-worth"] !== undefined
           ? E.toString(E.mul(worth.amount, flags["value-per-worth"]))
@@ -339,6 +361,7 @@ export default defineCommand({
           counts,
           actionCounts,
           firstUpgradeSec,
+          growthLog10PerDay,
         }),
       });
 
@@ -355,18 +378,42 @@ export default defineCommand({
       at90d: getSummaryBySeconds(rows, 7776000),
     };
 
-    const runId = flags["run-id"] ?? randomUUID();
+    const seed = baseSeed;
+    const runId =
+      flags["run-id"] ??
+      deriveDeterministicRunId({
+        command: "ltv",
+        seed,
+        scope: {
+          scenarioPath: resolve(process.cwd(), scenarioPath),
+          horizons: horizons.map((x) => x.label),
+          stepSec,
+        },
+      });
     const outputMeta = buildOutputMeta({
       command: "ltv",
       runId,
       scenarioPath,
       scenario: valid.scenario,
-      seed: flags.seed ?? compiled.ctx.seed,
+      seed,
+      pluginDigest: loaded.pluginDigest,
     });
+    const trend7to90 = (() => {
+      const at7d = summary.at7d;
+      const at90d = summary.at90d;
+      if (!at7d || !at90d) return "insufficient_horizon_data";
+      const n7 = Number(at7d.monetization.cumulativeLtvPerUser);
+      const n90 = Number(at90d.monetization.cumulativeLtvPerUser);
+      if (!Number.isFinite(n7) || !Number.isFinite(n90)) return "insufficient_horizon_data";
+      if (n90 > n7 * 1.2) return "long_tail_growth";
+      if (n90 < n7 * 1.02) return "late_game_flattening";
+      return "steady_growth";
+    })();
     const jsonOutput = {
       scenario: scenarioPath,
       run: {
         id: runId,
+        seed,
         stepSec,
         fast: !!runFast?.enabled,
         strategyId: strategy?.id ?? null,
@@ -381,6 +428,10 @@ export default defineCommand({
       },
       horizons: rows,
       summary,
+      insights: {
+        summary: `LTV trajectory classification: ${trend7to90}`,
+        trend7to90,
+      },
     };
     const output = flags.format === "json" ? jsonOutput : rows;
 
@@ -393,7 +444,7 @@ export default defineCommand({
         flags,
         forcedFlags: {
           "run-id": runId,
-          seed: flags.seed ?? compiled.ctx.seed,
+          seed,
           format: "json",
         },
         result: jsonOutput,

@@ -59,6 +59,8 @@ describe("replay policy", () => {
         command: "tune",
         scenarioPath: "examples/tutorials/01-cafe-baseline.json",
         scenario: { schemaVersion: 1 },
+        runId: "run-2",
+        seed: 3,
       });
 
       await writeCommandReplayArtifact({
@@ -85,6 +87,31 @@ describe("replay policy", () => {
       expect(replayArgs).not.toContain("--baseline-artifact");
       expect(replayArgs).not.toContain("--regression-tolerance");
       expect(replayArgs).not.toContain("--fail-on-regression");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects artifact writes when runId/seed are missing", async () => {
+    const dir = await mkdtemp(resolve(tmpdir(), "idlekit-replay-policy-missing-"));
+    try {
+      const outPath = resolve(dir, "simulate.artifact.json");
+      const meta = buildOutputMeta({
+        command: "simulate",
+        scenarioPath: "examples/tutorials/01-cafe-baseline.json",
+        scenario: { schemaVersion: 1 },
+      });
+
+      await expect(
+        writeCommandReplayArtifact({
+          command: "simulate",
+          outPath,
+          positional: ["/abs/scenario.json"],
+          flags: {},
+          result: { ok: true },
+          meta,
+        }),
+      ).rejects.toThrow("meta.runId");
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

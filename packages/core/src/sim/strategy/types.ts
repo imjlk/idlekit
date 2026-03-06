@@ -11,6 +11,8 @@ import type { Action, Model, SimContext, SimState } from "../types";
  */
 export interface Strategy<N, U extends string, Vars> {
   id: string;
+  // Optional strategy-state schema version used for persisted resume snapshots.
+  stateVersion?: number;
 
   decide: (
     ctx: SimContext<N, U, Vars>,

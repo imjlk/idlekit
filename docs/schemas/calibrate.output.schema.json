@@ -33,10 +33,18 @@
     "scenarioPatch": { "type": "object" },
     "_meta": {
       "type": "object",
-      "required": ["command", "telemetryHash"],
+      "required": ["command", "contractVersion", "schemaRef", "cliVersion", "gitSha", "telemetryHash", "pluginDigest"],
       "properties": {
         "command": { "const": "calibrate" },
-        "telemetryHash": { "type": "string" }
+        "contractVersion": { "type": "string" },
+        "schemaRef": { "const": "docs/schemas/calibrate.output.schema.json" },
+        "cliVersion": { "type": "string" },
+        "gitSha": { "type": "string" },
+        "telemetryHash": { "type": "string" },
+        "pluginDigest": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        }
       }
     }
   }
