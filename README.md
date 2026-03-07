@@ -66,6 +66,7 @@ bun run docs:verify:quick
 bun run docs:verify
 bun run templates:check
 bun run replay:verify
+bun run release:plan
 bun run bench:sim:check
 bun run bench:sim:suite:check
 bun run kpi:report
@@ -85,6 +86,7 @@ bun run release:dry-run
 - [출력 JSON 스키마](./docs/schemas/)
 - [테스트 운영 가이드](./docs/testing.md)
 - [릴리즈 운영 규약](./docs/release-process.md)
+- [Sampo 변경 로그/릴리즈 설정](./.sampo/README.md)
 - [튜토리얼 예제 세트](./examples/tutorials/README.md)
 - [플러그인 예제 프로젝트](./examples/plugins/README.md)
 - [머니 라이브러리 예제](./examples/money-package/README.md)

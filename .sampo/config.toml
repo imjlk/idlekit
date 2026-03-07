@@ -1,0 +1,17 @@
+# idlekit Sampo configuration
+version = 1
+
+[git]
+default_branch = "main"
+release_branches = ["main"]
+
+[github]
+# Set this when the repository remote is configured, so changelog links can be enriched.
+# repository = "owner/idlekit"
+
+[changelog]
+show_commit_hash = true
+show_acknowledgments = true
+
+[packages]
+ignore_unpublished = false
