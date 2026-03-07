@@ -13,6 +13,7 @@
 
 - 설정 파일: [config.toml](/Users/imjlk/repos/imjlk/idlekit/.sampo/config.toml)
 - pending changeset: [.sampo/changesets](/Users/imjlk/repos/imjlk/idlekit/.sampo/changesets)
+- GitHub workflow: [release.yml](/Users/imjlk/repos/imjlk/idlekit/.github/workflows/release.yml)
 
 변경을 추가할 때:
 
@@ -25,6 +26,8 @@ bun run changeset:add
 ```bash
 bun run release:plan
 ```
+
+`release:plan`은 changeset이 없는 경우도 informational 상태로 처리합니다. `.sampo/changesets`는 `.gitkeep`만 두고, 실제 changeset은 frontmatter가 있는 `*.md` 파일만 추가합니다.
 
 실제 version/changelog 갱신:
 
@@ -42,6 +45,7 @@ bun run release:publish:dry-run
 
 - 현재 설정은 `main`만 release branch로 취급합니다.
 - feature branch에서 릴리즈 계산을 보고 싶어서 `release:plan`은 `SAMPO_RELEASE_BRANCH=main`을 강제로 넣었습니다.
+- GitHub Actions에서는 `main` push 또는 수동 실행 시 `sampo auto`로 release/publish 흐름을 처리합니다.
 
 ## 3) 릴리즈 전 체크리스트
 

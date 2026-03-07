@@ -15,6 +15,8 @@ bun run release:publish:dry-run
 
 - `config.toml`: release branch / changelog policy
 - `changesets/*.md`: pending package changes
+- `changesets/.gitkeep`: 빈 changesets 디렉터리 유지용 파일
+- `.github/workflows/release.yml`: `main` push / 수동 실행용 release workflow
 
 ## Notes
 

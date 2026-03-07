@@ -19,7 +19,7 @@
     "templates:check": "bun tools/templates-check.ts",
     "replay:verify": "bun tools/replay-verify-gate.ts",
     "changeset:add": "sampo add",
-    "release:plan": "SAMPO_RELEASE_BRANCH=main sampo release --dry-run",
+    "release:plan": "bun tools/sampo-release-plan.ts",
     "release:version": "SAMPO_RELEASE_BRANCH=main sampo release",
     "release:publish:dry-run": "SAMPO_RELEASE_BRANCH=main sampo publish --dry-run",
     "kpi:report": "bun tools/kpi-report.ts --out tmp/kpi-report.json",
