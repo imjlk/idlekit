@@ -2,6 +2,9 @@
   "name": "@idlekit/cli",
   "version": "0.1.1",
   "type": "module",
+  "files": [
+    "dist"
+  ],
   "bin": {
     "idk": "dist/main.js"
   },
@@ -11,7 +14,9 @@
     "build": "bunli build --entry src/main.ts --runtime bun --outdir dist --sourcemap",
     "build:bin": "bunli build --entry src/main.ts --outdir dist --targets native",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "bun test src"
+    "test": "bun test src",
+    "prepack": "bun run build && bun ../../tools/package-manifest.ts prepare",
+    "postpack": "bun ../../tools/package-manifest.ts restore"
   },
   "dependencies": {
     "@bunli/core": "^0.8.0",

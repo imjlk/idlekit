@@ -17,6 +17,7 @@
     "docs:verify": "bun tools/docs-verify.ts",
     "docs:verify:quick": "bun tools/docs-verify.ts --quick",
     "templates:check": "bun tools/templates-check.ts",
+    "install:smoke": "bun tools/install-smoke.ts",
     "replay:verify": "bun tools/replay-verify-gate.ts",
     "changeset:add": "sampo add",
     "release:plan": "bun tools/sampo-release-plan.ts",

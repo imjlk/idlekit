@@ -100,6 +100,7 @@ bun run test
 bun run build
 bun run docs:verify:quick
 bun run templates:check
+bun run install:smoke
 bun run release:plan
 bun run bench:sim:check
 bun run bench:sim:suite:check

@@ -45,6 +45,9 @@ jobs:
       - name: Template Governance Check
         run: bun run templates:check
 
+      - name: Install Smoke
+        run: bun run install:smoke
+
       - name: Replay Verify Gate
         run: bun run replay:verify
 

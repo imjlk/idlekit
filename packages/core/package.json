@@ -3,6 +3,12 @@
   "version": "0.1.0",
   "type": "module",
   "sideEffects": false,
+  "files": [
+    "dist",
+    "src",
+    "tsconfig.build.json",
+    "tsconfig.json"
+  ],
   "main": "./dist/index.js",
   "module": "./dist/index.js",
   "types": "./src/index.ts",
@@ -17,7 +23,9 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "bun test src"
+    "test": "bun test src",
+    "prepack": "bun run build && bun ../../tools/package-manifest.ts prepare",
+    "postpack": "bun ../../tools/package-manifest.ts restore"
   },
   "dependencies": {
     "@idlekit/money": "workspace:*",

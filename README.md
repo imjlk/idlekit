@@ -65,6 +65,7 @@ bun run build
 bun run docs:verify:quick
 bun run docs:verify
 bun run templates:check
+bun run install:smoke
 bun run replay:verify
 bun run release:plan
 bun run bench:sim:check
