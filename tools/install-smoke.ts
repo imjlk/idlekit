@@ -1,6 +1,5 @@
-import { execFileSync } from "node:child_process";
-import { mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { $ } from "bun";
+import { dirname, resolve } from "path";
 
 type PackEntry = {
   filename: string;
@@ -13,15 +12,6 @@ const TMP_ROOT = resolve(ROOT, "tmp", "install-smoke");
 const PACKS_DIR = resolve(TMP_ROOT, "packs");
 const CONSUMER_DIR = resolve(TMP_ROOT, "consumer");
 const PACKAGES = ["packages/money", "packages/core", "packages/cli"] as const;
-
-function run(cmd: string, args: string[], cwd: string): string {
-  return execFileSync(cmd, args, {
-    cwd,
-    encoding: "utf8",
-    env: process.env,
-    maxBuffer: 128 * 1024 * 1024,
-  });
-}
 
 function packageBinPath(): string {
   return process.platform === "win32"
@@ -37,15 +27,15 @@ function parsePackEntries(raw: string): PackEntry[] {
   return JSON.parse(match[1]) as PackEntry[];
 }
 
-function packPackage(pkgDir: string): Readonly<{ packageDir: string; tarballPath: string; pack: PackEntry }> {
+async function packPackage(pkgDir: string): Promise<Readonly<{ packageDir: string; tarballPath: string; pack: PackEntry }>> {
   const absDir = resolve(ROOT, pkgDir);
-  const raw = run("npm", ["pack", "--json"], absDir);
+  const raw = await $`npm pack --json`.cwd(absDir).text();
   const parsed = parsePackEntries(raw);
   const pack = parsed[0];
   if (!pack) throw new Error(`npm pack returned no entries for ${pkgDir}`);
   const sourceTarball = resolve(absDir, pack.filename);
   const targetTarball = resolve(PACKS_DIR, pack.filename);
-  renameSync(sourceTarball, targetTarball);
+  await $`mv ${sourceTarball} ${targetTarball}`.quiet();
   return {
     packageDir: absDir,
     tarballPath: targetTarball,
@@ -53,8 +43,8 @@ function packPackage(pkgDir: string): Readonly<{ packageDir: string; tarballPath
   };
 }
 
-function writeConsumerPackageJson(): void {
-  writeFileSync(
+async function writeConsumerPackageJson(): Promise<void> {
+  await Bun.write(
     resolve(CONSUMER_DIR, "package.json"),
     `${JSON.stringify(
       {
@@ -65,11 +55,10 @@ function writeConsumerPackageJson(): void {
       null,
       2,
     )}\n`,
-    "utf8",
   );
 }
 
-function runLibrarySmoke(): Readonly<{ money: string; core: string }> {
+async function runLibrarySmoke(): Promise<Readonly<{ money: string; core: string }>> {
   const script = `
     import { createBreakInfinityEngine } from "@idlekit/money";
     import { createNumberEngine } from "@idlekit/core";
@@ -85,29 +74,30 @@ function runLibrarySmoke(): Readonly<{ money: string; core: string }> {
     console.log(JSON.stringify(out));
   `;
 
-  const raw = run("bun", ["-e", script], CONSUMER_DIR).trim();
-  return JSON.parse(raw) as { money: string; core: string };
+  const raw = await $`bun -e ${script}`.cwd(CONSUMER_DIR).text();
+  return JSON.parse(raw.trim()) as { money: string; core: string };
 }
 
-function runCliSmoke(): Readonly<{ helpHasIdk: boolean; validateOk: boolean }> {
-  const help = run(packageBinPath(), ["--help"], CONSUMER_DIR);
-  const validateRaw = run(packageBinPath(), ["validate", resolve(ROOT, "examples", "tutorials", "11-my-game-v1.json")], CONSUMER_DIR);
+async function runCliSmoke(): Promise<Readonly<{ helpHasIdk: boolean; validateOk: boolean }>> {
+  const help = await $`${packageBinPath()} --help`.cwd(CONSUMER_DIR).text();
+  const validateRaw =
+    await $`${packageBinPath()} validate ${resolve(ROOT, "examples", "tutorials", "11-my-game-v1.json")}`.cwd(CONSUMER_DIR).text();
+
   return {
     helpHasIdk: help.includes("idk"),
     validateOk: validateRaw.includes("OK:"),
   };
 }
 
-rmSync(TMP_ROOT, { recursive: true, force: true });
-mkdirSync(PACKS_DIR, { recursive: true });
-mkdirSync(CONSUMER_DIR, { recursive: true });
+await $`rm -rf ${TMP_ROOT}`.quiet();
+await $`mkdir -p ${PACKS_DIR} ${CONSUMER_DIR}`.quiet();
 
-const packed = PACKAGES.map(packPackage);
-writeConsumerPackageJson();
-run("npm", ["install", "--no-audit", "--no-fund", ...packed.map((entry) => entry.tarballPath)], CONSUMER_DIR);
+const packed = await Promise.all(PACKAGES.map(packPackage));
+await writeConsumerPackageJson();
+await $`npm install --no-audit --no-fund ${packed.map((entry) => entry.tarballPath)}`.cwd(CONSUMER_DIR).quiet();
 
-const librarySmoke = runLibrarySmoke();
-const cliSmoke = runCliSmoke();
+const librarySmoke = await runLibrarySmoke();
+const cliSmoke = await runCliSmoke();
 
 const out = {
   generatedAt: new Date().toISOString(),
@@ -122,6 +112,6 @@ const out = {
 };
 
 const outPath = resolve(ROOT, "tmp", "install-smoke.json");
-mkdirSync(dirname(outPath), { recursive: true });
-writeFileSync(outPath, `${JSON.stringify(out, null, 2)}\n`, "utf8");
+await $`mkdir -p ${dirname(outPath)}`.quiet();
+await Bun.write(outPath, `${JSON.stringify(out, null, 2)}\n`);
 console.log(`install smoke wrote ${outPath}`);

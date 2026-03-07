@@ -1,5 +1,5 @@
-import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { $ } from "bun";
+import { resolve } from "path";
 
 type PackageManifest = {
   name?: string;
@@ -14,15 +14,15 @@ const ROOT = resolve(import.meta.dir, "..");
 const BACKUP_FILE = ".package.json.prepack.backup";
 const SECTIONS = ["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"] as const;
 
-function readJson<T>(path: string): T {
-  return JSON.parse(readFileSync(path, "utf8")) as T;
+async function readJson<T>(path: string): Promise<T> {
+  return Bun.file(path).json() as Promise<T>;
 }
 
-function readWorkspaceVersions(): Map<string, string> {
+async function readWorkspaceVersions(): Promise<Map<string, string>> {
   const packageDirs = ["packages/money", "packages/core", "packages/cli"];
   const versions = new Map<string, string>();
   for (const pkgDir of packageDirs) {
-    const manifest = readJson<PackageManifest>(resolve(ROOT, pkgDir, "package.json"));
+    const manifest = await readJson<PackageManifest>(resolve(ROOT, pkgDir, "package.json"));
     if (manifest.name && manifest.version) {
       versions.set(manifest.name, manifest.version);
     }
@@ -68,38 +68,45 @@ function stableStringify(value: unknown): string {
   return `${JSON.stringify(value, null, 2)}\n`;
 }
 
-function prepare(): void {
+async function prepare(): Promise<void> {
   const manifestPath = resolve(process.cwd(), "package.json");
   const backupPath = resolve(process.cwd(), BACKUP_FILE);
-  if (existsSync(backupPath)) {
-    throw new Error(`prepack backup already exists: ${backupPath}`);
+  const backup = Bun.file(backupPath);
+  if (await backup.exists()) {
+    const backupText = await backup.text();
+    const manifestText = await Bun.file(manifestPath).text();
+    if (manifestText !== backupText) {
+      await Bun.write(manifestPath, backupText);
+    }
+    await $`rm -f ${backupPath}`.quiet();
   }
 
-  const original = readJson<PackageManifest>(manifestPath);
-  const rewritten = rewriteManifest(original, readWorkspaceVersions());
+  const original = await readJson<PackageManifest>(manifestPath);
+  const rewritten = rewriteManifest(original, await readWorkspaceVersions());
   const originalText = stableStringify(original);
   const rewrittenText = stableStringify(rewritten);
 
   if (originalText === rewrittenText) return;
 
-  writeFileSync(backupPath, originalText, "utf8");
-  writeFileSync(manifestPath, rewrittenText, "utf8");
+  await Bun.write(backupPath, originalText);
+  await Bun.write(manifestPath, rewrittenText);
 }
 
-function restore(): void {
+async function restore(): Promise<void> {
   const manifestPath = resolve(process.cwd(), "package.json");
   const backupPath = resolve(process.cwd(), BACKUP_FILE);
-  if (!existsSync(backupPath)) return;
-  writeFileSync(manifestPath, readFileSync(backupPath, "utf8"), "utf8");
-  rmSync(backupPath);
+  const backup = Bun.file(backupPath);
+  if (!(await backup.exists())) return;
+  await Bun.write(manifestPath, await backup.text());
+  await $`rm -f ${backupPath}`.quiet();
 }
 
 const mode = process.argv[2];
 
 if (mode === "prepare") {
-  prepare();
+  await prepare();
 } else if (mode === "restore") {
-  restore();
+  await restore();
 } else {
   throw new Error("usage: bun tools/package-manifest.ts <prepare|restore>");
 }

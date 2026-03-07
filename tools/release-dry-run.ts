@@ -1,24 +1,27 @@
-import { execFileSync } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { $ } from "bun";
+import { resolve } from "path";
 
 const root = process.cwd();
 const packages = ["packages/money", "packages/core", "packages/cli"];
 
-const results = packages.map((pkg) => {
-  const cwd = resolve(root, pkg);
-  const raw = execFileSync("npm", ["pack", "--json"], {
-    cwd,
-    encoding: "utf8",
-    env: process.env,
-    maxBuffer: 128 * 1024 * 1024,
-  });
-  const parsed = JSON.parse(raw) as unknown;
-  return {
-    packageDir: cwd,
-    pack: parsed,
-  };
-});
+function parsePackOutput(raw: string): unknown {
+  const match = raw.match(/(\[\s*{[\s\S]*}\s*\])\s*$/);
+  if (!match) {
+    throw new Error(`npm pack output did not include JSON payload:\n${raw}`);
+  }
+  return JSON.parse(match[1]) as unknown;
+}
+
+const results = await Promise.all(
+  packages.map(async (pkg) => {
+    const cwd = resolve(root, pkg);
+    const raw = await $`npm pack --json`.cwd(cwd).text();
+    return {
+      packageDir: cwd,
+      pack: parsePackOutput(raw),
+    };
+  }),
+);
 
 const out = {
   generatedAt: new Date().toISOString(),
@@ -26,6 +29,6 @@ const out = {
 };
 
 const outPath = resolve(root, "tmp", "release-dry-run.json");
-mkdirSync(resolve(root, "tmp"), { recursive: true });
-writeFileSync(outPath, `${JSON.stringify(out, null, 2)}\n`, "utf8");
+await $`mkdir -p ${resolve(root, "tmp")}`.quiet();
+await Bun.write(outPath, `${JSON.stringify(out, null, 2)}\n`);
 console.log(`release dry-run wrote ${outPath}`);
