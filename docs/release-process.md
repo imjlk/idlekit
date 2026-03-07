@@ -21,6 +21,50 @@
 bun run changeset:add
 ```
 
+### Changeset 작성 규칙
+
+다음 조건이면 changeset이 필요합니다.
+
+- `@idlekit/money`, `@idlekit/core`, `@idlekit/cli`의 동작/계약/출력/배포 산출물에 영향이 있는 변경
+- 사용자 문서에서 안내하는 명령/흐름이 달라지는 변경
+- changelog에 남겨야 하는 기능 추가, 수정, 운영 정책 변경
+
+다음 조건이면 보통 changeset 없이 진행합니다.
+
+- 문서 오탈자만 수정
+- 내부 테스트만 추가
+- 배포 패키지 동작이 바뀌지 않는 리팩토링
+
+작성 형식:
+
+```md
+---
+npm/@idlekit/cli: patch
+---
+
+Short user-facing summary.
+```
+
+팀 규칙:
+
+- 패키지 키는 `npm/@idlekit/money`, `npm/@idlekit/core`, `npm/@idlekit/cli`만 사용
+- bump 기준은 `patch=non-breaking fix/additive UX`, `minor=new additive capability`, `major=breaking change`
+- unrelated 변경은 한 changeset에 섞지 않음
+- 본문은 changelog에 그대로 들어가므로 “사용자 영향” 위주로 작성
+- `.sampo/changesets`에는 frontmatter가 있는 `*.md`만 두고, 보조 문서는 두지 않음
+
+검토 루틴:
+
+```bash
+bun run release:plan
+```
+
+성공 조건:
+
+- front matter parse 성공
+- 변경 패키지/버전 bump가 기대와 일치
+- changeset 본문이 changelog 문장으로 그대로 읽힘
+
 현재 브랜치에서 릴리즈 계산만 확인할 때:
 
 ```bash
