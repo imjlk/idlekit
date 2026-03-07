@@ -8,7 +8,27 @@
     "better": { "type": "string" },
     "detail": { "type": "object" },
     "measured": { "type": "object" },
-    "insights": { "type": "object" },
+    "insights": {
+      "type": "object",
+      "required": ["summary", "improved", "regressed", "drivers"],
+      "properties": {
+        "summary": { "type": "string" },
+        "improved": { "type": "array", "items": { "type": "string" } },
+        "regressed": { "type": "array", "items": { "type": "string" } },
+        "drivers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["key", "winner", "summary"],
+            "properties": {
+              "key": { "enum": ["endNetWorth", "droppedRate", "etaToTargetWorth"] },
+              "winner": { "enum": ["a", "b"] },
+              "summary": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
     "_meta": {
       "type": "object",
       "required": ["command", "contractVersion", "schemaRef", "cliVersion", "gitSha", "scenarioHash", "pluginDigest"],

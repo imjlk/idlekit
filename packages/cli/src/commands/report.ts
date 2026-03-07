@@ -10,6 +10,7 @@ import {
 } from "@idlekit/core";
 import { z } from "zod";
 import { loadRegistriesFromFlags, pluginOptions } from "./_shared/plugin";
+import { scenarioInvalidError, usageError } from "../errors";
 import { buildOutputMeta } from "../io/outputMeta";
 import { readScenarioFile } from "../io/readScenario";
 import { writeOutput } from "../io/writeOutput";
@@ -38,16 +39,14 @@ export default defineCommand({
   async handler({ flags, positional }) {
     const scenarioPath = positional[0];
     if (!scenarioPath) {
-      throw new Error("Usage: idk report <scenario> [--checkpoints 60,300,900,3600]");
+      throw usageError("Usage: idk report <scenario> [--checkpoints 60,300,900,3600]");
     }
 
     const input = await readScenarioFile(scenarioPath);
     const loaded = await loadRegistriesFromFlags(flags);
     const valid = validateScenarioV1(input, loaded.modelRegistry);
     if (!valid.ok || !valid.scenario) {
-      throw new Error(
-        `Scenario invalid: ${valid.issues.map((i) => `${i.path ?? "root"}: ${i.message}`).join("; ")}`,
-      );
+      throw scenarioInvalidError(valid.issues);
     }
 
     const E = createNumberEngine();

@@ -2,6 +2,7 @@ import { defineCommand, option } from "@bunli/core";
 import { readFile } from "node:fs/promises";
 import { extname, resolve } from "node:path";
 import { z } from "zod";
+import { cliError, usageError } from "../errors";
 import { buildOutputMeta } from "../io/outputMeta";
 import { writeOutput } from "../io/writeOutput";
 import { calibrateMonetization, type TelemetryRow } from "../lib/ltvModel";
@@ -44,7 +45,7 @@ function parseCsvRows(raw: string): string[][] {
   }
 
   if (inQuotes) {
-    throw new Error("CSV parse error: unterminated quoted field");
+    throw cliError("CLI_USAGE", "CSV parse error: unterminated quoted field");
   }
 
   if (cell.length > 0 || row.length > 0) {
@@ -70,12 +71,12 @@ function parseNumeric(raw: string, row: number, field: string, opts?: { allowEmp
   const input = raw.trim();
   if (input.length === 0) {
     if (opts?.allowEmpty) return undefined;
-    throw new Error(`Invalid numeric value in csv row ${row} field '${field}': empty`);
+    throw cliError("CLI_USAGE", `Invalid numeric value in csv row ${row} field '${field}': empty`);
   }
   const normalized = input.replaceAll(",", "");
   const n = Number(normalized);
   if (!Number.isFinite(n)) {
-    throw new Error(`Invalid numeric value in csv row ${row} field '${field}': ${raw}`);
+    throw cliError("CLI_USAGE", `Invalid numeric value in csv row ${row} field '${field}': ${raw}`);
   }
   return n;
 }
@@ -83,7 +84,7 @@ function parseNumeric(raw: string, row: number, field: string, opts?: { allowEmp
 export function parseCsvTelemetry(raw: string): TelemetryRow[] {
   const rows2d = parseCsvRows(raw);
   if (rows2d.length < 2) {
-    throw new Error("CSV telemetry requires a header and at least one data row");
+    throw cliError("CLI_USAGE", "CSV telemetry requires a header and at least one data row");
   }
 
   const headers = (rows2d[0] ?? []).map(normalizeHeader);
@@ -130,13 +131,13 @@ export function parseCsvTelemetry(raw: string): TelemetryRow[] {
 function parseJsonTelemetry(raw: string): TelemetryRow[] {
   const parsed = JSON.parse(raw) as unknown;
   if (!Array.isArray(parsed)) {
-    throw new Error("JSON telemetry must be an array");
+    throw cliError("CLI_USAGE", "JSON telemetry must be an array");
   }
 
   const rows: TelemetryRow[] = [];
   for (const [idx, row] of parsed.entries()) {
     if (!row || typeof row !== "object") {
-      throw new Error(`JSON telemetry row ${idx} must be an object`);
+      throw cliError("CLI_USAGE", `JSON telemetry row ${idx} must be an object`);
     }
     const r = row as Record<string, unknown>;
     const userId = String(r.userId ?? r.user_id ?? r.user ?? r.id ?? `anon-${idx}`);
@@ -150,7 +151,7 @@ function parseJsonTelemetry(raw: string): TelemetryRow[] {
     const active = r.active === undefined ? true : Boolean(r.active);
 
     if (!Number.isFinite(day) || !Number.isFinite(iapRevenue) || !Number.isFinite(adRevenue)) {
-      throw new Error(`Invalid numeric value in json row ${idx}`);
+      throw cliError("CLI_USAGE", `Invalid numeric value in json row ${idx}`);
     }
 
     rows.push({
@@ -179,7 +180,7 @@ export default defineCommand({
   async handler({ flags, positional }) {
     const telemetryPath = positional[0];
     if (!telemetryPath) {
-      throw new Error("Usage: idk calibrate <telemetry.csv|json> [--input-format auto|csv|json]");
+      throw usageError("Usage: idk calibrate <telemetry.csv|json> [--input-format auto|csv|json]");
     }
 
     const abs = resolve(process.cwd(), telemetryPath);

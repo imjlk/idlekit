@@ -39,6 +39,7 @@ describe("CLI golden outputs", () => {
     expect(out.detail?.source).toBe("measured");
     expect(out.measured?.a).toBeDefined();
     expect(out.measured?.b).toBeDefined();
+    expect(Array.isArray(out.insights?.drivers)).toBeTrue();
     expect(out._meta?.command).toBe("compare");
     expect(out._meta?.contractVersion).toBeDefined();
     expect(out._meta?.schemaRef).toBe("docs/schemas/compare.output.schema.json");
@@ -96,6 +97,8 @@ describe("CLI golden outputs", () => {
 
     expect(out.ok).toBeTrue();
     expect(out.report?.best).toBeDefined();
+    expect(Array.isArray(out.insights?.patterns)).toBeTrue();
+    expect(typeof out.insights?.scoreSpread?.plateau).toBe("boolean");
     expect(out._meta?.command).toBe("tune");
     expect(typeof out._meta?.tuneSpecHash).toBe("string");
   });

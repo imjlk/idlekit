@@ -11,16 +11,23 @@
 내 복제본부터 만들고 시작하려면:
 
 ```bash
-bun run --cwd packages/cli dev -- init scenario --track personal --out ../../tmp/my-game-v1.json
+bun run --cwd packages/cli dev -- init scenario --track personal --preset builder --out ../../tmp/my-game-v1.json
 ```
 
 이름까지 같이 바꾸려면:
 
 ```bash
-bun run --cwd packages/cli dev -- init scenario --track personal --out ../../tmp/my-game-v1.json --name "Space Miner"
+bun run --cwd packages/cli dev -- init scenario --track personal --preset builder --out ../../tmp/my-game-v1.json --name "Space Miner"
 ```
 
-이 명령은 아래 3개를 같이 만듭니다.
+세션형/장기형으로 바로 시작하려면:
+
+```bash
+bun run --cwd packages/cli dev -- init scenario --track personal --preset session --out ../../tmp/my-session-game.json
+bun run --cwd packages/cli dev -- init scenario --track personal --preset longrun --out ../../tmp/my-longrun-game.json
+```
+
+`personal` track은 항상 아래 3개를 같이 만듭니다.
 
 - `../../tmp/my-game-v1.json`
 - `../../tmp/my-game-v1-compare-b.json`
@@ -50,7 +57,7 @@ idk simulate examples/tutorials/11-my-game-v1.json --format json
 
 실패 대응:
 
-- `Scenario invalid`면 [11-my-game-v1.json](../examples/tutorials/11-my-game-v1.json)의 필수 필드 타입부터 확인합니다.
+- `[SCENARIO_INVALID]`가 뜨면 [11-my-game-v1.json](../examples/tutorials/11-my-game-v1.json)의 필수 필드 타입부터 확인합니다.
 
 ## 2. 가장 먼저 바꿀 3개
 
@@ -75,6 +82,7 @@ idk simulate examples/tutorials/11-my-game-v1.json --format json
 실패 대응:
 
 - 수치가 너무 커서 감이 안 오면 `buyCostGrowth`를 낮추고 `durationSec`를 1800 또는 3600으로 줄여 다시 확인합니다.
+- scaffold를 다시 만들 때 같은 파일명이 이미 있으면 `[CLI_USAGE] Output file already exists`가 나옵니다. 이 경우 `--force true`를 붙입니다.
 
 ## 3. 다시 시뮬레이션
 
@@ -167,6 +175,7 @@ idk compare \
 - `better`: A/B 중 어느 쪽이 현재 metric에서 나았는지
 - `detail.source`: 실제 실행값 기반인지(`measured`) 확인
 - `detail.measured`: 시나리오별 측정 결과
+- `insights.drivers`: 어떤 지표가 승부를 갈랐는지 요약
 
 성공 조건:
 
@@ -200,6 +209,8 @@ idk tune examples/tutorials/11-my-game-v1.json \
 - `report.best`: 가장 좋은 전략 파라미터
 - `report.top`: 상위 후보군
 - `report.tried`: 평가한 후보 수
+- `insights.patterns`: 상위 후보에 반복해서 나타나는 파라미터 패턴
+- `insights.scoreSpread.plateau`: 상위 후보가 거의 비슷한 plateau 구간인지 여부
 
 성공 조건:
 

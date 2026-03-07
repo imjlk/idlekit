@@ -16,6 +16,7 @@
     "bench:sim:check": "bun tools/bench-sim.ts --assert --threshold-ms 500 --threshold-p95-ms 900",
     "docs:verify": "bun tools/docs-verify.ts",
     "docs:verify:quick": "bun tools/docs-verify.ts --quick",
+    "templates:check": "bun tools/templates-check.ts",
     "replay:verify": "bun tools/replay-verify-gate.ts",
     "kpi:report": "bun tools/kpi-report.ts --out tmp/kpi-report.json",
     "kpi:regress": "bun run --cwd packages/cli dev -- kpi regress --baseline ../../examples/bench/kpi-baseline.json --current ../../tmp/kpi-report.json --out ../../tmp/kpi-regress.json --format json",

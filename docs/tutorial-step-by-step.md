@@ -11,6 +11,12 @@
 - 명령 흐름만 익히기: `01-cafe-baseline.json` 기준으로 이 문서를 그대로 진행
 - 플러그인 설계 예시 보기: [virtual-scenario-design.md](./virtual-scenario-design.md) 또는 `05/06/07` 세트로 이동
 
+직접 scaffold를 만들려면:
+
+```bash
+bun run --cwd packages/cli dev -- init scenario --track personal --preset builder --out ../../tmp/my-game-v1.json --name "Space Miner"
+```
+
 기준 경로:
 
 - 명령은 **프로젝트 루트**에서 실행

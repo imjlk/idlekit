@@ -4,6 +4,11 @@
 
 ## Start Here
 
+- scaffold 생성:
+  - `bun run --cwd packages/cli dev -- init scenario --track personal --preset builder --out ../../tmp/my-game-v1.json`
+  - `bun run --cwd packages/cli dev -- init scenario --track personal --preset builder --out ../../tmp/my-game-v1.json --name "Space Miner"`
+  - `bun run --cwd packages/cli dev -- init scenario --track personal --preset session --out ../../tmp/my-session-game.json`
+  - `bun run --cwd packages/cli dev -- init scenario --track personal --preset longrun --out ../../tmp/my-longrun-game.json`
 - `11-my-game-v1.json`
   - 자기 게임 V1을 바로 시작하는 개인용 기본형
   - 플러그인 없이 `validate -> simulate -> ltv`가 바로 동작

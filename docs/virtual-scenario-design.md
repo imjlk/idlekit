@@ -14,6 +14,14 @@
 - `examples/tutorials/09-idle-design-loot-camp.json`
 - `examples/tutorials/10-idle-design-space-port.json`
 
+빠르게 scaffold부터 만들려면:
+
+```bash
+bun run --cwd packages/cli dev -- init scenario --track personal --preset builder --out ../../tmp/my-game-v1.json
+bun run --cwd packages/cli dev -- init scenario --track personal --preset session --out ../../tmp/my-session-game.json
+bun run --cwd packages/cli dev -- init scenario --track personal --preset longrun --out ../../tmp/my-longrun-game.json
+```
+
 ## 0. 가상 시나리오 캔버스 먼저 작성
 
 시나리오 JSON을 바로 수정하기 전에 아래 5칸을 먼저 채우면 설계 의도가 흔들리지 않습니다.
@@ -117,12 +125,13 @@ bun run --cwd packages/cli dev -- simulate ../../examples/tutorials/11-my-game-v
 
 첫 반복 루프:
 
-1. `11-my-game-v1.json` 수정
-2. `validate`
-3. `simulate`
-4. `ltv --horizons 30m,2h,24h,7d,30d,90d`
-5. `12-my-game-compare-b.json`으로 대조군 비교
-6. `13-my-game-tune.json`으로 전략 파라미터 탐색
+1. `idk init scenario --track personal --preset builder|session|longrun`으로 scaffold 생성
+2. `11-my-game-v1.json` 또는 생성된 scaffold 수정
+3. `validate`
+4. `simulate`
+5. `ltv --horizons 30m,2h,24h,7d,30d,90d`
+6. `12-my-game-compare-b.json`으로 대조군 비교
+7. `13-my-game-tune.json`으로 전략 파라미터 탐색
 
 ## 6. worked example 보기 (A/B)
 

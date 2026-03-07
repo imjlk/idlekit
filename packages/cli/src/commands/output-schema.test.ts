@@ -70,6 +70,7 @@ describe("output schema contracts", () => {
       "json",
     ]);
     validateBySchema(readSchema("compare.output.schema.json"), out, "compare.output.schema.json");
+    expect(Array.isArray(out.insights?.drivers)).toBeTrue();
   });
 
   it("tune output follows schema", () => {
@@ -82,6 +83,8 @@ describe("output schema contracts", () => {
       "json",
     ]);
     validateBySchema(readSchema("tune.output.schema.json"), out, "tune.output.schema.json");
+    expect(Array.isArray(out.insights?.patterns)).toBeTrue();
+    expect(typeof out.insights?.scoreSpread?.plateau).toBe("boolean");
   });
 
   it("ltv output follows schema", () => {

@@ -33,8 +33,10 @@ idk simulate examples/tutorials/11-my-game-v1.json --format json
 내 파일 세트를 바로 만들고 싶다면:
 
 ```bash
-bun run --cwd packages/cli dev -- init scenario --track personal --out ../../tmp/my-game-v1.json
-bun run --cwd packages/cli dev -- init scenario --track personal --out ../../tmp/my-game-v1.json --name "Space Miner"
+bun run --cwd packages/cli dev -- init scenario --track personal --preset builder --out ../../tmp/my-game-v1.json
+bun run --cwd packages/cli dev -- init scenario --track personal --preset builder --out ../../tmp/my-game-v1.json --name "Space Miner"
+bun run --cwd packages/cli dev -- init scenario --track personal --preset session --out ../../tmp/my-session-game.json
+bun run --cwd packages/cli dev -- init scenario --track personal --preset longrun --out ../../tmp/my-longrun-game.json
 ```
 
 ## 시작 경로
@@ -62,6 +64,7 @@ bun run test
 bun run build
 bun run docs:verify:quick
 bun run docs:verify
+bun run templates:check
 bun run replay:verify
 bun run bench:sim:check
 bun run bench:sim:suite:check

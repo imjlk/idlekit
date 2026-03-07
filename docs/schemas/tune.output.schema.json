@@ -14,7 +14,35 @@
         "tried": { "type": "number" }
       }
     },
-    "insights": { "type": "object" },
+    "insights": {
+      "type": "object",
+      "required": ["summary", "patterns", "scoreSpread"],
+      "properties": {
+        "summary": { "type": "string" },
+        "patterns": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["path", "value", "frequency"],
+            "properties": {
+              "path": { "type": "string" },
+              "value": {},
+              "frequency": { "type": "number" }
+            }
+          }
+        },
+        "scoreSpread": {
+          "type": "object",
+          "required": ["best", "medianTop", "relativeGap", "plateau"],
+          "properties": {
+            "best": { "type": "number" },
+            "medianTop": { "type": "number" },
+            "relativeGap": { "type": "number" },
+            "plateau": { "type": "boolean" }
+          }
+        }
+      }
+    },
     "_meta": {
       "type": "object",
       "required": [

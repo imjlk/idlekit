@@ -14,6 +14,14 @@ import { resolve } from "node:path";
 import { z } from "zod";
 import { loadRegistriesFromFlags, pluginOptions } from "./_shared/plugin";
 import { buildOfflineSummary, resolveEventLog } from "./_shared/simulateView";
+import {
+  cliError,
+  errorDetail,
+  resumeStrategyMismatchError,
+  scenarioInvalidError,
+  unknownStrategyError,
+  usageError,
+} from "../errors";
 import { buildOutputMeta, deriveDeterministicRunId, deriveDeterministicSeed, hashContent } from "../io/outputMeta";
 import { writeCommandReplayArtifact } from "../io/replayPolicy";
 import { readScenarioFile } from "../io/readScenario";
@@ -23,9 +31,7 @@ const strategySchema = z.enum(["greedy", "planner", "scripted"]).optional();
 
 function assertValidScenario(valid: ReturnType<typeof validateScenarioV1>) {
   if (!valid.ok || !valid.scenario) {
-    throw new Error(
-      `Scenario invalid: ${valid.issues.map((i) => `${i.path ?? "root"}: ${i.message}`).join("; ")}`,
-    );
+    throw scenarioInvalidError(valid.issues);
   }
   return valid.scenario;
 }
@@ -37,7 +43,7 @@ function resolveStrategy(args: {
 }) {
   if (!args.overrideId) return args.compiled.strategy;
   const factory = args.loaded.strategyRegistry.get(args.overrideId);
-  if (!factory) throw new Error(`Unknown strategy: ${args.overrideId}`);
+  if (!factory) throw unknownStrategyError(args.overrideId);
   const params = factory.defaultParams ?? {};
   return factory.create(params) as typeof args.compiled.strategy;
 }
@@ -50,24 +56,24 @@ function restoreStrategyState(args: {
   const resumed = args.resumedJson.strategy;
   const strategy = args.strategy;
   if (!strategy) {
-    throw new Error(`Resume state contains strategy '${resumed.id}' but scenario has no strategy`);
+    throw resumeStrategyMismatchError(`Resume state contains strategy '${resumed.id}' but scenario has no strategy`);
   }
   if (strategy.id !== resumed.id) {
-    throw new Error(`Resume strategy mismatch: expected ${strategy.id}, got ${resumed.id}`);
+    throw resumeStrategyMismatchError(`Resume strategy mismatch: expected ${strategy.id}, got ${resumed.id}`);
   }
   if (
     resumed.version !== undefined &&
     strategy.stateVersion !== undefined &&
     resumed.version !== strategy.stateVersion
   ) {
-    throw new Error(
+    throw resumeStrategyMismatchError(
       `Resume strategy state version mismatch: expected ${strategy.stateVersion}, got ${resumed.version}`,
     );
   }
   if (strategy.restoreState) {
     strategy.restoreState(resumed.state);
   } else if (resumed.state !== undefined) {
-    throw new Error(`Strategy '${strategy.id}' does not support state restore`);
+    throw resumeStrategyMismatchError(`Strategy '${strategy.id}' does not support state restore`);
   }
 }
 
@@ -100,7 +106,7 @@ export default defineCommand({
   async handler({ flags, positional }) {
     const scenarioPath = positional[0];
     if (!scenarioPath) {
-      throw new Error(
+      throw usageError(
         "Usage: idk simulate <scenario> [--duration <sec>] [--step <sec>] [--offline-seconds <sec>] [--resume <state.json>]",
       );
     }
@@ -119,7 +125,24 @@ export default defineCommand({
     });
 
     const resumedJson = flags.resume
-      ? parseSimStateJSON(JSON.parse(await readFile(resolve(process.cwd(), flags.resume), "utf8")))
+      ? await readFile(resolve(process.cwd(), flags.resume), "utf8")
+          .then((raw) => {
+            try {
+              return parseSimStateJSON(JSON.parse(raw));
+            } catch (error) {
+              throw cliError("SIM_STATE_INVALID_JSON", `Invalid resume state json: ${resolve(process.cwd(), flags.resume!)}`, {
+                detail: errorDetail(error),
+                cause: error,
+              });
+            }
+          })
+          .catch((error) => {
+            if (error instanceof Error && error.name === "CliError") throw error;
+            throw cliError("SIM_STATE_INVALID_JSON", `Invalid resume state json: ${resolve(process.cwd(), flags.resume!)}`, {
+              detail: errorDetail(error),
+              cause: error,
+            });
+          })
       : undefined;
 
     const strategy = resolveStrategy({

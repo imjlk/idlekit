@@ -126,12 +126,16 @@ function verifyIntroTrack(): void {
   );
   const detail = asRecord(compare.detail as JSONValue);
   assert(detail.source === "measured", "compare detail.source must be measured");
+  assert(Array.isArray(asRecord(compare.insights as JSONValue).drivers), "compare insights.drivers must exist");
   assert(asRecord(compare._meta as JSONValue).command === "compare", "compare _meta.command must be compare");
 
   const tune = asRecord(runCliJson(["tune", baseline, "--tune", tuneSpec, "--format", "json"]));
   assert(tune.ok === true, "tune result must be ok=true");
   const report = asRecord(tune.report as JSONValue);
   assert(has(report, "best"), "tune report must include best");
+  const tuneInsights = asRecord(tune.insights as JSONValue);
+  assert(Array.isArray(tuneInsights.patterns), "tune insights.patterns must exist");
+  assert(has(asRecord(tuneInsights.scoreSpread as JSONValue), "plateau"), "tune scoreSpread.plateau must exist");
   assert(asRecord(tune._meta as JSONValue).command === "tune", "tune _meta.command must be tune");
 
   const replayArtifact = resolve(tmpDir, "intro-sim.artifact.json");
@@ -191,7 +195,18 @@ function verifyIntroTrack(): void {
   assert(personalValidate.includes("OK:"), "personal template validate should print OK");
 
   const generatedPersonalBase = resolve(tmpDir, "generated-my-game-v1.json");
-  runCli(["init", "scenario", "--track", "personal", "--out", generatedPersonalBase, "--name", "Docs Verify"]);
+  runCli([
+    "init",
+    "scenario",
+    "--track",
+    "personal",
+    "--preset",
+    "builder",
+    "--out",
+    generatedPersonalBase,
+    "--name",
+    "Docs Verify",
+  ]);
   const namedGeneratedBase = resolve(tmpDir, "docs-verify-v1.json");
   const namedGeneratedCompare = resolve(tmpDir, "docs-verify-v1-compare-b.json");
   const namedGeneratedTune = resolve(tmpDir, "docs-verify-v1-tune.json");
@@ -242,10 +257,12 @@ function verifyIntroTrack(): void {
     ]),
   );
   assert(asRecord(personalCompare.detail as JSONValue).source === "measured", "personal compare must be measured");
+  assert(Array.isArray(asRecord(personalCompare.insights as JSONValue).drivers), "personal compare insights.drivers must exist");
 
   const personalTune = asRecord(runCliJson(["tune", personalTemplate, "--tune", personalTuneSpec, "--format", "json"]));
   assert(personalTune.ok === true, "personal tune result must be ok=true");
   assert(has(asRecord(personalTune.report as JSONValue), "best"), "personal tune report must include best");
+  assert(Array.isArray(asRecord(personalTune.insights as JSONValue).patterns), "personal tune insights.patterns must exist");
 }
 
 function verifyPluginTrack(): void {

@@ -3,6 +3,7 @@ import { compileScenario, createNumberEngine, runScenario, validateScenarioV1 } 
 import { resolve } from "node:path";
 import { z } from "zod";
 import { loadRegistriesFromFlags, pluginOptions } from "./_shared/plugin";
+import { cliError, scenarioInvalidError, unknownStrategyError, usageError } from "../errors";
 import { buildOutputMeta, deriveDeterministicRunId, deriveDeterministicSeed } from "../io/outputMeta";
 import { writeCommandReplayArtifact } from "../io/replayPolicy";
 import { readScenarioFile } from "../io/readScenario";
@@ -23,14 +24,14 @@ type HorizonPoint = Readonly<{
 
 function parseHorizonToken(raw: string): HorizonPoint {
   const token = raw.trim().toLowerCase();
-  if (!token) throw new Error("horizon token cannot be empty");
+  if (!token) throw cliError("CLI_USAGE", "horizon token cannot be empty");
 
   const unitMatch = token.match(/^(\d+(?:\.\d+)?)(s|m|h|d)$/i);
   if (unitMatch) {
     const value = Number(unitMatch[1] ?? "");
     const unit = (unitMatch[2] ?? "").toLowerCase();
     if (!Number.isFinite(value) || value <= 0) {
-      throw new Error(`invalid horizon token: ${raw}`);
+      throw cliError("CLI_USAGE", `invalid horizon token: ${raw}`);
     }
     const seconds =
       unit === "s"
@@ -48,7 +49,7 @@ function parseHorizonToken(raw: string): HorizonPoint {
     return { label: `${numeric}s`, seconds: numeric };
   }
 
-  throw new Error(`invalid horizon token: ${raw} (expected e.g. 30m,2h,24h,7d)`);
+  throw cliError("CLI_USAGE", `invalid horizon token: ${raw} (expected e.g. 30m,2h,24h,7d)`);
 }
 
 function parseHorizons(raw: string): HorizonPoint[] {
@@ -57,7 +58,7 @@ function parseHorizons(raw: string): HorizonPoint[] {
     .map((x) => x.trim())
     .filter(Boolean);
   if (tokens.length === 0) {
-    throw new Error("at least one horizon is required");
+    throw cliError("CLI_USAGE", "at least one horizon is required");
   }
 
   const map = new Map<number, HorizonPoint>();
@@ -178,7 +179,7 @@ export default defineCommand({
   async handler({ flags, positional }) {
     const scenarioPath = positional[0];
     if (!scenarioPath) {
-      throw new Error("Usage: idk ltv <scenario> [--horizons 30m,2h,24h,7d,30d,90d]");
+      throw usageError("Usage: idk ltv <scenario> [--horizons 30m,2h,24h,7d,30d,90d]");
     }
 
     const horizons = parseHorizons(flags.horizons);
@@ -186,9 +187,7 @@ export default defineCommand({
     const loaded = await loadRegistriesFromFlags(flags);
     const valid = validateScenarioV1(input, loaded.modelRegistry);
     if (!valid.ok || !valid.scenario) {
-      throw new Error(
-        `Scenario invalid: ${valid.issues.map((i) => `${i.path ?? "root"}: ${i.message}`).join("; ")}`,
-      );
+      throw scenarioInvalidError(valid.issues);
     }
 
     const E = createNumberEngine();
@@ -203,7 +202,7 @@ export default defineCommand({
     const strategy = (() => {
       if (!flags.strategy) return compiled.strategy;
       const f = loaded.strategyRegistry.get(flags.strategy);
-      if (!f) throw new Error(`Unknown strategy: ${flags.strategy}`);
+      if (!f) throw unknownStrategyError(flags.strategy);
       return f.create(f.defaultParams ?? {}) as typeof compiled.strategy;
     })();
 

@@ -1,10 +1,15 @@
 {
   "schemaVersion": 1,
   "meta": {
-    "id": "my-game-v1-tune",
-    "title": "My Game V1 TuneSpec",
-    "description": "Tune the greedy preview behavior for 11-my-game-v1.",
-    "tags": ["template", "personal", "idle", "tune"]
+    "id": "11-my-game-v1-tune",
+    "title": "11 My Game TuneSpec",
+    "description": "Tune the greedy preview behavior for my-game-v1.",
+    "tags": [
+      "template",
+      "personal",
+      "idle",
+      "tune"
+    ]
   },
   "strategy": {
     "id": "greedy",
@@ -34,7 +39,11 @@
         "path": "bulk.mode",
         "space": {
           "kind": "choice",
-          "values": ["size1", "bestQuote", "maxAffordable"]
+          "values": [
+            "size1",
+            "bestQuote",
+            "maxAffordable"
+          ]
         }
       },
       {
@@ -57,7 +66,11 @@
     "id": "endNetWorthLog10"
   },
   "runner": {
-    "seeds": [7, 13, 29],
+    "seeds": [
+      7,
+      13,
+      29
+    ],
     "budget": 10,
     "overrideDurationSec": 1800,
     "topK": 4,

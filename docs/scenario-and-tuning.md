@@ -140,6 +140,20 @@
 
 ## 8. 튜토리얼 예제 파일 참조
 
+scaffold를 직접 만들 때:
+
+```bash
+bun run --cwd packages/cli dev -- init scenario --track personal --preset builder --out ../../tmp/my-game-v1.json
+bun run --cwd packages/cli dev -- init scenario --track personal --preset session --out ../../tmp/my-session-game.json
+bun run --cwd packages/cli dev -- init scenario --track personal --preset longrun --out ../../tmp/my-longrun-game.json
+```
+
+기본 preset:
+
+- `intro=session`
+- `design=builder`
+- `personal=builder`
+
 튜토리얼용 가상 시나리오/튜닝 파일:
 
 - `examples/tutorials/01-cafe-baseline.json`
@@ -196,11 +210,11 @@
 
 재개 시 검증/제약:
 
-- 구조 검증 실패 시 `SimStateError(code=SIM_STATE_INVALID_JSON)`
-- 단위 불일치 시 `SimStateError(code=SIM_STATE_UNIT_MISMATCH)`
-- 지원하지 않는 버전이면 `SimStateError(code=SIM_STATE_UNSUPPORTED_VERSION)`
-- 전략 id 불일치 시 `Resume strategy mismatch`
-- 전략 state version 불일치 시 `Resume strategy state version mismatch`
+- 구조 검증 실패 시 `[SIM_STATE_INVALID_JSON]`
+- 단위 불일치 시 `[SIM_STATE_UNIT_MISMATCH]`
+- 지원하지 않는 버전이면 `[SIM_STATE_UNSUPPORTED_VERSION]`
+- 전략 id 불일치 시 `[RESUME_STRATEGY_MISMATCH]`
+- 전략 state version 불일치 시 `[RESUME_STRATEGY_MISMATCH]`
 - 전략 상태가 있는데 restore 미지원이면 실패
 
 결정론 노트:

@@ -8,6 +8,7 @@ import {
 } from "@idlekit/core";
 import { z } from "zod";
 import { loadRegistriesFromFlags, pluginOptions } from "./_shared/plugin";
+import { scenarioInvalidError, usageError } from "../errors";
 import { buildOutputMeta } from "../io/outputMeta";
 import { readScenarioFile } from "../io/readScenario";
 import { writeOutput } from "../io/writeOutput";
@@ -34,7 +35,7 @@ export default defineCommand({
   async handler({ flags, positional }) {
     const scenarioPath = positional[0];
     if (!scenarioPath) {
-      throw new Error("Usage: idk eta <scenario> --target-money <NumStr> | --target-worth <NumStr>");
+      throw usageError("Usage: idk eta <scenario> --target-money <NumStr> | --target-worth <NumStr>");
     }
 
     const targetMoney = flags["target-money"];
@@ -44,7 +45,7 @@ export default defineCommand({
     const hasMoney = !!targetMoney;
     const hasWorth = !!targetWorth;
     if ((hasMoney ? 1 : 0) + (hasWorth ? 1 : 0) !== 1) {
-      throw new Error("Exactly one target is required: --target-money or --target-worth");
+      throw usageError("Exactly one target is required: --target-money or --target-worth");
     }
 
     const target = hasMoney
@@ -55,9 +56,7 @@ export default defineCommand({
     const loaded = await loadRegistriesFromFlags(flags);
     const valid = validateScenarioV1(input, loaded.modelRegistry);
     if (!valid.ok || !valid.scenario) {
-      throw new Error(
-        `Scenario invalid: ${valid.issues.map((i) => `${i.path ?? "root"}: ${i.message}`).join("; ")}`,
-      );
+      throw scenarioInvalidError(valid.issues);
     }
 
     const E = createNumberEngine();

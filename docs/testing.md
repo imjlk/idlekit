@@ -10,6 +10,7 @@ bun run test
 bun run build
 bun run docs:verify:quick
 bun run docs:verify
+bun run templates:check
 bun run replay:verify
 bun run bench:sim
 bun run bench:sim:suite
@@ -45,6 +46,8 @@ CLI:
 - `simulate` 저장/재개 + 오프라인/fast/strategy 조합 회귀
 - `simulate/compare/ltv/tune` replay artifact 표준 포맷 검증
 - `replay verify` 재실행 드리프트 검증
+- `init scenario` preset matrix + `--name` 규칙 검증
+- CLI 에러 계약 검증: `cli-error-contract.test.ts`
 - 출력 계약(schema) 검증: `output-schema.test.ts`
 - artifact 계약(schema) 검증: `artifact-schema.test.ts`
 - contract 호환성 검증: `outputMeta.compat.test.ts`
@@ -75,6 +78,7 @@ PR/커밋 전에:
 2. `bun run test`
 3. `bun run build`
 4. `bun run docs:verify:quick`
+5. `bun run templates:check`
 
 CI(`.github/workflows/ci.yml`)는 typecheck/test/build + docs quick + replay verify gate + 성능 체크 + KPI A/B 리포트 + KPI 리그레션 게이트를 실행합니다.
 

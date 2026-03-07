@@ -1,10 +1,16 @@
 {
   "schemaVersion": 1,
   "meta": {
-    "id": "my-game-v1-compare-b",
-    "title": "My Game V1 Compare Variant B",
-    "description": "A/B comparison variant for 11-my-game-v1. Slightly faster opening, tighter long-tail growth.",
-    "tags": ["template", "personal", "idle", "compare"]
+    "id": "11-my-game-v1-compare-b",
+    "title": "11 My Game Compare Variant B",
+    "description": "A/B comparison variant for my-game-v1. Slightly faster opening, tighter long-tail growth.",
+    "tags": [
+      "template",
+      "personal",
+      "idle",
+      "design-first",
+      "compare"
+    ]
   },
   "unit": {
     "code": "TOKEN",
@@ -18,7 +24,7 @@
     "id": "linear",
     "version": 1,
     "params": {
-      "incomePerSec": "1.9",
+      "incomePerSec": "1.84",
       "buyCostBase": "16",
       "buyCostGrowth": 1.17,
       "buyIncomeDelta": "1.05"
@@ -94,7 +100,10 @@
     "uncertainty": {
       "enabled": true,
       "draws": 200,
-      "quantiles": [0.5, 0.9],
+      "quantiles": [
+        0.5,
+        0.9
+      ],
       "seed": 13,
       "sigma": {
         "retention": 0.08,
@@ -122,7 +131,13 @@
   "outputs": {
     "format": "json",
     "report": {
-      "checkpointsSec": [60, 300, 900, 1800, 3600],
+      "checkpointsSec": [
+        60,
+        300,
+        900,
+        1800,
+        3600
+      ],
       "includeGrowth": true,
       "includeUX": true
     }

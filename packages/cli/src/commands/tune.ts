@@ -15,6 +15,7 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { z } from "zod";
 import { loadRegistriesFromFlags, pluginOptions } from "./_shared/plugin";
+import { cliError, scenarioInvalidError, tuneSpecInvalidError, usageError } from "../errors";
 import { buildOutputMeta, deriveDeterministicRunId, deriveDeterministicSeed } from "../io/outputMeta";
 import { writeCommandReplayArtifact } from "../io/replayPolicy";
 import { readScenarioFile } from "../io/readScenario";
@@ -33,7 +34,7 @@ type TuneRegression = Readonly<{
 function readBestScoreFromTuneResult(x: unknown): number {
   const score = (x as any)?.report?.best?.score;
   if (typeof score !== "number" || !Number.isFinite(score)) {
-    throw new Error("Unable to read best score from tune result.");
+    throw cliError("INTERNAL_ERROR", "Unable to read best score from tune result.");
   }
   return score;
 }
@@ -41,9 +42,78 @@ function readBestScoreFromTuneResult(x: unknown): number {
 function readBestScoreFromArtifact(x: unknown): number {
   const score = (x as any)?.result?.report?.best?.score;
   if (typeof score !== "number" || !Number.isFinite(score)) {
-    throw new Error("Invalid baseline artifact: result.report.best.score(number) is required.");
+    throw cliError("REPLAY_ARTIFACT_INVALID", "Invalid baseline artifact: result.report.best.score(number) is required.");
   }
   return score;
+}
+
+function buildTuneInsights(outputBase: Record<string, unknown>) {
+  const report = (outputBase as any).report;
+  const bestScore = readBestScoreFromTuneResult(outputBase);
+  const top = Array.isArray(report?.top) ? report.top : [];
+  const topScores = top
+    .map((entry: any) => Number(entry?.score))
+    .filter((value: number) => Number.isFinite(value))
+    .sort((a: number, b: number) => b - a);
+  const medianTopScore =
+    topScores.length > 0 ? topScores[Math.floor(topScores.length / 2)]! : bestScore;
+  const relativeGap =
+    Math.abs(bestScore) < 1e-12 ? 0 : Math.abs(bestScore - medianTopScore) / Math.max(1e-12, Math.abs(bestScore));
+
+  const counter = new Map<string, { path: string; value: unknown; count: number }>();
+  for (const candidate of top) {
+    const params = candidate?.params;
+    if (!params || typeof params !== "object" || Array.isArray(params)) continue;
+    for (const [path, value] of flattenParams(params)) {
+      const key = `${path}::${JSON.stringify(value)}`;
+      const prev = counter.get(key);
+      if (prev) {
+        prev.count += 1;
+      } else {
+        counter.set(key, { path, value, count: 1 });
+      }
+    }
+  }
+
+  const threshold = Math.max(1, Math.ceil(top.length * 0.5));
+  const patterns = [...counter.values()]
+    .filter((entry) => entry.count >= threshold)
+    .sort((a, b) => b.count - a.count || (a.path < b.path ? -1 : 1))
+    .map((entry) => ({
+      path: entry.path,
+      value: entry.value,
+      frequency: entry.count / Math.max(1, top.length),
+    }));
+
+  return {
+    summary:
+      relativeGap > 0.05
+        ? "Top candidate is clearly separated from the rest of the search frontier."
+        : "Top candidates are clustered; this parameter space likely has a plateau.",
+    patterns,
+    scoreSpread: {
+      best: bestScore,
+      medianTop: medianTopScore,
+      relativeGap,
+      plateau: relativeGap <= 0.02,
+    },
+  };
+}
+
+function flattenParams(
+  input: Record<string, unknown>,
+  prefix = "",
+): Array<readonly [string, unknown]> {
+  const out: Array<readonly [string, unknown]> = [];
+  for (const [key, value] of Object.entries(input)) {
+    const path = prefix ? `${prefix}.${key}` : key;
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      out.push(...flattenParams(value as Record<string, unknown>, path));
+      continue;
+    }
+    out.push([path, value] as const);
+  }
+  return out;
 }
 
 export async function cmdTune(args: {
@@ -60,12 +130,12 @@ export async function cmdTune(args: {
 }): Promise<unknown> {
   const sv = validateScenarioV1(args.scenarioInput, args.modelRegistry);
   if (!sv.ok || !sv.scenario) {
-    return { ok: false, kind: "scenario", issues: sv.issues };
+    throw scenarioInvalidError(sv.issues);
   }
 
   const tv = validateTuneSpecV1(args.tuneSpecInput);
   if (!tv.ok || !tv.tuneSpec) {
-    return { ok: false, kind: "tuneSpec", issues: tv.issues };
+    throw tuneSpecInvalidError(tv.issues);
   }
 
   const compiled = compileScenario({
@@ -127,7 +197,7 @@ export default defineCommand({
   async handler({ flags, positional }) {
     const scenarioPath = positional[0];
     if (!scenarioPath) {
-      throw new Error("Usage: idk tune <scenario> --tune <tunespec>");
+      throw usageError("Usage: idk tune <scenario> --tune <tunespec>");
     }
 
     const [scenarioInput, tuneSpecInput] = await Promise.all([
@@ -197,7 +267,8 @@ export default defineCommand({
       };
 
       if (regressed && flags["fail-on-regression"]) {
-        throw new Error(
+        throw cliError(
+          "INTERNAL_ERROR",
           `Tune regression detected: current=${currentBest}, baseline=${baselineBest}, tolerance=${tolerance}`,
         );
       }
@@ -206,21 +277,9 @@ export default defineCommand({
     const outputBase = regression ? { ...(result as Record<string, unknown>), regression } : result;
     const output = (() => {
       if ((outputBase as any)?.ok !== true) return outputBase;
-      const topScores = Array.isArray((outputBase as any).report?.top)
-        ? (outputBase as any).report.top.map((x: any) => Number(x?.score)).filter((x: number) => Number.isFinite(x))
-        : [];
-      const bestScore = readBestScoreFromTuneResult(outputBase);
-      const medianScore = topScores.length > 0 ? topScores[Math.floor(topScores.length / 2)]! : bestScore;
       return {
         ...(outputBase as Record<string, unknown>),
-        insights: {
-          summary:
-            bestScore - medianScore > 0.5
-              ? "Top candidate is clearly separated from median candidates."
-              : "Top candidates are clustered; keep exploring parameter space.",
-          bestScore,
-          medianTopScore: medianScore,
-        },
+        insights: buildTuneInsights(outputBase as Record<string, unknown>),
       };
     })();
 

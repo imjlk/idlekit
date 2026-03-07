@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 const THIS_DIR = dirname(fileURLToPath(import.meta.url));
 const CLI_PACKAGE_JSON = resolve(THIS_DIR, "../../package.json");
 const REPO_ROOT = resolve(THIS_DIR, "../../..");
-export const OUTPUT_CONTRACT_VERSION = "1.1.0";
+export const OUTPUT_CONTRACT_VERSION = "1.2.0";
 const UNKNOWN_GIT_SHA = "unknown";
 
 const OUTPUT_SCHEMA_REF: Readonly<Record<string, string>> = {

@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
+import { cliError, errorDetail, replayArtifactInvalidError, usageError } from "../errors";
 import { buildOutputMeta, stableStringify } from "../io/outputMeta";
 import { canonicalizeReplayResult, hashReplayResult, type ReplayArtifactV1 } from "../io/replayArtifact";
 import { writeOutput } from "../io/writeOutput";
@@ -50,7 +51,7 @@ function parseArtifact(input: unknown): ReplayArtifactV1 {
     const detail = parsed.error.issues
       .map((x) => `${x.path.join(".") || "root"}: ${x.message}`)
       .join("; ");
-    throw new Error(`Invalid replay artifact: ${detail}`);
+    throw replayArtifactInvalidError("Invalid replay artifact.", detail);
   }
 
   return parsed.data as unknown as ReplayArtifactV1;
@@ -66,7 +67,7 @@ function runReplay(args: readonly string[]): unknown {
   try {
     return JSON.parse(out);
   } catch (error) {
-    throw new Error(`Replay command did not return JSON: ${String(error)}`);
+    throw replayArtifactInvalidError("Replay command did not return JSON.", errorDetail(error), error);
   }
 }
 
@@ -83,11 +84,22 @@ export default defineCommand({
   async handler({ flags, positional }) {
     const artifactPath = positional[0];
     if (!artifactPath) {
-      throw new Error("Usage: idk replay verify <artifact.json>");
+      throw usageError("Usage: idk replay verify <artifact.json>");
     }
 
     const artifactAbs = resolve(process.cwd(), artifactPath);
-    const raw = JSON.parse(await readFile(artifactAbs, "utf8"));
+    const raw = await readFile(artifactAbs, "utf8")
+      .then((text) => {
+        try {
+          return JSON.parse(text);
+        } catch (error) {
+          throw replayArtifactInvalidError("Invalid replay artifact.", errorDetail(error), error);
+        }
+      })
+      .catch((error) => {
+        if (error instanceof Error && error.name === "CliError") throw error;
+        throw replayArtifactInvalidError("Invalid replay artifact.", errorDetail(error), error);
+      });
     const artifact = parseArtifact(raw);
 
     const requiredChecks = {
@@ -164,7 +176,8 @@ export default defineCommand({
     };
 
     if (!pass && flags.strict) {
-      throw new Error(
+      throw cliError(
+        "REPLAY_ARTIFACT_INVALID",
         `Replay verification failed: missing=[${missingFields.join(",")}], drift=${drift}, semantic=${JSON.stringify(semanticChecks)}`,
       );
     }

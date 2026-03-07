@@ -1,6 +1,7 @@
 import { defineCommand } from "@bunli/core";
 import { validateScenarioV1 } from "@idlekit/core";
 import { loadRegistriesFromFlags, pluginOptions } from "./_shared/plugin";
+import { scenarioInvalidError, usageError } from "../errors";
 import { readScenarioFileWithMeta } from "../io/readScenario";
 
 export default defineCommand({
@@ -12,7 +13,7 @@ export default defineCommand({
   async handler({ flags, positional }) {
     const scenarioPath = positional[0];
     if (!scenarioPath) {
-      throw new Error("Usage: idk validate <scenario.(json|yaml)> [--plugin <path,...>]");
+      throw usageError("Usage: idk validate <scenario.(json|yaml)> [--plugin <path,...>]");
     }
 
     const { value: input, notices } = await readScenarioFileWithMeta(scenarioPath);
@@ -20,12 +21,7 @@ export default defineCommand({
 
     const r = validateScenarioV1(input, modelRegistry);
     if (!r.ok) {
-      for (const issue of r.issues) {
-        const where = issue.path ? `${issue.path}: ` : "";
-        console.error(`- ${where}${issue.message}`);
-      }
-      process.exitCode = 1;
-      return;
+      throw scenarioInvalidError(r.issues);
     }
 
     for (const n of notices) {

@@ -7,13 +7,14 @@ import {
 } from "@idlekit/core";
 import { z } from "zod";
 import { loadRegistriesFromFlags, pluginOptions } from "./_shared/plugin";
+import { cliError, scenarioInvalidError, usageError } from "../errors";
 import { buildOutputMeta } from "../io/outputMeta";
 import { readScenarioFile } from "../io/readScenario";
 import { writeOutput } from "../io/writeOutput";
 
 function parseRange(input: string): { from: number; to: number } {
   const m = input.match(/^(\d+)\.\.(\d+)$/);
-  if (!m) throw new Error(`Invalid range format: ${input}. Expected 300..1800`);
+  if (!m) throw cliError("CLI_USAGE", `Invalid range format: ${input}. Expected 300..1800`);
   return { from: Number(m[1]), to: Number(m[2]) };
 }
 
@@ -35,16 +36,14 @@ export default defineCommand({
   async handler({ flags, positional }) {
     const scenarioPath = positional[0];
     if (!scenarioPath) {
-      throw new Error("Usage: idk prestige-cycle <scenario> [--scan 300..1800]");
+      throw usageError("Usage: idk prestige-cycle <scenario> [--scan 300..1800]");
     }
 
     const input = await readScenarioFile(scenarioPath);
     const loaded = await loadRegistriesFromFlags(flags);
     const valid = validateScenarioV1(input, loaded.modelRegistry);
     if (!valid.ok || !valid.scenario) {
-      throw new Error(
-        `Scenario invalid: ${valid.issues.map((i) => `${i.path ?? "root"}: ${i.message}`).join("; ")}`,
-      );
+      throw scenarioInvalidError(valid.issues);
     }
 
     const E = createNumberEngine();

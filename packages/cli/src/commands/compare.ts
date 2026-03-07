@@ -12,6 +12,7 @@ import { resolve } from "node:path";
 import { z } from "zod";
 import { betterFromCmp, formatEtaLabel, toComparableEta } from "./_shared/compareEval";
 import { loadRegistriesFromFlags, pluginOptions } from "./_shared/plugin";
+import { scenarioInvalidError, unknownStrategyError, usageError } from "../errors";
 import { buildOutputMeta, deriveDeterministicRunId, deriveDeterministicSeed } from "../io/outputMeta";
 import { writeCommandReplayArtifact } from "../io/replayPolicy";
 import { readScenarioFile } from "../io/readScenario";
@@ -24,7 +25,7 @@ function assertValidScenario(
   valid: ReturnType<typeof validateScenarioV1>,
 ): NonNullable<ReturnType<typeof validateScenarioV1>["scenario"]> {
   if (!valid.ok || !valid.scenario) {
-    throw new Error(`Scenario ${label} invalid: ${valid.issues.map((i) => i.message).join("; ")}`);
+    throw scenarioInvalidError(valid.issues, label);
   }
   return valid.scenario;
 }
@@ -52,7 +53,7 @@ function compileComparableScenario(args: {
   const overrideStrategy = (() => {
     if (!args.flags.strategy) return compiled.strategy;
     const factory = args.loaded.strategyRegistry.get(args.flags.strategy);
-    if (!factory) throw new Error(`Unknown strategy: ${args.flags.strategy}`);
+    if (!factory) throw unknownStrategyError(args.flags.strategy);
     return factory.create(factory.defaultParams ?? {}) as typeof compiled.strategy;
   })();
 
@@ -129,6 +130,7 @@ function measureScenario(args: {
 
 function buildCompareInsights(args: {
   metric: string;
+  endNetWorthWinner: "a" | "b" | "tie";
   a: {
     endNetWorth: string;
     droppedRate: number;
@@ -140,18 +142,47 @@ function buildCompareInsights(args: {
     etaToTargetWorth?: string;
   };
   better: "a" | "b" | "tie";
-}): Readonly<{ summary: string; improved: string[]; regressed: string[] }> {
+}): Readonly<{
+  summary: string;
+  improved: string[];
+  regressed: string[];
+  drivers: Array<{
+    key: "endNetWorth" | "droppedRate" | "etaToTargetWorth";
+    winner: "a" | "b";
+    summary: string;
+  }>;
+}> {
   const improved: string[] = [];
   const regressed: string[] = [];
+  const drivers: Array<{
+    key: "endNetWorth" | "droppedRate" | "etaToTargetWorth";
+    winner: "a" | "b";
+    summary: string;
+  }> = [];
   const betterLabel = args.better === "tie" ? "none" : args.better.toUpperCase();
+
+  if (args.endNetWorthWinner !== "tie") {
+    const winner = args.endNetWorthWinner;
+    drivers.push({
+      key: "endNetWorth",
+      winner,
+      summary: `${winner.toUpperCase()} finishes with higher measured net worth.`,
+    });
+  }
 
   const aDropped = args.a.droppedRate;
   const bDropped = args.b.droppedRate;
   if (aDropped !== bDropped) {
     const improvedSide = aDropped < bDropped ? "A" : "B";
+    const winner = improvedSide.toLowerCase() as "a" | "b";
     improved.push(`${improvedSide} has lower droppedRate (${Math.min(aDropped, bDropped).toFixed(4)})`);
     const regressedSide = improvedSide === "A" ? "B" : "A";
     regressed.push(`${regressedSide} has higher droppedRate (${Math.max(aDropped, bDropped).toFixed(4)})`);
+    drivers.push({
+      key: "droppedRate",
+      winner,
+      summary: `${improvedSide} wastes less income to dropped ticks.`,
+    });
   }
 
   if (args.metric === "etaToTargetWorth" && args.a.etaToTargetWorth && args.b.etaToTargetWorth) {
@@ -161,6 +192,11 @@ function buildCompareInsights(args: {
       const faster = aEta < bEta ? "A" : "B";
       improved.push(`${faster} reaches target worth faster`);
       regressed.push(`${faster === "A" ? "B" : "A"} reaches target worth slower`);
+      drivers.push({
+        key: "etaToTargetWorth",
+        winner: faster.toLowerCase() as "a" | "b",
+        summary: `${faster} reaches the target worth sooner.`,
+      });
     }
   }
 
@@ -168,6 +204,7 @@ function buildCompareInsights(args: {
     summary: `Measured comparison winner: ${betterLabel}`,
     improved,
     regressed,
+    drivers,
   };
 }
 
@@ -202,7 +239,7 @@ export default defineCommand({
     const aPath = positional[0];
     const bPath = positional[1];
     if (!aPath || !bPath) {
-      throw new Error(
+      throw usageError(
         "Usage: idk compare <A> <B> [--metric ...] [--plugin ...] [--target-worth <NumStr>]",
       );
     }
@@ -214,7 +251,7 @@ export default defineCommand({
     const bScenario = assertValidScenario("B", validateScenarioV1(bInput, loaded.modelRegistry));
 
     if (flags.metric === "etaToTargetWorth" && !flags["target-worth"]) {
-      throw new Error("metric=etaToTargetWorth requires --target-worth <NumStr>");
+      throw usageError("metric=etaToTargetWorth requires --target-worth <NumStr>");
     }
 
     const effectiveSeed =
@@ -357,6 +394,7 @@ export default defineCommand({
       },
       insights: buildCompareInsights({
         metric: flags.metric,
+        endNetWorthWinner: betterFromCmp(E.cmp(ma.endNetWorth, mb.endNetWorth)),
         better: result.better,
         a: {
           endNetWorth: E.toString(ma.endNetWorth),

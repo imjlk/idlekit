@@ -16,6 +16,7 @@ import simulateCommand from "./commands/simulate";
 import strategiesListCommand from "./commands/strategies";
 import tuneCommand from "./commands/tune";
 import validateCommand from "./commands/validate";
+import { formatCliError, toCliError } from "./errors";
 
 const modelsGroup = defineGroup({
   name: "models",
@@ -71,6 +72,27 @@ const cli = await createCLI({
   },
 });
 
+const GROUPS_WITH_SUBCOMMANDS = new Set(["models", "strategies", "objectives", "init", "replay", "kpi"]);
+
+function resolveInvocation(argv: string[]): { commandName?: string; args: string[] } {
+  const first = argv[0];
+  if (!first || first.startsWith("-")) return { args: argv };
+
+  if (GROUPS_WITH_SUBCOMMANDS.has(first)) {
+    const second = argv[1];
+    if (!second || second.startsWith("-")) return { args: argv };
+    return {
+      commandName: `${first} ${second}`,
+      args: argv.slice(2),
+    };
+  }
+
+  return {
+    commandName: first,
+    args: argv.slice(1),
+  };
+}
+
 cli.command(validateCommand);
 cli.command(modelsGroup);
 cli.command(strategiesGroup);
@@ -89,7 +111,18 @@ cli.command(tuneCommand);
 cli.command(calibrateCommand);
 
 if (import.meta.main) {
-  await cli.run(process.argv.slice(2));
+  const argv = process.argv.slice(2);
+  const invocation = resolveInvocation(argv);
+  try {
+    if (!invocation.commandName) {
+      await cli.run(argv);
+    } else {
+      await cli.execute(invocation.commandName, invocation.args);
+    }
+  } catch (error) {
+    console.error(formatCliError(toCliError(error)));
+    process.exitCode = 1;
+  }
 }
 
 export { cli };

@@ -61,11 +61,19 @@ bun run --cwd packages/cli build:bin
 시나리오 템플릿 생성:
 
 ```bash
-bun run --cwd packages/cli dev -- init scenario --track intro --out ../../tmp/new-scenario.json
-bun run --cwd packages/cli dev -- init scenario --track design --out ../../tmp/design-scenario.json
-bun run --cwd packages/cli dev -- init scenario --track personal --out ../../tmp/my-game-v1.json
-bun run --cwd packages/cli dev -- init scenario --track personal --out ../../tmp/my-game-v1.json --name "Space Miner"
+bun run --cwd packages/cli dev -- init scenario --track intro --preset session --out ../../tmp/new-scenario.json
+bun run --cwd packages/cli dev -- init scenario --track design --preset builder --out ../../tmp/design-scenario.json
+bun run --cwd packages/cli dev -- init scenario --track personal --preset builder --out ../../tmp/my-game-v1.json
+bun run --cwd packages/cli dev -- init scenario --track personal --preset builder --out ../../tmp/my-game-v1.json --name "Space Miner"
+bun run --cwd packages/cli dev -- init scenario --track personal --preset session --out ../../tmp/my-session-game.json
+bun run --cwd packages/cli dev -- init scenario --track personal --preset longrun --out ../../tmp/my-longrun-game.json
 ```
+
+preset 기본값:
+
+- `intro=session`
+- `design=builder`
+- `personal=builder`
 
 ## 3. 기본 워크플로우
 
@@ -187,9 +195,9 @@ bun run --cwd packages/cli dev -- simulate ../../examples/simple-linear.json \
 
 재개(`--resume`) 규칙:
 
-- state json은 실행 전에 구조 검증됩니다. 깨진 파일은 `Invalid sim state json: ...`으로 실패합니다.
-- 저장된 `unit`과 현재 시나리오 단위가 다르면 `Sim state unit mismatch`로 실패합니다.
-- state에 `strategy`가 있으면 현재 실행 전략과 `id`가 같아야 하며, 다르면 `Resume strategy mismatch`로 실패합니다.
+- state json은 실행 전에 구조 검증됩니다. 깨진 파일은 `[SIM_STATE_INVALID_JSON]`으로 실패합니다.
+- 저장된 `unit`과 현재 시나리오 단위가 다르면 `[SIM_STATE_UNIT_MISMATCH]`로 실패합니다.
+- state에 `strategy`가 있으면 현재 실행 전략과 `id`가 같아야 하며, 다르면 `[RESUME_STRATEGY_MISMATCH]`로 실패합니다.
 - state에 전략 상태가 있는데 해당 전략이 restore를 지원하지 않으면 실패합니다.
 
 권장:
@@ -287,6 +295,12 @@ bun run --cwd packages/cli dev -- compare ../../examples/tutorials/01-cafe-basel
 
 - `etaToTargetWorth` metric은 `--target-worth`가 필수입니다.
 
+주요 출력 필드:
+
+- `detail.source`
+- `measured.a`, `measured.b`
+- `insights.drivers`
+
 ### 3.8 전략 튜닝
 
 ```bash
@@ -315,6 +329,13 @@ bun run tune:regress --baseline ../../tmp/tune-baseline.json --current ../../tmp
 ```
 
 `tune --artifact-out`도 동일한 replay artifact 표준(`idk.replay.artifact`)을 사용합니다.
+
+주요 출력 필드:
+
+- `report.best`
+- `report.top`
+- `insights.patterns`
+- `insights.scoreSpread`
 
 ### 3.9 LTV 구간 스냅샷
 
