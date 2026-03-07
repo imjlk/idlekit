@@ -49,6 +49,7 @@ Short user-facing summary.
 
 - 패키지 키는 `npm/@idlekit/money`, `npm/@idlekit/core`, `npm/@idlekit/cli`만 사용
 - bump 기준은 `patch=non-breaking fix/additive UX`, `minor=new additive capability`, `major=breaking change`
+- 현재 운영 방침은 `당분간 major bump 금지`입니다. breaking 변경이 필요하면 바로 `major`로 올리지 말고 deprecation, additive 대안, 마이그레이션 문서를 먼저 준비한 뒤 별도 검토를 거칩니다.
 - unrelated 변경은 한 changeset에 섞지 않음
 - 본문은 changelog에 그대로 들어가므로 “사용자 영향” 위주로 작성
 - `.sampo/changesets`에는 frontmatter가 있는 `*.md`만 두고, 보조 문서는 두지 않음
