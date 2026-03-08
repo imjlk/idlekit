@@ -1,13 +1,12 @@
 import { describe, expect, it } from "bun:test";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { resolve } from "node:path";
+import { resolve } from "path";
 import { buildOutputMeta } from "./outputMeta";
 import { writeCommandReplayArtifact } from "./replayPolicy";
+import { createTempDir, readJson, removePath } from "../testkit/bun";
 
 describe("replay policy", () => {
   it("omits command-specific flags and keeps forced flags", async () => {
-    const dir = await mkdtemp(resolve(tmpdir(), "idlekit-replay-policy-"));
+    const dir = await createTempDir("idlekit-replay-policy");
     try {
       const outPath = resolve(dir, "simulate.artifact.json");
       const meta = buildOutputMeta({
@@ -36,7 +35,7 @@ describe("replay policy", () => {
         meta,
       });
 
-      const raw = JSON.parse(await readFile(outPath, "utf8"));
+      const raw = await readJson<any>(outPath);
       const replayArgs = raw.replay?.args as string[];
       expect(replayArgs).toContain("simulate");
       expect(replayArgs).toContain("--seed");
@@ -47,12 +46,12 @@ describe("replay policy", () => {
       expect(raw.replay?.verify?.runId).toBe("run-1");
       expect(raw.replay?.verify?.seed).toBe(7);
     } finally {
-      await rm(dir, { recursive: true, force: true });
+      await removePath(dir);
     }
   });
 
   it("applies tune omission policy for regression-only flags", async () => {
-    const dir = await mkdtemp(resolve(tmpdir(), "idlekit-replay-policy-tune-"));
+    const dir = await createTempDir("idlekit-replay-policy-tune");
     try {
       const outPath = resolve(dir, "tune.artifact.json");
       const meta = buildOutputMeta({
@@ -80,7 +79,7 @@ describe("replay policy", () => {
         meta,
       });
 
-      const raw = JSON.parse(await readFile(outPath, "utf8"));
+      const raw = await readJson<any>(outPath);
       const replayArgs = raw.replay?.args as string[];
       expect(replayArgs).toContain("tune");
       expect(replayArgs).toContain("--tune");
@@ -88,12 +87,12 @@ describe("replay policy", () => {
       expect(replayArgs).not.toContain("--regression-tolerance");
       expect(replayArgs).not.toContain("--fail-on-regression");
     } finally {
-      await rm(dir, { recursive: true, force: true });
+      await removePath(dir);
     }
   });
 
   it("rejects artifact writes when runId/seed are missing", async () => {
-    const dir = await mkdtemp(resolve(tmpdir(), "idlekit-replay-policy-missing-"));
+    const dir = await createTempDir("idlekit-replay-policy-missing");
     try {
       const outPath = resolve(dir, "simulate.artifact.json");
       const meta = buildOutputMeta({
@@ -113,12 +112,12 @@ describe("replay policy", () => {
         }),
       ).rejects.toThrow("meta.runId");
     } finally {
-      await rm(dir, { recursive: true, force: true });
+      await removePath(dir);
     }
   });
 
   it("normalizes path-like flags for stable replay args", async () => {
-    const dir = await mkdtemp(resolve(tmpdir(), "idlekit-replay-policy-paths-"));
+    const dir = await createTempDir("idlekit-replay-policy-paths");
     try {
       const outPath = resolve(dir, "tune.artifact.json");
       const meta = buildOutputMeta({
@@ -150,7 +149,7 @@ describe("replay policy", () => {
         meta,
       });
 
-      const raw = JSON.parse(await readFile(outPath, "utf8"));
+      const raw = await readJson<any>(outPath);
       const replayArgs = raw.replay?.args as string[];
       const map: Record<string, string> = {};
       for (let i = 1; i < replayArgs.length; i++) {
@@ -170,7 +169,7 @@ describe("replay policy", () => {
         `${resolve(pluginRel)}=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef`,
       );
     } finally {
-      await rm(dir, { recursive: true, force: true });
+      await removePath(dir);
     }
   });
 });

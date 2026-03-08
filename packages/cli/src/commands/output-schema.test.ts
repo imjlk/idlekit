@@ -1,23 +1,8 @@
 import { describe, expect, it } from "bun:test";
-import { execFileSync } from "node:child_process";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { resolve } from "path";
 import Ajv2020 from "ajv/dist/2020";
-
-function runCliJson(args: string[]): any {
-  const out = execFileSync("bun", ["src/main.ts", ...args], {
-    cwd: process.cwd(),
-    encoding: "utf8",
-    env: process.env,
-    maxBuffer: 128 * 1024 * 1024,
-  });
-  return JSON.parse(out);
-}
-
-function readSchema(name: string): object {
-  const path = resolve(process.cwd(), "../../docs/schemas", name);
-  return JSON.parse(readFileSync(path, "utf8")) as object;
-}
+import { ensureDir, writeTextFile } from "../runtime/bun";
+import { readSchema, runCliJson } from "../testkit/bun";
 
 const ajv = new Ajv2020({
   allErrors: true,
@@ -37,8 +22,10 @@ function validateBySchema(schema: object, value: unknown, name: string): void {
 describe("output schema contracts", () => {
   it("simulate output follows schema", () => {
     const out = runCliJson(["simulate", "../../examples/tutorials/01-cafe-baseline.json", "--format", "json"]);
-    validateBySchema(readSchema("simulate.output.schema.json"), out, "simulate.output.schema.json");
-    expect(out._meta.command).toBe("simulate");
+    return readSchema("simulate.output.schema.json").then((schema) => {
+      validateBySchema(schema, out, "simulate.output.schema.json");
+      expect(out._meta.command).toBe("simulate");
+    });
   });
 
   it("eta output follows schema", () => {
@@ -52,7 +39,9 @@ describe("output schema contracts", () => {
       "--format",
       "json",
     ]);
-    validateBySchema(readSchema("eta.output.schema.json"), out, "eta.output.schema.json");
+    return readSchema("eta.output.schema.json").then((schema) => {
+      validateBySchema(schema, out, "eta.output.schema.json");
+    });
   });
 
   it("compare output follows schema", () => {
@@ -69,8 +58,10 @@ describe("output schema contracts", () => {
       "--format",
       "json",
     ]);
-    validateBySchema(readSchema("compare.output.schema.json"), out, "compare.output.schema.json");
-    expect(Array.isArray(out.insights?.drivers)).toBeTrue();
+    return readSchema("compare.output.schema.json").then((schema) => {
+      validateBySchema(schema, out, "compare.output.schema.json");
+      expect(Array.isArray(out.insights?.drivers)).toBeTrue();
+    });
   });
 
   it("tune output follows schema", () => {
@@ -82,9 +73,11 @@ describe("output schema contracts", () => {
       "--format",
       "json",
     ]);
-    validateBySchema(readSchema("tune.output.schema.json"), out, "tune.output.schema.json");
-    expect(Array.isArray(out.insights?.patterns)).toBeTrue();
-    expect(typeof out.insights?.scoreSpread?.plateau).toBe("boolean");
+    return readSchema("tune.output.schema.json").then((schema) => {
+      validateBySchema(schema, out, "tune.output.schema.json");
+      expect(Array.isArray(out.insights?.patterns)).toBeTrue();
+      expect(typeof out.insights?.scoreSpread?.plateau).toBe("boolean");
+    });
   });
 
   it("ltv output follows schema", () => {
@@ -98,13 +91,15 @@ describe("output schema contracts", () => {
       "--format",
       "json",
     ]);
-    validateBySchema(readSchema("ltv.output.schema.json"), out, "ltv.output.schema.json");
+    return readSchema("ltv.output.schema.json").then((schema) => {
+      validateBySchema(schema, out, "ltv.output.schema.json");
+    });
   });
 
-  it("calibrate output follows schema", () => {
+  it("calibrate output follows schema", async () => {
     const telemetry = resolve(process.cwd(), "../../tmp", "schema-telemetry.csv");
-    mkdirSync(resolve(process.cwd(), "../../tmp"), { recursive: true });
-    writeFileSync(
+    await ensureDir(resolve(process.cwd(), "../../tmp"));
+    await writeTextFile(
       telemetry,
       [
         "user_id,day,revenue,ad_revenue,acquisition_cost,active",
@@ -114,10 +109,10 @@ describe("output schema contracts", () => {
       ].join("\n"),
     );
     const out = runCliJson(["calibrate", telemetry, "--input-format", "csv", "--format", "json"]);
-    validateBySchema(readSchema("calibrate.output.schema.json"), out, "calibrate.output.schema.json");
+    validateBySchema(await readSchema("calibrate.output.schema.json"), out, "calibrate.output.schema.json");
   });
 
-  it("kpi regress output follows schema", () => {
+  it("kpi regress output follows schema", async () => {
     const out = runCliJson([
       "kpi",
       "regress",
@@ -128,6 +123,6 @@ describe("output schema contracts", () => {
       "--format",
       "json",
     ]);
-    validateBySchema(readSchema("kpi.regress.output.schema.json"), out, "kpi.regress.output.schema.json");
+    validateBySchema(await readSchema("kpi.regress.output.schema.json"), out, "kpi.regress.output.schema.json");
   });
 });

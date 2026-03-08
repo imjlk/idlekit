@@ -1,9 +1,7 @@
 import { describe, expect, it } from "bun:test";
-import { execFileSync } from "node:child_process";
-import { mkdtemp, writeFile, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { resolve } from "node:path";
+import { resolve } from "path";
 import { parseCsvTelemetry } from "./calibrate";
+import { createTempDir, removePath, runCliJson, writeText } from "../testkit/bun";
 
 describe("calibrate csv parser", () => {
   it("parses quoted commas, escaped quotes, and multiline cells", () => {
@@ -35,10 +33,10 @@ describe("calibrate csv parser", () => {
 
 describe("calibrate command", () => {
   it("returns estimated correlation in monetization uncertainty", async () => {
-    const dir = await mkdtemp(resolve(tmpdir(), "idlekit-calibrate-"));
+    const dir = await createTempDir("idlekit-calibrate");
     try {
       const path = resolve(dir, "telemetry.csv");
-      await writeFile(
+      await writeText(
         path,
         [
           "user_id,day,revenue,ad_revenue,acquisition_cost,active",
@@ -54,18 +52,14 @@ describe("calibrate command", () => {
         ].join("\n"),
       );
 
-      const out = execFileSync("bun", ["src/main.ts", "calibrate", path, "--input-format", "csv", "--format", "json"], {
-        cwd: process.cwd(),
-        encoding: "utf8",
-      });
-      const parsed = JSON.parse(out);
+      const parsed = runCliJson<any>(["calibrate", path, "--input-format", "csv", "--format", "json"]);
       expect(parsed.ok).toBeTrue();
       expect(typeof parsed.monetization?.uncertainty?.correlation?.retentionConversion).toBe("number");
       expect(typeof parsed.diagnostics?.estimatedCorrelationRaw?.retentionConversion).toBe("number");
       expect(typeof parsed.diagnostics?.correlationConfidence?.retentionConversion).toBe("number");
       expect(typeof parsed._meta?.telemetryHash).toBe("string");
     } finally {
-      await rm(dir, { recursive: true, force: true });
+      await removePath(dir);
     }
   });
 });

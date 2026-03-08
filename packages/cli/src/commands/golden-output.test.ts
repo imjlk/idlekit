@@ -1,23 +1,10 @@
 import { describe, expect, it } from "bun:test";
-import { execFileSync } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { existsSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { resolve } from "node:path";
+import { resolve } from "path";
+import { pathExists, createTempDir, readJson, readText, removePath, runCliJson, writeText } from "../testkit/bun";
 
 const BASELINE = "../../examples/tutorials/01-cafe-baseline.json";
 const COMPARE_B = "../../examples/tutorials/03-cafe-compare-b.json";
 const TUNE = "../../examples/tutorials/04-cafe-tune.json";
-
-function runCliJson(args: string[]): any {
-  const out = execFileSync("bun", ["src/main.ts", ...args], {
-    cwd: process.cwd(),
-    encoding: "utf8",
-    env: process.env,
-    maxBuffer: 128 * 1024 * 1024,
-  });
-  return JSON.parse(out);
-}
 
 describe("CLI golden outputs", () => {
   it("compare returns measured source payload", () => {
@@ -193,7 +180,7 @@ describe("CLI golden outputs", () => {
   });
 
   it("simulate can write standardized replay artifact", async () => {
-    const dir = await mkdtemp(resolve(tmpdir(), "idlekit-sim-artifact-"));
+    const dir = await createTempDir("idlekit-sim-artifact");
     try {
       const artifactPath = resolve(dir, "simulate.artifact.json");
       const out = runCliJson([
@@ -210,7 +197,7 @@ describe("CLI golden outputs", () => {
         "--format",
         "json",
       ]);
-      const raw = JSON.parse(await readFile(artifactPath, "utf8"));
+      const raw = await readJson<any>(artifactPath);
       expect(raw.v).toBe(1);
       expect(raw.kind).toBe("idk.replay.artifact");
       expect(raw.artifactVersion).toBe(1);
@@ -225,7 +212,7 @@ describe("CLI golden outputs", () => {
       expect(typeof raw.replay?.verify?.resultHash).toBe("string");
       expect(raw.result?.endMoney).toBe(out.endMoney);
     } finally {
-      await rm(dir, { recursive: true, force: true });
+      await removePath(dir);
     }
   });
 
@@ -249,7 +236,7 @@ describe("CLI golden outputs", () => {
   });
 
   it("simulate can write and resume from state json", async () => {
-    const dir = await mkdtemp(resolve(tmpdir(), "idlekit-sim-state-"));
+    const dir = await createTempDir("idlekit-sim-state");
     try {
       const statePath = resolve(dir, "sim-state.json");
       const first = runCliJson([
@@ -263,8 +250,8 @@ describe("CLI golden outputs", () => {
         "json",
       ]);
 
-      expect(existsSync(statePath)).toBeTrue();
-      const savedRaw = JSON.parse(await readFile(statePath, "utf8"));
+      expect(await pathExists(statePath)).toBeTrue();
+      const savedRaw = await readJson<any>(statePath);
       expect(savedRaw.v).toBe(1);
       expect(savedRaw.t).toBe(first.endT);
       expect(savedRaw.meta?.runId).toBeDefined();
@@ -289,14 +276,14 @@ describe("CLI golden outputs", () => {
       expect(resumed.endT).toBe(first.endT + 15);
       expect(resumed.resumedFrom).toContain("sim-state.json");
     } finally {
-      await rm(dir, { recursive: true, force: true });
+      await removePath(dir);
     }
   });
 
   it("resume keeps scripted strategy cursor continuity", async () => {
-    const dir = await mkdtemp(resolve(tmpdir(), "idlekit-scripted-resume-"));
+    const dir = await createTempDir("idlekit-scripted-resume");
     try {
-      const baselineRaw = JSON.parse(await readFile(resolve(process.cwd(), BASELINE), "utf8"));
+      const baselineRaw = JSON.parse(await readText(resolve(process.cwd(), BASELINE)));
       const scenario = {
         ...baselineRaw,
         initial: {
@@ -325,7 +312,7 @@ describe("CLI golden outputs", () => {
         },
       };
       const scenarioPath = resolve(dir, "scripted-scenario.json");
-      await writeFile(scenarioPath, `${JSON.stringify(scenario, null, 2)}\n`, "utf8");
+      await writeText(scenarioPath, `${JSON.stringify(scenario, null, 2)}\n`);
 
       const full = runCliJson([
         "simulate",
@@ -349,7 +336,7 @@ describe("CLI golden outputs", () => {
       ]);
       expect(split.endT).toBe(7);
 
-      const splitStateRaw = JSON.parse(await readFile(splitStatePath, "utf8"));
+      const splitStateRaw = await readJson<any>(splitStatePath);
       expect(splitStateRaw.strategy?.id).toBe("scripted");
       expect(splitStateRaw.strategy?.state?.cursor).toBe(1);
 
@@ -368,12 +355,12 @@ describe("CLI golden outputs", () => {
       expect(resumed.endMoney).toBe(full.endMoney);
       expect(resumed.endNetWorth).toBe(full.endNetWorth);
     } finally {
-      await rm(dir, { recursive: true, force: true });
+      await removePath(dir);
     }
   });
 
   it("tune can write artifact and compare baseline artifact", async () => {
-    const dir = await mkdtemp(resolve(tmpdir(), "idlekit-tune-artifact-"));
+    const dir = await createTempDir("idlekit-tune-artifact");
     try {
       const baselinePath = resolve(dir, "baseline.json");
       runCliJson([
@@ -401,7 +388,7 @@ describe("CLI golden outputs", () => {
         "json",
       ]);
 
-      const raw = JSON.parse(await readFile(currentPath, "utf8"));
+      const raw = await readJson<any>(currentPath);
       expect(raw.v).toBe(1);
       expect(raw.kind).toBe("idk.replay.artifact");
       expect(raw.command).toBe("tune");
@@ -411,15 +398,15 @@ describe("CLI golden outputs", () => {
       expect(out.regression).toBeDefined();
       expect(typeof out.regression.currentBestScore).toBe("number");
     } finally {
-      await rm(dir, { recursive: true, force: true });
+      await removePath(dir);
     }
   });
 
   it("calibrate derives monetization block from csv telemetry", async () => {
-    const dir = await mkdtemp(resolve(tmpdir(), "idlekit-calibrate-"));
+    const dir = await createTempDir("idlekit-calibrate");
     try {
       const csvPath = resolve(dir, "telemetry.csv");
-      await writeFile(
+      await writeText(
         csvPath,
         [
           "user_id,day,revenue,ad_revenue,acquisition_cost,active",
@@ -430,7 +417,6 @@ describe("CLI golden outputs", () => {
           "u2,7,0.0,0.01,,true",
           "u3,1,0.0,0.01,1.3,true",
         ].join("\n"),
-        "utf8",
       );
 
       const out = runCliJson([
@@ -449,12 +435,12 @@ describe("CLI golden outputs", () => {
       expect(out._meta?.command).toBe("calibrate");
       expect(typeof out._meta?.telemetryHash).toBe("string");
     } finally {
-      await rm(dir, { recursive: true, force: true });
+      await removePath(dir);
     }
   });
 
   it("compare can write standardized replay artifact", async () => {
-    const dir = await mkdtemp(resolve(tmpdir(), "idlekit-artifact-"));
+    const dir = await createTempDir("idlekit-artifact");
     try {
       const compareArtifact = resolve(dir, "compare.artifact.json");
 
@@ -473,7 +459,7 @@ describe("CLI golden outputs", () => {
         "--format",
         "json",
       ]);
-      const compareRaw = JSON.parse(await readFile(compareArtifact, "utf8"));
+      const compareRaw = await readJson<any>(compareArtifact);
       expect(compareRaw.kind).toBe("idk.replay.artifact");
       expect(compareRaw.command).toBe("compare");
       expect(compareRaw.replay?.verify?.runId).toBe("cmp-artifact-run");
@@ -482,12 +468,12 @@ describe("CLI golden outputs", () => {
       expect(typeof compareRaw.replay?.verify?.scenarioHash?.b).toBe("string");
       expect(compareRaw.result?.detail?.source).toBe("measured");
     } finally {
-      await rm(dir, { recursive: true, force: true });
+      await removePath(dir);
     }
   });
 
   it("ltv can write standardized replay artifact", async () => {
-    const dir = await mkdtemp(resolve(tmpdir(), "idlekit-ltv-artifact-"));
+    const dir = await createTempDir("idlekit-ltv-artifact");
     try {
       const ltvArtifact = resolve(dir, "ltv.artifact.json");
 
@@ -509,7 +495,7 @@ describe("CLI golden outputs", () => {
         "--format",
         "json",
       ]);
-      const ltvRaw = JSON.parse(await readFile(ltvArtifact, "utf8"));
+      const ltvRaw = await readJson<any>(ltvArtifact);
       expect(ltvRaw.kind).toBe("idk.replay.artifact");
       expect(ltvRaw.command).toBe("ltv");
       expect(ltvRaw.replay?.verify?.runId).toBe("ltv-artifact-run");
@@ -517,7 +503,7 @@ describe("CLI golden outputs", () => {
       expect(typeof ltvRaw.replay?.verify?.scenarioHash).toBe("string");
       expect(ltvRaw.result?.summary?.at90d).toBeDefined();
     } finally {
-      await rm(dir, { recursive: true, force: true });
+      await removePath(dir);
     }
   });
 });

@@ -1,37 +1,11 @@
 import { describe, expect, it } from "bun:test";
-import { execFileSync } from "node:child_process";
-import { createHash } from "node:crypto";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
-import { isAbsolute, relative, resolve } from "node:path";
-import { tmpdir } from "node:os";
+import { isAbsolute, relative, resolve } from "path";
 import { hashReplayResult } from "../io/replayArtifact";
+import { createTempDir, readJson, readText, removePath, runCliJson, runCliJsonFromRepoRoot, sha256Hex, writeText } from "../testkit/bun";
 
 const BASELINE = "../../examples/tutorials/01-cafe-baseline.json";
 const COMPARE_B = "../../examples/tutorials/03-cafe-compare-b.json";
 const TUNE = "../../examples/tutorials/04-cafe-tune.json";
-const REPO_ROOT = resolve(process.cwd(), "../..");
-
-function runCliJson(args: string[]): any {
-  const out = execFileSync("bun", ["src/main.ts", ...args], {
-    cwd: process.cwd(),
-    encoding: "utf8",
-    env: process.env,
-    maxBuffer: 128 * 1024 * 1024,
-  });
-  return JSON.parse(out);
-}
-
-function runCliJsonFromRepoRoot(args: string[]): any {
-  const out = execFileSync("bun", ["packages/cli/src/main.ts", ...args], {
-    cwd: REPO_ROOT,
-    encoding: "utf8",
-    env: process.env,
-    maxBuffer: 128 * 1024 * 1024,
-  });
-  return JSON.parse(out);
-}
-
 function replayArgsToFlagMap(args: readonly string[]): Record<string, string> {
   const out: Record<string, string> = {};
   for (let i = 1; i < args.length; i++) {
@@ -56,7 +30,7 @@ function requiredFlag(flags: Record<string, string>, key: string): string {
 
 describe("replay consistency", () => {
   it("simulate fresh vs resume+offline split remains equivalent", async () => {
-    const dir = await mkdtemp(resolve(tmpdir(), "idlekit-replay-consistency-"));
+    const dir = await createTempDir("idlekit-replay-consistency");
     try {
       const statePath = resolve(dir, "state.json");
       const full = runCliJson([
@@ -106,7 +80,7 @@ describe("replay consistency", () => {
       expect(resumed.endMoney).toBe(full.endMoney);
       expect(resumed.endNetWorth).toBe(full.endNetWorth);
     } finally {
-      await rm(dir, { recursive: true, force: true });
+      await removePath(dir);
     }
   });
 
@@ -197,7 +171,7 @@ describe("replay consistency", () => {
   });
 
   it("replay verify passes for artifacts from all replay-enabled commands", async () => {
-    const dir = await mkdtemp(resolve(tmpdir(), "idlekit-replay-verify-all-"));
+    const dir = await createTempDir("idlekit-replay-verify-all");
     try {
       const artifacts = {
         simulate: resolve(dir, "simulate.artifact.json"),
@@ -272,28 +246,28 @@ describe("replay consistency", () => {
         expect(verified.ok).toBeTrue();
       }
 
-      const raw = JSON.parse(await readFile(artifacts.simulate, "utf8"));
+      const raw = await readJson<any>(artifacts.simulate);
       expect(raw.replay.verify.runId).toBe("replay-sim");
       expect(raw.replay.verify.seed).toBe(101);
       expect(typeof raw.replay.verify.resultHash).toBe("string");
     } finally {
-      await rm(dir, { recursive: true, force: true });
+      await removePath(dir);
     }
   });
 
   it("normalizes root-cwd path flags in artifacts for replay verify", async () => {
-    const dir = await mkdtemp(resolve(tmpdir(), "idlekit-replay-root-cwd-"));
+    const dir = await createTempDir("idlekit-replay-root-cwd");
     try {
       const baseline = "examples/tutorials/01-cafe-baseline.json";
       const compareB = "examples/tutorials/03-cafe-compare-b.json";
       const tunePath = "examples/tutorials/04-cafe-tune.json";
       const pluginPath = "examples/plugins/custom-econ-plugin.ts";
       const pluginRoot = "examples/plugins";
-      const pluginAbs = resolve(REPO_ROOT, pluginPath);
-      const pluginSha = createHash("sha256").update(readFileSync(pluginAbs)).digest("hex");
+      const pluginAbs = resolve("../..", pluginPath);
+      const pluginSha = sha256Hex(await readText(pluginAbs));
       const pluginShaArg = `${pluginPath}=${pluginSha}`;
       const trustPath = resolve(dir, "plugin-trust.json");
-      writeFileSync(trustPath, JSON.stringify({ plugins: { [pluginAbs]: pluginSha } }, null, 2), "utf8");
+      await writeText(trustPath, `${JSON.stringify({ plugins: { [pluginAbs]: pluginSha } }, null, 2)}\n`);
 
       const artifacts = {
         simulate: resolve(dir, "simulate.artifact.json"),
@@ -383,7 +357,7 @@ describe("replay consistency", () => {
       for (const [key, path] of Object.entries(artifacts)) {
         const verified = runCliJson(["replay", "verify", path, "--format", "json"]);
         expect(verified.ok).toBeTrue();
-        const raw = JSON.parse(await readFile(path, "utf8")) as {
+        const raw = (await readJson<any>(path)) as {
           replay: { args: string[] };
           input: { positional: string[] };
         };
@@ -405,13 +379,12 @@ describe("replay consistency", () => {
         }
       }
     } finally {
-      await rm(dir, { recursive: true, force: true });
+      await removePath(dir);
     }
   });
 
   it("normalizes root-cwd resume paths in simulate replay artifacts", async () => {
-    mkdirSync(resolve(REPO_ROOT, "tmp"), { recursive: true });
-    const dir = await mkdtemp(resolve(REPO_ROOT, "tmp", "idlekit-replay-root-resume-"));
+    const dir = await createTempDir("idlekit-replay-root-resume");
     try {
       const baseline = "examples/tutorials/01-cafe-baseline.json";
       const resumeAbs = resolve(dir, "resume-state.json");
@@ -436,7 +409,7 @@ describe("replay consistency", () => {
         "simulate",
         baseline,
         "--resume",
-        relative(REPO_ROOT, resumeAbs),
+        relative(resolve("../.."), resumeAbs),
         "--duration",
         "18",
         "--seed",
@@ -452,14 +425,14 @@ describe("replay consistency", () => {
       const verified = runCliJson(["replay", "verify", artifactPath, "--format", "json"]);
       expect(verified.ok).toBeTrue();
 
-      const raw = JSON.parse(await readFile(artifactPath, "utf8")) as {
+      const raw = (await readJson<any>(artifactPath)) as {
         replay: { args: string[] };
       };
       const replayFlags = replayArgsToFlagMap(raw.replay.args);
       expect(isAbsolute(requiredFlag(replayFlags, "resume"))).toBeTrue();
       expect(requiredFlag(replayFlags, "resume")).toBe(resumeAbs);
     } finally {
-      await rm(dir, { recursive: true, force: true });
+      await removePath(dir);
     }
   });
 });

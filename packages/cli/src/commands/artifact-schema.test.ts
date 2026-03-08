@@ -1,29 +1,11 @@
 import { describe, expect, it } from "bun:test";
-import { execFileSync } from "node:child_process";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
-import { resolve } from "node:path";
-import { tmpdir } from "node:os";
-import { readFileSync } from "node:fs";
+import { resolve } from "path";
 import Ajv2020 from "ajv/dist/2020";
+import { createTempDir, readJson, readSchema, removePath, runCliJson } from "../testkit/bun";
 
 const BASELINE = "../../examples/tutorials/01-cafe-baseline.json";
 const COMPARE_B = "../../examples/tutorials/03-cafe-compare-b.json";
 const TUNE = "../../examples/tutorials/04-cafe-tune.json";
-
-function runCliJson(args: string[]): any {
-  const out = execFileSync("bun", ["src/main.ts", ...args], {
-    cwd: process.cwd(),
-    encoding: "utf8",
-    env: process.env,
-    maxBuffer: 128 * 1024 * 1024,
-  });
-  return JSON.parse(out);
-}
-
-function readSchema(name: string): object {
-  const path = resolve(process.cwd(), "../../docs/schemas", name);
-  return JSON.parse(readFileSync(path, "utf8")) as object;
-}
 
 const ajv = new Ajv2020({ allErrors: true, strict: true });
 
@@ -38,7 +20,7 @@ function validateBySchema(schema: object, value: unknown, name: string): void {
 
 describe("artifact schema contracts", () => {
   it("simulate/compare/tune/ltv artifact files follow artifact schema", async () => {
-    const dir = await mkdtemp(resolve(tmpdir(), "idlekit-artifact-schema-"));
+    const dir = await createTempDir("idlekit-artifact-schema");
     try {
       const simArtifact = resolve(dir, "simulate.artifact.json");
       const cmpArtifact = resolve(dir, "compare.artifact.json");
@@ -108,18 +90,18 @@ describe("artifact schema contracts", () => {
         "json",
       ]);
 
-      const artifactSchema = readSchema("artifact.v1.schema.json");
+      const artifactSchema = await readSchema("artifact.v1.schema.json");
       for (const path of [simArtifact, cmpArtifact, tuneArtifact, ltvArtifact]) {
-        const parsed = JSON.parse(await readFile(path, "utf8"));
+        const parsed = await readJson<any>(path);
         validateBySchema(artifactSchema, parsed, "artifact.v1.schema.json");
       }
     } finally {
-      await rm(dir, { recursive: true, force: true });
+      await removePath(dir);
     }
   });
 
   it("replay verify output follows schema", async () => {
-    const dir = await mkdtemp(resolve(tmpdir(), "idlekit-replay-verify-schema-"));
+    const dir = await createTempDir("idlekit-replay-verify-schema");
     try {
       const artifactPath = resolve(dir, "simulate.artifact.json");
       runCliJson([
@@ -138,10 +120,10 @@ describe("artifact schema contracts", () => {
       ]);
 
       const out = runCliJson(["replay", "verify", artifactPath, "--format", "json"]);
-      validateBySchema(readSchema("replay.verify.output.schema.json"), out, "replay.verify.output.schema.json");
+      validateBySchema(await readSchema("replay.verify.output.schema.json"), out, "replay.verify.output.schema.json");
       expect(out.ok).toBeTrue();
     } finally {
-      await rm(dir, { recursive: true, force: true });
+      await removePath(dir);
     }
   });
 });

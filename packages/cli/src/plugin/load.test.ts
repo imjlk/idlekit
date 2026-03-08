@@ -1,9 +1,7 @@
 import { describe, expect, it } from "bun:test";
-import { createHash } from "node:crypto";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { relative, resolve } from "node:path";
+import { relative, resolve } from "path";
 import { loadRegistries, parsePluginPaths, parsePluginRoots, parsePluginSecurityOptions, parsePluginSha256 } from "./load";
+import { createTempDir, readText, removePath, sha256Hex, writeText } from "../testkit/bun";
 
 describe("plugin load", () => {
   it("parses comma-separated plugin paths", () => {
@@ -47,12 +45,12 @@ describe("plugin load", () => {
   });
 
   it("rejects unsupported plugin file extension", async () => {
-    const dir = await mkdtemp(resolve(tmpdir(), "idlekit-plugin-test-"));
+    const dir = await createTempDir("idlekit-plugin-test");
     const invalidPath = resolve(dir, "plugin.txt");
-    await writeFile(invalidPath, "export default {}", "utf8");
+    await writeText(invalidPath, "export default {}");
 
     await expect(loadRegistries([invalidPath])).rejects.toThrow("Unsupported plugin extension");
-    await rm(dir, { recursive: true, force: true });
+    await removePath(dir);
   });
 
   it("rejects plugin outside allowed roots", async () => {
@@ -83,8 +81,7 @@ describe("plugin load", () => {
 
   it("accepts plugin when sha256 matches", async () => {
     const pluginPath = resolve(process.cwd(), "../../examples/plugins/custom-econ-plugin.ts");
-    const buf = await readFile(pluginPath);
-    const digest = createHash("sha256").update(buf).digest("hex");
+    const digest = sha256Hex(await readText(pluginPath));
     const loaded = await loadRegistries([pluginPath], {
       requiredSha256: {
         [pluginPath]: digest,
@@ -95,20 +92,18 @@ describe("plugin load", () => {
 
   it("loads plugin trust policy file and enforces sha256", async () => {
     const pluginPath = resolve(process.cwd(), "../../examples/plugins/custom-econ-plugin.ts");
-    const buf = await readFile(pluginPath);
-    const digest = createHash("sha256").update(buf).digest("hex");
+    const digest = sha256Hex(await readText(pluginPath));
 
-    const dir = await mkdtemp(resolve(tmpdir(), "idlekit-plugin-trust-"));
+    const dir = await createTempDir("idlekit-plugin-trust");
     try {
       const trustPath = resolve(dir, "trust.json");
-      await writeFile(
+      await writeText(
         trustPath,
-        JSON.stringify({
+        `${JSON.stringify({
           plugins: {
             [pluginPath]: digest,
           },
-        }),
-        "utf8",
+        })}\n`,
       );
 
       const parsed = parsePluginSecurityOptions({
@@ -117,53 +112,49 @@ describe("plugin load", () => {
       const loaded = await loadRegistries([pluginPath], parsed);
       expect(loaded.strategyRegistry.get("plugin.producerFirst")).toBeDefined();
     } finally {
-      await rm(dir, { recursive: true, force: true });
+      await removePath(dir);
     }
   });
 
   it("trust file supports relative paths resolved from trust file directory", async () => {
     const pluginPath = resolve(process.cwd(), "../../examples/plugins/custom-econ-plugin.ts");
-    const buf = await readFile(pluginPath);
-    const digest = createHash("sha256").update(buf).digest("hex");
+    const digest = sha256Hex(await readText(pluginPath));
 
-    const dir = await mkdtemp(resolve(tmpdir(), "idlekit-plugin-trust-relative-"));
+    const dir = await createTempDir("idlekit-plugin-trust-relative");
     try {
       const trustPath = resolve(dir, "trust.json");
       const relToPlugin = relative(dir, pluginPath);
-      await writeFile(
+      await writeText(
         trustPath,
-        JSON.stringify({
+        `${JSON.stringify({
           plugins: {
             [relToPlugin]: digest,
           },
-        }),
-        "utf8",
+        })}\n`,
       );
 
       const loaded = await loadRegistries([pluginPath], { trustFile: trustPath });
       expect(loaded.modelRegistry.get("plugin.generators", 1)).toBeDefined();
     } finally {
-      await rm(dir, { recursive: true, force: true });
+      await removePath(dir);
     }
   });
 
   it("fails closed when trust-file and cli sha policy conflict", async () => {
     const pluginPath = resolve(process.cwd(), "../../examples/plugins/custom-econ-plugin.ts");
-    const buf = await readFile(pluginPath);
-    const digest = createHash("sha256").update(buf).digest("hex");
+    const digest = sha256Hex(await readText(pluginPath));
     const wrongDigest = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 
-    const dir = await mkdtemp(resolve(tmpdir(), "idlekit-plugin-trust-conflict-"));
+    const dir = await createTempDir("idlekit-plugin-trust-conflict");
     try {
       const trustPath = resolve(dir, "trust.json");
-      await writeFile(
+      await writeText(
         trustPath,
-        JSON.stringify({
+        `${JSON.stringify({
           plugins: {
             [pluginPath]: digest,
           },
-        }),
-        "utf8",
+        })}\n`,
       );
 
       await expect(
@@ -175,7 +166,7 @@ describe("plugin load", () => {
         }),
       ).rejects.toThrow("Conflicting sha256 policy");
     } finally {
-      await rm(dir, { recursive: true, force: true });
+      await removePath(dir);
     }
   });
 });

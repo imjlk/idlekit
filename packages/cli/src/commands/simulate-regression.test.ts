@@ -1,26 +1,14 @@
 import { describe, expect, it } from "bun:test";
-import { execFileSync } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { resolve } from "node:path";
+import { resolve } from "path";
+import { createTempDir, readJson, removePath, runCliJson, writeText } from "../testkit/bun";
 
 const BASELINE = "../../examples/tutorials/01-cafe-baseline.json";
 
-function runCliJson(args: string[]): any {
-  const out = execFileSync("bun", ["src/main.ts", ...args], {
-    cwd: process.cwd(),
-    encoding: "utf8",
-    env: process.env,
-    maxBuffer: 128 * 1024 * 1024,
-  });
-  return JSON.parse(out);
-}
-
 describe("simulate regression matrix", () => {
   it("covers offline + resume + fast + scripted strategy equivalence", async () => {
-    const dir = await mkdtemp(resolve(tmpdir(), "idlekit-sim-regression-"));
+    const dir = await createTempDir("idlekit-sim-regression");
     try {
-      const baselineRaw = JSON.parse(await readFile(resolve(process.cwd(), BASELINE), "utf8"));
+      const baselineRaw = await readJson<any>(resolve(process.cwd(), BASELINE));
       const scriptedScenario = {
         ...baselineRaw,
         initial: {
@@ -50,7 +38,7 @@ describe("simulate regression matrix", () => {
       };
 
       const scenarioPath = resolve(dir, "scripted-regression.json");
-      await writeFile(scenarioPath, `${JSON.stringify(scriptedScenario, null, 2)}\n`, "utf8");
+      await writeText(scenarioPath, `${JSON.stringify(scriptedScenario, null, 2)}\n`);
 
       const full = runCliJson([
         "simulate",
@@ -102,7 +90,7 @@ describe("simulate regression matrix", () => {
       expect(resumed.endMoney).toBe(full.endMoney);
       expect(resumed.endNetWorth).toBe(full.endNetWorth);
     } finally {
-      await rm(dir, { recursive: true, force: true });
+      await removePath(dir);
     }
   });
 });

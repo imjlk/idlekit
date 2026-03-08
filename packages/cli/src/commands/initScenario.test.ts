@@ -1,56 +1,46 @@
 import { describe, expect, it } from "bun:test";
-import { execFileSync } from "node:child_process";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { resolve } from "node:path";
-
-function runCli(args: string[], opts?: { stdio?: "pipe" | "inherit" }) {
-  return execFileSync("bun", ["src/main.ts", ...args], {
-    cwd: process.cwd(),
-    encoding: "utf8",
-    stdio: opts?.stdio ?? "pipe",
-  });
-}
+import { resolve } from "path";
+import { createTempDir, readJson, removePath, runCli, runCliFailure } from "../testkit/bun";
 
 describe("init scenario command", () => {
   it("writes track/preset matrix with stable defaults", async () => {
-    const dir = await mkdtemp(resolve(tmpdir(), "idlekit-init-"));
+    const dir = await createTempDir("idlekit-init");
     try {
       const introSession = resolve(dir, "intro-session.json");
       runCli(["init", "scenario", "--track", "intro", "--preset", "session", "--out", introSession]);
-      const introSessionJson = JSON.parse(await readFile(introSession, "utf8"));
+      const introSessionJson = await readJson<any>(introSession);
       expect(introSessionJson.clock.durationSec).toBe(1200);
       expect(introSessionJson.policy.mode).toBe("drop");
 
       const introBuilder = resolve(dir, "intro-builder.json");
       runCli(["init", "scenario", "--track", "intro", "--preset", "builder", "--out", introBuilder]);
-      const introBuilderJson = JSON.parse(await readFile(introBuilder, "utf8"));
+      const introBuilderJson = await readJson<any>(introBuilder);
       expect(introBuilderJson.meta.id).toBe("cafe-baseline");
       expect(introBuilderJson.policy.mode).toBe("accumulate");
 
       const introLongrun = resolve(dir, "intro-longrun.json");
       runCli(["init", "scenario", "--track", "intro", "--preset", "longrun", "--out", introLongrun]);
-      const introLongrunJson = JSON.parse(await readFile(introLongrun, "utf8"));
+      const introLongrunJson = await readJson<any>(introLongrun);
       expect(introLongrunJson.clock.stepSec).toBe(300);
       expect(introLongrunJson.clock.durationSec).toBe(604800);
 
       const designSession = resolve(dir, "design-session.json");
       runCli(["init", "scenario", "--track", "design", "--preset", "session", "--out", designSession]);
-      const designSessionJson = JSON.parse(await readFile(designSession, "utf8"));
+      const designSessionJson = await readJson<any>(designSession);
       expect(designSessionJson.clock.durationSec).toBe(1800);
       expect(designSessionJson.strategy.params.preferUpgradeAtProducers).toBe(6);
 
       const designLongrun = resolve(dir, "design-longrun.json");
       runCli(["init", "scenario", "--track", "design", "--preset", "longrun", "--out", designLongrun]);
-      const designLongrunJson = JSON.parse(await readFile(designLongrun, "utf8"));
+      const designLongrunJson = await readJson<any>(designLongrun);
       expect(designLongrunJson.clock.stepSec).toBe(10);
       expect(designLongrunJson.sim.fast).toBeTrue();
 
       const personalBasePath = resolve(dir, "my-game-v1.json");
       runCli(["init", "scenario", "--track", "personal", "--preset", "builder", "--out", personalBasePath]);
-      const personalBase = JSON.parse(await readFile(personalBasePath, "utf8"));
-      const personalCompare = JSON.parse(await readFile(resolve(dir, "my-game-v1-compare-b.json"), "utf8"));
-      const personalTune = JSON.parse(await readFile(resolve(dir, "my-game-v1-tune.json"), "utf8"));
+      const personalBase = await readJson<any>(personalBasePath);
+      const personalCompare = await readJson<any>(resolve(dir, "my-game-v1-compare-b.json"));
+      const personalTune = await readJson<any>(resolve(dir, "my-game-v1-tune.json"));
       expect(personalBase.model.id).toBe("linear");
       expect(personalCompare.model.params.incomePerSec).toBe("1.84");
       expect(personalCompare.model.params.buyCostGrowth).toBe(1.17);
@@ -59,62 +49,64 @@ describe("init scenario command", () => {
 
       const personalSessionPath = resolve(dir, "session-game.json");
       runCli(["init", "scenario", "--track", "personal", "--preset", "session", "--out", personalSessionPath]);
-      const personalSession = JSON.parse(await readFile(resolve(dir, "session-game-v1.json"), "utf8"));
-      const personalSessionTune = JSON.parse(await readFile(resolve(dir, "session-game-v1-tune.json"), "utf8"));
+      const personalSession = await readJson<any>(resolve(dir, "session-game-v1.json"));
+      const personalSessionTune = await readJson<any>(resolve(dir, "session-game-v1-tune.json"));
       expect(personalSession.policy.mode).toBe("drop");
       expect(personalSession.clock.durationSec).toBe(1800);
       expect(personalSessionTune.objective.id).toBe("pacingBalancedLog10");
 
       const personalLongrunPath = resolve(dir, "longrun-game.json");
       runCli(["init", "scenario", "--track", "personal", "--preset", "longrun", "--out", personalLongrunPath]);
-      const personalLongrun = JSON.parse(await readFile(resolve(dir, "longrun-game-v1.json"), "utf8"));
-      const personalLongrunTune = JSON.parse(await readFile(resolve(dir, "longrun-game-v1-tune.json"), "utf8"));
+      const personalLongrun = await readJson<any>(resolve(dir, "longrun-game-v1.json"));
+      const personalLongrunTune = await readJson<any>(resolve(dir, "longrun-game-v1-tune.json"));
       expect(personalLongrun.strategy.id).toBe("planner");
       expect(personalLongrun.clock.durationSec).toBe(86400);
       expect(personalLongrunTune.strategy.id).toBe("planner");
     } finally {
-      await rm(dir, { recursive: true, force: true });
+      await removePath(dir);
     }
   });
 
   it("supports named personal bundle generation", async () => {
-    const dir = await mkdtemp(resolve(tmpdir(), "idlekit-init-name-"));
+    const dir = await createTempDir("idlekit-init-name");
     try {
       const outPath = resolve(dir, "my-game-v1.json");
       runCli(["init", "scenario", "--track", "personal", "--out", outPath, "--name", "Space Miner"]);
 
-      const namedBase = JSON.parse(await readFile(resolve(dir, "space-miner-v1.json"), "utf8"));
-      const namedCompare = JSON.parse(await readFile(resolve(dir, "space-miner-v1-compare-b.json"), "utf8"));
-      const namedTune = JSON.parse(await readFile(resolve(dir, "space-miner-v1-tune.json"), "utf8"));
+      const namedBase = await readJson<any>(resolve(dir, "space-miner-v1.json"));
+      const namedCompare = await readJson<any>(resolve(dir, "space-miner-v1-compare-b.json"));
+      const namedTune = await readJson<any>(resolve(dir, "space-miner-v1-tune.json"));
       expect(namedBase.meta.id).toBe("space-miner-v1");
       expect(namedBase.meta.title).toBe("Space Miner V1 Template");
       expect(namedCompare.meta.id).toBe("space-miner-v1-compare-b");
       expect(namedTune.meta.id).toBe("space-miner-v1-tune");
     } finally {
-      await rm(dir, { recursive: true, force: true });
+      await removePath(dir);
     }
   });
 
   it("rejects --name on non-personal tracks with stable error code", async () => {
-    expect(() =>
-      runCli(["init", "scenario", "--track", "intro", "--out", resolve(tmpdir(), "bad.json"), "--name", "Nope"]),
-    ).toThrow("[CLI_FLAG_UNSUPPORTED_FOR_TRACK]");
+    const dir = await createTempDir("idlekit-init-bad");
+    try {
+      const result = runCliFailure(["init", "scenario", "--track", "intro", "--out", resolve(dir, "bad.json"), "--name", "Nope"]);
+      expect(result.stderr).toContain("[CLI_FLAG_UNSUPPORTED_FOR_TRACK]");
+    } finally {
+      await removePath(dir);
+    }
   });
 
   it("fails when output exists unless force=true", async () => {
-    const dir = await mkdtemp(resolve(tmpdir(), "idlekit-init-force-"));
+    const dir = await createTempDir("idlekit-init-force");
     try {
       const path = resolve(dir, "scenario.json");
       runCli(["init", "scenario", "--out", path]);
 
-      expect(() =>
-        runCli(["init", "scenario", "--out", path], {
-          stdio: "pipe",
-        })).toThrow("[CLI_USAGE] Output file already exists");
+      const result = runCliFailure(["init", "scenario", "--out", path]);
+      expect(result.stderr).toContain("[CLI_USAGE] Output file already exists");
 
       runCli(["init", "scenario", "--out", path, "--force", "true"]);
     } finally {
-      await rm(dir, { recursive: true, force: true });
+      await removePath(dir);
     }
   });
 });
