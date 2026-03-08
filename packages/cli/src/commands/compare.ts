@@ -8,7 +8,7 @@ import {
   runScenario,
   validateScenarioV1,
 } from "@idlekit/core";
-import { resolve } from "node:path";
+import { resolve } from "path";
 import { z } from "zod";
 import { betterFromCmp, formatEtaLabel, toComparableEta } from "./_shared/compareEval";
 import { loadRegistriesFromFlags, pluginOptions } from "./_shared/plugin";

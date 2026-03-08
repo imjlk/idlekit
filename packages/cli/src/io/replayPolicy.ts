@@ -1,4 +1,4 @@
-import { resolve } from "node:path";
+import { resolve } from "path";
 import type { OutputMeta } from "./outputMeta";
 import { buildReplayArgs, type ReplayArtifactV1, writeReplayArtifact } from "./replayArtifact";
 

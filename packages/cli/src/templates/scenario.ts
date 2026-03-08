@@ -1,4 +1,4 @@
-import { resolve, parse } from "node:path";
+import { resolve, parse } from "path";
 
 export const TEMPLATE_TRACKS = ["intro", "design", "personal"] as const;
 export type TemplateTrack = (typeof TEMPLATE_TRACKS)[number];

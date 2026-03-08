@@ -1,6 +1,6 @@
-import { mkdir, writeFile } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import { resolve } from "path";
 import { buildOutputMeta } from "../../io/outputMeta";
+import { writeTextFile } from "../../runtime/bun";
 
 export type ListFormat = "json" | "md" | "csv";
 
@@ -26,7 +26,6 @@ export async function writeListOutput<T extends Record<string, unknown>>(args: {
   }
 
   const path = resolve(args.out);
-  await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, body, "utf8");
+  await writeTextFile(path, body);
   console.log(`Wrote ${args.format} output to ${path}`);
 }

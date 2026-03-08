@@ -1,8 +1,8 @@
-import { readFile } from "node:fs/promises";
-import { extname, resolve } from "node:path";
+import { extname, resolve } from "path";
 import { migrateScenarioDocument, type ScenarioMigrationNotice } from "@idlekit/core";
 import YAML from "yaml";
 import { scenarioReadFailedError } from "../errors";
+import { readTextFile } from "../runtime/bun";
 
 export async function readScenarioFile(path: string): Promise<unknown> {
   const out = await readScenarioFileWithMeta(path);
@@ -14,7 +14,7 @@ export async function readScenarioFileWithMeta(path: string): Promise<{
   notices: ScenarioMigrationNotice[];
 }> {
   const abs = resolve(path);
-  const raw = await readFile(abs, "utf8").catch((error) => {
+  const raw = await readTextFile(abs).catch((error) => {
     throw scenarioReadFailedError(abs, error);
   });
   const ext = extname(abs).toLowerCase();

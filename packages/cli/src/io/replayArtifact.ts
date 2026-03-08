@@ -1,7 +1,7 @@
-import { mkdir, writeFile } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import { resolve } from "path";
 import { hashContent } from "./outputMeta";
 import type { OutputMeta } from "./outputMeta";
+import { writeTextFile } from "../runtime/bun";
 
 export type ReplayArtifactV1 = Readonly<{
   v: 1;
@@ -148,7 +148,6 @@ export async function writeReplayArtifact(args: {
     extra: args.extra,
   };
 
-  await mkdir(dirname(abs), { recursive: true });
-  await writeFile(abs, `${JSON.stringify(artifact, null, 2)}\n`, "utf8");
+  await writeTextFile(abs, `${JSON.stringify(artifact, null, 2)}\n`);
   return abs;
 }

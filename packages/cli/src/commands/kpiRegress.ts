@@ -1,9 +1,9 @@
 import { defineCommand, option } from "@bunli/core";
-import { readFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { resolve } from "path";
 import { z } from "zod";
 import { buildOutputMeta } from "../io/outputMeta";
 import { writeOutput } from "../io/writeOutput";
+import { readJsonFile } from "../runtime/bun";
 
 type Side = "a" | "b";
 type Horizon = "at7d" | "at30d" | "at90d";
@@ -69,8 +69,8 @@ export default defineCommand({
   async handler({ flags }) {
     const baselinePath = resolve(flags.baseline);
     const currentPath = resolve(flags.current);
-    const baseline = JSON.parse(await readFile(baselinePath, "utf8"));
-    const current = JSON.parse(await readFile(currentPath, "utf8"));
+    const baseline = await readJsonFile<any>(baselinePath);
+    const current = await readJsonFile<any>(currentPath);
 
     const horizons: Horizon[] = ["at7d", "at30d", "at90d"];
     const sides: Side[] = ["a", "b"];

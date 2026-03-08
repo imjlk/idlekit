@@ -1,6 +1,6 @@
 import { defineCommand, option } from "@bunli/core";
 import { compileScenario, createNumberEngine, runScenario, validateScenarioV1 } from "@idlekit/core";
-import { resolve } from "node:path";
+import { resolve } from "path";
 import { z } from "zod";
 import { loadRegistriesFromFlags, pluginOptions } from "./_shared/plugin";
 import { cliError, scenarioInvalidError, unknownStrategyError, usageError } from "../errors";

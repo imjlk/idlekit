@@ -1,16 +1,13 @@
 import { defineCommand, option } from "@bunli/core";
-import { execFileSync } from "node:child_process";
-import { readFile } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { resolve } from "path";
 import { z } from "zod";
 import { cliError, errorDetail, replayArtifactInvalidError, usageError } from "../errors";
 import { buildOutputMeta, stableStringify } from "../io/outputMeta";
 import { canonicalizeReplayResult, hashReplayResult, type ReplayArtifactV1 } from "../io/replayArtifact";
 import { writeOutput } from "../io/writeOutput";
+import { readJsonFile, runText } from "../runtime/bun";
 
-const CLI_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
-const MAX_BUFFER = 256 * 1024 * 1024;
+const CLI_ROOT = resolve(import.meta.dir, "../..");
 
 function deepEqual(a: unknown, b: unknown): boolean {
   return stableStringify(a) === stableStringify(b);
@@ -58,11 +55,9 @@ function parseArtifact(input: unknown): ReplayArtifactV1 {
 }
 
 function runReplay(args: readonly string[]): unknown {
-  const out = execFileSync("bun", ["src/main.ts", ...args], {
+  const out = runText(["bun", "src/main.ts", ...args], {
     cwd: CLI_ROOT,
-    encoding: "utf8",
     env: process.env,
-    maxBuffer: MAX_BUFFER,
   });
   try {
     return JSON.parse(out);
@@ -88,14 +83,7 @@ export default defineCommand({
     }
 
     const artifactAbs = resolve(process.cwd(), artifactPath);
-    const raw = await readFile(artifactAbs, "utf8")
-      .then((text) => {
-        try {
-          return JSON.parse(text);
-        } catch (error) {
-          throw replayArtifactInvalidError("Invalid replay artifact.", errorDetail(error), error);
-        }
-      })
+    const raw = await readJsonFile<unknown>(artifactAbs)
       .catch((error) => {
         if (error instanceof Error && error.name === "CliError") throw error;
         throw replayArtifactInvalidError("Invalid replay artifact.", errorDetail(error), error);

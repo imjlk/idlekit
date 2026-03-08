@@ -1,7 +1,4 @@
-import { createHash } from "node:crypto";
-import { readFile, stat } from "node:fs/promises";
-import { dirname, extname, isAbsolute, relative, resolve } from "node:path";
-import { pathToFileURL } from "node:url";
+import { dirname, extname, isAbsolute, relative, resolve } from "path";
 import {
   builtinObjectiveFactories,
   builtinStrategyFactories,
@@ -20,6 +17,7 @@ import {
 } from "@idlekit/core";
 import { z } from "zod";
 import type { EconPluginModule } from "./types";
+import { fileExists, readTextFile, sha256Hex } from "../runtime/bun";
 
 const ALLOWED_PLUGIN_EXTENSIONS = new Set([".js", ".mjs", ".cjs", ".ts", ".mts", ".cts"]);
 
@@ -306,7 +304,7 @@ export function parsePluginSecurityOptions(input: {
 }
 
 async function loadPluginTrustFile(pathAbs: string): Promise<Record<string, string>> {
-  const raw = await readFile(pathAbs, "utf8");
+  const raw = await readTextFile(pathAbs);
   const parsed = JSON.parse(raw) as unknown;
   const baseDir = dirname(pathAbs);
 
@@ -387,7 +385,7 @@ export async function loadRegistries(
         throw new Error(`Plugin sha256 mismatch for '${p}'. expected=${expected} actual=${actualDigest}`);
       }
     }
-    const mod = (await import(pathToFileURL(abs).href)) as PluginModule;
+    const mod = (await import(abs)) as PluginModule;
     const parsed = parsePluginModule(mod);
 
     if (parsed.models) modelFactories.push(...parsed.models);
@@ -409,8 +407,8 @@ function isPathInsideRoot(pathAbs: string, rootAbs: string): boolean {
 }
 
 async function sha256File(pathAbs: string): Promise<string> {
-  const buffer = await readFile(pathAbs);
-  return createHash("sha256").update(buffer).digest("hex");
+  const buffer = await Bun.file(pathAbs).bytes();
+  return sha256Hex(buffer);
 }
 
 async function resolveAndValidatePluginPath(input: string, allowedRoots: readonly string[]): Promise<string> {
@@ -424,8 +422,7 @@ async function resolveAndValidatePluginPath(input: string, allowedRoots: readonl
     throw new Error(`Unsupported plugin extension '${ext}' for ${input}`);
   }
 
-  const info = await stat(abs).catch(() => null);
-  if (!info || !info.isFile()) {
+  if (!(await fileExists(abs))) {
     throw new Error(`Plugin file not found: ${input}`);
   }
 

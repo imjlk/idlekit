@@ -1,11 +1,11 @@
 import { defineCommand, option } from "@bunli/core";
-import { readFile } from "node:fs/promises";
-import { extname, resolve } from "node:path";
+import { extname, resolve } from "path";
 import { z } from "zod";
 import { cliError, usageError } from "../errors";
 import { buildOutputMeta } from "../io/outputMeta";
 import { writeOutput } from "../io/writeOutput";
 import { calibrateMonetization, type TelemetryRow } from "../lib/ltvModel";
+import { readTextFile } from "../runtime/bun";
 
 function parseCsvRows(raw: string): string[][] {
   const rows: string[][] = [];
@@ -184,7 +184,7 @@ export default defineCommand({
     }
 
     const abs = resolve(process.cwd(), telemetryPath);
-    const raw = await readFile(abs, "utf8");
+    const raw = await readTextFile(abs);
     const format = flags["input-format"] === "auto" ? extname(abs).toLowerCase() : flags["input-format"];
     const rows =
       format === ".csv" || format === "csv"

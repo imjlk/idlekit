@@ -1,8 +1,8 @@
 import { defineCommand, option } from "@bunli/core";
-import { mkdir, stat, writeFile } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import { resolve } from "path";
 import { z } from "zod";
 import { cliError, unsupportedFlagForTrackError } from "../errors";
+import { fileExists, writeTextFile } from "../runtime/bun";
 import {
   buildInitTemplatePlan,
   serializeTemplate,
@@ -15,7 +15,7 @@ type Track = (typeof TEMPLATE_TRACKS)[number];
 type Preset = (typeof TEMPLATE_PRESETS)[number];
 
 async function ensureWritable(path: string, force: boolean): Promise<void> {
-  const exists = await stat(path).then(() => true).catch(() => false);
+  const exists = await fileExists(path);
   if (!exists || force) return;
   throw cliError("CLI_USAGE", `Output file already exists: ${path}`, {
     hint: "Pass --force true to overwrite.",
@@ -63,8 +63,7 @@ export default defineCommand({
     });
 
     await Promise.all(files.map((file) => ensureWritable(file.path, flags.force)));
-    await Promise.all(files.map((file) => mkdir(dirname(file.path), { recursive: true })));
-    await Promise.all(files.map((file) => writeFile(file.path, serializeTemplate(file.content), "utf8")));
+    await Promise.all(files.map((file) => writeTextFile(file.path, serializeTemplate(file.content))));
 
     if (track === "personal") {
       console.log("Wrote personal scenario bundle:");

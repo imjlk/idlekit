@@ -9,8 +9,7 @@ import {
   serializeSimState,
   validateScenarioV1,
 } from "@idlekit/core";
-import { readFile, writeFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { resolve } from "path";
 import { z } from "zod";
 import { loadRegistriesFromFlags, pluginOptions } from "./_shared/plugin";
 import { buildOfflineSummary, resolveEventLog } from "./_shared/simulateView";
@@ -26,6 +25,7 @@ import { buildOutputMeta, deriveDeterministicRunId, deriveDeterministicSeed, has
 import { writeCommandReplayArtifact } from "../io/replayPolicy";
 import { readScenarioFile } from "../io/readScenario";
 import { writeOutput } from "../io/writeOutput";
+import { readJsonFile, writeTextFile } from "../runtime/bun";
 
 const strategySchema = z.enum(["greedy", "planner", "scripted"]).optional();
 
@@ -125,10 +125,10 @@ export default defineCommand({
     });
 
     const resumedJson = flags.resume
-      ? await readFile(resolve(process.cwd(), flags.resume), "utf8")
+      ? await readJsonFile<unknown>(resolve(process.cwd(), flags.resume))
           .then((raw) => {
             try {
-              return parseSimStateJSON(JSON.parse(raw));
+              return parseSimStateJSON(raw);
             } catch (error) {
               throw cliError("SIM_STATE_INVALID_JSON", `Invalid resume state json: ${resolve(process.cwd(), flags.resume!)}`, {
                 detail: errorDetail(error),
@@ -281,7 +281,7 @@ export default defineCommand({
             }
           : undefined,
       });
-      await writeFile(stateOutPath, `${JSON.stringify(serialized, null, 2)}\n`, "utf8");
+      await writeTextFile(stateOutPath, `${JSON.stringify(serialized, null, 2)}\n`);
     }
 
     const offlineSummary = buildOfflineSummary(offlineRun);

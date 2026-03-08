@@ -1,12 +1,8 @@
-import { execSync } from "node:child_process";
-import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { resolve } from "path";
+import cliPackageJson from "../../package.json" with { type: "json" };
+import { runText, sha256Hex } from "../runtime/bun";
 
-const THIS_DIR = dirname(fileURLToPath(import.meta.url));
-const CLI_PACKAGE_JSON = resolve(THIS_DIR, "../../package.json");
-const REPO_ROOT = resolve(THIS_DIR, "../../..");
+const REPO_ROOT = resolve(import.meta.dir, "../../..");
 export const OUTPUT_CONTRACT_VERSION = "1.2.0";
 const UNKNOWN_GIT_SHA = "unknown";
 
@@ -33,7 +29,7 @@ export function stableStringify(value: unknown): string {
 }
 
 function sha256(value: string): string {
-  return createHash("sha256").update(value).digest("hex");
+  return sha256Hex(value);
 }
 
 let cachedGitSha: string | undefined;
@@ -49,10 +45,9 @@ function resolveGitSha(): string {
   }
 
   try {
-    cachedGitSha = execSync("git rev-parse --short HEAD", {
+    cachedGitSha = runText(["git", "rev-parse", "--short", "HEAD"], {
       cwd: REPO_ROOT,
-      stdio: ["ignore", "pipe", "ignore"],
-      encoding: "utf8",
+      env: process.env,
     }).trim();
   } catch {
     cachedGitSha = UNKNOWN_GIT_SHA;
@@ -60,14 +55,7 @@ function resolveGitSha(): string {
   return cachedGitSha ?? UNKNOWN_GIT_SHA;
 }
 
-const cliVersion = (() => {
-  try {
-    const parsed = JSON.parse(readFileSync(CLI_PACKAGE_JSON, "utf8")) as { version?: string };
-    return parsed.version ?? "0.0.0";
-  } catch {
-    return "0.0.0";
-  }
-})();
+const cliVersion = cliPackageJson.version ?? "0.0.0";
 
 export type OutputMeta = Readonly<{
   command: string;

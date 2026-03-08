@@ -11,8 +11,7 @@ import {
   type ObjectiveRegistry,
   type StrategyRegistry,
 } from "@idlekit/core";
-import { readFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { resolve } from "path";
 import { z } from "zod";
 import { loadRegistriesFromFlags, pluginOptions } from "./_shared/plugin";
 import { cliError, scenarioInvalidError, tuneSpecInvalidError, usageError } from "../errors";
@@ -20,6 +19,7 @@ import { buildOutputMeta, deriveDeterministicRunId, deriveDeterministicSeed } fr
 import { writeCommandReplayArtifact } from "../io/replayPolicy";
 import { readScenarioFile } from "../io/readScenario";
 import { writeOutput } from "../io/writeOutput";
+import { readJsonFile } from "../runtime/bun";
 
 type TuneRegression = Readonly<{
   baselinePath: string;
@@ -248,7 +248,7 @@ export default defineCommand({
     let regression: TuneRegression | undefined;
     if (flags["baseline-artifact"]) {
       const baselinePath = resolve(flags["baseline-artifact"]);
-      const baselineRaw = JSON.parse(await readFile(baselinePath, "utf8"));
+      const baselineRaw = await readJsonFile<unknown>(baselinePath);
       const baselineBest = readBestScoreFromArtifact(baselineRaw);
       const currentBest = readBestScoreFromTuneResult(result);
       const delta = currentBest - baselineBest;
