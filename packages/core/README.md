@@ -1,13 +1,15 @@
 # @idlekit/core
 
-Core simulation package for idle game economy design. It compiles scenarios,
-executes simulations, runs analysis, and builds reports.
+Simulation and analysis primitives for idle game economy design. It compiles
+scenarios, executes runs, evaluates long-horizon KPIs, and builds reports.
 
 ## Install
 
 ```bash
 bun add @idlekit/core
 ```
+
+Requires Bun `>=1.3.0`.
 
 ## Quick example
 

@@ -1,21 +1,24 @@
 # Adapter Pattern Example
 
-이 예제는 `Engine<N>` 어댑터를 통해 `bigint` 고정소수점 엔진을 시뮬레이터에 연결하는 방법을 보여줍니다.
+Korean version: [README_ko.md](./README_ko.md)
 
-파일:
+This example shows how to connect a custom fixed-point `bigint` engine to the
+simulator through the `Engine<N>` adapter contract.
 
-- `fixedPointEngine.ts`: `Engine<bigint>` 구현
-- `run.ts`: 커스텀 엔진 + 모델 + 내장 greedy 전략으로 시뮬레이션 실행
+Files:
 
-## 실행
+- `fixedPointEngine.ts`: `Engine<bigint>` implementation
+- `run.ts`: custom engine + model + built-in greedy strategy simulation
 
-프로젝트 루트에서:
+## Run
+
+From the repository root:
 
 ```bash
 bun examples/adapter-pattern/run.ts
 ```
 
-예상 출력(값은 모델/전략 변경에 따라 달라질 수 있음):
+Expected output shape:
 
 ```text
 Adapter pattern example completed
@@ -26,14 +29,14 @@ Adapter pattern example completed
 - Actions applied: ...
 ```
 
-## 포인트
+## What matters
 
-- 숫자 타입을 `number`에 고정하지 않고 `bigint`로 대체
-- 결제/소비/누적은 엔진 인터페이스로만 동작
-- 전략/시뮬레이터 코어는 숫자 타입과 독립적으로 재사용 가능
+- the simulator is not tied to `number`
+- payment / accumulation logic stays behind the engine adapter
+- strategies and simulation code remain reusable across numeric backends
 
-## 실무 적용 팁
+## Practical notes
 
-- 매우 큰 수(초대형 idle 게임 스케일)에서는 `absLog10` 구현 품질이 중요
-- `toNumber`는 휴리스틱 계산용 보조값으로만 사용
-- 정밀도가 필요한 경우 `mul/div` 구현에서 부동소수점 경유를 줄이고 정수 연산 기반으로 개선
+- very large idle-game scales depend on a solid `absLog10` implementation
+- use `toNumber` only for heuristics and UI-friendly summaries
+- if precision is critical, avoid float round-trips inside `mul` / `div`

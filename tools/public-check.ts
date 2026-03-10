@@ -1,6 +1,6 @@
 import { $ } from "bun";
 import { dirname, resolve } from "path";
-import { ROOT, ensureDir } from "./_bun";
+import { ROOT, ensureDir, withFileLock } from "./_bun";
 
 type PackageManifest = Readonly<{
   name?: string;
@@ -24,6 +24,8 @@ const DOCS_WITH_KO = [
   "docs/usage-guide.md",
   "docs/virtual-scenario-design.md",
   "docs/schemas/README.md",
+  "examples/adapter-pattern/README.md",
+  "examples/money-package/README.md",
   "examples/plugins/README.md",
   "examples/tutorials/README.md",
 ] as const;
@@ -74,14 +76,13 @@ async function checkPackageManifest(pkgDir: string): Promise<void> {
 
 async function packPackage(pkgDir: string, outDir: string): Promise<string> {
   const absDir = resolve(ROOT, pkgDir);
-  const raw = await $`npm pack --json`.cwd(absDir).text();
-  const parsed = JSON.parse(raw.match(/(\[\s*{[\s\S]*}\s*\])\s*$/)?.[1] ?? "[]") as Array<{ filename: string }>;
-  const filename = parsed[0]?.filename;
-  assert(!!filename, `npm pack returned no filename for ${pkgDir}`);
-  const sourceTarball = resolve(absDir, filename!);
-  const targetTarball = resolve(outDir, filename!);
-  await $`mv ${sourceTarball} ${targetTarball}`.quiet();
-  return targetTarball;
+  return withFileLock(`npm-pack-${pkgDir}`, async () => {
+    const raw = await $`npm pack --json --pack-destination ${outDir}`.cwd(absDir).text();
+    const parsed = JSON.parse(raw.match(/(\[\s*{[\s\S]*}\s*\])\s*$/)?.[1] ?? "[]") as Array<{ filename: string }>;
+    const filename = parsed[0]?.filename;
+    assert(!!filename, `npm pack returned no filename for ${pkgDir}`);
+    return resolve(outDir, filename!);
+  });
 }
 
 async function checkTarballContents(tarballPath: string, label: string): Promise<void> {

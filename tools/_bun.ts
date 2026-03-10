@@ -64,3 +64,35 @@ export async function createTempDir(prefix: string, baseDir = resolve(ROOT, "tmp
   await ensureDir(path);
   return path;
 }
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export async function withFileLock<T>(
+  key: string,
+  run: () => Promise<T>,
+  opts?: { timeoutMs?: number; pollMs?: number },
+): Promise<T> {
+  const timeoutMs = opts?.timeoutMs ?? 120_000;
+  const pollMs = opts?.pollMs ?? 100;
+  const lockDir = resolve(ROOT, "tmp", ".locks", key.replace(/[^a-zA-Z0-9._-]/g, "_"));
+  const startedAt = Date.now();
+
+  await ensureDir(dirname(lockDir));
+
+  while (true) {
+    const proc = Bun.spawnSync(["mkdir", lockDir], { cwd: ROOT, stdout: "ignore", stderr: "ignore" });
+    if (proc.exitCode === 0) break;
+    if (Date.now() - startedAt > timeoutMs) {
+      throw new Error(`timed out waiting for lock: ${key}`);
+    }
+    await sleep(pollMs);
+  }
+
+  try {
+    return await run();
+  } finally {
+    await removePath(lockDir);
+  }
+}

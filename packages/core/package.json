@@ -1,7 +1,7 @@
 {
   "name": "@idlekit/core",
   "version": "0.1.0",
-  "description": "Scenario compilation, simulation, analysis, and reporting for idle game economies.",
+  "description": "Bun-first scenario compilation, simulation, analysis, and reporting for idle game economies.",
   "license": "MIT",
   "type": "module",
   "sideEffects": false,
@@ -35,7 +35,9 @@
     "idle-game",
     "incremental-game",
     "economy-simulator",
-    "simulation"
+    "simulation",
+    "game-balancing",
+    "economy-design"
   ],
   "publishConfig": {
     "access": "public"

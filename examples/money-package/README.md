@@ -1,23 +1,25 @@
 # Money Package Example
 
-`@idlekit/money`를 단독으로 사용하는 실행 예제입니다.
+Korean version: [README_ko.md](./README_ko.md)
 
-## 실행
+This example runs `@idlekit/money` on its own, without the scenario compiler or CLI.
 
-프로젝트 루트에서:
+## Run
+
+From the repository root:
 
 ```bash
 bun examples/money-package/run.ts
 ```
 
-## 예제에서 확인하는 항목
+## What it demonstrates
 
-- `tickMoney` accumulate 정책(`queued` -> `flushed`)
-- `formatMoney`/`parseMoney`
-- `VisibilityTracker` 표시 변화 감지
-- `serializeMoneyState`/`deserializeMoneyState`
+- `tickMoney` with `accumulate` policy (`queued` -> `flushed`)
+- `formatMoney` / `parseMoney`
+- `VisibilityTracker`
+- `serializeMoneyState` / `deserializeMoneyState`
 
-## 참고
+## See also
 
-- 상세 문서: `docs/money-library.md`
-- 커스텀 엔진 어댑터: `examples/adapter-pattern`
+- Guide: [../../docs/money-library.md](../../docs/money-library.md)
+- Custom engine adapter example: [../adapter-pattern/README.md](../adapter-pattern/README.md)

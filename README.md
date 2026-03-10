@@ -28,7 +28,7 @@ bun add -g @idlekit/cli
 
 ## Quick start
 
-Repository flow:
+Repository examples:
 
 ```bash
 bun install
@@ -44,14 +44,23 @@ bun run --cwd packages/cli dev -- ltv ../../examples/tutorials/11-my-game-v1.jso
 Installed CLI flow:
 
 ```bash
-idk validate examples/tutorials/11-my-game-v1.json
-idk simulate examples/tutorials/11-my-game-v1.json --format json
+idk validate ./my-game-v1.json
+idk simulate ./my-game-v1.json --format json
 ```
+
+Use the repository examples while you are inside this checkout. Use your own local scenario files after installing `idk`.
 
 To scaffold your own bundle immediately:
 
 ```bash
 bun run --cwd packages/cli dev -- init scenario --track personal --preset builder --out ../../tmp/my-game-v1.json --name "Space Miner"
+```
+
+Then run:
+
+```bash
+bun run --cwd packages/cli dev -- validate ../../tmp/space-miner-v1.json
+bun run --cwd packages/cli dev -- simulate ../../tmp/space-miner-v1.json --format json
 ```
 
 ## Documentation

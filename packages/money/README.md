@@ -1,13 +1,15 @@
 # @idlekit/money
 
-Money primitives for idle game economies: numeric engines, money state transitions,
-notation, parsing, serialization, and visibility tracking.
+Money primitives for idle and incremental game economies: numeric engines,
+notation, money state transitions, serialization, and visibility tracking.
 
 ## Install
 
 ```bash
 bun add @idlekit/money
 ```
+
+Requires Bun `>=1.3.0`.
 
 ## Quick example
 

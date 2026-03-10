@@ -9,12 +9,20 @@ comparing balance variants, tuning strategies, and generating reports.
 bun add -g @idlekit/cli
 ```
 
+Requires Bun `>=1.3.0`.
+
 ## Quick start
 
 ```bash
-idk validate examples/tutorials/11-my-game-v1.json
-idk simulate examples/tutorials/11-my-game-v1.json --format json
-idk ltv examples/tutorials/11-my-game-v1.json --horizons 30m,2h,24h,7d,30d,90d --step 600 --fast true --format json
+idk validate ./my-game-v1.json
+idk simulate ./my-game-v1.json --format json
+idk ltv ./my-game-v1.json --horizons 30m,2h,24h,7d,30d,90d --step 600 --fast true --format json
+```
+
+To generate a starter bundle from the repository checkout:
+
+```bash
+bun run --cwd packages/cli dev -- init scenario --track personal --preset builder --out ../../tmp/my-game-v1.json --name "Space Miner"
 ```
 
 ## Runtime

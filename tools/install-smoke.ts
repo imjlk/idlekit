@@ -1,5 +1,6 @@
 import { $ } from "bun";
 import { dirname, resolve } from "path";
+import { withFileLock } from "./_bun";
 
 type PackEntry = {
   filename: string;
@@ -35,18 +36,17 @@ function parsePackEntries(raw: string): PackEntry[] {
 
 async function packPackage(pkgDir: string): Promise<Readonly<{ packageDir: string; tarballPath: string; pack: PackEntry }>> {
   const absDir = resolve(ROOT, pkgDir);
-  const raw = await $`npm pack --json`.cwd(absDir).text();
-  const parsed = parsePackEntries(raw);
-  const pack = parsed[0];
-  if (!pack) throw new Error(`npm pack returned no entries for ${pkgDir}`);
-  const sourceTarball = resolve(absDir, pack.filename);
-  const targetTarball = resolve(PACKS_DIR, pack.filename);
-  await $`mv ${sourceTarball} ${targetTarball}`.quiet();
-  return {
-    packageDir: absDir,
-    tarballPath: targetTarball,
-    pack,
-  };
+  return withFileLock(`npm-pack-${pkgDir}`, async () => {
+    const raw = await $`npm pack --json --pack-destination ${PACKS_DIR}`.cwd(absDir).text();
+    const parsed = parsePackEntries(raw);
+    const pack = parsed[0];
+    if (!pack) throw new Error(`npm pack returned no entries for ${pkgDir}`);
+    return {
+      packageDir: absDir,
+      tarballPath: resolve(PACKS_DIR, pack.filename),
+      pack,
+    };
+  });
 }
 
 async function inspectTarball(tarballPath: string): Promise<TarballCheck> {

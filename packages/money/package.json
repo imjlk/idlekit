@@ -1,7 +1,7 @@
 {
   "name": "@idlekit/money",
   "version": "0.1.0",
-  "description": "Money primitives, notation, policies, and serialization for idle game economies.",
+  "description": "Bun-first money primitives, notation, policies, and serialization for idle game economies.",
   "license": "MIT",
   "type": "module",
   "sideEffects": false,
@@ -35,7 +35,9 @@
     "idle-game",
     "incremental-game",
     "money",
-    "economy-simulator"
+    "economy",
+    "currency",
+    "big-number"
   ],
   "publishConfig": {
     "access": "public"
