@@ -1,8 +1,15 @@
-# 플러그인과 어댑터 패턴 가이드
+# Plugin and Adapter Guide
 
-## 1. 플러그인 모듈 형식
+Korean version: [plugin-and-adapter_ko.md](./plugin-and-adapter_ko.md)
 
-CLI 플러그인은 아래 구조를 export 하면 됩니다.
+This guide covers two extension points:
+
+- CLI plugins that contribute models, strategies, and objectives
+- `Engine<N>` adapters that let you plug in a custom numeric backend
+
+## Plugin module shape
+
+A CLI plugin can export any combination of `models`, `strategies`, and `objectives`.
 
 ```ts
 import type { ModelFactory, ObjectiveFactory, StrategyFactory } from "@idlekit/core";
@@ -20,15 +27,15 @@ const plugin: {
 export default plugin;
 ```
 
-또는 named export (`models`, `strategies`, `objectives`)도 지원됩니다.
+Named exports are also supported.
 
-로드:
+## Loading a plugin
 
 ```bash
 bun run --cwd packages/cli dev -- models list --plugin ./my-plugin.ts --allow-plugin true
 ```
 
-보안 로드(권장):
+Recommended secure loading:
 
 ```bash
 SHA=$(shasum -a 256 ./my-plugin.ts | awk '{print $1}')
@@ -39,65 +46,12 @@ bun run --cwd packages/cli dev -- models list \
   --plugin-sha256 ./my-plugin.ts=$SHA
 ```
 
-`--plugin-root`를 지정하면 허용 디렉터리 밖 플러그인은 거부되고, `--plugin-sha256`을 지정하면 해시 불일치 시 로딩이 실패합니다.
+## Engine adapters
 
-## 2. Engine 어댑터(핵심)
+`@idlekit/money` and `@idlekit/core` use the `Engine<N>` interface to abstract numeric backends.
+That lets you switch between `number`, `break_infinity.js`, or your own fixed-point / bigint engine.
 
-`@idlekit/money`(및 `@idlekit/core` re-export)는 `Engine<N>` 인터페이스로 숫자 엔진을 추상화합니다.
+Use the adapter example to see a custom `Engine<bigint>` wired into the simulator:
 
-```ts
-export interface Engine<N> {
-  zero(): N;
-  from(input: number | string | N): N;
-  add(a: N, b: N): N;
-  sub(a: N, b: N): N;
-  mul(a: N, k: number): N;
-  div(a: N, k: number): N;
-  mulN(a: N, b: N): N;
-  divN(a: N, b: N): N;
-  cmp(a: N, b: N): -1 | 0 | 1;
-  absLog10(a: N): number;
-  isFinite(a: N): boolean;
-  toString(a: N): string;
-  toNumber(a: N): number;
-}
-```
-
-핵심 포인트:
-
-- `toNumber`는 분석/휴리스틱용 보조값으로만 사용
-- 결제/누적/상태 업데이트는 항상 `N` 타입 연산으로 처리
-- `absLog10` 품질이 strategy/objective 안정성에 중요
-
-머니 처리만 독립 사용하려면 `@idlekit/money`를 직접 import 하고, 시뮬레이터까지 쓰려면 `@idlekit/core`를 사용하면 됩니다.
-
-## 3. 결정론 규약
-
-전략/모델 구현 시 아래를 지켜야 튜닝/플래닝 결과가 재현됩니다.
-
-- `Math.random()`, `Date.now()` 사용 금지
-- 입력 동일하면 `actions()`와 `bulk()` 결과 순서 동일
-- tie-break 규칙을 고정해서 사용
-- `ctx`, `state`를 mutate 하지 않기
-
-관련 코드:
-
-- `packages/core/src/sim/strategy/contracts.ts`
-- `packages/core/src/sim/strategy/stability.ts`
-
-## 4. stepOnce 의존 규약
-
-planner/optimizer 롤아웃은 `runScenario` 로직 복제가 아니라 `stepOnce`를 사용해야 합니다.
-
-- 단일 틱 전이 SSOT: `packages/core/src/sim/step.ts`
-- planner deps: `packages/core/src/sim/strategy/planner.ts`
-
-## 5. 어댑터 예제 프로젝트
-
-실행 가능한 예제:
-
-- `examples/adapter-pattern/README.md`
-- `examples/adapter-pattern/fixedPointEngine.ts`
-- `examples/adapter-pattern/run.ts`
-
-이 예제는 `bigint` 고정소수점 엔진을 `Engine<bigint>`로 어댑팅해서 시뮬레이터를 실행합니다.
+- [../examples/adapter-pattern/README.md](../examples/adapter-pattern/README.md)
+- [../examples/plugins/README.md](../examples/plugins/README.md)

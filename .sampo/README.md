@@ -1,6 +1,8 @@
-# Sampo
+# Sampo configuration for idlekit
 
-`idlekit`은 changelog/versioning/publish 흐름을 Sampo 기준으로 관리합니다.
+Korean version: [README_ko.md](./README_ko.md)
+
+`idlekit` uses Sampo for changesets, version bumps, changelog generation, and publish automation.
 
 ## Local workflow
 
@@ -13,57 +15,47 @@ bun run release:publish:dry-run
 
 ## Changeset authoring rules
 
-다음 기능 변경부터는 PR/작업 단위마다 `.sampo/changesets/*.md`를 같이 관리합니다.
+Add a changeset when a change affects:
 
-작성 규칙:
+- public package behavior, contracts, outputs, or shipped artifacts
+- the user-visible CLI flow or documented commands
+- release notes that operators or users should see
 
-- user-facing 영향이 있는 변경이면 changeset을 추가합니다.
-- 문서만 바꾸는 변경, 테스트만 보강하는 변경, 내부 리팩토링만 있고 패키지 동작/계약/출력이 안 바뀌면 changeset 없이 진행할 수 있습니다.
-- changeset 1개는 `하나의 논리적 배포 단위`만 설명합니다. unrelated 변경을 한 파일에 섞지 않습니다.
-- front matter 패키지 키는 canonical id를 사용합니다.
-  - npm 패키지: `npm/@idlekit/money`, `npm/@idlekit/core`, `npm/@idlekit/cli`
-- bump 수준은 아래 기준으로 고정합니다.
-  - `patch`: 버그 수정, additive 문서/출력 개선, non-breaking CLI UX 개선
-  - `minor`: 새 명령, 새 옵션, additive 공개 API, 새 시나리오/분석 기능
-  - `major`: 기존 계약/출력/CLI 사용법을 깨는 변경
-- 현재 운영 방침: 당분간 `major` bump는 사용하지 않습니다. breaking change가 필요하면 먼저 설계 검토/마이그레이션 문서/대체 경로를 준비하고, 실제 배포는 `v1` 범위 내 additive 또는 deprecation 중심으로 처리합니다.
-- 본문은 “무엇을 바꿨는지”보다 “사용자/운영자가 무엇을 얻게 되는지”를 1~3문장으로 씁니다.
-- changeset 파일은 `.sampo/changesets/*.md`만 허용합니다. 설명용 README를 넣지 않습니다.
-- 빈 디렉터리 유지는 `.sampo/changesets/.gitkeep`만 사용합니다.
+You can usually skip a changeset for:
 
-예시:
+- typo-only documentation edits
+- internal test additions
+- refactors that do not change package behavior or outputs
+
+### Format
 
 ```md
 ---
 npm/@idlekit/cli: patch
-npm/@idlekit/core: minor
 ---
 
-Add replay verification hints to CLI output and expose a new additive core analysis helper
-for long-horizon pacing checks.
+Short user-facing summary.
 ```
 
-검토 체크:
+### Package keys
 
-- 변경한 패키지가 front matter에 모두 들어갔는지
-- bump 수준이 실제 계약 변경 강도와 맞는지
-- 본문이 changelog에 그대로 들어가도 읽히는지
-- `bun run release:plan`이 통과하는지
+Use only these package keys:
+
+- `npm/@idlekit/money`
+- `npm/@idlekit/core`
+- `npm/@idlekit/cli`
+
+### Versioning policy
+
+- `patch`: non-breaking fixes and additive UX improvements
+- `minor`: additive public capabilities
+- `major`: breaking changes
+
+Current policy: do not ship `major` bumps during v1. If a breaking change becomes necessary,
+prepare a migration path and deprecation plan first.
 
 ## Files
 
-- `config.toml`: release branch / changelog policy
-- `changesets/*.md`: pending package changes
-- `changesets/.gitkeep`: 빈 changesets 디렉터리 유지용 파일
-- `.github/workflows/release.yml`: `main` push / 수동 실행용 release workflow
-
-## Notes
-
-- canonical release branch는 `main`
-- feature branch에서 dry-run을 보려면 `bun run release:plan`을 사용
-- actual publishing 전에는 `bun run templates:check`, `bun run docs:verify`, `bun run replay:verify`까지 같이 확인
-
-## Upstream links
-
-- Documentation: https://github.com/bruits/sampo/blob/main/crates/sampo/README.md
-- GitHub Action: https://github.com/bruits/sampo/blob/main/crates/sampo-github-action/README.md
+- [config.toml](./config.toml): release branch and changelog settings
+- [changesets/](./changesets): pending release notes
+- [../docs/release-process.md](../docs/release-process.md): public release process guide
