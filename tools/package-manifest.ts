@@ -4,6 +4,8 @@ import { resolve } from "path";
 type PackageManifest = {
   name?: string;
   version?: string;
+  types?: string;
+  exports?: Record<string, Record<string, string>>;
   dependencies?: Record<string, string>;
   devDependencies?: Record<string, string>;
   peerDependencies?: Record<string, string>;
@@ -13,6 +15,10 @@ type PackageManifest = {
 const ROOT = resolve(import.meta.dir, "..");
 const BACKUP_FILE = ".package.json.prepack.backup";
 const SECTIONS = ["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"] as const;
+const PUBLISH_EXPORTS: Record<string, { types: string; bun: string }> = {
+  "@idlekit/money": { types: "./dist/index.d.ts", bun: "./dist/index.js" },
+  "@idlekit/core": { types: "./dist/index.d.ts", bun: "./dist/index.js" },
+};
 
 async function readJson<T>(path: string): Promise<T> {
   return Bun.file(path).json() as Promise<T>;
@@ -59,6 +65,23 @@ function rewriteManifest(manifest: PackageManifest, versions: Map<string, string
     }
 
     next[section] = changed ? rewritten : deps;
+  }
+
+  const publishTarget = manifest.name ? PUBLISH_EXPORTS[manifest.name] : undefined;
+  if (publishTarget) {
+    next.types = publishTarget.types;
+
+    const rootExport = manifest.exports?.["."];
+    if (rootExport) {
+      next.exports = {
+        ...manifest.exports,
+        ".": {
+          ...rootExport,
+          types: publishTarget.types,
+          bun: publishTarget.bun,
+        },
+      };
+    }
   }
 
   return next;

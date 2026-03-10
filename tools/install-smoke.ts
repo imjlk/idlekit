@@ -7,6 +7,12 @@ type PackEntry = {
   version: string;
 };
 
+type TarballCheck = Readonly<{
+  hasReadme: boolean;
+  hasLicense: boolean;
+  hasTestArtifacts: boolean;
+}>;
+
 const ROOT = process.cwd();
 const TMP_ROOT = resolve(ROOT, "tmp", "install-smoke");
 const PACKS_DIR = resolve(TMP_ROOT, "packs");
@@ -41,6 +47,15 @@ async function packPackage(pkgDir: string): Promise<Readonly<{ packageDir: strin
     tarballPath: targetTarball,
     pack,
   };
+}
+
+async function inspectTarball(tarballPath: string): Promise<TarballCheck> {
+  const listing = await $`tar -tzf ${tarballPath}`.text();
+  const files = listing.trim().split("\n").filter(Boolean);
+  const hasReadme = files.some((file) => /package\/README\.md$/i.test(file));
+  const hasLicense = files.some((file) => /package\/LICENSE$/i.test(file));
+  const hasTestArtifacts = files.some((file) => /\.test\.(d\.ts|js|js\.map|ts|tsx)$/.test(file));
+  return { hasReadme, hasLicense, hasTestArtifacts };
 }
 
 async function writeConsumerPackageJson(): Promise<void> {
@@ -99,6 +114,19 @@ await $`npm install --no-audit --no-fund ${packed.map((entry) => entry.tarballPa
 const librarySmoke = await runLibrarySmoke();
 const cliSmoke = await runCliSmoke();
 
+const tarballChecks = await Promise.all(
+  packed.map(async (entry) => ({
+    name: entry.pack.name,
+    ...await inspectTarball(entry.tarballPath),
+  })),
+);
+
+for (const check of tarballChecks) {
+  if (!check.hasReadme) throw new Error(`tarball missing README.md: ${check.name}`);
+  if (!check.hasLicense) throw new Error(`tarball missing LICENSE: ${check.name}`);
+  if (check.hasTestArtifacts) throw new Error(`tarball still contains test artifacts: ${check.name}`);
+}
+
 const out = {
   generatedAt: new Date().toISOString(),
   tarballs: packed.map((entry) => ({
@@ -107,6 +135,7 @@ const out = {
     name: entry.pack.name,
     version: entry.pack.version,
   })),
+  tarballChecks,
   librarySmoke,
   cliSmoke,
 };

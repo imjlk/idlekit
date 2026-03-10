@@ -6,8 +6,7 @@ default_branch = "main"
 release_branches = ["main"]
 
 [github]
-# Set this when the repository remote is configured, so changelog links can be enriched.
-# repository = "owner/idlekit"
+repository = "imjlk/idlekit"
 
 [changelog]
 show_commit_hash = true

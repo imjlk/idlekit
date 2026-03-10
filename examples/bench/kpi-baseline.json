@@ -1,9 +1,9 @@
 {
   "generatedAt": "2026-03-06T01:42:32.769Z",
   "input": {
-    "a": "/Users/imjlk/repos/imjlk/idlekit/examples/tutorials/05-idle-design-v1.json",
-    "b": "/Users/imjlk/repos/imjlk/idlekit/examples/tutorials/06-idle-design-balance-b.json",
-    "plugin": "/Users/imjlk/repos/imjlk/idlekit/examples/plugins/custom-econ-plugin.ts"
+    "a": "examples/tutorials/05-idle-design-v1.json",
+    "b": "examples/tutorials/06-idle-design-balance-b.json",
+    "plugin": "examples/plugins/custom-econ-plugin.ts"
   },
   "compare": {
     "endNetWorth": {
@@ -34,8 +34,8 @@
         "gitSha": "523a510",
         "runId": "6a29efe8-f5ad-46dd-9266-fae5c716cd3d",
         "scenarioPath": [
-          "/Users/imjlk/repos/imjlk/idlekit/examples/tutorials/05-idle-design-v1.json",
-          "/Users/imjlk/repos/imjlk/idlekit/examples/tutorials/06-idle-design-balance-b.json"
+          "examples/tutorials/05-idle-design-v1.json",
+          "examples/tutorials/06-idle-design-balance-b.json"
         ],
         "scenarioHash": {
           "a": "2469411bd787683b9ba589d2e4856479cceb7d50afdc92be47fe1682afcbfc58",
@@ -73,8 +73,8 @@
         "gitSha": "523a510",
         "runId": "2b9b14a1-e27c-462f-ac1b-3ddec0d0ca95",
         "scenarioPath": [
-          "/Users/imjlk/repos/imjlk/idlekit/examples/tutorials/05-idle-design-v1.json",
-          "/Users/imjlk/repos/imjlk/idlekit/examples/tutorials/06-idle-design-balance-b.json"
+          "examples/tutorials/05-idle-design-v1.json",
+          "examples/tutorials/06-idle-design-balance-b.json"
         ],
         "scenarioHash": {
           "a": "2469411bd787683b9ba589d2e4856479cceb7d50afdc92be47fe1682afcbfc58",
@@ -260,7 +260,7 @@
         "cliVersion": "0.1.0",
         "gitSha": "523a510",
         "runId": "7c199dc9-47b2-41e6-a0e8-8fd5e48a735b",
-        "scenarioPath": "/Users/imjlk/repos/imjlk/idlekit/examples/tutorials/05-idle-design-v1.json",
+        "scenarioPath": "examples/tutorials/05-idle-design-v1.json",
         "scenarioHash": "2469411bd787683b9ba589d2e4856479cceb7d50afdc92be47fe1682afcbfc58"
       }
     },
@@ -440,7 +440,7 @@
         "cliVersion": "0.1.0",
         "gitSha": "523a510",
         "runId": "94dde59b-4507-4d20-b456-55eda0e66383",
-        "scenarioPath": "/Users/imjlk/repos/imjlk/idlekit/examples/tutorials/06-idle-design-balance-b.json",
+        "scenarioPath": "examples/tutorials/06-idle-design-balance-b.json",
         "scenarioHash": "7af6ea325aef42d4b0778c13eee7835b6a6976f54d6a42419d444107ca10fb54"
       }
     }

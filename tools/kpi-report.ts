@@ -32,6 +32,24 @@ function runCliJson(args: string[]): any {
   return runJson(["bun", "run", "--cwd", "packages/cli", "dev", "--", ...args], { cwd: ROOT });
 }
 
+function relativizeRepoPaths(value: unknown): unknown {
+  if (typeof value === "string") {
+    if (value.startsWith(`${ROOT}/`)) {
+      return value.slice(ROOT.length + 1);
+    }
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value.map((entry) => relativizeRepoPaths(entry));
+  }
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([key, entry]) => [key, relativizeRepoPaths(entry)]),
+    );
+  }
+  return value;
+}
+
 async function main(): Promise<void> {
   const args = parseArgs(process.argv);
   const scenarioAAbs = resolve(args.scenarioA);
@@ -116,7 +134,7 @@ async function main(): Promise<void> {
       "json",
     ]);
 
-    const report = {
+    const report = relativizeRepoPaths({
       generatedAt: new Date().toISOString(),
       input: {
         a: scenarioAAbs,
@@ -137,7 +155,7 @@ async function main(): Promise<void> {
           meta: ltvB._meta,
         },
       },
-    };
+    });
 
     const json = `${JSON.stringify(report, null, 2)}\n`;
 

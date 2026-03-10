@@ -1,10 +1,21 @@
 {
   "name": "idlekit",
   "private": true,
+  "description": "Bun-first idle game economy simulator, money library, and idk CLI.",
+  "license": "MIT",
   "type": "module",
+  "packageManager": "bun@1.3.10",
   "workspaces": [
     "packages/*"
   ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/imjlk/idlekit.git"
+  },
+  "homepage": "https://github.com/imjlk/idlekit#readme",
+  "bugs": {
+    "url": "https://github.com/imjlk/idlekit/issues"
+  },
   "scripts": {
     "build": "bun run --cwd packages/money build && bun run --cwd packages/core build && bun run --cwd packages/cli build",
     "typecheck": "bun run --cwd packages/money typecheck && bun run --cwd packages/core typecheck && bun run --cwd packages/cli typecheck",
@@ -19,6 +30,7 @@
     "docs:verify:quick": "bun tools/docs-verify.ts --quick",
     "templates:check": "bun tools/templates-check.ts",
     "install:smoke": "bun tools/install-smoke.ts",
+    "public:check": "bun tools/public-check.ts",
     "replay:verify": "bun tools/replay-verify-gate.ts",
     "changeset:add": "sampo add",
     "release:plan": "bun tools/sampo-release-plan.ts",

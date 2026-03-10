@@ -1,13 +1,14 @@
 {
   "name": "@idlekit/core",
   "version": "0.1.0",
+  "description": "Scenario compilation, simulation, analysis, and reporting for idle game economies.",
+  "license": "MIT",
   "type": "module",
   "sideEffects": false,
   "files": [
     "dist",
-    "src",
-    "tsconfig.build.json",
-    "tsconfig.json"
+    "README.md",
+    "LICENSE"
   ],
   "main": "./dist/index.js",
   "module": "./dist/index.js",
@@ -20,8 +21,30 @@
       "default": "./dist/index.js"
     }
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/imjlk/idlekit.git",
+    "directory": "packages/core"
+  },
+  "homepage": "https://github.com/imjlk/idlekit/tree/main/packages/core#readme",
+  "bugs": {
+    "url": "https://github.com/imjlk/idlekit/issues"
+  },
+  "keywords": [
+    "bun",
+    "idle-game",
+    "incremental-game",
+    "economy-simulator",
+    "simulation"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "bun": ">=1.3.0"
+  },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "rm -rf dist && tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "bun test src",
     "prepack": "bun run build && bun ../../tools/package-manifest.ts prepare",
