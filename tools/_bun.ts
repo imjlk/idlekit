@@ -1,0 +1,66 @@
+import { $ } from "bun";
+import { dirname, resolve } from "path";
+
+export const ROOT = process.cwd();
+
+export function runText(args: string[], opts?: { cwd?: string; env?: Record<string, string | undefined> }): string {
+  const proc = Bun.spawnSync(args, {
+    cwd: opts?.cwd ?? ROOT,
+    env: opts?.env ?? process.env,
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+
+  if (proc.exitCode !== 0) {
+    const stderr = proc.stderr.toString().trim();
+    const stdout = proc.stdout.toString().trim();
+    throw new Error(stderr || stdout || `command failed with exit code ${proc.exitCode}`);
+  }
+
+  return proc.stdout.toString();
+}
+
+export function runJson<T = unknown>(
+  args: string[],
+  opts?: { cwd?: string; env?: Record<string, string | undefined> },
+): T {
+  return JSON.parse(runText(args, opts)) as T;
+}
+
+export async function ensureDir(path: string): Promise<void> {
+  await $`mkdir -p ${path}`.quiet();
+}
+
+export async function removePath(path: string): Promise<void> {
+  await $`rm -rf ${path}`.quiet();
+}
+
+export async function readText(path: string): Promise<string> {
+  return Bun.file(path).text();
+}
+
+export async function readJson<T>(path: string): Promise<T> {
+  return Bun.file(path).json() as Promise<T>;
+}
+
+export async function writeText(path: string, body: string): Promise<void> {
+  await ensureDir(dirname(path));
+  await Bun.write(path, body);
+}
+
+export async function pathExists(path: string): Promise<boolean> {
+  return Bun.file(path).exists();
+}
+
+export function sha256Hex(value: string | Uint8Array): string {
+  const hasher = new Bun.CryptoHasher("sha256");
+  hasher.update(value);
+  return hasher.digest("hex");
+}
+
+export async function createTempDir(prefix: string, baseDir = resolve(ROOT, "tmp")): Promise<string> {
+  await ensureDir(baseDir);
+  const path = resolve(baseDir, `${prefix}-${crypto.randomUUID()}`);
+  await ensureDir(path);
+  return path;
+}

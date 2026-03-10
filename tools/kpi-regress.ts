@@ -1,5 +1,5 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import { dirname, resolve } from "path";
+import { ensureDir } from "./_bun";
 
 type Args = Readonly<{
   baseline: string;
@@ -91,8 +91,8 @@ async function main(): Promise<void> {
   const args = parseArgs(process.argv);
   const baselinePath = resolve(args.baseline);
   const currentPath = resolve(args.current);
-  const baseline = JSON.parse(await readFile(baselinePath, "utf8"));
-  const current = JSON.parse(await readFile(currentPath, "utf8"));
+  const baseline = await Bun.file(baselinePath).json();
+  const current = await Bun.file(currentPath).json();
 
   const horizons: Horizon[] = ["at7d", "at30d", "at90d"];
   const sides: Side[] = ["a", "b"];
@@ -197,8 +197,8 @@ async function main(): Promise<void> {
 
   if (args.out) {
     const outPath = resolve(args.out);
-    await mkdir(dirname(outPath), { recursive: true });
-    await writeFile(outPath, json, "utf8");
+    await ensureDir(dirname(outPath));
+    await Bun.write(outPath, json);
   }
 
   process.stdout.write(json);

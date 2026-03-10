@@ -76,6 +76,8 @@ bun run kpi:regress
 bun run release:dry-run
 ```
 
+`runtime:check`는 `packages/*/src` 런타임 코드와 `tools/` 스크립트에 `node:` import가 다시 들어오지 않는지 확인합니다.
+
 ## 문서
 
 - [CLI 디자이너 시작 문서](./docs/start-here-cli-designer.md)

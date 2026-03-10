@@ -1,10 +1,7 @@
-import { execFileSync } from "node:child_process";
-import { performance } from "node:perf_hooks";
-import { writeFile } from "node:fs/promises";
-import { resolve, dirname, isAbsolute } from "node:path";
-import { fileURLToPath } from "node:url";
+import { dirname, isAbsolute, resolve } from "path";
+import { ROOT, ensureDir, runJson } from "./_bun";
 
-const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const REPO_ROOT = resolve(import.meta.dir, "..");
 
 type Args = Readonly<{
   scenarios: string[];
@@ -86,14 +83,11 @@ function resolveScenarioPath(input: string): string {
 }
 
 function runSimulateOnce(scenarioPath: string): void {
-  const raw = execFileSync("bun", ["src/main.ts", "simulate", scenarioPath, "--format", "json"], {
-    cwd: resolve(REPO_ROOT, "packages/cli"),
-    encoding: "utf8",
-    env: process.env,
-    maxBuffer: 128 * 1024 * 1024,
-  });
+  const parsed = runJson(
+    ["bun", "src/main.ts", "simulate", scenarioPath, "--format", "json"],
+    { cwd: resolve(REPO_ROOT, "packages/cli"), env: process.env },
+  );
 
-  const parsed = JSON.parse(raw);
   if (!parsed || typeof parsed !== "object") {
     throw new Error("simulate benchmark returned non-object output");
   }
@@ -179,7 +173,9 @@ async function main(): Promise<void> {
   process.stdout.write(json);
 
   if (args.out) {
-    await writeFile(resolve(args.out), json, "utf8");
+    const outPath = resolve(ROOT, args.out);
+    await ensureDir(dirname(outPath));
+    await Bun.write(outPath, json);
   }
 
   if (args.assert && !(overallPass && memoryPass)) {

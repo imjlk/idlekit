@@ -1,8 +1,10 @@
 import { relative, resolve } from "path";
 
 const ROOT = process.cwd();
-const PACKAGES_DIR = resolve(ROOT, "packages");
-const glob = new Bun.Glob("packages/*/src/**/*.{ts,tsx,js,jsx,mts,cts,mjs,cjs}");
+const SCAN_GLOBS = [
+  new Bun.Glob("packages/*/src/**/*.{ts,tsx,js,jsx,mts,cts,mjs,cjs}"),
+  new Bun.Glob("tools/**/*.{ts,tsx,js,jsx,mts,cts,mjs,cjs}"),
+];
 const NODE_IMPORT = /from\s+["']node:|require\(\s*["']node:/;
 
 function isRuntimeSource(path: string): boolean {
@@ -11,11 +13,13 @@ function isRuntimeSource(path: string): boolean {
 
 const offenders: string[] = [];
 
-for await (const path of glob.scan({ cwd: ROOT, absolute: true })) {
-  if (!isRuntimeSource(path)) continue;
-  const body = await Bun.file(path).text();
-  if (NODE_IMPORT.test(body)) {
-    offenders.push(relative(ROOT, path));
+for (const glob of SCAN_GLOBS) {
+  for await (const path of glob.scan({ cwd: ROOT, absolute: true })) {
+    if (!isRuntimeSource(path)) continue;
+    const body = await Bun.file(path).text();
+    if (NODE_IMPORT.test(body)) {
+      offenders.push(relative(ROOT, path));
+    }
   }
 }
 
@@ -27,4 +31,4 @@ if (offenders.length > 0) {
   process.exit(1);
 }
 
-console.log(`runtime import check passed (${relative(ROOT, PACKAGES_DIR)})`);
+console.log("runtime import check passed (packages + tools)");

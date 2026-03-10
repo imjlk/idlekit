@@ -1,8 +1,5 @@
-import { createHash } from "node:crypto";
-import { mkdtempSync, readFileSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { dirname, resolve } from "node:path";
-import { execFileSync } from "node:child_process";
+import { dirname, resolve } from "path";
+import { ROOT, createTempDir, ensureDir, removePath, runJson, sha256Hex, writeText } from "./_bun";
 
 type Args = Readonly<{
   scenarioA: string;
@@ -32,36 +29,21 @@ function parseArgs(argv: string[]): Args {
 }
 
 function runCliJson(args: string[]): any {
-  const out = execFileSync("bun", ["run", "--cwd", "packages/cli", "dev", "--", ...args], {
-    cwd: process.cwd(),
-    encoding: "utf8",
-    maxBuffer: 128 * 1024 * 1024,
-    env: process.env,
-  });
-  return JSON.parse(out);
+  return runJson(["bun", "run", "--cwd", "packages/cli", "dev", "--", ...args], { cwd: ROOT });
 }
 
-function main(): void {
+async function main(): Promise<void> {
   const args = parseArgs(process.argv);
   const scenarioAAbs = resolve(args.scenarioA);
   const scenarioBAbs = resolve(args.scenarioB);
   const pluginAbs = args.plugin ? resolve(args.plugin) : undefined;
   const pluginRootAbs = args.pluginRoot ? resolve(args.pluginRoot) : undefined;
-  const pluginDigest = pluginAbs
-    ? createHash("sha256").update(readFileSync(pluginAbs)).digest("hex")
-    : undefined;
-  const pluginSha = pluginAbs && pluginDigest
-    ? `${pluginAbs}=${pluginDigest}`
-    : undefined;
-  const trustFile = pluginAbs
-    ? resolve(mkdtempSync(resolve(tmpdir(), "idlekit-kpi-trust-")), "plugin-trust.json")
-    : undefined;
+  const pluginDigest = pluginAbs ? sha256Hex(await Bun.file(pluginAbs).bytes()) : undefined;
+  const pluginSha = pluginAbs && pluginDigest ? `${pluginAbs}=${pluginDigest}` : undefined;
+  const trustDir = pluginAbs ? await createTempDir("idlekit-kpi-trust") : undefined;
+  const trustFile = trustDir ? resolve(trustDir, "plugin-trust.json") : undefined;
   if (trustFile && pluginAbs) {
-    writeFileSync(
-      trustFile,
-      `${JSON.stringify({ plugins: { [pluginAbs]: pluginDigest } }, null, 2)}\n`,
-      "utf8",
-    );
+    await writeText(trustFile, `${JSON.stringify({ plugins: { [pluginAbs]: pluginDigest } }, null, 2)}\n`);
   }
 
   const pluginFlags = pluginAbs
@@ -79,96 +61,100 @@ function main(): void {
       ]
     : [];
 
-  const compareNetWorth = runCliJson([
-    "compare",
-    scenarioAAbs,
-    scenarioBAbs,
-    "--metric",
-    "endNetWorth",
-    ...pluginFlags,
-    "--format",
-    "json",
-  ]);
+  try {
+    const compareNetWorth = runCliJson([
+      "compare",
+      scenarioAAbs,
+      scenarioBAbs,
+      "--metric",
+      "endNetWorth",
+      ...pluginFlags,
+      "--format",
+      "json",
+    ]);
 
-  const compareEta = runCliJson([
-    "compare",
-    scenarioAAbs,
-    scenarioBAbs,
-    "--metric",
-    "etaToTargetWorth",
-    "--target-worth",
-    "1e6",
-    "--max-duration",
-    "86400",
-    ...pluginFlags,
-    "--format",
-    "json",
-  ]);
+    const compareEta = runCliJson([
+      "compare",
+      scenarioAAbs,
+      scenarioBAbs,
+      "--metric",
+      "etaToTargetWorth",
+      "--target-worth",
+      "1e6",
+      "--max-duration",
+      "86400",
+      ...pluginFlags,
+      "--format",
+      "json",
+    ]);
 
-  const ltvA = runCliJson([
-    "ltv",
-    scenarioAAbs,
-    "--horizons",
-    "30m,2h,24h,7d,30d,90d",
-    "--step",
-    "600",
-    "--fast",
-    "true",
-    ...pluginFlags,
-    "--format",
-    "json",
-  ]);
+    const ltvA = runCliJson([
+      "ltv",
+      scenarioAAbs,
+      "--horizons",
+      "30m,2h,24h,7d,30d,90d",
+      "--step",
+      "600",
+      "--fast",
+      "true",
+      ...pluginFlags,
+      "--format",
+      "json",
+    ]);
 
-  const ltvB = runCliJson([
-    "ltv",
-    scenarioBAbs,
-    "--horizons",
-    "30m,2h,24h,7d,30d,90d",
-    "--step",
-    "600",
-    "--fast",
-    "true",
-    ...pluginFlags,
-    "--format",
-    "json",
-  ]);
+    const ltvB = runCliJson([
+      "ltv",
+      scenarioBAbs,
+      "--horizons",
+      "30m,2h,24h,7d,30d,90d",
+      "--step",
+      "600",
+      "--fast",
+      "true",
+      ...pluginFlags,
+      "--format",
+      "json",
+    ]);
 
-  const report = {
-    generatedAt: new Date().toISOString(),
-    input: {
-      a: scenarioAAbs,
-      b: scenarioBAbs,
-      plugin: pluginAbs,
-    },
-    compare: {
-      endNetWorth: compareNetWorth,
-      etaToTargetWorth: compareEta,
-    },
-    ltv: {
-      a: {
-        summary: ltvA.summary,
-        meta: ltvA._meta,
+    const report = {
+      generatedAt: new Date().toISOString(),
+      input: {
+        a: scenarioAAbs,
+        b: scenarioBAbs,
+        plugin: pluginAbs,
       },
-      b: {
-        summary: ltvB.summary,
-        meta: ltvB._meta,
+      compare: {
+        endNetWorth: compareNetWorth,
+        etaToTargetWorth: compareEta,
       },
-    },
-  };
+      ltv: {
+        a: {
+          summary: ltvA.summary,
+          meta: ltvA._meta,
+        },
+        b: {
+          summary: ltvB.summary,
+          meta: ltvB._meta,
+        },
+      },
+    };
 
-  const json = JSON.stringify(report, null, 2) + "\n";
+    const json = `${JSON.stringify(report, null, 2)}\n`;
 
-  if (args.out) {
-    const outPath = resolve(args.out);
-    mkdirSync(dirname(outPath), { recursive: true });
-    writeFileSync(outPath, json, "utf8");
-    process.stdout.write(`wrote kpi report: ${outPath}\n`);
-    if (trustFile) rmSync(dirname(trustFile), { recursive: true, force: true });
-    return;
+    if (args.out) {
+      const outPath = resolve(args.out);
+      await ensureDir(dirname(outPath));
+      await Bun.write(outPath, json);
+      process.stdout.write(`wrote kpi report: ${outPath}\n`);
+      return;
+    }
+
+    process.stdout.write(json);
+  } finally {
+    if (trustDir) {
+      await removePath(trustDir);
+    }
   }
-
-  process.stdout.write(json);
-  if (trustFile) rmSync(dirname(trustFile), { recursive: true, force: true });
 }
 
-main();
+await main();

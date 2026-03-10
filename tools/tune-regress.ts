@@ -1,5 +1,4 @@
-import { readFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { resolve } from "path";
 
 type Args = Readonly<{
   baseline: string;
@@ -42,8 +41,8 @@ async function main(): Promise<void> {
   const baselinePath = resolve(args.baseline);
   const currentPath = resolve(args.current);
 
-  const baseline = JSON.parse(await readFile(baselinePath, "utf8"));
-  const current = JSON.parse(await readFile(currentPath, "utf8"));
+  const baseline = await Bun.file(baselinePath).json();
+  const current = await Bun.file(currentPath).json();
 
   const baselineScore = readBestScore(baseline, "baseline");
   const currentScore = readBestScore(current, "current");
@@ -62,7 +61,7 @@ async function main(): Promise<void> {
     regressed,
   };
 
-  process.stdout.write(JSON.stringify(out, null, 2) + "\n");
+  process.stdout.write(`${JSON.stringify(out, null, 2)}\n`);
   if (regressed) {
     process.exit(2);
   }

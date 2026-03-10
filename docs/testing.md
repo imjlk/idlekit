@@ -36,7 +36,7 @@ bun run --cwd packages/cli test
 
 - 테스트 러너는 `bun:test`를 기본으로 사용합니다.
 - CLI 테스트의 파일/프로세스 I/O는 가능한 한 `packages/cli/src/testkit/bun.ts`를 사용합니다.
-- `packages/*/src` 비테스트 런타임 코드는 `node:` import 대신 Bun API를 우선 사용합니다.
+- `packages/*/src` 비테스트 런타임 코드와 `tools/` 스크립트는 `node:` import 대신 Bun API를 우선 사용합니다.
 - 이 규칙은 `bun run runtime:check`로 확인합니다.
 
 Core:

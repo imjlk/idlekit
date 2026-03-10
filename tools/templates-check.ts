@@ -1,11 +1,6 @@
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { resolve } from "path";
 import { stableStringify } from "../packages/cli/src/io/outputMeta";
 import { buildCanonicalPersonalBuilderExamples, buildInitTemplatePlan } from "../packages/cli/src/templates/scenario";
-
-function readJson(path: string): unknown {
-  return JSON.parse(readFileSync(path, "utf8"));
-}
 
 function assertEqual(label: string, actual: unknown, expected: unknown): void {
   if (stableStringify(actual) === stableStringify(expected)) return;
@@ -17,17 +12,17 @@ const canonical = buildCanonicalPersonalBuilderExamples();
 
 assertEqual(
   "examples/tutorials/11-my-game-v1.json",
-  readJson(resolve(root, "examples/tutorials/11-my-game-v1.json")),
+  await Bun.file(resolve(root, "examples/tutorials/11-my-game-v1.json")).json(),
   canonical.base,
 );
 assertEqual(
   "examples/tutorials/12-my-game-compare-b.json",
-  readJson(resolve(root, "examples/tutorials/12-my-game-compare-b.json")),
+  await Bun.file(resolve(root, "examples/tutorials/12-my-game-compare-b.json")).json(),
   canonical.compare,
 );
 assertEqual(
   "examples/tutorials/13-my-game-tune.json",
-  readJson(resolve(root, "examples/tutorials/13-my-game-tune.json")),
+  await Bun.file(resolve(root, "examples/tutorials/13-my-game-tune.json")).json(),
   canonical.tune,
 );
 

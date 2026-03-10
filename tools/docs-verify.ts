@@ -1,28 +1,13 @@
-import { existsSync } from "node:fs";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
-import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
-import { execFileSync } from "node:child_process";
+import { resolve } from "path";
+import { ROOT, ensureDir, pathExists, readText, removePath, runText, sha256Hex, writeText } from "./_bun";
 
 type JSONValue = null | boolean | number | string | JSONValue[] | { [k: string]: JSONValue };
 
-const root = process.cwd();
-const tmpDir = resolve(root, "tmp", "docs-verify");
+const tmpDir = resolve(ROOT, "tmp", "docs-verify");
 const isQuick = process.argv.includes("--quick");
-const maxBuffer = 256 * 1024 * 1024;
-
-function runCommand(args: string[]): string {
-  return execFileSync("bun", args, {
-    cwd: root,
-    encoding: "utf8",
-    env: process.env,
-    maxBuffer,
-  });
-}
 
 function runCli(args: string[]): string {
-  return runCommand(["run", "--cwd", "packages/cli", "dev", "--", ...args]);
+  return runText(["bun", "run", "--cwd", "packages/cli", "dev", "--", ...args], { cwd: ROOT });
 }
 
 function runCliJson(args: string[]): JSONValue {
@@ -49,7 +34,7 @@ function has(obj: Record<string, JSONValue>, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(obj, key);
 }
 
-function verifyIntroTrack(): void {
+async function verifyIntroTrack(): Promise<void> {
   const baseline = "../../examples/tutorials/01-cafe-baseline.json";
   const compareB = "../../examples/tutorials/03-cafe-compare-b.json";
   const tuneSpec = "../../examples/tutorials/04-cafe-tune.json";
@@ -75,7 +60,7 @@ function verifyIntroTrack(): void {
   const firstRun = asRecord(
     runCliJson(["simulate", baseline, "--duration", "30", "--state-out", statePath, "--format", "json"]),
   );
-  assert(existsSync(statePath), "simulate --state-out should create state json");
+  assert(await pathExists(statePath), "simulate --state-out should create state json");
   const resumed = asRecord(
     runCliJson(["simulate", baseline, "--resume", statePath, "--duration", "10", "--format", "json"]),
   );
@@ -106,8 +91,8 @@ function verifyIntroTrack(): void {
   const reportJson = resolve(tmpDir, "intro-report.json");
   runCli(["report", baseline, "--format", "md", "--out", reportMd]);
   runCli(["report", baseline, "--format", "json", "--out", reportJson]);
-  assert(existsSync(reportMd), "report md file should exist");
-  assert(existsSync(reportJson), "report json file should exist");
+  assert(await pathExists(reportMd), "report md file should exist");
+  assert(await pathExists(reportJson), "report json file should exist");
 
   const compare = asRecord(
     runCliJson([
@@ -210,9 +195,9 @@ function verifyIntroTrack(): void {
   const namedGeneratedBase = resolve(tmpDir, "docs-verify-v1.json");
   const namedGeneratedCompare = resolve(tmpDir, "docs-verify-v1-compare-b.json");
   const namedGeneratedTune = resolve(tmpDir, "docs-verify-v1-tune.json");
-  assert(existsSync(namedGeneratedBase), "init personal --name should create renamed base scenario");
-  assert(existsSync(namedGeneratedCompare), "init personal --name should create renamed compare scenario");
-  assert(existsSync(namedGeneratedTune), "init personal --name should create renamed tune spec");
+  assert(await pathExists(namedGeneratedBase), "init personal --name should create renamed base scenario");
+  assert(await pathExists(namedGeneratedCompare), "init personal --name should create renamed compare scenario");
+  assert(await pathExists(namedGeneratedTune), "init personal --name should create renamed tune spec");
   const generatedValidate = runCli(["validate", namedGeneratedBase]);
   assert(generatedValidate.includes("OK:"), "generated personal base validate should print OK");
   const generatedCompare = asRecord(
@@ -265,188 +250,67 @@ function verifyIntroTrack(): void {
   assert(Array.isArray(asRecord(personalTune.insights as JSONValue).patterns), "personal tune insights.patterns must exist");
 }
 
-function verifyPluginTrack(): void {
-  const plugin = resolve(root, "examples/plugins/custom-econ-plugin.ts");
-  const pluginRoot = resolve(root, "examples/plugins");
-  const sha = createHash("sha256").update(readFileSync(plugin)).digest("hex");
+async function verifyPluginTrack(): Promise<void> {
+  const plugin = resolve(ROOT, "examples/plugins/custom-econ-plugin.ts");
+  const pluginRoot = resolve(ROOT, "examples/plugins");
+  const sha = sha256Hex(await readText(plugin));
   const pluginShaArg = `${plugin}=${sha}`;
   const trustFile = resolve(tmpDir, "plugin-trust.json");
-  writeFileSync(trustFile, JSON.stringify({ plugins: { [plugin]: sha } }, null, 2), "utf8");
+  await writeText(trustFile, `${JSON.stringify({ plugins: { [plugin]: sha } }, null, 2)}\n`);
   const scenario = "../../examples/plugins/plugin-scenario.json";
   const tuneSpec = "../../examples/plugins/plugin-tune.json";
   const designV1 = "../../examples/tutorials/05-idle-design-v1.json";
   const designB = "../../examples/tutorials/06-idle-design-balance-b.json";
   const designTune = "../../examples/tutorials/07-idle-design-tune.json";
 
-  const strategies = asRecord(
-    runCliJson([
-      "strategies",
-      "list",
-      "--plugin",
-      plugin,
-      "--allow-plugin",
-      "true",
-      "--plugin-root",
-      pluginRoot,
-      "--plugin-sha256",
-      pluginShaArg,
-      "--plugin-trust-file",
-      trustFile,
-      "--format",
-      "json",
-    ]),
-  );
-  const strategyRows = (strategies.strategies ?? []) as JSONValue[];
-  assert(
-    strategyRows.some((x) => asRecord(x).id === "plugin.producerFirst"),
-    "plugin.producerFirst must be listed",
-  );
+  const pluginFlags = [
+    "--plugin",
+    plugin,
+    "--allow-plugin",
+    "true",
+    "--plugin-root",
+    pluginRoot,
+    "--plugin-sha256",
+    pluginShaArg,
+    "--plugin-trust-file",
+    trustFile,
+  ];
 
-  const objectives = asRecord(
-    runCliJson([
-      "objectives",
-      "list",
-      "--plugin",
-      plugin,
-      "--allow-plugin",
-      "true",
-      "--plugin-root",
-      pluginRoot,
-      "--plugin-sha256",
-      pluginShaArg,
-      "--plugin-trust-file",
-      trustFile,
-      "--format",
-      "json",
-    ]),
-  );
+  const strategies = asRecord(runCliJson(["strategies", "list", ...pluginFlags, "--format", "json"]));
+  const strategyRows = (strategies.strategies ?? []) as JSONValue[];
+  assert(strategyRows.some((x) => asRecord(x).id === "plugin.producerFirst"), "plugin.producerFirst must be listed");
+
+  const objectives = asRecord(runCliJson(["objectives", "list", ...pluginFlags, "--format", "json"]));
   const objectiveRows = (objectives.objectives ?? []) as JSONValue[];
   assert(
     objectiveRows.some((x) => asRecord(x).id === "plugin.gemsAndWorthLog10"),
     "plugin.gemsAndWorthLog10 must be listed",
   );
 
-  const validateOut = runCli([
-    "validate",
-    scenario,
-    "--plugin",
-    plugin,
-    "--allow-plugin",
-    "true",
-    "--plugin-root",
-    pluginRoot,
-    "--plugin-sha256",
-    pluginShaArg,
-    "--plugin-trust-file",
-    trustFile,
-  ]);
+  const validateOut = runCli(["validate", scenario, ...pluginFlags]);
   assert(validateOut.includes("OK:"), "plugin validate should print OK");
 
-  const tune = asRecord(
-    runCliJson([
-      "tune",
-      scenario,
-      "--plugin",
-      plugin,
-      "--allow-plugin",
-      "true",
-      "--plugin-root",
-      pluginRoot,
-      "--plugin-sha256",
-      pluginShaArg,
-      "--plugin-trust-file",
-      trustFile,
-      "--tune",
-      tuneSpec,
-      "--format",
-      "json",
-    ]),
-  );
+  const tune = asRecord(runCliJson(["tune", scenario, ...pluginFlags, "--tune", tuneSpec, "--format", "json"]));
   assert(tune.ok === true, "plugin tune result must be ok=true");
   const report = asRecord(tune.report as JSONValue);
   assert(has(report, "best"), "plugin tune report must include best");
 
-  const designValidate = runCli([
-    "validate",
-    designV1,
-    "--plugin",
-    plugin,
-    "--allow-plugin",
-    "true",
-    "--plugin-root",
-    pluginRoot,
-    "--plugin-sha256",
-    pluginShaArg,
-    "--plugin-trust-file",
-    trustFile,
-  ]);
+  const designValidate = runCli(["validate", designV1, ...pluginFlags]);
   assert(designValidate.includes("OK:"), "design track validate should print OK");
 
-  const designSim = asRecord(
-    runCliJson([
-      "simulate",
-      designV1,
-      "--plugin",
-      plugin,
-      "--allow-plugin",
-      "true",
-      "--plugin-root",
-      pluginRoot,
-      "--plugin-sha256",
-      pluginShaArg,
-      "--plugin-trust-file",
-      trustFile,
-      "--format",
-      "json",
-    ]),
-  );
+  const designSim = asRecord(runCliJson(["simulate", designV1, ...pluginFlags, "--format", "json"]));
   assert(has(designSim, "endMoney"), "design simulate must include endMoney");
   assert(has(designSim, "endNetWorth"), "design simulate must include endNetWorth");
   assert(has(designSim, "stats"), "design simulate must include stats");
 
   const designCompare = asRecord(
-    runCliJson([
-      "compare",
-      designV1,
-      designB,
-      "--metric",
-      "endNetWorth",
-      "--plugin",
-      plugin,
-      "--allow-plugin",
-      "true",
-      "--plugin-root",
-      pluginRoot,
-      "--plugin-sha256",
-      pluginShaArg,
-      "--plugin-trust-file",
-      trustFile,
-      "--format",
-      "json",
-    ]),
+    runCliJson(["compare", designV1, designB, "--metric", "endNetWorth", ...pluginFlags, "--format", "json"]),
   );
   const designCompareDetail = asRecord(designCompare.detail as JSONValue);
   assert(designCompareDetail.source === "measured", "design compare detail.source must be measured");
 
   const designTuneOut = asRecord(
-    runCliJson([
-      "tune",
-      designV1,
-      "--tune",
-      designTune,
-      "--plugin",
-      plugin,
-      "--allow-plugin",
-      "true",
-      "--plugin-root",
-      pluginRoot,
-      "--plugin-sha256",
-      pluginShaArg,
-      "--plugin-trust-file",
-      trustFile,
-      "--format",
-      "json",
-    ]),
+    runCliJson(["tune", designV1, "--tune", designTune, ...pluginFlags, "--format", "json"]),
   );
   assert(designTuneOut.ok === true, "design tune result must be ok=true");
   const designReport = asRecord(designTuneOut.report as JSONValue);
@@ -464,14 +328,7 @@ function verifyPluginTrack(): void {
       "true",
       "--value-per-worth",
       "0.001",
-      "--plugin",
-      plugin,
-      "--allow-plugin",
-      "true",
-      "--plugin-root",
-      pluginRoot,
-      "--plugin-sha256",
-      pluginShaArg,
+      ...pluginFlags,
       "--format",
       "json",
     ]),
@@ -487,7 +344,7 @@ function verifyPluginTrack(): void {
   assert(has(monetization, "cumulativeLtvPerUser"), "design ltv 90d row must include cumulativeLtvPerUser");
 
   const telemetryCsv = resolve(tmpDir, "calibration-telemetry.csv");
-  writeFileSync(
+  await writeText(
     telemetryCsv,
     [
       "user_id,day,revenue,ad_revenue,acquisition_cost,active",
@@ -496,7 +353,6 @@ function verifyPluginTrack(): void {
       "u2,1,0.0,0.02,1.0,true",
       "u3,1,0.0,0.01,1.1,true",
     ].join("\n"),
-    "utf8",
   );
   const calibrated = asRecord(runCliJson(["calibrate", telemetryCsv, "--input-format", "csv", "--format", "json"]));
   assert(calibrated.ok === true, "calibrate output must be ok=true");
@@ -508,14 +364,12 @@ function verifyPluginTrack(): void {
   assert(asRecord(calibrated._meta as JSONValue).command === "calibrate", "calibrate _meta.command must be calibrate");
 }
 
-function main(): void {
-  rmSync(tmpDir, { recursive: true, force: true });
-  mkdirSync(tmpDir, { recursive: true });
-
-  verifyIntroTrack();
-  if (!isQuick) verifyPluginTrack();
-
+async function main(): Promise<void> {
+  await removePath(tmpDir);
+  await ensureDir(tmpDir);
+  await verifyIntroTrack();
+  if (!isQuick) await verifyPluginTrack();
   console.log(`docs verification passed (${isQuick ? "quick" : "full"})`);
 }
 
-main();
+await main();

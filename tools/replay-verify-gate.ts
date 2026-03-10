@@ -1,39 +1,26 @@
-import { execFileSync } from "node:child_process";
-import { createHash } from "node:crypto";
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { resolve } from "path";
+import { ROOT, ensureDir, readText, removePath, runJson, sha256Hex, writeText } from "./_bun";
 
-const ROOT = process.cwd();
 const TMP_DIR = resolve(ROOT, "tmp", "replay-verify-gate");
-const MAX_BUFFER = 256 * 1024 * 1024;
 
 function runCliFromRoot(args: string[]): unknown {
-  const out = execFileSync("bun", ["packages/cli/src/main.ts", ...args], {
-    cwd: ROOT,
-    encoding: "utf8",
-    env: process.env,
-    maxBuffer: MAX_BUFFER,
-  });
-  return JSON.parse(out) as unknown;
+  return runJson(["bun", "packages/cli/src/main.ts", ...args], { cwd: ROOT });
 }
 
 function runCliDevJson(args: string[]): Record<string, unknown> {
-  const out = execFileSync("bun", ["run", "--cwd", "packages/cli", "dev", "--", ...args], {
-    cwd: ROOT,
-    encoding: "utf8",
-    env: process.env,
-    maxBuffer: MAX_BUFFER,
-  });
-  return JSON.parse(out) as Record<string, unknown>;
+  return runJson(["bun", "run", "--cwd", "packages/cli", "dev", "--", ...args], { cwd: ROOT }) as Record<
+    string,
+    unknown
+  >;
 }
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
 }
 
-function main(): void {
-  rmSync(TMP_DIR, { recursive: true, force: true });
-  mkdirSync(TMP_DIR, { recursive: true });
+async function main(): Promise<void> {
+  await removePath(TMP_DIR);
+  await ensureDir(TMP_DIR);
 
   const baseline = "examples/tutorials/01-cafe-baseline.json";
   const compareB = "examples/tutorials/03-cafe-compare-b.json";
@@ -41,10 +28,10 @@ function main(): void {
   const plugin = "examples/plugins/custom-econ-plugin.ts";
   const pluginRoot = "examples/plugins";
   const pluginAbs = resolve(ROOT, plugin);
-  const sha = createHash("sha256").update(readFileSync(pluginAbs)).digest("hex");
+  const sha = sha256Hex(await readText(pluginAbs));
   const pluginShaArg = `${plugin}=${sha}`;
   const trustFile = resolve(TMP_DIR, "plugin-trust.json");
-  writeFileSync(trustFile, JSON.stringify({ plugins: { [pluginAbs]: sha } }, null, 2), "utf8");
+  await writeText(trustFile, `${JSON.stringify({ plugins: { [pluginAbs]: sha } }, null, 2)}\n`);
 
   const artifacts = {
     simulate: resolve(TMP_DIR, "simulate.artifact.json"),
@@ -149,4 +136,4 @@ function main(): void {
   );
 }
 
-main();
+await main();
