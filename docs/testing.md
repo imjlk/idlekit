@@ -6,6 +6,7 @@
 
 ```bash
 bun run typecheck
+bun run runtime:check
 bun run test
 bun run build
 bun run docs:verify:quick
@@ -30,6 +31,13 @@ bun run --cwd packages/cli test
 ```
 
 ## 2. 현재 테스트 범위
+
+테스트 런타임 규약:
+
+- 테스트 러너는 `bun:test`를 기본으로 사용합니다.
+- CLI 테스트의 파일/프로세스 I/O는 가능한 한 `packages/cli/src/testkit/bun.ts`를 사용합니다.
+- `packages/*/src` 비테스트 런타임 코드는 `node:` import 대신 Bun API를 우선 사용합니다.
+- 이 규칙은 `bun run runtime:check`로 확인합니다.
 
 Core:
 
@@ -76,13 +84,14 @@ CLI 출력 변경:
 PR/커밋 전에:
 
 1. `bun run typecheck`
-2. `bun run test`
-3. `bun run build`
-4. `bun run docs:verify:quick`
-5. `bun run templates:check`
-6. `bun run install:smoke`
+2. `bun run runtime:check`
+3. `bun run test`
+4. `bun run build`
+5. `bun run docs:verify:quick`
+6. `bun run templates:check`
+7. `bun run install:smoke`
 
-CI(`.github/workflows/ci.yml`)는 typecheck/test/build + docs quick + replay verify gate + 성능 체크 + KPI A/B 리포트 + KPI 리그레션 게이트를 실행합니다.
+CI(`.github/workflows/ci.yml`)는 typecheck/runtime import check/test/build + docs quick + replay verify gate + 성능 체크 + KPI A/B 리포트 + KPI 리그레션 게이트를 실행합니다.
 패키지 배포 스모크는 `bun run install:smoke`로 tarball 설치 + Bun import + `idk validate`까지 함께 확인합니다.
 
 성능 리그레션은 `bench:sim:check`에서 평균/`p95` 실행시간 임계값으로 추가 검증합니다.

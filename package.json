@@ -8,6 +8,7 @@
   "scripts": {
     "build": "bun run --cwd packages/money build && bun run --cwd packages/core build && bun run --cwd packages/cli build",
     "typecheck": "bun run --cwd packages/money typecheck && bun run --cwd packages/core typecheck && bun run --cwd packages/cli typecheck",
+    "runtime:check": "bun tools/runtime-import-check.ts",
     "dev:cli": "bun run --cwd packages/cli dev",
     "test": "bun run --cwd packages/money test && bun run --cwd packages/core test && bun run --cwd packages/cli test",
     "bench:sim": "bun tools/bench-sim.ts",

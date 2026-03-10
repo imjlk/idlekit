@@ -60,6 +60,7 @@ bun run --cwd packages/cli dev -- init scenario --track personal --preset longru
 
 ```bash
 bun run typecheck
+bun run runtime:check
 bun run test
 bun run build
 bun run docs:verify:quick
