@@ -4,6 +4,13 @@ Korean version: [README_ko.md](./README_ko.md)
 
 `idlekit` uses Sampo for changesets, version bumps, changelog generation, and publish automation.
 
+Release automation policy:
+
+- day-to-day development and CI use Bun
+- GitHub release automation still uses Sampo for release orchestration
+- registry publish happens through `npm publish` only at release time
+- preferred registry auth is npm Trusted Publishing (OIDC); `NPM_TOKEN` is fallback-only
+
 ## Local workflow
 
 ```bash
@@ -12,6 +19,23 @@ bun run release:plan
 bun run release:version
 bun run release:publish:dry-run
 ```
+
+## GitHub release workflow
+
+The release workflow is defined in [../.github/workflows/release.yml](../.github/workflows/release.yml).
+
+It is intentionally split by responsibility:
+
+- Bun installs dependencies and runs release preflight checks
+- Node/npm is prepared only for the registry publish phase
+- Sampo drives release notes, versioning, tags, and publish orchestration
+
+Expected GitHub/npm configuration:
+
+- protected `main` branch, or manual dispatch while the repo is still private
+- GitHub Actions permission `id-token: write`
+- npm Trusted Publishing configured for this repository/workflow
+- optional `NPM_TOKEN` repository secret only if Trusted Publishing is not available
 
 ## Changeset authoring rules
 

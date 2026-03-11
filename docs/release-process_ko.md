@@ -86,11 +86,37 @@ publish dry-run:
 bun run release:publish:dry-run
 ```
 
+### GitHub 자동화 모델
+
+`idlekit`은 개발/검증은 Bun-first로 유지하고, 릴리즈 시점 배포에만 npm을 사용합니다.
+
+- CI와 로컬 개발: Bun
+- registry publish: `npm publish`
+- release orchestration: Sampo
+
+관련 workflow:
+
+- [release.yml](../.github/workflows/release.yml)
+
+GitHub Actions release job은 아래 순서로 동작합니다.
+
+1. Bun으로 install / build / public check / release plan
+2. Node/npm을 publish 전용으로 준비
+3. Sampo가 version/changelog/tag/publish를 실행
+
+인증 정책:
+
+- 기본: npm Trusted Publishing + GitHub OIDC
+- fallback: `NPM_TOKEN`을 `NODE_AUTH_TOKEN`으로 주입
+
+즉, 평소 개발에서 npm을 쓰는 게 아니라, GitHub release 경로에서만 npm publish를 호출합니다.
+
 노트:
 
 - 현재 설정은 `main`만 release branch로 취급합니다.
 - feature branch에서 릴리즈 계산을 보고 싶어서 `release:plan`은 `SAMPO_RELEASE_BRANCH=main`을 강제로 넣었습니다.
 - GitHub Actions에서는 `main` push 또는 수동 실행 시 `sampo auto`로 release/publish 흐름을 처리합니다.
+- GitHub release workflow 안에서는 npm만 publish 용도로 준비하고, 나머지 install/build/check는 계속 Bun으로 실행합니다.
 
 ## 3) 릴리즈 전 체크리스트
 

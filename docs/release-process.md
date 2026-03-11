@@ -26,6 +26,31 @@ bun run release:version
 bun run release:publish:dry-run
 ```
 
+## GitHub automation model
+
+`idlekit` keeps development and validation Bun-first:
+
+- CI installs and validates with Bun
+- local development commands use Bun
+- release-time registry publishing uses `npm publish` only
+
+The GitHub release workflow prepares both runtimes:
+
+1. Bun for install/build/public checks
+2. Node/npm only for registry publishing
+3. Sampo as the release orchestrator
+
+Workflow file:
+
+- [../.github/workflows/release.yml](../.github/workflows/release.yml)
+
+Release auth policy:
+
+- preferred: npm Trusted Publishing with GitHub OIDC
+- fallback: `NPM_TOKEN` secret exposed as `NODE_AUTH_TOKEN` at release time only
+
+If you use Trusted Publishing, configure npm to trust this repository and workflow before enabling automatic publish on `main`.
+
 ## Release checklist
 
 ```bash
@@ -52,3 +77,4 @@ bun run release:dry-run
 - The release workflow is pinned to commit SHAs for third-party GitHub Actions.
 - Keep `main` protected before enabling automatic publish on push.
 - Until branch protection and registry secrets are fully configured, prefer manual dispatch.
+- The release workflow upgrades npm only inside GitHub Actions so local development can stay Bun-first.

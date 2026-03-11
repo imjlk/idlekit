@@ -2,6 +2,13 @@
 
 `idlekit`은 changelog/versioning/publish 흐름을 Sampo 기준으로 관리합니다.
 
+릴리즈 자동화 정책:
+
+- 평소 개발과 CI는 Bun 기준으로 진행합니다.
+- GitHub 릴리즈 자동화는 Sampo가 orchestrator 역할을 맡습니다.
+- 레지스트리 배포는 릴리즈 시점에만 `npm publish`를 사용합니다.
+- npm 인증은 Trusted Publishing(OIDC)을 우선하고, `NPM_TOKEN`은 fallback입니다.
+
 ## Local workflow
 
 ```bash
@@ -10,6 +17,23 @@ bun run release:plan
 bun run release:version
 bun run release:publish:dry-run
 ```
+
+## GitHub release workflow
+
+GitHub workflow는 [../.github/workflows/release.yml](../.github/workflows/release.yml)에 있습니다.
+
+역할 분리는 아래 기준입니다.
+
+- Bun: install / build / release preflight
+- Node/npm: registry publish 단계 전용
+- Sampo: changelog / version / tag / publish orchestration
+
+기대하는 GitHub/npm 설정:
+
+- protected `main` 또는 private 단계에서는 manual dispatch
+- GitHub Actions `id-token: write` 권한
+- npm Trusted Publishing에 이 저장소/workflow 등록
+- Trusted Publishing을 못 쓰는 경우에만 `NPM_TOKEN` secret 추가
 
 ## Changeset authoring rules
 
