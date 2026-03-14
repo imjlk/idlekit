@@ -1,6 +1,9 @@
 # 릴리즈 운영 규약 (v1)
 
 영문 기준 로드맵: [roadmap.md](./roadmap.md)
+공개 저장소 운영 가이드: [public-repo-ops.md](./public-repo-ops.md)
+
+v1 공식 지원 범위는 Bun `>=1.3`입니다. Node.js와 브라우저 런타임은 v1 호환성 계약에 포함하지 않습니다.
 
 ## 1) 기본 원칙
 
@@ -21,6 +24,9 @@
 
 ```bash
 bun run changeset:add
+bun run publish:gate
+bun run readme:smoke
+bun run compat:check
 ```
 
 ### Changeset 작성 규칙
@@ -132,11 +138,10 @@ NPM_CONFIG_USERCONFIG=$PWD/.npmrc.publish.local bun run release:publish:prefligh
 
 `release:publish:preflight`가 확인하는 항목:
 
-1. build 성공
-2. tarball/install smoke 성공
-3. public package/readme check 통과
-4. `npm whoami`, `npm ping` 성공
-5. 현재 패키지 버전이 npm에 이미 올라간 버전보다 높은지
+1. `publish:gate` 통과
+2. `readme:smoke` 통과
+3. `npm whoami`, `npm ping` 성공
+4. 현재 패키지 버전이 npm에 이미 올라간 버전보다 높은지
 
 preflight가 통과하면 실제 publish 명령은 아래입니다.
 
@@ -155,11 +160,18 @@ NPM_CONFIG_USERCONFIG=$PWD/.npmrc.publish.local bun run release:publish
 
 ```bash
 bun run typecheck
+bun run runtime:check
 bun run test
 bun run build
 bun run docs:verify:quick
+bun run docs:verify
 bun run templates:check
 bun run install:smoke
+bun run readme:smoke
+bun run compat:check
+bun run public:check
+bun run replay:verify
+bun run publish:gate
 bun run release:plan
 bun run bench:sim:check
 bun run bench:sim:suite:check

@@ -1,0 +1,53 @@
+{
+  "metric": "endNetWorth",
+  "better": "a",
+  "detail": {
+    "aScore": 5.331520017099043,
+    "bScore": 5.183938569244502,
+    "metric": "endNetWorth",
+    "source": "measured"
+  },
+  "measured": {
+    "a": {
+      "endMoney": "6387.396595076675",
+      "endNetWorth": "214545.80000000002",
+      "droppedRate": 0
+    },
+    "b": {
+      "endMoney": "2027.3044667367774",
+      "endNetWorth": "152734.99999999997",
+      "droppedRate": 0
+    }
+  },
+  "insights": {
+    "summary": "Measured comparison winner: A",
+    "improved": [],
+    "regressed": [],
+    "drivers": [
+      {
+        "key": "endNetWorth",
+        "winner": "a",
+        "summary": "A finishes with higher measured net worth."
+      }
+    ]
+  },
+  "_meta": {
+    "command": "compare",
+    "generatedAt": "2026-03-14T11:42:00.703Z",
+    "contractVersion": "1.3.0",
+    "schemaRef": "docs/schemas/compare.output.schema.json",
+    "cliVersion": "0.1.1",
+    "gitSha": "ecc8f35",
+    "runId": "compat-compare-output-v1",
+    "seed": 17,
+    "scenarioPath": [
+      "../../examples/tutorials/11-my-game-v1.json",
+      "../../examples/tutorials/12-my-game-compare-b.json"
+    ],
+    "scenarioHash": {
+      "a": "f565390058b33abb0f4108a62c6a14783fef9fdf5833c4091554c380a4671674",
+      "b": "16ea65f81368024ee77e0def072973b8f2824b7e6db37c8609647c53507afeeb"
+    },
+    "pluginDigest": {}
+  }
+}

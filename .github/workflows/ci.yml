@@ -51,6 +51,12 @@ jobs:
       - name: Install Smoke
         run: bun run install:smoke
 
+      - name: README Smoke
+        run: bun run readme:smoke
+
+      - name: Compatibility Check
+        run: bun run compat:check
+
       - name: Public Readiness Check
         run: bun run public:check
 

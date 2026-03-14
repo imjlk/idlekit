@@ -200,15 +200,13 @@ describe("replay consistency", () => {
     expect(hashReplayResult(tuneA)).toBe(hashReplayResult(tuneB));
   });
 
-  it("replay verify passes for artifacts from all replay-enabled commands", async () => {
-    const dir = await createTempDir("idlekit-replay-verify-all");
+  it("replay verify passes for simulate/compare/experience artifacts", async () => {
+    const dir = await createTempDir("idlekit-replay-verify-basic");
     try {
       const artifacts = {
         simulate: resolve(dir, "simulate.artifact.json"),
         compare: resolve(dir, "compare.artifact.json"),
         experience: resolve(dir, "experience.artifact.json"),
-        tune: resolve(dir, "tune.artifact.json"),
-        ltv: resolve(dir, "ltv.artifact.json"),
       };
 
       runCliJson([
@@ -257,6 +255,28 @@ describe("replay consistency", () => {
         "json",
       ]);
 
+      for (const path of Object.values(artifacts)) {
+        const verified = runCliJson(["replay", "verify", path, "--format", "json"]);
+        expect(verified.ok).toBeTrue();
+      }
+
+      const raw = await readJson<any>(artifacts.simulate);
+      expect(raw.replay.verify.runId).toBe("replay-sim");
+      expect(raw.replay.verify.seed).toBe(101);
+      expect(typeof raw.replay.verify.resultHash).toBe("string");
+    } finally {
+      await removePath(dir);
+    }
+  });
+
+  it("replay verify passes for tune/ltv artifacts", async () => {
+    const dir = await createTempDir("idlekit-replay-verify-extended");
+    try {
+      const artifacts = {
+        tune: resolve(dir, "tune.artifact.json"),
+        ltv: resolve(dir, "ltv.artifact.json"),
+      };
+
       runCliJson([
         "tune",
         BASELINE,
@@ -293,11 +313,6 @@ describe("replay consistency", () => {
         const verified = runCliJson(["replay", "verify", path, "--format", "json"]);
         expect(verified.ok).toBeTrue();
       }
-
-      const raw = await readJson<any>(artifacts.simulate);
-      expect(raw.replay.verify.runId).toBe("replay-sim");
-      expect(raw.replay.verify.seed).toBe(101);
-      expect(typeof raw.replay.verify.resultHash).toBe("string");
     } finally {
       await removePath(dir);
     }

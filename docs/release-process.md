@@ -3,6 +3,9 @@
 Korean version: [release-process_ko.md](./release-process_ko.md)
 
 Roadmap: [roadmap.md](./roadmap.md)
+Public repo operations: [public-repo-ops.md](./public-repo-ops.md)
+
+Official support in v1: Bun `>=1.3` only. Node.js and browser runtimes are not part of the v1 compatibility contract.
 
 ## Principles
 
@@ -24,6 +27,9 @@ Common commands:
 
 ```bash
 bun run changeset:add
+bun run publish:gate
+bun run readme:smoke
+bun run compat:check
 bun run release:plan
 bun run release:version
 bun run release:publish
@@ -68,11 +74,10 @@ NPM_CONFIG_USERCONFIG=$PWD/.npmrc.publish.local bun run release:publish:prefligh
 
 What `release:publish:preflight` checks:
 
-1. build succeeds
-2. tarballs/install smoke succeed
-3. public package/readme checks pass
-4. `npm whoami` and `npm ping` succeed
-5. current package versions are greater than already-published npm versions
+1. `publish:gate` succeeds
+2. `readme:smoke` succeeds
+3. `npm whoami` and `npm ping` succeed
+4. current package versions are greater than already-published npm versions
 
 If preflight passes, the matching publish command is:
 
@@ -91,8 +96,11 @@ bun run docs:verify:quick
 bun run docs:verify
 bun run templates:check
 bun run install:smoke
+bun run readme:smoke
+bun run compat:check
 bun run public:check
 bun run replay:verify
+bun run publish:gate
 bun run release:plan
 bun run bench:sim:check
 bun run bench:sim:suite:check

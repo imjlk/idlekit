@@ -2,30 +2,26 @@
 
 Korean version: [README_ko.md](./README_ko.md)
 
-`idlekit` is a Bun-first toolkit for idle game economy design and design-decision evaluation.
-It provides three public packages:
+`idlekit` is a Bun-first toolkit for idle game economy design.
+It helps you model scenarios, simulate pacing, evaluate progression, and compare balance decisions.
+Official support in v1: Bun `>=1.3` only. Node.js and browser runtimes are not part of the v1 compatibility contract.
 
 - `@idlekit/money`: money primitives, notation, policies, and serialization
 - `@idlekit/core`: scenario compilation, simulation, analysis, and reporting
 - `@idlekit/cli`: the `idk` CLI for validation, simulation, tuning, and reporting
-
-## What is idlekit?
-
-Use `idlekit` when you want to:
-
-- model an idle or incremental game's economy as JSON scenarios
-- evaluate pacing, milestones, perceived progression, and session-pattern outcomes
-- compare balance variants with measured simulation results
-- tune strategy parameters and replay deterministic runs
-- package money/simulation logic as reusable Bun-first libraries
-
-## Packages
 
 ```bash
 bun add @idlekit/money
 bun add @idlekit/core
 bun add -g @idlekit/cli
 ```
+
+Use it when you want to:
+
+- model an idle or incremental game as JSON scenarios
+- evaluate pacing, milestones, perceived progression, and session patterns
+- compare balance variants with measured simulation results
+- tune strategy parameters and replay deterministic runs
 
 ## Quick start
 
@@ -93,6 +89,7 @@ bun run --cwd packages/cli dev -- experience ../../examples/tutorials/14-orbital
 - Scenario and tuning spec: [docs/scenario-and-tuning.md](./docs/scenario-and-tuning.md)
 - Testing and release operations: [docs/testing.md](./docs/testing.md), [docs/release-process.md](./docs/release-process.md)
 - Output schemas: [docs/schemas/README.md](./docs/schemas/README.md)
+- Public repo operations: [docs/public-repo-ops.md](./docs/public-repo-ops.md)
 
 ## Contributing
 
@@ -112,8 +109,11 @@ bun run docs:verify:quick
 bun run docs:verify
 bun run templates:check
 bun run install:smoke
+bun run readme:smoke
+bun run compat:check
 bun run public:check
 bun run replay:verify
+bun run publish:gate
 bun run release:plan
 bun run bench:sim:check
 bun run bench:sim:suite:check

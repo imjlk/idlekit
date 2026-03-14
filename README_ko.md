@@ -1,6 +1,7 @@
 # idlekit
 
 Bun workspace 기반의 범용 경제 시뮬레이터입니다.
+v1 공식 지원 범위는 Bun `>=1.3`입니다. Node.js와 브라우저 런타임은 v1 호환성 계약에 포함하지 않습니다.
 
 - `@idlekit/core`: 엔진 어댑터, 시나리오 컴파일, 시뮬레이션, 분석, 리포트
 - `@idlekit/money`: 화폐/표기/정책/직렬화 전용 라이브러리
@@ -68,7 +69,11 @@ bun run docs:verify:quick
 bun run docs:verify
 bun run templates:check
 bun run install:smoke
+bun run readme:smoke
+bun run compat:check
 bun run replay:verify
+bun run public:check
+bun run publish:gate
 bun run release:plan
 bun run bench:sim:check
 bun run bench:sim:suite:check
@@ -90,6 +95,7 @@ bun run release:dry-run
 - [머니 라이브러리 가이드](./docs/money-library.md)
 - [플러그인/어댑터 패턴 가이드](./docs/plugin-and-adapter.md)
 - [출력 JSON 스키마](./docs/schemas/)
+- [공개 저장소 운영 가이드](./docs/public-repo-ops.md)
 - [테스트 운영 가이드](./docs/testing.md)
 - [릴리즈 운영 규약](./docs/release-process.md)
 - [Sampo 변경 로그/릴리즈 설정](./.sampo/README.md)

@@ -1,5 +1,7 @@
 # 테스트 운영 가이드
 
+v1 공식 지원 범위는 Bun `>=1.3`입니다. Node.js와 브라우저 런타임은 v1 호환성 계약에 포함하지 않습니다.
+
 ## 1. 실행 명령
 
 전체:
@@ -13,6 +15,8 @@ bun run docs:verify:quick
 bun run docs:verify
 bun run templates:check
 bun run install:smoke
+bun run readme:smoke
+bun run compat:check
 bun run replay:verify
 bun run bench:sim
 bun run bench:sim:suite
@@ -38,6 +42,7 @@ bun run --cwd packages/cli test
 - CLI 테스트의 파일/프로세스 I/O는 가능한 한 `packages/cli/src/testkit/bun.ts`를 사용합니다.
 - `packages/*/src` 비테스트 런타임 코드와 `tools/` 스크립트는 `node:` import 대신 Bun API를 우선 사용합니다.
 - 이 규칙은 `bun run runtime:check`로 확인합니다.
+- Node.js/브라우저 실행은 별도 명시가 없는 한 v1 공식 지원 범위에 포함하지 않습니다.
 
 Core:
 
@@ -61,6 +66,14 @@ CLI:
 - artifact 계약(schema) 검증: `artifact-schema.test.ts`
 - contract 호환성 검증: `outputMeta.compat.test.ts`
 - `calibrate` CSV 파서 엣지 케이스 + correlation 추정 + confidence/shrinkage 진단
+
+## 2-1. Compatibility fixture 정책
+
+compatibility fixture는 `fixtures/compat/v1/` 아래에 둡니다.
+
+- additive contract 확장일 때만 fixture를 추가
+- 기존 fixture 수정은 compatibility 정책 재검토 없이는 하지 않음
+- fixture를 추가하거나 갱신한 뒤에는 `bun run compat:check` 실행
 
 ## 3. 변경 시 필수 테스트 추가 규칙
 

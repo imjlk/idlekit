@@ -1,9 +1,8 @@
 # @idlekit/money
 
-Money primitives for idle and incremental game economies: numeric engines,
-notation, money state transitions, serialization, and visibility tracking.
-
-## Install
+Money primitives for idle and incremental game economies.
+Includes numeric engines, notation, money state transitions, serialization, and visibility tracking.
+Official support in v1: Bun `>=1.3` only. Node.js and browser runtimes are not part of the v1 compatibility contract.
 
 ```bash
 bun add @idlekit/money
@@ -11,10 +10,24 @@ bun add @idlekit/money
 
 Requires Bun `>=1.3.0`.
 
+Use this package when you need:
+
+- `Engine<N>` adapters
+- `Money` / `MoneyState`
+- `tickMoney` with `drop` / `accumulate`
+- money formatting, parsing, and serde
+
 ## Quick example
 
+<!-- snippet: snippets/readme/money-quick-example.ts -->
 ```ts
-import { createBreakInfinityEngine, formatMoney, tickMoney } from "@idlekit/money";
+import {
+  createBreakInfinityEngine,
+  deserializeMoneyState,
+  formatMoney,
+  serializeMoneyState,
+  tickMoney,
+} from "@idlekit/money";
 
 const E = createBreakInfinityEngine();
 const unit = { code: "COIN" as const };
@@ -29,17 +42,11 @@ const result = tickMoney({
   policy: { mode: "accumulate", maxLogGap: 6 },
 });
 
-console.log(formatMoney(E, result.state.money));
+const saved = serializeMoneyState(E, result.state, { engineName: "break_infinity.js" });
+const restored = deserializeMoneyState(E, saved);
+
+console.log(formatMoney(E, restored.money));
 ```
-
-## Scope
-
-- `Engine<N>` adapters
-- `Money` / `MoneyState`
-- `tickMoney` with `drop` / `accumulate`
-- `formatMoney` / `parseMoney`
-- `serializeMoneyState` / `deserializeMoneyState`
-- `VisibilityTracker`
 
 ## Runtime
 

@@ -1,0 +1,424 @@
+{
+  "scenario": "../../examples/tutorials/11-my-game-v1.json",
+  "run": {
+    "id": "compat-ltv-output-v1",
+    "seed": 17,
+    "stepSec": 600,
+    "fast": true,
+    "strategyId": "greedy"
+  },
+  "monetization": {
+    "config": {
+      "cohorts": {
+        "baseUsers": 5000
+      },
+      "retention": {
+        "d1": 0.4,
+        "d7": 0.18,
+        "d30": 0.08,
+        "d90": 0.035,
+        "longTailDailyDecay": 0.02
+      },
+      "revenue": {
+        "payerConversion": 0.025,
+        "arppuDaily": 0.65,
+        "adArpDau": 0.018,
+        "platformFeeRate": 0.3,
+        "grossMarginRate": 0.92,
+        "progressionRevenueLift": 0.4,
+        "progressionLogSpan": 6
+      },
+      "acquisition": {
+        "cpi": 1.5
+      },
+      "uncertainty": {
+        "enabled": true,
+        "draws": 200,
+        "quantiles": [
+          0.5,
+          0.9
+        ],
+        "seed": 13,
+        "sigma": {
+          "retention": 0.08,
+          "conversion": 0.12,
+          "arppu": 0.2,
+          "ad": 0.15
+        },
+        "correlation": {
+          "retentionConversion": 0.25,
+          "retentionArppu": 0.2,
+          "retentionAd": 0.12,
+          "conversionArppu": 0.4,
+          "conversionAd": 0.22,
+          "arppuAd": 0.3
+        }
+      }
+    },
+    "uncertainty": {
+      "enabled": true,
+      "draws": 200,
+      "quantiles": [
+        0.5,
+        0.9
+      ]
+    }
+  },
+  "horizons": [
+    {
+      "horizon": "30m",
+      "seconds": 1800,
+      "segmentSec": 1800,
+      "endMoney": "7166.861999999999",
+      "endNetWorth": "7234.999999999999",
+      "deltaNetWorth": "7199.999999999999",
+      "netWorthPerHour": "14469.999999999998",
+      "deltaPerDay": "345599.99999999994",
+      "monetization": {
+        "cumulativeGrossRevenuePerUser": 0.00032442535922266543,
+        "cumulativeNetRevenuePerUser": 0.00020892993133939675,
+        "cumulativeLtvPerUser": -1.4997910700686603,
+        "cumulativeLtvQuantiles": {
+          "q50": -1.499794779119511,
+          "q90": -1.499725337172577
+        }
+      },
+      "guardrails": {
+        "timeToFirstUpgradeSec": null,
+        "stallRatio": 0,
+        "droppedRate": 0,
+        "actionMix": {
+          "buy.generator": 1
+        },
+        "growthLog10PerDay": 111.13778357302947
+      }
+    },
+    {
+      "horizon": "2h",
+      "seconds": 7200,
+      "segmentSec": 5400,
+      "endMoney": "67201.99644612435",
+      "endNetWorth": "67715",
+      "deltaNetWorth": "60480",
+      "netWorthPerHour": "33857.5",
+      "deltaPerDay": "967679.9999999999",
+      "monetization": {
+        "cumulativeGrossRevenuePerUser": 0.0013215754582206513,
+        "cumulativeNetRevenuePerUser": 0.0008510945950940992,
+        "cumulativeLtvPerUser": -1.4991489054049065,
+        "cumulativeLtvQuantiles": {
+          "q50": -1.4991831713360628,
+          "q90": -1.498942047610657
+        }
+      },
+      "guardrails": {
+        "timeToFirstUpgradeSec": null,
+        "stallRatio": 0,
+        "droppedRate": 0,
+        "actionMix": {
+          "buy.generator": 1
+        },
+        "growthLog10PerDay": 15.539941557536494
+      }
+    },
+    {
+      "horizon": "24h",
+      "seconds": 86400,
+      "segmentSec": 79200,
+      "endMoney": "644353.8648037493",
+      "endNetWorth": "6291394.999999998",
+      "deltaNetWorth": "6223679.999999998",
+      "netWorthPerHour": "262141.45833333326",
+      "deltaPerDay": "6789469.090909089",
+      "monetization": {
+        "cumulativeGrossRevenuePerUser": 0.01751892797530051,
+        "cumulativeNetRevenuePerUser": 0.011282189616093523,
+        "cumulativeLtvPerUser": -1.4887178103839065,
+        "cumulativeLtvQuantiles": {
+          "q50": -1.488931562394676,
+          "q90": -1.485476074238238
+        }
+      },
+      "guardrails": {
+        "timeToFirstUpgradeSec": null,
+        "stallRatio": 0.4027777777777778,
+        "droppedRate": 0,
+        "actionMix": {
+          "buy.generator": 1
+        },
+        "growthLog10PerDay": 2.146976803699186
+      }
+    },
+    {
+      "horizon": "7d",
+      "seconds": 604800,
+      "segmentSec": 518400,
+      "endMoney": "3948425.4515514416",
+      "endNetWorth": "69021395",
+      "deltaNetWorth": "62730000",
+      "netWorthPerHour": "410841.63690476195",
+      "deltaPerDay": "10455000",
+      "monetization": {
+        "cumulativeGrossRevenuePerUser": 0.08996373082010369,
+        "cumulativeNetRevenuePerUser": 0.057936642648146755,
+        "cumulativeLtvPerUser": -1.4420633573518546,
+        "cumulativeLtvQuantiles": {
+          "q50": -1.443120971307505,
+          "q90": -1.4276900655017601
+        }
+      },
+      "guardrails": {
+        "timeToFirstUpgradeSec": null,
+        "stallRatio": 0.8948412698412699,
+        "droppedRate": 0,
+        "actionMix": {
+          "buy.generator": 1
+        },
+        "growthLog10PerDay": 0.1733727966275489
+      }
+    },
+    {
+      "horizon": "30d",
+      "seconds": 2592000,
+      "segmentSec": 1987200,
+      "endMoney": "25644427.93840746",
+      "endNetWorth": "344373154.9999999",
+      "deltaNetWorth": "275351759.9999999",
+      "netWorthPerHour": "478296.04861111095",
+      "deltaPerDay": "11971815.652173908",
+      "monetization": {
+        "cumulativeGrossRevenuePerUser": 0.22741113202720548,
+        "cumulativeNetRevenuePerUser": 0.1464527690255203,
+        "cumulativeLtvPerUser": -1.3535472309744798,
+        "cumulativeLtvQuantiles": {
+          "q50": -1.3542163914100893,
+          "q90": -1.3122982723759657
+        }
+      },
+      "guardrails": {
+        "timeToFirstUpgradeSec": null,
+        "stallRatio": 0.9724537037037037,
+        "droppedRate": 0,
+        "actionMix": {
+          "buy.generator": 1
+        },
+        "growthLog10PerDay": 0.030349806818225203
+      }
+    },
+    {
+      "horizon": "90d",
+      "seconds": 7776000,
+      "segmentSec": 5184000,
+      "endMoney": "47549203.49031527",
+      "endNetWorth": "1129495715",
+      "deltaNetWorth": "785122560.0000001",
+      "netWorthPerHour": "522914.6828703704",
+      "deltaPerDay": "13085376.000000004",
+      "monetization": {
+        "cumulativeGrossRevenuePerUser": 0.3722273907487256,
+        "cumulativeNetRevenuePerUser": 0.23971443964217942,
+        "cumulativeLtvPerUser": -1.2602855603578207,
+        "cumulativeLtvQuantiles": {
+          "q50": -1.2618130495975666,
+          "q90": -1.1946911360616257
+        }
+      },
+      "guardrails": {
+        "timeToFirstUpgradeSec": null,
+        "stallRatio": 0.9900462962962963,
+        "droppedRate": 0,
+        "actionMix": {
+          "buy.generator": 1
+        },
+        "growthLog10PerDay": 0.008597588303683986
+      }
+    }
+  ],
+  "summary": {
+    "at30m": {
+      "horizon": "30m",
+      "seconds": 1800,
+      "segmentSec": 1800,
+      "endMoney": "7166.861999999999",
+      "endNetWorth": "7234.999999999999",
+      "deltaNetWorth": "7199.999999999999",
+      "netWorthPerHour": "14469.999999999998",
+      "deltaPerDay": "345599.99999999994",
+      "monetization": {
+        "cumulativeGrossRevenuePerUser": 0.00032442535922266543,
+        "cumulativeNetRevenuePerUser": 0.00020892993133939675,
+        "cumulativeLtvPerUser": -1.4997910700686603,
+        "cumulativeLtvQuantiles": {
+          "q50": -1.499794779119511,
+          "q90": -1.499725337172577
+        }
+      },
+      "guardrails": {
+        "timeToFirstUpgradeSec": null,
+        "stallRatio": 0,
+        "droppedRate": 0,
+        "actionMix": {
+          "buy.generator": 1
+        },
+        "growthLog10PerDay": 111.13778357302947
+      }
+    },
+    "at2h": {
+      "horizon": "2h",
+      "seconds": 7200,
+      "segmentSec": 5400,
+      "endMoney": "67201.99644612435",
+      "endNetWorth": "67715",
+      "deltaNetWorth": "60480",
+      "netWorthPerHour": "33857.5",
+      "deltaPerDay": "967679.9999999999",
+      "monetization": {
+        "cumulativeGrossRevenuePerUser": 0.0013215754582206513,
+        "cumulativeNetRevenuePerUser": 0.0008510945950940992,
+        "cumulativeLtvPerUser": -1.4991489054049065,
+        "cumulativeLtvQuantiles": {
+          "q50": -1.4991831713360628,
+          "q90": -1.498942047610657
+        }
+      },
+      "guardrails": {
+        "timeToFirstUpgradeSec": null,
+        "stallRatio": 0,
+        "droppedRate": 0,
+        "actionMix": {
+          "buy.generator": 1
+        },
+        "growthLog10PerDay": 15.539941557536494
+      }
+    },
+    "at24h": {
+      "horizon": "24h",
+      "seconds": 86400,
+      "segmentSec": 79200,
+      "endMoney": "644353.8648037493",
+      "endNetWorth": "6291394.999999998",
+      "deltaNetWorth": "6223679.999999998",
+      "netWorthPerHour": "262141.45833333326",
+      "deltaPerDay": "6789469.090909089",
+      "monetization": {
+        "cumulativeGrossRevenuePerUser": 0.01751892797530051,
+        "cumulativeNetRevenuePerUser": 0.011282189616093523,
+        "cumulativeLtvPerUser": -1.4887178103839065,
+        "cumulativeLtvQuantiles": {
+          "q50": -1.488931562394676,
+          "q90": -1.485476074238238
+        }
+      },
+      "guardrails": {
+        "timeToFirstUpgradeSec": null,
+        "stallRatio": 0.4027777777777778,
+        "droppedRate": 0,
+        "actionMix": {
+          "buy.generator": 1
+        },
+        "growthLog10PerDay": 2.146976803699186
+      }
+    },
+    "at7d": {
+      "horizon": "7d",
+      "seconds": 604800,
+      "segmentSec": 518400,
+      "endMoney": "3948425.4515514416",
+      "endNetWorth": "69021395",
+      "deltaNetWorth": "62730000",
+      "netWorthPerHour": "410841.63690476195",
+      "deltaPerDay": "10455000",
+      "monetization": {
+        "cumulativeGrossRevenuePerUser": 0.08996373082010369,
+        "cumulativeNetRevenuePerUser": 0.057936642648146755,
+        "cumulativeLtvPerUser": -1.4420633573518546,
+        "cumulativeLtvQuantiles": {
+          "q50": -1.443120971307505,
+          "q90": -1.4276900655017601
+        }
+      },
+      "guardrails": {
+        "timeToFirstUpgradeSec": null,
+        "stallRatio": 0.8948412698412699,
+        "droppedRate": 0,
+        "actionMix": {
+          "buy.generator": 1
+        },
+        "growthLog10PerDay": 0.1733727966275489
+      }
+    },
+    "at30d": {
+      "horizon": "30d",
+      "seconds": 2592000,
+      "segmentSec": 1987200,
+      "endMoney": "25644427.93840746",
+      "endNetWorth": "344373154.9999999",
+      "deltaNetWorth": "275351759.9999999",
+      "netWorthPerHour": "478296.04861111095",
+      "deltaPerDay": "11971815.652173908",
+      "monetization": {
+        "cumulativeGrossRevenuePerUser": 0.22741113202720548,
+        "cumulativeNetRevenuePerUser": 0.1464527690255203,
+        "cumulativeLtvPerUser": -1.3535472309744798,
+        "cumulativeLtvQuantiles": {
+          "q50": -1.3542163914100893,
+          "q90": -1.3122982723759657
+        }
+      },
+      "guardrails": {
+        "timeToFirstUpgradeSec": null,
+        "stallRatio": 0.9724537037037037,
+        "droppedRate": 0,
+        "actionMix": {
+          "buy.generator": 1
+        },
+        "growthLog10PerDay": 0.030349806818225203
+      }
+    },
+    "at90d": {
+      "horizon": "90d",
+      "seconds": 7776000,
+      "segmentSec": 5184000,
+      "endMoney": "47549203.49031527",
+      "endNetWorth": "1129495715",
+      "deltaNetWorth": "785122560.0000001",
+      "netWorthPerHour": "522914.6828703704",
+      "deltaPerDay": "13085376.000000004",
+      "monetization": {
+        "cumulativeGrossRevenuePerUser": 0.3722273907487256,
+        "cumulativeNetRevenuePerUser": 0.23971443964217942,
+        "cumulativeLtvPerUser": -1.2602855603578207,
+        "cumulativeLtvQuantiles": {
+          "q50": -1.2618130495975666,
+          "q90": -1.1946911360616257
+        }
+      },
+      "guardrails": {
+        "timeToFirstUpgradeSec": null,
+        "stallRatio": 0.9900462962962963,
+        "droppedRate": 0,
+        "actionMix": {
+          "buy.generator": 1
+        },
+        "growthLog10PerDay": 0.008597588303683986
+      }
+    }
+  },
+  "insights": {
+    "summary": "LTV trajectory classification: long_tail_growth",
+    "trend7to90": "long_tail_growth"
+  },
+  "_meta": {
+    "command": "ltv",
+    "generatedAt": "2026-03-14T11:42:01.524Z",
+    "contractVersion": "1.3.0",
+    "schemaRef": "docs/schemas/ltv.output.schema.json",
+    "cliVersion": "0.1.1",
+    "gitSha": "ecc8f35",
+    "runId": "compat-ltv-output-v1",
+    "seed": 17,
+    "scenarioPath": "../../examples/tutorials/11-my-game-v1.json",
+    "scenarioHash": "f565390058b33abb0f4108a62c6a14783fef9fdf5833c4091554c380a4671674",
+    "pluginDigest": {}
+  }
+}

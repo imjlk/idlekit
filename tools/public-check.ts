@@ -16,6 +16,8 @@ const DOCS_WITH_KO = [
   ".sampo/README.md",
   "docs/money-library.md",
   "docs/plugin-and-adapter.md",
+  "docs/public-repo-ops.md",
+  "docs/roadmap.md",
   "docs/release-process.md",
   "docs/scenario-and-tuning.md",
   "docs/start-here-cli-designer.md",
@@ -29,11 +31,21 @@ const DOCS_WITH_KO = [
   "examples/plugins/README.md",
   "examples/tutorials/README.md",
 ] as const;
-const PUBLIC_JSON_FILES = ["examples/bench/kpi-baseline.json"] as const;
+const PUBLIC_JSON_FILES = [
+  "examples/bench/kpi-baseline.json",
+  "fixtures/compat/v1/state/sim-state.v1.json",
+  "fixtures/compat/v1/artifacts/simulate.artifact.v1.json",
+  "fixtures/compat/v1/artifacts/experience.artifact.v1.json",
+  "fixtures/compat/v1/outputs/simulate.output.v1.json",
+  "fixtures/compat/v1/outputs/compare.output.v1.json",
+  "fixtures/compat/v1/outputs/experience.output.v1.json",
+  "fixtures/compat/v1/outputs/ltv.output.v1.json",
+] as const;
 
 const PACKAGE_DIRS = ["packages/money", "packages/core", "packages/cli"] as const;
 const LOCAL_LINK = /\[[^\]]*]\((?!https?:\/\/|mailto:|#)([^)]+)\)/g;
 const ABSOLUTE_LOCAL_PATH = /\/Users\/|[A-Z]:\\/;
+const SUPPORT_STATEMENT = "Node.js and browser runtimes are not part of the v1 compatibility contract.";
 
 function koVariantFor(path: string): string {
   if (path === "README.md") return "README_ko.md";
@@ -60,6 +72,17 @@ async function checkMarkdownLinks(path: string): Promise<void> {
     const proc = Bun.spawnSync(["test", "-e", resolved], { cwd: ROOT, stdout: "ignore", stderr: "ignore" });
     assert(proc.exitCode === 0, `${path} links to missing local target: ${href}`);
   }
+}
+
+async function checkSupportStatement(path: string): Promise<void> {
+  const body = await Bun.file(resolve(ROOT, path)).text();
+  assert(body.includes(SUPPORT_STATEMENT), `${path} missing v1 runtime support statement`);
+}
+
+async function checkPinnedWorkflow(path: string): Promise<void> {
+  const body = await Bun.file(resolve(ROOT, path)).text();
+  assert(!body.includes("@v4"), `${path} must pin actions/checkout by SHA`);
+  assert(!body.includes("@v2"), `${path} must pin setup actions by SHA`);
 }
 
 async function checkPackageManifest(pkgDir: string): Promise<void> {
@@ -114,7 +137,15 @@ for (const path of PUBLIC_JSON_FILES) {
 for (const pkgDir of PACKAGE_DIRS) {
   await checkPackageManifest(pkgDir);
   await checkMarkdownLinks(`${pkgDir}/README.md`);
+  await checkSupportStatement(`${pkgDir}/README.md`);
 }
+
+await checkSupportStatement("README.md");
+await checkSupportStatement("docs/testing.md");
+await checkSupportStatement("docs/release-process.md");
+assert(await Bun.file(resolve(ROOT, ".github", "dependabot.yml")).exists(), "missing .github/dependabot.yml");
+assert(await Bun.file(resolve(ROOT, ".github", "workflows", "codeql.yml")).exists(), "missing CodeQL workflow");
+await checkPinnedWorkflow(".github/workflows/docs-verify.yml");
 
 for (const pkgDir of PACKAGE_DIRS) {
   const tarball = await packPackage(pkgDir, tmpDir);

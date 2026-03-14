@@ -1,9 +1,8 @@
 # @idlekit/cli
 
-`idk` is the command-line interface for validating scenarios, running simulations,
-evaluating experience and pacing, comparing balance variants, tuning strategies, and generating reports.
-
-## Install
+`idk` is the command-line interface for idle game design evaluation.
+Use it to validate scenarios, run simulations, inspect pacing, compare variants, and tune strategies.
+Official support in v1: Bun `>=1.3` only. Node.js and browser runtimes are not part of the v1 compatibility contract.
 
 ```bash
 bun add -g @idlekit/cli
@@ -11,19 +10,14 @@ bun add -g @idlekit/cli
 
 Requires Bun `>=1.3.0`.
 
-## Quick start
+Typical flow:
 
+<!-- snippet: snippets/readme/cli-quick-start.sh -->
 ```bash
-idk validate ./my-game-v1.json
-idk simulate ./my-game-v1.json --format json
-idk experience ./my-game-v1.json --format json
-idk ltv ./my-game-v1.json --horizons 30m,2h,24h,7d,30d,90d --step 600 --fast true --format json
-```
-
-To generate a starter bundle from the repository checkout:
-
-```bash
-bun run --cwd packages/cli dev -- init scenario --track personal --preset builder --out ../../tmp/my-game-v1.json --name "Space Miner"
+idk init scenario --track personal --preset builder --out ./my-game-v1.json --name "Space Miner"
+idk validate ./space-miner-v1.json
+idk simulate ./space-miner-v1.json --format json
+idk experience ./space-miner-v1.json --format json
 ```
 
 Worked real-game example in this repository:

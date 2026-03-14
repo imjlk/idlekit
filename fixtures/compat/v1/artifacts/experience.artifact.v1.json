@@ -1,0 +1,556 @@
+{
+  "v": 1,
+  "kind": "idk.replay.artifact",
+  "artifactVersion": 1,
+  "contractVersion": "1.3.0",
+  "schemaRef": "docs/schemas/artifact.v1.schema.json",
+  "command": "experience",
+  "generatedAt": "2026-03-14T11:42:02.309Z",
+  "meta": {
+    "command": "experience",
+    "generatedAt": "2026-03-14T11:42:02.298Z",
+    "contractVersion": "1.3.0",
+    "schemaRef": "docs/schemas/experience.output.schema.json",
+    "cliVersion": "0.1.1",
+    "gitSha": "ecc8f35",
+    "runId": "compat-experience-artifact-v1",
+    "seed": 17,
+    "scenarioPath": "../../examples/tutorials/11-my-game-v1.json",
+    "scenarioHash": "f565390058b33abb0f4108a62c6a14783fef9fdf5833c4091554c380a4671674",
+    "pluginDigest": {}
+  },
+  "input": {
+    "positional": [
+      "../../examples/tutorials/11-my-game-v1.json"
+    ],
+    "flags": {
+      "session-pattern": "short-bursts",
+      "days": 3,
+      "draws": 1,
+      "seed": 17,
+      "run-id": "compat-experience-artifact-v1",
+      "artifact-out": "../../fixtures/compat/v1/artifacts/experience.artifact.v1.json",
+      "format": "json",
+      "help": false,
+      "version": false,
+      "plugin": "",
+      "allow-plugin": false,
+      "plugin-root": "",
+      "plugin-sha256": "",
+      "plugin-trust-file": ""
+    }
+  },
+  "replay": {
+    "cwd": "<REPO_ROOT>/packages/cli",
+    "args": [
+      "experience",
+      "../../examples/tutorials/11-my-game-v1.json",
+      "--days",
+      "3",
+      "--draws",
+      "1",
+      "--format",
+      "json",
+      "--run-id",
+      "compat-experience-artifact-v1",
+      "--seed",
+      "17",
+      "--session-pattern",
+      "short-bursts"
+    ],
+    "commandLine": "bun run --cwd packages/cli dev -- experience ../../examples/tutorials/11-my-game-v1.json --days 3 --draws 1 --format json --run-id compat-experience-artifact-v1 --seed 17 --session-pattern short-bursts",
+    "verify": {
+      "runId": "compat-experience-artifact-v1",
+      "seed": 17,
+      "scenarioHash": "f565390058b33abb0f4108a62c6a14783fef9fdf5833c4091554c380a4671674",
+      "gitSha": "ecc8f35",
+      "pluginDigest": {},
+      "resultHash": "35bb9012e60ecec3cf2244b90783d12684c051096f9f04857521723e3af444e2"
+    }
+  },
+  "result": {
+    "mode": "deterministic",
+    "design": {
+      "intent": "strategic-optimization",
+      "sessionPattern": {
+        "id": "short-bursts",
+        "days": 3
+      },
+      "series": "netWorth",
+      "draws": 1,
+      "quantiles": [
+        0.1,
+        0.5,
+        0.9
+      ]
+    },
+    "end": {
+      "t": 259200,
+      "money": "603252.7254732309",
+      "netWorth": "28263122.600001212",
+      "prestige": {
+        "count": 0,
+        "points": "0",
+        "multiplier": "1"
+      }
+    },
+    "session": {
+      "pattern": {
+        "id": "short-bursts",
+        "days": 3
+      },
+      "activeBlocks": 30,
+      "totalActiveSec": 1800,
+      "totalOfflineSec": 257400
+    },
+    "growth": {
+      "windowSec": 60,
+      "seriesRequested": "netWorth",
+      "valueSource": "netWorth",
+      "segments": [
+        {
+          "tFrom": 0,
+          "tTo": 60,
+          "regime": "exp",
+          "slope": 0.02055597963398393,
+          "doublingTimeSec": 14.644400365444366
+        },
+        {
+          "tFrom": 60,
+          "tTo": 5760,
+          "regime": "softcap",
+          "slope": 0.0004909771034295982,
+          "doublingTimeSec": 613.1243057185584
+        },
+        {
+          "tFrom": 5760,
+          "tTo": 5820,
+          "regime": "softcap",
+          "slope": 0.00008846037694703786,
+          "doublingTimeSec": 3402.9924589198954
+        },
+        {
+          "tFrom": 5820,
+          "tTo": 11520,
+          "regime": "softcap",
+          "slope": 0.00006103383897529322,
+          "doublingTimeSec": 4932.181896436819
+        },
+        {
+          "tFrom": 11520,
+          "tTo": 11580,
+          "regime": "softcap",
+          "slope": 0.00004362664366022173,
+          "doublingTimeSec": 6900.141069950262
+        },
+        {
+          "tFrom": 11580,
+          "tTo": 17280,
+          "regime": "softcap",
+          "slope": 0.0000352097308620994,
+          "doublingTimeSec": 8549.62501255632
+        },
+        {
+          "tFrom": 17280,
+          "tTo": 17340,
+          "regime": "softcap",
+          "slope": 0.000028878605252854092,
+          "doublingTimeSec": 10423.979725760135
+        },
+        {
+          "tFrom": 17340,
+          "tTo": 23040,
+          "regime": "softcap",
+          "slope": 0.000024781920854984115,
+          "doublingTimeSec": 12147.161530597752
+        },
+        {
+          "tFrom": 23040,
+          "tTo": 23100,
+          "regime": "softcap",
+          "slope": 0.000021615435701679195,
+          "doublingTimeSec": 13926.621689175374
+        },
+        {
+          "tFrom": 23100,
+          "tTo": 28800,
+          "regime": "softcap",
+          "slope": 0.000019136951470610434,
+          "doublingTimeSec": 15730.300415209178
+        },
+        {
+          "tFrom": 28800,
+          "tTo": 28860,
+          "regime": "softcap",
+          "slope": 0.000017197614857389353,
+          "doublingTimeSec": 17504.171256320275
+        },
+        {
+          "tFrom": 28860,
+          "tTo": 34560,
+          "regime": "softcap",
+          "slope": 0.000015577321471795452,
+          "doublingTimeSec": 19324.888184982952
+        },
+        {
+          "tFrom": 34560,
+          "tTo": 34620,
+          "regime": "softcap",
+          "slope": 0.000014161508885823792,
+          "doublingTimeSec": 21256.915353513188
+        },
+        {
+          "tFrom": 34620,
+          "tTo": 40320,
+          "regime": "softcap",
+          "slope": 0.000013130147732312025,
+          "doublingTimeSec": 22926.626706809664
+        },
+        {
+          "tFrom": 40320,
+          "tTo": 40380,
+          "regime": "softcap",
+          "slope": 0.00001219066290135314,
+          "doublingTimeSec": 24693.488623212397
+        },
+        {
+          "tFrom": 40380,
+          "tTo": 46080,
+          "regime": "softcap",
+          "slope": 0.000011348543649380243,
+          "doublingTimeSec": 26525.870187794608
+        },
+        {
+          "tFrom": 46080,
+          "tTo": 46140,
+          "regime": "softcap",
+          "slope": 0.00001061297250979365,
+          "doublingTimeSec": 28364.3432964884
+        },
+        {
+          "tFrom": 46140,
+          "tTo": 51840,
+          "regime": "softcap",
+          "slope": 0.000009986306010117125,
+          "doublingTimeSec": 30144.27911171636
+        },
+        {
+          "tFrom": 51840,
+          "tTo": 51900,
+          "regime": "softcap",
+          "slope": 0.000009406627783651682,
+          "doublingTimeSec": 32001.9036138709
+        },
+        {
+          "tFrom": 51900,
+          "tTo": 86400,
+          "regime": "softcap",
+          "slope": 0.000007182943364578247,
+          "doublingTimeSec": 41909.00309035869
+        },
+        {
+          "tFrom": 86400,
+          "tTo": 86460,
+          "regime": "softcap",
+          "slope": 0.0000056221301600582285,
+          "doublingTimeSec": 53543.761366930616
+        },
+        {
+          "tFrom": 86460,
+          "tTo": 92160,
+          "regime": "softcap",
+          "slope": 0.000005422342204144159,
+          "doublingTimeSec": 55516.59860823826
+        },
+        {
+          "tFrom": 92160,
+          "tTo": 92220,
+          "regime": "softcap",
+          "slope": 0.000005232002258992452,
+          "doublingTimeSec": 57536.289313826055
+        },
+        {
+          "tFrom": 92220,
+          "tTo": 97920,
+          "regime": "softcap",
+          "slope": 0.000005094500299044288,
+          "doublingTimeSec": 59089.2095384612
+        },
+        {
+          "tFrom": 97920,
+          "tTo": 97980,
+          "regime": "softcap",
+          "slope": 0.000004944305017939854,
+          "doublingTimeSec": 60884.187883176244
+        },
+        {
+          "tFrom": 97980,
+          "tTo": 103680,
+          "regime": "softcap",
+          "slope": 0.000004788914068703277,
+          "doublingTimeSec": 62859.76138751074
+        },
+        {
+          "tFrom": 103680,
+          "tTo": 103740,
+          "regime": "softcap",
+          "slope": 0.000004640031357997879,
+          "doublingTimeSec": 64876.71578880713
+        },
+        {
+          "tFrom": 103740,
+          "tTo": 109440,
+          "regime": "softcap",
+          "slope": 0.0000045397407455940765,
+          "doublingTimeSec": 66309.95304217268
+        },
+        {
+          "tFrom": 109440,
+          "tTo": 109500,
+          "regime": "softcap",
+          "slope": 0.000004416740637654589,
+          "doublingTimeSec": 68156.59337058931
+        },
+        {
+          "tFrom": 109500,
+          "tTo": 115200,
+          "regime": "softcap",
+          "slope": 0.00000429219285228904,
+          "doublingTimeSec": 70134.3126983311
+        },
+        {
+          "tFrom": 115200,
+          "tTo": 115260,
+          "regime": "softcap",
+          "slope": 0.00000417233072916486,
+          "doublingTimeSec": 72149.12124769068
+        },
+        {
+          "tFrom": 115260,
+          "tTo": 120960,
+          "regime": "softcap",
+          "slope": 0.000004088814279697691,
+          "doublingTimeSec": 73622.80971251108
+        },
+        {
+          "tFrom": 120960,
+          "tTo": 121020,
+          "regime": "softcap",
+          "slope": 0.000003994898329503135,
+          "doublingTimeSec": 75353.60623343367
+        },
+        {
+          "tFrom": 121020,
+          "tTo": 126720,
+          "regime": "softcap",
+          "slope": 0.00000389264343235901,
+          "doublingTimeSec": 77333.05166395675
+        },
+        {
+          "tFrom": 126720,
+          "tTo": 126780,
+          "regime": "softcap",
+          "slope": 0.0000037938835850977644,
+          "doublingTimeSec": 79346.13408972694
+        },
+        {
+          "tFrom": 126780,
+          "tTo": 132480,
+          "regime": "softcap",
+          "slope": 0.0000037122470228714016,
+          "doublingTimeSec": 81091.0464226425
+        },
+        {
+          "tFrom": 132480,
+          "tTo": 132540,
+          "regime": "softcap",
+          "slope": 0.0000036503059919053743,
+          "doublingTimeSec": 82467.05792104037
+        },
+        {
+          "tFrom": 132540,
+          "tTo": 138240,
+          "regime": "softcap",
+          "slope": 0.00000356468217190952,
+          "doublingTimeSec": 84447.92022025521
+        },
+        {
+          "tFrom": 138240,
+          "tTo": 138300,
+          "regime": "softcap",
+          "slope": 0.0000034817422846907436,
+          "doublingTimeSec": 86459.58576187938
+        },
+        {
+          "tFrom": 138300,
+          "tTo": 172800,
+          "regime": "softcap",
+          "slope": 0.000003103585084139106,
+          "doublingTimeSec": 96994.2783919143
+        },
+        {
+          "tFrom": 172800,
+          "tTo": 172860,
+          "regime": "softcap",
+          "slope": 0.0000027774520462505354,
+          "doublingTimeSec": 108383.50785222785
+        },
+        {
+          "tFrom": 172860,
+          "tTo": 178560,
+          "regime": "softcap",
+          "slope": 0.0000027275118783849712,
+          "doublingTimeSec": 110367.98704694503
+        },
+        {
+          "tFrom": 178560,
+          "tTo": 178620,
+          "regime": "softcap",
+          "slope": 0.000002678773938757928,
+          "doublingTimeSec": 112376.03565889563
+        },
+        {
+          "tFrom": 178620,
+          "tTo": 184320,
+          "regime": "softcap",
+          "slope": 0.000002641830660012383,
+          "doublingTimeSec": 113947.49868735728
+        },
+        {
+          "tFrom": 184320,
+          "tTo": 184380,
+          "regime": "softcap",
+          "slope": 0.00000261338788996035,
+          "doublingTimeSec": 115187.64467395935
+        },
+        {
+          "tFrom": 184380,
+          "tTo": 190080,
+          "regime": "softcap",
+          "slope": 0.000002569111385078066,
+          "doublingTimeSec": 117172.80823728628
+        },
+        {
+          "tFrom": 190080,
+          "tTo": 190140,
+          "regime": "softcap",
+          "slope": 0.0000025258395705514877,
+          "doublingTimeSec": 119180.17247558395
+        },
+        {
+          "tFrom": 190140,
+          "tTo": 195840,
+          "regime": "softcap",
+          "slope": 0.000002484448908640421,
+          "doublingTimeSec": 121165.70182508424
+        },
+        {
+          "tFrom": 195840,
+          "tTo": 195900,
+          "regime": "softcap",
+          "slope": 0.000002443966844856149,
+          "doublingTimeSec": 123172.70027519531
+        },
+        {
+          "tFrom": 195900,
+          "tTo": 201600,
+          "regime": "softcap",
+          "slope": 0.0000024051887991701206,
+          "doublingTimeSec": 125158.57207045356
+        },
+        {
+          "tFrom": 201600,
+          "tTo": 201660,
+          "regime": "softcap",
+          "slope": 0.000002367235133589792,
+          "doublingTimeSec": 127165.22807241564
+        },
+        {
+          "tFrom": 201660,
+          "tTo": 207360,
+          "regime": "softcap",
+          "slope": 0.000002346261587124525,
+          "doublingTimeSec": 128301.97507214459
+        },
+        {
+          "tFrom": 207360,
+          "tTo": 207420,
+          "regime": "softcap",
+          "slope": 0.0000023182822277719358,
+          "doublingTimeSec": 129850.45222612793
+        },
+        {
+          "tFrom": 207420,
+          "tTo": 213120,
+          "regime": "softcap",
+          "slope": 0.0000022833524519220335,
+          "doublingTimeSec": 131836.85042166238
+        },
+        {
+          "tFrom": 213120,
+          "tTo": 213180,
+          "regime": "softcap",
+          "slope": 0.0000022491280127064544,
+          "doublingTimeSec": 133842.98001861677
+        },
+        {
+          "tFrom": 213180,
+          "tTo": 218880,
+          "regime": "softcap",
+          "slope": 0.0000022162315466057403,
+          "doublingTimeSec": 135829.66821540933
+        },
+        {
+          "tFrom": 218880,
+          "tTo": 218940,
+          "regime": "softcap",
+          "slope": 0.000002183980024058248,
+          "doublingTimeSec": 137835.50781046547
+        },
+        {
+          "tFrom": 218940,
+          "tTo": 224640,
+          "regime": "softcap",
+          "slope": 0.0000021529443505091573,
+          "doublingTimeSec": 139822.46944413104
+        },
+        {
+          "tFrom": 224640,
+          "tTo": 224700,
+          "regime": "softcap",
+          "slope": 0.000002122499930227543,
+          "doublingTimeSec": 141828.03559937418
+        }
+      ],
+      "bottlenecks": []
+    },
+    "milestones": {
+      "milestones": [
+        {
+          "key": "action.buy.generator.firstApplied",
+          "firstSeenT": 0,
+          "firstSeenSec": 0,
+          "source": "action"
+        },
+        {
+          "key": "progress.first-upgrade",
+          "firstSeenT": 0,
+          "firstSeenSec": 0,
+          "source": "action"
+        }
+      ],
+      "firstMilestoneSec": 0,
+      "firstActionSec": 0
+    },
+    "perceived": {
+      "series": "netWorth",
+      "firstVisibleChangeSec": 1,
+      "visibleChangesPerMinute": 2.533333333333333,
+      "maxNoRewardGapSec": 60,
+      "avgPostPurchaseFeedbackSec": 0.08333333333333333,
+      "p95PostPurchaseFeedbackSec": 0,
+      "visibleChangeCount": 76,
+      "activeSeconds": 1800
+    }
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "v": 1,
+  "unit": "TOKEN",
+  "t": 45,
+  "wallet": {
+    "amount": "68.6858556947281",
+    "bucket": "0"
+  },
+  "maxMoneyEver": "68.6858556947281",
+  "prestige": {
+    "count": 0,
+    "points": "0",
+    "multiplier": "1"
+  },
+  "vars": {
+    "owned": 9
+  },
+  "engine": {
+    "name": "number",
+    "version": "1"
+  },
+  "meta": {
+    "scenarioPath": "../../examples/tutorials/11-my-game-v1.json",
+    "savedAt": "2026-03-14T11:42:00.259Z",
+    "runId": "compat-sim-state-v1",
+    "seed": 17,
+    "cliVersion": "0.1.1",
+    "gitSha": "ecc8f35",
+    "scenarioHash": "f565390058b33abb0f4108a62c6a14783fef9fdf5833c4091554c380a4671674"
+  },
+  "strategy": {
+    "id": "greedy"
+  }
+}

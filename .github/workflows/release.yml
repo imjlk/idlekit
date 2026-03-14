@@ -45,9 +45,8 @@ jobs:
 
       - name: Release preflight
         run: |
-          bun run build
-          bun run public:check
-          bun run release:plan
+          bun run publish:gate
+          bun run readme:smoke
 
       - name: Run Sampo Release/Publish
         id: sampo

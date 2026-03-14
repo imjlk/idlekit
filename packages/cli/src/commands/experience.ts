@@ -118,8 +118,10 @@ export default defineCommand({
         },
       });
 
+    const mode = draws > 1 ? ("monte-carlo" as const) : ("deterministic" as const);
+
     const output = {
-      mode: draws > 1 ? "monte-carlo" : "deterministic",
+      mode,
       design: {
         intent: valid.scenario.design?.intent,
         sessionPattern,
@@ -177,7 +179,7 @@ export default defineCommand({
           ? renderExperienceMarkdown({
               scenarioPath,
               intent: valid.scenario.design?.intent,
-              mode: output.mode,
+              mode,
               snapshot,
               monteCarlo,
             })
