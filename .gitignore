@@ -4,3 +4,5 @@ dist
 coverage
 tmp
 *.tgz
+.npmrc.local
+.npmrc.publish.local

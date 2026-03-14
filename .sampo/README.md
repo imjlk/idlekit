@@ -17,6 +17,7 @@ Release automation policy:
 bun run changeset:add
 bun run release:plan
 bun run release:version
+bun run release:publish
 bun run release:publish:dry-run
 ```
 

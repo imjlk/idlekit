@@ -23,6 +23,7 @@ Common commands:
 bun run changeset:add
 bun run release:plan
 bun run release:version
+bun run release:publish
 bun run release:publish:dry-run
 ```
 
@@ -48,8 +49,33 @@ Release auth policy:
 
 - preferred: npm Trusted Publishing with GitHub OIDC
 - fallback: `NPM_TOKEN` secret exposed as `NODE_AUTH_TOKEN` at release time only
+- local publish can use `NPM_CONFIG_USERCONFIG=/path/to/.npmrc`
 
 If you use Trusted Publishing, configure npm to trust this repository and workflow before enabling automatic publish on `main`.
+
+## Local publish preflight
+
+For local publish runs, keep the token outside the repository and point npm at it explicitly:
+
+```bash
+cp .npmrc.publish.example .npmrc.publish.local
+# edit .npmrc.publish.local or use any external .npmrc you already manage
+NPM_CONFIG_USERCONFIG=$PWD/.npmrc.publish.local bun run release:publish:preflight
+```
+
+What `release:publish:preflight` checks:
+
+1. build succeeds
+2. tarballs/install smoke succeed
+3. public package/readme checks pass
+4. `npm whoami` and `npm ping` succeed
+5. current package versions are greater than already-published npm versions
+
+If preflight passes, the matching publish command is:
+
+```bash
+NPM_CONFIG_USERCONFIG=$PWD/.npmrc.publish.local bun run release:publish
+```
 
 ## Release checklist
 

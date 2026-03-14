@@ -80,6 +80,12 @@ bun run release:plan
 bun run release:version
 ```
 
+실제 publish:
+
+```bash
+bun run release:publish
+```
+
 publish dry-run:
 
 ```bash
@@ -108,8 +114,33 @@ GitHub Actions release job은 아래 순서로 동작합니다.
 
 - 기본: npm Trusted Publishing + GitHub OIDC
 - fallback: `NPM_TOKEN`을 `NODE_AUTH_TOKEN`으로 주입
+- 로컬 publish는 `NPM_CONFIG_USERCONFIG=/path/to/.npmrc` 방식 지원
 
 즉, 평소 개발에서 npm을 쓰는 게 아니라, GitHub release 경로에서만 npm publish를 호출합니다.
+
+### 로컬 publish preflight
+
+로컬 publish는 토큰 파일을 저장소 밖에 두고, 필요할 때만 npm 설정 파일 경로를 넘기는 방식으로 가는 게 안전합니다.
+
+```bash
+cp .npmrc.publish.example .npmrc.publish.local
+# .npmrc.publish.local 또는 기존 외부 .npmrc를 사용
+NPM_CONFIG_USERCONFIG=$PWD/.npmrc.publish.local bun run release:publish:preflight
+```
+
+`release:publish:preflight`가 확인하는 항목:
+
+1. build 성공
+2. tarball/install smoke 성공
+3. public package/readme check 통과
+4. `npm whoami`, `npm ping` 성공
+5. 현재 패키지 버전이 npm에 이미 올라간 버전보다 높은지
+
+preflight가 통과하면 실제 publish 명령은 아래입니다.
+
+```bash
+NPM_CONFIG_USERCONFIG=$PWD/.npmrc.publish.local bun run release:publish
+```
 
 노트:
 
