@@ -47,6 +47,7 @@ console.log(result.ok);
 ## Documentation
 
 - Repository: [github.com/imjlk/idlekit](https://github.com/imjlk/idlekit)
+- Product roadmap: [docs/roadmap.md](https://github.com/imjlk/idlekit/blob/main/docs/roadmap.md)
 - Scenario guide: [docs/scenario-and-tuning.md](https://github.com/imjlk/idlekit/blob/main/docs/scenario-and-tuning.md)
 - Canonical worked example: [examples/tutorials/14-orbital-foundry-v1.json](https://github.com/imjlk/idlekit/blob/main/examples/tutorials/14-orbital-foundry-v1.json)
 - Adapter pattern example: [examples/adapter-pattern](https://github.com/imjlk/idlekit/tree/main/examples/adapter-pattern)

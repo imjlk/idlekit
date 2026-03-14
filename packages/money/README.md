@@ -48,5 +48,6 @@ console.log(formatMoney(E, result.state.money));
 ## Documentation
 
 - Repository: [github.com/imjlk/idlekit](https://github.com/imjlk/idlekit)
+- Product roadmap: [docs/roadmap.md](https://github.com/imjlk/idlekit/blob/main/docs/roadmap.md)
 - Usage guide: [docs/money-library.md](https://github.com/imjlk/idlekit/blob/main/docs/money-library.md)
 - Example: [examples/money-package](https://github.com/imjlk/idlekit/tree/main/examples/money-package)
