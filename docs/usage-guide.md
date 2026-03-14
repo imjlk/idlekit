@@ -5,8 +5,8 @@ Korean version: [usage-guide_ko.md](./usage-guide_ko.md)
 Choose your entrypoint first:
 
 1. Start your own game: [start-here-cli-designer.md](./start-here-cli-designer.md)
-2. Learn the command loop: [tutorial-step-by-step.md](./tutorial-step-by-step.md)
-3. Study a design example first: [virtual-scenario-design.md](./virtual-scenario-design.md)
+2. Study the canonical real-game example: [virtual-scenario-design.md](./virtual-scenario-design.md)
+3. Learn the command loop: [tutorial-step-by-step.md](./tutorial-step-by-step.md)
 
 ## Environment
 

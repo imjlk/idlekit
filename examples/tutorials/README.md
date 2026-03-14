@@ -19,6 +19,9 @@ This directory contains the example scenarios used throughout the public docs.
 
 ## Worked design example
 
+- `14-orbital-foundry-v1.json`: canonical real-game worked example baseline, optimized for stronger long-run value
+- `15-orbital-foundry-compare-b.json`: canonical A/B variant, optimized for earlier first-upgrade timing
+- `16-orbital-foundry-tune.json`: canonical design-oriented tune spec
 - `05-idle-design-v1.json`
 - `06-idle-design-balance-b.json`
 - `07-idle-design-tune.json`
@@ -32,6 +35,7 @@ This directory contains the example scenarios used throughout the public docs.
 ## Recommended order
 
 1. `11 -> 12 -> 13`
-2. `01 -> 03 -> 04`
-3. `05 -> 06 -> 07`
-4. `08 / 09 / 10`
+2. `14 -> 15 -> 16`
+3. `01 -> 03 -> 04`
+4. `05 -> 06 -> 07`
+5. `08 / 09 / 10`

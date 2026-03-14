@@ -339,6 +339,26 @@ function createPluginModelFactory(): ModelFactory {
             amount: ctx.E.add(state.wallet.money.amount, ctx.E.from(String(implied))),
           };
         },
+        milestones(_ctx: any, prev: any, next: any) {
+          const before = (prev.vars ?? {}) as PluginVars;
+          const after = (next.vars ?? {}) as PluginVars;
+          const milestones: string[] = [];
+
+          if (Number(before.upgrades ?? 0) < 1 && Number(after.upgrades ?? 0) >= 1) {
+            milestones.push("progress.first-upgrade");
+          }
+          if (Number(before.upgrades ?? 0) < 2 && Number(after.upgrades ?? 0) >= 2) {
+            milestones.push("progress.first-automation");
+          }
+          if (Number(before.gems ?? 0) < 1 && Number(after.gems ?? 0) >= 1) {
+            milestones.push("system.first-core");
+          }
+          if (Number(before.producers ?? 0) < 5 && Number(after.producers ?? 0) >= 5) {
+            milestones.push("system.fabricator-line-online");
+          }
+
+          return milestones;
+        },
       };
     },
   });

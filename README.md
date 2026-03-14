@@ -67,6 +67,20 @@ bun run --cwd packages/cli dev -- simulate ../../tmp/space-miner-v1.json --forma
 bun run --cwd packages/cli dev -- experience ../../tmp/space-miner-v1.json --format json
 ```
 
+Worked real-game example:
+
+```bash
+bun run --cwd packages/cli dev -- validate ../../examples/tutorials/14-orbital-foundry-v1.json \
+  --plugin ../../examples/plugins/custom-econ-plugin.ts \
+  --allow-plugin true
+bun run --cwd packages/cli dev -- experience ../../examples/tutorials/14-orbital-foundry-v1.json \
+  --plugin ../../examples/plugins/custom-econ-plugin.ts \
+  --allow-plugin true \
+  --session-pattern twice-daily \
+  --days 7 \
+  --format json
+```
+
 ## Documentation
 
 - Start here: [docs/start-here-cli-designer.md](./docs/start-here-cli-designer.md)

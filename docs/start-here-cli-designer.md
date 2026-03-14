@@ -97,3 +97,17 @@ Next reading:
 
 - [tutorial-step-by-step.md](./tutorial-step-by-step.md)
 - [virtual-scenario-design.md](./virtual-scenario-design.md)
+
+## 7. Move to the worked real-game example
+
+Once your personal scaffold makes sense, use the canonical plugin-rich example to see the full design loop on a more realistic economy:
+
+- [../examples/tutorials/14-orbital-foundry-v1.json](../examples/tutorials/14-orbital-foundry-v1.json)
+- [../examples/tutorials/15-orbital-foundry-compare-b.json](../examples/tutorials/15-orbital-foundry-compare-b.json)
+- [../examples/tutorials/16-orbital-foundry-tune.json](../examples/tutorials/16-orbital-foundry-tune.json)
+
+That bundle is the repo's main publish-facing worked example for:
+
+- session-pattern based `experience`
+- milestone timing comparisons
+- design-oriented tuning

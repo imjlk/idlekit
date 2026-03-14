@@ -26,6 +26,17 @@ To generate a starter bundle from the repository checkout:
 bun run --cwd packages/cli dev -- init scenario --track personal --preset builder --out ../../tmp/my-game-v1.json --name "Space Miner"
 ```
 
+Worked real-game example in this repository:
+
+```bash
+bun run --cwd packages/cli dev -- experience ../../examples/tutorials/14-orbital-foundry-v1.json \
+  --plugin ../../examples/plugins/custom-econ-plugin.ts \
+  --allow-plugin true \
+  --session-pattern twice-daily \
+  --days 7 \
+  --format json
+```
+
 ## Runtime
 
 `@idlekit/cli` is maintained as a Bun-first CLI package.

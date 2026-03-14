@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "meta": {
+    "id": "orbital-foundry-tune-v1",
+    "title": "Orbital Foundry TuneSpec",
+    "description": "Tune producer-first behavior against a design-balanced objective for the Orbital Foundry worked example.",
+    "tags": ["canonical", "worked-example", "plugin", "tune", "orbital-foundry"]
+  },
+  "strategy": {
+    "id": "plugin.producerFirst",
+    "baseParams": {
+      "schemaVersion": 1,
+      "allowUpgrade": true,
+      "preferUpgradeAtProducers": 6
+    },
+    "space": [
+      {
+        "path": "allowUpgrade",
+        "space": { "kind": "bool" }
+      },
+      {
+        "path": "preferUpgradeAtProducers",
+        "space": { "kind": "int", "min": 3, "max": 12 }
+      }
+    ]
+  },
+  "objective": {
+    "id": "experienceBalancedLog10",
+    "params": {
+      "sessionPattern": "twice-daily",
+      "days": 3,
+      "draws": 1,
+      "quantiles": [0.1, 0.5, 0.9],
+      "milestoneKey": "progress.first-upgrade"
+    }
+  },
+  "runner": {
+    "seeds": [11, 29],
+    "budget": 10,
+    "stages": [
+      {
+        "budget": 5,
+        "durationSec": 1800,
+        "keepTopK": 4,
+        "fast": true
+      },
+      {
+        "budget": 5,
+        "durationSec": 3600,
+        "keepTopK": 4,
+        "fast": true
+      }
+    ],
+    "topK": 4
+  }
+}

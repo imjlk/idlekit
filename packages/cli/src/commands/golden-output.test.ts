@@ -5,6 +5,7 @@ import { pathExists, createTempDir, readJson, readText, removePath, runCliJson, 
 const BASELINE = "../../examples/tutorials/01-cafe-baseline.json";
 const COMPARE_B = "../../examples/tutorials/03-cafe-compare-b.json";
 const TUNE = "../../examples/tutorials/04-cafe-tune.json";
+const CANONICAL_PLUGIN = "../../examples/plugins/custom-econ-plugin.ts";
 
 describe("CLI golden outputs", () => {
   it("compare returns measured source payload", () => {
@@ -132,6 +133,34 @@ describe("CLI golden outputs", () => {
     expect(out.measured?.a?.visibleChangesPerMinute).toBeDefined();
     expect(out.measured?.b?.visibleChangesPerMinute).toBeDefined();
     expect(out.detail?.source).toBe("measured");
+  });
+
+  it("canonical plugin fixture supports milestone timing compare", () => {
+    const out = runCliJson([
+      "compare",
+      "../../examples/tutorials/14-orbital-foundry-v1.json",
+      "../../examples/tutorials/15-orbital-foundry-compare-b.json",
+      "--metric",
+      "timeToMilestone",
+      "--milestone-key",
+      "progress.first-upgrade",
+      "--session-pattern",
+      "twice-daily",
+      "--days",
+      "7",
+      "--plugin",
+      CANONICAL_PLUGIN,
+      "--allow-plugin",
+      "true",
+      "--format",
+      "json",
+    ]);
+
+    expect(out.metric).toBe("timeToMilestone");
+    expect(out.measured?.a?.timeToMilestone).toBeDefined();
+    expect(out.measured?.b?.timeToMilestone).toBeDefined();
+    expect(out.detail?.source).toBe("measured");
+    expect(Array.isArray(out.insights?.drivers)).toBeTrue();
   });
 
   it("ltv returns default horizon summary and optional economyValueProxy", () => {

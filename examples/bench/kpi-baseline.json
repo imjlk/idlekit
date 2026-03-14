@@ -1,84 +1,261 @@
 {
-  "generatedAt": "2026-03-06T01:42:32.769Z",
+  "generatedAt": "2026-03-14T09:54:44.067Z",
   "input": {
-    "a": "examples/tutorials/05-idle-design-v1.json",
-    "b": "examples/tutorials/06-idle-design-balance-b.json",
+    "a": "examples/tutorials/14-orbital-foundry-v1.json",
+    "b": "examples/tutorials/15-orbital-foundry-compare-b.json",
     "plugin": "examples/plugins/custom-econ-plugin.ts"
   },
   "compare": {
     "endNetWorth": {
       "metric": "endNetWorth",
-      "better": "b",
+      "better": "a",
       "detail": {
-        "aScore": 5.831162598514183,
-        "bScore": 5.912812975243817,
+        "aScore": 6.25811563710756,
+        "bScore": 6.006589649426921,
         "metric": "endNetWorth",
         "source": "measured"
       },
       "measured": {
         "a": {
-          "endMoney": "40545.84752923632",
-          "endNetWorth": "677895.2619999999",
+          "endMoney": "58060.99811728721",
+          "endNetWorth": "1811822.4520000014",
           "droppedRate": 0
         },
         "b": {
-          "endMoney": "2604.6848903128666",
-          "endNetWorth": "818112.3999999993",
+          "endMoney": "69341.21187079651",
+          "endNetWorth": "1015288.9263999995",
           "droppedRate": 0
         }
       },
+      "insights": {
+        "summary": "Measured comparison winner: A",
+        "improved": [],
+        "regressed": [],
+        "drivers": [
+          {
+            "key": "endNetWorth",
+            "winner": "a",
+            "summary": "A finishes with higher measured net worth."
+          }
+        ]
+      },
       "_meta": {
         "command": "compare",
-        "generatedAt": "2026-03-06T01:42:32.084Z",
-        "cliVersion": "0.1.0",
-        "gitSha": "523a510",
-        "runId": "6a29efe8-f5ad-46dd-9266-fae5c716cd3d",
+        "generatedAt": "2026-03-14T09:54:39.473Z",
+        "contractVersion": "1.3.0",
+        "schemaRef": "docs/schemas/compare.output.schema.json",
+        "cliVersion": "0.1.1",
+        "gitSha": "ba8ad1f",
+        "runId": "compare-1bsyiil-73798ddd",
+        "seed": 2890549821,
         "scenarioPath": [
-          "examples/tutorials/05-idle-design-v1.json",
-          "examples/tutorials/06-idle-design-balance-b.json"
+          "examples/tutorials/14-orbital-foundry-v1.json",
+          "examples/tutorials/15-orbital-foundry-compare-b.json"
         ],
         "scenarioHash": {
-          "a": "2469411bd787683b9ba589d2e4856479cceb7d50afdc92be47fe1682afcbfc58",
-          "b": "7af6ea325aef42d4b0778c13eee7835b6a6976f54d6a42419d444107ca10fb54"
+          "a": "4a9ce5c03ae54aa5205552eac3da7a41d0004a17a53ba489994e52df9a6fc854",
+          "b": "7bbb681cbef1912a401382d16a7161f129d0690eb9c619c45d01316a5860438d"
+        },
+        "pluginDigest": {
+          "examples/plugins/custom-econ-plugin.ts": "ea3ab6cb9961886144d3781b1ebaf43b2c1bf9ad079dfa63cb7c9b25c29f1e8c"
         }
       }
     },
     "etaToTargetWorth": {
       "metric": "etaToTargetWorth",
-      "better": "b",
+      "better": "a",
       "detail": {
-        "aScore": 3198,
-        "bScore": 2776,
+        "aScore": 2339,
+        "bScore": 3560,
         "metric": "etaToTargetWorth",
         "source": "measured"
       },
       "measured": {
         "a": {
-          "endMoney": "40545.84752923632",
-          "endNetWorth": "677895.2619999999",
+          "endMoney": "58060.99811728721",
+          "endNetWorth": "1811822.4520000014",
           "droppedRate": 0,
-          "etaToTargetWorth": "3198"
+          "etaToTargetWorth": "2339"
         },
         "b": {
-          "endMoney": "2604.6848903128666",
-          "endNetWorth": "818112.3999999993",
+          "endMoney": "69341.21187079651",
+          "endNetWorth": "1015288.9263999995",
           "droppedRate": 0,
-          "etaToTargetWorth": "2776"
+          "etaToTargetWorth": "3560"
         }
+      },
+      "insights": {
+        "summary": "Measured comparison winner: A",
+        "improved": [
+          "A reaches target worth faster"
+        ],
+        "regressed": [
+          "B reaches target worth slower"
+        ],
+        "drivers": [
+          {
+            "key": "endNetWorth",
+            "winner": "a",
+            "summary": "A finishes with higher measured net worth."
+          },
+          {
+            "key": "etaToTargetWorth",
+            "winner": "a",
+            "summary": "A reaches the target worth sooner."
+          }
+        ]
       },
       "_meta": {
         "command": "compare",
-        "generatedAt": "2026-03-06T01:42:32.306Z",
-        "cliVersion": "0.1.0",
-        "gitSha": "523a510",
-        "runId": "2b9b14a1-e27c-462f-ac1b-3ddec0d0ca95",
+        "generatedAt": "2026-03-14T09:54:39.689Z",
+        "contractVersion": "1.3.0",
+        "schemaRef": "docs/schemas/compare.output.schema.json",
+        "cliVersion": "0.1.1",
+        "gitSha": "ba8ad1f",
+        "runId": "compare-11p6v3f-e6802de1",
+        "seed": 2279559147,
         "scenarioPath": [
-          "examples/tutorials/05-idle-design-v1.json",
-          "examples/tutorials/06-idle-design-balance-b.json"
+          "examples/tutorials/14-orbital-foundry-v1.json",
+          "examples/tutorials/15-orbital-foundry-compare-b.json"
         ],
         "scenarioHash": {
-          "a": "2469411bd787683b9ba589d2e4856479cceb7d50afdc92be47fe1682afcbfc58",
-          "b": "7af6ea325aef42d4b0778c13eee7835b6a6976f54d6a42419d444107ca10fb54"
+          "a": "4a9ce5c03ae54aa5205552eac3da7a41d0004a17a53ba489994e52df9a6fc854",
+          "b": "7bbb681cbef1912a401382d16a7161f129d0690eb9c619c45d01316a5860438d"
+        },
+        "pluginDigest": {
+          "examples/plugins/custom-econ-plugin.ts": "ea3ab6cb9961886144d3781b1ebaf43b2c1bf9ad079dfa63cb7c9b25c29f1e8c"
+        }
+      }
+    },
+    "visibleChangesPerMinute": {
+      "metric": "visibleChangesPerMinute",
+      "better": "a",
+      "detail": {
+        "aScore": 2.7595238095238095,
+        "bScore": 2.5785714285714287,
+        "metric": "visibleChangesPerMinute",
+        "source": "measured"
+      },
+      "measured": {
+        "a": {
+          "endMoney": "58060.99811728721",
+          "endNetWorth": "1811822.4520000014",
+          "droppedRate": 0,
+          "visibleChangesPerMinute": 2.7595238095238095
+        },
+        "b": {
+          "endMoney": "69341.21187079651",
+          "endNetWorth": "1015288.9263999995",
+          "droppedRate": 0,
+          "visibleChangesPerMinute": 2.5785714285714287
+        }
+      },
+      "insights": {
+        "summary": "Measured comparison winner: A",
+        "improved": [
+          "A delivers more visible progression changes per active minute"
+        ],
+        "regressed": [
+          "B changes the visible number less often"
+        ],
+        "drivers": [
+          {
+            "key": "endNetWorth",
+            "winner": "a",
+            "summary": "A finishes with higher measured net worth."
+          },
+          {
+            "key": "visibleChangesPerMinute",
+            "winner": "a",
+            "summary": "A changes the visible progression number more often during active play."
+          }
+        ]
+      },
+      "_meta": {
+        "command": "compare",
+        "generatedAt": "2026-03-14T09:54:40.781Z",
+        "contractVersion": "1.3.0",
+        "schemaRef": "docs/schemas/compare.output.schema.json",
+        "cliVersion": "0.1.1",
+        "gitSha": "ba8ad1f",
+        "runId": "compare-1k16jt5-0cd598c8",
+        "seed": 3388091081,
+        "scenarioPath": [
+          "examples/tutorials/14-orbital-foundry-v1.json",
+          "examples/tutorials/15-orbital-foundry-compare-b.json"
+        ],
+        "scenarioHash": {
+          "a": "4a9ce5c03ae54aa5205552eac3da7a41d0004a17a53ba489994e52df9a6fc854",
+          "b": "7bbb681cbef1912a401382d16a7161f129d0690eb9c619c45d01316a5860438d"
+        },
+        "pluginDigest": {
+          "examples/plugins/custom-econ-plugin.ts": "ea3ab6cb9961886144d3781b1ebaf43b2c1bf9ad079dfa63cb7c9b25c29f1e8c"
+        }
+      }
+    },
+    "timeToFirstUpgrade": {
+      "metric": "timeToMilestone",
+      "better": "b",
+      "detail": {
+        "aScore": 50,
+        "bScore": 47,
+        "metric": "timeToMilestone",
+        "source": "measured"
+      },
+      "measured": {
+        "a": {
+          "endMoney": "58060.99811728721",
+          "endNetWorth": "1811822.4520000014",
+          "droppedRate": 0,
+          "timeToMilestone": 50
+        },
+        "b": {
+          "endMoney": "69341.21187079651",
+          "endNetWorth": "1015288.9263999995",
+          "droppedRate": 0,
+          "timeToMilestone": 47
+        }
+      },
+      "insights": {
+        "summary": "Measured comparison winner: B",
+        "improved": [
+          "B reaches the requested milestone sooner"
+        ],
+        "regressed": [
+          "A reaches the requested milestone later"
+        ],
+        "drivers": [
+          {
+            "key": "endNetWorth",
+            "winner": "a",
+            "summary": "A finishes with higher measured net worth."
+          },
+          {
+            "key": "timeToMilestone",
+            "winner": "b",
+            "summary": "B reaches the selected milestone sooner in measured progression."
+          }
+        ]
+      },
+      "_meta": {
+        "command": "compare",
+        "generatedAt": "2026-03-14T09:54:41.857Z",
+        "contractVersion": "1.3.0",
+        "schemaRef": "docs/schemas/compare.output.schema.json",
+        "cliVersion": "0.1.1",
+        "gitSha": "ba8ad1f",
+        "runId": "compare-7wcd8y-3ad4dc99",
+        "seed": 477587986,
+        "scenarioPath": [
+          "examples/tutorials/14-orbital-foundry-v1.json",
+          "examples/tutorials/15-orbital-foundry-compare-b.json"
+        ],
+        "scenarioHash": {
+          "a": "4a9ce5c03ae54aa5205552eac3da7a41d0004a17a53ba489994e52df9a6fc854",
+          "b": "7bbb681cbef1912a401382d16a7161f129d0690eb9c619c45d01316a5860438d"
+        },
+        "pluginDigest": {
+          "examples/plugins/custom-econ-plugin.ts": "ea3ab6cb9961886144d3781b1ebaf43b2c1bf9ad079dfa63cb7c9b25c29f1e8c"
         }
       }
     }
@@ -90,18 +267,18 @@
           "horizon": "30m",
           "seconds": 1800,
           "segmentSec": 1800,
-          "endMoney": "6846.256",
-          "endNetWorth": "6880",
-          "deltaNetWorth": "6840",
-          "netWorthPerHour": "13760",
-          "deltaPerDay": "328320",
+          "endMoney": "9728.96875",
+          "endNetWorth": "9790",
+          "deltaNetWorth": "9720",
+          "netWorthPerHour": "19580",
+          "deltaPerDay": "466560.00000000006",
           "monetization": {
-            "cumulativeGrossRevenuePerUser": 0.0004046301962078623,
-            "cumulativeNetRevenuePerUser": 0.00026058184635786337,
-            "cumulativeLtvPerUser": -1.7997394181536421,
+            "cumulativeGrossRevenuePerUser": 0.000459636469524436,
+            "cumulativeNetRevenuePerUser": 0.00029600588637373673,
+            "cumulativeLtvPerUser": -1.9497039941136278,
             "cumulativeLtvQuantiles": {
-              "q50": -1.7997470243401017,
-              "q90": -1.7996610788264447
+              "q50": -1.949710470798282,
+              "q90": -1.949609921421828
             }
           },
           "guardrails": {
@@ -110,158 +287,170 @@
             "droppedRate": 0,
             "actionMix": {
               "buy.producer": 1
-            }
+            },
+            "growthLog10PerDay": 102.99286328586628
           }
         },
         "at2h": {
           "horizon": "2h",
           "seconds": 7200,
           "segmentSec": 5400,
-          "endMoney": "79517.2480686421",
-          "endNetWorth": "80824",
-          "deltaNetWorth": "73944",
-          "netWorthPerHour": "40412",
-          "deltaPerDay": "1183104",
+          "endMoney": "112627.9981560501",
+          "endNetWorth": "117044.80000000002",
+          "deltaNetWorth": "107254.80000000002",
+          "netWorthPerHour": "58522.40000000001",
+          "deltaPerDay": "1716076.8",
           "monetization": {
-            "cumulativeGrossRevenuePerUser": 0.0017361530920514882,
-            "cumulativeNetRevenuePerUser": 0.0011180825912811589,
-            "cumulativeLtvPerUser": -1.7988819174087196,
+            "cumulativeGrossRevenuePerUser": 0.0019644874820838455,
+            "cumulativeNetRevenuePerUser": 0.0012651299384619965,
+            "cumulativeLtvPerUser": -1.9487348700615386,
             "cumulativeLtvQuantiles": {
-              "q50": -1.7989114787149652,
-              "q90": -1.7985597050804554
+              "q50": -1.948778243359985,
+              "q90": -1.948396224926795
             }
           },
           "guardrails": {
-            "timeToFirstUpgradeSec": 4800,
+            "timeToFirstUpgradeSec": 3600,
             "stallRatio": 0,
             "droppedRate": 0,
             "actionMix": {
-              "buy.producer": 0.6666666666666666,
-              "buy.upgrade": 0.3333333333333333
-            }
+              "buy.producer": 0.5,
+              "buy.upgrade": 0.5
+            },
+            "growthLog10PerDay": 17.241110913106198
           }
         },
         "at24h": {
           "horizon": "24h",
           "seconds": 86400,
           "segmentSec": 79200,
-          "endMoney": "701625.0684727218",
-          "endNetWorth": "33562487.19999999",
-          "deltaNetWorth": "33481663.199999988",
-          "netWorthPerHour": "1398436.9666666663",
-          "deltaPerDay": "36525450.76363635",
+          "endMoney": "3668299.26563387",
+          "endNetWorth": "53977255",
+          "deltaNetWorth": "53860210.2",
+          "netWorthPerHour": "2249052.2916666665",
+          "deltaPerDay": "58756592.94545455",
           "monetization": {
-            "cumulativeGrossRevenuePerUser": 0.02326654980445795,
-            "cumulativeNetRevenuePerUser": 0.014983658074070923,
-            "cumulativeLtvPerUser": -1.785016341925929,
+            "cumulativeGrossRevenuePerUser": 0.026243735154740717,
+            "cumulativeNetRevenuePerUser": 0.016900965439653044,
+            "cumulativeLtvPerUser": -1.933099034560347,
             "cumulativeLtvQuantiles": {
-              "q50": -1.7852858612419733,
-              "q90": -1.7804626854035073
+              "q50": -1.933493564561986,
+              "q90": -1.9283864552399113
             }
           },
           "guardrails": {
-            "timeToFirstUpgradeSec": 4800,
+            "timeToFirstUpgradeSec": 3600,
             "stallRatio": 0,
             "droppedRate": 0,
             "actionMix": {
-              "buy.producer": 0.8333333333333334,
-              "buy.upgrade": 0.16666666666666666
-            }
+              "buy.producer": 0.8203125,
+              "buy.upgrade": 0.1796875
+            },
+            "growthLog10PerDay": 2.9060276410592167
           }
         },
         "at7d": {
           "horizon": "7d",
           "seconds": 604800,
           "segmentSec": 518400,
-          "endMoney": "37737195.84832578",
-          "endNetWorth": "582062472.3999996",
-          "deltaNetWorth": "548499985.1999996",
-          "netWorthPerHour": "3464657.5738095213",
-          "deltaPerDay": "91416664.19999993",
+          "endMoney": "22118737.494679023",
+          "endNetWorth": "929265404.2",
+          "deltaNetWorth": "875288149.2",
+          "netWorthPerHour": "5531341.691666667",
+          "deltaPerDay": "145881358.20000002",
           "monetization": {
-            "cumulativeGrossRevenuePerUser": 0.12177146429210615,
-            "cumulativeNetRevenuePerUser": 0.07842082300411635,
-            "cumulativeLtvPerUser": -1.721579176995884,
+            "cumulativeGrossRevenuePerUser": 0.13771167041470883,
+            "cumulativeNetRevenuePerUser": 0.08868631574707245,
+            "cumulativeLtvPerUser": -1.8613136842529283,
             "cumulativeLtvQuantiles": {
-              "q50": -1.7240036149672906,
-              "q90": -1.6956171058780438
+              "q50": -1.8639708187983797,
+              "q90": -1.8323334486372778
             }
           },
           "guardrails": {
-            "timeToFirstUpgradeSec": 4800,
+            "timeToFirstUpgradeSec": 3600,
             "stallRatio": 0,
             "droppedRate": 0,
             "actionMix": {
-              "buy.producer": 0.8404907975460123,
-              "buy.upgrade": 0.15950920245398773
-            }
+              "buy.producer": 0.8238993710691824,
+              "buy.upgrade": 0.1761006289308176
+            },
+            "growthLog10PerDay": 0.2059881623625214
           }
         },
         "at30d": {
           "horizon": "30d",
           "seconds": 2592000,
           "segmentSec": 1987200,
-          "endMoney": "128386782.78580493",
-          "endNetWorth": "3269336670.399994",
-          "deltaNetWorth": "2687274197.9999943",
-          "netWorthPerHour": "4540745.375555547",
-          "deltaPerDay": "116838008.6086954",
+          "endMoney": "204410834.50303146",
+          "endNetWorth": "5218697555.8",
+          "deltaNetWorth": "4289432151.6000004",
+          "netWorthPerHour": "7248191.049722223",
+          "deltaPerDay": "186497050.06956524",
           "monetization": {
-            "cumulativeGrossRevenuePerUser": 0.30451898221922863,
-            "cumulativeNetRevenuePerUser": 0.19611022454918314,
-            "cumulativeLtvPerUser": -1.6038897754508168,
+            "cumulativeGrossRevenuePerUser": 0.34910272377613355,
+            "cumulativeNetRevenuePerUser": 0.22482215411182976,
+            "cumulativeLtvPerUser": -1.7251778458881688,
             "cumulativeLtvQuantiles": {
-              "q50": -1.6094678998966705,
-              "q90": -1.5479803459124268
+              "q50": -1.7299431096980957,
+              "q90": -1.6706897484846852
             }
           },
           "guardrails": {
-            "timeToFirstUpgradeSec": 4800,
+            "timeToFirstUpgradeSec": 3600,
             "stallRatio": 0,
             "droppedRate": 0,
             "actionMix": {
-              "buy.producer": 0.8351648351648352,
-              "buy.upgrade": 0.16483516483516483
-            }
+              "buy.producer": 0.8248587570621468,
+              "buy.upgrade": 0.1751412429378531
+            },
+            "growthLog10PerDay": 0.03258358084697786
           }
         },
         "at90d": {
           "horizon": "90d",
           "seconds": 7776000,
           "segmentSec": 5184000,
-          "endMoney": "1029588334.0549937",
-          "endNetWorth": "11488518864.399912",
-          "deltaNetWorth": "8219182193.999918",
-          "netWorthPerHour": "5318758.7335184775",
-          "deltaPerDay": "136986369.89999864",
+          "endMoney": "1309447693.3786218",
+          "endNetWorth": "18377192521.599995",
+          "deltaNetWorth": "13158494965.799995",
+          "netWorthPerHour": "8507959.500740739",
+          "deltaPerDay": "219308249.42999995",
           "monetization": {
-            "cumulativeGrossRevenuePerUser": 0.5170474582062787,
-            "cumulativeNetRevenuePerUser": 0.3329785630848433,
-            "cumulativeLtvPerUser": -1.4670214369151564,
+            "cumulativeGrossRevenuePerUser": 0.6076026156081931,
+            "cumulativeNetRevenuePerUser": 0.391296084451676,
+            "cumulativeLtvPerUser": -1.5587039155483244,
             "cumulativeLtvQuantiles": {
-              "q50": -1.4698526794266786,
-              "q90": -1.379278022398705
+              "q50": -1.5728482196767974,
+              "q90": -1.4483298106000655
             }
           },
           "guardrails": {
-            "timeToFirstUpgradeSec": 4800,
+            "timeToFirstUpgradeSec": 3600,
             "stallRatio": 0,
             "droppedRate": 0,
             "actionMix": {
-              "buy.producer": 0.8358974358974359,
-              "buy.upgrade": 0.1641025641025641
-            }
+              "buy.producer": 0.8210526315789474,
+              "buy.upgrade": 0.17894736842105263
+            },
+            "growthLog10PerDay": 0.009111950609598818
           }
         }
       },
       "meta": {
         "command": "ltv",
-        "generatedAt": "2026-03-06T01:42:32.525Z",
-        "cliVersion": "0.1.0",
-        "gitSha": "523a510",
-        "runId": "7c199dc9-47b2-41e6-a0e8-8fd5e48a735b",
-        "scenarioPath": "examples/tutorials/05-idle-design-v1.json",
-        "scenarioHash": "2469411bd787683b9ba589d2e4856479cceb7d50afdc92be47fe1682afcbfc58"
+        "generatedAt": "2026-03-14T09:54:42.074Z",
+        "contractVersion": "1.3.0",
+        "schemaRef": "docs/schemas/ltv.output.schema.json",
+        "cliVersion": "0.1.1",
+        "gitSha": "ba8ad1f",
+        "runId": "ltv-179mir2-d63e9f1c",
+        "seed": 2616212846,
+        "scenarioPath": "examples/tutorials/14-orbital-foundry-v1.json",
+        "scenarioHash": "4a9ce5c03ae54aa5205552eac3da7a41d0004a17a53ba489994e52df9a6fc854",
+        "pluginDigest": {
+          "examples/plugins/custom-econ-plugin.ts": "ea3ab6cb9961886144d3781b1ebaf43b2c1bf9ad079dfa63cb7c9b25c29f1e8c"
+        }
       }
     },
     "b": {
@@ -270,18 +459,18 @@
           "horizon": "30m",
           "seconds": 1800,
           "segmentSec": 1800,
-          "endMoney": "6302.5241000000005",
-          "endNetWorth": "6340.000000000001",
-          "deltaNetWorth": "6300.000000000001",
-          "netWorthPerHour": "12680.000000000002",
-          "deltaPerDay": "302400.00000000006",
+          "endMoney": "7145.166625",
+          "endNetWorth": "7198",
+          "deltaNetWorth": "7128",
+          "netWorthPerHour": "14396",
+          "deltaPerDay": "342144",
           "monetization": {
-            "cumulativeGrossRevenuePerUser": 0.00043112781295156756,
-            "cumulativeNetRevenuePerUser": 0.00027764631154080925,
-            "cumulativeLtvPerUser": -1.84972235368846,
+            "cumulativeGrossRevenuePerUser": 0.00045239772355344887,
+            "cumulativeNetRevenuePerUser": 0.0002913441339684207,
+            "cumulativeLtvPerUser": -1.9997086558660313,
             "cumulativeLtvQuantiles": {
-              "q50": -1.8497325137133693,
-              "q90": -1.8496354260666772
+              "q50": -1.9997187684702846,
+              "q90": -1.999618694623378
             }
           },
           "guardrails": {
@@ -290,158 +479,1180 @@
             "droppedRate": 0,
             "actionMix": {
               "buy.producer": 1
-            }
+            },
+            "growthLog10PerDay": 96.58146251052652
           }
         },
         "at2h": {
           "horizon": "2h",
           "seconds": 7200,
           "segmentSec": 5400,
-          "endMoney": "76662.79635675409",
-          "endNetWorth": "77584.00000000001",
-          "deltaNetWorth": "71244.00000000001",
-          "netWorthPerHour": "38792.00000000001",
-          "deltaPerDay": "1139904.0000000002",
+          "endMoney": "70032.09635012501",
+          "endNetWorth": "77449.84000000001",
+          "deltaNetWorth": "70251.84000000001",
+          "netWorthPerHour": "38724.920000000006",
+          "deltaPerDay": "1124029.4400000002",
           "monetization": {
-            "cumulativeGrossRevenuePerUser": 0.0018293137243157076,
-            "cumulativeNetRevenuePerUser": 0.0011780780384593157,
-            "cumulativeLtvPerUser": -1.8488219219615412,
+            "cumulativeGrossRevenuePerUser": 0.0019107408398711648,
+            "cumulativeNetRevenuePerUser": 0.0012305171008770309,
+            "cumulativeLtvPerUser": -1.9987694828991225,
             "cumulativeLtvQuantiles": {
-              "q50": -1.8488494206174781,
-              "q90": -1.8484797106655877
+              "q50": -1.9987908399393481,
+              "q90": -1.998408894174948
             }
           },
           "guardrails": {
-            "timeToFirstUpgradeSec": 4800,
+            "timeToFirstUpgradeSec": 2400,
             "stallRatio": 0,
             "droppedRate": 0,
             "actionMix": {
-              "buy.producer": 0.6666666666666666,
-              "buy.upgrade": 0.3333333333333333
-            }
+              "buy.producer": 0.3333333333333333,
+              "buy.upgrade": 0.6666666666666666
+            },
+            "growthLog10PerDay": 16.508938921449804
           }
         },
         "at24h": {
           "horizon": "24h",
           "seconds": 86400,
           "segmentSec": 79200,
-          "endMoney": "1847255.5206879342",
-          "endNetWorth": "41189400.400000006",
-          "deltaNetWorth": "41111816.400000006",
-          "netWorthPerHour": "1716225.016666667",
-          "deltaPerDay": "44849254.25454546",
+          "endMoney": "1968151.3919246448",
+          "endNetWorth": "35598559.12",
+          "deltaNetWorth": "35521109.279999994",
+          "netWorthPerHour": "1483273.2966666666",
+          "deltaPerDay": "38750301.03272727",
           "monetization": {
-            "cumulativeGrossRevenuePerUser": 0.02546919705679512,
-            "cumulativeNetRevenuePerUser": 0.016402162904576054,
-            "cumulativeLtvPerUser": -1.833597837095424,
+            "cumulativeGrossRevenuePerUser": 0.026390709253491764,
+            "cumulativeNetRevenuePerUser": 0.016995616759248707,
+            "cumulativeLtvPerUser": -1.983004383240752,
             "cumulativeLtvQuantiles": {
-              "q50": -1.8341752225997712,
-              "q90": -1.8281092379116315
+              "q50": -1.983457800803115,
+              "q90": -1.9776425793070134
             }
           },
           "guardrails": {
-            "timeToFirstUpgradeSec": 4800,
+            "timeToFirstUpgradeSec": 2400,
             "stallRatio": 0,
             "droppedRate": 0,
             "actionMix": {
-              "buy.producer": 0.7984496124031008,
-              "buy.upgrade": 0.20155038759689922
-            }
+              "buy.producer": 0.780952380952381,
+              "buy.upgrade": 0.21904761904761905
+            },
+            "growthLog10PerDay": 2.90444934000705
           }
         },
         "at7d": {
           "horizon": "7d",
           "seconds": 604800,
           "segmentSec": 518400,
-          "endMoney": "68985223.9030829",
-          "endNetWorth": "725661788.8",
-          "deltaNetWorth": "684472388.4",
-          "netWorthPerHour": "4319415.409523809",
-          "deltaPerDay": "114078731.39999999",
+          "endMoney": "3610758.081435732",
+          "endNetWorth": "539116273.3600003",
+          "deltaNetWorth": "503517714.24000025",
+          "netWorthPerHour": "3209025.4366666684",
+          "deltaPerDay": "83919619.04000005",
           "monetization": {
-            "cumulativeGrossRevenuePerUser": 0.12712359922857505,
-            "cumulativeNetRevenuePerUser": 0.08186759790320233,
-            "cumulativeLtvPerUser": -1.768132402096797,
+            "cumulativeGrossRevenuePerUser": 0.13707932380152593,
+            "cumulativeNetRevenuePerUser": 0.08827908452818264,
+            "cumulativeLtvPerUser": -1.911720915471817,
             "cumulativeLtvQuantiles": {
-              "q50": -1.7691883342805566,
-              "q90": -1.7427541139995892
+              "q50": -1.9132640592667574,
+              "q90": -1.882585264274242
             }
           },
           "guardrails": {
-            "timeToFirstUpgradeSec": 4800,
+            "timeToFirstUpgradeSec": 2400,
             "stallRatio": 0,
             "droppedRate": 0,
             "actionMix": {
-              "buy.producer": 0.8050314465408805,
-              "buy.upgrade": 0.1949685534591195
-            }
+              "buy.producer": 0.7751937984496124,
+              "buy.upgrade": 0.2248062015503876
+            },
+            "growthLog10PerDay": 0.1967083369000743
           }
         },
         "at30d": {
           "horizon": "30d",
           "seconds": 2592000,
           "segmentSec": 1987200,
-          "endMoney": "44196835.679300494",
-          "endNetWorth": "4088504952.4",
-          "deltaNetWorth": "3362843163.6000004",
-          "netWorthPerHour": "5678479.100555556",
-          "deltaPerDay": "146210572.3304348",
+          "endMoney": "318867058.36336666",
+          "endNetWorth": "3007437089.2000017",
+          "deltaNetWorth": "2468320815.8400016",
+          "netWorthPerHour": "4176995.9572222247",
+          "deltaPerDay": "107318296.34086962",
           "monetization": {
-            "cumulativeGrossRevenuePerUser": 0.32294420564202153,
-            "cumulativeNetRevenuePerUser": 0.2079760684334619,
-            "cumulativeLtvPerUser": -1.6420239315665377,
+            "cumulativeGrossRevenuePerUser": 0.3400991025347638,
+            "cumulativeNetRevenuePerUser": 0.2190238220323879,
+            "cumulativeLtvPerUser": -1.7809761779676119,
             "cumulativeLtvQuantiles": {
-              "q50": -1.6492907837450828,
-              "q90": -1.5709672815760154
+              "q50": -1.7845406837837954,
+              "q90": -1.7093364799030308
             }
           },
           "guardrails": {
-            "timeToFirstUpgradeSec": 4800,
+            "timeToFirstUpgradeSec": 2400,
             "stallRatio": 0,
             "droppedRate": 0,
             "actionMix": {
-              "buy.producer": 0.8033707865168539,
-              "buy.upgrade": 0.19662921348314608
-            }
+              "buy.producer": 0.7762237762237763,
+              "buy.upgrade": 0.22377622377622378
+            },
+            "growthLog10PerDay": 0.032457135219250206
           }
         },
         "at90d": {
           "horizon": "90d",
           "seconds": 7776000,
           "segmentSec": 5184000,
-          "endMoney": "420347648.9810221",
-          "endNetWorth": "14396248915.599989",
-          "deltaNetWorth": "10307743963.19999",
-          "netWorthPerHour": "6664930.053518513",
-          "deltaPerDay": "171795732.71999982",
+          "endMoney": "1037045564.6030908",
+          "endNetWorth": "10578381699.28",
+          "deltaNetWorth": "7570944610.079999",
+          "netWorthPerHour": "4897398.934851852",
+          "deltaPerDay": "126182410.16799998",
           "monetization": {
-            "cumulativeGrossRevenuePerUser": 0.5491487071290309,
-            "cumulativeNetRevenuePerUser": 0.3536517673910959,
-            "cumulativeLtvPerUser": -1.4963482326089046,
+            "cumulativeGrossRevenuePerUser": 0.6048508337768297,
+            "cumulativeNetRevenuePerUser": 0.38952393695227855,
+            "cumulativeLtvPerUser": -1.6104760630477222,
             "cumulativeLtvQuantiles": {
-              "q50": -1.5076465692455399,
-              "q90": -1.381675844555776
+              "q50": -1.62289564720842,
+              "q90": -1.4774041654659626
             }
           },
           "guardrails": {
-            "timeToFirstUpgradeSec": 4800,
+            "timeToFirstUpgradeSec": 2400,
             "stallRatio": 0,
             "droppedRate": 0,
             "actionMix": {
-              "buy.producer": 0.8010471204188482,
-              "buy.upgrade": 0.19895287958115182
-            }
+              "buy.producer": 0.7727272727272727,
+              "buy.upgrade": 0.22727272727272727
+            },
+            "growthLog10PerDay": 0.009103711370619145
           }
         }
       },
       "meta": {
         "command": "ltv",
-        "generatedAt": "2026-03-06T01:42:32.747Z",
-        "cliVersion": "0.1.0",
-        "gitSha": "523a510",
-        "runId": "94dde59b-4507-4d20-b456-55eda0e66383",
-        "scenarioPath": "examples/tutorials/06-idle-design-balance-b.json",
-        "scenarioHash": "7af6ea325aef42d4b0778c13eee7835b6a6976f54d6a42419d444107ca10fb54"
+        "generatedAt": "2026-03-14T09:54:42.290Z",
+        "contractVersion": "1.3.0",
+        "schemaRef": "docs/schemas/ltv.output.schema.json",
+        "cliVersion": "0.1.1",
+        "gitSha": "ba8ad1f",
+        "runId": "ltv-wiqckh-6616f257",
+        "seed": 1966380065,
+        "scenarioPath": "examples/tutorials/15-orbital-foundry-compare-b.json",
+        "scenarioHash": "7bbb681cbef1912a401382d16a7161f129d0690eb9c619c45d01316a5860438d",
+        "pluginDigest": {
+          "examples/plugins/custom-econ-plugin.ts": "ea3ab6cb9961886144d3781b1ebaf43b2c1bf9ad079dfa63cb7c9b25c29f1e8c"
+        }
+      }
+    }
+  },
+  "experience": {
+    "a": {
+      "end": {
+        "t": 604800,
+        "money": "86866717.47666149",
+        "netWorth": "994013384.1819825",
+        "prestige": {
+          "count": 0,
+          "points": "0",
+          "multiplier": "1"
+        }
+      },
+      "session": {
+        "pattern": {
+          "id": "twice-daily",
+          "days": 7
+        },
+        "activeBlocks": 14,
+        "totalActiveSec": 25200,
+        "totalOfflineSec": 579600
+      },
+      "milestones": {
+        "milestones": [
+          {
+            "key": "action.buy.producer.firstApplied",
+            "firstSeenT": 0,
+            "firstSeenSec": 0,
+            "source": "action"
+          },
+          {
+            "key": "system.fabricator-line-online",
+            "firstSeenT": 8,
+            "firstSeenSec": 8,
+            "source": "event"
+          },
+          {
+            "key": "action.buy.upgrade.firstApplied",
+            "firstSeenT": 49,
+            "firstSeenSec": 49,
+            "source": "action"
+          },
+          {
+            "key": "progress.first-upgrade",
+            "firstSeenT": 50,
+            "firstSeenSec": 50,
+            "source": "event"
+          },
+          {
+            "key": "progress.first-automation",
+            "firstSeenT": 73,
+            "firstSeenSec": 73,
+            "source": "event"
+          }
+        ],
+        "firstMilestoneSec": 0,
+        "firstActionSec": 0
+      },
+      "perceived": {
+        "series": "netWorth",
+        "firstVisibleChangeSec": 1,
+        "visibleChangesPerMinute": 2.7595238095238095,
+        "maxNoRewardGapSec": 726,
+        "avgPostPurchaseFeedbackSec": 0.6428571428571429,
+        "p95PostPurchaseFeedbackSec": 2,
+        "visibleChangeCount": 1159,
+        "activeSeconds": 25200
+      },
+      "growth": {
+        "windowSec": 600,
+        "seriesRequested": "netWorth",
+        "valueSource": "netWorth",
+        "segments": [
+          {
+            "tFrom": 0,
+            "tTo": 600,
+            "regime": "softcap",
+            "slope": 0.0054553563074354475,
+            "doublingTimeSec": 55.18062958668502
+          },
+          {
+            "tFrom": 600,
+            "tTo": 1200,
+            "regime": "softcap",
+            "slope": 0.0007748291052460887,
+            "doublingTimeSec": 388.51147127258844
+          },
+          {
+            "tFrom": 1200,
+            "tTo": 1800,
+            "regime": "softcap",
+            "slope": 0.0004275682354297124,
+            "doublingTimeSec": 704.0513553618912
+          },
+          {
+            "tFrom": 1800,
+            "tTo": 43200,
+            "regime": "softcap",
+            "slope": 0.00004334674454492644,
+            "doublingTimeSec": 6944.696743073305
+          },
+          {
+            "tFrom": 43200,
+            "tTo": 43800,
+            "regime": "softcap",
+            "slope": 0.000011990565917930536,
+            "doublingTimeSec": 25105.5703062209
+          },
+          {
+            "tFrom": 43800,
+            "tTo": 44400,
+            "regime": "softcap",
+            "slope": 0.000012121320137598405,
+            "doublingTimeSec": 24834.75333105295
+          },
+          {
+            "tFrom": 44400,
+            "tTo": 45000,
+            "regime": "softcap",
+            "slope": 0.000012047432249651103,
+            "doublingTimeSec": 24987.066905705084
+          },
+          {
+            "tFrom": 45000,
+            "tTo": 86400,
+            "regime": "softcap",
+            "slope": 0.000008293557769589969,
+            "doublingTimeSec": 36296.846784834546
+          },
+          {
+            "tFrom": 86400,
+            "tTo": 87000,
+            "regime": "softcap",
+            "slope": 0.000005969718548602583,
+            "doublingTimeSec": 50426.162173834404
+          },
+          {
+            "tFrom": 87000,
+            "tTo": 87600,
+            "regime": "softcap",
+            "slope": 0.00000592088593920496,
+            "doublingTimeSec": 50842.05282029173
+          },
+          {
+            "tFrom": 87600,
+            "tTo": 88200,
+            "regime": "softcap",
+            "slope": 0.0000058728457586661636,
+            "doublingTimeSec": 51257.94342883456
+          },
+          {
+            "tFrom": 88200,
+            "tTo": 129600,
+            "regime": "softcap",
+            "slope": 0.0000048325070619476986,
+            "doublingTimeSec": 62292.717176631246
+          },
+          {
+            "tFrom": 129600,
+            "tTo": 130200,
+            "regime": "softcap",
+            "slope": 0.000003947930944632935,
+            "doublingTimeSec": 76250.06614495633
+          },
+          {
+            "tFrom": 130200,
+            "tTo": 130800,
+            "regime": "softcap",
+            "slope": 0.000003926514628096456,
+            "doublingTimeSec": 76665.95547866792
+          },
+          {
+            "tFrom": 130800,
+            "tTo": 131400,
+            "regime": "softcap",
+            "slope": 0.00000390532941238438,
+            "doublingTimeSec": 77081.8448014578
+          },
+          {
+            "tFrom": 131400,
+            "tTo": 172800,
+            "regime": "softcap",
+            "slope": 0.0000034219658246424047,
+            "doublingTimeSec": 87969.90124687724
+          },
+          {
+            "tFrom": 172800,
+            "tTo": 173400,
+            "regime": "softcap",
+            "slope": 0.0000029771597506626317,
+            "doublingTimeSec": 101113.14839486877
+          },
+          {
+            "tFrom": 173400,
+            "tTo": 174000,
+            "regime": "softcap",
+            "slope": 0.0000029649645432231845,
+            "doublingTimeSec": 101529.03728714894
+          },
+          {
+            "tFrom": 174000,
+            "tTo": 174600,
+            "regime": "softcap",
+            "slope": 0.0000029528688377104354,
+            "doublingTimeSec": 101944.92617470633
+          },
+          {
+            "tFrom": 174600,
+            "tTo": 216000,
+            "regime": "softcap",
+            "slope": 0.0000026273668671281796,
+            "doublingTimeSec": 114574.78566478971
+          },
+          {
+            "tFrom": 216000,
+            "tTo": 216600,
+            "regime": "softcap",
+            "slope": 0.0000024066891762153377,
+            "doublingTimeSec": 125080.5457717514
+          },
+          {
+            "tFrom": 216600,
+            "tTo": 217200,
+            "regime": "softcap",
+            "slope": 0.0000023987135328133274,
+            "doublingTimeSec": 125496.4344620671
+          },
+          {
+            "tFrom": 217200,
+            "tTo": 217800,
+            "regime": "softcap",
+            "slope": 0.000002390790576599263,
+            "doublingTimeSec": 125912.32314968211
+          },
+          {
+            "tFrom": 217800,
+            "tTo": 259200,
+            "regime": "softcap",
+            "slope": 0.000002165615589773011,
+            "doublingTimeSec": 139004.35381310387
+          },
+          {
+            "tFrom": 259200,
+            "tTo": 259800,
+            "regime": "softcap",
+            "slope": 0.0000019708934917132363,
+            "doublingTimeSec": 152737.83029356154
+          },
+          {
+            "tFrom": 259800,
+            "tTo": 260400,
+            "regime": "softcap",
+            "slope": 0.000001965541535054645,
+            "doublingTimeSec": 153153.71885825455
+          },
+          {
+            "tFrom": 260400,
+            "tTo": 261000,
+            "regime": "softcap",
+            "slope": 0.000001960218566153434,
+            "doublingTimeSec": 153569.6074212259
+          },
+          {
+            "tFrom": 261000,
+            "tTo": 302400,
+            "regime": "softcap",
+            "slope": 0.0000018081169958345852,
+            "doublingTimeSec": 166488.11794672208
+          },
+          {
+            "tFrom": 302400,
+            "tTo": 303000,
+            "regime": "softcap",
+            "slope": 0.0000016723665902536785,
+            "doublingTimeSec": 180002.39745181616
+          },
+          {
+            "tFrom": 303000,
+            "tTo": 303600,
+            "regime": "softcap",
+            "slope": 0.0000016685115596093425,
+            "doublingTimeSec": 180418.28594490705
+          },
+          {
+            "tFrom": 303600,
+            "tTo": 304200,
+            "regime": "softcap",
+            "slope": 0.0000016646742608313522,
+            "doublingTimeSec": 180834.17443701226
+          },
+          {
+            "tFrom": 304200,
+            "tTo": 345600,
+            "regime": "softcap",
+            "slope": 0.0000015736301522911267,
+            "doublingTimeSec": 191296.53510114597
+          },
+          {
+            "tFrom": 345600,
+            "tTo": 346200,
+            "regime": "softcap",
+            "slope": 0.0000014878987752897643,
+            "doublingTimeSec": 202318.86783115094
+          },
+          {
+            "tFrom": 346200,
+            "tTo": 346800,
+            "regime": "softcap",
+            "slope": 0.000001484846511665694,
+            "doublingTimeSec": 202734.7562855417
+          },
+          {
+            "tFrom": 346800,
+            "tTo": 347400,
+            "regime": "softcap",
+            "slope": 0.0000014818067451856838,
+            "doublingTimeSec": 203150.64473961442
+          },
+          {
+            "tFrom": 347400,
+            "tTo": 388800,
+            "regime": "softcap",
+            "slope": 0.0000013887167423016434,
+            "doublingTimeSec": 216768.4643630475
+          },
+          {
+            "tFrom": 388800,
+            "tTo": 389400,
+            "regime": "softcap",
+            "slope": 0.0000013058105197198226,
+            "doublingTimeSec": 230531.14607207393
+          },
+          {
+            "tFrom": 389400,
+            "tTo": 390000,
+            "regime": "softcap",
+            "slope": 0.0000013034590217812318,
+            "doublingTimeSec": 230947.03449335214
+          },
+          {
+            "tFrom": 390000,
+            "tTo": 390600,
+            "regime": "softcap",
+            "slope": 0.0000013011159777616873,
+            "doublingTimeSec": 231362.92291317778
+          },
+          {
+            "tFrom": 390600,
+            "tTo": 432000,
+            "regime": "softcap",
+            "slope": 0.000001231554417017172,
+            "doublingTimeSec": 244430.93338342014
+          },
+          {
+            "tFrom": 432000,
+            "tTo": 432600,
+            "regime": "softcap",
+            "slope": 0.0000011640755351442303,
+            "doublingTimeSec": 258600.05349797444
+          },
+          {
+            "tFrom": 432600,
+            "tTo": 433200,
+            "regime": "softcap",
+            "slope": 0.0000011622064397324531,
+            "doublingTimeSec": 259015.94189521106
+          },
+          {
+            "tFrom": 433200,
+            "tTo": 433800,
+            "regime": "softcap",
+            "slope": 0.0000011603433369108037,
+            "doublingTimeSec": 259431.83029379652
+          },
+          {
+            "tFrom": 433800,
+            "tTo": 475200,
+            "regime": "softcap",
+            "slope": 0.0000011066882111634456,
+            "doublingTimeSec": 272009.76085894386
+          },
+          {
+            "tFrom": 475200,
+            "tTo": 475800,
+            "regime": "softcap",
+            "slope": 0.0000010506815336016236,
+            "doublingTimeSec": 286509.2666396093
+          },
+          {
+            "tFrom": 475800,
+            "tTo": 476400,
+            "regime": "softcap",
+            "slope": 0.0000010491586059864962,
+            "doublingTimeSec": 286925.1550207041
+          },
+          {
+            "tFrom": 476400,
+            "tTo": 477000,
+            "regime": "softcap",
+            "slope": 0.0000010476400868508762,
+            "doublingTimeSec": 287341.04340055725
+          },
+          {
+            "tFrom": 477000,
+            "tTo": 518400,
+            "regime": "softcap",
+            "slope": 0.000001027187005150703,
+            "doublingTimeSec": 293062.50386200694
+          },
+          {
+            "tFrom": 518400,
+            "tTo": 519000,
+            "regime": "stall",
+            "slope": 9.860024417681264e-7,
+            "doublingTimeSec": 305303.4991720366
+          },
+          {
+            "tFrom": 519000,
+            "tTo": 519600,
+            "regime": "stall",
+            "slope": 9.84661123662652e-7,
+            "doublingTimeSec": 305719.38754343975
+          },
+          {
+            "tFrom": 519600,
+            "tTo": 520200,
+            "regime": "stall",
+            "slope": 9.833234499427117e-7,
+            "doublingTimeSec": 306135.27591711475
+          },
+          {
+            "tFrom": 520200,
+            "tTo": 561600,
+            "regime": "stall",
+            "slope": 9.397325022725519e-7,
+            "doublingTimeSec": 320335.8348636462
+          },
+          {
+            "tFrom": 561600,
+            "tTo": 562200,
+            "regime": "stall",
+            "slope": 9.04770604088038e-7,
+            "doublingTimeSec": 332714.16456705495
+          },
+          {
+            "tFrom": 562200,
+            "tTo": 562800,
+            "regime": "stall",
+            "slope": 9.036410645535397e-7,
+            "doublingTimeSec": 333130.0529294898
+          },
+          {
+            "tFrom": 562800,
+            "tTo": 563400,
+            "regime": "stall",
+            "slope": 9.025143417969635e-7,
+            "doublingTimeSec": 333545.9412917598
+          }
+        ],
+        "bottlenecks": [
+          {
+            "t": 519000,
+            "reason": "Near-zero growth slope"
+          },
+          {
+            "t": 519600,
+            "reason": "Near-zero growth slope"
+          },
+          {
+            "t": 520200,
+            "reason": "Near-zero growth slope"
+          },
+          {
+            "t": 561600,
+            "reason": "Near-zero growth slope"
+          },
+          {
+            "t": 562200,
+            "reason": "Near-zero growth slope"
+          },
+          {
+            "t": 562800,
+            "reason": "Near-zero growth slope"
+          },
+          {
+            "t": 563400,
+            "reason": "Near-zero growth slope"
+          }
+        ]
+      },
+      "meta": {
+        "command": "experience",
+        "generatedAt": "2026-03-14T09:54:43.160Z",
+        "contractVersion": "1.3.0",
+        "schemaRef": "docs/schemas/experience.output.schema.json",
+        "cliVersion": "0.1.1",
+        "gitSha": "ba8ad1f",
+        "runId": "experience-1bkcsq6-4e5420c9",
+        "seed": 2876099694,
+        "scenarioPath": "examples/tutorials/14-orbital-foundry-v1.json",
+        "scenarioHash": "4a9ce5c03ae54aa5205552eac3da7a41d0004a17a53ba489994e52df9a6fc854",
+        "pluginDigest": {
+          "examples/plugins/custom-econ-plugin.ts": "ea3ab6cb9961886144d3781b1ebaf43b2c1bf9ad079dfa63cb7c9b25c29f1e8c"
+        }
+      }
+    },
+    "b": {
+      "end": {
+        "t": 604800,
+        "money": "34308053.86931904",
+        "netWorth": "569813569.1478837",
+        "prestige": {
+          "count": 0,
+          "points": "0",
+          "multiplier": "1"
+        }
+      },
+      "session": {
+        "pattern": {
+          "id": "twice-daily",
+          "days": 7
+        },
+        "activeBlocks": 14,
+        "totalActiveSec": 25200,
+        "totalOfflineSec": 579600
+      },
+      "milestones": {
+        "milestones": [
+          {
+            "key": "action.buy.producer.firstApplied",
+            "firstSeenT": 0,
+            "firstSeenSec": 0,
+            "source": "action"
+          },
+          {
+            "key": "system.fabricator-line-online",
+            "firstSeenT": 8,
+            "firstSeenSec": 8,
+            "source": "event"
+          },
+          {
+            "key": "action.buy.upgrade.firstApplied",
+            "firstSeenT": 46,
+            "firstSeenSec": 46,
+            "source": "action"
+          },
+          {
+            "key": "progress.first-upgrade",
+            "firstSeenT": 47,
+            "firstSeenSec": 47,
+            "source": "event"
+          },
+          {
+            "key": "progress.first-automation",
+            "firstSeenT": 67,
+            "firstSeenSec": 67,
+            "source": "event"
+          }
+        ],
+        "firstMilestoneSec": 0,
+        "firstActionSec": 0
+      },
+      "perceived": {
+        "series": "netWorth",
+        "firstVisibleChangeSec": 1,
+        "visibleChangesPerMinute": 2.5785714285714287,
+        "maxNoRewardGapSec": 1074,
+        "avgPostPurchaseFeedbackSec": 0.3181818181818182,
+        "p95PostPurchaseFeedbackSec": 2,
+        "visibleChangeCount": 1083,
+        "activeSeconds": 25200
+      },
+      "growth": {
+        "windowSec": 600,
+        "seriesRequested": "netWorth",
+        "valueSource": "netWorth",
+        "segments": [
+          {
+            "tFrom": 0,
+            "tTo": 600,
+            "regime": "softcap",
+            "slope": 0.005014924440628174,
+            "doublingTimeSec": 60.02682577332589
+          },
+          {
+            "tFrom": 600,
+            "tTo": 1200,
+            "regime": "softcap",
+            "slope": 0.0007859390080684377,
+            "doublingTimeSec": 383.0195378694936
+          },
+          {
+            "tFrom": 1200,
+            "tTo": 1800,
+            "regime": "softcap",
+            "slope": 0.0004315310580606339,
+            "doublingTimeSec": 697.5859327874468
+          },
+          {
+            "tFrom": 1800,
+            "tTo": 43200,
+            "regime": "softcap",
+            "slope": 0.00004361131130739214,
+            "doublingTimeSec": 6902.566940539494
+          },
+          {
+            "tFrom": 43200,
+            "tTo": 43800,
+            "regime": "softcap",
+            "slope": 0.000012231614951018581,
+            "doublingTimeSec": 24610.813606335203
+          },
+          {
+            "tFrom": 43800,
+            "tTo": 44400,
+            "regime": "softcap",
+            "slope": 0.000012028347947115789,
+            "doublingTimeSec": 25026.711647143824
+          },
+          {
+            "tFrom": 44400,
+            "tTo": 45000,
+            "regime": "softcap",
+            "slope": 0.000011831726506075964,
+            "doublingTimeSec": 25442.60936976466
+          },
+          {
+            "tFrom": 45000,
+            "tTo": 86400,
+            "regime": "softcap",
+            "slope": 0.000008310529902771748,
+            "doublingTimeSec": 36222.71975263346
+          },
+          {
+            "tFrom": 86400,
+            "tTo": 87000,
+            "regime": "softcap",
+            "slope": 0.000006043588507784747,
+            "doublingTimeSec": 49809.81006172482
+          },
+          {
+            "tFrom": 87000,
+            "tTo": 87600,
+            "regime": "softcap",
+            "slope": 0.000005993544959486859,
+            "doublingTimeSec": 50225.70076620466
+          },
+          {
+            "tFrom": 87600,
+            "tTo": 88200,
+            "regime": "softcap",
+            "slope": 0.000005944323374439028,
+            "doublingTimeSec": 50641.59143131908
+          },
+          {
+            "tFrom": 88200,
+            "tTo": 129600,
+            "regime": "softcap",
+            "slope": 0.0000048432539982234745,
+            "doublingTimeSec": 62154.492779936845
+          },
+          {
+            "tFrom": 129600,
+            "tTo": 130200,
+            "regime": "softcap",
+            "slope": 0.000003985786497319547,
+            "doublingTimeSec": 75525.8707074312
+          },
+          {
+            "tFrom": 130200,
+            "tTo": 130800,
+            "regime": "softcap",
+            "slope": 0.000003963958636497012,
+            "doublingTimeSec": 75941.76006084774
+          },
+          {
+            "tFrom": 130800,
+            "tTo": 131400,
+            "regime": "softcap",
+            "slope": 0.000003942368551387669,
+            "doublingTimeSec": 76357.64940292608
+          },
+          {
+            "tFrom": 131400,
+            "tTo": 172800,
+            "regime": "softcap",
+            "slope": 0.000003418584358465795,
+            "doublingTimeSec": 88056.91599170558
+          },
+          {
+            "tFrom": 172800,
+            "tTo": 173400,
+            "regime": "softcap",
+            "slope": 0.0000029942584160054983,
+            "doublingTimeSec": 100535.74335964341
+          },
+          {
+            "tFrom": 173400,
+            "tTo": 174000,
+            "regime": "softcap",
+            "slope": 0.0000029819230152986858,
+            "doublingTimeSec": 100951.63225863106
+          },
+          {
+            "tFrom": 174000,
+            "tTo": 174600,
+            "regime": "softcap",
+            "slope": 0.000002969688833669437,
+            "doublingTimeSec": 101367.52115271938
+          },
+          {
+            "tFrom": 174600,
+            "tTo": 216000,
+            "regime": "softcap",
+            "slope": 0.0000026477544324791205,
+            "doublingTimeSec": 113692.5660368449
+          },
+          {
+            "tFrom": 216000,
+            "tTo": 216600,
+            "regime": "softcap",
+            "slope": 0.0000023747981944192514,
+            "doublingTimeSec": 126760.24277405898
+          },
+          {
+            "tFrom": 216600,
+            "tTo": 217200,
+            "regime": "softcap",
+            "slope": 0.000002367032179873737,
+            "doublingTimeSec": 127176.13145421575
+          },
+          {
+            "tFrom": 217200,
+            "tTo": 217800,
+            "regime": "softcap",
+            "slope": 0.000002359316792324151,
+            "doublingTimeSec": 127592.0201319968
+          },
+          {
+            "tFrom": 217800,
+            "tTo": 259200,
+            "regime": "softcap",
+            "slope": 0.000002156928878196568,
+            "doublingTimeSec": 139564.1732590069
+          },
+          {
+            "tFrom": 259200,
+            "tTo": 259800,
+            "regime": "softcap",
+            "slope": 0.000001977782491747367,
+            "doublingTimeSec": 152205.8148052579
+          },
+          {
+            "tFrom": 259800,
+            "tTo": 260400,
+            "regime": "softcap",
+            "slope": 0.000001972393106708381,
+            "doublingTimeSec": 152621.70337147126
+          },
+          {
+            "tFrom": 260400,
+            "tTo": 261000,
+            "regime": "softcap",
+            "slope": 0.0000019670330136219625,
+            "doublingTimeSec": 153037.59193633703
+          },
+          {
+            "tFrom": 261000,
+            "tTo": 302400,
+            "regime": "softcap",
+            "slope": 0.000001824498101535945,
+            "doublingTimeSec": 164993.31811338174
+          },
+          {
+            "tFrom": 302400,
+            "tTo": 303000,
+            "regime": "softcap",
+            "slope": 0.0000016840572051327978,
+            "doublingTimeSec": 178752.832591719
+          },
+          {
+            "tFrom": 303000,
+            "tTo": 303600,
+            "regime": "softcap",
+            "slope": 0.0000016801481521847942,
+            "doublingTimeSec": 179168.72108720557
+          },
+          {
+            "tFrom": 303600,
+            "tTo": 304200,
+            "regime": "softcap",
+            "slope": 0.0000016762572046946643,
+            "doublingTimeSec": 179584.6095819256
+          },
+          {
+            "tFrom": 304200,
+            "tTo": 345600,
+            "regime": "softcap",
+            "slope": 0.0000015634212483506002,
+            "doublingTimeSec": 192545.6724996964
+          },
+          {
+            "tFrom": 345600,
+            "tTo": 346200,
+            "regime": "softcap",
+            "slope": 0.0000014560993660417409,
+            "doublingTimeSec": 206737.26167624182
+          },
+          {
+            "tFrom": 346200,
+            "tTo": 346800,
+            "regime": "softcap",
+            "slope": 0.0000014531760462421771,
+            "doublingTimeSec": 207153.15012412023
+          },
+          {
+            "tFrom": 346800,
+            "tTo": 347400,
+            "regime": "softcap",
+            "slope": 0.0000014502644408557566,
+            "doublingTimeSec": 207569.03857227074
+          },
+          {
+            "tFrom": 347400,
+            "tTo": 388800,
+            "regime": "softcap",
+            "slope": 0.0000013932428233240141,
+            "doublingTimeSec": 216064.2715142652
+          },
+          {
+            "tFrom": 388800,
+            "tTo": 389400,
+            "regime": "softcap",
+            "slope": 0.0000013211687360274263,
+            "doublingTimeSec": 227851.2861038002
+          },
+          {
+            "tFrom": 389400,
+            "tTo": 390000,
+            "regime": "softcap",
+            "slope": 0.000001318761649751939,
+            "doublingTimeSec": 228267.17452741016
+          },
+          {
+            "tFrom": 390000,
+            "tTo": 390600,
+            "regime": "softcap",
+            "slope": 0.0000013163633186448938,
+            "doublingTimeSec": 228683.06295094203
+          },
+          {
+            "tFrom": 390600,
+            "tTo": 432000,
+            "regime": "softcap",
+            "slope": 0.0000012407966496504032,
+            "doublingTimeSec": 242610.2582955853
+          },
+          {
+            "tFrom": 432000,
+            "tTo": 432600,
+            "regime": "softcap",
+            "slope": 0.000001179455992656268,
+            "doublingTimeSec": 255227.83176168168
+          },
+          {
+            "tFrom": 432600,
+            "tTo": 433200,
+            "regime": "softcap",
+            "slope": 0.0000011775372204484805,
+            "doublingTimeSec": 255643.7201614145
+          },
+          {
+            "tFrom": 433200,
+            "tTo": 433800,
+            "regime": "softcap",
+            "slope": 0.000001175624681124532,
+            "doublingTimeSec": 256059.608561496
+          },
+          {
+            "tFrom": 433800,
+            "tTo": 475200,
+            "regime": "softcap",
+            "slope": 0.0000011144589219832475,
+            "doublingTimeSec": 270113.137169991
+          },
+          {
+            "tFrom": 475200,
+            "tTo": 475800,
+            "regime": "softcap",
+            "slope": 0.0000010661949906539311,
+            "doublingTimeSec": 282340.4708357802
+          },
+          {
+            "tFrom": 475800,
+            "tTo": 476400,
+            "regime": "softcap",
+            "slope": 0.0000010646267921080957,
+            "doublingTimeSec": 282756.3592194629
+          },
+          {
+            "tFrom": 476400,
+            "tTo": 477000,
+            "regime": "softcap",
+            "slope": 0.0000010630631999160774,
+            "doublingTimeSec": 283172.2476027255
+          },
+          {
+            "tFrom": 477000,
+            "tTo": 518400,
+            "regime": "softcap",
+            "slope": 0.0000010118731592183422,
+            "doublingTimeSec": 297497.7574229982
+          },
+          {
+            "tFrom": 518400,
+            "tTo": 519000,
+            "regime": "stall",
+            "slope": 9.639609373864506e-7,
+            "doublingTimeSec": 312284.4339316819
+          },
+          {
+            "tFrom": 519000,
+            "tTo": 519600,
+            "regime": "stall",
+            "slope": 9.626788787642227e-7,
+            "doublingTimeSec": 312700.32230312267
+          },
+          {
+            "tFrom": 519600,
+            "tTo": 520200,
+            "regime": "stall",
+            "slope": 9.614002258739873e-7,
+            "doublingTimeSec": 313116.2106710778
+          },
+          {
+            "tFrom": 520200,
+            "tTo": 561600,
+            "regime": "stall",
+            "slope": 9.445628104809744e-7,
+            "doublingTimeSec": 318697.70048504847
+          },
+          {
+            "tFrom": 561600,
+            "tTo": 562200,
+            "regime": "stall",
+            "slope": 9.04446554444623e-7,
+            "doublingTimeSec": 332833.37106505886
+          },
+          {
+            "tFrom": 562200,
+            "tTo": 562800,
+            "regime": "stall",
+            "slope": 9.033178233656495e-7,
+            "doublingTimeSec": 333249.259427187
+          },
+          {
+            "tFrom": 562800,
+            "tTo": 563400,
+            "regime": "stall",
+            "slope": 9.021919060418308e-7,
+            "doublingTimeSec": 333665.1477895477
+          }
+        ],
+        "bottlenecks": [
+          {
+            "t": 519000,
+            "reason": "Near-zero growth slope"
+          },
+          {
+            "t": 519600,
+            "reason": "Near-zero growth slope"
+          },
+          {
+            "t": 520200,
+            "reason": "Near-zero growth slope"
+          },
+          {
+            "t": 561600,
+            "reason": "Near-zero growth slope"
+          },
+          {
+            "t": 562200,
+            "reason": "Near-zero growth slope"
+          },
+          {
+            "t": 562800,
+            "reason": "Near-zero growth slope"
+          },
+          {
+            "t": 563400,
+            "reason": "Near-zero growth slope"
+          }
+        ]
+      },
+      "meta": {
+        "command": "experience",
+        "generatedAt": "2026-03-14T09:54:44.045Z",
+        "contractVersion": "1.3.0",
+        "schemaRef": "docs/schemas/experience.output.schema.json",
+        "cliVersion": "0.1.1",
+        "gitSha": "ba8ad1f",
+        "runId": "experience-12qu7k6-5596561f",
+        "seed": 2342794182,
+        "scenarioPath": "examples/tutorials/15-orbital-foundry-compare-b.json",
+        "scenarioHash": "7bbb681cbef1912a401382d16a7161f129d0690eb9c619c45d01316a5860438d",
+        "pluginDigest": {
+          "examples/plugins/custom-econ-plugin.ts": "ea3ab6cb9961886144d3781b1ebaf43b2c1bf9ad079dfa63cb7c9b25c29f1e8c"
+        }
       }
     }
   }

@@ -10,8 +10,8 @@ type Args = Readonly<{
 }>;
 
 function parseArgs(argv: string[]): Args {
-  let scenarioA = "examples/tutorials/05-idle-design-v1.json";
-  let scenarioB = "examples/tutorials/06-idle-design-balance-b.json";
+  let scenarioA = "examples/tutorials/14-orbital-foundry-v1.json";
+  let scenarioB = "examples/tutorials/15-orbital-foundry-compare-b.json";
   let plugin = "examples/plugins/custom-econ-plugin.ts";
   let pluginRoot = "examples/plugins";
   let out: string | undefined;
@@ -44,7 +44,10 @@ function relativizeRepoPaths(value: unknown): unknown {
   }
   if (value && typeof value === "object") {
     return Object.fromEntries(
-      Object.entries(value as Record<string, unknown>).map(([key, entry]) => [key, relativizeRepoPaths(entry)]),
+      Object.entries(value as Record<string, unknown>).map(([key, entry]) => [
+        key.startsWith(`${ROOT}/`) ? key.slice(ROOT.length + 1) : key,
+        relativizeRepoPaths(entry),
+      ]),
     );
   }
   return value;
@@ -106,6 +109,38 @@ async function main(): Promise<void> {
       "json",
     ]);
 
+    const compareVisible = runCliJson([
+      "compare",
+      scenarioAAbs,
+      scenarioBAbs,
+      "--metric",
+      "visibleChangesPerMinute",
+      "--session-pattern",
+      "twice-daily",
+      "--days",
+      "7",
+      ...pluginFlags,
+      "--format",
+      "json",
+    ]);
+
+    const compareMilestone = runCliJson([
+      "compare",
+      scenarioAAbs,
+      scenarioBAbs,
+      "--metric",
+      "timeToMilestone",
+      "--milestone-key",
+      "progress.first-upgrade",
+      "--session-pattern",
+      "twice-daily",
+      "--days",
+      "7",
+      ...pluginFlags,
+      "--format",
+      "json",
+    ]);
+
     const ltvA = runCliJson([
       "ltv",
       scenarioAAbs,
@@ -160,6 +195,8 @@ async function main(): Promise<void> {
       compare: {
         endNetWorth: compareNetWorth,
         etaToTargetWorth: compareEta,
+        visibleChangesPerMinute: compareVisible,
+        timeToFirstUpgrade: compareMilestone,
       },
       ltv: {
         a: {

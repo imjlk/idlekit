@@ -46,6 +46,17 @@ bun run --cwd packages/cli dev -- models list \
   --plugin-sha256 ./my-plugin.ts=$SHA
 ```
 
+Canonical worked example using the bundled plugin:
+
+```bash
+bun run --cwd packages/cli dev -- experience ../../examples/tutorials/14-orbital-foundry-v1.json \
+  --plugin ../../examples/plugins/custom-econ-plugin.ts \
+  --allow-plugin true \
+  --session-pattern twice-daily \
+  --days 7 \
+  --format json
+```
+
 ## Engine adapters
 
 `@idlekit/money` and `@idlekit/core` use the `Engine<N>` interface to abstract numeric backends.

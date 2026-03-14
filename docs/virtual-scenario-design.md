@@ -9,10 +9,37 @@ This guide maps early idle-game design decisions into runnable `idlekit` scenari
 - [../examples/tutorials/11-my-game-v1.json](../examples/tutorials/11-my-game-v1.json)
 - [../examples/tutorials/12-my-game-compare-b.json](../examples/tutorials/12-my-game-compare-b.json)
 - [../examples/tutorials/13-my-game-tune.json](../examples/tutorials/13-my-game-tune.json)
+- [../examples/tutorials/14-orbital-foundry-v1.json](../examples/tutorials/14-orbital-foundry-v1.json)
+- [../examples/tutorials/15-orbital-foundry-compare-b.json](../examples/tutorials/15-orbital-foundry-compare-b.json)
+- [../examples/tutorials/16-orbital-foundry-tune.json](../examples/tutorials/16-orbital-foundry-tune.json)
 - [../examples/tutorials/05-idle-design-v1.json](../examples/tutorials/05-idle-design-v1.json)
 - [../examples/tutorials/08-idle-design-city-factory.json](../examples/tutorials/08-idle-design-city-factory.json)
 - [../examples/tutorials/09-idle-design-loot-camp.json](../examples/tutorials/09-idle-design-loot-camp.json)
 - [../examples/tutorials/10-idle-design-space-port.json](../examples/tutorials/10-idle-design-space-port.json)
+
+## Canonical worked example: Orbital Foundry
+
+`Orbital Foundry` is the repo's main publish-facing design example.
+
+Concept mapping:
+
+- currency: `CREDIT`
+- producers: orbital fabricators and drone lines
+- upgrades: automation tiers
+- auxiliary value: recovered `cores`
+
+Use it when you want to see the full decision loop on a richer economy:
+
+1. validate the baseline
+2. inspect `experience` under `twice-daily`
+3. compare end-state worth and milestone timing against the A/B variant
+4. tune the producer-first strategy with a design-oriented objective
+5. run `ltv` and `kpi:report` for long-horizon viability
+
+The intended tradeoff in this pair is:
+
+- baseline (`14`): better long-run worth and long-horizon value
+- compare-b (`15`): faster first-upgrade timing
 
 ## Design canvas
 

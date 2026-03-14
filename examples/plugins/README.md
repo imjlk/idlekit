@@ -14,6 +14,19 @@ Files:
 - `plugin-scenario.json`
 - `plugin-tune.json`
 
+Canonical worked example built on this plugin:
+
+- `../tutorials/14-orbital-foundry-v1.json`
+- `../tutorials/15-orbital-foundry-compare-b.json`
+- `../tutorials/16-orbital-foundry-tune.json`
+
+Stable milestone keys emitted by this plugin model:
+
+- `progress.first-upgrade`
+- `progress.first-automation`
+- `system.first-core`
+- `system.fabricator-line-online`
+
 ## List registered entries
 
 ```bash

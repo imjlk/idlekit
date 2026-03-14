@@ -35,13 +35,15 @@ Success conditions:
 
 ```bash
 bun run --cwd packages/cli dev -- models list --plugin ../../examples/plugins/custom-econ-plugin.ts --allow-plugin true
-bun run --cwd packages/cli dev -- validate ../../examples/plugins/plugin-scenario.json --plugin ../../examples/plugins/custom-econ-plugin.ts --allow-plugin true
-bun run --cwd packages/cli dev -- experience ../../examples/tutorials/05-idle-design-v1.json --plugin ../../examples/plugins/custom-econ-plugin.ts --allow-plugin true --session-pattern twice-daily --days 7 --format json
-bun run --cwd packages/cli dev -- tune ../../examples/plugins/plugin-scenario.json --tune ../../examples/plugins/plugin-tune.json --plugin ../../examples/plugins/custom-econ-plugin.ts --allow-plugin true --format json
+bun run --cwd packages/cli dev -- validate ../../examples/tutorials/14-orbital-foundry-v1.json --plugin ../../examples/plugins/custom-econ-plugin.ts --allow-plugin true
+bun run --cwd packages/cli dev -- experience ../../examples/tutorials/14-orbital-foundry-v1.json --plugin ../../examples/plugins/custom-econ-plugin.ts --allow-plugin true --session-pattern twice-daily --days 7 --format json
+bun run --cwd packages/cli dev -- compare ../../examples/tutorials/14-orbital-foundry-v1.json ../../examples/tutorials/15-orbital-foundry-compare-b.json --metric timeToMilestone --milestone-key progress.first-upgrade --session-pattern twice-daily --days 7 --plugin ../../examples/plugins/custom-econ-plugin.ts --allow-plugin true --format json
+bun run --cwd packages/cli dev -- tune ../../examples/tutorials/14-orbital-foundry-v1.json --tune ../../examples/tutorials/16-orbital-foundry-tune.json --plugin ../../examples/plugins/custom-econ-plugin.ts --allow-plugin true --format json
 ```
 
 Success conditions:
 
 - plugin registries list custom entries
 - plugin experience returns `milestones` and `perceived`
+- plugin compare reports `detail.source === "measured"` for milestone timing
 - plugin tune returns `report.best`

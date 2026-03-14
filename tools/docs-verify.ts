@@ -300,9 +300,9 @@ async function verifyPluginTrack(): Promise<void> {
   await writeText(trustFile, `${JSON.stringify({ plugins: { [plugin]: sha } }, null, 2)}\n`);
   const scenario = "../../examples/plugins/plugin-scenario.json";
   const tuneSpec = "../../examples/plugins/plugin-tune.json";
-  const designV1 = "../../examples/tutorials/05-idle-design-v1.json";
-  const designB = "../../examples/tutorials/06-idle-design-balance-b.json";
-  const designTune = "../../examples/tutorials/07-idle-design-tune.json";
+  const designV1 = "../../examples/tutorials/14-orbital-foundry-v1.json";
+  const designB = "../../examples/tutorials/15-orbital-foundry-compare-b.json";
+  const designTune = "../../examples/tutorials/16-orbital-foundry-tune.json";
 
   const pluginFlags = [
     "--plugin",
@@ -349,6 +349,29 @@ async function verifyPluginTrack(): Promise<void> {
   );
   const designCompareDetail = asRecord(designCompare.detail as JSONValue);
   assert(designCompareDetail.source === "measured", "design compare detail.source must be measured");
+
+  const designMilestoneCompare = asRecord(
+    runCliJson([
+      "compare",
+      designV1,
+      designB,
+      "--metric",
+      "timeToMilestone",
+      "--milestone-key",
+      "progress.first-upgrade",
+      "--session-pattern",
+      "twice-daily",
+      "--days",
+      "7",
+      ...pluginFlags,
+      "--format",
+      "json",
+    ]),
+  );
+  assert(
+    asRecord(designMilestoneCompare.detail as JSONValue).source === "measured",
+    "design milestone compare detail.source must be measured",
+  );
 
   const designTuneOut = asRecord(
     runCliJson(["tune", designV1, "--tune", designTune, ...pluginFlags, "--format", "json"]),
