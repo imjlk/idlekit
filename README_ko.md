@@ -8,7 +8,7 @@ Bun workspace 기반의 범용 경제 시뮬레이터입니다.
 
 ## 3분 시작
 
-처음 저장소를 열었다면 `11-my-game-v1.json`부터 실행하면 됩니다. 그 다음 단계는 `12-my-game-compare-b.json`, `13-my-game-tune.json` 순서로 이어집니다.
+처음 저장소를 열었다면 `11-my-game-v1.json`부터 실행하면 됩니다. 그 다음 단계는 `12-my-game-compare-b.json`, `13-my-game-tune.json` 순서로 이어지고, 실전 worked example은 `14/15/16 Orbital Foundry` 세트입니다.
 
 ```bash
 bun install
@@ -50,6 +50,7 @@ bun run --cwd packages/cli dev -- init scenario --track personal --preset longru
 
 - 기본 시작점: [11-my-game-v1.json](./examples/tutorials/11-my-game-v1.json)
 - 개인용 A/B 루프: [12-my-game-compare-b.json](./examples/tutorials/12-my-game-compare-b.json), [13-my-game-tune.json](./examples/tutorials/13-my-game-tune.json)
+- canonical 실전 예제: [14-orbital-foundry-v1.json](./examples/tutorials/14-orbital-foundry-v1.json), [15-orbital-foundry-compare-b.json](./examples/tutorials/15-orbital-foundry-compare-b.json), [16-orbital-foundry-tune.json](./examples/tutorials/16-orbital-foundry-tune.json)
 - 명령 체험용: [01-cafe-baseline.json](./examples/tutorials/01-cafe-baseline.json)
 - 설계 예시용: [05-idle-design-v1.json](./examples/tutorials/05-idle-design-v1.json), [06-idle-design-balance-b.json](./examples/tutorials/06-idle-design-balance-b.json), [07-idle-design-tune.json](./examples/tutorials/07-idle-design-tune.json)
 - 장르 분기 템플릿: [08-idle-design-city-factory.json](./examples/tutorials/08-idle-design-city-factory.json), [09-idle-design-loot-camp.json](./examples/tutorials/09-idle-design-loot-camp.json), [10-idle-design-space-port.json](./examples/tutorials/10-idle-design-space-port.json)

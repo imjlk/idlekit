@@ -41,6 +41,17 @@ bun run --cwd packages/cli dev -- models list \
 
 `--plugin-root`를 지정하면 허용 디렉터리 밖 플러그인은 거부되고, `--plugin-sha256`을 지정하면 해시 불일치 시 로딩이 실패합니다.
 
+bundled plugin으로 canonical worked example 실행:
+
+```bash
+bun run --cwd packages/cli dev -- experience ../../examples/tutorials/14-orbital-foundry-v1.json \
+  --plugin ../../examples/plugins/custom-econ-plugin.ts \
+  --allow-plugin true \
+  --session-pattern twice-daily \
+  --days 7 \
+  --format md
+```
+
 ## 2. Engine 어댑터(핵심)
 
 `@idlekit/money`(및 `@idlekit/core` re-export)는 `Engine<N>` 인터페이스로 숫자 엔진을 추상화합니다.

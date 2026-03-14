@@ -5,6 +5,7 @@ import { loadRegistriesFromFlags, pluginOptions } from "./_shared/plugin";
 import { scenarioInvalidError, usageError } from "../errors";
 import {
   collectExperienceSnapshot,
+  renderExperienceMarkdown,
   resolveExperienceDraws,
   resolveExperienceQuantiles,
   resolveExperienceSeries,
@@ -171,7 +172,16 @@ export default defineCommand({
     await writeOutput({
       format: flags.format,
       outPath: flags.out,
-      data: output,
+      data:
+        flags.format === "md"
+          ? renderExperienceMarkdown({
+              scenarioPath,
+              intent: valid.scenario.design?.intent,
+              mode: output.mode,
+              snapshot,
+              monteCarlo,
+            })
+          : output,
       meta: outputMeta,
     });
   },

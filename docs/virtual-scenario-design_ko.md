@@ -7,6 +7,9 @@
 - `examples/tutorials/11-my-game-v1.json` - 개인용 기본형
 - `examples/tutorials/12-my-game-compare-b.json` - 개인용 대조군
 - `examples/tutorials/13-my-game-tune.json` - 개인용 튜닝
+- `examples/tutorials/14-orbital-foundry-v1.json` - canonical 실전 예제 baseline
+- `examples/tutorials/15-orbital-foundry-compare-b.json` - canonical A/B variant
+- `examples/tutorials/16-orbital-foundry-tune.json` - canonical design-oriented tuning
 - `examples/tutorials/05-idle-design-v1.json` - worked example
 - `examples/tutorials/06-idle-design-balance-b.json` - worked example 대조군
 - `examples/tutorials/07-idle-design-tune.json` - worked example 튜닝
@@ -141,7 +144,13 @@ bun run --cwd packages/cli dev -- simulate ../../examples/tutorials/11-my-game-v
 - `12-my-game-compare-b.json`: cost/growth 차이를 넣은 대조군
 - `13-my-game-tune.json`: `11`용 greedy preview 튜닝
 
-`05/06/07`은 "재화/요소/액션이 조금 더 구체적인 상태"를 보여주는 worked example입니다.
+`14/15/16`은 publish-facing canonical worked example입니다.
+
+- `14`: 장기 가치와 long-horizon worth를 더 강하게 가져가는 baseline
+- `15`: 첫 업그레이드 milestone을 더 빠르게 여는 A/B variant
+- `16`: `experienceBalancedLog10` 기준으로 producer-first 전략을 조정하는 TuneSpec
+
+`05/06/07`은 그보다 더 단순한 plugin worked example입니다.
 
 `06-idle-design-balance-b.json`은 V1 대비 다음을 변경:
 

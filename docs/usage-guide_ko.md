@@ -5,14 +5,14 @@
 먼저 아래에서 출발점을 고르세요.
 
 1. 내 게임을 바로 시작하고 싶다: [start-here-cli-designer.md](./start-here-cli-designer.md)
-2. 명령 흐름만 빠르게 익히고 싶다: [tutorial-step-by-step.md](./tutorial-step-by-step.md)
-3. 플러그인/다중 요소 설계 예시가 먼저 필요하다: [virtual-scenario-design.md](./virtual-scenario-design.md)
+2. canonical 실전 예제를 먼저 보고 싶다: [virtual-scenario-design.md](./virtual-scenario-design.md)
+3. 명령 흐름만 빠르게 익히고 싶다: [tutorial-step-by-step.md](./tutorial-step-by-step.md)
 
 역할 기준 시작점:
 
 - 내 게임을 바로 시작: `examples/tutorials/11-my-game-v1.json`
 - 명령만 빠르게 체험: `examples/tutorials/01-cafe-baseline.json`
-- 플러그인 설계 예시: `examples/tutorials/05-idle-design-v1.json`, `06-idle-design-balance-b.json`, `07-idle-design-tune.json`
+- canonical 실전 예제: `examples/tutorials/14-orbital-foundry-v1.json`, `15-orbital-foundry-compare-b.json`, `16-orbital-foundry-tune.json`
 
 ## 1. 개발 환경 준비
 

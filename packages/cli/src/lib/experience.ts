@@ -357,3 +357,78 @@ export function resolveSessionPatternId(value: string | undefined): SessionPatte
   }
   return undefined;
 }
+
+function formatMetric(value: number | undefined, digits = 2): string {
+  if (value === undefined || !Number.isFinite(value)) return "n/a";
+  return Number(value.toFixed(digits)).toString();
+}
+
+export function renderExperienceMarkdown(args: {
+  scenarioPath: string;
+  intent?: string;
+  mode: "deterministic" | "monte-carlo";
+  snapshot: ExperienceSnapshot;
+  monteCarlo?: ExperienceMonteCarloSummary;
+}): string {
+  const { snapshot, monteCarlo } = args;
+  const firstMilestone = snapshot.milestones.milestones[0];
+  const milestoneLines =
+    snapshot.milestones.milestones.length > 0
+      ? snapshot.milestones.milestones
+          .slice(0, 8)
+          .map((entry) => `- \`${entry.key}\`: ${formatMetric(entry.firstSeenSec, 0)}s (${entry.source})`)
+      : ["- none observed"];
+
+  const lines = [
+    "# Experience Report",
+    "",
+    `- Scenario: \`${args.scenarioPath}\``,
+    `- Intent: ${args.intent ?? "unspecified"}`,
+    `- Mode: ${args.mode}`,
+    `- Session pattern: \`${snapshot.session.pattern.id}\` for ${snapshot.session.pattern.days} day(s)`,
+    `- Active blocks: ${snapshot.session.activeBlocks}`,
+    `- Active / offline: ${formatMetric(snapshot.session.totalActiveSec, 0)}s / ${formatMetric(snapshot.session.totalOfflineSec, 0)}s`,
+    "",
+    "## End State",
+    "",
+    `- End money: \`${snapshot.endMoney}\``,
+    `- End net worth: \`${snapshot.endNetWorth}\``,
+    `- End net worth (log10): ${formatMetric(snapshot.endNetWorthLog10, 3)}`,
+    "",
+    "## Perceived Progression",
+    "",
+    `- First visible change: ${formatMetric(snapshot.perceived.firstVisibleChangeSec, 0)}s`,
+    `- Visible changes / minute: ${formatMetric(snapshot.perceived.visibleChangesPerMinute, 3)}`,
+    `- Longest no-reward gap: ${formatMetric(snapshot.perceived.maxNoRewardGapSec, 0)}s`,
+    `- Avg post-purchase feedback: ${formatMetric(snapshot.perceived.avgPostPurchaseFeedbackSec, 2)}s`,
+    `- P95 post-purchase feedback: ${formatMetric(snapshot.perceived.p95PostPurchaseFeedbackSec, 2)}s`,
+    "",
+    "## Milestones",
+    "",
+    `- First milestone: ${firstMilestone ? `\`${firstMilestone.key}\` at ${formatMetric(firstMilestone.firstSeenSec, 0)}s` : "none"}`,
+    ...milestoneLines,
+    "",
+    "## Growth",
+    "",
+    `- Series requested: \`${snapshot.growth.seriesRequested}\``,
+    `- Value source: \`${snapshot.growth.valueSource}\``,
+    `- Window: ${snapshot.growth.windowSec}s`,
+    `- Segments: ${snapshot.growth.segments.length}`,
+    `- Bottlenecks: ${snapshot.growth.bottlenecks.length}`,
+  ];
+
+  if (monteCarlo) {
+    lines.push(
+      "",
+      "## Monte Carlo",
+      "",
+      `- Draws: ${monteCarlo.draws}`,
+      `- Seed: ${monteCarlo.seed}`,
+      `- Net worth log10 mean: ${formatMetric(monteCarlo.endNetWorthLog10.mean, 3)}`,
+      `- Visible changes / minute mean: ${formatMetric(monteCarlo.visibleChangesPerMinute.mean, 3)}`,
+      `- No-reward gap mean: ${formatMetric(monteCarlo.maxNoRewardGapSec.mean, 2)}s`,
+    );
+  }
+
+  return `${lines.join("\n")}\n`;
+}

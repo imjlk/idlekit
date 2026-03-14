@@ -235,7 +235,21 @@ idk tune examples/tutorials/11-my-game-v1.json \
 - 장기 성장형을 원한다: [08-idle-design-city-factory.json](../examples/tutorials/08-idle-design-city-factory.json)
 - 초장기 고성장을 원한다: [10-idle-design-space-port.json](../examples/tutorials/10-idle-design-space-port.json)
 
-## 8. 고급 단계
+## 8. 실전 worked example로 이동
+
+개인용 scaffold 흐름이 감 잡혔다면, 다음 단계는 canonical 실전 예제인 Orbital Foundry 세트입니다.
+
+- [14-orbital-foundry-v1.json](../examples/tutorials/14-orbital-foundry-v1.json)
+- [15-orbital-foundry-compare-b.json](../examples/tutorials/15-orbital-foundry-compare-b.json)
+- [16-orbital-foundry-tune.json](../examples/tutorials/16-orbital-foundry-tune.json)
+
+이 세트는 아래 질문에 답하도록 구성돼 있습니다.
+
+- 장기 가치가 더 높은 안은 무엇인가?
+- 첫 업그레이드 milestone이 더 빠른 안은 무엇인가?
+- `experienceBalancedLog10` 기준으로 전략을 어떻게 조정할 수 있는가?
+
+## 9. 고급 단계
 
 재현성까지 같이 잡고 싶을 때만 아래를 추가합니다.
 

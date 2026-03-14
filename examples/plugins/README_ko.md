@@ -12,6 +12,19 @@
 - `plugin-scenario.json`: 플러그인 모델/전략 사용 시나리오
 - `plugin-tune.json`: 플러그인 전략/목표 기반 튜닝 스펙
 
+이 플러그인을 기반으로 한 canonical worked example:
+
+- `../tutorials/14-orbital-foundry-v1.json`
+- `../tutorials/15-orbital-foundry-compare-b.json`
+- `../tutorials/16-orbital-foundry-tune.json`
+
+안정적으로 기대할 수 있는 milestone key:
+
+- `progress.first-upgrade`
+- `progress.first-automation`
+- `system.first-core`
+- `system.fabricator-line-online`
+
 ## 1) 목록 확인
 
 루트에서 실행:

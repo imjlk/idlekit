@@ -33,6 +33,14 @@
 
 ## Worked Design Example
 
+- `14-orbital-foundry-v1.json`
+  - canonical 실전 worked example baseline
+  - 장기 가치와 7d/30d/90d worth를 더 강하게 가져가는 안
+- `15-orbital-foundry-compare-b.json`
+  - canonical A/B variant
+  - 첫 업그레이드 milestone을 조금 더 빨리 여는 안
+- `16-orbital-foundry-tune.json`
+  - Orbital Foundry용 design-oriented TuneSpec
 - `05-idle-design-v1.json`
   - 플러그인 기반 설계 예시 본편
   - `COIN`, `GEM`, `producers`, `upgrades`, `exchange.gem`이 들어간 worked example
@@ -53,9 +61,10 @@
 ## Recommended Order
 
 1. 내 게임을 바로 만들기: `11 -> 12 -> 13`
-2. 명령만 익히기: `01 -> 03 -> 04`
-3. 설계 예시 이해: `05 -> 06 -> 07`
-4. 장르 분기 찾기: `08/09/10`
+2. canonical 실전 예제 보기: `14 -> 15 -> 16`
+3. 명령만 익히기: `01 -> 03 -> 04`
+4. 설계 예시 이해: `05 -> 06 -> 07`
+5. 장르 분기 찾기: `08/09/10`
 
 ## What To Look At
 

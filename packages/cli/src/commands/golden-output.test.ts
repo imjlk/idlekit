@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { resolve } from "path";
-import { pathExists, createTempDir, readJson, readText, removePath, runCliJson, writeText } from "../testkit/bun";
+import { pathExists, createTempDir, readJson, readText, removePath, runCli, runCliJson, writeText } from "../testkit/bun";
 
 const BASELINE = "../../examples/tutorials/01-cafe-baseline.json";
 const COMPARE_B = "../../examples/tutorials/03-cafe-compare-b.json";
@@ -110,6 +110,27 @@ describe("CLI golden outputs", () => {
     expect(out.milestones?.milestones).toBeDefined();
     expect(out.perceived?.visibleChangesPerMinute).toBeDefined();
     expect(out._meta?.command).toBe("experience");
+  });
+
+  it("experience renders a readable markdown report", () => {
+    const out = runCli([
+      "experience",
+      "../../examples/tutorials/14-orbital-foundry-v1.json",
+      "--session-pattern",
+      "twice-daily",
+      "--days",
+      "7",
+      "--plugin",
+      CANONICAL_PLUGIN,
+      "--allow-plugin",
+      "true",
+      "--format",
+      "md",
+    ]);
+
+    expect(out.stdout).toContain("# Experience Report");
+    expect(out.stdout).toContain("## Perceived Progression");
+    expect(out.stdout).toContain("## Milestones");
   });
 
   it("compare supports design metrics", () => {

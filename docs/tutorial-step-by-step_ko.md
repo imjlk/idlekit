@@ -9,7 +9,7 @@
 
 - 처음 자기 게임을 만들기: [start-here-cli-designer.md](./start-here-cli-designer.md)
 - 명령 흐름만 익히기: `01-cafe-baseline.json` 기준으로 이 문서를 그대로 진행
-- 플러그인 설계 예시 보기: [virtual-scenario-design.md](./virtual-scenario-design.md) 또는 `05/06/07` 세트로 이동
+- 플러그인 설계 예시 보기: [virtual-scenario-design.md](./virtual-scenario-design.md) 또는 `14/15/16 Orbital Foundry` 세트로 이동
 
 직접 scaffold를 만들려면:
 
@@ -34,7 +34,7 @@ bun run --cwd packages/cli dev -- init scenario --track personal --preset builde
 
 - 입문 트랙: compare 결과에서 `detail.source = "measured"` 확인
 - 실전 트랙: tune 결과에서 `report.best` 확인
-- 설계 트랙: `05-idle-design-v1`에서 재화/요소/액션 선택 이유를 설명할 수 있음
+- 설계 트랙: `14-orbital-foundry-v1`에서 장기 가치와 early milestone tradeoff를 설명할 수 있음
 
 사전 체크(권장 10분):
 
@@ -246,13 +246,45 @@ idk models list --plugin examples/plugins/custom-econ-plugin.ts --allow-plugin t
 
 - `Cannot find module`이면 plugin 경로를 루트 기준 상대경로로 수정
 
-## 9) 실전 트랙: tune 실행 + best params 해석
+## 9) 실전 트랙: canonical worked example 실행
 
 ```bash
-bun run --cwd packages/cli dev -- tune ../../examples/plugins/plugin-scenario.json \
+bun run --cwd packages/cli dev -- validate ../../examples/tutorials/14-orbital-foundry-v1.json \
+  --plugin ../../examples/plugins/custom-econ-plugin.ts \
+  --allow-plugin true
+
+bun run --cwd packages/cli dev -- experience ../../examples/tutorials/14-orbital-foundry-v1.json \
   --plugin ../../examples/plugins/custom-econ-plugin.ts \
   --allow-plugin true \
-  --tune ../../examples/plugins/plugin-tune.json \
+  --session-pattern twice-daily \
+  --days 7 \
+  --format json
+
+bun run --cwd packages/cli dev -- compare \
+  ../../examples/tutorials/14-orbital-foundry-v1.json \
+  ../../examples/tutorials/15-orbital-foundry-compare-b.json \
+  --metric timeToMilestone \
+  --milestone-key progress.first-upgrade \
+  --session-pattern twice-daily \
+  --days 7 \
+  --plugin ../../examples/plugins/custom-econ-plugin.ts \
+  --allow-plugin true \
+  --format json
+```
+
+성공 조건:
+
+- `experience`에 `milestones`, `perceived`가 존재
+- `compare.detail.source = "measured"`
+- `compare.measured.a/b.timeToMilestone`이 존재
+
+## 10) 실전 트랙: tune 실행 + best params 해석
+
+```bash
+bun run --cwd packages/cli dev -- tune ../../examples/tutorials/14-orbital-foundry-v1.json \
+  --plugin ../../examples/plugins/custom-econ-plugin.ts \
+  --allow-plugin true \
+  --tune ../../examples/tutorials/16-orbital-foundry-tune.json \
   --format json
 ```
 
