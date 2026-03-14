@@ -84,6 +84,7 @@ bun run release:dry-run
 - [CLI 디자이너 시작 문서](./docs/start-here-cli-designer.md)
 - [튜토리얼(2트랙) 스텝바이스텝](./docs/tutorial-step-by-step.md)
 - [가상 시나리오 설계 가이드](./docs/virtual-scenario-design.md)
+- [로드맵](./docs/roadmap.md)
 - [사용 가이드](./docs/usage-guide.md)
 - [시나리오/튜닝 명세 가이드](./docs/scenario-and-tuning.md)
 - [머니 라이브러리 가이드](./docs/money-library.md)

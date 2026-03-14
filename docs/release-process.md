@@ -2,6 +2,8 @@
 
 Korean version: [release-process_ko.md](./release-process_ko.md)
 
+Roadmap: [roadmap.md](./roadmap.md)
+
 ## Principles
 
 - Prefer additive v1 changes over breaking changes

@@ -86,6 +86,7 @@ bun run --cwd packages/cli dev -- experience ../../examples/tutorials/14-orbital
 - Start here: [docs/start-here-cli-designer.md](./docs/start-here-cli-designer.md)
 - Step-by-step tutorial: [docs/tutorial-step-by-step.md](./docs/tutorial-step-by-step.md)
 - Scenario design workshop: [docs/virtual-scenario-design.md](./docs/virtual-scenario-design.md)
+- Product roadmap: [docs/roadmap.md](./docs/roadmap.md)
 - Command reference: [docs/usage-guide.md](./docs/usage-guide.md)
 - Money package guide: [docs/money-library.md](./docs/money-library.md)
 - Plugin and adapter guide: [docs/plugin-and-adapter.md](./docs/plugin-and-adapter.md)
