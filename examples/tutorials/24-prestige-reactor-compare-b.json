@@ -1,0 +1,113 @@
+{
+  "schemaVersion": 1,
+  "meta": {
+    "id": "prestige-reactor-compare-b",
+    "title": "Prestige Reactor Compare Variant B",
+    "description": "Counterfactual prestige-heavy variant with earlier prestige access but weaker multiplier carryover.",
+    "tags": ["design-library", "prestige-heavy", "plugin", "compare"]
+  },
+  "unit": {
+    "code": "PLASMA",
+    "symbol": "P"
+  },
+  "policy": {
+    "mode": "accumulate",
+    "maxLogGap": 14
+  },
+  "model": {
+    "id": "plugin.generators",
+    "version": 1,
+    "params": {
+      "baseIncome": "1.7",
+      "producerIncome": "2.1",
+      "producerBaseCost": "18",
+      "producerCostGrowth": 1.135,
+      "upgradeBaseCost": "110",
+      "upgradeGrowth": 1.58,
+      "upgradeIncomeBoost": 0.2,
+      "gemExchangeCost": "470",
+      "prestigeRequirement": "2400",
+      "prestigeStarterCash": "110",
+      "prestigeMultiplierPerPoint": 0.16
+    }
+  },
+  "initial": {
+    "t": 0,
+    "wallet": {
+      "unit": "PLASMA",
+      "amount": "80",
+      "bucket": "0"
+    },
+    "vars": {
+      "producers": 0,
+      "upgrades": 0,
+      "gems": 0
+    },
+    "prestige": {
+      "count": 0,
+      "points": "0",
+      "multiplier": "1"
+    }
+  },
+  "clock": {
+    "stepSec": 1,
+    "durationSec": 14400
+  },
+  "strategy": {
+    "id": "plugin.producerFirst",
+    "params": {
+      "schemaVersion": 1,
+      "allowUpgrade": true,
+      "preferUpgradeAtProducers": 5,
+      "allowPrestige": true,
+      "preferPrestigeAtProducers": 9
+    }
+  },
+  "design": {
+    "intent": "scale-fantasy",
+    "sessionPattern": {
+      "id": "weekend-marathon",
+      "days": 14
+    }
+  },
+  "analysis": {
+    "growth": {
+      "windowSec": 300
+    },
+    "experience": {
+      "series": "netWorth",
+      "draws": 1,
+      "quantiles": [0.1, 0.5, 0.9]
+    }
+  },
+  "monetization": {
+    "cohorts": { "baseUsers": 10000 },
+    "retention": {
+      "d1": 0.45,
+      "d7": 0.23,
+      "d30": 0.105,
+      "d90": 0.047,
+      "longTailDailyDecay": 0.019
+    },
+    "revenue": {
+      "payerConversion": 0.029,
+      "arppuDaily": 0.74,
+      "adArpDau": 0.021,
+      "platformFeeRate": 0.3,
+      "grossMarginRate": 0.92,
+      "progressionRevenueLift": 0.51,
+      "progressionLogSpan": 6
+    },
+    "acquisition": { "cpi": 1.9 }
+  },
+  "outputs": {
+    "format": "json",
+    "report": {
+      "checkpointsSec": [300, 1800, 3600, 7200, 14400],
+      "includeTrace": true,
+      "traceEverySteps": 2,
+      "includeGrowth": true,
+      "includeUX": true
+    }
+  }
+}

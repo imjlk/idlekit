@@ -10,6 +10,15 @@
 - `examples/tutorials/14-orbital-foundry-v1.json` - canonical 실전 예제 baseline
 - `examples/tutorials/15-orbital-foundry-compare-b.json` - canonical A/B variant
 - `examples/tutorials/16-orbital-foundry-tune.json` - canonical design-oriented tuning
+- `examples/tutorials/17-session-arcade-v1.json` - session-heavy family baseline
+- `examples/tutorials/18-session-arcade-compare-b.json` - session-heavy family compare
+- `examples/tutorials/19-session-arcade-tune.json` - session-heavy family tune
+- `examples/tutorials/20-longrun-colony-v1.json` - longrun family baseline
+- `examples/tutorials/21-longrun-colony-compare-b.json` - longrun family compare
+- `examples/tutorials/22-longrun-colony-tune.json` - longrun family tune
+- `examples/tutorials/23-prestige-reactor-v1.json` - prestige-heavy family baseline
+- `examples/tutorials/24-prestige-reactor-compare-b.json` - prestige-heavy family compare
+- `examples/tutorials/25-prestige-reactor-tune.json` - prestige-heavy family tune
 - `examples/tutorials/05-idle-design-v1.json` - worked example
 - `examples/tutorials/06-idle-design-balance-b.json` - worked example 대조군
 - `examples/tutorials/07-idle-design-tune.json` - worked example 튜닝
@@ -149,6 +158,15 @@ bun run --cwd packages/cli dev -- simulate ../../examples/tutorials/11-my-game-v
 - `14`: 장기 가치와 long-horizon worth를 더 강하게 가져가는 baseline
 - `15`: 첫 업그레이드 milestone을 더 빠르게 여는 A/B variant
 - `16`: `experienceBalancedLog10` 기준으로 producer-first 전략을 조정하는 TuneSpec
+
+추가 design library family:
+
+- `17/18/19 Session Arcade`
+  - short-burst 세션에서 visible progression을 더 강하게 보려는 경우
+- `20/21/22 Longrun Colony`
+  - offline-heavy / 30d / 90d worth를 보고 싶은 경우
+- `23/24/25 Prestige Reactor`
+  - prestige reset, multiplier carryover, first prestige timing을 보고 싶은 경우
 
 `05/06/07`은 그보다 더 단순한 plugin worked example입니다.
 

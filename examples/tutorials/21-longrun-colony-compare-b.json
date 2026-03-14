@@ -1,0 +1,116 @@
+{
+  "schemaVersion": 1,
+  "meta": {
+    "id": "longrun-colony-compare-b",
+    "title": "Longrun Colony Compare Variant B",
+    "description": "Counterfactual longrun variant with a stronger opening curve but lower colony scale over 30d/90d.",
+    "tags": ["design-library", "longrun", "plugin", "compare"]
+  },
+  "unit": {
+    "code": "ALLOY",
+    "symbol": "Al"
+  },
+  "policy": {
+    "mode": "accumulate",
+    "maxLogGap": 16
+  },
+  "model": {
+    "id": "plugin.generators",
+    "version": 1,
+    "params": {
+      "baseIncome": "3.5",
+      "producerIncome": "4.4",
+      "producerBaseCost": "40",
+      "producerCostGrowth": 1.19,
+      "upgradeBaseCost": "330",
+      "upgradeGrowth": 1.82,
+      "upgradeIncomeBoost": 0.22,
+      "gemExchangeCost": "2150"
+    }
+  },
+  "initial": {
+    "t": 0,
+    "wallet": {
+      "unit": "ALLOY",
+      "amount": "160",
+      "bucket": "0"
+    },
+    "vars": {
+      "producers": 0,
+      "upgrades": 0,
+      "gems": 0
+    },
+    "prestige": {
+      "count": 0,
+      "points": "0",
+      "multiplier": "1"
+    }
+  },
+  "clock": {
+    "stepSec": 10,
+    "durationSec": 86400
+  },
+  "strategy": {
+    "id": "plugin.producerFirst",
+    "params": {
+      "schemaVersion": 1,
+      "allowUpgrade": true,
+      "preferUpgradeAtProducers": 8,
+      "allowPrestige": false
+    }
+  },
+  "design": {
+    "intent": "scale-fantasy",
+    "sessionPattern": {
+      "id": "offline-heavy",
+      "days": 30
+    }
+  },
+  "analysis": {
+    "growth": {
+      "windowSec": 600
+    },
+    "experience": {
+      "series": "netWorth",
+      "draws": 1,
+      "quantiles": [0.1, 0.5, 0.9]
+    }
+  },
+  "sim": {
+    "fast": true,
+    "eventLog": {
+      "enabled": false,
+      "maxEvents": 0
+    }
+  },
+  "monetization": {
+    "cohorts": { "baseUsers": 12000 },
+    "retention": {
+      "d1": 0.38,
+      "d7": 0.195,
+      "d30": 0.102,
+      "d90": 0.049,
+      "longTailDailyDecay": 0.018
+    },
+    "revenue": {
+      "payerConversion": 0.033,
+      "arppuDaily": 0.83,
+      "adArpDau": 0.016,
+      "platformFeeRate": 0.3,
+      "grossMarginRate": 0.92,
+      "progressionRevenueLift": 0.48,
+      "progressionLogSpan": 7
+    },
+    "acquisition": { "cpi": 2.15 }
+  },
+  "outputs": {
+    "format": "json",
+    "report": {
+      "checkpointsSec": [300, 1800, 7200, 21600, 86400],
+      "includeTrace": true,
+      "traceEverySteps": 6,
+      "includeGrowth": true,
+      "includeUX": true
+    }
+  }
+}

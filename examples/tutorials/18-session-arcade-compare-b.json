@@ -1,0 +1,109 @@
+{
+  "schemaVersion": 1,
+  "meta": {
+    "id": "session-arcade-compare-b",
+    "title": "Session Arcade Compare Variant B",
+    "description": "Counterfactual session-heavy variant with even faster visible upgrades but weaker long-tail value.",
+    "tags": ["design-library", "session-heavy", "plugin", "compare"]
+  },
+  "unit": {
+    "code": "TICKET",
+    "symbol": "Tk"
+  },
+  "policy": {
+    "mode": "drop",
+    "maxLogGap": 12
+  },
+  "model": {
+    "id": "plugin.generators",
+    "version": 1,
+    "params": {
+      "baseIncome": "1.9",
+      "producerIncome": "1.15",
+      "producerBaseCost": "8",
+      "producerCostGrowth": 1.125,
+      "upgradeBaseCost": "38",
+      "upgradeGrowth": 1.5,
+      "upgradeIncomeBoost": 0.16,
+      "gemExchangeCost": "220"
+    }
+  },
+  "initial": {
+    "t": 0,
+    "wallet": {
+      "unit": "TICKET",
+      "amount": "28",
+      "bucket": "0"
+    },
+    "vars": {
+      "producers": 0,
+      "upgrades": 0,
+      "gems": 0
+    },
+    "prestige": {
+      "count": 0,
+      "points": "0",
+      "multiplier": "1"
+    }
+  },
+  "clock": {
+    "stepSec": 1,
+    "durationSec": 1800
+  },
+  "strategy": {
+    "id": "plugin.producerFirst",
+    "params": {
+      "schemaVersion": 1,
+      "allowUpgrade": true,
+      "preferUpgradeAtProducers": 3,
+      "allowPrestige": false
+    }
+  },
+  "design": {
+    "intent": "frequent-progression",
+    "sessionPattern": {
+      "id": "short-bursts",
+      "days": 7
+    }
+  },
+  "analysis": {
+    "growth": {
+      "windowSec": 60
+    },
+    "experience": {
+      "series": "netWorth",
+      "draws": 1,
+      "quantiles": [0.1, 0.5, 0.9]
+    }
+  },
+  "monetization": {
+    "cohorts": { "baseUsers": 9000 },
+    "retention": {
+      "d1": 0.5,
+      "d7": 0.22,
+      "d30": 0.094,
+      "d90": 0.037,
+      "longTailDailyDecay": 0.022
+    },
+    "revenue": {
+      "payerConversion": 0.023,
+      "arppuDaily": 0.49,
+      "adArpDau": 0.031,
+      "platformFeeRate": 0.3,
+      "grossMarginRate": 0.92,
+      "progressionRevenueLift": 0.31,
+      "progressionLogSpan": 5
+    },
+    "acquisition": { "cpi": 1.22 }
+  },
+  "outputs": {
+    "format": "json",
+    "report": {
+      "checkpointsSec": [60, 300, 900, 1800],
+      "includeTrace": true,
+      "traceEverySteps": 1,
+      "includeGrowth": true,
+      "includeUX": true
+    }
+  }
+}

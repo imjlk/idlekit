@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "meta": {
+    "id": "session-arcade-tune-v1",
+    "title": "Session Arcade TuneSpec",
+    "description": "Tune producer-first behavior for the session-heavy design library example.",
+    "tags": ["design-library", "session-heavy", "plugin", "tune"]
+  },
+  "strategy": {
+    "id": "plugin.producerFirst",
+    "baseParams": {
+      "schemaVersion": 1,
+      "allowUpgrade": true,
+      "preferUpgradeAtProducers": 4,
+      "allowPrestige": false
+    },
+    "space": [
+      { "path": "allowUpgrade", "space": { "kind": "bool" } },
+      { "path": "preferUpgradeAtProducers", "space": { "kind": "int", "min": 2, "max": 8 } }
+    ]
+  },
+  "objective": {
+    "id": "visibleProgressScore",
+    "params": {
+      "sessionPattern": "short-bursts",
+      "days": 1,
+      "draws": 1,
+      "quantiles": [0.1, 0.5, 0.9],
+      "milestoneKey": "progress.first-upgrade"
+    }
+  },
+  "runner": {
+    "seeds": [7, 17, 29],
+    "budget": 10,
+    "stages": [
+      { "budget": 5, "durationSec": 600, "keepTopK": 4, "fast": true },
+      { "budget": 5, "durationSec": 1800, "keepTopK": 4, "fast": true }
+    ],
+    "topK": 4
+  }
+}

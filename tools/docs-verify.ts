@@ -303,6 +303,15 @@ async function verifyPluginTrack(): Promise<void> {
   const designV1 = "../../examples/tutorials/14-orbital-foundry-v1.json";
   const designB = "../../examples/tutorials/15-orbital-foundry-compare-b.json";
   const designTune = "../../examples/tutorials/16-orbital-foundry-tune.json";
+  const sessionV1 = "../../examples/tutorials/17-session-arcade-v1.json";
+  const sessionB = "../../examples/tutorials/18-session-arcade-compare-b.json";
+  const sessionTune = "../../examples/tutorials/19-session-arcade-tune.json";
+  const longrunV1 = "../../examples/tutorials/20-longrun-colony-v1.json";
+  const longrunB = "../../examples/tutorials/21-longrun-colony-compare-b.json";
+  const longrunTune = "../../examples/tutorials/22-longrun-colony-tune.json";
+  const prestigeV1 = "../../examples/tutorials/23-prestige-reactor-v1.json";
+  const prestigeB = "../../examples/tutorials/24-prestige-reactor-compare-b.json";
+  const prestigeTune = "../../examples/tutorials/25-prestige-reactor-tune.json";
 
   const pluginFlags = [
     "--plugin",
@@ -422,6 +431,116 @@ async function verifyPluginTrack(): Promise<void> {
   assert(!!row90d, "design ltv must include 90d row");
   const monetization = asRecord(asRecord(row90d as JSONValue).monetization as JSONValue);
   assert(has(monetization, "cumulativeLtvPerUser"), "design ltv 90d row must include cumulativeLtvPerUser");
+
+  for (const scenarioPath of [sessionV1, sessionB, longrunV1, longrunB, prestigeV1, prestigeB]) {
+    const out = runCli(["validate", scenarioPath, ...pluginFlags]);
+    assert(out.includes("OK:"), `design library validate should print OK for ${scenarioPath}`);
+  }
+
+  const sessionExperience = asRecord(
+    runCliJson([
+      "experience",
+      sessionV1,
+      "--session-pattern",
+      "short-bursts",
+      "--days",
+      "3",
+      ...pluginFlags,
+      "--format",
+      "json",
+    ]),
+  );
+  assert(has(sessionExperience, "perceived"), "session library experience must include perceived");
+
+  const sessionCompare = asRecord(
+    runCliJson([
+      "compare",
+      sessionV1,
+      sessionB,
+      "--metric",
+      "visibleChangesPerMinute",
+      "--session-pattern",
+      "short-bursts",
+      "--days",
+      "3",
+      ...pluginFlags,
+      "--format",
+      "json",
+    ]),
+  );
+  assert(asRecord(sessionCompare.detail as JSONValue).source === "measured", "session compare must be measured");
+
+  const sessionTuneOut = asRecord(
+    runCliJson(["tune", sessionV1, "--tune", sessionTune, ...pluginFlags, "--format", "json"]),
+  );
+  assert(sessionTuneOut.ok === true, "session tune result must be ok=true");
+
+  const longrunCompare = asRecord(
+    runCliJson(["compare", longrunV1, longrunB, "--metric", "endNetWorth", ...pluginFlags, "--format", "json"]),
+  );
+  assert(asRecord(longrunCompare.detail as JSONValue).source === "measured", "longrun compare must be measured");
+
+  const longrunTuneOut = asRecord(
+    runCliJson(["tune", longrunV1, "--tune", longrunTune, ...pluginFlags, "--format", "json"]),
+  );
+  assert(longrunTuneOut.ok === true, "longrun tune result must be ok=true");
+
+  const longrunLtv = asRecord(
+    runCliJson([
+      "ltv",
+      longrunV1,
+      "--horizons",
+      "30m,2h,24h,7d,30d,90d",
+      "--step",
+      "600",
+      "--fast",
+      "true",
+      ...pluginFlags,
+      "--format",
+      "json",
+    ]),
+  );
+  assert(has(asRecord(longrunLtv.summary as JSONValue), "at90d"), "longrun ltv summary must include at90d");
+
+  const prestigeExperience = asRecord(
+    runCliJson([
+      "experience",
+      prestigeV1,
+      "--session-pattern",
+      "weekend-marathon",
+      "--days",
+      "14",
+      ...pluginFlags,
+      "--format",
+      "json",
+    ]),
+  );
+  assert(has(prestigeExperience, "milestones"), "prestige experience must include milestones");
+
+  const prestigeCompare = asRecord(
+    runCliJson([
+      "compare",
+      prestigeV1,
+      prestigeB,
+      "--metric",
+      "timeToMilestone",
+      "--milestone-key",
+      "prestige.first",
+      "--session-pattern",
+      "weekend-marathon",
+      "--days",
+      "14",
+      ...pluginFlags,
+      "--format",
+      "json",
+    ]),
+  );
+  assert(asRecord(prestigeCompare.detail as JSONValue).source === "measured", "prestige compare must be measured");
+
+  const prestigeTuneOut = asRecord(
+    runCliJson(["tune", prestigeV1, "--tune", prestigeTune, ...pluginFlags, "--format", "json"]),
+  );
+  assert(prestigeTuneOut.ok === true, "prestige tune result must be ok=true");
 
   const telemetryCsv = resolve(tmpDir, "calibration-telemetry.csv");
   await writeText(

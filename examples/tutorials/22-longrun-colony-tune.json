@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "meta": {
+    "id": "longrun-colony-tune-v1",
+    "title": "Longrun Colony TuneSpec",
+    "description": "Tune producer-first behavior for the longrun design library example.",
+    "tags": ["design-library", "longrun", "plugin", "tune"]
+  },
+  "strategy": {
+    "id": "plugin.producerFirst",
+    "baseParams": {
+      "schemaVersion": 1,
+      "allowUpgrade": true,
+      "preferUpgradeAtProducers": 10,
+      "allowPrestige": false
+    },
+    "space": [
+      { "path": "allowUpgrade", "space": { "kind": "bool" } },
+      { "path": "preferUpgradeAtProducers", "space": { "kind": "int", "min": 8, "max": 16 } }
+    ]
+  },
+  "objective": {
+    "id": "endNetWorthLog10"
+  },
+  "runner": {
+    "seeds": [11, 23],
+    "budget": 8,
+    "stages": [
+      { "budget": 4, "durationSec": 21600, "keepTopK": 3, "fast": true },
+      { "budget": 4, "durationSec": 86400, "keepTopK": 3, "fast": true }
+    ],
+    "topK": 3
+  }
+}

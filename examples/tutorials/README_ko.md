@@ -49,6 +49,30 @@
 - `07-idle-design-tune.json`
   - `05`를 대상으로 한 전략 파라미터 탐색 스펙
 
+## Design Library Families
+
+- `17-session-arcade-v1.json`
+  - session-heavy family baseline
+  - 짧은 세션에서 빠른 체감과 잦은 숫자 변화를 보는 예제
+- `18-session-arcade-compare-b.json`
+  - opening 감각은 더 빠르지만 장기 가치가 약한 대조군
+- `19-session-arcade-tune.json`
+  - session-heavy family 튜닝 스펙
+- `20-longrun-colony-v1.json`
+  - longrun family baseline
+  - offline-heavy / 30d / 90d worth를 보는 예제
+- `21-longrun-colony-compare-b.json`
+  - 초반은 더 빠르지만 장기 colony scale은 약한 대조군
+- `22-longrun-colony-tune.json`
+  - longrun family 튜닝 스펙
+- `23-prestige-reactor-v1.json`
+  - prestige-heavy family baseline
+  - reset / multiplier carryover / first prestige timing을 보는 예제
+- `24-prestige-reactor-compare-b.json`
+  - 더 빠른 prestige 진입 대신 carryover가 약한 대조군
+- `25-prestige-reactor-tune.json`
+  - prestige-heavy family 튜닝 스펙
+
 ## Genre Templates
 
 - `08-idle-design-city-factory.json`
@@ -62,9 +86,12 @@
 
 1. 내 게임을 바로 만들기: `11 -> 12 -> 13`
 2. canonical 실전 예제 보기: `14 -> 15 -> 16`
-3. 명령만 익히기: `01 -> 03 -> 04`
-4. 설계 예시 이해: `05 -> 06 -> 07`
-5. 장르 분기 찾기: `08/09/10`
+3. session-heavy family 보기: `17 -> 18 -> 19`
+4. longrun family 보기: `20 -> 21 -> 22`
+5. prestige-heavy family 보기: `23 -> 24 -> 25`
+6. 명령만 익히기: `01 -> 03 -> 04`
+7. 설계 예시 이해: `05 -> 06 -> 07`
+8. 장르 분기 찾기: `08/09/10`
 
 ## What To Look At
 

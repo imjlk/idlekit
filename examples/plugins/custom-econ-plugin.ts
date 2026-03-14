@@ -16,6 +16,9 @@ type PluginModelParams = {
   upgradeGrowth?: number;
   upgradeIncomeBoost?: number;
   gemExchangeCost?: string;
+  prestigeRequirement?: string;
+  prestigeStarterCash?: string;
+  prestigeMultiplierPerPoint?: number;
 };
 
 type PluginVars = {
@@ -28,6 +31,8 @@ type ProducerFirstParams = {
   schemaVersion?: 1;
   allowUpgrade?: boolean;
   preferUpgradeAtProducers?: number;
+  allowPrestige?: boolean;
+  preferPrestigeAtProducers?: number;
 };
 
 type ObjectiveParams = {
@@ -79,6 +84,15 @@ const PluginModelParamsSchema: StandardSchema<PluginModelParams> = {
       if (x.gemExchangeCost !== undefined && typeof x.gemExchangeCost !== "string") {
         issues.push({ path: "gemExchangeCost", message: "must be string" });
       }
+      if (x.prestigeRequirement !== undefined && typeof x.prestigeRequirement !== "string") {
+        issues.push({ path: "prestigeRequirement", message: "must be string" });
+      }
+      if (x.prestigeStarterCash !== undefined && typeof x.prestigeStarterCash !== "string") {
+        issues.push({ path: "prestigeStarterCash", message: "must be string" });
+      }
+      if (x.prestigeMultiplierPerPoint !== undefined && typeof x.prestigeMultiplierPerPoint !== "number") {
+        issues.push({ path: "prestigeMultiplierPerPoint", message: "must be number" });
+      }
 
       return issues.length > 0 ? fail(issues) : ok(x as PluginModelParams);
     },
@@ -120,11 +134,22 @@ const ProducerFirstParamsSchema: StandardSchema<ProducerFirstParams> = {
       if (x.allowUpgrade !== undefined && typeof x.allowUpgrade !== "boolean") {
         issues.push({ path: "allowUpgrade", message: "must be boolean" });
       }
+      if (x.allowPrestige !== undefined && typeof x.allowPrestige !== "boolean") {
+        issues.push({ path: "allowPrestige", message: "must be boolean" });
+      }
       if (
         x.preferUpgradeAtProducers !== undefined &&
         (typeof x.preferUpgradeAtProducers !== "number" || !Number.isInteger(x.preferUpgradeAtProducers) || x.preferUpgradeAtProducers < 0)
       ) {
         issues.push({ path: "preferUpgradeAtProducers", message: "must be non-negative integer" });
+      }
+      if (
+        x.preferPrestigeAtProducers !== undefined &&
+        (typeof x.preferPrestigeAtProducers !== "number" ||
+          !Number.isInteger(x.preferPrestigeAtProducers) ||
+          x.preferPrestigeAtProducers < 0)
+      ) {
+        issues.push({ path: "preferPrestigeAtProducers", message: "must be non-negative integer" });
       }
 
       return issues.length > 0 ? fail(issues) : ok(x as ProducerFirstParams);
@@ -167,7 +192,31 @@ function createPluginModelFactory(): ModelFactory {
         upgradeGrowth: 1.8,
         upgradeIncomeBoost: 0.2,
         gemExchangeCost: "500",
+        prestigeRequirement: "5000",
+        prestigeStarterCash: "80",
+        prestigeMultiplierPerPoint: 0.18,
         ...(rawParams ?? {}),
+      };
+
+      const currentNetWorthNumber = (state: any): number => {
+        const vars = (state.vars ?? {}) as PluginVars;
+        const producers = Number(vars.producers ?? 0);
+        const upgrades = Number(vars.upgrades ?? 0);
+        const gems = Number(vars.gems ?? 0);
+        const producerValue = geometricCost(
+          Number(p.producerBaseCost),
+          Number(p.producerCostGrowth),
+          0,
+          producers,
+        );
+        const upgradeValue = geometricCost(
+          Number(p.upgradeBaseCost),
+          Number(p.upgradeGrowth),
+          0,
+          upgrades,
+        );
+        const gemValue = gems * Number(p.gemExchangeCost);
+        return Number(state.wallet.money.amount) + producerValue + upgradeValue + gemValue;
       };
 
       return {
@@ -182,10 +231,11 @@ function createPluginModelFactory(): ModelFactory {
           const perProducer = ctx.E.from(p.producerIncome);
           const fromProducers = ctx.E.mul(perProducer, producers);
           const rawIncome = ctx.E.add(base, fromProducers);
-          const boost = 1 + upgrades * p.upgradeIncomeBoost;
+          const upgradeBoost = 1 + upgrades * p.upgradeIncomeBoost;
+          const boosted = ctx.E.mul(rawIncome, upgradeBoost);
           return {
             unit: ctx.unit,
-            amount: ctx.E.mul(rawIncome, boost),
+            amount: ctx.E.mulN(boosted, state.prestige.multiplier),
           };
         },
         actions(ctx: any, state: any) {
@@ -202,6 +252,7 @@ function createPluginModelFactory(): ModelFactory {
           const producerCostOne = producerBase * Math.pow(producerGrowth, producers);
           const upgradeCost = upgradeBase * Math.pow(upgradeGrowth, upgrades);
           const gemExchangeCost = Number(p.gemExchangeCost);
+          const prestigeRequirement = Number(p.prestigeRequirement);
 
           const buyProducer = {
             id: "buy.producer",
@@ -311,7 +362,61 @@ function createPluginModelFactory(): ModelFactory {
             },
           };
 
-          return [buyProducer, buyUpgrade, exchangeGem];
+          const prestigeReboot = {
+            id: "prestige.reboot",
+            kind: "prestige",
+            label: "Prestige Reactor",
+            canApply(_ctx: any, currentState: any) {
+              return currentNetWorthNumber(currentState) >= prestigeRequirement;
+            },
+            cost() {
+              return null;
+            },
+            equivalentCost() {
+              return {
+                unit: ctx.unit,
+                amount: ctx.E.from(String(prestigeRequirement)),
+              };
+            },
+            apply(_ctx: any, nextState: any) {
+              const worth = currentNetWorthNumber(nextState);
+              const gainedPoints = Math.max(
+                1,
+                Math.floor(Math.log10(Math.max(prestigeRequirement, worth)) - Math.log10(prestigeRequirement)) + 1,
+              );
+              const multiplierGain = 1 + gainedPoints * p.prestigeMultiplierPerPoint;
+              const nextPoints = ctx.E.add(nextState.prestige.points, ctx.E.from(String(gainedPoints)));
+              const nextMultiplier = ctx.E.mul(nextState.prestige.multiplier, multiplierGain);
+              return {
+                ...nextState,
+                wallet: {
+                  ...nextState.wallet,
+                  money: {
+                    ...nextState.wallet.money,
+                    amount: ctx.E.from(p.prestigeStarterCash),
+                  },
+                  bucket: ctx.E.zero(),
+                },
+                maxMoneyEver: {
+                  ...nextState.maxMoneyEver,
+                  amount: ctx.E.from(p.prestigeStarterCash),
+                },
+                prestige: {
+                  count: Number(nextState.prestige.count ?? 0) + 1,
+                  points: nextPoints,
+                  multiplier: nextMultiplier,
+                },
+                vars: {
+                  ...(nextState.vars ?? {}),
+                  producers: 0,
+                  upgrades: 0,
+                  gems: Number((nextState.vars ?? {}).gems ?? 0),
+                },
+              };
+            },
+          };
+
+          return [buyProducer, buyUpgrade, exchangeGem, prestigeReboot];
         },
         netWorth(ctx: any, state: any) {
           const vars = (state.vars ?? {}) as PluginVars;
@@ -370,6 +475,8 @@ const producerFirstStrategyFactory: StrategyFactory = {
     schemaVersion: 1,
     allowUpgrade: true,
     preferUpgradeAtProducers: 12,
+    allowPrestige: false,
+    preferPrestigeAtProducers: 18,
   } satisfies ProducerFirstParams,
   paramsSchema: ProducerFirstParamsSchema,
   create(rawParams) {
@@ -377,6 +484,8 @@ const producerFirstStrategyFactory: StrategyFactory = {
       schemaVersion: 1,
       allowUpgrade: true,
       preferUpgradeAtProducers: 12,
+      allowPrestige: false,
+      preferPrestigeAtProducers: 18,
       ...(rawParams ?? {}),
     };
 
@@ -388,6 +497,7 @@ const producerFirstStrategyFactory: StrategyFactory = {
 
         const producer = actions.find((a) => a.id === "buy.producer");
         const upgrade = actions.find((a) => a.id === "buy.upgrade");
+        const prestige = actions.find((a) => a.id === "prestige.reboot");
 
         const canAfford = (action: any): boolean => {
           if (!action) return false;
@@ -397,6 +507,11 @@ const producerFirstStrategyFactory: StrategyFactory = {
           if (cost.unit.code !== state.wallet.money.unit.code) return false;
           return ctx.E.cmp(state.wallet.money.amount, cost.amount) >= 0;
         };
+
+        const preferPrestige = p.allowPrestige && producers >= (p.preferPrestigeAtProducers ?? 18);
+        if (preferPrestige && canAfford(prestige)) {
+          return [{ action: prestige }];
+        }
 
         const preferUpgrade = p.allowUpgrade && producers >= (p.preferUpgradeAtProducers ?? 12);
         if (preferUpgrade && canAfford(upgrade)) {

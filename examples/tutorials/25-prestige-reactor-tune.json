@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "meta": {
+    "id": "prestige-reactor-tune-v1",
+    "title": "Prestige Reactor TuneSpec",
+    "description": "Tune producer-first prestige timing for the prestige-heavy design library example.",
+    "tags": ["design-library", "prestige-heavy", "plugin", "tune"]
+  },
+  "strategy": {
+    "id": "plugin.producerFirst",
+    "baseParams": {
+      "schemaVersion": 1,
+      "allowUpgrade": true,
+      "preferUpgradeAtProducers": 6,
+      "allowPrestige": true,
+      "preferPrestigeAtProducers": 12
+    },
+    "space": [
+      { "path": "allowUpgrade", "space": { "kind": "bool" } },
+      { "path": "preferUpgradeAtProducers", "space": { "kind": "int", "min": 4, "max": 10 } },
+      { "path": "allowPrestige", "space": { "kind": "bool" } },
+      { "path": "preferPrestigeAtProducers", "space": { "kind": "int", "min": 8, "max": 16 } }
+    ]
+  },
+  "objective": {
+    "id": "timeToMilestoneNegSec",
+    "params": {
+      "sessionPattern": "weekend-marathon",
+      "days": 14,
+      "draws": 1,
+      "quantiles": [0.1, 0.5, 0.9],
+      "milestoneKey": "prestige.first"
+    }
+  },
+  "runner": {
+    "seeds": [11, 23],
+    "budget": 10,
+    "stages": [
+      { "budget": 5, "durationSec": 3600, "keepTopK": 4, "fast": true },
+      { "budget": 5, "durationSec": 14400, "keepTopK": 4, "fast": true }
+    ],
+    "topK": 4
+  }
+}

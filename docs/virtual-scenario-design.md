@@ -41,6 +41,14 @@ The intended tradeoff in this pair is:
 - baseline (`14`): better long-run worth and long-horizon value
 - compare-b (`15`): faster first-upgrade timing
 
+## Design library families
+
+Use these families after Orbital Foundry when you want a more specific pacing shape:
+
+- `17/18/19 Session Arcade`: short-burst, session-heavy progression
+- `20/21/22 Longrun Colony`: offline-heavy scale checks and 30d/90d worth
+- `23/24/25 Prestige Reactor`: reset timing, multiplier carryover, and prestige loops
+
 ## Design canvas
 
 Before editing JSON, lock these five decisions:
