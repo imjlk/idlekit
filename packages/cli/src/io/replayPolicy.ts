@@ -2,13 +2,16 @@ import { resolve } from "path";
 import type { OutputMeta } from "./outputMeta";
 import { buildReplayArgs, type ReplayArtifactV1, writeReplayArtifact } from "./replayArtifact";
 
-type ReplayCommand = "simulate" | "compare" | "ltv" | "tune";
+type ReplayCommand = "simulate" | "compare" | "experience" | "ltv" | "tune";
 
 const REPLAY_POLICIES: Readonly<Record<ReplayCommand, { omitFlags: readonly string[] }>> = {
   simulate: {
     omitFlags: ["out", "artifact-out", "state-out"],
   },
   compare: {
+    omitFlags: ["out", "artifact-out"],
+  },
+  experience: {
     omitFlags: ["out", "artifact-out"],
   },
   ltv: {

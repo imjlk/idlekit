@@ -21,7 +21,16 @@
             "type": "object",
             "required": ["key", "winner", "summary"],
             "properties": {
-              "key": { "enum": ["endNetWorth", "droppedRate", "etaToTargetWorth"] },
+              "key": {
+                "enum": [
+                  "endNetWorth",
+                  "droppedRate",
+                  "etaToTargetWorth",
+                  "timeToMilestone",
+                  "visibleChangesPerMinute",
+                  "maxNoRewardGapSec"
+                ]
+              },
               "winner": { "enum": ["a", "b"] },
               "summary": { "type": "string" }
             }

@@ -58,6 +58,7 @@ export default defineCommand({
     });
     const report = analyzeGrowth({
       run,
+      scenario: compiled,
       series: flags.series,
       windowSec: flags.window,
     });

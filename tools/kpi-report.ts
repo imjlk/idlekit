@@ -134,6 +134,22 @@ async function main(): Promise<void> {
       "json",
     ]);
 
+    const experienceA = runCliJson([
+      "experience",
+      scenarioAAbs,
+      ...pluginFlags,
+      "--format",
+      "json",
+    ]);
+
+    const experienceB = runCliJson([
+      "experience",
+      scenarioBAbs,
+      ...pluginFlags,
+      "--format",
+      "json",
+    ]);
+
     const report = relativizeRepoPaths({
       generatedAt: new Date().toISOString(),
       input: {
@@ -153,6 +169,24 @@ async function main(): Promise<void> {
         b: {
           summary: ltvB.summary,
           meta: ltvB._meta,
+        },
+      },
+      experience: {
+        a: {
+          end: experienceA.end,
+          session: experienceA.session,
+          milestones: experienceA.milestones,
+          perceived: experienceA.perceived,
+          growth: experienceA.growth,
+          meta: experienceA._meta,
+        },
+        b: {
+          end: experienceB.end,
+          session: experienceB.session,
+          milestones: experienceB.milestones,
+          perceived: experienceB.perceived,
+          growth: experienceB.growth,
+          meta: experienceB._meta,
         },
       },
     });

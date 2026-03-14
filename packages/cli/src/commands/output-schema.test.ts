@@ -64,6 +64,23 @@ describe("output schema contracts", () => {
     });
   });
 
+  it("experience output follows schema", () => {
+    const out = runCliJson([
+      "experience",
+      "../../examples/tutorials/11-my-game-v1.json",
+      "--session-pattern",
+      "short-bursts",
+      "--days",
+      "1",
+      "--format",
+      "json",
+    ]);
+    return readSchema("experience.output.schema.json").then((schema) => {
+      validateBySchema(schema, out, "experience.output.schema.json");
+      expect(out._meta.command).toBe("experience");
+    });
+  });
+
   it("tune output follows schema", () => {
     const out = runCliJson([
       "tune",

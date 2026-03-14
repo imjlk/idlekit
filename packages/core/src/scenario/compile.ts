@@ -456,6 +456,8 @@ export function compileScenario<N, U extends string, Vars>(args: {
     ctx,
     model,
     initial,
+    design: scenario.design,
+    analysis: scenario.analysis,
     constraints: scenario.constraints,
     run,
     strategy,

@@ -44,6 +44,11 @@ export type SimEvent<N> =
       detail?: unknown;
     };
 
+export type TimedSimEvent<N> = Readonly<{
+  t: number;
+  event: SimEvent<N>;
+}>;
+
 export type SimContext<N, U extends string, Vars> = Readonly<{
   E: Engine<N>;
   unit: Unit<U>;
@@ -201,6 +206,8 @@ export type CompiledScenario<N, U extends string, Vars> = Readonly<{
   ctx: SimContext<N, U, Vars>;
   model: Model<N, U, Vars>;
   initial: SimState<N, U, Vars>;
+  design?: import("../scenario/types").ScenarioV1["design"];
+  analysis?: import("../scenario/types").ScenarioV1["analysis"];
   constraints?: ScenarioConstraints;
   run: SimRunOptions;
   strategy?: import("./strategy/types").Strategy<N, U, Vars>;
@@ -211,6 +218,7 @@ export type RunResult<N, U extends string, Vars> = Readonly<{
   end: SimState<N, U, Vars>;
 
   events: readonly SimEvent<N>[];
+  eventTimeline?: readonly TimedSimEvent<N>[];
 
   trace?: readonly SimState<N, U, Vars>[];
   actionsLog?: readonly {

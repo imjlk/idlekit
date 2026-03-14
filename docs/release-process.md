@@ -8,6 +8,7 @@ Korean version: [release-process_ko.md](./release-process_ko.md)
 - Update CLI help, docs, schemas, and tests together
 - Manage changelogs, version bumps, and publishing through Sampo
 - Keep `major` bumps disabled during v1 unless a migration path is prepared
+- Do not publish until design-decision gates pass: worth-aware growth, `experience`, session patterns, milestones, perceived progression, and Monte Carlo
 
 ## Sampo workflow
 

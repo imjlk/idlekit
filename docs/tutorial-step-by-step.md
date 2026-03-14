@@ -18,13 +18,16 @@ This tutorial has two tracks:
 ```bash
 bun run --cwd packages/cli dev -- validate ../../examples/tutorials/01-cafe-baseline.json
 bun run --cwd packages/cli dev -- simulate ../../examples/tutorials/01-cafe-baseline.json --format json
+bun run --cwd packages/cli dev -- experience ../../examples/tutorials/01-cafe-baseline.json --session-pattern short-bursts --days 7 --format json
 bun run --cwd packages/cli dev -- eta ../../examples/tutorials/01-cafe-baseline.json --target-worth 1e5 --mode analytic --format json
 bun run --cwd packages/cli dev -- compare ../../examples/tutorials/01-cafe-baseline.json ../../examples/tutorials/03-cafe-compare-b.json --metric etaToTargetWorth --target-worth 1e5 --max-duration 7200 --format json
+bun run --cwd packages/cli dev -- compare ../../examples/tutorials/01-cafe-baseline.json ../../examples/tutorials/03-cafe-compare-b.json --metric visibleChangesPerMinute --session-pattern short-bursts --days 7 --format json
 bun run --cwd packages/cli dev -- tune ../../examples/tutorials/01-cafe-baseline.json --tune ../../examples/tutorials/04-cafe-tune.json --format json
 ```
 
 Success conditions:
 
+- `experience.perceived.visibleChangesPerMinute` exists
 - `compare.detail.source === "measured"`
 - `tune.report.best` exists
 
@@ -33,10 +36,12 @@ Success conditions:
 ```bash
 bun run --cwd packages/cli dev -- models list --plugin ../../examples/plugins/custom-econ-plugin.ts --allow-plugin true
 bun run --cwd packages/cli dev -- validate ../../examples/plugins/plugin-scenario.json --plugin ../../examples/plugins/custom-econ-plugin.ts --allow-plugin true
+bun run --cwd packages/cli dev -- experience ../../examples/tutorials/05-idle-design-v1.json --plugin ../../examples/plugins/custom-econ-plugin.ts --allow-plugin true --session-pattern twice-daily --days 7 --format json
 bun run --cwd packages/cli dev -- tune ../../examples/plugins/plugin-scenario.json --tune ../../examples/plugins/plugin-tune.json --plugin ../../examples/plugins/custom-econ-plugin.ts --allow-plugin true --format json
 ```
 
 Success conditions:
 
 - plugin registries list custom entries
+- plugin experience returns `milestones` and `perceived`
 - plugin tune returns `report.best`

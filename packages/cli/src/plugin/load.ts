@@ -18,6 +18,7 @@ import {
 import { z } from "zod";
 import type { EconPluginModule } from "./types";
 import { fileExists, readTextFile, sha256Hex } from "../runtime/bun";
+import { designObjectiveFactories } from "../lib/designObjectives";
 
 const ALLOWED_PLUGIN_EXTENSIONS = new Set([".js", ".mjs", ".cjs", ".ts", ".mts", ".cts"]);
 
@@ -360,7 +361,7 @@ export async function loadRegistries(
 ): Promise<LoadedRegistries> {
   const modelFactories: ModelFactory[] = [createLinearFactory()];
   const strategyFactories: StrategyFactory[] = [...builtinStrategyFactories];
-  const objectiveFactories: ObjectiveFactory[] = [...builtinObjectiveFactories];
+  const objectiveFactories: ObjectiveFactory[] = [...builtinObjectiveFactories, ...designObjectiveFactories];
   const allowedRoots = (securityOptions.allowedRoots ?? []).map((x) => resolve(x));
   const trustFileSha256 =
     securityOptions.trustFile !== undefined

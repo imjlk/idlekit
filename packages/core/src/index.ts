@@ -27,6 +27,9 @@ export * from "./sim/simulator";
 export * from "./sim/step";
 export * from "./sim/stepTypes";
 export * from "./sim/offline";
+export * from "./sim/random";
+export * from "./sim/session";
+export * from "./sim/monteCarlo";
 
 export * from "./sim/strategy/types";
 export * from "./sim/strategy/contracts";
@@ -50,6 +53,7 @@ export * from "./sim/strategy/opt/runner";
 export * from "./sim/analysis/eta";
 export * from "./sim/analysis/prestigeCycle";
 export * from "./sim/analysis/growth";
+export * from "./sim/analysis/milestones";
 export * from "./sim/analysis/ux";
 
 export * from "./report/timeline";

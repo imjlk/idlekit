@@ -1,6 +1,6 @@
 import { analyzeUX, createSimStatsAccumulator } from "./analysis/ux";
 import { stepOnce } from "./step";
-import type { CompiledScenario, RunResult, SimEvent, SimState } from "./types";
+import type { CompiledScenario, RunResult, SimEvent, SimState, TimedSimEvent } from "./types";
 
 export type OfflineRunOptions<N, U extends string, Vars> = Readonly<{
   fromState?: SimState<N, U, Vars>;
@@ -122,6 +122,8 @@ export function applyOfflineSeconds<N, U extends string, Vars>(args: {
 
   const statsAcc = createSimStatsAccumulator();
   const events: SimEvent<N>[] = [];
+  const eventTimeline: TimedSimEvent<N>[] = [];
+  const actionsLog: Array<{ t: number; actionId: string; label?: string; bulkSize?: number }> = [];
 
   let totalSeenEvents = 0;
   let droppedEvents = 0;
@@ -155,6 +157,29 @@ export function applyOfflineSeconds<N, U extends string, Vars>(args: {
     events.push(...batch);
   };
 
+  const retainTimedEvents = (batch: readonly SimEvent<N>[], t: number): void => {
+    if (!eventLogEnabled || batch.length === 0) return;
+
+    const timedBatch = batch.map((event) => ({ t, event }));
+    if (maxEvents === 0) return;
+
+    if (maxEvents === undefined) {
+      eventTimeline.push(...timedBatch);
+      return;
+    }
+
+    if (timedBatch.length >= maxEvents) {
+      eventTimeline.splice(0, eventTimeline.length, ...timedBatch.slice(timedBatch.length - maxEvents));
+      return;
+    }
+
+    const overflow = Math.max(0, eventTimeline.length + timedBatch.length - maxEvents);
+    if (overflow > 0) {
+      eventTimeline.splice(0, overflow);
+    }
+    eventTimeline.push(...timedBatch);
+  };
+
   let state = start;
   const maxActionsPerStep = scenario.constraints?.maxActionsPerStep ?? Infinity;
 
@@ -175,6 +200,10 @@ export function applyOfflineSeconds<N, U extends string, Vars>(args: {
 
     state = out.next;
     retainEvents(out.events);
+    retainTimedEvents(out.events, state.t);
+    if (out.actionsApplied?.length) {
+      actionsLog.push(...out.actionsApplied);
+    }
   }
 
   if (remainderSec > 0) {
@@ -194,6 +223,10 @@ export function applyOfflineSeconds<N, U extends string, Vars>(args: {
 
     state = out.next;
     retainEvents(out.events);
+    retainTimedEvents(out.events, state.t);
+    if (out.actionsApplied?.length) {
+      actionsLog.push(...out.actionsApplied);
+    }
   }
 
   const stats = statsAcc.snapshot();
@@ -203,6 +236,8 @@ export function applyOfflineSeconds<N, U extends string, Vars>(args: {
     start,
     end: state,
     events,
+    eventTimeline: eventTimeline.length > 0 ? eventTimeline : undefined,
+    actionsLog: actionsLog.length > 0 ? actionsLog : undefined,
     stats,
     uxFlags,
     eventLog: {

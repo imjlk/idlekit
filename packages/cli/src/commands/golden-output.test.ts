@@ -90,6 +90,50 @@ describe("CLI golden outputs", () => {
     expect(typeof out._meta?.tuneSpecHash).toBe("string");
   });
 
+  it("experience returns session, milestone, and perceived summaries", () => {
+    const out = runCliJson([
+      "experience",
+      "../../examples/tutorials/11-my-game-v1.json",
+      "--session-pattern",
+      "short-bursts",
+      "--days",
+      "1",
+      "--draws",
+      "3",
+      "--format",
+      "json",
+    ]);
+
+    expect(out.design?.sessionPattern?.id).toBe("short-bursts");
+    expect(out.session?.activeBlocks).toBeDefined();
+    expect(out.milestones?.milestones).toBeDefined();
+    expect(out.perceived?.visibleChangesPerMinute).toBeDefined();
+    expect(out._meta?.command).toBe("experience");
+  });
+
+  it("compare supports design metrics", () => {
+    const out = runCliJson([
+      "compare",
+      "../../examples/tutorials/11-my-game-v1.json",
+      "../../examples/tutorials/12-my-game-compare-b.json",
+      "--metric",
+      "visibleChangesPerMinute",
+      "--session-pattern",
+      "short-bursts",
+      "--days",
+      "1",
+      "--draws",
+      "3",
+      "--format",
+      "json",
+    ]);
+
+    expect(out.metric).toBe("visibleChangesPerMinute");
+    expect(out.measured?.a?.visibleChangesPerMinute).toBeDefined();
+    expect(out.measured?.b?.visibleChangesPerMinute).toBeDefined();
+    expect(out.detail?.source).toBe("measured");
+  });
+
   it("ltv returns default horizon summary and optional economyValueProxy", () => {
     const out = runCliJson([
       "ltv",

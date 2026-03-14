@@ -1,7 +1,7 @@
 # @idlekit/cli
 
 `idk` is the command-line interface for validating scenarios, running simulations,
-comparing balance variants, tuning strategies, and generating reports.
+evaluating experience and pacing, comparing balance variants, tuning strategies, and generating reports.
 
 ## Install
 
@@ -16,6 +16,7 @@ Requires Bun `>=1.3.0`.
 ```bash
 idk validate ./my-game-v1.json
 idk simulate ./my-game-v1.json --format json
+idk experience ./my-game-v1.json --format json
 idk ltv ./my-game-v1.json --horizons 30m,2h,24h,7d,30d,90d --step 600 --fast true --format json
 ```
 

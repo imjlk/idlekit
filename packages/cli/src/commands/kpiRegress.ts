@@ -63,6 +63,12 @@ export default defineCommand({
     "max-dropped-delta": option(z.coerce.number().nonnegative().default(0.03), {
       description: "Maximum allowed droppedRate increase",
     }),
+    "min-visible-progress-ratio": option(z.coerce.number().positive().default(0.9), {
+      description: "Minimum allowed current/baseline visibleChangesPerMinute ratio",
+    }),
+    "max-no-reward-gap-delta": option(z.coerce.number().nonnegative().default(60), {
+      description: "Maximum allowed maxNoRewardGapSec increase",
+    }),
     out: option(z.string().optional(), { description: "Output path" }),
     format: option(z.enum(["json", "md", "csv"]).default("json"), { description: "Output format" }),
   },
@@ -159,6 +165,48 @@ export default defineCommand({
     }
 
     const pass = checks.every((x) => x.pass.overall);
+    const experienceChecks = sides.map((side) => {
+      const baselinePerceived = baseline?.experience?.[side]?.perceived ?? {};
+      const currentPerceived = current?.experience?.[side]?.perceived ?? {};
+
+      const baselineVisible = Number(baselinePerceived.visibleChangesPerMinute ?? 0);
+      const currentVisible = Number(currentPerceived.visibleChangesPerMinute ?? 0);
+      const baselineNoReward = Number(baselinePerceived.maxNoRewardGapSec ?? 0);
+      const currentNoReward = Number(currentPerceived.maxNoRewardGapSec ?? 0);
+
+      const visibleRatio =
+        baselineVisible <= 0 ? (currentVisible > 0 ? Number.POSITIVE_INFINITY : 1) : currentVisible / baselineVisible;
+      const noRewardDelta = currentNoReward - baselineNoReward;
+
+      const visiblePass = visibleRatio >= flags["min-visible-progress-ratio"];
+      const noRewardPass = noRewardDelta <= flags["max-no-reward-gap-delta"];
+
+      return {
+        side,
+        baseline: {
+          visibleChangesPerMinute: baselineVisible,
+          maxNoRewardGapSec: baselineNoReward,
+        },
+        current: {
+          visibleChangesPerMinute: currentVisible,
+          maxNoRewardGapSec: currentNoReward,
+        },
+        deltas: {
+          visibleRatio,
+          noRewardGapSec: noRewardDelta,
+        },
+        thresholds: {
+          minVisibleProgressRatio: flags["min-visible-progress-ratio"],
+          maxNoRewardGapDelta: flags["max-no-reward-gap-delta"],
+        },
+        pass: {
+          visibleProgress: visiblePass,
+          noRewardGap: noRewardPass,
+          overall: visiblePass && noRewardPass,
+        },
+      };
+    });
+    const overallPass = pass && experienceChecks.every((x) => x.pass.overall);
     const output = {
       baselinePath,
       currentPath,
@@ -167,9 +215,12 @@ export default defineCommand({
         minWorthRatio: flags["min-worth-ratio"],
         maxStallDelta: flags["max-stall-delta"],
         maxDroppedDelta: flags["max-dropped-delta"],
+        minVisibleProgressRatio: flags["min-visible-progress-ratio"],
+        maxNoRewardGapDelta: flags["max-no-reward-gap-delta"],
       },
-      pass,
+      pass: overallPass,
       checks,
+      experienceChecks,
     };
 
     await writeOutput({
@@ -179,7 +230,7 @@ export default defineCommand({
       meta: buildOutputMeta({ command: "kpi.regress" }),
     });
 
-    if (!pass) {
+    if (!overallPass) {
       process.exit(2);
     }
   },

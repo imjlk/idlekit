@@ -24,6 +24,7 @@ describe("artifact schema contracts", () => {
     try {
       const simArtifact = resolve(dir, "simulate.artifact.json");
       const cmpArtifact = resolve(dir, "compare.artifact.json");
+      const experienceArtifact = resolve(dir, "experience.artifact.json");
       const tuneArtifact = resolve(dir, "tune.artifact.json");
       const ltvArtifact = resolve(dir, "ltv.artifact.json");
 
@@ -54,6 +55,21 @@ describe("artifact schema contracts", () => {
         "schema-cmp-run",
         "--artifact-out",
         cmpArtifact,
+        "--format",
+        "json",
+      ]);
+
+      runCliJson([
+        "experience",
+        BASELINE,
+        "--days",
+        "1",
+        "--seed",
+        "11",
+        "--run-id",
+        "schema-experience-run",
+        "--artifact-out",
+        experienceArtifact,
         "--format",
         "json",
       ]);
@@ -91,7 +107,7 @@ describe("artifact schema contracts", () => {
       ]);
 
       const artifactSchema = await readSchema("artifact.v1.schema.json");
-      for (const path of [simArtifact, cmpArtifact, tuneArtifact, ltvArtifact]) {
+      for (const path of [simArtifact, cmpArtifact, experienceArtifact, tuneArtifact, ltvArtifact]) {
         const parsed = await readJson<any>(path);
         validateBySchema(artifactSchema, parsed, "artifact.v1.schema.json");
       }

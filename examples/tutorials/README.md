@@ -6,7 +6,7 @@ This directory contains the example scenarios used throughout the public docs.
 
 ## Start here
 
-- `11-my-game-v1.json`: personal baseline for your own game idea
+- `11-my-game-v1.json`: personal baseline for your own game idea, including design intent and session defaults for `idk experience`
 - `12-my-game-compare-b.json`: generated comparison variant
 - `13-my-game-tune.json`: generated tuning spec
 

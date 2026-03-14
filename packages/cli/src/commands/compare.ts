@@ -12,6 +12,15 @@ import { resolve } from "path";
 import { z } from "zod";
 import { betterFromCmp, formatEtaLabel, toComparableEta } from "./_shared/compareEval";
 import { loadRegistriesFromFlags, pluginOptions } from "./_shared/plugin";
+import {
+  collectExperienceSnapshot,
+  comparableExperienceMetric,
+  resolveExperienceQuantiles,
+  resolveExperienceSeries,
+  resolveSessionPatternId,
+  resolveSessionPatternSpec,
+  summarizeComparableExperienceMetric,
+} from "../lib/experience";
 import { scenarioInvalidError, unknownStrategyError, usageError } from "../errors";
 import { buildOutputMeta, deriveDeterministicRunId, deriveDeterministicSeed } from "../io/outputMeta";
 import { writeCommandReplayArtifact } from "../io/replayPolicy";
@@ -128,6 +137,85 @@ function measureScenario(args: {
   };
 }
 
+function measureDesignMetric(args: {
+  compiled: ReturnType<typeof compileComparableScenario>;
+  metric: "timeToMilestone" | "visibleChangesPerMinute" | "maxNoRewardGapSec";
+  sessionPatternId?: string;
+  days?: number;
+  draws?: number;
+  milestoneKey?: string;
+}): Readonly<{
+  value: number;
+  snapshot: ReturnType<typeof collectExperienceSnapshot<any, any, any>>["snapshot"];
+}> {
+  const sessionPattern = resolveSessionPatternSpec({
+    scenario: args.compiled,
+    sessionPatternId: resolveSessionPatternId(args.sessionPatternId),
+    days: args.days,
+  });
+  const series = resolveExperienceSeries(args.compiled);
+  const draws = Math.max(1, Math.floor(args.draws ?? args.compiled.analysis?.experience?.draws ?? 1));
+  const quantiles = resolveExperienceQuantiles(args.compiled);
+  const fallback = sessionPattern.days * 86400 + 1;
+
+  const deterministic = collectExperienceSnapshot({
+    scenario: args.compiled,
+    sessionPattern,
+    seed: args.compiled.ctx.seed,
+    series,
+  });
+
+  if (draws <= 1) {
+    return {
+      value:
+        comparableExperienceMetric({
+          snapshot: deterministic.snapshot,
+          metric: args.metric,
+          milestoneKey: args.milestoneKey,
+          fallbackValue: fallback,
+        }) ?? fallback,
+      snapshot: deterministic.snapshot,
+    };
+  }
+
+  const summary = summarizeComparableExperienceMetric({
+    scenario: args.compiled,
+    sessionPattern,
+    metric: args.metric,
+    milestoneKey: args.milestoneKey,
+    draws,
+    seed: args.compiled.ctx.seed ?? 1,
+    quantiles,
+    series,
+  });
+
+  return {
+    value: summary.quantiles.q50 ?? summary.mean,
+    snapshot: deterministic.snapshot,
+  };
+}
+
+function measuredDesignFields(
+  metric: string,
+  measured: ReturnType<typeof measureDesignMetric> | undefined,
+): Readonly<{
+  timeToMilestone?: number;
+  visibleChangesPerMinute?: number;
+  maxNoRewardGapSec?: number;
+}> {
+  if (!measured) return {};
+  switch (metric) {
+    case "timeToMilestone":
+      return { timeToMilestone: measured.value };
+    case "visibleChangesPerMinute":
+      return { visibleChangesPerMinute: measured.snapshot.perceived.visibleChangesPerMinute };
+    case "maxNoRewardGapSec":
+      return { maxNoRewardGapSec: measured.snapshot.perceived.maxNoRewardGapSec };
+    default:
+      return {};
+  }
+}
+
 function buildCompareInsights(args: {
   metric: string;
   endNetWorthWinner: "a" | "b" | "tie";
@@ -135,11 +223,17 @@ function buildCompareInsights(args: {
     endNetWorth: string;
     droppedRate: number;
     etaToTargetWorth?: string;
+    timeToMilestone?: number;
+    visibleChangesPerMinute?: number;
+    maxNoRewardGapSec?: number;
   };
   b: {
     endNetWorth: string;
     droppedRate: number;
     etaToTargetWorth?: string;
+    timeToMilestone?: number;
+    visibleChangesPerMinute?: number;
+    maxNoRewardGapSec?: number;
   };
   better: "a" | "b" | "tie";
 }): Readonly<{
@@ -147,7 +241,13 @@ function buildCompareInsights(args: {
   improved: string[];
   regressed: string[];
   drivers: Array<{
-    key: "endNetWorth" | "droppedRate" | "etaToTargetWorth";
+    key:
+      | "endNetWorth"
+      | "droppedRate"
+      | "etaToTargetWorth"
+      | "timeToMilestone"
+      | "visibleChangesPerMinute"
+      | "maxNoRewardGapSec";
     winner: "a" | "b";
     summary: string;
   }>;
@@ -155,7 +255,13 @@ function buildCompareInsights(args: {
   const improved: string[] = [];
   const regressed: string[] = [];
   const drivers: Array<{
-    key: "endNetWorth" | "droppedRate" | "etaToTargetWorth";
+    key:
+      | "endNetWorth"
+      | "droppedRate"
+      | "etaToTargetWorth"
+      | "timeToMilestone"
+      | "visibleChangesPerMinute"
+      | "maxNoRewardGapSec";
     winner: "a" | "b";
     summary: string;
   }> = [];
@@ -200,6 +306,54 @@ function buildCompareInsights(args: {
     }
   }
 
+  if (
+    args.metric === "timeToMilestone" &&
+    args.a.timeToMilestone !== undefined &&
+    args.b.timeToMilestone !== undefined &&
+    args.a.timeToMilestone !== args.b.timeToMilestone
+  ) {
+    const faster = args.a.timeToMilestone < args.b.timeToMilestone ? "A" : "B";
+    improved.push(`${faster} reaches the requested milestone sooner`);
+    regressed.push(`${faster === "A" ? "B" : "A"} reaches the requested milestone later`);
+    drivers.push({
+      key: "timeToMilestone",
+      winner: faster.toLowerCase() as "a" | "b",
+      summary: `${faster} reaches the selected milestone sooner in measured progression.`,
+    });
+  }
+
+  if (
+    args.metric === "visibleChangesPerMinute" &&
+    args.a.visibleChangesPerMinute !== undefined &&
+    args.b.visibleChangesPerMinute !== undefined &&
+    args.a.visibleChangesPerMinute !== args.b.visibleChangesPerMinute
+  ) {
+    const moreVisible = args.a.visibleChangesPerMinute > args.b.visibleChangesPerMinute ? "A" : "B";
+    improved.push(`${moreVisible} delivers more visible progression changes per active minute`);
+    regressed.push(`${moreVisible === "A" ? "B" : "A"} changes the visible number less often`);
+    drivers.push({
+      key: "visibleChangesPerMinute",
+      winner: moreVisible.toLowerCase() as "a" | "b",
+      summary: `${moreVisible} changes the visible progression number more often during active play.`,
+    });
+  }
+
+  if (
+    args.metric === "maxNoRewardGapSec" &&
+    args.a.maxNoRewardGapSec !== undefined &&
+    args.b.maxNoRewardGapSec !== undefined &&
+    args.a.maxNoRewardGapSec !== args.b.maxNoRewardGapSec
+  ) {
+    const shorter = args.a.maxNoRewardGapSec < args.b.maxNoRewardGapSec ? "A" : "B";
+    improved.push(`${shorter} keeps the longest no-reward gap shorter`);
+    regressed.push(`${shorter === "A" ? "B" : "A"} leaves longer stretches without visible reward`);
+    drivers.push({
+      key: "maxNoRewardGapSec",
+      winner: shorter.toLowerCase() as "a" | "b",
+      summary: `${shorter} reduces the worst active-session wait between visible rewards.`,
+    });
+  }
+
   return {
     summary: `Measured comparison winner: ${betterLabel}`,
     improved,
@@ -220,6 +374,19 @@ export default defineCommand({
     "target-worth": option(z.string().optional(), {
       description: "Required for etaToTargetWorth metric, optional otherwise",
     }),
+    "milestone-key": option(z.string().optional(), {
+      description: "Required for timeToMilestone metric; compared against milestone report keys",
+    }),
+    "session-pattern": option(
+      z.enum(["always-on", "short-bursts", "twice-daily", "offline-heavy", "weekend-marathon"]).optional(),
+      { description: "Session pattern for design metrics" },
+    ),
+    days: option(z.coerce.number().int().positive().optional(), {
+      description: "Session-pattern day count for design metrics",
+    }),
+    draws: option(z.coerce.number().int().positive().optional(), {
+      description: "Monte Carlo draw count for design metrics",
+    }),
     "max-duration": option(z.coerce.number().default(86400), {
       description: "Max duration for etaToTargetWorth metric simulation",
     }),
@@ -229,7 +396,17 @@ export default defineCommand({
     }),
     "artifact-out": option(z.string().optional(), { description: "Write replay artifact JSON to path" }),
     metric: option(
-      z.enum(["endMoney", "endNetWorth", "etaToTargetWorth", "droppedRate"]).default("endNetWorth"),
+      z
+        .enum([
+          "endMoney",
+          "endNetWorth",
+          "etaToTargetWorth",
+          "droppedRate",
+          "timeToMilestone",
+          "visibleChangesPerMinute",
+          "maxNoRewardGapSec",
+        ])
+        .default("endNetWorth"),
       { description: "Comparison metric" },
     ),
     out: option(z.string().optional(), { description: "Output path" }),
@@ -253,6 +430,9 @@ export default defineCommand({
     if (flags.metric === "etaToTargetWorth" && !flags["target-worth"]) {
       throw usageError("metric=etaToTargetWorth requires --target-worth <NumStr>");
     }
+    if (flags.metric === "timeToMilestone" && !flags["milestone-key"]) {
+      throw usageError("metric=timeToMilestone requires --milestone-key <key>");
+    }
 
     const effectiveSeed =
       flags.seed ??
@@ -270,6 +450,10 @@ export default defineCommand({
           fast: flags.fast,
           targetWorth: flags["target-worth"],
           maxDuration: flags["max-duration"],
+          sessionPattern: flags["session-pattern"],
+          days: flags.days,
+          draws: flags.draws,
+          milestoneKey: flags["milestone-key"],
         },
       });
 
@@ -294,6 +478,11 @@ export default defineCommand({
       },
     });
 
+    const isDesignMetric =
+      flags.metric === "timeToMilestone" ||
+      flags.metric === "visibleChangesPerMinute" ||
+      flags.metric === "maxNoRewardGapSec";
+
     const ma = measureScenario({
       compiled: aCompiled,
       E,
@@ -306,6 +495,26 @@ export default defineCommand({
       targetWorth: flags["target-worth"],
       maxDuration: flags["max-duration"],
     });
+    const da = isDesignMetric
+      ? measureDesignMetric({
+          compiled: aCompiled,
+          metric: flags.metric as "timeToMilestone" | "visibleChangesPerMinute" | "maxNoRewardGapSec",
+          sessionPatternId: flags["session-pattern"],
+          days: flags.days,
+          draws: flags.draws,
+          milestoneKey: flags["milestone-key"],
+        })
+      : undefined;
+    const db = isDesignMetric
+      ? measureDesignMetric({
+          compiled: bCompiled,
+          metric: flags.metric as "timeToMilestone" | "visibleChangesPerMinute" | "maxNoRewardGapSec",
+          sessionPatternId: flags["session-pattern"],
+          days: flags.days,
+          draws: flags.draws,
+          milestoneKey: flags["milestone-key"],
+        })
+      : undefined;
 
     const result = compareScenarios({
       a: aScenario,
@@ -317,12 +526,14 @@ export default defineCommand({
           endNetWorth: E.absLog10(ma.endNetWorth),
           droppedRate: ma.droppedRate,
           etaToTargetWorth: toComparableEta(ma.etaToTargetWorth, flags["max-duration"]),
+          ...measuredDesignFields(flags.metric, da),
         },
         b: {
           endMoney: E.absLog10(mb.endMoney),
           endNetWorth: E.absLog10(mb.endNetWorth),
           droppedRate: mb.droppedRate,
           etaToTargetWorth: toComparableEta(mb.etaToTargetWorth, flags["max-duration"]),
+          ...measuredDesignFields(flags.metric, db),
         },
       },
       measuredDecision: (metric) => {
@@ -338,6 +549,15 @@ export default defineCommand({
             const bEta = toComparableEta(mb.etaToTargetWorth, flags["max-duration"]);
             if (aEta === undefined || bEta === undefined) return undefined;
             return betterFromCmp(aEta < bEta ? 1 : aEta > bEta ? -1 : 0);
+          }
+          case "timeToMilestone":
+          case "maxNoRewardGapSec": {
+            if (da?.value === undefined || db?.value === undefined) return undefined;
+            return betterFromCmp(da.value < db.value ? 1 : da.value > db.value ? -1 : 0);
+          }
+          case "visibleChangesPerMinute": {
+            if (da?.value === undefined || db?.value === undefined) return undefined;
+            return betterFromCmp(da.value > db.value ? 1 : da.value < db.value ? -1 : 0);
           }
           default:
             return undefined;
@@ -381,6 +601,7 @@ export default defineCommand({
             ma.etaToTargetWorth === undefined
               ? undefined
               : formatEtaLabel(ma.etaToTargetWorth, !!ma.etaReached),
+          ...measuredDesignFields(flags.metric, da),
         },
         b: {
           endMoney: E.toString(mb.endMoney),
@@ -390,6 +611,7 @@ export default defineCommand({
             mb.etaToTargetWorth === undefined
               ? undefined
               : formatEtaLabel(mb.etaToTargetWorth, !!mb.etaReached),
+          ...measuredDesignFields(flags.metric, db),
         },
       },
       insights: buildCompareInsights({
@@ -403,6 +625,7 @@ export default defineCommand({
             ma.etaToTargetWorth === undefined
               ? undefined
               : formatEtaLabel(ma.etaToTargetWorth, !!ma.etaReached),
+          ...measuredDesignFields(flags.metric, da),
         },
         b: {
           endNetWorth: E.toString(mb.endNetWorth),
@@ -411,6 +634,7 @@ export default defineCommand({
             mb.etaToTargetWorth === undefined
               ? undefined
               : formatEtaLabel(mb.etaToTargetWorth, !!mb.etaReached),
+          ...measuredDesignFields(flags.metric, db),
         },
       }),
     };

@@ -27,10 +27,26 @@ This guide summarizes the public ScenarioV1 and TuneSpec contracts used by `idle
 - `initial`: wallet, vars, prestige state, and optional max worth
 - `clock`: simulation step and stop condition
 - `strategy`: strategy id plus params
-- `analysis`: ETA / growth / prestige analysis options
+- `design`: intent and session-pattern metadata for design-facing analysis
+- `analysis`: ETA / growth / prestige / experience analysis options
 - `monetization`: retention, revenue, and uncertainty inputs for LTV
 - `sim.fast`: log-domain fast mode
 - `outputs.report`: report and trace settings
+
+## Design-facing fields
+
+- `design.intent`: descriptive label for the intended play feel
+- `design.sessionPattern`: default pattern/days for `idk experience`
+- `analysis.experience.series`: `"money"` or `"netWorth"`
+- `analysis.experience.draws`: Monte Carlo draw default
+- `analysis.experience.quantiles`: summary quantiles for experience Monte Carlo
+
+Common milestone key conventions:
+
+- `progress.first-upgrade`
+- `progress.first-automation`
+- `prestige.first`
+- `system.*`
 
 ## Strategy parameter injection
 

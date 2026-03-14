@@ -40,11 +40,20 @@ idk --help
 ```bash
 idk validate <scenario>
 idk simulate <scenario> --format json
+idk experience <scenario> --format json
 idk compare <a> <b> --metric endNetWorth --format json
+idk compare <a> <b> --metric visibleChangesPerMinute --session-pattern short-bursts --days 7 --format json
 idk tune <scenario> --tune <tunespec> --format json
 idk ltv <scenario> --horizons 30m,2h,24h,7d,30d,90d --step 600 --fast true --format json
 idk replay verify <artifact> --format json
 ```
+
+## Design evaluation commands
+
+- `experience`: session-pattern simulation, growth, milestones, and perceived progression
+- `compare`: deterministic or design-facing A/B comparison
+- `tune`: strategy search against economy or experience-oriented objectives
+- `ltv`: long-horizon monetization and value proxy estimation
 
 ## More guides
 

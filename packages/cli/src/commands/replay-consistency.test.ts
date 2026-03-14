@@ -84,7 +84,7 @@ describe("replay consistency", () => {
     }
   });
 
-  it("compare/ltv/tune are deterministic for same input + seed", () => {
+  it("compare/experience/ltv/tune are deterministic for same input + seed", () => {
     const cmpA = runCliJson([
       "compare",
       BASELINE,
@@ -112,6 +112,36 @@ describe("replay consistency", () => {
       "json",
     ]);
     expect(hashReplayResult(cmpA)).toBe(hashReplayResult(cmpB));
+
+    const experienceA = runCliJson([
+      "experience",
+      "../../examples/tutorials/11-my-game-v1.json",
+      "--session-pattern",
+      "short-bursts",
+      "--days",
+      "7",
+      "--seed",
+      "21",
+      "--run-id",
+      "experience-1",
+      "--format",
+      "json",
+    ]);
+    const experienceB = runCliJson([
+      "experience",
+      "../../examples/tutorials/11-my-game-v1.json",
+      "--session-pattern",
+      "short-bursts",
+      "--days",
+      "7",
+      "--seed",
+      "21",
+      "--run-id",
+      "experience-1",
+      "--format",
+      "json",
+    ]);
+    expect(hashReplayResult(experienceA)).toBe(hashReplayResult(experienceB));
 
     const ltvA = runCliJson([
       "ltv",
@@ -176,6 +206,7 @@ describe("replay consistency", () => {
       const artifacts = {
         simulate: resolve(dir, "simulate.artifact.json"),
         compare: resolve(dir, "compare.artifact.json"),
+        experience: resolve(dir, "experience.artifact.json"),
         tune: resolve(dir, "tune.artifact.json"),
         ltv: resolve(dir, "ltv.artifact.json"),
       };
@@ -205,6 +236,23 @@ describe("replay consistency", () => {
         "replay-compare",
         "--artifact-out",
         artifacts.compare,
+        "--format",
+        "json",
+      ]);
+
+      runCliJson([
+        "experience",
+        "../../examples/tutorials/11-my-game-v1.json",
+        "--session-pattern",
+        "short-bursts",
+        "--days",
+        "7",
+        "--seed",
+        "105",
+        "--run-id",
+        "replay-experience",
+        "--artifact-out",
+        artifacts.experience,
         "--format",
         "json",
       ]);

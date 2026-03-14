@@ -24,6 +24,20 @@ Before editing JSON, lock these five decisions:
 - action priority: what should players buy first in early / mid / late game?
 - KPI windows: what matters at `30m/2h/24h/7d/30d/90d`?
 
+Then add the design-facing layer:
+
+- `design.intent`: what feeling are you aiming for?
+  - `frequent-progression`
+  - `scale-fantasy`
+  - `strategic-optimization`
+- `design.sessionPattern`: which real play rhythm are you evaluating?
+  - `always-on`
+  - `short-bursts`
+  - `twice-daily`
+  - `offline-heavy`
+  - `weekend-marathon`
+- `analysis.experience`: default series / draw / quantile settings for `idk experience`
+
 ## Mapping ideas to scenario fields
 
 - main currency -> `unit`, `wallet`, `Action.cost`
@@ -31,12 +45,27 @@ Before editing JSON, lock these five decisions:
 - producers -> `vars.producers`
 - upgrades -> `vars.upgrades`
 - long-horizon monetization -> `monetization`
+- design intent -> `design.intent`
+- session cadence -> `design.sessionPattern`
+- perceived progression defaults -> `analysis.experience`
 
 ## Suggested workflow
 
 1. scaffold with `init scenario --track personal --preset <builder|session|longrun>`
 2. rename currencies and adjust `model.params`
 3. simulate the baseline
-4. run `ltv` on `30m/2h/24h/7d/30d/90d`
-5. compare against the generated `compare-b`
-6. tune the generated strategy spec
+4. run `experience` to inspect milestones and perceived progression
+5. run `ltv` on `30m/2h/24h/7d/30d/90d`
+6. compare against the generated `compare-b`
+7. tune the generated strategy spec
+
+## Standard milestone keys
+
+Built-in and documentation-facing milestone keys should use these conventions:
+
+- `progress.first-upgrade`
+- `progress.first-automation`
+- `prestige.first`
+- `system.*` for model-specific milestones
+
+If your plugin model emits milestones, keep those names stable so `compare --metric timeToMilestone --milestone-key ...` stays usable across scenario variants.

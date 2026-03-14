@@ -9,6 +9,7 @@ These are the canonical JSON output contracts for the CLI.
 - `simulate.output.schema.json`
 - `eta.output.schema.json`
 - `compare.output.schema.json`
+- `experience.output.schema.json`
 - `tune.output.schema.json`
 - `ltv.output.schema.json`
 - `calibrate.output.schema.json`

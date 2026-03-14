@@ -99,4 +99,18 @@ describe("cli error contract", () => {
       await removePath(dir);
     }
   });
+
+  it("prints CLI_USAGE when timeToMilestone compare is missing --milestone-key", () => {
+    const result = runCliFailure([
+      "compare",
+      "../../examples/tutorials/11-my-game-v1.json",
+      "../../examples/tutorials/12-my-game-compare-b.json",
+      "--metric",
+      "timeToMilestone",
+      "--format",
+      "json",
+    ]);
+    expect(result.stderr).toContain("[CLI_USAGE]");
+    expect(result.stderr).toContain("--milestone-key");
+  });
 });

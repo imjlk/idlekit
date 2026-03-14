@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "idlekit/experience-output-v1",
+  "type": "object",
+  "required": ["mode", "design", "end", "session", "growth", "milestones", "perceived", "_meta"],
+  "properties": {
+    "mode": { "enum": ["deterministic", "monte-carlo"] },
+    "design": { "type": "object" },
+    "end": { "type": "object" },
+    "session": { "type": "object" },
+    "growth": { "type": "object" },
+    "milestones": { "type": "object" },
+    "perceived": { "type": "object" },
+    "monteCarlo": { "type": "object" },
+    "_meta": {
+      "type": "object",
+      "required": ["command", "contractVersion", "schemaRef", "cliVersion", "gitSha", "scenarioHash", "pluginDigest"],
+      "properties": {
+        "command": { "const": "experience" },
+        "contractVersion": { "type": "string" },
+        "schemaRef": { "const": "docs/schemas/experience.output.schema.json" },
+        "cliVersion": { "type": "string" },
+        "gitSha": { "type": "string" },
+        "runId": { "type": "string" },
+        "seed": { "type": "number" },
+        "scenarioHash": { "type": "string" },
+        "pluginDigest": { "type": "object", "additionalProperties": { "type": "string" } }
+      }
+    }
+  }
+}

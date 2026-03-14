@@ -97,6 +97,23 @@ const introSession = {
   strategy: {
     id: "greedy",
   },
+  design: {
+    intent: "frequent-progression",
+    sessionPattern: {
+      id: "short-bursts",
+      days: 7,
+    },
+  },
+  analysis: {
+    growth: {
+      windowSec: 30,
+    },
+    experience: {
+      series: "netWorth",
+      draws: 1,
+      quantiles: [0.1, 0.5, 0.9],
+    },
+  },
   outputs: {
     format: "json",
   },
@@ -149,12 +166,24 @@ const introBuilder = {
   strategy: {
     id: "greedy",
   },
+  design: {
+    intent: "strategic-optimization",
+    sessionPattern: {
+      id: "twice-daily",
+      days: 7,
+    },
+  },
   analysis: {
     eta: {
       mode: "simulate",
     },
     growth: {
       windowSec: 60,
+    },
+    experience: {
+      series: "netWorth",
+      draws: 1,
+      quantiles: [0.1, 0.5, 0.9],
     },
   },
   outputs: {
@@ -198,6 +227,23 @@ const introLongrun = {
     durationSec: 604800,
   },
   strategy: { id: "greedy" },
+  design: {
+    intent: "scale-fantasy",
+    sessionPattern: {
+      id: "offline-heavy",
+      days: 30,
+    },
+  },
+  analysis: {
+    growth: {
+      windowSec: 600,
+    },
+    experience: {
+      series: "netWorth",
+      draws: 1,
+      quantiles: [0.1, 0.5, 0.9],
+    },
+  },
   sim: { fast: true },
   outputs: { format: "json" },
 } as const;
@@ -240,6 +286,26 @@ const designBuilder = {
       schemaVersion: 1,
       allowUpgrade: true,
       preferUpgradeAtProducers: 8,
+    },
+  },
+  design: {
+    intent: "strategic-optimization",
+    sessionPattern: {
+      id: "twice-daily",
+      days: 7,
+    },
+  },
+  analysis: {
+    eta: {
+      mode: "simulate",
+    },
+    growth: {
+      windowSec: 60,
+    },
+    experience: {
+      series: "netWorth",
+      draws: 1,
+      quantiles: [0.1, 0.5, 0.9],
     },
   },
   monetization: {
@@ -372,12 +438,24 @@ function createPersonalBaseScenario(preset: TemplatePreset): unknown {
           },
         },
       },
+      design: {
+        intent: "strategic-optimization",
+        sessionPattern: {
+          id: "twice-daily",
+          days: 7,
+        },
+      },
       analysis: {
         eta: {
           mode: "analytic",
         },
         growth: {
           windowSec: 60,
+        },
+        experience: {
+          series: "netWorth",
+          draws: 1,
+          quantiles: [0.1, 0.5, 0.9],
         },
       },
       monetization: {
@@ -499,6 +577,23 @@ function createPersonalBaseScenario(preset: TemplatePreset): unknown {
           },
         },
       },
+      design: {
+        intent: "frequent-progression",
+        sessionPattern: {
+          id: "short-bursts",
+          days: 7,
+        },
+      },
+      analysis: {
+        growth: {
+          windowSec: 30,
+        },
+        experience: {
+          series: "netWorth",
+          draws: 1,
+          quantiles: [0.1, 0.5, 0.9],
+        },
+      },
       outputs: {
         format: "json",
       },
@@ -563,6 +658,23 @@ function createPersonalBaseScenario(preset: TemplatePreset): unknown {
         bulk: {
           mode: "bestQuote",
         },
+      },
+    },
+    design: {
+      intent: "scale-fantasy",
+      sessionPattern: {
+        id: "offline-heavy",
+        days: 30,
+      },
+    },
+    analysis: {
+      growth: {
+        windowSec: 600,
+      },
+      experience: {
+        series: "netWorth",
+        draws: 1,
+        quantiles: [0.1, 0.5, 0.9],
       },
     },
     sim: {

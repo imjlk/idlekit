@@ -212,6 +212,23 @@ async function verifyIntroTrack(): Promise<void> {
   assert(has(personalSim, "endMoney"), "personal template simulate must include endMoney");
   assert(has(personalSim, "endNetWorth"), "personal template simulate must include endNetWorth");
 
+  const personalExperience = asRecord(
+    runCliJson([
+      "experience",
+      personalTemplate,
+      "--session-pattern",
+      "short-bursts",
+      "--days",
+      "7",
+      "--format",
+      "json",
+    ]),
+  );
+  assert(has(personalExperience, "growth"), "personal template experience must include growth");
+  assert(has(personalExperience, "milestones"), "personal template experience must include milestones");
+  assert(has(personalExperience, "perceived"), "personal template experience must include perceived");
+  assert(asRecord(personalExperience._meta as JSONValue).command === "experience", "experience _meta.command must be experience");
+
   const personalLtv = asRecord(
     runCliJson([
       "ltv",
@@ -243,6 +260,30 @@ async function verifyIntroTrack(): Promise<void> {
   );
   assert(asRecord(personalCompare.detail as JSONValue).source === "measured", "personal compare must be measured");
   assert(Array.isArray(asRecord(personalCompare.insights as JSONValue).drivers), "personal compare insights.drivers must exist");
+
+  const personalExperienceCompare = asRecord(
+    runCliJson([
+      "compare",
+      personalTemplate,
+      personalCompareB,
+      "--metric",
+      "visibleChangesPerMinute",
+      "--session-pattern",
+      "short-bursts",
+      "--days",
+      "7",
+      "--format",
+      "json",
+    ]),
+  );
+  assert(
+    asRecord(personalExperienceCompare.detail as JSONValue).source === "measured",
+    "personal experience compare must be measured",
+  );
+  assert(
+    has(asRecord(personalExperienceCompare.measured as JSONValue).a as any, "visibleChangesPerMinute"),
+    "personal experience compare measured.a must include visibleChangesPerMinute",
+  );
 
   const personalTune = asRecord(runCliJson(["tune", personalTemplate, "--tune", personalTuneSpec, "--format", "json"]));
   assert(personalTune.ok === true, "personal tune result must be ok=true");
@@ -315,6 +356,22 @@ async function verifyPluginTrack(): Promise<void> {
   assert(designTuneOut.ok === true, "design tune result must be ok=true");
   const designReport = asRecord(designTuneOut.report as JSONValue);
   assert(has(designReport, "best"), "design tune report must include best");
+
+  const designExperience = asRecord(
+    runCliJson([
+      "experience",
+      designV1,
+      "--session-pattern",
+      "twice-daily",
+      "--days",
+      "7",
+      ...pluginFlags,
+      "--format",
+      "json",
+    ]),
+  );
+  assert(has(designExperience, "milestones"), "design experience must include milestones");
+  assert(has(designExperience, "perceived"), "design experience must include perceived");
 
   const designLtv = asRecord(
     runCliJson([

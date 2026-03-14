@@ -2,7 +2,7 @@
 
 Korean version: [README_ko.md](./README_ko.md)
 
-`idlekit` is a Bun-first toolkit for idle game economy design.
+`idlekit` is a Bun-first toolkit for idle game economy design and design-decision evaluation.
 It provides three public packages:
 
 - `@idlekit/money`: money primitives, notation, policies, and serialization
@@ -14,6 +14,7 @@ It provides three public packages:
 Use `idlekit` when you want to:
 
 - model an idle or incremental game's economy as JSON scenarios
+- evaluate pacing, milestones, perceived progression, and session-pattern outcomes
 - compare balance variants with measured simulation results
 - tune strategy parameters and replay deterministic runs
 - package money/simulation logic as reusable Bun-first libraries
@@ -34,6 +35,7 @@ Repository examples:
 bun install
 bun run --cwd packages/cli dev -- validate ../../examples/tutorials/11-my-game-v1.json
 bun run --cwd packages/cli dev -- simulate ../../examples/tutorials/11-my-game-v1.json --format json
+bun run --cwd packages/cli dev -- experience ../../examples/tutorials/11-my-game-v1.json --format json
 bun run --cwd packages/cli dev -- ltv ../../examples/tutorials/11-my-game-v1.json \
   --horizons 30m,2h,24h,7d,30d,90d \
   --step 600 \
@@ -46,6 +48,7 @@ Installed CLI flow:
 ```bash
 idk validate ./my-game-v1.json
 idk simulate ./my-game-v1.json --format json
+idk experience ./my-game-v1.json --format json
 ```
 
 Use the repository examples while you are inside this checkout. Use your own local scenario files after installing `idk`.
@@ -61,6 +64,7 @@ Then run:
 ```bash
 bun run --cwd packages/cli dev -- validate ../../tmp/space-miner-v1.json
 bun run --cwd packages/cli dev -- simulate ../../tmp/space-miner-v1.json --format json
+bun run --cwd packages/cli dev -- experience ../../tmp/space-miner-v1.json --format json
 ```
 
 ## Documentation

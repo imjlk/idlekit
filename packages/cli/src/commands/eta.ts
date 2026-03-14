@@ -73,7 +73,10 @@ export default defineCommand({
       run: {
         ...compiled.run,
         eventLog: flags["include-run"]
-          ? compiled.run.eventLog
+          ? {
+              enabled: true,
+              maxEvents: Math.min(200, compiled.run.eventLog?.maxEvents ?? 200),
+            }
           : {
               enabled: false,
               maxEvents: 0,

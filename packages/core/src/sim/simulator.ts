@@ -1,6 +1,6 @@
 import { analyzeUX, createSimStatsAccumulator } from "./analysis/ux";
 import { stepOnce } from "./step";
-import type { CompiledScenario, RunResult, SimEvent, SimState } from "./types";
+import type { CompiledScenario, RunResult, SimEvent, SimState, TimedSimEvent } from "./types";
 
 export function runScenario<N, U extends string, Vars>(
   sc: CompiledScenario<N, U, Vars>,
@@ -9,6 +9,7 @@ export function runScenario<N, U extends string, Vars>(
   const start = sc.initial;
 
   const events: SimEvent<N>[] = [];
+  const eventTimeline: TimedSimEvent<N>[] = [];
   const trace: SimState<N, U, Vars>[] = sc.run.trace ? [state] : [];
   const actionsLog: { t: number; actionId: string; label?: string; bulkSize?: number }[] = [];
   const statsAcc = createSimStatsAccumulator();
@@ -66,6 +67,29 @@ export function runScenario<N, U extends string, Vars>(
     events.push(...batch);
   };
 
+  const retainTimedEvents = (batch: readonly SimEvent<N>[], t: number): void => {
+    if (!eventLogEnabled || batch.length === 0) return;
+
+    const timedBatch = batch.map((event) => ({ t, event }));
+    if (maxEvents === 0) return;
+
+    if (maxEvents === undefined) {
+      eventTimeline.push(...timedBatch);
+      return;
+    }
+
+    if (timedBatch.length >= maxEvents) {
+      eventTimeline.splice(0, eventTimeline.length, ...timedBatch.slice(timedBatch.length - maxEvents));
+      return;
+    }
+
+    const overflow = Math.max(0, eventTimeline.length + timedBatch.length - maxEvents);
+    if (overflow > 0) {
+      eventTimeline.splice(0, overflow);
+    }
+    eventTimeline.push(...timedBatch);
+  };
+
   while (true) {
     if (maxSteps !== undefined && steps >= maxSteps) {
       throw new Error(`runScenario exceeded maxSteps (${maxSteps}) without meeting stop condition`);
@@ -86,6 +110,7 @@ export function runScenario<N, U extends string, Vars>(
 
     state = step.next;
     retainEvents(step.events);
+    retainTimedEvents(step.events, state.t);
 
     if (sc.run.trace?.keepActionsLog && step.actionsApplied?.length) {
       actionsLog.push(...step.actionsApplied);
@@ -104,6 +129,7 @@ export function runScenario<N, U extends string, Vars>(
     start,
     end: state,
     events,
+    eventTimeline: eventTimeline.length > 0 ? eventTimeline : undefined,
     trace: sc.run.trace ? trace : undefined,
     actionsLog: sc.run.trace?.keepActionsLog ? actionsLog : undefined,
     stats,

@@ -4,7 +4,10 @@ export type CompareMetric =
   | "endMoney"
   | "endNetWorth"
   | "etaToTargetWorth"
-  | "droppedRate";
+  | "droppedRate"
+  | "timeToMilestone"
+  | "visibleChangesPerMinute"
+  | "maxNoRewardGapSec";
 
 export type MeasuredCompareMetrics = Readonly<Partial<Record<CompareMetric, number>>>;
 export type MeasuredDecision = "a" | "b" | "tie";
@@ -38,6 +41,10 @@ function score(s: ScenarioV1, metric: CompareMetric): number {
       return -(s.policy.maxLogGap ?? 0);
     case "etaToTargetWorth":
       return -(s.clock.durationSec ?? Number.MAX_SAFE_INTEGER);
+    case "timeToMilestone":
+    case "visibleChangesPerMinute":
+    case "maxNoRewardGapSec":
+      return 0;
     default:
       return 0;
   }
@@ -84,7 +91,10 @@ export function compareScenarios(args: {
   const aScore = useMeasured ? measuredA : score(args.a, args.metric);
   const bScore = useMeasured ? measuredB : score(args.b, args.metric);
 
-  const higherBetter = args.metric === "endMoney" || args.metric === "endNetWorth";
+  const higherBetter =
+    args.metric === "endMoney" ||
+    args.metric === "endNetWorth" ||
+    args.metric === "visibleChangesPerMinute";
 
   if (aScore === bScore) {
     return {

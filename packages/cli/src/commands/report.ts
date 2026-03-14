@@ -10,6 +10,7 @@ import {
 } from "@idlekit/core";
 import { z } from "zod";
 import { loadRegistriesFromFlags, pluginOptions } from "./_shared/plugin";
+import { collectExperienceSnapshot, resolveSessionPatternId, resolveSessionPatternSpec } from "../lib/experience";
 import { scenarioInvalidError, usageError } from "../errors";
 import { buildOutputMeta } from "../io/outputMeta";
 import { readScenarioFile } from "../io/readScenario";
@@ -33,6 +34,15 @@ export default defineCommand({
     }),
     "include-growth": option(z.coerce.boolean().default(false), { description: "Include growth report" }),
     "include-ux": option(z.coerce.boolean().default(false), { description: "Include UX flags" }),
+    "include-milestones": option(z.coerce.boolean().default(false), { description: "Include milestone report" }),
+    "include-perceived": option(z.coerce.boolean().default(false), { description: "Include perceived progression report" }),
+    "session-pattern": option(
+      z.enum(["always-on", "short-bursts", "twice-daily", "offline-heavy", "weekend-marathon"]).optional(),
+      { description: "Session pattern for milestone/perceived report sections" },
+    ),
+    days: option(z.coerce.number().int().positive().optional(), {
+      description: "Session-pattern day count for milestone/perceived report sections",
+    }),
     out: option(z.string().optional(), { description: "Output path" }),
     format: option(z.enum(["md", "json"]).default("md"), { description: "Output format" }),
   },
@@ -85,6 +95,7 @@ export default defineCommand({
     if (flags["include-growth"]) {
       data.growth = analyzeGrowth({
         run,
+        scenario: runInput,
         series: runInput.model.netWorth ? "netWorth" : "money",
         windowSec: valid.scenario.analysis?.growth?.windowSec ?? 60,
       });
@@ -93,6 +104,25 @@ export default defineCommand({
     if (flags["include-ux"]) {
       data.stats = run.stats;
       data.uxFlags = run.uxFlags;
+    }
+
+    if (flags["include-milestones"] || flags["include-perceived"]) {
+      const experience = collectExperienceSnapshot({
+        scenario: runInput,
+        sessionPattern: resolveSessionPatternSpec({
+          scenario: runInput,
+          sessionPatternId: resolveSessionPatternId(flags["session-pattern"]),
+          days: flags.days,
+        }),
+        seed: runInput.ctx.seed,
+      });
+      data.session = experience.snapshot.session;
+      if (flags["include-milestones"]) {
+        data.milestones = experience.snapshot.milestones;
+      }
+      if (flags["include-perceived"]) {
+        data.perceived = experience.snapshot.perceived;
+      }
     }
 
     await writeOutput({

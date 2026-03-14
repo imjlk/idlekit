@@ -43,8 +43,10 @@ Core:
 CLI:
 
 - output schemas and replay artifact contracts
+- `experience` schema, session-pattern replay, and design-metric comparisons
 - init preset matrix and naming rules
 - error contract coverage
 - replay consistency and resume determinism
 - plugin loading and security policy
 - docs, templates, install smoke, public readiness, and replay gates
+- perceived progression and KPI regression guardrails

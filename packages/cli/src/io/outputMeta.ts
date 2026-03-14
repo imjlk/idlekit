@@ -3,13 +3,14 @@ import cliPackageJson from "../../package.json" with { type: "json" };
 import { runText, sha256Hex } from "../runtime/bun";
 
 const REPO_ROOT = resolve(import.meta.dir, "../../..");
-export const OUTPUT_CONTRACT_VERSION = "1.2.0";
+export const OUTPUT_CONTRACT_VERSION = "1.3.0";
 const UNKNOWN_GIT_SHA = "unknown";
 
 const OUTPUT_SCHEMA_REF: Readonly<Record<string, string>> = {
   simulate: "docs/schemas/simulate.output.schema.json",
   eta: "docs/schemas/eta.output.schema.json",
   compare: "docs/schemas/compare.output.schema.json",
+  experience: "docs/schemas/experience.output.schema.json",
   tune: "docs/schemas/tune.output.schema.json",
   ltv: "docs/schemas/ltv.output.schema.json",
   calibrate: "docs/schemas/calibrate.output.schema.json",

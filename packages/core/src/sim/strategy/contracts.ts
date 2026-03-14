@@ -29,9 +29,9 @@
  *    (d) bulkSize ascending
  *
  * Notes:
- * - We intentionally keep RNG out of core v0.1.
- *   If stochastic models are needed later, randomness should be carried explicitly in Vars/SimState,
- *   so that rollouts (planner) can clone it safely.
+ * - Randomness must be explicit and seeded.
+ *   Do not call Math.random(). Carry seeded RNG through ctx.seed and/or Vars/SimState
+ *   so rollouts (planner/session/monte-carlo) can clone it safely.
  */
 
 export const DeterminismContract = {

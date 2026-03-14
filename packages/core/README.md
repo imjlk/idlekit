@@ -1,7 +1,8 @@
 # @idlekit/core
 
 Simulation and analysis primitives for idle game economy design. It compiles
-scenarios, executes runs, evaluates long-horizon KPIs, and builds reports.
+scenarios, executes runs, evaluates long-horizon KPIs, and now includes
+session-pattern, milestone, and Monte Carlo analysis hooks for design decisions.
 
 ## Install
 
@@ -36,6 +37,7 @@ console.log(result.ok);
 - simulation loop and `stepOnce`
 - built-in strategies and tuning primitives
 - ETA / growth / prestige / UX analysis
+- session-pattern, milestone, and Monte Carlo primitives
 - report builders
 
 ## Runtime

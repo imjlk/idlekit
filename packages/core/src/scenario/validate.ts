@@ -266,6 +266,67 @@ function validateBaseScenario(input: unknown): StandardResult<ScenarioV1> {
     }
   }
 
+  const design = input.design;
+  if (design !== undefined) {
+    if (!isRecord(design)) {
+      pushIssue(issues, "design must be an object when provided", "design", design);
+    } else {
+      if (
+        design.intent !== undefined &&
+        design.intent !== "frequent-progression" &&
+        design.intent !== "scale-fantasy" &&
+        design.intent !== "strategic-optimization"
+      ) {
+        pushIssue(
+          issues,
+          "design.intent must be 'frequent-progression', 'scale-fantasy', or 'strategic-optimization'",
+          "design.intent",
+          design.intent,
+        );
+      }
+
+      if (design.sessionPattern !== undefined) {
+        const sessionPattern = design.sessionPattern;
+        if (!isRecord(sessionPattern)) {
+          pushIssue(
+            issues,
+            "design.sessionPattern must be an object when provided",
+            "design.sessionPattern",
+            sessionPattern,
+          );
+        } else {
+          if (
+            sessionPattern.id !== "always-on" &&
+            sessionPattern.id !== "short-bursts" &&
+            sessionPattern.id !== "twice-daily" &&
+            sessionPattern.id !== "offline-heavy" &&
+            sessionPattern.id !== "weekend-marathon"
+          ) {
+            pushIssue(
+              issues,
+              "design.sessionPattern.id must be one of always-on, short-bursts, twice-daily, offline-heavy, weekend-marathon",
+              "design.sessionPattern.id",
+              sessionPattern.id,
+            );
+          }
+          if (
+            sessionPattern.days !== undefined &&
+            (typeof sessionPattern.days !== "number" ||
+              !Number.isInteger(sessionPattern.days) ||
+              sessionPattern.days <= 0)
+          ) {
+            pushIssue(
+              issues,
+              "design.sessionPattern.days must be a positive integer when provided",
+              "design.sessionPattern.days",
+              sessionPattern.days,
+            );
+          }
+        }
+      }
+    }
+  }
+
   const monetization = input.monetization;
   if (monetization !== undefined) {
     if (!isRecord(monetization)) {
@@ -548,6 +609,68 @@ function validateBaseScenario(input: unknown): StandardResult<ScenarioV1> {
                   );
                 }
               }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  const analysis = input.analysis;
+  if (analysis !== undefined) {
+    if (!isRecord(analysis)) {
+      pushIssue(issues, "analysis must be an object when provided", "analysis", analysis);
+    } else if (analysis.experience !== undefined) {
+      const experience = analysis.experience;
+      if (!isRecord(experience)) {
+        pushIssue(
+          issues,
+          "analysis.experience must be an object when provided",
+          "analysis.experience",
+          experience,
+        );
+      } else {
+        if (
+          experience.series !== undefined &&
+          experience.series !== "money" &&
+          experience.series !== "netWorth"
+        ) {
+          pushIssue(
+            issues,
+            "analysis.experience.series must be 'money' or 'netWorth'",
+            "analysis.experience.series",
+            experience.series,
+          );
+        }
+        if (
+          experience.draws !== undefined &&
+          (typeof experience.draws !== "number" ||
+            !Number.isInteger(experience.draws) ||
+            experience.draws <= 0)
+        ) {
+          pushIssue(
+            issues,
+            "analysis.experience.draws must be a positive integer when provided",
+            "analysis.experience.draws",
+            experience.draws,
+          );
+        }
+        if (experience.quantiles !== undefined) {
+          if (!Array.isArray(experience.quantiles) || experience.quantiles.length === 0) {
+            pushIssue(
+              issues,
+              "analysis.experience.quantiles must be a non-empty array when provided",
+              "analysis.experience.quantiles",
+              experience.quantiles,
+            );
+          } else {
+            for (let i = 0; i < experience.quantiles.length; i += 1) {
+              validateRate01(
+                issues,
+                experience.quantiles[i],
+                `analysis.experience.quantiles.${i}`,
+                "analysis.experience quantile",
+              );
             }
           }
         }

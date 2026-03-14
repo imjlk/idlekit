@@ -58,6 +58,14 @@ export type ScenarioV1 = Readonly<{
     params?: unknown;
   }>;
 
+  design?: Readonly<{
+    intent?: "frequent-progression" | "scale-fantasy" | "strategic-optimization";
+    sessionPattern?: Readonly<{
+      id: "always-on" | "short-bursts" | "twice-daily" | "offline-heavy" | "weekend-marathon";
+      days?: number;
+    }>;
+  }>;
+
   constraints?: Readonly<{
     maxActionsPerStep?: number;
     minPrestigeIntervalSec?: number;
@@ -71,6 +79,11 @@ export type ScenarioV1 = Readonly<{
       cycles?: number;
     }>;
     growth?: Readonly<{ windowSec?: number }>;
+    experience?: Readonly<{
+      series?: "money" | "netWorth";
+      draws?: number;
+      quantiles?: number[];
+    }>;
   }>;
 
   monetization?: Readonly<{
