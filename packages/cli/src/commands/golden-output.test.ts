@@ -107,6 +107,7 @@ describe("CLI golden outputs", () => {
 
     expect(out.design?.sessionPattern?.id).toBe("short-bursts");
     expect(out.session?.activeBlocks).toBeDefined();
+    expect(out.growth?.segments).toBeDefined();
     expect(out.milestones?.milestones).toBeDefined();
     expect(out.perceived?.visibleChangesPerMinute).toBeDefined();
     expect(out._meta?.command).toBe("experience");
@@ -155,6 +156,24 @@ describe("CLI golden outputs", () => {
     expect(out.measured?.b?.visibleChangesPerMinute).toBeDefined();
     expect(out.detail?.source).toBe("measured");
   });
+
+  it("compare supports metric bundles", () => {
+    const out = runCliJson([
+      "compare",
+      "../../examples/tutorials/11-my-game-v1.json",
+      "../../examples/tutorials/12-my-game-compare-b.json",
+      "--bundle",
+      "design",
+      "--format",
+      "json",
+    ]);
+
+    expect(out.bundle).toBe("design");
+    expect(out.milestoneKey).toBe("progress.first-upgrade");
+    expect(Array.isArray(out.results)).toBeTrue();
+    expect(out.results.length).toBe(3);
+    expect(out._meta?.schemaRef).toBe("docs/schemas/compare.output.schema.json");
+  }, 20000);
 
   it("canonical plugin fixture supports milestone timing compare", () => {
     const out = runCliJson([
@@ -216,6 +235,33 @@ describe("CLI golden outputs", () => {
     expect(typeof out._meta?.gitSha).toBe("string");
     expect(out._meta?.pluginDigest).toBeDefined();
     expect(typeof out._meta?.scenarioHash).toBe("string");
+  });
+
+  it("evaluate returns workflow summary and optional file map", () => {
+    const out = runCliJson([
+      "evaluate",
+      "../../examples/tutorials/11-my-game-v1.json",
+      "--format",
+      "json",
+    ]);
+
+    expect(out.ok).toBeTrue();
+    expect(out.simulate?.endMoney).toBeDefined();
+    expect(out.experience?.growth?.segments).toBeDefined();
+    expect(out.experience?.perceived?.visibleChangesPerMinute).toBeDefined();
+    expect(out.ltv?.summary?.at7d).toBeDefined();
+    expect(out._meta?.command).toBe("evaluate");
+    expect(out._meta?.schemaRef).toBe("docs/schemas/evaluate.output.schema.json");
+  }, 20000);
+
+  it("doctor reports runtime and completions wiring", () => {
+    const out = runCliJson(["doctor", "--format", "json"]);
+
+    expect(out.ok).toBeTrue();
+    expect(Array.isArray(out.checks)).toBeTrue();
+    expect(out.checks.some((check: any) => check.id === "completions.script" && check.ok === true)).toBeTrue();
+    expect(out._meta?.command).toBe("doctor");
+    expect(out._meta?.schemaRef).toBe("docs/schemas/doctor.output.schema.json");
   });
 
   it("ltv uncertainty is deterministic for fixed seed", () => {

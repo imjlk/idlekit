@@ -40,6 +40,19 @@ bun run --cwd packages/cli dev -- init scenario --track personal --preset sessio
 bun run --cwd packages/cli dev -- init scenario --track personal --preset longrun --out ../../tmp/my-longrun-game.json
 ```
 
+대화형 wizard로 시작하려면:
+
+```bash
+bun run --cwd packages/cli dev -- init scenario --wizard true --track personal --preset builder --out ../../tmp/my-game-v1.json
+```
+
+사람이 직접 검토하는 review 흐름:
+
+```bash
+bun run --cwd packages/cli dev -- review evaluate ../../tmp/my-game-v1.json --image-mode auto
+bun run --cwd packages/cli dev -- review compare ../../tmp/my-game-v1.json ../../tmp/my-game-v1-compare-b.json
+```
+
 ## 시작 경로
 
 - 처음 자기 게임을 만들기: [CLI 디자이너 시작 문서](./docs/start-here-cli-designer.md)

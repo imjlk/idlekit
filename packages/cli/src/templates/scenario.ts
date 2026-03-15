@@ -12,6 +12,22 @@ export type GeneratedTemplateFile = Readonly<{
   content: unknown;
 }>;
 
+export type TemplateIntent = "frequent-progression" | "scale-fantasy" | "strategic-optimization";
+export type TemplateSessionPatternId =
+  | "always-on"
+  | "short-bursts"
+  | "twice-daily"
+  | "offline-heavy"
+  | "weekend-marathon";
+
+export type TemplateWizardOverrides = Readonly<{
+  unitCode?: string;
+  unitSymbol?: string;
+  designIntent?: TemplateIntent;
+  sessionPatternId?: TemplateSessionPatternId;
+  economy?: Readonly<Record<string, string | number>>;
+}>;
+
 const INTRO_PRESET_DEFAULT: Readonly<Record<TemplateTrack, TemplatePreset>> = {
   intro: "session",
   design: "builder",
@@ -55,6 +71,71 @@ function titleCaseSlug(slug: string): string {
     .filter(Boolean)
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
+}
+
+function trimToUndefined(value: string | undefined): string | undefined {
+  const normalized = value?.trim();
+  return normalized ? normalized : undefined;
+}
+
+function applyScenarioOverrides(scenario: any, overrides?: TemplateWizardOverrides): void {
+  if (!overrides) return;
+
+  const unitCode = trimToUndefined(overrides.unitCode);
+  if (unitCode) {
+    scenario.unit = {
+      ...(scenario.unit ?? {}),
+      code: unitCode,
+    };
+    if (scenario.initial?.wallet) {
+      scenario.initial.wallet = {
+        ...scenario.initial.wallet,
+        unit: unitCode,
+      };
+    }
+  }
+
+  if (overrides.unitSymbol !== undefined) {
+    const symbol = trimToUndefined(overrides.unitSymbol);
+    scenario.unit = {
+      ...(scenario.unit ?? {}),
+      ...(symbol ? { symbol } : {}),
+    };
+    if (!symbol && scenario.unit && "symbol" in scenario.unit) {
+      delete scenario.unit.symbol;
+    }
+  }
+
+  if (overrides.designIntent) {
+    scenario.design = {
+      ...(scenario.design ?? {}),
+      intent: overrides.designIntent,
+    };
+  }
+
+  if (overrides.sessionPatternId) {
+    scenario.design = {
+      ...(scenario.design ?? {}),
+      sessionPattern: {
+        ...(scenario.design?.sessionPattern ?? {}),
+        id: overrides.sessionPatternId,
+      },
+    };
+  }
+
+  if (overrides.economy) {
+    scenario.model = {
+      ...(scenario.model ?? {}),
+      params: {
+        ...(scenario.model?.params ?? {}),
+      },
+    };
+    for (const [key, value] of Object.entries(overrides.economy)) {
+      if (!(key in scenario.model.params)) continue;
+      const current = scenario.model.params[key];
+      scenario.model.params[key] = typeof current === "number" ? Number(value) : String(value);
+    }
+  }
 }
 
 function normalizeStemFromOutPath(outPath: string): string {
@@ -835,6 +916,7 @@ export function buildInitTemplatePlan(args: {
   outPath: string;
   preset?: TemplatePreset;
   name?: string;
+  overrides?: TemplateWizardOverrides;
 }): readonly GeneratedTemplateFile[] {
   const track = args.track;
   const preset = resolveTemplatePreset(track, args.preset);
@@ -846,6 +928,7 @@ export function buildInitTemplatePlan(args: {
     const ext = parsed.ext || ".json";
     const dir = parsed.dir || ".";
     const baseScenario = createPersonalBaseScenario(preset) as any;
+    applyScenarioOverrides(baseScenario, args.overrides);
     const compareScenario = createPersonalCompareScenario(baseScenario) as any;
     const tuneSpec = createPersonalTuneSpec(preset, baseScenario) as any;
     applyPersonalBundleIdentity({ base: baseScenario, compare: compareScenario, tune: tuneSpec }, { stem, displayName });
@@ -859,6 +942,7 @@ export function buildInitTemplatePlan(args: {
   const content = track === "intro"
     ? clone(preset === "session" ? introSession : preset === "builder" ? introBuilder : introLongrun)
     : createDesignScenario(preset);
+  applyScenarioOverrides(content as any, args.overrides);
   return [{ kind: "scenario", path: resolve(args.outPath), content }];
 }
 

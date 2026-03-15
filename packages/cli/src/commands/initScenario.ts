@@ -2,6 +2,8 @@ import { defineCommand, option } from "@bunli/core";
 import { resolve } from "path";
 import { z } from "zod";
 import { cliError, unsupportedFlagForTrackError } from "../errors";
+import { printNextSteps } from "../io/nextSteps";
+import { runInitWizard } from "../lib/initWizard";
 import { fileExists, writeTextFile } from "../runtime/bun";
 import {
   buildInitTemplatePlan,
@@ -42,16 +44,32 @@ export default defineCommand({
     name: option(z.string().optional(), {
       description: "Optional personal track name. Changes generated file stem + meta id/title.",
     }),
+    wizard: option(z.coerce.boolean().default(false), {
+      description: "Launch an interactive wizard for template customization",
+    }),
     force: option(z.coerce.boolean().default(false), {
       description: "Overwrite output file when already exists",
     }),
   },
-  async handler({ flags }) {
-    const track = flags.track as Track;
-    const preset = flags.preset as Preset | undefined;
+  async handler({ flags, prompt, terminal, runtime }) {
     const outPath = resolve(process.cwd(), flags.out);
+    const wizard = flags.wizard;
+    const wizardResult = wizard
+      ? await runInitWizard({
+          prompt,
+          terminal,
+          runtimeArgs: runtime.args,
+          outPath,
+          initialTrack: flags.track as Track,
+          initialPreset: flags.preset as Preset | undefined,
+          initialName: flags.name,
+        })
+      : undefined;
+    const track = wizardResult?.track ?? (flags.track as Track);
+    const preset = wizardResult?.preset ?? (flags.preset as Preset | undefined);
+    const bundleName = wizardResult?.name ?? flags.name;
 
-    if (flags.name && track !== "personal") {
+    if (bundleName && track !== "personal") {
       throw unsupportedFlagForTrackError("--name", track);
     }
 
@@ -59,7 +77,8 @@ export default defineCommand({
       track,
       preset,
       outPath,
-      name: flags.name,
+      name: bundleName,
+      overrides: wizardResult?.overrides,
     });
 
     await Promise.all(files.map((file) => ensureWritable(file.path, flags.force)));
@@ -68,12 +87,32 @@ export default defineCommand({
     if (track === "personal") {
       console.log("Wrote personal scenario bundle:");
       for (const line of describeBundle(files)) console.log(line);
+      const base = files.find((file) => file.kind === "scenario");
+      if (base) {
+        printNextSteps({
+          steps: [
+            { label: "validate", command: `idk validate ${base.path}` },
+            { label: "simulate", command: `idk simulate ${base.path} --format json` },
+            { label: "experience", command: `idk experience ${base.path} --format md` },
+          ],
+        });
+      }
       return;
     }
 
     console.log(`Wrote scenario template (${track}/${preset ?? "default"}) to ${files[0]!.path}`);
+    if (wizard) {
+      console.log("Wizard overrides applied to unit/design/economy fields.");
+    }
     if (track === "design") {
       console.log("Note: design track template requires plugin.generators/plugin.producerFirst.");
     }
+    printNextSteps({
+      steps: [
+        { label: "validate", command: `idk validate ${files[0]!.path}` },
+        { label: "simulate", command: `idk simulate ${files[0]!.path} --format json` },
+        { label: "experience", command: `idk experience ${files[0]!.path} --format md` },
+      ],
+    });
   },
 });

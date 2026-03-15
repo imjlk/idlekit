@@ -24,6 +24,12 @@ jobs:
       - name: Typecheck
         run: bun run typecheck
 
+      - name: Bunli Generate Check
+        run: bun run --cwd packages/cli generate:check
+
+      - name: Bunli Completion Doctor
+        run: bun run --cwd packages/cli doctor:completions
+
       - name: Runtime Import Check
         run: bun run runtime:check
 

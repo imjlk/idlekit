@@ -16,6 +16,12 @@ This is the shortest path for a designer who wants to turn an idle game idea int
 bun run --cwd packages/cli dev -- init scenario --track personal --preset builder --out ../../tmp/my-game-v1.json --name "Space Miner"
 ```
 
+If you want the CLI to guide the first choices interactively:
+
+```bash
+bun run --cwd packages/cli dev -- init scenario --wizard true --track personal --preset builder --out ../../tmp/my-game-v1.json
+```
+
 The `personal` track always creates three files:
 
 - `space-miner-v1.json`
@@ -28,6 +34,7 @@ The `personal` track always creates three files:
 bun run --cwd packages/cli dev -- validate ../../tmp/space-miner-v1.json
 bun run --cwd packages/cli dev -- simulate ../../tmp/space-miner-v1.json --format json
 bun run --cwd packages/cli dev -- experience ../../tmp/space-miner-v1.json --format json
+bun run --cwd packages/cli dev -- evaluate ../../tmp/space-miner-v1.json --format md
 ```
 
 Success condition:
@@ -66,6 +73,18 @@ Success condition:
 
 - JSON includes `design.sessionPattern`, `milestones.milestones`, and `perceived.visibleChangesPerMinute`
 
+Human review path:
+
+```bash
+bun run --cwd packages/cli dev -- review evaluate ../../tmp/space-miner-v1.json --image-mode auto
+```
+
+Success condition:
+
+- the dashboard opens in an interactive terminal
+- `q` or `Esc` exits cleanly
+- image preview falls back gracefully when Kitty-compatible preview is unavailable
+
 ## 5. Add long-horizon checks
 
 ```bash
@@ -85,6 +104,7 @@ Success condition:
 ```bash
 bun run --cwd packages/cli dev -- compare ../../tmp/space-miner-v1.json ../../tmp/space-miner-v1-compare-b.json --metric endNetWorth --format json
 bun run --cwd packages/cli dev -- compare ../../tmp/space-miner-v1.json ../../tmp/space-miner-v1-compare-b.json --metric visibleChangesPerMinute --session-pattern short-bursts --days 7 --format json
+bun run --cwd packages/cli dev -- review compare ../../tmp/space-miner-v1.json ../../tmp/space-miner-v1-compare-b.json
 bun run --cwd packages/cli dev -- tune ../../tmp/space-miner-v1.json --tune ../../tmp/space-miner-v1-tune.json --format json
 ```
 
@@ -93,12 +113,24 @@ Success condition:
 - compare JSON reports `detail.source === "measured"`
 - tune JSON includes `report.best`, `insights.patterns`, and `insights.scoreSpread`
 
+## 7. Enable completions and run doctor
+
+```bash
+source <(idk completions zsh)
+idk doctor --format md
+```
+
+Success condition:
+
+- completion script prints successfully
+- doctor reports `Overall: pass`
+
 Next reading:
 
 - [tutorial-step-by-step.md](./tutorial-step-by-step.md)
 - [virtual-scenario-design.md](./virtual-scenario-design.md)
 
-## 7. Move to the worked real-game example
+## 8. Move to the worked real-game example
 
 Once your personal scaffold makes sense, use the canonical plugin-rich example to see the full design loop on a more realistic economy:
 

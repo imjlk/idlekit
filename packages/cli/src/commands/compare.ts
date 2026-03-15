@@ -28,6 +28,19 @@ import { readScenarioFile } from "../io/readScenario";
 import { writeOutput } from "../io/writeOutput";
 
 const strategySchema = z.enum(["greedy", "planner", "scripted"]).optional();
+const compareMetricSchema = z.enum([
+  "endMoney",
+  "endNetWorth",
+  "etaToTargetWorth",
+  "droppedRate",
+  "timeToMilestone",
+  "visibleChangesPerMinute",
+  "maxNoRewardGapSec",
+]);
+const compareBundleSchema = z.enum(["economy", "design", "full"]).optional();
+
+type CompareMetric = z.infer<typeof compareMetricSchema>;
+type CompareBundle = NonNullable<z.infer<typeof compareBundleSchema>>;
 
 function assertValidScenario(
   label: "A" | "B",
@@ -217,7 +230,7 @@ function measuredDesignFields(
 }
 
 function buildCompareInsights(args: {
-  metric: string;
+  metric: CompareMetric;
   endNetWorthWinner: "a" | "b" | "tie";
   a: {
     endNetWorth: string;
@@ -362,6 +375,146 @@ function buildCompareInsights(args: {
   };
 }
 
+function bundleMetrics(bundle: CompareBundle): readonly CompareMetric[] {
+  switch (bundle) {
+    case "economy":
+      return ["endMoney", "endNetWorth", "droppedRate"];
+    case "design":
+      return ["visibleChangesPerMinute", "maxNoRewardGapSec", "timeToMilestone"];
+    case "full":
+      return ["endMoney", "endNetWorth", "droppedRate", "visibleChangesPerMinute", "maxNoRewardGapSec", "timeToMilestone"];
+  }
+}
+
+function compareDecisionForMetric(args: {
+  metric: CompareMetric;
+  E: ReturnType<typeof createNumberEngine>;
+  ma: ReturnType<typeof measureScenario>;
+  mb: ReturnType<typeof measureScenario>;
+  da?: ReturnType<typeof measureDesignMetric>;
+  db?: ReturnType<typeof measureDesignMetric>;
+  maxDuration: number;
+}): "a" | "b" | "tie" | undefined {
+  switch (args.metric) {
+    case "endMoney":
+      return betterFromCmp(args.E.cmp(args.ma.endMoney, args.mb.endMoney));
+    case "endNetWorth":
+      return betterFromCmp(args.E.cmp(args.ma.endNetWorth, args.mb.endNetWorth));
+    case "droppedRate":
+      return betterFromCmp(
+        args.ma.droppedRate < args.mb.droppedRate ? 1 : args.ma.droppedRate > args.mb.droppedRate ? -1 : 0,
+      );
+    case "etaToTargetWorth": {
+      const aEta = toComparableEta(args.ma.etaToTargetWorth, args.maxDuration);
+      const bEta = toComparableEta(args.mb.etaToTargetWorth, args.maxDuration);
+      if (aEta === undefined || bEta === undefined) return undefined;
+      return betterFromCmp(aEta < bEta ? 1 : aEta > bEta ? -1 : 0);
+    }
+    case "timeToMilestone":
+    case "maxNoRewardGapSec":
+      if (args.da?.value === undefined || args.db?.value === undefined) return undefined;
+      return betterFromCmp(args.da.value < args.db.value ? 1 : args.da.value > args.db.value ? -1 : 0);
+    case "visibleChangesPerMinute":
+      if (args.da?.value === undefined || args.db?.value === undefined) return undefined;
+      return betterFromCmp(args.da.value > args.db.value ? 1 : args.da.value < args.db.value ? -1 : 0);
+  }
+}
+
+function buildSingleCompareOutput(args: {
+  metric: CompareMetric;
+  E: ReturnType<typeof createNumberEngine>;
+  aScenario: any;
+  bScenario: any;
+  ma: ReturnType<typeof measureScenario>;
+  mb: ReturnType<typeof measureScenario>;
+  da?: ReturnType<typeof measureDesignMetric>;
+  db?: ReturnType<typeof measureDesignMetric>;
+  maxDuration: number;
+}): Record<string, unknown> {
+  const result = compareScenarios({
+    a: args.aScenario,
+    b: args.bScenario,
+    metric: args.metric,
+    measured: {
+      a: {
+        endMoney: args.E.absLog10(args.ma.endMoney),
+        endNetWorth: args.E.absLog10(args.ma.endNetWorth),
+        droppedRate: args.ma.droppedRate,
+        etaToTargetWorth: toComparableEta(args.ma.etaToTargetWorth, args.maxDuration),
+        ...measuredDesignFields(args.metric, args.da),
+      },
+      b: {
+        endMoney: args.E.absLog10(args.mb.endMoney),
+        endNetWorth: args.E.absLog10(args.mb.endNetWorth),
+        droppedRate: args.mb.droppedRate,
+        etaToTargetWorth: toComparableEta(args.mb.etaToTargetWorth, args.maxDuration),
+        ...measuredDesignFields(args.metric, args.db),
+      },
+    },
+    measuredDecision: (metric) =>
+      compareDecisionForMetric({
+        metric: metric as CompareMetric,
+        E: args.E,
+        ma: args.ma,
+        mb: args.mb,
+        da: args.da,
+        db: args.db,
+        maxDuration: args.maxDuration,
+      }),
+  });
+
+  return {
+    metric: args.metric,
+    better: result.better,
+    detail: result.detail,
+    measured: {
+      a: {
+        endMoney: args.E.toString(args.ma.endMoney),
+        endNetWorth: args.E.toString(args.ma.endNetWorth),
+        droppedRate: args.ma.droppedRate,
+        etaToTargetWorth:
+          args.ma.etaToTargetWorth === undefined
+            ? undefined
+            : formatEtaLabel(args.ma.etaToTargetWorth, !!args.ma.etaReached),
+        ...measuredDesignFields(args.metric, args.da),
+      },
+      b: {
+        endMoney: args.E.toString(args.mb.endMoney),
+        endNetWorth: args.E.toString(args.mb.endNetWorth),
+        droppedRate: args.mb.droppedRate,
+        etaToTargetWorth:
+          args.mb.etaToTargetWorth === undefined
+            ? undefined
+            : formatEtaLabel(args.mb.etaToTargetWorth, !!args.mb.etaReached),
+        ...measuredDesignFields(args.metric, args.db),
+      },
+    },
+    insights: buildCompareInsights({
+      metric: args.metric,
+      endNetWorthWinner: betterFromCmp(args.E.cmp(args.ma.endNetWorth, args.mb.endNetWorth)),
+      better: result.better,
+      a: {
+        endNetWorth: args.E.toString(args.ma.endNetWorth),
+        droppedRate: args.ma.droppedRate,
+        etaToTargetWorth:
+          args.ma.etaToTargetWorth === undefined
+            ? undefined
+            : formatEtaLabel(args.ma.etaToTargetWorth, !!args.ma.etaReached),
+        ...measuredDesignFields(args.metric, args.da),
+      },
+      b: {
+        endNetWorth: args.E.toString(args.mb.endNetWorth),
+        droppedRate: args.mb.droppedRate,
+        etaToTargetWorth:
+          args.mb.etaToTargetWorth === undefined
+            ? undefined
+            : formatEtaLabel(args.mb.etaToTargetWorth, !!args.mb.etaReached),
+        ...measuredDesignFields(args.metric, args.db),
+      },
+    }),
+  };
+}
+
 export default defineCommand({
   name: "compare",
   description: "Compare two scenarios via measured simulation metrics",
@@ -395,20 +548,10 @@ export default defineCommand({
       description: "Optional run identifier used in output metadata",
     }),
     "artifact-out": option(z.string().optional(), { description: "Write replay artifact JSON to path" }),
-    metric: option(
-      z
-        .enum([
-          "endMoney",
-          "endNetWorth",
-          "etaToTargetWorth",
-          "droppedRate",
-          "timeToMilestone",
-          "visibleChangesPerMinute",
-          "maxNoRewardGapSec",
-        ])
-        .default("endNetWorth"),
-      { description: "Comparison metric" },
-    ),
+    metric: option(compareMetricSchema.optional(), { description: "Comparison metric" }),
+    bundle: option(compareBundleSchema, {
+      description: "Run a predefined metric bundle (economy|design|full)",
+    }),
     out: option(z.string().optional(), { description: "Output path" }),
     format: option(z.enum(["json", "md", "csv"]).default("json"), { description: "Output format" }),
   },
@@ -427,10 +570,21 @@ export default defineCommand({
     const aScenario = assertValidScenario("A", validateScenarioV1(aInput, loaded.modelRegistry));
     const bScenario = assertValidScenario("B", validateScenarioV1(bInput, loaded.modelRegistry));
 
-    if (flags.metric === "etaToTargetWorth" && !flags["target-worth"]) {
+    if (flags.bundle && flags.metric) {
+      throw usageError("Use either --metric or --bundle, not both.");
+    }
+
+    const selectedMetric: CompareMetric | undefined = flags.bundle ? undefined : (flags.metric ?? "endNetWorth");
+    const selectedMetrics = flags.bundle ? bundleMetrics(flags.bundle) : [selectedMetric!];
+    const needsMilestone = selectedMetrics.includes("timeToMilestone");
+    const effectiveMilestoneKey = flags.bundle
+      ? (flags["milestone-key"] ?? (needsMilestone ? "progress.first-upgrade" : undefined))
+      : flags["milestone-key"];
+
+    if (selectedMetrics.includes("etaToTargetWorth") && !flags["target-worth"]) {
       throw usageError("metric=etaToTargetWorth requires --target-worth <NumStr>");
     }
-    if (flags.metric === "timeToMilestone" && !flags["milestone-key"]) {
+    if (!flags.bundle && selectedMetric === "timeToMilestone" && !effectiveMilestoneKey) {
       throw usageError("metric=timeToMilestone requires --milestone-key <key>");
     }
 
@@ -443,7 +597,8 @@ export default defineCommand({
           b: bScenario,
         },
         options: {
-          metric: flags.metric,
+          metric: selectedMetric,
+          bundle: flags.bundle,
           duration: flags.duration,
           step: flags.step,
           strategy: flags.strategy,
@@ -453,7 +608,7 @@ export default defineCommand({
           sessionPattern: flags["session-pattern"],
           days: flags.days,
           draws: flags.draws,
-          milestoneKey: flags["milestone-key"],
+          milestoneKey: effectiveMilestoneKey,
         },
       });
 
@@ -478,11 +633,6 @@ export default defineCommand({
       },
     });
 
-    const isDesignMetric =
-      flags.metric === "timeToMilestone" ||
-      flags.metric === "visibleChangesPerMinute" ||
-      flags.metric === "maxNoRewardGapSec";
-
     const ma = measureScenario({
       compiled: aCompiled,
       E,
@@ -495,75 +645,44 @@ export default defineCommand({
       targetWorth: flags["target-worth"],
       maxDuration: flags["max-duration"],
     });
-    const da = isDesignMetric
-      ? measureDesignMetric({
+    const designCache = new Map<
+      CompareMetric,
+      Readonly<{
+        a: ReturnType<typeof measureDesignMetric>;
+        b: ReturnType<typeof measureDesignMetric>;
+      }>
+    >();
+    const getDesignPair = (metric: CompareMetric) => {
+      if (
+        metric !== "timeToMilestone" &&
+        metric !== "visibleChangesPerMinute" &&
+        metric !== "maxNoRewardGapSec"
+      ) {
+        return undefined;
+      }
+      const cached = designCache.get(metric);
+      if (cached) return cached;
+      const pair = {
+        a: measureDesignMetric({
           compiled: aCompiled,
-          metric: flags.metric as "timeToMilestone" | "visibleChangesPerMinute" | "maxNoRewardGapSec",
+          metric,
           sessionPatternId: flags["session-pattern"],
           days: flags.days,
           draws: flags.draws,
-          milestoneKey: flags["milestone-key"],
-        })
-      : undefined;
-    const db = isDesignMetric
-      ? measureDesignMetric({
+          milestoneKey: effectiveMilestoneKey,
+        }),
+        b: measureDesignMetric({
           compiled: bCompiled,
-          metric: flags.metric as "timeToMilestone" | "visibleChangesPerMinute" | "maxNoRewardGapSec",
+          metric,
           sessionPatternId: flags["session-pattern"],
           days: flags.days,
           draws: flags.draws,
-          milestoneKey: flags["milestone-key"],
-        })
-      : undefined;
-
-    const result = compareScenarios({
-      a: aScenario,
-      b: bScenario,
-      metric: flags.metric,
-      measured: {
-        a: {
-          endMoney: E.absLog10(ma.endMoney),
-          endNetWorth: E.absLog10(ma.endNetWorth),
-          droppedRate: ma.droppedRate,
-          etaToTargetWorth: toComparableEta(ma.etaToTargetWorth, flags["max-duration"]),
-          ...measuredDesignFields(flags.metric, da),
-        },
-        b: {
-          endMoney: E.absLog10(mb.endMoney),
-          endNetWorth: E.absLog10(mb.endNetWorth),
-          droppedRate: mb.droppedRate,
-          etaToTargetWorth: toComparableEta(mb.etaToTargetWorth, flags["max-duration"]),
-          ...measuredDesignFields(flags.metric, db),
-        },
-      },
-      measuredDecision: (metric) => {
-        switch (metric) {
-          case "endMoney":
-            return betterFromCmp(E.cmp(ma.endMoney, mb.endMoney));
-          case "endNetWorth":
-            return betterFromCmp(E.cmp(ma.endNetWorth, mb.endNetWorth));
-          case "droppedRate":
-            return betterFromCmp(ma.droppedRate < mb.droppedRate ? 1 : ma.droppedRate > mb.droppedRate ? -1 : 0);
-          case "etaToTargetWorth": {
-            const aEta = toComparableEta(ma.etaToTargetWorth, flags["max-duration"]);
-            const bEta = toComparableEta(mb.etaToTargetWorth, flags["max-duration"]);
-            if (aEta === undefined || bEta === undefined) return undefined;
-            return betterFromCmp(aEta < bEta ? 1 : aEta > bEta ? -1 : 0);
-          }
-          case "timeToMilestone":
-          case "maxNoRewardGapSec": {
-            if (da?.value === undefined || db?.value === undefined) return undefined;
-            return betterFromCmp(da.value < db.value ? 1 : da.value > db.value ? -1 : 0);
-          }
-          case "visibleChangesPerMinute": {
-            if (da?.value === undefined || db?.value === undefined) return undefined;
-            return betterFromCmp(da.value > db.value ? 1 : da.value < db.value ? -1 : 0);
-          }
-          default:
-            return undefined;
-        }
-      },
-    });
+          milestoneKey: effectiveMilestoneKey,
+        }),
+      };
+      designCache.set(metric, pair);
+      return pair;
+    };
 
     const seed = effectiveSeed;
     const runId =
@@ -574,7 +693,8 @@ export default defineCommand({
         scope: {
           aPath: resolve(process.cwd(), aPath),
           bPath: resolve(process.cwd(), bPath),
-          metric: flags.metric,
+          metric: selectedMetric,
+          bundle: flags.bundle,
         },
       });
     const outputMeta = buildOutputMeta({
@@ -588,56 +708,35 @@ export default defineCommand({
       },
       pluginDigest: loaded.pluginDigest,
     });
-    const output = {
-      metric: flags.metric,
-      better: result.better,
-      detail: result.detail,
-      measured: {
-        a: {
-          endMoney: E.toString(ma.endMoney),
-          endNetWorth: E.toString(ma.endNetWorth),
-          droppedRate: ma.droppedRate,
-          etaToTargetWorth:
-            ma.etaToTargetWorth === undefined
-              ? undefined
-              : formatEtaLabel(ma.etaToTargetWorth, !!ma.etaReached),
-          ...measuredDesignFields(flags.metric, da),
-        },
-        b: {
-          endMoney: E.toString(mb.endMoney),
-          endNetWorth: E.toString(mb.endNetWorth),
-          droppedRate: mb.droppedRate,
-          etaToTargetWorth:
-            mb.etaToTargetWorth === undefined
-              ? undefined
-              : formatEtaLabel(mb.etaToTargetWorth, !!mb.etaReached),
-          ...measuredDesignFields(flags.metric, db),
-        },
-      },
-      insights: buildCompareInsights({
-        metric: flags.metric,
-        endNetWorthWinner: betterFromCmp(E.cmp(ma.endNetWorth, mb.endNetWorth)),
-        better: result.better,
-        a: {
-          endNetWorth: E.toString(ma.endNetWorth),
-          droppedRate: ma.droppedRate,
-          etaToTargetWorth:
-            ma.etaToTargetWorth === undefined
-              ? undefined
-              : formatEtaLabel(ma.etaToTargetWorth, !!ma.etaReached),
-          ...measuredDesignFields(flags.metric, da),
-        },
-        b: {
-          endNetWorth: E.toString(mb.endNetWorth),
-          droppedRate: mb.droppedRate,
-          etaToTargetWorth:
-            mb.etaToTargetWorth === undefined
-              ? undefined
-              : formatEtaLabel(mb.etaToTargetWorth, !!mb.etaReached),
-          ...measuredDesignFields(flags.metric, db),
-        },
-      }),
-    };
+    const singleResults = selectedMetrics.map((metric) => {
+      const design = getDesignPair(metric);
+      return buildSingleCompareOutput({
+        metric,
+        E,
+        aScenario,
+        bScenario,
+        ma,
+        mb,
+        da: design?.a,
+        db: design?.b,
+        maxDuration: flags["max-duration"],
+      });
+    });
+    const output =
+      flags.bundle
+        ? {
+            bundle: flags.bundle,
+            milestoneKey: effectiveMilestoneKey,
+            results: singleResults,
+            summary: {
+              winners: {
+                a: singleResults.filter((result) => result.better === "a").length,
+                b: singleResults.filter((result) => result.better === "b").length,
+                tie: singleResults.filter((result) => result.better === "tie").length,
+              },
+            },
+          }
+        : singleResults[0]!;
 
     if (flags["artifact-out"]) {
       const aAbs = resolve(process.cwd(), aPath);

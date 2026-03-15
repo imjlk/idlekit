@@ -18,6 +18,22 @@ idk init scenario --track personal --preset builder --out ./my-game-v1.json --na
 idk validate ./space-miner-v1.json
 idk simulate ./space-miner-v1.json --format json
 idk experience ./space-miner-v1.json --format json
+idk evaluate ./space-miner-v1.json --format md
+```
+
+Interactive scaffold and review:
+
+```bash
+idk init scenario --wizard true --track personal --preset builder --out ./my-game-v1.json
+idk review evaluate ./space-miner-v1.json --image-mode auto
+idk review compare ./space-miner-v1.json ./space-miner-v1-compare-b.json
+```
+
+Shell completion and health check:
+
+```bash
+source <(idk completions zsh)
+idk doctor --format md
 ```
 
 Worked real-game example in this repository:
@@ -34,6 +50,9 @@ bun run --cwd packages/cli dev -- experience ../../examples/tutorials/14-orbital
 ## Runtime
 
 `@idlekit/cli` is maintained as a Bun-first CLI package.
+
+- automation path: `evaluate`, `compare --format json`, `experience --format md|json`
+- human review path: `review evaluate`, `review compare`
 
 ## Documentation
 

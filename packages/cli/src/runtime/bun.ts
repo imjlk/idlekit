@@ -1,6 +1,8 @@
 import { $ } from "bun";
 import { dirname } from "path";
 
+const MAX_CAPTURE_BYTES = 8 * 1024 * 1024;
+
 export async function readTextFile(path: string): Promise<string> {
   return Bun.file(path).text();
 }
@@ -22,6 +24,17 @@ export async function fileExists(path: string): Promise<boolean> {
   return Bun.file(path).exists();
 }
 
+export async function removePath(path: string): Promise<void> {
+  await $`rm -rf ${path}`.quiet();
+}
+
+export async function createTempDir(prefix: string): Promise<string> {
+  const root = process.env.TMPDIR || process.env.TMP || process.env.TEMP || "/tmp";
+  const path = `${root.replace(/\/$/, "")}/${prefix}-${crypto.randomUUID()}`;
+  await ensureDir(path);
+  return path;
+}
+
 export function sha256Hex(value: string | Uint8Array): string {
   const hasher = new Bun.CryptoHasher("sha256");
   hasher.update(value);
@@ -34,6 +47,7 @@ export function runText(args: string[], opts?: { cwd?: string; env?: Record<stri
     env: opts?.env,
     stdout: "pipe",
     stderr: "pipe",
+    maxBuffer: MAX_CAPTURE_BYTES,
   });
 
   if (proc.exitCode !== 0) {

@@ -22,6 +22,7 @@ import {
   usageError,
 } from "../errors";
 import { buildOutputMeta, deriveDeterministicRunId, deriveDeterministicSeed, hashContent } from "../io/outputMeta";
+import { printNextSteps } from "../io/nextSteps";
 import { writeCommandReplayArtifact } from "../io/replayPolicy";
 import { readScenarioFile } from "../io/readScenario";
 import { writeOutput } from "../io/writeOutput";
@@ -347,6 +348,14 @@ export default defineCommand({
       outPath: flags.out,
       data: output,
       meta: outputMeta,
+    });
+    printNextSteps({
+      format: flags.format,
+      steps: [
+        { label: "experience", command: `idk experience ${scenarioPath} --format md` },
+        { label: "compare", command: `idk compare ${scenarioPath} <other-scenario> --metric endNetWorth --format json` },
+        { label: "report", command: `idk report ${scenarioPath} --include-growth true --format md` },
+      ],
     });
   },
 });

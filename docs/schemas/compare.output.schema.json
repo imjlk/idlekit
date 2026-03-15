@@ -1,44 +1,87 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "idlekit/compare-output-v1",
+  "$id": "idlekit/compare-output-v2",
   "type": "object",
-  "required": ["metric", "better", "detail", "measured", "_meta"],
-  "properties": {
-    "metric": { "type": "string" },
-    "better": { "type": "string" },
-    "detail": { "type": "object" },
-    "measured": { "type": "object" },
-    "insights": {
-      "type": "object",
-      "required": ["summary", "improved", "regressed", "drivers"],
+  "oneOf": [
+    {
+      "required": ["metric", "better", "detail", "measured", "_meta"],
       "properties": {
-        "summary": { "type": "string" },
-        "improved": { "type": "array", "items": { "type": "string" } },
-        "regressed": { "type": "array", "items": { "type": "string" } },
-        "drivers": {
+        "metric": { "type": "string" },
+        "better": { "type": "string" },
+        "detail": { "type": "object" },
+        "measured": { "type": "object" },
+        "insights": {
+          "type": "object",
+          "required": ["summary", "improved", "regressed", "drivers"],
+          "properties": {
+            "summary": { "type": "string" },
+            "improved": { "type": "array", "items": { "type": "string" } },
+            "regressed": { "type": "array", "items": { "type": "string" } },
+            "drivers": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["key", "winner", "summary"],
+                "properties": {
+                  "key": {
+                    "enum": [
+                      "endNetWorth",
+                      "droppedRate",
+                      "etaToTargetWorth",
+                      "timeToMilestone",
+                      "visibleChangesPerMinute",
+                      "maxNoRewardGapSec"
+                    ]
+                  },
+                  "winner": { "enum": ["a", "b"] },
+                  "summary": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "_meta": { "$ref": "#/$defs/meta" }
+      }
+    },
+    {
+      "required": ["bundle", "results", "_meta"],
+      "properties": {
+        "bundle": { "enum": ["economy", "design", "full"] },
+        "milestoneKey": { "type": "string" },
+        "summary": {
+          "type": "object",
+          "properties": {
+            "winners": {
+              "type": "object",
+              "required": ["a", "b", "tie"],
+              "properties": {
+                "a": { "type": "number" },
+                "b": { "type": "number" },
+                "tie": { "type": "number" }
+              }
+            }
+          }
+        },
+        "results": {
           "type": "array",
           "items": {
             "type": "object",
-            "required": ["key", "winner", "summary"],
+            "required": ["metric", "better", "detail", "measured"],
             "properties": {
-              "key": {
-                "enum": [
-                  "endNetWorth",
-                  "droppedRate",
-                  "etaToTargetWorth",
-                  "timeToMilestone",
-                  "visibleChangesPerMinute",
-                  "maxNoRewardGapSec"
-                ]
-              },
-              "winner": { "enum": ["a", "b"] },
-              "summary": { "type": "string" }
+              "metric": { "type": "string" },
+              "better": { "type": "string" },
+              "detail": { "type": "object" },
+              "measured": { "type": "object" },
+              "insights": { "type": "object" }
             }
           }
-        }
+        },
+        "_meta": { "$ref": "#/$defs/meta" }
       }
-    },
-    "_meta": {
+    }
+  ],
+  "$defs": {
+    "meta": {
       "type": "object",
       "required": ["command", "contractVersion", "schemaRef", "cliVersion", "gitSha", "scenarioHash", "pluginDigest"],
       "properties": {

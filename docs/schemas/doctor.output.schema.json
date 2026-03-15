@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "idlekit/doctor-output-v1",
+  "type": "object",
+  "required": ["ok", "cli", "runtime", "checks", "_meta"],
+  "properties": {
+    "ok": { "type": "boolean" },
+    "cli": { "type": "object" },
+    "runtime": { "type": "object" },
+    "checks": { "type": "array", "items": { "type": "object" } },
+    "_meta": {
+      "type": "object",
+      "required": ["command", "contractVersion", "schemaRef", "cliVersion", "gitSha", "pluginDigest"],
+      "properties": {
+        "command": { "const": "doctor" },
+        "contractVersion": { "type": "string" },
+        "schemaRef": { "const": "docs/schemas/doctor.output.schema.json" },
+        "cliVersion": { "type": "string" },
+        "gitSha": { "type": "string" },
+        "pluginDigest": { "type": "object", "additionalProperties": { "type": "string" } }
+      }
+    }
+  }
+}

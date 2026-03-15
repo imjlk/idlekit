@@ -2,6 +2,7 @@ import { defineCommand } from "@bunli/core";
 import { validateScenarioV1 } from "@idlekit/core";
 import { loadRegistriesFromFlags, pluginOptions } from "./_shared/plugin";
 import { scenarioInvalidError, usageError } from "../errors";
+import { printNextSteps } from "../io/nextSteps";
 import { readScenarioFileWithMeta } from "../io/readScenario";
 
 export default defineCommand({
@@ -29,5 +30,11 @@ export default defineCommand({
       console.warn(`[${n.level}] ${where}${n.message}`);
     }
     console.log(`OK: ${scenarioPath}`);
+    printNextSteps({
+      steps: [
+        { label: "simulate", command: `idk simulate ${scenarioPath} --format json` },
+        { label: "experience", command: `idk experience ${scenarioPath} --format md` },
+      ],
+    });
   },
 });

@@ -32,6 +32,7 @@ bun install
 bun run --cwd packages/cli dev -- validate ../../examples/tutorials/11-my-game-v1.json
 bun run --cwd packages/cli dev -- simulate ../../examples/tutorials/11-my-game-v1.json --format json
 bun run --cwd packages/cli dev -- experience ../../examples/tutorials/11-my-game-v1.json --format json
+bun run --cwd packages/cli dev -- evaluate ../../examples/tutorials/11-my-game-v1.json --format md
 bun run --cwd packages/cli dev -- ltv ../../examples/tutorials/11-my-game-v1.json \
   --horizons 30m,2h,24h,7d,30d,90d \
   --step 600 \
@@ -45,6 +46,7 @@ Installed CLI flow:
 idk validate ./my-game-v1.json
 idk simulate ./my-game-v1.json --format json
 idk experience ./my-game-v1.json --format json
+idk evaluate ./my-game-v1.json --format md
 ```
 
 Use the repository examples while you are inside this checkout. Use your own local scenario files after installing `idk`.
@@ -55,12 +57,33 @@ To scaffold your own bundle immediately:
 bun run --cwd packages/cli dev -- init scenario --track personal --preset builder --out ../../tmp/my-game-v1.json --name "Space Miner"
 ```
 
+Interactive wizard:
+
+```bash
+bun run --cwd packages/cli dev -- init scenario --wizard true --track personal --preset builder --out ../../tmp/my-game-v1.json
+```
+
 Then run:
 
 ```bash
 bun run --cwd packages/cli dev -- validate ../../tmp/space-miner-v1.json
 bun run --cwd packages/cli dev -- simulate ../../tmp/space-miner-v1.json --format json
 bun run --cwd packages/cli dev -- experience ../../tmp/space-miner-v1.json --format json
+bun run --cwd packages/cli dev -- evaluate ../../tmp/space-miner-v1.json --format md
+```
+
+Human review path:
+
+```bash
+bun run --cwd packages/cli dev -- review evaluate ../../tmp/space-miner-v1.json --image-mode auto
+bun run --cwd packages/cli dev -- review compare ../../tmp/space-miner-v1.json ../../tmp/space-miner-v1-compare-b.json
+```
+
+Completion and setup check:
+
+```bash
+source <(idk completions zsh)
+idk doctor --format md
 ```
 
 Worked real-game example:

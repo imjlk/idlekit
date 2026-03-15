@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "idlekit/evaluate-output-v1",
+  "type": "object",
+  "required": ["ok", "scenario", "run", "simulate", "experience", "ltv", "_meta"],
+  "properties": {
+    "ok": { "type": "boolean" },
+    "scenario": { "type": "string" },
+    "run": { "type": "object" },
+    "simulate": { "type": "object" },
+    "experience": { "type": "object" },
+    "ltv": { "type": "object" },
+    "files": { "type": "object" },
+    "_meta": {
+      "type": "object",
+      "required": ["command", "contractVersion", "schemaRef", "cliVersion", "gitSha"],
+      "properties": {
+        "command": { "const": "evaluate" },
+        "contractVersion": { "type": "string" },
+        "schemaRef": { "const": "docs/schemas/evaluate.output.schema.json" },
+        "cliVersion": { "type": "string" },
+        "gitSha": { "type": "string" },
+        "runId": { "type": "string" },
+        "seed": { "type": "number" },
+        "scenarioPath": { "type": "string" },
+        "pluginDigest": { "type": "object", "additionalProperties": { "type": "string" } }
+      }
+    }
+  }
+}

@@ -4,6 +4,8 @@ import { ROOT, ensureDir, runText, writeText } from "./_bun";
 const STEPS = [
   "typecheck",
   "runtime:check",
+  "bun run --cwd packages/cli generate:check",
+  "bun run --cwd packages/cli doctor:completions",
   "test",
   "build",
   "docs:verify",
@@ -16,10 +18,8 @@ const STEPS = [
   "release:plan",
 ] as const;
 
-type StepName = (typeof STEPS)[number];
-
 type StepResult = Readonly<{
-  name: StepName;
+  name: string;
   ok: boolean;
   startedAt: string;
   finishedAt: string;
@@ -31,7 +31,11 @@ async function main(): Promise<void> {
   for (const step of STEPS) {
     const startedAt = new Date();
     console.log(`==> ${step}`);
-    runText(["bun", "run", step], { cwd: ROOT, env: process.env });
+    if (step.startsWith("bun ")) {
+      runText(step.split(" "), { cwd: ROOT, env: process.env });
+    } else {
+      runText(["bun", "run", step], { cwd: ROOT, env: process.env });
+    }
     const finishedAt = new Date();
     results.push({
       name: step,

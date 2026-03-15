@@ -9,6 +9,8 @@ Official support in v1: Bun `>=1.3` only. Node.js and browser runtimes are not p
 ```bash
 bun run typecheck
 bun run runtime:check
+bun run --cwd packages/cli generate:check
+bun run --cwd packages/cli doctor:completions
 bun run test
 bun run build
 bun run docs:verify:quick

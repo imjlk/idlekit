@@ -3,6 +3,7 @@ import { dirname, resolve } from "path";
 
 export const CLI_CWD = process.cwd();
 export const REPO_ROOT = resolve(CLI_CWD, "../..");
+const MAX_CAPTURE_BYTES = 8 * 1024 * 1024;
 
 type CliRunOptions = Readonly<{
   cwd?: string;
@@ -60,6 +61,7 @@ export function runCli(args: string[], opts?: CliRunOptions): CliRunResult {
     env: opts?.env,
     stdout: "pipe",
     stderr: "pipe",
+    maxBuffer: MAX_CAPTURE_BYTES,
   });
 
   const result = {

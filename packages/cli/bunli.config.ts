@@ -1,13 +1,15 @@
 import { defineConfig } from "bunli";
+import { CLI_DESCRIPTION, CLI_NAME, CLI_VERSION } from "./src/cliMeta";
+import { bunliPlugins } from "./src/bunliPlugins";
 
 export default defineConfig({
-  name: "idk",
-  version: "0.1.0",
-  description: "Generic economy simulation CLI",
+  name: CLI_NAME,
+  version: CLI_VERSION,
+  description: CLI_DESCRIPTION,
+  generated: true,
+  plugins: bunliPlugins as any,
   commands: {
     entry: "./src/main.ts",
-    directory: "./src/commands",
-    generateReport: false,
   },
   build: {
     entry: "./src/main.ts",

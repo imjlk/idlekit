@@ -39,7 +39,10 @@
   "scripts": {
     "dev": "bun src/main.ts",
     "dev:watch": "bunli dev --entry src/main.ts",
-    "build": "rm -rf dist && bunli build --entry src/main.ts --runtime bun --outdir dist --sourcemap",
+    "generate": "bunli generate --entry src/main.ts --output ./.bunli/commands.gen.ts",
+    "generate:check": "bun scripts/generate-check.ts",
+    "doctor:completions": "bunli doctor completions",
+    "build": "rm -rf dist && bun run generate && bunli build --entry src/main.ts --runtime bun --outdir dist --sourcemap",
     "build:bin": "bunli build --entry src/main.ts --outdir dist --targets native",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "bun test src",
@@ -47,11 +50,20 @@
     "postpack": "bun ../../tools/package-manifest.ts restore"
   },
   "dependencies": {
-    "@bunli/core": "^0.8.0",
+    "@bunli/core": "^0.8.2",
+    "@bunli/plugin-completions": "^0.3.4",
+    "@bunli/runtime": "^0.2.0",
     "@idlekit/core": "workspace:*",
+    "@opentui/react": "^0.1.86",
     "ajv": "^8.17.1",
-    "bunli": "^0.7.1",
+    "bunli": "^0.8.2",
+    "pngjs": "^7.0.0",
+    "react": "^19.2.0",
     "yaml": "^2.8.1",
     "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "@types/pngjs": "^6.0.5",
+    "@types/react": "^19.2.2"
   }
 }

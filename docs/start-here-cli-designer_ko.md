@@ -14,6 +14,12 @@
 bun run --cwd packages/cli dev -- init scenario --track personal --preset builder --out ../../tmp/my-game-v1.json
 ```
 
+interactive wizard로 바로 고르면서 시작하려면:
+
+```bash
+bun run --cwd packages/cli dev -- init scenario --wizard true --track personal --preset builder --out ../../tmp/my-game-v1.json
+```
+
 이름까지 같이 바꾸려면:
 
 ```bash
@@ -148,7 +154,19 @@ idk ltv examples/tutorials/11-my-game-v1.json \
 
 - 장기 구간 수치가 너무 들쭉날쭉하면 `--step 300`으로 다시 돌려 봅니다.
 
-## 5. 비교용 대조군 만들기
+## 5. 사람용 review 대시보드 보기
+
+```bash
+bun run --cwd packages/cli dev -- review evaluate ../../examples/tutorials/11-my-game-v1.json --image-mode auto
+```
+
+성공 조건:
+
+- interactive terminal에서 대시보드가 뜹니다.
+- `q` 또는 `Esc`로 정상 종료됩니다.
+- Kitty 호환 이미지 프리뷰가 없으면 텍스트 fallback으로 계속 진행됩니다.
+
+## 6. 비교용 대조군 만들기
 
 기본형을 한 번 돌렸으면 바로 대조군을 돌려 보는 편이 빠릅니다.
 
@@ -185,7 +203,13 @@ idk compare \
 
 - 차이가 거의 없으면 `12-my-game-compare-b.json`에서 `buyCostGrowth` 또는 `buyIncomeDelta` 차이를 더 크게 벌립니다.
 
-## 6. 개인용 템플릿 튜닝
+review 대시보드:
+
+```bash
+bun run --cwd packages/cli dev -- review compare ../../examples/tutorials/11-my-game-v1.json ../../examples/tutorials/12-my-game-compare-b.json
+```
+
+## 7. 개인용 템플릿 튜닝
 
 `13-my-game-tune.json`은 `11`을 대상으로 greedy preview 파라미터를 탐색합니다.
 
@@ -220,7 +244,7 @@ idk tune examples/tutorials/11-my-game-v1.json \
 
 - 튜닝 시간이 길면 `13-my-game-tune.json`의 `runner.budget`을 줄이거나 `overrideDurationSec`을 900으로 낮춥니다.
 
-## 7. 다음 분기
+## 8. 다음 분기
 
 여기까지 끝나면 다음 셋 중 하나로 이동하면 됩니다.
 
@@ -235,7 +259,7 @@ idk tune examples/tutorials/11-my-game-v1.json \
 - 장기 성장형을 원한다: [08-idle-design-city-factory.json](../examples/tutorials/08-idle-design-city-factory.json)
 - 초장기 고성장을 원한다: [10-idle-design-space-port.json](../examples/tutorials/10-idle-design-space-port.json)
 
-## 8. 실전 worked example로 이동
+## 9. 실전 worked example로 이동
 
 개인용 scaffold 흐름이 감 잡혔다면, 다음 단계는 canonical 실전 예제인 Orbital Foundry 세트입니다.
 
@@ -249,7 +273,7 @@ idk tune examples/tutorials/11-my-game-v1.json \
 - 첫 업그레이드 milestone이 더 빠른 안은 무엇인가?
 - `experienceBalancedLog10` 기준으로 전략을 어떻게 조정할 수 있는가?
 
-## 9. 고급 단계
+## 10. 고급 단계
 
 재현성까지 같이 잡고 싶을 때만 아래를 추가합니다.
 

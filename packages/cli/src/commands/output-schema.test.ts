@@ -10,6 +10,10 @@ const ajv = new Ajv2020({
 });
 
 function validateBySchema(schema: object, value: unknown, name: string): void {
+  const schemaId = (schema as { $id?: string }).$id;
+  if (schemaId) {
+    ajv.removeSchema(schemaId);
+  }
   const validate = ajv.compile(schema);
   const ok = validate(value);
   if (ok) return;
@@ -64,6 +68,23 @@ describe("output schema contracts", () => {
     });
   });
 
+  it("compare bundle output follows schema", () => {
+    const out = runCliJson([
+      "compare",
+      "../../examples/tutorials/11-my-game-v1.json",
+      "../../examples/tutorials/12-my-game-compare-b.json",
+      "--bundle",
+      "design",
+      "--format",
+      "json",
+    ]);
+    return readSchema("compare.output.schema.json").then((schema) => {
+      validateBySchema(schema, out, "compare.output.schema.json");
+      expect(out.bundle).toBe("design");
+      expect(Array.isArray(out.results)).toBeTrue();
+    });
+  }, 20000);
+
   it("experience output follows schema", () => {
     const out = runCliJson([
       "experience",
@@ -78,6 +99,27 @@ describe("output schema contracts", () => {
     return readSchema("experience.output.schema.json").then((schema) => {
       validateBySchema(schema, out, "experience.output.schema.json");
       expect(out._meta.command).toBe("experience");
+    });
+  });
+
+  it("evaluate output follows schema", () => {
+    const out = runCliJson([
+      "evaluate",
+      "../../examples/tutorials/11-my-game-v1.json",
+      "--format",
+      "json",
+    ]);
+    return readSchema("evaluate.output.schema.json").then((schema) => {
+      validateBySchema(schema, out, "evaluate.output.schema.json");
+      expect(out._meta.command).toBe("evaluate");
+    });
+  }, 20000);
+
+  it("doctor output follows schema", () => {
+    const out = runCliJson(["doctor", "--format", "json"]);
+    return readSchema("doctor.output.schema.json").then((schema) => {
+      validateBySchema(schema, out, "doctor.output.schema.json");
+      expect(out._meta.command).toBe("doctor");
     });
   });
 

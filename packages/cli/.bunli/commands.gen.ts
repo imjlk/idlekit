@@ -6,30 +6,48 @@ import { createGeneratedHelpers, registerGeneratedStore } from '@bunli/core'
 
 import Calibrate from '../src/commands/calibrate.js'
 import Compare from '../src/commands/compare.js'
+import Doctor from '../src/commands/doctor.js'
 import Eta from '../src/commands/eta.js'
+import Evaluate from '../src/commands/evaluate.js'
 import Experience from '../src/commands/experience.js'
 import Growth from '../src/commands/growth.js'
+import Init from '../src/commands/groups/init.js'
+import Kpi from '../src/commands/groups/kpi.js'
 import Ltv from '../src/commands/ltv.js'
+import Models from '../src/commands/groups/models.js'
+import Objectives from '../src/commands/groups/objectives.js'
 import PrestigeCycle from '../src/commands/prestigeCycle.js'
+import Replay from '../src/commands/groups/replay.js'
 import Report from '../src/commands/report.js'
+import Review from '../src/commands/groups/review.js'
 import Simulate from '../src/commands/simulate.js'
+import Strategies from '../src/commands/groups/strategies.js'
 import Tune from '../src/commands/tune.js'
 import Validate from '../src/commands/validate.js'
 
 // Narrow list of command names to avoid typeof-cycles in types
-const names = ['calibrate', 'compare', 'eta', 'experience', 'growth', 'ltv', 'prestige-cycle', 'report', 'simulate', 'tune', 'validate'] as const
+const names = ['calibrate', 'compare', 'doctor', 'eta', 'evaluate', 'experience', 'growth', 'init', 'kpi', 'ltv', 'models', 'objectives', 'prestige-cycle', 'replay', 'report', 'review', 'simulate', 'strategies', 'tune', 'validate'] as const
 type GeneratedNames = typeof names[number]
 
 const modules: Record<GeneratedNames, Command<any>> = {
   'calibrate': Calibrate,
   'compare': Compare,
+  'doctor': Doctor,
   'eta': Eta,
+  'evaluate': Evaluate,
   'experience': Experience,
   'growth': Growth,
+  'init': Init,
+  'kpi': Kpi,
   'ltv': Ltv,
+  'models': Models,
+  'objectives': Objectives,
   'prestige-cycle': PrestigeCycle,
+  'replay': Replay,
   'report': Report,
+  'review': Review,
   'simulate': Simulate,
+  'strategies': Strategies,
   'tune': Tune,
   'validate': Validate
 } as const
@@ -52,21 +70,31 @@ const metadata: Record<GeneratedNames, GeneratedCommandMeta> = {
         'duration': { type: 'z.coerce.number.optional', required: false, hasDefault: false, description: 'Override durationSec', schema: {"type":"zod","method":"optional","args":[]}, validator: '(val) => true' },
         'step': { type: 'z.coerce.number.optional', required: false, hasDefault: false, description: 'Override stepSec', schema: {"type":"zod","method":"optional","args":[]}, validator: '(val) => true' },
         'strategy': { type: 'strategySchema', required: true, hasDefault: false, description: 'Override strategy id (greedy|planner|scripted)', schema: {"type":"zod","name":"strategySchema"}, validator: '(val) => true' },
-        'fast': { type: 'z.coerce.boolean.default', required: true, hasDefault: true, default: false, description: 'Enable fast(log-domain) mode', schema: {"type":"zod","method":"default","args":[{"type":"unknown","raw":{"type":"BooleanLiteral","start":12091,"end":12096,"loc":{"start":{"line":373,"column":44,"index":12091},"end":{"line":373,"column":49,"index":12096}},"value":false}}]}, validator: '(val) => true' },
+        'fast': { type: 'z.coerce.boolean.default', required: true, hasDefault: true, default: false, description: 'Enable fast(log-domain) mode', schema: {"type":"zod","method":"default","args":[{"type":"unknown","raw":{"type":"BooleanLiteral","start":17720,"end":17725,"loc":{"start":{"line":526,"column":44,"index":17720},"end":{"line":526,"column":49,"index":17725}},"value":false}}]}, validator: '(val) => true' },
         'target-worth': { type: 'z.string.optional', required: false, hasDefault: false, description: 'Required for etaToTargetWorth metric, optional otherwise', schema: {"type":"zod","method":"optional","args":[]}, validator: '(val) => true' },
         'milestone-key': { type: 'z.string.optional', required: false, hasDefault: false, description: 'Required for timeToMilestone metric; compared against milestone report keys', schema: {"type":"zod","method":"optional","args":[]}, validator: '(val) => true' },
         'session-pattern': { type: 'z.enum.optional', required: false, hasDefault: false, description: 'Session pattern for design metrics', enumValues: ["always-on","short-bursts","twice-daily","offline-heavy","weekend-marathon"], schema: {"type":"zod","method":"optional","args":[]}, validator: '(val) => true' },
         'days': { type: 'z.coerce.number.int.positive.optional', required: false, hasDefault: false, description: 'Session-pattern day count for design metrics', schema: {"type":"zod","method":"optional","args":[]}, validator: '(val) => true' },
         'draws': { type: 'z.coerce.number.int.positive.optional', required: false, hasDefault: false, description: 'Monte Carlo draw count for design metrics', schema: {"type":"zod","method":"optional","args":[]}, validator: '(val) => true' },
-        'max-duration': { type: 'z.coerce.number.default', required: true, hasDefault: true, default: 86400, description: 'Max duration for etaToTargetWorth metric simulation', schema: {"type":"zod","method":"default","args":[{"type":"unknown","raw":{"type":"NumericLiteral","start":12987,"end":12992,"loc":{"start":{"line":390,"column":53,"index":12987},"end":{"line":390,"column":58,"index":12992}},"extra":{"rawValue":86400,"raw":"86400"},"value":86400}}]}, validator: '(val) => true' },
+        'max-duration': { type: 'z.coerce.number.default', required: true, hasDefault: true, default: 86400, description: 'Max duration for etaToTargetWorth metric simulation', schema: {"type":"zod","method":"default","args":[{"type":"unknown","raw":{"type":"NumericLiteral","start":18616,"end":18621,"loc":{"start":{"line":543,"column":53,"index":18616},"end":{"line":543,"column":58,"index":18621}},"extra":{"rawValue":86400,"raw":"86400"},"value":86400}}]}, validator: '(val) => true' },
         'seed': { type: 'z.coerce.number.optional', required: false, hasDefault: false, description: 'Deterministic seed passed to ctx.seed', schema: {"type":"zod","method":"optional","args":[]}, validator: '(val) => true' },
         'run-id': { type: 'z.string.optional', required: false, hasDefault: false, description: 'Optional run identifier used in output metadata', schema: {"type":"zod","method":"optional","args":[]}, validator: '(val) => true' },
         'artifact-out': { type: 'z.string.optional', required: false, hasDefault: false, description: 'Write replay artifact JSON to path', fileType: 'path', schema: {"type":"zod","method":"optional","args":[]}, validator: '(val) => true' },
-        'metric': { type: 'z.enum.default', required: true, hasDefault: true, default: "endNetWorth", description: 'Comparison metric', enumValues: ["endMoney","endNetWorth","etaToTargetWorth","droppedRate","timeToMilestone","visibleChangesPerMinute","maxNoRewardGapSec"], schema: {"type":"zod","method":"default","args":[{"type":"literal","value":"endNetWorth"}]}, validator: '(val) => true' },
+        'metric': { type: 'compareMetricSchema.optional', required: false, hasDefault: false, description: 'Comparison metric', schema: {"type":"zod","method":"optional","args":[]}, validator: '(val) => true' },
+        'bundle': { type: 'compareBundleSchema', required: true, hasDefault: false, description: 'Run a predefined metric bundle (economy|design|full)', schema: {"type":"zod","name":"compareBundleSchema"}, validator: '(val) => true' },
         'out': { type: 'z.string.optional', required: false, hasDefault: false, description: 'Output path', fileType: 'path', schema: {"type":"zod","method":"optional","args":[]}, validator: '(val) => true' },
         'format': { type: 'z.enum.default', required: true, hasDefault: true, default: "json", description: 'Output format', enumValues: ["json","md","csv"], schema: {"type":"zod","method":"default","args":[{"type":"literal","value":"json"}]}, validator: '(val) => true' }
       },
       path: './src/commands/compare'
+    },
+  'doctor': {
+      name: 'doctor',
+      description: 'Check runtime, generated metadata, and completions wiring',
+      options: {
+        'format': { type: 'z.enum.default', required: true, hasDefault: true, default: "md", description: 'Output format', enumValues: ["json","md"], schema: {"type":"zod","method":"default","args":[{"type":"literal","value":"md"}]}, validator: '(val) => true' },
+        'shell': { type: 'z.enum.default', required: true, hasDefault: true, default: "zsh", description: 'Completion shell to validate', enumValues: ["zsh","bash","fish","powershell"], schema: {"type":"zod","method":"default","args":[{"type":"literal","value":"zsh"}]}, validator: '(val) => true' }
+      },
+      path: './src/commands/doctor'
     },
   'eta': {
       name: 'eta',
@@ -83,6 +111,23 @@ const metadata: Record<GeneratedNames, GeneratedCommandMeta> = {
         'format': { type: 'z.enum.default', required: true, hasDefault: true, default: "json", description: 'Output format', enumValues: ["json","md","csv"], schema: {"type":"zod","method":"default","args":[{"type":"literal","value":"json"}]}, validator: '(val) => true' }
       },
       path: './src/commands/eta'
+    },
+  'evaluate': {
+      name: 'evaluate',
+      description: 'Run validate + simulate + experience + ltv as one workflow',
+      options: {
+        'session-pattern': { type: 'sessionPatternSchema', required: true, hasDefault: false, description: 'Session pattern override for experience', schema: {"type":"zod","name":"sessionPatternSchema"}, validator: '(val) => true' },
+        'days': { type: 'z.coerce.number.int.positive.optional', required: false, hasDefault: false, description: 'Session-pattern day count for experience', schema: {"type":"zod","method":"optional","args":[]}, validator: '(val) => true' },
+        'draws': { type: 'z.coerce.number.int.positive.optional', required: false, hasDefault: false, description: 'Monte Carlo draw count for experience', schema: {"type":"zod","method":"optional","args":[]}, validator: '(val) => true' },
+        'seed': { type: 'z.coerce.number.optional', required: false, hasDefault: false, description: 'Deterministic seed override', schema: {"type":"zod","method":"optional","args":[]}, validator: '(val) => true' },
+        'strategy': { type: 'strategySchema', required: true, hasDefault: false, description: 'Override strategy id (greedy|planner|scripted)', schema: {"type":"zod","name":"strategySchema"}, validator: '(val) => true' },
+        'fast': { type: 'z.coerce.boolean.default', required: true, hasDefault: true, default: false, description: 'Enable fast mode for simulate/ltv', schema: {"type":"zod","method":"default","args":[{"type":"unknown","raw":{"type":"BooleanLiteral","start":4378,"end":4383,"loc":{"start":{"line":111,"column":44,"index":4378},"end":{"line":111,"column":49,"index":4383}},"value":false}}]}, validator: '(val) => true' },
+        'step': { type: 'z.coerce.number.positive.optional', required: false, hasDefault: false, description: 'Override stepSec for simulate/ltv', schema: {"type":"zod","method":"optional","args":[]}, validator: '(val) => true' },
+        'horizons': { type: 'z.string.default', required: true, hasDefault: true, default: "30m,2h,24h,7d,30d,90d", description: 'LTV horizons override', schema: {"type":"zod","method":"default","args":[{"type":"literal","value":"30m,2h,24h,7d,30d,90d"}]}, validator: '(val) => true' },
+        'out-dir': { type: 'z.string.optional', required: false, hasDefault: false, description: 'Optional directory to save simulate/experience/ltv/summary outputs', fileType: 'directory', schema: {"type":"zod","method":"optional","args":[]}, validator: '(val) => true' },
+        'format': { type: 'z.enum.default', required: true, hasDefault: true, default: "json", description: 'Summary output format', enumValues: ["json","md"], schema: {"type":"zod","method":"default","args":[{"type":"literal","value":"json"}]}, validator: '(val) => true' }
+      },
+      path: './src/commands/evaluate'
     },
   'experience': {
       name: 'experience',
@@ -111,6 +156,49 @@ const metadata: Record<GeneratedNames, GeneratedCommandMeta> = {
       },
       path: './src/commands/growth'
     },
+  'init': {
+      name: 'init',
+      description: 'Scaffold templates',
+      commands: [
+        {
+          name: 'scenario',
+          description: 'Generate a starter scenario template',
+          options: {
+            'out': { type: 'z.string.default', required: true, hasDefault: true, default: "./tmp/new-scenario.json", description: 'Output scenario path (personal track also writes compare/tune siblings)', fileType: 'path', schema: {"type":"zod","method":"default","args":[{"type":"literal","value":"./tmp/new-scenario.json"}]}, validator: '(val) => true' },
+            'track': { type: 'z.enum.default', required: true, hasDefault: true, default: "intro", description: 'Template track (intro|design|personal)', schema: {"type":"zod","method":"default","args":[{"type":"literal","value":"intro"}]}, validator: '(val) => true' },
+            'preset': { type: 'z.enum.optional', required: false, hasDefault: false, description: 'Template preset (session|builder|longrun)', schema: {"type":"zod","method":"optional","args":[]}, validator: '(val) => true' },
+            'name': { type: 'z.string.optional', required: false, hasDefault: false, description: 'Optional personal track name. Changes generated file stem + meta id/title.', schema: {"type":"zod","method":"optional","args":[]}, validator: '(val) => true' },
+            'wizard': { type: 'z.coerce.boolean.default', required: true, hasDefault: true, default: false, description: 'Launch an interactive wizard for template customization', schema: {"type":"zod","method":"default","args":[{"type":"unknown","raw":{"type":"BooleanLiteral","start":1750,"end":1755,"loc":{"start":{"line":47,"column":46,"index":1750},"end":{"line":47,"column":51,"index":1755}},"value":false}}]}, validator: '(val) => true' },
+            'force': { type: 'z.coerce.boolean.default', required: true, hasDefault: true, default: false, description: 'Overwrite output file when already exists', fileType: 'file', schema: {"type":"zod","method":"default","args":[{"type":"unknown","raw":{"type":"BooleanLiteral","start":1891,"end":1896,"loc":{"start":{"line":50,"column":45,"index":1891},"end":{"line":50,"column":50,"index":1896}},"value":false}}]}, validator: '(val) => true' }
+          },
+          path: './src/commands/initScenario'
+        }
+      ],
+      path: './src/commands/groups/init'
+    },
+  'kpi': {
+      name: 'kpi',
+      description: 'KPI guardrail commands',
+      commands: [
+        {
+          name: 'regress',
+          description: 'Run long-horizon KPI regression gate',
+          options: {
+            'baseline': { type: 'z.string.default', required: true, hasDefault: true, default: "examples/bench/kpi-baseline.json", description: 'Baseline KPI report path', fileType: 'path', schema: {"type":"zod","method":"default","args":[{"type":"literal","value":"examples/bench/kpi-baseline.json"}]}, validator: '(val) => true' },
+            'current': { type: 'z.string.default', required: true, hasDefault: true, default: "tmp/kpi-report.json", description: 'Current KPI report path', fileType: 'path', schema: {"type":"zod","method":"default","args":[{"type":"literal","value":"tmp/kpi-report.json"}]}, validator: '(val) => true' },
+            'min-worth-ratio': { type: 'z.coerce.number.positive.default', required: true, hasDefault: true, default: 0.97, description: 'Minimum allowed current/baseline endNetWorth ratio', schema: {"type":"zod","method":"default","args":[{"type":"unknown","raw":{"type":"NumericLiteral","start":1863,"end":1867,"loc":{"start":{"line":57,"column":67,"index":1863},"end":{"line":57,"column":71,"index":1867}},"extra":{"rawValue":0.97,"raw":"0.97"},"value":0.97}}]}, validator: '(val) => true' },
+            'max-stall-delta': { type: 'z.coerce.number.nonnegative.default', required: true, hasDefault: true, default: 0.03, description: 'Maximum allowed stallRatio increase', schema: {"type":"zod","method":"default","args":[{"type":"unknown","raw":{"type":"NumericLiteral","start":2023,"end":2027,"loc":{"start":{"line":60,"column":70,"index":2023},"end":{"line":60,"column":74,"index":2027}},"extra":{"rawValue":0.03,"raw":"0.03"},"value":0.03}}]}, validator: '(val) => true' },
+            'max-dropped-delta': { type: 'z.coerce.number.nonnegative.default', required: true, hasDefault: true, default: 0.03, description: 'Maximum allowed droppedRate increase', schema: {"type":"zod","method":"default","args":[{"type":"unknown","raw":{"type":"NumericLiteral","start":2170,"end":2174,"loc":{"start":{"line":63,"column":72,"index":2170},"end":{"line":63,"column":76,"index":2174}},"extra":{"rawValue":0.03,"raw":"0.03"},"value":0.03}}]}, validator: '(val) => true' },
+            'min-visible-progress-ratio': { type: 'z.coerce.number.positive.default', required: true, hasDefault: true, default: 0.9, description: 'Minimum allowed current/baseline visibleChangesPerMinute ratio', schema: {"type":"zod","method":"default","args":[{"type":"unknown","raw":{"type":"NumericLiteral","start":2324,"end":2327,"loc":{"start":{"line":66,"column":78,"index":2324},"end":{"line":66,"column":81,"index":2327}},"extra":{"rawValue":0.9,"raw":"0.9"},"value":0.9}}]}, validator: '(val) => true' },
+            'max-no-reward-gap-delta': { type: 'z.coerce.number.nonnegative.default', required: true, hasDefault: true, default: 60, description: 'Maximum allowed maxNoRewardGapSec increase', schema: {"type":"zod","method":"default","args":[{"type":"unknown","raw":{"type":"NumericLiteral","start":2503,"end":2505,"loc":{"start":{"line":69,"column":78,"index":2503},"end":{"line":69,"column":80,"index":2505}},"extra":{"rawValue":60,"raw":"60"},"value":60}}]}, validator: '(val) => true' },
+            'out': { type: 'z.string.optional', required: false, hasDefault: false, description: 'Output path', fileType: 'path', schema: {"type":"zod","method":"optional","args":[]}, validator: '(val) => true' },
+            'format': { type: 'z.enum.default', required: true, hasDefault: true, default: "json", description: 'Output format', enumValues: ["json","md","csv"], schema: {"type":"zod","method":"default","args":[{"type":"literal","value":"json"}]}, validator: '(val) => true' }
+          },
+          path: './src/commands/kpiRegress'
+        }
+      ],
+      path: './src/commands/groups/kpi'
+    },
   'ltv': {
       name: 'ltv',
       description: 'Compute long-horizon LTV snapshots (30m..90d) and uncertainty bands',
@@ -129,6 +217,38 @@ const metadata: Record<GeneratedNames, GeneratedCommandMeta> = {
       },
       path: './src/commands/ltv'
     },
+  'models': {
+      name: 'models',
+      description: 'Model registry commands',
+      commands: [
+        {
+          name: 'list',
+          description: 'List available models',
+          options: {
+            'format': { type: 'z.enum.default', required: true, hasDefault: true, default: "md", description: 'Output format', enumValues: ["json","md","csv"], schema: {"type":"zod","method":"default","args":[{"type":"literal","value":"md"}]}, validator: '(val) => true' },
+            'out': { type: 'z.string.optional', required: false, hasDefault: false, description: 'Output file path', fileType: 'file', schema: {"type":"zod","method":"optional","args":[]}, validator: '(val) => true' }
+          },
+          path: './src/commands/modelsList'
+        }
+      ],
+      path: './src/commands/groups/models'
+    },
+  'objectives': {
+      name: 'objectives',
+      description: 'Objective registry commands',
+      commands: [
+        {
+          name: 'list',
+          description: 'List optimization objectives',
+          options: {
+            'format': { type: 'z.enum.default', required: true, hasDefault: true, default: "md", description: 'Output format', enumValues: ["json","md","csv"], schema: {"type":"zod","method":"default","args":[{"type":"literal","value":"md"}]}, validator: '(val) => true' },
+            'out': { type: 'z.string.optional', required: false, hasDefault: false, description: 'Output file path', fileType: 'file', schema: {"type":"zod","method":"optional","args":[]}, validator: '(val) => true' }
+          },
+          path: './src/commands/objectives'
+        }
+      ],
+      path: './src/commands/groups/objectives'
+    },
   'prestige-cycle': {
       name: 'prestige-cycle',
       description: 'Analyze optimal prestige cycle',
@@ -142,6 +262,23 @@ const metadata: Record<GeneratedNames, GeneratedCommandMeta> = {
         'format': { type: 'z.enum.default', required: true, hasDefault: true, default: "json", description: 'Output format', enumValues: ["json","md","csv"], schema: {"type":"zod","method":"default","args":[{"type":"literal","value":"json"}]}, validator: '(val) => true' }
       },
       path: './src/commands/prestigeCycle'
+    },
+  'replay': {
+      name: 'replay',
+      description: 'Replay artifact commands',
+      commands: [
+        {
+          name: 'verify',
+          description: 'Verify replay artifact reproducibility',
+          options: {
+            'strict': { type: 'z.coerce.boolean.default', required: true, hasDefault: true, default: true, description: 'Exit with error if replay verification fails', schema: {"type":"zod","method":"default","args":[{"type":"unknown","raw":{"type":"BooleanLiteral","start":2435,"end":2439,"loc":{"start":{"line":73,"column":46,"index":2435},"end":{"line":73,"column":50,"index":2439}},"value":true}}]}, validator: '(val) => true' },
+            'out': { type: 'z.string.optional', required: false, hasDefault: false, description: 'Output path', fileType: 'path', schema: {"type":"zod","method":"optional","args":[]}, validator: '(val) => true' },
+            'format': { type: 'z.enum.default', required: true, hasDefault: true, default: "json", description: 'Output format', enumValues: ["json","md","csv"], schema: {"type":"zod","method":"default","args":[{"type":"literal","value":"json"}]}, validator: '(val) => true' }
+          },
+          path: './src/commands/replayVerify'
+        }
+      ],
+      path: './src/commands/groups/replay'
     },
   'report': {
       name: 'report',
@@ -159,6 +296,48 @@ const metadata: Record<GeneratedNames, GeneratedCommandMeta> = {
       },
       path: './src/commands/report'
     },
+  'review': {
+      name: 'review',
+      description: 'Interactive human-review dashboards',
+      commands: [
+        {
+          name: 'evaluate',
+          description: 'Interactive evaluate dashboard for human design review',
+          options: {
+            'session-pattern': { type: 'sessionPatternSchema', required: true, hasDefault: false, description: 'Session pattern override for review data', schema: {"type":"zod","name":"sessionPatternSchema"}, validator: '(val) => true' },
+            'days': { type: 'z.coerce.number.int.positive.optional', required: false, hasDefault: false, description: 'Session-pattern day count override', schema: {"type":"zod","method":"optional","args":[]}, validator: '(val) => true' },
+            'draws': { type: 'z.coerce.number.int.positive.optional', required: false, hasDefault: false, description: 'Monte Carlo draw count override', schema: {"type":"zod","method":"optional","args":[]}, validator: '(val) => true' },
+            'seed': { type: 'z.coerce.number.optional', required: false, hasDefault: false, description: 'Deterministic seed override', schema: {"type":"zod","method":"optional","args":[]}, validator: '(val) => true' },
+            'strategy': { type: 'strategySchema', required: true, hasDefault: false, description: 'Override strategy id (greedy|planner|scripted)', schema: {"type":"zod","name":"strategySchema"}, validator: '(val) => true' },
+            'fast': { type: 'z.coerce.boolean.default', required: true, hasDefault: true, default: false, description: 'Enable fast mode for evaluate child runs', schema: {"type":"zod","method":"default","args":[{"type":"unknown","raw":{"type":"BooleanLiteral","start":2636,"end":2641,"loc":{"start":{"line":76,"column":44,"index":2636},"end":{"line":76,"column":49,"index":2641}},"value":false}}]}, validator: '(val) => true' },
+            'step': { type: 'z.coerce.number.positive.optional', required: false, hasDefault: false, description: 'Override stepSec for evaluate child runs', schema: {"type":"zod","method":"optional","args":[]}, validator: '(val) => true' },
+            'horizons': { type: 'z.string.default', required: true, hasDefault: true, default: "30m,2h,24h,7d,30d,90d", description: 'LTV horizons override', schema: {"type":"zod","method":"default","args":[{"type":"literal","value":"30m,2h,24h,7d,30d,90d"}]}, validator: '(val) => true' }
+          },
+          path: './src/commands/reviewEvaluate'
+        },
+        {
+          name: 'compare',
+          description: 'Interactive compare dashboard for human design review',
+          options: {
+            'duration': { type: 'z.coerce.number.optional', required: false, hasDefault: false, description: 'Override durationSec', schema: {"type":"zod","method":"optional","args":[]}, validator: '(val) => true' },
+            'step': { type: 'z.coerce.number.optional', required: false, hasDefault: false, description: 'Override stepSec', schema: {"type":"zod","method":"optional","args":[]}, validator: '(val) => true' },
+            'strategy': { type: 'strategySchema', required: true, hasDefault: false, description: 'Override strategy id (greedy|planner|scripted)', schema: {"type":"zod","name":"strategySchema"}, validator: '(val) => true' },
+            'fast': { type: 'z.coerce.boolean.default', required: true, hasDefault: true, default: false, description: 'Enable fast(log-domain) mode', schema: {"type":"zod","method":"default","args":[{"type":"unknown","raw":{"type":"BooleanLiteral","start":2628,"end":2633,"loc":{"start":{"line":77,"column":44,"index":2628},"end":{"line":77,"column":49,"index":2633}},"value":false}}]}, validator: '(val) => true' },
+            'target-worth': { type: 'z.string.optional', required: false, hasDefault: false, description: 'Required for etaToTargetWorth metric, optional otherwise', schema: {"type":"zod","method":"optional","args":[]}, validator: '(val) => true' },
+            'milestone-key': { type: 'z.string.optional', required: false, hasDefault: false, description: 'Milestone key override for design bundles or timeToMilestone metric', schema: {"type":"zod","method":"optional","args":[]}, validator: '(val) => true' },
+            'session-pattern': { type: 'sessionPatternSchema', required: true, hasDefault: false, description: 'Session pattern override for design metrics', schema: {"type":"zod","name":"sessionPatternSchema"}, validator: '(val) => true' },
+            'days': { type: 'z.coerce.number.int.positive.optional', required: false, hasDefault: false, description: 'Session-pattern day count for design metrics', schema: {"type":"zod","method":"optional","args":[]}, validator: '(val) => true' },
+            'draws': { type: 'z.coerce.number.int.positive.optional', required: false, hasDefault: false, description: 'Monte Carlo draw count for design metrics', schema: {"type":"zod","method":"optional","args":[]}, validator: '(val) => true' },
+            'max-duration': { type: 'z.coerce.number.default', required: true, hasDefault: true, default: 86400, description: 'Max duration for etaToTargetWorth metric simulation', schema: {"type":"zod","method":"default","args":[{"type":"unknown","raw":{"type":"NumericLiteral","start":3437,"end":3442,"loc":{"start":{"line":93,"column":53,"index":3437},"end":{"line":93,"column":58,"index":3442}},"extra":{"rawValue":86400,"raw":"86400"},"value":86400}}]}, validator: '(val) => true' },
+            'seed': { type: 'z.coerce.number.optional', required: false, hasDefault: false, description: 'Deterministic seed', schema: {"type":"zod","method":"optional","args":[]}, validator: '(val) => true' },
+            'metric': { type: 'compareMetricSchema.optional', required: false, hasDefault: false, description: 'Single comparison metric', schema: {"type":"zod","method":"optional","args":[]}, validator: '(val) => true' },
+            'bundle': { type: 'compareBundleSchema', required: true, hasDefault: false, description: 'Bundle of comparison metrics', schema: {"type":"zod","name":"compareBundleSchema"}, validator: '(val) => true' }
+          },
+          path: './src/commands/reviewCompare'
+        }
+      ],
+      path: './src/commands/groups/review'
+    },
   'simulate': {
       name: 'simulate',
       description: 'Run simulation with scenario',
@@ -166,7 +345,7 @@ const metadata: Record<GeneratedNames, GeneratedCommandMeta> = {
         'duration': { type: 'z.coerce.number.optional', required: false, hasDefault: false, description: 'Override durationSec', schema: {"type":"zod","method":"optional","args":[]}, validator: '(val) => true' },
         'step': { type: 'z.coerce.number.optional', required: false, hasDefault: false, description: 'Override stepSec', schema: {"type":"zod","method":"optional","args":[]}, validator: '(val) => true' },
         'strategy': { type: 'strategySchema', required: true, hasDefault: false, description: 'greedy|planner|scripted', schema: {"type":"zod","name":"strategySchema"}, validator: '(val) => true' },
-        'fast': { type: 'z.coerce.boolean.default', required: true, hasDefault: true, default: false, description: 'Enable fast(log-domain) mode', schema: {"type":"zod","method":"default","args":[{"type":"unknown","raw":{"type":"BooleanLiteral","start":3296,"end":3301,"loc":{"start":{"line":88,"column":44,"index":3296},"end":{"line":88,"column":49,"index":3301}},"value":false}}]}, validator: '(val) => true' },
+        'fast': { type: 'z.coerce.boolean.default', required: true, hasDefault: true, default: false, description: 'Enable fast(log-domain) mode', schema: {"type":"zod","method":"default","args":[{"type":"unknown","raw":{"type":"BooleanLiteral","start":3346,"end":3351,"loc":{"start":{"line":89,"column":44,"index":3346},"end":{"line":89,"column":49,"index":3351}},"value":false}}]}, validator: '(val) => true' },
         'event-log-enabled': { type: 'z.coerce.boolean.optional', required: false, hasDefault: false, description: 'Override event log retention enabled flag', schema: {"type":"zod","method":"optional","args":[]}, validator: '(val) => true' },
         'event-log-max': { type: 'z.coerce.number.int.nonnegative.optional', required: false, hasDefault: false, description: 'Retain only latest N events in memory', schema: {"type":"zod","method":"optional","args":[]}, validator: '(val) => true' },
         'offline-seconds': { type: 'z.coerce.number.nonnegative.optional', required: false, hasDefault: false, description: 'Apply offline catch-up before simulation starts', schema: {"type":"zod","method":"optional","args":[]}, validator: '(val) => true' },
@@ -179,6 +358,22 @@ const metadata: Record<GeneratedNames, GeneratedCommandMeta> = {
         'format': { type: 'z.enum.default', required: true, hasDefault: true, default: "json", description: 'Output format', enumValues: ["json","md","csv"], schema: {"type":"zod","method":"default","args":[{"type":"literal","value":"json"}]}, validator: '(val) => true' }
       },
       path: './src/commands/simulate'
+    },
+  'strategies': {
+      name: 'strategies',
+      description: 'Strategy registry commands',
+      commands: [
+        {
+          name: 'list',
+          description: 'List available strategies',
+          options: {
+            'format': { type: 'z.enum.default', required: true, hasDefault: true, default: "md", description: 'Output format', enumValues: ["json","md","csv"], schema: {"type":"zod","method":"default","args":[{"type":"literal","value":"md"}]}, validator: '(val) => true' },
+            'out': { type: 'z.string.optional', required: false, hasDefault: false, description: 'Output file path', fileType: 'file', schema: {"type":"zod","method":"optional","args":[]}, validator: '(val) => true' }
+          },
+          path: './src/commands/strategies'
+        }
+      ],
+      path: './src/commands/groups/strategies'
     },
   'tune': {
       name: 'tune',

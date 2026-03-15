@@ -61,6 +61,7 @@ bun run --cwd packages/cli build:bin
 시나리오 템플릿 생성:
 
 ```bash
+bun run --cwd packages/cli dev -- init scenario --wizard true --track personal --preset builder --out ../../tmp/my-game-v1.json
 bun run --cwd packages/cli dev -- init scenario --track intro --preset session --out ../../tmp/new-scenario.json
 bun run --cwd packages/cli dev -- init scenario --track design --preset builder --out ../../tmp/design-scenario.json
 bun run --cwd packages/cli dev -- init scenario --track personal --preset builder --out ../../tmp/my-game-v1.json
@@ -74,6 +75,13 @@ preset 기본값:
 - `intro=session`
 - `design=builder`
 - `personal=builder`
+
+사람이 직접 보는 review 경로:
+
+```bash
+bun run --cwd packages/cli dev -- review evaluate ../../examples/tutorials/11-my-game-v1.json --image-mode auto
+bun run --cwd packages/cli dev -- review compare ../../examples/tutorials/11-my-game-v1.json ../../examples/tutorials/12-my-game-compare-b.json
+```
 
 ## 3. 기본 워크플로우
 

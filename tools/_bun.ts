@@ -2,6 +2,7 @@ import { $ } from "bun";
 import { dirname, resolve } from "path";
 
 export const ROOT = process.cwd();
+const MAX_CAPTURE_BYTES = 8 * 1024 * 1024;
 
 export function runText(args: string[], opts?: { cwd?: string; env?: Record<string, string | undefined> }): string {
   const proc = Bun.spawnSync(args, {
@@ -9,6 +10,7 @@ export function runText(args: string[], opts?: { cwd?: string; env?: Record<stri
     env: opts?.env ?? process.env,
     stdout: "pipe",
     stderr: "pipe",
+    maxBuffer: MAX_CAPTURE_BYTES,
   });
 
   if (proc.exitCode !== 0) {

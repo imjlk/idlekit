@@ -12,6 +12,7 @@ Official support in v1: Bun `>=1.3` only. Node.js and browser runtimes are not p
 - Prefer additive v1 changes over breaking changes
 - Update CLI help, docs, schemas, and tests together
 - Manage changelogs, version bumps, and publishing through Sampo
+- `bunli release` is not part of this repository's release contract
 - Keep `major` bumps disabled during v1 unless a migration path is prepared
 - Do not publish until design-decision gates pass: worth-aware growth, `experience`, session patterns, milestones, perceived progression, and Monte Carlo
 

@@ -114,6 +114,20 @@ async function verifyIntroTrack(): Promise<void> {
   assert(Array.isArray(asRecord(compare.insights as JSONValue).drivers), "compare insights.drivers must exist");
   assert(asRecord(compare._meta as JSONValue).command === "compare", "compare _meta.command must be compare");
 
+  const compareBundle = asRecord(
+    runCliJson([
+      "compare",
+      personalTemplate,
+      personalCompareB,
+      "--bundle",
+      "design",
+      "--format",
+      "json",
+    ]),
+  );
+  assert(compareBundle.bundle === "design", "compare bundle must include bundle name");
+  assert(Array.isArray(compareBundle.results as JSONValue[]), "compare bundle must include results");
+
   const tune = asRecord(runCliJson(["tune", baseline, "--tune", tuneSpec, "--format", "json"]));
   assert(tune.ok === true, "tune result must be ok=true");
   const report = asRecord(tune.report as JSONValue);
@@ -122,6 +136,27 @@ async function verifyIntroTrack(): Promise<void> {
   assert(Array.isArray(tuneInsights.patterns), "tune insights.patterns must exist");
   assert(has(asRecord(tuneInsights.scoreSpread as JSONValue), "plateau"), "tune scoreSpread.plateau must exist");
   assert(asRecord(tune._meta as JSONValue).command === "tune", "tune _meta.command must be tune");
+
+  const doctor = asRecord(runCliJson(["doctor", "--format", "json"]));
+  assert(doctor.ok === true, "doctor must pass");
+  assert(Array.isArray(doctor.checks as JSONValue[]), "doctor must include checks");
+
+  const evaluate = asRecord(
+    runCliJson([
+      "evaluate",
+      baseline,
+      "--session-pattern",
+      "short-bursts",
+      "--days",
+      "1",
+      "--format",
+      "json",
+    ]),
+  );
+  assert(evaluate.ok === true, "evaluate must be ok=true");
+  assert(has(asRecord(evaluate.simulate as JSONValue), "endMoney"), "evaluate simulate section must include endMoney");
+  assert(has(asRecord(evaluate.experience as JSONValue), "perceived"), "evaluate experience section must include perceived");
+  assert(has(asRecord(evaluate.ltv as JSONValue), "summary"), "evaluate ltv section must include summary");
 
   const replayArtifact = resolve(tmpDir, "intro-sim.artifact.json");
   runCli([
