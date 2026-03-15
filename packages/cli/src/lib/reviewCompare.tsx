@@ -1,8 +1,12 @@
 /** @jsxImportSource @opentui/react */
+import { detectImageCapability, renderImage } from "@bunli/runtime/image";
 import { useRuntime } from "@bunli/runtime/app";
-import { createElement } from "react";
+import type { ResolvedTuiImageOptions } from "@bunli/core";
+import { createElement, useEffect, useState } from "react";
 import { useKeyboard } from "@opentui/react";
+import { cliError } from "../errors";
 import { runSelfCliJson } from "../runtime/selfCli";
+import { encodeLineChartPng, log10FromNumberish } from "./reviewCharts";
 
 type CompareMetric =
   | "endMoney"
@@ -34,6 +38,7 @@ export type ReviewCompareFlags = Readonly<{
   seed?: number;
   metric?: CompareMetric;
   bundle?: CompareBundle;
+  horizons?: string;
 }>;
 
 type CompareSingle = Readonly<{
@@ -66,6 +71,21 @@ type CompareBundleOutput = Readonly<{
       tie: number;
     };
   };
+}>;
+
+type ReviewCompareOverlay = Readonly<{
+  growthSegments: ReadonlyArray<{ tTo: number; slope: number }>;
+  ltvSummary?: Record<string, { endNetWorth?: string }>;
+}>;
+
+type ReviewCompareChart = Readonly<{
+  title: string;
+  bytes: Uint8Array;
+}>;
+
+export type ReviewCompareImagePlan = Readonly<{
+  status: string;
+  charts: readonly ReviewCompareChart[];
 }>;
 
 export type ReviewCompareOutput = CompareSingle | CompareBundleOutput;
@@ -109,6 +129,116 @@ export function loadReviewCompareData(
   runner: ReviewCompareRunner = runSelfCliJson,
 ): ReviewCompareOutput {
   return runner(buildReviewCompareArgs(aPath, bPath, flags));
+}
+
+function buildOverlayArgs(scenarioPath: string, flags: ReviewCompareFlags): string[] {
+  const args = [
+    "evaluate",
+    scenarioPath,
+    ...pluginArgs(flags),
+    "--format",
+    "json",
+    "--horizons",
+    flags.horizons ?? "30m,2h,24h,7d,30d,90d",
+  ];
+  if (flags["session-pattern"]) args.push("--session-pattern", flags["session-pattern"]);
+  if (flags.days !== undefined) args.push("--days", String(flags.days));
+  if (flags.draws !== undefined) args.push("--draws", String(flags.draws));
+  if (flags.seed !== undefined) args.push("--seed", String(flags.seed));
+  if (flags.strategy) args.push("--strategy", flags.strategy);
+  if (flags.fast) args.push("--fast", "true");
+  if (flags.step !== undefined) args.push("--step", String(flags.step));
+  return args;
+}
+
+function loadOverlay(scenarioPath: string, flags: ReviewCompareFlags): ReviewCompareOverlay {
+  const output = runSelfCliJson<any>(buildOverlayArgs(scenarioPath, flags));
+  return {
+    growthSegments: (output.experience?.growth?.segments ?? []).map((segment: any) => ({
+      tTo: Number(segment.tTo ?? 0),
+      slope: Number(segment.slope ?? 0),
+    })),
+    ltvSummary: output.ltv?.summary,
+  };
+}
+
+function orderedLtvPoints(summary?: Record<string, { endNetWorth?: string }>): Array<{ x: number; y: number }> {
+  const keys = ["at30m", "at2h", "at24h", "at7d", "at30d", "at90d"];
+  return keys
+    .map((key, index) => {
+      const endNetWorth = summary?.[key]?.endNetWorth;
+      if (!endNetWorth) return undefined;
+      return { x: index, y: log10FromNumberish(endNetWorth) };
+    })
+    .filter((value): value is { x: number; y: number } => Boolean(value));
+}
+
+function buildCompareCharts(a: ReviewCompareOverlay, b: ReviewCompareOverlay): readonly ReviewCompareChart[] {
+  const charts: ReviewCompareChart[] = [];
+  if (a.growthSegments.length > 0 || b.growthSegments.length > 0) {
+    charts.push({
+      title: "Growth overlay",
+      bytes: encodeLineChartPng({
+        title: "Growth overlay",
+        series: [
+          { color: [56, 189, 248], points: a.growthSegments.map((segment) => ({ x: segment.tTo, y: segment.slope })) },
+          { color: [244, 114, 182], points: b.growthSegments.map((segment) => ({ x: segment.tTo, y: segment.slope })) },
+        ],
+      }),
+    });
+  }
+  const aLtv = orderedLtvPoints(a.ltvSummary);
+  const bLtv = orderedLtvPoints(b.ltvSummary);
+  if (aLtv.length > 0 || bLtv.length > 0) {
+    charts.push({
+      title: "Worth overlay",
+      bytes: encodeLineChartPng({
+        title: "Worth overlay",
+        series: [
+          { color: [167, 139, 250], points: aLtv },
+          { color: [251, 191, 36], points: bLtv },
+        ],
+      }),
+    });
+  }
+  return charts;
+}
+
+export function resolveReviewCompareImagePlan(args: {
+  aPath: string;
+  bPath: string;
+  flags: ReviewCompareFlags;
+  image: ResolvedTuiImageOptions;
+  env?: NodeJS.ProcessEnv;
+  stdout?: NodeJS.WriteStream;
+  overlayLoader?: (scenarioPath: string, flags: ReviewCompareFlags) => ReviewCompareOverlay;
+}): ReviewCompareImagePlan {
+  if (args.image.mode === "off") {
+    return { status: "Image preview disabled (--image-mode off).", charts: [] };
+  }
+
+  const capability = detectImageCapability({ env: args.env, stdout: args.stdout });
+  if (!capability.supported) {
+    if (args.image.mode === "on") {
+      throw cliError("CLI_USAGE", "Image preview is not available in this terminal.", {
+        hint: "Use --image-mode auto or --image-mode off when Kitty-compatible preview is unavailable.",
+        detail: capability.reason,
+      });
+    }
+    return {
+      status: `Image preview unavailable (${capability.reason ?? "capability-missing"}). Falling back to text dashboard.`,
+      charts: [],
+    };
+  }
+
+  const overlayLoader = args.overlayLoader ?? loadOverlay;
+  const aOverlay = overlayLoader(args.aPath, args.flags);
+  const bOverlay = overlayLoader(args.bPath, args.flags);
+  const charts = buildCompareCharts(aOverlay, bOverlay);
+  return {
+    status: charts.length > 0 ? "Image preview ready." : "No overlay chart data available.",
+    charts,
+  };
 }
 
 function sectionLines(title: string, lines: readonly string[]) {
@@ -156,8 +286,12 @@ function driverLines(results: readonly CompareSingle[]): string[] {
 
 function measuredLines(results: readonly CompareSingle[]): string[] {
   return results.slice(0, 4).flatMap((result) => {
-    const aFields = Object.entries(result.measured?.a ?? {}).slice(0, 2).map(([key, value]) => `A ${result.metric}.${key}: ${String(value)}`);
-    const bFields = Object.entries(result.measured?.b ?? {}).slice(0, 2).map(([key, value]) => `B ${result.metric}.${key}: ${String(value)}`);
+    const aFields = Object.entries(result.measured?.a ?? {})
+      .slice(0, 2)
+      .map(([key, value]) => `A ${result.metric}.${key}: ${String(value)}`);
+    const bFields = Object.entries(result.measured?.b ?? {})
+      .slice(0, 2)
+      .map(([key, value]) => `B ${result.metric}.${key}: ${String(value)}`);
     return [...aFields, ...bFields];
   });
 }
@@ -174,8 +308,12 @@ function CompareReviewDashboard(props: {
   aPath: string;
   bPath: string;
   output: ReviewCompareOutput;
+  image: ResolvedTuiImageOptions;
+  imagePlan: ReviewCompareImagePlan;
 }) {
   const { exit } = useRuntime();
+  const [imageStatus, setImageStatus] = useState(props.imagePlan.status);
+
   useKeyboard((key) => {
     if (key.ctrl && key.name === "c") {
       exit();
@@ -187,6 +325,35 @@ function CompareReviewDashboard(props: {
   });
 
   const results = normalizeResults(props.output);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (props.imagePlan.charts.length === 0) return;
+    void (async () => {
+      try {
+        for (const chart of props.imagePlan.charts) {
+          const result = await renderImage(
+            { kind: "bytes", bytes: chart.bytes, mimeType: "image/png" },
+            {
+              mode: props.image.mode,
+              protocol: props.image.protocol,
+              width: props.image.width ?? 70,
+              height: props.image.height ?? 18,
+            },
+          );
+          if (cancelled) return;
+          setImageStatus(`${chart.title}: ${result.rendered ? "rendered" : `skipped (${result.reason ?? "unknown"})`}`);
+        }
+      } catch (error) {
+        if (cancelled) return;
+        setImageStatus(`Image preview error: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [props.image.mode, props.image.protocol, props.image.width, props.image.height, props.imagePlan]);
 
   return createElement(
     "box",
@@ -202,6 +369,7 @@ function CompareReviewDashboard(props: {
     sectionLines("Metric Table", metricLines(results)),
     sectionLines("Drivers", driverLines(results)),
     sectionLines("Measured Snapshots", measuredLines(results)),
+    sectionLines("Image Preview", [imageStatus, ...props.imagePlan.charts.map((chart) => `- ${chart.title}`)]),
     sectionLines("Next Steps", nextStepLines()),
   );
 }
@@ -210,6 +378,8 @@ export function createReviewCompareElement(args: {
   aPath: string;
   bPath: string;
   output: ReviewCompareOutput;
+  image: ResolvedTuiImageOptions;
+  imagePlan: ReviewCompareImagePlan;
 }) {
   return createElement(CompareReviewDashboard, args);
 }

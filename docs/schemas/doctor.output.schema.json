@@ -8,6 +8,7 @@
     "cli": { "type": "object" },
     "runtime": { "type": "object" },
     "checks": { "type": "array", "items": { "type": "object" } },
+    "fixes": { "type": "array", "items": { "type": "object" } },
     "_meta": {
       "type": "object",
       "required": ["command", "contractVersion", "schemaRef", "cliVersion", "gitSha", "pluginDigest"],

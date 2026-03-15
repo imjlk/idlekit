@@ -20,13 +20,14 @@ import PrestigeCycle from '../src/commands/prestigeCycle.js'
 import Replay from '../src/commands/groups/replay.js'
 import Report from '../src/commands/report.js'
 import Review from '../src/commands/groups/review.js'
+import Setup from '../src/commands/groups/setup.js'
 import Simulate from '../src/commands/simulate.js'
 import Strategies from '../src/commands/groups/strategies.js'
 import Tune from '../src/commands/tune.js'
 import Validate from '../src/commands/validate.js'
 
 // Narrow list of command names to avoid typeof-cycles in types
-const names = ['calibrate', 'compare', 'doctor', 'eta', 'evaluate', 'experience', 'growth', 'init', 'kpi', 'ltv', 'models', 'objectives', 'prestige-cycle', 'replay', 'report', 'review', 'simulate', 'strategies', 'tune', 'validate'] as const
+const names = ['calibrate', 'compare', 'doctor', 'eta', 'evaluate', 'experience', 'growth', 'init', 'kpi', 'ltv', 'models', 'objectives', 'prestige-cycle', 'replay', 'report', 'review', 'setup', 'simulate', 'strategies', 'tune', 'validate'] as const
 type GeneratedNames = typeof names[number]
 
 const modules: Record<GeneratedNames, Command<any>> = {
@@ -46,6 +47,7 @@ const modules: Record<GeneratedNames, Command<any>> = {
   'replay': Replay,
   'report': Report,
   'review': Review,
+  'setup': Setup,
   'simulate': Simulate,
   'strategies': Strategies,
   'tune': Tune,
@@ -92,7 +94,14 @@ const metadata: Record<GeneratedNames, GeneratedCommandMeta> = {
       description: 'Check runtime, generated metadata, and completions wiring',
       options: {
         'format': { type: 'z.enum.default', required: true, hasDefault: true, default: "md", description: 'Output format', enumValues: ["json","md"], schema: {"type":"zod","method":"default","args":[{"type":"literal","value":"md"}]}, validator: '(val) => true' },
-        'shell': { type: 'z.enum.default', required: true, hasDefault: true, default: "zsh", description: 'Completion shell to validate', enumValues: ["zsh","bash","fish","powershell"], schema: {"type":"zod","method":"default","args":[{"type":"literal","value":"zsh"}]}, validator: '(val) => true' }
+        'shell': { type: 'z.enum.default', required: true, hasDefault: true, default: "detect", description: 'Completion shell to validate', enumValues: ["detect","zsh","bash","fish","powershell"], schema: {"type":"zod","method":"default","args":[{"type":"literal","value":"detect"}]}, validator: '(val) => true' },
+        'rc': { type: 'z.string.optional', required: false, hasDefault: false, description: 'Optional shell rc/profile path for completion installation checks', fileType: 'file', schema: {"type":"zod","method":"optional","args":[]}, validator: '(val) => true' },
+        'fix': { type: 'z.coerce.boolean.default', required: true, hasDefault: true, default: false, description: 'Apply completion/plugin-trust fixes after the checks run', schema: {"type":"zod","method":"default","args":[{"type":"unknown","raw":{"type":"BooleanLiteral","start":2535,"end":2540,"loc":{"start":{"line":81,"column":43,"index":2535},"end":{"line":81,"column":48,"index":2540}},"value":false}}]}, validator: '(val) => true' },
+        'wizard': { type: 'z.coerce.boolean.default', required: true, hasDefault: true, default: false, description: 'Interactive doctor fix flow for completions and plugin trust', schema: {"type":"zod","method":"default","args":[{"type":"unknown","raw":{"type":"BooleanLiteral","start":2678,"end":2683,"loc":{"start":{"line":84,"column":46,"index":2678},"end":{"line":84,"column":51,"index":2683}},"value":false}}]}, validator: '(val) => true' },
+        'yes': { type: 'z.coerce.boolean.default', required: true, hasDefault: true, default: false, description: 'Skip confirmations when applying doctor fixes', schema: {"type":"zod","method":"default","args":[{"type":"unknown","raw":{"type":"BooleanLiteral","start":2822,"end":2827,"loc":{"start":{"line":87,"column":43,"index":2822},"end":{"line":87,"column":48,"index":2827}},"value":false}}]}, validator: '(val) => true' },
+        'plugin': { type: 'z.string.default', required: true, hasDefault: true, default: "", description: 'Optional plugin path(s) for trust file generation during doctor fix', fileType: 'path', schema: {"type":"zod","method":"default","args":[{"type":"literal","value":""}]}, validator: '(val) => true' },
+        'trust-out': { type: 'z.string.default', required: true, hasDefault: true, default: "", description: 'Optional plugin trust file output path used by doctor fix', fileType: 'path', schema: {"type":"zod","method":"default","args":[{"type":"literal","value":""}]}, validator: '(val) => true' },
+        'force': { type: 'z.coerce.boolean.default', required: true, hasDefault: true, default: false, description: 'Overwrite existing completion/trust files when fixing', schema: {"type":"zod","method":"default","args":[{"type":"unknown","raw":{"type":"BooleanLiteral","start":3234,"end":3239,"loc":{"start":{"line":96,"column":45,"index":3234},"end":{"line":96,"column":50,"index":3239}},"value":false}}]}, validator: '(val) => true' }
       },
       path: './src/commands/doctor'
     },
@@ -322,13 +331,13 @@ const metadata: Record<GeneratedNames, GeneratedCommandMeta> = {
             'duration': { type: 'z.coerce.number.optional', required: false, hasDefault: false, description: 'Override durationSec', schema: {"type":"zod","method":"optional","args":[]}, validator: '(val) => true' },
             'step': { type: 'z.coerce.number.optional', required: false, hasDefault: false, description: 'Override stepSec', schema: {"type":"zod","method":"optional","args":[]}, validator: '(val) => true' },
             'strategy': { type: 'strategySchema', required: true, hasDefault: false, description: 'Override strategy id (greedy|planner|scripted)', schema: {"type":"zod","name":"strategySchema"}, validator: '(val) => true' },
-            'fast': { type: 'z.coerce.boolean.default', required: true, hasDefault: true, default: false, description: 'Enable fast(log-domain) mode', schema: {"type":"zod","method":"default","args":[{"type":"unknown","raw":{"type":"BooleanLiteral","start":2628,"end":2633,"loc":{"start":{"line":77,"column":44,"index":2628},"end":{"line":77,"column":49,"index":2633}},"value":false}}]}, validator: '(val) => true' },
+            'fast': { type: 'z.coerce.boolean.default', required: true, hasDefault: true, default: false, description: 'Enable fast(log-domain) mode', schema: {"type":"zod","method":"default","args":[{"type":"unknown","raw":{"type":"BooleanLiteral","start":2834,"end":2839,"loc":{"start":{"line":86,"column":44,"index":2834},"end":{"line":86,"column":49,"index":2839}},"value":false}}]}, validator: '(val) => true' },
             'target-worth': { type: 'z.string.optional', required: false, hasDefault: false, description: 'Required for etaToTargetWorth metric, optional otherwise', schema: {"type":"zod","method":"optional","args":[]}, validator: '(val) => true' },
             'milestone-key': { type: 'z.string.optional', required: false, hasDefault: false, description: 'Milestone key override for design bundles or timeToMilestone metric', schema: {"type":"zod","method":"optional","args":[]}, validator: '(val) => true' },
             'session-pattern': { type: 'sessionPatternSchema', required: true, hasDefault: false, description: 'Session pattern override for design metrics', schema: {"type":"zod","name":"sessionPatternSchema"}, validator: '(val) => true' },
             'days': { type: 'z.coerce.number.int.positive.optional', required: false, hasDefault: false, description: 'Session-pattern day count for design metrics', schema: {"type":"zod","method":"optional","args":[]}, validator: '(val) => true' },
             'draws': { type: 'z.coerce.number.int.positive.optional', required: false, hasDefault: false, description: 'Monte Carlo draw count for design metrics', schema: {"type":"zod","method":"optional","args":[]}, validator: '(val) => true' },
-            'max-duration': { type: 'z.coerce.number.default', required: true, hasDefault: true, default: 86400, description: 'Max duration for etaToTargetWorth metric simulation', schema: {"type":"zod","method":"default","args":[{"type":"unknown","raw":{"type":"NumericLiteral","start":3437,"end":3442,"loc":{"start":{"line":93,"column":53,"index":3437},"end":{"line":93,"column":58,"index":3442}},"extra":{"rawValue":86400,"raw":"86400"},"value":86400}}]}, validator: '(val) => true' },
+            'max-duration': { type: 'z.coerce.number.default', required: true, hasDefault: true, default: 86400, description: 'Max duration for etaToTargetWorth metric simulation', schema: {"type":"zod","method":"default","args":[{"type":"unknown","raw":{"type":"NumericLiteral","start":3643,"end":3648,"loc":{"start":{"line":102,"column":53,"index":3643},"end":{"line":102,"column":58,"index":3648}},"extra":{"rawValue":86400,"raw":"86400"},"value":86400}}]}, validator: '(val) => true' },
             'seed': { type: 'z.coerce.number.optional', required: false, hasDefault: false, description: 'Deterministic seed', schema: {"type":"zod","method":"optional","args":[]}, validator: '(val) => true' },
             'metric': { type: 'compareMetricSchema.optional', required: false, hasDefault: false, description: 'Single comparison metric', schema: {"type":"zod","method":"optional","args":[]}, validator: '(val) => true' },
             'bundle': { type: 'compareBundleSchema', required: true, hasDefault: false, description: 'Bundle of comparison metrics', schema: {"type":"zod","name":"compareBundleSchema"}, validator: '(val) => true' }
@@ -337,6 +346,37 @@ const metadata: Record<GeneratedNames, GeneratedCommandMeta> = {
         }
       ],
       path: './src/commands/groups/review'
+    },
+  'setup': {
+      name: 'setup',
+      description: 'Semi-automated shell and plugin setup helpers',
+      commands: [
+        {
+          name: 'completions',
+          description: 'Install or inspect shell completions setup',
+          options: {
+            'shell': { type: 'z.enum.default', required: true, hasDefault: true, default: "detect", description: 'Target shell', enumValues: ["detect","zsh","bash","fish","powershell"], schema: {"type":"zod","method":"default","args":[{"type":"literal","value":"detect"}]}, validator: '(val) => true' },
+            'rc': { type: 'z.string.optional', required: false, hasDefault: false, description: 'Explicit RC/profile path override', fileType: 'file', schema: {"type":"zod","method":"optional","args":[]}, validator: '(val) => true' },
+            'print': { type: 'z.coerce.boolean.default', required: true, hasDefault: true, default: false, description: 'Print the completion setup line instead of writing it', schema: {"type":"zod","method":"default","args":[{"type":"unknown","raw":{"type":"BooleanLiteral","start":1024,"end":1029,"loc":{"start":{"line":27,"column":45,"index":1024},"end":{"line":27,"column":50,"index":1029}},"value":false}}]}, validator: '(val) => true' },
+            'force': { type: 'z.coerce.boolean.default', required: true, hasDefault: true, default: false, description: 'Rewrite the managed completion block even if unchanged', schema: {"type":"zod","method":"default","args":[{"type":"unknown","raw":{"type":"BooleanLiteral","start":1152,"end":1157,"loc":{"start":{"line":28,"column":45,"index":1152},"end":{"line":28,"column":50,"index":1157}},"value":false}}]}, validator: '(val) => true' },
+            'format': { type: 'z.enum.default', required: true, hasDefault: true, default: "md", description: 'Output format', enumValues: ["json","md"], schema: {"type":"zod","method":"default","args":[{"type":"literal","value":"md"}]}, validator: '(val) => true' }
+          },
+          path: './src/commands/setupCompletions'
+        },
+        {
+          name: 'plugin-trust',
+          description: 'Generate a plugin trust file with sha256 digests',
+          options: {
+            'plugin': { type: 'z.string.default', required: true, hasDefault: true, default: "", description: 'Comma-separated plugin paths', fileType: 'path', schema: {"type":"zod","method":"default","args":[{"type":"literal","value":""}]}, validator: '(val) => true' },
+            'out': { type: 'z.string.default', required: true, hasDefault: true, default: "", description: 'Trust file output path', fileType: 'path', schema: {"type":"zod","method":"default","args":[{"type":"literal","value":""}]}, validator: '(val) => true' },
+            'relative': { type: 'z.coerce.boolean.default', required: true, hasDefault: true, default: true, description: 'Store plugin keys relative to the trust file directory', fileType: 'directory', schema: {"type":"zod","method":"default","args":[{"type":"unknown","raw":{"type":"BooleanLiteral","start":1075,"end":1079,"loc":{"start":{"line":28,"column":48,"index":1075},"end":{"line":28,"column":52,"index":1079}},"value":true}}]}, validator: '(val) => true' },
+            'force': { type: 'z.coerce.boolean.default', required: true, hasDefault: true, default: false, description: 'Overwrite trust file if it exists', schema: {"type":"zod","method":"default","args":[{"type":"unknown","raw":{"type":"BooleanLiteral","start":1203,"end":1208,"loc":{"start":{"line":29,"column":45,"index":1203},"end":{"line":29,"column":50,"index":1208}},"value":false}}]}, validator: '(val) => true' },
+            'format': { type: 'z.enum.default', required: true, hasDefault: true, default: "md", description: 'Output format', enumValues: ["json","md"], schema: {"type":"zod","method":"default","args":[{"type":"literal","value":"md"}]}, validator: '(val) => true' }
+          },
+          path: './src/commands/setupPluginTrust'
+        }
+      ],
+      path: './src/commands/groups/setup'
     },
   'simulate': {
       name: 'simulate',
@@ -379,13 +419,16 @@ const metadata: Record<GeneratedNames, GeneratedCommandMeta> = {
       name: 'tune',
       description: 'Tune strategy parameters with objective scoring',
       options: {
-        'tune': { type: 'z.string.min', required: true, hasDefault: false, description: 'TuneSpec file path (.json|.yaml)', min: 1, minLength: 1, fileType: 'file', schema: {"type":"zod","method":"min","args":[{"type":"unknown","raw":{"type":"NumericLiteral","start":5712,"end":5713,"loc":{"start":{"line":177,"column":32,"index":5712},"end":{"line":177,"column":33,"index":5713}},"extra":{"rawValue":1,"raw":"1"},"value":1}}]}, validator: '(val) => true' },
+        'tune': { type: 'z.string.optional', required: false, hasDefault: false, description: 'TuneSpec file path (.json|.yaml)', fileType: 'file', schema: {"type":"zod","method":"optional","args":[]}, validator: '(val) => true' },
+        'wizard': { type: 'z.coerce.boolean.default', required: true, hasDefault: true, default: false, description: 'Interactively generate a TuneSpec before tuning', schema: {"type":"zod","method":"default","args":[{"type":"unknown","raw":{"type":"BooleanLiteral","start":5871,"end":5876,"loc":{"start":{"line":179,"column":46,"index":5871},"end":{"line":179,"column":51,"index":5876}},"value":false}}]}, validator: '(val) => true' },
+        'tune-out': { type: 'z.string.optional', required: false, hasDefault: false, description: 'When --wizard is true, write the generated TuneSpec to this path', fileType: 'path', schema: {"type":"zod","method":"optional","args":[]}, validator: '(val) => true' },
+        'force': { type: 'z.coerce.boolean.default', required: true, hasDefault: true, default: false, description: 'Overwrite generated TuneSpec when --wizard is used', schema: {"type":"zod","method":"default","args":[{"type":"unknown","raw":{"type":"BooleanLiteral","start":6147,"end":6152,"loc":{"start":{"line":185,"column":45,"index":6147},"end":{"line":185,"column":50,"index":6152}},"value":false}}]}, validator: '(val) => true' },
         'seed': { type: 'z.coerce.number.optional', required: false, hasDefault: false, description: 'Optional deterministic seed exposed in metadata/replay verification', schema: {"type":"zod","method":"optional","args":[]}, validator: '(val) => true' },
         'artifact-out': { type: 'z.string.optional', required: false, hasDefault: false, description: 'Write tune artifact JSON to path', fileType: 'path', schema: {"type":"zod","method":"optional","args":[]}, validator: '(val) => true' },
         'baseline-artifact': { type: 'z.string.optional', required: false, hasDefault: false, description: 'Compare current best score against baseline artifact', schema: {"type":"zod","method":"optional","args":[]}, validator: '(val) => true' },
         'run-id': { type: 'z.string.optional', required: false, hasDefault: false, description: 'Optional run identifier used in output metadata', schema: {"type":"zod","method":"optional","args":[]}, validator: '(val) => true' },
-        'regression-tolerance': { type: 'z.coerce.number.default', required: true, hasDefault: true, default: 0, description: 'Allowed score decrease before regression is flagged', schema: {"type":"zod","method":"default","args":[{"type":"unknown","raw":{"type":"NumericLiteral","start":6346,"end":6347,"loc":{"start":{"line":188,"column":61,"index":6346},"end":{"line":188,"column":62,"index":6347}},"extra":{"rawValue":0,"raw":"0"},"value":0}}]}, validator: '(val) => true' },
-        'fail-on-regression': { type: 'z.coerce.boolean.default', required: true, hasDefault: true, default: false, description: 'Exit with error when regression is detected', schema: {"type":"zod","method":"default","args":[{"type":"unknown","raw":{"type":"BooleanLiteral","start":6494,"end":6499,"loc":{"start":{"line":191,"column":60,"index":6494},"end":{"line":191,"column":65,"index":6499}},"value":false}}]}, validator: '(val) => true' },
+        'regression-tolerance': { type: 'z.coerce.number.default', required: true, hasDefault: true, default: 0, description: 'Allowed score decrease before regression is flagged', schema: {"type":"zod","method":"default","args":[{"type":"unknown","raw":{"type":"NumericLiteral","start":6814,"end":6815,"loc":{"start":{"line":198,"column":61,"index":6814},"end":{"line":198,"column":62,"index":6815}},"extra":{"rawValue":0,"raw":"0"},"value":0}}]}, validator: '(val) => true' },
+        'fail-on-regression': { type: 'z.coerce.boolean.default', required: true, hasDefault: true, default: false, description: 'Exit with error when regression is detected', schema: {"type":"zod","method":"default","args":[{"type":"unknown","raw":{"type":"BooleanLiteral","start":6962,"end":6967,"loc":{"start":{"line":201,"column":60,"index":6962},"end":{"line":201,"column":65,"index":6967}},"value":false}}]}, validator: '(val) => true' },
         'out': { type: 'z.string.optional', required: false, hasDefault: false, description: 'Output path', fileType: 'path', schema: {"type":"zod","method":"optional","args":[]}, validator: '(val) => true' },
         'format': { type: 'z.enum.default', required: true, hasDefault: true, default: "json", description: 'Output format', enumValues: ["json","md","csv"], schema: {"type":"zod","method":"default","args":[{"type":"literal","value":"json"}]}, validator: '(val) => true' }
       },

@@ -77,6 +77,7 @@ Human review path:
 
 ```bash
 bun run --cwd packages/cli dev -- review evaluate ../../tmp/space-miner-v1.json --image-mode auto
+bun run --cwd packages/cli dev -- review compare ../../tmp/space-miner-v1.json ../../tmp/space-miner-v1-compare-b.json --image-mode auto
 ```
 
 Success condition:
@@ -104,8 +105,9 @@ Success condition:
 ```bash
 bun run --cwd packages/cli dev -- compare ../../tmp/space-miner-v1.json ../../tmp/space-miner-v1-compare-b.json --metric endNetWorth --format json
 bun run --cwd packages/cli dev -- compare ../../tmp/space-miner-v1.json ../../tmp/space-miner-v1-compare-b.json --metric visibleChangesPerMinute --session-pattern short-bursts --days 7 --format json
-bun run --cwd packages/cli dev -- review compare ../../tmp/space-miner-v1.json ../../tmp/space-miner-v1-compare-b.json
+bun run --cwd packages/cli dev -- review compare ../../tmp/space-miner-v1.json ../../tmp/space-miner-v1-compare-b.json --image-mode auto
 bun run --cwd packages/cli dev -- tune ../../tmp/space-miner-v1.json --tune ../../tmp/space-miner-v1-tune.json --format json
+bun run --cwd packages/cli dev -- tune ../../tmp/space-miner-v1.json --wizard true
 ```
 
 Success condition:
@@ -113,17 +115,30 @@ Success condition:
 - compare JSON reports `detail.source === "measured"`
 - tune JSON includes `report.best`, `insights.patterns`, and `insights.scoreSpread`
 
+Failure response:
+
+- if you do not have a TuneSpec yet, use `tune --wizard true`
+- if the output file already exists, re-run with `--force true`
+
 ## 7. Enable completions and run doctor
 
 ```bash
 source <(idk completions zsh)
 idk doctor --format md
+idk doctor --fix true --shell zsh
+idk setup plugin-trust --plugin ../../examples/plugins/custom-econ-plugin.ts --out ../../tmp/plugin-trust.json
 ```
 
 Success condition:
 
 - completion script prints successfully
 - doctor reports `Overall: pass`
+- `doctor --fix` writes the managed completion block when it was missing
+
+Failure response:
+
+- if `doctor --wizard` requires an interactive terminal, run it from a local terminal instead of CI
+- if the trust file already exists, add `--force true`
 
 Next reading:
 

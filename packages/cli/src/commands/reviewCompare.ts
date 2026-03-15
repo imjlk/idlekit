@@ -5,6 +5,7 @@ import { usageError } from "../errors";
 import {
   createReviewCompareElement,
   loadReviewCompareData,
+  resolveReviewCompareImagePlan,
   type ReviewCompareFlags,
 } from "../lib/reviewCompare";
 
@@ -54,10 +55,18 @@ export function renderReviewCompare(
     throw usageError("Usage: idk review compare <A> <B>");
   }
   const output = loadData(aPath, bPath, args.flags as Flags);
+  const imagePlan = resolveReviewCompareImagePlan({
+    aPath,
+    bPath,
+    flags: args.flags as Flags,
+    image: args.image,
+  });
   return createReviewCompareElement({
     aPath,
     bPath,
     output,
+    image: args.image,
+    imagePlan,
   });
 }
 

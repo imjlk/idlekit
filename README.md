@@ -76,7 +76,7 @@ Human review path:
 
 ```bash
 bun run --cwd packages/cli dev -- review evaluate ../../tmp/space-miner-v1.json --image-mode auto
-bun run --cwd packages/cli dev -- review compare ../../tmp/space-miner-v1.json ../../tmp/space-miner-v1-compare-b.json
+bun run --cwd packages/cli dev -- review compare ../../tmp/space-miner-v1.json ../../tmp/space-miner-v1-compare-b.json --image-mode auto
 ```
 
 Completion and setup check:
@@ -84,6 +84,8 @@ Completion and setup check:
 ```bash
 source <(idk completions zsh)
 idk doctor --format md
+idk doctor --fix true --shell zsh
+idk setup plugin-trust --plugin ./custom-econ-plugin.ts --out ./.idk/plugin-trust.json
 ```
 
 Worked real-game example:

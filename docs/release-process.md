@@ -37,6 +37,14 @@ bun run release:publish
 bun run release:publish:dry-run
 ```
 
+Operational setup helpers:
+
+```bash
+idk setup completions --shell zsh
+idk doctor --fix true --shell zsh
+idk setup plugin-trust --plugin ./custom-econ-plugin.ts --out ./.idk/plugin-trust.json
+```
+
 ## GitHub automation model
 
 `idlekit` keeps development and validation Bun-first:

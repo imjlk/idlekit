@@ -46,11 +46,25 @@ bun run --cwd packages/cli dev -- init scenario --track personal --preset longru
 bun run --cwd packages/cli dev -- init scenario --wizard true --track personal --preset builder --out ../../tmp/my-game-v1.json
 ```
 
+튜닝 스펙도 wizard로 만들 수 있습니다:
+
+```bash
+bun run --cwd packages/cli dev -- tune ../../tmp/space-miner-v1.json --wizard true
+```
+
 사람이 직접 검토하는 review 흐름:
 
 ```bash
 bun run --cwd packages/cli dev -- review evaluate ../../tmp/my-game-v1.json --image-mode auto
-bun run --cwd packages/cli dev -- review compare ../../tmp/my-game-v1.json ../../tmp/my-game-v1-compare-b.json
+bun run --cwd packages/cli dev -- review compare ../../tmp/my-game-v1.json ../../tmp/my-game-v1-compare-b.json --image-mode auto
+```
+
+completion / trust 설정:
+
+```bash
+idk setup completions --shell zsh
+idk doctor --fix true --shell zsh
+idk setup plugin-trust --plugin ../../examples/plugins/custom-econ-plugin.ts --out ../../tmp/plugin-trust.json
 ```
 
 ## 시작 경로

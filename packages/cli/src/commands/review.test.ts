@@ -7,6 +7,7 @@ import { runInitWizard } from "../lib/initWizard";
 import { buildInitTemplatePlan } from "../templates/scenario";
 import { resolve } from "path";
 import { resolveReviewEvaluateImagePlan } from "../lib/reviewEvaluate";
+import { resolveReviewCompareImagePlan } from "../lib/reviewCompare";
 import { sha256Hex } from "../runtime/bun";
 
 const interactiveTerminal = {
@@ -107,10 +108,12 @@ const reviewCompareOutput = {
 function createPromptStub(responses: {
   select: readonly unknown[];
   text: readonly string[];
+  confirm?: readonly boolean[];
 }) {
   const calls: string[] = [];
   let selectIndex = 0;
   let textIndex = 0;
+  let confirmIndex = 0;
   const prompt = {
     intro(message: string) {
       calls.push(`intro:${message}`);
@@ -128,6 +131,10 @@ function createPromptStub(responses: {
     async text(message: string) {
       calls.push(`text:${message}`);
       return responses.text[textIndex++] ?? "";
+    },
+    async confirm(message: string) {
+      calls.push(`confirm:${message}`);
+      return responses.confirm?.[confirmIndex++] ?? true;
     },
     async group<T extends Record<string, () => Promise<unknown>>>(steps: T) {
       const out: Record<string, unknown> = {};
@@ -282,6 +289,53 @@ describe("interactive CLI helpers", () => {
         stdout: { isTTY: false } as never,
       }),
     ).toThrow("Image preview is not available in this terminal");
+  });
+
+  it("review compare image plan supports overlay charts and fallback", () => {
+    const offPlan = resolveReviewCompareImagePlan({
+      aPath: "/tmp/a.json",
+      bPath: "/tmp/b.json",
+      flags: {
+        plugin: "",
+        "allow-plugin": false,
+        "plugin-root": "",
+        "plugin-sha256": "",
+        "plugin-trust-file": "",
+        fast: false,
+        "max-duration": 86400,
+      },
+      image: { mode: "off", protocol: "auto" },
+    });
+    expect(offPlan.charts.length).toBe(0);
+
+    const autoPlan = resolveReviewCompareImagePlan({
+      aPath: "/tmp/a.json",
+      bPath: "/tmp/b.json",
+      flags: {
+        plugin: "",
+        "allow-plugin": false,
+        "plugin-root": "",
+        "plugin-sha256": "",
+        "plugin-trust-file": "",
+        fast: false,
+        "max-duration": 86400,
+      },
+      image: { mode: "auto", protocol: "auto" },
+      env: { TERM: "xterm-kitty" },
+      stdout: { isTTY: true } as never,
+      overlayLoader: (_path) => ({
+        growthSegments: [
+          { tTo: 300, slope: 0.01 },
+          { tTo: 600, slope: 0.015 },
+        ],
+        ltvSummary: {
+          at30m: { endNetWorth: "1e3" },
+          at7d: { endNetWorth: "1e6" },
+        },
+      }),
+    });
+    expect(autoPlan.charts.length).toBe(2);
+    expect(sha256Hex(autoPlan.charts[0]!.bytes)).toBe(sha256Hex(autoPlan.charts[0]!.bytes));
   });
 
   it("review commands fail with CLI_USAGE in non-interactive mode", () => {

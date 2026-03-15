@@ -12,6 +12,7 @@ These are the canonical JSON output contracts for the CLI.
 - `doctor.output.schema.json`
 - `evaluate.output.schema.json`
 - `experience.output.schema.json`
+- `setup.output.schema.json`
 - `tune.output.schema.json`
 - `ltv.output.schema.json`
 - `calibrate.output.schema.json`

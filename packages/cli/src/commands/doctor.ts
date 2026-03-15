@@ -3,8 +3,17 @@ import { z } from "zod";
 import { CLI_NAME, CLI_VERSION } from "../cliMeta";
 import { buildOutputMeta } from "../io/outputMeta";
 import { writeOutput } from "../io/writeOutput";
+import {
+  describePluginTrustFlags,
+  installCompletions,
+  parsePluginList,
+  readCompletionSetup,
+  suggestedTrustPath,
+  writePluginTrust,
+} from "../lib/setup";
 import { fileExists } from "../runtime/bun";
 import { runSelfCli } from "../runtime/selfCli";
+import { usageError } from "../errors";
 
 function parseMinimumVersion(range: string): string {
   const match = range.match(/(\d+\.\d+\.\d+)/);
@@ -40,8 +49,21 @@ function renderDoctorMarkdown(output: Record<string, any>): string {
     lines.push(`- ${check.id}: ${check.ok ? "pass" : "fail"}${check.detail ? ` (${check.detail})` : ""}`);
   }
 
+  if (Array.isArray(output.fixes) && output.fixes.length > 0) {
+    lines.push("", "## Fixes", "");
+    for (const fix of output.fixes) {
+      lines.push(`- ${fix.id}: ${fix.status}${fix.detail ? ` (${fix.detail})` : ""}`);
+    }
+  }
+
   return lines.join("\n");
 }
+
+type DoctorFix = Readonly<{
+  id: "completions" | "plugin-trust";
+  status: "applied" | "skipped";
+  detail?: string;
+}>;
 
 export default defineCommand({
   name: "doctor",
@@ -50,11 +72,32 @@ export default defineCommand({
     format: option(z.enum(["json", "md"]).default("md"), {
       description: "Output format",
     }),
-    shell: option(z.enum(["zsh", "bash", "fish", "powershell"]).default("zsh"), {
+    shell: option(z.enum(["detect", "zsh", "bash", "fish", "powershell"]).default("detect"), {
       description: "Completion shell to validate",
     }),
+    rc: option(z.string().optional(), {
+      description: "Optional shell rc/profile path for completion installation checks",
+    }),
+    fix: option(z.coerce.boolean().default(false), {
+      description: "Apply completion/plugin-trust fixes after the checks run",
+    }),
+    wizard: option(z.coerce.boolean().default(false), {
+      description: "Interactive doctor fix flow for completions and plugin trust",
+    }),
+    yes: option(z.coerce.boolean().default(false), {
+      description: "Skip confirmations when applying doctor fixes",
+    }),
+    plugin: option(z.string().default(""), {
+      description: "Optional plugin path(s) for trust file generation during doctor fix",
+    }),
+    "trust-out": option(z.string().default(""), {
+      description: "Optional plugin trust file output path used by doctor fix",
+    }),
+    force: option(z.coerce.boolean().default(false), {
+      description: "Overwrite existing completion/trust files when fixing",
+    }),
   },
-  async handler({ flags }) {
+  async handler({ flags, prompt, terminal, cwd }) {
     const packageJson = await import("../../package.json", { with: { type: "json" } });
     const generatedUrl = new URL("../../.bunli/commands.gen.ts", import.meta.url);
     const generatedExists = await fileExists(generatedUrl.pathname);
@@ -74,10 +117,15 @@ export default defineCommand({
       }
     }
 
-    const completions = runSelfCli(["completions", flags.shell]);
+    const completionShell = flags.shell;
+    const completions = runSelfCli(["completions", completionShell === "detect" ? "zsh" : completionShell]);
     const completionScriptOk = completions.exitCode === 0 && completions.stdout.trim().length > 0;
     const dynamicComplete = runSelfCli(["complete", "--", "compare", "--metric", ""]);
     const dynamicCompleteOk = dynamicComplete.exitCode === 0;
+    const completionSetup = await readCompletionSetup({
+      shell: flags.shell,
+      rcPath: flags.rc,
+    });
 
     const checks = [
       {
@@ -111,7 +159,7 @@ export default defineCommand({
       {
         id: "completions.script",
         ok: completionScriptOk,
-        detail: completionScriptOk ? `${flags.shell} script ready` : completions.stderr.trim() || "no completion output",
+        detail: completionScriptOk ? `${completionSetup.shell} script ready` : completions.stderr.trim() || "no completion output",
       },
       {
         id: "completions.dynamic",
@@ -119,11 +167,110 @@ export default defineCommand({
         detail: dynamicCompleteOk ? "complete protocol available" : dynamicComplete.stderr.trim() || "dynamic completion failed",
       },
       {
+        id: "completions.installed",
+        ok: true,
+        detail: completionSetup.installed
+          ? `managed block present in ${completionSetup.rcPath}`
+          : `managed block missing in ${completionSetup.rcPath}`,
+      },
+      {
         id: "metadata.version",
         ok: CLI_VERSION === packageJson.default.version && CLI_NAME === "idk",
         detail: `${CLI_NAME}@${CLI_VERSION}`,
       },
     ];
+
+    const fixes: DoctorFix[] = [];
+    const wantsWizard = flags.wizard;
+    const wantsFix = flags.fix || wantsWizard;
+
+    if (wantsWizard && (!terminal.isInteractive || terminal.isCI)) {
+      throw usageError("doctor --wizard requires an interactive terminal.", "Use --fix true with explicit flags in non-interactive environments.");
+    }
+
+    if (wantsFix) {
+      let shouldInstallCompletions = true;
+      let shouldWriteTrust = flags.plugin.trim().length > 0;
+      let pluginValue = flags.plugin;
+      let trustOutValue = flags["trust-out"];
+
+      if (wantsWizard) {
+        prompt.intro("Doctor fix wizard");
+        shouldInstallCompletions = await prompt.confirm("Install or refresh the managed completion block?", {
+          default: !completionSetup.installed,
+        });
+        shouldWriteTrust = await prompt.confirm("Generate a plugin trust file?", {
+          default: flags.plugin.trim().length > 0,
+        });
+        if (shouldWriteTrust && !pluginValue.trim()) {
+          pluginValue = await prompt.text("Plugin path(s)", {
+            placeholder: "../../examples/plugins/custom-econ-plugin.ts",
+          });
+        }
+        if (shouldWriteTrust && !trustOutValue.trim()) {
+          trustOutValue = await prompt.text("Trust file output path", {
+            default: suggestedTrustPath(cwd),
+          });
+        }
+      }
+
+      if (shouldInstallCompletions) {
+        if (wantsWizard && !flags.yes) {
+          const confirmed = await prompt.confirm(`Write completions block to ${completionSetup.rcPath}?`, {
+            default: true,
+          });
+          if (!confirmed) {
+            fixes.push({ id: "completions", status: "skipped", detail: "user declined completion install" });
+          } else {
+            const result = await installCompletions({
+              shell: flags.shell,
+              rcPath: flags.rc,
+              force: flags.force,
+            });
+            fixes.push({
+              id: "completions",
+              status: "applied",
+              detail: result.updated ? `updated ${result.rcPath}` : `already configured in ${result.rcPath}`,
+            });
+          }
+        } else {
+          const result = await installCompletions({
+            shell: flags.shell,
+            rcPath: flags.rc,
+            force: flags.force,
+          });
+          fixes.push({
+            id: "completions",
+            status: "applied",
+            detail: result.updated ? `updated ${result.rcPath}` : `already configured in ${result.rcPath}`,
+          });
+        }
+      }
+
+      if (shouldWriteTrust) {
+        const plugins = parsePluginList(pluginValue);
+        if (plugins.length === 0) {
+          fixes.push({ id: "plugin-trust", status: "skipped", detail: "no plugin paths provided" });
+        } else {
+          const trustOut = trustOutValue.trim() ? trustOutValue : suggestedTrustPath(cwd);
+          const trustResult = await writePluginTrust({
+            plugins,
+            outPath: trustOut,
+            force: flags.force,
+            relative: true,
+          });
+          fixes.push({
+            id: "plugin-trust",
+            status: "applied",
+            detail: `${trustResult.outPath} (${describePluginTrustFlags(trustResult).join(" ")})`,
+          });
+        }
+      }
+
+      if (wantsWizard) {
+        prompt.outro("Doctor fix wizard complete.");
+      }
+    }
 
     const output = {
       ok: checks.every((check) => check.ok),
@@ -136,6 +283,7 @@ export default defineCommand({
         requiredBun,
       },
       checks,
+      fixes,
     };
 
     await writeOutput({

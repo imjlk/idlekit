@@ -19,6 +19,7 @@ import { buildOutputMeta, deriveDeterministicRunId, deriveDeterministicSeed } fr
 import { writeCommandReplayArtifact } from "../io/replayPolicy";
 import { readScenarioFile } from "../io/readScenario";
 import { writeOutput } from "../io/writeOutput";
+import { runTuneWizard } from "../lib/tuneWizard";
 import { readJsonFile } from "../runtime/bun";
 
 type TuneRegression = Readonly<{
@@ -174,7 +175,16 @@ export default defineCommand({
   description: "Tune strategy parameters with objective scoring",
   options: {
     ...pluginOptions(),
-    tune: option(z.string().min(1), { description: "TuneSpec file path (.json|.yaml)" }),
+    tune: option(z.string().optional(), { description: "TuneSpec file path (.json|.yaml)" }),
+    wizard: option(z.coerce.boolean().default(false), {
+      description: "Interactively generate a TuneSpec before tuning",
+    }),
+    "tune-out": option(z.string().optional(), {
+      description: "When --wizard is true, write the generated TuneSpec to this path",
+    }),
+    force: option(z.coerce.boolean().default(false), {
+      description: "Overwrite generated TuneSpec when --wizard is used",
+    }),
     seed: option(z.coerce.number().optional(), {
       description: "Optional deterministic seed exposed in metadata/replay verification",
     }),
@@ -194,17 +204,33 @@ export default defineCommand({
     out: option(z.string().optional(), { description: "Output path" }),
     format: option(z.enum(["json", "md", "csv"]).default("json"), { description: "Output format" }),
   },
-  async handler({ flags, positional }) {
+  async handler({ flags, positional, prompt, terminal }) {
     const scenarioPath = positional[0];
     if (!scenarioPath) {
       throw usageError("Usage: idk tune <scenario> --tune <tunespec>");
     }
+    if (!flags.tune && !flags.wizard) {
+      throw usageError("Usage: idk tune <scenario> --tune <tunespec>");
+    }
 
-    const [scenarioInput, tuneSpecInput] = await Promise.all([
-      readScenarioFile(scenarioPath),
-      readScenarioFile(flags.tune),
-    ]);
+    const scenarioInput = await readScenarioFile(scenarioPath);
     const loaded = await loadRegistriesFromFlags(flags);
+    const wizardResult = flags.wizard
+      ? await runTuneWizard({
+          prompt,
+          terminal,
+          scenarioPath,
+          scenarioInput,
+          modelRegistry: loaded.modelRegistry,
+          outPath: flags["tune-out"] ?? flags.tune,
+          force: flags.force,
+        })
+      : undefined;
+    const tunePath = wizardResult?.tunePath ?? flags.tune;
+    if (!tunePath) {
+      throw usageError("Usage: idk tune <scenario> --tune <tunespec>");
+    }
+    const tuneSpecInput = wizardResult?.tuneSpec ?? (await readScenarioFile(tunePath));
     const seed =
       flags.seed ??
       deriveDeterministicSeed({
@@ -223,7 +249,7 @@ export default defineCommand({
         seed,
         scope: {
           scenarioPath: resolve(process.cwd(), scenarioPath),
-          tunePath: resolve(process.cwd(), flags.tune),
+          tunePath: resolve(process.cwd(), tunePath),
         },
       });
     const outputMeta = buildOutputMeta({
@@ -285,7 +311,7 @@ export default defineCommand({
 
     if (flags["artifact-out"]) {
       const scenarioAbs = resolve(process.cwd(), scenarioPath);
-      const tuneAbs = resolve(process.cwd(), flags.tune);
+      const tuneAbs = resolve(process.cwd(), tunePath);
       await writeCommandReplayArtifact({
         outPath: flags["artifact-out"],
         command: "tune",

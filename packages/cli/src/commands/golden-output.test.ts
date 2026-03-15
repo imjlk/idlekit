@@ -264,6 +264,28 @@ describe("CLI golden outputs", () => {
     expect(out._meta?.schemaRef).toBe("docs/schemas/doctor.output.schema.json");
   });
 
+  it("setup completions writes a managed block and returns setup output", async () => {
+    const dir = await createTempDir("idlekit-golden-setup");
+    try {
+      const rcPath = resolve(dir, ".zshrc");
+      const out = runCliJson([
+        "setup",
+        "completions",
+        "--shell",
+        "zsh",
+        "--rc",
+        rcPath,
+        "--format",
+        "json",
+      ]);
+      expect(out.ok).toBeTrue();
+      expect(out._meta?.command).toBe("setup.completions");
+      expect((await readText(rcPath))).toContain("idk completions zsh");
+    } finally {
+      await removePath(dir);
+    }
+  });
+
   it("ltv uncertainty is deterministic for fixed seed", () => {
     const args = [
       "ltv",

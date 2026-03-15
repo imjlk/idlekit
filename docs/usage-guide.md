@@ -44,13 +44,17 @@ idk simulate <scenario> --format json
 idk experience <scenario> --format json
 idk evaluate <scenario> --format md
 idk review evaluate <scenario> --image-mode auto
-idk review compare <a> <b>
+idk review compare <a> <b> --image-mode auto
 idk compare <a> <b> --metric endNetWorth --format json
 idk compare <a> <b> --bundle design --format json
 idk compare <a> <b> --metric visibleChangesPerMinute --session-pattern short-bursts --days 7 --format json
+idk tune <scenario> --wizard true
 idk tune <scenario> --tune <tunespec> --format json
+idk setup completions --shell zsh
+idk setup plugin-trust --plugin ./custom-econ-plugin.ts --out ./.idk/plugin-trust.json
 idk ltv <scenario> --horizons 30m,2h,24h,7d,30d,90d --step 600 --fast true --format json
 idk doctor --format md
+idk doctor --fix true --shell zsh
 idk completions zsh
 idk replay verify <artifact> --format json
 ```
@@ -70,6 +74,15 @@ idk replay verify <artifact> --format json
 - `idk completions zsh|bash|fish|powershell`: emit shell completion script
 - `idk complete -- <args...>`: dynamic completion protocol endpoint
 - `idk doctor`: validate generated metadata, completions wiring, and Bun runtime assumptions
+- `idk doctor --fix`: apply the managed completions block and optionally generate plugin trust output
+- `idk setup completions`: install the managed completions block directly
+- `idk setup plugin-trust`: generate a sha256 trust file for plugin-based runs
+
+## Wizard flows
+
+- `idk init scenario --wizard`: interactive scenario scaffold generation
+- `idk tune --wizard`: interactive TuneSpec generation before the tune run
+- `idk doctor --wizard`: interactive setup for completions and plugin trust
 
 ## More guides
 

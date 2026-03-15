@@ -13,6 +13,8 @@ const OUTPUT_SCHEMA_REF: Readonly<Record<string, string>> = {
   doctor: "docs/schemas/doctor.output.schema.json",
   evaluate: "docs/schemas/evaluate.output.schema.json",
   experience: "docs/schemas/experience.output.schema.json",
+  "setup.completions": "docs/schemas/setup.output.schema.json",
+  "setup.plugin-trust": "docs/schemas/setup.output.schema.json",
   tune: "docs/schemas/tune.output.schema.json",
   ltv: "docs/schemas/ltv.output.schema.json",
   calibrate: "docs/schemas/calibrate.output.schema.json",

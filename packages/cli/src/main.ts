@@ -21,6 +21,7 @@ import modelsGroup from "./commands/groups/models";
 import objectivesGroup from "./commands/groups/objectives";
 import replayGroup from "./commands/groups/replay";
 import reviewGroup from "./commands/groups/review";
+import setupGroup from "./commands/groups/setup";
 import strategiesGroup from "./commands/groups/strategies";
 import { CLI_DESCRIPTION, CLI_NAME, CLI_VERSION } from "./cliMeta";
 import { bunliPlugins } from "./bunliPlugins";
@@ -37,7 +38,7 @@ const cli = await createCLI({
   },
 });
 
-const GROUPS_WITH_SUBCOMMANDS = new Set(["models", "strategies", "objectives", "init", "replay", "kpi", "review"]);
+const GROUPS_WITH_SUBCOMMANDS = new Set(["models", "strategies", "objectives", "init", "replay", "kpi", "review", "setup"]);
 
 function resolveInvocation(argv: string[]): { commandName?: string; args: string[] } {
   const first = argv[0];
@@ -69,6 +70,7 @@ cli.command(initGroup);
 cli.command(replayGroup);
 cli.command(kpiGroup);
 cli.command(reviewGroup);
+cli.command(setupGroup);
 cli.command(doctorCommand);
 cli.command(evaluateCommand);
 cli.command(simulateCommand);

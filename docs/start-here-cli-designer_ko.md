@@ -20,6 +20,12 @@ interactive wizard로 바로 고르면서 시작하려면:
 bun run --cwd packages/cli dev -- init scenario --wizard true --track personal --preset builder --out ../../tmp/my-game-v1.json
 ```
 
+튜닝 스펙도 wizard로 만들 수 있습니다:
+
+```bash
+bun run --cwd packages/cli dev -- tune ../../tmp/my-game-v1.json --wizard true
+```
+
 이름까지 같이 바꾸려면:
 
 ```bash
@@ -206,7 +212,15 @@ idk compare \
 review 대시보드:
 
 ```bash
-bun run --cwd packages/cli dev -- review compare ../../examples/tutorials/11-my-game-v1.json ../../examples/tutorials/12-my-game-compare-b.json
+bun run --cwd packages/cli dev -- review compare ../../examples/tutorials/11-my-game-v1.json ../../examples/tutorials/12-my-game-compare-b.json --image-mode auto
+```
+
+completion / trust 설정:
+
+```bash
+idk setup completions --shell zsh
+idk doctor --fix true --shell zsh
+idk setup plugin-trust --plugin ../../examples/plugins/custom-econ-plugin.ts --out ../../tmp/plugin-trust.json
 ```
 
 ## 7. 개인용 템플릿 튜닝

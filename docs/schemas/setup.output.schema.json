@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "idlekit/setup-output-v1",
+  "type": "object",
+  "required": ["ok", "_meta"],
+  "properties": {
+    "ok": { "type": "boolean" },
+    "shell": { "type": "string" },
+    "rcPath": { "type": "string" },
+    "line": { "type": "string" },
+    "installed": { "type": "boolean" },
+    "updated": { "type": "boolean" },
+    "printOnly": { "type": "boolean" },
+    "outPath": { "type": "string" },
+    "pluginCount": { "type": "number" },
+    "pluginEntries": { "type": "object" },
+    "pluginRootSuggestion": { "type": "string" },
+    "recommendedFlags": { "type": "array", "items": { "type": "string" } },
+    "_meta": {
+      "type": "object",
+      "required": ["command", "contractVersion", "schemaRef", "cliVersion", "gitSha", "pluginDigest"],
+      "properties": {
+        "command": { "enum": ["setup.completions", "setup.plugin-trust"] },
+        "contractVersion": { "type": "string" },
+        "schemaRef": { "const": "docs/schemas/setup.output.schema.json" },
+        "cliVersion": { "type": "string" },
+        "gitSha": { "type": "string" },
+        "pluginDigest": { "type": "object", "additionalProperties": { "type": "string" } }
+      }
+    }
+  }
+}

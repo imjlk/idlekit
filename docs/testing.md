@@ -51,6 +51,7 @@ CLI:
 
 - output schemas and replay artifact contracts
 - `experience` schema, session-pattern replay, and design-metric comparisons
+- `setup`, `doctor --fix`, `tune --wizard`, and review TUI/image flows
 - init preset matrix and naming rules
 - error contract coverage
 - replay consistency and resume determinism

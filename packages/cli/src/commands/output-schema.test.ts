@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { resolve } from "path";
 import Ajv2020 from "ajv/dist/2020";
 import { ensureDir, writeTextFile } from "../runtime/bun";
-import { readSchema, runCliJson } from "../testkit/bun";
+import { createTempDir, readSchema, removePath, runCliJson } from "../testkit/bun";
 
 const ajv = new Ajv2020({
   allErrors: true,
@@ -121,6 +121,29 @@ describe("output schema contracts", () => {
       validateBySchema(schema, out, "doctor.output.schema.json");
       expect(out._meta.command).toBe("doctor");
     });
+  });
+
+  it("setup completions output follows schema", async () => {
+    const dir = await createTempDir("idlekit-setup-schema");
+    const rcPath = resolve(dir, ".zshrc");
+    const out = runCliJson([
+      "setup",
+      "completions",
+      "--shell",
+      "zsh",
+      "--rc",
+      rcPath,
+      "--format",
+      "json",
+    ]);
+    try {
+      return readSchema("setup.output.schema.json").then((schema) => {
+        validateBySchema(schema, out, "setup.output.schema.json");
+        expect(out._meta.command).toBe("setup.completions");
+      });
+    } finally {
+      await removePath(dir);
+    }
   });
 
   it("tune output follows schema", () => {
