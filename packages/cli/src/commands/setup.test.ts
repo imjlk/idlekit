@@ -90,6 +90,8 @@ describe("setup and tune wizard", () => {
       expect(out.ok).toBeTrue();
       expect(out.pluginCount).toBe(1);
       expect(Array.isArray(out.recommendedFlags)).toBeTrue();
+      expect(out.recommendedFlags).toContain("--allow-plugin true");
+      expect(out.recommendedFlags.some((flag: string) => flag.startsWith("--plugin "))).toBeTrue();
       const trust = await readJson<any>(outPath);
       expect(Object.keys(trust.plugins ?? {}).length).toBe(1);
       expect(String(Object.values(trust.plugins ?? {})[0])).toHaveLength(64);
@@ -121,6 +123,7 @@ describe("setup and tune wizard", () => {
       ]);
       expect(out.ok).toBeTrue();
       expect(Array.isArray(out.fixes)).toBeTrue();
+      expect(out.checks.some((check: any) => check.id === "completions.installed" && check.ok === true)).toBeTrue();
       expect(out.fixes.some((fix: any) => fix.id === "completions" && fix.status === "applied")).toBeTrue();
       expect(out.fixes.some((fix: any) => fix.id === "plugin-trust" && fix.status === "applied")).toBeTrue();
       expect((await readText(rcPath))).toContain("idk completions zsh");

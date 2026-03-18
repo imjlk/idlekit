@@ -137,7 +137,9 @@ async function verifyIntroTrack(): Promise<void> {
   assert(has(asRecord(tuneInsights.scoreSpread as JSONValue), "plateau"), "tune scoreSpread.plateau must exist");
   assert(asRecord(tune._meta as JSONValue).command === "tune", "tune _meta.command must be tune");
 
-  const doctor = asRecord(runCliJson(["doctor", "--format", "json"]));
+  const doctorRc = resolve(tmpDir, ".zshrc");
+  runCliJson(["doctor", "--format", "json", "--fix", "true", "--shell", "zsh", "--rc", doctorRc]);
+  const doctor = asRecord(runCliJson(["doctor", "--format", "json", "--shell", "zsh", "--rc", doctorRc]));
   assert(doctor.ok === true, "doctor must pass");
   assert(Array.isArray(doctor.checks as JSONValue[]), "doctor must include checks");
 

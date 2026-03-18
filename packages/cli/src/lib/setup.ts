@@ -15,6 +15,7 @@ export type CompletionInstallResult = Readonly<{
 
 export type PluginTrustResult = Readonly<{
   outPath: string;
+  plugins: readonly string[];
   pluginCount: number;
   pluginEntries: Readonly<Record<string, string>>;
   pluginRootSuggestion: string;
@@ -201,6 +202,7 @@ export async function writePluginTrust(args: {
 
   return {
     outPath,
+    plugins: args.plugins.map((plugin) => resolve(plugin)),
     pluginCount: args.plugins.length,
     pluginEntries: entries,
     pluginRootSuggestion: commonDir(args.plugins.map((plugin) => resolve(plugin))),
@@ -222,6 +224,8 @@ export function suggestedTrustPath(baseDir = process.cwd()): string {
 
 export function describePluginTrustFlags(result: PluginTrustResult): string[] {
   return [
+    "--allow-plugin true",
+    `--plugin ${result.plugins.join(",")}`,
     `--plugin-root ${result.pluginRootSuggestion}`,
     `--plugin-trust-file ${result.outPath}`,
   ];

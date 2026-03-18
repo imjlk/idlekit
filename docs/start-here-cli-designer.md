@@ -132,8 +132,8 @@ idk setup plugin-trust --plugin ../../examples/plugins/custom-econ-plugin.ts --o
 Success condition:
 
 - completion script prints successfully
-- doctor reports `Overall: pass`
 - `doctor --fix` writes the managed completion block when it was missing
+- rerunning `idk doctor --format md` reports `Overall: pass`
 
 Failure response:
 

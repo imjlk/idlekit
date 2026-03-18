@@ -212,6 +212,7 @@ export function resolveReviewCompareImagePlan(args: {
   env?: NodeJS.ProcessEnv;
   stdout?: NodeJS.WriteStream;
   overlayLoader?: (scenarioPath: string, flags: ReviewCompareFlags) => ReviewCompareOverlay;
+  eager?: boolean;
 }): ReviewCompareImagePlan {
   if (args.image.mode === "off") {
     return { status: "Image preview disabled (--image-mode off).", charts: [] };
@@ -227,6 +228,13 @@ export function resolveReviewCompareImagePlan(args: {
     }
     return {
       status: `Image preview unavailable (${capability.reason ?? "capability-missing"}). Falling back to text dashboard.`,
+      charts: [],
+    };
+  }
+
+  if (!args.eager) {
+    return {
+      status: "Image preview ready. Loading overlay charts after first render.",
       charts: [],
     };
   }
@@ -310,9 +318,11 @@ function CompareReviewDashboard(props: {
   output: ReviewCompareOutput;
   image: ResolvedTuiImageOptions;
   imagePlan: ReviewCompareImagePlan;
+  loadImagePlan?: () => ReviewCompareImagePlan;
 }) {
   const { exit } = useRuntime();
   const [imageStatus, setImageStatus] = useState(props.imagePlan.status);
+  const [charts, setCharts] = useState<readonly ReviewCompareChart[]>(props.imagePlan.charts);
 
   useKeyboard((key) => {
     if (key.ctrl && key.name === "c") {
@@ -328,10 +338,14 @@ function CompareReviewDashboard(props: {
 
   useEffect(() => {
     let cancelled = false;
-    if (props.imagePlan.charts.length === 0) return;
+    if (!props.loadImagePlan) return;
     void (async () => {
       try {
-        for (const chart of props.imagePlan.charts) {
+        const plan = await Promise.resolve(props.loadImagePlan());
+        if (cancelled) return;
+        setCharts(plan.charts);
+        setImageStatus(plan.status);
+        for (const chart of plan.charts) {
           const result = await renderImage(
             { kind: "bytes", bytes: chart.bytes, mimeType: "image/png" },
             {
@@ -353,7 +367,7 @@ function CompareReviewDashboard(props: {
     return () => {
       cancelled = true;
     };
-  }, [props.image.mode, props.image.protocol, props.image.width, props.image.height, props.imagePlan]);
+  }, [props.image.mode, props.image.protocol, props.image.width, props.image.height, props.loadImagePlan]);
 
   return createElement(
     "box",
@@ -369,7 +383,7 @@ function CompareReviewDashboard(props: {
     sectionLines("Metric Table", metricLines(results)),
     sectionLines("Drivers", driverLines(results)),
     sectionLines("Measured Snapshots", measuredLines(results)),
-    sectionLines("Image Preview", [imageStatus, ...props.imagePlan.charts.map((chart) => `- ${chart.title}`)]),
+    sectionLines("Image Preview", [imageStatus, ...charts.map((chart) => `- ${chart.title}`)]),
     sectionLines("Next Steps", nextStepLines()),
   );
 }
@@ -380,6 +394,7 @@ export function createReviewCompareElement(args: {
   output: ReviewCompareOutput;
   image: ResolvedTuiImageOptions;
   imagePlan: ReviewCompareImagePlan;
+  loadImagePlan?: () => ReviewCompareImagePlan;
 }) {
   return createElement(CompareReviewDashboard, args);
 }

@@ -67,6 +67,14 @@ export function renderReviewCompare(
     output,
     image: args.image,
     imagePlan,
+    loadImagePlan: () =>
+      resolveReviewCompareImagePlan({
+        aPath,
+        bPath,
+        flags: args.flags as Flags,
+        image: args.image,
+        eager: true,
+      }),
   });
 }
 

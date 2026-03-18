@@ -65,6 +65,74 @@ type DoctorFix = Readonly<{
   detail?: string;
 }>;
 
+function buildChecks(args: {
+  bunOk: boolean;
+  requiredBun: string;
+  generatedExists: boolean;
+  generatedCommands: string[];
+  generatedError?: string;
+  completionScriptOk: boolean;
+  completionScriptDetail: string;
+  dynamicCompleteOk: boolean;
+  dynamicCompleteDetail: string;
+  completionInstalled: boolean;
+  completionRcPath: string;
+  metadataVersionOk: boolean;
+}) {
+  return [
+    {
+      id: "runtime.bun",
+      ok: args.bunOk,
+      detail: args.bunOk ? undefined : `requires Bun >= ${args.requiredBun}`,
+    },
+    {
+      id: "generated.exists",
+      ok: args.generatedExists,
+      detail: args.generatedExists ? undefined : "missing .bunli/commands.gen.ts",
+    },
+    {
+      id: "generated.inventory",
+      ok: args.generatedCommands.includes("validate") && args.generatedCommands.includes("simulate") && args.generatedCommands.includes("experience"),
+      detail:
+        args.generatedError ??
+        (args.generatedCommands.length > 0 ? `commands=${args.generatedCommands.join(",")}` : "unable to load generated commands"),
+    },
+    {
+      id: "generated.groups",
+      ok:
+        args.generatedCommands.includes("models") &&
+        args.generatedCommands.includes("strategies") &&
+        args.generatedCommands.includes("objectives") &&
+        args.generatedCommands.includes("init") &&
+        args.generatedCommands.includes("replay") &&
+        args.generatedCommands.includes("kpi"),
+      detail: args.generatedCommands.length > 0 ? `commands=${args.generatedCommands.join(",")}` : args.generatedError,
+    },
+    {
+      id: "completions.script",
+      ok: args.completionScriptOk,
+      detail: args.completionScriptDetail,
+    },
+    {
+      id: "completions.dynamic",
+      ok: args.dynamicCompleteOk,
+      detail: args.dynamicCompleteDetail,
+    },
+    {
+      id: "completions.installed",
+      ok: args.completionInstalled,
+      detail: args.completionInstalled
+        ? `managed block present in ${args.completionRcPath}`
+        : `managed block missing in ${args.completionRcPath}`,
+    },
+    {
+      id: "metadata.version",
+      ok: args.metadataVersionOk,
+      detail: `${CLI_NAME}@${CLI_VERSION}`,
+    },
+  ];
+}
+
 export default defineCommand({
   name: "doctor",
   description: "Check runtime, generated metadata, and completions wiring",
@@ -127,58 +195,7 @@ export default defineCommand({
       rcPath: flags.rc,
     });
 
-    const checks = [
-      {
-        id: "runtime.bun",
-        ok: bunOk,
-        detail: bunOk ? undefined : `requires Bun >= ${requiredBun}`,
-      },
-      {
-        id: "generated.exists",
-        ok: generatedExists,
-        detail: generatedExists ? undefined : "missing .bunli/commands.gen.ts",
-      },
-      {
-        id: "generated.inventory",
-        ok: generatedCommands.includes("validate") && generatedCommands.includes("simulate") && generatedCommands.includes("experience"),
-        detail:
-          generatedError ??
-          (generatedCommands.length > 0 ? `commands=${generatedCommands.join(",")}` : "unable to load generated commands"),
-      },
-      {
-        id: "generated.groups",
-        ok:
-          generatedCommands.includes("models") &&
-          generatedCommands.includes("strategies") &&
-          generatedCommands.includes("objectives") &&
-          generatedCommands.includes("init") &&
-          generatedCommands.includes("replay") &&
-          generatedCommands.includes("kpi"),
-        detail: generatedCommands.length > 0 ? `commands=${generatedCommands.join(",")}` : generatedError,
-      },
-      {
-        id: "completions.script",
-        ok: completionScriptOk,
-        detail: completionScriptOk ? `${completionSetup.shell} script ready` : completions.stderr.trim() || "no completion output",
-      },
-      {
-        id: "completions.dynamic",
-        ok: dynamicCompleteOk,
-        detail: dynamicCompleteOk ? "complete protocol available" : dynamicComplete.stderr.trim() || "dynamic completion failed",
-      },
-      {
-        id: "completions.installed",
-        ok: true,
-        detail: completionSetup.installed
-          ? `managed block present in ${completionSetup.rcPath}`
-          : `managed block missing in ${completionSetup.rcPath}`,
-      },
-      {
-        id: "metadata.version",
-        ok: CLI_VERSION === packageJson.default.version && CLI_NAME === "idk",
-        detail: `${CLI_NAME}@${CLI_VERSION}`,
-      },
-    ];
+    const metadataVersionOk = CLI_VERSION === packageJson.default.version && CLI_NAME === "idk";
 
     const fixes: DoctorFix[] = [];
     const wantsWizard = flags.wizard;
@@ -271,6 +288,28 @@ export default defineCommand({
         prompt.outro("Doctor fix wizard complete.");
       }
     }
+
+    const completionSetupFinal = wantsFix
+      ? await readCompletionSetup({
+          shell: flags.shell,
+          rcPath: flags.rc,
+        })
+      : completionSetup;
+
+    const checks = buildChecks({
+      bunOk,
+      requiredBun,
+      generatedExists,
+      generatedCommands,
+      generatedError,
+      completionScriptOk,
+      completionScriptDetail: completionScriptOk ? `${completionSetupFinal.shell} script ready` : completions.stderr.trim() || "no completion output",
+      dynamicCompleteOk,
+      dynamicCompleteDetail: dynamicCompleteOk ? "complete protocol available" : dynamicComplete.stderr.trim() || "dynamic completion failed",
+      completionInstalled: completionSetupFinal.installed,
+      completionRcPath: completionSetupFinal.rcPath,
+      metadataVersionOk,
+    });
 
     const output = {
       ok: checks.every((check) => check.ok),

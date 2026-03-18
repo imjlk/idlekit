@@ -257,9 +257,9 @@ describe("CLI golden outputs", () => {
   it("doctor reports runtime and completions wiring", () => {
     const out = runCliJson(["doctor", "--format", "json"]);
 
-    expect(out.ok).toBeTrue();
     expect(Array.isArray(out.checks)).toBeTrue();
     expect(out.checks.some((check: any) => check.id === "completions.script" && check.ok === true)).toBeTrue();
+    expect(out.checks.some((check: any) => check.id === "completions.installed")).toBeTrue();
     expect(out._meta?.command).toBe("doctor");
     expect(out._meta?.schemaRef).toBe("docs/schemas/doctor.output.schema.json");
   });

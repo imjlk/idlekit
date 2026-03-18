@@ -323,6 +323,7 @@ describe("interactive CLI helpers", () => {
       image: { mode: "auto", protocol: "auto" },
       env: { TERM: "xterm-kitty" },
       stdout: { isTTY: true } as never,
+      eager: true,
       overlayLoader: (_path) => ({
         growthSegments: [
           { tTo: 300, slope: 0.01 },
