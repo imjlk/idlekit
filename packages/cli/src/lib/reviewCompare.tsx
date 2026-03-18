@@ -338,10 +338,11 @@ function CompareReviewDashboard(props: {
 
   useEffect(() => {
     let cancelled = false;
-    if (!props.loadImagePlan) return;
+    const loadImagePlan = props.loadImagePlan;
+    if (!loadImagePlan) return;
     void (async () => {
       try {
-        const plan = await Promise.resolve(props.loadImagePlan());
+        const plan = await Promise.resolve(loadImagePlan());
         if (cancelled) return;
         setCharts(plan.charts);
         setImageStatus(plan.status);
