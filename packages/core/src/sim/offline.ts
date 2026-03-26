@@ -1,6 +1,7 @@
 import { analyzeUX, createSimStatsAccumulator } from "./analysis/ux";
+import { createEventBuffer } from "./eventBuffer";
 import { stepOnce } from "./step";
-import type { CompiledScenario, RunResult, SimEvent, SimState, TimedSimEvent } from "./types";
+import type { CompiledScenario, RunResult, SimState } from "./types";
 
 export type OfflineRunOptions<N, U extends string, Vars> = Readonly<{
   fromState?: SimState<N, U, Vars>;
@@ -121,64 +122,11 @@ export function applyOfflineSeconds<N, U extends string, Vars>(args: {
   }
 
   const statsAcc = createSimStatsAccumulator();
-  const events: SimEvent<N>[] = [];
-  const eventTimeline: TimedSimEvent<N>[] = [];
+  const eventBuffer = createEventBuffer<N>({
+    enabled: eventLogEnabled,
+    maxEvents,
+  });
   const actionsLog: Array<{ t: number; actionId: string; label?: string; bulkSize?: number }> = [];
-
-  let totalSeenEvents = 0;
-  let droppedEvents = 0;
-
-  const retainEvents = (batch: readonly SimEvent<N>[]): void => {
-    statsAcc.push(batch);
-    totalSeenEvents += batch.length;
-    if (!eventLogEnabled || batch.length === 0) return;
-
-    if (maxEvents === 0) {
-      droppedEvents += batch.length;
-      return;
-    }
-
-    if (maxEvents === undefined) {
-      events.push(...batch);
-      return;
-    }
-
-    if (batch.length >= maxEvents) {
-      droppedEvents += events.length + (batch.length - maxEvents);
-      events.splice(0, events.length, ...batch.slice(batch.length - maxEvents));
-      return;
-    }
-
-    const overflow = Math.max(0, events.length + batch.length - maxEvents);
-    if (overflow > 0) {
-      events.splice(0, overflow);
-      droppedEvents += overflow;
-    }
-    events.push(...batch);
-  };
-
-  const retainTimedEvents = (batch: readonly SimEvent<N>[], t: number): void => {
-    if (!eventLogEnabled || batch.length === 0) return;
-
-    const timedBatch = batch.map((event) => ({ t, event }));
-    if (maxEvents === 0) return;
-
-    if (maxEvents === undefined) {
-      eventTimeline.push(...timedBatch);
-      return;
-    }
-
-    if (timedBatch.length >= maxEvents) {
-      eventTimeline.splice(0, eventTimeline.length, ...timedBatch.slice(timedBatch.length - maxEvents));
-      return;
-    }
-
-    const overflow = Math.max(0, eventTimeline.length + timedBatch.length - maxEvents);
-    if (overflow > 0) {
-      eventTimeline.splice(0, overflow);
-    }
-    eventTimeline.push(...timedBatch);
-  };
 
   let state = start;
   const maxActionsPerStep = scenario.constraints?.maxActionsPerStep ?? Infinity;
@@ -199,8 +147,8 @@ export function applyOfflineSeconds<N, U extends string, Vars>(args: {
     });
 
     state = out.next;
-    retainEvents(out.events);
-    retainTimedEvents(out.events, state.t);
+    statsAcc.push(out.events);
+    eventBuffer.pushBatch(out.events, state.t);
     if (out.actionsApplied?.length) {
       actionsLog.push(...out.actionsApplied);
     }
@@ -222,8 +170,8 @@ export function applyOfflineSeconds<N, U extends string, Vars>(args: {
     });
 
     state = out.next;
-    retainEvents(out.events);
-    retainTimedEvents(out.events, state.t);
+    statsAcc.push(out.events);
+    eventBuffer.pushBatch(out.events, state.t);
     if (out.actionsApplied?.length) {
       actionsLog.push(...out.actionsApplied);
     }
@@ -231,22 +179,17 @@ export function applyOfflineSeconds<N, U extends string, Vars>(args: {
 
   const stats = statsAcc.snapshot();
   const uxFlags = analyzeUX(stats);
+  const retained = eventBuffer.snapshot();
 
   return {
     start,
     end: state,
-    events,
-    eventTimeline: eventTimeline.length > 0 ? eventTimeline : undefined,
+    events: retained.events,
+    eventTimeline: retained.eventTimeline,
     actionsLog: actionsLog.length > 0 ? actionsLog : undefined,
     stats,
     uxFlags,
-    eventLog: {
-      enabled: eventLogEnabled,
-      maxEvents,
-      totalSeen: totalSeenEvents,
-      dropped: eventLogEnabled ? droppedEvents : totalSeenEvents,
-      retained: events.length,
-    },
+    eventLog: retained.eventLog,
     offline: {
       requestedSec: seconds,
       preDecaySec: resolved.preDecaySec,

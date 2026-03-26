@@ -313,85 +313,78 @@ function standardIssues(result: unknown): string[] {
   return ["invalid schema result shape"];
 }
 
-export function compileScenario<N, U extends string, Vars>(args: {
+function buildUnit<U extends string>(args: {
+  scenario: ScenarioV1;
+  unitFactory?: (code: string) => Unit<U>;
+}): Unit<U> {
+  return args.unitFactory
+    ? args.unitFactory(args.scenario.unit.code)
+    : ({ code: args.scenario.unit.code as U, symbol: args.scenario.unit.symbol } as Unit<U>);
+}
+
+function parseScenarioMoney<N, U extends string>(args: {
+  E: Engine<N>;
+  unit: Unit<U>;
+  raw: string;
+  allowSuffixNotation: boolean;
+}) {
+  return parseMoney(args.E, args.raw, {
+    unit: args.unit,
+    suffix: args.allowSuffixNotation ? { kind: "alphaInfinite", minLen: 2 } : undefined,
+  });
+}
+
+function buildInitialState<N, U extends string, Vars>(args: {
   E: Engine<N>;
   scenario: ScenarioV1;
-  registry: ModelRegistry;
-  strategyRegistry?: StrategyRegistry;
-  unitFactory?: (code: string) => Unit<U>;
-  opts?: CompileOptions;
-}): CompiledScenario<N, U, Vars> {
-  const { E, scenario, registry, strategyRegistry } = args;
-
-  const modelFactory = registry.get(scenario.model.id, scenario.model.version);
-  if (!modelFactory) {
-    throw new Error(`Model not found: ${scenario.model.id}@${scenario.model.version}`);
-  }
-
-  const unit = args.unitFactory
-    ? args.unitFactory(scenario.unit.code)
-    : ({ code: scenario.unit.code as U, symbol: scenario.unit.symbol } as Unit<U>);
-
-  const allowSuffix = args.opts?.allowSuffixNotation ?? true;
-
-  const walletMoney = parseMoney(E, scenario.initial.wallet.amount, {
+  unit: Unit<U>;
+  allowSuffixNotation: boolean;
+}) {
+  const { E, scenario, unit, allowSuffixNotation } = args;
+  const walletMoney = parseScenarioMoney({
+    E,
     unit,
-    suffix: allowSuffix ? { kind: "alphaInfinite", minLen: 2 } : undefined,
+    raw: scenario.initial.wallet.amount,
+    allowSuffixNotation,
   });
 
   const bucket = scenario.initial.wallet.bucket
-    ? parseMoney(E, scenario.initial.wallet.bucket, {
+    ? parseScenarioMoney({
+        E,
         unit,
-        suffix: allowSuffix ? { kind: "alphaInfinite", minLen: 2 } : undefined,
+        raw: scenario.initial.wallet.bucket,
+        allowSuffixNotation,
       }).amount
     : E.zero();
 
   const maxMoneyEver = scenario.initial.maxMoneyEver
-    ? parseMoney(E, scenario.initial.maxMoneyEver, {
+    ? parseScenarioMoney({
+        E,
         unit,
-        suffix: allowSuffix ? { kind: "alphaInfinite", minLen: 2 } : undefined,
+        raw: scenario.initial.maxMoneyEver,
+        allowSuffixNotation,
       })
     : walletMoney;
 
   const points = scenario.initial.prestige?.points
-    ? parseMoney(E, scenario.initial.prestige.points, {
+    ? parseScenarioMoney({
+        E,
         unit,
-        suffix: allowSuffix ? { kind: "alphaInfinite", minLen: 2 } : undefined,
+        raw: scenario.initial.prestige.points,
+        allowSuffixNotation,
       }).amount
     : E.zero();
 
   const multiplier = scenario.initial.prestige?.multiplier
-    ? parseMoney(E, scenario.initial.prestige.multiplier, {
+    ? parseScenarioMoney({
+        E,
         unit,
-        suffix: allowSuffix ? { kind: "alphaInfinite", minLen: 2 } : undefined,
+        raw: scenario.initial.prestige.multiplier,
+        allowSuffixNotation,
       }).amount
     : E.from(1);
 
-  const model = modelFactory.create(scenario.model.params) as Model<N, U, Vars>;
-
-  let strategy: CompiledScenario<N, U, Vars>["strategy"] | undefined;
-  if (scenario.strategy) {
-    if (!strategyRegistry) {
-      throw new Error(`StrategyRegistry is required to compile strategy: ${scenario.strategy.id}`);
-    }
-
-    const factory = strategyRegistry.get(scenario.strategy.id);
-    if (!factory) {
-      throw new Error(`Unknown strategy: ${scenario.strategy.id}`);
-    }
-
-    const rawParams = scenario.strategy.params ?? factory.defaultParams ?? {};
-    if (factory.paramsSchema) {
-      const issues = standardIssues(factory.paramsSchema["~standard"].validate(rawParams));
-      if (issues.length > 0) {
-        throw new Error(`Invalid strategy params: ${issues.join("; ")}`);
-      }
-    }
-
-    strategy = factory.create(rawParams) as CompiledScenario<N, U, Vars>["strategy"];
-  }
-
-  const initial = {
+  return {
     t: scenario.initial.t ?? 0,
     wallet: {
       money: walletMoney,
@@ -405,17 +398,58 @@ export function compileScenario<N, U extends string, Vars>(args: {
     },
     vars: (scenario.initial.vars ?? ({} as Vars)) as Vars,
   };
+}
 
-  const ctx = {
-    E,
-    unit,
-    stepSec: scenario.clock.stepSec,
+function buildStrategy<N, U extends string, Vars>(args: {
+  scenario: ScenarioV1;
+  strategyRegistry?: StrategyRegistry;
+}) {
+  const { scenario, strategyRegistry } = args;
+  if (!scenario.strategy) return undefined;
+  if (!strategyRegistry) {
+    throw new Error(`StrategyRegistry is required to compile strategy: ${scenario.strategy.id}`);
+  }
+
+  const factory = strategyRegistry.get(scenario.strategy.id);
+  if (!factory) {
+    throw new Error(`Unknown strategy: ${scenario.strategy.id}`);
+  }
+
+  const rawParams = scenario.strategy.params ?? factory.defaultParams ?? {};
+  if (factory.paramsSchema) {
+    const issues = standardIssues(factory.paramsSchema["~standard"].validate(rawParams));
+    if (issues.length > 0) {
+      throw new Error(`Invalid strategy params: ${issues.join("; ")}`);
+    }
+  }
+
+  return factory.create(rawParams) as CompiledScenario<N, U, Vars>["strategy"];
+}
+
+function buildContext<N, U extends string, Vars>(args: {
+  E: Engine<N>;
+  unit: Unit<U>;
+  scenario: ScenarioV1;
+}) {
+  return {
+    E: args.E,
+    unit: args.unit,
+    stepSec: args.scenario.clock.stepSec,
     tickPolicy: {
-      mode: scenario.policy.mode,
-      maxLogGap: scenario.policy.maxLogGap,
+      mode: args.scenario.policy.mode,
+      maxLogGap: args.scenario.policy.maxLogGap,
     },
   };
+}
 
+function buildRunConfig<N, U extends string>(args: {
+  scenario: ScenarioV1;
+  E: Engine<N>;
+  unit: Unit<U>;
+  allowSuffixNotation: boolean;
+  allowUnsafeUntilExpr: boolean;
+}) {
+  const { scenario } = args;
   const hasDuration = typeof scenario.clock.durationSec === "number";
   const hasUntilExpr = typeof scenario.clock.untilExpr === "string" && scenario.clock.untilExpr.trim().length > 0;
   if (hasDuration && !(scenario.clock.durationSec! > 0)) {
@@ -425,15 +459,15 @@ export function compileScenario<N, U extends string, Vars>(args: {
     throw new Error("clock requires at least one stop condition: durationSec or untilExpr");
   }
 
-  const run = {
+  return {
     stepSec: scenario.clock.stepSec,
     durationSec: scenario.clock.durationSec,
     until: compileUntilExpr({
       expr: scenario.clock.untilExpr,
-      E,
-      unit,
-      allowSuffixNotation: allowSuffix,
-      allowUnsafe: args.opts?.allowUnsafeUntilExpr ?? false,
+      E: args.E,
+      unit: args.unit,
+      allowSuffixNotation: args.allowSuffixNotation,
+      allowUnsafe: args.allowUnsafeUntilExpr,
     }),
     trace: scenario.outputs?.report?.includeTrace
       ? {
@@ -451,6 +485,42 @@ export function compileScenario<N, U extends string, Vars>(args: {
     eventLog: scenario.sim?.eventLog,
     offline: scenario.sim?.offline,
   };
+}
+
+export function compileScenario<N, U extends string, Vars>(args: {
+  E: Engine<N>;
+  scenario: ScenarioV1;
+  registry: ModelRegistry;
+  strategyRegistry?: StrategyRegistry;
+  unitFactory?: (code: string) => Unit<U>;
+  opts?: CompileOptions;
+}): CompiledScenario<N, U, Vars> {
+  const { E, scenario, registry, strategyRegistry } = args;
+
+  const modelFactory = registry.get(scenario.model.id, scenario.model.version);
+  if (!modelFactory) {
+    throw new Error(`Model not found: ${scenario.model.id}@${scenario.model.version}`);
+  }
+
+  const unit = buildUnit({ scenario, unitFactory: args.unitFactory });
+  const allowSuffix = args.opts?.allowSuffixNotation ?? true;
+
+  const model = modelFactory.create(scenario.model.params) as Model<N, U, Vars>;
+  const strategy = buildStrategy<N, U, Vars>({ scenario, strategyRegistry });
+  const initial = buildInitialState<N, U, Vars>({
+    E,
+    scenario,
+    unit,
+    allowSuffixNotation: allowSuffix,
+  });
+  const ctx = buildContext<N, U, Vars>({ E, unit, scenario });
+  const run = buildRunConfig<N, U>({
+    scenario,
+    E,
+    unit,
+    allowSuffixNotation: allowSuffix,
+    allowUnsafeUntilExpr: args.opts?.allowUnsafeUntilExpr ?? false,
+  });
 
   return {
     ctx,

@@ -235,4 +235,32 @@ describe("validateScenarioV1 clock stop conditions", () => {
     expect(out.ok).toBeFalse();
     expect(out.issues.some((i) => i.path === "monetization.uncertainty.correlation.retentionConversion")).toBeTrue();
   });
+
+  it("accepts valid engine metadata", () => {
+    const sc: ScenarioV1 = {
+      ...baseScenario(),
+      engine: {
+        name: "breakInfinity",
+        version: "1.0.0",
+      },
+    };
+
+    const out = validateScenarioV1(sc);
+    expect(out.ok).toBeTrue();
+  });
+
+  it("rejects invalid engine metadata", () => {
+    const sc = {
+      ...baseScenario(),
+      engine: {
+        name: "",
+        version: 1,
+      },
+    } as unknown as ScenarioV1;
+
+    const out = validateScenarioV1(sc);
+    expect(out.ok).toBeFalse();
+    expect(out.issues.some((i) => i.path === "engine.name")).toBeTrue();
+    expect(out.issues.some((i) => i.path === "engine.version")).toBeTrue();
+  });
 });

@@ -1,7 +1,8 @@
 import { analyzeUX, createSimStatsAccumulator } from "./analysis/ux";
+import { createEventBuffer } from "./eventBuffer";
 import { applyOfflineSeconds, type OfflineRunResult } from "./offline";
 import { runScenario } from "./simulator";
-import type { CompiledScenario, RunResult, SimState, TimedSimEvent } from "./types";
+import type { CompiledScenario, RunResult, SimState } from "./types";
 
 export type SessionPatternId =
   | "always-on"
@@ -102,25 +103,21 @@ export function simulateSessionPattern<N, U extends string, Vars>(args: {
   const horizonSec = args.pattern.days * 86400;
   const startT = start.t;
   const segments: SessionSegment<N, U, Vars>[] = [];
-  const events = [] as RunResult<N, U, Vars>["events"] extends readonly (infer E)[] ? E[] : never[];
-  const eventTimeline: TimedSimEvent<N>[] = [];
   const trace: SimState<N, U, Vars>[] = [];
   const actionsLog: Array<{ t: number; actionId: string; label?: string; bulkSize?: number }> = [];
   const statsAcc = createSimStatsAccumulator();
+  const eventBuffer = createEventBuffer<N>({
+    enabled: sc.run.eventLog?.enabled ?? true,
+    maxEvents: sc.run.eventLog?.maxEvents,
+  });
   let state = start;
-  let totalSeen = 0;
-  let retainedDropped = 0;
   let totalActiveSec = 0;
   let totalOfflineSec = 0;
   let activeBlocks = 0;
 
   const retainRun = (run: RunResult<N, U, Vars>) => {
     statsAcc.push(run.events);
-    totalSeen += run.events.length;
-    events.push(...run.events);
-    if (run.eventTimeline?.length) {
-      eventTimeline.push(...run.eventTimeline);
-    }
+    eventBuffer.pushRun(run);
   };
 
   const blocks = buildBlocks(args.pattern);
@@ -134,7 +131,10 @@ export function simulateSessionPattern<N, U extends string, Vars>(args: {
           fromState: state,
           useStrategy: true,
           fast: sc.run.fast,
-          eventLog: { enabled: true },
+          eventLog: {
+            enabled: sc.run.eventLog?.enabled ?? true,
+            maxEvents: sc.run.eventLog?.maxEvents,
+          },
           policy: sc.run.offline,
         },
       });
@@ -158,7 +158,10 @@ export function simulateSessionPattern<N, U extends string, Vars>(args: {
         ...sc.run,
         durationSec: block.durationSec,
         trace: { everySteps: 1, keepActionsLog: true },
-        eventLog: { enabled: true },
+        eventLog: {
+          enabled: sc.run.eventLog?.enabled ?? true,
+          maxEvents: sc.run.eventLog?.maxEvents,
+        },
       },
     });
 
@@ -194,7 +197,10 @@ export function simulateSessionPattern<N, U extends string, Vars>(args: {
         fromState: state,
         useStrategy: true,
         fast: sc.run.fast,
-        eventLog: { enabled: true },
+        eventLog: {
+          enabled: sc.run.eventLog?.enabled ?? true,
+          maxEvents: sc.run.eventLog?.maxEvents,
+        },
         policy: sc.run.offline,
       },
     });
@@ -212,21 +218,17 @@ export function simulateSessionPattern<N, U extends string, Vars>(args: {
   }
 
   const stats = statsAcc.snapshot();
+  const retained = eventBuffer.snapshot();
   const run: RunResult<N, U, Vars> = {
     start,
     end: state,
-    events,
-    eventTimeline,
+    events: retained.events,
+    eventTimeline: retained.eventTimeline,
     trace,
     actionsLog,
     stats,
     uxFlags: analyzeUX(stats),
-    eventLog: {
-      enabled: true,
-      totalSeen,
-      dropped: retainedDropped,
-      retained: events.length,
-    },
+    eventLog: retained.eventLog,
   };
 
   return {

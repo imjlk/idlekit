@@ -254,6 +254,34 @@ describe("CLI golden outputs", () => {
     expect(out._meta?.schemaRef).toBe("docs/schemas/evaluate.output.schema.json");
   }, 20000);
 
+  it("evaluate writes workflow child outputs to out-dir", async () => {
+    const dir = await createTempDir("idlekit-evaluate-out");
+    try {
+      const out = runCliJson([
+        "evaluate",
+        "../../examples/tutorials/11-my-game-v1.json",
+        "--out-dir",
+        dir,
+        "--format",
+        "json",
+      ]);
+
+      expect(out.files).toBeDefined();
+      expect(await pathExists(resolve(dir, "simulate.json"))).toBeTrue();
+      expect(await pathExists(resolve(dir, "experience.json"))).toBeTrue();
+      expect(await pathExists(resolve(dir, "ltv.json"))).toBeTrue();
+      expect(await pathExists(resolve(dir, "summary.json"))).toBeTrue();
+
+      const summary = await readJson<any>(resolve(dir, "summary.json"));
+      expect(summary._meta?.command).toBe("evaluate");
+      expect(summary.simulate?.endMoney).toBeDefined();
+      expect(summary.experience?.perceived?.visibleChangesPerMinute).toBeDefined();
+      expect(summary.ltv?.summary?.at7d).toBeDefined();
+    } finally {
+      await removePath(dir);
+    }
+  }, 20000);
+
   it("doctor reports runtime and completions wiring", () => {
     const out = runCliJson(["doctor", "--format", "json"]);
 

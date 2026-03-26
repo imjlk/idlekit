@@ -41,4 +41,31 @@ describe("simulateSessionPattern", () => {
     expect(a.end.wallet.money.amount).toBe(b.end.wallet.money.amount);
     expect(a.summary.activeBlocks).toBe(10);
   });
+
+  it("aggregates dropped event counts across session segments", () => {
+    const E = createNumberEngine();
+    const model: Model<number, UnitCode, Vars> = {
+      id: "linear",
+      version: 1,
+      income: () => ({ unit: { code: "COIN" }, amount: 1 }),
+      actions: () => [],
+    };
+    const scenario: CompiledScenario<number, UnitCode, Vars> = {
+      ctx: { E, unit: { code: "COIN" }, tickPolicy: { mode: "drop" }, seed: 7 },
+      model,
+      initial: makeState(),
+      run: {
+        stepSec: 1,
+        durationSec: 10,
+        eventLog: {
+          enabled: true,
+          maxEvents: 0,
+        },
+      },
+    };
+
+    const out = simulateSessionPattern({ scenario, pattern: { id: "short-bursts", days: 1 }, seed: 7 });
+    expect((out.run.eventLog?.dropped ?? 0) > 0).toBeTrue();
+    expect(out.run.eventLog?.retained).toBe(0);
+  });
 });

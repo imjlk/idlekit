@@ -1,5 +1,12 @@
 import { defineCommand, option } from "@bunli/core";
-import { compileScenario, createNumberEngine, runScenario, validateScenarioV1 } from "@idlekit/core";
+import {
+  compileScenario,
+  createNumberEngine,
+  runScenario,
+  validateScenarioV1,
+  type CompiledScenario,
+  type ScenarioV1,
+} from "@idlekit/core";
 import { resolve } from "path";
 import { z } from "zod";
 import { loadRegistriesFromFlags, pluginOptions } from "./_shared/plugin";
@@ -147,6 +154,260 @@ function buildGuardrailKpi(args: {
   };
 }
 
+export type LtvRow = Readonly<{
+  horizon: string;
+  seconds: number;
+  segmentSec: number;
+  endMoney: string;
+  endNetWorth: string;
+  deltaNetWorth: string;
+  netWorthPerHour: string;
+  deltaPerDay: string;
+  economyValueProxy?: string;
+  monetization: {
+    cumulativeGrossRevenuePerUser: number;
+    cumulativeNetRevenuePerUser: number;
+    cumulativeLtvPerUser: number;
+    cumulativeLtvQuantiles?: Record<string, number>;
+  };
+  guardrails: {
+    timeToFirstUpgradeSec: number | null;
+    stallRatio: number;
+    droppedRate: number;
+    actionMix: Record<string, number>;
+    growthLog10PerDay: number;
+  };
+}>;
+
+export type LtvAnalysisResult = Readonly<{
+  monetization: {
+    config: ReturnType<typeof deriveMonetizationConfig>;
+    uncertainty: {
+      enabled: boolean;
+      draws: number;
+      quantiles: readonly number[];
+    };
+  };
+  horizons: readonly LtvRow[];
+  summary: {
+    at30m?: LtvRow;
+    at2h?: LtvRow;
+    at24h?: LtvRow;
+    at7d?: LtvRow;
+    at30d?: LtvRow;
+    at90d?: LtvRow;
+  };
+  insights: {
+    summary: string;
+    trend7to90: string;
+  };
+  run: {
+    id: string;
+    seed: number;
+    stepSec: number;
+    fast: boolean;
+    strategyId: string | null;
+  };
+}>;
+
+export function runLtvAnalysis(args: {
+  scenario: ScenarioV1;
+  scenarioPath: string;
+  compiled: CompiledScenario<number, string, Record<string, unknown>>;
+  strategy: CompiledScenario<number, string, Record<string, unknown>>["strategy"];
+  horizonsRaw: string;
+  step?: number;
+  fast: boolean;
+  seed: number;
+  draws?: number;
+  valuePerWorth?: number;
+  runId?: string;
+}): LtvAnalysisResult {
+  const horizons = parseHorizons(args.horizonsRaw);
+  const stepSec = args.step ?? args.compiled.run.stepSec;
+  const runFast = args.fast
+    ? {
+        enabled: true,
+        kind: "log-domain" as const,
+        disableMoneyEvents: true,
+      }
+    : args.compiled.run.fast;
+  const monetizationConfig = deriveMonetizationConfig(args.scenario);
+  const uncertainEnabled = monetizationConfig.uncertainty.enabled || args.draws !== undefined;
+  const draws = args.draws ?? monetizationConfig.uncertainty.draws;
+
+  let state = args.compiled.initial;
+  let previousTargetSec = 0;
+  let previousWorth = args.compiled.model.netWorth?.(args.compiled.ctx, args.compiled.initial) ?? args.compiled.initial.wallet.money;
+  const startWorthLog10 = args.compiled.ctx.E.absLog10(previousWorth.amount);
+
+  const actionCounts: Record<string, number> = {};
+  let firstUpgradeSec: number | null = null;
+  let counts = emptyCounts();
+
+  const rows: LtvRow[] = [];
+
+  for (const h of horizons) {
+    const segmentSec = h.seconds - previousTargetSec;
+    if (segmentSec <= 0) continue;
+
+    const run = runScenario({
+      ...args.compiled,
+      initial: state,
+      strategy: args.strategy,
+      ctx: {
+        ...args.compiled.ctx,
+        seed: args.seed,
+      },
+      run: {
+        ...args.compiled.run,
+        stepSec,
+        durationSec: segmentSec,
+        until: undefined,
+        trace: {
+          everySteps: Number.MAX_SAFE_INTEGER,
+          keepActionsLog: true,
+        },
+        eventLog: {
+          enabled: false,
+          maxEvents: 0,
+        },
+        fast: runFast,
+      },
+    });
+
+    state = run.end;
+    counts = mergeCounts(counts, run.stats);
+
+    for (const log of run.actionsLog ?? []) {
+      actionCounts[log.actionId] = (actionCounts[log.actionId] ?? 0) + 1;
+      if (firstUpgradeSec === null && /upgrade/i.test(log.actionId)) {
+        firstUpgradeSec = log.t;
+      }
+    }
+
+    const worth = args.compiled.model.netWorth?.(args.compiled.ctx, state) ?? state.wallet.money;
+    const endWorthLog10 = args.compiled.ctx.E.absLog10(worth.amount);
+    const progression = progressionFactor(startWorthLog10, endWorthLog10, monetizationConfig.revenue.progressionLogSpan);
+    const horizonDays = h.seconds / 86400;
+    const point = estimateLtvPerUser({
+      config: monetizationConfig,
+      horizonDays,
+      progression,
+    });
+    const distribution =
+      uncertainEnabled && draws > 1
+        ? estimateLtvDistribution({
+            config: monetizationConfig,
+            horizonDays,
+            progression,
+            draws,
+            quantiles: monetizationConfig.uncertainty.quantiles,
+            seed: (args.seed ?? monetizationConfig.uncertainty.seed ?? 1) + h.seconds,
+          })
+        : undefined;
+
+    const E = args.compiled.ctx.E;
+    const deltaWorth = E.sub(worth.amount, previousWorth.amount);
+    const perHour = E.mul(E.div(worth.amount, Math.max(1, h.seconds)), 3600);
+    const deltaPerDay = E.mul(E.div(deltaWorth, Math.max(1, segmentSec)), 86400);
+    const growthLog10PerDay = (() => {
+      const prevLog = E.absLog10(previousWorth.amount);
+      const nextLog = E.absLog10(worth.amount);
+      const days = Math.max(segmentSec / 86400, 1e-12);
+      return (nextLog - prevLog) / days;
+    })();
+    const economyValueProxy =
+      args.valuePerWorth !== undefined
+        ? E.toString(E.mul(worth.amount, args.valuePerWorth))
+        : undefined;
+
+    rows.push({
+      horizon: h.label,
+      seconds: h.seconds,
+      segmentSec,
+      endMoney: E.toString(state.wallet.money.amount),
+      endNetWorth: E.toString(worth.amount),
+      deltaNetWorth: E.toString(deltaWorth),
+      netWorthPerHour: E.toString(perHour),
+      deltaPerDay: E.toString(deltaPerDay),
+      economyValueProxy,
+      monetization: {
+        cumulativeGrossRevenuePerUser: distribution?.mean.cumulativeGrossRevenuePerUser ?? point.cumulativeGrossRevenuePerUser,
+        cumulativeNetRevenuePerUser: distribution?.mean.cumulativeNetRevenuePerUser ?? point.cumulativeNetRevenuePerUser,
+        cumulativeLtvPerUser: distribution?.mean.cumulativeLtvPerUser ?? point.cumulativeLtvPerUser,
+        cumulativeLtvQuantiles: distribution?.quantiles,
+      },
+      guardrails: buildGuardrailKpi({
+        counts,
+        actionCounts,
+        firstUpgradeSec,
+        growthLog10PerDay,
+      }),
+    });
+
+    previousWorth = worth;
+    previousTargetSec = h.seconds;
+  }
+
+  const summary = {
+    at30m: getSummaryBySeconds(rows, 1800),
+    at2h: getSummaryBySeconds(rows, 7200),
+    at24h: getSummaryBySeconds(rows, 86400),
+    at7d: getSummaryBySeconds(rows, 604800),
+    at30d: getSummaryBySeconds(rows, 2592000),
+    at90d: getSummaryBySeconds(rows, 7776000),
+  };
+
+  const runId =
+    args.runId ??
+    deriveDeterministicRunId({
+      command: "ltv",
+      seed: args.seed,
+      scope: {
+        scenarioPath: resolve(process.cwd(), args.scenarioPath),
+        horizons: horizons.map((x) => x.label),
+        stepSec,
+      },
+    });
+
+  const trend7to90 = (() => {
+    const at7d = summary.at7d;
+    const at90d = summary.at90d;
+    if (!at7d || !at90d) return "insufficient_horizon_data";
+    const n7 = Number(at7d.monetization.cumulativeLtvPerUser);
+    const n90 = Number(at90d.monetization.cumulativeLtvPerUser);
+    if (!Number.isFinite(n7) || !Number.isFinite(n90)) return "insufficient_horizon_data";
+    if (n90 > n7 * 1.2) return "long_tail_growth";
+    if (n90 < n7 * 1.02) return "late_game_flattening";
+    return "steady_growth";
+  })();
+
+  return {
+    monetization: {
+      config: monetizationConfig,
+      uncertainty: {
+        enabled: uncertainEnabled,
+        draws: uncertainEnabled ? draws : 0,
+        quantiles: monetizationConfig.uncertainty.quantiles,
+      },
+    },
+    horizons: rows,
+    summary,
+    insights: {
+      summary: `LTV trajectory classification: ${trend7to90}`,
+      trend7to90,
+    },
+    run: {
+      id: runId,
+      seed: args.seed,
+      stepSec,
+      fast: !!runFast?.enabled,
+      strategyId: args.strategy?.id ?? null,
+    },
+  };
+}
+
 export default defineCommand({
   name: "ltv",
   description: "Compute long-horizon LTV snapshots (30m..90d) and uncertainty bands",
@@ -182,7 +443,6 @@ export default defineCommand({
       throw usageError("Usage: idk ltv <scenario> [--horizons 30m,2h,24h,7d,30d,90d]");
     }
 
-    const horizons = parseHorizons(flags.horizons);
     const input = await readScenarioFile(scenarioPath);
     const loaded = await loadRegistriesFromFlags(flags);
     const valid = validateScenarioV1(input, loaded.modelRegistry);
@@ -206,14 +466,6 @@ export default defineCommand({
       return f.create(f.defaultParams ?? {}) as typeof compiled.strategy;
     })();
 
-    const stepSec = flags.step ?? compiled.run.stepSec;
-    const runFast = flags.fast
-      ? {
-          enabled: true,
-          kind: "log-domain" as const,
-          disableMoneyEvents: true,
-        }
-      : compiled.run.fast;
     const baseSeed =
       flags.seed ??
       deriveDeterministicSeed({
@@ -221,7 +473,7 @@ export default defineCommand({
         scenario: valid.scenario,
         options: {
           horizons: flags.horizons,
-          step: stepSec,
+          step: flags.step ?? compiled.run.stepSec,
           strategy: flags.strategy,
           fast: flags.fast,
           draws: flags.draws,
@@ -229,210 +481,37 @@ export default defineCommand({
         },
       });
 
-    const monetizationConfig = deriveMonetizationConfig(valid.scenario);
-    const uncertainEnabled = monetizationConfig.uncertainty.enabled || flags.draws !== undefined;
-    const draws = flags.draws ?? monetizationConfig.uncertainty.draws;
-
-    let state = compiled.initial;
-    let previousTargetSec = 0;
-    let previousWorth = compiled.model.netWorth?.(compiled.ctx, compiled.initial) ?? compiled.initial.wallet.money;
-    const startWorthLog10 = E.absLog10(previousWorth.amount);
-
-    const actionCounts: Record<string, number> = {};
-    let firstUpgradeSec: number | null = null;
-    let counts = emptyCounts();
-
-    const rows: Array<{
-      horizon: string;
-      seconds: number;
-      segmentSec: number;
-      endMoney: string;
-      endNetWorth: string;
-      deltaNetWorth: string;
-      netWorthPerHour: string;
-      deltaPerDay: string;
-      economyValueProxy?: string;
-      monetization: {
-        cumulativeGrossRevenuePerUser: number;
-        cumulativeNetRevenuePerUser: number;
-        cumulativeLtvPerUser: number;
-        cumulativeLtvQuantiles?: Record<string, number>;
-      };
-      guardrails: {
-        timeToFirstUpgradeSec: number | null;
-        stallRatio: number;
-        droppedRate: number;
-        actionMix: Record<string, number>;
-      };
-    }> = [];
-
-    for (const h of horizons) {
-      const segmentSec = h.seconds - previousTargetSec;
-      if (segmentSec <= 0) continue;
-
-      const run = runScenario({
-        ...compiled,
-        initial: state,
-        strategy,
-        ctx: {
-          ...compiled.ctx,
-          seed: baseSeed,
-        },
-        run: {
-          ...compiled.run,
-          stepSec,
-          durationSec: segmentSec,
-          until: undefined,
-          trace: {
-            everySteps: Number.MAX_SAFE_INTEGER,
-            keepActionsLog: true,
-          },
-          eventLog: {
-            enabled: false,
-            maxEvents: 0,
-          },
-          fast: runFast,
-        },
-      });
-
-      state = run.end;
-      counts = mergeCounts(counts, run.stats);
-
-      for (const log of run.actionsLog ?? []) {
-        actionCounts[log.actionId] = (actionCounts[log.actionId] ?? 0) + 1;
-      if (firstUpgradeSec === null && /upgrade/i.test(log.actionId)) {
-        firstUpgradeSec = log.t;
-      }
-      }
-
-      const worth = compiled.model.netWorth?.(compiled.ctx, state) ?? state.wallet.money;
-      const endWorthLog10 = E.absLog10(worth.amount);
-      const progression = progressionFactor(startWorthLog10, endWorthLog10, monetizationConfig.revenue.progressionLogSpan);
-      const horizonDays = h.seconds / 86400;
-      const point = estimateLtvPerUser({
-        config: monetizationConfig,
-        horizonDays,
-        progression,
-      });
-      const distribution =
-        uncertainEnabled && draws > 1
-          ? estimateLtvDistribution({
-              config: monetizationConfig,
-              horizonDays,
-              progression,
-              draws,
-              quantiles: monetizationConfig.uncertainty.quantiles,
-              seed: (baseSeed ?? monetizationConfig.uncertainty.seed ?? 1) + h.seconds,
-            })
-          : undefined;
-
-      const deltaWorth = E.sub(worth.amount, previousWorth.amount);
-      const perHour = E.mul(E.div(worth.amount, Math.max(1, h.seconds)), 3600);
-      const deltaPerDay = E.mul(E.div(deltaWorth, Math.max(1, segmentSec)), 86400);
-      const growthLog10PerDay = (() => {
-        const prevLog = E.absLog10(previousWorth.amount);
-        const nextLog = E.absLog10(worth.amount);
-        const days = Math.max(segmentSec / 86400, 1e-12);
-        return (nextLog - prevLog) / days;
-      })();
-      const economyValueProxy =
-        flags["value-per-worth"] !== undefined
-          ? E.toString(E.mul(worth.amount, flags["value-per-worth"]))
-          : undefined;
-
-      rows.push({
-        horizon: h.label,
-        seconds: h.seconds,
-        segmentSec,
-        endMoney: E.toString(state.wallet.money.amount),
-        endNetWorth: E.toString(worth.amount),
-        deltaNetWorth: E.toString(deltaWorth),
-        netWorthPerHour: E.toString(perHour),
-        deltaPerDay: E.toString(deltaPerDay),
-        economyValueProxy,
-        monetization: {
-          cumulativeGrossRevenuePerUser: distribution?.mean.cumulativeGrossRevenuePerUser ?? point.cumulativeGrossRevenuePerUser,
-          cumulativeNetRevenuePerUser: distribution?.mean.cumulativeNetRevenuePerUser ?? point.cumulativeNetRevenuePerUser,
-          cumulativeLtvPerUser: distribution?.mean.cumulativeLtvPerUser ?? point.cumulativeLtvPerUser,
-          cumulativeLtvQuantiles: distribution?.quantiles,
-        },
-        guardrails: buildGuardrailKpi({
-          counts,
-          actionCounts,
-          firstUpgradeSec,
-          growthLog10PerDay,
-        }),
-      });
-
-      previousWorth = worth;
-      previousTargetSec = h.seconds;
-    }
-
-    const summary = {
-      at30m: getSummaryBySeconds(rows, 1800),
-      at2h: getSummaryBySeconds(rows, 7200),
-      at24h: getSummaryBySeconds(rows, 86400),
-      at7d: getSummaryBySeconds(rows, 604800),
-      at30d: getSummaryBySeconds(rows, 2592000),
-      at90d: getSummaryBySeconds(rows, 7776000),
-    };
-
     const seed = baseSeed;
-    const runId =
-      flags["run-id"] ??
-      deriveDeterministicRunId({
-        command: "ltv",
-        seed,
-        scope: {
-          scenarioPath: resolve(process.cwd(), scenarioPath),
-          horizons: horizons.map((x) => x.label),
-          stepSec,
-        },
-      });
+    const analysis = runLtvAnalysis({
+      scenario: valid.scenario,
+      scenarioPath,
+      compiled,
+      strategy,
+      horizonsRaw: flags.horizons,
+      step: flags.step,
+      fast: flags.fast,
+      seed,
+      draws: flags.draws,
+      valuePerWorth: flags["value-per-worth"],
+      runId: flags["run-id"],
+    });
     const outputMeta = buildOutputMeta({
       command: "ltv",
-      runId,
+      runId: analysis.run.id,
       scenarioPath,
       scenario: valid.scenario,
       seed,
       pluginDigest: loaded.pluginDigest,
     });
-    const trend7to90 = (() => {
-      const at7d = summary.at7d;
-      const at90d = summary.at90d;
-      if (!at7d || !at90d) return "insufficient_horizon_data";
-      const n7 = Number(at7d.monetization.cumulativeLtvPerUser);
-      const n90 = Number(at90d.monetization.cumulativeLtvPerUser);
-      if (!Number.isFinite(n7) || !Number.isFinite(n90)) return "insufficient_horizon_data";
-      if (n90 > n7 * 1.2) return "long_tail_growth";
-      if (n90 < n7 * 1.02) return "late_game_flattening";
-      return "steady_growth";
-    })();
     const jsonOutput = {
       scenario: scenarioPath,
-      run: {
-        id: runId,
-        seed,
-        stepSec,
-        fast: !!runFast?.enabled,
-        strategyId: strategy?.id ?? null,
-      },
-      monetization: {
-        config: monetizationConfig,
-        uncertainty: {
-          enabled: uncertainEnabled,
-          draws: uncertainEnabled ? draws : 0,
-          quantiles: monetizationConfig.uncertainty.quantiles,
-        },
-      },
-      horizons: rows,
-      summary,
-      insights: {
-        summary: `LTV trajectory classification: ${trend7to90}`,
-        trend7to90,
-      },
+      run: analysis.run,
+      monetization: analysis.monetization,
+      horizons: analysis.horizons,
+      summary: analysis.summary,
+      insights: analysis.insights,
     };
-    const output = flags.format === "json" ? jsonOutput : rows;
+    const output = flags.format === "json" ? jsonOutput : analysis.horizons;
 
     if (flags["artifact-out"]) {
       const scenarioAbs = resolve(process.cwd(), scenarioPath);
@@ -442,7 +521,7 @@ export default defineCommand({
         positional: [scenarioAbs],
         flags,
         forcedFlags: {
-          "run-id": runId,
+          "run-id": analysis.run.id,
           seed,
           format: "json",
         },
