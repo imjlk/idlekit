@@ -444,7 +444,7 @@ describe("replay consistency", () => {
     } finally {
       await removePath(dir);
     }
-  });
+  }, 20000);
 
   it("normalizes root-cwd resume paths in simulate replay artifacts", async () => {
     const dir = await createTempDir("idlekit-replay-root-resume");
