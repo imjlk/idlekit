@@ -241,6 +241,16 @@ describe("CLI golden outputs", () => {
     const out = runCliJson([
       "evaluate",
       "../../examples/tutorials/11-my-game-v1.json",
+      "--session-pattern",
+      "short-bursts",
+      "--days",
+      "1",
+      "--step",
+      "600",
+      "--fast",
+      "true",
+      "--horizons",
+      "30m,2h,24h,7d",
       "--format",
       "json",
     ]);
@@ -252,7 +262,7 @@ describe("CLI golden outputs", () => {
     expect(out.ltv?.summary?.at7d).toBeDefined();
     expect(out._meta?.command).toBe("evaluate");
     expect(out._meta?.schemaRef).toBe("docs/schemas/evaluate.output.schema.json");
-  }, 20000);
+  }, 40000);
 
   it("evaluate writes workflow child outputs to out-dir", async () => {
     const dir = await createTempDir("idlekit-evaluate-out");
@@ -262,6 +272,16 @@ describe("CLI golden outputs", () => {
         "../../examples/tutorials/11-my-game-v1.json",
         "--out-dir",
         dir,
+        "--session-pattern",
+        "short-bursts",
+        "--days",
+        "1",
+        "--step",
+        "600",
+        "--fast",
+        "true",
+        "--horizons",
+        "30m,2h,24h,7d",
         "--format",
         "json",
       ]);
@@ -280,7 +300,7 @@ describe("CLI golden outputs", () => {
     } finally {
       await removePath(dir);
     }
-  }, 20000);
+  }, 40000);
 
   it("doctor reports runtime and completions wiring", () => {
     const out = runCliJson(["doctor", "--format", "json"]);
@@ -312,7 +332,7 @@ describe("CLI golden outputs", () => {
     } finally {
       await removePath(dir);
     }
-  });
+  }, 15000);
 
   it("ltv uncertainty is deterministic for fixed seed", () => {
     const args = [

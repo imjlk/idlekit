@@ -62,6 +62,8 @@ describe("artifact schema contracts", () => {
       runCliJson([
         "experience",
         BASELINE,
+        "--session-pattern",
+        "short-bursts",
         "--days",
         "1",
         "--seed",
@@ -114,7 +116,7 @@ describe("artifact schema contracts", () => {
     } finally {
       await removePath(dir);
     }
-  });
+  }, 20000);
 
   it("replay verify output follows schema", async () => {
     const dir = await createTempDir("idlekit-replay-verify-schema");

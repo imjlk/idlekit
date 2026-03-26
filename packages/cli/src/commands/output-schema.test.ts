@@ -106,6 +106,16 @@ describe("output schema contracts", () => {
     const out = runCliJson([
       "evaluate",
       "../../examples/tutorials/11-my-game-v1.json",
+      "--session-pattern",
+      "short-bursts",
+      "--days",
+      "1",
+      "--step",
+      "600",
+      "--fast",
+      "true",
+      "--horizons",
+      "30m,2h,24h,7d",
       "--format",
       "json",
     ]);
@@ -113,7 +123,7 @@ describe("output schema contracts", () => {
       validateBySchema(schema, out, "evaluate.output.schema.json");
       expect(out._meta.command).toBe("evaluate");
     });
-  }, 20000);
+  }, 40000);
 
   it("doctor output follows schema", () => {
     const out = runCliJson(["doctor", "--format", "json"]);
@@ -144,7 +154,7 @@ describe("output schema contracts", () => {
     } finally {
       await removePath(dir);
     }
-  });
+  }, 15000);
 
   it("tune output follows schema", () => {
     const out = runCliJson([

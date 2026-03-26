@@ -3,7 +3,7 @@ import { dirname, resolve } from "path";
 
 export const CLI_CWD = process.cwd();
 export const REPO_ROOT = resolve(CLI_CWD, "../..");
-const MAX_CAPTURE_BYTES = 8 * 1024 * 1024;
+const MAX_CAPTURE_BYTES = 32 * 1024 * 1024;
 
 type CliRunOptions = Readonly<{
   cwd?: string;
