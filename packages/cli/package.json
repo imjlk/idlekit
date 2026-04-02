@@ -56,7 +56,7 @@
     "@idlekit/core": "workspace:*",
     "@opentui/react": "^0.1.86",
     "ajv": "^8.17.1",
-    "bunli": "^0.8.2",
+    "bunli": "^0.9.0",
     "pngjs": "^7.0.0",
     "react": "^19.2.0",
     "yaml": "^2.8.1",
