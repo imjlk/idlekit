@@ -50,7 +50,7 @@ jobs:
 
       - name: Run Sampo Release/Publish
         id: sampo
-        uses: bruits/sampo/crates/sampo-github-action@438b2ebfb4a78c1b8c2fe3a3da8c825cb21c6131 # main @ 2026-03-11
+        uses: bruits/sampo/crates/sampo-github-action@2cb3066596478e882659ba119724a996b8c5faa8 # main @ 2026-03-11
         with:
           command: auto
         env:
