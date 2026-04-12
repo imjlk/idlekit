@@ -10,7 +10,7 @@ import { renderReviewEvaluate } from "./reviewEvaluate";
 import { runInitWizard } from "../lib/initWizard";
 import { buildInitTemplatePlan } from "../templates/scenario";
 import { resolve } from "path";
-import { resolveReviewEvaluateImagePlan } from "../lib/reviewEvaluate";
+import { buildReviewEvaluateCards, resolveReviewEvaluateImagePlan } from "../lib/reviewEvaluate";
 import { buildReviewCompareCards, resolveReviewCompareImagePlan } from "../lib/reviewCompare";
 import { createLazyReviewElement } from "../lib/reviewLazy";
 import { sha256Hex } from "../runtime/bun";
@@ -387,6 +387,20 @@ describe("interactive CLI helpers", () => {
         stdout: { isTTY: false } as never,
       }),
     ).toThrow("Image preview is not available in this terminal");
+  });
+
+  it("review evaluate builds fixed summary cards", () => {
+    const cards = buildReviewEvaluateCards(reviewEvaluateOutput as never);
+    expect(cards.map((card) => card.title)).toEqual([
+      "Intent / Session",
+      "End state",
+      "Milestone / pacing",
+      "Long-horizon worth",
+    ]);
+    expect(cards[0]?.value).toContain("strategic-optimization / twice-daily");
+    expect(cards[1]?.value).toContain("Worth 5678");
+    expect(cards[2]?.value).toContain("progress.first-upgrade @ 120.0s");
+    expect(cards[3]?.value).toContain("at7d 1e6");
   });
 
   it("review compare image plan supports overlay charts and fallback", () => {

@@ -7,7 +7,7 @@ import { useKeyboard } from "@opentui/react";
 import { cliError } from "../errors";
 import { runSelfCliJson } from "../runtime/selfCli";
 import { encodeLineChartPng, log10FromNumberish } from "./reviewCharts";
-import { reviewExitHint, reviewSection } from "./reviewUi";
+import { reviewExitHint, reviewSection, reviewSummaryCard, type ReviewCardTone } from "./reviewUi";
 
 type ReviewEvaluateOutput = Readonly<{
   scenario: string;
@@ -106,6 +106,13 @@ type ReviewChart = Readonly<{
 type ReviewEvaluateImagePlan = Readonly<{
   status: string;
   charts: readonly ReviewChart[];
+}>;
+
+type ReviewEvaluateCard = Readonly<{
+  title: string;
+  value: string;
+  detail: string;
+  tone: ReviewCardTone;
 }>;
 
 function pluginArgs(flags: ReviewEvaluateFlags): string[] {
@@ -248,6 +255,46 @@ function metricOrNa(value: unknown): string {
   return value === undefined || value === null ? "n/a" : String(value);
 }
 
+function firstMilestone(output: ReviewEvaluateOutput) {
+  return output.experience.milestones.milestones[0];
+}
+
+function strongestWorthRow(output: ReviewEvaluateOutput) {
+  const rows = orderedHorizonRows(output);
+  return rows[rows.length - 1];
+}
+
+export function buildReviewEvaluateCards(output: ReviewEvaluateOutput): readonly ReviewEvaluateCard[] {
+  const first = firstMilestone(output);
+  const worthRow = strongestWorthRow(output);
+  return [
+    {
+      title: "Intent / Session",
+      value: `${output.experience.design.intent ?? "n/a"} / ${output.experience.design.sessionPattern.id}`,
+      detail: `Run ${output.run.id} | Seed ${output.run.seed}`,
+      tone: "info",
+    },
+    {
+      title: "End state",
+      value: `Worth ${output.simulate.endNetWorth}`,
+      detail: `Money ${output.simulate.endMoney} | Dropped ${metricOrNa(output.simulate.stats?.money?.droppedRate)}`,
+      tone: "good",
+    },
+    {
+      title: "Milestone / pacing",
+      value: first ? `${first.key} @ ${first.firstSeenSec.toFixed(1)}s` : "No milestone",
+      detail: `Visible ${output.experience.perceived.visibleChangesPerMinute.toFixed(2)}/min | Gap ${output.experience.perceived.maxNoRewardGapSec.toFixed(1)}s`,
+      tone: first ? "info" : "warn",
+    },
+    {
+      title: "Long-horizon worth",
+      value: worthRow ? `${worthRow.label} ${worthRow.value}` : "No summary",
+      detail: `Active blocks ${output.experience.session.activeBlocks} | Offline ${output.experience.session.totalOfflineSec}s`,
+      tone: worthRow ? "good" : "warn",
+    },
+  ];
+}
+
 function EvaluateReviewDashboard(props: {
   output: ReviewEvaluateOutput;
   image: ResolvedTuiImageOptions;
@@ -344,6 +391,18 @@ function EvaluateReviewDashboard(props: {
       style: { flexDirection: "column", gap: 1, padding: 1 },
     },
     reviewSection("Header", headerLines),
+    createElement(
+      "box",
+      {
+        style: {
+          flexDirection: "row",
+          gap: 1,
+        },
+      },
+      ...buildReviewEvaluateCards(props.output).map((card) =>
+        reviewSummaryCard(card.title, card.value, card.detail, card.tone)
+      ),
+    ),
     reviewSection("Simulate Summary", simulateLines),
     reviewSection("Experience Summary", experienceLines),
     reviewSection("Milestones", milestoneLines),
