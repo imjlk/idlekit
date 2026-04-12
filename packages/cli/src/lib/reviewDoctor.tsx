@@ -59,6 +59,24 @@ function sectionLines(title: string, lines: readonly string[]) {
   );
 }
 
+function summaryCard(title: string, value: string, detail: string, tone: "good" | "warn" | "info") {
+  const fg = tone === "good" ? "#86efac" : tone === "warn" ? "#fca5a5" : "#93c5fd";
+  return createElement(
+    "box",
+    {
+      border: true,
+      padding: 1,
+      style: {
+        flexDirection: "column",
+        width: 30,
+      },
+    },
+    createElement("text", { content: title, fg }),
+    createElement("text", { content: value }),
+    createElement("text", { content: detail, fg: "#94a3b8" }),
+  );
+}
+
 function summarizeChecks(output: DoctorOutput): string[] {
   return output.checks.map((check) => {
     const status = check.ok ? "pass" : "fail";
@@ -87,9 +105,17 @@ function nextStepLines(output: DoctorOutput): string[] {
   ];
 }
 
+function summaryStats(output: DoctorOutput) {
+  const passing = output.checks.filter((check) => check.ok).length;
+  const failing = output.checks.length - passing;
+  const appliedFixes = (output.fixes ?? []).filter((fix) => fix.status === "applied").length;
+  return { passing, failing, appliedFixes };
+}
+
 export function createReviewDoctorElement(args: { output: DoctorOutput }) {
   function ReviewDoctorScreen() {
     const runtime = useRuntime();
+    const stats = summaryStats(args.output);
     useKeyboard((key) => {
       if (key.name === "q" || key.name === "escape" || (key.ctrl === true && key.name === "c")) {
         runtime.exit();
@@ -112,6 +138,18 @@ export function createReviewDoctorElement(args: { output: DoctorOutput }) {
       createElement("text", {
         content: `Bun ${args.output.runtime.currentBun} | required ${args.output.runtime.requiredBun} | overall ${args.output.ok ? "pass" : "fail"}`,
       }),
+      createElement(
+        "box",
+        {
+          style: {
+            flexDirection: "row",
+            gap: 1,
+          },
+        },
+        summaryCard("Overall", args.output.ok ? "pass" : "fail", `${stats.passing} pass / ${stats.failing} fail`, args.output.ok ? "good" : "warn"),
+        summaryCard("Runtime", args.output.runtime.currentBun, `Requires ${args.output.runtime.requiredBun}`, "info"),
+        summaryCard("Applied fixes", String(stats.appliedFixes), stats.appliedFixes > 0 ? "Managed fixes were applied." : "No managed fixes in this run.", stats.appliedFixes > 0 ? "good" : "info"),
+      ),
       sectionLines("Checks", summarizeChecks(args.output)),
       sectionLines("Fixes", fixLines(args.output)),
       sectionLines("Next", nextStepLines(args.output)),
