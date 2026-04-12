@@ -6,3 +6,4 @@ tmp
 *.tgz
 .npmrc.local
 .npmrc.publish.local
+packages/cli/.bunli/*.report.json

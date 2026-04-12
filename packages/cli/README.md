@@ -36,6 +36,7 @@ Shell completion and health check:
 source <(idk completions zsh)
 idk doctor --format md
 idk doctor --fix true --shell zsh
+idk review doctor
 idk setup plugin-trust --plugin ./custom-econ-plugin.ts --out ./.idk/plugin-trust.json
 ```
 
@@ -55,7 +56,7 @@ bun run --cwd packages/cli dev -- experience ../../examples/tutorials/14-orbital
 `@idlekit/cli` is maintained as a Bun-first CLI package.
 
 - automation path: `evaluate`, `compare --format json`, `experience --format md|json`
-- human review path: `review evaluate`, `review compare`
+- human review path: `review evaluate`, `review compare`, `review doctor`
 - guided setup path: `init scenario --wizard`, `tune --wizard`, `doctor --fix`, `setup completions`
 
 ## Documentation

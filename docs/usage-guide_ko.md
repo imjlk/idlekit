@@ -84,6 +84,7 @@ bun run --cwd packages/cli dev -- review evaluate ../../examples/tutorials/11-my
 bun run --cwd packages/cli dev -- review compare ../../examples/tutorials/11-my-game-v1.json ../../examples/tutorials/12-my-game-compare-b.json --image-mode auto
 idk setup completions --shell zsh
 idk doctor --fix true --shell zsh
+idk review doctor
 idk setup plugin-trust --plugin ../../examples/plugins/custom-econ-plugin.ts --out ../../tmp/plugin-trust.json
 ```
 

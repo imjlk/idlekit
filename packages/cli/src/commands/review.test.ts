@@ -2,6 +2,7 @@ import { createCLI, defineCommand, defineGroup } from "@bunli/core";
 import { describe, expect, it } from "bun:test";
 import { createTempDir, removePath, runCliFailure } from "../testkit/bun";
 import { renderReviewCompare } from "./reviewCompare";
+import { renderReviewDoctor } from "./reviewDoctor";
 import { renderReviewEvaluate } from "./reviewEvaluate";
 import { runInitWizard } from "../lib/initWizard";
 import { buildInitTemplatePlan } from "../templates/scenario";
@@ -103,6 +104,23 @@ const reviewCompareOutput = {
       measured: { a: { timeToMilestone: 300 }, b: { timeToMilestone: 180 } },
     },
   ],
+} as const;
+
+const reviewDoctorOutput = {
+  ok: false,
+  cli: {
+    name: "idk",
+    version: "0.1.1",
+  },
+  runtime: {
+    currentBun: "1.3.10",
+    requiredBun: ">=1.3.0",
+  },
+  checks: [
+    { id: "bun.version", ok: true, detail: "Bun version satisfies the v1 contract." },
+    { id: "completions.installed", ok: false, detail: "Managed completions block not found." },
+  ],
+  fixes: [{ id: "completions.install", status: "applied", detail: "Managed completions block written." }],
 } as const;
 
 function createPromptStub(responses: {
@@ -265,6 +283,41 @@ describe("interactive CLI helpers", () => {
     expect(called).toBeTrue();
   });
 
+  it("review doctor uses the TUI render path in interactive mode", async () => {
+    let called = false;
+    const cli = await createCLI(
+      { name: "idk", version: "test", generated: false },
+      {
+        getTerminalInfo: () => interactiveTerminal,
+        runTuiRender: async (args) => {
+          called = true;
+          expect(args.command.name).toBe("doctor");
+          const element = renderReviewDoctor(args as never, () => reviewDoctorOutput as never);
+          expect(element).toBeDefined();
+        },
+      },
+    );
+    cli.command(
+      defineGroup({
+        name: "review",
+        description: "review commands",
+        commands: [
+          defineCommand({
+            name: "doctor",
+            description: "review doctor",
+            handler() {},
+            render(args) {
+              return renderReviewDoctor(args as never, () => reviewDoctorOutput as never);
+            },
+          }),
+        ],
+      }),
+    );
+
+    await cli.execute("review doctor", []);
+    expect(called).toBeTrue();
+  });
+
   it("review evaluate image plan is deterministic and respects image mode", () => {
     const offPlan = resolveReviewEvaluateImagePlan({
       output: reviewEvaluateOutput,
@@ -350,5 +403,8 @@ describe("interactive CLI helpers", () => {
       "../../examples/tutorials/12-my-game-compare-b.json",
     ]);
     expect(compareResult.stderr).toContain("[CLI_USAGE]");
+
+    const doctorResult = runCliFailure(["review", "doctor"]);
+    expect(doctorResult.stderr).toContain("[CLI_USAGE]");
   });
 });

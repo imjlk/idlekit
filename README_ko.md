@@ -64,6 +64,7 @@ completion / trust 설정:
 ```bash
 idk setup completions --shell zsh
 idk doctor --fix true --shell zsh
+idk review doctor
 idk setup plugin-trust --plugin ../../examples/plugins/custom-econ-plugin.ts --out ../../tmp/plugin-trust.json
 ```
 

@@ -126,6 +126,7 @@ Failure response:
 source <(idk completions zsh)
 idk doctor --format md
 idk doctor --fix true --shell zsh
+idk review doctor
 idk setup plugin-trust --plugin ../../examples/plugins/custom-econ-plugin.ts --out ../../tmp/plugin-trust.json
 ```
 
@@ -133,6 +134,7 @@ Success condition:
 
 - completion script prints successfully
 - `doctor --fix` writes the managed completion block when it was missing
+- `review doctor` opens a human-readable setup dashboard in an interactive terminal
 - rerunning `idk doctor --format md` reports `Overall: pass`
 
 Failure response:

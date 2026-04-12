@@ -1,15 +1,16 @@
-import { defineConfig } from "bunli";
-import { CLI_DESCRIPTION, CLI_NAME, CLI_VERSION } from "./src/cliMeta";
+import { defineConfig } from "@bunli/core";
+import packageJson from "./package.json" with { type: "json" };
 import { bunliPlugins } from "./src/bunliPlugins";
 
 export default defineConfig({
-  name: CLI_NAME,
-  version: CLI_VERSION,
-  description: CLI_DESCRIPTION,
-  generated: true,
+  name: packageJson.name,
+  version: packageJson.version,
+  description: packageJson.description,
   plugins: bunliPlugins as any,
   commands: {
     entry: "./src/main.ts",
+    directory: "./src/commands",
+    generateReport: true,
   },
   build: {
     entry: "./src/main.ts",
@@ -22,5 +23,10 @@ export default defineConfig({
   dev: {
     watch: true,
     inspect: false,
+  },
+  tui: {
+    renderer: {
+      bufferMode: "alternate",
+    },
   },
 });

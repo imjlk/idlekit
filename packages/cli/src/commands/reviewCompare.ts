@@ -83,7 +83,7 @@ export default defineCommand({
   description: "Interactive compare dashboard for human design review",
   tui: {
     renderer: {
-      bufferMode: "standard",
+      bufferMode: "alternate",
     },
   },
   options: {

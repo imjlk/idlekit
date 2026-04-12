@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 import { createCLI } from "@bunli/core";
+import bunliConfig from "../bunli.config";
 import calibrateCommand from "./commands/calibrate";
 import compareCommand from "./commands/compare";
 import doctorCommand from "./commands/doctor";
@@ -28,14 +29,11 @@ import { bunliPlugins } from "./bunliPlugins";
 import { formatCliError, toCliError } from "./errors";
 
 const cli = await createCLI({
+  ...bunliConfig,
   name: CLI_NAME,
   version: CLI_VERSION,
   description: CLI_DESCRIPTION,
-  generated: true,
   plugins: bunliPlugins as any,
-  commands: {
-    entry: "./src/main.ts",
-  },
 });
 
 const GROUPS_WITH_SUBCOMMANDS = new Set(["models", "strategies", "objectives", "init", "replay", "kpi", "review", "setup"]);

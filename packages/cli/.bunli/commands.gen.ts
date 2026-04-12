@@ -318,7 +318,7 @@ const metadata: Record<GeneratedNames, GeneratedCommandMeta> = {
             'draws': { type: 'z.coerce.number.int.positive.optional', required: false, hasDefault: false, description: 'Monte Carlo draw count override', schema: {"type":"zod","method":"optional","args":[]}, validator: '(val) => true' },
             'seed': { type: 'z.coerce.number.optional', required: false, hasDefault: false, description: 'Deterministic seed override', schema: {"type":"zod","method":"optional","args":[]}, validator: '(val) => true' },
             'strategy': { type: 'strategySchema', required: true, hasDefault: false, description: 'Override strategy id (greedy|planner|scripted)', schema: {"type":"zod","name":"strategySchema"}, validator: '(val) => true' },
-            'fast': { type: 'z.coerce.boolean.default', required: true, hasDefault: true, default: false, description: 'Enable fast mode for evaluate child runs', schema: {"type":"zod","method":"default","args":[{"type":"unknown","raw":{"type":"BooleanLiteral","start":2636,"end":2641,"loc":{"start":{"line":76,"column":44,"index":2636},"end":{"line":76,"column":49,"index":2641}},"value":false}}]}, validator: '(val) => true' },
+            'fast': { type: 'z.coerce.boolean.default', required: true, hasDefault: true, default: false, description: 'Enable fast mode for evaluate child runs', schema: {"type":"zod","method":"default","args":[{"type":"unknown","raw":{"type":"BooleanLiteral","start":2637,"end":2642,"loc":{"start":{"line":76,"column":44,"index":2637},"end":{"line":76,"column":49,"index":2642}},"value":false}}]}, validator: '(val) => true' },
             'step': { type: 'z.coerce.number.positive.optional', required: false, hasDefault: false, description: 'Override stepSec for evaluate child runs', schema: {"type":"zod","method":"optional","args":[]}, validator: '(val) => true' },
             'horizons': { type: 'z.string.default', required: true, hasDefault: true, default: "30m,2h,24h,7d,30d,90d", description: 'LTV horizons override', schema: {"type":"zod","method":"default","args":[{"type":"literal","value":"30m,2h,24h,7d,30d,90d"}]}, validator: '(val) => true' }
           },
@@ -331,18 +331,27 @@ const metadata: Record<GeneratedNames, GeneratedCommandMeta> = {
             'duration': { type: 'z.coerce.number.optional', required: false, hasDefault: false, description: 'Override durationSec', schema: {"type":"zod","method":"optional","args":[]}, validator: '(val) => true' },
             'step': { type: 'z.coerce.number.optional', required: false, hasDefault: false, description: 'Override stepSec', schema: {"type":"zod","method":"optional","args":[]}, validator: '(val) => true' },
             'strategy': { type: 'strategySchema', required: true, hasDefault: false, description: 'Override strategy id (greedy|planner|scripted)', schema: {"type":"zod","name":"strategySchema"}, validator: '(val) => true' },
-            'fast': { type: 'z.coerce.boolean.default', required: true, hasDefault: true, default: false, description: 'Enable fast(log-domain) mode', schema: {"type":"zod","method":"default","args":[{"type":"unknown","raw":{"type":"BooleanLiteral","start":3021,"end":3026,"loc":{"start":{"line":94,"column":44,"index":3021},"end":{"line":94,"column":49,"index":3026}},"value":false}}]}, validator: '(val) => true' },
+            'fast': { type: 'z.coerce.boolean.default', required: true, hasDefault: true, default: false, description: 'Enable fast(log-domain) mode', schema: {"type":"zod","method":"default","args":[{"type":"unknown","raw":{"type":"BooleanLiteral","start":3022,"end":3027,"loc":{"start":{"line":94,"column":44,"index":3022},"end":{"line":94,"column":49,"index":3027}},"value":false}}]}, validator: '(val) => true' },
             'target-worth': { type: 'z.string.optional', required: false, hasDefault: false, description: 'Required for etaToTargetWorth metric, optional otherwise', schema: {"type":"zod","method":"optional","args":[]}, validator: '(val) => true' },
             'milestone-key': { type: 'z.string.optional', required: false, hasDefault: false, description: 'Milestone key override for design bundles or timeToMilestone metric', schema: {"type":"zod","method":"optional","args":[]}, validator: '(val) => true' },
             'session-pattern': { type: 'sessionPatternSchema', required: true, hasDefault: false, description: 'Session pattern override for design metrics', schema: {"type":"zod","name":"sessionPatternSchema"}, validator: '(val) => true' },
             'days': { type: 'z.coerce.number.int.positive.optional', required: false, hasDefault: false, description: 'Session-pattern day count for design metrics', schema: {"type":"zod","method":"optional","args":[]}, validator: '(val) => true' },
             'draws': { type: 'z.coerce.number.int.positive.optional', required: false, hasDefault: false, description: 'Monte Carlo draw count for design metrics', schema: {"type":"zod","method":"optional","args":[]}, validator: '(val) => true' },
-            'max-duration': { type: 'z.coerce.number.default', required: true, hasDefault: true, default: 86400, description: 'Max duration for etaToTargetWorth metric simulation', schema: {"type":"zod","method":"default","args":[{"type":"unknown","raw":{"type":"NumericLiteral","start":3830,"end":3835,"loc":{"start":{"line":110,"column":53,"index":3830},"end":{"line":110,"column":58,"index":3835}},"extra":{"rawValue":86400,"raw":"86400"},"value":86400}}]}, validator: '(val) => true' },
+            'max-duration': { type: 'z.coerce.number.default', required: true, hasDefault: true, default: 86400, description: 'Max duration for etaToTargetWorth metric simulation', schema: {"type":"zod","method":"default","args":[{"type":"unknown","raw":{"type":"NumericLiteral","start":3831,"end":3836,"loc":{"start":{"line":110,"column":53,"index":3831},"end":{"line":110,"column":58,"index":3836}},"extra":{"rawValue":86400,"raw":"86400"},"value":86400}}]}, validator: '(val) => true' },
             'seed': { type: 'z.coerce.number.optional', required: false, hasDefault: false, description: 'Deterministic seed', schema: {"type":"zod","method":"optional","args":[]}, validator: '(val) => true' },
             'metric': { type: 'compareMetricSchema.optional', required: false, hasDefault: false, description: 'Single comparison metric', schema: {"type":"zod","method":"optional","args":[]}, validator: '(val) => true' },
             'bundle': { type: 'compareBundleSchema', required: true, hasDefault: false, description: 'Bundle of comparison metrics', schema: {"type":"zod","name":"compareBundleSchema"}, validator: '(val) => true' }
           },
           path: './src/commands/reviewCompare'
+        },
+        {
+          name: 'doctor',
+          description: 'Interactive doctor dashboard for human setup review',
+          options: {
+            'shell': { type: 'z.enum.default', required: true, hasDefault: true, default: "detect", description: 'Completion shell to validate', enumValues: ["detect","zsh","bash","fish","powershell"], schema: {"type":"zod","method":"default","args":[{"type":"literal","value":"detect"}]}, validator: '(val) => true' },
+            'rc': { type: 'z.string.optional', required: false, hasDefault: false, description: 'Optional shell rc/profile path for completion installation checks', fileType: 'file', schema: {"type":"zod","method":"optional","args":[]}, validator: '(val) => true' }
+          },
+          path: './src/commands/reviewDoctor'
         }
       ],
       path: './src/commands/groups/review'

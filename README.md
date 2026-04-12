@@ -85,6 +85,7 @@ Completion and setup check:
 source <(idk completions zsh)
 idk doctor --format md
 idk doctor --fix true --shell zsh
+idk review doctor
 idk setup plugin-trust --plugin ./custom-econ-plugin.ts --out ./.idk/plugin-trust.json
 ```
 
