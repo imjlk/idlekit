@@ -99,6 +99,25 @@ type ReviewCompareCard = Readonly<{
   tone: ReviewCardTone;
 }>;
 
+function metricLabel(metric: CompareMetric): string {
+  switch (metric) {
+    case "endMoney":
+      return "end money";
+    case "endNetWorth":
+      return "end worth";
+    case "etaToTargetWorth":
+      return "ETA to target";
+    case "droppedRate":
+      return "drop rate";
+    case "timeToMilestone":
+      return "milestone time";
+    case "visibleChangesPerMinute":
+      return "visible/min";
+    case "maxNoRewardGapSec":
+      return "max no-reward gap";
+  }
+}
+
 function pluginArgs(flags: ReviewCompareFlags): string[] {
   const args: string[] = [];
   if (flags.plugin) args.push("--plugin", flags.plugin);
@@ -265,24 +284,24 @@ function winnerSummary(output: ReviewCompareOutput): string[] {
   if ("results" in output) {
     return [
       `Bundle: ${output.bundle}`,
-      `Winner counts -> A: ${output.summary.winners.a}, B: ${output.summary.winners.b}, Tie: ${output.summary.winners.tie}`,
-      `Milestone key: ${output.milestoneKey ?? "n/a"}`,
+      `A ${output.summary.winners.a} | B ${output.summary.winners.b} | T ${output.summary.winners.tie}`,
+      `Key: ${output.milestoneKey ?? "n/a"}`,
     ];
   }
   return [
-    `Metric: ${output.metric}`,
+    `Metric: ${metricLabel(output.metric)}`,
     `Winner: ${output.better.toUpperCase()}`,
     `Source: ${output.detail?.source ?? "n/a"}`,
   ];
 }
 
 function metricLines(results: readonly CompareSingle[]): string[] {
-  return results.map((result) => `${result.metric}: ${result.better.toUpperCase()} (${result.detail?.source ?? "n/a"})`);
+  return results.map((result) => `${metricLabel(result.metric)}: ${result.better.toUpperCase()} (${result.detail?.source ?? "n/a"})`);
 }
 
 function driverLines(results: readonly CompareSingle[]): string[] {
   const drivers = results.flatMap((result) =>
-    (result.insights?.drivers ?? []).map((driver) => `${driver.key}: ${driver.winner.toUpperCase()} - ${driver.summary}`),
+    (result.insights?.drivers ?? []).map((driver) => `${driver.key}: ${driver.winner.toUpperCase()} | ${driver.summary}`),
   );
   return drivers.length > 0 ? drivers.slice(0, 8) : ["No comparison drivers emitted."];
 }
@@ -372,10 +391,12 @@ function cardFromResult(title: string, result: CompareSingle | undefined, tone: 
   let value = `${result.metric}: ${result.better.toUpperCase()}`;
   if (a !== undefined && b !== undefined) {
     if (result.metric === "timeToMilestone" || result.metric === "maxNoRewardGapSec" || result.metric === "droppedRate" || result.metric === "etaToTargetWorth") {
-      value = `${result.better.toUpperCase()} ahead by ${formatMetricValue(Math.abs(a - b), result.metric)}`;
+      value = `${result.better.toUpperCase()} by ${formatMetricValue(Math.abs(a - b), result.metric)}`;
     } else {
       value = `${result.better.toUpperCase()} +${formatMetricValue(Math.abs(a - b), result.metric)}`;
     }
+  } else {
+    value = `${metricLabel(result.metric)}: ${result.better.toUpperCase()}`;
   }
 
   return {
@@ -393,14 +414,14 @@ export function buildReviewCompareCards(output: ReviewCompareOutput): readonly R
     return [
       {
         title: "Bundle / Metric",
-        value: output.bundle,
-        detail: `Milestone key: ${output.milestoneKey ?? "progress.first-upgrade"}`,
+        value: `${output.bundle} bundle`,
+        detail: `Key ${output.milestoneKey ?? "progress.first-upgrade"}`,
         tone: "info",
       },
       {
         title: "Winner summary",
         value: `A ${output.summary.winners.a} / B ${output.summary.winners.b} / T ${output.summary.winners.tie}`,
-        detail: primaryDriver ? `${primaryDriver.key}: ${primaryDriver.summary}` : "No compare drivers emitted.",
+        detail: primaryDriver ? `${primaryDriver.key} | ${primaryDriver.summary}` : "No compare drivers emitted.",
         tone: output.summary.winners.a === output.summary.winners.b ? "info" : output.summary.winners.a > output.summary.winners.b ? "good" : "warn",
       },
       cardFromResult("Milestone / pacing delta", pacingResult(results), "info"),
@@ -412,14 +433,14 @@ export function buildReviewCompareCards(output: ReviewCompareOutput): readonly R
   return [
     {
       title: "Bundle / Metric",
-      value: output.metric,
-      detail: `Measured source: ${output.detail?.source ?? "n/a"}`,
+      value: metricLabel(output.metric),
+      detail: `Source ${output.detail?.source ?? "n/a"}`,
       tone: "info",
     },
     {
       title: "Winner summary",
-      value: output.better.toUpperCase(),
-      detail: primaryDriver ? `${primaryDriver.key}: ${primaryDriver.summary}` : "Single-metric compare result.",
+      value: `Winner ${output.better.toUpperCase()}`,
+      detail: primaryDriver ? `${primaryDriver.key} | ${primaryDriver.summary}` : "Single-metric compare result.",
       tone: output.better === "a" ? "good" : output.better === "b" ? "warn" : "info",
     },
     cardFromResult("Milestone / pacing delta", output.metric === "timeToMilestone" || output.metric === "visibleChangesPerMinute" ? output : undefined, "info"),

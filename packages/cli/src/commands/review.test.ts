@@ -459,7 +459,7 @@ describe("interactive CLI helpers", () => {
       "Milestone / pacing delta",
       "Friction delta",
     ]);
-    expect(cards[0]?.value).toBe("design");
+    expect(cards[0]?.value).toBe("design bundle");
     expect(cards[1]?.detail).toContain("A changes faster.");
     expect(cards[2]?.detail).toContain("A 300.0s | B 180.0s");
     expect(cards[3]?.value).toBe("n/a");
@@ -473,8 +473,8 @@ describe("interactive CLI helpers", () => {
       "Milestone / pacing delta",
       "Friction delta",
     ]);
-    expect(cards[0]?.value).toBe("visibleChangesPerMinute");
-    expect(cards[1]?.value).toBe("A");
+    expect(cards[0]?.value).toBe("visible/min");
+    expect(cards[1]?.value).toBe("Winner A");
     expect(cards[2]?.value).toContain("A +2.10");
     expect(cards[2]?.detail).toContain("A 6.20 | B 4.10");
     expect(cards[3]?.value).toBe("n/a");
