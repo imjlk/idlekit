@@ -71,12 +71,22 @@ idk replay verify <artifact> --format json
 - `tune`: strategy search against economy or experience-oriented objectives
 - `ltv`: long-horizon monetization and value proxy estimation
 
+Recommended interactive order:
+
+1. `idk init scenario --wizard`
+2. `idk review doctor`
+3. `idk review evaluate`
+4. `idk review compare`
+5. `idk tune --wizard`
+
 ## Completions and metadata
 
 - `idk completions zsh|bash|fish|powershell`: emit shell completion script
 - `idk complete -- <args...>`: dynamic completion protocol endpoint
 - `idk doctor`: validate generated metadata, completions wiring, and Bun runtime assumptions
 - `idk doctor --fix`: apply the managed completions block and optionally generate plugin trust output
+- `idk doctor --format md|json`: automation/setup report path
+- `idk review doctor`: human setup review path
 - `idk setup completions`: install the managed completions block directly
 - `idk setup plugin-trust`: generate a sha256 trust file for plugin-based runs
 

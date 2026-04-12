@@ -31,6 +31,7 @@
     "templates:check": "bun tools/templates-check.ts",
     "install:smoke": "bun tools/install-smoke.ts",
     "readme:smoke": "bun tools/readme-smoke.ts",
+    "review:smoke": "bun run --cwd packages/cli review:smoke",
     "compat:check": "bun tools/compat-check.ts",
     "public:check": "bun tools/public-check.ts",
     "replay:verify": "bun tools/replay-verify-gate.ts",

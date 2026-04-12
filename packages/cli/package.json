@@ -43,6 +43,7 @@
     "generate": "bunli generate --entry src/main.ts --directory src/commands --output ./.bunli/commands.gen.ts",
     "generate:check": "bun scripts/generate-check.ts",
     "doctor:completions": "bunli doctor completions",
+    "review:smoke": "bun scripts/review-smoke.ts",
     "build": "rm -rf dist && bun run generate && bunli build --entry src/main.ts --runtime bun --outdir dist --sourcemap",
     "build:bin": "bunli build --entry src/main.ts --outdir dist --targets native",
     "typecheck": "tsc -p tsconfig.json --noEmit",

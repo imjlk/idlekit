@@ -163,6 +163,7 @@ idk ltv examples/tutorials/11-my-game-v1.json \
 ## 5. 사람용 review 대시보드 보기
 
 ```bash
+idk review doctor
 bun run --cwd packages/cli dev -- review evaluate ../../examples/tutorials/11-my-game-v1.json --image-mode auto
 ```
 
@@ -212,6 +213,7 @@ idk compare \
 review 대시보드:
 
 ```bash
+idk review doctor
 bun run --cwd packages/cli dev -- review compare ../../examples/tutorials/11-my-game-v1.json ../../examples/tutorials/12-my-game-compare-b.json --image-mode auto
 ```
 

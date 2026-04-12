@@ -98,6 +98,7 @@ bun run docs:verify
 bun run templates:check
 bun run install:smoke
 bun run readme:smoke
+bun run review:smoke
 bun run compat:check
 bun run replay:verify
 bun run public:check

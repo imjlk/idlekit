@@ -25,6 +25,7 @@ Interactive scaffold and review:
 
 ```bash
 idk init scenario --wizard true --track personal --preset builder --out ./my-game-v1.json
+idk review doctor
 idk review evaluate ./space-miner-v1.json --image-mode auto
 idk review compare ./space-miner-v1.json ./space-miner-v1-compare-b.json --image-mode auto
 idk tune ./space-miner-v1.json --wizard true
@@ -58,6 +59,7 @@ bun run --cwd packages/cli dev -- experience ../../examples/tutorials/14-orbital
 - automation path: `evaluate`, `compare --format json`, `experience --format md|json`
 - human review path: `review evaluate`, `review compare`, `review doctor`
 - guided setup path: `init scenario --wizard`, `tune --wizard`, `doctor --fix`, `setup completions`
+- recommended human sequence: `init scenario --wizard` -> `review doctor` -> `review evaluate` -> `review compare` -> `tune --wizard`
 
 ## Documentation
 

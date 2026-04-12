@@ -75,6 +75,7 @@ bun run --cwd packages/cli dev -- evaluate ../../tmp/space-miner-v1.json --forma
 Human review path:
 
 ```bash
+bun run --cwd packages/cli dev -- review doctor
 bun run --cwd packages/cli dev -- review evaluate ../../tmp/space-miner-v1.json --image-mode auto
 bun run --cwd packages/cli dev -- review compare ../../tmp/space-miner-v1.json ../../tmp/space-miner-v1-compare-b.json --image-mode auto
 ```
@@ -88,6 +89,14 @@ idk doctor --fix true --shell zsh
 idk review doctor
 idk setup plugin-trust --plugin ./custom-econ-plugin.ts --out ./.idk/plugin-trust.json
 ```
+
+Recommended interactive sequence:
+
+1. `init scenario --wizard`
+2. `review doctor`
+3. `review evaluate`
+4. `review compare`
+5. `tune --wizard`
 
 Worked real-game example:
 
@@ -136,6 +145,7 @@ bun run docs:verify
 bun run templates:check
 bun run install:smoke
 bun run readme:smoke
+bun run review:smoke
 bun run compat:check
 bun run public:check
 bun run replay:verify

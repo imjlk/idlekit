@@ -3,6 +3,7 @@ import { createElement } from "react";
 import { useKeyboard } from "@opentui/react";
 import { useRuntime } from "@bunli/runtime/app";
 import { runSelfCliJson } from "../runtime/selfCli";
+import { reviewExitHint, reviewSection, reviewSummaryCard } from "./reviewUi";
 
 type DoctorOutput = Readonly<{
   ok: boolean;
@@ -44,37 +45,6 @@ export function loadReviewDoctorData(
   runner: ReviewDoctorRunner = runSelfCliJson,
 ): DoctorOutput {
   return runner(buildReviewDoctorArgs(flags));
-}
-
-function sectionLines(title: string, lines: readonly string[]) {
-  return createElement(
-    "box",
-    {
-      border: true,
-      padding: 1,
-      style: { flexDirection: "column", gap: 0 },
-    },
-    createElement("text", { key: `${title}-title`, content: title, fg: "#93c5fd" }),
-    ...lines.map((line, index) => createElement("text", { key: `${title}-${index}`, content: line })),
-  );
-}
-
-function summaryCard(title: string, value: string, detail: string, tone: "good" | "warn" | "info") {
-  const fg = tone === "good" ? "#86efac" : tone === "warn" ? "#fca5a5" : "#93c5fd";
-  return createElement(
-    "box",
-    {
-      border: true,
-      padding: 1,
-      style: {
-        flexDirection: "column",
-        width: 30,
-      },
-    },
-    createElement("text", { content: title, fg }),
-    createElement("text", { content: value }),
-    createElement("text", { content: detail, fg: "#94a3b8" }),
-  );
 }
 
 function summarizeChecks(output: DoctorOutput): string[] {
@@ -146,17 +116,14 @@ export function createReviewDoctorElement(args: { output: DoctorOutput }) {
             gap: 1,
           },
         },
-        summaryCard("Overall", args.output.ok ? "pass" : "fail", `${stats.passing} pass / ${stats.failing} fail`, args.output.ok ? "good" : "warn"),
-        summaryCard("Runtime", args.output.runtime.currentBun, `Requires ${args.output.runtime.requiredBun}`, "info"),
-        summaryCard("Applied fixes", String(stats.appliedFixes), stats.appliedFixes > 0 ? "Managed fixes were applied." : "No managed fixes in this run.", stats.appliedFixes > 0 ? "good" : "info"),
+        reviewSummaryCard("Overall", args.output.ok ? "pass" : "fail", `${stats.passing} pass / ${stats.failing} fail`, args.output.ok ? "good" : "warn"),
+        reviewSummaryCard("Runtime", args.output.runtime.currentBun, `Requires ${args.output.runtime.requiredBun}`, "info"),
+        reviewSummaryCard("Applied fixes", String(stats.appliedFixes), stats.appliedFixes > 0 ? "Managed fixes were applied." : "No managed fixes in this run.", stats.appliedFixes > 0 ? "good" : "info"),
       ),
-      sectionLines("Checks", summarizeChecks(args.output)),
-      sectionLines("Fixes", fixLines(args.output)),
-      sectionLines("Next", nextStepLines(args.output)),
-      createElement("text", {
-        content: "Press q, Esc, or Ctrl+C to exit.",
-        fg: "#94a3b8",
-      }),
+      reviewSection("Checks", summarizeChecks(args.output)),
+      reviewSection("Fixes", fixLines(args.output)),
+      reviewSection("Next", nextStepLines(args.output)),
+      reviewExitHint(),
     );
   }
 

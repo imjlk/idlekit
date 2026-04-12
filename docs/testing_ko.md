@@ -16,6 +16,7 @@ bun run docs:verify
 bun run templates:check
 bun run install:smoke
 bun run readme:smoke
+bun run review:smoke
 bun run compat:check
 bun run replay:verify
 bun run bench:sim
@@ -66,8 +67,17 @@ CLI:
 - artifact 계약(schema) 검증: `artifact-schema.test.ts`
 - contract 호환성 검증: `outputMeta.compat.test.ts`
 - `calibrate` CSV 파서 엣지 케이스 + correlation 추정 + confidence/shrinkage 진단
+- `review doctor`, `review evaluate`, `review compare` interactive smoke
 
-## 2-1. Compatibility fixture 정책
+## 2-1. Interactive review smoke
+
+`bun run review:smoke`는 사람용 review 경로를 확인하는 maintainer 전용 체크입니다.
+
+- lazy-loaded `review doctor`, `review evaluate`, `review compare`를 테스트 renderer에 실제로 mount합니다.
+- 공통 loading shell이 먼저 뜨는지 확인합니다.
+- lazy follow-up work 이후에도 각 dashboard가 안정적으로 내용을 표시하는지 확인합니다.
+
+## 2-2. Compatibility fixture 정책
 
 compatibility fixture는 `fixtures/compat/v1/` 아래에 둡니다.
 

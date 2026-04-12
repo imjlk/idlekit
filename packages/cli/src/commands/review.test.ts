@@ -1,5 +1,8 @@
 import { createCLI, defineCommand, defineGroup } from "@bunli/core";
 import { describe, expect, it } from "bun:test";
+import { RuntimeProvider } from "@bunli/runtime/app";
+import { testRender } from "@opentui/react/test-utils";
+import { act, createElement } from "react";
 import { createTempDir, removePath, runCliFailure } from "../testkit/bun";
 import { renderReviewCompare } from "./reviewCompare";
 import { renderReviewDoctor } from "./reviewDoctor";
@@ -8,7 +11,8 @@ import { runInitWizard } from "../lib/initWizard";
 import { buildInitTemplatePlan } from "../templates/scenario";
 import { resolve } from "path";
 import { resolveReviewEvaluateImagePlan } from "../lib/reviewEvaluate";
-import { resolveReviewCompareImagePlan } from "../lib/reviewCompare";
+import { buildReviewCompareCards, resolveReviewCompareImagePlan } from "../lib/reviewCompare";
+import { createLazyReviewElement } from "../lib/reviewLazy";
 import { sha256Hex } from "../runtime/bun";
 
 const interactiveTerminal = {
@@ -122,6 +126,47 @@ const reviewDoctorOutput = {
   ],
   fixes: [{ id: "completions.install", status: "applied", detail: "Managed completions block written." }],
 } as const;
+
+const reviewCompareSingleOutput = {
+  metric: "visibleChangesPerMinute",
+  better: "a",
+  detail: { source: "measured" },
+  insights: {
+    drivers: [{ key: "visibleChangesPerMinute", winner: "a", summary: "A changes faster." }],
+  },
+  measured: { a: { visibleChangesPerMinute: 6.2 }, b: { visibleChangesPerMinute: 4.1 } },
+} as const;
+
+async function waitForFrameContains(
+  frameGetter: () => Promise<string>,
+  pattern: string,
+  timeoutMs = 3000,
+): Promise<string> {
+  const started = Date.now();
+  let last = "";
+  while (Date.now() - started < timeoutMs) {
+    last = await frameGetter();
+    if (last.includes(pattern)) return last;
+    await act(async () => {
+      await Bun.sleep(25);
+    });
+  }
+  throw new Error(`Timed out waiting for frame to include '${pattern}'. Last frame:\n${last}`);
+}
+
+async function withFilteredActWarnings<T>(run: () => Promise<T>): Promise<T> {
+  const originalConsoleError = console.error;
+  console.error = (...args: unknown[]) => {
+    const message = args.map((arg) => String(arg)).join(" ");
+    if (message.includes("not wrapped in act")) return;
+    originalConsoleError(...args);
+  };
+  try {
+    return await run();
+  } finally {
+    console.error = originalConsoleError;
+  }
+}
 
 function createPromptStub(responses: {
   select: readonly unknown[];
@@ -390,6 +435,95 @@ describe("interactive CLI helpers", () => {
     });
     expect(autoPlan.charts.length).toBe(2);
     expect(sha256Hex(autoPlan.charts[0]!.bytes)).toBe(sha256Hex(autoPlan.charts[0]!.bytes));
+  });
+
+  it("review compare builds fixed summary cards for bundle results", () => {
+    const cards = buildReviewCompareCards(reviewCompareOutput as never);
+    expect(cards.map((card) => card.title)).toEqual([
+      "Bundle / Metric",
+      "Winner summary",
+      "Milestone / pacing delta",
+      "Friction delta",
+    ]);
+    expect(cards[0]?.value).toBe("design");
+    expect(cards[1]?.detail).toContain("A changes faster.");
+    expect(cards[2]?.detail).toContain("A 300.0s | B 180.0s");
+    expect(cards[3]?.value).toBe("n/a");
+  });
+
+  it("review compare builds fixed summary cards for single-metric results", () => {
+    const cards = buildReviewCompareCards(reviewCompareSingleOutput as never);
+    expect(cards.map((card) => card.title)).toEqual([
+      "Bundle / Metric",
+      "Winner summary",
+      "Milestone / pacing delta",
+      "Friction delta",
+    ]);
+    expect(cards[0]?.value).toBe("visibleChangesPerMinute");
+    expect(cards[1]?.value).toBe("A");
+    expect(cards[2]?.value).toContain("A +2.10");
+    expect(cards[2]?.detail).toContain("A 6.20 | B 4.10");
+    expect(cards[3]?.value).toBe("n/a");
+  });
+
+  it("shared lazy review shell shows loading then loaded content", async () => {
+    await withFilteredActWarnings(async () => {
+      const element = createLazyReviewElement({
+        title: "idlekit review smoke",
+        description: "Loading synthetic review flow.",
+        loader: async () => function Loaded() {
+          return createElement("text", { content: "Loaded synthetic review screen" });
+        },
+        props: undefined as never,
+      });
+
+      const rendered = await testRender(createElement(RuntimeProvider as any, { onExit() {} }, element), {
+        width: 100,
+        height: 24,
+      });
+
+      try {
+        await rendered.renderOnce();
+        const loadingFrame = rendered.captureCharFrame();
+        expect(loadingFrame).toContain("Preparing interactive dashboard");
+
+        const loadedFrame = await waitForFrameContains(async () => {
+          await rendered.renderOnce();
+          return rendered.captureCharFrame();
+        }, "Loaded synthetic review screen");
+        expect(loadedFrame).toContain("Loaded synthetic review screen");
+      } finally {
+        rendered.renderer.destroy();
+      }
+    });
+  });
+
+  it("shared lazy review shell shows error content when loader fails", async () => {
+    await withFilteredActWarnings(async () => {
+      const element = createLazyReviewElement({
+        title: "idlekit review smoke",
+        description: "Loading synthetic review flow.",
+        loader: async () => {
+          throw new Error("Synthetic loader failure");
+        },
+        props: undefined as never,
+      });
+
+      const rendered = await testRender(createElement(RuntimeProvider as any, { onExit() {} }, element), {
+        width: 100,
+        height: 24,
+      });
+
+      try {
+        const errorFrame = await waitForFrameContains(async () => {
+          await rendered.renderOnce();
+          return rendered.captureCharFrame();
+        }, "Synthetic loader failure");
+        expect(errorFrame).toContain("Error");
+      } finally {
+        rendered.renderer.destroy();
+      }
+    });
   });
 
   it("review commands fail with CLI_USAGE in non-interactive mode", () => {

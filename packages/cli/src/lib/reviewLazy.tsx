@@ -2,6 +2,7 @@
 import { useRuntime } from "@bunli/runtime/app";
 import { createElement, useEffect, useState, type ComponentType } from "react";
 import { useKeyboard } from "@opentui/react";
+import { reviewExitHint, reviewSection } from "./reviewUi";
 
 type Loader<TProps> = () => Promise<ComponentType<TProps>>;
 
@@ -11,19 +12,6 @@ type LazyReviewOptions<TProps> = Readonly<{
   loader: Loader<TProps>;
   props: TProps;
 }>;
-
-function sectionLines(title: string, lines: readonly string[]) {
-  return createElement(
-    "box",
-    {
-      border: true,
-      padding: 1,
-      style: { flexDirection: "column", gap: 0 },
-    },
-    createElement("text", { key: `${title}-title`, content: title, fg: "#93c5fd" }),
-    ...lines.map((line, index) => createElement("text", { key: `${title}-${index}`, content: line })),
-  );
-}
 
 export function createLazyReviewElement<TProps>(options: LazyReviewOptions<TProps>) {
   function LazyReviewScreen() {
@@ -66,11 +54,8 @@ export function createLazyReviewElement<TProps>(options: LazyReviewOptions<TProp
           },
         },
         createElement("text", { content: options.title, fg: "#fca5a5" }),
-        sectionLines("Error", [error]),
-        createElement("text", {
-          content: "Press q, Esc, or Ctrl+C to exit.",
-          fg: "#94a3b8",
-        }),
+        reviewSection("Error", [error]),
+        reviewExitHint(),
       );
     }
 
@@ -85,11 +70,8 @@ export function createLazyReviewElement<TProps>(options: LazyReviewOptions<TProp
           },
         },
         createElement("text", { content: options.title, fg: "#86efac" }),
-        sectionLines("Loading", [options.description, "Preparing interactive dashboard..."]),
-        createElement("text", {
-          content: "Press q, Esc, or Ctrl+C to exit.",
-          fg: "#94a3b8",
-        }),
+        reviewSection("Loading", [options.description, "Preparing interactive dashboard..."]),
+        reviewExitHint(),
       );
     }
 

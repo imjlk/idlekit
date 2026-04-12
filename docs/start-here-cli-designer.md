@@ -76,6 +76,7 @@ Success condition:
 Human review path:
 
 ```bash
+bun run --cwd packages/cli dev -- review doctor
 bun run --cwd packages/cli dev -- review evaluate ../../tmp/space-miner-v1.json --image-mode auto
 bun run --cwd packages/cli dev -- review compare ../../tmp/space-miner-v1.json ../../tmp/space-miner-v1-compare-b.json --image-mode auto
 ```
@@ -85,6 +86,7 @@ Success condition:
 - the dashboard opens in an interactive terminal
 - `q` or `Esc` exits cleanly
 - image preview falls back gracefully when Kitty-compatible preview is unavailable
+- `review doctor` is the human setup path; `doctor --format md|json` remains the automation report path
 
 ## 5. Add long-horizon checks
 

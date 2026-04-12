@@ -18,6 +18,7 @@ bun run docs:verify
 bun run templates:check
 bun run install:smoke
 bun run readme:smoke
+bun run review:smoke
 bun run compat:check
 bun run public:check
 bun run replay:verify
@@ -57,7 +58,16 @@ CLI:
 - replay consistency and resume determinism
 - plugin loading and security policy
 - docs, templates, install smoke, public readiness, and replay gates
+- interactive review smoke for `review doctor`, `review evaluate`, and `review compare`
 - perceived progression and KPI regression guardrails
+
+## Interactive review smoke
+
+`bun run review:smoke` is a maintainer-only check for the human review path.
+
+- it mounts the lazy-loaded `review doctor`, `review evaluate`, and `review compare` flows with a test renderer
+- it verifies the shared loading shell appears first
+- it verifies each dashboard reaches stable content without crashing after lazy follow-up work
 
 ## Compatibility fixtures
 

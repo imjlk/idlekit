@@ -7,6 +7,7 @@ import { useKeyboard } from "@opentui/react";
 import { cliError } from "../errors";
 import { runSelfCliJson } from "../runtime/selfCli";
 import { encodeLineChartPng, log10FromNumberish } from "./reviewCharts";
+import { reviewExitHint, reviewSection, reviewSummaryCard, type ReviewCardTone } from "./reviewUi";
 
 type CompareMetric =
   | "endMoney"
@@ -90,6 +91,13 @@ export type ReviewCompareImagePlan = Readonly<{
 
 export type ReviewCompareOutput = CompareSingle | CompareBundleOutput;
 export type ReviewCompareRunner = (args: readonly string[]) => ReviewCompareOutput;
+
+type ReviewCompareCard = Readonly<{
+  title: string;
+  value: string;
+  detail: string;
+  tone: ReviewCardTone;
+}>;
 
 function pluginArgs(flags: ReviewCompareFlags): string[] {
   const args: string[] = [];
@@ -249,19 +257,6 @@ export function resolveReviewCompareImagePlan(args: {
   };
 }
 
-function sectionLines(title: string, lines: readonly string[]) {
-  return createElement(
-    "box",
-    {
-      border: true,
-      padding: 1,
-      style: { flexDirection: "column", gap: 0 },
-    },
-    createElement("text", { key: `${title}-title`, content: title, fg: "#93c5fd" }),
-    ...lines.map((line, index) => createElement("text", { key: `${title}-${index}`, content: line })),
-  );
-}
-
 function normalizeResults(output: ReviewCompareOutput): readonly CompareSingle[] {
   return "results" in output ? output.results : [output];
 }
@@ -309,6 +304,126 @@ function nextStepLines(): string[] {
     "- tweak scenario B and rerun review compare",
     "- compare --bundle full --format json for artifact-friendly output",
     "- tune <scenario-a> --tune <spec.json> --format json",
+  ];
+}
+
+function parseNumberish(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return undefined;
+}
+
+function formatMetricValue(value: number | undefined, metric: CompareMetric): string {
+  if (value === undefined) return "n/a";
+  if (metric === "droppedRate") return value.toFixed(3);
+  if (metric === "visibleChangesPerMinute") return value.toFixed(2);
+  if (metric === "maxNoRewardGapSec" || metric === "timeToMilestone" || metric === "etaToTargetWorth") return `${value.toFixed(1)}s`;
+  return value.toFixed(2);
+}
+
+function metricValue(result: CompareSingle, side: "a" | "b"): number | undefined {
+  const values = result.measured?.[side];
+  if (!values) return undefined;
+  const direct = parseNumberish(values[result.metric]);
+  if (direct !== undefined) return direct;
+  for (const value of Object.values(values)) {
+    const parsed = parseNumberish(value);
+    if (parsed !== undefined) return parsed;
+  }
+  return undefined;
+}
+
+function bundlePrimaryDriver(results: readonly CompareSingle[]) {
+  for (const result of results) {
+    const driver = result.insights?.drivers?.[0];
+    if (driver) return driver;
+  }
+  return undefined;
+}
+
+function pacingResult(results: readonly CompareSingle[]): CompareSingle | undefined {
+  return results.find((result) => result.metric === "timeToMilestone")
+    ?? results.find((result) => result.metric === "visibleChangesPerMinute");
+}
+
+function frictionResult(results: readonly CompareSingle[]): CompareSingle | undefined {
+  return results.find((result) => result.metric === "maxNoRewardGapSec")
+    ?? results.find((result) => result.metric === "droppedRate");
+}
+
+function cardFromResult(title: string, result: CompareSingle | undefined, tone: ReviewCardTone = "info"): ReviewCompareCard {
+  if (!result) {
+    return {
+      title,
+      value: "n/a",
+      detail: "No matching metric in this compare result.",
+      tone,
+    };
+  }
+
+  const a = metricValue(result, "a");
+  const b = metricValue(result, "b");
+  const aText = formatMetricValue(a, result.metric);
+  const bText = formatMetricValue(b, result.metric);
+
+  let value = `${result.metric}: ${result.better.toUpperCase()}`;
+  if (a !== undefined && b !== undefined) {
+    if (result.metric === "timeToMilestone" || result.metric === "maxNoRewardGapSec" || result.metric === "droppedRate" || result.metric === "etaToTargetWorth") {
+      value = `${result.better.toUpperCase()} ahead by ${formatMetricValue(Math.abs(a - b), result.metric)}`;
+    } else {
+      value = `${result.better.toUpperCase()} +${formatMetricValue(Math.abs(a - b), result.metric)}`;
+    }
+  }
+
+  return {
+    title,
+    value,
+    detail: `A ${aText} | B ${bText}`,
+    tone,
+  };
+}
+
+export function buildReviewCompareCards(output: ReviewCompareOutput): readonly ReviewCompareCard[] {
+  const results = normalizeResults(output);
+  if ("results" in output) {
+    const primaryDriver = bundlePrimaryDriver(results);
+    return [
+      {
+        title: "Bundle / Metric",
+        value: output.bundle,
+        detail: `Milestone key: ${output.milestoneKey ?? "progress.first-upgrade"}`,
+        tone: "info",
+      },
+      {
+        title: "Winner summary",
+        value: `A ${output.summary.winners.a} / B ${output.summary.winners.b} / T ${output.summary.winners.tie}`,
+        detail: primaryDriver ? `${primaryDriver.key}: ${primaryDriver.summary}` : "No compare drivers emitted.",
+        tone: output.summary.winners.a === output.summary.winners.b ? "info" : output.summary.winners.a > output.summary.winners.b ? "good" : "warn",
+      },
+      cardFromResult("Milestone / pacing delta", pacingResult(results), "info"),
+      cardFromResult("Friction delta", frictionResult(results), "warn"),
+    ];
+  }
+
+  const primaryDriver = output.insights?.drivers?.[0];
+  return [
+    {
+      title: "Bundle / Metric",
+      value: output.metric,
+      detail: `Measured source: ${output.detail?.source ?? "n/a"}`,
+      tone: "info",
+    },
+    {
+      title: "Winner summary",
+      value: output.better.toUpperCase(),
+      detail: primaryDriver ? `${primaryDriver.key}: ${primaryDriver.summary}` : "Single-metric compare result.",
+      tone: output.better === "a" ? "good" : output.better === "b" ? "warn" : "info",
+    },
+    cardFromResult("Milestone / pacing delta", output.metric === "timeToMilestone" || output.metric === "visibleChangesPerMinute" ? output : undefined, "info"),
+    cardFromResult("Friction delta", output.metric === "maxNoRewardGapSec" || output.metric === "droppedRate" ? output : undefined, "warn"),
   ];
 }
 
@@ -375,17 +490,29 @@ function CompareReviewDashboard(props: {
     {
       style: { flexDirection: "column", gap: 1, padding: 1 },
     },
-    sectionLines("Header", [
+    reviewSection("Header", [
       `Scenario A: ${props.aPath}`,
       `Scenario B: ${props.bPath}`,
-      "Press q or Esc to exit.",
     ]),
-    sectionLines("Winner Summary", winnerSummary(props.output)),
-    sectionLines("Metric Table", metricLines(results)),
-    sectionLines("Drivers", driverLines(results)),
-    sectionLines("Measured Snapshots", measuredLines(results)),
-    sectionLines("Image Preview", [imageStatus, ...charts.map((chart) => `- ${chart.title}`)]),
-    sectionLines("Next Steps", nextStepLines()),
+    createElement(
+      "box",
+      {
+        style: {
+          flexDirection: "row",
+          gap: 1,
+        },
+      },
+      ...buildReviewCompareCards(props.output).map((card) =>
+        reviewSummaryCard(card.title, card.value, card.detail, card.tone)
+      ),
+    ),
+    reviewSection("Winner Summary", winnerSummary(props.output)),
+    reviewSection("Metric Table", metricLines(results)),
+    reviewSection("Drivers", driverLines(results)),
+    reviewSection("Measured Snapshots", measuredLines(results)),
+    reviewSection("Image Preview", [imageStatus, ...charts.map((chart) => `- ${chart.title}`)]),
+    reviewSection("Next Steps", nextStepLines()),
+    reviewExitHint(),
   );
 }
 

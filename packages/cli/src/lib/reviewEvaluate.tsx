@@ -7,6 +7,7 @@ import { useKeyboard } from "@opentui/react";
 import { cliError } from "../errors";
 import { runSelfCliJson } from "../runtime/selfCli";
 import { encodeLineChartPng, log10FromNumberish } from "./reviewCharts";
+import { reviewExitHint, reviewSection } from "./reviewUi";
 
 type ReviewEvaluateOutput = Readonly<{
   scenario: string;
@@ -235,19 +236,6 @@ export function resolveReviewEvaluateImagePlan(args: {
   };
 }
 
-function sectionLines(title: string, lines: readonly string[]) {
-  return createElement(
-    "box",
-    {
-      border: true,
-      padding: 1,
-      style: { flexDirection: "column", gap: 0 },
-    },
-    createElement("text", { key: `${title}-title`, content: title, fg: "#93c5fd" }),
-    ...lines.map((line, index) => createElement("text", { key: `${title}-${index}`, content: line })),
-  );
-}
-
 function nextStepLines(output: ReviewEvaluateOutput): string[] {
   return [
     `- review compare ${output.scenario} <variant.json>`,
@@ -355,13 +343,14 @@ function EvaluateReviewDashboard(props: {
     {
       style: { flexDirection: "column", gap: 1, padding: 1 },
     },
-    sectionLines("Header", headerLines),
-    sectionLines("Simulate Summary", simulateLines),
-    sectionLines("Experience Summary", experienceLines),
-    sectionLines("Milestones", milestoneLines),
-    sectionLines("LTV Summary", ltvLines),
-    sectionLines("Image Preview", imageLines),
-    sectionLines("Next Steps", nextStepLines(props.output)),
+    reviewSection("Header", headerLines),
+    reviewSection("Simulate Summary", simulateLines),
+    reviewSection("Experience Summary", experienceLines),
+    reviewSection("Milestones", milestoneLines),
+    reviewSection("LTV Summary", ltvLines),
+    reviewSection("Image Preview", imageLines),
+    reviewSection("Next Steps", nextStepLines(props.output)),
+    reviewExitHint(),
   );
 }
 
