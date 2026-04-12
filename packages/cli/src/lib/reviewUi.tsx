@@ -1,7 +1,14 @@
 /** @jsxImportSource @opentui/react */
+import { useTerminalDimensions } from "@opentui/react";
 import { createElement } from "react";
 
 export type ReviewCardTone = "good" | "warn" | "info";
+export type ReviewSummaryCardData = Readonly<{
+  title: string;
+  value: string;
+  detail: string;
+  tone: ReviewCardTone;
+}>;
 
 export function reviewSection(title: string, lines: readonly string[]) {
   return createElement(
@@ -16,7 +23,7 @@ export function reviewSection(title: string, lines: readonly string[]) {
   );
 }
 
-export function reviewSummaryCard(title: string, value: string, detail: string, tone: ReviewCardTone) {
+export function reviewSummaryCard(title: string, value: string, detail: string, tone: ReviewCardTone, width = 28) {
   const fg = tone === "good" ? "#86efac" : tone === "warn" ? "#fca5a5" : "#93c5fd";
   return createElement(
     "box",
@@ -25,7 +32,7 @@ export function reviewSummaryCard(title: string, value: string, detail: string, 
       padding: 1,
       style: {
         flexDirection: "column",
-        width: 30,
+        width,
       },
     },
     createElement("text", { content: title, fg }),
@@ -39,4 +46,63 @@ export function reviewExitHint() {
     content: "Press q, Esc, or Ctrl+C to exit.",
     fg: "#94a3b8",
   });
+}
+
+function resolveColumns(width: number, cardCount: number, minCardWidth = 28, gap = 1): number {
+  const usableWidth = Math.max(width - 4, width);
+  for (let columns = Math.min(cardCount, 4); columns >= 1; columns -= 1) {
+    const cardWidth = Math.floor((usableWidth - gap * (columns - 1)) / columns);
+    if (cardWidth >= minCardWidth) return columns;
+  }
+  return 1;
+}
+
+function chunk<T>(values: readonly T[], size: number): T[][] {
+  const rows: T[][] = [];
+  for (let index = 0; index < values.length; index += size) {
+    rows.push(values.slice(index, index + size) as T[]);
+  }
+  return rows;
+}
+
+export function createReviewSummaryGrid(cards: readonly ReviewSummaryCardData[]) {
+  function ReviewSummaryGrid() {
+    const { width } = useTerminalDimensions();
+    const columns = resolveColumns(width, cards.length);
+    const cardWidth = Math.max(24, Math.floor((Math.max(width - 4, 24 * columns) - (columns - 1)) / columns));
+    const rows = chunk(cards, columns);
+
+    return createElement(
+      "box",
+      {
+        style: {
+          flexDirection: "column",
+          gap: 1,
+        },
+      },
+      ...rows.map((row, rowIndex) =>
+        createElement(
+          "box",
+          {
+            key: `review-card-row-${rowIndex}`,
+            style: {
+              flexDirection: "row",
+              gap: 1,
+            },
+          },
+          ...row.map((card, cardIndex) =>
+            createElement(
+              "box",
+              {
+                key: `review-card-${rowIndex}-${cardIndex}`,
+              },
+              reviewSummaryCard(card.title, card.value, card.detail, card.tone, cardWidth),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  return createElement(ReviewSummaryGrid);
 }

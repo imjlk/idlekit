@@ -7,7 +7,7 @@ import { useKeyboard } from "@opentui/react";
 import { cliError } from "../errors";
 import { runSelfCliJson } from "../runtime/selfCli";
 import { encodeLineChartPng, log10FromNumberish } from "./reviewCharts";
-import { reviewExitHint, reviewSection, reviewSummaryCard, type ReviewCardTone } from "./reviewUi";
+import { createReviewSummaryGrid, reviewExitHint, reviewSection, type ReviewCardTone } from "./reviewUi";
 
 type ReviewEvaluateOutput = Readonly<{
   scenario: string;
@@ -391,18 +391,7 @@ function EvaluateReviewDashboard(props: {
       style: { flexDirection: "column", gap: 1, padding: 1 },
     },
     reviewSection("Header", headerLines),
-    createElement(
-      "box",
-      {
-        style: {
-          flexDirection: "row",
-          gap: 1,
-        },
-      },
-      ...buildReviewEvaluateCards(props.output).map((card) =>
-        reviewSummaryCard(card.title, card.value, card.detail, card.tone)
-      ),
-    ),
+    createReviewSummaryGrid(buildReviewEvaluateCards(props.output)),
     reviewSection("Simulate Summary", simulateLines),
     reviewSection("Experience Summary", experienceLines),
     reviewSection("Milestones", milestoneLines),

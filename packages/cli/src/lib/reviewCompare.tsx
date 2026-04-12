@@ -7,7 +7,7 @@ import { useKeyboard } from "@opentui/react";
 import { cliError } from "../errors";
 import { runSelfCliJson } from "../runtime/selfCli";
 import { encodeLineChartPng, log10FromNumberish } from "./reviewCharts";
-import { reviewExitHint, reviewSection, reviewSummaryCard, type ReviewCardTone } from "./reviewUi";
+import { createReviewSummaryGrid, reviewExitHint, reviewSection, type ReviewCardTone } from "./reviewUi";
 
 type CompareMetric =
   | "endMoney"
@@ -494,18 +494,7 @@ function CompareReviewDashboard(props: {
       `Scenario A: ${props.aPath}`,
       `Scenario B: ${props.bPath}`,
     ]),
-    createElement(
-      "box",
-      {
-        style: {
-          flexDirection: "row",
-          gap: 1,
-        },
-      },
-      ...buildReviewCompareCards(props.output).map((card) =>
-        reviewSummaryCard(card.title, card.value, card.detail, card.tone)
-      ),
-    ),
+    createReviewSummaryGrid(buildReviewCompareCards(props.output)),
     reviewSection("Winner Summary", winnerSummary(props.output)),
     reviewSection("Metric Table", metricLines(results)),
     reviewSection("Drivers", driverLines(results)),

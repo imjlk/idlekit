@@ -3,7 +3,7 @@ import { createElement } from "react";
 import { useKeyboard } from "@opentui/react";
 import { useRuntime } from "@bunli/runtime/app";
 import { runSelfCliJson } from "../runtime/selfCli";
-import { reviewExitHint, reviewSection, reviewSummaryCard } from "./reviewUi";
+import { createReviewSummaryGrid, reviewExitHint, reviewSection } from "./reviewUi";
 
 type DoctorOutput = Readonly<{
   ok: boolean;
@@ -108,18 +108,11 @@ export function createReviewDoctorElement(args: { output: DoctorOutput }) {
       createElement("text", {
         content: `Bun ${args.output.runtime.currentBun} | required ${args.output.runtime.requiredBun} | overall ${args.output.ok ? "pass" : "fail"}`,
       }),
-      createElement(
-        "box",
-        {
-          style: {
-            flexDirection: "row",
-            gap: 1,
-          },
-        },
-        reviewSummaryCard("Overall", args.output.ok ? "pass" : "fail", `${stats.passing} pass / ${stats.failing} fail`, args.output.ok ? "good" : "warn"),
-        reviewSummaryCard("Runtime", args.output.runtime.currentBun, `Requires ${args.output.runtime.requiredBun}`, "info"),
-        reviewSummaryCard("Applied fixes", String(stats.appliedFixes), stats.appliedFixes > 0 ? "Managed fixes were applied." : "No managed fixes in this run.", stats.appliedFixes > 0 ? "good" : "info"),
-      ),
+      createReviewSummaryGrid([
+        { title: "Overall", value: args.output.ok ? "pass" : "fail", detail: `${stats.passing} pass / ${stats.failing} fail`, tone: args.output.ok ? "good" : "warn" },
+        { title: "Runtime", value: args.output.runtime.currentBun, detail: `Requires ${args.output.runtime.requiredBun}`, tone: "info" },
+        { title: "Applied fixes", value: String(stats.appliedFixes), detail: stats.appliedFixes > 0 ? "Managed fixes were applied." : "No managed fixes in this run.", tone: stats.appliedFixes > 0 ? "good" : "info" },
+      ]),
       reviewSection("Checks", summarizeChecks(args.output)),
       reviewSection("Fixes", fixLines(args.output)),
       reviewSection("Next", nextStepLines(args.output)),
