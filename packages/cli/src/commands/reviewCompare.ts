@@ -2,12 +2,8 @@ import { defineCommand, option, type RenderArgs } from "@bunli/core";
 import { z } from "zod";
 import { pluginOptions, type PluginOptionFlags } from "./_shared/plugin";
 import { usageError } from "../errors";
-import {
-  createReviewCompareElement,
-  loadReviewCompareData,
-  resolveReviewCompareImagePlan,
-  type ReviewCompareFlags,
-} from "../lib/reviewCompare";
+import { createLazyReviewElement } from "../lib/reviewLazy";
+import type { ReviewCompareFlags } from "../lib/reviewCompare";
 
 const strategySchema = z.enum(["greedy", "planner", "scripted"]).optional();
 const compareMetricSchema = z.enum([
@@ -47,34 +43,43 @@ function ensureInteractiveReview(terminal: { isInteractive: boolean; isCI: boole
 
 export function renderReviewCompare(
   args: RenderArgs<Flags>,
-  loadData: (aPath: string, bPath: string, flags: Flags) => ReturnType<typeof loadReviewCompareData> = loadReviewCompareData,
 ) {
   const aPath = args.positional[0];
   const bPath = args.positional[1];
   if (!aPath || !bPath) {
     throw usageError("Usage: idk review compare <A> <B>");
   }
-  const output = loadData(aPath, bPath, args.flags as Flags);
-  const imagePlan = resolveReviewCompareImagePlan({
-    aPath,
-    bPath,
-    flags: args.flags as Flags,
-    image: args.image,
-  });
-  return createReviewCompareElement({
-    aPath,
-    bPath,
-    output,
-    image: args.image,
-    imagePlan,
-    loadImagePlan: () =>
-      resolveReviewCompareImagePlan({
-        aPath,
-        bPath,
-        flags: args.flags as Flags,
-        image: args.image,
-        eager: true,
-      }),
+  return createLazyReviewElement({
+    title: "idlekit review compare",
+    description: "Loading comparison bundle and overlay charts for the review dashboard.",
+    loader: async () => {
+      const module = await import("../lib/reviewCompare");
+      return function ReviewCompareLoaded() {
+        const output = module.loadReviewCompareData(aPath, bPath, args.flags as Flags);
+        const imagePlan = module.resolveReviewCompareImagePlan({
+          aPath,
+          bPath,
+          flags: args.flags as Flags,
+          image: args.image,
+        });
+        return module.createReviewCompareElement({
+          aPath,
+          bPath,
+          output,
+          image: args.image,
+          imagePlan,
+          loadImagePlan: () =>
+            module.resolveReviewCompareImagePlan({
+              aPath,
+              bPath,
+              flags: args.flags as Flags,
+              image: args.image,
+              eager: true,
+            }),
+        });
+      };
+    },
+    props: undefined as never,
   });
 }
 

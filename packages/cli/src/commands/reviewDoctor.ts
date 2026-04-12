@@ -1,11 +1,8 @@
 import { defineCommand, option, type RenderArgs } from "@bunli/core";
 import { z } from "zod";
 import { usageError } from "../errors";
-import {
-  createReviewDoctorElement,
-  loadReviewDoctorData,
-  type ReviewDoctorFlags,
-} from "../lib/reviewDoctor";
+import { createLazyReviewElement } from "../lib/reviewLazy";
+import type { ReviewDoctorFlags } from "../lib/reviewDoctor";
 
 function ensureInteractiveReview(terminal: { isInteractive: boolean; isCI: boolean }, command: string): void {
   if (terminal.isInteractive && !terminal.isCI) return;
@@ -16,10 +13,19 @@ type Flags = ReviewDoctorFlags;
 
 export function renderReviewDoctor(
   args: RenderArgs<Flags>,
-  loadData: (flags: Flags) => ReturnType<typeof loadReviewDoctorData> = loadReviewDoctorData,
 ) {
-  const output = loadData(args.flags as Flags);
-  return createReviewDoctorElement({ output });
+  return createLazyReviewElement({
+    title: "idlekit review doctor",
+    description: "Loading setup and completions health checks for interactive review.",
+    loader: async () => {
+      const module = await import("../lib/reviewDoctor");
+      return function ReviewDoctorLoaded() {
+        const output = module.loadReviewDoctorData(args.flags as Flags);
+        return module.createReviewDoctorElement({ output });
+      };
+    },
+    props: undefined as never,
+  });
 }
 
 export default defineCommand({

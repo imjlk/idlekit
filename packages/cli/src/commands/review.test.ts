@@ -222,7 +222,7 @@ describe("interactive CLI helpers", () => {
         runTuiRender: async (args) => {
           called = true;
           expect(args.command.name).toBe("evaluate");
-          const element = renderReviewEvaluate(args as never, () => reviewEvaluateOutput as never);
+          const element = renderReviewEvaluate(args as never);
           expect(element).toBeDefined();
         },
       },
@@ -237,7 +237,7 @@ describe("interactive CLI helpers", () => {
             description: "review evaluate",
             handler() {},
             render(args) {
-              return renderReviewEvaluate(args as never, () => reviewEvaluateOutput as never);
+              return renderReviewEvaluate(args as never);
             },
           }),
         ],
@@ -257,7 +257,7 @@ describe("interactive CLI helpers", () => {
         runTuiRender: async (args) => {
           called = true;
           expect(args.command.name).toBe("compare");
-          const element = renderReviewCompare(args as never, () => reviewCompareOutput as never);
+          const element = renderReviewCompare(args as never);
           expect(element).toBeDefined();
         },
       },
@@ -272,7 +272,7 @@ describe("interactive CLI helpers", () => {
             description: "review compare",
             handler() {},
             render(args) {
-              return renderReviewCompare(args as never, () => reviewCompareOutput as never);
+              return renderReviewCompare(args as never);
             },
           }),
         ],
@@ -292,7 +292,7 @@ describe("interactive CLI helpers", () => {
         runTuiRender: async (args) => {
           called = true;
           expect(args.command.name).toBe("doctor");
-          const element = renderReviewDoctor(args as never, () => reviewDoctorOutput as never);
+          const element = renderReviewDoctor(args as never);
           expect(element).toBeDefined();
         },
       },
@@ -307,7 +307,7 @@ describe("interactive CLI helpers", () => {
             description: "review doctor",
             handler() {},
             render(args) {
-              return renderReviewDoctor(args as never, () => reviewDoctorOutput as never);
+              return renderReviewDoctor(args as never);
             },
           }),
         ],

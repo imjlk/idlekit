@@ -2,12 +2,8 @@ import { defineCommand, option, type RenderArgs } from "@bunli/core";
 import { z } from "zod";
 import { pluginOptions, type PluginOptionFlags } from "./_shared/plugin";
 import { usageError } from "../errors";
-import {
-  createReviewEvaluateElement,
-  loadReviewEvaluateData,
-  resolveReviewEvaluateImagePlan,
-  type ReviewEvaluateFlags,
-} from "../lib/reviewEvaluate";
+import { createLazyReviewElement } from "../lib/reviewLazy";
+import type { ReviewEvaluateFlags } from "../lib/reviewEvaluate";
 
 const strategySchema = z.enum(["greedy", "planner", "scripted"]).optional();
 const sessionPatternSchema = z
@@ -34,21 +30,30 @@ function ensureInteractiveReview(terminal: { isInteractive: boolean; isCI: boole
 
 export function renderReviewEvaluate(
   args: RenderArgs<Flags>,
-  loadData: (scenarioPath: string, flags: Flags) => ReturnType<typeof loadReviewEvaluateData> = loadReviewEvaluateData,
 ) {
   const scenarioPath = args.positional[0];
   if (!scenarioPath) {
     throw usageError("Usage: idk review evaluate <scenario>");
   }
-  const output = loadData(scenarioPath, args.flags as Flags);
-  const imagePlan = resolveReviewEvaluateImagePlan({
-    output,
-    image: args.image,
-  });
-  return createReviewEvaluateElement({
-    output,
-    image: args.image,
-    imagePlan,
+  return createLazyReviewElement({
+    title: "idlekit review evaluate",
+    description: "Loading simulate, experience, and LTV summaries for the design dashboard.",
+    loader: async () => {
+      const module = await import("../lib/reviewEvaluate");
+      return function ReviewEvaluateLoaded() {
+        const output = module.loadReviewEvaluateData(scenarioPath, args.flags as Flags);
+        const imagePlan = module.resolveReviewEvaluateImagePlan({
+          output,
+          image: args.image,
+        });
+        return module.createReviewEvaluateElement({
+          output,
+          image: args.image,
+          imagePlan,
+        });
+      };
+    },
+    props: undefined as never,
   });
 }
 
