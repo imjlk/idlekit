@@ -54,7 +54,7 @@
     "@bunli/plugin-completions": "^0.3.4",
     "@bunli/runtime": "^0.2.0",
     "@idlekit/core": "workspace:*",
-    "@opentui/react": "^0.1.86",
+    "@opentui/react": "^0.2.15",
     "ajv": "^8.17.1",
     "bunli": "^0.8.2",
     "pngjs": "^7.0.0",
