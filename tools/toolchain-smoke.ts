@@ -73,6 +73,19 @@ function hashTree(dir: string): string {
   return sha256Hex(files.map((path) => `${relative(dir, path)}\n${readFileSync(path)}`).join("\n"));
 }
 
+function readWithDeadline(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  timeoutMs: number,
+): Promise<ReadableStreamReadResult<Uint8Array>> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error("graph MCP read timed out")), timeoutMs);
+  });
+  return Promise.race([reader.read(), timeout]).finally(() => {
+    if (timer !== undefined) clearTimeout(timer);
+  });
+}
+
 async function mcp(
   cwd: string,
   messages: Array<{ id?: number; method: string; params?: unknown }>,
@@ -94,10 +107,11 @@ async function mcp(
     while (responses.length < wanted.size) {
       const newline = buffer.indexOf("\n");
       if (newline === -1) {
-        if (Date.now() > deadline) {
+        const remaining = deadline - Date.now();
+        if (remaining <= 0) {
           throw new Error(`graph MCP timed out after ${responses.length}/${wanted.size} responses\n${buffer.slice(0, 500)}`);
         }
-        const chunk = await reader.read();
+        const chunk = await readWithDeadline(reader, remaining);
         if (chunk.done) throw new Error(`graph MCP stdout closed\n${buffer}`);
         buffer += decoder.decode(chunk.value);
         continue;
