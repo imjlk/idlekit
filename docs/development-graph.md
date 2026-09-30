@@ -12,7 +12,7 @@ From the repository root, with Bun `1.3.10`:
 bun tools/graph-query.ts --question "Where is runScenario declared?" --request '{"type":"lookup","query":"runScenario"}'
 ```
 
-`graph-query.ts` starts `ttsc-graph --cwd <root> --tsconfig tsconfig.graph.json`, performs MCP `initialize`, reads `inspect_typescript_graph` from `tools/list`, and sends only fields that schema publishes. Wrapper fields (`question`, `draft`, `review`, `request`) come from that schema. A field that is not in the live branch exits the process. The printed lines are symbol, file, and line. They are not a raw dump and they are not node ids.
+`graph-query.ts` starts `ttsc-graph --cwd <root> --tsconfig tsconfig.graph.json`, performs MCP `initialize`, reads `inspect_typescript_graph` from `tools/list`, and sends only fields that schema publishes. Wrapper fields (`question`, `draft`, `review`, `request`) come from that schema. A field that is not in the live branch exits the process. The printed lines are symbol, file, and line. A span that carries a declaration signature prints that signature after the location. A trace also prints `from -> to` hop lines, using symbol names rather than node ids. The output is not a raw dump.
 
 `bun run graph:check` is the gate. It checks initialize, tool discovery, lookup, caller and callee traces, workspace source spans, scratch rename / signature / citation updates in a fresh process, and stdin shutdown. `--help` alone is not a pass.
 
@@ -30,7 +30,7 @@ The checker does not see JSON or YAML scenarios, shell and package scripts, dyna
 
 ## TC-04 verification
 
-Queried on macOS arm64 with Bun `1.3.10`, `@ttsc/graph` `0.30.4`, protocol `2025-11-25`, at commit `3658c2a4dedec48d39f7ebaf2c0ceaf16f8bdd0a`. No generation field was returned. Scratch edits were re-read in a new process. `bun run graph:check` exited 0. The tour payload includes the `runScenario` and `stepOnce` spans below.
+Queried on macOS arm64 with Bun `1.3.10`, `@ttsc/graph` `0.30.4`, protocol `2025-11-25`, at commit `878707f92c6c80552bf3e76a65e889908aa3b021`. No generation field was returned. Scratch edits were re-read in a new process. `bun run graph:check` exited 0. The tour payload includes the `runScenario` and `stepOnce` spans below.
 
 | Symbol | Span | Graph result |
 |---|---|---|

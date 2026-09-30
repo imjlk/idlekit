@@ -336,6 +336,31 @@ try {
     JSON.stringify({ wrongPath, innerPath }),
   );
 
+  const regexBody = [
+    'describe("kept", () => {',
+    "  expect(value).toMatch(/\\}/);",
+    '  it("quota is documented", exportedName);',
+    "});",
+    'describe("later", () => {',
+    "  expect(value).toMatch(/\\{/);",
+    '  it("quota is documented", otherName);',
+    "});",
+  ].join("\n");
+  const regexKept = registeredSuites(regexBody, "exportedName", "quota is documented");
+  const regexLater = registeredSuites(regexBody, "otherName", "quota is documented");
+  const regexSuiteOk =
+    regexKept.length === 1 &&
+    regexKept[0]?.join(" > ") === "kept" &&
+    regexLater.length === 1 &&
+    regexLater[0]?.join(" > ") === "later";
+  record(
+    "regex-brace",
+    "zero",
+    regexSuiteOk ? 0 : 1,
+    regexSuiteOk,
+    JSON.stringify({ regexKept, regexLater }),
+  );
+
   const indentedFence = headingAnchors("    ```\n## Visible {#quota}\n");
   const indentedFenceOk = indentedFence.length === 1 && indentedFence[0] === "quota";
   record(
