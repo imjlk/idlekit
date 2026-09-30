@@ -1,4 +1,3 @@
-import { createRequire } from "node:module";
 import { readFileSync, realpathSync } from "fs";
 import { isAbsolute, join, resolve } from "path";
 import { sha256Hex } from "./_bun";
@@ -8,7 +7,17 @@ export const pinsPath = join(root, "fixtures/toolchain/pins.json");
 export const ttscBin = join(root, "node_modules/.bin/ttsc");
 export const graphBin = join(root, "node_modules/.bin/ttsc-graph");
 
-const require = createRequire(join(root, "package.json"));
+function fromFileUrl(url: string): string {
+  if (!url.startsWith("file://")) return url;
+  const path = decodeURIComponent(new URL(url).pathname);
+  if (process.platform === "win32" && /^\/[A-Za-z]:/.test(path)) return path.slice(1);
+  return path;
+}
+
+function resolveSpecifier(specifier: string, parent?: string): string {
+  const resolved = parent === undefined ? import.meta.resolve(specifier) : import.meta.resolve(specifier, parent);
+  return fromFileUrl(resolved);
+}
 
 export type PinFile = {
   bun: string;
@@ -26,8 +35,7 @@ export type CommandResult = {
 };
 
 export function readPins(): PinFile {
-  const pins = require(pinsPath) as PinFile;
-  return pins;
+  return JSON.parse(readFileSync(pinsPath, "utf8")) as PinFile;
 }
 
 export function nodeSatisfies(version: string, floor: string): boolean {
@@ -44,9 +52,8 @@ export function platformPackage(): string {
 }
 
 export function resolvePlatformBinary(name: string): string {
-  const ttscPackage = require.resolve("ttsc/package.json");
-  const fromTtsc = createRequire(ttscPackage);
-  return fromTtsc.resolve(`${platformPackage()}/bin/${name}`);
+  const ttscPackage = resolveSpecifier("ttsc/package.json");
+  return resolveSpecifier(`${platformPackage()}/bin/${name}`, ttscPackage);
 }
 
 export function bundledGoBinary(): string {
