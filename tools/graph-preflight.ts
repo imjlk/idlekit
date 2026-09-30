@@ -202,17 +202,23 @@ async function scratch(): Promise<void> {
 }
 
 async function main(): Promise<void> {
+  const rootPkg = await readJson(join(root, "package.json"));
+  const dev = (rootPkg.devDependencies ?? {}) as Record<string, string>;
   const graphPkg = await readJson(join(root, "node_modules", "@ttsc", "graph", "package.json"));
   const ttscPkg = await readJson(join(root, "node_modules", "ttsc", "package.json"));
   console.log(`installed @ttsc/graph ${String(graphPkg.version)} ttsc ${String(ttscPkg.version)}`);
+  if (String(graphPkg.version) !== dev["@ttsc/graph"]) {
+    fail(`installed @ttsc/graph ${String(graphPkg.version)} is not the pin ${String(dev["@ttsc/graph"])}`);
+  }
+  if (String(ttscPkg.version) !== dev.ttsc) {
+    fail(`installed ttsc ${String(ttscPkg.version)} is not the pin ${String(dev.ttsc)}`);
+  }
   console.log(`command ${graphBin} --cwd ${root} --tsconfig tsconfig.graph.json`);
   for (const rel of ["tsconfig.graph.json", "tools/graph-query.ts", "tools/graph-preflight.ts"]) {
     const bytes = await Bun.file(join(root, rel)).bytes();
     console.log(`sha256 ${rel} ${createHash("sha256").update(bytes).digest("hex")}`);
   }
 
-  const rootPkg = await readJson(join(root, "package.json"));
-  const dev = (rootPkg.devDependencies ?? {}) as Record<string, string>;
   if (dev["@ttsc/graph"] !== "0.30.4") fail(`root @ttsc/graph is ${String(dev["@ttsc/graph"])}`);
   for (const rel of ["packages/money/package.json", "packages/core/package.json", "packages/cli/package.json"]) {
     const pkg = await readJson(join(root, rel));
@@ -375,25 +381,28 @@ async function main(): Promise<void> {
     const moneyDecl = namedSource(money, "tickMoney", "packages/money/src/policy/tickMoney.ts");
     if (moneyDecl) ok(`lookup tickMoney ${moneyDecl.file}:${moneyDecl.line}`);
     else {
-      const onlyDts = collectSpans(money).filter((span) => span.name === "tickMoney" || span.signature?.includes("tickMoney"));
-      if (onlyDts.length > 0 && onlyDts.every((span) => span.file.endsWith(".d.ts"))) {
-        fail("tickMoney resolved only to .d.ts");
-      } else {
-        console.log("aggregate tickMoney did not land on the money source; querying packages/money");
-        const moneySession = await openSchema(join(root, "packages", "money"), "tsconfig.json");
-        try {
-          const local = await ask(
-            moneySession.session,
-            moneySession.schema,
-            "Where is tickMoney declared?",
-            optionalRequest(moneySession.schema, "lookup", { query: "tickMoney", limit: 5 }),
-          );
-          const localDecl = namedSource(local, "tickMoney", "src/policy/tickMoney.ts");
-          if (!localDecl) fail("money package config did not declare tickMoney in src/policy/tickMoney.ts");
-          else ok(`authoritative money package lookup tickMoney ${localDecl.file}:${localDecl.line}`);
-        } finally {
-          await moneySession.session.close();
-        }
+      const onlyDts = collectSpans(money).filter(
+        (span) => span.name === "tickMoney" || span.signature?.includes("tickMoney"),
+      );
+      const declarationOnly = onlyDts.length > 0 && onlyDts.every((span) => span.file.endsWith(".d.ts"));
+      console.log(
+        declarationOnly
+          ? "aggregate tickMoney resolved only to .d.ts; querying packages/money"
+          : "aggregate tickMoney did not land on the money source; querying packages/money",
+      );
+      const moneySession = await openSchema(join(root, "packages", "money"), "tsconfig.json");
+      try {
+        const local = await ask(
+          moneySession.session,
+          moneySession.schema,
+          "Where is tickMoney declared?",
+          optionalRequest(moneySession.schema, "lookup", { query: "tickMoney", limit: 5 }),
+        );
+        const localDecl = namedSource(local, "tickMoney", "src/policy/tickMoney.ts");
+        if (!localDecl) fail("money package config did not declare tickMoney in src/policy/tickMoney.ts");
+        else ok(`authoritative money package lookup tickMoney ${localDecl.file}:${localDecl.line}`);
+      } finally {
+        await moneySession.session.close();
       }
     }
 
