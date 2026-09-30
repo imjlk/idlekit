@@ -80,7 +80,7 @@ Compatibility fixtures live under `fixtures/compat/v1/`.
 
 ## Analysis baseline
 
-At `265c6ed` the repository compiler was `tsc`, tests ran with `bun test`, and the CLI bundle was Bunli. Root Bun was `1.3.10` and CI pinned Bun `1.3.9`. `TC-01` moves CI to Bun `1.3.10` and pins ttsc. Package check and emit scripts still call `tsc` until `TC-02`. The live pins are in [Toolchain pins](./toolchain.md).
+At `265c6ed` the repository compiler was `tsc`, tests ran with `bun test`, and the CLI bundle was Bunli. Root Bun was `1.3.10` and CI pinned Bun `1.3.9`. `TC-01` moves CI to Bun `1.3.10` and pins ttsc. `TC-02` runs package check and money/core emit through `ttsc`, with the same transform on Bun source, `bun test`, the CLI bundle, and the packed artifact. The live pins are in [Toolchain pins](./toolchain.md).
 
 `bun tools/analysis-baseline-check.ts` checks the paths cited by the [source audit](./implementation/source-audit.md) and the current host pins.
 

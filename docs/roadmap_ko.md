@@ -32,7 +32,7 @@ English version: [roadmap.md](./roadmap.md)
 
 `PR-15`(흐름 관측), `PR-16`(가드된 시간 건너뛰기), `PR-19`(Jev provider), `DX-05`(worker backend)는 선택이다.
 
-`265c6ed`에서 root `packageManager`는 `bun@1.3.10`이었고 CI는 Bun `1.3.9`를 pin했다. `TC-01`이 CI를 Bun `1.3.10`으로 맞추고 ttsc를 pin한다. check와 emit 스크립트는 `TC-02` 전까지 `tsc`를 호출한다. 그 compiler가 필요로 하는 개발용 Node나 Go는 host 세부사항이다. 제품 런타임은 Bun-first를 유지한다. [툴체인 pin](./toolchain_ko.md)을 본다.
+`265c6ed`에서 root `packageManager`는 `bun@1.3.10`이었고 CI는 Bun `1.3.9`를 pin했다. `TC-01`이 CI를 Bun `1.3.10`으로 맞추고 ttsc를 pin한다. `TC-02`는 그 pin 위에서 check와 money/core emit을 `ttsc`로 실행한다. 그 compiler가 필요로 하는 개발용 Node나 Go는 host 세부사항이다. 제품 런타임은 Bun-first를 유지한다. [툴체인 pin](./toolchain_ko.md)을 본다.
 
 `prestigeCycle.stability`는 정상상태 측정값이 아니다. `createBreakEternityEngine`은 미구현 placeholder다.
 

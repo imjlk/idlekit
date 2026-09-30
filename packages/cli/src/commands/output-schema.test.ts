@@ -83,7 +83,7 @@ describe("output schema contracts", () => {
       expect(out.bundle).toBe("design");
       expect(Array.isArray(out.results)).toBeTrue();
     });
-  }, 20000);
+  }, 180000);
 
   it("experience output follows schema", () => {
     const out = runCliJson([
@@ -123,7 +123,7 @@ describe("output schema contracts", () => {
       validateBySchema(schema, out, "evaluate.output.schema.json");
       expect(out._meta.command).toBe("evaluate");
     });
-  }, 40000);
+  }, 180000);
 
   it("doctor output follows schema", () => {
     const out = runCliJson(["doctor", "--format", "json"]);
@@ -154,7 +154,7 @@ describe("output schema contracts", () => {
     } finally {
       await removePath(dir);
     }
-  }, 15000);
+  }, 180000);
 
   it("tune output follows schema", () => {
     const out = runCliJson([

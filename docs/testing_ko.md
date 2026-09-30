@@ -134,7 +134,7 @@ suite는 `30m/2h/24h/7d/30d/90d` 장기 구간 시나리오를 포함합니다.
 
 ## 6. 분석 기준
 
-`265c6ed`에서 저장소 compiler는 `tsc`였고, 테스트는 `bun test`였으며, CLI 번들은 Bunli였다. Root Bun은 `1.3.10`이었고 CI는 Bun `1.3.9`를 pin했다. `TC-01`이 CI를 Bun `1.3.10`으로 맞추고 ttsc를 pin한다. 패키지 check/emit 스크립트는 `TC-02` 전까지 `tsc`를 호출한다. 현재 pin은 [툴체인 pin](./toolchain_ko.md)에 있다.
+`265c6ed`에서 저장소 compiler는 `tsc`였고, 테스트는 `bun test`였으며, CLI 번들은 Bunli였다. Root Bun은 `1.3.10`이었고 CI는 Bun `1.3.9`를 pin했다. `TC-01`이 CI를 Bun `1.3.10`으로 맞추고 ttsc를 pin한다. `TC-02`는 패키지 check와 money/core emit을 `ttsc`로 실행하고, 같은 변환을 Bun source, `bun test`, CLI bundle, packed artifact에 적용한다. 현재 pin은 [툴체인 pin](./toolchain_ko.md)에 있다.
 
 `bun tools/analysis-baseline-check.ts`는 [소스 감사](./implementation/source-audit_ko.md)가 인용한 경로와 현재 host pin을 확인한다.
 

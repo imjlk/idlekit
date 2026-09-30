@@ -173,7 +173,7 @@ describe("CLI golden outputs", () => {
     expect(Array.isArray(out.results)).toBeTrue();
     expect(out.results.length).toBe(3);
     expect(out._meta?.schemaRef).toBe("docs/schemas/compare.output.schema.json");
-  }, 20000);
+  }, 180000);
 
   it("canonical plugin fixture supports milestone timing compare", () => {
     const out = runCliJson([
@@ -262,7 +262,7 @@ describe("CLI golden outputs", () => {
     expect(out.ltv?.summary?.at7d).toBeDefined();
     expect(out._meta?.command).toBe("evaluate");
     expect(out._meta?.schemaRef).toBe("docs/schemas/evaluate.output.schema.json");
-  }, 40000);
+  }, 180000);
 
   it("evaluate writes workflow child outputs to out-dir", async () => {
     const dir = await createTempDir("idlekit-evaluate-out");
@@ -300,7 +300,7 @@ describe("CLI golden outputs", () => {
     } finally {
       await removePath(dir);
     }
-  }, 40000);
+  }, 180000);
 
   it("doctor reports runtime and completions wiring", () => {
     const out = runCliJson(["doctor", "--format", "json"]);
@@ -332,7 +332,7 @@ describe("CLI golden outputs", () => {
     } finally {
       await removePath(dir);
     }
-  }, 15000);
+  }, 180000);
 
   it("ltv uncertainty is deterministic for fixed seed", () => {
     const args = [

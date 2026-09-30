@@ -18,7 +18,8 @@
   },
   "scripts": {
     "build": "bun run --cwd packages/money build && bun run --cwd packages/core build && bun run --cwd packages/cli build",
-    "typecheck": "bun run --cwd packages/money typecheck && bun run --cwd packages/core typecheck && bun run --cwd packages/cli typecheck",
+    "typecheck": "bun run --cwd packages/money typecheck && bun run --cwd packages/core typecheck && bun run --cwd packages/cli typecheck && bun tools/tsconfig-program-check.ts",
+    "transform:smoke": "bun tools/transform-smoke.ts",
     "runtime:check": "bun tools/runtime-import-check.ts",
     "dev:cli": "bun run --cwd packages/cli dev",
     "test": "bun run --cwd packages/money test && bun run --cwd packages/core test && bun run --cwd packages/cli test",
@@ -49,6 +50,10 @@
     "toolchain:doctor": "bun tools/toolchain-doctor.ts",
     "toolchain:prepare": "bun tools/toolchain-prepare.ts",
     "toolchain:smoke": "bun tools/toolchain-smoke.ts"
+  },
+  "overrides": {
+    "@opentui/core": "0.4.5",
+    "@opentui/react": "0.4.5"
   },
   "devDependencies": {
     "@ttsc/evidence": "0.30.4",

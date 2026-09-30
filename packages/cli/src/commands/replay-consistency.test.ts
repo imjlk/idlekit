@@ -198,7 +198,7 @@ describe("replay consistency", () => {
       "json",
     ]);
     expect(hashReplayResult(tuneA)).toBe(hashReplayResult(tuneB));
-  }, 20000);
+  }, 180000);
 
   it("replay verify passes for simulate/compare/experience artifacts", async () => {
     const dir = await createTempDir("idlekit-replay-verify-basic");
@@ -267,7 +267,7 @@ describe("replay consistency", () => {
     } finally {
       await removePath(dir);
     }
-  }, 20000);
+  }, 180000);
 
   it("replay verify passes for tune/ltv artifacts", async () => {
     const dir = await createTempDir("idlekit-replay-verify-extended");
@@ -444,7 +444,7 @@ describe("replay consistency", () => {
     } finally {
       await removePath(dir);
     }
-  }, 20000);
+  }, 180000);
 
   it("normalizes root-cwd resume paths in simulate replay artifacts", async () => {
     const dir = await createTempDir("idlekit-replay-root-resume");

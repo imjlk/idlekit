@@ -125,6 +125,8 @@ async function restore(): Promise<void> {
 }
 
 const mode = process.argv[2];
+const packageDir = process.argv[3];
+if (packageDir) process.chdir(resolve(packageDir));
 
 if (mode === "prepare") {
   await prepare();

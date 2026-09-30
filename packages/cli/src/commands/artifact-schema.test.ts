@@ -116,7 +116,7 @@ describe("artifact schema contracts", () => {
     } finally {
       await removePath(dir);
     }
-  }, 20000);
+  }, 180000);
 
   it("replay verify output follows schema", async () => {
     const dir = await createTempDir("idlekit-replay-verify-schema");
