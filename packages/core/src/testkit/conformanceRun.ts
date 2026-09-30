@@ -297,8 +297,10 @@ export function snapshotEconomy<N, U extends string, Vars>(
   return JSON.stringify({
     t: state.t,
     amount: engine.toString(state.wallet.money.amount),
+    amountUnit: state.wallet.money.unit.code,
     bucket: engine.toString(state.wallet.bucket),
     max: engine.toString(state.maxMoneyEver.amount),
+    maxUnit: state.maxMoneyEver.unit.code,
     prestige: {
       count: state.prestige.count,
       points: engine.toString(state.prestige.points),
@@ -312,10 +314,44 @@ export function economyAfter<N, U extends string, Vars>(scenario: CompiledScenar
   return snapshotEconomy(scenario.ctx.E, runScenario(scenario).end);
 }
 
+type StrategyBracket = {
+  snap: () => unknown;
+  restore: (state: unknown) => void;
+};
+
+/** Independent runs share one strategy object, so a cursor has to return to where that run started. */
+function strategyBracket<N, U extends string, Vars>(
+  scenario: CompiledScenario<N, U, Vars>,
+): StrategyBracket | RelationCheck {
+  const strategy = scenario.strategy;
+  const snap = strategy?.snapshotState;
+  const restore = strategy?.restoreState;
+  if (!snap && !restore) return { snap: () => undefined, restore: () => {} };
+  if (!snap || !restore) return skip("strategy exposes only one of snapshotState and restoreState");
+  return {
+    snap: () => snap(),
+    restore: (state) => {
+      restore(state);
+    },
+  };
+}
+
+function isRelationCheck(value: StrategyBracket | RelationCheck): value is RelationCheck {
+  return "applicable" in value;
+}
+
 export function checkReplay<N, U extends string, Vars>(scenario: CompiledScenario<N, U, Vars>): RelationCheck {
-  const left = economyAfter(scenario);
-  const right = economyAfter(scenario);
-  return left === right ? pass(left) : fail(`${left} != ${right}`);
+  const bracket = strategyBracket(scenario);
+  if (isRelationCheck(bracket)) return bracket;
+  const initial = bracket.snap();
+  try {
+    const left = economyAfter(scenario);
+    bracket.restore(initial);
+    const right = economyAfter(scenario);
+    return left === right ? pass(left) : fail(`${left} != ${right}`);
+  } finally {
+    bracket.restore(initial);
+  }
 }
 
 /** A few ulps cover `0.3 / 0.1`. A real offset such as `1.000000001` stays off the grid. */
@@ -360,45 +396,54 @@ function restoreJsonCheckpoint<N, U extends string, Vars>(
   return deserializeSimState(scenario.ctx.E, JSON.parse(text));
 }
 
+function resumeFromCheckpoint<N, U extends string, Vars>(
+  scenario: CompiledScenario<N, U, Vars>,
+  splitSec: number,
+  tailInitial: (headEnd: SimState<N, U, Vars>) => SimState<N, U, Vars>,
+): RelationCheck {
+  const refused = onGrid(scenario, splitSec);
+  if (refused) return refused;
+  const bracket = strategyBracket(scenario);
+  if (isRelationCheck(bracket)) return bracket;
+  const step = scenario.run.stepSec;
+  const duration = scenario.run.durationSec ?? 0;
+  const splitTicks = wholeTickCount(splitSec, step);
+  const initial = bracket.snap();
+  try {
+    const full = economyAfter(scenario);
+    bracket.restore(initial);
+    const head = runScenario({
+      ...scenario,
+      run: { ...scenario.run, durationSec: splitSec },
+    });
+    const elapsed = head.end.t - scenario.initial.t;
+    if (splitTicks === null || wholeTickCount(elapsed, step) !== splitTicks) {
+      return skip("head stopped before the checkpoint");
+    }
+    bracket.restore(bracket.snap());
+    const tail = economyAfter({
+      ...scenario,
+      initial: tailInitial(head.end),
+      run: { ...scenario.run, durationSec: duration - splitSec },
+    });
+    return full === tail ? pass(full) : fail(`${full} != ${tail}`);
+  } finally {
+    bracket.restore(initial);
+  }
+}
+
 export function checkResume<N, U extends string, Vars>(
   scenario: CompiledScenario<N, U, Vars>,
   splitSec: number,
 ): RelationCheck {
-  const refused = onGrid(scenario, splitSec);
-  if (refused) return refused;
-  const duration = scenario.run.durationSec ?? 0;
-  const full = economyAfter(scenario);
-  const head = runScenario({
-    ...scenario,
-    run: { ...scenario.run, durationSec: splitSec },
-  });
-  const tail = economyAfter({
-    ...scenario,
-    initial: head.end,
-    run: { ...scenario.run, durationSec: duration - splitSec },
-  });
-  return full === tail ? pass(full) : fail(`${full} != ${tail}`);
+  return resumeFromCheckpoint(scenario, splitSec, (headEnd) => headEnd);
 }
 
 export function checkResumeFromJson<N, U extends string, Vars>(
   scenario: CompiledScenario<N, U, Vars>,
   splitSec: number,
 ): RelationCheck {
-  const refused = onGrid(scenario, splitSec);
-  if (refused) return refused;
-  const duration = scenario.run.durationSec ?? 0;
-  const full = economyAfter(scenario);
-  const head = runScenario({
-    ...scenario,
-    run: { ...scenario.run, durationSec: splitSec },
-  });
-  const restored = restoreJsonCheckpoint(scenario, head.end, "checkpoint");
-  const tail = economyAfter({
-    ...scenario,
-    initial: restored,
-    run: { ...scenario.run, durationSec: duration - splitSec },
-  });
-  return full === tail ? pass(full) : fail(`${full} != ${tail}`);
+  return resumeFromCheckpoint(scenario, splitSec, (headEnd) => restoreJsonCheckpoint(scenario, headEnd, "checkpoint"));
 }
 
 export function checkJsonRoundTrip<N, U extends string, Vars>(
@@ -414,36 +459,52 @@ export function checkJsonRoundTrip<N, U extends string, Vars>(
 export function checkRetention<N, U extends string, Vars>(
   scenario: CompiledScenario<N, U, Vars>,
 ): RelationCheck {
-  const kept = runScenario(scenario);
-  const dropped = runScenario({
-    ...scenario,
-    run: { ...scenario.run, eventLog: { enabled: false, maxEvents: 0 } },
-  });
-  const left = snapshotEconomy(scenario.ctx.E, kept.end);
-  const right = snapshotEconomy(scenario.ctx.E, dropped.end);
-  if (left !== right) return fail(`${left} != ${right}`);
-  return pass(`${left}; retained ${kept.events.length}; dropped ${dropped.events.length}`);
+  const bracket = strategyBracket(scenario);
+  if (isRelationCheck(bracket)) return bracket;
+  const initial = bracket.snap();
+  try {
+    const kept = runScenario(scenario);
+    bracket.restore(initial);
+    const dropped = runScenario({
+      ...scenario,
+      run: { ...scenario.run, eventLog: { enabled: false, maxEvents: 0 } },
+    });
+    const left = snapshotEconomy(scenario.ctx.E, kept.end);
+    const right = snapshotEconomy(scenario.ctx.E, dropped.end);
+    if (left !== right) return fail(`${left} != ${right}`);
+    return pass(`${left}; retained ${kept.events.length}; dropped ${dropped.events.length}`);
+  } finally {
+    bracket.restore(initial);
+  }
 }
 
 export function checkObserver<N, U extends string, Vars>(
   scenario: CompiledScenario<N, U, Vars>,
 ): RelationCheck {
-  let observed = 0;
-  const withObserver = economyAfter({
-    ...scenario,
-    ctx: {
-      ...scenario.ctx,
-      emit: (events) => {
-        observed += events.length;
+  const bracket = strategyBracket(scenario);
+  if (isRelationCheck(bracket)) return bracket;
+  const initial = bracket.snap();
+  try {
+    let observed = 0;
+    const withObserver = economyAfter({
+      ...scenario,
+      ctx: {
+        ...scenario.ctx,
+        emit: (events) => {
+          observed += events.length;
+        },
       },
-    },
-  });
-  const withoutObserver = economyAfter({
-    ...scenario,
-    ctx: { ...scenario.ctx, emit: undefined },
-  });
-  if (withObserver !== withoutObserver) return fail(`${withObserver} != ${withoutObserver}`);
-  return pass(`${withObserver}; observed batches ${observed}`);
+    });
+    bracket.restore(initial);
+    const withoutObserver = economyAfter({
+      ...scenario,
+      ctx: { ...scenario.ctx, emit: undefined },
+    });
+    if (withObserver !== withoutObserver) return fail(`${withObserver} != ${withoutObserver}`);
+    return pass(`${withObserver}; observed batches ${observed}`);
+  } finally {
+    bracket.restore(initial);
+  }
 }
 
 export function checkTrialOrder(run: (gameSeed: number) => string, seeds: readonly number[]): RelationCheck {

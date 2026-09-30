@@ -4,6 +4,7 @@ import { join } from "path";
 import { createBreakInfinityEngine, createNumberEngine } from "../engine/breakInfinity";
 import type { Engine } from "../engine/types";
 import { etaAnalytic, etaSimulate } from "../sim/analysis/eta";
+import { createScriptedStrategy } from "../sim/strategy/scripted";
 import type { Action, CompiledScenario, Model, SimState } from "../sim/types";
 import type { Strategy } from "../sim/strategy/types";
 import { compareAmounts } from "./compareAmounts";
@@ -28,6 +29,7 @@ import {
   gameSeedForCase,
   rejectNonPositiveStep,
   replayShrinkReport,
+  snapshotEconomy,
   type RelationCheck,
 } from "./conformanceRun";
 
@@ -76,6 +78,37 @@ function constantScenario(args: {
     model,
     initial: state(engine, 0),
     run: { stepSec: args.stepSec, durationSec: args.durationSec },
+  };
+}
+
+function scriptedGrant(durationSec: number): CompiledScenario<number, UnitCode, Vars> {
+  const engine = createNumberEngine();
+  const unit = { code: "COIN" as const };
+  const grant: Action<number, UnitCode, Vars> = {
+    id: "grant",
+    kind: "grant",
+    canApply: () => true,
+    cost: () => null,
+    apply: (_ctx, current) => ({
+      ...current,
+      vars: { buys: current.vars.buys + 1 },
+    }),
+  };
+  return {
+    ctx: { E: engine, unit, tickPolicy: { mode: "drop" }, stepSec: 1 },
+    model: {
+      id: "scripted-grant",
+      version: 1,
+      income: () => ({ unit, amount: 0 }),
+      actions: () => [grant],
+    },
+    initial: state(engine, 0),
+    strategy: createScriptedStrategy<number, UnitCode, Vars>({
+      schemaVersion: 1,
+      program: [{ actionId: "grant" }],
+      loop: false,
+    }),
+    run: { stepSec: 1, durationSec },
   };
 }
 
@@ -219,6 +252,62 @@ describe("PR-02 time boundaries", () => {
     const coarseBuy = economyAfter(thresholdScenario(1));
     const fineBuy = economyAfter(thresholdScenario(0.5));
     expectApplicable(checkSnapshots(coarseBuy, fineBuy, "different"));
+  });
+});
+
+describe("stateful strategy and currency identity", () => {
+  it("replays a one-shot scripted grant from the same cursor", () => {
+    const scenario = scriptedGrant(2);
+    const replay = checkReplay(scenario);
+    expectApplicable(replay);
+    expect((JSON.parse(replay.summary) as { vars: Vars }).vars.buys).toBe(1);
+    expectApplicable(checkResume(scenario, 1));
+    expectApplicable(checkResumeFromJson(scriptedGrant(4), 2));
+    expectApplicable(checkRetention(scenario));
+    expectApplicable(checkObserver(scenario));
+  });
+
+  it("skips a resume whose until stops before the checkpoint", () => {
+    const scenario = constantScenario({ rate: 1, durationSec: 10, stepSec: 1 });
+    const early = {
+      ...scenario,
+      run: { ...scenario.run, until: (current: SimState<number, UnitCode, Vars>) => current.t >= 3 },
+    };
+    const memory = checkResume(early, 5);
+    const json = checkResumeFromJson(early, 5);
+    expect(memory.applicable).toBe(false);
+    expect(memory.ok).toBe(true);
+    expect(json.applicable).toBe(false);
+    expect(json.summary).toContain("checkpoint");
+  });
+
+  it("skips a strategy that cannot restore the snapshot it exposes", () => {
+    const scenario = constantScenario({ rate: 1, durationSec: 2, stepSec: 1 });
+    const partial: Strategy<number, UnitCode, Vars> = {
+      id: "partial",
+      snapshotState: () => ({ cursor: 0 }),
+      decide: () => [],
+    };
+    const refused = checkReplay({ ...scenario, strategy: partial });
+    expect(refused.applicable).toBe(false);
+    expect(refused.ok).toBe(true);
+  });
+
+  it("records wallet and max-money units on the economy snapshot", () => {
+    const engine = createNumberEngine();
+    const coin = snapshotEconomy(engine, state(engine, 10));
+    const parsed = JSON.parse(coin) as { amountUnit: string; maxUnit: string };
+    expect(parsed.amountUnit).toBe("COIN");
+    expect(parsed.maxUnit).toBe("COIN");
+    const gemState: SimState<number, "GEM", Vars> = {
+      t: 0,
+      wallet: { money: { unit: { code: "GEM" }, amount: 10 }, bucket: engine.zero() },
+      maxMoneyEver: { unit: { code: "GEM" }, amount: 10 },
+      prestige: { count: 0, points: engine.zero(), multiplier: engine.from(1) },
+      vars: { buys: 0 },
+    };
+    const gem = snapshotEconomy(engine, gemState);
+    expect(gem).not.toBe(coin);
   });
 });
 
