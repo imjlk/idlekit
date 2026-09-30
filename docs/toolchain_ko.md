@@ -72,7 +72,7 @@ Evidence와 Graph는 이 fixture에서만 확인한다. 저장소 `evidence:chec
 
 ## TC-01 검증
 
-아래 명령은 Bun `1.3.10`으로 실행했다. `ttsc version`은 `ttsc 0.30.4 (Version 7.0.2)`다. Fixture 입력 hash는 `933e8d6f6e411e2cfef0a4b5ce1a121cc8e00ad647c08d009c2cf632543f5b73`이다. Lockfile sha256은 `c39164595007df4da8710b7fda5f70ccca09d5f9c2f8b8a73d8f4d360d0e137e`다.
+아래 명령은 Bun `1.3.10`으로 실행했다. `ttsc version`은 `ttsc 0.30.4 (Version 7.0.2)`다. Fixture 입력 hash는 `933e8d6f6e411e2cfef0a4b5ce1a121cc8e00ad647c08d009c2cf632543f5b73`이다. Lockfile sha256은 `3b8640456614474f98e6faff990b85fe2e4274438c42f355ec689bfc278e7ab0`다.
 
 | 명령 | Host | Exit |
 |---|---|---|
