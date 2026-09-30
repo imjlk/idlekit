@@ -4,7 +4,7 @@ import type { StepOnceFn } from "../stepTypes";
 import { parseMoney } from "../../notation/parseMoney";
 import type { Action, BulkQuote, Model, SimContext, SimState } from "../types";
 import type { PlannerStrategyParamsV1 } from "./params";
-import { stableActions, stableBulkQuotes } from "./stability";
+import { quotedDecisionSize, stableActions, stableBulkQuotes } from "./stability";
 
 /**
  * Planner MUST use stepOnce for rollouts.
@@ -126,7 +126,7 @@ function buildStepCandidates<N, U extends string, Vars>(
       score: Number.isFinite(score) ? score : Number.NEGATIVE_INFINITY,
       decision: {
         action,
-        bulkSize: quote.size > 1 ? quote.size : undefined,
+        bulkSize: quotedDecisionSize(quote.size),
       } satisfies Decision<N, U, Vars>,
     };
   });

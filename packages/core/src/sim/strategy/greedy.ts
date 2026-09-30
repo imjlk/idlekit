@@ -1,6 +1,6 @@
 import type { Action, BulkQuote, Model, SimContext, SimState } from "../types";
 import type { GreedyStrategyParamsV1 } from "./params";
-import { compareCandidateKey, stableActions, stableBulkQuotes } from "./stability";
+import { compareCandidateKey, quotedDecisionSize, stableActions, stableBulkQuotes } from "./stability";
 import type { Strategy } from "./types";
 
 export type GreedyObjective = GreedyStrategyParamsV1["objective"];
@@ -127,7 +127,7 @@ function buildCandidates<N, U extends string, Vars>(
       if (!Number.isFinite(score)) continue;
       candidates.push({
         action,
-        bulkSize: quote.size > 1 ? quote.size : undefined,
+        bulkSize: quotedDecisionSize(quote.size),
         score,
         equivCostLog10: quote.equivalentCost ? ctx.E.absLog10(quote.equivalentCost.amount) : undefined,
         costLog10: quote.cost ? ctx.E.absLog10(quote.cost.amount) : undefined,

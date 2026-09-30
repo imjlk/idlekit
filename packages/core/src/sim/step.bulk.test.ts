@@ -3,7 +3,10 @@ import { createBreakInfinityEngine, createNumberEngine } from "../engine/breakIn
 import type { Engine } from "../engine/types";
 import type { Money } from "../money/types";
 import { checkBulk, checkNonNegative, expectProperty } from "../testkit/conformanceRun";
+import { buildSimStats } from "./analysis/ux";
 import { singleBuySize, stepOnce } from "./step";
+import { createGreedyStrategy } from "./strategy/greedy";
+import { quotedDecisionSize } from "./strategy/stability";
 import type { Action, Model, SimContext, SimEvent, SimState } from "./types";
 
 type UnitCode = "COIN";
@@ -99,7 +102,7 @@ function skippedReason(events: readonly SimEvent<unknown>[]): string | undefined
  * @evidence ./step.ts#singleBuySize Reads the size that must stay on Action.cost.
  * @evidenceReview ./step.ts#singleBuySize #d686b8e The declaration is 1. This test pays Action.cost for that size and does not call bulk.
  * @evidence ./step.ts#stepOnce Calls stepOnce for the quoted buy and the rejected quotes.
- * @evidenceReview ./step.ts#stepOnce #996264a Re-read stepOnce: a quoted size pays BulkQuote.cost once and a rejected quote does not apply.
+ * @evidenceReview ./step.ts#stepOnce #7267272 Re-read stepOnce: each decision re-reads model.actions for the state so far, a quoted size pays BulkQuote.cost once, and a rejected quote does not apply.
  */
 export function settlesQuotedBulkAndRejectsBadQuotes(): void {
   expect(singleBuySize).toBe(1);
@@ -544,6 +547,105 @@ function createCustomEngine(): Engine<number> {
   };
 }
 
+function growingQuoteModel<N>(engine: Engine<N>): Model<N, UnitCode, Vars> {
+  return {
+    id: "growing-quote",
+    version: 1,
+    income: () => coin(engine, engine.zero()),
+    actions: (_ctx, current) => {
+      const owned = current.vars.owned;
+      const unit = 10;
+      const growth = 2;
+      return [
+        {
+          id: "buy",
+          kind: "buy",
+          canApply: () => true,
+          cost: () => coin(engine, engine.from(unit * growth ** owned)),
+          bulk: () => {
+            const size = 2;
+            const total = unit * growth ** owned + unit * growth ** (owned + 1);
+            return [{ size, cost: coin(engine, engine.from(total)) }];
+          },
+          apply: (_ctx, currentState, bulkSize = 1) => ({
+            ...currentState,
+            vars: { ...currentState.vars, owned: currentState.vars.owned + bulkSize },
+          }),
+        },
+      ];
+    },
+  };
+}
+
 describe("PR-01 bulk quote settlement", () => {
   it("settles a quoted bulk buy and rejects a bad quote", settlesQuotedBulkAndRejectsBadQuotes);
+
+  it("reprices a later buy from the updated ownership", () => {
+    const engine = createNumberEngine();
+    const model = growingQuoteModel(engine);
+    const ctx = context(engine);
+    const start = state(engine, 1000);
+    const stale = model.actions(ctx, start)[0];
+    if (!stale) throw new Error("missing buy");
+    const out = stepOnce({
+      ctx,
+      model,
+      state: start,
+      dt: 0,
+      decisions: [
+        { action: stale, bulkSize: 2 },
+        { action: stale, bulkSize: 2 },
+      ],
+    });
+    expect(out.next.vars.owned).toBe(4);
+    expect(engine.toNumber(out.next.wallet.money.amount)).toBe(850);
+  });
+
+  it("keeps a malformed quote size on the settlement path", () => {
+    expect(quotedDecisionSize(1)).toBeUndefined();
+    expect(quotedDecisionSize(0.5)).toBe(0.5);
+    expect(quotedDecisionSize(0)).toBe(0);
+    expect(quotedDecisionSize(Number.NaN)).toBeNaN();
+
+    const engine = createNumberEngine();
+    const action: Action<number, UnitCode, Vars> = {
+      id: "buy",
+      kind: "buy",
+      canApply: () => true,
+      cost: () => coin(engine, engine.from(10)),
+      bulk: () => [
+        {
+          size: Number.NaN,
+          cost: coin(engine, engine.from(10)),
+          deltaIncomePerSec: coin(engine, engine.from(1)),
+        },
+      ],
+      apply: (_ctx, current, bulkSize = 1) => ({
+        ...current,
+        vars: { ...current.vars, owned: current.vars.owned + (bulkSize ?? 1) },
+      }),
+    };
+    const model = zeroIncomeModel(engine, action);
+    const start = state(engine, 1000);
+    const decisions = createGreedyStrategy<number, UnitCode, Vars>({
+      schemaVersion: 1,
+      objective: "maximizeIncome",
+      bulk: { mode: "bestQuote" },
+    }).decide(context(engine), model, start);
+    expect(decisions).toHaveLength(1);
+    expect(decisions[0]?.bulkSize).toBeNaN();
+    const out = stepOnce({
+      ctx: context(engine),
+      model,
+      state: start,
+      dt: 0,
+      decisions,
+    });
+    expect(skippedReason(out.events)).toBe("invalidQuote");
+    expect(out.next.vars.owned).toBe(0);
+    expect(engine.toNumber(out.next.wallet.money.amount)).toBe(1000);
+    const stats = buildSimStats(out.events);
+    expect(stats.actions.skippedInvalidQuote).toBe(1);
+    expect(stats.actions.applied).toBe(0);
+  });
 });

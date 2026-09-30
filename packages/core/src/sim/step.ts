@@ -50,6 +50,16 @@ export type StepOutput<N, U extends string, Vars> = Readonly<{
  */
 export const singleBuySize = 1;
 
+function currentAction<N, U extends string, Vars>(
+  model: Model<N, U, Vars>,
+  ctx: SimContext<N, U, Vars>,
+  state: SimState<N, U, Vars>,
+  selected: Action<N, U, Vars>,
+): Action<N, U, Vars> {
+  const match = model.actions(ctx, state).find((candidate) => candidate.id === selected.id);
+  return match ?? selected;
+}
+
 function rejectBulk<N>(events: SimEvent<N>[], actionId: string, code: string, detail: unknown): void {
   events.push({ type: "warning", code, detail });
   events.push({ type: "action.skipped", actionId, reason: "invalidQuote" });
@@ -167,6 +177,7 @@ function settleBulk<N, U extends string, Vars>(
  * An omitted size or `singleBuySize` pays `Action.cost` once, then `apply` once.
  * A larger integer size pays the matching `BulkQuote.cost` once, then `apply` once.
  * `apply` does not pay again. A rejected quote leaves this state unchanged.
+ * Each decision re-reads `model.actions` for the state so far, so a later buy is quoted after earlier applies.
  * Plugin callbacks are not a transaction.
  *
  * @evidence docs/requirements/active/bulk-quote-settlement.md#req-pr01-bulk-quote-settlement Pays the current matching BulkQuote once for a quoted bulk size and keeps the single-cost path for size 1.
@@ -187,7 +198,7 @@ export function stepOnce<N, U extends string, Vars>(
   const decisions = (input.decisions ?? []).slice(0, Math.max(0, maxActionsPerStep));
 
   for (const d of decisions) {
-    const action = d.action;
+    const action = currentAction(model, ctx, next, d.action);
     if (!action.canApply(ctx, next)) {
       events.push({
         type: "action.skipped",

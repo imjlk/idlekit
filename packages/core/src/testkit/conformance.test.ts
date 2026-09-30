@@ -4,6 +4,7 @@ import { join } from "path";
 import { createBreakInfinityEngine, createNumberEngine } from "../engine/breakInfinity";
 import type { Engine } from "../engine/types";
 import { etaAnalytic, etaSimulate } from "../sim/analysis/eta";
+import { stepOnce } from "../sim/step";
 import type { Action, CompiledScenario, Model, SimState } from "../sim/types";
 import type { Strategy } from "../sim/strategy/types";
 import { compareAmounts } from "./compareAmounts";
@@ -170,6 +171,47 @@ describe("DX-01 conformance harness", () => {
   });
 });
 
+function flatBulkSnapshot(size: number, mode: "bulk" | "repeated"): string {
+  const engine = createNumberEngine();
+  const unit = { code: "COIN" as const };
+  const action: Action<number, UnitCode, Vars> = {
+    id: "flat",
+    kind: "buy",
+    canApply: () => true,
+    cost: () => ({ unit, amount: 10 }),
+    bulk: () => [{ size, cost: { unit, amount: 10 * size } }],
+    apply: (_ctx, current, bulkSize = 1) => ({
+      ...current,
+      vars: { buys: current.vars.buys + bulkSize },
+    }),
+  };
+  const model: Model<number, UnitCode, Vars> = {
+    id: "flat-bulk",
+    version: 1,
+    income: () => ({ unit, amount: 0 }),
+    actions: () => [action],
+  };
+  let current = state(engine, 10_000);
+  const ctx = { E: engine, unit, tickPolicy: { mode: "drop" as const } };
+  if (mode === "bulk") {
+    current = stepOnce({
+      ctx,
+      model,
+      state: current,
+      dt: 0,
+      decisions: [{ action, bulkSize: size }],
+    }).next;
+  } else {
+    for (let index = 0; index < size; index += 1) {
+      current = stepOnce({ ctx, model, state: current, dt: 0, decisions: [{ action }] }).next;
+    }
+  }
+  return JSON.stringify({
+    wallet: engine.toString(current.wallet.money.amount),
+    buys: current.vars.buys,
+  });
+}
+
 describe("PR-01 bulk equivalence", () => {
   it("checks bulk equality only when the fixture declares it", () => {
     const linear = (count: number, times: number) => JSON.stringify({ count: count + times, bonus: 0 });
@@ -187,6 +229,27 @@ describe("PR-01 bulk equivalence", () => {
     expect(undeclared.applicable).toBe(false);
     expect(undeclared.ok).toBe(true);
     expect(repeated).not.toBe(bulk);
+  });
+
+  it("replays declared flat bulk across the seed corpus", () => {
+    expectProperty({
+      predicateId: "declared-flat-bulk",
+      testSeed: 0xb011,
+      cases: conformanceCaseCount(),
+      generate: (_index, rng) => rng.int(2, 12),
+      shrink: (value) => (value > 2 ? [value - 1] : []),
+      predicate: (size) => {
+        const check = checkBulk(true, flatBulkSnapshot(size, "repeated"), flatBulkSnapshot(size, "bulk"));
+        return check.applicable && check.ok;
+      },
+      describeCase: (size, index) => ({
+        gameSeed: gameSeedForCase(0xb011, index),
+        engineId: "number",
+        modelId: "flat-bulk",
+        strategyId: null,
+        tickSchedule: { stepSec: 0, durationSec: size },
+      }),
+    });
   });
 });
 
