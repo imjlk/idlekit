@@ -511,6 +511,9 @@ function jsonRoundTripPreserves(value: unknown, seen: Set<object> = new Set()): 
   if (typeof value !== "object") return false;
   if (seen.has(value)) return false;
   seen.add(value);
+  if (Object.getOwnPropertySymbols(value).length > 0) return false;
+  const names = Object.getOwnPropertyNames(value);
+  if (names.some((key) => Object.getOwnPropertyDescriptor(value, key)?.enumerable !== true)) return false;
   if (Array.isArray(value)) {
     for (let index = 0; index < value.length; index += 1) {
       if (!(index in value) || !jsonRoundTripPreserves(value[index], seen)) return false;
@@ -529,8 +532,13 @@ export function checkJsonRoundTrip<N, U extends string, Vars>(
   const initial = bracket.snap();
   try {
     const end = runScenario(scenario).end;
-    const restored = restoreJsonCheckpoint(scenario, end, "round-trip");
     if (!jsonRoundTripPreserves(end.vars)) return fail("vars do not survive a JSON checkpoint");
+    let restored: ReturnType<typeof restoreJsonCheckpoint<N, U, Vars>>;
+    try {
+      restored = restoreJsonCheckpoint(scenario, end, "round-trip");
+    } catch (error) {
+      return fail(error instanceof Error ? error.message : "vars do not survive a JSON checkpoint");
+    }
     const originalVars = JSON.stringify(end.vars);
     const restoredVars = JSON.stringify(restored.vars);
     if (originalVars !== restoredVars) return fail(`vars ${originalVars} != ${restoredVars}`);
@@ -635,12 +643,19 @@ export function checkDurationBoundary<N, U extends string, Vars>(
   if (scenario.run.until) return skip("until can stop the run before durationSec");
   const ticks = wholeTickCount(duration, step);
   if (ticks === null) return skip("duration is not a multiple of stepSec");
-  const end = runScenario(scenario).end;
-  const expected = advancedTimestamp(scenario.initial.t, step, ticks);
-  if (end.t !== expected) {
-    return fail(`elapsed ${end.t} did not stop at ${expected}`);
+  const bracket = strategyBracket(scenario);
+  if (isRelationCheck(bracket)) return bracket;
+  const initial = bracket.snap();
+  try {
+    const end = runScenario(scenario).end;
+    const expected = advancedTimestamp(scenario.initial.t, step, ticks);
+    if (end.t !== expected) {
+      return fail(`elapsed ${end.t} did not stop at ${expected}`);
+    }
+    return pass(`stopped at t=${end.t}`);
+  } finally {
+    bracket.restore(initial);
   }
-  return pass(`stopped at t=${end.t}`);
 }
 
 export function rejectNonPositiveStep(stepSec: number): RelationCheck {

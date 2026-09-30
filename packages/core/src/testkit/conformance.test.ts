@@ -303,7 +303,7 @@ describe("PR-01 bulk equivalence", () => {
  * @evidence docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness The same scenario replays from an on-grid checkpoint, and an off-grid checkpoint does not apply.
  * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #a195f0e Re-read the section: the 0.1 grid resume at 0.2 applies, and the resume at 1.5 does not.
  * @evidence ./conformanceRun.ts#checkDurationBoundary A 4s run at step 1 and a 0.3s run at step 0.1 both apply; an until at t greater than or equal to 3 does not.
- * @evidenceReview ./conformanceRun.ts#checkDurationBoundary #829c130 Re-read the function: it compares the end time with the timestamp advanced from the run's own start, so a start at t=1 still applies.
+ * @evidenceReview ./conformanceRun.ts#checkDurationBoundary #b2b5971 Re-read the function: it snapshots and restores the strategy around the run, and it compares the end time with the timestamp advanced from the run's own start.
  * @evidence ./conformanceRun.ts#rejectNonPositiveStep Step 0 is a failing applicable check.
  * @evidenceReview ./conformanceRun.ts#rejectNonPositiveStep #31155b2 Step 0 is a failing applicable check.
  * @evidence ./conformanceRun.ts#checkResume An off-grid resume at 1.5 does not apply; a 0.2 resume on the 0.1 grid does.
@@ -375,6 +375,7 @@ describe("PR-02 time boundaries", () => {
  */
 export function replaysOneShotScriptedGrantFromTheSameCursor(): void {
   const scenario = scriptedGrant(2);
+  expectApplicable(checkDurationBoundary(scenario));
   expectApplicable(checkJsonRoundTrip(scenario));
   const replay = checkReplay(scenario);
   expectApplicable(replay);
@@ -467,7 +468,7 @@ export function recordsWalletAndMaxMoneyUnitsOnTheEconomySnapshot(): void {
  * @evidence docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness An on-grid checkpoint replays from memory and from JSON, and independent trials are compared by game seed.
  * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #a195f0e Re-read the section, then ran this function: memory resume, JSON resume, and the JSON round-trip apply, and the two game seeds stay ordered.
  * @evidence ./conformanceRun.ts#checkJsonRoundTrip The constant-income scenario matches after a JSON round trip.
- * @evidenceReview ./conformanceRun.ts#checkJsonRoundTrip #6bbbf9c Re-read the function: it restores the strategy around the run, a shared vars object fails, and the constant-income round trip matches.
+ * @evidenceReview ./conformanceRun.ts#checkJsonRoundTrip #4ab8239 Re-read the function: it restores the strategy around the run, rejects shared, symbol, and non-enumerable vars before stringify, and the constant-income round trip matches.
  * @evidence ./conformanceRun.ts#checkTrialOrder Two distinct game seeds keep distinct economy snapshots.
  * @evidenceReview ./conformanceRun.ts#checkTrialOrder #5e85ee7 Two distinct game seeds keep distinct economy snapshots.
  */
@@ -484,6 +485,19 @@ export function resumesOnTheSameTickGridFromMemoryAndJson(): void {
   const sharedRound = checkJsonRoundTrip(aliased);
   expect(sharedRound.ok).toBe(false);
   expect(sharedRound.summary).toContain("JSON");
+  const hidden = Object.defineProperty({ visible: 1 }, "secret", { value: 2, enumerable: false });
+  const hiddenRound = checkJsonRoundTrip({
+    ...scenario,
+    initial: { ...scenario.initial, vars: hidden as unknown as Vars },
+  });
+  expect(hiddenRound.ok).toBe(false);
+  const marked = { visible: 1 } as { visible: number; [tag: symbol]: number };
+  marked[Symbol("tag")] = 1;
+  const symbolRound = checkJsonRoundTrip({
+    ...scenario,
+    initial: { ...scenario.initial, vars: marked as unknown as Vars },
+  });
+  expect(symbolRound.ok).toBe(false);
   const gameA = gameSeedForCase(0x51ed, 1);
   const gameB = gameSeedForCase(0x51ed, 2);
   expectApplicable(

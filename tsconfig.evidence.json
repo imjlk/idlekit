@@ -18,6 +18,8 @@
     "packages/core/src/testkit/conformanceRun.ts",
     "packages/core/src/testkit/compareAmounts.ts",
     "packages/money/src/testkit/compareAmounts.ts",
-    "packages/money/src/testkit/compareAmounts.test.ts"
+    "packages/money/src/testkit/compareAmounts.test.ts",
+    "tools/conformance.ts",
+    "tools/conformance.negative.test.ts"
   ]
 }
