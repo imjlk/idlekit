@@ -145,10 +145,11 @@ describe("DX-01 conformance harness", () => {
       predicateId: "constant-replay",
       testSeed: 0xc0ffee,
       cases: conformanceCaseCount(),
-      generate: (_index, rng) => ({
+      generate: (index, rng) => ({
         rate: rng.int(1, 5),
         durationSec: rng.int(2, 8),
         stepSec: 1,
+        seed: gameSeedForCase(0xc0ffee, index),
       }),
       shrink: (value) => {
         const smaller = [];
@@ -158,8 +159,8 @@ describe("DX-01 conformance harness", () => {
       },
       predicate: (value) =>
         checkReplay(constantScenario(value)).ok && checkJsonRoundTrip(constantScenario(value)).ok,
-      describeCase: (value, index) => ({
-        gameSeed: gameSeedForCase(0xc0ffee, index),
+      describeCase: (value) => ({
+        gameSeed: value.seed,
         engineId: "number",
         modelId: "constant-income",
         strategyId: null,
@@ -198,6 +199,16 @@ describe("PR-02 time boundaries", () => {
     expect(refused.applicable).toBe(true);
     const offGrid = checkResume(scenario, 1.5);
     expect(offGrid.applicable).toBe(false);
+
+    const fractional = constantScenario({ rate: 2, durationSec: 0.3, stepSec: 0.1 });
+    expectApplicable(checkDurationBoundary(fractional));
+    expectApplicable(checkResume(fractional, 0.2));
+    const earlyStop = checkDurationBoundary({
+      ...scenario,
+      run: { ...scenario.run, until: (current) => current.t >= 3 },
+    });
+    expect(earlyStop.applicable).toBe(false);
+    expect(earlyStop.ok).toBe(true);
   });
 
   it("treats step 1 and 0.5 as equal only for constant income", () => {
@@ -334,5 +345,16 @@ describe("engine differential", () => {
     expect(bigEngine.isFinite(bigEngine.from("1e400"))).toBe(true);
     expect(collapsed.status).toBe("refused-number-collapse");
     expect(collapsed.left).not.toBe(collapsed.right);
+
+    const nearZero = compareAmounts(
+      { engineId: "number", engine: numberEngine, amount: numberEngine.from(0) },
+      { engineId: "number", engine: numberEngine, amount: numberEngine.from(1e-13) },
+    );
+    expect(nearZero.status).toBe("different");
+    const opposite = compareAmounts(
+      { engineId: "number", engine: numberEngine, amount: numberEngine.from(1e-13) },
+      { engineId: "number", engine: numberEngine, amount: numberEngine.from(-1e-13) },
+    );
+    expect(opposite.status).toBe("different");
   });
 });
