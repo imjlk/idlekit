@@ -5,12 +5,22 @@
       "pr": "TC-02",
       "anchor": "req-typia-transform-missing",
       "doc": "docs/requirements/active/typia-transform.md",
-      "production": ["packages/core/src/scenario/concreteValidator.ts"],
+      "production": [
+        "packages/core/src/scenario/concreteValidator.ts",
+        "packages/core/src/scenario/validate.ts"
+      ],
       "tests": [
         {
           "file": "packages/core/src/scenario/concreteValidator.test.ts",
           "exportName": "acceptsNumericConcreteQuota",
           "registeredAs": "accepts a numeric count and rejects a string count",
+          "cwd": "packages/core",
+          "args": ["test", "src/scenario/concreteValidator.test.ts"]
+        },
+        {
+          "file": "packages/core/src/scenario/concreteValidator.test.ts",
+          "exportName": "rejectsUnresolvedGenericAsUserInput",
+          "registeredAs": "does not report a missing generic transform as a user input error",
           "cwd": "packages/core",
           "args": ["test", "src/scenario/concreteValidator.test.ts"]
         }
