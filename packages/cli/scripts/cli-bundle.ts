@@ -1,6 +1,6 @@
 import { loadConfig } from "@bunli/core";
 import ttsc from "@ttsc/unplugin/bun";
-import { basename, extname, join, resolve } from "path";
+import { resolve } from "path";
 
 const cliRoot = resolve(import.meta.dir, "..");
 process.chdir(cliRoot);
@@ -33,7 +33,9 @@ const sourcemap = process.argv.includes("--sourcemap") ? true : config.build.sou
 // undefined). Keep the packages external. The CLI depends on both so
 // dist/main.js can resolve them. Bun 1.3.10 then does not have to bundle
 // @opentui/core's optional platform imports.
-const external = [...new Set([...(config.build.external ?? []), "@opentui/react", "@opentui/core"])];
+const external = [
+  ...new Set([...(config.build.external ?? []), "react", "@opentui/react", "@opentui/core"]),
+];
 const outdirAbs = resolve(cliRoot, outdir);
 const generateEntry = config.commands?.entry ?? entry;
 const generateDirectory = config.commands?.directory ?? "src/commands";
@@ -55,27 +57,16 @@ if (generated.exitCode !== 0) {
 }
 const plugins = [ttsc()];
 
+if (targets === "native") {
+  throw new Error(
+    "build:bin does not emit a standalone executable. @opentui/core loads optional platform packages and its asset loader cannot be inlined. The JS bundle keeps react, @opentui/react, and @opentui/core external.",
+  );
+}
+
 await Bun.$`rm -rf ${outdirAbs}`.quiet();
 await Bun.$`mkdir -p ${outdirAbs}`.quiet();
 
-if (targets === "native") {
-  const stem = basename(entry, extname(entry));
-  const outfile = join(outdir, process.platform === "win32" ? `${stem}.exe` : stem);
-  const result = await Bun.build({
-    entrypoints: [entry],
-    minify,
-    sourcemap,
-    external,
-    plugins,
-    compile: {
-      outfile,
-    },
-  });
-  if (!result.success) {
-    throw new Error(result.logs.join("\n"));
-  }
-  console.log(`compiled ${outfile}`);
-} else {
+{
   const result = await Bun.build({
     entrypoints: [entry],
     outdir,
