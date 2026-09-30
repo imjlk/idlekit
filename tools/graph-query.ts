@@ -438,6 +438,7 @@ async function main(): Promise<void> {
   }
   const request = JSON.parse(requestText) as Record<string, unknown>;
   const session = new GraphSession(cwd, tsconfig);
+  let exitCode = 0;
   try {
     const hello = await session.open();
     const tools = await session.listTools();
@@ -449,9 +450,10 @@ async function main(): Promise<void> {
     console.log(`cwd=${cwd} tsconfig=${tsconfig}`);
     console.log(summarize(payload));
   } finally {
-    const exitCode = await session.close();
+    exitCode = await session.close();
     console.log(`shutdown=${exitCode}`);
   }
+  if (exitCode !== 0) throw new Error(`graph server shutdown ${exitCode}`);
 }
 
 if (import.meta.main) {

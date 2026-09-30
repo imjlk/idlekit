@@ -223,8 +223,9 @@ export function headingAnchors(markdown: string): string[] {
     } else {
       continue;
     }
-    const match = /^##\s+.+\{#([A-Za-z0-9][A-Za-z0-9._:-]*)\}\s*$/.exec(line);
-    if (line.startsWith("## ") && !match) {
+    const heading = line.replace(/^ {0,3}/, "");
+    const match = /^##\s+.+\{#([A-Za-z0-9][A-Za-z0-9._:-]*)\}\s*$/.exec(heading);
+    if (heading.startsWith("## ") && !match) {
       anchors.push("");
       continue;
     }
@@ -351,6 +352,49 @@ function citesRequirement(body: string, exportName: string, doc: string, anchor:
   return comment !== undefined && citesAnchor(comment, doc, anchor);
 }
 
+function evidenceTargets(comment: string): string[] {
+  const targets: string[] = [];
+  for (const match of comment.matchAll(/@evidence\s+(\S+)/g)) {
+    if (match[1]) targets.push(match[1]);
+  }
+  return targets;
+}
+
+function isRequirementTarget(target: string, doc: string, anchor: string): boolean {
+  const pattern = `^${escapeRegExp(doc)}#${escapeRegExp(anchor)}(?![A-Za-z0-9._:-])`;
+  return new RegExp(pattern).test(target);
+}
+
+function isImplementationTarget(target: string, doc: string, anchor: string): boolean {
+  if (isRequirementTarget(target, doc, anchor)) return false;
+  return target.includes(".ts#") || target.startsWith("./") || target.startsWith("../");
+}
+
+/** Inventoried exports must be the ones that cite the implementation. */
+export function unregisteredImplementationHost(
+  body: string,
+  doc: string,
+  anchor: string,
+  registered: readonly string[],
+): string | undefined {
+  const names = new Set(registered);
+  let registeredCitesImplementation = false;
+  for (const match of body.matchAll(
+    /\/\*\*((?:(?!\*\/)[\s\S])*)\*\/\s*export\s+(?:async\s+)?function\s+([A-Za-z0-9_]+)/g,
+  )) {
+    const comment = match[1] ?? "";
+    const name = match[2];
+    if (!name) continue;
+    const implementation = evidenceTargets(comment).filter((target) =>
+      isImplementationTarget(target, doc, anchor),
+    );
+    if (implementation.length === 0) continue;
+    if (names.has(name)) registeredCitesImplementation = true;
+    else return name;
+  }
+  return registeredCitesImplementation ? undefined : "";
+}
+
 export function productionFileCites(body: string, doc: string, anchor: string): boolean {
   for (const match of body.matchAll(/\/\*\*((?:(?!\*\/)[\s\S])*)\*\//g)) {
     if (!match[1] || !citesAnchor(match[1], doc, anchor) || match.index === undefined) continue;
@@ -381,6 +425,18 @@ async function approvalIds(): Promise<string[]> {
     return [];
   }
   return files.map((file) => file.replace(/\.md$/, ""));
+}
+
+function enabledMarkdownGlobs(): string[] {
+  const globs: string[] = [];
+  for (const claim of evidenceGraph.claims) {
+    if (claim.disabled) continue;
+    const references = Array.isArray(claim.reference) ? claim.reference : [claim.reference];
+    for (const reference of references) {
+      if (reference.type === "markdown") globs.push(...reference.files);
+    }
+  }
+  return [...new Set(globs)];
 }
 
 function claimFiles(): string[] {
@@ -527,6 +583,27 @@ export async function checkInventory(projectRoot = root): Promise<string[]> {
         fail(failures, `inventory host is not protected: ${rel}`);
       }
     }
+    const files = [...new Set(requirement.tests.map((test) => test.file))];
+    for (const file of files) {
+      const body = readFileSync(join(projectRoot, file), "utf8");
+      const registered = requirement.tests
+        .filter((test) => test.file === file)
+        .map((test) => test.exportName);
+      const host = unregisteredImplementationHost(
+        body,
+        requirement.doc,
+        requirement.anchor,
+        registered,
+      );
+      if (host === "") {
+        fail(failures, `${requirement.id} inventoried tests do not cite the implementation`);
+      } else if (host) {
+        fail(
+          failures,
+          `${requirement.id} implementation citation is on unregistered export ${host}`,
+        );
+      }
+    }
   }
 
   for (const pair of seenPairs) {
@@ -542,13 +619,20 @@ export async function checkInventory(projectRoot = root): Promise<string[]> {
     }
   }
 
+  const activeGlobs = enabledMarkdownGlobs().filter((glob) => glob.includes("/active/"));
+  const activeScan = await expandGlob("docs/requirements/active/**/*.md", projectRoot);
+  const covered = new Set<string>();
+  for (const glob of activeGlobs) {
+    for (const file of await expandGlob(glob, projectRoot)) covered.add(file);
+  }
+  if (activeGlobs.length === 0 || covered.size === 0) {
+    fail(failures, "enabled graph claims cover no active requirements");
+  }
+  for (const doc of activeScan) {
+    if (!covered.has(doc)) fail(failures, `active graph references omit ${doc}`);
+  }
   const globFailures = await assertNonEmptyGlobs(
-    [
-      "docs/requirements/active/**/*.md",
-      "docs/requirements/planned/**/*.md",
-      ...productionFiles,
-      ...testFiles,
-    ],
+    [...activeGlobs, "docs/requirements/planned/**/*.md", ...productionFiles, ...testFiles],
     projectRoot,
   );
   failures.push(...globFailures);
