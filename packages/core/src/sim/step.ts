@@ -5,6 +5,8 @@ import type { Action, BulkQuote, Model, ScenarioConstraints, SimContext, SimEven
 export type StepDecision<N, U extends string, Vars> = Readonly<{
   action: Action<N, U, Vars>;
   bulkSize?: number;
+  /** Position of `action` among the same `id` and `kind` in the list the caller selected from. */
+  occurrence?: number;
 }>;
 
 export type StepInput<N, U extends string, Vars> = Readonly<{
@@ -55,10 +57,17 @@ function currentAction<N, U extends string, Vars>(
   ctx: SimContext<N, U, Vars>,
   state: SimState<N, U, Vars>,
   selected: Action<N, U, Vars>,
+  occurrence?: number,
 ): Action<N, U, Vars> | undefined {
-  return model.actions(ctx, state).find(
+  const fresh = model.actions(ctx, state);
+  const byRef = fresh.find((candidate) => candidate === selected);
+  if (byRef) return byRef;
+  const matches = fresh.filter(
     (candidate) => candidate.id === selected.id && candidate.kind === selected.kind,
   );
+  if (occurrence !== undefined) return matches[occurrence];
+  if (matches.length === 1) return matches[0];
+  return undefined;
 }
 
 function rejectBulk<N>(events: SimEvent<N>[], actionId: string, code: string, detail: unknown): void {
@@ -267,7 +276,7 @@ export function stepOnce<N, U extends string, Vars>(
   const decisions = (input.decisions ?? []).slice(0, Math.max(0, maxActionsPerStep));
 
   for (const d of decisions) {
-    const action = currentAction(model, ctx, next, d.action);
+    const action = currentAction(model, ctx, next, d.action, d.occurrence);
     if (!action) {
       events.push({
         type: "action.skipped",

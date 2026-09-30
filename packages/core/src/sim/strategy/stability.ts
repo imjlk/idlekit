@@ -7,6 +7,19 @@ export function quotedDecisionSize(size: number | undefined): number | undefined
   return size === singleBuySize ? undefined : size;
 }
 
+/** How many earlier actions share `selected`'s id and kind. The list order is the caller's selection order. */
+export function actionOccurrence<N, U extends string, Vars>(
+  actions: readonly Action<N, U, Vars>[],
+  selected: Action<N, U, Vars>,
+): number {
+  let occurrence = 0;
+  for (const action of actions) {
+    if (action === selected) return occurrence;
+    if (action.id === selected.id && action.kind === selected.kind) occurrence += 1;
+  }
+  return occurrence;
+}
+
 /**
  * Stabilize Action ordering for deterministic strategy/planner.
  * Sort by action.id (lexicographic), then kind.

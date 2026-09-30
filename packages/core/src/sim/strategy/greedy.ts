@@ -1,7 +1,13 @@
 import { canSettleCost } from "../step";
 import type { Action, BulkQuote, Model, SimContext, SimState } from "../types";
 import type { GreedyStrategyParamsV1 } from "./params";
-import { compareCandidateKey, quotedDecisionSize, stableActions, stableBulkQuotes } from "./stability";
+import {
+  actionOccurrence,
+  compareCandidateKey,
+  quotedDecisionSize,
+  stableActions,
+  stableBulkQuotes,
+} from "./stability";
 import type { Strategy } from "./types";
 
 export type GreedyObjective = GreedyStrategyParamsV1["objective"];
@@ -9,6 +15,7 @@ export type GreedyObjective = GreedyStrategyParamsV1["objective"];
 type Candidate<N, U extends string, Vars> = Readonly<{
   action: Action<N, U, Vars>;
   bulkSize?: number;
+  occurrence: number;
   score: number;
   equivCostLog10?: number;
   costLog10?: number;
@@ -119,7 +126,8 @@ function buildCandidates<N, U extends string, Vars>(
   state: SimState<N, U, Vars>,
 ): Candidate<N, U, Vars>[] {
   const candidates: Candidate<N, U, Vars>[] = [];
-  const actions = stableActions(model.actions(ctx, state));
+  const raw = model.actions(ctx, state);
+  const actions = stableActions(raw);
 
   for (const action of actions) {
     if (!action.canApply(ctx, state)) continue;
@@ -129,6 +137,7 @@ function buildCandidates<N, U extends string, Vars>(
       candidates.push({
         action,
         bulkSize: quotedDecisionSize(quote.size),
+        occurrence: actionOccurrence(raw, action),
         score,
         equivCostLog10: quote.equivalentCost ? ctx.E.absLog10(quote.equivalentCost.amount) : undefined,
         costLog10: quote.cost ? ctx.E.absLog10(quote.cost.amount) : undefined,
@@ -178,6 +187,7 @@ export function createGreedyStrategy<N, U extends string, Vars>(
       return ranked.slice(0, Math.max(1, maxPicksPerStep)).map((x) => ({
         action: x.action,
         bulkSize: x.bulkSize,
+        occurrence: x.occurrence,
       }));
     },
   };

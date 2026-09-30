@@ -50,6 +50,21 @@ function decimalIsFinite(value: Decimal): boolean {
   return Number.isFinite(value.mantissa) && Number.isFinite(value.exponent);
 }
 
+/** `String(1e21)` is `"1e+21"`. Settlement text needs one plain decimal exponent. */
+function plainExponent(exponent: number): string {
+  if (!Number.isFinite(exponent)) return String(exponent);
+  const sign = exponent < 0 ? "-" : "";
+  const magnitude = Math.abs(exponent);
+  if (magnitude < 1e21) return `${sign}${String(magnitude)}`;
+  const text = magnitude.toExponential();
+  const match = /^(\d+)(?:\.(\d+))?e\+(\d+)$/.exec(text);
+  if (!match?.[1] || !match[3]) return `${sign}${text}`;
+  const fraction = match[2] ?? "";
+  const zeros = Number(match[3]) - fraction.length;
+  if (!Number.isInteger(zeros) || zeros < 0) return `${sign}${text}`;
+  return `${sign}${match[1]}${fraction}${"0".repeat(zeros)}`;
+}
+
 export function createBreakInfinityEngine(opts?: BreakInfinityEngineOptions): Engine<Decimal> {
   const epsilon = toDecimal(opts?.epsilon ?? "1e-12");
 
@@ -80,7 +95,7 @@ export function createBreakInfinityEngine(opts?: BreakInfinityEngineOptions): En
       if (!decimalIsFinite(value)) return text;
       const sign = value.mantissa < 0 ? "-" : "";
       const digits = String(Math.abs(value.mantissa));
-      return `${sign}${digits}e${String(value.exponent)}`;
+      return `${sign}${digits}e${plainExponent(value.exponent)}`;
     },
     toNumber: (a) => a.toNumber(),
   };

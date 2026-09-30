@@ -4,7 +4,7 @@ import type { StepOnceFn } from "../stepTypes";
 import { parseMoney } from "../../notation/parseMoney";
 import type { Action, BulkQuote, Model, SimContext, SimState } from "../types";
 import type { PlannerStrategyParamsV1 } from "./params";
-import { quotedDecisionSize, stableActions, stableBulkQuotes } from "./stability";
+import { actionOccurrence, quotedDecisionSize, stableActions, stableBulkQuotes } from "./stability";
 
 /**
  * Planner MUST use stepOnce for rollouts.
@@ -17,6 +17,7 @@ export type PlannerDeps<N, U extends string, Vars> = Readonly<{
 type Decision<N, U extends string, Vars> = Readonly<{
   action: Action<N, U, Vars>;
   bulkSize?: number;
+  occurrence?: number;
 }>;
 
 type PlannerNode<N, U extends string, Vars> = Readonly<{
@@ -118,7 +119,8 @@ function buildStepCandidates<N, U extends string, Vars>(
   model: Model<N, U, Vars>,
   state: SimState<N, U, Vars>,
 ): readonly Decision<N, U, Vars>[] {
-  const actions = stableActions(model.actions(ctx, state)).filter((action) => action.canApply(ctx, state));
+  const raw = model.actions(ctx, state);
+  const actions = stableActions(raw).filter((action) => action.canApply(ctx, state));
   const decisions = actions.map((action) => {
     const quote = selectBulkQuote(params, action, ctx, state);
     const score = scoreQuote(params, ctx, quote);
@@ -127,6 +129,7 @@ function buildStepCandidates<N, U extends string, Vars>(
       decision: {
         action,
         bulkSize: quotedDecisionSize(quote.size),
+        occurrence: actionOccurrence(raw, action),
       } satisfies Decision<N, U, Vars>,
     };
   });

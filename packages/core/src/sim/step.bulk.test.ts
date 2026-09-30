@@ -104,7 +104,7 @@ function skippedReason(events: readonly SimEvent<unknown>[]): string | undefined
  * @evidence ./step.ts#canSettleCost A zero wallet cannot pay 1e-13, and it can pay a zero cost.
  * @evidenceReview ./step.ts#canSettleCost #af1aab3 Re-read canSettleCost: a zero wallet cannot pay 1e-13, and it can pay a zero cost, without using cmp.
  * @evidence ./step.ts#stepOnce Calls stepOnce for the quoted buy and the rejected quotes.
- * @evidenceReview ./step.ts#stepOnce #692ab29 Re-read stepOnce: each decision re-reads model.actions for the state so far, a quoted size pays BulkQuote.cost once through exact decimal order scaled to the smaller exponent, a non-finite cost is skipped before toString, and a rejected quote does not apply. Ran this function: a sentinel amount whose toString throws was skipped as invalidQuote on the bulk quote and on the single-cost path.
+ * @evidenceReview ./step.ts#stepOnce #ab12ceb Re-read stepOnce: each decision re-reads model.actions for the state so far, a quoted size pays BulkQuote.cost once through exact decimal order scaled to the smaller exponent, a non-finite cost is skipped before toString, duplicate id and kind stay on their occurrence, and a rejected quote does not apply. Ran this function: a sentinel amount whose toString throws was skipped as invalidQuote, and the second same-id action paid 40.
  */
 export function settlesQuotedBulkAndRejectsBadQuotes(): void {
   expect(singleBuySize).toBe(1);
@@ -455,6 +455,50 @@ export function settlesQuotedBulkAndRejectsBadQuotes(): void {
   expect(skippedReason(unsafeSingle.events)).toBe("invalidQuote");
   expect(unsafeSingle.next.wallet.money.amount).toBe(1000);
   expect(unsafeSingle.next.vars.owned).toBe(0);
+
+  const duplicate = (slot: 0 | 1): Action<number, UnitCode, Vars> => ({
+    id: "buy",
+    kind: "buy",
+    canApply: () => true,
+    cost: () => coin(engine, slot === 0 ? 10 : 40),
+    apply: (_ctx, current) => ({
+      ...current,
+      vars: { ...current.vars, owned: current.vars.owned + (slot === 0 ? 1 : 5) },
+    }),
+  });
+  const duplicateModel: Model<number, UnitCode, Vars> = {
+    id: "duplicate-buy",
+    version: 1,
+    income: () => coin(engine, engine.zero()),
+    actions: () => [duplicate(0), duplicate(1)],
+  };
+  const ambiguousDuplicate = stepOnce({
+    ctx,
+    model: duplicateModel,
+    state: state(engine, 1000),
+    dt: 0,
+    decisions: [{ action: duplicate(1) }],
+  });
+  expect(skippedReason(ambiguousDuplicate.events)).toBe("cannotApply");
+  expect(ambiguousDuplicate.next.wallet.money.amount).toBe(1000);
+  expect(ambiguousDuplicate.next.vars.owned).toBe(0);
+  const secondDuplicate = stepOnce({
+    ctx,
+    model: duplicateModel,
+    state: state(engine, 1000),
+    dt: 0,
+    decisions: [{ action: duplicate(1), occurrence: 1 }],
+  });
+  expect(secondDuplicate.next.wallet.money.amount).toBe(960);
+  expect(secondDuplicate.next.vars.owned).toBe(5);
+
+  const wide = createBreakInfinityEngine();
+  const wideWallet = wide.from(1);
+  wideWallet.exponent = 1e21;
+  const wideCost = wide.from(1);
+  wideCost.exponent = 1e20;
+  expect(canSettleCost(wide, wideWallet, wideWallet)).toBe(true);
+  expect(canSettleCost(wide, wideCost, wideWallet)).toBe(false);
 
   expectProperty({
     predicateId: "declared-flat-bulk",
