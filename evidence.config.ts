@@ -11,9 +11,15 @@ import type { ITtscLintConfig } from "@ttsc/lint";
  * that implementation changes. `requireReview` watches the cited target,
  * not every edit in the repository.
  */
-export const productionFiles = ["packages/core/src/scenario/concreteValidator.ts"];
+export const productionFiles = [
+  "packages/core/src/scenario/concreteValidator.ts",
+  "packages/core/src/testkit/conformance.ts",
+];
 
-export const testFiles = ["packages/core/src/scenario/concreteValidator.test.ts"];
+export const testFiles = [
+  "packages/core/src/scenario/concreteValidator.test.ts",
+  "packages/core/src/testkit/conformance.test.ts",
+];
 
 const activeMarkdown = {
   type: "markdown" as const,
