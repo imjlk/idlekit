@@ -29,6 +29,10 @@ function exactSign(text: string): -1 | 0 | 1 {
   return match[1] === "-" ? -1 : 1;
 }
 
+/**
+ * @evidence docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness Compares engine amounts and refuses equal non-finite number collapse.
+ * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #a195f0e Re-read the section and this function: a non-finite toNumber or engine value returns refused-number-collapse instead of an equal match.
+ */
 export function compareAmounts<A, B>(
   left: AmountSide<A>,
   right: AmountSide<B>,
