@@ -504,6 +504,17 @@ export function checkResumeFromJson<N, U extends string, Vars>(
   );
 }
 
+function ordinaryJsonData(descriptor: PropertyDescriptor | undefined): boolean {
+  return (
+    descriptor?.enumerable === true &&
+    descriptor.writable === true &&
+    descriptor.configurable === true &&
+    Object.prototype.hasOwnProperty.call(descriptor, "value") &&
+    descriptor.get === undefined &&
+    descriptor.set === undefined
+  );
+}
+
 function jsonRoundTripPreserves(value: unknown, seen: Set<object> = new Set()): boolean {
   if (value === null) return true;
   if (typeof value === "string" || typeof value === "boolean") return true;
@@ -522,12 +533,15 @@ function jsonRoundTripPreserves(value: unknown, seen: Set<object> = new Set()): 
     });
     if (foreign) return false;
     for (let index = 0; index < length; index += 1) {
-      if (!(index in value) || !jsonRoundTripPreserves(value[index], seen)) return false;
+      const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
+      if (!(index in value) || !ordinaryJsonData(descriptor) || !jsonRoundTripPreserves(value[index], seen)) {
+        return false;
+      }
     }
     return true;
   }
   const names = Object.getOwnPropertyNames(value);
-  if (names.some((key) => Object.getOwnPropertyDescriptor(value, key)?.enumerable !== true)) return false;
+  if (names.some((key) => !ordinaryJsonData(Object.getOwnPropertyDescriptor(value, key)))) return false;
   if (Object.getPrototypeOf(value) !== Object.prototype) return false;
   return Object.values(value).every((child) => jsonRoundTripPreserves(child, seen));
 }

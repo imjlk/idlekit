@@ -12,7 +12,7 @@
 bun tools/graph-query.ts --question "Where is runScenario declared?" --request '{"type":"lookup","query":"runScenario"}'
 ```
 
-`graph-query.ts`는 `ttsc-graph --cwd <root> --tsconfig tsconfig.graph.json`을 띄우고, MCP `initialize` 다음 `tools/list`에서 `inspect_typescript_graph`의 schema를 읽는다. 그 schema가 공개한 필드만 보낸다. `question`, `draft`, `review`, `request`는 schema에서 온다. live branch에 없는 필드는 프로세스를 끝낸다. 출력은 symbol, 파일, 줄이다. raw dump도 node id도 아니다.
+`graph-query.ts`는 `ttsc-graph --cwd <root> --tsconfig tsconfig.graph.json`을 띄우고, MCP `initialize` 다음 `tools/list`에서 `inspect_typescript_graph`의 schema를 읽는다. 그 schema가 공개한 필드만 보낸다. `question`, `draft`, `review`, `request`는 schema에서 온다. live branch에 없는 필드는 프로세스를 끝낸다. 출력은 symbol, 파일, 줄이다. 선언 signature가 있는 span은 위치 뒤에 그 signature를 찍는다. trace는 node id 대신 symbol 이름으로 `from -> to` hop 줄도 찍는다. raw dump는 아니다.
 
 `bun run graph:check`가 gate다. initialize, tool discovery, lookup, caller/callee trace, workspace source span, scratch의 rename / signature / citation을 새 프로세스로 확인하고, stdin을 닫아 종료한다. `--help`만으로는 통과가 아니다.
 
@@ -30,7 +30,7 @@ JSON/YAML 시나리오, shell과 package script, `packages/cli/src/plugin/load.t
 
 ## TC-04 검증
 
-macOS arm64, Bun `1.3.10`, `@ttsc/graph` `0.30.4`, protocol `2025-11-25`, commit `3658c2a4dedec48d39f7ebaf2c0ceaf16f8bdd0a`에서 조회했다. generation 필드는 없었다. scratch 수정은 새 프로세스에서 다시 읽었다. `bun run graph:check`는 exit 0이다. tour payload에도 아래 `runScenario`와 `stepOnce` span이 있다.
+macOS arm64, Bun `1.3.10`, `@ttsc/graph` `0.30.4`, protocol `2025-11-25`, commit `878707f92c6c80552bf3e76a65e889908aa3b021`에서 조회했다. generation 필드는 없었다. scratch 수정은 새 프로세스에서 다시 읽었다. `bun run graph:check`는 exit 0이다. tour payload에도 아래 `runScenario`와 `stepOnce` span이 있다.
 
 | Symbol | Span | 결과 |
 |---|---|---|
