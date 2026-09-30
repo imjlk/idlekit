@@ -56,7 +56,9 @@ function currentAction<N, U extends string, Vars>(
   state: SimState<N, U, Vars>,
   selected: Action<N, U, Vars>,
 ): Action<N, U, Vars> {
-  const match = model.actions(ctx, state).find((candidate) => candidate.id === selected.id);
+  const match = model.actions(ctx, state).find(
+    (candidate) => candidate.id === selected.id && candidate.kind === selected.kind,
+  );
   return match ?? selected;
 }
 
@@ -86,6 +88,11 @@ function isQuoteList<N, U extends string>(
   return Array.isArray(value);
 }
 
+function moneyUnitCode(money: { unit?: { code?: unknown } | null } | null | undefined): string | undefined {
+  const code = money?.unit?.code;
+  return typeof code === "string" && code.length > 0 ? code : undefined;
+}
+
 function payQuote<N, U extends string, Vars>(
   ctx: SimContext<N, U, Vars>,
   state: SimState<N, U, Vars>,
@@ -98,11 +105,17 @@ function payQuote<N, U extends string, Vars>(
     rejectBulk(events, actionId, "INVALID_BULK_COST", { actionId, reason: "missingCost" });
     return undefined;
   }
-  if (state.wallet.money.unit.code !== cost.unit.code) {
+  const costCode = moneyUnitCode(cost);
+  const walletCode = moneyUnitCode(state.wallet.money);
+  if (!costCode || cost.amount == null) {
+    rejectBulk(events, actionId, "INVALID_BULK_COST", { actionId, reason: "malformedCost" });
+    return undefined;
+  }
+  if (!walletCode || walletCode !== costCode) {
     rejectBulk(events, actionId, "UNIT_MISMATCH_ON_COST", {
       actionId,
-      wallet: state.wallet.money.unit.code,
-      cost: cost.unit.code,
+      wallet: walletCode,
+      cost: costCode,
     });
     return undefined;
   }

@@ -648,4 +648,64 @@ describe("PR-01 bulk quote settlement", () => {
     expect(stats.actions.skippedInvalidQuote).toBe(1);
     expect(stats.actions.applied).toBe(0);
   });
+
+  it("rejects a quote cost that has no unit", () => {
+    const engine = createNumberEngine();
+    const action: Action<number, UnitCode, Vars> = {
+      id: "buy",
+      kind: "buy",
+      canApply: () => true,
+      cost: () => coin(engine, engine.from(10)),
+      bulk: () => [{ size: 2, cost: { amount: engine.from(10) } as Money<number, UnitCode> }],
+      apply: (_ctx, current, bulkSize = 1) => ({
+        ...current,
+        vars: { ...current.vars, owned: current.vars.owned + bulkSize },
+      }),
+    };
+    const out = stepOnce({
+      ctx: context(engine),
+      model: zeroIncomeModel(engine, action),
+      state: state(engine, 1000),
+      dt: 0,
+      decisions: [{ action, bulkSize: 2 }],
+    });
+    expect(skippedReason(out.events)).toBe("invalidQuote");
+    expect(warningCodes(out.events)).toContain("INVALID_BULK_COST");
+    expect(out.next.vars.owned).toBe(0);
+    expect(engine.toNumber(out.next.wallet.money.amount)).toBe(1000);
+  });
+
+  it("refreshes the selected action by id and kind", () => {
+    const engine = createNumberEngine();
+    const buy: Action<number, UnitCode, Vars> = {
+      id: "act",
+      kind: "buy",
+      canApply: () => true,
+      cost: () => coin(engine, engine.from(10)),
+      apply: (_ctx, current) => ({ ...current, vars: { ...current.vars, bonus: 1 } }),
+    };
+    const grant: Action<number, UnitCode, Vars> = {
+      id: "act",
+      kind: "grant",
+      canApply: () => true,
+      cost: () => null,
+      apply: (_ctx, current) => ({ ...current, vars: { ...current.vars, bonus: 7 } }),
+    };
+    const model: Model<number, UnitCode, Vars> = {
+      id: "same-id",
+      version: 1,
+      income: () => coin(engine, engine.zero()),
+      actions: () => [buy, grant],
+    };
+    const out = stepOnce({
+      ctx: context(engine),
+      model,
+      state: state(engine, 1000),
+      dt: 0,
+      decisions: [{ action: grant }],
+    });
+    expect(out.next.vars.bonus).toBe(7);
+    expect(engine.toNumber(out.next.wallet.money.amount)).toBe(1000);
+    expect(skippedReason(out.events)).toBeUndefined();
+  });
 });
