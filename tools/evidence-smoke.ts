@@ -7,6 +7,7 @@ import {
   evidenceProgramSourceFiles,
   commandTargetsFile,
   headingAnchors,
+  registeredSuites,
   isNonProductionPath,
   recordedBaseSpec,
   requireFetchedRevision,
@@ -294,6 +295,45 @@ try {
     fencedCommentOk ? 0 : 1,
     fencedCommentOk,
     JSON.stringify(fencedComment),
+  );
+
+  const commentFence = headingAnchors("<!--\n```\n-->\n## After {#after}\n");
+  const commentFenceOk = commentFence.length === 1 && commentFence[0] === "after";
+  record(
+    "comment-fence",
+    "zero",
+    commentFenceOk ? 0 : 1,
+    commentFenceOk,
+    JSON.stringify(commentFence),
+  );
+
+  const tabbed = headingAnchors("##\tMissing\n##\tKept {#kept}\n");
+  const tabbedOk = tabbed.length === 2 && tabbed[0] === "" && tabbed[1] === "kept";
+  record("tab-heading", "zero", tabbedOk ? 0 : 1, tabbedOk, JSON.stringify(tabbed));
+
+  const nestedBody = [
+    'describe("wrong", () => {',
+    '  it("quota is documented", exportedName);',
+    "});",
+    'describe("expected", () => {',
+    '  describe("inner", () => {',
+    '    it("quota is documented", otherName);',
+    "  });",
+    "});",
+  ].join("\n");
+  const wrongPath = registeredSuites(nestedBody, "exportedName", "quota is documented");
+  const innerPath = registeredSuites(nestedBody, "otherName", "quota is documented");
+  const suiteNestingOk =
+    wrongPath.length === 1 &&
+    wrongPath[0]?.join(" > ") === "wrong" &&
+    innerPath.length === 1 &&
+    innerPath[0]?.join(" > ") === "expected > inner";
+  record(
+    "suite-nesting",
+    "zero",
+    suiteNestingOk ? 0 : 1,
+    suiteNestingOk,
+    JSON.stringify({ wrongPath, innerPath }),
   );
 
   const indentedFence = headingAnchors("    ```\n## Visible {#quota}\n");
