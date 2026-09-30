@@ -74,12 +74,17 @@ async function openSchema(cwd: string, tsconfig: string): Promise<{
   hello: { protocolVersion?: string; server?: string };
 }> {
   const session = new GraphSession(cwd, tsconfig);
-  const hello = await session.open();
-  const tools = await session.listTools();
-  const tool = tools.find((entry) => entry.name === "inspect_typescript_graph");
-  if (!tool) throw new Error(`tools/list missed inspect_typescript_graph at ${cwd} ${tsconfig}`);
-  assertActions(tool.inputSchema);
-  return { session, schema: tool.inputSchema, hello };
+  try {
+    const hello = await session.open();
+    const tools = await session.listTools();
+    const tool = tools.find((entry) => entry.name === "inspect_typescript_graph");
+    if (!tool) throw new Error(`tools/list missed inspect_typescript_graph at ${cwd} ${tsconfig}`);
+    assertActions(tool.inputSchema);
+    return { session, schema: tool.inputSchema, hello };
+  } catch (error) {
+    await session.close();
+    throw error;
+  }
 }
 
 async function ask(
