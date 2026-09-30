@@ -134,7 +134,7 @@ Host는 macOS arm64다. 명령은 `mise exec bun@1.3.10 -- bun ...`으로 실행
 
 ## TC-04 검증
 
-Host는 macOS arm64다. 명령은 `mise exec bun@1.3.10 -- bun ...`으로 실행했다. `@ttsc/graph`와 `ttsc`는 `0.30.4`다. MCP handshake는 protocol `2025-11-25`, server `ttsc-graph 0.30.4`다. 결과에 generation 식별자가 없어서 scratch fixture는 새 프로세스로 다시 확인했다. 입력 sha256: `tsconfig.graph.json` `f4c53cefd70090c4437eb4593d837fff966570400dfb663c3b16b4e68035928e`, `tools/graph-query.ts` `74bdd34fd022a484f86c0b7780e21aad415e5aba750bd8742511aa7e5df8fc2b`, `tools/graph-preflight.ts` `7f4e048703dfc9406a5794747c51c30a627bf2dd2765c4b52526479ad153f9ae`.
+Host는 macOS arm64다. 명령은 `mise exec bun@1.3.10 -- bun ...`으로 실행했다. `@ttsc/graph`와 `ttsc`는 `0.30.4`다. MCP handshake는 protocol `2025-11-25`, server `ttsc-graph 0.30.4`다. 결과에 generation 식별자가 없어서 scratch fixture는 새 프로세스로 다시 확인했다. 입력 sha256: `tsconfig.graph.json` `f4c53cefd70090c4437eb4593d837fff966570400dfb663c3b16b4e68035928e`, `tools/graph-query.ts` `c3c595e0fd42786720b1d6b389b7ccb794412620961e00e8a3d8f192af964813`, `tools/graph-preflight.ts` `fc29dea9f065b10c94c93cccf6e4358c5b0b18c95b666d5500d051ec4dca2813`.
 
 | 명령 | Exit |
 |---|---|

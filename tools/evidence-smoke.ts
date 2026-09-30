@@ -7,6 +7,7 @@ import {
   evidenceProgramSourceFiles,
   headingAnchors,
   recordedBaseSpec,
+  unregisteredImplementationHost,
   includedSourceCount,
   omittedProgramHosts,
   productionFileCites,
@@ -274,6 +275,22 @@ try {
   );
   const nestedOk = nested.length === 1 && nested[0] === "after";
   record("nested-fence", "zero", nestedOk ? 0 : 1, nestedOk, JSON.stringify(nested));
+
+  const indented = headingAnchors(" ## Quota {#quota}\n    ## Hidden {#hidden}\n");
+  const indentedOk = indented.length === 1 && indented[0] === "quota";
+  record("indented-heading", "zero", indentedOk ? 0 : 1, indentedOk, JSON.stringify(indented));
+
+  const splitHost = [
+    "/** @evidence docs/spec.md#quota Cites the section only. */",
+    "export function registeredOnly(): void {}",
+    "/** @evidence ./host.ts#quotaHost Calls the host. */",
+    "export function helper(): void {}",
+  ].join("\n");
+  const gap = unregisteredImplementationHost(splitHost, "docs/spec.md", "quota", [
+    "registeredOnly",
+  ]);
+  const gapOk = gap === "helper";
+  record("registered-implementation", "nonzero", gapOk ? 1 : 0, gapOk, gap ?? "none");
 
   const recordedSha = "a".repeat(40);
   const recorded = recordedBaseSpec({ GITHUB_BASE_SHA: recordedSha, GITHUB_BASE_REF: "main" });
