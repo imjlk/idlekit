@@ -1,8 +1,9 @@
-import { existsSync } from "fs";
+import { existsSync, readdirSync, statSync } from "fs";
 import { dirname, isAbsolute, resolve } from "path";
 import { ROOT, ensureDir, runJson } from "./_bun";
 
 const REPO_ROOT = resolve(import.meta.dir, "..");
+const CLI_ROOT = resolve(REPO_ROOT, "packages/cli");
 
 type Args = Readonly<{
   scenarios: string[];
@@ -83,19 +84,58 @@ function resolveScenarioPath(input: string): string {
   return isAbsolute(input) ? input : resolve(REPO_ROOT, input);
 }
 
-function runSimulateOnce(scenarioPath: string): void {
-  const cliRoot = resolve(REPO_ROOT, "packages/cli");
-  const bundled = resolve(cliRoot, "dist/main.js");
-  if (!existsSync(bundled)) {
-    throw new Error(
-      "simulate benchmark needs packages/cli/dist/main.js. Run bun run build first.",
-    );
+const BUNDLE_INPUTS = [
+  "package.json",
+  "bun.lock",
+  "packages/cli/package.json",
+  "packages/cli/src",
+  "packages/cli/scripts",
+  "packages/cli/bunli.config.ts",
+  "packages/core/package.json",
+  "packages/core/src",
+  "packages/money/package.json",
+  "packages/money/src",
+];
+
+function newestMtime(path: string): number {
+  const stat = statSync(path);
+  if (!stat.isDirectory()) return stat.mtimeMs;
+  let newest = stat.mtimeMs;
+  for (const name of readdirSync(path)) {
+    newest = Math.max(newest, newestMtime(resolve(path, name)));
   }
+  return newest;
+}
+
+/** Rebuild when the shipped bundle is missing or older than a bundled source. */
+function ensureFreshBundle(): string {
+  const bundled = resolve(CLI_ROOT, "dist/main.js");
+  const fresh =
+    existsSync(bundled) &&
+    BUNDLE_INPUTS.every((rel) => {
+      const input = resolve(REPO_ROOT, rel);
+      return !existsSync(input) || newestMtime(input) <= statSync(bundled).mtimeMs;
+    });
+  if (!fresh) {
+    const proc = Bun.spawnSync(["bun", "run", "build"], {
+      cwd: CLI_ROOT,
+      stdout: "inherit",
+      stderr: "inherit",
+      env: process.env,
+    });
+    if ((proc.exitCode ?? 1) !== 0 || !existsSync(bundled)) {
+      throw new Error("simulate benchmark could not refresh packages/cli/dist/main.js");
+    }
+  }
+  return bundled;
+}
+
+function runSimulateOnce(bundled: string, scenarioPath: string): void {
   // --config skips the CLI bunfig preload. Timing `bun src/main.ts` measures
   // ttsc program setup (several seconds) instead of simulate.
   const parsed = runJson(
     ["bun", `--config=${resolve(REPO_ROOT, "tools/bench-bunfig.toml")}`, bundled, "simulate", scenarioPath, "--format", "json"],
-    { cwd: cliRoot, env: process.env },
+    { cwd: CLI_ROOT, env: process.env },
   );
 
   if (!parsed || typeof parsed !== "object") {
@@ -120,6 +160,7 @@ type ScenarioBenchResult = {
 
 async function main(): Promise<void> {
   const args = parseArgs(process.argv);
+  const bundled = ensureFreshBundle();
   const memoryStart = process.memoryUsage().rss;
   const scenarioResults: ScenarioBenchResult[] = [];
 
@@ -129,7 +170,7 @@ async function main(): Promise<void> {
 
     for (let i = 0; i < args.warmup + args.iterations; i++) {
       const start = performance.now();
-      runSimulateOnce(scenarioPath);
+      runSimulateOnce(bundled, scenarioPath);
       const elapsed = performance.now() - start;
       if (i >= args.warmup) {
         samples.push(elapsed);
