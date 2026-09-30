@@ -71,16 +71,14 @@ const mustExist = [
 ];
 
 const mustBeAbsent = [
-  "docs/requirements",
   "ttsc.config.ts",
   "ttsc.config.json",
-  // A root project would auto-attach @ttsc/lint. That config arrives in TC-03.
+  // A root tsconfig.json would auto-attach lint to every nearest project.
+  // TC-03 uses tsconfig.evidence.json instead.
   "tsconfig.json",
 ];
 
 const absentRootScripts = [
-  "evidence:check",
-  "evidence:smoke",
   "graph:check",
   "contracts:generate",
   "contracts:check",
@@ -143,6 +141,15 @@ if (rootDev["@types/node"] !== "^26.1.2") {
 const scripts = (rootPkg.scripts ?? {}) as Record<string, string>;
 for (const name of absentRootScripts) {
   if (name in scripts) fail(`planned script is already defined: ${name}`);
+}
+for (const name of ["evidence:check", "evidence:smoke", "format:check"]) {
+  if (!(name in scripts)) fail(`TC-03 script is missing: ${name}`);
+}
+if (!entryExists(resolve(root, "docs/requirements/active/typia-transform.md"))) {
+  fail("active typia requirement is missing");
+}
+if (!entryExists(resolve(root, "lint.config.ts")) || !entryExists(resolve(root, "evidence.config.ts"))) {
+  fail("evidence lint config is missing");
 }
 
 const corePkg = await readJson(resolve(root, "packages/core/package.json"));

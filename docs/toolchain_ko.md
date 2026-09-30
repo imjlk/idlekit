@@ -44,6 +44,8 @@ Bun `1.3.10`은 Node 호환 `process.version`을 보고하지만 `node:module.re
 | tools | `tsconfig.tools.json` | `tools/**/*.ts`, `noEmit`. 목록만 유지한다. |
 | examples | `tsconfig.examples.json` | `examples/**/*.ts`와 `snippets/**/*.ts`, `noEmit`. 목록만 유지한다. |
 | example plugin | `examples/plugins/tsconfig.json` | `custom-econ-plugin.ts`. 패키지 preload가 home `tsconfig.json`까지 올라가지 않도록 이 파일의 nearest project다. private `package.json`이 이 프로그램에 `@ttsc/lint`를 붙이지 않게 한다. |
+| evidence | `tsconfig.evidence.json` | `TC-03` gate. `@ttsc/lint`가 `lint.config.ts`를 읽는다. `@ttsc/evidence`는 compiler plugin이 아니라 lint contributor다. |
+| format | `tsconfig.format.json` | 새 evidence tool만 포함한다. `format.severity`는 `"error"`다. |
 | solution | `tsconfig.solution.json` | `files: []`와 references. root `typecheck`는 이 파일을 `ttsc`에 넘기지 않는다. |
 
 root `tsconfig.json`은 없다. root project는 `@ttsc/lint`를 자동으로 붙이고, 그 설정은 `TC-03`이다. 패키지 디렉터리의 `bunfig.toml`이 runtime과 `bun test` 모두에 `@ttsc/unplugin/bun-register`를 preload한다. preload는 프로세스 cwd만 보고 상위로 올라가지 않으므로 fixture의 `bunfig.toml`은 격리된다. 패키지 소스를 root에서 실행할 때는 `--preload @ttsc/unplugin/bun-register`를 붙인다. CLI testkit, `replay:verify`, doctor의 source 재진입은 cwd가 repo root일 때 그렇게 한다. source 실행마다 그 변환 비용이 있으므로 `@idlekit/cli` 테스트는 `bun test --timeout 90000`을 쓰고, 명령을 여러 번 띄우는 경우는 180초를 허용한다. `tools/ttsx-under-node`는 `lint.config.ts` 평가용 Node launcher로 남는다. 제품 런타임은 Bun이다.
@@ -68,7 +70,7 @@ Dependabot은 `ttsc`, `@ttsc/*`, `typia`, `@typia/*`를 한 그룹 PR로 연다.
 | emit | plain `bun`이 생성된 JS를 실행하고 `typia.createValidate`는 대체됨 | 남은 `typia.createValidate`나 `@ttsc/*` import는 smoke 실패 |
 | TSX | emit이 `@opentui/react`를 import | `react/jsx-runtime` import는 smoke 실패 |
 
-Evidence와 Graph는 이 fixture에서만 확인한다. 저장소 `evidence:check`와 `graph:check`는 `TC-03`과 `TC-04` 전까지 없다.
+툴체인 fixture는 Evidence와 Graph를 따로 확인한다. `TC-03`이 저장소 `evidence:check`와 `evidence:smoke`를 추가한다. `graph:check`는 `TC-04`까지 없다.
 
 ## TC-01 검증
 
@@ -111,4 +113,22 @@ Host는 macOS arm64다. 명령은 `mise exec bun@1.3.10 -- bun ...`으로 실행
 | `bun run build:bin` | 미실행 |
 | Linux host | 미실행 |
 
-`transform:smoke`가 validator 네 경로와 음성 검사를 기록한다. 기대한 nonzero도 통과다. `source-nopreload` 1, `check-type-error` 1 (`TS2322`), `generic-unresolved` 3 (`non-specified generic argument`). 나머지 smoke 행은 exit 0이다. repo 밖 published artifact 실행, `.d.ts` consumer `ttsc --noEmit`, sourcemap, shebang, lazy review marker, plugin load, cold/warm `ttsc prepare`가 여기 포함된다. `tsconfig.tools.json`과 `tsconfig.examples.json`은 목록용 프로그램이다. exit 2는 아직 없는 `TC-03` lint config와 그 파일들의 기존 오류다. root `typecheck` 스크립트에 넣지 않는다. `bun run build:bin`과 Linux host는 이번 변경에서 실행하지 않았다. Evidence와 Graph는 연결하지 않는다.
+`transform:smoke`가 validator 네 경로와 음성 검사를 기록한다. 기대한 nonzero도 통과다. `source-nopreload` 1, `check-type-error` 1 (`TS2322`), `generic-unresolved` 3 (`non-specified generic argument`). 나머지 smoke 행은 exit 0이다. repo 밖 published artifact 실행, `.d.ts` consumer `ttsc --noEmit`, sourcemap, shebang, lazy review marker, plugin load, cold/warm `ttsc prepare`가 여기 포함된다. `tsconfig.tools.json`과 `tsconfig.examples.json`은 목록용 프로그램이다. `TC-03`은 거기에 `@ttsc/lint` `enabled: false`를 넣어, host가 없는 Program에 저장소 evidence graph를 적용하지 않는다. `bun run build:bin`과 Linux host는 그 변경에서 실행하지 않았다.
+
+## TC-03 검증
+
+Host는 macOS arm64다. 명령은 `mise exec bun@1.3.10 -- bun ...`으로 실행했다. `ttsc version`은 `ttsc 0.30.4 (Version 7.0.2)`다. `evidence:check`는 active 문서와 config의 sha256, 그리고 `tsconfig.evidence.json`에 대한 `ttsc cache paths --json`을 출력한다. `projectRoot`는 이 저장소다.
+
+| 명령 | Exit |
+|---|---|
+| `bun run typecheck` | 0 |
+| `bun run evidence:check` | 0 |
+| `bun run evidence:smoke` | 0 (16행) |
+| `bun run format:check` | 0 |
+| `bun run runtime:check` | 0 |
+| `bun tools/analysis-baseline-check.ts` | 0 |
+| `packages/core`에서 `bun test src/scenario/concreteValidator.test.ts` | 0 (3 pass) |
+| `bun run graph:check` | 미실행 (`TC-04`) |
+| Linux host | 미실행 |
+
+`evidence:smoke`의 기대한 nonzero는 인용 삭제, 없는 anchor, 새 active 제목, 같은 cache에서 markdown 변경 후 review 만료, 인용한 함수 본문 변경 후 review 만료, 금지된 `@evidenceExclude`, 등록하지 않은 named test, 거짓 assertion, 빈 glob, 빈 Program, 승인 없는 coverage 축소, `format.severity` `"error"`다. 거짓 assertion은 `ttsc` exit 0이고 `bun test`는 nonzero다. Evidence는 assertion의 참을 판단하지 않는다. Inventory가 named test의 실제 실행을 확인한다. `singular`는 끄고, `evidence/documented`와 `evidence/todo`는 `fixtures/evidence/base`에만 켠다. 이 lint loader는 config 객체 하나만 받고, `files`로 `evidence/graph` 옵션을 따로 좁힐 수 없다.

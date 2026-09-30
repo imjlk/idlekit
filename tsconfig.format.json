@@ -1,0 +1,23 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "types": ["node", "bun"],
+    "plugins": [
+      {
+        "transform": "@ttsc/lint",
+        "configFile": "./lint.format.config.ts"
+      }
+    ]
+  },
+  "include": [
+    "evidence.config.ts",
+    "lint.config.ts",
+    "lint.format.config.ts",
+    "tools/evidence-host.ts",
+    "tools/evidence-inventory.ts",
+    "tools/evidence-check.ts",
+    "tools/evidence-smoke.ts",
+    "tools/format-check.ts"
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "types": ["node", "bun"],
+    "plugins": [
+      {
+        "transform": "@ttsc/lint",
+        "configFile": "./lint.config.ts"
+      }
+    ]
+  },
+  "include": [
+    "packages/core/src/scenario/concreteValidator.ts",
+    "packages/core/src/scenario/concreteValidator.test.ts"
+  ]
+}
