@@ -171,14 +171,20 @@ function headingAnchors(markdown: string): string[] {
   return anchors;
 }
 
-function showBaseline(spec: string): BaselineFile | undefined {
-  const proc = Bun.spawnSync(["git", "show", `${spec}:docs/requirements/coverage-baseline.json`], {
+function showPath(spec: string, path: string): string | undefined {
+  const proc = Bun.spawnSync(["git", "show", `${spec}:${path}`], {
     cwd: root,
     stdout: "pipe",
     stderr: "pipe",
   });
   if (proc.exitCode !== 0) return undefined;
-  return JSON.parse(proc.stdout.toString()) as BaselineFile;
+  return proc.stdout.toString();
+}
+
+function showBaseline(spec: string): BaselineFile | undefined {
+  const text = showPath(spec, "docs/requirements/coverage-baseline.json");
+  if (text === undefined) return undefined;
+  return JSON.parse(text) as BaselineFile;
 }
 
 function fetchRevision(revision: string): void {
@@ -189,33 +195,46 @@ function fetchRevision(revision: string): void {
   });
 }
 
-function previousBaseline(): BaselineFile | undefined {
+function previousRevision(): string | undefined {
   const baseRef = process.env.GITHUB_BASE_REF;
   if (baseRef) {
     fetchRevision(baseRef);
-    const fromBase = showBaseline(`origin/${baseRef}`);
-    if (fromBase) return fromBase;
+    const spec = `origin/${baseRef}`;
+    if (showBaseline(spec)) return spec;
   }
   const before = process.env.GITHUB_BEFORE ?? "";
   if (/^[0-9a-f]{40}$/.test(before) && !before.startsWith("0000000")) {
     fetchRevision(before);
-    const fromBefore = showBaseline(before);
-    if (fromBefore) return fromBefore;
+    if (showBaseline(before)) return before;
   }
-  return showBaseline("HEAD^");
+  if (showBaseline("HEAD^")) return "HEAD^";
+  return undefined;
+}
+
+function previousBaseline(): BaselineFile | undefined {
+  const revision = previousRevision();
+  return revision ? showBaseline(revision) : undefined;
+}
+
+/** An approval counts only when this baseline transition adds or edits its file. */
+export function approvalApplies(current: string, previous: string | undefined): boolean {
+  return previous === undefined || previous !== current;
 }
 
 /** Approval files name retired protected paths as bullet lines of `` `path` ``. */
-async function readApprovals(): Promise<{ ids: string[]; files: string[] }> {
-  const ids = await approvalIds();
+async function readApprovals(revision: string): Promise<{ ids: string[]; files: string[] }> {
+  const ids: string[] = [];
   const files: string[] = [];
-  for (const id of ids) {
+  for (const id of await approvalIds()) {
+    const rel = `docs/requirements/approvals/${id}.md`;
     let text = "";
     try {
-      text = readFileSync(join(root, "docs", "requirements", "approvals", `${id}.md`), "utf8");
+      text = readFileSync(join(root, rel), "utf8");
     } catch {
       continue;
     }
+    if (!approvalApplies(text, showPath(revision, rel))) continue;
+    ids.push(id);
     for (const line of text.split("\n")) {
       const match = /^\s*-\s+`([^`]+)`\s*$/.exec(line);
       if (match?.[1]) files.push(match[1]);
@@ -234,13 +253,35 @@ function registersNamedTest(body: string, registeredAs: string, exportName: stri
   return new RegExp(`\\b(?:it|test)\\(\\s*${quoted}\\s*,\\s*${fn}\\b`).test(body);
 }
 
-/** The doc comment on the exported test must cite this requirement, not only share its file. */
-function citesRequirement(body: string, exportName: string, doc: string, anchor: string): boolean {
+function evidenceNeedle(doc: string, anchor: string): string {
+  return `@evidence ${doc}#${anchor}`;
+}
+
+/** The block comment immediately above this export, with no nested terminator. */
+function adjacentExportComment(body: string, exportName: string): string | undefined {
   const fn = exportName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const match = new RegExp(
-    `(/\\*\\*[\\s\\S]*?\\*/)\\s*export\\s+(?:async\\s+)?function\\s+${fn}\\b`,
+    `\\/\\*\\*((?:(?!\\*\\/)[\\s\\S])*)\\*\\/\\s*export\\s+(?:async\\s+)?function\\s+${fn}\\b`,
   ).exec(body);
-  return match?.[1]?.includes(`@evidence ${doc}#${anchor}`) === true;
+  return match?.[1];
+}
+
+/** The doc comment on the exported test must cite this requirement, not only share its file. */
+function citesRequirement(body: string, exportName: string, doc: string, anchor: string): boolean {
+  return adjacentExportComment(body, exportName)?.includes(evidenceNeedle(doc, anchor)) === true;
+}
+
+function productionFileCites(body: string, doc: string, anchor: string): boolean {
+  const needle = evidenceNeedle(doc, anchor);
+  for (const match of body.matchAll(/\/\*\*((?:(?!\*\/)[\s\S])*)\*\//g)) {
+    if (!match[1]?.includes(needle) || match.index === undefined) continue;
+    const after = body.slice(match.index + match[0].length);
+    // A // note may sit between the doc block and the export. Another block comment may not.
+    if (/^(?:\s|\/\/[^\n]*(?:\n|$))*export\s+(?:async\s+)?(?:function|const|class|type|interface|enum)\b/.test(after)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function commandTargetsFile(test: InventoryTest): boolean {
@@ -290,8 +331,9 @@ export async function checkInventory(projectRoot = root): Promise<string[]> {
     fail(failures, "inventory ids and coverage baseline ids differ");
   }
 
-  const approvals = projectRoot === root ? await readApprovals() : { ids: [], files: [] };
-  const previous = projectRoot === root ? previousBaseline() : undefined;
+  const revision = projectRoot === root ? previousRevision() : undefined;
+  const approvals = revision ? await readApprovals(revision) : { ids: [], files: [] };
+  const previous = revision ? showBaseline(revision) : undefined;
   if (previous) {
     const shrink = retainedCoverage(previous.ids, baseline.ids, approvals.ids);
     if (!shrink.ok) {
@@ -366,6 +408,12 @@ export async function checkInventory(projectRoot = root): Promise<string[]> {
       const body = readFileSync(join(projectRoot, rel), "utf8");
       if (!hasProductionExport(body)) {
         fail(failures, `${requirement.id} production file has no export: ${rel}`);
+      }
+      if (!productionFileCites(body, requirement.doc, requirement.anchor)) {
+        fail(
+          failures,
+          `${requirement.id} production file ${rel} does not cite ${requirement.doc}#${requirement.anchor}`,
+        );
       }
     }
     if (requirement.tests.length === 0) fail(failures, `${requirement.id} has no executed tests`);

@@ -1,6 +1,7 @@
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { join } from "path";
 import {
+  approvalApplies,
   assertExecutedTests,
   assertNonEmptyGlobs,
   includedSourceCount,
@@ -221,6 +222,17 @@ try {
     shrinkOk ? 1 : 0,
     shrinkOk,
     JSON.stringify({ shrunk, approved }),
+  );
+  const approvalOk =
+    approvalApplies("fresh", undefined) &&
+    approvalApplies("edited", "old") &&
+    !approvalApplies("same", "same");
+  record(
+    "approval-transition",
+    "zero",
+    approvalOk ? 0 : 1,
+    approvalOk,
+    "a stale approval must not cover a later removal",
   );
 
   const formatBad = join(root, "fixtures", "evidence", "format-bad");
