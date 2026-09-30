@@ -247,6 +247,7 @@ export function runSeededProperty<T>(run: PropertyRun<T>): { ok: true } | { ok: 
     const outcome = predicateOutcome(run.predicate, original);
     if (!outcome.failed) continue;
     const shrunk = shrinkValue(run.predicate, run.shrink, original);
+    const shrunkOutcome = predicateOutcome(run.predicate, shrunk.value);
     const identity = run.describeCase(shrunk.value, index);
     return {
       ok: false,
@@ -263,7 +264,7 @@ export function runSeededProperty<T>(run: PropertyRun<T>): { ok: true } | { ok: 
         original,
         value: shrunk.value,
         shrinkingPath: shrunk.shrinkingPath,
-        ...(outcome.thrown === undefined ? {} : { thrown: outcome.thrown }),
+        ...(shrunkOutcome.thrown === undefined ? {} : { thrown: shrunkOutcome.thrown }),
       },
     };
   }
