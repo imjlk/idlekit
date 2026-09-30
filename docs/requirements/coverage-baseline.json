@@ -3,6 +3,7 @@
   "protectedFiles": [
     "docs/requirements/active/typia-transform.md",
     "packages/core/src/scenario/concreteValidator.ts",
+    "packages/core/src/scenario/typiaTransformMissing.ts",
     "packages/core/src/scenario/concreteValidator.test.ts",
     "fixtures/toolchain/evidence/lint.config.ts",
     "fixtures/toolchain/evidence/src/quotaHost.ts",

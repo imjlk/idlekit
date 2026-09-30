@@ -1,5 +1,5 @@
 import { readFileSync } from "fs";
-import { dirname, join, resolve } from "path";
+import { dirname, join, relative, resolve } from "path";
 import { disabledClaimLedger, evidenceGraph, productionFiles, testFiles } from "../evidence.config";
 import { root } from "./evidence-host";
 
@@ -169,18 +169,65 @@ function showBaseline(spec: string): BaselineFile | undefined {
   return JSON.parse(proc.stdout.toString()) as BaselineFile;
 }
 
+function fetchRevision(revision: string): void {
+  Bun.spawnSync(["git", "fetch", "--no-tags", "--depth=1", "origin", revision], {
+    cwd: root,
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+}
+
 function previousBaseline(): BaselineFile | undefined {
   const baseRef = process.env.GITHUB_BASE_REF;
   if (baseRef) {
-    Bun.spawnSync(["git", "fetch", "--no-tags", "--depth=1", "origin", baseRef], {
-      cwd: root,
-      stdout: "pipe",
-      stderr: "pipe",
-    });
+    fetchRevision(baseRef);
     const fromBase = showBaseline(`origin/${baseRef}`);
     if (fromBase) return fromBase;
   }
+  const before = process.env.GITHUB_BEFORE ?? "";
+  if (/^[0-9a-f]{40}$/.test(before) && !before.startsWith("0000000")) {
+    fetchRevision(before);
+    const fromBefore = showBaseline(before);
+    if (fromBefore) return fromBefore;
+  }
   return showBaseline("HEAD^");
+}
+
+/** Approval files name retired protected paths as bullet lines of `` `path` ``. */
+async function readApprovals(): Promise<{ ids: string[]; files: string[] }> {
+  const ids = await approvalIds();
+  const files: string[] = [];
+  for (const id of ids) {
+    let text = "";
+    try {
+      text = readFileSync(join(root, "docs", "requirements", "approvals", `${id}.md`), "utf8");
+    } catch {
+      continue;
+    }
+    for (const line of text.split("\n")) {
+      const match = /^\s*-\s+`([^`]+)`\s*$/.exec(line);
+      if (match?.[1]) files.push(match[1]);
+    }
+  }
+  return { ids, files };
+}
+
+function exportsNamedFunction(body: string, name: string): boolean {
+  return new RegExp(`export\\s+(?:async\\s+)?function\\s+${name}\\b`).test(body);
+}
+
+function registersNamedTest(body: string, registeredAs: string, exportName: string): boolean {
+  const quoted = JSON.stringify(registeredAs).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const fn = exportName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`\\b(?:it|test)\\(\\s*${quoted}\\s*,\\s*${fn}\\b`).test(body);
+}
+
+function commandTargetsFile(test: InventoryTest): boolean {
+  const fromCwd = relative(test.cwd, test.file).replaceAll("\\", "/");
+  return test.args.some((arg) => {
+    const normalized = arg.replaceAll("\\", "/");
+    return normalized === fromCwd || normalized === test.file;
+  });
 }
 
 async function approvalIds(): Promise<string[]> {
@@ -211,18 +258,25 @@ export async function checkInventory(projectRoot = root): Promise<string[]> {
   );
   const inventoryIds = inventory.requirements.map((requirement) => requirement.id);
   if (inventoryIds.length === 0) fail(failures, "active inventory has no requirements");
+  if (new Set(inventoryIds).size !== inventoryIds.length) {
+    fail(failures, "inventory requirement ids are duplicated");
+  }
   const baselineIds = [...baseline.ids];
+  if (new Set(baselineIds).size !== baselineIds.length) {
+    fail(failures, "coverage baseline ids are duplicated");
+  }
   if (baselineIds.join("\n") !== inventoryIds.join("\n")) {
     fail(failures, "inventory ids and coverage baseline ids differ");
   }
 
+  const approvals = projectRoot === root ? await readApprovals() : { ids: [], files: [] };
   const previous = projectRoot === root ? previousBaseline() : undefined;
   if (previous) {
-    const shrink = retainedCoverage(previous.ids, baseline.ids, await approvalIds());
+    const shrink = retainedCoverage(previous.ids, baseline.ids, approvals.ids);
     if (!shrink.ok) {
       fail(failures, `active coverage shrunk without approval: ${shrink.missing.join(", ")}`);
     }
-    const fileShrink = retainedCoverage(previous.protectedFiles, baseline.protectedFiles, []);
+    const fileShrink = retainedCoverage(previous.protectedFiles, baseline.protectedFiles, approvals.files);
     if (!fileShrink.ok) {
       fail(
         failures,
@@ -237,6 +291,14 @@ export async function checkInventory(projectRoot = root): Promise<string[]> {
       readFileSync(path);
     } catch {
       fail(failures, `protected evidence file is missing: ${rel}`);
+    }
+    const isPackageHost = rel.startsWith("packages/") && rel.endsWith(".ts");
+    const listed = inventory.requirements.some(
+      (requirement) =>
+        requirement.production.includes(rel) || requirement.tests.some((test) => test.file === rel),
+    );
+    if (isPackageHost && !listed) {
+      fail(failures, `protected evidence host left the inventory: ${rel}`);
     }
   }
 
@@ -279,13 +341,14 @@ export async function checkInventory(projectRoot = root): Promise<string[]> {
     if (requirement.tests.length === 0) fail(failures, `${requirement.id} has no executed tests`);
     for (const test of requirement.tests) {
       const body = readFileSync(join(projectRoot, test.file), "utf8");
-      if (!body.includes(`export function ${test.exportName}`)) {
+      if (!exportsNamedFunction(body, test.exportName)) {
         fail(failures, `${requirement.id} test export ${test.exportName} is missing`);
       }
-      const registered = body.includes(`it(${JSON.stringify(test.registeredAs)}, ${test.exportName})`)
-        || body.includes(`test(${JSON.stringify(test.registeredAs)}, ${test.exportName})`);
-      if (!registered) {
+      if (!registersNamedTest(body, test.registeredAs, test.exportName)) {
         fail(failures, `${requirement.id} does not register ${test.exportName} with the runner`);
+      }
+      if (!commandTargetsFile(test)) {
+        fail(failures, `${requirement.id} command does not run ${test.file}`);
       }
     }
   }
@@ -343,6 +406,11 @@ export async function checkInventory(projectRoot = root): Promise<string[]> {
     }
     if (!disabledNames.includes(entry.name)) {
       fail(failures, `disabled ledger ${entry.name} is not disabled in the graph`);
+    }
+  }
+  for (const name of disabledNames) {
+    if (!disabledClaimLedger.some((entry) => entry.name === name)) {
+      fail(failures, `disabled claim ${name} has no ledger entry`);
     }
   }
 
