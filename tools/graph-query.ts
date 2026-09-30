@@ -1,7 +1,8 @@
 import { join, resolve } from "path";
 
 export const root = resolve(import.meta.dir, "..");
-export const graphBin = join(root, "node_modules", ".bin", "ttsc-graph");
+const graphBinName = process.platform === "win32" ? "ttsc-graph.cmd" : "ttsc-graph";
+export const graphBin = join(root, "node_modules", ".bin", graphBinName);
 
 const ACTIONS = ["overview", "tour", "entrypoints", "lookup", "details", "trace"] as const;
 
@@ -354,7 +355,8 @@ export class GraphSession {
   }
 
   async open(): Promise<{ protocolVersion?: string; server?: string }> {
-    if (!graphBin.endsWith(join("node_modules", ".bin", "ttsc-graph"))) {
+    const graphShim = join("node_modules", ".bin", process.platform === "win32" ? "ttsc-graph.cmd" : "ttsc-graph");
+    if (!graphBin.endsWith(graphShim)) {
       throw new Error(`refusing non-ttsc-graph command: ${graphBin}`);
     }
     this.proc = Bun.spawn([graphBin, "--cwd", this.cwd, "--tsconfig", this.tsconfig], {

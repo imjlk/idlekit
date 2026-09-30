@@ -35,6 +35,27 @@ function hasSource(payload: unknown, needle: string): boolean {
   return sourceSpans(payload).some((span) => span.file.includes(needle));
 }
 
+function endpointName(value: unknown): string | undefined {
+  if (typeof value === "string") return value;
+  if (!value || typeof value !== "object") return undefined;
+  const name = (value as { name?: unknown }).name;
+  return typeof name === "string" ? name : undefined;
+}
+
+function traceHops(value: unknown, found: Array<{ from: string; to: string }> = []): Array<{ from: string; to: string }> {
+  if (Array.isArray(value)) {
+    for (const item of value) traceHops(item, found);
+    return found;
+  }
+  if (!value || typeof value !== "object") return found;
+  const record = value as Record<string, unknown>;
+  const from = endpointName(record.from);
+  const to = endpointName(record.to);
+  if (from && to) found.push({ from, to });
+  for (const child of Object.values(record)) traceHops(child, found);
+  return found;
+}
+
 function tagTexts(value: unknown, found: string[] = []): string[] {
   if (Array.isArray(value)) {
     for (const item of value) tagTexts(item, found);
@@ -131,8 +152,12 @@ async function scratch(): Promise<void> {
           maxNodes: 12,
         }),
       );
-      if (!JSON.stringify(traced).includes("quotaHost") || !hasSource(traced, "src/host.ts")) {
-        fail("scratch trace useQuota did not reach quotaHost in src/host.ts");
+      const traceType = resultType(traced);
+      const linked = traceHops(traced).some(
+        (hop) => hop.from.includes("useQuota") && hop.to.includes("quotaHost"),
+      );
+      if (traceType !== "trace" || !linked) {
+        fail(`scratch trace useQuota did not reach quotaHost in src/host.ts (${traceType ?? "untyped"})`);
       } else ok("scratch trace useQuota -> quotaHost");
     } finally {
       const code = await base.session.close();
