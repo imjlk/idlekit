@@ -30,7 +30,7 @@ JSON/YAML 시나리오, shell과 package script, `packages/cli/src/plugin/load.t
 
 ## TC-04 검증
 
-macOS arm64, Bun `1.3.10`, `@ttsc/graph` `0.30.4`, protocol `2025-11-25`에서 조회했다. generation 필드는 없었다. scratch 수정은 새 프로세스에서 다시 읽었다. `bun run graph:check`는 exit 0이다.
+macOS arm64, Bun `1.3.10`, `@ttsc/graph` `0.30.4`, protocol `2025-11-25`, commit `d599e209546df0307cc3ca1f4be4224782f7a814`에서 조회했다. generation 필드는 없었다. scratch 수정은 새 프로세스에서 다시 읽었다. `bun run graph:check`는 exit 0이다.
 
 | Symbol | Span | 결과 |
 |---|---|---|
