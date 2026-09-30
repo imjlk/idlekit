@@ -13,6 +13,12 @@ export interface Engine<N> {
 
   cmp(a: N, b: N): -1 | 0 | 1;
 
+  /**
+   * Exact order for values whose `toString` is not a bare decimal.
+   * Settlement rejects the comparison when this hook is absent.
+   */
+  exactOrder?(a: N, b: N): -1 | 0 | 1;
+
   absLog10(a: N): number;
   isFinite(a: N): boolean;
 

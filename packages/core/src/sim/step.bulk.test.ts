@@ -1,10 +1,10 @@
 import { describe, expect, it } from "bun:test";
-import { createBreakInfinityEngine, createNumberEngine } from "../engine/breakInfinity";
+import { createBreakInfinityEngine, createNumberEngine, type Decimal } from "../engine/breakInfinity";
 import type { Engine } from "../engine/types";
 import type { Money } from "../money/types";
 import { checkBulk, checkNonNegative, expectProperty } from "../testkit/conformanceRun";
 import { buildSimStats } from "./analysis/ux";
-import { singleBuySize, stepOnce } from "./step";
+import { canSettleCost, singleBuySize, stepOnce } from "./step";
 import { createGreedyStrategy } from "./strategy/greedy";
 import { quotedDecisionSize } from "./strategy/stability";
 import type { Action, BulkQuote, Model, SimContext, SimEvent, SimState } from "./types";
@@ -101,12 +101,16 @@ function skippedReason(events: readonly SimEvent<unknown>[]): string | undefined
  * @evidenceReview docs/requirements/active/bulk-quote-settlement.md#req-pr01-bulk-quote-settlement #f2fb3d7 Re-read the section, then ran this function: wallet ends at 900, a missing size-10 quote does not grant 10, and the bonus model stays undeclared.
  * @evidence ./step.ts#singleBuySize Reads the size that must stay on Action.cost.
  * @evidenceReview ./step.ts#singleBuySize #d686b8e The declaration is 1. This test pays Action.cost for that size and does not call bulk.
+ * @evidence ./step.ts#canSettleCost A zero wallet cannot pay 1e-13, and it can pay a zero cost.
+ * @evidenceReview ./step.ts#canSettleCost #af1aab3 Re-read canSettleCost: a zero wallet cannot pay 1e-13, and it can pay a zero cost, without using cmp.
  * @evidence ./step.ts#stepOnce Calls stepOnce for the quoted buy and the rejected quotes.
  * @evidenceReview ./step.ts#stepOnce #4250196 Re-read stepOnce: each decision re-reads model.actions for the state so far, a quoted size pays BulkQuote.cost once through exact decimal order scaled to the smaller exponent, and a rejected quote does not apply.
  */
 export function settlesQuotedBulkAndRejectsBadQuotes(): void {
   expect(singleBuySize).toBe(1);
   const engine = createNumberEngine();
+  expect(canSettleCost(engine, 0, 1e-13)).toBe(false);
+  expect(canSettleCost(engine, 0, 0)).toBe(true);
   const calls = { cost: 0, bulk: 0, apply: 0 };
   const action = flatBuy(engine, calls);
   const ctx = context(engine);
@@ -540,6 +544,7 @@ function createCustomEngine(): Engine<number> {
     mulN: (a, b) => inner.mulN(a, b),
     divN: (a, b) => inner.divN(a, b),
     cmp: (a, b) => inner.cmp(a, b),
+    exactOrder: (a, b) => (a < b ? -1 : a > b ? 1 : 0),
     absLog10: (a) => inner.absLog10(a),
     isFinite: (a) => inner.isFinite(a),
     toString: (a) => `custom:${inner.toString(a)}`,
@@ -862,6 +867,142 @@ describe("PR-01 bulk quote settlement", () => {
     });
     expect(skippedReason(out.events)).toBe("insufficientFunds");
     expect(out.next.vars.owned).toBe(0);
+    expect(engine.toNumber(out.next.wallet.money.amount)).toBe(0);
+  });
+
+  it("pays a break-infinity quote across a huge exponent gap", () => {
+    const engine = createBreakInfinityEngine();
+    const action: Action<Decimal, UnitCode, Vars> = {
+      id: "buy",
+      kind: "buy",
+      canApply: () => true,
+      cost: () => coin(engine, engine.from(1)),
+      bulk: () => [{ size: 2, cost: coin(engine, engine.from(1)) }],
+      apply: (_ctx, current, bulkSize = 1) => ({
+        ...current,
+        vars: { ...current.vars, owned: current.vars.owned + bulkSize },
+      }),
+    };
+    const out = stepOnce({
+      ctx: context(engine),
+      model: zeroIncomeModel(engine, action),
+      state: state(engine, engine.from("1e1000000000")),
+      dt: 0,
+      decisions: [{ action, bulkSize: 2 }],
+    });
+    expect(skippedReason(out.events)).toBeUndefined();
+    expect(out.next.vars.owned).toBe(2);
+    expect(engine.cmp(out.next.wallet.money.amount, engine.from("1e999999999"))).toBe(1);
+  });
+
+  it("rejects a non-decimal engine that has no exact order", () => {
+    const engine = createCustomEngine();
+    delete engine.exactOrder;
+    const action: Action<number, UnitCode, Vars> = {
+      id: "buy",
+      kind: "buy",
+      canApply: () => true,
+      cost: () => coin(engine, 10),
+      bulk: () => [{ size: 2, cost: coin(engine, 20) }],
+      apply: (_ctx, current, bulkSize = 1) => ({
+        ...current,
+        vars: { ...current.vars, owned: current.vars.owned + bulkSize },
+      }),
+    };
+    const out = stepOnce({
+      ctx: context(engine),
+      model: zeroIncomeModel(engine, action),
+      state: state(engine, 1000),
+      dt: 0,
+      decisions: [{ action, bulkSize: 2 }],
+    });
+    expect(skippedReason(out.events)).toBe("invalidQuote");
+    expect(out.next.vars.owned).toBe(0);
+    expect(engine.toString(out.next.wallet.money.amount)).toBe("custom:1000");
+  });
+
+  it("uses exactOrder when toNumber collapses distinct amounts", () => {
+    const wallet = 9007199254740992n;
+    const cost = 9007199254740993n;
+    const engine: Engine<bigint> = {
+      zero: () => 0n,
+      from: (input) => (typeof input === "bigint" ? input : BigInt(Math.trunc(Number(input)))),
+      add: (a, b) => a + b,
+      sub: (a, b) => a - b,
+      mul: (a, k) => a * BigInt(Math.trunc(k)),
+      div: (a, k) => a / BigInt(Math.trunc(k)),
+      mulN: (a, b) => a * b,
+      divN: (a, b) => (b === 0n ? 0n : a / b),
+      cmp: (a, b) => (a < b ? -1 : a > b ? 1 : 0),
+      exactOrder: (a, b) => (a < b ? -1 : a > b ? 1 : 0),
+      absLog10: () => 0,
+      isFinite: () => true,
+      toString: () => "opaque",
+      toNumber: () => 9007199254740992,
+    };
+    const action: Action<bigint, UnitCode, Vars> = {
+      id: "buy",
+      kind: "buy",
+      canApply: () => true,
+      cost: () => coin(engine, cost),
+      bulk: () => [{ size: 2, cost: coin(engine, cost) }],
+      apply: (_ctx, current, bulkSize = 1) => ({
+        ...current,
+        vars: { ...current.vars, owned: current.vars.owned + bulkSize },
+      }),
+    };
+    const out = stepOnce({
+      ctx: context(engine),
+      model: zeroIncomeModel(engine, action),
+      state: state(engine, wallet),
+      dt: 0,
+      decisions: [{ action, bulkSize: 2 }],
+    });
+    expect(skippedReason(out.events)).toBe("insufficientFunds");
+    expect(out.next.vars.owned).toBe(0);
+    expect(out.next.wallet.money.amount).toBe(wallet);
+  });
+
+  it("keeps maxAffordable on the same exact order as settlement", () => {
+    const engine = createNumberEngine();
+    const action: Action<number, UnitCode, Vars> = {
+      id: "buy",
+      kind: "buy",
+      canApply: () => true,
+      cost: () => coin(engine, engine.from(1)),
+      bulk: () => [
+        {
+          size: 2,
+          cost: coin(engine, engine.zero()),
+          deltaIncomePerSec: coin(engine, engine.from(1)),
+        },
+        {
+          size: 10,
+          cost: coin(engine, engine.from(1e-13)),
+          deltaIncomePerSec: coin(engine, engine.from(1)),
+        },
+      ],
+      apply: (_ctx, current, bulkSize = 1) => ({
+        ...current,
+        vars: { ...current.vars, owned: current.vars.owned + bulkSize },
+      }),
+    };
+    const model = zeroIncomeModel(engine, action);
+    const start = state(engine, 0);
+    const decisions = createGreedyStrategy<number, UnitCode, Vars>({
+      schemaVersion: 1,
+      objective: "maximizeIncome",
+      bulk: { mode: "maxAffordable" },
+    }).decide(context(engine), model, start);
+    expect(decisions[0]?.bulkSize).toBe(2);
+    const out = stepOnce({
+      ctx: context(engine),
+      model,
+      state: start,
+      dt: 0,
+      decisions,
+    });
+    expect(out.next.vars.owned).toBe(2);
     expect(engine.toNumber(out.next.wallet.money.amount)).toBe(0);
   });
 });

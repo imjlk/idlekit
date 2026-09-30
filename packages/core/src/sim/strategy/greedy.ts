@@ -1,3 +1,4 @@
+import { canSettleCost } from "../step";
 import type { Action, BulkQuote, Model, SimContext, SimState } from "../types";
 import type { GreedyStrategyParamsV1 } from "./params";
 import { compareCandidateKey, quotedDecisionSize, stableActions, stableBulkQuotes } from "./stability";
@@ -32,7 +33,7 @@ function isAffordable<N, U extends string, Vars>(
 ): boolean {
   if (!cost) return true;
   if (cost.unit.code !== state.wallet.money.unit.code) return false;
-  return ctx.E.cmp(state.wallet.money.amount, cost.amount) >= 0;
+  return canSettleCost(ctx.E, state.wallet.money.amount, cost.amount);
 }
 
 function chooseQuotes<N, U extends string, Vars>(

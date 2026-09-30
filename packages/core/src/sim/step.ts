@@ -90,26 +90,35 @@ function exactTextOrder(leftText: string, rightText: string): -1 | 0 | 1 | undef
     return left.sign === right.sign ? 0 : left.sign === 0 ? (right.sign < 0 ? 1 : -1) : left.sign;
   }
   if (left.sign !== right.sign) return left.sign < right.sign ? -1 : 1;
-  const exp = Math.min(left.exp, right.exp);
-  const leftScaled = left.coeff * 10n ** BigInt(left.exp - exp);
-  const rightScaled = right.coeff * 10n ** BigInt(right.exp - exp);
-  const magnitude = leftScaled < rightScaled ? -1 : leftScaled > rightScaled ? 1 : 0;
+  const leftDigits = left.coeff.toString();
+  const rightDigits = right.coeff.toString();
+  const leftScale = BigInt(left.exp) + BigInt(leftDigits.length);
+  const rightScale = BigInt(right.exp) + BigInt(rightDigits.length);
+  if (leftScale !== rightScale) return leftScale < rightScale ? -1 : 1;
+  const width = Math.max(leftDigits.length, rightDigits.length);
+  const leftPadded = leftDigits.padEnd(width, "0");
+  const rightPadded = rightDigits.padEnd(width, "0");
+  const magnitude = leftPadded < rightPadded ? -1 : leftPadded > rightPadded ? 1 : 0;
   if (magnitude === 0 || left.sign === 1) return magnitude;
   return magnitude === -1 ? 1 : -1;
 }
 
+type ExactEngine<N> = {
+  toString(value: N): string;
+  exactOrder?(left: N, right: N): -1 | 0 | 1;
+};
+
 /** Settlement boundaries ignore `cmp`, which treats an epsilon-sized gap as equality. */
-function exactAmountOrder<N>(
-  engine: { toString(value: N): string; toNumber(value: N): number },
-  left: N,
-  right: N,
-): -1 | 0 | 1 | undefined {
+function exactAmountOrder<N>(engine: ExactEngine<N>, left: N, right: N): -1 | 0 | 1 | undefined {
   const parsed = exactTextOrder(engine.toString(left), engine.toString(right));
   if (parsed !== undefined) return parsed;
-  const leftNumber = engine.toNumber(left);
-  const rightNumber = engine.toNumber(right);
-  if (!Number.isFinite(leftNumber) || !Number.isFinite(rightNumber)) return undefined;
-  return leftNumber < rightNumber ? -1 : leftNumber > rightNumber ? 1 : 0;
+  return engine.exactOrder?.(left, right);
+}
+
+/** True when the wallet can pay the cost without `cmp` or a rounded `toNumber`. */
+export function canSettleCost<N>(engine: ExactEngine<N>, wallet: N, cost: N): boolean {
+  const order = exactAmountOrder(engine, wallet, cost);
+  return order !== undefined && order >= 0;
 }
 
 function matchingQuotes<N, U extends string>(
