@@ -512,14 +512,22 @@ function jsonRoundTripPreserves(value: unknown, seen: Set<object> = new Set()): 
   if (seen.has(value)) return false;
   seen.add(value);
   if (Object.getOwnPropertySymbols(value).length > 0) return false;
-  const names = Object.getOwnPropertyNames(value);
-  if (names.some((key) => Object.getOwnPropertyDescriptor(value, key)?.enumerable !== true)) return false;
   if (Array.isArray(value)) {
-    for (let index = 0; index < value.length; index += 1) {
+    const names = Object.getOwnPropertyNames(value);
+    const length = value.length;
+    const foreign = names.some((key) => {
+      if (key === "length") return false;
+      if (!/^(?:0|[1-9]\d*)$/.test(key)) return true;
+      return Number(key) >= length;
+    });
+    if (foreign) return false;
+    for (let index = 0; index < length; index += 1) {
       if (!(index in value) || !jsonRoundTripPreserves(value[index], seen)) return false;
     }
     return true;
   }
+  const names = Object.getOwnPropertyNames(value);
+  if (names.some((key) => Object.getOwnPropertyDescriptor(value, key)?.enumerable !== true)) return false;
   if (Object.getPrototypeOf(value) !== Object.prototype) return false;
   return Object.values(value).every((child) => jsonRoundTripPreserves(child, seen));
 }
