@@ -34,10 +34,17 @@ export type ShrinkResult = {
   missing: string[];
 };
 
-const NON_PRODUCTION_SUFFIXES = [".test.ts", ".test.tsx", ".spec.ts", ".generated.ts", ".d.ts"];
+const NON_PRODUCTION_SUFFIXES = [
+  ".test.ts",
+  ".test.tsx",
+  ".spec.ts",
+  ".spec.tsx",
+  ".generated.ts",
+  ".d.ts",
+];
 const NON_PRODUCTION_SEGMENTS = new Set(["fixtures", "dist"]);
 
-function isNonProductionPath(rel: string): boolean {
+export function isNonProductionPath(rel: string): boolean {
   const normalized = rel.replaceAll("\\", "/");
   if (NON_PRODUCTION_SUFFIXES.some((suffix) => normalized.endsWith(suffix))) return true;
   return normalized.split("/").some((segment) => NON_PRODUCTION_SEGMENTS.has(segment));
@@ -207,9 +214,9 @@ export function headingAnchors(markdown: string): string[] {
     const commentAt = rawLine.indexOf("<!--");
     const line = commentAt === -1 ? rawLine : rawLine.slice(0, commentAt);
     if (commentAt !== -1 && !rawLine.includes("-->", commentAt + 4)) inComment = true;
-    const marker = /^(`{3,}|~{3,})(.*)$/.exec(line.trim());
-    const opener = marker?.[1];
-    const info = marker?.[2] ?? "";
+    const marker = /^( {0,3})(`{3,}|~{3,})(.*)$/.exec(line);
+    const opener = marker?.[2];
+    const info = marker?.[3] ?? "";
     if (!fenceChar) {
       if (opener) {
         fenceChar = opener.startsWith("`") ? "`" : "~";
@@ -250,12 +257,23 @@ function showBaseline(spec: string): BaselineFile | undefined {
   return JSON.parse(text) as BaselineFile;
 }
 
-function fetchRevision(revision: string): void {
-  Bun.spawnSync(["git", "fetch", "--no-tags", "--depth=1", "origin", revision], {
+function fetchRevision(revision: string): boolean {
+  const proc = Bun.spawnSync(["git", "fetch", "--no-tags", "--depth=1", "origin", revision], {
     cwd: root,
     stdout: "pipe",
     stderr: "pipe",
   });
+  return proc.exitCode === 0;
+}
+
+/** An explicit baseline revision that cannot be fetched fails the gate. A fetched commit with no baseline file does not. */
+export function requireFetchedRevision(
+  revision: string,
+  fetched: boolean,
+  baselineFound: boolean,
+): string | undefined {
+  if (!fetched) throw new Error(`evidence baseline revision ${revision} could not be fetched`);
+  return baselineFound ? revision : undefined;
 }
 
 /** The pull-request base SHA wins over a branch name that can move during the job. */
@@ -267,19 +285,25 @@ export function recordedBaseSpec(env: NodeJS.ProcessEnv = process.env): string |
 function previousRevision(): string | undefined {
   const recorded = recordedBaseSpec();
   if (recorded) {
-    fetchRevision(recorded);
-    return showBaseline(recorded) ? recorded : undefined;
+    return requireFetchedRevision(
+      recorded,
+      fetchRevision(recorded),
+      showBaseline(recorded) !== undefined,
+    );
   }
   const baseRef = process.env.GITHUB_BASE_REF;
   if (baseRef) {
-    fetchRevision(baseRef);
+    requireFetchedRevision(baseRef, fetchRevision(baseRef), true);
     const spec = `origin/${baseRef}`;
-    if (showBaseline(spec)) return spec;
+    return showBaseline(spec) ? spec : undefined;
   }
   const before = process.env.GITHUB_BEFORE ?? "";
   if (/^[0-9a-f]{40}$/.test(before) && !before.startsWith("0000000")) {
-    fetchRevision(before);
-    if (showBaseline(before)) return before;
+    return requireFetchedRevision(
+      before,
+      fetchRevision(before),
+      showBaseline(before) !== undefined,
+    );
   }
   if (showBaseline("HEAD^")) return "HEAD^";
   return undefined;
@@ -370,15 +394,40 @@ function isImplementationTarget(target: string, doc: string, anchor: string): bo
   return target.includes(".ts#") || target.startsWith("./") || target.startsWith("../");
 }
 
-/** Inventoried exports must be the ones that cite the implementation. */
+function citedPath(target: string, testFile: string): string | undefined {
+  const pathPart = target.split("#")[0]?.replaceAll("\\", "/");
+  if (!pathPart) return undefined;
+  if (pathPart.startsWith("./") || pathPart.startsWith("../")) {
+    return relative(root, resolve(root, dirname(testFile), pathPart)).replaceAll("\\", "/");
+  }
+  if (pathPart.endsWith(".ts") || pathPart.endsWith(".tsx")) return pathPart;
+  return undefined;
+}
+
+function citesProduction(target: string, testFile: string, production: readonly string[]): boolean {
+  const cited = citedPath(target, testFile);
+  return cited !== undefined && production.some((host) => host.replaceAll("\\", "/") === cited);
+}
+
+export type ImplementationHostGap =
+  | ""
+  | undefined
+  | { kind: "unregistered" | "foreign"; name: string };
+
+/** Inventoried exports must cite this requirement's production hosts, not another requirement's. */
 export function unregisteredImplementationHost(
   body: string,
   doc: string,
   anchor: string,
   registered: readonly string[],
-): string | undefined {
-  const names = new Set(registered);
-  let registeredCitesImplementation = false;
+  scope: { file: string; production: readonly string[]; fileRegistered?: readonly string[] } = {
+    file: "test.ts",
+    production: [],
+  },
+): ImplementationHostGap {
+  const names = new Set(scope.fileRegistered ?? registered);
+  const own = new Set(registered);
+  let ownCites = false;
   for (const match of body.matchAll(
     /\/\*\*((?:(?!\*\/)[\s\S])*)\*\/\s*export\s+(?:async\s+)?function\s+([A-Za-z0-9_]+)/g,
   )) {
@@ -389,10 +438,14 @@ export function unregisteredImplementationHost(
       isImplementationTarget(target, doc, anchor),
     );
     if (implementation.length === 0) continue;
-    if (names.has(name)) registeredCitesImplementation = true;
-    else return name;
+    if (!names.has(name)) return { kind: "unregistered", name };
+    if (!own.has(name)) continue;
+    if (implementation.some((target) => !citesProduction(target, scope.file, scope.production))) {
+      return { kind: "foreign", name };
+    }
+    ownCites = true;
   }
-  return registeredCitesImplementation ? undefined : "";
+  return ownCites ? undefined : "";
 }
 
 export function productionFileCites(body: string, doc: string, anchor: string): boolean {
@@ -408,9 +461,10 @@ export function productionFileCites(body: string, doc: string, anchor: string): 
   return false;
 }
 
-function commandTargetsFile(test: InventoryTest): boolean {
+export function commandTargetsFile(test: InventoryTest): boolean {
+  if (test.args[0] !== "test") return false;
   const fromCwd = relative(test.cwd, test.file).replaceAll("\\", "/");
-  return test.args.some((arg) => {
+  return test.args.slice(1).some((arg) => {
     const normalized = arg.replaceAll("\\", "/");
     return normalized === fromCwd || normalized === test.file;
   });
@@ -589,18 +643,33 @@ export async function checkInventory(projectRoot = root): Promise<string[]> {
       const registered = requirement.tests
         .filter((test) => test.file === file)
         .map((test) => test.exportName);
+      const fileRegistered = inventory.requirements.flatMap((entry) =>
+        entry.tests
+          .filter((test) => test.file === file)
+          .map((test) => test.exportName),
+      );
       const host = unregisteredImplementationHost(
         body,
         requirement.doc,
         requirement.anchor,
         registered,
+        {
+          file,
+          production: requirement.production,
+          fileRegistered,
+        },
       );
       if (host === "") {
         fail(failures, `${requirement.id} inventoried tests do not cite the implementation`);
-      } else if (host) {
+      } else if (host?.kind === "unregistered") {
         fail(
           failures,
-          `${requirement.id} implementation citation is on unregistered export ${host}`,
+          `${requirement.id} implementation citation is on unregistered export ${host.name}`,
+        );
+      } else if (host?.kind === "foreign") {
+        fail(
+          failures,
+          `${requirement.id} test ${host.name} cites an implementation outside its production hosts`,
         );
       }
     }
