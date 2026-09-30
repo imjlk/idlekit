@@ -1,0 +1,6 @@
+#!/bin/sh
+# Bun's process.execPath cannot load ttsx: node:module.registerHooks is missing.
+# A path without a .js/.ts extension is spawned directly, so this script is Node.
+set -eu
+root=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
+exec node "$root/node_modules/ttsc/lib/launcher/ttsx.js" "$@"

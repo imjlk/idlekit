@@ -1,0 +1,11 @@
+{
+  "sha": "265c6ed1dad56e474a9b8acd847be42aaa3faa51",
+  "packageManager": "bun@1.3.10",
+  "ciBun": "1.3.9",
+  "typescript": "^5.8.3",
+  "typesNode": "^24.3.0",
+  "typia": "^9.7.2",
+  "compilerScripts": "tsc",
+  "ttscInstalled": false,
+  "note": "Read-only snapshot of main before this pin. It is not a fallback compiler."
+}
