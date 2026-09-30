@@ -12,7 +12,7 @@
 bun tools/graph-query.ts --question "Where is runScenario declared?" --request '{"type":"lookup","query":"runScenario"}'
 ```
 
-`graph-query.ts`는 `ttsc-graph --cwd <root> --tsconfig tsconfig.graph.json`을 띄우고, MCP `initialize` 다음 `tools/list`에서 `inspect_typescript_graph`의 schema를 읽는다. 그 schema가 공개한 필드만 보낸다. `question`, `draft`, `review`, `request`는 schema에서 온다. live branch에 없는 필드는 프로세스를 끝낸다. 출력은 symbol, 파일, 줄이다. raw dump도 node id도 아니다.
+`graph-query.ts`는 `ttsc-graph --cwd <root> --tsconfig tsconfig.graph.json`을 띄우고, MCP `initialize` 다음 `tools/list`에서 `inspect_typescript_graph`의 schema를 읽는다. 그 schema가 공개한 필드만 보낸다. `question`, `draft`, `review`, `request`는 schema에서 온다. live branch에 없는 필드는 프로세스를 끝낸다. 출력은 symbol, 파일, 줄이다. 선언 signature가 있는 span은 위치 뒤에 그 signature를 찍는다. trace는 node id 대신 symbol 이름으로 `from -> to` hop 줄도 찍는다. raw dump는 아니다.
 
 `bun run graph:check`가 gate다. initialize, tool discovery, lookup, caller/callee trace, workspace source span, scratch의 rename / signature / citation을 새 프로세스로 확인하고, stdin을 닫아 종료한다. `--help`만으로는 통과가 아니다.
 

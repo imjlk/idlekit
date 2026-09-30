@@ -284,10 +284,12 @@ async function main(): Promise<void> {
   if (dev["@ttsc/graph"] !== "0.30.4") fail(`root @ttsc/graph is ${String(dev["@ttsc/graph"])}`);
   for (const rel of ["packages/money/package.json", "packages/core/package.json", "packages/cli/package.json"]) {
     const pkg = await readJson(join(root, rel));
-    const names = Object.keys({
-      ...((pkg.dependencies ?? {}) as Record<string, string>),
-      ...((pkg.devDependencies ?? {}) as Record<string, string>),
-    });
+    const names = [
+      "dependencies",
+      "devDependencies",
+      "peerDependencies",
+      "optionalDependencies",
+    ].flatMap((section) => Object.keys((pkg[section] ?? {}) as Record<string, string>));
     if (names.includes("@ttsc/graph") || names.includes("ttsc")) fail(`${rel} depends on the graph toolchain`);
   }
 
