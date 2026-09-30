@@ -49,7 +49,7 @@ Follow-up queries and `graph:check` do not store node ids. `bun run runtime:chec
 
 ## PR-01 callers
 
-Queried on macOS arm64 with Bun `1.3.10`, `@ttsc/graph` `0.30.4`, protocol `2025-11-25`, from the repository root with `tsconfig.graph.json`. No generation identifier. Lookup places `stepOnce` at `packages/core/src/sim/step.ts:255` and `singleBuySize` at `packages/core/src/sim/step.ts:51`.
+Queried on macOS arm64 with Bun `1.3.10`, `@ttsc/graph` `0.30.4`, protocol `2025-11-25`, from the repository root with `tsconfig.graph.json`, at commit `6b525116e938378ec0f6ec3c44bdba2b4aa40fd5`. No generation identifier. Lookup places `stepOnce` at `packages/core/src/sim/step.ts:255` and `singleBuySize` at `packages/core/src/sim/step.ts:51`.
 
 A reverse execution trace of `stepOnce` (`focus` execution, `maxDepth` 3, `maxNodes` 32) has direct hops from `packages/core/src/sim/simulator.ts#runScenario` (span `simulator.ts:49`), `packages/core/src/sim/offline.ts#applyOfflineSeconds` (span `offline.ts:139`), and `packages/core/src/testkit/conformance.ts#flatBulkSnapshot`. Through `runScenario` it reaches `session.ts`, `monteCarlo.ts`, `eta.ts`, `prestigeCycle.ts`, `strategy/opt/runner.ts`, and CLI `compare.ts`, `ltv.ts`, `tune.ts`, `lib/designObjectives.ts`, and `lib/experience.ts`. The 32-node cap is not every caller.
 
