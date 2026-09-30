@@ -114,7 +114,7 @@ export type DoctorReport = {
   cacheDirEnv: { set: boolean; path?: string; insideRepo?: boolean };
   graphBinaryEnv: { set: boolean; origin?: string; path?: string };
   goBinaryEnv: { set: boolean; origin?: string; path?: string };
-  publishNode: { version: string; ttscLauncher: false; reason: string };
+  publishNode: { version: string; ttscLauncher: boolean; reason: string };
 };
 
 function samePath(left: string, right: string): boolean {
@@ -235,8 +235,11 @@ export function inspectToolchain(): DoctorReport {
     goBinaryEnv,
     publishNode: {
       version: pins.publishNode,
-      ttscLauncher: false,
-      reason: `${pins.publishNode} is below ${pins.nodeLauncher}; the release job does not run ttsc`,
+      ttscLauncher: true,
+      reason: [
+        `${pins.publishNode} satisfies ${pins.nodeLauncher}.`,
+        "publish:gate and package prepack run ttsc.",
+      ].join(" "),
     },
   };
 }

@@ -256,7 +256,7 @@ function createPluginModelFactory(): ModelFactory {
 
           const buyProducer = {
             id: "buy.producer",
-            kind: "buy",
+            kind: "buy" as const,
             label: "Buy Producer",
             canApply() {
               return true;
@@ -302,7 +302,7 @@ function createPluginModelFactory(): ModelFactory {
 
           const buyUpgrade = {
             id: "buy.upgrade",
-            kind: "buy",
+            kind: "buy" as const,
             label: "Buy Upgrade",
             canApply() {
               return true;
@@ -333,7 +333,7 @@ function createPluginModelFactory(): ModelFactory {
 
           const exchangeGem = {
             id: "exchange.gem",
-            kind: "custom",
+            kind: "custom" as const,
             label: "Exchange Gem",
             canApply() {
               return true;
@@ -364,7 +364,7 @@ function createPluginModelFactory(): ModelFactory {
 
           const prestigeReboot = {
             id: "prestige.reboot",
-            kind: "prestige",
+            kind: "prestige" as const,
             label: "Prestige Reactor",
             canApply(_ctx: any, currentState: any) {
               return currentNetWorthNumber(currentState) >= prestigeRequirement;

@@ -3,6 +3,7 @@
  *
  * Confirms the source-audit paths exist and the planned toolchain names do not.
  * TC-01 updates the host pins in this file when it changes Bun, TypeScript, or typia.
+ * TC-02 requires package check and money/core emit to call ttsc, not tsc.
  * toolchain:doctor and toolchain:prepare are real after that pin.
  * Evidence and Graph repository gates stay absent until TC-03 and TC-04.
  */
@@ -73,6 +74,7 @@ const mustBeAbsent = [
   "docs/requirements",
   "ttsc.config.ts",
   "ttsc.config.json",
+  // A root project would auto-attach @ttsc/lint. That config arrives in TC-03.
   "tsconfig.json",
 ];
 
@@ -160,15 +162,26 @@ for (const rel of ["packages/money/package.json", "packages/core/package.json", 
   }
 }
 
+function commandCalls(script: string, command: string): boolean {
+  return new RegExp(`(^|\\s)${command}(\\s|$)`).test(script);
+}
+
 for (const rel of ["packages/money/package.json", "packages/core/package.json", "packages/cli/package.json"]) {
   const pkg = await readJson(resolve(root, rel));
   const pkgScripts = (pkg.scripts ?? {}) as Record<string, string>;
-  if (!pkgScripts.typecheck?.includes("tsc")) fail(`${rel} typecheck does not call tsc`);
+  if (!commandCalls(pkgScripts.typecheck ?? "", "ttsc")) fail(`${rel} typecheck does not call ttsc`);
+  if (commandCalls(pkgScripts.typecheck ?? "", "tsc")) fail(`${rel} typecheck still calls tsc`);
 }
 for (const rel of ["packages/money/package.json", "packages/core/package.json"]) {
   const pkg = await readJson(resolve(root, rel));
   const pkgScripts = (pkg.scripts ?? {}) as Record<string, string>;
-  if (!pkgScripts.build?.includes("tsc")) fail(`${rel} build does not call tsc`);
+  if (!commandCalls(pkgScripts.build ?? "", "ttsc")) fail(`${rel} build does not call ttsc`);
+  if (commandCalls(pkgScripts.build ?? "", "tsc")) fail(`${rel} build still calls tsc`);
+}
+const cliPkg = await readJson(resolve(root, "packages/cli/package.json"));
+const cliScripts = (cliPkg.scripts ?? {}) as Record<string, string>;
+if (!cliScripts.build?.includes("scripts/cli-bundle.ts")) {
+  fail("CLI build does not use scripts/cli-bundle.ts");
 }
 
 const outputMeta = await readText(resolve(root, "packages/cli/src/io/outputMeta.ts"));

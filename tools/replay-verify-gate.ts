@@ -4,7 +4,7 @@ import { ROOT, ensureDir, readText, removePath, runJson, sha256Hex, writeText } 
 const TMP_DIR = resolve(ROOT, "tmp", "replay-verify-gate");
 
 function runCliFromRoot(args: string[]): unknown {
-  return runJson(["bun", "packages/cli/src/main.ts", ...args], { cwd: ROOT });
+  return runJson(["bun", "--preload", "@ttsc/unplugin/bun-register", "packages/cli/src/main.ts", ...args], { cwd: ROOT });
 }
 
 function runCliDevJson(args: string[]): Record<string, unknown> {

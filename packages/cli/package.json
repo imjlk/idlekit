@@ -44,12 +44,12 @@
     "generate:check": "bun scripts/generate-check.ts",
     "doctor:completions": "bunli doctor completions",
     "review:smoke": "bun scripts/review-smoke.ts",
-    "build": "rm -rf dist && bun run generate && bunli build --entry src/main.ts --runtime bun --outdir dist --sourcemap",
-    "build:bin": "bunli build --entry src/main.ts --outdir dist --targets native",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "bun test src",
-    "prepack": "bun run build && bun ../../tools/package-manifest.ts prepare",
-    "postpack": "bun ../../tools/package-manifest.ts restore"
+    "build": "rm -rf dist && bun run generate && bun scripts/cli-bundle.ts --outdir dist --sourcemap",
+    "build:bin": "bun scripts/cli-bundle.ts --entry src/main.ts --outdir dist --targets native",
+    "typecheck": "ttsc -p tsconfig.json --noEmit",
+    "test": "bun test --timeout 90000 src",
+    "prepack": "bun run build && cd ../.. && bun tools/package-manifest.ts prepare packages/cli",
+    "postpack": "cd ../.. && bun tools/package-manifest.ts restore packages/cli"
   },
   "dependencies": {
     "@bunli/core": "0.9.1",

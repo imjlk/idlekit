@@ -6,7 +6,7 @@ English version: [source-audit.md](./source-audit.md)
 
 기준 커밋: `265c6ed1dad56e474a9b8acd847be42aaa3faa51` (`main`, 2026-09-30). git이 기록한 커밋 날짜는 2026-04-12다. 이 파일은 이번 세션이 소스에서 읽은 사실과, 아직 런타임 fixture가 필요한 위험을 구분한다. `bun test` 결과를 적지 않는다. 아래의 계획된 파일과 명령은 일부러 없다.
 
-`bun tools/analysis-baseline-check.ts`는 인용한 경로가 있는지 확인한다. 아래 표는 `265c6ed`의 `PR-00` 스냅샷이다. `TC-01` 이후의 pin은 [툴체인 pin](../toolchain_ko.md)에 있다. `TC-01`이 host pin을 맞출 때 그 검사의 pin도 같이 고친다.
+`bun tools/analysis-baseline-check.ts`는 인용한 경로가 있는지 확인한다. 아래 표는 `265c6ed`의 `PR-00` 스냅샷이다. `TC-01` 이후의 pin은 [툴체인 pin](../toolchain_ko.md)에 있다. `TC-01`이 host pin을 맞출 때 그 검사의 pin도 같이 고친다. `TC-02`는 패키지 check와 money/core emit을 `ttsc`로 바꾼다. 스냅샷 표는 `265c6ed`에 둔다.
 
 ## 이미 있는 것
 

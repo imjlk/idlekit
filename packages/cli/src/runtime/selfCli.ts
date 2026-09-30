@@ -1,11 +1,17 @@
+import { resolve } from "path";
+
 function currentEntry(): string {
   return Bun.main;
 }
 
+const CLI_ROOT = resolve(import.meta.dir, "../..");
 const MAX_CAPTURE_BYTES = 8 * 1024 * 1024;
 
 export function selfCliCommand(args: readonly string[]) {
-  return [process.argv[0] ?? "bun", currentEntry(), ...args];
+  const entry = currentEntry();
+  const bunfigApplies = resolve(process.cwd()) === CLI_ROOT;
+  const preload = entry.endsWith(".ts") && !bunfigApplies ? ["--preload", "@ttsc/unplugin/bun-register"] : [];
+  return [process.argv[0] ?? "bun", ...preload, entry, ...args];
 }
 
 export function runSelfCli(args: readonly string[]): Readonly<{

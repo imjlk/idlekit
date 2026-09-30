@@ -56,8 +56,13 @@ export function sha256Hex(value: string | Uint8Array): string {
 }
 
 export function runCli(args: string[], opts?: CliRunOptions): CliRunResult {
-  const proc = Bun.spawnSync(["bun", opts?.entry ?? "src/main.ts", ...args], {
-    cwd: opts?.cwd ?? CLI_CWD,
+  const cwd = opts?.cwd ?? CLI_CWD;
+  // Package bunfig.toml applies only when cwd is that package. Repo-root
+  // launches do not walk up to packages/cli/bunfig.toml, so the typia
+  // transform has to be named on the command.
+  const command = cwd === CLI_CWD ? ["bun"] : ["bun", "--preload", "@ttsc/unplugin/bun-register"];
+  const proc = Bun.spawnSync([...command, opts?.entry ?? "src/main.ts", ...args], {
+    cwd,
     env: opts?.env,
     stdout: "pipe",
     stderr: "pipe",
