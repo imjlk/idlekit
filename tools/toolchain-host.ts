@@ -1,6 +1,6 @@
 import { createRequire } from "node:module";
 import { readFileSync, realpathSync } from "fs";
-import { join, resolve } from "path";
+import { isAbsolute, join, resolve } from "path";
 import { sha256Hex } from "./_bun";
 
 export const root = resolve(import.meta.dir, "..");
@@ -125,7 +125,7 @@ function inspectOverride(
 ): { set: boolean; origin?: string; path?: string } {
   const value = process.env[name];
   if (!value) return { set: false };
-  if (!value.startsWith("/")) {
+  if (!isAbsolute(value)) {
     failures.push(`${name} is set to a non-absolute path`);
     return { set: true, origin: "external", path: value };
   }

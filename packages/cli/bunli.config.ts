@@ -21,7 +21,7 @@ export default defineConfig({
     compress: false,
     // Keep OpenTUI external. Inlining @opentui/core makes Bun resolve every
     // optional platform package during `bunli build`.
-    external: ["@opentui/react", "@opentui/core"],
+    external: ["@opentui/react", "@opentui/core", "react"],
   },
   dev: {
     watch: true,
