@@ -366,7 +366,8 @@ async function main(): Promise<void> {
   const preloadEnv = fixtureEnv(cacheDir);
   // Bun 1.3.10 has no node:module.registerHooks. A non-.js launcher makes
   // @ttsc/lint spawn ttsx under Node instead of process.execPath.
-  preloadEnv.TTSC_TTSX_BINARY = join(root, "tools/ttsx-under-node");
+  const ttsxLauncher = process.platform === "win32" ? "ttsx-under-node.cmd" : "ttsx-under-node";
+  preloadEnv.TTSC_TTSX_BINARY = join(root, "tools", ttsxLauncher);
   const preload = runCommand([process.execPath, join(root, "fixtures/toolchain/bun-preload/src/entry.ts")], {
     cwd: join(root, "fixtures/toolchain/bun-preload"),
     env: preloadEnv,
