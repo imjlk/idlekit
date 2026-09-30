@@ -129,6 +129,6 @@ Host: macOS arm64, Bun `1.3.10`, `ttsc 0.30.4 (Version 7.0.2)`. Requirement file
 | `bun run build` | unrun |
 | `bun run test:conformance:extended` | unrun |
 
-`conformanceGeneratorVersion` lookup returned `packages/core/src/testkit/conformance.ts:8`. Reverse trace reached `replaysConstantIncomeAndShrinksGap` at `packages/core/src/testkit/conformance.test.ts:120`. `compareAmounts` is declared at line 23 in both testkits. Built `dist/` does not contain `testkit`. The shrink fixture's minimal value is `1`.
+`conformanceGeneratorVersion` lookup returned `packages/core/src/testkit/conformance.ts:8`. Reverse trace reached `replaysConstantIncomeAndShrinksGap` at `packages/core/src/testkit/conformance.test.ts:120`. `compareAmounts` is declared at line 32 in both testkits. Built `dist/` does not contain `testkit`. The shrink fixture's minimal value is `1`.
 
 Shared meanings for later analysis work are in [Analysis contracts](./adr/analysis-contracts.md).
