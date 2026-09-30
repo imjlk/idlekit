@@ -124,7 +124,7 @@ Host는 macOS arm64다. 명령은 `mise exec bun@1.3.10 -- bun ...`으로 실행
 |---|---|
 | `bun run typecheck` | 0 |
 | `bun run evidence:check` | 0 |
-| `bun run evidence:smoke` | 0 (34행) |
+| `bun run evidence:smoke` | 0 (37행) |
 | `bun run format:check` | 0 |
 | `bun run runtime:check` | 0 |
 | `bun tools/analysis-baseline-check.ts` | 0 |
