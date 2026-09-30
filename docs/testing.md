@@ -29,6 +29,7 @@ bun run bench:sim:suite:check
 bun run kpi:report
 bun run kpi:regress
 bun run tune:regress --baseline ./tmp/tune-baseline.json --current ./tmp/tune-latest.json --tolerance 0.05
+bun tools/analysis-baseline-check.ts
 ```
 
 ## Test runtime rules
@@ -76,3 +77,13 @@ Compatibility fixtures live under `fixtures/compat/v1/`.
 - add new fixtures for additive contract growth
 - do not rewrite existing fixtures unless you are intentionally revisiting compatibility policy
 - run `bun run compat:check` after adding or updating fixtures
+
+## Analysis baseline
+
+At `265c6ed` the repository compiler is `tsc`, tests run with `bun test`, and the CLI bundle is Bunli. Root Bun is `1.3.10`. CI pins Bun `1.3.9`.
+
+`bun tools/analysis-baseline-check.ts` checks the paths cited by the [source audit](./implementation/source-audit.md) and checks that planned toolchain commands are still absent. `TC-01` updates the host pins inside that script when it changes them.
+
+These names are not repository commands yet: `toolchain:doctor`, `toolchain:prepare`, `evidence:check`, `evidence:smoke`, `graph:check`, `contracts:generate`, `contracts:check`, `test:conformance`.
+
+Shared meanings for later analysis work are in [Analysis contracts](./adr/analysis-contracts.md).

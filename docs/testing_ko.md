@@ -26,6 +26,7 @@ bun run bench:sim:suite:check
 bun run kpi:report
 bun run kpi:regress
 bun run tune:regress --baseline ./tmp/tune-baseline.json --current ./tmp/tune-latest.json --tolerance 0.05
+bun tools/analysis-baseline-check.ts
 ```
 
 패키지별:
@@ -130,3 +131,13 @@ suite는 `30m/2h/24h/7d/30d/90d` 장기 구간 시나리오를 포함합니다.
 - `docs: ...` 사용 문서
 
 기능 구현과 테스트/문서를 분리하면 변경 추적과 릴리즈 노트 작성이 쉬워집니다.
+
+## 6. 분석 기준
+
+`265c6ed`에서 저장소 compiler는 `tsc`이고, 테스트는 `bun test`이며, CLI 번들은 Bunli다. Root Bun은 `1.3.10`이다. CI는 Bun `1.3.9`를 pin한다.
+
+`bun tools/analysis-baseline-check.ts`는 [소스 감사](./implementation/source-audit_ko.md)가 인용한 경로를 확인하고, 계획된 툴체인 명령이 아직 없는지도 확인한다. `TC-01`이 host pin을 바꾸면 그 스크립트 안의 pin도 같이 고친다.
+
+이 이름들은 아직 저장소 명령이 아니다. `toolchain:doctor`, `toolchain:prepare`, `evidence:check`, `evidence:smoke`, `graph:check`, `contracts:generate`, `contracts:check`, `test:conformance`.
+
+이후 분석 작업의 공유 의미는 [분석 계약](./adr/analysis-contracts_ko.md)에 있다.
