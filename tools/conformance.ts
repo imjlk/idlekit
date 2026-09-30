@@ -170,12 +170,19 @@ function negative(): void {
 
     const graphEmpty = join(work, "graph-empty");
     copyFixture("fixtures/toolchain/graph-empty", graphEmpty);
+    // The shared fixture matches no TypeScript inputs, so ttscgraph exits before lookup.
+    // An unrelated source lets this query finish without declaring quoteBudget.
+    mkdirSync(join(graphEmpty, "src"), { recursive: true });
+    writeFileSync(
+      join(graphEmpty, "src", "unrelated.ts"),
+      "export function unrelatedHost(): 1 {\n  return 1;\n}\n",
+    );
     const missed = graphLookup(graphEmpty, "quoteBudget");
     const declared = /quoteBudget\s+\S+:\d+/.test(missed.text);
     record(
       "graph-missing",
-      !declared,
-      declared ? missed.text.slice(0, 1500) : `exit=${missed.exitCode}`,
+      missed.exitCode === 0 && !declared,
+      missed.exitCode === 0 && !declared ? `exit=${missed.exitCode}` : missed.text.slice(0, 1500),
     );
   } finally {
     rmSync(work, { recursive: true, force: true });
