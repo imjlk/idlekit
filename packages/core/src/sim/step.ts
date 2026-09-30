@@ -70,15 +70,15 @@ function isQuotedBulkSize(size: number): boolean {
   return Number.isInteger(size) && size > singleBuySize;
 }
 
-function exactDecimal(text: string): { sign: -1 | 0 | 1; coeff: bigint; exp: number } | undefined {
+function exactDecimal(text: string): { sign: -1 | 0 | 1; coeff: bigint; exp: bigint } | undefined {
   const match = /^([+-]?)(\d+)(?:\.(\d+))?(?:e([+-]?\d+))?$/i.exec(text.trim());
   if (!match) return undefined;
   const whole = match[2] ?? "";
   const frac = match[3] ?? "";
-  const exp = (match[4] ? Number(match[4]) : 0) - frac.length;
-  if (!Number.isSafeInteger(exp)) return undefined;
+  let exp = match[4] ? BigInt(match[4]) : 0n;
+  exp -= BigInt(frac.length);
   const digits = `${whole}${frac}`.replace(/^0+(?=\d)/, "");
-  if (digits === "0") return { sign: 0, coeff: 0n, exp: 0 };
+  if (digits === "0") return { sign: 0, coeff: 0n, exp: 0n };
   return { sign: match[1] === "-" ? -1 : 1, coeff: BigInt(digits), exp };
 }
 
@@ -92,8 +92,8 @@ function exactTextOrder(leftText: string, rightText: string): -1 | 0 | 1 | undef
   if (left.sign !== right.sign) return left.sign < right.sign ? -1 : 1;
   const leftDigits = left.coeff.toString();
   const rightDigits = right.coeff.toString();
-  const leftScale = BigInt(left.exp) + BigInt(leftDigits.length);
-  const rightScale = BigInt(right.exp) + BigInt(rightDigits.length);
+  const leftScale = left.exp + BigInt(leftDigits.length);
+  const rightScale = right.exp + BigInt(rightDigits.length);
   if (leftScale !== rightScale) return leftScale < rightScale ? -1 : 1;
   const width = Math.max(leftDigits.length, rightDigits.length);
   const leftPadded = leftDigits.padEnd(width, "0");

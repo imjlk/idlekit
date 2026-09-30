@@ -895,6 +895,32 @@ describe("PR-01 bulk quote settlement", () => {
     expect(engine.cmp(out.next.wallet.money.amount, engine.from("1e999999999"))).toBe(1);
   });
 
+  it("pays a break-infinity quote whose exponent is not a safe integer", () => {
+    const engine = createBreakInfinityEngine();
+    const wallet = engine.from("1e10000000000000000");
+    const action: Action<Decimal, UnitCode, Vars> = {
+      id: "buy",
+      kind: "buy",
+      canApply: () => true,
+      cost: () => coin(engine, engine.from(1)),
+      bulk: () => [{ size: 2, cost: coin(engine, engine.from(1)) }],
+      apply: (_ctx, current, bulkSize = 1) => ({
+        ...current,
+        vars: { ...current.vars, owned: current.vars.owned + bulkSize },
+      }),
+    };
+    const out = stepOnce({
+      ctx: context(engine),
+      model: zeroIncomeModel(engine, action),
+      state: state(engine, wallet),
+      dt: 0,
+      decisions: [{ action, bulkSize: 2 }],
+    });
+    expect(engine.toString(wallet)).toBe("1e10000000000000000");
+    expect(skippedReason(out.events)).toBeUndefined();
+    expect(out.next.vars.owned).toBe(2);
+  });
+
   it("rejects a non-decimal engine that has no exact order", () => {
     const engine = createCustomEngine();
     delete engine.exactOrder;

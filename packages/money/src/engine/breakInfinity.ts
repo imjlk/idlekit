@@ -74,7 +74,14 @@ export function createBreakInfinityEngine(opts?: BreakInfinityEngineOptions): En
       return a.absLog10();
     },
     isFinite: decimalIsFinite,
-    toString: (a) => a.toString(),
+    toString(value) {
+      const text = value.toString();
+      if (text !== "Infinity" && text !== "-Infinity") return text;
+      if (!decimalIsFinite(value)) return text;
+      const sign = value.mantissa < 0 ? "-" : "";
+      const digits = String(Math.abs(value.mantissa));
+      return `${sign}${digits}e${String(value.exponent)}`;
+    },
     toNumber: (a) => a.toNumber(),
   };
 }
