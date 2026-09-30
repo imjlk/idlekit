@@ -368,11 +368,11 @@ function wholeTickCount(total: number, step: number): number | null {
   return nearest;
 }
 
-/** The same repeated addition the simulator uses, so a long `0.1` run can stop past the nominal duration. */
-function accumulatedOffset(step: number, ticks: number): number {
-  let total = 0;
-  for (let index = 0; index < ticks; index += 1) total += step;
-  return total;
+/** The same repeated addition the simulator uses, starting from the run's own timestamp. */
+function advancedTimestamp(start: number, step: number, ticks: number): number {
+  let time = start;
+  for (let index = 0; index < ticks; index += 1) time += step;
+  return time;
 }
 
 function onGrid<N, U extends string, Vars>(
@@ -463,8 +463,8 @@ function resumeFromCheckpoint<N, U extends string, Vars>(
       ...scenario,
       run: { ...scenario.run, durationSec: splitSec },
     });
-    const elapsed = head.end.t - scenario.initial.t;
-    if (splitTicks === null || elapsed !== accumulatedOffset(step, splitTicks)) {
+    const expected = splitTicks === null ? undefined : advancedTimestamp(scenario.initial.t, step, splitTicks);
+    if (expected === undefined || head.end.t !== expected) {
       return skip("head stopped before the checkpoint");
     }
     const started = startTail(head.end);
@@ -504,35 +504,42 @@ export function checkResumeFromJson<N, U extends string, Vars>(
   );
 }
 
-function jsonRoundTripPreserves(value: unknown): boolean {
+function jsonRoundTripPreserves(value: unknown, seen: Set<object> = new Set()): boolean {
   if (value === null) return true;
   if (typeof value === "string" || typeof value === "boolean") return true;
   if (typeof value === "number") return Number.isFinite(value) && !Object.is(value, -0);
+  if (typeof value !== "object") return false;
+  if (seen.has(value)) return false;
+  seen.add(value);
   if (Array.isArray(value)) {
     for (let index = 0; index < value.length; index += 1) {
-      if (!(index in value) || !jsonRoundTripPreserves(value[index])) return false;
+      if (!(index in value) || !jsonRoundTripPreserves(value[index], seen)) return false;
     }
     return true;
   }
-  if (typeof value === "object") {
-    if (Object.getPrototypeOf(value) !== Object.prototype) return false;
-    return Object.values(value).every(jsonRoundTripPreserves);
-  }
-  return false;
+  if (Object.getPrototypeOf(value) !== Object.prototype) return false;
+  return Object.values(value).every((child) => jsonRoundTripPreserves(child, seen));
 }
 
 export function checkJsonRoundTrip<N, U extends string, Vars>(
   scenario: CompiledScenario<N, U, Vars>,
 ): RelationCheck {
-  const end = runScenario(scenario).end;
-  const restored = restoreJsonCheckpoint(scenario, end, "round-trip");
-  if (!jsonRoundTripPreserves(end.vars)) return fail("vars do not survive a JSON checkpoint");
-  const originalVars = JSON.stringify(end.vars);
-  const restoredVars = JSON.stringify(restored.vars);
-  if (originalVars !== restoredVars) return fail(`vars ${originalVars} != ${restoredVars}`);
-  const left = snapshotEconomy(scenario.ctx.E, end);
-  const right = snapshotEconomy(scenario.ctx.E, restored);
-  return left === right ? pass(left) : fail(`${left} != ${right}`);
+  const bracket = strategyBracket(scenario);
+  if (isRelationCheck(bracket)) return bracket;
+  const initial = bracket.snap();
+  try {
+    const end = runScenario(scenario).end;
+    const restored = restoreJsonCheckpoint(scenario, end, "round-trip");
+    if (!jsonRoundTripPreserves(end.vars)) return fail("vars do not survive a JSON checkpoint");
+    const originalVars = JSON.stringify(end.vars);
+    const restoredVars = JSON.stringify(restored.vars);
+    if (originalVars !== restoredVars) return fail(`vars ${originalVars} != ${restoredVars}`);
+    const left = snapshotEconomy(scenario.ctx.E, end);
+    const right = snapshotEconomy(scenario.ctx.E, restored);
+    return left === right ? pass(left) : fail(`${left} != ${right}`);
+  } finally {
+    bracket.restore(initial);
+  }
 }
 
 export function checkRetention<N, U extends string, Vars>(
@@ -629,9 +636,9 @@ export function checkDurationBoundary<N, U extends string, Vars>(
   const ticks = wholeTickCount(duration, step);
   if (ticks === null) return skip("duration is not a multiple of stepSec");
   const end = runScenario(scenario).end;
-  const elapsed = end.t - scenario.initial.t;
-  if (elapsed !== accumulatedOffset(step, ticks)) {
-    return fail(`elapsed ${elapsed} did not stop at duration ${duration}`);
+  const expected = advancedTimestamp(scenario.initial.t, step, ticks);
+  if (end.t !== expected) {
+    return fail(`elapsed ${end.t} did not stop at ${expected}`);
   }
   return pass(`stopped at t=${end.t}`);
 }
