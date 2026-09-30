@@ -468,7 +468,7 @@ export function recordsWalletAndMaxMoneyUnitsOnTheEconomySnapshot(): void {
  * @evidence docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness An on-grid checkpoint replays from memory and from JSON, and independent trials are compared by game seed.
  * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #a195f0e Re-read the section, then ran this function: memory resume, JSON resume, and the JSON round-trip apply, and the two game seeds stay ordered.
  * @evidence ./conformanceRun.ts#checkJsonRoundTrip The constant-income scenario matches after a JSON round trip.
- * @evidenceReview ./conformanceRun.ts#checkJsonRoundTrip #4ab8239 Re-read the function: it restores the strategy around the run, rejects shared, symbol, and non-enumerable vars before stringify, and the constant-income round trip matches.
+ * @evidenceReview ./conformanceRun.ts#checkJsonRoundTrip #4ab8239 Re-read the function: it restores the strategy around the run, accepts a dense array and an empty array, rejects shared refs, symbol keys, non-enumerable names, and sparse holes before stringify, and the constant-income round trip matches. Ran this function: the dense round trip passed and the sparse round trip did not.
  * @evidence ./conformanceRun.ts#checkTrialOrder Two distinct game seeds keep distinct economy snapshots.
  * @evidenceReview ./conformanceRun.ts#checkTrialOrder #5e85ee7 Two distinct game seeds keep distinct economy snapshots.
  */
@@ -498,6 +498,18 @@ export function resumesOnTheSameTickGridFromMemoryAndJson(): void {
     initial: { ...scenario.initial, vars: marked as unknown as Vars },
   });
   expect(symbolRound.ok).toBe(false);
+  const denseRound = checkJsonRoundTrip({
+    ...scenario,
+    initial: { ...scenario.initial, vars: { items: [1, 2], empty: [] } as unknown as Vars },
+  });
+  expect(denseRound.ok).toBe(true);
+  const sparse = [1];
+  delete sparse[0];
+  const sparseRound = checkJsonRoundTrip({
+    ...scenario,
+    initial: { ...scenario.initial, vars: { items: sparse } as unknown as Vars },
+  });
+  expect(sparseRound.ok).toBe(false);
   const gameA = gameSeedForCase(0x51ed, 1);
   const gameB = gameSeedForCase(0x51ed, 2);
   expectApplicable(
