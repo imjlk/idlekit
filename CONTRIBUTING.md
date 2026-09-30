@@ -7,6 +7,7 @@ Thank you for contributing to `idlekit`.
 ```bash
 bun install
 bun run typecheck
+bun run graph:check
 bun run runtime:check
 bun run test
 bun run build

@@ -13,7 +13,7 @@ import {
  * @evidence docs/requirements/active/typia-transform.md#req-typia-transform-missing Accepts count 2 and rejects a string count through the concrete validator and its schema adapter.
  * @evidenceReview docs/requirements/active/typia-transform.md#req-typia-transform-missing #1e5e1ef Re-read the section, then ran both inputs: count 2 succeeds and the string count is rejected.
  * @evidence ./concreteValidator.ts#validateConcreteQuota Calls validateConcreteQuota for count 2 and for a string count.
- * @evidenceReview ./concreteValidator.ts#validateConcreteQuota #144c72f The declaration is typia.createValidate of ConcreteQuota. This test fails if either input is classified wrong.
+ * @evidenceReview ./concreteValidator.ts#validateConcreteQuota #3dda434 Re-read the arrow: it still calls typia.createValidate of ConcreteQuota when invoked, and this test fails if either input is classified wrong.
  * @evidence ./concreteValidator.ts#concreteQuotaSchema Checks the Standard Schema adapter on the same two inputs.
  * @evidenceReview ./concreteValidator.ts#concreteQuotaSchema #65e8e9e The adapter is standardSchemaFromValidate of validateConcreteQuota. Both results are asserted here.
  * @evidence ./concreteValidator.ts#ConcreteQuota.count Reads the accepted count field named by the ConcreteQuota type.
@@ -50,8 +50,16 @@ describe("concrete typia validator", () => {
     expect(schema["~standard"].validate({ count: "no" }).success).toBe(false);
   });
 
-  it("does not report a missing generic transform as a user input error", () => {
-    const schema = typiaStandardSchema<{ count: number }>();
-    expect(() => schema["~standard"].validate({ count: 2 })).toThrow(TypiaTransformMissingError);
-  });
+  it("does not report a missing generic transform as a user input error", rejectsUnresolvedGenericAsUserInput);
 });
+
+/**
+ * @evidence docs/requirements/active/typia-transform.md#req-typia-transform-missing Throws TypiaTransformMissingError instead of reporting a user-input issue.
+ * @evidenceReview docs/requirements/active/typia-transform.md#req-typia-transform-missing #1e5e1ef Re-read the section and ran this test: count 2 throws TypiaTransformMissingError rather than a failed user-input result.
+ * @evidence ./typiaTransformMissing.ts#typiaStandardSchema Calls typiaStandardSchema for an unresolved type argument.
+ * @evidenceReview ./typiaTransformMissing.ts#typiaStandardSchema #c09164c Re-read the function: its validate method throws TypiaTransformMissingError and does not return issues.
+ */
+export function rejectsUnresolvedGenericAsUserInput(): void {
+  const schema = typiaStandardSchema<{ count: number }>();
+  expect(() => schema["~standard"].validate({ count: 2 })).toThrow(TypiaTransformMissingError);
+}

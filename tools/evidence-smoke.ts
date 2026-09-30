@@ -61,7 +61,9 @@ function checkFixture(dir: string, _cacheDir?: string): CommandResult {
   return runTtsc(["-p", "tsconfig.json", "--noEmit", "--cwd", dir], dir);
 }
 
-const cacheRoot = mkdtempSync(join(root, "tmp", "evidence-smoke-"));
+const tempParent = join(root, "tmp");
+mkdirSync(tempParent, { recursive: true });
+const cacheRoot = mkdtempSync(join(tempParent, "evidence-smoke-"));
 mkdirSync(cacheRoot, { recursive: true });
 
 try {

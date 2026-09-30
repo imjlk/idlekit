@@ -98,6 +98,8 @@ function skippedReason(events: readonly SimEvent<unknown>[]): string | undefined
  * @evidenceReview docs/requirements/active/bulk-quote-settlement.md#req-pr01-bulk-quote-settlement #f2fb3d7 Re-read the section, then ran this function: wallet ends at 900, a missing size-10 quote does not grant 10, and the bonus model stays undeclared.
  * @evidence ./step.ts#singleBuySize Reads the size that must stay on Action.cost.
  * @evidenceReview ./step.ts#singleBuySize #d686b8e The declaration is 1. This test pays Action.cost for that size and does not call bulk.
+ * @evidence ./step.ts#stepOnce Calls stepOnce for the quoted buy and the rejected quotes.
+ * @evidenceReview ./step.ts#stepOnce #996264a Re-read stepOnce: a quoted size pays BulkQuote.cost once and a rejected quote does not apply.
  */
 export function settlesQuotedBulkAndRejectsBadQuotes(): void {
   expect(singleBuySize).toBe(1);

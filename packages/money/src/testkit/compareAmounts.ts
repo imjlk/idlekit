@@ -20,6 +20,15 @@ export type AmountComparison = {
 
 const DEFAULT_LOG_TOLERANCE = 1e-9;
 
+/** `cmp` returns 0 inside epsilon, so `0` and `1e-13` must not share a sign. */
+function exactSign(text: string): -1 | 0 | 1 {
+  const match = /^([+-]?)(\d+)(?:\.(\d+))?(?:e[+-]?\d+)?$/i.exec(text.trim());
+  if (!match) return text.trim().startsWith("-") ? -1 : 1;
+  const digits = `${match[2] ?? ""}${match[3] ?? ""}`;
+  if (/^0+$/.test(digits)) return 0;
+  return match[1] === "-" ? -1 : 1;
+}
+
 export function compareAmounts<A, B>(
   left: AmountSide<A>,
   right: AmountSide<B>,
@@ -45,8 +54,8 @@ export function compareAmounts<A, B>(
     };
   }
 
-  const leftSign = left.engine.cmp(left.amount, left.engine.zero());
-  const rightSign = right.engine.cmp(right.amount, right.engine.zero());
+  const leftSign = exactSign(leftText);
+  const rightSign = exactSign(rightText);
   if (leftSign !== rightSign) {
     return {
       status: "different",

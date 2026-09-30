@@ -111,10 +111,10 @@ Host는 macOS arm64다. 명령은 `mise exec bun@1.3.10 -- bun ...`으로 실행
 | `bunx ttsc -p tsconfig.tools.json --noEmit` | 2 |
 | `bunx ttsc -p tsconfig.examples.json --noEmit` | 2 |
 | `bunx ttsc -p examples/plugins/tsconfig.json --noEmit` | 0 |
-| `bun run build:bin` | 미실행 |
+| `bun run build:bin` | 번들 전에 종료한다. `@opentui/core`는 standalone 실행 파일로 인라인할 수 없다 |
 | Linux host | 미실행 |
 
-`transform:smoke`가 validator 네 경로와 음성 검사를 기록한다. 기대한 nonzero도 통과다. `source-nopreload` 1, `check-type-error` 1 (`TS2322`), `generic-unresolved` 3 (`non-specified generic argument`). 나머지 smoke 행은 exit 0이다. repo 밖 published artifact 실행, `.d.ts` consumer `ttsc --noEmit`, sourcemap, shebang, lazy review marker, plugin load, cold/warm `ttsc prepare`가 여기 포함된다. `tsconfig.tools.json`과 `tsconfig.examples.json`은 목록용 프로그램이다. `TC-03`은 거기에 `@ttsc/lint` `enabled: false`를 넣어, host가 없는 Program에 저장소 evidence graph를 적용하지 않는다. `bun run build:bin`과 Linux host는 그 변경에서 실행하지 않았다.
+`transform:smoke`가 validator 네 경로와 음성 검사를 기록한다. 기대한 nonzero도 통과다. `source-nopreload` 1, `check-type-error` 1 (`TS2322`), `generic-unresolved` 3 (`non-specified generic argument`). 나머지 smoke 행은 exit 0이다. repo 밖 published artifact 실행, `.d.ts` consumer `ttsc --noEmit`, sourcemap, shebang, lazy review marker, plugin load, cold/warm `ttsc prepare`가 여기 포함된다. `tsconfig.tools.json`과 `tsconfig.examples.json`은 목록용 프로그램이다. `TC-03`은 거기에 `@ttsc/lint` `enabled: false`를 넣어, host가 없는 Program에 저장소 evidence graph를 적용하지 않는다. `bun run build:bin`은 `@opentui/core`를 인라인할 수 없어서 standalone 실행 파일을 거절한다. Linux host는 그 변경에서 실행하지 않았다.
 
 ## TC-03 검증
 

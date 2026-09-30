@@ -26,5 +26,16 @@ describe("money conformance comparator", () => {
     expect(bigEngine.isFinite(bigEngine.from("1e400"))).toBe(true);
     expect(collapsed.status).toBe("refused-number-collapse");
     expect(collapsed.left).not.toBe(collapsed.right);
+
+    const nearZero = compareAmounts(
+      { engineId: "number", engine: numberEngine, amount: numberEngine.from(0) },
+      { engineId: "number", engine: numberEngine, amount: numberEngine.from(1e-13) },
+    );
+    expect(nearZero.status).toBe("different");
+    const opposite = compareAmounts(
+      { engineId: "number", engine: numberEngine, amount: numberEngine.from(1e-13) },
+      { engineId: "break-infinity", engine: bigEngine, amount: bigEngine.from("-1e-13") },
+    );
+    expect(opposite.status).toBe("different");
   });
 });

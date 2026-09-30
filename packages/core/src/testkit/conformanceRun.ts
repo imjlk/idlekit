@@ -303,6 +303,17 @@ export function checkReplay<N, U extends string, Vars>(scenario: CompiledScenari
   return left === right ? pass(left) : fail(`${left} != ${right}`);
 }
 
+/** `0.3 / 0.1` is not an integer in IEEE-754. A tick still counts when the quotient rounds. */
+const TICK_SLACK = 1e-8;
+
+function wholeTickCount(total: number, step: number): number | null {
+  if (!(step > 0) || !(total > 0) || !Number.isFinite(total) || !Number.isFinite(step)) return null;
+  const count = total / step;
+  const nearest = Math.round(count);
+  if (nearest < 1 || Math.abs(count - nearest) > TICK_SLACK) return null;
+  return nearest;
+}
+
 function onGrid<N, U extends string, Vars>(
   scenario: CompiledScenario<N, U, Vars>,
   splitSec: number,
@@ -313,10 +324,26 @@ function onGrid<N, U extends string, Vars>(
     return skip("run has no positive step and duration");
   }
   if (!(splitSec > 0) || splitSec >= duration) return skip("split is outside the run");
-  if (splitSec % step !== 0 || duration % step !== 0) {
+  const durationTicks = wholeTickCount(duration, step);
+  const splitTicks = wholeTickCount(splitSec, step);
+  if (durationTicks === null || splitTicks === null || splitTicks >= durationTicks) {
     return skip("split is not on the original tick grid");
   }
   return null;
+}
+
+function restoreJsonCheckpoint<N, U extends string, Vars>(
+  scenario: CompiledScenario<N, U, Vars>,
+  state: SimState<N, U, Vars>,
+  engineName: string,
+): SimState<N, U, Vars> {
+  const text = JSON.stringify(
+    serializeSimState(scenario.ctx.E, state, {
+      seed: scenario.ctx.seed,
+      engineName,
+    }),
+  );
+  return deserializeSimState(scenario.ctx.E, JSON.parse(text));
 }
 
 export function checkResume<N, U extends string, Vars>(
@@ -351,13 +378,7 @@ export function checkResumeFromJson<N, U extends string, Vars>(
     ...scenario,
     run: { ...scenario.run, durationSec: splitSec },
   });
-  const restored = deserializeSimState<N, U, Vars>(
-    scenario.ctx.E,
-    serializeSimState(scenario.ctx.E, head.end, {
-      seed: scenario.ctx.seed,
-      engineName: "checkpoint",
-    }),
-  );
+  const restored = restoreJsonCheckpoint(scenario, head.end, "checkpoint");
   const tail = economyAfter({
     ...scenario,
     initial: restored,
@@ -370,13 +391,7 @@ export function checkJsonRoundTrip<N, U extends string, Vars>(
   scenario: CompiledScenario<N, U, Vars>,
 ): RelationCheck {
   const end = runScenario(scenario).end;
-  const restored = deserializeSimState<N, U, Vars>(
-    scenario.ctx.E,
-    serializeSimState(scenario.ctx.E, end, {
-      seed: scenario.ctx.seed,
-      engineName: "round-trip",
-    }),
-  );
+  const restored = restoreJsonCheckpoint(scenario, end, "round-trip");
   const left = snapshotEconomy(scenario.ctx.E, end);
   const right = snapshotEconomy(scenario.ctx.E, restored);
   return left === right ? pass(left) : fail(`${left} != ${right}`);
@@ -451,10 +466,14 @@ export function checkDurationBoundary<N, U extends string, Vars>(
   if (duration === undefined || !(step > 0) || !(duration > 0)) {
     return skip("run has no positive step and duration");
   }
-  if (duration % step !== 0) return skip("duration is not a multiple of stepSec");
+  if (scenario.run.until) return skip("until can stop the run before durationSec");
+  const ticks = wholeTickCount(duration, step);
+  if (ticks === null) return skip("duration is not a multiple of stepSec");
   const end = runScenario(scenario).end;
   const elapsed = end.t - scenario.initial.t;
-  if (elapsed !== duration) return fail(`elapsed ${elapsed} did not stop at duration ${duration}`);
+  if (wholeTickCount(elapsed, step) !== ticks) {
+    return fail(`elapsed ${elapsed} did not stop at duration ${duration}`);
+  }
   return pass(`stopped at t=${end.t}`);
 }
 
