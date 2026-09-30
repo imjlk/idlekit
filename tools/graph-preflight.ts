@@ -164,9 +164,11 @@ async function scratch(): Promise<void> {
         "What is the quotaHostRenamed signature?",
         optionalRequest(edited.schema, "details", { handles: ["quotaHostRenamed"] }),
       );
-      const body = JSON.stringify(details);
-      if (!body.includes("4")) fail("scratch body change was not visible in details");
-      else ok(`scratch body ${generationNote(details)}`);
+      const decl = namedSource(details, "quotaHostRenamed", "src/host.ts");
+      const signature = decl?.signature ?? "";
+      if (!decl || !signature.includes("(): 4") || signature.includes("(): 3")) {
+        fail(`scratch signature was ${signature || "missing"}`);
+      } else ok(`scratch body ${signature} ${generationNote(details)}`);
     } finally {
       await edited.session.close();
     }
