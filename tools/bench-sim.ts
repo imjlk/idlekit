@@ -1,3 +1,4 @@
+import { existsSync } from "fs";
 import { dirname, isAbsolute, resolve } from "path";
 import { ROOT, ensureDir, runJson } from "./_bun";
 
@@ -83,9 +84,18 @@ function resolveScenarioPath(input: string): string {
 }
 
 function runSimulateOnce(scenarioPath: string): void {
+  const cliRoot = resolve(REPO_ROOT, "packages/cli");
+  const bundled = resolve(cliRoot, "dist/main.js");
+  if (!existsSync(bundled)) {
+    throw new Error(
+      "simulate benchmark needs packages/cli/dist/main.js. Run bun run build first.",
+    );
+  }
+  // --config skips the CLI bunfig preload. Timing `bun src/main.ts` measures
+  // ttsc program setup (several seconds) instead of simulate.
   const parsed = runJson(
-    ["bun", "src/main.ts", "simulate", scenarioPath, "--format", "json"],
-    { cwd: resolve(REPO_ROOT, "packages/cli"), env: process.env },
+    ["bun", `--config=${resolve(REPO_ROOT, "tools/bench-bunfig.toml")}`, bundled, "simulate", scenarioPath, "--format", "json"],
+    { cwd: cliRoot, env: process.env },
   );
 
   if (!parsed || typeof parsed !== "object") {

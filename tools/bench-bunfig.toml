@@ -1,0 +1,4 @@
+# Perf samples replace packages/cli/bunfig.toml. That file preloads ttsc, which
+# rebuilds the TypeScript program on every process and is not how the shipped
+# bundle starts.
+logLevel = "error"
