@@ -34,15 +34,26 @@ export type ShrinkResult = {
   missing: string[];
 };
 
-const NON_PRODUCTION = [
-  ".test.ts",
-  ".test.tsx",
-  ".spec.ts",
-  "/fixtures/",
-  "/dist/",
-  ".generated.ts",
-  ".d.ts",
-];
+const NON_PRODUCTION_SUFFIXES = [".test.ts", ".test.tsx", ".spec.ts", ".generated.ts", ".d.ts"];
+const NON_PRODUCTION_SEGMENTS = new Set(["fixtures", "dist"]);
+
+function isNonProductionPath(rel: string): boolean {
+  const normalized = rel.replaceAll("\\", "/");
+  if (NON_PRODUCTION_SUFFIXES.some((suffix) => normalized.endsWith(suffix))) return true;
+  return normalized.split("/").some((segment) => NON_PRODUCTION_SEGMENTS.has(segment));
+}
+
+function hasProductionExport(body: string): boolean {
+  return /\bexport\s+(?:async\s+)?function\b/.test(body)
+    || /\bexport\s+(?:const|class|type|interface|enum)\b/.test(body)
+    || /\bexport\s*\{/.test(body);
+}
+
+function reporterEntry(line: string): { status: string; name: string } | undefined {
+  const match = /^\s*\((pass|fail|skip|todo)\)\s+(.+?)\s*(?:\[[^\]]*\])?\s*$/.exec(line);
+  if (!match?.[1] || !match[2]) return undefined;
+  return { status: match[1], name: match[2] };
+}
 
 function readJson<T>(path: string): T {
   return JSON.parse(readFileSync(path, "utf8")) as T;
@@ -114,10 +125,12 @@ export function assertExecutedTests(output: string, exitCode: number, names: rea
     fail(failures, "bun test pass count is 0");
   }
   for (const name of names) {
-    if (!output.includes(name)) fail(failures, `executed reporter missed ${name}`);
-    const lines = output.split("\n").filter((line) => line.includes(name));
-    if (lines.some((line) => line.includes("(skip)") || line.includes("(fail)"))) {
-      fail(failures, `required test was skipped or failed: ${name}`);
+    const entries = output
+      .split("\n")
+      .map(reporterEntry)
+      .filter((entry): entry is { status: string; name: string } => entry?.name === name);
+    if (!entries.some((entry) => entry.status === "pass")) {
+      fail(failures, `executed reporter missed a passing ${name}`);
     }
   }
   return failures;
@@ -136,14 +149,28 @@ function headingAnchors(markdown: string): string[] {
   return anchors;
 }
 
-function previousBaseline(): BaselineFile | undefined {
-  const proc = Bun.spawnSync(["git", "show", "HEAD:docs/requirements/coverage-baseline.json"], {
+function showBaseline(spec: string): BaselineFile | undefined {
+  const proc = Bun.spawnSync(["git", "show", `${spec}:docs/requirements/coverage-baseline.json`], {
     cwd: root,
     stdout: "pipe",
     stderr: "pipe",
   });
   if (proc.exitCode !== 0) return undefined;
   return JSON.parse(proc.stdout.toString()) as BaselineFile;
+}
+
+function previousBaseline(): BaselineFile | undefined {
+  const baseRef = process.env.GITHUB_BASE_REF;
+  if (baseRef) {
+    Bun.spawnSync(["git", "fetch", "--no-tags", "--depth=1", "origin", baseRef], {
+      cwd: root,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const fromBase = showBaseline(`origin/${baseRef}`);
+    if (fromBase) return fromBase;
+  }
+  return showBaseline("HEAD^");
 }
 
 async function approvalIds(): Promise<string[]> {
@@ -228,14 +255,14 @@ export async function checkInventory(projectRoot = root): Promise<string[]> {
     }
     if (requirement.production.length === 0) fail(failures, `${requirement.id} has no production files`);
     for (const rel of requirement.production) {
-      if (NON_PRODUCTION.some((token) => rel.includes(token))) {
+      if (isNonProductionPath(rel)) {
         fail(
           failures,
           `${requirement.id} production file is a test, fixture, or generated file: ${rel}`,
         );
       }
       const body = readFileSync(join(projectRoot, rel), "utf8");
-      if (!body.includes(`export function ${requirement.tests[0]?.exportName ?? ""}`) && !body.includes("export const")) {
+      if (!hasProductionExport(body)) {
         fail(failures, `${requirement.id} production file has no export: ${rel}`);
       }
     }
@@ -271,7 +298,7 @@ export async function checkInventory(projectRoot = root): Promise<string[]> {
   failures.push(...globFailures);
 
   for (const rel of claimFiles()) {
-    if (NON_PRODUCTION.some((token) => rel.includes(token)) && productionFiles.includes(rel)) {
+    if (isNonProductionPath(rel) && productionFiles.includes(rel)) {
       fail(failures, `production claim includes a non-production file: ${rel}`);
     }
   }
@@ -307,6 +334,27 @@ export async function checkInventory(projectRoot = root): Promise<string[]> {
     if (!disabledNames.includes(entry.name)) {
       fail(failures, `disabled ledger ${entry.name} is not disabled in the graph`);
     }
+  }
+
+  const inventoryTestFiles = [
+    ...new Set(inventory.requirements.flatMap((requirement) => requirement.tests.map((test) => test.file))),
+  ].sort();
+  const graphTestFiles = [...testFiles].sort();
+  if (inventoryTestFiles.join("\n") !== graphTestFiles.join("\n")) {
+    fail(
+      failures,
+      `inventory test files and evidence graph test hosts differ: inventory=${inventoryTestFiles.join(",")} graph=${graphTestFiles.join(",")}`,
+    );
+  }
+  const inventoryProductionFiles = [
+    ...new Set(inventory.requirements.flatMap((requirement) => requirement.production)),
+  ].sort();
+  const graphProductionFiles = [...productionFiles].sort();
+  if (inventoryProductionFiles.join("\n") !== graphProductionFiles.join("\n")) {
+    fail(
+      failures,
+      `inventory production files and evidence graph production hosts differ: inventory=${inventoryProductionFiles.join(",")} graph=${graphProductionFiles.join(",")}`,
+    );
   }
 
   const names = inventory.requirements.flatMap((requirement) =>

@@ -11,7 +11,10 @@ import type { ITtscLintConfig } from "@ttsc/lint";
  * that implementation changes. `requireReview` watches the cited target,
  * not every edit in the repository.
  */
-export const productionFiles = ["packages/core/src/scenario/concreteValidator.ts"];
+export const productionFiles = [
+  "packages/core/src/scenario/concreteValidator.ts",
+  "packages/core/src/scenario/validate.ts",
+];
 
 export const testFiles = ["packages/core/src/scenario/concreteValidator.test.ts"];
 
@@ -58,7 +61,7 @@ export const evidenceGraph: ITtscEvidenceGraphConfig = {
       reference: {
         type: "typescript",
         files: productionFiles,
-        symbol: "property",
+        symbol: ["property", "function"],
         noEvidenceExclude: true,
         requireReview: true,
       },

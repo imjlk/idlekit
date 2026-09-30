@@ -50,8 +50,15 @@ describe("concrete typia validator", () => {
     expect(schema["~standard"].validate({ count: "no" }).success).toBe(false);
   });
 
-  it("does not report a missing generic transform as a user input error", () => {
-    const schema = typiaStandardSchema<{ count: number }>();
-    expect(() => schema["~standard"].validate({ count: 2 })).toThrow(TypiaTransformMissingError);
-  });
+  it("does not report a missing generic transform as a user input error", rejectsUnresolvedGenericAsUserInput);
 });
+
+/**
+ * @evidence docs/requirements/active/typia-transform.md#req-typia-transform-missing Throws TypiaTransformMissingError instead of reporting a user-input issue.
+ * @evidence ./validate.ts#typiaStandardSchema Calls typiaStandardSchema for an unresolved type argument.
+ * @evidence ./validate.ts#TypiaTransformMissingError The thrown value is TypiaTransformMissingError.
+ */
+export function rejectsUnresolvedGenericAsUserInput(): void {
+  const schema = typiaStandardSchema<{ count: number }>();
+  expect(() => schema["~standard"].validate({ count: 2 })).toThrow(TypiaTransformMissingError);
+}
