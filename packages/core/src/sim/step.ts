@@ -70,6 +70,48 @@ function isQuotedBulkSize(size: number): boolean {
   return Number.isInteger(size) && size > singleBuySize;
 }
 
+function exactDecimal(text: string): { sign: -1 | 0 | 1; coeff: bigint; exp: number } | undefined {
+  const match = /^([+-]?)(\d+)(?:\.(\d+))?(?:e([+-]?\d+))?$/i.exec(text.trim());
+  if (!match) return undefined;
+  const whole = match[2] ?? "";
+  const frac = match[3] ?? "";
+  const exp = (match[4] ? Number(match[4]) : 0) - frac.length;
+  if (!Number.isSafeInteger(exp)) return undefined;
+  const digits = `${whole}${frac}`.replace(/^0+(?=\d)/, "");
+  if (digits === "0") return { sign: 0, coeff: 0n, exp: 0 };
+  return { sign: match[1] === "-" ? -1 : 1, coeff: BigInt(digits), exp };
+}
+
+function exactTextOrder(leftText: string, rightText: string): -1 | 0 | 1 | undefined {
+  const left = exactDecimal(leftText);
+  const right = exactDecimal(rightText);
+  if (!left || !right) return undefined;
+  if (left.sign === 0 || right.sign === 0) {
+    return left.sign === right.sign ? 0 : left.sign === 0 ? (right.sign < 0 ? 1 : -1) : left.sign;
+  }
+  if (left.sign !== right.sign) return left.sign < right.sign ? -1 : 1;
+  const exp = Math.max(left.exp, right.exp);
+  const leftScaled = left.coeff * 10n ** BigInt(exp - left.exp);
+  const rightScaled = right.coeff * 10n ** BigInt(exp - right.exp);
+  const magnitude = leftScaled < rightScaled ? -1 : leftScaled > rightScaled ? 1 : 0;
+  if (magnitude === 0 || left.sign === 1) return magnitude;
+  return magnitude === -1 ? 1 : -1;
+}
+
+/** Settlement boundaries ignore `cmp`, which treats an epsilon-sized gap as equality. */
+function exactAmountOrder<N>(
+  engine: { toString(value: N): string; toNumber(value: N): number },
+  left: N,
+  right: N,
+): -1 | 0 | 1 | undefined {
+  const parsed = exactTextOrder(engine.toString(left), engine.toString(right));
+  if (parsed !== undefined) return parsed;
+  const leftNumber = engine.toNumber(left);
+  const rightNumber = engine.toNumber(right);
+  if (!Number.isFinite(leftNumber) || !Number.isFinite(rightNumber)) return undefined;
+  return leftNumber < rightNumber ? -1 : leftNumber > rightNumber ? 1 : 0;
+}
+
 function matchingQuotes<N, U extends string>(
   quotes: readonly BulkQuote<N, U>[],
   size: number,
@@ -119,11 +161,13 @@ function payQuote<N, U extends string, Vars>(
     return undefined;
   }
   const { E } = ctx;
-  if (!E.isFinite(cost.amount) || E.cmp(cost.amount, E.zero()) < 0) {
+  const costOrder = exactAmountOrder(E, cost.amount, E.zero());
+  if (!E.isFinite(cost.amount) || costOrder === undefined || costOrder < 0) {
     rejectBulk(events, actionId, "INVALID_BULK_COST", { actionId });
     return undefined;
   }
-  if (E.cmp(state.wallet.money.amount, cost.amount) < 0) {
+  const afford = exactAmountOrder(E, state.wallet.money.amount, cost.amount);
+  if (afford === undefined || afford < 0) {
     const behavior = ctx.payment?.onInsufficientFunds ?? "skip";
     if (behavior === "throw") {
       throw new Error(`Insufficient funds for action ${actionId}`);
@@ -250,7 +294,17 @@ export function stepOnce<N, U extends string, Vars>(
           continue;
         }
 
-        if (E.cmp(next.wallet.money.amount, cost.amount) < 0) {
+        const singleCost = exactAmountOrder(E, cost.amount, E.zero());
+        if (!E.isFinite(cost.amount) || singleCost === undefined || singleCost < 0) {
+          events.push({
+            type: "action.skipped",
+            actionId: action.id,
+            reason: "invalidQuote",
+          });
+          continue;
+        }
+        const singleAfford = exactAmountOrder(E, next.wallet.money.amount, cost.amount);
+        if (singleAfford === undefined || singleAfford < 0) {
           const behavior = ctx.payment?.onInsufficientFunds ?? "skip";
           if (behavior === "throw") {
             throw new Error(`Insufficient funds for action ${action.id}`);

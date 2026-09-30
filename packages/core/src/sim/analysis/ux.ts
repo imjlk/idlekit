@@ -15,7 +15,8 @@ export type SimStats = Readonly<{
     applied: number;
     skippedCannotApply: number;
     skippedInsufficientFunds: number;
-    skippedInvalidQuote: number;
+    /** Absent on a stats object built before this counter existed. New results still set it. */
+    skippedInvalidQuote?: number;
   }>;
 }>;
 

@@ -788,4 +788,55 @@ describe("PR-01 bulk quote settlement", () => {
     expect(engine.toNumber(out.next.wallet.money.amount)).toBe(1000);
     expect(skippedReason(out.events)).toBe("cannotApply");
   });
+
+  it("rejects a negative epsilon quote instead of crediting the wallet", () => {
+    const engine = createNumberEngine();
+    const action: Action<number, UnitCode, Vars> = {
+      id: "buy",
+      kind: "buy",
+      canApply: () => true,
+      cost: () => coin(engine, engine.from(1)),
+      bulk: () => [{ size: 2, cost: coin(engine, engine.from(-1e-13)) }],
+      apply: (_ctx, current, bulkSize = 1) => ({
+        ...current,
+        vars: { ...current.vars, owned: current.vars.owned + bulkSize },
+      }),
+    };
+    const out = stepOnce({
+      ctx: context(engine),
+      model: zeroIncomeModel(engine, action),
+      state: state(engine, 1000),
+      dt: 0,
+      decisions: [{ action, bulkSize: 2 }],
+    });
+    expect(skippedReason(out.events)).toBe("invalidQuote");
+    expect(warningCodes(out.events)).toContain("INVALID_BULK_COST");
+    expect(out.next.vars.owned).toBe(0);
+    expect(engine.toNumber(out.next.wallet.money.amount)).toBe(1000);
+  });
+
+  it("rejects an epsilon quote that cmp would treat as free", () => {
+    const engine = createNumberEngine();
+    const action: Action<number, UnitCode, Vars> = {
+      id: "buy",
+      kind: "buy",
+      canApply: () => true,
+      cost: () => coin(engine, engine.from(1)),
+      bulk: () => [{ size: 2, cost: coin(engine, engine.from(1e-13)) }],
+      apply: (_ctx, current, bulkSize = 1) => ({
+        ...current,
+        vars: { ...current.vars, owned: current.vars.owned + bulkSize },
+      }),
+    };
+    const out = stepOnce({
+      ctx: context(engine),
+      model: zeroIncomeModel(engine, action),
+      state: state(engine, 0),
+      dt: 0,
+      decisions: [{ action, bulkSize: 2 }],
+    });
+    expect(skippedReason(out.events)).toBe("insufficientFunds");
+    expect(out.next.vars.owned).toBe(0);
+    expect(engine.toNumber(out.next.wallet.money.amount)).toBe(0);
+  });
 });
