@@ -30,7 +30,7 @@ The checker does not see JSON or YAML scenarios, shell and package scripts, dyna
 
 ## TC-04 verification
 
-Queried on macOS arm64 with Bun `1.3.10`, `@ttsc/graph` `0.30.4`, protocol `2025-11-25`, at commit `3658c2a4dedec48d39f7ebaf2c0ceaf16f8bdd0a`. No generation field was returned. Scratch edits were re-read in a new process. `bun run graph:check` exited 0. The tour payload includes the `runScenario` and `stepOnce` spans below.
+Queried on macOS arm64 with Bun `1.3.10`, `@ttsc/graph` `0.30.4`, protocol `2025-11-25`, at commit `878707f92c6c80552bf3e76a65e889908aa3b021`. No generation field was returned. Scratch edits were re-read in a new process. `bun run graph:check` exited 0. The tour payload includes the `runScenario` and `stepOnce` spans below.
 
 | Symbol | Span | Graph result |
 |---|---|---|
