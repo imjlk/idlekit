@@ -39,7 +39,8 @@ function graphEnv(): Record<string, string | undefined> {
   const env: Record<string, string | undefined> = { ...process.env };
   delete env.TTSC_GRAPH_BINARY;
   delete env.TTSC_GO_BINARY;
-  env.TTSC_TTSX_BINARY = join(root, "tools", "ttsx-under-node");
+  const ttsxName = process.platform === "win32" ? "ttsx-under-node.cmd" : "ttsx-under-node";
+  env.TTSC_TTSX_BINARY = join(root, "tools", ttsxName);
   return env;
 }
 
