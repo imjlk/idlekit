@@ -6,6 +6,7 @@ import {
   assertNonEmptyGlobs,
   evidenceProgramSourceFiles,
   headingAnchors,
+  recordedBaseSpec,
   includedSourceCount,
   omittedProgramHosts,
   productionFileCites,
@@ -267,6 +268,24 @@ try {
   );
   const fenceOk = anchors.length === 1 && anchors[0] === "visible";
   record("fenced-headings", "zero", fenceOk ? 0 : 1, fenceOk, JSON.stringify(anchors));
+
+  const nested = headingAnchors(
+    ["````md", "```ts", "## Example {#example}", "```", "````", "## After {#after}"].join("\n"),
+  );
+  const nestedOk = nested.length === 1 && nested[0] === "after";
+  record("nested-fence", "zero", nestedOk ? 0 : 1, nestedOk, JSON.stringify(nested));
+
+  const recordedSha = "a".repeat(40);
+  const recorded = recordedBaseSpec({ GITHUB_BASE_SHA: recordedSha, GITHUB_BASE_REF: "main" });
+  const moving = recordedBaseSpec({ GITHUB_BASE_REF: "main" });
+  const recordedOk = recorded === recordedSha && moving === undefined;
+  record(
+    "recorded-base",
+    "zero",
+    recordedOk ? 0 : 1,
+    recordedOk,
+    `${recorded ?? "none"} ${moving ?? "none"}`,
+  );
 
   const functionCites = productionFileCites(
     "/** @evidence docs/spec.md#quota */\nexport function quotaHost() {\n  return 3;\n}\n",
