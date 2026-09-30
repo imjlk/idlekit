@@ -15,7 +15,7 @@ Registry metadata checked on 2026-09-30. Versions are exact. `ttsc` `@0.30.4` is
 | `typia` | `14.0.6` | Newest release inside `@ttsc/graph@0.30.4`'s `typia@^14.0.6` range. `15.0.1` is outside that range. The staged `^13.2.0` candidate was not kept. |
 | Bun | `1.3.10` | Root `packageManager`. CI workflows use the same pin. |
 | Node launcher | `>=22.15.0` | `ttsc@0.30.4` `engines.node`. CI smoke uses `22.23.3`. |
-| Publish Node | `22.14.0` | Release workflow only. It is below the ttsc floor and does not run ttsc. |
+| Publish Node | `22.23.3` | Release workflow. Same Node as CI, because `publish:gate` and package prepack run ttsc. |
 
 `fixtures/toolchain/baseline.json` is the read-only `265c6ed` snapshot (`typescript` `^5.8.3`, typia `^9.7.2`, CI Bun `1.3.9`, no ttsc). `fixtures/toolchain/pins.json` is the pin this change checks. A failed `ttsc` install is not retried with `tsc` or `tsx`.
 

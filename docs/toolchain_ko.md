@@ -15,7 +15,7 @@ English version: [toolchain.md](./toolchain.md)
 | `typia` | `14.0.6` | `@ttsc/graph@0.30.4`의 `typia@^14.0.6` 범위 안에서 가장 새 release. `15.0.1`은 범위 밖이다. 미리 올려 둔 `^13.2.0` 후보는 유지하지 않는다. |
 | Bun | `1.3.10` | root `packageManager`. CI workflow도 같은 pin이다. |
 | Node launcher | `>=22.15.0` | `ttsc@0.30.4`의 `engines.node`. CI smoke는 `22.23.3`을 쓴다. |
-| Publish Node | `22.14.0` | release workflow 전용. ttsc 하한보다 낮고 ttsc를 실행하지 않는다. |
+| Publish Node | `22.23.3` | release workflow. `publish:gate`와 패키지 prepack이 ttsc를 실행하므로 CI와 같은 Node다. |
 
 `fixtures/toolchain/baseline.json`은 `265c6ed`의 읽기 전용 스냅샷이다 (`typescript` `^5.8.3`, typia `^9.7.2`, CI Bun `1.3.9`, ttsc 없음). `fixtures/toolchain/pins.json`이 이번 pin이다. `ttsc` 설치 실패를 `tsc`나 `tsx`로 다시 시도하지 않는다.
 
