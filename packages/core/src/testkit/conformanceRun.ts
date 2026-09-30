@@ -368,6 +368,13 @@ function wholeTickCount(total: number, step: number): number | null {
   return nearest;
 }
 
+/** The same repeated addition the simulator uses, so a long `0.1` run can stop past the nominal duration. */
+function accumulatedOffset(step: number, ticks: number): number {
+  let total = 0;
+  for (let index = 0; index < ticks; index += 1) total += step;
+  return total;
+}
+
 function onGrid<N, U extends string, Vars>(
   scenario: CompiledScenario<N, U, Vars>,
   splitSec: number,
@@ -457,7 +464,7 @@ function resumeFromCheckpoint<N, U extends string, Vars>(
       run: { ...scenario.run, durationSec: splitSec },
     });
     const elapsed = head.end.t - scenario.initial.t;
-    if (splitTicks === null || wholeTickCount(elapsed, step) !== splitTicks) {
+    if (splitTicks === null || elapsed !== accumulatedOffset(step, splitTicks)) {
       return skip("head stopped before the checkpoint");
     }
     const started = startTail(head.end);
@@ -500,7 +507,7 @@ export function checkResumeFromJson<N, U extends string, Vars>(
 function jsonRoundTripPreserves(value: unknown): boolean {
   if (value === null) return true;
   if (typeof value === "string" || typeof value === "boolean") return true;
-  if (typeof value === "number") return Number.isFinite(value);
+  if (typeof value === "number") return Number.isFinite(value) && !Object.is(value, -0);
   if (Array.isArray(value)) {
     for (let index = 0; index < value.length; index += 1) {
       if (!(index in value) || !jsonRoundTripPreserves(value[index])) return false;
@@ -535,7 +542,12 @@ export function checkRetention<N, U extends string, Vars>(
   if (isRelationCheck(bracket)) return bracket;
   const initial = bracket.snap();
   try {
-    const kept = runScenario(scenario);
+    const log = scenario.run.eventLog;
+    const records = (log?.enabled ?? true) && (log?.maxEvents === undefined || log.maxEvents > 0);
+    const keptScenario = records
+      ? scenario
+      : { ...scenario, run: { ...scenario.run, eventLog: { enabled: true, maxEvents: 32 } } };
+    const kept = runScenario(keptScenario);
     bracket.restore(initial);
     const dropped = runScenario({
       ...scenario,
@@ -618,7 +630,7 @@ export function checkDurationBoundary<N, U extends string, Vars>(
   if (ticks === null) return skip("duration is not a multiple of stepSec");
   const end = runScenario(scenario).end;
   const elapsed = end.t - scenario.initial.t;
-  if (wholeTickCount(elapsed, step) !== ticks) {
+  if (elapsed !== accumulatedOffset(step, ticks)) {
     return fail(`elapsed ${elapsed} did not stop at duration ${duration}`);
   }
   return pass(`stopped at t=${end.t}`);

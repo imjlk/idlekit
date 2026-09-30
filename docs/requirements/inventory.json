@@ -46,6 +46,83 @@
           "args": ["test", "src/testkit/conformance.test.ts"]
         },
         {
+          "file": "packages/core/src/testkit/conformance.test.ts",
+          "exportName": "replaysConstantIncomeAcrossTheFixedSeedCorpus",
+          "registeredAs": "replays constant income across the fixed seed corpus",
+          "cwd": "packages/core",
+          "args": ["test", "src/testkit/conformance.test.ts"]
+        },
+        {
+          "file": "packages/core/src/testkit/conformance.test.ts",
+          "exportName": "checksBulkEqualityOnlyWhenTheFixtureDeclaresIt",
+          "registeredAs": "checks bulk equality only when the fixture declares it",
+          "cwd": "packages/core",
+          "args": ["test", "src/testkit/conformance.test.ts"]
+        },
+        {
+          "file": "packages/core/src/testkit/conformance.test.ts",
+          "exportName": "stopsOnAPositiveTickGridAndRefusesANonPositiveStep",
+          "registeredAs": "stops on a positive tick grid and refuses a non-positive step",
+          "cwd": "packages/core",
+          "args": ["test", "src/testkit/conformance.test.ts"]
+        },
+        {
+          "file": "packages/core/src/testkit/conformance.test.ts",
+          "exportName": "treatsStepSizesAsEqualOnlyForConstantIncome",
+          "registeredAs": "treats step 1 and 0.5 as equal only for constant income",
+          "cwd": "packages/core",
+          "args": ["test", "src/testkit/conformance.test.ts"]
+        },
+        {
+          "file": "packages/core/src/testkit/conformance.test.ts",
+          "exportName": "replaysOneShotScriptedGrantFromTheSameCursor",
+          "registeredAs": "replays a one-shot scripted grant from the same cursor",
+          "cwd": "packages/core",
+          "args": ["test", "src/testkit/conformance.test.ts"]
+        },
+        {
+          "file": "packages/core/src/testkit/conformance.test.ts",
+          "exportName": "skipsResumeWhoseUntilStopsBeforeTheCheckpoint",
+          "registeredAs": "skips a resume whose until stops before the checkpoint",
+          "cwd": "packages/core",
+          "args": ["test", "src/testkit/conformance.test.ts"]
+        },
+        {
+          "file": "packages/core/src/testkit/conformance.test.ts",
+          "exportName": "recordsWalletAndMaxMoneyUnitsOnTheEconomySnapshot",
+          "registeredAs": "records wallet and max-money units on the economy snapshot",
+          "cwd": "packages/core",
+          "args": ["test", "src/testkit/conformance.test.ts"]
+        },
+        {
+          "file": "packages/core/src/testkit/conformance.test.ts",
+          "exportName": "resumesOnTheSameTickGridFromMemoryAndJson",
+          "registeredAs": "resumes on the same tick grid from memory and from JSON",
+          "cwd": "packages/core",
+          "args": ["test", "src/testkit/conformance.test.ts"]
+        },
+        {
+          "file": "packages/core/src/testkit/conformance.test.ts",
+          "exportName": "bansNegativeBalanceOnlyWhenDebtIsDisallowed",
+          "registeredAs": "bans a negative balance only when debt is disallowed",
+          "cwd": "packages/core",
+          "args": ["test", "src/testkit/conformance.test.ts"]
+        },
+        {
+          "file": "packages/core/src/testkit/conformance.test.ts",
+          "exportName": "keepsFormulaSecondsApartFromExecutedEtaResults",
+          "registeredAs": "keeps formula seconds apart from executed eta results",
+          "cwd": "packages/core",
+          "args": ["test", "src/testkit/conformance.test.ts"]
+        },
+        {
+          "file": "packages/core/src/testkit/conformance.test.ts",
+          "exportName": "matchesASafeConstantRunAndRefusesNumberInfinityCollapse",
+          "registeredAs": "matches a safe constant run and refuses number Infinity collapse",
+          "cwd": "packages/core",
+          "args": ["test", "src/testkit/conformance.test.ts"]
+        },
+        {
           "file": "packages/money/src/testkit/compareAmounts.test.ts",
           "exportName": "matchesFiniteAmountsAndRefusesInfinityCollapse",
           "registeredAs": "matches finite amounts by log distance and refuses Infinity collapse",
