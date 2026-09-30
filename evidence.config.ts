@@ -19,6 +19,7 @@ export const productionFiles = [
   "packages/core/src/testkit/conformanceRun.ts",
   "packages/core/src/testkit/compareAmounts.ts",
   "packages/money/src/testkit/compareAmounts.ts",
+  "tools/conformance.ts",
 ];
 
 export const testFiles = [
@@ -26,6 +27,7 @@ export const testFiles = [
   "packages/core/src/sim/step.bulk.test.ts",
   "packages/core/src/testkit/conformance.test.ts",
   "packages/money/src/testkit/compareAmounts.test.ts",
+  "tools/conformance.negative.test.ts",
 ];
 
 const activeMarkdown = {

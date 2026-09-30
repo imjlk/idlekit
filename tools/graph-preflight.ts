@@ -36,24 +36,54 @@ function hasSource(payload: unknown, needle: string): boolean {
   return sourceSpans(payload).some((span) => span.file.includes(needle));
 }
 
+function symbolFile(label: string, file: string | undefined): string | undefined {
+  if (file) return file;
+  const hash = label.lastIndexOf("#");
+  return hash > 0 ? label.slice(0, hash) : undefined;
+}
+
+function isCliCommandFile(file: string | undefined): boolean {
+  if (!file) return false;
+  return file.includes("packages/cli/src/commands/") || /(^|\/)src\/commands\//.test(file);
+}
+
 function citesCliRun(payload: unknown): boolean {
   if (resultType(payload) !== "trace") return false;
-  const cliNames = sourceSpans(payload)
-    .filter((span) => span.file.includes("packages/cli/src/") && span.name)
-    .map((span) => span.name as string);
   return collectHops(payload).some((hop) => {
-    const ends = [
-      { name: hop.from, file: hop.fromFile },
-      { name: hop.to, file: hop.toFile },
-    ];
-    const run = ends.find((end) => end.name.includes("runScenario"));
-    const other = ends.find((end) => end !== run);
-    if (!run || !other) return false;
-    if (other.file?.includes("packages/cli/src/")) return true;
-    return cliNames.some(
-      (name) => other.name === name || other.name.endsWith(`.${name}`) || name.endsWith(`.${other.name}`),
-    );
+    const fromRun = hop.from.includes("runScenario");
+    const toRun = hop.to.includes("runScenario");
+    if (fromRun === toRun) return false;
+    const command = fromRun ? symbolFile(hop.to, hop.toFile) : symbolFile(hop.from, hop.fromFile);
+    return isCliCommandFile(command);
   });
+}
+
+function endpointsConnect(
+  hops: ReadonlyArray<{ from: string; to: string }>,
+  left: string,
+  right: string,
+): boolean {
+  const parent = new Map<string, string>();
+  const find = (name: string): string => {
+    const prev = parent.get(name);
+    if (!prev || prev === name) {
+      parent.set(name, name);
+      return name;
+    }
+    const rootName = find(prev);
+    parent.set(name, rootName);
+    return rootName;
+  };
+  const union = (from: string, to: string): void => {
+    const fromRoot = find(from);
+    const toRoot = find(to);
+    if (fromRoot !== toRoot) parent.set(fromRoot, toRoot);
+  };
+  for (const hop of hops) union(hop.from, hop.to);
+  const names = [...parent.keys()];
+  const leftNames = names.filter((name) => name.includes(left));
+  const rightNames = names.filter((name) => name.includes(right));
+  return leftNames.some((from) => rightNames.some((to) => find(from) === find(to)));
 }
 
 function tagTexts(value: unknown, found: string[] = []): string[] {
@@ -182,7 +212,8 @@ async function scratch(): Promise<void> {
       if (!decl || stale) fail("scratch rename did not show quotaHostRenamed on src/host.ts");
       else ok(`scratch rename ${decl.file}:${decl.line} ${generationNote(looked)}`);
     } finally {
-      await renamed.session.close();
+      const code = await renamed.session.close();
+      if (code !== 0) fail(`scratch rename shutdown ${code}`);
     }
 
     writeFileSync(hostPath, readFileSync(hostPath, "utf8").replace("(): 3", "(): 4").replace("return 3", "return 4"));
@@ -200,7 +231,8 @@ async function scratch(): Promise<void> {
         fail(`scratch signature was ${signature || "missing"}`);
       } else ok(`scratch body ${signature} ${generationNote(details)}`);
     } finally {
-      await edited.session.close();
+      const code = await edited.session.close();
+      if (code !== 0) fail(`scratch edit shutdown ${code}`);
     }
 
     writeFileSync(hostPath, readFileSync(hostPath, "utf8").replace("docs/spec.md#quota", "docs/spec.md#quota-next"));
@@ -386,12 +418,10 @@ async function main(): Promise<void> {
         maxNodes: 32,
       }),
     );
-    const plannerHops = (plannerPath as { result?: { hops?: unknown[] }; hops?: unknown[] }).result?.hops
-      ?? (plannerPath as { hops?: unknown[] }).hops
-      ?? [];
     const plannerSource = readFileSync(join(root, "packages/core/src/sim/strategy/planner.ts"), "utf8");
     const bindsDefault = plannerSource.includes("({ stepOnce }") && plannerSource.includes("d.stepOnce(");
-    if (plannerHops.length > 0 && hasSource(plannerPath, "packages/core/src/sim/step.ts")) {
+    const plannerLinked = endpointsConnect(collectHops(plannerPath), "createPlannerStrategy", "stepOnce");
+    if (plannerLinked) {
       ok("trace createPlannerStrategy -> stepOnce");
     } else if (plannerDecl && bindsDefault) {
       ok(
@@ -441,7 +471,8 @@ async function main(): Promise<void> {
         if (!localDecl) fail("money package config did not declare tickMoney in src/policy/tickMoney.ts");
         else ok(`authoritative money package lookup tickMoney ${localDecl.file}:${localDecl.line}`);
       } finally {
-        await moneySession.session.close();
+        const code = await moneySession.session.close();
+        if (code !== 0) fail(`money package shutdown ${code}`);
       }
     }
 
@@ -474,15 +505,11 @@ async function main(): Promise<void> {
             maxNodes: 32,
           }),
         );
-        const cliSource = hasSource(local, "src/commands/") || hasSource(local, "packages/cli/src/");
-        const simulator = collectSpans(local).filter((span) => span.file.includes("simulator"));
-        const simulatorSource = simulator.some((span) => !span.file.endsWith(".d.ts"));
-        if (!cliSource) fail("CLI package config reverse trace did not cite a command source");
-        else if (simulator.length === 0) fail("CLI package trace omitted runScenario");
-        else if (!simulatorSource) fail("CLI invoke resolved runScenario only through .d.ts");
+        if (!citesCliRun(local)) fail("CLI package reverse trace missed a command to runScenario hop");
         else ok("authoritative CLI package trace cites command source");
       } finally {
-        await cliSession.session.close();
+        const code = await cliSession.session.close();
+        if (code !== 0) fail(`CLI package shutdown ${code}`);
       }
     }
   } catch (error) {

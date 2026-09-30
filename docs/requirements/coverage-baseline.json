@@ -15,6 +15,8 @@
     "packages/core/src/testkit/compareAmounts.ts",
     "packages/money/src/testkit/compareAmounts.ts",
     "packages/money/src/testkit/compareAmounts.test.ts",
+    "tools/conformance.ts",
+    "tools/conformance.negative.test.ts",
     "fixtures/conformance/shrink-gap.json",
     "fixtures/toolchain/evidence/lint.config.ts",
     "fixtures/toolchain/evidence/src/quotaHost.ts",

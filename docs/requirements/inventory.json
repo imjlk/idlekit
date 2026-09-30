@@ -13,14 +13,14 @@
         {
           "file": "packages/core/src/scenario/concreteValidator.test.ts",
           "exportName": "acceptsNumericConcreteQuota",
-          "registeredAs": "accepts a numeric count and rejects a string count",
+          "registeredAs": "concrete typia validator > accepts a numeric count and rejects a string count",
           "cwd": "packages/core",
           "args": ["test", "src/scenario/concreteValidator.test.ts"]
         },
         {
           "file": "packages/core/src/scenario/concreteValidator.test.ts",
           "exportName": "rejectsUnresolvedGenericAsUserInput",
-          "registeredAs": "does not report a missing generic transform as a user input error",
+          "registeredAs": "concrete typia validator > does not report a missing generic transform as a user input error",
           "cwd": "packages/core",
           "args": ["test", "src/scenario/concreteValidator.test.ts"]
         }
@@ -35,7 +35,8 @@
         "packages/core/src/testkit/conformance.ts",
         "packages/core/src/testkit/conformanceRun.ts",
         "packages/core/src/testkit/compareAmounts.ts",
-        "packages/money/src/testkit/compareAmounts.ts"
+        "packages/money/src/testkit/compareAmounts.ts",
+        "tools/conformance.ts"
       ],
       "tests": [
         {
@@ -121,6 +122,13 @@
           "registeredAs": "matches a safe constant run and refuses number Infinity collapse",
           "cwd": "packages/core",
           "args": ["test", "src/testkit/conformance.test.ts"]
+        },
+        {
+          "file": "tools/conformance.negative.test.ts",
+          "exportName": "runsTheNegativeConformanceRunner",
+          "registeredAs": "runs the negative conformance runner",
+          "cwd": ".",
+          "args": ["test", "tools/conformance.negative.test.ts"]
         },
         {
           "file": "packages/money/src/testkit/compareAmounts.test.ts",

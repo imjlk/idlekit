@@ -1,6 +1,12 @@
 import { readFileSync, realpathSync } from "fs";
 import { dirname, join, relative, resolve } from "path";
-import { disabledClaimLedger, evidenceGraph, productionFiles, testFiles } from "../evidence.config";
+import {
+  disabledClaimLedger,
+  evidenceGraph,
+  graphLintConfig,
+  productionFiles,
+  testFiles,
+} from "../evidence.config";
 import { root } from "./evidence-host";
 
 type InventoryTest = {
@@ -74,14 +80,9 @@ function reporterEntry(line: string): { status: string; name: string } | undefin
   return { status: match[1], name: match[2] };
 }
 
-/** Bun prints `suite > nested > test title`. The ledger stores the test title. */
+/** Bun prints `suite > nested > test title`. The ledger stores that full name. */
 function reporterNameMatches(reported: string, registered: string): boolean {
-  if (reported === registered) return true;
-  const parts = reported.split(" > ");
-  for (let index = 1; index < parts.length; index += 1) {
-    if (parts.slice(index).join(" > ") === registered) return true;
-  }
-  return false;
+  return reported === registered;
 }
 
 function readJson<T>(path: string): T {
@@ -207,14 +208,7 @@ export function headingAnchors(markdown: string): string[] {
   let fenceLength = 0;
   let inComment = false;
   for (const rawLine of markdown.split("\n")) {
-    if (inComment) {
-      if (rawLine.includes("-->")) inComment = false;
-      continue;
-    }
-    const commentAt = rawLine.indexOf("<!--");
-    const line = commentAt === -1 ? rawLine : rawLine.slice(0, commentAt);
-    if (commentAt !== -1 && !rawLine.includes("-->", commentAt + 4)) inComment = true;
-    const marker = /^( {0,3})(`{3,}|~{3,})(.*)$/.exec(line);
+    const marker = /^( {0,3})(`{3,}|~{3,})(.*)$/.exec(rawLine);
     const opener = marker?.[2];
     const info = marker?.[3] ?? "";
     if (!fenceChar) {
@@ -230,6 +224,13 @@ export function headingAnchors(markdown: string): string[] {
     } else {
       continue;
     }
+    if (inComment) {
+      if (rawLine.includes("-->")) inComment = false;
+      continue;
+    }
+    const commentAt = rawLine.indexOf("<!--");
+    const line = commentAt === -1 ? rawLine : rawLine.slice(0, commentAt);
+    if (commentAt !== -1 && !rawLine.includes("-->", commentAt + 4)) inComment = true;
     const heading = line.replace(/^ {0,3}/, "");
     const match = /^##\s+.+\{#([A-Za-z0-9][A-Za-z0-9._:-]*)\}\s*$/.exec(heading);
     if (heading.startsWith("## ") && !match) {
@@ -346,9 +347,16 @@ function exportsNamedFunction(body: string, name: string): boolean {
 }
 
 function registersNamedTest(body: string, registeredAs: string, exportName: string): boolean {
-  const quoted = JSON.stringify(registeredAs).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const parts = registeredAs.split(" > ");
+  const title = parts.at(-1);
+  if (!title) return false;
+  const quoted = JSON.stringify(title).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const fn = exportName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return new RegExp(`\\b(?:it|test)\\(\\s*${quoted}\\s*,\\s*${fn}\\b`).test(body);
+  if (!new RegExp(`\\b(?:it|test)\\(\\s*${quoted}\\s*,\\s*${fn}\\b`).test(body)) return false;
+  return parts.slice(0, -1).every((suite) => {
+    const suiteQuoted = JSON.stringify(suite).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return new RegExp(`\\bdescribe\\(\\s*${suiteQuoted}`).test(body);
+  });
 }
 
 function escapeRegExp(value: string): string {
@@ -746,6 +754,18 @@ export async function checkInventory(projectRoot = root): Promise<string[]> {
     lintPlugin !== undefined && lintPlugin.enabled !== false && lintPlugin.configFile === "./lint.config.ts";
   if (!lintEnabled) {
     fail(failures, "tsconfig.evidence.json must enable @ttsc/lint for lint.config.ts");
+  }
+  const loadedRules = graphLintConfig.rules;
+  const graphRule = loadedRules["evidence/graph"];
+  const reviewRule = loadedRules["evidence/review"];
+  const graphOn =
+    Array.isArray(graphRule) &&
+    graphRule[0] === "error" &&
+    typeof graphRule[1] === "object" &&
+    graphRule[1] !== null;
+  const reviewOn = reviewRule === "error" || (Array.isArray(reviewRule) && reviewRule[0] === "error");
+  if (!graphOn || !reviewOn) {
+    fail(failures, "lint.config.ts must enable evidence/graph and evidence/review");
   }
   const evidencePackage = readJson<{ ttsc?: unknown }>(
     join(projectRoot, "node_modules", "@ttsc", "evidence", "package.json"),

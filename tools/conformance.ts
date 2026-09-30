@@ -85,6 +85,14 @@ function graphLookup(dir: string, query: string): { exitCode: number; text: stri
   );
 }
 
+/**
+ * @evidence docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness The negative runner checks a missing transform, a deleted citation, and an empty graph.
+ * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #a195f0e Re-read the section: those three checks belong to the harness.
+ */
+export function runNegativeConformanceChecks(): void {
+  negative();
+}
+
 function negative(): void {
   const work = join(root, "tmp", `conformance-negative-${process.pid}`);
   rmSync(work, { recursive: true, force: true });
@@ -117,6 +125,8 @@ function negative(): void {
       )}\n`,
     );
     const preloadEnv = fixtureEnv();
+    // bun test sets NODE_ENV=test, and ttsc then refuses this preload project's generation.
+    delete preloadEnv.NODE_ENV;
     preloadEnv.TTSC_TTSX_BINARY = join(root, "tools/ttsx-under-node");
     const preloaded = spawn([process.execPath, "src/entry.ts"], preload, preloadEnv);
     record(
@@ -190,19 +200,21 @@ function negative(): void {
   finish();
 }
 
-const command = process.argv[2];
-if (command === "replay") {
-  const target = process.argv[3];
-  if (!target) {
-    console.error("usage: bun tools/conformance.ts replay <fixture>");
+if (import.meta.main) {
+  const command = process.argv[2];
+  if (command === "replay") {
+    const target = process.argv[3];
+    if (!target) {
+      console.error("usage: bun tools/conformance.ts replay <fixture>");
+      process.exit(2);
+    }
+    replay(target);
+  } else if (command === "print-shrink") {
+    printShrink();
+  } else if (command === "negative") {
+    runNegativeConformanceChecks();
+  } else {
+    console.error("usage: bun tools/conformance.ts replay <fixture> | negative | print-shrink");
     process.exit(2);
   }
-  replay(target);
-} else if (command === "print-shrink") {
-  printShrink();
-} else if (command === "negative") {
-  negative();
-} else {
-  console.error("usage: bun tools/conformance.ts replay <fixture> | negative | print-shrink");
-  process.exit(2);
 }
