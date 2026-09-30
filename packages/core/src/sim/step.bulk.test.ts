@@ -102,7 +102,7 @@ function skippedReason(events: readonly SimEvent<unknown>[]): string | undefined
  * @evidence ./step.ts#singleBuySize Reads the size that must stay on Action.cost.
  * @evidenceReview ./step.ts#singleBuySize #d686b8e The declaration is 1. This test pays Action.cost for that size and does not call bulk.
  * @evidence ./step.ts#stepOnce Calls stepOnce for the quoted buy and the rejected quotes.
- * @evidenceReview ./step.ts#stepOnce #7267272 Re-read stepOnce: each decision re-reads model.actions for the state so far, a quoted size pays BulkQuote.cost once, and a rejected quote does not apply.
+ * @evidenceReview ./step.ts#stepOnce #4250196 Re-read stepOnce: each decision re-reads model.actions for the state so far, a quoted size pays BulkQuote.cost once through exact decimal order scaled to the smaller exponent, and a rejected quote does not apply.
  */
 export function settlesQuotedBulkAndRejectsBadQuotes(): void {
   expect(singleBuySize).toBe(1);
