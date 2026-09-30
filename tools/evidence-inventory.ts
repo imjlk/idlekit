@@ -1,5 +1,5 @@
 import { readFileSync } from "fs";
-import { dirname, join, resolve } from "path";
+import { dirname, join, relative, resolve } from "path";
 import { disabledClaimLedger, evidenceGraph, productionFiles, testFiles } from "../evidence.config";
 import { root } from "./evidence-host";
 
@@ -49,8 +49,20 @@ function hasProductionExport(body: string): boolean {
     || /\bexport\s*\{/.test(body);
 }
 
+function stripAnsi(text: string): string {
+  return text.replaceAll(/\u001b\[[0-9;]*m/g, "");
+}
+
+function plainTestEnv(): Record<string, string | undefined> {
+  const env: Record<string, string | undefined> = { ...process.env };
+  delete env.FORCE_COLOR;
+  delete env.CLICOLOR_FORCE;
+  env.NO_COLOR = "1";
+  return env;
+}
+
 function reporterEntry(line: string): { status: string; name: string } | undefined {
-  const match = /^\s*\((pass|fail|skip|todo)\)\s+(.+?)\s*(?:\[[^\]]*\])?\s*$/.exec(line);
+  const match = /^\s*\((pass|fail|skip|todo)\)\s+(.+?)\s*(?:\[[^\]]*\])?\s*$/.exec(stripAnsi(line));
   if (!match?.[1] || !match[2]) return undefined;
   return { status: match[1], name: match[2] };
 }
@@ -169,18 +181,74 @@ function showBaseline(spec: string): BaselineFile | undefined {
   return JSON.parse(proc.stdout.toString()) as BaselineFile;
 }
 
+function fetchRevision(revision: string): void {
+  Bun.spawnSync(["git", "fetch", "--no-tags", "--depth=1", "origin", revision], {
+    cwd: root,
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+}
+
 function previousBaseline(): BaselineFile | undefined {
   const baseRef = process.env.GITHUB_BASE_REF;
   if (baseRef) {
-    Bun.spawnSync(["git", "fetch", "--no-tags", "--depth=1", "origin", baseRef], {
-      cwd: root,
-      stdout: "pipe",
-      stderr: "pipe",
-    });
+    fetchRevision(baseRef);
     const fromBase = showBaseline(`origin/${baseRef}`);
     if (fromBase) return fromBase;
   }
+  const before = process.env.GITHUB_BEFORE ?? "";
+  if (/^[0-9a-f]{40}$/.test(before) && !before.startsWith("0000000")) {
+    fetchRevision(before);
+    const fromBefore = showBaseline(before);
+    if (fromBefore) return fromBefore;
+  }
   return showBaseline("HEAD^");
+}
+
+/** Approval files name retired protected paths as bullet lines of `` `path` ``. */
+async function readApprovals(): Promise<{ ids: string[]; files: string[] }> {
+  const ids = await approvalIds();
+  const files: string[] = [];
+  for (const id of ids) {
+    let text = "";
+    try {
+      text = readFileSync(join(root, "docs", "requirements", "approvals", `${id}.md`), "utf8");
+    } catch {
+      continue;
+    }
+    for (const line of text.split("\n")) {
+      const match = /^\s*-\s+`([^`]+)`\s*$/.exec(line);
+      if (match?.[1]) files.push(match[1]);
+    }
+  }
+  return { ids, files };
+}
+
+function exportsNamedFunction(body: string, name: string): boolean {
+  return new RegExp(`export\\s+(?:async\\s+)?function\\s+${name}\\b`).test(body);
+}
+
+function registersNamedTest(body: string, registeredAs: string, exportName: string): boolean {
+  const quoted = JSON.stringify(registeredAs).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const fn = exportName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`\\b(?:it|test)\\(\\s*${quoted}\\s*,\\s*${fn}\\b`).test(body);
+}
+
+/** The doc comment on the exported test must cite this requirement, not only share its file. */
+function citesRequirement(body: string, exportName: string, doc: string, anchor: string): boolean {
+  const fn = exportName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = new RegExp(
+    `(/\\*\\*[\\s\\S]*?\\*/)\\s*export\\s+(?:async\\s+)?function\\s+${fn}\\b`,
+  ).exec(body);
+  return match?.[1]?.includes(`@evidence ${doc}#${anchor}`) === true;
+}
+
+function commandTargetsFile(test: InventoryTest): boolean {
+  const fromCwd = relative(test.cwd, test.file).replaceAll("\\", "/");
+  return test.args.some((arg) => {
+    const normalized = arg.replaceAll("\\", "/");
+    return normalized === fromCwd || normalized === test.file;
+  });
 }
 
 async function approvalIds(): Promise<string[]> {
@@ -211,18 +279,25 @@ export async function checkInventory(projectRoot = root): Promise<string[]> {
   );
   const inventoryIds = inventory.requirements.map((requirement) => requirement.id);
   if (inventoryIds.length === 0) fail(failures, "active inventory has no requirements");
+  if (new Set(inventoryIds).size !== inventoryIds.length) {
+    fail(failures, "inventory requirement ids are duplicated");
+  }
   const baselineIds = [...baseline.ids];
+  if (new Set(baselineIds).size !== baselineIds.length) {
+    fail(failures, "coverage baseline ids are duplicated");
+  }
   if (baselineIds.join("\n") !== inventoryIds.join("\n")) {
     fail(failures, "inventory ids and coverage baseline ids differ");
   }
 
+  const approvals = projectRoot === root ? await readApprovals() : { ids: [], files: [] };
   const previous = projectRoot === root ? previousBaseline() : undefined;
   if (previous) {
-    const shrink = retainedCoverage(previous.ids, baseline.ids, await approvalIds());
+    const shrink = retainedCoverage(previous.ids, baseline.ids, approvals.ids);
     if (!shrink.ok) {
       fail(failures, `active coverage shrunk without approval: ${shrink.missing.join(", ")}`);
     }
-    const fileShrink = retainedCoverage(previous.protectedFiles, baseline.protectedFiles, []);
+    const fileShrink = retainedCoverage(previous.protectedFiles, baseline.protectedFiles, approvals.files);
     if (!fileShrink.ok) {
       fail(
         failures,
@@ -238,26 +313,43 @@ export async function checkInventory(projectRoot = root): Promise<string[]> {
     } catch {
       fail(failures, `protected evidence file is missing: ${rel}`);
     }
+    const isPackageHost = rel.startsWith("packages/") && rel.endsWith(".ts");
+    const listed = inventory.requirements.some(
+      (requirement) =>
+        requirement.production.includes(rel) || requirement.tests.some((test) => test.file === rel),
+    );
+    if (isPackageHost && !listed) {
+      fail(failures, `protected evidence host left the inventory: ${rel}`);
+    }
   }
 
   const activeDocs = await expandGlob("docs/requirements/active/**/*.md", projectRoot);
   if (activeDocs.length === 0) fail(failures, "active requirements directory is empty");
-  const seenAnchors = new Set<string>();
+  const seenPairs = new Set<string>();
   for (const doc of activeDocs) {
     const text = readFileSync(join(projectRoot, doc), "utf8");
+    const seenInDoc = new Set<string>();
     for (const anchor of headingAnchors(text)) {
       if (anchor.length === 0) {
         fail(failures, `active H2 is missing an explicit anchor: ${doc}`);
         continue;
       }
-      seenAnchors.add(anchor);
+      if (seenInDoc.has(anchor)) {
+        fail(failures, `active document repeats anchor ${anchor}: ${doc}`);
+        continue;
+      }
+      seenInDoc.add(anchor);
+      seenPairs.add(`${doc}#${anchor}`);
     }
   }
 
   for (const requirement of inventory.requirements) {
     if (!requirement.pr) fail(failures, `${requirement.id} has no PR id`);
-    if (!seenAnchors.has(requirement.anchor)) {
-      fail(failures, `${requirement.id} anchor ${requirement.anchor} is not an active H2`);
+    if (!seenPairs.has(`${requirement.doc}#${requirement.anchor}`)) {
+      fail(
+        failures,
+        `${requirement.id} anchor ${requirement.anchor} is not an active H2 in ${requirement.doc}`,
+      );
     }
     const docText = readFileSync(join(projectRoot, requirement.doc), "utf8");
     if (!docText.includes(`{#${requirement.anchor}}`)) {
@@ -279,20 +371,42 @@ export async function checkInventory(projectRoot = root): Promise<string[]> {
     if (requirement.tests.length === 0) fail(failures, `${requirement.id} has no executed tests`);
     for (const test of requirement.tests) {
       const body = readFileSync(join(projectRoot, test.file), "utf8");
-      if (!body.includes(`export function ${test.exportName}`)) {
+      if (!exportsNamedFunction(body, test.exportName)) {
         fail(failures, `${requirement.id} test export ${test.exportName} is missing`);
       }
-      const registered = body.includes(`it(${JSON.stringify(test.registeredAs)}, ${test.exportName})`)
-        || body.includes(`test(${JSON.stringify(test.registeredAs)}, ${test.exportName})`);
-      if (!registered) {
+      if (!registersNamedTest(body, test.registeredAs, test.exportName)) {
         fail(failures, `${requirement.id} does not register ${test.exportName} with the runner`);
+      }
+      if (!commandTargetsFile(test)) {
+        fail(failures, `${requirement.id} command does not run ${test.file}`);
+      }
+      if (!citesRequirement(body, test.exportName, requirement.doc, requirement.anchor)) {
+        fail(
+          failures,
+          `${requirement.id} test ${test.exportName} does not cite ${requirement.doc}#${requirement.anchor}`,
+        );
+      }
+      if (!baseline.protectedFiles.includes(test.file)) {
+        fail(failures, `inventory host is not protected: ${test.file}`);
+      }
+    }
+    for (const rel of requirement.production) {
+      if (!baseline.protectedFiles.includes(rel)) {
+        fail(failures, `inventory host is not protected: ${rel}`);
       }
     }
   }
 
-  for (const anchor of seenAnchors) {
-    if (!inventory.requirements.some((requirement) => requirement.anchor === anchor)) {
-      fail(failures, `active anchor ${anchor} is missing from the inventory`);
+  for (const pair of seenPairs) {
+    const split = pair.lastIndexOf("#");
+    const doc = pair.slice(0, split);
+    const anchor = pair.slice(split + 1);
+    if (
+      !inventory.requirements.some(
+        (requirement) => requirement.doc === doc && requirement.anchor === anchor,
+      )
+    ) {
+      fail(failures, `active anchor ${pair} is missing from the inventory`);
     }
   }
 
@@ -345,6 +459,11 @@ export async function checkInventory(projectRoot = root): Promise<string[]> {
       fail(failures, `disabled ledger ${entry.name} is not disabled in the graph`);
     }
   }
+  for (const name of disabledNames) {
+    if (!disabledClaimLedger.some((entry) => entry.name === name)) {
+      fail(failures, `disabled claim ${name} has no ledger entry`);
+    }
+  }
 
   const inventoryTestFiles = [
     ...new Set(inventory.requirements.flatMap((requirement) => requirement.tests.map((test) => test.file))),
@@ -386,7 +505,7 @@ export async function checkInventory(projectRoot = root): Promise<string[]> {
       cwd: resolve(projectRoot, first.cwd),
       stdout: "pipe",
       stderr: "pipe",
-      env: process.env,
+      env: plainTestEnv(),
     });
     const output = `${proc.stdout.toString()}\n${proc.stderr.toString()}`;
     failures.push(
