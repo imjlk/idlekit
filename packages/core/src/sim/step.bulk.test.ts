@@ -104,7 +104,7 @@ function skippedReason(events: readonly SimEvent<unknown>[]): string | undefined
  * @evidence ./step.ts#canSettleCost A zero wallet cannot pay 1e-13, and it can pay a zero cost.
  * @evidenceReview ./step.ts#canSettleCost #af1aab3 Re-read canSettleCost: a zero wallet cannot pay 1e-13, and it can pay a zero cost, without using cmp.
  * @evidence ./step.ts#stepOnce Calls stepOnce for the quoted buy and the rejected quotes.
- * @evidenceReview ./step.ts#stepOnce #4250196 Re-read stepOnce: each decision re-reads model.actions for the state so far, a quoted size pays BulkQuote.cost once through exact decimal order scaled to the smaller exponent, and a rejected quote does not apply.
+ * @evidenceReview ./step.ts#stepOnce #692ab29 Re-read stepOnce: each decision re-reads model.actions for the state so far, a quoted size pays BulkQuote.cost once through exact decimal order scaled to the smaller exponent, a non-finite cost is skipped before toString, and a rejected quote does not apply. Ran this function: a sentinel amount whose toString throws was skipped as invalidQuote on the bulk quote and on the single-cost path.
  */
 export function settlesQuotedBulkAndRejectsBadQuotes(): void {
   expect(singleBuySize).toBe(1);
@@ -426,6 +426,36 @@ export function settlesQuotedBulkAndRejectsBadQuotes(): void {
   expect(custom.toString(customOut.next.wallet.money.amount)).toBe("custom:900");
   expect(customOut.next.vars.owned).toBe(formulaSize);
 
+  const unsafe = throwingNonFiniteEngine();
+  const unsafeAction: Action<number, UnitCode, Vars> = {
+    id: "buy",
+    kind: "buy",
+    canApply: () => true,
+    cost: () => coin(unsafe, nonFiniteSentinel),
+    bulk: () => [{ size: formulaSize, cost: coin(unsafe, nonFiniteSentinel) }],
+    apply: (_ctx, current) => ({ ...current, vars: { ...current.vars, owned: 1 } }),
+  };
+  const unsafeBulk = stepOnce({
+    ctx: context(unsafe),
+    model: zeroIncomeModel(unsafe, unsafeAction),
+    state: state(unsafe, 1000),
+    dt: 0,
+    decisions: [{ action: unsafeAction, bulkSize: formulaSize }],
+  });
+  expect(skippedReason(unsafeBulk.events)).toBe("invalidQuote");
+  expect(unsafeBulk.next.wallet.money.amount).toBe(1000);
+  expect(unsafeBulk.next.vars.owned).toBe(0);
+  const unsafeSingle = stepOnce({
+    ctx: context(unsafe),
+    model: zeroIncomeModel(unsafe, unsafeAction),
+    state: state(unsafe, 1000),
+    dt: 0,
+    decisions: [{ action: unsafeAction }],
+  });
+  expect(skippedReason(unsafeSingle.events)).toBe("invalidQuote");
+  expect(unsafeSingle.next.wallet.money.amount).toBe(1000);
+  expect(unsafeSingle.next.vars.owned).toBe(0);
+
   expectProperty({
     predicateId: "declared-flat-bulk",
     testSeed: declaredSeed,
@@ -530,6 +560,31 @@ function runBonus(engine: Engine<number>, mode: "bulk" | "repeated"): string {
     }
   }
   return snapshot(engine, current);
+}
+
+const nonFiniteSentinel = 7;
+
+function throwingNonFiniteEngine(): Engine<number> {
+  const inner = createNumberEngine();
+  return {
+    zero: () => inner.zero(),
+    from: (input) => inner.from(input),
+    add: (a, b) => inner.add(a, b),
+    sub: (a, b) => inner.sub(a, b),
+    mul: (a, k) => inner.mul(a, k),
+    div: (a, k) => inner.div(a, k),
+    mulN: (a, b) => inner.mulN(a, b),
+    divN: (a, b) => inner.divN(a, b),
+    cmp: (a, b) => inner.cmp(a, b),
+    exactOrder: (a, b) => (a < b ? -1 : a > b ? 1 : 0),
+    absLog10: (a) => inner.absLog10(a),
+    isFinite: (value) => value !== nonFiniteSentinel && inner.isFinite(value),
+    toString: (value) => {
+      if (value === nonFiniteSentinel) throw new Error("toString refused a non-finite amount");
+      return inner.toString(value);
+    },
+    toNumber: (value) => inner.toNumber(value),
+  };
 }
 
 function createCustomEngine(): Engine<number> {

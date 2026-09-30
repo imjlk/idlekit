@@ -170,8 +170,12 @@ function payQuote<N, U extends string, Vars>(
     return undefined;
   }
   const { E } = ctx;
+  if (!E.isFinite(cost.amount)) {
+    rejectBulk(events, actionId, "INVALID_BULK_COST", { actionId });
+    return undefined;
+  }
   const costOrder = exactAmountOrder(E, cost.amount, E.zero());
-  if (!E.isFinite(cost.amount) || costOrder === undefined || costOrder < 0) {
+  if (costOrder === undefined || costOrder < 0) {
     rejectBulk(events, actionId, "INVALID_BULK_COST", { actionId });
     return undefined;
   }
@@ -303,8 +307,16 @@ export function stepOnce<N, U extends string, Vars>(
           continue;
         }
 
+        if (!E.isFinite(cost.amount)) {
+          events.push({
+            type: "action.skipped",
+            actionId: action.id,
+            reason: "invalidQuote",
+          });
+          continue;
+        }
         const singleCost = exactAmountOrder(E, cost.amount, E.zero());
-        if (!E.isFinite(cost.amount) || singleCost === undefined || singleCost < 0) {
+        if (singleCost === undefined || singleCost < 0) {
           events.push({
             type: "action.skipped",
             actionId: action.id,
