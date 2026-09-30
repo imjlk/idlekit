@@ -46,3 +46,9 @@ macOS arm64, Bun `1.3.10`, `@ttsc/graph` `0.30.4`, protocol `2025-11-25`에서 �
 같은 gate가 `fixtures/graph/base`를 임시 디렉터리로 복사했다. lookup은 `src/host.ts:5`의 `quotaHost`를 찾았다. `quotaHostRenamed`로 바꾼 뒤의 새 프로세스는 그 이름을 반환했다. 반환 타입을 `4`로 바꾸면 `details`에 보였다. `@evidence docs/spec.md#quota`를 `docs/spec.md#quota-next`로 바꾸면 `docTags` 텍스트가 바뀌고, 이전 target은 exact tag가 아니었다. stdin shutdown은 exit 0이다.
 
 이후 조회와 `graph:check`는 node id를 저장하지 않는다. `bun run runtime:check`는 exit 0, `bun tools/analysis-baseline-check.ts`는 exit 0이다. `typecheck`, `format:check`, `test`, Linux host, CI `graph:check`는 실행하지 않았다.
+
+## PR-01 호출자
+
+macOS arm64, Bun `1.3.10`, `@ttsc/graph` `0.30.4`, protocol `2025-11-25`에서 조회했다. 생성 식별자는 없다. 결제 수정 전 `stepOnce`의 reverse execution trace(`maxDepth` 3, `maxNodes` 32)는 직접 호출로 `packages/core/src/sim/simulator.ts:49`(`runScenario`)와 `packages/core/src/sim/offline.ts:139`(`applyOfflineSeconds`)를 가리켰다. 그 호스트를 통해 `session.ts`, `monteCarlo.ts`, `eta.ts`, `prestigeCycle.ts`, `strategy/opt/runner.ts`, CLI `compare.ts`, `ltv.ts`, `tune.ts`, `lib/designObjectives.ts`, `lib/experience.ts`에 닿았다. 32노드 상한이 모든 호출자는 아니다.
+
+`createPlannerStrategy`는 hop이 아니었다. 여전히 `PlannerDeps`의 `d.stepOnce`를 호출한다. 그 edge는 미관측이다. 소스를 보면 `applyOfflineSeconds`는 나머지 step으로 `packages/core/src/sim/offline.ts:162`에서 `stepOnce`를 한 번 더 호출한다. 수정 후 lookup은 `stepOnce`를 `packages/core/src/sim/step.ts:175`에 둔다. `singleBuySize`는 `packages/core/src/sim/step.ts:51`이다.

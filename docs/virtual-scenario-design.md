@@ -75,7 +75,7 @@ Then add the design-facing layer:
 
 ## Mapping ideas to scenario fields
 
-- main currency -> `unit`, `wallet`, `Action.cost`
+- main currency -> `unit`, `wallet`, `Action.cost` for one buy, `BulkQuote.cost` for a quoted bulk buy
 - secondary value currency -> `vars`, exchange actions, tuning objective weights
 - producers -> `vars.producers`
 - upgrades -> `vars.upgrades`

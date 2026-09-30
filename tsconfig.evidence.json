@@ -13,6 +13,8 @@
   "include": [
     "packages/core/src/scenario/concreteValidator.ts",
     "packages/core/src/scenario/concreteValidator.test.ts",
+    "packages/core/src/sim/step.ts",
+    "packages/core/src/sim/step.bulk.test.ts",
     "packages/core/src/testkit/conformance.ts",
     "packages/core/src/testkit/conformance.test.ts"
   ]

@@ -31,6 +31,22 @@
           "args": ["test", "src/testkit/conformance.test.ts"]
         }
       ]
+    },
+    {
+      "id": "REQ-PR01-BULK-QUOTE-SETTLEMENT",
+      "pr": "PR-01",
+      "anchor": "req-pr01-bulk-quote-settlement",
+      "doc": "docs/requirements/active/bulk-quote-settlement.md",
+      "production": ["packages/core/src/sim/step.ts"],
+      "tests": [
+        {
+          "file": "packages/core/src/sim/step.bulk.test.ts",
+          "exportName": "settlesQuotedBulkAndRejectsBadQuotes",
+          "registeredAs": "settles a quoted bulk buy and rejects a bad quote",
+          "cwd": "packages/core",
+          "args": ["test", "src/sim/step.bulk.test.ts"]
+        }
+      ]
     }
   ]
 }
