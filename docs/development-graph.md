@@ -62,3 +62,11 @@ Queried on macOS arm64 with Bun `1.3.10`, `@ttsc/graph` `0.30.4`, protocol `2025
 A forward execution trace from `runScenario` (`maxDepth` 2, `maxNodes` 32) reaches `nextBoundary` and `stepOnce` at `packages/core/src/sim/step.ts:175`. A reverse execution trace of `stepOnce` (`maxDepth` 3, `maxNodes` 32) names direct calls at `packages/core/src/sim/simulator.ts:80` and `packages/core/src/sim/offline.ts:162`. The offline remainder is the same loop, not a second call. Through those hosts the trace reached `session.ts`, `monteCarlo.ts`, `eta.ts`, `prestigeCycle.ts`, `strategy/opt/runner.ts`, `conformanceRun.ts`, `simulator.time.test.ts`, and CLI `compare.ts`, `ltv.ts`, `tune.ts`, `lib/designObjectives.ts`, and `lib/experience.ts`. The 32-node cap is not every caller.
 
 A reverse trace of `nextBoundary` names `packages/core/src/sim/simulator.ts:60` and `packages/core/src/sim/offline.ts:140`. `createPlannerStrategy` is still not a hop to `stepOnce`. The call remains `d.stepOnce` on `PlannerDeps`. That edge stays unobserved.
+
+## PR-03 callers
+
+Queried on macOS arm64 with Bun `1.3.10`, `@ttsc/graph` `0.30.4`, protocol `2025-11-25`. No generation identifier. Lookup places `createRunFactory` at `packages/core/src/sim/runFactory.ts:338`, `cloneRunState` at `packages/core/src/sim/runFactory.ts:161`, and `simulateMonteCarlo` at `packages/core/src/sim/monteCarlo.ts:41`.
+
+A reverse execution trace of `createRunFactory` (`maxDepth` 3, `maxNodes` 32) names the call in `packages/core/src/sim/monteCarlo.ts:46` and `packages/core/src/sim/runFactory.test.ts`. Through `simulateMonteCarlo` it reached `isolatesIndependentRuns`, CLI `lib/designObjectives.ts`, `lib/experience.ts`, and `commands/compare.ts`. The 32-node cap is not every caller.
+
+A forward execution trace of `simulateMonteCarlo` (`maxDepth` 2, `maxNodes` 32) reaches `createRunFactory` at `packages/core/src/sim/runFactory.ts:338`, then `session.ts` and `simulator.ts`. A reverse execution trace of `cloneRunState` (`maxDepth` 2, `maxNodes` 16) names `packages/core/src/scenario/compile.ts:388` inside `buildInitialState`, `compileScenario` at `packages/core/src/scenario/compile.ts:491`, and the factory's own `bind`. `createPlannerStrategy` is still not a hop to `stepOnce`. That edge stays unobserved.

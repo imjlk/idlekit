@@ -1,6 +1,7 @@
 import type { Engine } from "../engine/types";
 import type { Unit } from "../money/types";
 import { parseMoney } from "../notation/parseMoney";
+import { cloneRunState } from "../sim/runFactory";
 import type { CompiledScenario, Model } from "../sim/types";
 import type { StrategyRegistry } from "../sim/strategy/registry";
 import type { ModelRegistry } from "./registry";
@@ -384,7 +385,7 @@ function buildInitialState<N, U extends string, Vars>(args: {
       }).amount
     : E.from(1);
 
-  return {
+  return cloneRunState({
     t: scenario.initial.t ?? 0,
     wallet: {
       money: walletMoney,
@@ -397,7 +398,7 @@ function buildInitialState<N, U extends string, Vars>(args: {
       multiplier,
     },
     vars: (scenario.initial.vars ?? ({} as Vars)) as Vars,
-  };
+  });
 }
 
 function buildStrategy<N, U extends string, Vars>(args: {

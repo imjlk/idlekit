@@ -3,7 +3,8 @@
     "REQ-TC02-TYPIA-TRANSFORM-MISSING",
     "REQ-DX01-CONFORMANCE-HARNESS",
     "REQ-PR01-BULK-QUOTE-SETTLEMENT",
-    "REQ-PR02-SIMULATION-TIME-BOUNDARIES"
+    "REQ-PR02-SIMULATION-TIME-BOUNDARIES",
+    "REQ-PR03-RUN-LIFECYCLE-ISOLATION"
   ],
   "protectedFiles": [
     "docs/requirements/active/typia-transform.md",
@@ -28,6 +29,11 @@
     "packages/core/src/sim/simulator.ts",
     "packages/core/src/sim/offline.ts",
     "packages/core/src/sim/simulator.time.test.ts",
+    "docs/requirements/active/run-lifecycle-isolation.md",
+    "packages/core/src/sim/runFactory.ts",
+    "packages/core/src/sim/runFactory.test.ts",
+    "packages/core/src/sim/monteCarlo.ts",
+    "packages/core/src/scenario/compile.ts",
     "fixtures/conformance/shrink-gap.json",
     "fixtures/toolchain/evidence/lint.config.ts",
     "fixtures/toolchain/evidence/src/quotaHost.ts",

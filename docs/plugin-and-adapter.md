@@ -66,6 +66,8 @@ That lets you switch between `number`, `break_infinity.js`, or your own fixed-po
 
 Runners do not step past `durationSec`. The last tick may be shorter than `stepSec`. Each tick passes a copy of `ctx` whose `stepSec` is that tick's `dt`. The original context object is not written. A preview that reads `ctx.stepSec` therefore sees the runner's clock, not a stored step. Only constant income is treated as exact across different step sizes.
 
+Independent trials do not share a strategy cursor or a stateful model closure. `createRunFactory` restores `snapshotState` for a fresh draw, keeps that cursor for `continue`, and builds a new instance from a `ModelFactory` or `StrategyFactory`. A closure with hidden state and neither a factory nor snapshot hooks is not isolated by cloning the function. Marking it stateful throws `RunIsolationError` before the run. `initial.vars` is copied from the input scenario. `ctx.E` is shared. Engine values are treated as immutable.
+
 Use the adapter example to see a custom `Engine<bigint>` wired into the simulator:
 
 - [../examples/adapter-pattern/README.md](../examples/adapter-pattern/README.md)

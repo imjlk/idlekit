@@ -31,6 +31,7 @@ export * from "./sim/offline";
 export * from "./sim/random";
 export * from "./sim/session";
 export * from "./sim/monteCarlo";
+export * from "./sim/runFactory";
 
 export * from "./sim/strategy/types";
 export * from "./sim/strategy/contracts";

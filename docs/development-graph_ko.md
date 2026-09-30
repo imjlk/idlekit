@@ -62,3 +62,11 @@ macOS arm64, Bun `1.3.10`, `@ttsc/graph` `0.30.4`, protocol `2025-11-25`에서 �
 `runScenario`의 forward execution trace(`maxDepth` 2, `maxNodes` 32)는 `nextBoundary`와 `packages/core/src/sim/step.ts:175`의 `stepOnce`에 닿는다. `stepOnce`의 reverse execution trace(`maxDepth` 3, `maxNodes` 32)는 직접 호출로 `packages/core/src/sim/simulator.ts:80`과 `packages/core/src/sim/offline.ts:162`를 가리킨다. 오프라인 나머지는 두 번째 호출이 아니라 같은 루프다. 그 호스트를 통해 `session.ts`, `monteCarlo.ts`, `eta.ts`, `prestigeCycle.ts`, `strategy/opt/runner.ts`, `conformanceRun.ts`, `simulator.time.test.ts`, CLI `compare.ts`, `ltv.ts`, `tune.ts`, `lib/designObjectives.ts`, `lib/experience.ts`에 닿았다. 32노드 상한이 모든 호출자는 아니다.
 
 `nextBoundary`의 reverse trace는 `packages/core/src/sim/simulator.ts:60`과 `packages/core/src/sim/offline.ts:140`을 가리킨다. `createPlannerStrategy`는 여전히 `stepOnce`까지의 hop이 아니다. 호출은 `PlannerDeps`의 `d.stepOnce`다. 그 edge는 미관측이다.
+
+## PR-03 호출자
+
+macOS arm64, Bun `1.3.10`, `@ttsc/graph` `0.30.4`, protocol `2025-11-25`에서 조회했다. 생성 식별자는 없다. lookup은 `createRunFactory`를 `packages/core/src/sim/runFactory.ts:338`, `cloneRunState`를 `packages/core/src/sim/runFactory.ts:161`, `simulateMonteCarlo`를 `packages/core/src/sim/monteCarlo.ts:41`에 둔다.
+
+`createRunFactory`의 reverse execution trace(`maxDepth` 3, `maxNodes` 32)는 `packages/core/src/sim/monteCarlo.ts:46`의 호출과 `packages/core/src/sim/runFactory.test.ts`를 가리킨다. `simulateMonteCarlo`를 통해 `isolatesIndependentRuns`, CLI `lib/designObjectives.ts`, `lib/experience.ts`, `commands/compare.ts`에 닿았다. 32노드 상한이 모든 호출자는 아니다.
+
+`simulateMonteCarlo`의 forward execution trace(`maxDepth` 2, `maxNodes` 32)는 `packages/core/src/sim/runFactory.ts:338`의 `createRunFactory`에 닿고, 이어서 `session.ts`와 `simulator.ts`에 닿는다. `cloneRunState`의 reverse execution trace(`maxDepth` 2, `maxNodes` 16)는 `buildInitialState` 안의 `packages/core/src/scenario/compile.ts:388`, `packages/core/src/scenario/compile.ts:491`의 `compileScenario`, 그리고 factory의 `bind`를 가리킨다. `createPlannerStrategy`는 여전히 `stepOnce`까지의 hop이 아니다. 그 edge는 미관측이다.

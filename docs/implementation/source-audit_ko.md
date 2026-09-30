@@ -40,7 +40,7 @@ export나 명령이 있다는 것은 분석이 끝났다는 뜻이 아니다.
 2. **벌크 결제는 현재 견적을 한 번 낸다.** `PR-01`이 `stepOnce`를 바꿨다. `bulkSize`가 없거나 `1`이면 여전히 `Action.cost`를 한 번 뺀다. 그보다 큰 정수는 현재 상태에서 `Action.bulk`를 다시 읽고 그 `BulkQuote.cost`를 한 번 뺀 다음 `apply`를 한 번 호출한다. size가 없거나 중복이거나, 정수가 아니거나, 유한하지 않거나, 음수이거나, 단위가 다른 견적은 `apply` 전에 거부한다. 단건 비용만 빼고 `bulkSize`를 적용하던 이전 경로는 지금 제어 흐름이 아니다. Fixture: `packages/core/src/sim/step.bulk.test.ts`.
 3. **`runScenario`와 `applyOfflineSeconds`는 경제 horizon에서 멈춘다.** `PR-02`가 둘을 바꿨다. 마지막 틱은 `min(stepSec, horizon 안에 남은 시간)`이다. 이미 참인 duration이나 `until`은 `maxSteps`보다 먼저 끝난다. horizon을 요청했는데 `maxSteps`가 먼저이면 `stop.reason: "budget"`을 반환한다. duration과 `until`이 없고 `maxSteps`만 있으면 여전히 throw한다. 그 throw는 끝이 없는 루프에 대한 가드다. Fixture: `packages/core/src/sim/simulator.time.test.ts`. 이 변경이 정확한 동치로 다루는 dt 분할은 상수 수입뿐이다.
 4. **Planner rollout은 `node.firstDecision ?? decision`으로 첫 결정을 유지한다.** 첫 결정이 없는 상태와 명시적 no-op이 같은 빈 값이라, 이후 행동이 첫 대기를 바꿀 수 있다. rollout은 살아있는 `ctx`로 `stepOnce`를 호출한다. 후속: `PR-04`.
-5. **Monte Carlo는 model과 strategy 객체를 공유한다.** `deepClonePreservingPrototype`에 들어가는 것은 `initial`뿐이다. closure에 cursor를 두는 strategy는 draw 사이에 공유된다. 후속: `PR-03`.
+5. **독립 trial은 새 model과 복원된 strategy에서 시작한다.** `PR-03`이 `createRunFactory`를 추가했다. `simulateMonteCarlo`는 모든 draw를 그 factory에 묶고, snapshot strategy를 그 호출에서 캡처한 cursor로 되돌린다. `ModelFactory`나 `StrategyFactory`는 fresh draw마다 새 인스턴스를 만든다. factory도 `snapshotState`/`restoreState`도 없는 compiled 인스턴스는 공유되며 stateless로 다룬다. 그 closure를 stateful로 표시하면 `RunIsolationError`가 난다. 함수를 deep clone하는 것은 격리가 아니다. `compileScenario`는 `initial.vars`를 `deepClonePreservingPrototype`으로 복사한다. Fixture: `packages/core/src/sim/runFactory.test.ts`. 재현 라벨은 `0x7103`이다. 여기서의 기준은 상수 수입이 아니라 draw 순서다.
 6. **Session 통계는 보관된 이벤트에서 다시 합산된다.** `runScenario`는 step 이벤트로 stats를 쌓은 뒤 `eventBuffer`가 보관한 `events`를 반환한다. `simulateSessionPattern`은 그 보관 목록에 `statsAcc.push(run.events)`를 한다. session이 합치는 값은 child `run.stats`가 아니다. session 안의 오프라인 catch-up은 `useStrategy: true`다. 후속: `PR-05`, `PR-06`.
 7. **오프라인 catch-up은 경제 시간만큼 `state.t`를 진행한다.** `resolveOfflineSeconds`는 `seconds`를 clamp와 decay로 `effectiveSec`로 줄일 수 있다. 이후 루프는 나머지를 포함해 `effectiveSec`를 step한다. 반환값 `offline.requestedSec`는 호출자가 준 seconds를 유지한다. session 일정은 그 다음 `state.t`를 읽는다. 후속: `PR-06`.
 8. **Analytic ETA는 양쪽을 `number`로 줄인다.** `etaAnalytic`은 목표를 `E.from`으로 읽고, 수입과 차액을 `E.toNumber`로 바꾼 뒤 나눈다. `constant` 수입이 high-confidence hint다. 후속: `PR-09`.
@@ -56,7 +56,6 @@ export나 명령이 있다는 것은 분석이 끝났다는 뜻이 아니다.
 
 - `bulk()` 견적이 `cost()`와 다른 action에서 size가 1보다 큰 경우.
 - horizon `10`, `stepSec` `6`은 `PR-02` fixture다. `until`과 budget이 같은 틱에서 만나는 목표는 아직 별도 fixture가 필요하다.
-- scripted strategy cursor 하나를 두 Monte Carlo draw가 쓰는 경우.
 - `eventLog.maxEvents`가 이벤트를 버릴 만큼 작을 때의 session stats.
 - 다음 session block이 벽시계를 따라야 하는 오프라인 상한 또는 감쇠.
 - 양과 속도는 `number`에 들어가지 않고 비율은 유한한 경우.

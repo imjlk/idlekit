@@ -24,7 +24,7 @@ This guide summarizes the public ScenarioV1 and TuneSpec contracts used by `idle
 - `unit`: primary payment currency
 - `policy`: `drop` or `accumulate`, plus optional `maxLogGap`
 - `model`: model id and version
-- `initial`: wallet, vars, prestige state, and optional max worth
+- `initial`: wallet, vars, prestige state, and optional max worth. `compileScenario` copies `vars` and keeps numeric prototypes. The input object is not the run's vars object.
 - `clock`: simulation step and stop condition. The last tick is shorter when `durationSec` is not a multiple of `stepSec`. `maxSteps` is a safety budget, not a second horizon. Program API `durationSec: 0` completes immediately. ScenarioV1 JSON still requires a positive `durationSec` when that field is present.
 - `strategy`: strategy id plus params
 - `design`: intent and session-pattern metadata for design-facing analysis

@@ -178,6 +178,22 @@
           "args": ["test", "src/sim/simulator.time.test.ts"]
         }
       ]
+    },
+    {
+      "id": "REQ-PR03-RUN-LIFECYCLE-ISOLATION",
+      "pr": "PR-03",
+      "anchor": "req-pr03-run-lifecycle-isolation",
+      "doc": "docs/requirements/active/run-lifecycle-isolation.md",
+      "production": ["packages/core/src/sim/runFactory.ts"],
+      "tests": [
+        {
+          "file": "packages/core/src/sim/runFactory.test.ts",
+          "exportName": "isolatesIndependentRuns",
+          "registeredAs": "isolates independent runs",
+          "cwd": "packages/core",
+          "args": ["test", "src/sim/runFactory.test.ts"]
+        }
+      ]
     }
   ]
 }
