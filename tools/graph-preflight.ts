@@ -5,6 +5,7 @@ import {
   GraphSession,
   assertActions,
   buildToolArguments,
+  collectHops,
   collectSpans,
   generationNote,
   graphBin,
@@ -35,25 +36,24 @@ function hasSource(payload: unknown, needle: string): boolean {
   return sourceSpans(payload).some((span) => span.file.includes(needle));
 }
 
-function endpointName(value: unknown): string | undefined {
-  if (typeof value === "string") return value;
-  if (!value || typeof value !== "object") return undefined;
-  const name = (value as { name?: unknown }).name;
-  return typeof name === "string" ? name : undefined;
-}
-
-function traceHops(value: unknown, found: Array<{ from: string; to: string }> = []): Array<{ from: string; to: string }> {
-  if (Array.isArray(value)) {
-    for (const item of value) traceHops(item, found);
-    return found;
-  }
-  if (!value || typeof value !== "object") return found;
-  const record = value as Record<string, unknown>;
-  const from = endpointName(record.from);
-  const to = endpointName(record.to);
-  if (from && to) found.push({ from, to });
-  for (const child of Object.values(record)) traceHops(child, found);
-  return found;
+function citesCliRun(payload: unknown): boolean {
+  if (resultType(payload) !== "trace") return false;
+  const cliNames = sourceSpans(payload)
+    .filter((span) => span.file.includes("packages/cli/src/") && span.name)
+    .map((span) => span.name as string);
+  return collectHops(payload).some((hop) => {
+    const ends = [
+      { name: hop.from, file: hop.fromFile },
+      { name: hop.to, file: hop.toFile },
+    ];
+    const run = ends.find((end) => end.name.includes("runScenario"));
+    const other = ends.find((end) => end !== run);
+    if (!run || !other) return false;
+    if (other.file?.includes("packages/cli/src/")) return true;
+    return cliNames.some(
+      (name) => other.name === name || other.name.endsWith(`.${name}`) || name.endsWith(`.${other.name}`),
+    );
+  });
 }
 
 function tagTexts(value: unknown, found: string[] = []): string[] {
@@ -153,7 +153,7 @@ async function scratch(): Promise<void> {
         }),
       );
       const traceType = resultType(traced);
-      const linked = traceHops(traced).some(
+      const linked = collectHops(traced).some(
         (hop) => hop.from.includes("useQuota") && hop.to.includes("quotaHost"),
       );
       if (traceType !== "trace" || !linked) {
@@ -331,7 +331,7 @@ async function main(): Promise<void> {
       }),
     );
     const forwardType = resultType(forward);
-    const forwardHop = traceHops(forward).some(
+    const forwardHop = collectHops(forward).some(
       (hop) => hop.from.includes("runScenario") && hop.to.includes("stepOnce"),
     );
     if (forwardType !== "trace" || !forwardHop) {
@@ -351,7 +351,7 @@ async function main(): Promise<void> {
       }),
     );
     const reverseType = resultType(reverse);
-    const reverseHop = traceHops(reverse).some(
+    const reverseHop = collectHops(reverse).some(
       (hop) =>
         (hop.from.includes("runScenario") && hop.to.includes("stepOnce")) ||
         (hop.from.includes("stepOnce") && hop.to.includes("runScenario")),
@@ -457,7 +457,7 @@ async function main(): Promise<void> {
         maxNodes: 32,
       }),
     );
-    if (hasSource(callers, "packages/cli/src/")) ok("trace runScenario reverse reaches packages/cli/src");
+    if (citesCliRun(callers)) ok("trace runScenario reverse reaches packages/cli/src");
     else {
       console.log("aggregate reverse trace did not cite CLI source; querying packages/cli");
       const cliSession = await openSchema(join(root, "packages", "cli"), "tsconfig.json");

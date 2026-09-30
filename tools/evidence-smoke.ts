@@ -5,8 +5,11 @@ import {
   assertExecutedTests,
   assertNonEmptyGlobs,
   evidenceProgramSourceFiles,
+  commandTargetsFile,
   headingAnchors,
+  isNonProductionPath,
   recordedBaseSpec,
+  requireFetchedRevision,
   unregisteredImplementationHost,
   includedSourceCount,
   omittedProgramHosts,
@@ -280,6 +283,16 @@ try {
   const indentedOk = indented.length === 1 && indented[0] === "quota";
   record("indented-heading", "zero", indentedOk ? 0 : 1, indentedOk, JSON.stringify(indented));
 
+  const indentedFence = headingAnchors("    ```\n## Visible {#quota}\n");
+  const indentedFenceOk = indentedFence.length === 1 && indentedFence[0] === "quota";
+  record(
+    "indented-fence",
+    "zero",
+    indentedFenceOk ? 0 : 1,
+    indentedFenceOk,
+    JSON.stringify(indentedFence),
+  );
+
   const splitHost = [
     "/** @evidence docs/spec.md#quota Cites the section only. */",
     "export function registeredOnly(): void {}",
@@ -289,8 +302,74 @@ try {
   const gap = unregisteredImplementationHost(splitHost, "docs/spec.md", "quota", [
     "registeredOnly",
   ]);
-  const gapOk = gap === "helper";
-  record("registered-implementation", "nonzero", gapOk ? 1 : 0, gapOk, gap ?? "none");
+  const gapOk =
+    typeof gap === "object" && gap?.kind === "unregistered" && gap.name === "helper";
+  record("registered-implementation", "nonzero", gapOk ? 1 : 0, gapOk, JSON.stringify(gap));
+
+  const siblingBody = [
+    "/** @evidence ./host.ts#quotaHost Calls the host. */",
+    "export function owned(): void {}",
+    "/** @evidence ./other.ts#otherHost Calls the sibling host. */",
+    "export function sibling(): void {}",
+  ].join("\n");
+  const sibling = unregisteredImplementationHost(siblingBody, "docs/spec.md", "quota", ["owned"], {
+    file: "pkg/case.test.ts",
+    production: ["pkg/host.ts"],
+    fileRegistered: ["owned", "sibling"],
+  });
+  const siblingOk = sibling === undefined;
+  record("sibling-inventory", "zero", siblingOk ? 0 : 1, siblingOk, JSON.stringify(sibling));
+
+  const foreign = unregisteredImplementationHost(siblingBody, "docs/spec.md", "quota", ["owned"], {
+    file: "pkg/case.test.ts",
+    production: ["pkg/missing.ts"],
+    fileRegistered: ["owned", "sibling"],
+  });
+  const foreignOk =
+    typeof foreign === "object" && foreign?.kind === "foreign" && foreign.name === "owned";
+  record("foreign-production", "nonzero", foreignOk ? 1 : 0, foreignOk, JSON.stringify(foreign));
+
+  const wrapped = commandTargetsFile({
+    file: "src/example.test.ts",
+    exportName: "example",
+    registeredAs: "example",
+    cwd: ".",
+    args: ["run", "wrapper", "src/example.test.ts"],
+  });
+  const direct = commandTargetsFile({
+    file: "src/example.test.ts",
+    exportName: "example",
+    registeredAs: "example",
+    cwd: ".",
+    args: ["test", "src/example.test.ts"],
+  });
+  const commandOk = wrapped === false && direct === true;
+  record(
+    "test-subcommand",
+    "zero",
+    commandOk ? 0 : 1,
+    commandOk,
+    `wrapped=${wrapped} direct=${direct}`,
+  );
+
+  const specTsx = isNonProductionPath("packages/web/src/widget.spec.tsx");
+  record("spec-tsx", "nonzero", specTsx ? 1 : 0, specTsx, String(specTsx));
+
+  let fetchThrew = false;
+  try {
+    requireFetchedRevision("abc", false, false);
+  } catch {
+    fetchThrew = true;
+  }
+  const fetchedMissing = requireFetchedRevision("abc", true, false);
+  const fetchOk = fetchThrew && fetchedMissing === undefined;
+  record(
+    "baseline-fetch",
+    "nonzero",
+    fetchOk ? 1 : 0,
+    fetchOk,
+    `threw=${fetchThrew} missing=${fetchedMissing ?? "none"}`,
+  );
 
   const recordedSha = "a".repeat(40);
   const recorded = recordedBaseSpec({ GITHUB_BASE_SHA: recordedSha, GITHUB_BASE_REF: "main" });
