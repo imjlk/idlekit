@@ -55,11 +55,10 @@ function currentAction<N, U extends string, Vars>(
   ctx: SimContext<N, U, Vars>,
   state: SimState<N, U, Vars>,
   selected: Action<N, U, Vars>,
-): Action<N, U, Vars> {
-  const match = model.actions(ctx, state).find(
+): Action<N, U, Vars> | undefined {
+  return model.actions(ctx, state).find(
     (candidate) => candidate.id === selected.id && candidate.kind === selected.kind,
   );
-  return match ?? selected;
 }
 
 function rejectBulk<N>(events: SimEvent<N>[], actionId: string, code: string, detail: unknown): void {
@@ -212,6 +211,14 @@ export function stepOnce<N, U extends string, Vars>(
 
   for (const d of decisions) {
     const action = currentAction(model, ctx, next, d.action);
+    if (!action) {
+      events.push({
+        type: "action.skipped",
+        actionId: d.action.id,
+        reason: "cannotApply",
+      });
+      continue;
+    }
     if (!action.canApply(ctx, next)) {
       events.push({
         type: "action.skipped",

@@ -749,4 +749,43 @@ describe("PR-01 bulk quote settlement", () => {
     expect(engine.toNumber(out.next.wallet.money.amount)).toBe(1000);
     expect(skippedReason(out.events)).toBeUndefined();
   });
+
+  it("skips a later decision when the model no longer offers that action", () => {
+    const engine = createNumberEngine();
+    let hideSecond = false;
+    const first: Action<number, UnitCode, Vars> = {
+      id: "first",
+      kind: "buy",
+      canApply: () => true,
+      cost: () => null,
+      apply: (_ctx, current) => {
+        hideSecond = true;
+        return { ...current, vars: { ...current.vars, bonus: 1 } };
+      },
+    };
+    const second: Action<number, UnitCode, Vars> = {
+      id: "second",
+      kind: "buy",
+      canApply: () => true,
+      cost: () => coin(engine, engine.from(100)),
+      apply: (_ctx, current) => ({ ...current, vars: { ...current.vars, owned: 1 } }),
+    };
+    const model: Model<number, UnitCode, Vars> = {
+      id: "vanish",
+      version: 1,
+      income: () => coin(engine, engine.zero()),
+      actions: () => (hideSecond ? [first] : [first, second]),
+    };
+    const out = stepOnce({
+      ctx: context(engine),
+      model,
+      state: state(engine, 1000),
+      dt: 0,
+      decisions: [{ action: first }, { action: second }],
+    });
+    expect(out.next.vars.bonus).toBe(1);
+    expect(out.next.vars.owned).toBe(0);
+    expect(engine.toNumber(out.next.wallet.money.amount)).toBe(1000);
+    expect(skippedReason(out.events)).toBe("cannotApply");
+  });
 });
