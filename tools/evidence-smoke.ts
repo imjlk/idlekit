@@ -4,7 +4,9 @@ import {
   approvalApplies,
   assertExecutedTests,
   assertNonEmptyGlobs,
+  headingAnchors,
   includedSourceCount,
+  productionFileCites,
   retainedCoverage,
 } from "./evidence-inventory";
 import { commandText, root, runTtsc, type CommandResult } from "./evidence-host";
@@ -233,6 +235,59 @@ try {
     approvalOk ? 0 : 1,
     approvalOk,
     "a stale approval must not cover a later removal",
+  );
+
+  const ambiguousOut = [
+    "(pass) alpha > quota is documented",
+    "(pass) beta > quota is documented",
+    "2 pass",
+  ].join("\n");
+  const ambiguous = assertExecutedTests(ambiguousOut, 0, ["quota is documented"]);
+  const ambiguousOk = ambiguous.some((message) => message.includes("more than one suite"));
+  record("ambiguous-suite", "nonzero", ambiguousOk ? 1 : 0, ambiguousOk, ambiguous.join("\n"));
+
+  const qualifiedOut = ["(pass) alpha > quota is documented", "1 pass"].join("\n");
+  const qualified = assertExecutedTests(qualifiedOut, 0, ["quota is documented"]);
+  const qualifiedOk = qualified.length === 0;
+  record("suite-qualified", "zero", qualifiedOk ? 0 : 1, qualifiedOk, qualified.join("\n"));
+
+  const anchors = headingAnchors(
+    [
+      "## Visible {#visible}",
+      "```ts",
+      "## Example {#example}",
+      "```",
+      "<!--",
+      "## Hidden {#hidden}",
+      "-->",
+      "text <!-- ## Mid {#mid} -->",
+    ].join("\n"),
+  );
+  const fenceOk = anchors.length === 1 && anchors[0] === "visible";
+  record("fenced-headings", "zero", fenceOk ? 0 : 1, fenceOk, JSON.stringify(anchors));
+
+  const functionCites = productionFileCites(
+    "/** @evidence docs/spec.md#quota */\nexport function quotaHost() {\n  return 3;\n}\n",
+    "docs/spec.md",
+    "quota",
+  );
+  const constCites = productionFileCites(
+    "/** @evidence docs/spec.md#quota */\nexport const quotaHost = 3;\n",
+    "docs/spec.md",
+    "quota",
+  );
+  const typeCites = productionFileCites(
+    "/** @evidence docs/spec.md#quota */\nexport type Quota = number;\n",
+    "docs/spec.md",
+    "quota",
+  );
+  const citeOk = functionCites && constCites && !typeCites;
+  record(
+    "production-citation-kind",
+    "zero",
+    citeOk ? 0 : 1,
+    citeOk,
+    `function=${functionCites} const=${constCites} type=${typeCites}`,
   );
 
   const formatBad = join(root, "fixtures", "evidence", "format-bad");
