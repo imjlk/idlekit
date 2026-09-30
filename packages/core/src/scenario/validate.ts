@@ -2,6 +2,8 @@ import type { IValidation } from "typia";
 import type { ZodType } from "zod";
 import type { ScenarioV1 } from "./types";
 
+export { TypiaTransformMissingError, typiaStandardSchema } from "./typiaTransformMissing";
+
 export type StandardIssue = Readonly<{
   path?: string;
   message: string;
@@ -18,16 +20,6 @@ export type StandardSchema<T> = Readonly<{
     validate: (input: unknown) => StandardResult<T>;
   }>;
 }>;
-
-export class TypiaTransformMissingError extends Error {
-  constructor(cause: unknown) {
-    super(
-      "typia.validate<T>() was not transformed. Call typia.createValidate<Concrete>() at a concrete site and pass that function to standardSchemaFromValidate().",
-      cause === undefined ? undefined : { cause },
-    );
-    this.name = "TypiaTransformMissingError";
-  }
-}
 
 function issuesFromTypiaErrors(errors: readonly IValidation.IError[]): StandardIssue[] {
   return errors.map((err) => ({
@@ -57,24 +49,6 @@ export function standardSchemaFromValidate<T>(
     "~standard": {
       validate(input) {
         return standardResultFromValidation(validate(input));
-      },
-    },
-  };
-}
-
-/**
- * @deprecated The pinned typia transform rejects `typia.validate<T>()` when `T` is not concrete
- * (`non-specified generic argument`). There are no in-repo callers. Use
- * {@link standardSchemaFromValidate} with `typia.createValidate<Concrete>()`.
- * Calling this helper throws {@link TypiaTransformMissingError} instead of reporting a user-input issue.
- */
-export function typiaStandardSchema<T>(): StandardSchema<T> {
-  return {
-    "~standard": {
-      validate(_input: unknown): StandardResult<T> {
-        throw new TypiaTransformMissingError(
-          "typia.validate<T>() was not emitted because the type argument is not concrete",
-        );
       },
     },
   };

@@ -52,11 +52,13 @@ bun link --cwd packages/cli
 idk --help
 ```
 
-네이티브 바이너리 빌드:
+JS 번들:
 
 ```bash
-bun run --cwd packages/cli build:bin
+bun run --cwd packages/cli build
 ```
+
+`build:bin`은 standalone 실행 파일을 만들지 않는다. `@opentui/core`의 플랫폼 패키지와 asset loader는 인라인할 수 없다.
 
 시나리오 템플릿 생성:
 

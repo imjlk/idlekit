@@ -13,6 +13,7 @@ import type { ITtscLintConfig } from "@ttsc/lint";
  */
 export const productionFiles = [
   "packages/core/src/scenario/concreteValidator.ts",
+  "packages/core/src/scenario/typiaTransformMissing.ts",
   "packages/core/src/testkit/conformance.ts",
 ];
 
@@ -64,7 +65,7 @@ export const evidenceGraph: ITtscEvidenceGraphConfig = {
       reference: {
         type: "typescript",
         files: productionFiles,
-        symbol: "property",
+        symbol: ["property", "function"],
         noEvidenceExclude: true,
         requireReview: true,
       },

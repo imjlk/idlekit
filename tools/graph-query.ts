@@ -248,6 +248,19 @@ export function summarize(payload: unknown): string {
   return [`type=${resultType(payload) ?? "unknown"}`, generationNote(payload), ...lines].join("\n");
 }
 
+function readWithDeadline(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  timeoutMs: number,
+): Promise<ReadableStreamReadResult<Uint8Array>> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error("graph MCP read timed out")), timeoutMs);
+  });
+  return Promise.race([reader.read(), timeout]).finally(() => {
+    if (timer !== undefined) clearTimeout(timer);
+  });
+}
+
 export class GraphSession {
   readonly cwd: string;
   private proc: ReturnType<typeof Bun.spawn> | null = null;
@@ -296,11 +309,19 @@ export class GraphSession {
     while (true) {
       const newline = this.buffer.indexOf("\n");
       if (newline === -1) {
-        if (Date.now() > deadline) {
+        const remaining = deadline - Date.now();
+        if (remaining <= 0) {
+          this.proc?.kill();
           throw new Error(`graph MCP timed out waiting for id ${id}\n${this.stderrTail()}`);
         }
         if (!this.reader) throw new Error("graph stdout is closed");
-        const chunk = await this.reader.read();
+        let chunk: ReadableStreamReadResult<Uint8Array>;
+        try {
+          chunk = await readWithDeadline(this.reader, remaining);
+        } catch (error) {
+          this.proc?.kill();
+          throw error;
+        }
         if (chunk.done) {
           throw new Error(
             `graph MCP stdout closed waiting for id ${id}\n${this.stderrTail()}\n${this.buffer.slice(0, 400)}`,
