@@ -30,7 +30,7 @@ JSON/YAML 시나리오, shell과 package script, `packages/cli/src/plugin/load.t
 
 ## TC-04 검증
 
-macOS arm64, Bun `1.3.10`, `@ttsc/graph` `0.30.4`, protocol `2025-11-25`, commit `878707f92c6c80552bf3e76a65e889908aa3b021`에서 조회했다. generation 필드는 없었다. scratch 수정은 새 프로세스에서 다시 읽었다. `bun run graph:check`는 exit 0이다. tour payload에도 아래 `runScenario`와 `stepOnce` span이 있다.
+macOS arm64, Bun `1.3.10`, `@ttsc/graph` `0.30.4`, protocol `2025-11-25`, commit `9f527f25ff3be3c363de1ce47e8a5d17b5eaff36`에서 조회했다. generation 필드는 없었다. scratch 수정은 새 프로세스에서 다시 읽었고, 이미 열린 세션은 signature 수정 뒤 `quotaHost`를 `(): 4`로 보고했다. `bun run graph:check`는 exit 0이다. tour payload에도 아래 `runScenario`와 `stepOnce` span이 있다.
 
 | Symbol | Span | 결과 |
 |---|---|---|

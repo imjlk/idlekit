@@ -30,7 +30,7 @@ The checker does not see JSON or YAML scenarios, shell and package scripts, dyna
 
 ## TC-04 verification
 
-Queried on macOS arm64 with Bun `1.3.10`, `@ttsc/graph` `0.30.4`, protocol `2025-11-25`, at commit `878707f92c6c80552bf3e76a65e889908aa3b021`. No generation field was returned. Scratch edits were re-read in a new process. `bun run graph:check` exited 0. The tour payload includes the `runScenario` and `stepOnce` spans below.
+Queried on macOS arm64 with Bun `1.3.10`, `@ttsc/graph` `0.30.4`, protocol `2025-11-25`, at commit `9f527f25ff3be3c363de1ce47e8a5d17b5eaff36`. No generation field was returned. Scratch edits were re-read in a new process, and the already open session reported `quotaHost` as `(): 4` after the signature edit. `bun run graph:check` exited 0. The tour payload includes the `runScenario` and `stepOnce` spans below.
 
 | Symbol | Span | Graph result |
 |---|---|---|
