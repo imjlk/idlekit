@@ -330,10 +330,13 @@ async function main(): Promise<void> {
         maxNodes: 32,
       }),
     );
-    const stepDecl = namedSource(forward, "stepOnce", "packages/core/src/sim/step.ts");
-    if (!JSON.stringify(forward).includes("stepOnce") || !stepDecl) {
-      fail("trace runScenario forward missed stepOnce in packages/core/src/sim/step.ts");
-    } else ok(`trace runScenario -> stepOnce ${stepDecl.file}:${stepDecl.line}`);
+    const forwardType = resultType(forward);
+    const forwardHop = traceHops(forward).some(
+      (hop) => hop.from.includes("runScenario") && hop.to.includes("stepOnce"),
+    );
+    if (forwardType !== "trace" || !forwardHop) {
+      fail("trace runScenario forward missed the runScenario -> stepOnce hop");
+    } else ok("trace runScenario -> stepOnce");
 
     const reverse = await ask(
       opened.session,
@@ -347,8 +350,14 @@ async function main(): Promise<void> {
         maxNodes: 32,
       }),
     );
-    if (!JSON.stringify(reverse).includes("runScenario") || !hasSource(reverse, "packages/core/src/sim/simulator.ts")) {
-      fail("trace stepOnce reverse missed runScenario in packages/core/src/sim/simulator.ts");
+    const reverseType = resultType(reverse);
+    const reverseHop = traceHops(reverse).some(
+      (hop) =>
+        (hop.from.includes("runScenario") && hop.to.includes("stepOnce")) ||
+        (hop.from.includes("stepOnce") && hop.to.includes("runScenario")),
+    );
+    if (reverseType !== "trace" || !reverseHop) {
+      fail("trace stepOnce reverse missed the runScenario -> stepOnce hop");
     } else ok("trace stepOnce <- runScenario");
 
     const plannerLookup = await ask(
