@@ -49,8 +49,8 @@ macOS arm64, Bun `1.3.10`, `@ttsc/graph` `0.30.4`, protocol `2025-11-25`, commit
 
 ## PR-01 호출자
 
-macOS arm64, Bun `1.3.10`, `@ttsc/graph` `0.30.4`, protocol `2025-11-25`, commit `6b525116e938378ec0f6ec3c44bdba2b4aa40fd5`에서 저장소 루트의 `tsconfig.graph.json`으로 조회했다. 생성 식별자는 없다. lookup은 `stepOnce`를 `packages/core/src/sim/step.ts:255`, `singleBuySize`를 `packages/core/src/sim/step.ts:51`에 둔다.
+macOS arm64, Bun `1.3.10`, `@ttsc/graph` `0.30.4`, protocol `2025-11-25`, commit `d7ac8635ffae3a71fc835ac000cfc82f8c164bb6`에서 저장소 루트의 `tsconfig.graph.json`으로 조회했다. 생성 식별자는 없다. lookup은 `stepOnce`를 `packages/core/src/sim/step.ts:264`, `singleBuySize`를 `packages/core/src/sim/step.ts:53`에 둔다.
 
-`stepOnce`의 reverse execution trace(`focus` execution, `maxDepth` 3, `maxNodes` 32)의 직접 hop은 `packages/core/src/sim/simulator.ts#runScenario`(span `simulator.ts:49`), `packages/core/src/sim/offline.ts#applyOfflineSeconds`(span `offline.ts:139`), `packages/core/src/testkit/conformance.ts#flatBulkSnapshot`이다. `runScenario`를 통해 `session.ts`, `monteCarlo.ts`, `eta.ts`, `prestigeCycle.ts`, `strategy/opt/runner.ts`, CLI `compare.ts`, `ltv.ts`, `tune.ts`, `lib/designObjectives.ts`, `lib/experience.ts`에 닿았다. 32노드 상한이 모든 호출자는 아니다.
+`stepOnce`의 reverse execution trace(`focus` execution, `maxDepth` 3, `maxNodes` 32)의 직접 hop은 `packages/core/src/sim/simulator.ts#runScenario`(span `simulator.ts:49`), `packages/core/src/sim/offline.ts#applyOfflineSeconds`(span `offline.ts:139`), `packages/core/src/testkit/conformance.ts#flatBulkSnapshot`, 그리고 `packages/core/src/sim/step.bulk.test.ts`의 `settlesQuotedBulkAndRejectsBadQuotes`, `runFlat`, `runBonus`다. `runScenario`를 통해 `session.ts`, `monteCarlo.ts`, `eta.ts`, `prestigeCycle.ts`, `strategy/opt/runner.ts`, CLI `compare.ts`, `ltv.ts`, `tune.ts`, `lib/designObjectives.ts`, `lib/experience.ts`에 닿았다. 32노드 상한이 모든 호출자는 아니다.
 
 `createPlannerStrategy`는 hop이 아니었다. 여전히 `PlannerDeps`의 `d.stepOnce`를 호출한다. 그 edge는 미관측이다. 소스를 보면 `applyOfflineSeconds`는 나머지 step으로 `packages/core/src/sim/offline.ts:162`에서 `stepOnce`를 한 번 더 호출한다. trace는 함수를 가리킬 뿐 그 두 번째 호출 지점을 나누지 않는다.
