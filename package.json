@@ -69,5 +69,9 @@
     "ttsc": "0.30.4",
     "typescript": "7.0.2",
     "typia": "14.0.6"
+  },
+  "overrides": {
+    "@opentui/core": "0.4.5",
+    "@opentui/react": "0.4.5"
   }
 }

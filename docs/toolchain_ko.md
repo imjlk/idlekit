@@ -15,13 +15,13 @@ English version: [toolchain.md](./toolchain.md)
 | `typia` | `14.0.6` | `@ttsc/graph@0.30.4`의 `typia@^14.0.6` 범위 안에서 가장 새 release. `15.0.1`은 범위 밖이다. 미리 올려 둔 `^13.2.0` 후보는 유지하지 않는다. |
 | Bun | `1.3.10` | root `packageManager`. CI workflow도 같은 pin이다. |
 | Node launcher | `>=22.15.0` | `ttsc@0.30.4`의 `engines.node`. CI smoke는 `22.23.3`을 쓴다. |
-| Publish Node | `22.14.0` | release workflow 전용. ttsc 하한보다 낮고 ttsc를 실행하지 않는다. |
+| Publish Node | `22.23.3` | release workflow. `publish:gate`와 패키지 prepack이 ttsc를 실행하므로 CI와 같은 Node다. |
 
 `fixtures/toolchain/baseline.json`은 `265c6ed`의 읽기 전용 스냅샷이다 (`typescript` `^5.8.3`, typia `^9.7.2`, CI Bun `1.3.9`, ttsc 없음). `fixtures/toolchain/pins.json`이 이번 pin이다. `ttsc` 설치 실패를 `tsc`나 `tsx`로 다시 시도하지 않는다.
 
 `ttsc version`은 ttsc 패키지와 해석된 TypeScript-Go 버전을 함께 출력한다. native binary와 묶인 Go는 `@ttsc/<platform>-<arch>`에 있다. `TTSC_GRAPH_BINARY`와 `TTSC_GO_BINARY`는 비어 있거나 그 패키지를 가리켜야 한다. 다른 경로는 `toolchain:doctor`가 거절한다. Smoke는 `TTSC_TTSX_BINARY`도 지운다.
 
-Bun `1.3.10`은 Node 호환 `process.version`을 보고하지만 `node:module.registerHooks`는 없다. `@ttsc/lint`는 경로가 `.js`로 끝나면 `process.execPath`로 `ttsx.js`를 실행해 `lint.config.ts`를 평가한다. `bun-register` 아래 그 실행 파일은 Bun이고 평가는 exit 1이다. `tools/ttsx-under-node`에는 `.js` 확장이 없어서 lint 패키지가 그 스크립트를 직접 실행하고, 스크립트는 실제 `node`로 `ttsc/lib/launcher/ttsx.js`를 `exec`한다. `bun-preload` fixture만 `TTSC_TTSX_BINARY`를 그 스크립트로 둔다. 제품 코드는 계속 Bun에서 돈다. 이것은 `tsc`나 `tsx` 폴백이 아니다.
+Bun `1.3.10`은 Node 호환 `process.version`을 보고하지만 `node:module.registerHooks`는 없다. `@ttsc/lint`는 경로가 `.js`로 끝나면 `process.execPath`로 `ttsx.js`를 실행해 `lint.config.ts`를 평가한다. `bun-register` 아래 그 실행 파일은 Bun이고 평가는 exit 1이다. `tools/ttsx-under-node`에는 `.js` 확장이 없어서 lint 패키지가 그 스크립트를 직접 실행하고, 스크립트는 실제 `node`로 `ttsc/lib/launcher/ttsx.js`를 `exec`한다. Windows는 같은 Node 실행에 `tools/ttsx-under-node.cmd`를 쓴다. `bun-preload` fixture는 `TTSC_TTSX_BINARY`를 현재 플랫폼의 런처로 둔다. 제품 코드는 계속 Bun에서 돈다. 이것은 `tsc`나 `tsx` 폴백이 아니다.
 
 ## 명령
 
