@@ -2,7 +2,7 @@ import type { Engine } from "../engine/types";
 import { deriveDrawSeed, mulberry32 } from "../sim/random";
 import { runScenario } from "../sim/simulator";
 import type { CompiledScenario, SimState } from "../sim/types";
-import { deserializeSimState, serializeSimState } from "../serde/simState";
+import { deserializeSimState, parseSimStateJSON, serializeSimState } from "../serde/simState";
 import { conformanceGeneratorVersion } from "./conformance";
 
 export const SHRINK_GAP_SEED = 0xd101;
@@ -396,10 +396,51 @@ function restoreJsonCheckpoint<N, U extends string, Vars>(
   return deserializeSimState(scenario.ctx.E, JSON.parse(text));
 }
 
+type TailStart<N, U extends string, Vars> = {
+  state: SimState<N, U, Vars>;
+  strategyState?: unknown;
+  persistedStrategy: boolean;
+};
+
+function positiveStateVersion(version: number | undefined): number | undefined {
+  if (typeof version === "number" && Number.isInteger(version) && version > 0) return version;
+  return undefined;
+}
+
+/** A JSON reload starts from the initial strategy, then applies the saved snapshot. */
+function jsonResumeCheckpoint<N, U extends string, Vars>(
+  scenario: CompiledScenario<N, U, Vars>,
+  state: SimState<N, U, Vars>,
+  engineName: string,
+): TailStart<N, U, Vars> {
+  const strategy = scenario.strategy;
+  const persistedStrategy = typeof strategy?.snapshotState === "function";
+  const text = JSON.stringify(
+    serializeSimState(scenario.ctx.E, state, {
+      seed: scenario.ctx.seed,
+      engineName,
+      strategy:
+        strategy && persistedStrategy
+          ? {
+              id: strategy.id,
+              version: positiveStateVersion(strategy.stateVersion),
+              state: strategy.snapshotState?.(),
+            }
+          : undefined,
+    }),
+  );
+  const parsed = parseSimStateJSON(JSON.parse(text) as unknown);
+  return {
+    state: deserializeSimState(scenario.ctx.E, parsed),
+    strategyState: parsed.strategy?.state,
+    persistedStrategy,
+  };
+}
+
 function resumeFromCheckpoint<N, U extends string, Vars>(
   scenario: CompiledScenario<N, U, Vars>,
   splitSec: number,
-  tailInitial: (headEnd: SimState<N, U, Vars>) => SimState<N, U, Vars>,
+  startTail: (headEnd: SimState<N, U, Vars>) => TailStart<N, U, Vars>,
 ): RelationCheck {
   const refused = onGrid(scenario, splitSec);
   if (refused) return refused;
@@ -420,10 +461,16 @@ function resumeFromCheckpoint<N, U extends string, Vars>(
     if (splitTicks === null || wholeTickCount(elapsed, step) !== splitTicks) {
       return skip("head stopped before the checkpoint");
     }
-    bracket.restore(bracket.snap());
+    const started = startTail(head.end);
+    if (started.persistedStrategy) {
+      bracket.restore(initial);
+      if (started.strategyState !== undefined) bracket.restore(started.strategyState);
+    } else {
+      bracket.restore(bracket.snap());
+    }
     const tail = economyAfter({
       ...scenario,
-      initial: tailInitial(head.end),
+      initial: started.state,
       run: { ...scenario.run, durationSec: duration - splitSec },
     });
     return full === tail ? pass(full) : fail(`${full} != ${tail}`);
@@ -436,14 +483,19 @@ export function checkResume<N, U extends string, Vars>(
   scenario: CompiledScenario<N, U, Vars>,
   splitSec: number,
 ): RelationCheck {
-  return resumeFromCheckpoint(scenario, splitSec, (headEnd) => headEnd);
+  return resumeFromCheckpoint(scenario, splitSec, (headEnd) => ({
+    state: headEnd,
+    persistedStrategy: false,
+  }));
 }
 
 export function checkResumeFromJson<N, U extends string, Vars>(
   scenario: CompiledScenario<N, U, Vars>,
   splitSec: number,
 ): RelationCheck {
-  return resumeFromCheckpoint(scenario, splitSec, (headEnd) => restoreJsonCheckpoint(scenario, headEnd, "checkpoint"));
+  return resumeFromCheckpoint(scenario, splitSec, (headEnd) =>
+    jsonResumeCheckpoint(scenario, headEnd, "checkpoint"),
+  );
 }
 
 export function checkJsonRoundTrip<N, U extends string, Vars>(
