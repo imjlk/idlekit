@@ -150,7 +150,15 @@ export function assertExecutedTests(output: string, exitCode: number, names: rea
     const entries = output
       .split("\n")
       .map(reporterEntry)
-      .filter((entry): entry is { status: string; name: string } => entry !== undefined && reporterNameMatches(entry.name, name));
+      .filter(
+        (entry): entry is { status: string; name: string } =>
+          entry !== undefined && reporterNameMatches(entry.name, name),
+      );
+    const reportedNames = new Set(entries.map((entry) => entry.name));
+    if (reportedNames.size > 1) {
+      fail(failures, `executed reporter matched more than one suite for ${name}`);
+      continue;
+    }
     if (!entries.some((entry) => entry.status === "pass")) {
       fail(failures, `executed reporter missed a passing ${name}`);
     }
@@ -158,9 +166,33 @@ export function assertExecutedTests(output: string, exitCode: number, names: rea
   return failures;
 }
 
-function headingAnchors(markdown: string): string[] {
+export function headingAnchors(markdown: string): string[] {
   const anchors: string[] = [];
-  for (const line of markdown.split("\n")) {
+  let fence: "`" | "~" | undefined;
+  let inComment = false;
+  for (const rawLine of markdown.split("\n")) {
+    if (inComment) {
+      if (rawLine.includes("-->")) inComment = false;
+      continue;
+    }
+    const commentAt = rawLine.indexOf("<!--");
+    const line = commentAt === -1 ? rawLine : rawLine.slice(0, commentAt);
+    if (commentAt !== -1 && !rawLine.includes("-->", commentAt + 4)) inComment = true;
+    const marker = /^(```+|~~~+)/.exec(line.trim());
+    if (!fence) {
+      if (marker?.[1]) {
+        fence = marker[1].startsWith("`") ? "`" : "~";
+        continue;
+      }
+    } else if (
+      (fence === "`" && marker?.[1]?.startsWith("`")) ||
+      (fence === "~" && marker?.[1]?.startsWith("~"))
+    ) {
+      fence = undefined;
+      continue;
+    } else {
+      continue;
+    }
     const match = /^##\s+.+\{#([A-Za-z0-9][A-Za-z0-9._:-]*)\}\s*$/.exec(line);
     if (line.startsWith("## ") && !match) {
       anchors.push("");
@@ -271,15 +303,14 @@ function citesRequirement(body: string, exportName: string, doc: string, anchor:
   return adjacentExportComment(body, exportName)?.includes(evidenceNeedle(doc, anchor)) === true;
 }
 
-function productionFileCites(body: string, doc: string, anchor: string): boolean {
+export function productionFileCites(body: string, doc: string, anchor: string): boolean {
   const needle = evidenceNeedle(doc, anchor);
   for (const match of body.matchAll(/\/\*\*((?:(?!\*\/)[\s\S])*)\*\//g)) {
     if (!match[1]?.includes(needle) || match.index === undefined) continue;
     const after = body.slice(match.index + match[0].length);
     // A // note may sit between the doc block and the export. Another block comment may not.
     const exportFollows = new RegExp(
-      "^(?:\\s|//[^\\n]*(?:\\n|$))*" +
-        "export\\s+(?:async\\s+)?(?:function|const|class|type|interface|enum)\\b",
+      "^(?:\\s|//[^\\n]*(?:\\n|$))*export\\s+(?:async\\s+)?(?:function|const)\\b",
     );
     if (exportFollows.test(after)) return true;
   }
