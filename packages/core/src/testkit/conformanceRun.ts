@@ -463,7 +463,7 @@ function resumeFromCheckpoint<N, U extends string, Vars>(
     const started = startTail(head.end);
     if (started.persistedStrategy) {
       bracket.restore(initial);
-      if (started.strategyState !== undefined) bracket.restore(started.strategyState);
+      bracket.restore(started.strategyState);
     } else {
       bracket.restore(bracket.snap());
     }
@@ -501,7 +501,12 @@ function jsonRoundTripPreserves(value: unknown): boolean {
   if (value === null) return true;
   if (typeof value === "string" || typeof value === "boolean") return true;
   if (typeof value === "number") return Number.isFinite(value);
-  if (Array.isArray(value)) return value.every(jsonRoundTripPreserves);
+  if (Array.isArray(value)) {
+    for (let index = 0; index < value.length; index += 1) {
+      if (!(index in value) || !jsonRoundTripPreserves(value[index])) return false;
+    }
+    return true;
+  }
   if (typeof value === "object") {
     if (Object.getPrototypeOf(value) !== Object.prototype) return false;
     return Object.values(value).every(jsonRoundTripPreserves);
