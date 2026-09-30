@@ -55,6 +55,16 @@ function reporterEntry(line: string): { status: string; name: string } | undefin
   return { status: match[1], name: match[2] };
 }
 
+/** Bun prints `suite > nested > test title`. The ledger stores the test title. */
+function reporterNameMatches(reported: string, registered: string): boolean {
+  if (reported === registered) return true;
+  const parts = reported.split(" > ");
+  for (let index = 1; index < parts.length; index += 1) {
+    if (parts.slice(index).join(" > ") === registered) return true;
+  }
+  return false;
+}
+
 function readJson<T>(path: string): T {
   return JSON.parse(readFileSync(path, "utf8")) as T;
 }
@@ -128,7 +138,7 @@ export function assertExecutedTests(output: string, exitCode: number, names: rea
     const entries = output
       .split("\n")
       .map(reporterEntry)
-      .filter((entry): entry is { status: string; name: string } => entry?.name === name);
+      .filter((entry): entry is { status: string; name: string } => entry !== undefined && reporterNameMatches(entry.name, name));
     if (!entries.some((entry) => entry.status === "pass")) {
       fail(failures, `executed reporter missed a passing ${name}`);
     }
