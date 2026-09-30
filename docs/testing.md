@@ -112,7 +112,7 @@ Graph does not see the JSON fixture, the workflow file, or the package script st
 
 ### DX-01 verification
 
-Host: macOS arm64, Bun `1.3.10`, `ttsc 0.30.4 (Version 7.0.2)`. Requirement file sha256 `0efed87200a7893388d45bad58aa389235bc0ddb2169f8293eb3d53c98cfaf13`. Graph server `ttsc-graph 0.30.4`, protocol `2025-11-25`, no generation identifier. Parent commit `d599e20`.
+Host: macOS arm64, Bun `1.3.10`, `ttsc 0.30.4 (Version 7.0.2)`. Requirement file sha256 `0efed87200a7893388d45bad58aa389235bc0ddb2169f8293eb3d53c98cfaf13`. Graph server `ttsc-graph 0.30.4`, protocol `2025-11-25`, no generation identifier. Verified commit `58eba05b478c380c8308a6d8f802634f5c86b54a`. Its parent is `4078aa3ff3526d106c5860a461c6ca8475dc0014`.
 
 | Command | Exit |
 |---|---|
