@@ -134,7 +134,7 @@ Host is macOS arm64. Commands ran as `mise exec bun@1.3.10 -- bun ...`. `ttsc ve
 
 ## TC-04 verification
 
-Host is macOS arm64. Commands ran as `mise exec bun@1.3.10 -- bun ...`. `@ttsc/graph` and `ttsc` were `0.30.4`. The MCP handshake reported protocol `2025-11-25` and server `ttsc-graph 0.30.4`. Results had no generation identifier, so the scratch fixture was checked again in a fresh process. Input sha256: `tsconfig.graph.json` `f4c53cefd70090c4437eb4593d837fff966570400dfb663c3b16b4e68035928e`, `tools/graph-query.ts` `88aa9576aa0e080c17fa2d35f63f22ab6f2c53f13913f4e6e249393d0561ad7a`, `tools/graph-preflight.ts` `7755d90fec6ab0365bec9661d51feb8d0ca2a283c16dad6044febaa629220d8b`.
+Host is macOS arm64. Commands ran as `mise exec bun@1.3.10 -- bun ...`. `@ttsc/graph` and `ttsc` were `0.30.4`. The MCP handshake reported protocol `2025-11-25` and server `ttsc-graph 0.30.4`. Results had no generation identifier, so the scratch fixture was checked again in a fresh process. Input sha256: `tsconfig.graph.json` `f4c53cefd70090c4437eb4593d837fff966570400dfb663c3b16b4e68035928e`, `tools/graph-query.ts` `88aa9576aa0e080c17fa2d35f63f22ab6f2c53f13913f4e6e249393d0561ad7a`, `tools/graph-preflight.ts` `77092b6725b802db2202bd0cef3c09d449e7d58914d1b62015d16034ba285918`.
 
 | Command | Exit |
 |---|---|
