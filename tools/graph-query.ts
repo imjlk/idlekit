@@ -242,12 +242,52 @@ export function generationNote(payload: unknown): string {
   return found.length > 0 ? `generation fields: ${found.join(", ")}` : "no generation identifier";
 }
 
+export type TraceHop = {
+  from: string;
+  to: string;
+  fromFile?: string;
+  toFile?: string;
+};
+
+function endpointLabel(value: unknown): { name?: string; file?: string } {
+  if (typeof value === "string") return { name: value };
+  if (!value || typeof value !== "object") return {};
+  const record = value as { name?: unknown; file?: unknown };
+  return {
+    name: typeof record.name === "string" ? record.name : undefined,
+    file: typeof record.file === "string" ? record.file : undefined,
+  };
+}
+
+/** Hop edges use symbol names. Opaque node ids are left out. */
+export function collectHops(value: unknown, found: TraceHop[] = []): TraceHop[] {
+  if (Array.isArray(value)) {
+    for (const item of value) collectHops(item, found);
+    return found;
+  }
+  if (!value || typeof value !== "object") return found;
+  const record = value as Record<string, unknown>;
+  const from = endpointLabel(record.from);
+  const to = endpointLabel(record.to);
+  if (from.name && to.name) {
+    found.push({ from: from.name, to: to.name, fromFile: from.file, toFile: to.file });
+  }
+  for (const child of Object.values(record)) collectHops(child, found);
+  return found;
+}
+
 export function summarize(payload: unknown): string {
   const lines = collectSpans(payload)
     .filter((span) => span.name || span.line !== undefined)
     .slice(0, 40)
-    .map((span) => `${span.name ?? "(span)"} ${span.file}:${span.line ?? "?"}`);
-  return [`type=${resultType(payload) ?? "unknown"}`, generationNote(payload), ...lines].join("\n");
+    .map((span) => {
+      const location = `${span.name ?? "(span)"} ${span.file}:${span.line ?? "?"}`;
+      return span.signature ? `${location} ${span.signature}` : location;
+    });
+  const hops = collectHops(payload)
+    .slice(0, 40)
+    .map((hop) => `${hop.from} -> ${hop.to}`);
+  return [`type=${resultType(payload) ?? "unknown"}`, generationNote(payload), ...lines, ...hops].join("\n");
 }
 
 function readWithDeadline(
