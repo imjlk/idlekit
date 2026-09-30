@@ -46,6 +46,7 @@ Bun `1.3.10` reports a Node-compatible `process.version` but `node:module.regist
 | example plugin | `examples/plugins/tsconfig.json` | `custom-econ-plugin.ts`. Nearest project for the plugin file so package preload does not walk to a home `tsconfig.json`. Its private `package.json` keeps `@ttsc/lint` off this program. |
 | evidence | `tsconfig.evidence.json` | `TC-03` gate. `@ttsc/lint` loads `lint.config.ts`. `@ttsc/evidence` is a lint contributor, not a compiler plugin. |
 | format | `tsconfig.format.json` | New evidence tools only. `format.severity` is `"error"`. |
+| graph | `tsconfig.graph.json` | `TC-04` aggregate program. `noEmit`. CLI keeps `jsx: react-jsx` and `jsxImportSource: @opentui/react`. `@ttsc/lint` is `enabled: false`. |
 | solution | `tsconfig.solution.json` | `files: []` plus references. Root `typecheck` must not pass this file to `ttsc`. |
 
 There is no root `tsconfig.json`. A root project would auto-attach `@ttsc/lint`, and that config is `TC-03`. Package directories carry `bunfig.toml` with `@ttsc/unplugin/bun-register` for both runtime and `bun test`. Preload follows the process cwd and does not walk upward, so a fixture `bunfig.toml` stays isolated. Root execution of a package source file passes `--preload @ttsc/unplugin/bun-register`. The CLI testkit, `replay:verify`, and doctor’s source re-entry do that when their cwd is the repo root. Each source launch pays for that transform, so `@idlekit/cli` tests use `bun test --timeout 90000` and the multi-command cases allow 180s. `tools/ttsx-under-node` remains the Node launcher for `lint.config.ts` evaluation. Product runtime stays Bun.
@@ -70,7 +71,7 @@ Dependabot opens one grouped pull request for `ttsc`, `@ttsc/*`, `typia`, and `@
 | emit | plain `bun` runs emitted JS; `typia.createValidate` is replaced | a leftover `typia.createValidate` or `@ttsc/*` import fails the smoke |
 | TSX | emit imports `@opentui/react` | emit that imports `react/jsx-runtime` fails the smoke |
 
-The toolchain fixture still exercises Evidence and Graph in isolation. `TC-03` adds repository `evidence:check` and `evidence:smoke`. `graph:check` stays absent until `TC-04`.
+The toolchain fixture still exercises Evidence and Graph in isolation. `TC-03` adds repository `evidence:check` and `evidence:smoke`. `TC-04` adds `graph:check` for the repository program. `contracts:generate`, `contracts:check`, and `test:conformance` stay absent.
 
 ## TC-01 verification
 
@@ -128,7 +129,24 @@ Host is macOS arm64. Commands ran as `mise exec bun@1.3.10 -- bun ...`. `ttsc ve
 | `bun run runtime:check` | 0 |
 | `bun tools/analysis-baseline-check.ts` | 0 |
 | `bun test src/scenario/concreteValidator.test.ts` in `packages/core` | 0 (3 pass) |
-| `bun run graph:check` | unrun (`TC-04`) |
+| `bun run graph:check` | unrun on this change (`TC-04` runs it) |
 | Linux host | unrun |
+
+## TC-04 verification
+
+Host is macOS arm64. Commands ran as `mise exec bun@1.3.10 -- bun ...`. `@ttsc/graph` and `ttsc` were `0.30.4`. The MCP handshake reported protocol `2025-11-25` and server `ttsc-graph 0.30.4`. Results had no generation identifier, so the scratch fixture was checked again in a fresh process. Input sha256: `tsconfig.graph.json` `f4c53cefd70090c4437eb4593d837fff966570400dfb663c3b16b4e68035928e`, `tools/graph-query.ts` `20edb056860afc4fda3c720d411f9d85e30f4c891ea034dd2ca263e77b29844c`, `tools/graph-preflight.ts` `a76fe1031ea5d83809a12f460da15614830bad6d2674cc2bdbeb400eced21dbc`.
+
+| Command | Exit |
+|---|---|
+| `bun run graph:check` | 0 |
+| `bun run runtime:check` | 0 |
+| `bun tools/analysis-baseline-check.ts` | 0 |
+| `bun run typecheck` | unrun |
+| `bun run format:check` | unrun |
+| `bun run test` | unrun |
+| Linux host | unrun |
+| CI `graph:check` | unrun |
+
+`graph:check` resolved `runScenario` to `packages/core/src/sim/simulator.ts:6`, `stepOnce` to `packages/core/src/sim/step.ts:50`, `compileScenario` to `packages/core/src/scenario/compile.ts:490`, and `tickMoney` to `packages/money/src/policy/tickMoney.ts:8`. Forward and reverse execution traces connect `runScenario` and `stepOnce`. A reverse trace from `runScenario` cites `packages/cli/src`. `createPlannerStrategy` is `packages/core/src/sim/strategy/planner.ts:189`. The path to `stepOnce` has no hops: the call is `d.stepOnce` on `PlannerDeps`, and the default `{ stepOnce }` is source-reviewed, not a graph edge. Scratch rename, signature change, and `@evidence` target change were visible. Details are in [Development graph](./development-graph.md).
 
 `evidence:smoke` expects nonzero for deleted citations, a missing anchor, a new active heading, a stale review after a markdown edit on the same cache, a stale review after the cited function body changes, a forbidden `@evidenceExclude`, an unregistered named test, a false assertion, an empty glob, an empty Program, coverage shrinkage without an approval, and `format.severity` `"error"`. The false-assertion row is exit 0 from `ttsc` and nonzero from `bun test`. Evidence does not decide that assertion. Inventory is the project check that the named test actually ran. `singular` is off. `evidence/documented` and `evidence/todo` are on for `fixtures/evidence/base` only, because this lint loader accepts one config object and a `files` filter cannot scope contributor options separately from `evidence/graph`.

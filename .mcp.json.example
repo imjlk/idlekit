@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "ttsc-graph": {
+      "command": "node_modules/.bin/ttsc-graph",
+      "args": ["--cwd", ".", "--tsconfig", "tsconfig.graph.json"]
+    }
+  }
+}
