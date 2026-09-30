@@ -111,10 +111,10 @@ Host is macOS arm64. Commands ran as `mise exec bun@1.3.10 -- bun ...` so the Bu
 | `bunx ttsc -p tsconfig.tools.json --noEmit` | 2 |
 | `bunx ttsc -p tsconfig.examples.json --noEmit` | 2 |
 | `bunx ttsc -p examples/plugins/tsconfig.json --noEmit` | 0 |
-| `bun run build:bin` | unrun |
+| `bun run build:bin` | exits before bundling. A standalone executable cannot inline `@opentui/core` |
 | Linux host | unrun |
 
-`transform:smoke` records the four validator paths and the negative checks. Expected nonzero rows are part of the pass: `source-nopreload` 1, `check-type-error` 1 (`TS2322`), `generic-unresolved` 3 (`non-specified generic argument`). The other smoke rows exited 0, including published-artifact run outside the repo, `.d.ts` consumer `ttsc --noEmit`, sourcemap, shebang, lazy review markers, plugin load, and cold/warm `ttsc prepare`. `tsconfig.tools.json` and `tsconfig.examples.json` are inventory programs. `TC-03` sets `@ttsc/lint` `enabled: false` there so the repository evidence graph is not applied to a Program that does not contain its hosts. `bun run build:bin` and a Linux host were not run for that change.
+`transform:smoke` records the four validator paths and the negative checks. Expected nonzero rows are part of the pass: `source-nopreload` 1, `check-type-error` 1 (`TS2322`), `generic-unresolved` 3 (`non-specified generic argument`). The other smoke rows exited 0, including published-artifact run outside the repo, `.d.ts` consumer `ttsc --noEmit`, sourcemap, shebang, lazy review markers, plugin load, and cold/warm `ttsc prepare`. `tsconfig.tools.json` and `tsconfig.examples.json` are inventory programs. `TC-03` sets `@ttsc/lint` `enabled: false` there so the repository evidence graph is not applied to a Program that does not contain its hosts. `bun run build:bin` refuses a standalone executable because `@opentui/core` cannot be inlined. A Linux host was not run for that change.
 
 ## TC-03 verification
 
