@@ -31,7 +31,12 @@
       "pr": "DX-01",
       "anchor": "req-dx01-conformance-harness",
       "doc": "docs/requirements/active/simulation-conformance.md",
-      "production": ["packages/core/src/testkit/conformance.ts"],
+      "production": [
+        "packages/core/src/testkit/conformance.ts",
+        "packages/core/src/testkit/conformanceRun.ts",
+        "packages/core/src/testkit/compareAmounts.ts",
+        "packages/money/src/testkit/compareAmounts.ts"
+      ],
       "tests": [
         {
           "file": "packages/core/src/testkit/conformance.test.ts",
@@ -39,6 +44,13 @@
           "registeredAs": "replays a constant-income run and shrinks the gap predicate",
           "cwd": "packages/core",
           "args": ["test", "src/testkit/conformance.test.ts"]
+        },
+        {
+          "file": "packages/money/src/testkit/compareAmounts.test.ts",
+          "exportName": "matchesFiniteAmountsAndRefusesInfinityCollapse",
+          "registeredAs": "matches finite amounts by log distance and refuses Infinity collapse",
+          "cwd": "packages/money",
+          "args": ["test", "src/testkit/compareAmounts.test.ts"]
         }
       ]
     },

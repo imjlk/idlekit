@@ -57,10 +57,6 @@
     "toolchain:prepare": "bun tools/toolchain-prepare.ts",
     "toolchain:smoke": "bun tools/toolchain-smoke.ts"
   },
-  "overrides": {
-    "@opentui/core": "0.4.5",
-    "@opentui/react": "0.4.5"
-  },
   "devDependencies": {
     "@ttsc/evidence": "0.30.4",
     "@ttsc/graph": "0.30.4",

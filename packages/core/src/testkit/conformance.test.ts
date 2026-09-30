@@ -150,6 +150,44 @@ function thresholdScenario(stepSec: number): CompiledScenario<number, UnitCode, 
  * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #a195f0e Re-read the section, then ran this function: the gap shrinks to 1 and the constant-income replay matches.
  * @evidence ./conformance.ts#conformanceGeneratorVersion Reads generator version 1 from the shrink report and from this export.
  * @evidenceReview ./conformance.ts#conformanceGeneratorVersion #80e01c8 The declaration is the number 1. The shrink report stores that same generatorVersion.
+ * @evidence ./conformanceRun.ts#checkReplay Replays the constant-income scenario through the harness.
+ * @evidenceReview ./conformanceRun.ts#checkReplay #c6a3c78 checkReplay applies to the constant-income scenario at rate 3, duration 4, and step 1.
+ * @evidence ./conformanceRun.ts#demonstrateShrinkGap Builds the shrink-gap report whose value is 1 and whose testSeed is 0xd101.
+ * @evidenceReview ./conformanceRun.ts#demonstrateShrinkGap #e31f17f Builds the shrink-gap report whose value is 1 and whose testSeed is 0xd101.
+ * @evidence ./conformanceRun.ts#replayShrinkReport Replays the saved report and expects the path to fail closed at 1.
+ * @evidenceReview ./conformanceRun.ts#replayShrinkReport #bd11c06 Replays the saved report and expects the path to fail closed at 1.
+ * @evidence ./conformanceRun.ts#gameSeedForCase Derives a game seed from 0x51ed and index 0 that is an integer other than that test seed.
+ * @evidenceReview ./conformanceRun.ts#gameSeedForCase #39c73b9 Derives a game seed from 0x51ed and index 0 that is an integer other than that test seed.
+ * @evidence ./conformanceRun.ts#ShrinkReport.value Expects the shrunk value to be 1.
+ * @evidenceReview ./conformanceRun.ts#ShrinkReport.value #302e9b3 Expects the shrunk value to be 1.
+ * @evidence ./conformanceRun.ts#ShrinkReport.generatorVersion Expects the report generator version to equal conformanceGeneratorVersion.
+ * @evidenceReview ./conformanceRun.ts#ShrinkReport.generatorVersion #3a33f3a Expects the report generator version to equal conformanceGeneratorVersion.
+ * @evidence ./conformanceRun.ts#ShrinkReport.gameSeed Expects the shrink-gap report game seed to be null.
+ * @evidenceReview ./conformanceRun.ts#ShrinkReport.gameSeed #7cfdfda Expects the shrink-gap report game seed to be null.
+ * @evidence ./conformanceRun.ts#ShrinkReport.testSeed Expects the shrink-gap report test seed to be 0xd101.
+ * @evidenceReview ./conformanceRun.ts#ShrinkReport.testSeed #9feb10a Expects the shrink-gap report test seed to be 0xd101.
+ * @evidence ./conformanceRun.ts#ShrinkReport.predicateId The fixture deep-equals the report, including predicateId shrink-gap.
+ * @evidenceReview ./conformanceRun.ts#ShrinkReport.predicateId #de50b55 The fixture deep-equals the report, including predicateId shrink-gap.
+ * @evidence ./conformanceRun.ts#ShrinkReport.engineId The fixture deep-equals the report, including a null engineId.
+ * @evidenceReview ./conformanceRun.ts#ShrinkReport.engineId #da43186 The fixture deep-equals the report, including a null engineId.
+ * @evidence ./conformanceRun.ts#ShrinkReport.modelId The fixture deep-equals the report, including a null modelId.
+ * @evidenceReview ./conformanceRun.ts#ShrinkReport.modelId #25b280a The fixture deep-equals the report, including a null modelId.
+ * @evidence ./conformanceRun.ts#ShrinkReport.strategyId The fixture deep-equals the report, including a null strategyId.
+ * @evidenceReview ./conformanceRun.ts#ShrinkReport.strategyId #d04084f The fixture deep-equals the report, including a null strategyId.
+ * @evidence ./conformanceRun.ts#ShrinkReport.tickSchedule The fixture deep-equals the report, including a null tick schedule.
+ * @evidenceReview ./conformanceRun.ts#ShrinkReport.tickSchedule #5ec8725 The fixture deep-equals the report, including a null tick schedule.
+ * @evidence ./conformanceRun.ts#ShrinkReport.caseIndex The fixture deep-equals the report, including the failing case index.
+ * @evidenceReview ./conformanceRun.ts#ShrinkReport.caseIndex #734ed99 The fixture deep-equals the report, including the failing case index.
+ * @evidence ./conformanceRun.ts#ShrinkReport.original The fixture deep-equals the report, including the original failing integer.
+ * @evidenceReview ./conformanceRun.ts#ShrinkReport.original #f5b7108 The fixture deep-equals the report, including the original failing integer.
+ * @evidence ./conformanceRun.ts#ShrinkReport.shrinkingPath The fixture deep-equals the report, including the shrinking path.
+ * @evidenceReview ./conformanceRun.ts#ShrinkReport.shrinkingPath #7bad00f The fixture deep-equals the report, including the shrinking path.
+ * @evidence ./conformanceRun.ts#ShrinkStep.from The fixture deep-equals each shrinking step's from value.
+ * @evidenceReview ./conformanceRun.ts#ShrinkStep.from #5c04bd3 The fixture deep-equals each shrinking step's from value.
+ * @evidence ./conformanceRun.ts#ShrinkStep.to The fixture deep-equals each shrinking step's to value.
+ * @evidenceReview ./conformanceRun.ts#ShrinkStep.to #95c10f1 The fixture deep-equals each shrinking step's to value.
+ * @evidence ./conformanceRun.ts#ShrinkStep.kept The fixture deep-equals each shrinking step's kept flag.
+ * @evidenceReview ./conformanceRun.ts#ShrinkStep.kept #9e0b459 The fixture deep-equals each shrinking step's kept flag.
  */
 export function replaysConstantIncomeAndShrinksGap(): void {
   const report = demonstrateShrinkGap();
@@ -171,37 +209,62 @@ export function replaysConstantIncomeAndShrinksGap(): void {
   expect(Number.isInteger(gameSeed)).toBe(true);
 }
 
+/**
+ * @evidence ./conformanceRun.ts#expectProperty Runs the constant-replay corpus and expects every case to pass.
+ * @evidenceReview ./conformanceRun.ts#expectProperty #3189395 Runs the constant-replay corpus and expects every case to pass.
+ * @evidence ./conformanceRun.ts#conformanceCaseCount Uses the harness case count as the corpus size.
+ * @evidenceReview ./conformanceRun.ts#conformanceCaseCount #3d7ef65 Uses the harness case count as the corpus size.
+ * @evidence ./conformanceRun.ts#PropertyRun.predicateId Sets predicateId to constant-replay.
+ * @evidenceReview ./conformanceRun.ts#PropertyRun.predicateId #8bb6534 Sets predicateId to constant-replay.
+ * @evidence ./conformanceRun.ts#PropertyRun.testSeed Sets testSeed to 0xc0ffee.
+ * @evidenceReview ./conformanceRun.ts#PropertyRun.testSeed #df04338 Sets testSeed to 0xc0ffee.
+ * @evidence ./conformanceRun.ts#PropertyRun.cases Sets cases from conformanceCaseCount.
+ * @evidenceReview ./conformanceRun.ts#PropertyRun.cases #99d1521 Sets cases from conformanceCaseCount.
+ * @evidence ./conformanceRun.ts#PropertyRun.generate Draws rate and duration with rng.int and a derived game seed.
+ * @evidenceReview ./conformanceRun.ts#PropertyRun.generate #6180b34 Draws rate and duration with rng.int and a derived game seed.
+ * @evidence ./conformanceRun.ts#PropertyRun.shrink Shrinks durationSec and rate toward the minimums.
+ * @evidenceReview ./conformanceRun.ts#PropertyRun.shrink #84e219d Shrinks durationSec and rate toward the minimums.
+ * @evidence ./conformanceRun.ts#PropertyRun.predicate Requires checkReplay and checkJsonRoundTrip to pass.
+ * @evidenceReview ./conformanceRun.ts#PropertyRun.predicate #d795845 Requires checkReplay and checkJsonRoundTrip to pass.
+ * @evidence ./conformanceRun.ts#PropertyRun.describeCase Records the game seed, number engine, constant-income model, and tick schedule.
+ * @evidenceReview ./conformanceRun.ts#PropertyRun.describeCase #f8f25e9 Records the game seed, number engine, constant-income model, and tick schedule.
+ */
+export function replaysConstantIncomeAcrossTheFixedSeedCorpus(): void {
+  expectProperty({
+    predicateId: "constant-replay",
+    testSeed: 0xc0ffee,
+    cases: conformanceCaseCount(),
+    generate: (index, rng) => ({
+      rate: rng.int(1, 5),
+      durationSec: rng.int(2, 8),
+      stepSec: 1,
+      seed: gameSeedForCase(0xc0ffee, index),
+    }),
+    shrink: (value) => {
+      const smaller = [];
+      if (value.durationSec > 2) smaller.push({ ...value, durationSec: value.durationSec - 1 });
+      if (value.rate > 1) smaller.push({ ...value, rate: value.rate - 1 });
+      return smaller;
+    },
+    predicate: (value) =>
+      checkReplay(constantScenario(value)).ok && checkJsonRoundTrip(constantScenario(value)).ok,
+    describeCase: (value) => ({
+      gameSeed: value.seed,
+      engineId: "number",
+      modelId: "constant-income",
+      strategyId: null,
+      tickSchedule: { stepSec: value.stepSec, durationSec: value.durationSec },
+    }),
+  });
+}
+
 describe("DX-01 conformance harness", () => {
   it("replays a constant-income run and shrinks the gap predicate", replaysConstantIncomeAndShrinksGap);
 
-  it("replays constant income across the fixed seed corpus", () => {
-    expectProperty({
-      predicateId: "constant-replay",
-      testSeed: 0xc0ffee,
-      cases: conformanceCaseCount(),
-      generate: (index, rng) => ({
-        rate: rng.int(1, 5),
-        durationSec: rng.int(2, 8),
-        stepSec: 1,
-        seed: gameSeedForCase(0xc0ffee, index),
-      }),
-      shrink: (value) => {
-        const smaller = [];
-        if (value.durationSec > 2) smaller.push({ ...value, durationSec: value.durationSec - 1 });
-        if (value.rate > 1) smaller.push({ ...value, rate: value.rate - 1 });
-        return smaller;
-      },
-      predicate: (value) =>
-        checkReplay(constantScenario(value)).ok && checkJsonRoundTrip(constantScenario(value)).ok,
-      describeCase: (value) => ({
-        gameSeed: value.seed,
-        engineId: "number",
-        modelId: "constant-income",
-        strategyId: null,
-        tickSchedule: { stepSec: value.stepSec, durationSec: value.durationSec },
-      }),
-    });
-  });
+  it(
+    "replays constant income across the fixed seed corpus",
+    replaysConstantIncomeAcrossTheFixedSeedCorpus,
+  );
 });
 
 function flatBulkSnapshot(size: number, mode: "bulk" | "repeated"): string {
@@ -245,24 +308,33 @@ function flatBulkSnapshot(size: number, mode: "bulk" | "repeated"): string {
   });
 }
 
-describe("PR-01 bulk equivalence", () => {
-  it("checks bulk equality only when the fixture declares it", () => {
-    const linear = (count: number, times: number) => JSON.stringify({ count: count + times, bonus: 0 });
-    const declared = checkBulk(true, linear(0, 3), linear(0, 3));
-    expectApplicable(declared);
+/**
+ * @evidence ./conformanceRun.ts#checkBulk Declared equal totals apply; an undeclared bonus mismatch is skipped.
+ * @evidenceReview ./conformanceRun.ts#checkBulk #e513eda Declared equal totals apply; an undeclared bonus mismatch is skipped.
+ */
+export function checksBulkEqualityOnlyWhenTheFixtureDeclaresIt(): void {
+  const linear = (count: number, times: number) => JSON.stringify({ count: count + times, bonus: 0 });
+  const declared = checkBulk(true, linear(0, 3), linear(0, 3));
+  expectApplicable(declared);
 
-    let stepped = { count: 0, bonus: 0 };
-    for (let index = 0; index < 2; index += 1) {
-      const count = stepped.count + 1;
-      stepped = { count, bonus: count === 2 ? stepped.bonus + 10 : stepped.bonus };
-    }
-    const bulk = JSON.stringify({ count: 2, bonus: 0 });
-    const repeated = JSON.stringify(stepped);
-    const undeclared = checkBulk(false, repeated, bulk);
-    expect(undeclared.applicable).toBe(false);
-    expect(undeclared.ok).toBe(true);
-    expect(repeated).not.toBe(bulk);
-  });
+  let stepped = { count: 0, bonus: 0 };
+  for (let index = 0; index < 2; index += 1) {
+    const count = stepped.count + 1;
+    stepped = { count, bonus: count === 2 ? stepped.bonus + 10 : stepped.bonus };
+  }
+  const bulk = JSON.stringify({ count: 2, bonus: 0 });
+  const repeated = JSON.stringify(stepped);
+  const undeclared = checkBulk(false, repeated, bulk);
+  expect(undeclared.applicable).toBe(false);
+  expect(undeclared.ok).toBe(true);
+  expect(repeated).not.toBe(bulk);
+}
+
+describe("PR-01 bulk equivalence", () => {
+  it(
+    "checks bulk equality only when the fixture declares it",
+    checksBulkEqualityOnlyWhenTheFixtureDeclaresIt,
+  );
 
   it("replays declared flat bulk across the seed corpus", () => {
     expectProperty({
@@ -286,63 +358,115 @@ describe("PR-01 bulk equivalence", () => {
   });
 });
 
+/**
+ * @evidence ./conformanceRun.ts#checkDurationBoundary A 4s run at step 1 and a 0.3s run at step 0.1 both apply; an until at t greater than or equal to 3 does not.
+ * @evidenceReview ./conformanceRun.ts#checkDurationBoundary #b292d69 A 4s run at step 1 and a 0.3s run at step 0.1 both apply; an until at t greater than or equal to 3 does not.
+ * @evidence ./conformanceRun.ts#rejectNonPositiveStep Step 0 is a failing applicable check.
+ * @evidenceReview ./conformanceRun.ts#rejectNonPositiveStep #31155b2 Step 0 is a failing applicable check.
+ * @evidence ./conformanceRun.ts#checkResume An off-grid resume at 1.5 does not apply; a 0.2 resume on the 0.1 grid does.
+ * @evidenceReview ./conformanceRun.ts#checkResume #db56c7a An off-grid resume at 1.5 does not apply; a 0.2 resume on the 0.1 grid does.
+ */
+export function stopsOnAPositiveTickGridAndRefusesANonPositiveStep(): void {
+  const scenario = constantScenario({ rate: 2, durationSec: 4, stepSec: 1 });
+  expectApplicable(checkDurationBoundary(scenario));
+  const refused = rejectNonPositiveStep(0);
+  expect(refused.ok).toBe(false);
+  expect(refused.applicable).toBe(true);
+  const offGrid = checkResume(scenario, 1.5);
+  expect(offGrid.applicable).toBe(false);
+
+  const fractional = constantScenario({ rate: 2, durationSec: 0.3, stepSec: 0.1 });
+  expectApplicable(checkDurationBoundary(fractional));
+  expectApplicable(checkResume(fractional, 0.2));
+  const earlyStop = checkDurationBoundary({
+    ...scenario,
+    run: { ...scenario.run, until: (current) => current.t >= 3 },
+  });
+  expect(earlyStop.applicable).toBe(false);
+  expect(earlyStop.ok).toBe(true);
+}
+
+/**
+ * @evidence ./conformanceRun.ts#economyAfter Runs constant income and the threshold buy at steps 1 and 0.5.
+ * @evidenceReview ./conformanceRun.ts#economyAfter #749e95e Runs constant income and the threshold buy at steps 1 and 0.5.
+ * @evidence ./conformanceRun.ts#checkSnapshots Constant income matches across those steps; the threshold buy does not.
+ * @evidenceReview ./conformanceRun.ts#checkSnapshots #3b0fa96 Constant income matches across those steps; the threshold buy does not.
+ */
+export function treatsStepSizesAsEqualOnlyForConstantIncome(): void {
+  const coarse = economyAfter(constantScenario({ rate: 4, durationSec: 4, stepSec: 1 }));
+  const fine = economyAfter(constantScenario({ rate: 4, durationSec: 4, stepSec: 0.5 }));
+  expectApplicable(checkSnapshots(coarse, fine, "same"));
+
+  const coarseBuy = economyAfter(thresholdScenario(1));
+  const fineBuy = economyAfter(thresholdScenario(0.5));
+  expectApplicable(checkSnapshots(coarseBuy, fineBuy, "different"));
+}
+
 describe("PR-02 time boundaries", () => {
-  it("stops on a positive tick grid and refuses a non-positive step", () => {
-    const scenario = constantScenario({ rate: 2, durationSec: 4, stepSec: 1 });
-    expectApplicable(checkDurationBoundary(scenario));
-    const refused = rejectNonPositiveStep(0);
-    expect(refused.ok).toBe(false);
-    expect(refused.applicable).toBe(true);
-    const offGrid = checkResume(scenario, 1.5);
-    expect(offGrid.applicable).toBe(false);
+  it(
+    "stops on a positive tick grid and refuses a non-positive step",
+    stopsOnAPositiveTickGridAndRefusesANonPositiveStep,
+  );
 
-    const fractional = constantScenario({ rate: 2, durationSec: 0.3, stepSec: 0.1 });
-    expectApplicable(checkDurationBoundary(fractional));
-    expectApplicable(checkResume(fractional, 0.2));
-    const earlyStop = checkDurationBoundary({
-      ...scenario,
-      run: { ...scenario.run, until: (current) => current.t >= 3 },
-    });
-    expect(earlyStop.applicable).toBe(false);
-    expect(earlyStop.ok).toBe(true);
-  });
-
-  it("treats step 1 and 0.5 as equal only for constant income", () => {
-    const coarse = economyAfter(constantScenario({ rate: 4, durationSec: 4, stepSec: 1 }));
-    const fine = economyAfter(constantScenario({ rate: 4, durationSec: 4, stepSec: 0.5 }));
-    expectApplicable(checkSnapshots(coarse, fine, "same"));
-
-    const coarseBuy = economyAfter(thresholdScenario(1));
-    const fineBuy = economyAfter(thresholdScenario(0.5));
-    expectApplicable(checkSnapshots(coarseBuy, fineBuy, "different"));
-  });
+  it(
+    "treats step 1 and 0.5 as equal only for constant income",
+    treatsStepSizesAsEqualOnlyForConstantIncome,
+  );
 });
 
-describe("stateful strategy and currency identity", () => {
-  it("replays a one-shot scripted grant from the same cursor", () => {
-    const scenario = scriptedGrant(2);
-    const replay = checkReplay(scenario);
-    expectApplicable(replay);
-    expect((JSON.parse(replay.summary) as { vars: Vars }).vars.buys).toBe(1);
-    expectApplicable(checkResume(scenario, 1));
-    expectApplicable(checkResumeFromJson(scriptedGrant(4), 2));
-    expectApplicable(checkRetention(scenario));
-    expectApplicable(checkObserver(scenario));
-  });
+/**
+ * @evidence ./conformanceRun.ts#checkResumeFromJson Resumes a 4s scripted grant from JSON at t=2.
+ * @evidenceReview ./conformanceRun.ts#checkResumeFromJson #91c215a Resumes a 4s scripted grant from JSON at t=2.
+ * @evidence ./conformanceRun.ts#checkRetention Retention applies to the scripted grant.
+ * @evidenceReview ./conformanceRun.ts#checkRetention #32a89c5 Retention applies to the scripted grant.
+ * @evidence ./conformanceRun.ts#checkObserver The observer check applies to the scripted grant.
+ * @evidenceReview ./conformanceRun.ts#checkObserver #918ed45 The observer check applies to the scripted grant.
+ */
+export function replaysOneShotScriptedGrantFromTheSameCursor(): void {
+  const scenario = scriptedGrant(2);
+  const replay = checkReplay(scenario);
+  expectApplicable(replay);
+  expect((JSON.parse(replay.summary) as { vars: Vars }).vars.buys).toBe(1);
+  expectApplicable(checkResume(scenario, 1));
+  expectApplicable(checkResumeFromJson(scriptedGrant(4), 2));
+  expectApplicable(checkRetention(scenario));
+  expectApplicable(checkObserver(scenario));
+}
 
-  it("skips a resume whose until stops before the checkpoint", () => {
-    const scenario = constantScenario({ rate: 1, durationSec: 10, stepSec: 1 });
-    const early = {
-      ...scenario,
-      run: { ...scenario.run, until: (current: SimState<number, UnitCode, Vars>) => current.t >= 3 },
-    };
-    const memory = checkResume(early, 5);
-    const json = checkResumeFromJson(early, 5);
-    expect(memory.applicable).toBe(false);
-    expect(memory.ok).toBe(true);
-    expect(json.applicable).toBe(false);
-    expect(json.summary).toContain("checkpoint");
-  });
+/**
+ * @evidence ./conformanceRun.ts#checkResume A checkpoint at t=5 does not apply when until stops at t=3.
+ * @evidenceReview ./conformanceRun.ts#checkResume #db56c7a A checkpoint at t=5 does not apply when until stops at t=3.
+ * @evidence ./conformanceRun.ts#RelationCheck.ok That skipped resume is ok.
+ * @evidenceReview ./conformanceRun.ts#RelationCheck.ok #e196dd9 That skipped resume is ok.
+ * @evidence ./conformanceRun.ts#RelationCheck.applicable That skipped resume is not applicable.
+ * @evidenceReview ./conformanceRun.ts#RelationCheck.applicable #f6fa89c That skipped resume is not applicable.
+ * @evidence ./conformanceRun.ts#RelationCheck.summary The JSON summary contains checkpoint.
+ * @evidenceReview ./conformanceRun.ts#RelationCheck.summary #7777be8 The JSON summary contains checkpoint.
+ */
+export function skipsResumeWhoseUntilStopsBeforeTheCheckpoint(): void {
+  const scenario = constantScenario({ rate: 1, durationSec: 10, stepSec: 1 });
+  const early = {
+    ...scenario,
+    run: { ...scenario.run, until: (current: SimState<number, UnitCode, Vars>) => current.t >= 3 },
+  };
+  const memory = checkResume(early, 5);
+  const json = checkResumeFromJson(early, 5);
+  expect(memory.applicable).toBe(false);
+  expect(memory.ok).toBe(true);
+  expect(json.applicable).toBe(false);
+  expect(json.summary).toContain("checkpoint");
+}
+
+describe("stateful strategy and currency identity", () => {
+  it(
+    "replays a one-shot scripted grant from the same cursor",
+    replaysOneShotScriptedGrantFromTheSameCursor,
+  );
+
+  it(
+    "skips a resume whose until stops before the checkpoint",
+    skipsResumeWhoseUntilStopsBeforeTheCheckpoint,
+  );
 
   it("skips a strategy that cannot restore the snapshot it exposes", () => {
     const scenario = constantScenario({ rate: 1, durationSec: 2, stepSec: 1 });
@@ -356,39 +480,59 @@ describe("stateful strategy and currency identity", () => {
     expect(refused.ok).toBe(true);
   });
 
-  it("records wallet and max-money units on the economy snapshot", () => {
-    const engine = createNumberEngine();
-    const coin = snapshotEconomy(engine, state(engine, 10));
-    const parsed = JSON.parse(coin) as { amountUnit: string; maxUnit: string };
-    expect(parsed.amountUnit).toBe("COIN");
-    expect(parsed.maxUnit).toBe("COIN");
-    const gemState: SimState<number, "GEM", Vars> = {
-      t: 0,
-      wallet: { money: { unit: { code: "GEM" }, amount: 10 }, bucket: engine.zero() },
-      maxMoneyEver: { unit: { code: "GEM" }, amount: 10 },
-      prestige: { count: 0, points: engine.zero(), multiplier: engine.from(1) },
-      vars: { buys: 0 },
-    };
-    const gem = snapshotEconomy(engine, gemState);
-    expect(gem).not.toBe(coin);
-  });
+  it(
+    "records wallet and max-money units on the economy snapshot",
+    recordsWalletAndMaxMoneyUnitsOnTheEconomySnapshot,
+  );
 });
 
+/**
+ * @evidence ./conformanceRun.ts#snapshotEconomy Reads amountUnit and maxUnit for COIN, and a GEM snapshot is a different string.
+ * @evidenceReview ./conformanceRun.ts#snapshotEconomy #e1778bf Reads amountUnit and maxUnit for COIN, and a GEM snapshot is a different string.
+ */
+export function recordsWalletAndMaxMoneyUnitsOnTheEconomySnapshot(): void {
+  const engine = createNumberEngine();
+  const coin = snapshotEconomy(engine, state(engine, 10));
+  const parsed = JSON.parse(coin) as { amountUnit: string; maxUnit: string };
+  expect(parsed.amountUnit).toBe("COIN");
+  expect(parsed.maxUnit).toBe("COIN");
+  const gemState: SimState<number, "GEM", Vars> = {
+    t: 0,
+    wallet: { money: { unit: { code: "GEM" }, amount: 10 }, bucket: engine.zero() },
+    maxMoneyEver: { unit: { code: "GEM" }, amount: 10 },
+    prestige: { count: 0, points: engine.zero(), multiplier: engine.from(1) },
+    vars: { buys: 0 },
+  };
+  const gem = snapshotEconomy(engine, gemState);
+  expect(gem).not.toBe(coin);
+}
+
+/**
+ * @evidence ./conformanceRun.ts#checkJsonRoundTrip The constant-income scenario matches after a JSON round trip.
+ * @evidenceReview ./conformanceRun.ts#checkJsonRoundTrip #05aa7ed The constant-income scenario matches after a JSON round trip.
+ * @evidence ./conformanceRun.ts#checkTrialOrder Two distinct game seeds keep distinct economy snapshots.
+ * @evidenceReview ./conformanceRun.ts#checkTrialOrder #5e85ee7 Two distinct game seeds keep distinct economy snapshots.
+ */
+export function resumesOnTheSameTickGridFromMemoryAndJson(): void {
+  const scenario = constantScenario({ rate: 5, durationSec: 6, stepSec: 1, seed: 19 });
+  expectApplicable(checkResume(scenario, 2));
+  expectApplicable(checkResumeFromJson(scenario, 2));
+  expectApplicable(checkJsonRoundTrip(scenario));
+  const gameA = gameSeedForCase(0x51ed, 1);
+  const gameB = gameSeedForCase(0x51ed, 2);
+  expectApplicable(
+    checkTrialOrder(
+      (gameSeed) => economyAfter(constantScenario({ rate: 2, durationSec: 3, stepSec: 1, seed: gameSeed })),
+      [gameA, gameB],
+    ),
+  );
+}
+
 describe("PR-03 resume isolation", () => {
-  it("resumes on the same tick grid from memory and from JSON", () => {
-    const scenario = constantScenario({ rate: 5, durationSec: 6, stepSec: 1, seed: 19 });
-    expectApplicable(checkResume(scenario, 2));
-    expectApplicable(checkResumeFromJson(scenario, 2));
-    expectApplicable(checkJsonRoundTrip(scenario));
-    const gameA = gameSeedForCase(0x51ed, 1);
-    const gameB = gameSeedForCase(0x51ed, 2);
-    expectApplicable(
-      checkTrialOrder(
-        (gameSeed) => economyAfter(constantScenario({ rate: 2, durationSec: 3, stepSec: 1, seed: gameSeed })),
-        [gameA, gameB],
-      ),
-    );
-  });
+  it(
+    "resumes on the same tick grid from memory and from JSON",
+    resumesOnTheSameTickGridFromMemoryAndJson,
+  );
 });
 
 describe("PR-05 observation retention", () => {
@@ -403,110 +547,152 @@ describe("PR-05 observation retention", () => {
     expect(observer.summary).toContain("observed batches");
   });
 
-  it("bans a negative balance only when debt is disallowed", () => {
-    const engine = createNumberEngine();
-    const unit = { code: "COIN" as const };
-    const buy: Action<number, UnitCode, Vars> = {
-      id: "buy",
-      kind: "buy",
-      canApply: () => true,
-      cost: () => ({ unit, amount: 5 }),
-      apply: (_ctx, current) => current,
-    };
-    const blocked: CompiledScenario<number, UnitCode, Vars> = {
-      ctx: { E: engine, unit, tickPolicy: { mode: "drop" }, payment: { onInsufficientFunds: "skip" } },
-      model: { id: "skip-payment", version: 1, income: () => ({ unit, amount: 0 }), actions: () => [buy] },
-      initial: state(engine, 1),
-      strategy: { id: "always-buy", decide: () => [{ action: buy }] },
-      run: { stepSec: 1, durationSec: 1 },
-    };
-    const blockedEnd = economyAfter(blocked);
-    expect(blockedEnd).toContain('"amount":"1"');
-    expectApplicable(checkNonNegative(false, false));
-
-    const debt: Action<number, UnitCode, Vars> = {
-      id: "debt",
-      kind: "custom",
-      canApply: () => true,
-      cost: () => null,
-      apply: (ctx, current) => ({
-        ...current,
-        wallet: {
-          ...current.wallet,
-          money: { ...current.wallet.money, amount: ctx.E.sub(current.wallet.money.amount, ctx.E.from(5)) },
-        },
-      }),
-    };
-    const allowed: CompiledScenario<number, UnitCode, Vars> = {
-      ctx: { E: engine, unit, tickPolicy: { mode: "drop" } },
-      model: { id: "allows-debt", version: 1, income: () => ({ unit, amount: 0 }), actions: () => [debt] },
-      initial: state(engine, 1),
-      strategy: { id: "take-debt", decide: () => [{ action: debt }] },
-      run: { stepSec: 1, durationSec: 1 },
-    };
-    const after = economyAfter(allowed);
-    expect(after).toContain('"amount":"-4"');
-    const skipped = checkNonNegative(true, true);
-    expect(skipped.applicable).toBe(false);
-  });
+  it(
+    "bans a negative balance only when debt is disallowed",
+    bansNegativeBalanceOnlyWhenDebtIsDisallowed,
+  );
 });
+
+/**
+ * @evidence ./conformanceRun.ts#checkNonNegative A non-negative wallet applies when debt is disallowed, and a negative wallet does not apply when debt is allowed.
+ * @evidenceReview ./conformanceRun.ts#checkNonNegative #d87668f A non-negative wallet applies when debt is disallowed, and a negative wallet does not apply when debt is allowed.
+ */
+export function bansNegativeBalanceOnlyWhenDebtIsDisallowed(): void {
+  const engine = createNumberEngine();
+  const unit = { code: "COIN" as const };
+  const buy: Action<number, UnitCode, Vars> = {
+    id: "buy",
+    kind: "buy",
+    canApply: () => true,
+    cost: () => ({ unit, amount: 5 }),
+    apply: (_ctx, current) => current,
+  };
+  const blocked: CompiledScenario<number, UnitCode, Vars> = {
+    ctx: { E: engine, unit, tickPolicy: { mode: "drop" }, payment: { onInsufficientFunds: "skip" } },
+    model: { id: "skip-payment", version: 1, income: () => ({ unit, amount: 0 }), actions: () => [buy] },
+    initial: state(engine, 1),
+    strategy: { id: "always-buy", decide: () => [{ action: buy }] },
+    run: { stepSec: 1, durationSec: 1 },
+  };
+  const blockedEnd = economyAfter(blocked);
+  expect(blockedEnd).toContain('"amount":"1"');
+  expectApplicable(checkNonNegative(false, false));
+
+  const debt: Action<number, UnitCode, Vars> = {
+    id: "debt",
+    kind: "custom",
+    canApply: () => true,
+    cost: () => null,
+    apply: (ctx, current) => ({
+      ...current,
+      wallet: {
+        ...current.wallet,
+        money: { ...current.wallet.money, amount: ctx.E.sub(current.wallet.money.amount, ctx.E.from(5)) },
+      },
+    }),
+  };
+  const allowed: CompiledScenario<number, UnitCode, Vars> = {
+    ctx: { E: engine, unit, tickPolicy: { mode: "drop" } },
+    model: { id: "allows-debt", version: 1, income: () => ({ unit, amount: 0 }), actions: () => [debt] },
+    initial: state(engine, 1),
+    strategy: { id: "take-debt", decide: () => [{ action: debt }] },
+    run: { stepSec: 1, durationSec: 1 },
+  };
+  const after = economyAfter(allowed);
+  expect(after).toContain('"amount":"-4"');
+  const skipped = checkNonNegative(true, true);
+  expect(skipped.applicable).toBe(false);
+}
 
 describe("analysis source labels", () => {
-  it("keeps formula seconds apart from executed eta results", () => {
-    const scenario = constantScenario({ rate: 1, durationSec: 10, stepSec: 1 });
-    const simulate = etaSimulate({
-      scenario,
-      target: { kind: "money", value: "3" },
-      maxDurationSec: 10,
-    });
-    const analytic = etaAnalytic({
-      scenario,
-      target: { kind: "money", value: "3" },
-    });
-    const formulaSeconds = 3;
-    const result = checkTimedSources({
-      formulaSeconds,
-      simulate: { mode: simulate.mode, seconds: simulate.seconds },
-      analytic: { mode: analytic.mode, seconds: analytic.seconds },
-    });
-    expectApplicable(result);
-    expect(result.summary).toContain("formula 3");
-    expect(result.summary).toContain("executed simulate 3");
-    expect(result.summary).toContain("executed analytic 3");
-    expect(simulate.mode).toBe("simulate");
-    expect(analytic.mode).toBe("analytic");
-  });
+  it(
+    "keeps formula seconds apart from executed eta results",
+    keepsFormulaSecondsApartFromExecutedEtaResults,
+  );
 });
 
-describe("engine differential", () => {
-  it("matches a safe constant run and refuses number Infinity collapse", () => {
-    const numberEngine = createNumberEngine();
-    const bigEngine = createBreakInfinityEngine();
-    const scenario = constantScenario({ rate: 6, durationSec: 4, stepSec: 1 });
-    expect(economyAfter(scenario)).toContain('"amount":"24"');
-    const comparison = compareAmounts(
-      { engineId: "number", engine: numberEngine, amount: numberEngine.from(24) },
-      { engineId: "break-infinity", engine: bigEngine, amount: bigEngine.from(24) },
-    );
-    expect(comparison.status).toBe("equal");
-    const collapsed = compareAmounts(
-      { engineId: "number", engine: numberEngine, amount: numberEngine.from("1e400") },
-      { engineId: "break-infinity", engine: bigEngine, amount: bigEngine.from("1e400") },
-    );
-    expect(numberEngine.isFinite(numberEngine.from("1e400"))).toBe(false);
-    expect(bigEngine.isFinite(bigEngine.from("1e400"))).toBe(true);
-    expect(collapsed.status).toBe("refused-number-collapse");
-    expect(collapsed.left).not.toBe(collapsed.right);
-
-    const nearZero = compareAmounts(
-      { engineId: "number", engine: numberEngine, amount: numberEngine.from(0) },
-      { engineId: "number", engine: numberEngine, amount: numberEngine.from(1e-13) },
-    );
-    expect(nearZero.status).toBe("different");
-    const opposite = compareAmounts(
-      { engineId: "number", engine: numberEngine, amount: numberEngine.from(1e-13) },
-      { engineId: "number", engine: numberEngine, amount: numberEngine.from(-1e-13) },
-    );
-    expect(opposite.status).toBe("different");
+/**
+ * @evidence ./conformanceRun.ts#checkTimedSources Formula, simulate, and analytic seconds are all 3, and the executed modes stay distinct.
+ * @evidenceReview ./conformanceRun.ts#checkTimedSources #25df548 Formula, simulate, and analytic seconds are all 3, and the executed modes stay distinct.
+ */
+export function keepsFormulaSecondsApartFromExecutedEtaResults(): void {
+  const scenario = constantScenario({ rate: 1, durationSec: 10, stepSec: 1 });
+  const simulate = etaSimulate({
+    scenario,
+    target: { kind: "money", value: "3" },
+    maxDurationSec: 10,
   });
+  const analytic = etaAnalytic({
+    scenario,
+    target: { kind: "money", value: "3" },
+  });
+  const formulaSeconds = 3;
+  const result = checkTimedSources({
+    formulaSeconds,
+    simulate: { mode: simulate.mode, seconds: simulate.seconds },
+    analytic: { mode: analytic.mode, seconds: analytic.seconds },
+  });
+  expectApplicable(result);
+  expect(result.summary).toContain("formula 3");
+  expect(result.summary).toContain("executed simulate 3");
+  expect(result.summary).toContain("executed analytic 3");
+  expect(simulate.mode).toBe("simulate");
+  expect(analytic.mode).toBe("analytic");
+}
+
+/**
+ * @evidence ./compareAmounts.ts#compareAmounts The number engine and break-infinity engine agree on 24, and 1e400 collapses only on the number engine.
+ * @evidenceReview ./compareAmounts.ts#compareAmounts #4af6dfc Re-read compareAmounts: 24 matches by absLog10, and 1e400 returns refused-number-collapse because the number engine is not finite.
+ * @evidence ./compareAmounts.ts#AmountComparison.status Expects equal for 24, refused-number-collapse for 1e400, and different for the near-zero and opposite-sign pairs.
+ * @evidenceReview ./compareAmounts.ts#AmountComparison.status #62a5942 Expects equal for 24, refused-number-collapse for 1e400, and different for the near-zero and opposite-sign pairs.
+ * @evidence ./compareAmounts.ts#AmountComparison.left The collapsed number text is not the break-infinity text.
+ * @evidenceReview ./compareAmounts.ts#AmountComparison.left #6b7edef The collapsed number text is not the break-infinity text.
+ * @evidence ./compareAmounts.ts#AmountComparison.right The collapsed break-infinity text is not the number text.
+ * @evidenceReview ./compareAmounts.ts#AmountComparison.right #33c760e The collapsed break-infinity text is not the number text.
+ * @evidence ./compareAmounts.ts#AmountComparison.detail The collapse detail says Infinity collapse is not an amount match.
+ * @evidenceReview ./compareAmounts.ts#AmountComparison.detail #e1d350b The collapse detail says Infinity collapse is not an amount match.
+ * @evidence ./compareAmounts.ts#AmountSide.engineId Passes number and break-infinity as the side ids.
+ * @evidenceReview ./compareAmounts.ts#AmountSide.engineId #f238f2b Passes number and break-infinity as the side ids.
+ * @evidence ./compareAmounts.ts#AmountSide.engine Passes the number engine and the break-infinity engine.
+ * @evidenceReview ./compareAmounts.ts#AmountSide.engine #7ca5927 Passes the number engine and the break-infinity engine.
+ * @evidence ./compareAmounts.ts#AmountSide.amount Passes 24, 1e400, 0, and 1e-13 through the engines' from.
+ * @evidenceReview ./compareAmounts.ts#AmountSide.amount #3fc6861 Passes 24, 1e400, 0, and 1e-13 through the engines' from.
+ */
+export function matchesASafeConstantRunAndRefusesNumberInfinityCollapse(): void {
+  const numberEngine = createNumberEngine();
+  const bigEngine = createBreakInfinityEngine();
+  const scenario = constantScenario({ rate: 6, durationSec: 4, stepSec: 1 });
+  expect(economyAfter(scenario)).toContain('"amount":"24"');
+  const comparison = compareAmounts(
+    { engineId: "number", engine: numberEngine, amount: numberEngine.from(24) },
+    { engineId: "break-infinity", engine: bigEngine, amount: bigEngine.from(24) },
+  );
+  expect(comparison.status).toBe("equal");
+  const collapsed = compareAmounts(
+    { engineId: "number", engine: numberEngine, amount: numberEngine.from("1e400") },
+    { engineId: "break-infinity", engine: bigEngine, amount: bigEngine.from("1e400") },
+  );
+  expect(numberEngine.isFinite(numberEngine.from("1e400"))).toBe(false);
+  expect(bigEngine.isFinite(bigEngine.from("1e400"))).toBe(true);
+  expect(collapsed.status).toBe("refused-number-collapse");
+  expect(collapsed.detail).toContain("Infinity collapse");
+  expect(collapsed.left).not.toBe(collapsed.right);
+
+  const nearZero = compareAmounts(
+    { engineId: "number", engine: numberEngine, amount: numberEngine.from(0) },
+    { engineId: "number", engine: numberEngine, amount: numberEngine.from(1e-13) },
+  );
+  expect(nearZero.status).toBe("different");
+  const opposite = compareAmounts(
+    { engineId: "number", engine: numberEngine, amount: numberEngine.from(1e-13) },
+    { engineId: "number", engine: numberEngine, amount: numberEngine.from(-1e-13) },
+  );
+  expect(opposite.status).toBe("different");
+}
+
+describe("engine differential", () => {
+  it(
+    "matches a safe constant run and refuses number Infinity collapse",
+    matchesASafeConstantRunAndRefusesNumberInfinityCollapse,
+  );
 });

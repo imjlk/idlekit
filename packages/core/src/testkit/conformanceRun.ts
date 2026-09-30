@@ -5,12 +5,12 @@ import type { CompiledScenario, SimState } from "../sim/types";
 import { deserializeSimState, parseSimStateJSON, serializeSimState } from "../serde/simState";
 import { conformanceGeneratorVersion } from "./conformance";
 
-export const SHRINK_GAP_SEED = 0xd101;
-export const SHRINK_GAP_CASES = 17;
-export const SHRINK_GAP_MIN = 0;
-export const SHRINK_GAP_MAX = 16;
+const SHRINK_GAP_SEED = 0xd101;
+const SHRINK_GAP_CASES = 17;
+const SHRINK_GAP_MIN = 0;
+const SHRINK_GAP_MAX = 16;
 
-export type TickSchedule = {
+type TickSchedule = {
   readonly stepSec: number;
   readonly durationSec: number;
 };
@@ -36,7 +36,7 @@ export type ShrinkReport = {
   readonly shrinkingPath: readonly ShrinkStep[];
 };
 
-export type FailureReport = {
+type FailureReport = {
   readonly predicateId: string;
   readonly generatorVersion: number;
   readonly testSeed: number;
@@ -58,7 +58,7 @@ export type RelationCheck = {
   readonly summary: string;
 };
 
-export type TestRng = {
+type TestRng = {
   int: (min: number, max: number) => number;
 };
 
@@ -86,7 +86,7 @@ export function conformanceCaseCount(): number {
   return raw;
 }
 
-export function createTestRng(seed: number): TestRng {
+function createTestRng(seed: number): TestRng {
   const next = mulberry32(seed >>> 0);
   return {
     int(min: number, max: number): number {
@@ -102,11 +102,11 @@ export function gameSeedForCase(testSeed: number, index: number): number {
 }
 
 /** Passes for `n <= 0` or `n >= 8`. Fails for the open gap `1..7`. */
-export function shrinkGapHolds(value: number): boolean {
+function shrinkGapHolds(value: number): boolean {
   return value <= 0 || value >= 8;
 }
 
-export function shrinkTowardZero(value: number): number[] {
+function shrinkTowardZero(value: number): number[] {
   if (!Number.isInteger(value) || value === 0) return [];
   const toward = value > 0 ? value - 1 : value + 1;
   const half = Math.trunc(value / 2);
@@ -240,7 +240,7 @@ function shrinkValue<T>(predicate: (value: T) => boolean, shrink: (value: T) => 
   return { value: current, shrinkingPath };
 }
 
-export function runSeededProperty<T>(run: PropertyRun<T>): { ok: true } | { ok: false; report: FailureReport } {
+function runSeededProperty<T>(run: PropertyRun<T>): { ok: true } | { ok: false; report: FailureReport } {
   const rng = createTestRng(run.testSeed);
   for (let index = 0; index < run.cases; index += 1) {
     const original = run.generate(index, rng);
@@ -327,11 +327,11 @@ function strategyBracket<N, U extends string, Vars>(
   const snap = strategy?.snapshotState;
   const restore = strategy?.restoreState;
   if (!snap && !restore) return { snap: () => undefined, restore: () => {} };
-  if (!snap || !restore) return skip("strategy exposes only one of snapshotState and restoreState");
+  if (!snap || !restore || !strategy) return skip("strategy exposes only one of snapshotState and restoreState");
   return {
-    snap: () => snap(),
+    snap: () => strategy.snapshotState?.(),
     restore: (state) => {
-      restore(state);
+      strategy.restoreState?.(state);
     },
   };
 }
@@ -340,6 +340,10 @@ function isRelationCheck(value: StrategyBracket | RelationCheck): value is Relat
   return "applicable" in value;
 }
 
+/**
+ * @evidence docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness Replays one compiled scenario from the same initial strategy snapshot.
+ * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #a195f0e Re-read the section and this function: both runs restore the same strategy snapshot, and the check fails when the economy strings differ.
+ */
 export function checkReplay<N, U extends string, Vars>(scenario: CompiledScenario<N, U, Vars>): RelationCheck {
   const bracket = strategyBracket(scenario);
   if (isRelationCheck(bracket)) return bracket;
@@ -402,11 +406,6 @@ type TailStart<N, U extends string, Vars> = {
   persistedStrategy: boolean;
 };
 
-function positiveStateVersion(version: number | undefined): number | undefined {
-  if (typeof version === "number" && Number.isInteger(version) && version > 0) return version;
-  return undefined;
-}
-
 /** A JSON reload starts from the initial strategy, then applies the saved snapshot. */
 function jsonResumeCheckpoint<N, U extends string, Vars>(
   scenario: CompiledScenario<N, U, Vars>,
@@ -423,7 +422,7 @@ function jsonResumeCheckpoint<N, U extends string, Vars>(
         strategy && persistedStrategy
           ? {
               id: strategy.id,
-              version: positiveStateVersion(strategy.stateVersion),
+              version: strategy.stateVersion,
               state: strategy.snapshotState?.(),
             }
           : undefined,
@@ -498,11 +497,27 @@ export function checkResumeFromJson<N, U extends string, Vars>(
   );
 }
 
+function jsonRoundTripPreserves(value: unknown): boolean {
+  if (value === null) return true;
+  if (typeof value === "string" || typeof value === "boolean") return true;
+  if (typeof value === "number") return Number.isFinite(value);
+  if (Array.isArray(value)) return value.every(jsonRoundTripPreserves);
+  if (typeof value === "object") {
+    if (Object.getPrototypeOf(value) !== Object.prototype) return false;
+    return Object.values(value).every(jsonRoundTripPreserves);
+  }
+  return false;
+}
+
 export function checkJsonRoundTrip<N, U extends string, Vars>(
   scenario: CompiledScenario<N, U, Vars>,
 ): RelationCheck {
   const end = runScenario(scenario).end;
   const restored = restoreJsonCheckpoint(scenario, end, "round-trip");
+  if (!jsonRoundTripPreserves(end.vars)) return fail("vars do not survive a JSON checkpoint");
+  const originalVars = JSON.stringify(end.vars);
+  const restoredVars = JSON.stringify(restored.vars);
+  if (originalVars !== restoredVars) return fail(`vars ${originalVars} != ${restoredVars}`);
   const left = snapshotEconomy(scenario.ctx.E, end);
   const right = snapshotEconomy(scenario.ctx.E, restored);
   return left === right ? pass(left) : fail(`${left} != ${right}`);

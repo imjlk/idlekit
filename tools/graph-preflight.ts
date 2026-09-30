@@ -443,9 +443,9 @@ async function main(): Promise<void> {
         const cliSource = hasSource(local, "src/commands/") || hasSource(local, "packages/cli/src/");
         const simulator = collectSpans(local).filter((span) => span.file.includes("simulator"));
         const simulatorSource = simulator.some((span) => !span.file.endsWith(".d.ts"));
-        const simulatorDts = simulator.length > 0 && simulator.every((span) => span.file.endsWith(".d.ts"));
         if (!cliSource) fail("CLI package config reverse trace did not cite a command source");
-        else if (simulatorDts && !simulatorSource) fail("CLI invoke resolved runScenario only through .d.ts");
+        else if (simulator.length === 0) fail("CLI package trace omitted runScenario");
+        else if (!simulatorSource) fail("CLI invoke resolved runScenario only through .d.ts");
         else ok("authoritative CLI package trace cites command source");
       } finally {
         await cliSession.session.close();

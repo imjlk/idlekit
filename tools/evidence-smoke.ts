@@ -4,8 +4,10 @@ import {
   approvalApplies,
   assertExecutedTests,
   assertNonEmptyGlobs,
+  evidenceProgramSourceFiles,
   headingAnchors,
   includedSourceCount,
+  omittedProgramHosts,
   productionFileCites,
   retainedCoverage,
 } from "./evidence-inventory";
@@ -288,6 +290,37 @@ try {
     citeOk ? 0 : 1,
     citeOk,
     `function=${functionCites} const=${constCites} type=${typeCites}`,
+  );
+
+  const exactAnchor = productionFileCites(
+    "/** @evidence docs/spec.md#quota */\nexport function quotaHost() {}\n",
+    "docs/spec.md",
+    "quota",
+  );
+  const longerAnchor = productionFileCites(
+    "/** @evidence docs/spec.md#quota-v2 */\nexport function quotaHost() {}\n",
+    "docs/spec.md",
+    "quota",
+  );
+  const anchorOk = exactAnchor && !longerAnchor;
+  record(
+    "citation-anchor",
+    "zero",
+    anchorOk ? 0 : 1,
+    anchorOk,
+    `exact=${exactAnchor} longer=${longerAnchor}`,
+  );
+
+  const omitted = omittedProgramHosts(["src/a.ts"], ["src/a.ts", "src/b.ts"]);
+  const program = evidenceProgramSourceFiles(join(root, "tsconfig.evidence.json"));
+  const hostPresent = program.includes("packages/core/src/scenario/typiaTransformMissing.ts");
+  const programOk = omitted.length === 1 && omitted[0] === "src/b.ts" && hostPresent;
+  record(
+    "program-hosts",
+    "zero",
+    programOk ? 0 : 1,
+    programOk,
+    `omitted=${omitted.join(",")} host=${hostPresent}`,
   );
 
   const formatBad = join(root, "fixtures", "evidence", "format-bad");

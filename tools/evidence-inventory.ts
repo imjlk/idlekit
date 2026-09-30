@@ -1,4 +1,4 @@
-import { readFileSync } from "fs";
+import { readFileSync, realpathSync } from "fs";
 import { dirname, join, relative, resolve } from "path";
 import { disabledClaimLedger, evidenceGraph, productionFiles, testFiles } from "../evidence.config";
 import { root } from "./evidence-host";
@@ -119,6 +119,34 @@ export async function includedSourceCount(tsconfigPath: string): Promise<number>
     }
   }
   return count;
+}
+
+export function omittedProgramHosts(programFiles: readonly string[], hosts: readonly string[]): string[] {
+  const present = new Set(programFiles);
+  return hosts.filter((host) => !present.has(host));
+}
+
+/** Source files of the evidence program, including imports of the included roots. */
+export function evidenceProgramSourceFiles(tsconfigPath: string): string[] {
+  const base = realpathSync(dirname(tsconfigPath));
+  const tsc = join(base, "node_modules", ".bin", "tsc");
+  const proc = Bun.spawnSync(
+    [tsc, "-p", tsconfigPath, "--listFilesOnly", "--noEmit", "--pretty", "false"],
+    { cwd: base, stdout: "pipe", stderr: "pipe" },
+  );
+  const stdout = proc.stdout.toString();
+  if ((proc.exitCode ?? 1) !== 0 && stdout.trim().length === 0) {
+    throw new Error(proc.stderr.toString() || "tsc --listFilesOnly failed");
+  }
+  const files: string[] = [];
+  for (const line of stdout.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.includes("/node_modules/") || trimmed.endsWith(".d.ts")) continue;
+    const rel = relative(base, realpathSync(trimmed)).replaceAll("\\", "/");
+    if (rel.startsWith("..")) continue;
+    files.push(rel);
+  }
+  return files;
 }
 
 export function retainedCoverage(
@@ -285,8 +313,14 @@ function registersNamedTest(body: string, registeredAs: string, exportName: stri
   return new RegExp(`\\b(?:it|test)\\(\\s*${quoted}\\s*,\\s*${fn}\\b`).test(body);
 }
 
-function evidenceNeedle(doc: string, anchor: string): string {
-  return `@evidence ${doc}#${anchor}`;
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/** `quota` must not match a citation of `quota-v2`. */
+function citesAnchor(text: string, doc: string, anchor: string): boolean {
+  const pattern = `@evidence ${escapeRegExp(doc)}#${escapeRegExp(anchor)}(?![A-Za-z0-9._:-])`;
+  return new RegExp(pattern).test(text);
 }
 
 /** The block comment immediately above this export, with no nested terminator. */
@@ -300,13 +334,13 @@ function adjacentExportComment(body: string, exportName: string): string | undef
 
 /** The doc comment on the exported test must cite this requirement, not only share its file. */
 function citesRequirement(body: string, exportName: string, doc: string, anchor: string): boolean {
-  return adjacentExportComment(body, exportName)?.includes(evidenceNeedle(doc, anchor)) === true;
+  const comment = adjacentExportComment(body, exportName);
+  return comment !== undefined && citesAnchor(comment, doc, anchor);
 }
 
 export function productionFileCites(body: string, doc: string, anchor: string): boolean {
-  const needle = evidenceNeedle(doc, anchor);
   for (const match of body.matchAll(/\/\*\*((?:(?!\*\/)[\s\S])*)\*\//g)) {
-    if (!match[1]?.includes(needle) || match.index === undefined) continue;
+    if (!match[1] || !citesAnchor(match[1], doc, anchor) || match.index === undefined) continue;
     const after = body.slice(match.index + match[0].length);
     // A // note may sit between the doc block and the export. Another block comment may not.
     const exportFollows = new RegExp(
@@ -515,8 +549,17 @@ export async function checkInventory(projectRoot = root): Promise<string[]> {
     if (testFiles.includes(rel)) fail(failures, `production and test claims share ${rel}`);
   }
 
-  if ((await includedSourceCount(join(projectRoot, "tsconfig.evidence.json"))) === 0) {
+  let programFiles: string[] = [];
+  try {
+    programFiles = evidenceProgramSourceFiles(join(projectRoot, "tsconfig.evidence.json"));
+  } catch (error) {
+    fail(failures, error instanceof Error ? error.message : String(error));
+  }
+  if (!programFiles.some((file) => file.endsWith(".ts") || file.endsWith(".tsx"))) {
     fail(failures, "tsconfig.evidence.json includes no TypeScript sources");
+  }
+  for (const host of omittedProgramHosts(programFiles, [...productionFiles, ...testFiles])) {
+    fail(failures, `evidence program omits graph host ${host}`);
   }
 
   const evidenceTsconfig = readFileSync(join(projectRoot, "tsconfig.evidence.json"), "utf8");
