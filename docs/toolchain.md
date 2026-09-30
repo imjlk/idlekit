@@ -75,7 +75,7 @@ The toolchain fixture still exercises Evidence and Graph in isolation. `TC-03` a
 
 ## TC-01 verification
 
-Commands below used Bun `1.3.10`. `ttsc version` was `ttsc 0.30.4 (Version 7.0.2)`. Fixture input hash `933e8d6f6e411e2cfef0a4b5ce1a121cc8e00ad647c08d009c2cf632543f5b73`. Lockfile sha256 `c39164595007df4da8710b7fda5f70ccca09d5f9c2f8b8a73d8f4d360d0e137e`.
+Commands below used Bun `1.3.10`. `ttsc version` was `ttsc 0.30.4 (Version 7.0.2)`. Fixture input hash `933e8d6f6e411e2cfef0a4b5ce1a121cc8e00ad647c08d009c2cf632543f5b73`. Lockfile sha256 `3b8640456614474f98e6faff990b85fe2e4274438c42f355ec689bfc278e7ab0`.
 
 | Command | Host | Exit |
 |---|---|---|
