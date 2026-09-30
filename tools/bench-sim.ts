@@ -85,10 +85,15 @@ function resolveScenarioPath(input: string): string {
 }
 
 const BUNDLE_INPUTS = [
+  "package.json",
+  "bun.lock",
+  "packages/cli/package.json",
   "packages/cli/src",
   "packages/cli/scripts",
   "packages/cli/bunli.config.ts",
+  "packages/core/package.json",
   "packages/core/src",
+  "packages/money/package.json",
   "packages/money/src",
 ];
 
