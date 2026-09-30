@@ -227,7 +227,7 @@ try {
   expectNonZero(
     "format-severity",
     runTtsc(["-p", "tsconfig.json", "--noEmit", "--cwd", formatBad], formatBad),
-    /format|quote|semi/i,
+    /\[format\/(?:quotes|semi)\]/,
   );
 } finally {
   rmSync(cacheRoot, { recursive: true, force: true });

@@ -374,6 +374,12 @@ export class GraphSession {
       },
       60_000,
     )) as RpcResult;
+    if (init.protocolVersion !== "2025-11-25") {
+      this.proc?.kill();
+      throw new Error(
+        `graph MCP protocol ${init.protocolVersion ?? "missing"} is not 2025-11-25\n${this.stderrTail()}`,
+      );
+    }
     await this.send({ jsonrpc: "2.0", method: "notifications/initialized" });
     const server = init.serverInfo
       ? `${init.serverInfo.name ?? ""} ${init.serverInfo.version ?? ""}`.trim()
