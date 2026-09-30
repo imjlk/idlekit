@@ -815,6 +815,31 @@ describe("PR-01 bulk quote settlement", () => {
     expect(engine.toNumber(out.next.wallet.money.amount)).toBe(1000);
   });
 
+  it("pays a fractional quote whose exponent is smaller than the wallet", () => {
+    const engine = createNumberEngine();
+    const action: Action<number, UnitCode, Vars> = {
+      id: "buy",
+      kind: "buy",
+      canApply: () => true,
+      cost: () => coin(engine, engine.from(1)),
+      bulk: () => [{ size: 2, cost: coin(engine, engine.from(11.5)) }],
+      apply: (_ctx, current, bulkSize = 1) => ({
+        ...current,
+        vars: { ...current.vars, owned: current.vars.owned + bulkSize },
+      }),
+    };
+    const out = stepOnce({
+      ctx: context(engine),
+      model: zeroIncomeModel(engine, action),
+      state: state(engine, 100),
+      dt: 0,
+      decisions: [{ action, bulkSize: 2 }],
+    });
+    expect(skippedReason(out.events)).toBeUndefined();
+    expect(out.next.vars.owned).toBe(2);
+    expect(engine.toNumber(out.next.wallet.money.amount)).toBe(88.5);
+  });
+
   it("rejects an epsilon quote that cmp would treat as free", () => {
     const engine = createNumberEngine();
     const action: Action<number, UnitCode, Vars> = {

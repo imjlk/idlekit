@@ -90,9 +90,9 @@ function exactTextOrder(leftText: string, rightText: string): -1 | 0 | 1 | undef
     return left.sign === right.sign ? 0 : left.sign === 0 ? (right.sign < 0 ? 1 : -1) : left.sign;
   }
   if (left.sign !== right.sign) return left.sign < right.sign ? -1 : 1;
-  const exp = Math.max(left.exp, right.exp);
-  const leftScaled = left.coeff * 10n ** BigInt(exp - left.exp);
-  const rightScaled = right.coeff * 10n ** BigInt(exp - right.exp);
+  const exp = Math.min(left.exp, right.exp);
+  const leftScaled = left.coeff * 10n ** BigInt(left.exp - exp);
+  const rightScaled = right.coeff * 10n ** BigInt(right.exp - exp);
   const magnitude = leftScaled < rightScaled ? -1 : leftScaled > rightScaled ? 1 : 0;
   if (magnitude === 0 || left.sign === 1) return magnitude;
   return magnitude === -1 ? 1 : -1;
