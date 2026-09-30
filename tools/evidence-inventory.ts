@@ -375,6 +375,50 @@ function readQuoted(body: string, index: number): { value: string; end: number }
   return { value: raw.replace(/\\(["'\\])/g, "$1"), end };
 }
 
+function regexCanStart(body: string, index: number): boolean {
+  let cursor = index - 1;
+  while (cursor >= 0 && /\s/.test(body[cursor] ?? "")) cursor -= 1;
+  if (cursor < 0) return true;
+  const previous = body[cursor] ?? "";
+  if ("([{,;:=!&|?+-*%^~<>".includes(previous)) return true;
+  if (!/[A-Za-z0-9_$]/.test(previous)) return false;
+  const word = /[A-Za-z_$][A-Za-z0-9_$]*$/.exec(body.slice(0, cursor + 1))?.[0];
+  return (
+    word === "return" ||
+    word === "throw" ||
+    word === "case" ||
+    word === "void" ||
+    word === "typeof" ||
+    word === "delete" ||
+    word === "await" ||
+    word === "yield" ||
+    word === "in" ||
+    word === "of"
+  );
+}
+
+function skipRegex(body: string, index: number): number {
+  let cursor = index + 1;
+  let inClass = false;
+  while (cursor < body.length) {
+    const char = body[cursor] ?? "";
+    if (char === "\\") {
+      cursor += 2;
+      continue;
+    }
+    if (char === "\n") return cursor;
+    if (char === "[" && !inClass) inClass = true;
+    else if (char === "]" && inClass) inClass = false;
+    else if (char === "/" && !inClass) {
+      cursor += 1;
+      while (cursor < body.length && /[a-zA-Z]/.test(body[cursor] ?? "")) cursor += 1;
+      return cursor;
+    }
+    cursor += 1;
+  }
+  return cursor;
+}
+
 function readIdentifier(body: string, index: number): { value: string; end: number } | undefined {
   const cursor = skipWhitespace(body, index);
   const match = /^[A-Za-z_$][A-Za-z0-9_$]*/.exec(body.slice(cursor));
@@ -420,6 +464,10 @@ export function registeredSuites(body: string, exportName: string, title: string
         else index += 1;
       }
       index += 1;
+      continue;
+    }
+    if (char === "/" && regexCanStart(body, index)) {
+      index = skipRegex(body, index);
       continue;
     }
     if (char === "{") {
