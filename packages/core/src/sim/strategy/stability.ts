@@ -1,8 +1,9 @@
 import { singleBuySize } from "../step";
 import type { Action, BulkQuote } from "../types";
 
-/** Size 1 pays `Action.cost`. Every other selected size, including a malformed one, is settled as a quote. */
-export function quotedDecisionSize(size: number): number | undefined {
+/** Size 1 pays `Action.cost`. A missing size stays rejectable. Every other selected size is settled as a quote. */
+export function quotedDecisionSize(size: number | undefined): number | undefined {
+  if (typeof size !== "number") return Number.NaN;
   return size === singleBuySize ? undefined : size;
 }
 

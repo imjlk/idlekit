@@ -7,7 +7,7 @@ import { buildSimStats } from "./analysis/ux";
 import { singleBuySize, stepOnce } from "./step";
 import { createGreedyStrategy } from "./strategy/greedy";
 import { quotedDecisionSize } from "./strategy/stability";
-import type { Action, Model, SimContext, SimEvent, SimState } from "./types";
+import type { Action, BulkQuote, Model, SimContext, SimEvent, SimState } from "./types";
 
 type UnitCode = "COIN";
 type Vars = { owned: number; bonus: number; tier: number };
@@ -647,6 +647,47 @@ describe("PR-01 bulk quote settlement", () => {
     const stats = buildSimStats(out.events);
     expect(stats.actions.skippedInvalidQuote).toBe(1);
     expect(stats.actions.applied).toBe(0);
+  });
+
+  it("rejects a quote that omits its size", () => {
+    expect(quotedDecisionSize(undefined)).toBeNaN();
+    const engine = createNumberEngine();
+    const action: Action<number, UnitCode, Vars> = {
+      id: "buy",
+      kind: "buy",
+      canApply: () => true,
+      cost: () => coin(engine, engine.from(10)),
+      bulk: () => [
+        {
+          cost: coin(engine, engine.from(10)),
+          deltaIncomePerSec: coin(engine, engine.from(1)),
+        } as BulkQuote<number, UnitCode>,
+      ],
+      apply: (_ctx, current, bulkSize = 1) => ({
+        ...current,
+        vars: { ...current.vars, owned: current.vars.owned + (bulkSize ?? 1) },
+      }),
+    };
+    const model = zeroIncomeModel(engine, action);
+    const start = state(engine, 1000);
+    const decisions = createGreedyStrategy<number, UnitCode, Vars>({
+      schemaVersion: 1,
+      objective: "maximizeIncome",
+      bulk: { mode: "bestQuote" },
+    }).decide(context(engine), model, start);
+    expect(decisions).toHaveLength(1);
+    expect(decisions[0]?.bulkSize).toBeNaN();
+    const out = stepOnce({
+      ctx: context(engine),
+      model,
+      state: start,
+      dt: 0,
+      decisions,
+    });
+    expect(skippedReason(out.events)).toBe("invalidQuote");
+    expect(warningCodes(out.events)).toContain("INVALID_BULK_SIZE");
+    expect(out.next.vars.owned).toBe(0);
+    expect(engine.toNumber(out.next.wallet.money.amount)).toBe(1000);
   });
 
   it("rejects a quote cost that has no unit", () => {
