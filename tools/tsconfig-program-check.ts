@@ -1,3 +1,4 @@
+import { statSync } from "fs";
 import { resolve } from "path";
 
 const root = resolve(import.meta.dir, "..");
@@ -49,9 +50,13 @@ for (const reference of references) {
   const cwd = projectPath.endsWith("tsconfig.json") ? resolve(projectPath, "..") : root;
   for (const pattern of patterns) {
     const asDir = resolve(cwd, pattern);
-    const expanded = Bun.spawnSync(["test", "-d", asDir], { stdout: "ignore", stderr: "ignore" }).exitCode === 0
-      ? `${pattern.replace(/\/$/, "")}/**/*`
-      : pattern;
+    let directory = false;
+    try {
+      directory = statSync(asDir).isDirectory();
+    } catch {
+      directory = false;
+    }
+    const expanded = directory ? `${pattern.replace(/\/$/, "")}/**/*` : pattern;
     const glob = new Bun.Glob(expanded);
     for await (const _file of glob.scan({ cwd, onlyFiles: true })) {
       count += 1;
