@@ -277,9 +277,11 @@ function productionFileCites(body: string, doc: string, anchor: string): boolean
     if (!match[1]?.includes(needle) || match.index === undefined) continue;
     const after = body.slice(match.index + match[0].length);
     // A // note may sit between the doc block and the export. Another block comment may not.
-    if (/^(?:\s|\/\/[^\n]*(?:\n|$))*export\s+(?:async\s+)?(?:function|const|class|type|interface|enum)\b/.test(after)) {
-      return true;
-    }
+    const exportFollows = new RegExp(
+      "^(?:\\s|//[^\\n]*(?:\\n|$))*" +
+        "export\\s+(?:async\\s+)?(?:function|const|class|type|interface|enum)\\b",
+    );
+    if (exportFollows.test(after)) return true;
   }
   return false;
 }
@@ -339,7 +341,11 @@ export async function checkInventory(projectRoot = root): Promise<string[]> {
     if (!shrink.ok) {
       fail(failures, `active coverage shrunk without approval: ${shrink.missing.join(", ")}`);
     }
-    const fileShrink = retainedCoverage(previous.protectedFiles, baseline.protectedFiles, approvals.files);
+    const fileShrink = retainedCoverage(
+      previous.protectedFiles,
+      baseline.protectedFiles,
+      approvals.files,
+    );
     if (!fileShrink.ok) {
       fail(
         failures,
