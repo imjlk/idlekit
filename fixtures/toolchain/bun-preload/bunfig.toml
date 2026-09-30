@@ -1,0 +1,1 @@
+preload = ["@ttsc/unplugin/bun-register"]

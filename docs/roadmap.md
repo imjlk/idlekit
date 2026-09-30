@@ -32,7 +32,7 @@ Correctness work follows the toolchain, then the conformance harness:
 
 `PR-15` (flow observation), `PR-16` (guarded time skip), `PR-19` (Jev provider), and `DX-05` (worker backend) stay optional.
 
-At `265c6ed`, root `packageManager` is `bun@1.3.10` and CI pins Bun `1.3.9`. Check and emit still use `tsc`. `TC-01` unifies the host and moves check/emit to ttsc. Development Node or Go needed by that compiler is a host detail. The product runtime stays Bun-first.
+At `265c6ed`, root `packageManager` was `bun@1.3.10` and CI pinned Bun `1.3.9`. `TC-01` unifies CI on Bun `1.3.10` and pins ttsc. Check and emit scripts still call `tsc` until `TC-02`. Development Node or Go needed by that compiler is a host detail. The product runtime stays Bun-first. See [Toolchain pins](./toolchain.md).
 
 `prestigeCycle.stability` is not a steady-state measurement. `createBreakEternityEngine` remains an unimplemented placeholder.
 

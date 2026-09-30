@@ -1,0 +1,47 @@
+{
+  "baseline": "265c6ed1dad56e474a9b8acd847be42aaa3faa51",
+  "bun": "1.3.10",
+  "nodeLauncher": ">=22.15.0",
+  "ciNode": "22.23.3",
+  "publishNode": "22.14.0",
+  "packages": {
+    "ttsc": {
+      "version": "0.30.4",
+      "integrity": "sha512-JDw66o8hIkelLp0gMWj7izVzXAXxT+oObILBTOa6MxBGA8a2lqdfMsP++XN0hPYYxKNpyuLVnClBBvehNZyIpw=="
+    },
+    "@ttsc/lint": {
+      "version": "0.30.4",
+      "integrity": "sha512-UB8Akjtrcc8iiXL6iuy/jfaXtoFx65VXkbT6gPSsFR/9+rvK7SBozhp09beKrjR1Bcmmvlr8apzdjhwbMo0UWA=="
+    },
+    "@ttsc/evidence": {
+      "version": "0.30.4",
+      "integrity": "sha512-+/TwMXlfFmcMRs1PQ3GDOirAzIxIQV/rGILpDfZOXvKJYnY/TuItxIp8PjHV6eu+JrmTn/vCQgANp14MzMa2fQ=="
+    },
+    "@ttsc/graph": {
+      "version": "0.30.4",
+      "integrity": "sha512-n6+BF5+94aSVs0dS7Jo3ogkg47mrSA6Vp16XtJ593kAxRL7AXhjLKpkVx9dVWceh1H+FXPAqtHkIA2LGuUd7iw=="
+    },
+    "@ttsc/unplugin": {
+      "version": "0.30.4",
+      "integrity": "sha512-YzAtIzbgzLlUUMsgmoPQ2oYkYzAA+KsrpMq0BjLRa/pEve6NIOOQ1VRzS/nLrUt+VKtvGjHy4P/5w/oRLdbfUw=="
+    },
+    "typescript": {
+      "version": "7.0.2",
+      "integrity": "sha512-8FYau96o3NKOhbjKi/qNvG/W5jhzxkbdm5sj9AbZ/5T5sWqn3hJgLfGx27sRKZWTvyzCP8dLRBTf5tBTSRVUNA=="
+    },
+    "typia": {
+      "version": "14.0.6",
+      "integrity": "sha512-dWtC9sMgmlR26yms6BAHWO0/P4Vzfw/cs1Mg+ZRYFlGub1CXRnF343EVgoZcxQdzoaPh50nTOtgd2Oaym73pIg=="
+    }
+  },
+  "platformPackages": {
+    "@ttsc/darwin-arm64": {
+      "version": "0.30.4",
+      "integrity": "sha512-+x5qOR5kTTjVJKUYqZtkIs33dS3MnNflJfu4Lg1XRvipqjqzIb6RtUlYJ0uTJcGF1ZZ6N1s+ddGocpFqxD9Zpw=="
+    },
+    "@ttsc/linux-x64": {
+      "version": "0.30.4",
+      "integrity": "sha512-JZrx4sXeQVAJeyGpA8phlffrvbeyIjwme8ZVoBG8gvyT+BswfVgKQhskBaEGDodi6VyM3k53i53e+QcywFN+xQ=="
+    }
+  }
+}

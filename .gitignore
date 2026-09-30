@@ -7,3 +7,4 @@ tmp
 .npmrc.local
 .npmrc.publish.local
 packages/cli/.bunli/*.report.json
+.atlas/

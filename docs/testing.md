@@ -80,10 +80,10 @@ Compatibility fixtures live under `fixtures/compat/v1/`.
 
 ## Analysis baseline
 
-At `265c6ed` the repository compiler is `tsc`, tests run with `bun test`, and the CLI bundle is Bunli. Root Bun is `1.3.10`. CI pins Bun `1.3.9`.
+At `265c6ed` the repository compiler was `tsc`, tests ran with `bun test`, and the CLI bundle was Bunli. Root Bun was `1.3.10` and CI pinned Bun `1.3.9`. `TC-01` moves CI to Bun `1.3.10` and pins ttsc. Package check and emit scripts still call `tsc` until `TC-02`. The live pins are in [Toolchain pins](./toolchain.md).
 
-`bun tools/analysis-baseline-check.ts` checks the paths cited by the [source audit](./implementation/source-audit.md) and checks that planned toolchain commands are still absent. `TC-01` updates the host pins inside that script when it changes them.
+`bun tools/analysis-baseline-check.ts` checks the paths cited by the [source audit](./implementation/source-audit.md) and the current host pins.
 
-These names are not repository commands yet: `toolchain:doctor`, `toolchain:prepare`, `evidence:check`, `evidence:smoke`, `graph:check`, `contracts:generate`, `contracts:check`, `test:conformance`.
+These names are not repository commands yet: `evidence:check`, `evidence:smoke`, `graph:check`, `contracts:generate`, `contracts:check`, `test:conformance`. `toolchain:doctor` and `toolchain:prepare` are the `TC-01` host commands.
 
 Shared meanings for later analysis work are in [Analysis contracts](./adr/analysis-contracts.md).

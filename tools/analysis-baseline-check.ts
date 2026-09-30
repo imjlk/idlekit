@@ -3,7 +3,8 @@
  *
  * Confirms the source-audit paths exist and the planned toolchain names do not.
  * TC-01 updates the host pins in this file when it changes Bun, TypeScript, or typia.
- * Evidence and Graph are intentionally absent here.
+ * toolchain:doctor and toolchain:prepare are real after that pin.
+ * Evidence and Graph repository gates stay absent until TC-03 and TC-04.
  */
 import { resolve } from "path";
 
@@ -22,6 +23,13 @@ const mustExist = [
   "docs/roadmap_ko.md",
   "docs/testing.md",
   "docs/testing_ko.md",
+  "docs/toolchain.md",
+  "docs/toolchain_ko.md",
+  "fixtures/toolchain/pins.json",
+  "fixtures/toolchain/baseline.json",
+  "tools/toolchain-doctor.ts",
+  "tools/toolchain-prepare.ts",
+  "tools/toolchain-smoke.ts",
   "package.json",
   "tsconfig.base.json",
   "packages/money/package.json",
@@ -69,8 +77,6 @@ const mustBeAbsent = [
 ];
 
 const absentRootScripts = [
-  "toolchain:doctor",
-  "toolchain:prepare",
   "evidence:check",
   "evidence:smoke",
   "graph:check",
@@ -116,11 +122,20 @@ if (rootPkg.packageManager !== "bun@1.3.10") {
   fail(`root packageManager is ${String(rootPkg.packageManager)}, baseline is bun@1.3.10`);
 }
 const rootDev = (rootPkg.devDependencies ?? {}) as Record<string, string>;
-if (rootDev.typescript !== "^5.8.3") {
-  fail(`root typescript is ${String(rootDev.typescript)}, baseline is ^5.8.3`);
+const pinnedDev: Record<string, string> = {
+  ttsc: "0.30.4",
+  "@ttsc/lint": "0.30.4",
+  "@ttsc/evidence": "0.30.4",
+  "@ttsc/graph": "0.30.4",
+  "@ttsc/unplugin": "0.30.4",
+  typescript: "7.0.2",
+  typia: "14.0.6",
+};
+for (const [name, version] of Object.entries(pinnedDev)) {
+  if (rootDev[name] !== version) fail(`root ${name} is ${String(rootDev[name])}, pin is ${version}`);
 }
-if (rootDev["@types/node"] !== "^24.3.0") {
-  fail(`root @types/node is ${String(rootDev["@types/node"])}, baseline is ^24.3.0`);
+if (rootDev["@types/node"] !== "^26.1.2") {
+  fail(`root @types/node is ${String(rootDev["@types/node"])}, pin is ^26.1.2`);
 }
 
 const scripts = (rootPkg.scripts ?? {}) as Record<string, string>;
@@ -130,11 +145,11 @@ for (const name of absentRootScripts) {
 
 const corePkg = await readJson(resolve(root, "packages/core/package.json"));
 const coreDeps = (corePkg.dependencies ?? {}) as Record<string, string>;
-if (coreDeps.typia !== "^9.7.2") {
-  fail(`@idlekit/core typia is ${String(coreDeps.typia)}, baseline is ^9.7.2`);
+if (coreDeps.typia !== "14.0.6") {
+  fail(`@idlekit/core typia is ${String(coreDeps.typia)}, pin is 14.0.6`);
 }
 
-for (const rel of ["package.json", "packages/money/package.json", "packages/core/package.json", "packages/cli/package.json"]) {
+for (const rel of ["packages/money/package.json", "packages/core/package.json", "packages/cli/package.json"]) {
   const pkg = await readJson(resolve(root, rel));
   const names = Object.keys({
     ...((pkg.dependencies ?? {}) as Record<string, string>),
@@ -188,7 +203,8 @@ if (main.includes("inspectCommand") || main.includes("analyzeCommand")) {
 
 for (const workflow of ["ci.yml", "codeql.yml", "docs-verify.yml", "release.yml"]) {
   const text = await readText(resolve(root, ".github/workflows", workflow));
-  if (!text.includes('bun-version: "1.3.9"')) fail(`${workflow} does not pin Bun 1.3.9`);
+  if (!text.includes('bun-version: "1.3.10"')) fail(`${workflow} does not pin Bun 1.3.10`);
+  if (text.includes('bun-version: "1.3.9"')) fail(`${workflow} still pins Bun 1.3.9`);
 }
 
 const head = Bun.spawnSync(["git", "rev-parse", "HEAD"], { cwd: root, stdout: "pipe", stderr: "pipe" });

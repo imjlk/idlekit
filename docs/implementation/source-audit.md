@@ -6,7 +6,7 @@ Policy: [analysis contracts](../adr/analysis-contracts.md).
 
 Baseline commit: `265c6ed1dad56e474a9b8acd847be42aaa3faa51` (`main`, 2026-09-30). The commit date recorded by git is 2026-04-12. This file separates what this session read in source from risks that still need a runtime fixture. It does not record a `bun test` result. Planned files and commands below are absent on purpose.
 
-`bun tools/analysis-baseline-check.ts` checks that the cited paths exist and that the planned toolchain names are still absent. `TC-01` updates the host pins in that check when it unifies them.
+`bun tools/analysis-baseline-check.ts` checks that the cited paths exist. The table below is the `PR-00` snapshot at `265c6ed`. Live pins after `TC-01` are in [Toolchain pins](../toolchain.md). `TC-01` updates the host pins in the check when it unifies them.
 
 ## What already exists
 
