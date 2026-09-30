@@ -244,19 +244,22 @@ try {
     "a stale approval must not cover a later removal",
   );
 
-  const ambiguousOut = [
-    "(pass) alpha > quota is documented",
-    "(pass) beta > quota is documented",
-    "2 pass",
-  ].join("\n");
-  const ambiguous = assertExecutedTests(ambiguousOut, 0, ["quota is documented"]);
-  const ambiguousOk = ambiguous.some((message) => message.includes("more than one suite"));
+  const ambiguousOut = ["(pass) beta > quota is documented", "1 pass"].join("\n");
+  const ambiguous = assertExecutedTests(ambiguousOut, 0, ["alpha > quota is documented"]);
+  const ambiguousOk = ambiguous.some((message) => message.includes("missed"));
   record("ambiguous-suite", "nonzero", ambiguousOk ? 1 : 0, ambiguousOk, ambiguous.join("\n"));
 
   const qualifiedOut = ["(pass) alpha > quota is documented", "1 pass"].join("\n");
-  const qualified = assertExecutedTests(qualifiedOut, 0, ["quota is documented"]);
-  const qualifiedOk = qualified.length === 0;
-  record("suite-qualified", "zero", qualifiedOk ? 0 : 1, qualifiedOk, qualified.join("\n"));
+  const qualified = assertExecutedTests(qualifiedOut, 0, ["alpha > quota is documented"]);
+  const bareTitle = assertExecutedTests(qualifiedOut, 0, ["quota is documented"]);
+  const qualifiedOk = qualified.length === 0 && bareTitle.length > 0;
+  record(
+    "suite-qualified",
+    "zero",
+    qualifiedOk ? 0 : 1,
+    qualifiedOk,
+    `full=${qualified.join("\n")} bare=${bareTitle.join("\n")}`,
+  );
 
   const anchors = headingAnchors(
     [
@@ -282,6 +285,16 @@ try {
   const indented = headingAnchors(" ## Quota {#quota}\n    ## Hidden {#hidden}\n");
   const indentedOk = indented.length === 1 && indented[0] === "quota";
   record("indented-heading", "zero", indentedOk ? 0 : 1, indentedOk, JSON.stringify(indented));
+
+  const fencedComment = headingAnchors("```\n<!--\n```\n## After {#after}\n");
+  const fencedCommentOk = fencedComment.length === 1 && fencedComment[0] === "after";
+  record(
+    "fenced-comment",
+    "zero",
+    fencedCommentOk ? 0 : 1,
+    fencedCommentOk,
+    JSON.stringify(fencedComment),
+  );
 
   const indentedFence = headingAnchors("    ```\n## Visible {#quota}\n");
   const indentedFenceOk = indentedFence.length === 1 && indentedFence[0] === "quota";
