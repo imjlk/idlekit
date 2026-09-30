@@ -14,9 +14,13 @@ import type { ITtscLintConfig } from "@ttsc/lint";
 export const productionFiles = [
   "packages/core/src/scenario/concreteValidator.ts",
   "packages/core/src/scenario/typiaTransformMissing.ts",
+  "packages/core/src/testkit/conformance.ts",
 ];
 
-export const testFiles = ["packages/core/src/scenario/concreteValidator.test.ts"];
+export const testFiles = [
+  "packages/core/src/scenario/concreteValidator.test.ts",
+  "packages/core/src/testkit/conformance.test.ts",
+];
 
 const activeMarkdown = {
   type: "markdown" as const,

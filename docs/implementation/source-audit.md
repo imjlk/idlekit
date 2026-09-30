@@ -90,4 +90,4 @@ There is no root `tsconfig.json`. Package configs extend `tsconfig.base.json`.
 
 ## Planned names that are not in the tree
 
-At `265c6ed` none of these existed. `toolchain:doctor` and `toolchain:prepare` arrived in `TC-01`. `evidence:check`, `evidence:smoke`, and `docs/requirements/active/` arrived in `TC-03`. `graph:check` and `tsconfig.graph.json` arrived in `TC-04`. Still targets: `contracts:generate`, `contracts:check`, `test:conformance`, `idk inspect`, `idk analyze`, `ExecutionPlan`, `RunInstance`, and `AnalyzerRegistry`.
+At `265c6ed` none of these existed. `toolchain:doctor` and `toolchain:prepare` arrived in `TC-01`. `evidence:check`, `evidence:smoke`, and `docs/requirements/active/` arrived in `TC-03`. `graph:check` and `tsconfig.graph.json` arrived in `TC-04`. `test:conformance` arrived in `DX-01`. Still targets: `contracts:generate`, `contracts:check`, `idk inspect`, `idk analyze`, `ExecutionPlan`, `RunInstance`, and `AnalyzerRegistry`.

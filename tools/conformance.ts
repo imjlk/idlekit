@@ -1,0 +1,201 @@
+import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "fs";
+import { join, resolve } from "path";
+import { demonstrateShrinkGap, replayShrinkReport } from "../packages/core/src/testkit/conformanceRun";
+import { commandText, root, runTtsc } from "./evidence-host";
+import { fixtureEnv } from "./toolchain-host";
+
+type Step = {
+  name: string;
+  ok: boolean;
+  detail?: string;
+};
+
+const steps: Step[] = [];
+
+function record(name: string, ok: boolean, detail?: string): void {
+  steps.push({ name, ok, detail });
+  console.error(`${ok ? "ok" : "FAIL"} ${name}`);
+  if (!ok && detail) console.error(detail.slice(0, 2000));
+}
+
+function finish(): void {
+  if (steps.some((step) => !step.ok)) process.exit(1);
+}
+
+function readReport(path: string): ReturnType<typeof demonstrateShrinkGap> {
+  return JSON.parse(readFileSync(path, "utf8")) as ReturnType<typeof demonstrateShrinkGap>;
+}
+
+function replay(path: string): void {
+  const absolute = resolve(root, path);
+  const saved = readReport(absolute);
+  const fresh = demonstrateShrinkGap();
+  const same = JSON.stringify(saved) === JSON.stringify(fresh);
+  record("shrink-fixture-matches", same, same ? undefined : "fixture drifted from demonstrateShrinkGap()");
+  const replayed = replayShrinkReport(saved);
+  const failedAgain = replayed.failed && replayed.pathOk && replayed.shrunk === saved.value && saved.value === 1;
+  record(
+    "shrink-replay-fails",
+    failedAgain,
+    failedAgain ? undefined : JSON.stringify({ saved: saved.value, replayed }),
+  );
+  finish();
+}
+
+function printShrink(): void {
+  process.stdout.write(`${JSON.stringify(demonstrateShrinkGap(), null, 2)}\n`);
+}
+
+function copyFixture(rel: string, dest: string): void {
+  cpSync(join(root, rel), dest, { recursive: true });
+}
+
+function spawn(
+  args: string[],
+  cwd: string,
+  env: Record<string, string | undefined> = process.env,
+): { exitCode: number; text: string } {
+  const proc = Bun.spawnSync(args, {
+    cwd,
+    stdout: "pipe",
+    stderr: "pipe",
+    env,
+  });
+  return {
+    exitCode: proc.exitCode ?? 1,
+    text: `${proc.stdout.toString()}\n${proc.stderr.toString()}`,
+  };
+}
+
+function graphLookup(dir: string, query: string): { exitCode: number; text: string } {
+  return spawn(
+    [
+      process.execPath,
+      join(root, "tools/graph-query.ts"),
+      "--cwd",
+      dir,
+      "--tsconfig",
+      "tsconfig.json",
+      "--question",
+      `Where is ${query} declared?`,
+      "--request",
+      JSON.stringify({ type: "lookup", query, limit: 5 }),
+    ],
+    root,
+  );
+}
+
+function negative(): void {
+  const work = join(root, "tmp", `conformance-negative-${process.pid}`);
+  rmSync(work, { recursive: true, force: true });
+  mkdirSync(work, { recursive: true });
+  try {
+    const preload = join(work, "bun-preload");
+    mkdirSync(join(preload, "src"), { recursive: true });
+    cpSync(join(root, "fixtures/toolchain/bun-preload/bunfig.toml"), join(preload, "bunfig.toml"));
+    cpSync(join(root, "fixtures/toolchain/bun-preload/src/entry.ts"), join(preload, "src/entry.ts"));
+    // A copied tsconfig inode makes ttsc's generation capture fail. Write a new
+    // file with the same options so the temp project does not walk to a home config.
+    writeFileSync(
+      join(preload, "tsconfig.json"),
+      `${JSON.stringify(
+        {
+          compilerOptions: {
+            target: "ES2022",
+            module: "ESNext",
+            moduleResolution: "Bundler",
+            lib: ["ES2022"],
+            strict: true,
+            skipLibCheck: true,
+            noEmit: true,
+            types: ["node"],
+          },
+          include: ["src"],
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    const preloadEnv = fixtureEnv();
+    preloadEnv.TTSC_TTSX_BINARY = join(root, "tools/ttsx-under-node");
+    const preloaded = spawn([process.execPath, "src/entry.ts"], preload, preloadEnv);
+    record(
+      "transform-present",
+      preloaded.exitCode === 0 && preloaded.text.includes("preload-ok"),
+      preloaded.text.slice(0, 1500),
+    );
+
+    const nopreload = join(work, "bun-nopreload");
+    copyFixture("fixtures/toolchain/bun-nopreload", nopreload);
+    const missingTransform = spawn(
+      [process.execPath, join(nopreload, "src/entry.ts")],
+      nopreload,
+      fixtureEnv(),
+    );
+    record(
+      "transform-missing",
+      missingTransform.exitCode !== 0 && /transform|typia/i.test(missingTransform.text),
+      missingTransform.text.slice(0, 1500),
+    );
+
+    const evidence = join(work, "evidence");
+    copyFixture("fixtures/evidence/base", evidence);
+    const evidenceOk = runTtsc(["-p", "tsconfig.json", "--noEmit", "--cwd", evidence], evidence);
+    record("evidence-present", evidenceOk.exitCode === 0, commandText(evidenceOk).slice(0, 1500));
+
+    const hostPath = join(evidence, "src/host.ts");
+    const host = readFileSync(hostPath, "utf8");
+    const citation = " * @evidence docs/spec.md#quota Returns the quota this section states, which is 3.\n";
+    if (!host.includes(citation)) {
+      record("evidence-missing", false, "citation text was not in the copied host");
+    } else {
+      writeFileSync(hostPath, host.replace(citation, ""));
+      const evidenceBad = runTtsc(["-p", "tsconfig.json", "--noEmit", "--cwd", evidence], evidence);
+      const body = commandText(evidenceBad);
+      record(
+        "evidence-missing",
+        evidenceBad.exitCode !== 0 && /Missing acknowledgement/.test(body),
+        body.slice(0, 1500),
+      );
+    }
+
+    const graphBase = join(work, "graph-base");
+    copyFixture("fixtures/graph/base", graphBase);
+    const found = graphLookup(graphBase, "quotaHost");
+    record(
+      "graph-present",
+      found.exitCode === 0 && found.text.includes("quotaHost") && found.text.includes("src/host.ts"),
+      found.text.slice(0, 1500),
+    );
+
+    const graphEmpty = join(work, "graph-empty");
+    copyFixture("fixtures/toolchain/graph-empty", graphEmpty);
+    const missed = graphLookup(graphEmpty, "quoteBudget");
+    const declared = /quoteBudget\s+\S+:\d+/.test(missed.text);
+    record(
+      "graph-missing",
+      !declared,
+      declared ? missed.text.slice(0, 1500) : `exit=${missed.exitCode}`,
+    );
+  } finally {
+    rmSync(work, { recursive: true, force: true });
+  }
+  finish();
+}
+
+const command = process.argv[2];
+if (command === "replay") {
+  const target = process.argv[3];
+  if (!target) {
+    console.error("usage: bun tools/conformance.ts replay <fixture>");
+    process.exit(2);
+  }
+  replay(target);
+} else if (command === "print-shrink") {
+  printShrink();
+} else if (command === "negative") {
+  negative();
+} else {
+  console.error("usage: bun tools/conformance.ts replay <fixture> | negative | print-shrink");
+  process.exit(2);
+}

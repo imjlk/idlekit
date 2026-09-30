@@ -25,6 +25,22 @@
           "args": ["test", "src/scenario/concreteValidator.test.ts"]
         }
       ]
+    },
+    {
+      "id": "REQ-DX01-CONFORMANCE-HARNESS",
+      "pr": "DX-01",
+      "anchor": "req-dx01-conformance-harness",
+      "doc": "docs/requirements/active/simulation-conformance.md",
+      "production": ["packages/core/src/testkit/conformance.ts"],
+      "tests": [
+        {
+          "file": "packages/core/src/testkit/conformance.test.ts",
+          "exportName": "replaysConstantIncomeAndShrinksGap",
+          "registeredAs": "replays a constant-income run and shrinks the gap predicate",
+          "cwd": "packages/core",
+          "args": ["test", "src/testkit/conformance.test.ts"]
+        }
+      ]
     }
   ]
 }
