@@ -49,6 +49,7 @@ export type FailureReport = {
   readonly original: unknown;
   readonly value: unknown;
   readonly shrinkingPath: readonly ShrinkStep[];
+  readonly thrown?: string;
 };
 
 export type RelationCheck = {
@@ -207,6 +208,17 @@ export function replayShrinkReport(report: ShrinkReport): {
   };
 }
 
+function predicateOutcome<T>(
+  predicate: (value: T) => boolean,
+  value: T,
+): { failed: boolean; thrown?: string } {
+  try {
+    return { failed: !predicate(value) };
+  } catch (error) {
+    return { failed: true, thrown: error instanceof Error ? error.message : String(error) };
+  }
+}
+
 function shrinkValue<T>(predicate: (value: T) => boolean, shrink: (value: T) => readonly T[], original: T): {
   value: T;
   shrinkingPath: ShrinkStep[];
@@ -216,7 +228,7 @@ function shrinkValue<T>(predicate: (value: T) => boolean, shrink: (value: T) => 
   for (let guard = 0; guard < 64; guard += 1) {
     let improved = false;
     for (const candidate of shrink(current)) {
-      const kept = !predicate(candidate);
+      const kept = predicateOutcome(predicate, candidate).failed;
       shrinkingPath.push({ from: current, to: candidate, kept });
       if (!kept) continue;
       current = candidate;
@@ -232,9 +244,10 @@ export function runSeededProperty<T>(run: PropertyRun<T>): { ok: true } | { ok: 
   const rng = createTestRng(run.testSeed);
   for (let index = 0; index < run.cases; index += 1) {
     const original = run.generate(index, rng);
-    if (run.predicate(original)) continue;
-    const identity = run.describeCase(original, index);
+    const outcome = predicateOutcome(run.predicate, original);
+    if (!outcome.failed) continue;
     const shrunk = shrinkValue(run.predicate, run.shrink, original);
+    const identity = run.describeCase(shrunk.value, index);
     return {
       ok: false,
       report: {
@@ -250,6 +263,7 @@ export function runSeededProperty<T>(run: PropertyRun<T>): { ok: true } | { ok: 
         original,
         value: shrunk.value,
         shrinkingPath: shrunk.shrinkingPath,
+        ...(outcome.thrown === undefined ? {} : { thrown: outcome.thrown }),
       },
     };
   }
@@ -303,14 +317,13 @@ export function checkReplay<N, U extends string, Vars>(scenario: CompiledScenari
   return left === right ? pass(left) : fail(`${left} != ${right}`);
 }
 
-/** `0.3 / 0.1` is not an integer in IEEE-754. A tick still counts when the quotient rounds. */
-const TICK_SLACK = 1e-8;
-
+/** A few ulps cover `0.3 / 0.1`. A real offset such as `1.000000001` stays off the grid. */
 function wholeTickCount(total: number, step: number): number | null {
   if (!(step > 0) || !(total > 0) || !Number.isFinite(total) || !Number.isFinite(step)) return null;
   const count = total / step;
   const nearest = Math.round(count);
-  if (nearest < 1 || Math.abs(count - nearest) > TICK_SLACK) return null;
+  const slack = Number.EPSILON * Math.max(1, Math.abs(count)) * 16;
+  if (nearest < 1 || Math.abs(count - nearest) > slack) return null;
   return nearest;
 }
 
