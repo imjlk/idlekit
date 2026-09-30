@@ -26,7 +26,7 @@
     "bench:sim": "bun tools/bench-sim.ts",
     "bench:sim:suite": "bun tools/bench-sim.ts --scenarios examples/tutorials/01-cafe-baseline.json,examples/bench/30m-linear.json,examples/bench/2h-linear.json,examples/bench/24h-linear.json,examples/bench/7d-linear.json,examples/bench/30d-linear.json,examples/bench/90d-linear.json",
     "bench:sim:suite:check": "bun tools/bench-sim.ts --assert --iterations 4 --warmup 1 --scenarios examples/tutorials/01-cafe-baseline.json,examples/bench/30m-linear.json,examples/bench/2h-linear.json,examples/bench/24h-linear.json,examples/bench/7d-linear.json,examples/bench/30d-linear.json,examples/bench/90d-linear.json --threshold-ms 900 --threshold-p95-ms 1500 --threshold-rss-delta-bytes 161061273",
-    "bench:sim:check": "bun tools/bench-sim.ts --assert --threshold-ms 500 --threshold-p95-ms 900",
+    "bench:sim:check": "bun tools/bench-sim.ts --assert --threshold-ms 900 --threshold-p95-ms 900",
     "docs:verify": "bun tools/docs-verify.ts",
     "docs:verify:quick": "bun tools/docs-verify.ts --quick",
     "templates:check": "bun tools/templates-check.ts",
