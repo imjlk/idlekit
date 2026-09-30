@@ -468,9 +468,9 @@ export function recordsWalletAndMaxMoneyUnitsOnTheEconomySnapshot(): void {
  * @evidence docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness An on-grid checkpoint replays from memory and from JSON, and independent trials are compared by game seed.
  * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #a195f0e Re-read the section, then ran this function: memory resume, JSON resume, and the JSON round-trip apply, and the two game seeds stay ordered.
  * @evidence ./conformanceRun.ts#checkJsonRoundTrip The constant-income scenario matches after a JSON round trip.
- * @evidenceReview ./conformanceRun.ts#checkJsonRoundTrip #4ab8239 Re-read the function: it restores the strategy around the run, accepts a dense array and an empty array, rejects shared refs, symbol keys, non-enumerable names, and sparse holes before stringify, and the constant-income round trip matches. Ran this function: the dense round trip passed and the sparse round trip did not.
+ * @evidenceReview ./conformanceRun.ts#checkJsonRoundTrip #4ab8239 Re-read the function: it restores the strategy around the run, accepts a dense array and an empty array, rejects shared refs, symbol keys, non-enumerable names, sparse holes, frozen data, and enumerable getters before stringify, and the constant-income round trip matches. Ran this function: the dense round trip passed, and the sparse, frozen, and getter round trips did not.
  * @evidence ./conformanceRun.ts#checkTrialOrder Two distinct game seeds keep distinct economy snapshots.
- * @evidenceReview ./conformanceRun.ts#checkTrialOrder #5e85ee7 Two distinct game seeds keep distinct economy snapshots.
+ * @evidenceReview ./conformanceRun.ts#checkTrialOrder #5e85ee7 Two game seeds keep ordered snapshots. This run uses a seed-dependent income rate, and the two economy snapshots differ.
  */
 export function resumesOnTheSameTickGridFromMemoryAndJson(): void {
   const scenario = constantScenario({ rate: 5, durationSec: 6, stepSec: 1, seed: 19 });
@@ -510,14 +510,26 @@ export function resumesOnTheSameTickGridFromMemoryAndJson(): void {
     initial: { ...scenario.initial, vars: { items: sparse } as unknown as Vars },
   });
   expect(sparseRound.ok).toBe(false);
+  const frozenRound = checkJsonRoundTrip({
+    ...scenario,
+    initial: { ...scenario.initial, vars: Object.freeze({ x: 1 }) as unknown as Vars },
+  });
+  expect(frozenRound.ok).toBe(false);
+  const getterVars = {};
+  Object.defineProperty(getterVars, "x", { enumerable: true, configurable: true, get: () => 1 });
+  const getterRound = checkJsonRoundTrip({
+    ...scenario,
+    initial: { ...scenario.initial, vars: getterVars as unknown as Vars },
+  });
+  expect(getterRound.ok).toBe(false);
   const gameA = gameSeedForCase(0x51ed, 1);
   const gameB = gameSeedForCase(0x51ed, 2);
-  expectApplicable(
-    checkTrialOrder(
-      (gameSeed) => economyAfter(constantScenario({ rate: 2, durationSec: 3, stepSec: 1, seed: gameSeed })),
-      [gameA, gameB],
-    ),
-  );
+  const trial = (gameSeed: number) =>
+    economyAfter(
+      constantScenario({ rate: 1 + (gameSeed % 97), durationSec: 3, stepSec: 1, seed: gameSeed }),
+    );
+  expect(trial(gameA)).not.toBe(trial(gameB));
+  expectApplicable(checkTrialOrder(trial, [gameA, gameB]));
 }
 
 describe("PR-03 resume isolation", () => {
