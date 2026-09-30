@@ -23,7 +23,7 @@
 - `initial.wallet`: 시작 재화
 - `initial.vars`: 모델 상태(모델별 스키마)
 - `clock.stepSec`: 틱 간격(초)
-- `clock.durationSec`: 총 시뮬레이션 시간
+- `clock.durationSec`: 총 시뮬레이션 시간. `stepSec`의 배수가 아니면 마지막 틱은 남은 시간만 진행한다. `maxSteps`는 두 번째 horizon이 아니라 안전 budget이다. 프로그램 API의 `durationSec: 0`은 즉시 끝난다. ScenarioV1 JSON은 `durationSec`가 있으면 여전히 양수여야 한다.
 - `clock.untilExpr`: 조기 종료 조건식(안전 파서 문법: `<path> <op> <value>` + `&&`, `||`)
 - `clock` 종료 조건: `durationSec` 또는 `untilExpr` 중 최소 1개는 필수
 - `strategy`: 전략 id + params

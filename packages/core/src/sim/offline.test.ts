@@ -106,16 +106,21 @@ describe("applyOfflineSeconds", () => {
     expect(noStrategy.end.vars.bought).toBe(0);
   });
 
-  it("throws when maxSteps is insufficient", () => {
+  it("stops at the step budget instead of throwing the partial run away", () => {
     const scenario = makeScenario({ incomePerSec: 1 });
 
-    expect(() =>
-      applyOfflineSeconds({
-        scenario,
-        seconds: 10,
-        options: { maxSteps: 5 },
-      }),
-    ).toThrow("offline run exceeded maxSteps");
+    const out = applyOfflineSeconds({
+      scenario,
+      seconds: 10,
+      options: { maxSteps: 5 },
+    });
+
+    expect(out.stop?.reason).toBe("budget");
+    expect(out.stop?.steps).toBe(5);
+    expect(out.end.t).toBe(5);
+    expect(out.offline.effectiveSec).toBe(10);
+    expect(out.offline.simulatedSec).toBe(5);
+    expect(out.offline.fullSteps).toBe(10);
   });
 
   it("applies clamp policy from scenario.run.offline", () => {

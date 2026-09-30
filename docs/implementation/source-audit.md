@@ -30,15 +30,15 @@ CLI registration in `packages/cli/src/main.ts` includes `validate`, `simulate`, 
 
 Also present and meant to be reused: `stepOnce`, `Engine` `divN` / `cmp` / `absLog10`, strategy snapshot/restore, `deepClonePreservingPrototype`, `eventBuffer`, `OUTPUT_CONTRACT_VERSION`, and the Sampo, compat, replay, and KPI gates.
 
-`packages/core/src/sim/simulator.ts` still applies a full `stepSec` on each loop iteration when `fast` is set. A fast flag in that function is not an analytic time skip.
+`packages/core/src/sim/simulator.ts` calls `stepOnce` for every tick, including a shorter final tick. `fast` does not skip that loop. It is not an analytic time skip.
 
 ## Source facts read in this session
 
-These are control-flow facts. No fixture in this change executed them.
+These are control-flow facts. Items 2 and 3 name the fixtures that now execute those paths. The other items were not executed by those fixtures.
 
 1. **Prestige cycle is an interval scan.** `analyzePrestigeCycle` runs the original scenario once per interval with `durationSec` set to that interval. It does not repeat resets. `breakEvenSec` is `Math.min(interval, horizonSec)`. `netWorthPerHour` and `pointsPerHour` are `Engine.toNumber` divided by hours. Follow-up: `PR-10`, `PR-11`.
 2. **Bulk settlement pays the current quote.** `PR-01` changed `stepOnce`. An omitted `bulkSize` or `1` still subtracts `Action.cost` once. A larger integer size re-reads `Action.bulk` on the current state and subtracts that `BulkQuote.cost` once, then calls `apply` once. A missing, duplicate, non-integer, non-finite, negative, or wrong-unit quote is rejected before `apply`. The old path, which charged the single cost and then applied `bulkSize`, is not the current control flow. Fixture: `packages/core/src/sim/step.bulk.test.ts`.
-3. **`runScenario` steps a whole `stepSec` and checks `maxSteps` before the stop conditions.** The duration check uses `state.t` before the step. A horizon that is not a multiple of `stepSec` therefore continues through the step that crosses it. `maxSteps` throws when `steps >= maxSteps` before the duration or `until` check. `applyOfflineSeconds` splits a remainder instead. Follow-up: `PR-02`.
+3. **`runScenario` and `applyOfflineSeconds` stop on the economic horizon.** `PR-02` changed both. The last tick is `min(stepSec, time still inside the horizon)`. A duration or `until` that is already true stops before `maxSteps`. A requested horizon that hits `maxSteps` first returns `stop.reason: "budget"`. `maxSteps` alone, with no duration or `until`, still throws. That throw is the unbounded-loop guard. Fixture: `packages/core/src/sim/simulator.time.test.ts`. Constant income is the only dt split this treats as exact.
 4. **Planner rollout keeps the first decision with `node.firstDecision ?? decision`.** An unset first decision and an explicit no-op are the same missing value, so a later action can replace the first wait. Rollout calls `stepOnce` with the live `ctx`. Follow-up: `PR-04`.
 5. **Monte Carlo shares model and strategy objects.** Only `initial` is passed through `deepClonePreservingPrototype`. A strategy that stores a cursor in a closure is shared across draws. Follow-up: `PR-03`.
 6. **Session stats are rebuilt from retained events.** `runScenario` accumulates stats from each step's events, then returns `eventBuffer`'s retained `events`. `simulateSessionPattern` calls `statsAcc.push(run.events)` on that retained list. Child `run.stats` is not what the session sums. Offline catch-up inside the session sets `useStrategy: true`. Follow-up: `PR-05`, `PR-06`.
@@ -55,7 +55,7 @@ These are control-flow facts. No fixture in this change executed them.
 ## Risks that still need a runtime fixture
 
 - Bulk size greater than 1 against an action whose `bulk()` quote differs from `cost()`.
-- Horizon `10` with `stepSec` `6`, and a goal reached on the step that also hits `maxSteps`.
+- Horizon `10` with `stepSec` `6` is the `PR-02` fixture. A goal that becomes true on the same step as `maxSteps` still needs a fixture when `until` and the budget meet on one tick.
 - Two Monte Carlo draws with one scripted strategy cursor.
 - Session stats with `eventLog.maxEvents` set low enough to drop events.
 - Offline cap or decay where the next session block should follow wall time.

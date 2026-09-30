@@ -44,9 +44,33 @@ export type SimEvent<N> =
       detail?: unknown;
     };
 
+export type EventTimePhase = "action-start" | "income-end";
+
 export type TimedSimEvent<N> = Readonly<{
   t: number;
   event: SimEvent<N>;
+  /**
+   * `action-start` is the state time before this tick's actions.
+   * `income-end` is the state time after income and `dt` are applied.
+   * Absent on timelines built before this field existed.
+   */
+  phase?: EventTimePhase;
+}>;
+
+export type RunStopReason = "duration" | "until" | "budget";
+
+/**
+ * In-memory stop record for `runScenario` and `applyOfflineSeconds`.
+ * The CLI simulate wire schema does not include this object.
+ * `budget` means `maxSteps` was reached before duration or until.
+ * It is not a claim that another step size would match this state.
+ */
+export type RunStop = Readonly<{
+  reason: RunStopReason;
+  steps: number;
+  elapsedSec: number;
+  requestedDurationSec?: number;
+  budgetSteps?: number;
 }>;
 
 export type SimContext<N, U extends string, Vars> = Readonly<{
@@ -169,7 +193,12 @@ export type SimRunOptions = Readonly<{
   stepSec: number;
   durationSec?: number;
   until?: (s: any) => boolean;
-  // Hard guard against accidental unbounded runs.
+  /**
+   * Safety budget, not a successful horizon.
+   * A duration or until that is already satisfied stops first.
+   * If this budget is hit while one of those was requested, the run stops
+   * with reason `budget` and keeps the state. With neither, the runner throws.
+   */
   maxSteps?: number;
 
   offline?: Readonly<{
@@ -237,4 +266,6 @@ export type RunResult<N, U extends string, Vars> = Readonly<{
     dropped: number;
     retained: number;
   }>;
+
+  stop?: RunStop;
 }>;

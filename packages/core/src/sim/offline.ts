@@ -1,7 +1,8 @@
 import { analyzeUX, createSimStatsAccumulator } from "./analysis/ux";
 import { createEventBuffer } from "./eventBuffer";
 import { stepOnce } from "./step";
-import type { CompiledScenario, RunResult, SimState } from "./types";
+import { assertSimulationClock, nextBoundary, stepContext, timeEpsilon, timeStepEvents } from "./timeBoundary";
+import type { CompiledScenario, RunResult, RunStop, SimState } from "./types";
 
 export type OfflineRunOptions<N, U extends string, Vars> = Readonly<{
   fromState?: SimState<N, U, Vars>;
@@ -82,6 +83,14 @@ function resolveOfflineSeconds(
   };
 }
 
+/**
+ * Catch up `effectiveSec` with the same partial-tick and budget rules as `runScenario`.
+ * A short `maxSteps` stops with reason `budget` instead of throwing the completed time away.
+ * `stepOnce` is still the only economy transition.
+ *
+ * @evidence docs/requirements/active/simulation-time-boundaries.md#req-pr02-simulation-time-boundaries Applies the same horizon, partial tick, and step budget as the online runner.
+ * @evidenceReview docs/requirements/active/simulation-time-boundaries.md#req-pr02-simulation-time-boundaries #89f7aa9 Re-read the section: offline uses that partial tick, and a short maxSteps returns budget instead of discarding the run.
+ */
 export function applyOfflineSeconds<N, U extends string, Vars>(args: {
   scenario: CompiledScenario<N, U, Vars>;
   seconds: number;
@@ -95,9 +104,8 @@ export function applyOfflineSeconds<N, U extends string, Vars>(args: {
   }
 
   const stepSec = opts?.stepSec ?? scenario.run.stepSec;
-  if (!Number.isFinite(stepSec) || stepSec <= 0) {
-    throw new Error(`offline stepSec must be > 0 (received: ${stepSec})`);
-  }
+  const maxSteps = opts?.maxSteps;
+  assertSimulationClock("offline", { stepSec, maxSteps });
 
   const useStrategy = opts?.useStrategy ?? !!scenario.strategy;
   const start = opts?.fromState ?? scenario.initial;
@@ -110,16 +118,10 @@ export function applyOfflineSeconds<N, U extends string, Vars>(args: {
   }
 
   const resolved = resolveOfflineSeconds(seconds, opts?.policy ?? scenario.run.offline);
+  assertSimulationClock("offline", { stepSec, durationSec: resolved.effectiveSec, maxSteps });
   const fullSteps = Math.floor(resolved.effectiveSec / stepSec);
   const remainderRaw = resolved.effectiveSec - fullSteps * stepSec;
-  const remainderEpsilon = Math.max(1e-12, seconds * 1e-12);
-  const remainderSec = remainderRaw > remainderEpsilon ? remainderRaw : 0;
-
-  const plannedSteps = fullSteps + (remainderSec > 0 ? 1 : 0);
-  const maxSteps = opts?.maxSteps;
-  if (maxSteps !== undefined && plannedSteps > maxSteps) {
-    throw new Error(`offline run exceeded maxSteps (${maxSteps}); required=${plannedSteps}`);
-  }
+  const remainderSec = remainderRaw > timeEpsilon(resolved.effectiveSec) ? remainderRaw : 0;
 
   const statsAcc = createSimStatsAccumulator();
   const eventBuffer = createEventBuffer<N>({
@@ -129,49 +131,49 @@ export function applyOfflineSeconds<N, U extends string, Vars>(args: {
   const actionsLog: Array<{ t: number; actionId: string; label?: string; bulkSize?: number }> = [];
 
   let state = start;
+  let steps = 0;
+  let simulatedSec = 0;
   const maxActionsPerStep = scenario.constraints?.maxActionsPerStep ?? Infinity;
+  let stop: RunStop | undefined;
 
-  for (let i = 0; i < fullSteps; i++) {
-    const decisions = useStrategy
-      ? (scenario.strategy?.decide(scenario.ctx, scenario.model, state) ?? []).slice(0, maxActionsPerStep)
-      : [];
-
-    const out = stepOnce({
-      ctx: scenario.ctx,
-      model: scenario.model,
-      state,
-      dt: stepSec,
-      decisions,
-      constraints: scenario.constraints,
-      fast: opts?.fast ?? scenario.run.fast,
+  while (stop === undefined) {
+    const decision = nextBoundary({
+      elapsedSec: state.t - start.t,
+      steps,
+      stepSec,
+      durationSec: resolved.effectiveSec,
+      untilMet: false,
+      hasUntil: false,
+      maxSteps,
     });
-
-    state = out.next;
-    statsAcc.push(out.events);
-    eventBuffer.pushBatch(out.events, state.t);
-    if (out.actionsApplied?.length) {
-      actionsLog.push(...out.actionsApplied);
+    if (decision.kind === "guard") {
+      throw new Error(`offline run exceeded maxSteps (${maxSteps}) without meeting stop condition`);
     }
-  }
+    if (decision.kind === "stop") {
+      stop = decision.stop;
+      break;
+    }
 
-  if (remainderSec > 0) {
+    const stepCtx = stepContext(scenario.ctx, decision.dt);
     const decisions = useStrategy
-      ? (scenario.strategy?.decide(scenario.ctx, scenario.model, state) ?? []).slice(0, maxActionsPerStep)
+      ? (scenario.strategy?.decide(stepCtx, scenario.model, state) ?? []).slice(0, maxActionsPerStep)
       : [];
-
+    const actionStartT = state.t;
     const out = stepOnce({
-      ctx: scenario.ctx,
+      ctx: stepCtx,
       model: scenario.model,
       state,
-      dt: remainderSec,
+      dt: decision.dt,
       decisions,
       constraints: scenario.constraints,
       fast: opts?.fast ?? scenario.run.fast,
     });
 
     state = out.next;
+    simulatedSec += decision.dt;
+    steps += 1;
     statsAcc.push(out.events);
-    eventBuffer.pushBatch(out.events, state.t);
+    eventBuffer.pushTimed(timeStepEvents(out.events, actionStartT, state.t));
     if (out.actionsApplied?.length) {
       actionsLog.push(...out.actionsApplied);
     }
@@ -190,11 +192,12 @@ export function applyOfflineSeconds<N, U extends string, Vars>(args: {
     stats,
     uxFlags,
     eventLog: retained.eventLog,
+    stop,
     offline: {
       requestedSec: seconds,
       preDecaySec: resolved.preDecaySec,
       effectiveSec: resolved.effectiveSec,
-      simulatedSec: fullSteps * stepSec + remainderSec,
+      simulatedSec,
       stepSec,
       fullSteps,
       remainderSec,

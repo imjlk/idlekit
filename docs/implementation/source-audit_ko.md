@@ -30,15 +30,15 @@ export나 명령이 있다는 것은 분석이 끝났다는 뜻이 아니다.
 
 재사용할 것도 있다. `stepOnce`, `Engine`의 `divN` / `cmp` / `absLog10`, strategy snapshot/restore, `deepClonePreservingPrototype`, `eventBuffer`, `OUTPUT_CONTRACT_VERSION`, Sampo, compat, replay, KPI gate.
 
-`packages/core/src/sim/simulator.ts`는 `fast`가 켜져 있어도 루프마다 `stepSec` 전체를 적용한다. 그 함수의 fast flag는 해석적 시간 건너뛰기가 아니다.
+`packages/core/src/sim/simulator.ts`는 마지막 짧은 틱을 포함해 매 틱 `stepOnce`를 호출한다. `fast`는 그 루프를 건너뛰지 않는다. 해석적 시간 건너뛰기가 아니다.
 
 ## 이번 세션에서 읽은 소스 사실
 
-아래는 제어 흐름 사실이다. 이 변경에서 그 사실을 실행한 fixture는 없다.
+아래는 제어 흐름 사실이다. 2번과 3번은 그 경로를 지금 실행하는 fixture를 가리킨다. 나머지 항목은 그 fixture가 실행하지 않았다.
 
 1. **Prestige cycle은 interval scan이다.** `analyzePrestigeCycle`은 interval마다 `durationSec`를 그 간격으로 두고 원래 scenario를 한 번 실행한다. reset을 반복하지 않는다. `breakEvenSec`는 `Math.min(interval, horizonSec)`다. `netWorthPerHour`와 `pointsPerHour`는 `Engine.toNumber`를 시간으로 나눈 값이다. 후속: `PR-10`, `PR-11`.
 2. **벌크 결제는 현재 견적을 한 번 낸다.** `PR-01`이 `stepOnce`를 바꿨다. `bulkSize`가 없거나 `1`이면 여전히 `Action.cost`를 한 번 뺀다. 그보다 큰 정수는 현재 상태에서 `Action.bulk`를 다시 읽고 그 `BulkQuote.cost`를 한 번 뺀 다음 `apply`를 한 번 호출한다. size가 없거나 중복이거나, 정수가 아니거나, 유한하지 않거나, 음수이거나, 단위가 다른 견적은 `apply` 전에 거부한다. 단건 비용만 빼고 `bulkSize`를 적용하던 이전 경로는 지금 제어 흐름이 아니다. Fixture: `packages/core/src/sim/step.bulk.test.ts`.
-3. **`runScenario`는 `stepSec` 전체를 진행하고, `maxSteps`를 종료 조건보다 먼저 본다.** duration 검사는 step 전의 `state.t`를 본다. horizon이 `stepSec`의 배수가 아니면 경계를 넘는 step까지 진행한다. `maxSteps`는 duration이나 `until` 검사 전에 `steps >= maxSteps`이면 throw한다. `applyOfflineSeconds`는 나머지를 나눈다. 후속: `PR-02`.
+3. **`runScenario`와 `applyOfflineSeconds`는 경제 horizon에서 멈춘다.** `PR-02`가 둘을 바꿨다. 마지막 틱은 `min(stepSec, horizon 안에 남은 시간)`이다. 이미 참인 duration이나 `until`은 `maxSteps`보다 먼저 끝난다. horizon을 요청했는데 `maxSteps`가 먼저이면 `stop.reason: "budget"`을 반환한다. duration과 `until`이 없고 `maxSteps`만 있으면 여전히 throw한다. 그 throw는 끝이 없는 루프에 대한 가드다. Fixture: `packages/core/src/sim/simulator.time.test.ts`. 이 변경이 정확한 동치로 다루는 dt 분할은 상수 수입뿐이다.
 4. **Planner rollout은 `node.firstDecision ?? decision`으로 첫 결정을 유지한다.** 첫 결정이 없는 상태와 명시적 no-op이 같은 빈 값이라, 이후 행동이 첫 대기를 바꿀 수 있다. rollout은 살아있는 `ctx`로 `stepOnce`를 호출한다. 후속: `PR-04`.
 5. **Monte Carlo는 model과 strategy 객체를 공유한다.** `deepClonePreservingPrototype`에 들어가는 것은 `initial`뿐이다. closure에 cursor를 두는 strategy는 draw 사이에 공유된다. 후속: `PR-03`.
 6. **Session 통계는 보관된 이벤트에서 다시 합산된다.** `runScenario`는 step 이벤트로 stats를 쌓은 뒤 `eventBuffer`가 보관한 `events`를 반환한다. `simulateSessionPattern`은 그 보관 목록에 `statsAcc.push(run.events)`를 한다. session이 합치는 값은 child `run.stats`가 아니다. session 안의 오프라인 catch-up은 `useStrategy: true`다. 후속: `PR-05`, `PR-06`.
@@ -55,7 +55,7 @@ export나 명령이 있다는 것은 분석이 끝났다는 뜻이 아니다.
 ## 아직 런타임 fixture가 필요한 위험
 
 - `bulk()` 견적이 `cost()`와 다른 action에서 size가 1보다 큰 경우.
-- horizon `10`, `stepSec` `6`, 그리고 같은 step에서 목표 도달과 `maxSteps`가 만나는 경우.
+- horizon `10`, `stepSec` `6`은 `PR-02` fixture다. `until`과 budget이 같은 틱에서 만나는 목표는 아직 별도 fixture가 필요하다.
 - scripted strategy cursor 하나를 두 Monte Carlo draw가 쓰는 경우.
 - `eventLog.maxEvents`가 이벤트를 버릴 만큼 작을 때의 session stats.
 - 다음 session block이 벽시계를 따라야 하는 오프라인 상한 또는 감쇠.

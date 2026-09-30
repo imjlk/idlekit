@@ -1,5 +1,10 @@
 {
-  "ids": ["REQ-TC02-TYPIA-TRANSFORM-MISSING", "REQ-DX01-CONFORMANCE-HARNESS", "REQ-PR01-BULK-QUOTE-SETTLEMENT"],
+  "ids": [
+    "REQ-TC02-TYPIA-TRANSFORM-MISSING",
+    "REQ-DX01-CONFORMANCE-HARNESS",
+    "REQ-PR01-BULK-QUOTE-SETTLEMENT",
+    "REQ-PR02-SIMULATION-TIME-BOUNDARIES"
+  ],
   "protectedFiles": [
     "docs/requirements/active/typia-transform.md",
     "docs/requirements/active/simulation-conformance.md",
@@ -18,6 +23,11 @@
     "packages/money/src/testkit/compareAmounts.test.ts",
     "tools/conformance.ts",
     "tools/conformance.negative.test.ts",
+    "docs/requirements/active/simulation-time-boundaries.md",
+    "packages/core/src/sim/timeBoundary.ts",
+    "packages/core/src/sim/simulator.ts",
+    "packages/core/src/sim/offline.ts",
+    "packages/core/src/sim/simulator.time.test.ts",
     "fixtures/conformance/shrink-gap.json",
     "fixtures/toolchain/evidence/lint.config.ts",
     "fixtures/toolchain/evidence/src/quotaHost.ts",

@@ -407,6 +407,7 @@ describe("PR-01 bulk equivalence", () => {
 export function stopsOnAPositiveTickGridAndRefusesANonPositiveStep(): void {
   const scenario = constantScenario({ rate: 2, durationSec: 4, stepSec: 1 });
   expectApplicable(checkDurationBoundary(scenario));
+  expectApplicable(checkResume(scenario, 2));
   const refused = rejectNonPositiveStep(0);
   expect(refused.ok).toBe(false);
   expect(refused.applicable).toBe(true);

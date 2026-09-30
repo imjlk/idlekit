@@ -53,4 +53,12 @@ macOS arm64, Bun `1.3.10`, `@ttsc/graph` `0.30.4`, protocol `2025-11-25`, commit
 
 `stepOnce`의 reverse execution trace(`focus` execution, `maxDepth` 3, `maxNodes` 32)의 직접 hop은 `packages/core/src/sim/simulator.ts#runScenario`(span `simulator.ts:49`), `packages/core/src/sim/offline.ts#applyOfflineSeconds`(span `offline.ts:139`), `packages/core/src/testkit/conformance.ts#flatBulkSnapshot`, 그리고 `packages/core/src/sim/step.bulk.test.ts`의 `settlesQuotedBulkAndRejectsBadQuotes`, `runFlat`, `runBonus`다. `runScenario`를 통해 `session.ts`, `monteCarlo.ts`, `eta.ts`, `prestigeCycle.ts`, `strategy/opt/runner.ts`, CLI `compare.ts`, `ltv.ts`, `tune.ts`, `lib/designObjectives.ts`, `lib/experience.ts`에 닿았다. 32노드 상한이 모든 호출자는 아니다.
 
-`createPlannerStrategy`는 hop이 아니었다. 여전히 `PlannerDeps`의 `d.stepOnce`를 호출한다. 그 edge는 미관측이다. 소스를 보면 `applyOfflineSeconds`는 나머지 step으로 `packages/core/src/sim/offline.ts:162`에서 `stepOnce`를 한 번 더 호출한다. trace는 함수를 가리킬 뿐 그 두 번째 호출 지점을 나누지 않는다.
+`createPlannerStrategy`는 hop이 아니었다. 여전히 `PlannerDeps`의 `d.stepOnce`를 호출한다. 그 edge는 미관측이다. 그 PR-01 트리의 소스는 `applyOfflineSeconds`가 나머지 step으로 `stepOnce`를 한 번 더 호출함을 보여 줬다. 수정 후 lookup은 `stepOnce`를 `packages/core/src/sim/step.ts:175`에 둔다. `singleBuySize`는 `packages/core/src/sim/step.ts:51`이다.
+
+## PR-02 호출자
+
+macOS arm64, Bun `1.3.10`, `@ttsc/graph` `0.30.4`, protocol `2025-11-25`에서 조회했다. 생성 식별자는 없다. lookup은 `runScenario`를 `packages/core/src/sim/simulator.ts:25`, `applyOfflineSeconds`를 `packages/core/src/sim/offline.ts:94`, `nextBoundary`를 `packages/core/src/sim/timeBoundary.ts:54`, `stepOnce`를 `packages/core/src/sim/step.ts:175`에 둔다. `timeBoundaryEpsilonScale`은 `packages/core/src/sim/timeBoundary.ts:11`의 property다. 그 줄은 소스 선언이며 별도 lookup hit는 아니다.
+
+`runScenario`의 forward execution trace(`maxDepth` 2, `maxNodes` 32)는 `nextBoundary`와 `packages/core/src/sim/step.ts:175`의 `stepOnce`에 닿는다. `stepOnce`의 reverse execution trace(`maxDepth` 3, `maxNodes` 32)는 직접 호출로 `packages/core/src/sim/simulator.ts:80`과 `packages/core/src/sim/offline.ts:162`를 가리킨다. 오프라인 나머지는 두 번째 호출이 아니라 같은 루프다. 그 호스트를 통해 `session.ts`, `monteCarlo.ts`, `eta.ts`, `prestigeCycle.ts`, `strategy/opt/runner.ts`, `conformanceRun.ts`, `simulator.time.test.ts`, CLI `compare.ts`, `ltv.ts`, `tune.ts`, `lib/designObjectives.ts`, `lib/experience.ts`에 닿았다. 32노드 상한이 모든 호출자는 아니다.
+
+`nextBoundary`의 reverse trace는 `packages/core/src/sim/simulator.ts:60`과 `packages/core/src/sim/offline.ts:140`을 가리킨다. `createPlannerStrategy`는 여전히 `stepOnce`까지의 hop이 아니다. 호출은 `PlannerDeps`의 `d.stepOnce`다. 그 edge는 미관측이다.

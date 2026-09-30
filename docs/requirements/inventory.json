@@ -162,6 +162,22 @@
           "args": ["test", "src/sim/step.bulk.test.ts"]
         }
       ]
+    },
+    {
+      "id": "REQ-PR02-SIMULATION-TIME-BOUNDARIES",
+      "pr": "PR-02",
+      "anchor": "req-pr02-simulation-time-boundaries",
+      "doc": "docs/requirements/active/simulation-time-boundaries.md",
+      "production": ["packages/core/src/sim/timeBoundary.ts"],
+      "tests": [
+        {
+          "file": "packages/core/src/sim/simulator.time.test.ts",
+          "exportName": "stopsOnTheRequestedHorizon",
+          "registeredAs": "stops on the requested horizon",
+          "cwd": "packages/core",
+          "args": ["test", "src/sim/simulator.time.test.ts"]
+        }
+      ]
     }
   ]
 }

@@ -59,6 +59,21 @@ export function createEventBuffer<N>(args: {
       }
     },
 
+    pushTimed(frames: readonly TimedSimEvent<N>[]): void {
+      totalSeen += frames.length;
+      if (!args.enabled || frames.length === 0) return;
+
+      retainList(
+        events,
+        frames.map((frame) => frame.event),
+        args.maxEvents,
+        (count) => {
+          dropped += count;
+        },
+      );
+      retainList(eventTimeline, frames, args.maxEvents);
+    },
+
     pushRun<U extends string, Vars>(run: Pick<RunResult<N, U, Vars>, "events" | "eventTimeline" | "eventLog">): void {
       totalSeen += run.eventLog?.totalSeen ?? run.events.length;
       if (!args.enabled) return;
