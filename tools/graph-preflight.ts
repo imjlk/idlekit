@@ -320,6 +320,15 @@ async function main(): Promise<void> {
       }),
     );
     expectType("tour", tour, "tour");
+    const tourRun = namedSource(tour, "runScenario", "packages/core/src/sim/simulator.ts");
+    const tourStep = namedSource(tour, "stepOnce", "packages/core/src/sim/step.ts");
+    if (!tourRun || !tourStep) {
+      fail(
+        `tour missed runScenario (${tourRun ? `${tourRun.file}:${tourRun.line}` : "none"}) or stepOnce (${tourStep ? `${tourStep.file}:${tourStep.line}` : "none"})`,
+      );
+    } else {
+      ok(`tour runScenario ${tourRun.file}:${tourRun.line}; stepOnce ${tourStep.file}:${tourStep.line}`);
+    }
 
     const entrypoints = await ask(
       opened.session,

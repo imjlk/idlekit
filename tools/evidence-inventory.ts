@@ -211,29 +211,28 @@ export function headingAnchors(markdown: string): string[] {
     const marker = /^( {0,3})(`{3,}|~{3,})(.*)$/.exec(rawLine);
     const opener = marker?.[2];
     const info = marker?.[3] ?? "";
-    if (!fenceChar) {
-      if (opener) {
-        fenceChar = opener.startsWith("`") ? "`" : "~";
-        fenceLength = opener.length;
-        continue;
+    if (fenceChar) {
+      if (opener && opener.startsWith(fenceChar) && opener.length >= fenceLength && info.trim() === "") {
+        fenceChar = undefined;
+        fenceLength = 0;
       }
-    } else if (opener && opener.startsWith(fenceChar) && opener.length >= fenceLength && info.trim() === "") {
-      fenceChar = undefined;
-      fenceLength = 0;
-      continue;
-    } else {
       continue;
     }
     if (inComment) {
       if (rawLine.includes("-->")) inComment = false;
       continue;
     }
+    if (opener) {
+      fenceChar = opener.startsWith("`") ? "`" : "~";
+      fenceLength = opener.length;
+      continue;
+    }
     const commentAt = rawLine.indexOf("<!--");
     const line = commentAt === -1 ? rawLine : rawLine.slice(0, commentAt);
     if (commentAt !== -1 && !rawLine.includes("-->", commentAt + 4)) inComment = true;
     const heading = line.replace(/^ {0,3}/, "");
-    const match = /^##\s+.+\{#([A-Za-z0-9][A-Za-z0-9._:-]*)\}\s*$/.exec(heading);
-    if (heading.startsWith("## ") && !match) {
+    const match = /^##[ \t]+.+\{#([A-Za-z0-9][A-Za-z0-9._:-]*)\}[ \t]*$/.exec(heading);
+    if (/^##[ \t]/.test(heading) && !match) {
       anchors.push("");
       continue;
     }
@@ -346,17 +345,147 @@ function exportsNamedFunction(body: string, name: string): boolean {
   return new RegExp(`export\\s+(?:async\\s+)?function\\s+${name}\\b`).test(body);
 }
 
+function skipWhitespace(body: string, index: number): number {
+  let cursor = index;
+  while (cursor < body.length && /\s/.test(body[cursor] ?? "")) cursor += 1;
+  return cursor;
+}
+
+function skipQuoted(body: string, index: number): number {
+  const quote = body[index];
+  if (quote !== "'" && quote !== '"') return index;
+  let cursor = index + 1;
+  while (cursor < body.length) {
+    if (body[cursor] === "\\") {
+      cursor += 2;
+      continue;
+    }
+    if (body[cursor] === quote) return cursor + 1;
+    cursor += 1;
+  }
+  return cursor;
+}
+
+function readQuoted(body: string, index: number): { value: string; end: number } | undefined {
+  const cursor = skipWhitespace(body, index);
+  const quote = body[cursor];
+  if (quote !== "'" && quote !== '"') return undefined;
+  const end = skipQuoted(body, cursor);
+  const raw = body.slice(cursor + 1, end - 1);
+  return { value: raw.replace(/\\(["'\\])/g, "$1"), end };
+}
+
+function readIdentifier(body: string, index: number): { value: string; end: number } | undefined {
+  const cursor = skipWhitespace(body, index);
+  const match = /^[A-Za-z_$][A-Za-z0-9_$]*/.exec(body.slice(cursor));
+  if (!match) return undefined;
+  return { value: match[0], end: cursor + match[0].length };
+}
+
+/** Suite names wrapping this `it`/`test` callback, from the outermost `describe`. */
+export function registeredSuites(body: string, exportName: string, title: string): string[][] {
+  const found: string[][] = [];
+  const stack: { title: string; depth: number }[] = [];
+  let depth = 0;
+  let parens = 0;
+  let pending: { title: string; parens: number } | undefined;
+  let index = 0;
+
+  const pushPending = (): void => {
+    if (!pending) return;
+    stack.push({ title: pending.title, depth });
+    pending = undefined;
+  };
+
+  while (index < body.length) {
+    const char = body[index] ?? "";
+    if (char === "/" && body[index + 1] === "/") {
+      const next = body.indexOf("\n", index);
+      index = next < 0 ? body.length : next + 1;
+      continue;
+    }
+    if (char === "/" && body[index + 1] === "*") {
+      const next = body.indexOf("*/", index + 2);
+      index = next < 0 ? body.length : next + 2;
+      continue;
+    }
+    if (char === "'" || char === '"') {
+      index = skipQuoted(body, index);
+      continue;
+    }
+    if (char === "`") {
+      index += 1;
+      while (index < body.length && body[index] !== "`") {
+        if (body[index] === "\\") index += 2;
+        else index += 1;
+      }
+      index += 1;
+      continue;
+    }
+    if (char === "{") {
+      depth += 1;
+      pushPending();
+      index += 1;
+      continue;
+    }
+    if (char === "}") {
+      while (stack.length > 0 && stack[stack.length - 1]?.depth === depth) stack.pop();
+      depth = Math.max(0, depth - 1);
+      index += 1;
+      continue;
+    }
+    if (char === "(") {
+      parens += 1;
+      index += 1;
+      continue;
+    }
+    if (char === ")") {
+      parens -= 1;
+      if (pending && parens === pending.parens) pending = undefined;
+      index += 1;
+      continue;
+    }
+    if (!/[A-Za-z_$]/.test(char)) {
+      index += 1;
+      continue;
+    }
+    const word = readIdentifier(body, index);
+    if (!word) {
+      index += 1;
+      continue;
+    }
+    const previous = body[word.end - word.value.length - 1];
+    index = word.end;
+    if (previous === "." || (previous !== undefined && /[A-Za-z0-9_$]/.test(previous))) continue;
+    if (word.value !== "describe" && word.value !== "it" && word.value !== "test") continue;
+    const open = skipWhitespace(body, index);
+    if (body[open] !== "(") continue;
+    const quoted = readQuoted(body, open + 1);
+    if (!quoted) continue;
+    if (word.value === "describe") {
+      pending = { title: quoted.value, parens };
+    } else {
+      const comma = skipWhitespace(body, quoted.end);
+      const callback = body[comma] === "," ? readIdentifier(body, comma + 1) : undefined;
+      if (callback?.value === exportName && quoted.value === title) {
+        const suites = stack.map((frame) => frame.title);
+        if (pending) suites.push(pending.title);
+        found.push(suites);
+      }
+    }
+    index = open;
+  }
+  return found;
+}
+
 function registersNamedTest(body: string, registeredAs: string, exportName: string): boolean {
   const parts = registeredAs.split(" > ");
   const title = parts.at(-1);
   if (!title) return false;
-  const quoted = JSON.stringify(title).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const fn = exportName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  if (!new RegExp(`\\b(?:it|test)\\(\\s*${quoted}\\s*,\\s*${fn}\\b`).test(body)) return false;
-  return parts.slice(0, -1).every((suite) => {
-    const suiteQuoted = JSON.stringify(suite).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    return new RegExp(`\\bdescribe\\(\\s*${suiteQuoted}`).test(body);
-  });
+  const suites = parts.slice(0, -1);
+  return registeredSuites(body, exportName, title).some(
+    (path) => path.length === suites.length && path.every((suite, index) => suite === suites[index]),
+  );
 }
 
 function escapeRegExp(value: string): string {

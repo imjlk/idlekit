@@ -124,7 +124,7 @@ Host는 macOS arm64다. 명령은 `mise exec bun@1.3.10 -- bun ...`으로 실행
 |---|---|
 | `bun run typecheck` | 0 |
 | `bun run evidence:check` | 0 |
-| `bun run evidence:smoke` | 0 (34행) |
+| `bun run evidence:smoke` | 0 (37행) |
 | `bun run format:check` | 0 |
 | `bun run runtime:check` | 0 |
 | `bun tools/analysis-baseline-check.ts` | 0 |
@@ -134,7 +134,7 @@ Host는 macOS arm64다. 명령은 `mise exec bun@1.3.10 -- bun ...`으로 실행
 
 ## TC-04 검증
 
-Host는 macOS arm64다. 명령은 `mise exec bun@1.3.10 -- bun ...`으로 실행했다. `@ttsc/graph`와 `ttsc`는 `0.30.4`다. MCP handshake는 protocol `2025-11-25`, server `ttsc-graph 0.30.4`다. 결과에 generation 식별자가 없어서 scratch fixture는 새 프로세스로 다시 확인했다. 입력 sha256: `tsconfig.graph.json` `f4c53cefd70090c4437eb4593d837fff966570400dfb663c3b16b4e68035928e`, `tools/graph-query.ts` `fb713ee8f165a5b3d502b3ce0753ad759cd81269f3ee125c846cc6bb1d995114`, `tools/graph-preflight.ts` `adea9f61c12bfd47c6386791576ef7adcfb00ae4088623cd25c716b0abbdb279`.
+Host는 macOS arm64다. 명령은 commit `3658c2a4dedec48d39f7ebaf2c0ceaf16f8bdd0a`에서 `mise exec bun@1.3.10 -- bun ...`으로 실행했다. `@ttsc/graph`와 `ttsc`는 `0.30.4`다. MCP handshake는 protocol `2025-11-25`, server `ttsc-graph 0.30.4`다. 결과에 generation 식별자가 없어서 scratch fixture는 새 프로세스로 다시 확인했다. 입력 sha256: `tsconfig.graph.json` `f4c53cefd70090c4437eb4593d837fff966570400dfb663c3b16b4e68035928e`, `tools/graph-query.ts` `fb713ee8f165a5b3d502b3ce0753ad759cd81269f3ee125c846cc6bb1d995114`, `tools/graph-preflight.ts` `b53056bae175ba24fb0cde6df092f3a1b93537bc81052a6eadbff826efe2533a`.
 
 | 명령 | Exit |
 |---|---|
@@ -147,6 +147,6 @@ Host는 macOS arm64다. 명령은 `mise exec bun@1.3.10 -- bun ...`으로 실행
 | Linux host | 미실행 |
 | CI `graph:check` | 미실행 |
 
-`graph:check`는 `runScenario`를 `packages/core/src/sim/simulator.ts:6`, `stepOnce`를 `packages/core/src/sim/step.ts:50`, `compileScenario`를 `packages/core/src/scenario/compile.ts:490`, `tickMoney`를 `packages/money/src/policy/tickMoney.ts:8`으로 풀었다. `runScenario`와 `stepOnce`는 실행 방향과 역방향 trace로 연결된다. `runScenario`의 역방향 trace는 `packages/cli/src`를 가리킨다. `createPlannerStrategy`는 `packages/core/src/sim/strategy/planner.ts:189`다. `stepOnce`까지의 path hop은 0이다. 호출은 `PlannerDeps`의 `d.stepOnce`이고, 기본값 `{ stepOnce }`는 소스를 읽어 확인한 것이지 graph edge가 아니다. Scratch의 rename, signature 변경, `@evidence` target 변경은 보였다. 자세한 절차는 [개발 그래프](./development-graph_ko.md)에 있다.
+`graph:check`는 `runScenario`를 `packages/core/src/sim/simulator.ts:6`, `stepOnce`를 `packages/core/src/sim/step.ts:50`, `compileScenario`를 `packages/core/src/scenario/compile.ts:490`, `tickMoney`를 `packages/money/src/policy/tickMoney.ts:8`으로 풀었다. tour payload에도 그 `runScenario`와 `stepOnce` span이 있다. `runScenario`와 `stepOnce`는 실행 방향과 역방향 trace로 연결된다. `runScenario`의 역방향 trace는 `packages/cli/src`를 가리킨다. `createPlannerStrategy`는 `packages/core/src/sim/strategy/planner.ts:189`다. `stepOnce`까지의 path hop은 0이다. 호출은 `PlannerDeps`의 `d.stepOnce`이고, 기본값 `{ stepOnce }`는 소스를 읽어 확인한 것이지 graph edge가 아니다. Scratch의 rename, signature 변경, `@evidence` target 변경은 보였다. 자세한 절차는 [개발 그래프](./development-graph_ko.md)에 있다.
 
 `evidence:smoke`의 기대한 nonzero는 인용 삭제, 없는 anchor, 새 active 제목, 같은 cache에서 markdown 변경 후 review 만료, 인용한 함수 본문 변경 후 review 만료, 금지된 `@evidenceExclude`, 등록하지 않은 named test, 거짓 assertion, 빈 glob, 빈 Program, 승인 없는 coverage 축소, `format.severity` `"error"`다. 거짓 assertion은 `ttsc` exit 0이고 `bun test`는 nonzero다. Evidence는 assertion의 참을 판단하지 않는다. Inventory가 named test의 실제 실행을 확인한다. `singular`는 끄고, `evidence/documented`와 `evidence/todo`는 `fixtures/evidence/base`에만 켠다. 이 lint loader는 config 객체 하나만 받고, `files`로 `evidence/graph` 옵션을 따로 좁힐 수 없다.
