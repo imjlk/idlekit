@@ -1,4 +1,4 @@
-import typia from "typia";
+import typia, { type IValidation } from "typia";
 import { standardSchemaFromValidate, type StandardSchema } from "./validate";
 
 /**
@@ -9,7 +9,10 @@ export type ConcreteQuota = {
   readonly count: number;
 };
 
-export const validateConcreteQuota = typia.createValidate<ConcreteQuota>();
+// The call stays inside the function so importing the core barrel does not
+// run an untransformed typia factory. ttsc still rewrites this concrete call.
+export const validateConcreteQuota = (input: unknown): IValidation<ConcreteQuota> =>
+  typia.createValidate<ConcreteQuota>()(input);
 
 export const concreteQuotaSchema: StandardSchema<ConcreteQuota> =
   standardSchemaFromValidate(validateConcreteQuota);
