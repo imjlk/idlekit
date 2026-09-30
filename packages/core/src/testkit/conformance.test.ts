@@ -209,6 +209,8 @@ export function replaysConstantIncomeAndShrinksGap(): void {
 }
 
 /**
+ * @evidence docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness A property draw records the test seed and a separate game seed, and a JSON round-trip preserves the economy snapshot.
+ * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #a195f0e Re-read the section, then ran this function: every constant-replay case passes checkReplay and checkJsonRoundTrip.
  * @evidence ./conformanceRun.ts#expectProperty Runs the constant-replay corpus and expects every case to pass.
  * @evidenceReview ./conformanceRun.ts#expectProperty #3189395 Runs the constant-replay corpus and expects every case to pass.
  * @evidence ./conformanceRun.ts#conformanceCaseCount Uses the harness case count as the corpus size.
@@ -267,6 +269,8 @@ describe("DX-01 conformance harness", () => {
 });
 
 /**
+ * @evidence docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness bulk matches repeated single buys only when the fixture declares that equivalence.
+ * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #a195f0e Re-read the section: a declared equal total applies, and an undeclared bonus mismatch is skipped.
  * @evidence ./conformanceRun.ts#checkBulk Declared equal totals apply; an undeclared bonus mismatch is skipped.
  * @evidenceReview ./conformanceRun.ts#checkBulk #e513eda Declared equal totals apply; an undeclared bonus mismatch is skipped.
  */
@@ -296,8 +300,10 @@ describe("PR-01 bulk equivalence", () => {
 });
 
 /**
+ * @evidence docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness The same scenario replays from an on-grid checkpoint, and an off-grid checkpoint does not apply.
+ * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #a195f0e Re-read the section: the 0.1 grid resume at 0.2 applies, and the resume at 1.5 does not.
  * @evidence ./conformanceRun.ts#checkDurationBoundary A 4s run at step 1 and a 0.3s run at step 0.1 both apply; an until at t greater than or equal to 3 does not.
- * @evidenceReview ./conformanceRun.ts#checkDurationBoundary #b292d69 A 4s run at step 1 and a 0.3s run at step 0.1 both apply; an until at t greater than or equal to 3 does not.
+ * @evidenceReview ./conformanceRun.ts#checkDurationBoundary #9ae1eeb A 4s run at step 1 and a 0.3s run at step 0.1 both apply; an until at t greater than or equal to 3 does not.
  * @evidence ./conformanceRun.ts#rejectNonPositiveStep Step 0 is a failing applicable check.
  * @evidenceReview ./conformanceRun.ts#rejectNonPositiveStep #31155b2 Step 0 is a failing applicable check.
  * @evidence ./conformanceRun.ts#checkResume An off-grid resume at 1.5 does not apply; a 0.2 resume on the 0.1 grid does.
@@ -324,6 +330,8 @@ export function stopsOnAPositiveTickGridAndRefusesANonPositiveStep(): void {
 }
 
 /**
+ * @evidence docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness Step 1 and 0.5 match for constant income and differ when a purchase threshold sits between them.
+ * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #a195f0e Re-read the section, then ran this function: constant income matches across those steps and the threshold buy does not.
  * @evidence ./conformanceRun.ts#economyAfter Runs constant income and the threshold buy at steps 1 and 0.5.
  * @evidenceReview ./conformanceRun.ts#economyAfter #749e95e Runs constant income and the threshold buy at steps 1 and 0.5.
  * @evidence ./conformanceRun.ts#checkSnapshots Constant income matches across those steps; the threshold buy does not.
@@ -352,10 +360,12 @@ describe("PR-02 time boundaries", () => {
 });
 
 /**
+ * @evidence docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness The same scripted grant replays, resumes on grid, keeps its economy under retention and a recording observer, and preserves the JSON snapshot.
+ * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #a195f0e Re-read the section, then ran this function: replay, resume, JSON resume, retention, and the observer all apply, and buys stays 1.
  * @evidence ./conformanceRun.ts#checkResumeFromJson Resumes a 4s scripted grant from JSON at t=2.
  * @evidenceReview ./conformanceRun.ts#checkResumeFromJson #91c215a Resumes a 4s scripted grant from JSON at t=2.
  * @evidence ./conformanceRun.ts#checkRetention Retention applies to the scripted grant.
- * @evidenceReview ./conformanceRun.ts#checkRetention #32a89c5 Retention applies to the scripted grant.
+ * @evidenceReview ./conformanceRun.ts#checkRetention #16e87d2 Retention applies to the scripted grant.
  * @evidence ./conformanceRun.ts#checkObserver The observer check applies to the scripted grant.
  * @evidenceReview ./conformanceRun.ts#checkObserver #918ed45 The observer check applies to the scripted grant.
  */
@@ -371,6 +381,8 @@ export function replaysOneShotScriptedGrantFromTheSameCursor(): void {
 }
 
 /**
+ * @evidence docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness The checkpoint replay applies only when that checkpoint is inside the run.
+ * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #a195f0e Re-read the section: a checkpoint at t=5 does not apply when until stops at t=3, and the skipped check stays ok.
  * @evidence ./conformanceRun.ts#checkResume A checkpoint at t=5 does not apply when until stops at t=3.
  * @evidenceReview ./conformanceRun.ts#checkResume #db56c7a A checkpoint at t=5 does not apply when until stops at t=3.
  * @evidence ./conformanceRun.ts#RelationCheck.ok That skipped resume is ok.
@@ -424,6 +436,8 @@ describe("stateful strategy and currency identity", () => {
 });
 
 /**
+ * @evidence docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness The harness economy snapshot records the wallet unit and the max-money unit.
+ * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #a195f0e Re-read the section, then ran this function: the COIN snapshot records COIN for both units, and a GEM snapshot is a different string.
  * @evidence ./conformanceRun.ts#snapshotEconomy Reads amountUnit and maxUnit for COIN, and a GEM snapshot is a different string.
  * @evidenceReview ./conformanceRun.ts#snapshotEconomy #e1778bf Reads amountUnit and maxUnit for COIN, and a GEM snapshot is a different string.
  */
@@ -445,6 +459,8 @@ export function recordsWalletAndMaxMoneyUnitsOnTheEconomySnapshot(): void {
 }
 
 /**
+ * @evidence docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness An on-grid checkpoint replays from memory and from JSON, and independent trials are compared by game seed.
+ * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #a195f0e Re-read the section, then ran this function: memory resume, JSON resume, and the JSON round-trip apply, and the two game seeds stay ordered.
  * @evidence ./conformanceRun.ts#checkJsonRoundTrip The constant-income scenario matches after a JSON round trip.
  * @evidenceReview ./conformanceRun.ts#checkJsonRoundTrip #05aa7ed The constant-income scenario matches after a JSON round trip.
  * @evidence ./conformanceRun.ts#checkTrialOrder Two distinct game seeds keep distinct economy snapshots.
@@ -491,6 +507,8 @@ describe("PR-05 observation retention", () => {
 });
 
 /**
+ * @evidence docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness A negative balance fails the check only when the payment policy disallows debt.
+ * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #a195f0e Re-read the section: checkNonNegative applies when debt is disallowed and does not apply when debt is allowed.
  * @evidence ./conformanceRun.ts#checkNonNegative A non-negative wallet applies when debt is disallowed, and a negative wallet does not apply when debt is allowed.
  * @evidenceReview ./conformanceRun.ts#checkNonNegative #d87668f A non-negative wallet applies when debt is disallowed, and a negative wallet does not apply when debt is allowed.
  */
@@ -549,6 +567,8 @@ describe("analysis source labels", () => {
 });
 
 /**
+ * @evidence docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness Formula seconds stay labeled apart from executed etaSimulate and etaAnalytic results.
+ * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #a195f0e Re-read the section, then ran this function: formula, simulate, and analytic seconds are 3 and the executed modes stay distinct.
  * @evidence ./conformanceRun.ts#checkTimedSources Formula, simulate, and analytic seconds are all 3, and the executed modes stay distinct.
  * @evidenceReview ./conformanceRun.ts#checkTimedSources #25df548 Formula, simulate, and analytic seconds are all 3, and the executed modes stay distinct.
  */
@@ -578,6 +598,8 @@ export function keepsFormulaSecondsApartFromExecutedEtaResults(): void {
 }
 
 /**
+ * @evidence docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness Cross-engine comparison matches a finite constant-income amount and refuses a number Infinity collapse.
+ * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #a195f0e Re-read the section, then ran this function: 24 matches across engines and 1e400 is refused on the number engine.
  * @evidence ./compareAmounts.ts#compareAmounts The number engine and break-infinity engine agree on 24, and 1e400 collapses only on the number engine.
  * @evidenceReview ./compareAmounts.ts#compareAmounts #4af6dfc Re-read compareAmounts: 24 matches by absLog10, and 1e400 returns refused-number-collapse because the number engine is not finite.
  * @evidence ./compareAmounts.ts#AmountComparison.status Expects equal for 24, refused-number-collapse for 1e400, and different for the near-zero and opposite-sign pairs.
