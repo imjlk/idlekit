@@ -196,7 +196,8 @@ export function assertExecutedTests(output: string, exitCode: number, names: rea
 
 export function headingAnchors(markdown: string): string[] {
   const anchors: string[] = [];
-  let fence: "`" | "~" | undefined;
+  let fenceChar: "`" | "~" | undefined;
+  let fenceLength = 0;
   let inComment = false;
   for (const rawLine of markdown.split("\n")) {
     if (inComment) {
@@ -206,17 +207,18 @@ export function headingAnchors(markdown: string): string[] {
     const commentAt = rawLine.indexOf("<!--");
     const line = commentAt === -1 ? rawLine : rawLine.slice(0, commentAt);
     if (commentAt !== -1 && !rawLine.includes("-->", commentAt + 4)) inComment = true;
-    const marker = /^(```+|~~~+)/.exec(line.trim());
-    if (!fence) {
-      if (marker?.[1]) {
-        fence = marker[1].startsWith("`") ? "`" : "~";
+    const marker = /^(`{3,}|~{3,})(.*)$/.exec(line.trim());
+    const opener = marker?.[1];
+    const info = marker?.[2] ?? "";
+    if (!fenceChar) {
+      if (opener) {
+        fenceChar = opener.startsWith("`") ? "`" : "~";
+        fenceLength = opener.length;
         continue;
       }
-    } else if (
-      (fence === "`" && marker?.[1]?.startsWith("`")) ||
-      (fence === "~" && marker?.[1]?.startsWith("~"))
-    ) {
-      fence = undefined;
+    } else if (opener && opener.startsWith(fenceChar) && opener.length >= fenceLength && info.trim() === "") {
+      fenceChar = undefined;
+      fenceLength = 0;
       continue;
     } else {
       continue;
@@ -255,7 +257,18 @@ function fetchRevision(revision: string): void {
   });
 }
 
+/** The pull-request base SHA wins over a branch name that can move during the job. */
+export function recordedBaseSpec(env: NodeJS.ProcessEnv = process.env): string | undefined {
+  const sha = env.GITHUB_BASE_SHA ?? "";
+  return /^[0-9a-f]{40}$/.test(sha) ? sha : undefined;
+}
+
 function previousRevision(): string | undefined {
+  const recorded = recordedBaseSpec();
+  if (recorded) {
+    fetchRevision(recorded);
+    return showBaseline(recorded) ? recorded : undefined;
+  }
   const baseRef = process.env.GITHUB_BASE_REF;
   if (baseRef) {
     fetchRevision(baseRef);
@@ -565,6 +578,21 @@ export async function checkInventory(projectRoot = root): Promise<string[]> {
   const evidenceTsconfig = readFileSync(join(projectRoot, "tsconfig.evidence.json"), "utf8");
   if (evidenceTsconfig.includes("@ttsc/evidence")) {
     fail(failures, "tsconfig.evidence.json lists @ttsc/evidence as a compiler plugin");
+  }
+  let evidencePlugins: Array<{ transform?: string; configFile?: string; enabled?: boolean }> = [];
+  try {
+    const parsed = JSON.parse(evidenceTsconfig) as {
+      compilerOptions?: { plugins?: Array<{ transform?: string; configFile?: string; enabled?: boolean }> };
+    };
+    evidencePlugins = parsed.compilerOptions?.plugins ?? [];
+  } catch (error) {
+    fail(failures, error instanceof Error ? error.message : String(error));
+  }
+  const lintPlugin = evidencePlugins.find((plugin) => plugin.transform === "@ttsc/lint");
+  const lintEnabled =
+    lintPlugin !== undefined && lintPlugin.enabled !== false && lintPlugin.configFile === "./lint.config.ts";
+  if (!lintEnabled) {
+    fail(failures, "tsconfig.evidence.json must enable @ttsc/lint for lint.config.ts");
   }
   const evidencePackage = readJson<{ ttsc?: unknown }>(
     join(projectRoot, "node_modules", "@ttsc", "evidence", "package.json"),
