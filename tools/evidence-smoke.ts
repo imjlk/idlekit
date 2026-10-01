@@ -12,7 +12,9 @@ import {
   duplicateFullNamesAcross,
   duplicateRequirementAnchors,
   junitCases,
+  blockedTestArgs,
   junitReporterArgs,
+  unresolvedRunnerCalls,
   registrationLines,
   sourceGraph,
   citesRequirement,
@@ -822,6 +824,59 @@ try {
     "credited",
   );
   const member = registeredSuites('it("credited", citedExport.method);', "citedExport", "credited");
+  const escapedBody = [
+    'if (false) it("credited", citedExport);',
+    'it("\\u0063redited", unrelated);',
+  ].join("\n");
+  const escapedNames = duplicateFullNames(escapedBody);
+  const escapedLive = registeredSuites(escapedBody, "unrelated", "credited");
+  const escapedDead = registeredSuites(escapedBody, "citedExport", "credited");
+  const aliasBody = [
+    "const register = it;",
+    'if (false) it("credited", citedExport);',
+    'register("credited", unrelated);',
+  ].join("\n");
+  const aliasNames = duplicateFullNames(aliasBody);
+  const aliasLive = registeredSuites(aliasBody, "unrelated", "credited");
+  const importedLive = registeredSuites(
+    'import { it as register } from "bun:test";\nregister("credited", unrelated);',
+    "unrelated",
+    "credited",
+  );
+  const aliasShadowed = registeredSuites(
+    'const register = it;\n{\n  const register = other;\n  register("credited", unrelated);\n}\n',
+    "unrelated",
+    "credited",
+  );
+  const asiBody = [
+    "const register = it",
+    'if (false) it("credited", citedExport)',
+    'register("credited", unrelated)',
+  ].join("\n");
+  const asiLive = registeredSuites(asiBody, "unrelated", "credited");
+  const typedBody = [
+    "const register: typeof it = it",
+    'register("credited", unrelated)',
+  ].join("\n");
+  const typedLive = registeredSuites(typedBody, "unrelated", "credited");
+  const blockBody = ["{", "const register = it", 'register("credited", unrelated)', "}"].join("\n");
+  const blockLive = registeredSuites(blockBody, "unrelated", "credited");
+  const reboundBody = [
+    "let register = it",
+    "register = other",
+    'register("credited", unrelated)',
+  ].join("\n");
+  const reboundLive = registeredSuites(reboundBody, "unrelated", "credited");
+  const reboundUnresolved = unresolvedRunnerCalls(reboundBody);
+  const wrappedBody = ["const register = wrap(it)", 'register("credited", unrelated)'].join("\n");
+  const wrappedLive = registeredSuites(wrappedBody, "unrelated", "credited");
+  const wrappedUnresolved = unresolvedRunnerCalls(wrappedBody);
+  const forBody = [
+    "const register = it",
+    "for (const register = other; false;) {}",
+    'register("credited", unrelated)',
+  ].join("\n");
+  const forLive = registeredSuites(forBody, "unrelated", "credited");
   const duplicateOk =
     duplicateNames.length === 1 &&
     duplicateNames[0] === "kept > quota is documented" &&
@@ -855,7 +910,24 @@ try {
     conjunctionOther.length === 0 &&
     asserted.length === 1 &&
     assertedLive.length === 0 &&
-    member.length === 0;
+    member.length === 0 &&
+    escapedNames.length === 1 &&
+    escapedNames[0] === "credited" &&
+    escapedLive.length === 1 &&
+    escapedDead.length === 1 &&
+    aliasNames.length === 1 &&
+    aliasNames[0] === "credited" &&
+    aliasLive.length === 1 &&
+    importedLive.length === 1 &&
+    aliasShadowed.length === 0 &&
+    asiLive.length === 1 &&
+    typedLive.length === 1 &&
+    blockLive.length === 1 &&
+    reboundLive.length === 0 &&
+    reboundUnresolved.length === 1 &&
+    wrappedLive.length === 0 &&
+    wrappedUnresolved.length === 1 &&
+    forLive.length === 1;
   record(
     "duplicate-title",
     "zero",
@@ -984,6 +1056,10 @@ try {
     ["src/example.test.ts"],
   );
   const reporterArgs = junitReporterArgs(["test", "--", "src/example.test.ts"], "out.xml");
+  const watchBlocked = blockedTestArgs(["test", "--watch", "src/example.test.ts"]);
+  const updateBlocked = blockedTestArgs(["test", "-u", "src/example.test.ts"]);
+  const updateNamed = blockedTestArgs(["test", "--update-snapshots", "src/example.test.ts"]);
+  const plainCommand = blockedTestArgs(["test", "src/example.test.ts"]);
   const reporterAt = reporterArgs.indexOf("--reporter=junit");
   const separatorAt = reporterArgs.indexOf("--");
   const commandOk =
@@ -1001,7 +1077,11 @@ try {
     reported.length === 0 &&
     reporterAt >= 0 &&
     separatorAt > reporterAt &&
-    reporterArgs.at(-1) === "src/example.test.ts";
+    reporterArgs.at(-1) === "src/example.test.ts" &&
+    watchBlocked === "--watch" &&
+    updateBlocked === "-u" &&
+    updateNamed === "--update-snapshots" &&
+    plainCommand === undefined;
   record(
     "test-subcommand",
     "zero",

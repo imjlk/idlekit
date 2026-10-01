@@ -592,13 +592,79 @@ function skipQuoted(body: string, index: number): number {
   return cursor;
 }
 
+function simpleEscape(next: string): string | undefined {
+  if (next === "b") return "\b";
+  if (next === "f") return "\f";
+  if (next === "n") return "\n";
+  if (next === "r") return "\r";
+  if (next === "t") return "\t";
+  if (next === "v") return "\v";
+  if (next === "0") return "\0";
+  if (next === "\\") return "\\";
+  if (next === "'") return "'";
+  if (next === '"') return '"';
+  return undefined;
+}
+
+/** One JavaScript escape starting at a backslash. Invalid strict-mode escapes do not decode. */
+function readEscape(body: string, index: number): { value: string; end: number } | undefined {
+  if (body[index] !== "\\") return undefined;
+  const next = body[index + 1];
+  if (next === undefined) return undefined;
+  if (next === "\n") return { value: "", end: index + 2 };
+  if (next === "\r") return { value: "", end: body[index + 2] === "\n" ? index + 3 : index + 2 };
+  if (next === "0" && /[0-9]/.test(body[index + 2] ?? "")) return undefined;
+  const simple = simpleEscape(next);
+  if (simple !== undefined) return { value: simple, end: index + 2 };
+  if (next === "x") {
+    const hex = body.slice(index + 2, index + 4);
+    if (!/^[0-9a-fA-F]{2}$/.test(hex)) return undefined;
+    return { value: String.fromCharCode(Number.parseInt(hex, 16)), end: index + 4 };
+  }
+  if (next === "u") {
+    if (body[index + 2] === "{") {
+      const close = body.indexOf("}", index + 3);
+      if (close < 0) return undefined;
+      const hex = body.slice(index + 3, close);
+      if (!/^[0-9a-fA-F]{1,6}$/.test(hex)) return undefined;
+      const code = Number.parseInt(hex, 16);
+      if (code > 0x10ffff) return undefined;
+      return { value: String.fromCodePoint(code), end: close + 1 };
+    }
+    const hex = body.slice(index + 2, index + 6);
+    if (!/^[0-9a-fA-F]{4}$/.test(hex)) return undefined;
+    return { value: String.fromCharCode(Number.parseInt(hex, 16)), end: index + 6 };
+  }
+  if (/[0-9]/.test(next)) return undefined;
+  return { value: next, end: index + 2 };
+}
+
+function decodeQuotedContents(body: string, from: number, to: number): string | undefined {
+  let value = "";
+  let at = from;
+  while (at < to) {
+    if (body[at] === "\\") {
+      const escaped = readEscape(body, at);
+      if (!escaped || escaped.end > to) return undefined;
+      value += escaped.value;
+      at = escaped.end;
+      continue;
+    }
+    value += body[at] ?? "";
+    at += 1;
+  }
+  return value;
+}
+
 function readQuoted(body: string, index: number): { value: string; end: number } | undefined {
   const cursor = skipWhitespace(body, index);
   const quote = body[cursor];
   if (quote !== "'" && quote !== '"') return undefined;
   const end = skipQuoted(body, cursor);
-  const raw = body.slice(cursor + 1, end - 1);
-  return { value: raw.replace(/\\(["'\\])/g, "$1"), end };
+  if (body[end - 1] !== quote) return undefined;
+  const value = decodeQuotedContents(body, cursor + 1, end - 1);
+  if (value === undefined) return undefined;
+  return { value, end };
 }
 
 /** A static template title. Interpolation and an unclosed backtick are not titles. */
@@ -613,13 +679,10 @@ function readStaticTemplate(
   while (cursorAt < body.length) {
     const char = body[cursorAt] ?? "";
     if (char === "\\") {
-      const next = body[cursorAt + 1];
-      if (next === undefined) return undefined;
-      if (next === "n") value += "\n";
-      else if (next === "r") value += "\r";
-      else if (next === "t") value += "\t";
-      else value += next;
-      cursorAt += 2;
+      const escaped = readEscape(body, cursorAt);
+      if (!escaped) return undefined;
+      value += escaped.value;
+      cursorAt = escaped.end;
       continue;
     }
     if (char === "$" && body[cursorAt + 1] === "{") return undefined;
@@ -1209,11 +1272,249 @@ function readDirectCallback(
   return { value: ident.value, at, end };
 }
 
+type RunnerKind = "describe" | "it" | "test";
+
+type RunnerAlias = {
+  name: string;
+  kind: RunnerKind | undefined;
+  modifiers: string[];
+  depth: number;
+};
+
+function isRunnerKind(value: string): value is RunnerKind {
+  return value === "describe" || value === "it" || value === "test";
+}
+
+function aliasAt(aliases: readonly RunnerAlias[], name: string): RunnerAlias | undefined {
+  for (let index = aliases.length - 1; index >= 0; index -= 1) {
+    if (aliases[index]?.name === name) return aliases[index];
+  }
+  return undefined;
+}
+
+function bindingBoundary(body: string, index: number): boolean {
+  const cursor = skipSpaceAndComments(body, index);
+  const char = body[cursor];
+  if (
+    char === undefined ||
+    char === "," ||
+    char === ";" ||
+    char === ")" ||
+    char === "}" ||
+    char === "{"
+  ) {
+    return true;
+  }
+  const word = readIdentifier(body, cursor);
+  if (!word) return false;
+  return word.value !== "in" && word.value !== "instanceof";
+}
+
+/** `.only` / `.skip` / `.todo` / `.each`, including a newline before the dot. */
+function readDottedModifiers(body: string, index: number, modifiers: string[]): number {
+  let at = index;
+  for (;;) {
+    const dot = skipSpaceAndComments(body, at);
+    if (body[dot] !== ".") return at;
+    const modifier = readIdentifier(body, dot + 1);
+    if (!modifier || (modifier.value !== "each" && !TEST_MODIFIERS.has(modifier.value))) return at;
+    modifiers.push(modifier.value);
+    at = modifier.end;
+  }
+}
+
+/** `=` that ends a binding type. `=>` and `==` stay inside the type. */
+function findBindingEquals(body: string, index: number): number {
+  let cursor = index;
+  let depth = 0;
+  while (cursor < body.length) {
+    const char = body[cursor] ?? "";
+    if (char === "'" || char === '"') {
+      cursor = skipQuoted(body, cursor);
+      continue;
+    }
+    if (char === "`") {
+      const end = skipTemplateLiteral(body, cursor);
+      if (end < 0) return -1;
+      cursor = end;
+      continue;
+    }
+    if (char === "/" && body[cursor + 1] === "/") {
+      const line = body.indexOf("\n", cursor);
+      cursor = line < 0 ? body.length : line + 1;
+      continue;
+    }
+    if (char === "/" && body[cursor + 1] === "*") {
+      const close = body.indexOf("*/", cursor + 2);
+      cursor = close < 0 ? body.length : close + 2;
+      continue;
+    }
+    if (char === "(" || char === "{" || char === "[" || char === "<") {
+      depth += 1;
+      cursor += 1;
+      continue;
+    }
+    if (char === ")" || char === "}" || char === "]" || char === ">") {
+      if (depth === 0) return -1;
+      depth -= 1;
+      cursor += 1;
+      continue;
+    }
+    if (
+      depth === 0 &&
+      char === "=" &&
+      body[cursor + 1] !== "=" &&
+      body[cursor + 1] !== ">" &&
+      body[cursor - 1] !== "="
+    ) {
+      return cursor;
+    }
+    if (depth === 0 && (char === "," || char === ";")) return -1;
+    cursor += 1;
+  }
+  return -1;
+}
+
+function assignmentAt(body: string, index: number): { at: number; plain: boolean } | undefined {
+  const cursor = skipSpaceAndComments(body, index);
+  const operators = [
+    ">>>=",
+    "<<=",
+    ">>=",
+    "**=",
+    "&&=",
+    "||=",
+    "??=",
+    "+=",
+    "-=",
+    "*=",
+    "/=",
+    "%=",
+    "&=",
+    "|=",
+    "^=",
+    "=",
+  ];
+  for (const op of operators) {
+    if (!body.startsWith(op, cursor)) continue;
+    if (op === "=" && (body[cursor + 1] === "=" || body[cursor + 1] === ">")) return undefined;
+    return { at: cursor, plain: op === "=" };
+  }
+  return undefined;
+}
+
+/** A call whose first argument is a title and whose second argument is present. */
+function titleCallAt(body: string, index: number): boolean {
+  const modifiers: string[] = [];
+  const dotted = readDottedModifiers(body, index, modifiers);
+  let open = skipWhitespace(body, dotted);
+  if (modifiers.includes("each")) {
+    const tableEnd = skipEachTable(body, dotted);
+    if (tableEnd < 0) return false;
+    open = skipWhitespace(body, tableEnd);
+  }
+  if (body[open] !== "(") return false;
+  const quoted = readTestTitle(body, open + 1);
+  if (!quoted) return false;
+  return body[skipWhitespace(body, quoted.end)] === ",";
+}
+
+/** `const register = it.only` and `const again = register` name the same runner. */
+function readRunnerRef(
+  body: string,
+  index: number,
+  aliases: readonly RunnerAlias[],
+): { kind: RunnerKind; modifiers: string[]; end: number } | undefined {
+  const cursor = skipSpaceAndComments(body, index);
+  if (body[cursor] === "(") {
+    const inner = readRunnerRef(body, cursor + 1, aliases);
+    if (!inner) return undefined;
+    const close = skipSpaceAndComments(body, inner.end);
+    if (body[close] !== ")") return undefined;
+    const modifiers = [...inner.modifiers];
+    const dotted = readDottedModifiers(body, close + 1, modifiers);
+    const end = skipTypeOnlySuffix(body, dotted);
+    if (end < 0 || !bindingBoundary(body, end)) return undefined;
+    return { kind: inner.kind, modifiers, end };
+  }
+  const ident = readIdentifier(body, cursor);
+  if (!ident) return undefined;
+  let kind: RunnerKind | undefined;
+  let modifiers: string[] = [];
+  if (isRunnerKind(ident.value)) kind = ident.value;
+  else {
+    const alias = aliasAt(aliases, ident.value);
+    if (!alias?.kind) return undefined;
+    kind = alias.kind;
+    modifiers = [...alias.modifiers];
+  }
+  const dotted = readDottedModifiers(body, ident.end, modifiers);
+  const end = skipTypeOnlySuffix(body, dotted);
+  if (end < 0 || !bindingBoundary(body, end)) return undefined;
+  return { kind, modifiers, end };
+}
+
+function readImportRunnerAliases(
+  body: string,
+  index: number,
+): { entries: Array<{ name: string; kind: RunnerKind }>; end: number } | undefined {
+  let cursor = skipSpaceAndComments(body, index);
+  if (readIdentifier(body, cursor)?.value === "type") return undefined;
+  if (body[cursor] !== "{") return undefined;
+  const entries: Array<{ name: string; kind: RunnerKind }> = [];
+  cursor += 1;
+  while (cursor < body.length) {
+    cursor = skipSpaceAndComments(body, cursor);
+    if (body[cursor] === "}") {
+      cursor += 1;
+      break;
+    }
+    let imported = readIdentifier(body, cursor);
+    if (!imported) return undefined;
+    let typeOnly = false;
+    if (imported.value === "type") {
+      typeOnly = true;
+      const named = readIdentifier(body, skipSpaceAndComments(body, imported.end));
+      if (!named) return undefined;
+      imported = named;
+    }
+    cursor = skipSpaceAndComments(body, imported.end);
+    let local = imported.value;
+    const asWord = readIdentifier(body, cursor);
+    if (asWord?.value === "as") {
+      const renamed = readIdentifier(body, asWord.end);
+      if (!renamed) return undefined;
+      local = renamed.value;
+      cursor = skipSpaceAndComments(body, renamed.end);
+    }
+    if (!typeOnly && isRunnerKind(imported.value)) {
+      entries.push({ name: local, kind: imported.value });
+    }
+    if (body[cursor] === ",") {
+      cursor += 1;
+      continue;
+    }
+    if (body[cursor] === "}") {
+      cursor += 1;
+      break;
+    }
+    return undefined;
+  }
+  cursor = skipSpaceAndComments(body, cursor);
+  const fromWord = readIdentifier(body, cursor);
+  if (fromWord?.value !== "from") return undefined;
+  const spec = readQuoted(body, fromWord.end) ?? readStaticTemplate(body, fromWord.end);
+  if (!spec) return undefined;
+  return { entries, end: spec.end };
+}
+
 /** Every `it`/`test` title in this source, including ones inside a false condition. */
-function collectRegistrations(body: string): Registration[] {
+function collectRegistrations(body: string, unresolved: string[] = []): Registration[] {
   const ranges = localRanges(body);
   const found: Registration[] = [];
   const stack: { title: string; depth: number }[] = [];
+  const aliases: RunnerAlias[] = [];
+  const forParens: number[] = [];
   let depth = 0;
   let parens = 0;
   let pending: { title: string; parens: number } | undefined;
@@ -1279,6 +1580,7 @@ function collectRegistrations(body: string): Registration[] {
     }
     if (char === "}") {
       while (stack.length > 0 && stack[stack.length - 1]?.depth === depth) stack.pop();
+      while (aliases.length > 0 && aliases[aliases.length - 1]?.depth === depth) aliases.pop();
       const closedDepth = depth;
       depth = Math.max(0, depth - 1);
       if (templateCloseDepths.at(-1) === closedDepth) {
@@ -1295,6 +1597,7 @@ function collectRegistrations(body: string): Registration[] {
     }
     if (char === ")") {
       parens -= 1;
+      if (forParens.at(-1) === parens) forParens.pop();
       if (pending && parens === pending.parens) pending = undefined;
       index += 1;
       continue;
@@ -1313,27 +1616,100 @@ function collectRegistrations(body: string): Registration[] {
       index = word.end;
       continue;
     }
-    if (word.value !== "describe" && word.value !== "it" && word.value !== "test") {
+    if (word.value === "for") {
+      let next = skipSpaceAndComments(body, word.end);
+      const ahead = readIdentifier(body, next);
+      if (ahead?.value === "await") next = skipSpaceAndComments(body, ahead.end);
+      if (body[next] === "(") forParens.push(parens);
       index = word.end;
       continue;
     }
-    let cursor = word.end;
-    let parameterized = false;
-    for (;;) {
-      if (body[cursor] !== ".") break;
-      const modifier = readIdentifier(body, cursor + 1);
-      if (!modifier) break;
-      if (modifier.value === "each") {
-        parameterized = true;
-        cursor = modifier.end;
+    if (word.value === "import") {
+      const imported = readImportRunnerAliases(body, word.end);
+      if (imported) {
+        for (const entry of imported.entries) {
+          aliases.push({ name: entry.name, kind: entry.kind, modifiers: [], depth });
+        }
+        index = imported.end;
         continue;
       }
-      if (!TEST_MODIFIERS.has(modifier.value)) break;
-      cursor = modifier.end;
+      index = word.end;
+      continue;
     }
-    let open = skipWhitespace(body, cursor);
+    if (word.value === "const" || word.value === "let" || word.value === "var") {
+      let bindingAt = skipSpaceAndComments(body, word.end);
+      const bindingDepth = forParens.length > 0 ? depth + 1 : depth;
+      for (;;) {
+        if (body[bindingAt] === "{" || body[bindingAt] === "[") break;
+        const ident = readIdentifier(body, bindingAt);
+        if (!ident) break;
+        const after = skipSpaceAndComments(body, ident.end);
+        let equalsAt = after;
+        if (body[after] === ":") {
+          const found = findBindingEquals(body, after + 1);
+          if (found < 0) {
+            aliases.push({
+              name: ident.value,
+              kind: undefined,
+              modifiers: [],
+              depth: bindingDepth,
+            });
+            break;
+          }
+          equalsAt = found;
+        }
+        if (body[equalsAt] !== "=") {
+          aliases.push({ name: ident.value, kind: undefined, modifiers: [], depth: bindingDepth });
+          break;
+        }
+        const ref = readRunnerRef(body, equalsAt + 1, aliases);
+        aliases.push({
+          name: ident.value,
+          kind: ref?.kind,
+          modifiers: ref?.modifiers ?? [],
+          depth: bindingDepth,
+        });
+        if (!ref) break;
+        bindingAt = skipSpaceAndComments(body, ref.end);
+        if (body[bindingAt] !== ",") break;
+        bindingAt = skipSpaceAndComments(body, bindingAt + 1);
+      }
+      index = word.end;
+      continue;
+    }
+    const alias = aliasAt(aliases, word.value);
+    const assigned = assignmentAt(body, word.end);
+    if (assigned && alias) {
+      const ref = assigned.plain ? readRunnerRef(body, assigned.at + 1, aliases) : undefined;
+      aliases.push({
+        name: word.value,
+        kind: ref?.kind,
+        modifiers: ref?.modifiers ?? [],
+        depth: forParens.length > 0 ? depth + 1 : depth,
+      });
+      index = word.end;
+      continue;
+    }
+    let kind: RunnerKind | undefined;
+    let modifiers: string[] = [];
+    if (alias) {
+      if (alias.kind) {
+        kind = alias.kind;
+        modifiers = [...alias.modifiers];
+      }
+    } else if (isRunnerKind(word.value)) {
+      kind = word.value;
+    }
+    if (!kind) {
+      if (alias && titleCallAt(body, word.end)) unresolved.push(word.value);
+      index = word.end;
+      continue;
+    }
+    const dotted = readDottedModifiers(body, word.end, modifiers);
+    const parameterized = modifiers.includes("each");
+    let open = skipWhitespace(body, dotted);
     if (parameterized) {
-      const tableEnd = skipEachTable(body, cursor);
+      const tableEnd = skipEachTable(body, dotted);
       if (tableEnd < 0) {
         index = word.end;
         continue;
@@ -1349,7 +1725,7 @@ function collectRegistrations(body: string): Registration[] {
       index = word.end;
       continue;
     }
-    if (word.value === "describe") {
+    if (kind === "describe") {
       pending = { title: quoted.value, parens };
     } else {
       const comma = skipWhitespace(body, quoted.end);
@@ -1367,6 +1743,13 @@ function collectRegistrations(body: string): Registration[] {
     index = open;
   }
   return found;
+}
+
+/** Title calls through a binding that is not `it`, `test`, or `describe`. */
+export function unresolvedRunnerCalls(body: string): string[] {
+  const unresolved: string[] = [];
+  collectRegistrations(body, unresolved);
+  return unresolved;
 }
 
 /** 1-based lines where this full reporter name is registered. */
@@ -1822,6 +2205,24 @@ const TEST_VALUE_FLAGS = new Set([
   "--test-name-pattern",
   "--timeout",
 ]);
+
+const BLOCKED_TEST_FLAGS = new Set(["--watch", "-u", "--update-snapshots"]);
+
+/** Flags that hang the evidence run or rewrite snapshots while reporting a pass. */
+export function blockedTestArgs(args: readonly string[]): string | undefined {
+  let patterns = false;
+  for (const arg of args) {
+    if (!patterns && arg === "--") {
+      patterns = true;
+      continue;
+    }
+    if (patterns) continue;
+    const equals = arg.indexOf("=");
+    const name = equals === -1 ? arg : arg.slice(0, equals);
+    if (BLOCKED_TEST_FLAGS.has(name)) return name;
+  }
+  return undefined;
+}
 
 /** `--flag value` consumes the value. `--flag=value` and boolean flags do not. */
 function consumesTestValue(flag: string, next: string | undefined): boolean {
@@ -2439,6 +2840,9 @@ export async function checkInventory(projectRoot = root): Promise<string[]> {
     const files = [...new Set(requirement.tests.map((test) => test.file))];
     for (const file of files) {
       const body = readFileSync(join(projectRoot, file), "utf8");
+      if (unresolvedRunnerCalls(body).length > 0) {
+        fail(failures, `${requirement.id} has a registration call that is not the test runner`);
+      }
       const registered = requirement.tests
         .filter((test) => test.file === file)
         .map((test) => test.exportName);
@@ -2622,6 +3026,11 @@ export async function checkInventory(projectRoot = root): Promise<string[]> {
   for (const tests of groups.values()) {
     const first = tests[0];
     if (!first) continue;
+    const blocked = blockedTestArgs(first.args);
+    if (blocked) {
+      fail(failures, `inventory command uses ${blocked}`);
+      continue;
+    }
     const reportDir = mkdtempSync(join(tmpdir(), "idlekit-evidence-"));
     const reportPath = join(reportDir, "junit.xml");
     const command = [process.execPath, ...junitReporterArgs(first.args, reportPath)];
