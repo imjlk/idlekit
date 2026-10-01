@@ -1,5 +1,5 @@
 import { defineCommand, option } from "../runtime/command";
-import type { JudgeReportV1 } from "@idlekit/core";
+import type { JevAdvisoryV1, JudgeReportV1 } from "@idlekit/core";
 import { z } from "zod";
 import { usageError } from "../errors";
 import { buildOutputMeta } from "../io/outputMeta";
@@ -7,6 +7,7 @@ import { writeOutput } from "../io/writeOutput";
 import { readJsonFile } from "../runtime/bun";
 import { readJudgeInputs } from "../lib/evaluation/input";
 import { evaluateRules } from "../lib/evaluation/rules";
+import { adviseWithJev, type JevTransport } from "../lib/evaluation/providers/jev";
 
 function renderJudgeMarkdown(report: JudgeReportV1): string {
   const lines = [
@@ -36,15 +37,25 @@ function renderJudgeMarkdown(report: JudgeReportV1): string {
   return lines.join("\n");
 }
 
+export type JevJudgeBundle = Readonly<{
+  numericalReport: JudgeReportV1;
+  advisory: JevAdvisoryV1;
+}>;
+
 export async function runJudge(flags: {
   rubric: string;
-  provider: "rules";
+  provider: "rules" | "jev";
   out?: string;
   format: "json" | "md" | "csv";
-}, analysisPath: string): Promise<JudgeReportV1> {
-  if (flags.provider !== "rules") {
-    throw usageError("--provider must be rules");
-  }
+  "dry-run"?: boolean;
+  model?: string;
+  cache?: string;
+}, analysisPath: string, hooks?: {
+  transport?: JevTransport;
+  env?: Readonly<Record<string, string | undefined>>;
+  nowMs?: number;
+  sleep?: (ms: number) => Promise<void>;
+}): Promise<JudgeReportV1 | JevJudgeBundle> {
   const artifactRaw = await readJsonFile<unknown>(analysisPath);
   const rubricRaw = await readJsonFile<unknown>(flags.rubric);
   const parsed = readJudgeInputs(artifactRaw, rubricRaw);
@@ -58,17 +69,48 @@ export async function runJudge(flags: {
     const message = error instanceof Error ? error.message : String(error);
     throw usageError(`Invalid judge input: ${message}`);
   }
+  if (flags.provider === "rules") {
+    if (flags.format === "md") {
+      console.log(renderJudgeMarkdown(report));
+      return report;
+    }
+    await writeOutput({
+      format: flags.format,
+      outPath: flags.out,
+      data: report,
+      meta: buildOutputMeta({ command: "judge", pluginDigest: {} }),
+    });
+    return report;
+  }
+  const advisory = await adviseWithJev({
+    artifact: parsed.artifact,
+    rubric: parsed.rubric,
+    numerical: report,
+    requestedModel: flags.model ?? "jev-latest",
+    dryRun: flags["dry-run"] === true,
+    cachePath: flags.cache,
+    transport: hooks?.transport,
+    env: hooks?.env,
+    nowMs: hooks?.nowMs,
+    sleep: hooks?.sleep,
+  });
+  const bundle: JevJudgeBundle = { numericalReport: report, advisory };
   if (flags.format === "md") {
     console.log(renderJudgeMarkdown(report));
-    return report;
+    console.log(`- Jev: ${advisory.status} ${advisory.reason}`);
+    return bundle;
   }
   await writeOutput({
     format: flags.format,
     outPath: flags.out,
-    data: report,
-    meta: buildOutputMeta({ command: "judge", pluginDigest: {} }),
+    data: bundle,
+    meta: buildOutputMeta({
+      command: "judge",
+      pluginDigest: {},
+      schemaRef: "docs/schemas/jev.advisory.v1.schema.json",
+    }),
   });
-  return report;
+  return bundle;
 }
 
 export default defineCommand({
@@ -76,9 +118,16 @@ export default defineCommand({
   description: "Advise on an analysis artifact with a versioned rules rubric",
   options: {
     rubric: option(z.string(), { description: "Versioned rubric JSON path" }),
-    provider: option(z.enum(["rules"]).default("rules"), {
-      description: "Advisory provider. The only built-in provider is rules.",
+    provider: option(z.enum(["rules", "jev"]).default("rules"), {
+      description: "Advisory provider. rules is local. jev is an opt-in network provider.",
     }),
+    "dry-run": option(z.coerce.boolean().default(false), {
+      description: "Show the Jev request plan without calling the network",
+    }),
+    model: option(z.string().default("jev-latest"), {
+      description: "Requested Jev model. jev-latest is an alias, not a pinned id.",
+    }),
+    cache: option(z.string().optional(), { description: "Optional Jev advisory cache path" }),
     out: option(z.string().optional(), { description: "Output path" }),
     format: option(z.enum(["json", "md", "csv"]).default("json"), { description: "Output format" }),
   },
