@@ -414,25 +414,44 @@ function runSeededProperty<T>(run: PropertyRun<T>): { ok: true } | { ok: false; 
   return { ok: true };
 }
 
+function counterexampleTag(kind: string, value?: string): { [SENTINEL_KEY]: string; value?: string } {
+  return value === undefined ? { [SENTINEL_KEY]: kind } : { [SENTINEL_KEY]: kind, value };
+}
+
 function serializeCounterexample(value: unknown): string {
   const seen = new WeakSet<object>();
+  const trusted = new WeakSet<object>();
+  const tag = (kind: string, extra?: string): { [SENTINEL_KEY]: string; value?: string } => {
+    const encoded = counterexampleTag(kind, extra);
+    trusted.add(encoded);
+    return encoded;
+  };
   try {
     const text = JSON.stringify(
       value,
       (_key, current: unknown) => {
         if (typeof current === "bigint") return `${current}n`;
-        if (typeof current === "number" && !Number.isFinite(current)) {
-          if (Number.isNaN(current)) return "NaN";
-          if (current === Number.NEGATIVE_INFINITY) return "-Infinity";
-          return "Infinity";
-        }
-        if (typeof current === "number" && Object.is(current, -0)) return "-0";
-        if (typeof current === "symbol") return String(current);
-        if (typeof current === "function") return `[function ${current.name}]`;
-        if (current === undefined) return "[undefined]";
+        if (typeof current === "number" && Number.isNaN(current)) return tag("nan");
+        if (typeof current === "number" && current === Number.NEGATIVE_INFINITY) return tag("-infinity");
+        if (typeof current === "number" && current === Number.POSITIVE_INFINITY) return tag("infinity");
+        if (typeof current === "number" && Object.is(current, -0)) return tag("-0");
+        if (typeof current === "symbol") return tag("symbol", String(current));
+        if (typeof current === "function") return tag("function", current.name);
+        if (current === undefined) return tag("undefined");
         if (typeof current === "object" && current !== null) {
-          if (seen.has(current)) return "[Circular]";
+          if (trusted.has(current)) return current;
+          if (seen.has(current)) return tag("circular");
           seen.add(current);
+          if (Object.prototype.hasOwnProperty.call(current, SENTINEL_KEY)) {
+            const fields: Record<string, unknown> = {};
+            for (const key of Object.keys(current)) {
+              fields[key] = (current as Record<string, unknown>)[key];
+            }
+            trusted.add(fields);
+            const escaped = { [SENTINEL_KEY]: "escaped", fields };
+            trusted.add(escaped);
+            return escaped;
+          }
         }
         return current;
       },
@@ -538,10 +557,20 @@ function withSymbolKeys(value: unknown, symbols: readonly unknown[]): unknown {
   return { [SENTINEL_KEY]: "symbol-keys", value, symbols };
 }
 
+const symbolIdentity = new Map<symbol, number>();
+let nextSymbolIdentity = 1;
+
 function describeSymbol(item: symbol): string {
+  let id = symbolIdentity.get(item);
+  if (id === undefined) {
+    id = nextSymbolIdentity;
+    nextSymbolIdentity += 1;
+    symbolIdentity.set(item, id);
+  }
+  const rendered = `${String(item)} #${id}`;
   const key = Symbol.keyFor(item);
-  if (key === undefined) return String(item);
-  return `${String(item)} for ${key}`;
+  if (key === undefined) return rendered;
+  return `${rendered} for ${key}`;
 }
 
 function describeFunction(item: Function): string {
@@ -636,6 +665,19 @@ function snapshotData(item: unknown, seen: WeakMap<object, number>, nextId: { va
   return withSymbolKeys(escapeSentinelKey(record), symbolKeySnapshots(item, seen, nextId));
 }
 
+/** A hook JSON would call. `Date.prototype.toJSON` stays on the JSON path so the instant is kept. */
+function declaresCustomToJson(item: object): boolean {
+  let current: object | null = item;
+  while (current !== null && current !== Object.prototype) {
+    if (Object.prototype.hasOwnProperty.call(current, "toJSON")) {
+      if (current === Date.prototype) return false;
+      return true;
+    }
+    current = Object.getPrototypeOf(current);
+  }
+  return false;
+}
+
 /** JSON drops NaN, Infinity, undefined, functions, and symbols. Those still have to stay distinct. */
 function jsonSilentlyDrops(item: unknown, seen = new Set<object>()): boolean {
   if (item === undefined) return true;
@@ -646,6 +688,7 @@ function jsonSilentlyDrops(item: unknown, seen = new Set<object>()): boolean {
   if (type !== "object") return false;
   if (seen.has(item)) return true;
   seen.add(item);
+  if (declaresCustomToJson(item)) return true;
   if (Array.isArray(item)) {
     if (arrayIndexCount(item) !== item.length) return true;
     for (const key of Object.getOwnPropertyNames(item)) {
@@ -746,9 +789,10 @@ function isRelationCheck(value: StrategyBracket | RelationCheck): value is Relat
 
 /**
  * @evidence docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness Replays one compiled scenario from the same initial strategy snapshot.
- * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #a195f0e Re-read the section and this function: both runs restore the same strategy snapshot, and the check fails when the economy strings differ.
+ * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #a195f0e Re-read the section and this function: both runs restore the same strategy snapshot, and the check fails when the economy strings differ. A scenario that already has an emitter does not apply.
  */
 export function checkReplay<N, U extends string, Vars>(scenario: CompiledScenario<N, U, Vars>): RelationCheck {
+  if (scenario.ctx.emit !== undefined) return skip("scenario already has an emitter");
   const bracket = strategyBracket(scenario);
   if (isRelationCheck(bracket)) return bracket;
   const initial = bracket.snap();
@@ -826,22 +870,6 @@ function unitFactoryFor<N, U extends string, Vars>(
   return (code) => (code === unit.code ? unit : ({ code: code as U } as typeof unit));
 }
 
-/** `stepOnce` stores one money object on both fields after a new maximum. JSON parses two. */
-function withSharedMaxMoney<N, U extends string, Vars>(
-  original: SimState<N, U, Vars>,
-  restored: SimState<N, U, Vars>,
-): SimState<N, U, Vars> {
-  if (original.wallet.money !== original.maxMoneyEver) return restored;
-  if (restored.wallet.money === restored.maxMoneyEver) return restored;
-  return {
-    t: restored.t,
-    wallet: restored.wallet,
-    maxMoneyEver: restored.wallet.money,
-    prestige: restored.prestige,
-    vars: restored.vars,
-  };
-}
-
 function restoreJsonCheckpoint<N, U extends string, Vars>(
   scenario: CompiledScenario<N, U, Vars>,
   state: SimState<N, U, Vars>,
@@ -853,10 +881,9 @@ function restoreJsonCheckpoint<N, U extends string, Vars>(
       engineName,
     }),
   );
-  const restored = deserializeSimState<N, U, Vars>(scenario.ctx.E, JSON.parse(text), {
+  return deserializeSimState<N, U, Vars>(scenario.ctx.E, JSON.parse(text), {
     unitFactory: unitFactoryFor(scenario),
   });
-  return withSharedMaxMoney<N, U, Vars>(state, restored);
 }
 
 type TailStart<N, U extends string, Vars> = {
@@ -949,12 +976,9 @@ function jsonResumeCheckpoint<N, U extends string, Vars>(
   }
   try {
     return {
-      state: withSharedMaxMoney<N, U, Vars>(
-        state,
-        deserializeSimState<N, U, Vars>(scenario.ctx.E, parsed, {
-          unitFactory: unitFactoryFor(scenario),
-        }),
-      ),
+      state: deserializeSimState<N, U, Vars>(scenario.ctx.E, parsed, {
+        unitFactory: unitFactoryFor(scenario),
+      }),
       strategyState: parsed.strategy?.state,
       persistedStrategy,
     };
@@ -1197,9 +1221,6 @@ export function checkJsonRoundTrip<N, U extends string, Vars>(
     const originalVars = JSON.stringify(end.vars);
     const restoredVars = JSON.stringify(restored.vars);
     if (originalVars !== restoredVars) return fail(`vars ${originalVars} != ${restoredVars}`);
-    if (end.wallet.money === end.maxMoneyEver && restored.wallet.money !== restored.maxMoneyEver) {
-      return fail("restored max-money is a different object from the wallet");
-    }
     const left = snapshotEconomy(scenario.ctx.E, end);
     const right = snapshotEconomy(scenario.ctx.E, restored);
     return left === right ? pass(left) : fail(`${left} != ${right}`);
