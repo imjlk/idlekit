@@ -71,6 +71,7 @@ export * from "./sim/analysis/metrics";
 export * from "./sim/analysis/registry";
 export * from "./sim/analysis/analyzers";
 export * from "./sim/analysis/inspect";
+export * from "./sim/analysis/checks";
 
 export * from "./report/timeline";
 export * from "./report/compare";

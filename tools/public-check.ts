@@ -37,6 +37,7 @@ const DOCS_WITH_KO = [
   "docs/analyzer-registry.md",
   "docs/scenario-inspect.md",
   "docs/performance-budget.md",
+  "docs/balance-checks.md",
   "examples/adapter-pattern/README.md",
   "examples/money-package/README.md",
   "examples/plugins/README.md",

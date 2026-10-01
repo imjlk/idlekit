@@ -1,5 +1,15 @@
 import { defineCommand, option } from "../runtime/command";
-import { runElapsedSec, runScenario, validateScenarioV1 } from "@idlekit/core";
+import {
+  evaluateBalanceChecks,
+  parseBalanceCheckRequest,
+  parseFailOn,
+  renderBalanceCheckMarkdown,
+  runElapsedSec,
+  runScenario,
+  toBalanceCheckError,
+  validateScenarioV1,
+  type BalanceCheckReportV1,
+} from "@idlekit/core";
 import { resolve } from "path";
 import { z } from "zod";
 import { pluginOptions, type PluginOptionFlags } from "./_shared/plugin";
@@ -20,7 +30,7 @@ import {
 } from "../lib/experience";
 import { prepareResolvedRun, workflowRunHash } from "../lib/runConfiguration";
 import { readScenarioFile } from "../io/readScenario";
-import { ensureDir, writeTextFile } from "../runtime/bun";
+import { ensureDir, readJsonFile, writeTextFile } from "../runtime/bun";
 
 const strategySchema = z.string().min(1).optional();
 const sessionPatternSchema = z
@@ -41,6 +51,8 @@ type EvaluateFlags = PluginOptionFlags &
     horizons: string;
     "out-dir"?: string;
     format: "json" | "md";
+    checks?: string;
+    "fail-on": string;
   }>;
 
 function renderEvaluateMarkdown(output: Record<string, any>, unitCode: string): string {
@@ -82,7 +94,38 @@ function renderEvaluateMarkdown(output: Record<string, any>, unitCode: string): 
     }
   }
 
+  if (output.balanceChecks) {
+    sections.push("", renderBalanceCheckMarkdown(output.balanceChecks));
+  }
+
   return sections.join("\n");
+}
+
+async function loadBalanceChecks(flags: Pick<EvaluateFlags, "checks" | "fail-on">): Promise<BalanceCheckReportV1 | null> {
+  if (!flags.checks) return null;
+  const failOn = parseFailOn(flags["fail-on"]);
+  if (!failOn) {
+    throw usageError("--fail-on must list error, warn, inconclusive, or unsupported");
+  }
+  const raw = await readJsonFile<unknown>(resolve(process.cwd(), flags.checks));
+  const parsed = parseBalanceCheckRequest(raw);
+  if (!parsed.ok) {
+    throw usageError(`Invalid balance checks: ${parsed.issues.join("; ")}`);
+  }
+  return evaluateBalanceChecks({ ...parsed.request, failOn });
+}
+
+async function emitBalanceChecks(flags: Pick<EvaluateFlags, "format">, report: BalanceCheckReportV1): Promise<void> {
+  const document = report.exitCode === 2 ? toBalanceCheckError(report) : report;
+  if (flags.format === "md") {
+    console.log(renderBalanceCheckMarkdown(document));
+    return;
+  }
+  await writeOutput({
+    format: "json",
+    data: document,
+    meta: buildOutputMeta({ command: "evaluate.checks", pluginDigest: {} }),
+  });
 }
 
 export default defineCommand({
@@ -120,11 +163,21 @@ export default defineCommand({
     format: option(z.enum(["json", "md"]).default("json"), {
       description: "Summary output format",
     }),
+    checks: option(z.string().optional(), {
+      description: "Balance check file. When omitted, evaluate keeps the existing workflow.",
+    }),
+    "fail-on": option(z.string().default("error"), {
+      description: "Balance verdicts that fail the process: error, warn, inconclusive, unsupported.",
+    }),
   },
   async handler({ flags, positional }) {
+    const balance = await loadBalanceChecks(flags);
     const scenarioPath = positional[0];
     if (!scenarioPath) {
-      throw usageError("Usage: idk evaluate <scenario> [--out-dir <path>]");
+      if (!balance) throw usageError("Usage: idk evaluate <scenario> [--checks <file>] [--out-dir <path>]");
+      await emitBalanceChecks(flags, balance);
+      if (balance.exitCode === 2) process.exit(2);
+      return;
     }
 
     const input = await readScenarioFile(scenarioPath);
@@ -361,6 +414,9 @@ export default defineCommand({
         horizons: ltv.horizons,
       },
       files: flags["out-dir"] ? files : undefined,
+      ...(balance
+        ? { balanceChecks: balance.exitCode === 2 ? toBalanceCheckError(balance) : balance }
+        : {}),
     };
 
     if (flags["out-dir"]) {
@@ -387,5 +443,6 @@ export default defineCommand({
       data: flags.format === "md" ? renderEvaluateMarkdown(output, scenario.unit.code) : output,
       meta: evaluateMeta,
     });
+    if (balance?.exitCode === 2) process.exit(2);
   },
 });

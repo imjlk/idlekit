@@ -64,7 +64,14 @@
     "REQ-DX04-GATE-FAILURE",
     "REQ-DX04-BASELINE-HASH",
     "REQ-DX04-SAME-CONFIG",
-    "REQ-DX04-PHASE-LABELS"
+    "REQ-DX04-PHASE-LABELS",
+    "REQ-PR17-CHECK-SPEC",
+    "REQ-PR17-VERDICT-BOUNDS",
+    "REQ-PR17-IDENTITY-MISMATCH",
+    "REQ-PR17-KPI-ADAPTER",
+    "REQ-PR17-ASSERTION-GRAMMAR",
+    "REQ-PR17-NUMERIC-ADVISORY",
+    "REQ-PR17-FAILURE-REPORT"
   ],
   "protectedFiles": [
     "docs/requirements/active/typia-transform.md",
@@ -147,6 +154,9 @@
     "packages/core/src/sim/analysis/inspect.test.ts",
     "docs/requirements/active/performance-budget.md",
     "tools/performanceBudget.ts",
-    "tools/performanceBudget.test.ts"
+    "tools/performanceBudget.test.ts",
+    "docs/requirements/active/balance-checks.md",
+    "packages/core/src/sim/analysis/checks.ts",
+    "packages/core/src/sim/analysis/checks.test.ts"
   ]
 }

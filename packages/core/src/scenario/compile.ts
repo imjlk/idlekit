@@ -305,6 +305,7 @@ function matchesUntilTerm<N, U extends string>(args: {
   return compareByOp(cmp, term.op);
 }
 
+// Scenario outputs.assertions are not compiled here. untilExpr keeps its own safe term parser.
 function compileUntilExpr<N, U extends string>(args: {
   expr: string | undefined;
   E: Engine<N>;

@@ -1291,6 +1291,118 @@
           "args": ["test", "--timeout", "120000", "tools/performanceBudget.test.ts"]
         }
       ]
+    },
+    {
+      "id": "REQ-PR17-CHECK-SPEC",
+      "pr": "PR-17",
+      "anchor": "req-pr17-check-spec",
+      "doc": "docs/requirements/active/balance-checks.md",
+      "production": ["packages/core/src/sim/analysis/checks.ts"],
+      "tests": [
+        {
+          "file": "packages/core/src/sim/analysis/checks.test.ts",
+          "exportName": "checksRegisteredMetrics",
+          "registeredAs": "balance checks > checks a registered metric spec",
+          "cwd": "packages/core",
+          "args": ["test", "--timeout", "120000", "src/sim/analysis/checks.test.ts"]
+        }
+      ]
+    },
+    {
+      "id": "REQ-PR17-VERDICT-BOUNDS",
+      "pr": "PR-17",
+      "anchor": "req-pr17-verdict-bounds",
+      "doc": "docs/requirements/active/balance-checks.md",
+      "production": ["packages/core/src/sim/analysis/checks.ts"],
+      "tests": [
+        {
+          "file": "packages/core/src/sim/analysis/checks.test.ts",
+          "exportName": "judgesBoundedMetrics",
+          "registeredAs": "balance checks > judges bounded metrics",
+          "cwd": "packages/core",
+          "args": ["test", "--timeout", "120000", "src/sim/analysis/checks.test.ts"]
+        }
+      ]
+    },
+    {
+      "id": "REQ-PR17-IDENTITY-MISMATCH",
+      "pr": "PR-17",
+      "anchor": "req-pr17-identity-mismatch",
+      "doc": "docs/requirements/active/balance-checks.md",
+      "production": ["packages/core/src/sim/analysis/checks.ts"],
+      "tests": [
+        {
+          "file": "packages/core/src/sim/analysis/checks.test.ts",
+          "exportName": "reportsIdentityMismatch",
+          "registeredAs": "balance checks > reports an identity mismatch",
+          "cwd": "packages/core",
+          "args": ["test", "--timeout", "120000", "src/sim/analysis/checks.test.ts"]
+        }
+      ]
+    },
+    {
+      "id": "REQ-PR17-KPI-ADAPTER",
+      "pr": "PR-17",
+      "anchor": "req-pr17-kpi-adapter",
+      "doc": "docs/requirements/active/balance-checks.md",
+      "production": ["packages/core/src/sim/analysis/checks.ts"],
+      "tests": [
+        {
+          "file": "packages/core/src/sim/analysis/checks.test.ts",
+          "exportName": "adaptsKpiRegression",
+          "registeredAs": "balance checks > adapts kpi regression",
+          "cwd": "packages/core",
+          "args": ["test", "--timeout", "120000", "src/sim/analysis/checks.test.ts"]
+        }
+      ]
+    },
+    {
+      "id": "REQ-PR17-ASSERTION-GRAMMAR",
+      "pr": "PR-17",
+      "anchor": "req-pr17-assertion-grammar",
+      "doc": "docs/requirements/active/balance-checks.md",
+      "production": ["packages/core/src/sim/analysis/checks.ts"],
+      "tests": [
+        {
+          "file": "packages/core/src/sim/analysis/checks.test.ts",
+          "exportName": "classifiesAssertionGrammar",
+          "registeredAs": "balance checks > classifies assertion grammar",
+          "cwd": "packages/core",
+          "args": ["test", "--timeout", "120000", "src/sim/analysis/checks.test.ts"]
+        }
+      ]
+    },
+    {
+      "id": "REQ-PR17-NUMERIC-ADVISORY",
+      "pr": "PR-17",
+      "anchor": "req-pr17-numeric-advisory",
+      "doc": "docs/requirements/active/balance-checks.md",
+      "production": ["packages/core/src/sim/analysis/checks.ts"],
+      "tests": [
+        {
+          "file": "packages/core/src/sim/analysis/checks.test.ts",
+          "exportName": "keepsAdvisoryOffTheVerdict",
+          "registeredAs": "balance checks > keeps advisory off the verdict",
+          "cwd": "packages/core",
+          "args": ["test", "--timeout", "120000", "src/sim/analysis/checks.test.ts"]
+        }
+      ]
+    },
+    {
+      "id": "REQ-PR17-FAILURE-REPORT",
+      "pr": "PR-17",
+      "anchor": "req-pr17-failure-report",
+      "doc": "docs/requirements/active/balance-checks.md",
+      "production": ["packages/core/src/sim/analysis/checks.ts"],
+      "tests": [
+        {
+          "file": "packages/core/src/sim/analysis/checks.test.ts",
+          "exportName": "validatesFailureReport",
+          "registeredAs": "balance checks > validates the failure report",
+          "cwd": "packages/core",
+          "args": ["test", "--timeout", "120000", "src/sim/analysis/checks.test.ts"]
+        }
+      ]
     }
   ]
 }
