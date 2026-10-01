@@ -188,20 +188,33 @@ export function replayShrinkReport(report: ShrinkReport): {
 } {
   let current = report.original;
   let pathOk = typeof report.original === "number" && !shrinkGapHolds(report.original);
-  for (const step of report.shrinkingPath) {
-    if (typeof step.to !== "number" || typeof step.from !== "number") {
-      pathOk = false;
-      continue;
+  let cursor = 0;
+  // Each round must list the shrinker's candidates in order, including rejections, and stop at the first keep.
+  while (pathOk && typeof current === "number") {
+    const expected = shrinkTowardZero(current);
+    if (expected.length === 0) break;
+    let keptOne = false;
+    for (const candidate of expected) {
+      const step = report.shrinkingPath[cursor];
+      if (!step || step.from !== current || step.to !== candidate) {
+        pathOk = false;
+        break;
+      }
+      const shouldKeep = !shrinkGapHolds(candidate);
+      if (step.kept !== shouldKeep) {
+        pathOk = false;
+        break;
+      }
+      cursor += 1;
+      if (shouldKeep) {
+        current = candidate;
+        keptOne = true;
+        break;
+      }
     }
-    if (!shrinkTowardZero(current).includes(step.to)) pathOk = false;
-    const holds = shrinkGapHolds(step.to);
-    if (step.kept) {
-      if (holds || step.from !== current) pathOk = false;
-      current = step.to;
-    } else if (!holds || step.from !== current) {
-      pathOk = false;
-    }
+    if (!pathOk || !keptOne) break;
   }
+  if (cursor !== report.shrinkingPath.length) pathOk = false;
   return {
     failed: !shrinkGapHolds(report.value),
     pathOk: pathOk && current === report.value,
@@ -374,6 +387,14 @@ function skip(summary: string): RelationCheck {
 function snapshotData(item: unknown, seen: WeakMap<object, number>, nextId: { value: number }): unknown {
   if (typeof item === "bigint") return `bigint:${item.toString()}`;
   if (typeof item === "symbol") return "symbol";
+  if (typeof item === "function") return "function";
+  if (item === undefined) return "undefined";
+  if (typeof item === "number") {
+    if (Number.isNaN(item)) return "nan";
+    if (item === Number.POSITIVE_INFINITY) return "infinity";
+    if (item === Number.NEGATIVE_INFINITY) return "-infinity";
+    return item;
+  }
   if (item === null || typeof item !== "object") return item;
   const known = seen.get(item);
   if (known !== undefined) return `cycle:${known}`;
@@ -413,16 +434,50 @@ function snapshotData(item: unknown, seen: WeakMap<object, number>, nextId: { va
   return record;
 }
 
-function snapshotText(value: unknown): string {
-  try {
-    return JSON.stringify(value);
-  } catch {
-    const plain = snapshotData(value, new WeakMap(), { value: 0 });
-    try {
-      return JSON.stringify(plain) ?? "unsupported";
-    } catch {
-      return "unsupported";
+/** JSON drops NaN, Infinity, undefined, functions, and symbols. Those still have to stay distinct. */
+function jsonSilentlyDrops(item: unknown, seen = new Set<object>()): boolean {
+  if (item === undefined) return true;
+  if (item === null) return false;
+  const type = typeof item;
+  if (type === "number") return !Number.isFinite(item);
+  if (type === "function" || type === "symbol" || type === "bigint") return true;
+  if (type !== "object") return false;
+  if (seen.has(item)) return false;
+  seen.add(item);
+  if (Array.isArray(item)) {
+    for (const key of Object.getOwnPropertyNames(item)) {
+      if (key === "length") continue;
+      if (!/^(?:0|[1-9][0-9]*)$/.test(key)) continue;
+      if (Number(key) >= item.length) continue;
+      const descriptor = Object.getOwnPropertyDescriptor(item, key);
+      if (!descriptor || descriptor.get !== undefined || !("value" in descriptor)) continue;
+      if (jsonSilentlyDrops(descriptor.value, seen)) return true;
     }
+    return false;
+  }
+  for (const key of Object.getOwnPropertyNames(item)) {
+    const descriptor = Object.getOwnPropertyDescriptor(item, key);
+    if (!descriptor || descriptor.enumerable !== true) continue;
+    if (descriptor.get !== undefined || !("value" in descriptor)) continue;
+    if (jsonSilentlyDrops(descriptor.value, seen)) return true;
+  }
+  return false;
+}
+
+function snapshotText(value: unknown): string {
+  if (!jsonSilentlyDrops(value)) {
+    try {
+      const text = JSON.stringify(value);
+      if (text !== undefined) return text;
+    } catch {
+      // A throwing toJSON, getter, or cycle uses the plain copy below.
+    }
+  }
+  const plain = snapshotData(value, new WeakMap(), { value: 0 });
+  try {
+    return JSON.stringify(plain) ?? "unsupported";
+  } catch {
+    return "unsupported";
   }
 }
 
@@ -650,6 +705,7 @@ function jsonResumeCheckpoint<N, U extends string, Vars>(
   state: SimState<N, U, Vars>,
   engineName: string,
 ): TailStart<N, U, Vars> | RelationCheck {
+  if (varsAliasSerializedState(state)) return skip("vars alias another checkpoint field");
   const strategy = scenario.strategy;
   const persistedStrategy = typeof strategy?.snapshotState === "function";
   const payload = serializeSimState(scenario.ctx.E, state, {
@@ -928,6 +984,7 @@ export function checkJsonRoundTrip<N, U extends string, Vars>(
 export function checkRetention<N, U extends string, Vars>(
   scenario: CompiledScenario<N, U, Vars>,
 ): RelationCheck {
+  if (scenario.ctx.emit !== undefined) return skip("scenario already has an emitter");
   const bracket = strategyBracket(scenario);
   if (isRelationCheck(bracket)) return bracket;
   const initial = bracket.snap();
