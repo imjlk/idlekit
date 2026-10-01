@@ -226,6 +226,58 @@ describe("createGreedyStrategy", () => {
     expect(out[0]?.bulkSize).toBe(2);
   });
 
+  it("does not let an invalid-only action outrank a settleable action", () => {
+    const ctx: SimContext<number, UnitCode, Vars> = {
+      E: createNumberEngine(),
+      unit: { code: "COIN" },
+      tickPolicy: { mode: "drop" },
+    };
+    const invalid: Action<number, UnitCode, Vars> = {
+      id: "invalid",
+      kind: "buy",
+      canApply: () => true,
+      cost: () => null,
+      bulk: () => [
+        {
+          size: 2.5,
+          cost: null,
+          deltaIncomePerSec: { unit: { code: "COIN" }, amount: 9 },
+        },
+      ],
+      apply: (_ctx, state) => state,
+    };
+    const settleable: Action<number, UnitCode, Vars> = {
+      id: "settleable",
+      kind: "buy",
+      canApply: () => true,
+      cost: () => null,
+      bulk: () => [
+        {
+          size: 2,
+          cost: null,
+          deltaIncomePerSec: { unit: { code: "COIN" }, amount: 1 },
+        },
+      ],
+      apply: (_ctx, state) => state,
+    };
+    const model: Model<number, UnitCode, Vars> = {
+      id: "m",
+      version: 1,
+      income: () => ({ unit: { code: "COIN" }, amount: 0 }),
+      actions: () => [invalid, settleable],
+    };
+    const strategy = createGreedyStrategy<number, UnitCode, Vars>({
+      schemaVersion: 1,
+      objective: "maximizeIncome",
+    });
+    const out = strategy.decide(ctx, model, makeState(0));
+    expect(out.length).toBe(1);
+    expect(out[0]?.action.id).toBe("settleable");
+    const onlyInvalid = strategy.decide(ctx, { ...model, actions: () => [invalid] }, makeState(0));
+    expect(onlyInvalid.length).toBe(1);
+    expect(onlyInvalid[0]?.bulkSize).toBe(2.5);
+  });
+
   it("ranks a settleable quote ahead of a cost that has no unit", () => {
     const ctx: SimContext<number, UnitCode, Vars> = {
       E: createNumberEngine(),
@@ -669,6 +721,57 @@ describe("createGreedyStrategy", () => {
     const sized = strategy.decide(ctx, { ...model, actions: () => [mixed] }, makeState(0));
     expect(sized.length).toBe(1);
     expect(sized[0]?.bulkSize).toBe(2);
+  });
+
+  it("scores maxAffordable size one with Action.cost", () => {
+    const ctx: SimContext<number, UnitCode, Vars> = {
+      E: createNumberEngine(),
+      unit: { code: "COIN" },
+      tickPolicy: { mode: "drop" },
+    };
+    const advertised: Action<number, UnitCode, Vars> = {
+      id: "advertised",
+      kind: "buy",
+      canApply: () => true,
+      cost: () => ({ unit: { code: "COIN" }, amount: 100 }),
+      bulk: () => [
+        {
+          size: 1,
+          cost: { unit: { code: "COIN" }, amount: 1 },
+          deltaIncomePerSec: { unit: { code: "COIN" }, amount: 1 },
+        },
+      ],
+      apply: (_ctx, state) => state,
+    };
+    const priced: Action<number, UnitCode, Vars> = {
+      id: "priced",
+      kind: "buy",
+      canApply: () => true,
+      cost: () => ({ unit: { code: "COIN" }, amount: 10 }),
+      bulk: () => [
+        {
+          size: 2,
+          cost: { unit: { code: "COIN" }, amount: 10 },
+          deltaIncomePerSec: { unit: { code: "COIN" }, amount: 1 },
+        },
+      ],
+      apply: (_ctx, state) => state,
+    };
+    const model: Model<number, UnitCode, Vars> = {
+      id: "m",
+      version: 1,
+      income: () => ({ unit: { code: "COIN" }, amount: 0 }),
+      actions: () => [advertised, priced],
+    };
+    const strategy = createGreedyStrategy<number, UnitCode, Vars>({
+      schemaVersion: 1,
+      objective: "minPayback",
+      payback: { useEquivalentCost: false },
+      bulk: { mode: "maxAffordable" },
+    });
+    const out = strategy.decide(ctx, model, makeState(1000));
+    expect(out.length).toBe(1);
+    expect(out[0]?.action.id).toBe("priced");
   });
 
   it("ranks a size of one with Action.cost", () => {

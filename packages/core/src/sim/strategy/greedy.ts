@@ -56,19 +56,33 @@ function isAffordable<N, U extends string, Vars>(
   return canSettleCost(ctx.E, state.wallet.money.amount, cost.amount);
 }
 
+type QuoteChoice<N, U extends string> = Readonly<{
+  selected: readonly BulkQuote<N, U>[];
+  rejected: readonly BulkQuote<N, U>[];
+}>;
+
+function withActionCost<N, U extends string>(
+  quote: BulkQuote<N, U>,
+  quotedCost: BulkQuote<N, U>["cost"],
+): BulkQuote<N, U> {
+  if (quote.size !== singleBuySize || quote.cost === quotedCost) return quote;
+  return { ...quote, cost: quotedCost };
+}
+
 function chooseQuotes<N, U extends string, Vars>(
   action: Action<N, U, Vars>,
   ctx: SimContext<N, U, Vars>,
   state: SimState<N, U, Vars>,
   params: GreedyStrategyParamsV1,
-): readonly BulkQuote<N, U>[] {
+): QuoteChoice<N, U> {
   const mode = params.bulk?.mode ?? "bestQuote";
   const raw = action.bulk?.(ctx, state);
   const quotes = raw && raw.length > 0 ? stableBulkQuotes(raw) : [toFallbackQuote(action, ctx, state)];
+  const none: QuoteChoice<N, U> = { selected: [], rejected: [] };
 
   if (mode === "size1") {
     const q1 = quotes.find((q) => q.size === 1);
-    return [q1 ?? quotes[0]!];
+    return { selected: [q1 ?? quotes[0]!], rejected: [] };
   }
 
   if (mode === "maxAffordable") {
@@ -79,10 +93,11 @@ function chooseQuotes<N, U extends string, Vars>(
       if (quote.size > cap) continue;
       const quotedCost = quote.size === singleBuySize ? action.cost(ctx, state) : quote.cost;
       if (!isAffordable(ctx, state, quotedCost)) continue;
-      eligible.push(quote);
+      eligible.push(withActionCost(quote, quotedCost));
     }
-    if (eligible.length === 0) return [];
-    return [eligible[eligible.length - 1]!];
+    const largest = eligible[eligible.length - 1];
+    if (!largest) return none;
+    return { selected: [largest], rejected: [] };
   }
 
   const listed = Boolean(raw && raw.length > 0);
@@ -91,8 +106,8 @@ function chooseQuotes<N, U extends string, Vars>(
     singleCost = action.cost(ctx, state);
   }
   const rankable = rankableQuotes(ctx, state, quotes, singleCost);
-  // Ranking drops an invalid quote only when a settleable quote can replace it.
-  return rankable.length > 0 ? rankable : quotes;
+  if (rankable.length > 0) return { selected: rankable, rejected: [] };
+  return { selected: [], rejected: quotes };
 }
 
 function scoreQuote<N, U extends string, Vars>(
@@ -148,16 +163,20 @@ function buildCandidates<N, U extends string, Vars>(
   model: Model<N, U, Vars>,
   state: SimState<N, U, Vars>,
 ): Candidate<N, U, Vars>[] {
-  const candidates: Candidate<N, U, Vars>[] = [];
+  const settleable: Candidate<N, U, Vars>[] = [];
+  const rejected: Candidate<N, U, Vars>[] = [];
   const raw = model.actions(ctx, state);
   const actions = stableActions(raw);
 
   for (const action of actions) {
     if (!action.canApply(ctx, state)) continue;
-    for (const quote of chooseQuotes(action, ctx, state, params)) {
+    const choice = chooseQuotes(action, ctx, state, params);
+    const quotes = choice.selected.length > 0 ? choice.selected : choice.rejected;
+    const bucket = choice.selected.length > 0 ? settleable : rejected;
+    for (const quote of quotes) {
       const score = scoreQuote(params.objective, params, ctx, quote);
       if (!Number.isFinite(score)) continue;
-      candidates.push({
+      bucket.push({
         action,
         bulkSize: quotedDecisionSize(quote.size),
         occurrence: actionOccurrence(raw, action),
@@ -167,6 +186,9 @@ function buildCandidates<N, U extends string, Vars>(
       });
     }
   }
+
+  // Invalid quotes stay available only when no action has a settleable one.
+  const candidates = settleable.length > 0 ? settleable : rejected;
 
   candidates.sort((a, b) =>
     compareCandidateKey(
