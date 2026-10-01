@@ -9,6 +9,7 @@ import type { ScenarioV1 } from "./types";
  * PR-10 appends the reset-cycle artifact. PR-12 appends the growth fit.
  * PR-11 appends the reset-policy artifact.
  * PR-13 appends the distribution artifact.
+ * PR-14 appends the experiment artifact.
  * The registry does not migrate every existing DTO.
  */
 
@@ -79,6 +80,12 @@ const contractRegistry = [
     kind: "distribution" as const,
     typeName: "DistributionArtifactV1",
     source: "packages/core/src/sim/analysis/distribution.ts",
+  },
+  {
+    id: "idlekit.experiment.v1" as const,
+    kind: "experiment" as const,
+    typeName: "ExperimentArtifactV1",
+    source: "packages/core/src/sim/analysis/experiment.ts",
   },
 ] as const;
 

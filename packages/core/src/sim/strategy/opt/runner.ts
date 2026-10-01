@@ -1,7 +1,7 @@
 import { runScenario } from "../../simulator";
 import { assertHorizonReached, runElapsedSec, type CompiledScenario } from "../../types";
-import { deepClonePreservingPrototype } from "../../../utils/deepClone";
 import type { StrategyRegistry } from "../registry";
+import { cloneCandidateInitial } from "./freshRun";
 import type { ObjectiveRegistry } from "./registry";
 import type { TuneSeedResult } from "./tuner";
 import type { ModelRegistry } from "../../../scenario/registry";
@@ -74,7 +74,7 @@ export function runCandidateAndScore(args: {
           ? { enabled: true, kind: "log-domain", disableMoneyEvents: true }
           : args.baseScenario.run.fast,
       },
-      initial: deepClonePreservingPrototype(args.baseScenario.initial),
+      initial: cloneCandidateInitial(args.baseScenario.initial),
     });
     const sc = openScenario();
 

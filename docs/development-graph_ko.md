@@ -218,3 +218,10 @@ RNG는 없다. reset policy 재현 fixture는 `fixtures/conformance/reset-policy
 `simulateMonteCarlo`의 reverse execution trace(`maxDepth` 3, `maxNodes` 32)는 `packages/cli/src/lib/designObjectives.ts`의 `evaluateVisibleProgress`, `evaluateMilestoneTime`, `evaluateExperienceBalanced`, `summarizeExperienceMonteCarlo`, `experience.ts:459`의 `summarizeComparableExperienceMetric`, `packages/core/src/sim/runFactory.test.ts:161`의 `isolatesIndependentRuns`, `distribution.test.ts:245`의 `keepsLogicalDrawsIndependentOfOrder` 안 `run` helper를 가리킨다.
 
 분포 재현 fixture는 `fixtures/conformance/independent-drop.json`, seed `28947`(`0x7113`), 10000 draws, 확률 `0.01`, 절대 허용 오차 `0.005`다. 상태가 있는 logical draw 검사도 같은 seed를 쓴다. 이 변경의 실행은 로컬이다. worker 수는 seed의 입력이 아니다. 이 변경의 gate는 pull request에 적는다.
+## PR-14 호출자
+
+이 변경의 tree에서 macOS arm64, Bun `1.4.2`, `@ttsc/graph` `0.30.4`, protocol `2025-11-25`로 조회했다. 생성 식별자는 없다. 서버 cwd는 이 작업 트리이고 프로그램은 `tsconfig.graph.json`이다. 소스 확인상 `runExperiment`는 `packages/core/src/sim/analysis/experiment.ts:530`, `normalizeSpec`은 `experiment.ts:317`, `requireSpec`은 `experiment.ts:334`이다.
+
+`runExperiment`의 reverse execution trace(`maxDepth` 3, `maxNodes` 32)는 `experiment.test.ts:132`의 `runWith`, `experiment.test.ts:163`의 `checksLocalElasticityDirection`, `experiment.test.ts:292`의 `rejectsUnsafeParametersBeforeRun`, `experiment.test.ts:352`의 `keepsCandidateOrderAndScenario`, `experiment.test.ts:401`의 `skipsCensoredHorizonForSensitivity`, `experiment.test.ts:442`의 `matchesHandPareto`를 가리킨다. CLI command는 가리키지 않는다. 소스 확인상 호출은 `packages/cli/src/commands/experiment.ts:45`다. 그 줄은 리뷰다. graph hop이 아니다.
+
+상수 수입 예제에는 RNG가 없다. parameter experiment 재현 fixture는 `fixtures/conformance/parameter-experiment.json`, seed `28948`이다. 한 번에 하나씩 보는 국소 민감도는 전역 민감도가 아니며 Sobol index도 아니다. 이 변경의 gate는 pull request에 적는다.

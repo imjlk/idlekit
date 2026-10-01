@@ -33,7 +33,14 @@
     "REQ-PR13-QUANTILE-CONVENTION",
     "REQ-PR13-LOGICAL-DRAWS",
     "REQ-PR13-EMPIRICAL-DROP",
-    "REQ-PR13-MEAN-IDENTITY"
+    "REQ-PR13-MEAN-IDENTITY",
+    "REQ-PR14-LOCAL-ELASTICITY",
+    "REQ-PR14-TASK-DESCRIPTOR",
+    "REQ-PR14-TUNE-SIGNATURE",
+    "REQ-PR14-REGISTERED-SETTER",
+    "REQ-PR14-CANDIDATE-ORDER",
+    "REQ-PR14-CENSORED-HORIZON",
+    "REQ-PR14-PARETO-UNKNOWN"
   ],
   "protectedFiles": [
     "docs/requirements/active/typia-transform.md",
@@ -102,6 +109,10 @@
     "packages/core/src/sim/analysis/distribution.ts",
     "packages/core/src/sim/analysis/distribution.test.ts",
     "packages/core/src/sim/monteCarlo.ts",
-    "fixtures/conformance/independent-drop.json"
+    "fixtures/conformance/independent-drop.json",
+    "docs/requirements/active/parameter-experiments.md",
+    "packages/core/src/sim/analysis/experiment.ts",
+    "packages/core/src/sim/analysis/experiment.test.ts",
+    "fixtures/conformance/parameter-experiment.json"
   ]
 }

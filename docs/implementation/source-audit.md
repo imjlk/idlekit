@@ -19,14 +19,14 @@ Export or command presence is not a finished analysis.
 | Growth | `packages/core/src/sim/analysis/growth.ts`, `growthFit.ts`, `idk growth` | Legacy log-slope buckets remain. `fitGrowth` reports shape and speed separately. |
 | Session | `packages/core/src/sim/session.ts`, `idk experience` | Preset blocks, offline gaps, seeded session runs. |
 | Monte Carlo | `packages/core/src/sim/monteCarlo.ts` | Seeded draws. Each draw clones `initial` and shares `model` and `strategy`. |
-| Tuner | `packages/core/src/sim/strategy/opt/tuneSpec.ts`, `idk tune` | Strategy `baseParams` and `space`. |
+| Tuner | `packages/core/src/sim/strategy/opt/tuneSpec.ts`, `idk tune` | Strategy `baseParams` and `space`. Model and policy sweeps use `idk experiment`, not this tuner. |
 | Evaluate | `packages/cli/src/commands/evaluate.ts` | In-process validate, simulate, experience, and ltv. |
 | Review | `packages/cli/src/commands/groups/review.ts` and the `review*.ts` commands | Existing doctor, evaluate, and compare flows. |
 | KPI / replay | `idk kpi`, `packages/cli/src/commands/kpiRegress.ts`, `idk replay` | Existing regression and replay gates. |
 | Doctor | `packages/cli/src/commands/doctor.ts` | Environment and setup diagnosis. Economic judgment is a later judge, not this command. |
 | Large numbers | `createBreakInfinityEngine` | Real adapter. `createBreakEternityEngine` throws from every method. |
 
-CLI registration in `packages/cli/src/main.ts` includes `validate`, `simulate`, `eta`, `prestige-cycle`, `growth`, `experience`, `evaluate`, `tune`, `compare`, `ltv`, `report`, `calibrate`, `doctor`, `setup`, and the `models`, `strategies`, `objectives`, `init`, `replay`, `kpi`, and `review` groups.
+CLI registration in `packages/cli/src/main.ts` includes `validate`, `simulate`, `eta`, `experiment`, `prestige-cycle`, `growth`, `experience`, `evaluate`, `tune`, `compare`, `ltv`, `report`, `calibrate`, `doctor`, `setup`, and the `models`, `strategies`, `objectives`, `init`, `replay`, `kpi`, and `review` groups.
 
 Also present and meant to be reused: `stepOnce`, `Engine` `divN` / `cmp` / `absLog10`, strategy snapshot/restore, `deepClonePreservingPrototype`, `eventBuffer`, `OUTPUT_CONTRACT_VERSION`, and the Sampo, compat, replay, and KPI gates.
 
@@ -48,7 +48,7 @@ These are control-flow facts. Items 2 and 3 name the fixtures that now execute t
 10. **`evaluate` opens each stage from one resolved plan.** `PR-07` compiles once in `prepareResolvedRun`. Simulate, experience, and ltv each call `createRunFactory` `fresh`. `--strategy` is a registered id and reaches all three stages. `--step` and `--fast` stay on simulate and ltv unless `--consistent-overrides` is set. `scenario.engine` is metadata. The default engine remains `number`. `breakInfinity` is explicit. `breakEternity` throws. Amount `until` paths use `parseMoney` and do not take the numeric `Number(rawRight)` branch. `scenarioHash` stays the original scenario object. `effectiveRunHash` omits `generatedAt` and absolute paths. `TC-05` registers `ScenarioV1` only. `idlekit.resolved-run-configuration` stays a CLI plan id and is not a generated schema. Fixture: `packages/cli/src/lib/runConfiguration.test.ts`. The repro label is `0x7107`. The runs use seed `1`.
 11. **A missing first visible change stays censored.** `PR-13` adds `analyzeDistribution`. Ninety observed draws and ten censored draws report completion `0.9`, and the population p95 is not the completed-only quantile. An empty observed set is unavailable, not mean `0`. `summarizeExperienceMonteCarlo` sends a missing `firstVisibleChangeSec` through `firstVisibleDistributionSample` and does not substitute `totalActiveSec` or `0`. Quantiles use `inclusive-floor-index` version 1. Logical seeds ignore worker count. Fixture: `packages/core/src/sim/analysis/distribution.test.ts` and `fixtures/conformance/independent-drop.json`. The drop seed is `28947`.
 12. **KPI regression fills some missing guardrail numbers with zero.** Horizons are fixed to `at7d`, `at30d`, and `at90d`. `stallRatio`, `droppedRate`, `visibleChangesPerMinute`, and `maxNoRewardGapSec` use `Number(value ?? 0)`. Follow-up: `PR-17`.
-13. **The tuner spec is strategy parameters.** `TuneSpec` carries `strategy.baseParams` and `strategy.space`. Follow-up: `PR-14`, as a separate experiment spec rather than a replacement tuner.
+13. **The tuner spec is strategy parameters.** `TuneSpec` carries `strategy.baseParams` and `strategy.space`. `PR-14` leaves that tuner in place and adds `ExperimentSpecV1` with `idk experiment`. Fixture: `packages/core/src/sim/analysis/experiment.test.ts` and `fixtures/conformance/parameter-experiment.json`. The seed is `28948`.
 
 `packages/core/src/scenario/compile.ts` still uses `Number(rawRight)` for `t`, `prestige.count`, and unknown numeric paths. Amount paths no longer do. A numeric left value does not move `money` and the other amount paths onto that `Number` branch.
 

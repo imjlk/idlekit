@@ -1,0 +1,59 @@
+# Parameter experiments
+
+## Local elasticity stays one parameter at a time {#req-pr14-local-elasticity}
+
+Requirement `REQ-PR14-LOCAL-ELASTICITY`. `PR-14` owns it.
+
+`experimentLocalOat` in `packages/core/src/sim/analysis/experiment.ts` is `one-at-a-time-local-not-sobol`. `runExperiment` builds a fixed sweep and local probes from registered dimensions. It does not compute a Sobol index or a global sensitivity index. `globalSensitivity` and `sobol` stay false. The estimator version is `one-at-a-time-local-v1` and the method is `fixed-sweep-and-one-at-a-time`.
+
+Constant income of rate `p` with step `1` reaches money `T` at time `T/p` when `p` divides `T`. The canonical fixture is `fixtures/conformance/parameter-experiment.json`, seed `28948`. Target `10` and horizon `40` give baseline rate `1` a reach time `"10"`. Probe rate `2` reaches in `"5"` and the elasticity is `"-0.5"` with direction `lower`. Probe rate `0.5` reaches in `"20"` and the elasticity is `"-2"` with direction `higher`. Policy `maxPicks` probe `2` keeps reach time `"10"`, elasticity `"0"`, and direction `flat`. A non-positive baseline parameter reports absolute change and direction and leaves elasticity unavailable. Relative elasticity is only for finite `p` and `y` greater than zero.
+
+The executed test is `checksLocalElasticityDirection` in `packages/core/src/sim/analysis/experiment.test.ts`.
+
+## Tasks keep parameters, seed, and version {#req-pr14-task-descriptor}
+
+Requirement `REQ-PR14-TASK-DESCRIPTOR`. `PR-14` owns it.
+
+`experimentTaskDescriptor` is `task-id-params-seed-version`. A task id is the candidate id, `#`, and the logical seed. The same seed, session, and horizon are used for every candidate. The descriptor stores `engineId`, `engineVersion`, `modelId`, `modelVersion`, `strategyId`, and JSON text for model and strategy params. It does not store a function or a compiled scenario. The income probe task `oat:incomeRate:2#28948` has model params `{"incomeRate":2}` and strategy params `{"maxPicks":1}`. The policy probe task keeps `{"incomeRate":1}` and sets `{"maxPicks":2}`. `effectiveRunHash` is the caller-supplied run hash. Original and effective spec hashes are sha256 of the canonical spec. The structural schema is `typia.json.schema<ExperimentArtifactV1, "3.1">()` registered as `idlekit.experiment.v1`.
+
+The executed test is `checksLocalElasticityDirection` in `packages/core/src/sim/analysis/experiment.test.ts`.
+
+## Strategy tune stays a separate signature {#req-pr14-tune-signature}
+
+Requirement `REQ-PR14-TUNE-SIGNATURE`. `PR-14` owns it.
+
+`experimentSeparateSpec` is `experiment-spec-not-tunespec`. `TuneSpecV1` still describes only `strategy.space`. `validateTuneSpecV1` accepts a strategy integer path. `runCandidateAndScore` still scores seeds `7` and `11` as `9`. The experiment spec is not passed through that tuner. `idk tune` is unchanged. `idk experiment <spec>` is a separate command.
+
+The executed test is `keepsStrategyTuneSignature` in `packages/core/src/sim/analysis/experiment.test.ts`.
+
+## Parameters use a registered setter {#req-pr14-registered-setter}
+
+Requirement `REQ-PR14-REGISTERED-SETTER`. `PR-14` owns it.
+
+`experimentRegisteredSetter` is `registered-key-not-jsonpath`. A path is dotted identifiers. `__proto__`, `prototype`, `constructor`, `eval`, `$`, brackets, and parentheses are rejected. Session paths are only `pattern` or `days`. Values must sit in the ParamSpace kind `bool`, `int`, `number`, or `choice`. An integer outside min and max is rejected. A rate of `-1` can sit inside a wide numeric space and still fail the model `paramsSchema` because income must be positive. Those rejections happen before `ModelFactory.create`. The create count stays `0`.
+
+The executed test is `rejectsUnsafeParametersBeforeRun` in `packages/core/src/sim/analysis/experiment.test.ts`.
+
+## Candidate order does not change the scenario {#req-pr14-candidate-order}
+
+Requirement `REQ-PR14-CANDIDATE-ORDER`. `PR-14` owns it.
+
+`experimentCandidateOrder` is `sorted-candidates-unmutated-scenario`. Reversing explicit candidate ids changes `originalSpecHash` and leaves `effectiveSpecHash` and the rest of the artifact the same. Candidate ids come out sorted. Each fresh run creates a model, so two candidates and one seed across both orders call create `4` times. The input scenario JSON is unchanged, including a decoy `incomeRate` of `0` that is not the model parameter.
+
+The executed test is `keepsCandidateOrderAndScenario` in `packages/core/src/sim/analysis/experiment.test.ts`.
+
+## A censored reach time is not the horizon {#req-pr14-censored-horizon}
+
+Requirement `REQ-PR14-CENSORED-HORIZON`. `PR-14` owns it.
+
+`experimentCensoredHorizon` is `censored-time-not-horizon`. Horizon `9`, rate `1`, and target `10` finish with money below the target. The baseline task status is `censored` and the value is null. It is not `"9"`. The rate `2` probe still reaches in `"5"`. Elasticity against the censored baseline is `unavailable`, with null elasticity and null absolute change. The missed goal is not turned into a finite time.
+
+The executed test is `skipsCensoredHorizonForSensitivity` in `packages/core/src/sim/analysis/experiment.test.ts`.
+
+## Unknown objectives are not Pareto wins {#req-pr14-pareto-unknown}
+
+Requirement `REQ-PR14-PARETO-UNKNOWN`. `PR-14` owns it.
+
+`experimentParetoUnknown` is `unknown-is-not-superior`. Two objectives are higher end money and higher `vars.benefit`. The hand points are A `(5, 3)`, B `(3, 5)`, C `(6, 1)`, D `(2, 2)`, and E money `4` with benefit unreported. A, B, and C trade off. D is dominated by A and by B. E is `uncompared` because benefit is censored, so E is not treated as better. The front is `["A", "B", "C"]`. Constraint `cap` is end money `lte 4`, so A and C list `cap` and B does not. The artifact has no weighted score.
+
+The executed test is `matchesHandPareto` in `packages/core/src/sim/analysis/experiment.test.ts`.
