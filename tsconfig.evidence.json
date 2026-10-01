@@ -74,6 +74,12 @@
     "packages/money/src/testkit/compareAmounts.ts",
     "packages/money/src/testkit/compareAmounts.test.ts",
     "tools/conformance.ts",
-    "tools/conformance.negative.test.ts"
+    "tools/conformance.negative.test.ts",
+    "packages/core/src/sim/executionBackend.ts",
+    "packages/core/src/sim/executionBackend.test.ts",
+    "packages/cli/src/runtime/workers/pool.ts",
+    "packages/cli/src/runtime/workers/trial.ts",
+    "packages/cli/src/runtime/workers/entry.ts",
+    "packages/cli/src/runtime/workers/pool.test.ts"
   ]
 }

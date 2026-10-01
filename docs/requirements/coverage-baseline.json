@@ -94,7 +94,12 @@
     "REQ-PR19-CACHE-IDENTITY",
     "REQ-PR19-SECRET-BOUNDARY",
     "REQ-PR19-NUMERICAL-UNCHANGED",
-    "REQ-PR19-OPT-IN-LIVE"
+    "REQ-PR19-OPT-IN-LIVE",
+    "REQ-DX05-LOCAL-DEFAULT",
+    "REQ-DX05-SERIALIZABLE-TASK",
+    "REQ-DX05-STABLE-REDUCTION",
+    "REQ-DX05-FAILURE-BOUNDARY",
+    "REQ-DX05-WORKER-PARITY"
   ],
   "protectedFiles": [
     "docs/requirements/active/typia-transform.md",
@@ -198,6 +203,14 @@
     "packages/core/src/sim/analysis/jevAdvisory.ts",
     "packages/cli/src/lib/evaluation/cache.ts",
     "packages/cli/src/lib/evaluation/providers/jev.test.ts",
-    "examples/analysis/jev-wire.json"
+    "examples/analysis/jev-wire.json",
+    "docs/requirements/active/worker-execution-backend.md",
+    "packages/core/src/sim/executionBackend.ts",
+    "packages/core/src/sim/executionBackend.test.ts",
+    "packages/cli/src/runtime/workers/pool.ts",
+    "packages/cli/src/runtime/workers/trial.ts",
+    "packages/cli/src/runtime/workers/entry.ts",
+    "packages/cli/src/runtime/workers/pool.test.ts",
+    "examples/analysis/worker-trial.json"
   ]
 }

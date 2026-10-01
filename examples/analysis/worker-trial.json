@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "contract": "idlekit.execution-task.v1",
+  "taskId": "trial-0",
+  "logicalIndex": 0,
+  "seed": 19,
+  "stepBudget": 1000,
+  "kind": "analysis-trial",
+  "payload": {
+    "engineId": "number",
+    "stepSec": 1,
+    "durationSec": 3,
+    "incomePerSec": "1"
+  },
+  "pluginPaths": [],
+  "pluginRoots": [],
+  "pluginDigests": {}
+}

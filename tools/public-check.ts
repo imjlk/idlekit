@@ -42,6 +42,7 @@ const DOCS_WITH_KO = [
   "docs/flow-observability.md",
   "docs/guarded-analytic-advance.md",
   "docs/jev-integration.md",
+  "docs/worker-execution.md",
   "examples/adapter-pattern/README.md",
   "examples/money-package/README.md",
   "examples/plugins/README.md",
