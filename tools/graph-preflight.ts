@@ -107,6 +107,58 @@ function hasTag(payload: unknown, text: string): boolean {
   return tagTexts(payload).some((value) => value.split(/\s+/).includes(text));
 }
 
+function declarationSource(fileText: string, startLine: number): string {
+  const lines = fileText.split(/\r?\n/);
+  const start = startLine - 1;
+  if (start < 0 || start >= lines.length) return "";
+  const text = lines.slice(start).join("\n");
+  let depth = 0;
+  let seenBrace = false;
+  let index = 0;
+  while (index < text.length) {
+    const char = text[index] ?? "";
+    if (char === "/" && text[index + 1] === "/") {
+      const next = text.indexOf("\n", index);
+      index = next < 0 ? text.length : next + 1;
+      continue;
+    }
+    if (char === "/" && text[index + 1] === "*") {
+      const next = text.indexOf("*/", index + 2);
+      index = next < 0 ? text.length : next + 2;
+      continue;
+    }
+    if (char === "'" || char === '"') {
+      const quote = char;
+      index += 1;
+      while (index < text.length && text[index] !== quote) {
+        if (text[index] === "\\") index += 2;
+        else if (text[index] === "\n") break;
+        else index += 1;
+      }
+      index += 1;
+      continue;
+    }
+    if (char === "`") {
+      index += 1;
+      while (index < text.length && text[index] !== "`") {
+        if (text[index] === "\\") index += 2;
+        else index += 1;
+      }
+      index += 1;
+      continue;
+    }
+    if (char === "{") {
+      depth += 1;
+      seenBrace = true;
+    } else if (char === "}") {
+      depth -= 1;
+      if (seenBrace && depth <= 0) return text.slice(0, index + 1);
+    }
+    index += 1;
+  }
+  return text;
+}
+
 function namedSource(payload: unknown, name: string, needle: string): Span | undefined {
   return sourceSpans(payload).find((span) => {
     if (!span.file.includes(needle) || span.line === undefined) return false;
@@ -455,7 +507,8 @@ async function main(): Promise<void> {
       }),
     );
     const plannerSource = readFileSync(join(root, "packages/core/src/sim/strategy/planner.ts"), "utf8");
-    const bindsDefault = plannerSource.includes("({ stepOnce }") && plannerSource.includes("d.stepOnce(");
+    const plannerBody = plannerDecl ? declarationSource(plannerSource, plannerDecl.line) : "";
+    const bindsDefault = plannerBody.includes("({ stepOnce }") && plannerBody.includes("d.stepOnce(");
     const plannerLinked = endpointsConnect(collectHops(plannerPath), "createPlannerStrategy", "stepOnce");
     if (plannerLinked) {
       ok("trace createPlannerStrategy -> stepOnce");
