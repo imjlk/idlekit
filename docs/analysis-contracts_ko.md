@@ -23,3 +23,30 @@
 기존 `eta.ts`와 `growth.ts`는 일부 금액에 `toNumber` 또는 `Number`를 아직 쓴다. 그 호출은 추정 경로로 분류한다. artifact 계약이 아니다. 유한 변환을 전부 금지하지 않는다.
 
 Node.js and browser runtimes are not part of the v1 compatibility contract.
+
+## 검증
+
+계약 fixture에는 RNG가 없다. 상태 값은 리터럴이다. 아래 명령은 macOS arm64, Bun `1.4.2`, 이 작업 트리에서 실행했다.
+
+| 명령 | 종료 |
+|---|---|
+| `bun install --frozen-lockfile` | 0 |
+| `bun run typecheck` | 0 |
+| `bun run test` | 0 |
+| `bun run build` | 0 |
+| `bun run runtime:check` | 0 |
+| `bun run compat:check` | 0 |
+| `bun run replay:verify` | 0 |
+| `bun run docs:verify:quick` | 0 |
+| `bun run templates:check` | 0 |
+| `bun run contracts:check` | 0 |
+| `bun run graph:check` | 0 |
+| `bun run --cwd packages/cli generate:check` | 0 |
+| `bun run --cwd packages/cli doctor:completions` | 0 |
+| `bun run readme:smoke` | 0 |
+| `bun run install:smoke` | 0 |
+| `bun run review:smoke` | 0 |
+| `packages/core`에서 `bun test --timeout 120000 src/sim/analysis/analysisContract.test.ts` | 0 |
+| `bun test --cwd packages/cli --timeout 120000 src/io/analysisArtifact.test.ts` | 0 |
+
+실행하지 않음: `bench:sim:check`, `bench:sim:suite:check`, `tune:regress`, `kpi:report`, `kpi:regress`, `test:conformance:extended`, `bunx ttsc -p tsconfig.tools.json`, `bunx ttsc -p tsconfig.examples.json`, Linux host, CI. Graph 호출 기록은 [development-graph_ko.md](./development-graph_ko.md)에 있다.

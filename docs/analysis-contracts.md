@@ -23,3 +23,30 @@ The generated schema is `docs/schemas/generated/analysis.artifact.v1.schema.json
 Legacy `eta.ts` and `growth.ts` still narrow some amounts with `toNumber` or `Number`. Those calls are classified as estimate paths, not as the artifact contract. This change does not ban every finite conversion.
 
 Node.js and browser runtimes are not part of the v1 compatibility contract.
+
+## Verification
+
+The contract fixture has no RNG. State values are literals. These commands were run on macOS arm64 with Bun `1.4.2` from this worktree.
+
+| Command | Exit |
+|---|---|
+| `bun install --frozen-lockfile` | 0 |
+| `bun run typecheck` | 0 |
+| `bun run test` | 0 |
+| `bun run build` | 0 |
+| `bun run runtime:check` | 0 |
+| `bun run compat:check` | 0 |
+| `bun run replay:verify` | 0 |
+| `bun run docs:verify:quick` | 0 |
+| `bun run templates:check` | 0 |
+| `bun run contracts:check` | 0 |
+| `bun run graph:check` | 0 |
+| `bun run --cwd packages/cli generate:check` | 0 |
+| `bun run --cwd packages/cli doctor:completions` | 0 |
+| `bun run readme:smoke` | 0 |
+| `bun run install:smoke` | 0 |
+| `bun run review:smoke` | 0 |
+| `bun test --timeout 120000 src/sim/analysis/analysisContract.test.ts` in `packages/core` | 0 |
+| `bun test --cwd packages/cli --timeout 120000 src/io/analysisArtifact.test.ts` | 0 |
+
+Not run: `bench:sim:check`, `bench:sim:suite:check`, `tune:regress`, `kpi:report`, `kpi:regress`, `test:conformance:extended`, `bunx ttsc -p tsconfig.tools.json`, `bunx ttsc -p tsconfig.examples.json`, a Linux host, and CI. Graph caller notes are in [development-graph.md](./development-graph.md).
