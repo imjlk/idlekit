@@ -1,5 +1,5 @@
 import type { Strategy } from "./types";
-import { stepOnce } from "../step";
+import { singleBuySize, stepOnce } from "../step";
 import type { StepOnceFn } from "../stepTypes";
 import { parseMoney } from "../../notation/parseMoney";
 import type { Action, BulkQuote, Model, SimContext, SimState } from "../types";
@@ -97,12 +97,21 @@ function selectBulkQuote<N, U extends string, Vars>(
   ctx: SimContext<N, U, Vars>,
   state: SimState<N, U, Vars>,
 ): BulkQuote<N, U> | undefined {
-  const quotes = action.bulk?.(ctx, state);
-  const singleCost = action.cost(ctx, state);
-  const stable =
-    quotes && quotes.length > 0
-      ? stableBulkQuotes(quotes)
-      : [{ size: 1, cost: singleCost, equivalentCost: action.equivalentCost?.(ctx, state) }];
+  const raw = action.bulk?.(ctx, state);
+  const listed = raw !== undefined && raw.length > 0;
+  const stable = listed
+    ? stableBulkQuotes(raw)
+    : [
+        {
+          size: 1,
+          cost: action.cost(ctx, state),
+          equivalentCost: action.equivalentCost?.(ctx, state),
+        },
+      ];
+  let singleCost = stable[0]!.cost;
+  if (listed && stable.some((quote) => quote.size === singleBuySize)) {
+    singleCost = action.cost(ctx, state);
+  }
   const usable = rankableQuotes(ctx, state, stable, singleCost);
   // Ranking drops an invalid quote only when a settleable quote can replace it.
   const pool = usable.length > 0 ? usable : stable;
