@@ -3,6 +3,11 @@ import { join, resolve } from "path";
 export const root = resolve(import.meta.dir, "..");
 export const ttscBin = join(root, "node_modules", ".bin", "ttsc");
 
+/** Windows needs the `.cmd` shim. The extensionless file is the POSIX launcher. */
+export function ttsxUnderNodeName(platform: NodeJS.Platform = process.platform): string {
+  return platform === "win32" ? "ttsx-under-node.cmd" : "ttsx-under-node";
+}
+
 export type CommandResult = {
   command: string;
   exitCode: number;
@@ -14,7 +19,7 @@ export function evidenceEnv(cacheDir?: string): Record<string, string | undefine
   const env: Record<string, string | undefined> = { ...process.env };
   delete env.TTSC_GRAPH_BINARY;
   delete env.TTSC_GO_BINARY;
-  env.TTSC_TTSX_BINARY = join(root, "tools", "ttsx-under-node");
+  env.TTSC_TTSX_BINARY = join(root, "tools", ttsxUnderNodeName());
   if (cacheDir) env.TTSC_CACHE_DIR = cacheDir;
   else delete env.TTSC_CACHE_DIR;
   return env;

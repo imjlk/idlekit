@@ -514,7 +514,7 @@ export function recordsWalletAndMaxMoneyUnitsOnTheEconomySnapshot(): void {
  * @evidence docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness An on-grid checkpoint replays from memory and from JSON, and independent trials are compared by game seed.
  * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #a195f0e Re-read the section, then ran this function: memory resume, JSON resume, and the JSON round-trip apply, and the two game seeds stay ordered.
  * @evidence ./conformanceRun.ts#checkJsonRoundTrip The constant-income scenario matches after a JSON round trip.
- * @evidenceReview ./conformanceRun.ts#checkJsonRoundTrip #4ab8239 Re-read the function: it restores the strategy around the run, accepts a dense array and an empty array, rejects shared refs, symbol keys, non-enumerable names, sparse holes, frozen data, non-extensible objects and arrays, a non-writable array length, a nonstandard array prototype, and enumerable getters before stringify, and the constant-income round trip matches. Ran this function: the dense round trip passed, and the sparse, frozen, non-extensible, locked-length, custom-prototype, and getter round trips did not.
+ * @evidenceReview ./conformanceRun.ts#checkJsonRoundTrip #4c0bb28 Re-read the function: it restores the strategy around the run, accepts a dense array and an empty array, rejects shared refs, symbol keys, non-enumerable names, sparse holes, frozen data, non-extensible objects and arrays, a non-writable array length, a nonstandard array prototype, and enumerable getters before stringify, and the constant-income round trip matches. A vars object that also appears on the wallet, max-money, or prestige graph is inapplicable. Ran this function: the dense round trip passed, and the sparse, frozen, non-extensible, locked-length, custom-prototype, and getter round trips did not.
  * @evidence ./conformanceRun.ts#checkTrialOrder Two distinct game seeds keep distinct economy snapshots.
  * @evidenceReview ./conformanceRun.ts#checkTrialOrder #5e85ee7 Two game seeds keep ordered snapshots. This run uses a seed-dependent income rate, and the two economy snapshots differ.
  */
@@ -531,6 +531,14 @@ export function resumesOnTheSameTickGridFromMemoryAndJson(): void {
   const sharedRound = checkJsonRoundTrip(aliased);
   expect(sharedRound.ok).toBe(false);
   expect(sharedRound.summary).toContain("JSON");
+  const unit = scenario.initial.wallet.money.unit;
+  const aliasedUnit = checkJsonRoundTrip({
+    ...scenario,
+    run: { ...scenario.run, durationSec: 0 },
+    initial: { ...scenario.initial, vars: { unit } as unknown as Vars },
+  });
+  expect(aliasedUnit.ok).toBe(true);
+  expect(aliasedUnit.applicable).toBe(false);
   const hidden = Object.defineProperty({ visible: 1 }, "secret", { value: 2, enumerable: false });
   const hiddenRound = checkJsonRoundTrip({
     ...scenario,

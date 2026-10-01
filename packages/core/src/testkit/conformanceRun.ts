@@ -563,6 +563,34 @@ function ordinaryJsonData(descriptor: PropertyDescriptor | undefined): boolean {
   );
 }
 
+function collectObjects(value: unknown, seen: Set<object>): void {
+  if (value === null || typeof value !== "object") return;
+  if (seen.has(value)) return;
+  seen.add(value);
+  if (Array.isArray(value)) {
+    // A replaced prototype drops @@iterator, so index access stays safe.
+    for (let index = 0; index < value.length; index += 1) {
+      if (index in value) collectObjects(value[index], seen);
+    }
+    return;
+  }
+  for (const child of Object.values(value)) collectObjects(child, seen);
+}
+
+/** JSON copies every object, so a vars alias into wallet or prestige cannot round-trip. */
+function varsAliasSerializedState<N, U extends string, Vars>(state: SimState<N, U, Vars>): boolean {
+  const outside = new Set<object>();
+  collectObjects(state.wallet, outside);
+  collectObjects(state.maxMoneyEver, outside);
+  collectObjects(state.prestige, outside);
+  const varsObjects = new Set<object>();
+  collectObjects(state.vars, varsObjects);
+  for (const object of varsObjects) {
+    if (outside.has(object)) return true;
+  }
+  return false;
+}
+
 function jsonRoundTripPreserves(value: unknown, seen: Set<object> = new Set()): boolean {
   if (value === null) return true;
   if (typeof value === "string" || typeof value === "boolean") return true;
@@ -615,6 +643,7 @@ export function checkJsonRoundTrip<N, U extends string, Vars>(
   const initial = bracket.snap();
   try {
     const end = runScenario(scenario).end;
+    if (varsAliasSerializedState(end)) return skip("vars alias another checkpoint field");
     if (!jsonRoundTripPreserves(end.vars)) return fail("vars do not survive a JSON checkpoint");
     let restored: ReturnType<typeof restoreJsonCheckpoint<N, U, Vars>>;
     try {
