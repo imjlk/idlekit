@@ -30,7 +30,7 @@ JSON/YAML 시나리오, shell과 package script, `packages/cli/src/plugin/load.t
 
 ## TC-04 검증
 
-macOS arm64, Bun `1.3.10`, `@ttsc/graph` `0.30.4`, protocol `2025-11-25`, commit `9f527f25ff3be3c363de1ce47e8a5d17b5eaff36`에서 조회했다. generation 필드는 없었다. scratch 수정은 새 프로세스에서 다시 읽었고, 이미 열린 세션은 signature 수정 뒤 `quotaHost`를 `(): 4`로 보고했다. `bun run graph:check`는 exit 0이다. tour payload에도 아래 `runScenario`와 `stepOnce` span이 있다.
+macOS arm64, Bun `1.3.10`, `@ttsc/graph` `0.30.4`, protocol `2025-11-25`, commit `3e16237ec6e5b3c9a5ab6e35e3bf962ab97eef9f`에서 조회했다. generation 필드는 없었다. scratch 수정은 새 프로세스에서 다시 읽었고, 이미 열린 세션은 signature 수정 뒤 `quotaHost`를 `(): 4`로 보고했다. `bun run graph:check`는 exit 0이다. tour payload에도 아래 `runScenario`와 `stepOnce` span이 있다.
 
 | Symbol | Span | 결과 |
 |---|---|---|
@@ -41,7 +41,7 @@ macOS arm64, Bun `1.3.10`, `@ttsc/graph` `0.30.4`, protocol `2025-11-25`, commit
 | `createPlannerStrategy` | `packages/core/src/sim/strategy/planner.ts:189` | lookup. `stepOnce`까지 path hop은 0 |
 | `runScenario`의 CLI caller | `packages/cli/src` | 역방향 실행 trace. 같은 config의 이후 trace가 `commands/compare.ts`, `commands/ltv.ts`, `commands/tune.ts`, `lib/designObjectives.ts`, `lib/experience.ts`를 지목했다. 32 node cap은 모든 caller가 아니다 |
 
-`createPlannerStrategy`는 `d.stepOnce(...)`를 호출한다. 기본 인자는 `({ stepOnce } as PlannerDeps)`다. 이 그래프는 그 binding을 hop으로 돌려주지 않았다. 소스 줄이 검토 기록이다. 이 행은 통과한 call edge가 아니라 미관측이다.
+`createPlannerStrategy`는 `d.stepOnce(...)`를 호출한다. 기본 인자는 `({ stepOnce } as PlannerDeps)`다. `tools/graph-preflight.ts`는 그 기본값을 함수 선언에서 읽는다. 이 그래프는 그 binding을 hop으로 돌려주지 않았다. 소스 줄이 검토 기록이다. 이 행은 통과한 call edge가 아니라 미관측이다.
 
 같은 gate가 `fixtures/graph/base`를 임시 디렉터리로 복사했다. lookup은 `src/host.ts:5`의 `quotaHost`를 찾았다. `quotaHostRenamed`로 바꾼 뒤의 새 프로세스는 그 이름을 반환했다. 반환 타입을 `4`로 바꾸면 `details`에 보였다. `@evidence docs/spec.md#quota`를 `docs/spec.md#quota-next`로 바꾸면 `docTags` 텍스트가 바뀌고, 이전 target은 exact tag가 아니었다. stdin shutdown은 exit 0이다.
 
