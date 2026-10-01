@@ -16,6 +16,10 @@ import {
  * @evidenceReview ./concreteValidator.ts#validateConcreteQuota #3dda434 Re-read the arrow: it still calls typia.createValidate of ConcreteQuota when invoked, and this test fails if either input is classified wrong.
  * @evidence ./concreteValidator.ts#concreteQuotaSchema Checks the Standard Schema adapter on the same two inputs.
  * @evidenceReview ./concreteValidator.ts#concreteQuotaSchema #65e8e9e The adapter is standardSchemaFromValidate of validateConcreteQuota. Both results are asserted here.
+ * @evidence ./standardSchema.ts#standardSchemaFromValidate Runs the adapter on the same two inputs.
+ * @evidenceReview ./standardSchema.ts#standardSchemaFromValidate #8607c9d The adapter calls standardResultFromValidation. Both schema results are asserted here.
+ * @evidence ./standardSchema.ts#standardResultFromValidation The schema results come from this converter.
+ * @evidenceReview ./standardSchema.ts#standardResultFromValidation #71a8d95 Success keeps data. Failure copies the typia issue fields.
  * @evidence ./concreteValidator.ts#ConcreteQuota.count Reads the accepted count field named by the ConcreteQuota type.
  * @evidenceReview ./concreteValidator.ts#ConcreteQuota.count #e5d9ed6 accepted.data.count is 2 when the input count is 2. The field is the numeric count on ConcreteQuota.
  */

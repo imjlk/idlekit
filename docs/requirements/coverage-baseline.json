@@ -6,6 +6,7 @@
     "docs/requirements/active/bulk-quote-settlement.md",
     "packages/core/src/scenario/concreteValidator.ts",
     "packages/core/src/scenario/typiaTransformMissing.ts",
+    "packages/core/src/scenario/standardSchema.ts",
     "packages/core/src/scenario/concreteValidator.test.ts",
     "packages/core/src/sim/step.ts",
     "packages/core/src/sim/step.bulk.test.ts",

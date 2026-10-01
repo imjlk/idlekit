@@ -351,7 +351,30 @@ function runSeededProperty<T>(run: PropertyRun<T>): { ok: true } | { ok: false; 
       };
     }
     const shrunkOutcome = predicateOutcome(run.predicate, shrunk.value);
-    const identity = run.describeCase(shrunk.value, index);
+    let identity: CaseIdentity;
+    try {
+      identity = run.describeCase(shrunk.value, index);
+    } catch (error) {
+      const thrown = error instanceof Error ? error.message : String(error);
+      return {
+        ok: false,
+        report: {
+          predicateId: run.predicateId,
+          generatorVersion: conformanceGeneratorVersion,
+          testSeed: run.testSeed,
+          gameSeed: null,
+          engineId: null,
+          modelId: null,
+          strategyId: null,
+          tickSchedule: null,
+          caseIndex: index,
+          original,
+          value: shrunk.value,
+          shrinkingPath: shrunk.shrinkingPath,
+          thrown,
+        },
+      };
+    }
     return {
       ok: false,
       report: {
@@ -433,10 +456,37 @@ function skip(summary: string): RelationCheck {
   return { ok: true, applicable: false, summary };
 }
 
-/** A special value's encoding is an object, so it cannot match a user string such as "nan". */
-function snapshotTag(tag: string, value?: string): { tag: string; value?: string } {
-  if (value === undefined) return { tag };
-  return { tag, value };
+const SENTINEL_KEY = "~idlekit";
+
+/**
+ * Fallback values use a private key. A user object that already has that key is wrapped,
+ * so `{ "~idlekit": "nan" }` does not compare equal to numeric NaN.
+ */
+function snapshotTag(tag: string, value?: string): { [SENTINEL_KEY]: string; value?: string } {
+  if (value === undefined) return { [SENTINEL_KEY]: tag };
+  return { [SENTINEL_KEY]: tag, value };
+}
+
+function escapeSentinelKey(record: Record<string, unknown>): unknown {
+  if (!Object.prototype.hasOwnProperty.call(record, SENTINEL_KEY)) return record;
+  return { [SENTINEL_KEY]: "escaped", fields: record };
+}
+
+/** JSON.stringify keeps an enumerable `~idlekit` key, which collides with a fallback tag. */
+function containsSentinelKey(item: unknown, seen = new Set<object>()): boolean {
+  if (item === null || typeof item !== "object") return false;
+  if (seen.has(item)) return false;
+  seen.add(item);
+  const own = Object.getOwnPropertyDescriptor(item, SENTINEL_KEY);
+  if (own?.enumerable === true) return true;
+  for (const key of Object.getOwnPropertyNames(item)) {
+    if (key === "length") continue;
+    const descriptor = Object.getOwnPropertyDescriptor(item, key);
+    if (!descriptor || descriptor.enumerable !== true) continue;
+    if (descriptor.get !== undefined || !("value" in descriptor)) continue;
+    if (containsSentinelKey(descriptor.value, seen)) return true;
+  }
+  return false;
 }
 
 function snapshotData(item: unknown, seen: WeakMap<object, number>, nextId: { value: number }): unknown {
@@ -531,7 +581,7 @@ function snapshotData(item: unknown, seen: WeakMap<object, number>, nextId: { va
     }
     record[label] = snapshotData(descriptor.value, seen, nextId);
   }
-  return record;
+  return escapeSentinelKey(record);
 }
 
 /** JSON drops NaN, Infinity, undefined, functions, and symbols. Those still have to stay distinct. */
@@ -570,7 +620,7 @@ function jsonSilentlyDrops(item: unknown, seen = new Set<object>()): boolean {
 }
 
 function snapshotText(value: unknown): string {
-  if (!jsonSilentlyDrops(value)) {
+  if (!jsonSilentlyDrops(value) && !containsSentinelKey(value)) {
     try {
       const text = JSON.stringify(value);
       if (text !== undefined) return text;

@@ -606,7 +606,7 @@ export function recordsWalletAndMaxMoneyUnitsOnTheEconomySnapshot(): void {
     ...gemState,
     vars: { buys: 1n } as unknown as Vars,
   });
-  expect(bigintVars).toContain('"tag":"bigint"');
+  expect(bigintVars).toContain('"~idlekit":"bigint"');
   expect(bigintVars).toContain('"value":"1"');
   const cyclic: { buys: number; self?: unknown } = { buys: 2 };
   cyclic.self = cyclic;
@@ -614,7 +614,7 @@ export function recordsWalletAndMaxMoneyUnitsOnTheEconomySnapshot(): void {
     ...gemState,
     vars: cyclic as unknown as Vars,
   });
-  expect(cyclicVars).toContain('"tag":"cycle"');
+  expect(cyclicVars).toContain('"~idlekit":"cycle"');
   expect(cyclicVars).not.toBe(bigintVars);
   const nanVars = snapshotEconomy(engine, {
     ...gemState,
@@ -631,6 +631,16 @@ export function recordsWalletAndMaxMoneyUnitsOnTheEconomySnapshot(): void {
     vars: { buys: "nan" } as unknown as Vars,
   });
   expect(nanVars).not.toBe(nanText);
+  const nanTag = snapshotEconomy(engine, {
+    ...gemState,
+    vars: { buys: { tag: "nan" } } as unknown as Vars,
+  });
+  const nanSentinel = snapshotEconomy(engine, {
+    ...gemState,
+    vars: { buys: { "~idlekit": "nan" } } as unknown as Vars,
+  });
+  expect(nanVars).not.toBe(nanTag);
+  expect(nanVars).not.toBe(nanSentinel);
   const missingExtra = snapshotEconomy(engine, {
     ...gemState,
     vars: { buys: 1 } as unknown as Vars,
@@ -1326,6 +1336,24 @@ describe("counterexample report", () => {
       }),
     ).toThrow(/"testSeed": 41[\s\S]*"caseIndex": 0[\s\S]*"original": 7[\s\S]*shrink rejected/);
   });
+
+  it("reports a describeCase throw with the seed, case, original, and path", () => {
+    expect(() =>
+      expectProperty({
+        predicateId: "describe-throws",
+        testSeed: 41,
+        cases: 1,
+        generate: () => 7,
+        shrink: (value) => (value === 7 ? [3] : []),
+        predicate: () => false,
+        describeCase: () => {
+          throw new Error("describe rejected");
+        },
+      }),
+    ).toThrow(
+      /"testSeed": 41[\s\S]*"caseIndex": 0[\s\S]*"original": 7[\s\S]*"shrinkingPath":[\s\S]*describe rejected/,
+    );
+  });
 });
 
 describe("PR-05 observation retention", () => {
@@ -1414,6 +1442,18 @@ describe("PR-05 observation retention", () => {
     });
     expect(nanObserver.ok).toBe(false);
     expect(nanObserver.applicable).toBe(true);
+    const sentinelObserver = checkObserver({
+      ...scenario,
+      model: {
+        ...scenario.model,
+        evolve: (ctx, current) => ({
+          ...current,
+          vars: { buys: ctx.emit ? Number.NaN : { "~idlekit": "nan" } } as unknown as Vars,
+        }),
+      },
+    });
+    expect(sentinelObserver.ok).toBe(false);
+    expect(sentinelObserver.applicable).toBe(true);
     const holeObserver = checkObserver({
       ...scenario,
       model: {

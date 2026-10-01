@@ -1661,6 +1661,7 @@ function readDynamicRunnerImport(
 
 /**
  * `const { it: register } = await import("bun:test")` names `register` as `it`.
+ * `const { it: register } = require("bun:test")` is the same binding.
  * A default, a nested pattern, or any other module is not a runner binding.
  */
 function readDestructuredRunnerImport(
@@ -1706,9 +1707,31 @@ function readDestructuredRunnerImport(
   }
   cursor = skipSpaceAndComments(body, cursor);
   if (body[cursor] !== "=") return undefined;
-  const imported = readDynamicRunnerImport(body, cursor + 1);
+  const imported =
+    readDynamicRunnerImport(body, cursor + 1) ?? readRunnerRequire(body, cursor + 1);
   if (!imported) return undefined;
   return { entries, end: imported.end };
+}
+
+/** `require("bun:test")`, including one pair of parentheses around the call. */
+function readRunnerRequire(body: string, index: number): { end: number } | undefined {
+  let cursor = skipSpaceAndComments(body, index);
+  if (body[cursor] === "(") {
+    const inner = readRunnerRequire(body, cursor + 1);
+    if (!inner) return undefined;
+    const close = skipSpaceAndComments(body, inner.end);
+    if (body[close] !== ")") return undefined;
+    return { end: close + 1 };
+  }
+  const word = readIdentifier(body, cursor);
+  if (word?.value !== "require") return undefined;
+  const open = skipSpaceAndComments(body, word.end);
+  if (body[open] !== "(") return undefined;
+  const spec = readQuoted(body, open + 1) ?? readStaticTemplate(body, open + 1);
+  if (!spec || !runnerModuleSpec(spec.value)) return undefined;
+  const close = skipPair(body, open);
+  if (close < 0) return undefined;
+  return { end: close };
 }
 
 /** Every `it`/`test` title in this source, including ones inside a false condition. */
