@@ -181,13 +181,25 @@ export function demonstrateShrinkGap(): ShrinkReport {
   };
 }
 
+function recordedShrinkIdentity(report: ShrinkReport): boolean {
+  if (report.predicateId !== "shrink-gap") return false;
+  if (report.generatorVersion !== conformanceGeneratorVersion) return false;
+  if (!Number.isInteger(report.caseIndex)) return false;
+  if (report.caseIndex < 0 || report.caseIndex >= SHRINK_GAP_CASES) return false;
+  const domain = seededDomain(report.testSeed, SHRINK_GAP_MIN, SHRINK_GAP_MAX);
+  return domain[report.caseIndex] === report.original;
+}
+
 export function replayShrinkReport(report: ShrinkReport): {
   failed: boolean;
   pathOk: boolean;
   shrunk: number;
 } {
   let current = report.original;
-  let pathOk = typeof report.original === "number" && !shrinkGapHolds(report.original);
+  let pathOk =
+    recordedShrinkIdentity(report) &&
+    typeof report.original === "number" &&
+    !shrinkGapHolds(report.original);
   let cursor = 0;
   // Each round must list the shrinker's candidates in order, including rejections, and stop at the first keep.
   while (pathOk && typeof current === "number") {
@@ -480,7 +492,7 @@ function containsSentinelKey(item: unknown, seen = new Set<object>()): boolean {
   const own = Object.getOwnPropertyDescriptor(item, SENTINEL_KEY);
   if (own?.enumerable === true) return true;
   for (const key of Object.getOwnPropertyNames(item)) {
-    if (key === "length") continue;
+    if (Array.isArray(item) && key === "length") continue;
     const descriptor = Object.getOwnPropertyDescriptor(item, key);
     if (!descriptor || descriptor.enumerable !== true) continue;
     if (descriptor.get !== undefined || !("value" in descriptor)) continue;
@@ -489,12 +501,36 @@ function containsSentinelKey(item: unknown, seen = new Set<object>()): boolean {
   return false;
 }
 
+function symbolKeySnapshots(
+  item: object,
+  seen: WeakMap<object, number>,
+  nextId: { value: number },
+): unknown[] {
+  const symbols: unknown[] = [];
+  for (const key of enumerableSymbolKeys(item)) {
+    const descriptor = Object.getOwnPropertyDescriptor(item, key);
+    if (!descriptor) continue;
+    const value =
+      descriptor.get !== undefined || !("value" in descriptor)
+        ? snapshotTag("getter")
+        : snapshotData(descriptor.value, seen, nextId);
+    symbols.push({ [SENTINEL_KEY]: "symbol-key", name: String(key), value });
+  }
+  return symbols;
+}
+
+function withSymbolKeys(value: unknown, symbols: readonly unknown[]): unknown {
+  if (symbols.length === 0) return value;
+  return { [SENTINEL_KEY]: "symbol-keys", value, symbols };
+}
+
 function snapshotData(item: unknown, seen: WeakMap<object, number>, nextId: { value: number }): unknown {
   if (typeof item === "bigint") return snapshotTag("bigint", item.toString());
   if (typeof item === "symbol") return snapshotTag("symbol");
   if (typeof item === "function") return snapshotTag("function");
   if (item === undefined) return snapshotTag("undefined");
   if (typeof item === "number") {
+    if (Object.is(item, -0)) return snapshotTag("-0");
     if (Number.isNaN(item)) return snapshotTag("nan");
     if (item === Number.POSITIVE_INFINITY) return snapshotTag("infinity");
     if (item === Number.NEGATIVE_INFINITY) return snapshotTag("-infinity");
@@ -537,17 +573,7 @@ function snapshotData(item: unknown, seen: WeakMap<object, number>, nextId: { va
       }
       extras[key] = snapshotData(descriptor.value, seen, nextId);
     }
-    for (const key of enumerableSymbolKeys(item)) {
-      const descriptor = Object.getOwnPropertyDescriptor(item, key);
-      if (!descriptor) continue;
-      extraCount += 1;
-      const label = `symbol:${String(key)}`;
-      if (descriptor.get !== undefined || !("value" in descriptor)) {
-        extras[label] = snapshotTag("getter");
-        continue;
-      }
-      extras[label] = snapshotData(descriptor.value, seen, nextId);
-    }
+    const symbols = symbolKeySnapshots(item, seen, nextId);
     if (indexes.length !== item.length) {
       const entries: Record<string, unknown> = {};
       for (let slot = 0; slot < indexes.length; slot += 1) {
@@ -555,11 +581,11 @@ function snapshotData(item: unknown, seen: WeakMap<object, number>, nextId: { va
         if (index === undefined) continue;
         entries[String(index)] = elements[slot];
       }
-      if (extraCount === 0) return { length: item.length, entries };
-      return { length: item.length, entries, extras };
+      if (extraCount === 0) return withSymbolKeys({ length: item.length, entries }, symbols);
+      return withSymbolKeys({ length: item.length, entries, extras }, symbols);
     }
-    if (extraCount === 0) return elements;
-    return { items: elements, extras };
+    if (extraCount === 0) return withSymbolKeys(elements, symbols);
+    return withSymbolKeys({ items: elements, extras }, symbols);
   }
   const record: Record<string, unknown> = {};
   for (const key of Object.getOwnPropertyNames(item)) {
@@ -571,17 +597,7 @@ function snapshotData(item: unknown, seen: WeakMap<object, number>, nextId: { va
     }
     record[key] = snapshotData(descriptor.value, seen, nextId);
   }
-  for (const key of enumerableSymbolKeys(item)) {
-    const descriptor = Object.getOwnPropertyDescriptor(item, key);
-    if (!descriptor) continue;
-    const label = `symbol:${String(key)}`;
-    if (descriptor.get !== undefined || !("value" in descriptor)) {
-      record[label] = snapshotTag("getter");
-      continue;
-    }
-    record[label] = snapshotData(descriptor.value, seen, nextId);
-  }
-  return escapeSentinelKey(record);
+  return withSymbolKeys(escapeSentinelKey(record), symbolKeySnapshots(item, seen, nextId));
 }
 
 /** JSON drops NaN, Infinity, undefined, functions, and symbols. Those still have to stay distinct. */
@@ -589,7 +605,7 @@ function jsonSilentlyDrops(item: unknown, seen = new Set<object>()): boolean {
   if (item === undefined) return true;
   if (item === null) return false;
   const type = typeof item;
-  if (type === "number") return !Number.isFinite(item);
+  if (type === "number") return !Number.isFinite(item) || Object.is(item, -0);
   if (type === "function" || type === "symbol" || type === "bigint") return true;
   if (type !== "object") return false;
   if (seen.has(item)) return false;
