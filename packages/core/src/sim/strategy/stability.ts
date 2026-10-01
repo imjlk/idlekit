@@ -30,15 +30,18 @@ export function settlementAcceptsQuote<N, U extends string, Vars>(
   return canSettleCost(ctx.E, cost.amount, ctx.E.zero());
 }
 
-/** Drop settlement-invalid quotes, including two bulk quotes that share one size. */
+/**
+ * Count a repeated bulk size on the raw list before dropping quotes settlement
+ * would skip. One valid copy of that size is still ambiguous.
+ */
 export function rankableQuotes<N, U extends string, Vars>(
   ctx: SimContext<N, U, Vars>,
   state: SimState<N, U, Vars>,
   quotes: readonly BulkQuote<N, U>[],
   singleCost: BulkQuote<N, U>["cost"],
 ): BulkQuote<N, U>[] {
-  return uniqueQuotedSizes(
-    quotes.filter((quote) => settlementAcceptsQuote(ctx, state, quote, singleCost)),
+  return uniqueQuotedSizes(quotes).filter((quote) =>
+    settlementAcceptsQuote(ctx, state, quote, singleCost),
   );
 }
 

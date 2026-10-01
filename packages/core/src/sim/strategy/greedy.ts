@@ -69,14 +69,13 @@ function chooseQuotes<N, U extends string, Vars>(
   if (mode === "maxAffordable") {
     const cap = params.bulk?.maxSizeCap ?? Number.POSITIVE_INFINITY;
     const eligible: BulkQuote<N, U>[] = [];
-    for (const quote of quotes) {
+    for (const quote of uniqueQuotedSizes(quotes)) {
       if (!Number.isInteger(quote.size) || quote.size < singleBuySize) continue;
       if (quote.size > cap) continue;
       if (!isAffordable(ctx, state, quote.cost)) continue;
       eligible.push(quote);
     }
-    const unique = uniqueQuotedSizes(eligible);
-    const chosen = unique.length > 0 ? unique[unique.length - 1] : undefined;
+    const chosen = eligible.length > 0 ? eligible[eligible.length - 1] : undefined;
     return [chosen ?? quotes[0]!];
   }
 

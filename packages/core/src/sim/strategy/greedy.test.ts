@@ -495,6 +495,60 @@ describe("createGreedyStrategy", () => {
     expect(out[0]?.bulkSize).toBe(2);
   });
 
+  it("keeps a unique size when a higher size is repeated by an invalid quote", () => {
+    const ctx: SimContext<number, UnitCode, Vars> = {
+      E: createNumberEngine(),
+      unit: { code: "COIN" },
+      tickPolicy: { mode: "drop" },
+    };
+    const quotes = [
+      {
+        size: 2,
+        cost: null,
+        deltaIncomePerSec: { unit: { code: "COIN" }, amount: 1 },
+      },
+      {
+        size: 10,
+        cost: null,
+        deltaIncomePerSec: { unit: { code: "COIN" }, amount: 9 },
+      },
+      {
+        size: 10,
+        cost: { unit: { code: "COIN" }, amount: -1 },
+        deltaIncomePerSec: { unit: { code: "COIN" }, amount: 9 },
+      },
+    ];
+    const action: Action<number, UnitCode, Vars> = {
+      id: "buy",
+      kind: "buy",
+      canApply: () => true,
+      cost: () => null,
+      bulk: () => quotes,
+      apply: (_ctx, state) => state,
+    };
+    const model: Model<number, UnitCode, Vars> = {
+      id: "m",
+      version: 1,
+      income: () => ({ unit: { code: "COIN" }, amount: 0 }),
+      actions: () => [action],
+    };
+    const ranked = createGreedyStrategy<number, UnitCode, Vars>({
+      schemaVersion: 1,
+      objective: "maximizeIncome",
+    });
+    const rankedOut = ranked.decide(ctx, model, makeState(0));
+    expect(rankedOut.length).toBe(1);
+    expect(rankedOut[0]?.bulkSize).toBe(2);
+    const capped = createGreedyStrategy<number, UnitCode, Vars>({
+      schemaVersion: 1,
+      objective: "maximizeIncome",
+      bulk: { mode: "maxAffordable" },
+    });
+    const cappedOut = capped.decide(ctx, model, makeState(0));
+    expect(cappedOut.length).toBe(1);
+    expect(cappedOut[0]?.bulkSize).toBe(2);
+  });
+
   it("accepts occurrence on a contextually typed decision", () => {
     const ctx: SimContext<number, UnitCode, Vars> = {
       E: createNumberEngine(),

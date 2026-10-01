@@ -346,6 +346,57 @@ describe("createPlannerStrategy", () => {
     expect(out[0]?.bulkSize).toBe(2);
   });
 
+  it("keeps a unique bulk size when a higher size is repeated by an invalid quote", () => {
+    const ctx = makeContext(1);
+    const action: Action<number, UnitCode, Vars> = {
+      id: "buy",
+      kind: "buy",
+      canApply: () => true,
+      cost: () => null,
+      bulk: () => [
+        {
+          size: 2,
+          cost: null,
+          deltaIncomePerSec: { unit: { code: "COIN" }, amount: 1 },
+        },
+        {
+          size: 10,
+          cost: null,
+          deltaIncomePerSec: { unit: { code: "COIN" }, amount: 9 },
+        },
+        {
+          size: 10,
+          cost: { unit: { code: "COIN" }, amount: -1 },
+          deltaIncomePerSec: { unit: { code: "COIN" }, amount: 9 },
+        },
+      ],
+      apply: (_ctx, state) => state,
+    };
+    const model: Model<number, UnitCode, Vars> = {
+      id: "m",
+      version: 1,
+      income: () => ({ unit: { code: "COIN" }, amount: 0 }),
+      actions: () => [action],
+      netWorth: (_ctx, state) => state.wallet.money,
+    };
+    const strategy = createPlannerStrategy<number, UnitCode, Vars>(
+      {
+        schemaVersion: 1,
+        horizonSteps: 1,
+        beamWidth: 1,
+        objective: "maximizeNetWorthAtEnd",
+      },
+      {
+        stepOnce(input) {
+          return { prev: input.state, next: input.state, events: [] };
+        },
+      },
+    );
+    const out = strategy.decide(ctx, model, makeState(0));
+    expect(out.length).toBe(1);
+    expect(out[0]?.bulkSize).toBe(2);
+  });
+
   it("throws when minTimeToTargetWorth has invalid targetWorth", () => {
     const ctx = makeContext();
 
