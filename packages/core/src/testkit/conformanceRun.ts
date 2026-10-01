@@ -434,6 +434,13 @@ function onGrid<N, U extends string, Vars>(
   return null;
 }
 
+function unitFactoryFor<N, U extends string, Vars>(
+  scenario: CompiledScenario<N, U, Vars>,
+): (code: string) => CompiledScenario<N, U, Vars>["ctx"]["unit"] {
+  const unit = scenario.ctx.unit;
+  return (code) => (code === unit.code ? unit : ({ code: code as U } as typeof unit));
+}
+
 function restoreJsonCheckpoint<N, U extends string, Vars>(
   scenario: CompiledScenario<N, U, Vars>,
   state: SimState<N, U, Vars>,
@@ -445,7 +452,9 @@ function restoreJsonCheckpoint<N, U extends string, Vars>(
       engineName,
     }),
   );
-  return deserializeSimState(scenario.ctx.E, JSON.parse(text));
+  return deserializeSimState(scenario.ctx.E, JSON.parse(text), {
+    unitFactory: unitFactoryFor(scenario),
+  });
 }
 
 type TailStart<N, U extends string, Vars> = {
@@ -479,7 +488,9 @@ function jsonResumeCheckpoint<N, U extends string, Vars>(
     );
     const parsed = parseSimStateJSON(JSON.parse(text) as unknown);
     return {
-      state: deserializeSimState(scenario.ctx.E, parsed),
+      state: deserializeSimState(scenario.ctx.E, parsed, {
+        unitFactory: unitFactoryFor(scenario),
+      }),
       strategyState: parsed.strategy?.state,
       persistedStrategy,
     };
@@ -669,6 +680,13 @@ export function checkJsonRoundTrip<N, U extends string, Vars>(
     } catch (error) {
       return fail(error instanceof Error ? error.message : "vars do not survive a JSON checkpoint");
     }
+    if (
+      restored.wallet.money.unit.code === scenario.ctx.unit.code &&
+      (restored.wallet.money.unit !== scenario.ctx.unit ||
+        restored.maxMoneyEver.unit !== scenario.ctx.unit)
+    ) {
+      return fail("restored unit is not the scenario unit");
+    }
     const originalVars = JSON.stringify(end.vars);
     const restoredVars = JSON.stringify(restored.vars);
     if (originalVars !== restoredVars) return fail(`vars ${originalVars} != ${restoredVars}`);
@@ -742,6 +760,7 @@ export function checkObserver<N, U extends string, Vars>(
 }
 
 export function checkTrialOrder(run: (gameSeed: number) => string, seeds: readonly number[]): RelationCheck {
+  if (new Set(seeds).size < 2) return skip("trial order needs at least two distinct seeds");
   const forward = seeds.map((seed) => ({ seed, snapshot: run(seed) }));
   const backward = [...seeds].reverse().map((seed) => ({ seed, snapshot: run(seed) }));
   const normalize = (rows: readonly { seed: number; snapshot: string }[]) =>
@@ -778,6 +797,10 @@ export function checkDurationBoundary<N, U extends string, Vars>(
   if (scenario.run.until) return skip("until can stop the run before durationSec");
   const ticks = wholeTickCount(duration, step);
   if (ticks === null) return skip("duration is not a multiple of stepSec");
+  const maxSteps = scenario.run.maxSteps;
+  if (maxSteps !== undefined && (!Number.isInteger(maxSteps) || maxSteps <= ticks)) {
+    return skip("maxSteps can stop the run before durationSec");
+  }
   const bracket = strategyBracket(scenario);
   if (isRelationCheck(bracket)) return bracket;
   const initial = bracket.snap();

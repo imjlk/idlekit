@@ -223,7 +223,7 @@ export function replaysConstantIncomeAndShrinksGap(): void {
 
 /**
  * @evidence docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness A property draw records the test seed and a separate game seed, and a JSON round-trip preserves the economy snapshot.
- * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #a195f0e Re-read the section, then ran this function: every constant-replay case passes checkReplay and checkJsonRoundTrip.
+ * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #a195f0e Re-read the section, then ran this function: every constant-replay case passes checkReplay and checkJsonRoundTrip, and both checks apply.
  * @evidence ./conformanceRun.ts#expectProperty Runs the constant-replay corpus and expects every case to pass.
  * @evidenceReview ./conformanceRun.ts#expectProperty #46079f1 Runs the constant-replay corpus and expects every case to pass. A bigint or cyclic counterexample still reports the seed, case index, and shrink path.
  * @evidence ./conformanceRun.ts#conformanceCaseCount Uses the harness case count as the corpus size.
@@ -260,8 +260,11 @@ export function replaysConstantIncomeAcrossTheFixedSeedCorpus(): void {
       if (value.rate > 1) smaller.push({ ...value, rate: value.rate - 1 });
       return smaller;
     },
-    predicate: (value) =>
-      checkReplay(constantScenario(value)).ok && checkJsonRoundTrip(constantScenario(value)).ok,
+    predicate: (value) => {
+      const replay = checkReplay(constantScenario(value));
+      const roundTrip = checkJsonRoundTrip(constantScenario(value));
+      return replay.ok && replay.applicable && roundTrip.ok && roundTrip.applicable;
+    },
     describeCase: (value) => ({
       gameSeed: value.seed,
       engineId: "number",
@@ -341,8 +344,8 @@ describe("PR-01 bulk equivalence", () => {
 /**
  * @evidence docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness The same scenario replays from an on-grid checkpoint, and an off-grid checkpoint does not apply.
  * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #a195f0e Re-read the section: the 0.1 grid resume at 0.2 applies, and the resume at 1.5 does not.
- * @evidence ./conformanceRun.ts#checkDurationBoundary A 4s run at step 1 and a 0.3s run at step 0.1 both apply; an until at t greater than or equal to 3 does not.
- * @evidenceReview ./conformanceRun.ts#checkDurationBoundary #b2b5971 Re-read the function: it snapshots and restores the strategy around the run, and it compares the end time with the timestamp advanced from the run's own start.
+ * @evidence ./conformanceRun.ts#checkDurationBoundary A 4s run at step 1 and a 0.3s run at step 0.1 both apply; an until at t greater than or equal to 3 does not. A maxSteps that is not an integer, or that is at most the tick count, does not apply.
+ * @evidenceReview ./conformanceRun.ts#checkDurationBoundary #5b5b407 Re-read the function: it snapshots and restores the strategy around the run, and it compares the end time with the timestamp advanced from the run's own start. A maxSteps that is not an integer, or that is at most the tick count, skips before the run.
  * @evidence ./conformanceRun.ts#rejectNonPositiveStep Step 0 is a failing applicable check.
  * @evidenceReview ./conformanceRun.ts#rejectNonPositiveStep #31155b2 Step 0 is a failing applicable check.
  * @evidence ./conformanceRun.ts#checkResume An off-grid resume at 1.5 does not apply; a 0.2 resume on the 0.1 grid does.
@@ -372,6 +375,17 @@ export function stopsOnAPositiveTickGridAndRefusesANonPositiveStep(): void {
   });
   expect(earlyStop.applicable).toBe(false);
   expect(earlyStop.ok).toBe(true);
+  const capped = checkDurationBoundary({
+    ...scenario,
+    run: { ...scenario.run, maxSteps: 4 },
+  });
+  expect(capped.applicable).toBe(false);
+  expect(capped.ok).toBe(true);
+  const roomy = checkDurationBoundary({
+    ...scenario,
+    run: { ...scenario.run, maxSteps: 5 },
+  });
+  expectApplicable(roomy);
 }
 
 /**
@@ -513,10 +527,10 @@ export function recordsWalletAndMaxMoneyUnitsOnTheEconomySnapshot(): void {
 /**
  * @evidence docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness An on-grid checkpoint replays from memory and from JSON, and independent trials are compared by game seed.
  * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #a195f0e Re-read the section, then ran this function: memory resume, JSON resume, and the JSON round-trip apply, and the two game seeds stay ordered.
- * @evidence ./conformanceRun.ts#checkJsonRoundTrip The constant-income scenario matches after a JSON round trip.
- * @evidenceReview ./conformanceRun.ts#checkJsonRoundTrip #4c0bb28 Re-read the function: it restores the strategy around the run, accepts a dense array and an empty array, rejects shared refs, symbol keys, non-enumerable names, sparse holes, frozen data, non-extensible objects and arrays, a non-writable array length, a nonstandard array prototype, and enumerable getters before stringify, and the constant-income round trip matches. A vars object that also appears on the wallet, max-money, or prestige graph is inapplicable. Ran this function: the dense round trip passed, and the sparse, frozen, non-extensible, locked-length, custom-prototype, and getter round trips did not.
- * @evidence ./conformanceRun.ts#checkTrialOrder Two distinct game seeds keep distinct economy snapshots.
- * @evidenceReview ./conformanceRun.ts#checkTrialOrder #5e85ee7 Two game seeds keep ordered snapshots. This run uses a seed-dependent income rate, and the two economy snapshots differ.
+ * @evidence ./conformanceRun.ts#checkJsonRoundTrip The constant-income scenario matches after a JSON round trip, and the restored wallet and max-money units are the scenario unit when the codes match.
+ * @evidenceReview ./conformanceRun.ts#checkJsonRoundTrip #2b25391 Re-read the function: it restores the strategy around the run, accepts a dense array and an empty array, rejects shared refs, symbol keys, non-enumerable names, sparse holes, frozen data, non-extensible objects and arrays, a non-writable array length, a nonstandard array prototype, and enumerable getters before stringify, and the constant-income round trip matches. A restored unit that shares the scenario code must be the scenario unit object. A vars object that also appears on the wallet, max-money, or prestige graph is inapplicable. Ran this function: the dense round trip passed, and the sparse, frozen, non-extensible, locked-length, custom-prototype, and getter round trips did not.
+ * @evidence ./conformanceRun.ts#checkTrialOrder Two distinct game seeds keep distinct economy snapshots. Fewer than two distinct seeds does not apply.
+ * @evidenceReview ./conformanceRun.ts#checkTrialOrder #088b936 Two game seeds keep ordered snapshots. Fewer than two distinct seeds skips the check. This run uses a seed-dependent income rate, and the two economy snapshots differ.
  */
 export function resumesOnTheSameTickGridFromMemoryAndJson(): void {
   const scenario = constantScenario({ rate: 5, durationSec: 6, stepSec: 1, seed: 19 });
@@ -616,6 +630,12 @@ export function resumesOnTheSameTickGridFromMemoryAndJson(): void {
     );
   expect(trial(gameA)).not.toBe(trial(gameB));
   expectApplicable(checkTrialOrder(trial, [gameA, gameB]));
+  const vacuous = checkTrialOrder(trial, []);
+  expect(vacuous.ok).toBe(true);
+  expect(vacuous.applicable).toBe(false);
+  const repeatedSeed = checkTrialOrder(trial, [gameA, gameA]);
+  expect(repeatedSeed.ok).toBe(true);
+  expect(repeatedSeed.applicable).toBe(false);
 }
 
 describe("PR-03 resume isolation", () => {

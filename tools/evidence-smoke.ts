@@ -12,6 +12,9 @@ import {
   duplicateFullNamesAcross,
   duplicateRequirementAnchors,
   junitCases,
+  junitReporterArgs,
+  registrationLines,
+  sourceGraph,
   citesRequirement,
   enabledClaimFailures,
   formatGateFailures,
@@ -319,12 +322,30 @@ try {
   ].join("");
   const classnameName = junitCases(classnameReport)[0]?.name;
   const filelessName = junitCases(filelessReport)[0]?.name;
+  const locatedSource = [
+    'describe("alpha", () => {',
+    '  it("quota is documented", exportedName);',
+    "});",
+  ].join("\n");
+  const locatedLine = registrationLines(locatedSource, "alpha > quota is documented")[0];
+  const locatedCase =
+    `<testcase name="quota is documented" classname="alpha" ` +
+    `file="src/host.test.ts" line="${locatedLine}" />`;
+  const locatedReport = [
+    '<testsuites><testsuite name="src/host.test.ts" file="src/host.test.ts">',
+    locatedCase,
+    "</testsuite></testsuites>",
+  ].join("");
+  const located = junitCases(locatedReport)[0];
   const qualifiedOk =
     qualified.length === 0 &&
     bareTitle.length > 0 &&
     printed.length > 0 &&
     classnameName === "concrete typia validator > inner > accepts a numeric" &&
-    filelessName === "concrete typia validator > accepts a numeric";
+    filelessName === "concrete typia validator > accepts a numeric" &&
+    located?.file === "src/host.test.ts" &&
+    located.line === locatedLine &&
+    locatedLine === 2;
   record(
     "suite-qualified",
     "zero",
@@ -402,8 +423,17 @@ try {
   const setext = headingAnchors(
     "Requirement {#req-id}\n---\nTitle {#h1}\n===\n## Kept {#kept}\nParagraph\n---\n",
   );
+  const quotedBreak = headingAnchors("> Example {#example}\n---\n## Kept {#kept}\n");
+  const listedBreak = headingAnchors("- Example {#listed}\n---\n## Kept {#kept}\n");
   const setextOk =
-    setext.length === 3 && setext[0] === "req-id" && setext[1] === "kept" && setext[2] === "";
+    setext.length === 3 &&
+    setext[0] === "req-id" &&
+    setext[1] === "kept" &&
+    setext[2] === "" &&
+    quotedBreak.length === 1 &&
+    quotedBreak[0] === "kept" &&
+    listedBreak.length === 1 &&
+    listedBreak[0] === "kept";
   record("setext-heading", "zero", setextOk ? 0 : 1, setextOk, JSON.stringify(setext));
 
   const activeDocs = ["docs/requirements/active/**/*.md"];
@@ -432,9 +462,13 @@ try {
   const spoofedCitation =
     "const text = `/** @evidence docs/requirements/active/x.md#anchor */ export function fake`;\n";
   const realCitation = "/** @evidence docs/requirements/active/x.md#anchor */\nexport function real() {}\n";
+  const ordinaryBlock =
+    "/* note /** @evidence docs/requirements/active/x.md#anchor */ export function uncited() {}\n";
   const citationOk =
     !productionFileCites(spoofedCitation, "docs/requirements/active/x.md", "anchor") &&
-    productionFileCites(realCitation, "docs/requirements/active/x.md", "anchor");
+    productionFileCites(realCitation, "docs/requirements/active/x.md", "anchor") &&
+    !productionFileCites(ordinaryBlock, "docs/requirements/active/x.md", "anchor") &&
+    !citesRequirement(ordinaryBlock, "uncited", "docs/requirements/active/x.md", "anchor");
   const spoofedRequirement =
     "const text = `/** @evidence docs/requirements/active/x.md#anchor */ export function sameName`;\n";
   const realRequirement =
@@ -530,11 +564,29 @@ try {
   ].join("\n");
   const wrongPath = registeredSuites(nestedBody, "exportedName", "quota is documented");
   const innerPath = registeredSuites(nestedBody, "otherName", "quota is documented");
+  const shadowedBody = [
+    "export function quotaTest() {}",
+    'describe("alpha", () => {',
+    "  const quotaTest = unrelated;",
+    '  it("quota is documented", quotaTest);',
+    "});",
+  ].join("\n");
+  const clearBody = [
+    "export function quotaTest() {}",
+    'describe("alpha", () => {',
+    '  it("quota is documented", quotaTest);',
+    "});",
+  ].join("\n");
+  const shadowed = registeredSuites(shadowedBody, "quotaTest", "quota is documented");
+  const clear = registeredSuites(clearBody, "quotaTest", "quota is documented");
   const suiteNestingOk =
     wrongPath.length === 1 &&
     wrongPath[0]?.join(" > ") === "wrong" &&
     innerPath.length === 1 &&
-    innerPath[0]?.join(" > ") === "expected > inner";
+    innerPath[0]?.join(" > ") === "expected > inner" &&
+    shadowed.length === 0 &&
+    clear.length === 1 &&
+    clear[0]?.join(" > ") === "alpha";
   record(
     "suite-nesting",
     "zero",
@@ -586,11 +638,31 @@ try {
     "});",
   ].join("\n");
   const acrossFiles = duplicateFullNamesAcross([otherFile, duplicateBody]);
+  const graphDir = mkdtempSync(join(tmpdir(), "idlekit-evidence-graph-"));
+  const helperPath = join(graphDir, "helper.ts");
+  const hostPath = join(graphDir, "host.test.ts");
+  writeFileSync(
+    helperPath,
+    'describe("kept", () => {\n  it("quota is documented", exportedName);\n});\n',
+  );
+  writeFileSync(
+    hostPath,
+    'import "./helper";\ndescribe("kept", () => {\n  it("quota is documented", exportedName);\n});\n',
+  );
+  let graphDuplicate = false;
+  try {
+    graphDuplicate = duplicateFullNamesAcross(sourceGraph([hostPath])).includes(
+      "kept > quota is documented",
+    );
+  } finally {
+    rmSync(graphDir, { recursive: true, force: true });
+  }
   const duplicateOk =
     duplicateNames.length === 1 &&
     duplicateNames[0] === "kept > quota is documented" &&
     duplicateStillRegistered.length === 1 &&
-    acrossFiles.includes("kept > quota is documented");
+    acrossFiles.includes("kept > quota is documented") &&
+    graphDuplicate;
   record(
     "duplicate-title",
     "zero",
@@ -683,8 +755,29 @@ try {
   const onlyTarget = uninventoriedCommandTargets(["test", "src/example.test.ts"], ".", [
     "src/example.test.ts",
   ]);
+  const preloaded = uninventoriedCommandTargets(
+    ["test", "--preload", "./setup.ts", "src/example.test.ts"],
+    ".",
+    ["src/example.test.ts"],
+  );
+  const preloadedEq = uninventoriedCommandTargets(
+    ["test", "--preload=./setup.ts", "src/example.test.ts"],
+    ".",
+    ["src/example.test.ts"],
+  );
+  const reporterArgs = junitReporterArgs(["test", "--", "src/example.test.ts"], "out.xml");
+  const reporterAt = reporterArgs.indexOf("--reporter=junit");
+  const separatorAt = reporterArgs.indexOf("--");
   const commandOk =
-    wrapped === false && direct === true && extraTargets.length === 1 && onlyTarget.length === 0;
+    wrapped === false &&
+    direct === true &&
+    extraTargets.length === 1 &&
+    onlyTarget.length === 0 &&
+    preloaded.length === 0 &&
+    preloadedEq.length === 0 &&
+    reporterAt >= 0 &&
+    separatorAt > reporterAt &&
+    reporterArgs.at(-1) === "src/example.test.ts";
   record(
     "test-subcommand",
     "zero",
