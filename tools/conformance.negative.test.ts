@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { runNegativeConformanceChecks } from "./conformance";
+import { ttsxUnderNodeName } from "./evidence-host";
 
 /**
  * @evidence docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness The negative runner checks a missing transform, a deleted citation, and an empty graph.
@@ -13,4 +14,9 @@ export function runsTheNegativeConformanceRunner(): void {
 
 describe("DX-01 conformance harness", () => {
   it("runs the negative conformance runner", runsTheNegativeConformanceRunner, { timeout: 120_000 });
+
+  it("selects the Windows ttsx launcher", () => {
+    expect(ttsxUnderNodeName("win32")).toBe("ttsx-under-node.cmd");
+    expect(ttsxUnderNodeName("darwin")).toBe("ttsx-under-node");
+  });
 });
