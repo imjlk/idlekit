@@ -1,0 +1,18 @@
+# Project-scoped example. Copy to `.codex/config.toml` in a trusted checkout.
+# Do not write this into `~/.codex/config.toml`.
+# Keys follow https://learn.chatgpt.com/codex/extend/mcp (checked 2026-09-30):
+# command, args, cwd, startup_timeout_sec, tool_timeout_sec.
+# The command is the pinned local `ttsc-graph` bin, not `npx`.
+# POSIX command: node_modules/.bin/ttsc-graph
+# Windows command: node_modules/.bin/ttsc-graph.cmd
+# On Windows, copy the `.cmd` path into `command`. The extensionless npm shim
+# is not a Windows executable.
+# Handshake returns before the graph build. The first tool call can outlive
+# the 60s default tool timeout, so this example raises it.
+
+[mcp_servers.ttsc-graph]
+command = "node_modules/.bin/ttsc-graph"
+args = ["--cwd", ".", "--tsconfig", "tsconfig.graph.json"]
+cwd = "."
+startup_timeout_sec = 30
+tool_timeout_sec = 600

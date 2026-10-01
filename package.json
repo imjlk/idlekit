@@ -22,6 +22,7 @@
     "evidence:check": "bun tools/evidence-check.ts",
     "evidence:smoke": "bun tools/evidence-smoke.ts",
     "format:check": "bun tools/format-check.ts",
+    "graph:check": "bun tools/graph-preflight.ts",
     "transform:smoke": "bun tools/transform-smoke.ts",
     "runtime:check": "bun tools/runtime-import-check.ts",
     "dev:cli": "bun run --cwd packages/cli dev",

@@ -138,6 +138,6 @@ suite는 `30m/2h/24h/7d/30d/90d` 장기 구간 시나리오를 포함합니다.
 
 `bun tools/analysis-baseline-check.ts`는 [소스 감사](./implementation/source-audit_ko.md)가 인용한 경로와 현재 host pin을 확인한다.
 
-`evidence:check`, `evidence:smoke`, `format:check`는 `TC-03` 이후의 저장소 명령이다. `graph:check`, `contracts:generate`, `contracts:check`, `test:conformance`는 아직 아니다. `toolchain:doctor`와 `toolchain:prepare`는 `TC-01` host 명령이다.
+`evidence:check`, `evidence:smoke`, `format:check`는 `TC-03` 이후의 저장소 명령이다. `graph:check`는 `TC-04` 명령이다. `contracts:generate`, `contracts:check`, `test:conformance`는 아직 아니다. `toolchain:doctor`와 `toolchain:prepare`는 `TC-01` host 명령이다.
 
 이후 분석 작업의 공유 의미는 [분석 계약](./adr/analysis-contracts_ko.md)에 있다.

@@ -7,6 +7,7 @@ Thank you for contributing to `idlekit`.
 ```bash
 bun install
 bun run typecheck
+bun run graph:check
 bun run runtime:check
 bun run test
 bun run build
@@ -25,6 +26,10 @@ Do not `@evidenceExclude` a core requirement to turn the check green. Planned wo
 A test that carries `@evidence` must be an exported function and must be registered with `it(name, fn)` or `test(name, fn)`. Inventory reads the bun test reporter. Evidence does not decide whether the assertion is true.
 
 `@ttsc/evidence` is registered in `lint.config.ts` as a `@ttsc/lint` contributor. Do not add it to `compilerOptions.plugins`. `@evidenceReview` fingerprints come from the `ttsc` diagnostic after re-reading the cited target. Do not invent them.
+
+## Graph
+
+`bun run graph:check` queries the local `ttsc-graph` server for `tsconfig.graph.json`. Start from `tour` or `lookup`, then `details` or `trace`, then read the cited span. Graph rank does not drop the test suite. JSON, YAML, shell, dynamic plugin loads, and `package.json` exports are outside the graph. Do not record opaque node ids. `@ttsc/graph` is a root devDependency and is not imported by published packages.
 
 ## Pull request rules
 

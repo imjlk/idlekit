@@ -40,6 +40,9 @@ jobs:
       - name: Toolchain smoke
         run: bun run toolchain:smoke
 
+      - name: Graph check
+        run: bun run graph:check
+
       - name: Typecheck
         run: bun run typecheck
 

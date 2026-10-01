@@ -79,7 +79,6 @@ const mustBeAbsent = [
 ];
 
 const absentRootScripts = [
-  "graph:check",
   "contracts:generate",
   "contracts:check",
   "test:conformance",
@@ -144,6 +143,16 @@ for (const name of absentRootScripts) {
 }
 for (const name of ["evidence:check", "evidence:smoke", "format:check"]) {
   if (!(name in scripts)) fail(`TC-03 script is missing: ${name}`);
+}
+if (!("graph:check" in scripts)) fail("TC-04 script is missing: graph:check");
+for (const rel of [
+  "tsconfig.graph.json",
+  "tools/graph-preflight.ts",
+  "tools/graph-query.ts",
+  "docs/development-graph.md",
+  "AGENTS.md",
+]) {
+  if (!entryExists(resolve(root, rel))) fail(`TC-04 path is missing: ${rel}`);
 }
 if (!entryExists(resolve(root, "docs/requirements/active/typia-transform.md"))) {
   fail("active typia requirement is missing");
