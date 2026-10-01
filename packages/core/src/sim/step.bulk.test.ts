@@ -1280,6 +1280,16 @@ describe("PR-01 bulk quote settlement", () => {
     expect(engine.toString(out.next.wallet.money.amount)).toBe("custom:1000");
   });
 
+  it("asks exactOrder when an infinite wallet meets a non-decimal finite cost", () => {
+    const engine = createCustomEngine();
+    engine.toString = (amount) => (Number.isFinite(amount) ? `custom:${amount}` : String(amount));
+    expect(canSettleCost(engine, Number.POSITIVE_INFINITY, 1)).toBe(true);
+    expect(canSettleCost(engine, Number.NEGATIVE_INFINITY, 1)).toBe(false);
+    expect(canSettleCost(engine, Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY)).toBe(false);
+    delete engine.exactOrder;
+    expect(canSettleCost(engine, Number.POSITIVE_INFINITY, 1)).toBe(false);
+  });
+
   it("uses exactOrder when toNumber collapses distinct amounts", () => {
     const wallet = 9007199254740992n;
     const cost = 9007199254740993n;

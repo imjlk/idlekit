@@ -177,8 +177,7 @@ function exactAmountOrder<N>(engine: ExactEngine<N>, left: N, right: N): -1 | 0 
   const rightText = engine.toString(right);
   if (leftText === "NaN" || rightText === "NaN") return undefined;
   if (rightText === "Infinity" || rightText === "-Infinity") return undefined;
-  if (leftText === "Infinity" || leftText === "-Infinity") {
-    if (!exactDecimal(rightText)) return undefined;
+  if ((leftText === "Infinity" || leftText === "-Infinity") && exactDecimal(rightText)) {
     return leftText === "-Infinity" ? -1 : 1;
   }
   const parsed = exactTextOrder(leftText, rightText);
