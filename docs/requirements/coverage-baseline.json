@@ -4,7 +4,8 @@
     "REQ-DX01-CONFORMANCE-HARNESS",
     "REQ-PR01-BULK-QUOTE-SETTLEMENT",
     "REQ-PR02-SIMULATION-TIME-BOUNDARIES",
-    "REQ-PR03-RUN-LIFECYCLE-ISOLATION"
+    "REQ-PR03-RUN-LIFECYCLE-ISOLATION",
+    "REQ-PR05-OBSERVATION-RETENTION"
   ],
   "protectedFiles": [
     "docs/requirements/active/typia-transform.md",
@@ -32,8 +33,10 @@
     "docs/requirements/active/run-lifecycle-isolation.md",
     "packages/core/src/sim/runFactory.ts",
     "packages/core/src/sim/runFactory.test.ts",
-    "packages/core/src/sim/monteCarlo.ts",
-    "packages/core/src/scenario/compile.ts",
+    "docs/requirements/active/observation-retention.md",
+    "packages/core/src/sim/observation.ts",
+    "packages/core/src/sim/observation.test.ts",
+    "packages/core/src/sim/session.ts",
     "fixtures/conformance/shrink-gap.json",
     "fixtures/toolchain/evidence/lint.config.ts",
     "fixtures/toolchain/evidence/src/quotaHost.ts",

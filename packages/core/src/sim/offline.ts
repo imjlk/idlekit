@@ -1,5 +1,6 @@
-import { analyzeUX, createSimStatsAccumulator } from "./analysis/ux";
-import { createEventBuffer } from "./eventBuffer";
+import { analyzeUX } from "./analysis/ux";
+import { createBoundedLog, createEventBuffer } from "./eventBuffer";
+import { createObservationRecorder, statsFromObservation } from "./observation";
 import { stepOnce } from "./step";
 import { assertSimulationClock, nextBoundary, stepContext, timeEpsilon, timeStepEvents } from "./timeBoundary";
 import type { CompiledScenario, RunResult, RunStop, SimState } from "./types";
@@ -123,12 +124,24 @@ export function applyOfflineSeconds<N, U extends string, Vars>(args: {
   const remainderRaw = resolved.effectiveSec - fullSteps * stepSec;
   const remainderSec = remainderRaw > timeEpsilon(resolved.effectiveSec) ? remainderRaw : 0;
 
-  const statsAcc = createSimStatsAccumulator();
+  const recorder = createObservationRecorder({
+    enabled: scenario.run.observation?.enabled !== false,
+    startT: start.t,
+    maxMilestones: scenario.run.observation?.maxMilestones ?? 64,
+    maxGoals: scenario.run.observation?.maxGoals ?? 32,
+    goals: scenario.run.goals ?? [],
+    observer: scenario.run.observer,
+  });
   const eventBuffer = createEventBuffer<N>({
     enabled: eventLogEnabled,
     maxEvents,
   });
   const actionsLog: Array<{ t: number; actionId: string; label?: string; bulkSize?: number }> = [];
+  const actionBudget = scenario.run.trace?.maxActions;
+  const actionLog =
+    actionBudget !== undefined
+      ? createBoundedLog<{ t: number; actionId: string; label?: string; bulkSize?: number }>(actionBudget)
+      : undefined;
 
   let state = start;
   let steps = 0;
@@ -172,23 +185,50 @@ export function applyOfflineSeconds<N, U extends string, Vars>(args: {
     state = out.next;
     simulatedSec += decision.dt;
     steps += 1;
-    statsAcc.push(out.events);
+    recorder.recordStep({
+      t0: actionStartT,
+      t1: state.t,
+      dt: decision.dt,
+      events: out.events,
+      observedMoney: out.observedMoney,
+      prestigeChanged:
+        out.next.prestige.count !== out.prev.prestige.count ||
+        String(out.next.prestige.points) !== String(out.prev.prestige.points),
+      state,
+    });
     eventBuffer.pushTimed(timeStepEvents(out.events, actionStartT, state.t));
     if (out.actionsApplied?.length) {
-      actionsLog.push(...out.actionsApplied);
+      if (actionLog) {
+        for (const row of out.actionsApplied) actionLog.push(row);
+      } else {
+        actionsLog.push(...out.actionsApplied);
+      }
     }
   }
 
-  const stats = statsAcc.snapshot();
+  const observation = recorder.finish();
+  const stats = statsFromObservation(observation);
   const uxFlags = analyzeUX(stats);
   const retained = eventBuffer.snapshot();
+  const loggedActions = actionLog?.snapshot();
 
   return {
     start,
     end: state,
     events: retained.events,
     eventTimeline: retained.eventTimeline,
-    actionsLog: actionsLog.length > 0 ? actionsLog : undefined,
+    actionsLog: loggedActions ? loggedActions.items : actionsLog.length > 0 ? actionsLog : undefined,
+    observation,
+    ...(loggedActions
+      ? {
+          actionsLogMeta: {
+            maxActions: actionBudget,
+            totalSeen: loggedActions.totalSeen,
+            dropped: loggedActions.dropped,
+            retained: loggedActions.retained,
+          },
+        }
+      : {}),
     stats,
     uxFlags,
     eventLog: retained.eventLog,

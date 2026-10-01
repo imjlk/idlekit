@@ -222,7 +222,26 @@ export type SimRunOptions = Readonly<{
   trace?: Readonly<{
     everySteps?: number;
     keepActionsLog?: boolean;
+    /** Undefined keeps every traced point. A number keeps the latest points only. */
+    maxPoints?: number;
+    /** Undefined keeps every applied action. A number keeps the latest rows only. */
+    maxActions?: number;
   }>;
+
+  /**
+   * Compact counters and samples. Default is on.
+   * `enabled: false` reports missing counters. It does not report measured zeros.
+   * Reset transitions are not observed here.
+   */
+  observation?: Readonly<{
+    enabled?: boolean;
+    maxMilestones?: number;
+    maxGoals?: number;
+  }>;
+
+  observer?: import("./observation").RunObserver;
+
+  goals?: readonly import("./observation").RunGoal<any, any, any>[];
 
   fast?: Readonly<{
     enabled: boolean;
@@ -259,6 +278,19 @@ export type RunResult<N, U extends string, Vars> = Readonly<{
 
   stats?: import("./analysis/ux").SimStats;
   uxFlags?: import("./analysis/ux").UXFlag[];
+  observation?: import("./observation").RunObservation;
+  traceLog?: Readonly<{
+    maxPoints?: number;
+    totalSeen: number;
+    dropped: number;
+    retained: number;
+  }>;
+  actionsLogMeta?: Readonly<{
+    maxActions?: number;
+    totalSeen: number;
+    dropped: number;
+    retained: number;
+  }>;
   eventLog?: Readonly<{
     enabled: boolean;
     maxEvents?: number;

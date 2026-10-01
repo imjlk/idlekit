@@ -17,6 +17,8 @@
     "packages/core/src/sim/step.bulk.test.ts",
     "packages/core/src/sim/timeBoundary.ts",
     "packages/core/src/sim/runFactory.ts",
+    "packages/core/src/sim/observation.ts",
+    "packages/core/src/sim/observation.test.ts",
     "packages/core/src/sim/simulator.ts",
     "packages/core/src/sim/offline.ts",
     "packages/core/src/sim/simulator.time.test.ts",

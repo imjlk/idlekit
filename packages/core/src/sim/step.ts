@@ -40,6 +40,20 @@ export type StepOutput<N, U extends string, Vars> = Readonly<{
     bulkSize?: number;
   }>[];
 
+  /**
+   * Money counters for this committed tick.
+   * Present even when `disableMoneyEvents` omits the money event from `events`.
+   */
+  observedMoney?: Readonly<{
+    applied: number;
+    dropped: number;
+    queued: number;
+    flushed: number;
+    blocked: number;
+    /** True when this tick applied or flushed a positive amount. */
+    rewarded: boolean;
+  }>;
+
   walletDelta?: Money<N, U>;
 }>;
 
@@ -460,22 +474,35 @@ export function stepOnce<N, U extends string, Vars>(
     ...income,
     amount: E.mul(income.amount, dt),
   };
+  const retainMoneyEvents = ctx.collectMoneyEvents ?? !fast?.disableMoneyEvents;
   const moneyTick = tickMoney({
     E,
     state: next.wallet,
     delta: scaledIncome,
     policy: ctx.tickPolicy,
-    options: {
-      collectEvents: ctx.collectMoneyEvents ?? !fast?.disableMoneyEvents,
-    },
+    options: { collectEvents: true },
   });
+  const observedMoney = { applied: 0, dropped: 0, queued: 0, flushed: 0, blocked: 0, rewarded: false };
+  for (const moneyEvent of moneyTick.events) {
+    if (moneyEvent.type === "applied") {
+      observedMoney.applied += 1;
+      if (E.cmp(moneyEvent.delta, E.zero()) > 0) observedMoney.rewarded = true;
+    }
+    if (moneyEvent.type === "dropped") observedMoney.dropped += 1;
+    if (moneyEvent.type === "queued") observedMoney.queued += 1;
+    if (moneyEvent.type === "flushed") {
+      observedMoney.flushed += 1;
+      if (E.cmp(moneyEvent.bucketFlushed, E.zero()) > 0) observedMoney.rewarded = true;
+    }
+    if (moneyEvent.type === "blocked") observedMoney.blocked += 1;
+  }
 
   next = {
     ...next,
     wallet: moneyTick.state,
   };
 
-  if (moneyTick.events.length > 0) {
+  if (retainMoneyEvents && moneyTick.events.length > 0) {
     events.push({ type: "money", events: moneyTick.events });
   }
 
@@ -514,6 +541,7 @@ export function stepOnce<N, U extends string, Vars>(
     next,
     events,
     actionsApplied: actionsApplied.length > 0 ? actionsApplied : undefined,
+    observedMoney,
     walletDelta,
   };
 }

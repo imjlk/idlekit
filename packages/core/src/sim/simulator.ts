@@ -1,5 +1,6 @@
-import { analyzeUX, createSimStatsAccumulator } from "./analysis/ux";
-import { createEventBuffer } from "./eventBuffer";
+import { analyzeUX } from "./analysis/ux";
+import { createBoundedLog, createEventBuffer } from "./eventBuffer";
+import { createObservationRecorder, statsFromObservation } from "./observation";
 import { stepOnce } from "./step";
 import { assertSimulationClock, nextBoundary, stepContext, timeStepEvents } from "./timeBoundary";
 import type { CompiledScenario, RunResult, RunStop, SimState } from "./types";
@@ -28,9 +29,22 @@ export function runScenario<N, U extends string, Vars>(
   let state = sc.initial;
   const start = sc.initial;
 
-  const trace: SimState<N, U, Vars>[] = sc.run.trace ? [state] : [];
+  const trace: SimState<N, U, Vars>[] = sc.run.trace && sc.run.trace.maxPoints === undefined ? [state] : [];
+  const traceLog = sc.run.trace && sc.run.trace.maxPoints !== undefined ? createBoundedLog<SimState<N, U, Vars>>(sc.run.trace.maxPoints) : undefined;
+  if (traceLog) traceLog.push(state);
   const actionsLog: { t: number; actionId: string; label?: string; bulkSize?: number }[] = [];
-  const statsAcc = createSimStatsAccumulator();
+  const actionLog =
+    sc.run.trace?.keepActionsLog && sc.run.trace.maxActions !== undefined
+      ? createBoundedLog<{ t: number; actionId: string; label?: string; bulkSize?: number }>(sc.run.trace.maxActions)
+      : undefined;
+  const recorder = createObservationRecorder({
+    enabled: sc.run.observation?.enabled !== false,
+    startT: state.t,
+    maxMilestones: sc.run.observation?.maxMilestones ?? 64,
+    maxGoals: sc.run.observation?.maxGoals ?? 32,
+    goals: sc.run.goals ?? [],
+    observer: sc.run.observer,
+  });
 
   const stepSec = sc.run.stepSec;
   const durationSec = sc.run.durationSec;
@@ -88,34 +102,77 @@ export function runScenario<N, U extends string, Vars>(
     });
 
     state = step.next;
-    statsAcc.push(step.events);
+    recorder.recordStep({
+      t0: actionStartT,
+      t1: state.t,
+      dt: decision.dt,
+      events: step.events,
+      observedMoney: step.observedMoney,
+      prestigeChanged:
+        step.next.prestige.count !== step.prev.prestige.count ||
+        String(step.next.prestige.points) !== String(step.prev.prestige.points),
+      state,
+    });
     eventBuffer.pushTimed(timeStepEvents(step.events, actionStartT, state.t));
 
     if (sc.run.trace?.keepActionsLog && step.actionsApplied?.length) {
-      actionsLog.push(...step.actionsApplied);
+      if (actionLog) {
+        for (const row of step.actionsApplied) actionLog.push(row);
+      } else {
+        actionsLog.push(...step.actionsApplied);
+      }
     }
 
     steps += 1;
-    if (sc.run.trace && steps % everySteps === 0) {
-      trace.push(state);
-    }
+    if (traceLog && steps % everySteps === 0) traceLog.push(state);
+    else if (sc.run.trace && traceLog === undefined && steps % everySteps === 0) trace.push(state);
   }
 
-  finishTrace(sc.run.trace !== undefined, trace, state);
+  if (traceLog) {
+    const retainedTrace = traceLog.snapshot().items;
+    const last = retainedTrace[retainedTrace.length - 1];
+    if (last !== state) traceLog.push(state);
+  } else {
+    finishTrace(sc.run.trace !== undefined, trace, state);
+  }
 
-  const stats = statsAcc.snapshot();
+  const observation = recorder.finish();
+  const stats = statsFromObservation(observation);
   const uxFlags = analyzeUX(stats);
   const retained = eventBuffer.snapshot();
+  const traced = traceLog?.snapshot();
+  const loggedActions = actionLog?.snapshot();
 
   return {
     start,
     end: state,
     events: retained.events,
     eventTimeline: retained.eventTimeline,
-    trace: sc.run.trace ? trace : undefined,
-    actionsLog: sc.run.trace?.keepActionsLog ? actionsLog : undefined,
+    trace: sc.run.trace ? (traced ? traced.items : trace) : undefined,
+    actionsLog: sc.run.trace?.keepActionsLog ? (loggedActions ? loggedActions.items : actionsLog) : undefined,
     stats,
     uxFlags,
+    observation,
+    ...(traced
+      ? {
+          traceLog: {
+            maxPoints: sc.run.trace?.maxPoints,
+            totalSeen: traced.totalSeen,
+            dropped: traced.dropped,
+            retained: traced.retained,
+          },
+        }
+      : {}),
+    ...(loggedActions
+      ? {
+          actionsLogMeta: {
+            maxActions: sc.run.trace?.maxActions,
+            totalSeen: loggedActions.totalSeen,
+            dropped: loggedActions.dropped,
+            retained: loggedActions.retained,
+          },
+        }
+      : {}),
     eventLog: retained.eventLog,
     stop,
   };

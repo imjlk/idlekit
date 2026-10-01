@@ -32,6 +32,40 @@ function retainList<T>(
   target.push(...batch);
 }
 
+/** Ring buffer for trace points or action rows. This is not a second event log. */
+export function createBoundedLog<T>(maxItems: number | undefined) {
+  const items: T[] = [];
+  let totalSeen = 0;
+  let dropped = 0;
+
+  return {
+    push(item: T): void {
+      totalSeen += 1;
+      if (maxItems === 0) {
+        dropped += 1;
+        return;
+      }
+      if (maxItems === undefined) {
+        items.push(item);
+        return;
+      }
+      if (items.length >= maxItems) {
+        items.shift();
+        dropped += 1;
+      }
+      items.push(item);
+    },
+    snapshot() {
+      return {
+        items,
+        totalSeen,
+        dropped,
+        retained: items.length,
+      };
+    },
+  };
+}
+
 export function createEventBuffer<N>(args: {
   enabled: boolean;
   maxEvents?: number;

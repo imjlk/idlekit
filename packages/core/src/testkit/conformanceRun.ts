@@ -1318,6 +1318,9 @@ export function checkRetention<N, U extends string, Vars>(
     const left = snapshotEconomy(scenario.ctx.E, kept.end);
     const right = snapshotEconomy(scenario.ctx.E, dropped.end);
     if (left !== right) return fail(`${left} != ${right}`);
+    const keptStats = JSON.stringify(kept.stats ?? null);
+    const droppedStats = JSON.stringify(dropped.stats ?? null);
+    if (keptStats !== droppedStats) return fail(`stats ${keptStats} != ${droppedStats}`);
     if ((kept.eventLog?.totalSeen ?? 0) < 1) return skip("retention saw no events");
     return pass(`${left}; retained ${kept.events.length}; dropped ${dropped.events.length}`);
   } finally {

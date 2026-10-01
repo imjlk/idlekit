@@ -12,6 +12,8 @@ export type MilestoneReport = Readonly<{
   firstMilestoneSec?: number;
   firstActionSec?: number;
   firstPrestigeSec?: number;
+  /** `incomplete` means the times came from a truncated log with no compact samples. */
+  coverage?: "complete" | "partial" | "incomplete";
 }>;
 
 function compareOccurrence(a: MilestoneOccurrence, b: MilestoneOccurrence): number {
@@ -26,6 +28,8 @@ export function analyzeMilestones<N, U extends string, Vars>(args: {
   const { run } = args;
   const byKey = new Map<string, MilestoneOccurrence>();
   const startT = run.start.t;
+  const compact = run.observation;
+  const useCompact = compact !== undefined && compact.coverage !== "disabled" && !compact.legacyEventFallback;
 
   const upsert = (entry: MilestoneOccurrence) => {
     const prev = byKey.get(entry.key);
@@ -33,6 +37,31 @@ export function analyzeMilestones<N, U extends string, Vars>(args: {
       byKey.set(entry.key, entry);
     }
   };
+
+  if (useCompact && compact) {
+    for (const sample of compact.milestones) {
+      if (sample.source === "goal") continue;
+      upsert({
+        key: sample.key,
+        firstSeenT: sample.firstSeenT,
+        firstSeenSec: Math.max(0, sample.firstSeenT - startT),
+        source: sample.source === "milestone" ? "event" : sample.source,
+      });
+    }
+  }
+
+  if (useCompact) {
+    const milestones = [...byKey.values()].sort(compareOccurrence);
+    const firstAction = milestones.find((x) => x.source === "action");
+    const firstPrestige = milestones.find((x) => x.key === "prestige.first");
+    return {
+      milestones,
+      firstMilestoneSec: milestones[0]?.firstSeenSec,
+      firstActionSec: firstAction?.firstSeenSec,
+      firstPrestigeSec: firstPrestige?.firstSeenSec,
+      coverage: compact?.coverage === "partial" ? "partial" : "complete",
+    };
+  }
 
   for (const frame of run.eventTimeline ?? []) {
     if (frame.event.type !== "milestone") continue;
@@ -95,5 +124,6 @@ export function analyzeMilestones<N, U extends string, Vars>(args: {
     firstMilestoneSec: milestones[0]?.firstSeenSec,
     firstActionSec: firstAction?.firstSeenSec,
     firstPrestigeSec: firstPrestige?.firstSeenSec,
+    coverage: run.eventLog !== undefined && run.eventLog.dropped > 0 ? "incomplete" : "complete",
   };
 }

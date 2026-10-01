@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { createNumberEngine } from "../engine/breakInfinity";
+import { mergeObservations } from "./observation";
 import { simulateSessionPattern } from "./session";
 import type { CompiledScenario, Model, SimState } from "./types";
 
@@ -67,5 +68,16 @@ describe("simulateSessionPattern", () => {
     const out = simulateSessionPattern({ scenario, pattern: { id: "short-bursts", days: 1 }, seed: 7 });
     expect((out.run.eventLog?.dropped ?? 0) > 0).toBeTrue();
     expect(out.run.eventLog?.retained).toBe(0);
+    const merged = mergeObservations(out.segments.map((segment) => segment.run.observation!));
+    expect(out.run.stats?.money.applied).toBe(merged.money.applied);
+    expect(out.run.stats?.actions.applied).toBe(merged.actions.applied);
+    expect(out.run.observation?.legacyEventFallback).toBe(false);
+    const kept = simulateSessionPattern({
+      scenario: { ...scenario, run: { ...scenario.run, eventLog: { enabled: true } } },
+      pattern: { id: "short-bursts", days: 1 },
+      seed: 7,
+    });
+    expect(kept.run.stats?.money).toEqual(out.run.stats?.money);
+    expect(kept.end.wallet.money.amount).toBe(out.end.wallet.money.amount);
   });
 });

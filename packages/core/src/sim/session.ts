@@ -1,5 +1,6 @@
-import { analyzeUX, createSimStatsAccumulator } from "./analysis/ux";
+import { analyzeUX } from "./analysis/ux";
 import { createEventBuffer } from "./eventBuffer";
+import { mergeObservations, observationFromLegacyEvents, statsFromObservation, type RunObservation } from "./observation";
 import { applyOfflineSeconds, type OfflineRunResult } from "./offline";
 import { runScenario } from "./simulator";
 import type { CompiledScenario, RunResult, SimState } from "./types";
@@ -105,18 +106,25 @@ export function simulateSessionPattern<N, U extends string, Vars>(args: {
   const segments: SessionSegment<N, U, Vars>[] = [];
   const trace: SimState<N, U, Vars>[] = [];
   const actionsLog: Array<{ t: number; actionId: string; label?: string; bulkSize?: number }> = [];
-  const statsAcc = createSimStatsAccumulator();
   const eventBuffer = createEventBuffer<N>({
     enabled: sc.run.eventLog?.enabled ?? true,
     maxEvents: sc.run.eventLog?.maxEvents,
   });
+  const segmentObservations: RunObservation[] = [];
   let state = start;
   let totalActiveSec = 0;
   let totalOfflineSec = 0;
   let activeBlocks = 0;
 
   const retainRun = (run: RunResult<N, U, Vars>) => {
-    statsAcc.push(run.events);
+    segmentObservations.push(
+      run.observation ??
+        observationFromLegacyEvents({
+          startT: run.start.t,
+          endT: run.end.t,
+          events: run.events,
+        }),
+    );
     eventBuffer.pushRun(run);
   };
 
@@ -217,7 +225,8 @@ export function simulateSessionPattern<N, U extends string, Vars>(args: {
     state = offlineRun.end;
   }
 
-  const stats = statsAcc.snapshot();
+  const observation = mergeObservations(segmentObservations);
+  const stats = statsFromObservation(observation);
   const retained = eventBuffer.snapshot();
   const run: RunResult<N, U, Vars> = {
     start,
@@ -228,6 +237,7 @@ export function simulateSessionPattern<N, U extends string, Vars>(args: {
     actionsLog,
     stats,
     uxFlags: analyzeUX(stats),
+    observation,
     eventLog: retained.eventLog,
   };
 

@@ -70,3 +70,13 @@ macOS arm64, Bun `1.3.10`, `@ttsc/graph` `0.30.4`, protocol `2025-11-25`에서 �
 `createRunFactory`의 reverse execution trace(`maxDepth` 3, `maxNodes` 32)는 `packages/core/src/sim/monteCarlo.ts:46`의 호출과 `packages/core/src/sim/runFactory.test.ts`를 가리킨다. `simulateMonteCarlo`를 통해 `isolatesIndependentRuns`, CLI `lib/designObjectives.ts`, `lib/experience.ts`, `commands/compare.ts`에 닿았다. 32노드 상한이 모든 호출자는 아니다.
 
 `simulateMonteCarlo`의 forward execution trace(`maxDepth` 2, `maxNodes` 32)는 `packages/core/src/sim/runFactory.ts:338`의 `createRunFactory`에 닿고, 이어서 `session.ts`와 `simulator.ts`에 닿는다. `cloneRunState`의 reverse execution trace(`maxDepth` 2, `maxNodes` 16)는 `buildInitialState` 안의 `packages/core/src/scenario/compile.ts:388`, `packages/core/src/scenario/compile.ts:491`의 `compileScenario`, 그리고 factory의 `bind`를 가리킨다. `createPlannerStrategy`는 여전히 `stepOnce`까지의 hop이 아니다. 그 edge는 미관측이다.
+
+## PR-05 호출자
+
+macOS arm64, Bun `1.3.10`, `@ttsc/graph` `0.30.4`, protocol `2025-11-25`에서 조회했다. 생성 식별자는 없다. lookup은 `createObservationRecorder`를 `packages/core/src/sim/observation.ts:238`, `mergeObservations`를 `packages/core/src/sim/observation.ts:160`, `observationContract`를 `packages/core/src/sim/observation.ts:11`, `simulateSessionPattern`을 `packages/core/src/sim/session.ts:97`, `runScenario`를 `packages/core/src/sim/simulator.ts:26`에 둔다.
+
+`createObservationRecorder`의 reverse execution trace(`maxDepth` 3, `maxNodes` 32)는 `packages/core/src/sim/simulator.ts:40`과 `packages/core/src/sim/offline.ts:127`을 가리킨다. 그 호스트를 통해 `session.ts:162`, `prestigeCycle.ts:29`, `strategy/opt/runner.ts:61`, `eta.ts:70`, `monteCarlo.ts:73`, `conformanceRun.ts`, `observation.test.ts:82`, `simulator.time.test.ts:110`, CLI `compare.ts:114`, `ltv.ts:254`, `tune.ts:157`, `lib/designObjectives.ts`, `lib/experience.ts`에 닿았다. 32노드 상한이 모든 호출자는 아니다.
+
+`mergeObservations`의 reverse execution trace(`maxDepth` 3, `maxNodes` 32)는 `packages/core/src/sim/session.ts:228`을 가리킨다. `simulateSessionPattern`을 통해 `packages/core/src/sim/monteCarlo.ts:41`의 `simulateMonteCarlo`, `packages/cli/src/lib/experience.ts:226`의 `collectExperienceSnapshot`, `isolatesIndependentRuns`, `lib/designObjectives.ts`, `commands/compare.ts:174`에 닿았다.
+
+`simulateSessionPattern`의 forward execution trace(`maxDepth` 2, `maxNodes` 32)는 `packages/core/src/sim/session.ts:228`, `packages/core/src/sim/observation.ts:162`, `packages/core/src/sim/observation.ts:189`, `packages/core/src/sim/observation.ts:378`, `packages/core/src/sim/eventBuffer.ts:83`, `packages/core/src/sim/offline.ts:127`, `packages/core/src/sim/simulator.ts:40`을 포함한다. 그 span은 `stepOnce`를 가리키지 않는다. `createPlannerStrategy`의 forward execution trace(`maxDepth` 3, `maxNodes` 32)는 `packages/core/src/sim/strategy/planner.ts` 안에 머물고 `stepOnce`를 가리키지 않는다. 그 edge는 미관측이다.

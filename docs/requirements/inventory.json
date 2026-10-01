@@ -194,6 +194,22 @@
           "args": ["test", "src/sim/runFactory.test.ts"]
         }
       ]
+    },
+    {
+      "id": "REQ-PR05-OBSERVATION-RETENTION",
+      "pr": "PR-05",
+      "anchor": "req-pr05-observation-retention",
+      "doc": "docs/requirements/active/observation-retention.md",
+      "production": ["packages/core/src/sim/observation.ts"],
+      "tests": [
+        {
+          "file": "packages/core/src/sim/observation.test.ts",
+          "exportName": "keepsStatsIndependentOfRetention",
+          "registeredAs": "keeps stats independent of retention",
+          "cwd": "packages/core",
+          "args": ["test", "src/sim/observation.test.ts"]
+        }
+      ]
     }
   ]
 }
