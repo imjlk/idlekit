@@ -1,5 +1,15 @@
 import { resolve } from "path";
-import { ROOT, ensureDir, pathExists, readText, removePath, runText, sha256Hex, writeText } from "./_bun";
+import {
+  ROOT,
+  cliCommand,
+  ensureDir,
+  pathExists,
+  readText,
+  removePath,
+  runText,
+  sha256Hex,
+  writeText,
+} from "./_bun";
 
 type JSONValue = null | boolean | number | string | JSONValue[] | { [k: string]: JSONValue };
 
@@ -7,7 +17,7 @@ const tmpDir = resolve(ROOT, "tmp", "docs-verify");
 const isQuick = process.argv.includes("--quick");
 
 function runCli(args: string[]): string {
-  return runText(["bun", "run", "--cwd", "packages/cli", "dev", "--", ...args], { cwd: ROOT });
+  return runText(cliCommand(args), { cwd: resolve(ROOT, "packages/cli") });
 }
 
 function runCliJson(args: string[]): JSONValue {

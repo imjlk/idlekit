@@ -1,0 +1,3 @@
+# Replaces packages/cli/bunfig.toml for a bundled CLI process.
+# That preload rebuilds the TypeScript program on every launch.
+logLevel = "error"

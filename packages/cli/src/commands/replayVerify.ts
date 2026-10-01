@@ -6,8 +6,7 @@ import { buildOutputMeta, stableStringify } from "../io/outputMeta";
 import { canonicalizeReplayResult, hashReplayResult, type ReplayArtifactV1 } from "../io/replayArtifact";
 import { writeOutput } from "../io/writeOutput";
 import { readJsonFile, runText } from "../runtime/bun";
-
-const CLI_ROOT = resolve(import.meta.dir, "../..");
+import { cliPackageRoot, isBundledCliProcess, selfCliCommand } from "../runtime/selfCli";
 
 function deepEqual(a: unknown, b: unknown): boolean {
   return stableStringify(a) === stableStringify(b);
@@ -55,8 +54,9 @@ function parseArtifact(input: unknown): ReplayArtifactV1 {
 }
 
 function runReplay(args: readonly string[]): unknown {
-  const out = runText(["bun", "src/main.ts", ...args], {
-    cwd: CLI_ROOT,
+  const command = isBundledCliProcess() ? selfCliCommand(args) : ["bun", "src/main.ts", ...args];
+  const out = runText(command, {
+    cwd: cliPackageRoot(),
     env: process.env,
   });
   try {
