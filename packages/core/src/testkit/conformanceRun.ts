@@ -502,6 +502,22 @@ function unitFactoryFor<N, U extends string, Vars>(
   return (code) => (code === unit.code ? unit : ({ code: code as U } as typeof unit));
 }
 
+/** `stepOnce` stores one money object on both fields after a new maximum. JSON parses two. */
+function withSharedMaxMoney<N, U extends string, Vars>(
+  original: SimState<N, U, Vars>,
+  restored: SimState<N, U, Vars>,
+): SimState<N, U, Vars> {
+  if (original.wallet.money !== original.maxMoneyEver) return restored;
+  if (restored.wallet.money === restored.maxMoneyEver) return restored;
+  return {
+    t: restored.t,
+    wallet: restored.wallet,
+    maxMoneyEver: restored.wallet.money,
+    prestige: restored.prestige,
+    vars: restored.vars,
+  };
+}
+
 function restoreJsonCheckpoint<N, U extends string, Vars>(
   scenario: CompiledScenario<N, U, Vars>,
   state: SimState<N, U, Vars>,
@@ -513,9 +529,10 @@ function restoreJsonCheckpoint<N, U extends string, Vars>(
       engineName,
     }),
   );
-  return deserializeSimState(scenario.ctx.E, JSON.parse(text), {
+  const restored = deserializeSimState<N, U, Vars>(scenario.ctx.E, JSON.parse(text), {
     unitFactory: unitFactoryFor(scenario),
   });
+  return withSharedMaxMoney<N, U, Vars>(state, restored);
 }
 
 type TailStart<N, U extends string, Vars> = {
@@ -538,10 +555,12 @@ function jsonCheckpointPreserves(
   seen.add(value);
   if (Object.getOwnPropertySymbols(value).length > 0) return false;
   if (Array.isArray(value)) {
+    if (userData && !extensibleUserArray(value)) return false;
     for (let index = 0; index < value.length; index += 1) {
       if (!(index in value)) return false;
       const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
       if (!descriptor || descriptor.get !== undefined || !("value" in descriptor)) return false;
+      if (userData && !ordinaryJsonData(descriptor)) return false;
       if (!jsonCheckpointPreserves(descriptor.value, seen, userData)) return false;
     }
     for (const key of Object.getOwnPropertyNames(value)) {
@@ -552,10 +571,12 @@ function jsonCheckpointPreserves(
   }
   const proto = Object.getPrototypeOf(value);
   if (proto !== Object.prototype && proto !== null) return false;
+  if (userData && !Object.isExtensible(value)) return false;
   for (const key of Object.getOwnPropertyNames(value)) {
     const descriptor = Object.getOwnPropertyDescriptor(value, key);
     if (!descriptor || descriptor.get !== undefined || !("value" in descriptor)) return false;
     if (descriptor.enumerable !== true) return false;
+    if (userData && (descriptor.writable !== true || descriptor.configurable !== true)) return false;
     if (descriptor.value === undefined) {
       if (userData || key === "vars" || key === "state") return false;
       continue;
@@ -601,9 +622,12 @@ function jsonResumeCheckpoint<N, U extends string, Vars>(
   }
   try {
     return {
-      state: deserializeSimState(scenario.ctx.E, parsed, {
-        unitFactory: unitFactoryFor(scenario),
-      }),
+      state: withSharedMaxMoney<N, U, Vars>(
+        state,
+        deserializeSimState<N, U, Vars>(scenario.ctx.E, parsed, {
+          unitFactory: unitFactoryFor(scenario),
+        }),
+      ),
       strategyState: parsed.strategy?.state,
       persistedStrategy,
     };
@@ -683,6 +707,18 @@ export function checkResumeFromJson<N, U extends string, Vars>(
 ): RelationCheck {
   return resumeFromCheckpoint(scenario, splitSec, (headEnd) =>
     jsonResumeCheckpoint(scenario, headEnd, "checkpoint"),
+  );
+}
+
+function extensibleUserArray(value: unknown[]): boolean {
+  if (!Object.isExtensible(value) || Object.getPrototypeOf(value) !== Array.prototype) return false;
+  const lengthDescriptor = Object.getOwnPropertyDescriptor(value, "length");
+  return (
+    lengthDescriptor?.writable === true &&
+    lengthDescriptor.enumerable === false &&
+    lengthDescriptor.configurable === false &&
+    lengthDescriptor.get === undefined &&
+    lengthDescriptor.set === undefined
   );
 }
 
@@ -807,6 +843,9 @@ export function checkJsonRoundTrip<N, U extends string, Vars>(
     const originalVars = JSON.stringify(end.vars);
     const restoredVars = JSON.stringify(restored.vars);
     if (originalVars !== restoredVars) return fail(`vars ${originalVars} != ${restoredVars}`);
+    if (end.wallet.money === end.maxMoneyEver && restored.wallet.money !== restored.maxMoneyEver) {
+      return fail("restored max-money is a different object from the wallet");
+    }
     const left = snapshotEconomy(scenario.ctx.E, end);
     const right = snapshotEconomy(scenario.ctx.E, restored);
     return left === right ? pass(left) : fail(`${left} != ${right}`);

@@ -553,7 +553,7 @@ export function recordsWalletAndMaxMoneyUnitsOnTheEconomySnapshot(): void {
  * @evidence docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness An on-grid checkpoint replays from memory and from JSON, and independent trials are compared by game seed.
  * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #a195f0e Re-read the section, then ran this function: memory resume, JSON resume, and the JSON round-trip apply, and the two game seeds stay ordered.
  * @evidence ./conformanceRun.ts#checkJsonRoundTrip The constant-income scenario matches after a JSON round trip, and the restored wallet and max-money units are the scenario unit when the codes match.
- * @evidenceReview ./conformanceRun.ts#checkJsonRoundTrip #2b25391 Re-read the function: it restores the strategy around the run, accepts a dense array and an empty array, rejects shared refs, symbol keys, non-enumerable names, sparse holes, frozen data, non-extensible objects and arrays, a non-writable array length, a nonstandard array prototype, and enumerable getters before stringify, and the constant-income round trip matches. A restored unit that shares the scenario code must be the scenario unit object. A vars object that also appears on the wallet, max-money, or prestige graph is inapplicable. Ran this function: the dense round trip passed, and the sparse, frozen, non-extensible, locked-length, custom-prototype, and getter round trips did not.
+ * @evidenceReview ./conformanceRun.ts#checkJsonRoundTrip #dc57e3c Re-read the function: it restores the strategy around the run, accepts a dense array and an empty array, rejects shared refs, symbol keys, non-enumerable names, sparse holes, frozen data, non-extensible objects and arrays, a non-writable array length, a nonstandard array prototype, and enumerable getters before stringify, and the constant-income round trip matches. A restored unit that shares the scenario code must be the scenario unit object. A vars object that also appears on the wallet, max-money, or prestige graph is inapplicable. When the run stores one object as both wallet money and max-money, the restored checkpoint keeps that same object. Ran this function: the dense round trip passed, and the sparse, frozen, non-extensible, locked-length, custom-prototype, and getter round trips did not.
  * @evidence ./conformanceRun.ts#checkTrialOrder Two distinct game seeds keep distinct economy snapshots. Fewer than two distinct seeds does not apply.
  * @evidenceReview ./conformanceRun.ts#checkTrialOrder #1b0de3d Two game seeds keep ordered snapshots. Fewer than two distinct seeds skips the check. A reversed list that repeats the same call order skips the check. This run uses a seed-dependent income rate, and the two economy snapshots differ.
  */
@@ -943,6 +943,64 @@ describe("PR-03 resume isolation", () => {
     expect(emptyId.ok).toBe(false);
     expect(emptyId.applicable).toBe(true);
     expect(emptyId.summary).toContain("JSON");
+    const frozenVars = checkResumeFromJson(
+      {
+        ...scenario,
+        initial: {
+          ...scenario.initial,
+          vars: Object.freeze({ buys: 0 }) as unknown as Vars,
+        },
+      },
+      2,
+    );
+    expect(frozenVars.ok).toBe(false);
+    expect(frozenVars.applicable).toBe(true);
+    expect(frozenVars.summary).toContain("JSON");
+    const sealedVars = { buys: 0 };
+    Object.seal(sealedVars);
+    const sealed = checkResumeFromJson(
+      {
+        ...scenario,
+        initial: { ...scenario.initial, vars: sealedVars as unknown as Vars },
+      },
+      2,
+    );
+    expect(sealed.ok).toBe(false);
+    expect(sealed.applicable).toBe(true);
+    expect(sealed.summary).toContain("JSON");
+    const lockedVars = { buys: 0 };
+    Object.defineProperty(lockedVars, "marker", {
+      value: 1,
+      writable: false,
+      enumerable: true,
+      configurable: true,
+    });
+    const locked = checkResumeFromJson(
+      {
+        ...scenario,
+        initial: { ...scenario.initial, vars: lockedVars as unknown as Vars },
+      },
+      2,
+    );
+    expect(locked.ok).toBe(false);
+    expect(locked.applicable).toBe(true);
+    expect(locked.summary).toContain("JSON");
+    const frozenSnapshot = checkResumeFromJson(
+      {
+        ...scenario,
+        strategy: {
+          id: "frozen-state",
+          stateVersion: 1,
+          decide: () => [],
+          snapshotState: () => Object.freeze({ marker: 1 }),
+          restoreState: () => {},
+        },
+      },
+      2,
+    );
+    expect(frozenSnapshot.ok).toBe(false);
+    expect(frozenSnapshot.applicable).toBe(true);
+    expect(frozenSnapshot.summary).toContain("JSON");
   });
 });
 
