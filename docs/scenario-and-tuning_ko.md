@@ -181,6 +181,8 @@ bun run --cwd packages/cli dev -- init scenario --track personal --preset longru
 - `examples/tutorials/13-my-game-tune.json`
 - 가이드: `docs/virtual-scenario-design.md`
 
+릴리스 행렬 [../examples/analysis/integration-matrix.json](../examples/analysis/integration-matrix.json)은 작은 정수 사례를 본다. 상수 수입, 세션 step 예산, 미달 목표, 견적 bulk 한 번, reset carry, break-infinity 크기, 기록된 offline 상한, 이벤트 로그 보관, 새 scripted cursor다. `breakEternity`는 지원하지 않는다고 적혀 있다. 선택 기능인 flow, 가드된 전진, Jev, worker pool은 [roadmap_ko.md](./roadmap_ko.md)에 있고 기본 시나리오 경로가 아니다. Node.js와 browser 런타임은 v1 호환 계약에 포함되지 않는다.
+
 ## 9. SimState 저장/재개 계약
 
 `simulate --state-out`으로 저장되는 상태 포맷(v1):

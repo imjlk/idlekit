@@ -607,3 +607,7 @@ bun examples/money-package/run.ts
 상세 API/정책 설명:
 
 - [money-library.md](./money-library.md)
+
+## 10. 릴리스 범위
+
+포함한 선택 기능은 flow 진단, 가드된 해석 전진, opt-in Jev judge, 명시적 worker pool이다. flow는 건강 판정을 하지 않는다. 가드된 전진은 해석 수입이 fixed-step 수입과 같을 때만 건너뛴다. Jev는 `idk judge --provider jev`에서만 돌고 수치 판정이 아니다. worker pool은 명시적이며 기본 backend는 local이고 논리 인덱스로 정렬한다. 이들은 게시 게이트가 아니다. `createBreakEternityEngine`은 미구현 placeholder다. 손계산 fixture는 [../examples/analysis/integration-matrix.json](../examples/analysis/integration-matrix.json)이다. 이 가이드는 npm에 게시하지 않는다. Node.js와 browser 런타임은 v1 호환 계약에 포함되지 않는다.

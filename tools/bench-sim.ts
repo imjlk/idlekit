@@ -177,6 +177,9 @@ function runSimulateOnce(bundled: string, scenarioPath: string): unknown {
     { cwd: CLI_ROOT, env: process.env },
   );
   if (!parsed || typeof parsed !== "object") throw new Error("simulate benchmark returned non-object output");
+  if (typeof (parsed as { endMoney?: unknown }).endMoney !== "string") {
+    throw new Error("simulate benchmark returned no endMoney string");
+  }
   return parsed;
 }
 

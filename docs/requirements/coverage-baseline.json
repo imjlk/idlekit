@@ -99,7 +99,8 @@
     "REQ-DX05-SERIALIZABLE-TASK",
     "REQ-DX05-STABLE-REDUCTION",
     "REQ-DX05-FAILURE-BOUNDARY",
-    "REQ-DX05-WORKER-PARITY"
+    "REQ-DX05-WORKER-PARITY",
+    "REQ-PR20-INTEGRATION-MATRIX"
   ],
   "protectedFiles": [
     "docs/requirements/active/typia-transform.md",
@@ -211,6 +212,10 @@
     "packages/cli/src/runtime/workers/trial.ts",
     "packages/cli/src/runtime/workers/entry.ts",
     "packages/cli/src/runtime/workers/pool.test.ts",
-    "examples/analysis/worker-trial.json"
+    "examples/analysis/worker-trial.json",
+    "docs/requirements/active/analysis-integration-release-gates.md",
+    "packages/core/src/sim/integrationMatrix.ts",
+    "packages/core/src/sim/integrationMatrix.test.ts",
+    "examples/analysis/integration-matrix.json"
   ]
 }

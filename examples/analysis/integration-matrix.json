@@ -1,0 +1,61 @@
+{
+  "schemaVersion": 1,
+  "seed": 19,
+  "linear": {
+    "initial": "0",
+    "incomePerSec": "2",
+    "stepSec": 1,
+    "durationSec": 5,
+    "expectedEnd": "10",
+    "expectedStop": "duration"
+  },
+  "budget": {
+    "initial": "0",
+    "incomePerSec": "2",
+    "stepSec": 1,
+    "durationSec": 100,
+    "maxSteps": 3,
+    "expectedEnd": "6",
+    "expectedStop": "budget"
+  },
+  "goal": {
+    "initial": "0",
+    "incomePerSec": "1",
+    "stepSec": 1,
+    "durationSec": 4,
+    "target": "100",
+    "expectedEnd": "4",
+    "expectedStatus": "unreached"
+  },
+  "bulk": {
+    "start": "50",
+    "unitCost": "3",
+    "quoteSize": 10,
+    "quoteCost": "20",
+    "expectedWallet": "30",
+    "expectedOwned": 10
+  },
+  "reset": {
+    "initialWallet": "9",
+    "gain": "4",
+    "carryWallet": "1",
+    "intervalSec": 1
+  },
+  "big": {
+    "initial": "1e400",
+    "incomePerSec": "0",
+    "stepSec": 1,
+    "durationSec": 1
+  },
+  "offline": {
+    "maxSec": 60,
+    "overflowPolicy": "clamp"
+  },
+  "logs": {
+    "capped": 1
+  },
+  "stateful": {
+    "programLength": 2
+  },
+  "unsupported": "breakEternity"
+}

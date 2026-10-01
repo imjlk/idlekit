@@ -1925,6 +1925,22 @@
           "args": ["test", "--timeout", "90000", "src/runtime/workers/pool.test.ts"]
         }
       ]
+    },
+    {
+      "id": "REQ-PR20-INTEGRATION-MATRIX",
+      "pr": "PR-20",
+      "anchor": "req-pr20-integration-matrix",
+      "doc": "docs/requirements/active/analysis-integration-release-gates.md",
+      "production": ["packages/core/src/sim/integrationMatrix.ts"],
+      "tests": [
+        {
+          "file": "packages/core/src/sim/integrationMatrix.test.ts",
+          "exportName": "checksIntegrationMatrix",
+          "registeredAs": "analysis integration matrix > checks the integration matrix",
+          "cwd": "packages/core",
+          "args": ["test", "src/sim/integrationMatrix.test.ts"]
+        }
+      ]
     }
   ]
 }
