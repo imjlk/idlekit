@@ -5,7 +5,8 @@
     "REQ-PR01-BULK-QUOTE-SETTLEMENT",
     "REQ-PR02-SIMULATION-TIME-BOUNDARIES",
     "REQ-PR03-RUN-LIFECYCLE-ISOLATION",
-    "REQ-PR05-OBSERVATION-RETENTION"
+    "REQ-PR05-OBSERVATION-RETENTION",
+    "REQ-PR04-PLANNER-ROLLOUT"
   ],
   "protectedFiles": [
     "docs/requirements/active/typia-transform.md",
@@ -36,6 +37,10 @@
     "docs/requirements/active/observation-retention.md",
     "packages/core/src/sim/observation.ts",
     "packages/core/src/sim/observation.test.ts",
+    "docs/requirements/active/planner-rollout.md",
+    "packages/core/src/sim/constraints.ts",
+    "packages/core/src/sim/strategy/planner.ts",
+    "packages/core/src/sim/strategy/planner.regression.test.ts",
     "packages/core/src/sim/session.ts",
     "fixtures/conformance/shrink-gap.json",
     "fixtures/toolchain/evidence/lint.config.ts",

@@ -210,6 +210,25 @@
           "args": ["test", "src/sim/observation.test.ts"]
         }
       ]
+    },
+    {
+      "id": "REQ-PR04-PLANNER-ROLLOUT",
+      "pr": "PR-04",
+      "anchor": "req-pr04-planner-rollout",
+      "doc": "docs/requirements/active/planner-rollout.md",
+      "production": [
+        "packages/core/src/sim/constraints.ts",
+        "packages/core/src/sim/strategy/planner.ts"
+      ],
+      "tests": [
+        {
+          "file": "packages/core/src/sim/strategy/planner.regression.test.ts",
+          "exportName": "keepsPlannerRolloutFaithful",
+          "registeredAs": "keeps planner rollout faithful",
+          "cwd": "packages/core",
+          "args": ["test", "src/sim/strategy/planner.regression.test.ts"]
+        }
+      ]
     }
   ]
 }

@@ -1,8 +1,9 @@
 import type { ModelFactory, ModelRegistry } from "../scenario/registry";
 import { deepClonePreservingPrototype } from "../utils/deepClone";
+import { constraintsWithAnchor, prestigeAnchorFromCheckpoint } from "./constraints";
 import type { StrategyFactory, StrategyRegistry } from "./strategy/registry";
 import type { Strategy } from "./strategy/types";
-import type { CompiledScenario, Model, SimContext, SimRunOptions, SimState } from "./types";
+import type { CompiledScenario, Model, ScenarioConstraints, SimContext, SimRunOptions, SimState } from "./types";
 
 /**
  * RNG stream for a committed step.
@@ -54,13 +55,20 @@ export type ExecutionPlan = Readonly<{
   eventLog?: SimRunOptions["eventLog"];
   trace?: SimRunOptions["trace"];
   fast?: SimRunOptions["fast"];
+  /** Step limits copied onto the run. The prestige anchor is checkpoint state, not this object. */
+  constraints?: Readonly<{
+    maxActionsPerStep?: number;
+    minPrestigeIntervalSec?: number;
+  }>;
 }>;
 
 export type RunMode = "fresh" | "continue" | "resume";
 
 /**
  * Runner-owned checkpoint. Not part of SimStateJSON.
- * `runner.prestigeReadyAtSec` is the slot for a later cooldown.
+ * `runner.lastPrestigeResetT` is the last committed prestige time.
+ * `runner.prestigeReadyAtSec` is that time plus `minPrestigeIntervalSec` when both are known.
+ * A missing runner does not invent a past timestamp.
  * Old saves omit this object, and readers must not require it.
  * Strategy bytes are `Strategy.snapshotState`, not a second serializer.
  */
@@ -81,6 +89,7 @@ export type RunCheckpoint = Readonly<{
   }>;
   runner?: Readonly<{
     prestigeReadyAtSec?: number;
+    lastPrestigeResetT?: number;
   }>;
 }>;
 
@@ -218,7 +227,29 @@ export function executionPlanIdentity(plan: ExecutionPlan): string {
     eventLog: plan.eventLog ?? null,
     trace: plan.trace ?? null,
     fast: plan.fast ?? null,
+    constraints: plan.constraints
+      ? {
+          maxActionsPerStep: plan.constraints.maxActionsPerStep ?? null,
+          minPrestigeIntervalSec: plan.constraints.minPrestigeIntervalSec ?? null,
+        }
+      : null,
   });
+}
+
+function resolvedConstraints(
+  scenario: ScenarioConstraints | undefined,
+  plan: ExecutionPlan | undefined,
+  lastResetT: number | undefined,
+): ScenarioConstraints | undefined {
+  const fromPlan = plan?.constraints;
+  if (!scenario && !fromPlan && lastResetT === undefined) return undefined;
+  const { lastPrestigeResetT: _ignored, ...rest } = scenario ?? {};
+  const merged: ScenarioConstraints = {
+    ...rest,
+    ...(fromPlan?.maxActionsPerStep !== undefined ? { maxActionsPerStep: fromPlan.maxActionsPerStep } : {}),
+    ...(fromPlan?.minPrestigeIntervalSec !== undefined ? { minPrestigeIntervalSec: fromPlan.minPrestigeIntervalSec } : {}),
+  };
+  return constraintsWithAnchor(merged, lastResetT);
 }
 
 function assertExecutionPlan(plan: ExecutionPlan): void {
@@ -361,8 +392,42 @@ export function createRunFactory(deps?: RunFactoryDeps): RunFactory {
         model: Model<N, U, Vars>,
         rng: StreamRng,
         preview: StreamRng,
+        anchorResetT: number | undefined,
+        constraintBase?: ScenarioConstraints,
       ): RunInstance<N, U, Vars> => {
         const run = applyExecutionPlan(scenario.run, plan);
+        let lastResetT = anchorResetT;
+        let liveConstraints = resolvedConstraints(constraintBase ?? scenario.constraints, plan, lastResetT);
+        const userHook = run.onPrestigeReset;
+        const scenarioBox: { current: CompiledScenario<N, U, Vars> } = {
+          current: undefined as unknown as CompiledScenario<N, U, Vars>,
+        };
+        scenarioBox.current = {
+          ...scenario,
+          ctx: {
+            ...scenario.ctx,
+            seed,
+            stepSec: run.stepSec,
+            ...(liveConstraints ? { constraints: liveConstraints } : {}),
+          } as SimContext<N, U, Vars>,
+          model,
+          initial: cloneRunState(state),
+          constraints: liveConstraints,
+          run: {
+            ...run,
+            onPrestigeReset(t: number) {
+              lastResetT = t;
+              liveConstraints = constraintsWithAnchor(liveConstraints, t);
+              scenarioBox.current = {
+                ...scenarioBox.current,
+                constraints: liveConstraints,
+                ctx: { ...scenarioBox.current.ctx, constraints: liveConstraints },
+              };
+              userHook?.(t);
+            },
+          },
+          strategy,
+        };
         const instance: RunInstance<N, U, Vars> = {
           mode,
           trialId,
@@ -371,23 +436,22 @@ export function createRunFactory(deps?: RunFactoryDeps): RunFactory {
             execution: deriveStreamSeed(seed, trialId, executionStream),
             preview: deriveStreamSeed(seed, trialId, previewStream),
           },
-          scenario: {
-            ...scenario,
-            ctx: {
-              ...scenario.ctx,
-              seed,
-              stepSec: run.stepSec,
-            } as SimContext<N, U, Vars>,
-            model,
-            initial: cloneRunState(state),
-            run: { ...run },
-            strategy,
+          get scenario() {
+            return scenarioBox.current;
           },
           rng,
           preview,
           observer: { trialId, buffer: "per-run" },
           checkpoint() {
             const saved = strategy?.snapshotState?.();
+            const interval = liveConstraints?.minPrestigeIntervalSec;
+            const ready =
+              typeof lastResetT === "number" &&
+              typeof interval === "number" &&
+              Number.isFinite(interval) &&
+              interval > 0
+                ? lastResetT + interval
+                : undefined;
             return {
               contract: "idlekit.run-checkpoint",
               version: 1,
@@ -404,6 +468,14 @@ export function createRunFactory(deps?: RunFactoryDeps): RunFactory {
                       id: strategy.id,
                       ...(strategy.stateVersion !== undefined ? { stateVersion: strategy.stateVersion } : {}),
                       state: deepClonePreservingPrototype(saved),
+                    },
+                  }
+                : {}),
+              ...(typeof lastResetT === "number"
+                ? {
+                    runner: {
+                      lastPrestigeResetT: lastResetT,
+                      ...(ready !== undefined ? { prestigeReadyAtSec: ready } : {}),
                     },
                   }
                 : {}),
@@ -473,6 +545,8 @@ export function createRunFactory(deps?: RunFactoryDeps): RunFactory {
             modelFor("fresh", undefined),
             createStreamRng(executionStream, executionSeed),
             createStreamRng(previewStream, previewSeed),
+            undefined,
+            scenario.constraints,
           );
         },
         continue(previous, args) {
@@ -486,6 +560,8 @@ export function createRunFactory(deps?: RunFactoryDeps): RunFactory {
             modelFor("continue", previous),
             previous.rng,
             previous.preview,
+            prestigeAnchorFromCheckpoint(previous.checkpoint()).lastResetT,
+            previous.scenario.constraints,
           );
         },
         resume(args) {
@@ -506,6 +582,8 @@ export function createRunFactory(deps?: RunFactoryDeps): RunFactory {
             modelFor("resume", undefined),
             execution,
             preview,
+            prestigeAnchorFromCheckpoint(args.checkpoint).lastResetT,
+            scenario.constraints,
           );
         },
         release,

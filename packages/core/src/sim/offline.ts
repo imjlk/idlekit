@@ -1,4 +1,5 @@
 import { analyzeUX } from "./analysis/ux";
+import { recordPrestigeReset } from "./constraints";
 import { createBoundedLog, createEventBuffer } from "./eventBuffer";
 import { createObservationRecorder, statsFromObservation } from "./observation";
 import { stepOnce } from "./step";
@@ -147,6 +148,7 @@ export function applyOfflineSeconds<N, U extends string, Vars>(args: {
   let steps = 0;
   let simulatedSec = 0;
   const maxActionsPerStep = scenario.constraints?.maxActionsPerStep ?? Infinity;
+  let constraints = scenario.constraints;
   let stop: RunStop | undefined;
 
   while (stop === undefined) {
@@ -167,7 +169,10 @@ export function applyOfflineSeconds<N, U extends string, Vars>(args: {
       break;
     }
 
-    const stepCtx = stepContext(scenario.ctx, decision.dt);
+    const stepCtx = stepContext(
+      { ...scenario.ctx, ...(constraints ? { constraints } : {}) },
+      decision.dt,
+    );
     const decisions = useStrategy
       ? (scenario.strategy?.decide(stepCtx, scenario.model, state) ?? []).slice(0, maxActionsPerStep)
       : [];
@@ -178,9 +183,10 @@ export function applyOfflineSeconds<N, U extends string, Vars>(args: {
       state,
       dt: decision.dt,
       decisions,
-      constraints: scenario.constraints,
+      constraints,
       fast: opts?.fast ?? scenario.run.fast,
     });
+    constraints = recordPrestigeReset(constraints, out.prestigeResetT, scenario.run.onPrestigeReset);
 
     state = out.next;
     simulatedSec += decision.dt;

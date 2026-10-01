@@ -31,7 +31,7 @@ export type SimEvent<N> =
   | {
       type: "action.skipped";
       actionId: string;
-      reason: "cannotApply" | "insufficientFunds" | "invalidQuote";
+      reason: "cannotApply" | "insufficientFunds" | "invalidQuote" | "cooldown";
     }
   | {
       type: "milestone";
@@ -90,6 +90,9 @@ export type SimContext<N, U extends string, Vars> = Readonly<{
   }>;
 
   emit?: Emitter<SimEvent<N>>;
+
+  /** Limits shared by a committed step and a planner preview. */
+  constraints?: ScenarioConstraints;
 }>;
 
 export type BulkQuote<N, U extends string> = Readonly<{
@@ -187,6 +190,11 @@ export interface Model<N, U extends string, Vars> {
 export type ScenarioConstraints = Readonly<{
   maxActionsPerStep?: number;
   minPrestigeIntervalSec?: number;
+  /**
+   * Absolute `t` of the last committed prestige reset.
+   * Omitted means the anchor is unknown. Callers must not invent one.
+   */
+  lastPrestigeResetT?: number;
 }>;
 
 export type SimRunOptions = Readonly<{
@@ -248,6 +256,9 @@ export type SimRunOptions = Readonly<{
     kind?: "log-domain";
     disableMoneyEvents?: boolean;
   }>;
+
+  /** Records a committed prestige reset. Preview does not receive this callback. */
+  onPrestigeReset?: (t: number) => void;
 }>;
 
 export type CompiledScenario<N, U extends string, Vars> = Readonly<{

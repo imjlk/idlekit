@@ -1,4 +1,5 @@
 import { analyzeUX } from "./analysis/ux";
+import { recordPrestigeReset } from "./constraints";
 import { createBoundedLog, createEventBuffer } from "./eventBuffer";
 import { createObservationRecorder, statsFromObservation } from "./observation";
 import { stepOnce } from "./step";
@@ -52,6 +53,7 @@ export function runScenario<N, U extends string, Vars>(
   const eventLogEnabled = sc.run.eventLog?.enabled ?? true;
   const maxEvents = sc.run.eventLog?.maxEvents;
   const maxActionsPerStep = sc.constraints?.maxActionsPerStep ?? Infinity;
+  let constraints = sc.constraints;
   const everySteps = sc.run.trace?.everySteps ?? 1;
   const eventBuffer = createEventBuffer<N>({
     enabled: eventLogEnabled,
@@ -88,7 +90,10 @@ export function runScenario<N, U extends string, Vars>(
       break;
     }
 
-    const stepCtx = stepContext(sc.ctx, decision.dt);
+    const stepCtx = stepContext(
+      { ...sc.ctx, ...(constraints ? { constraints } : {}) },
+      decision.dt,
+    );
     const decisions = (sc.strategy?.decide(stepCtx, sc.model, state) ?? []).slice(0, maxActionsPerStep);
     const actionStartT = state.t;
     const step = stepOnce({
@@ -97,9 +102,10 @@ export function runScenario<N, U extends string, Vars>(
       state,
       dt: decision.dt,
       decisions,
-      constraints: sc.constraints,
+      constraints,
       fast: sc.run.fast,
     });
+    constraints = recordPrestigeReset(constraints, step.prestigeResetT, sc.run.onPrestigeReset);
 
     state = step.next;
     recorder.recordStep({
