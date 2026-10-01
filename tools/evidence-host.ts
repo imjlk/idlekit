@@ -1,7 +1,16 @@
 import { join, resolve } from "path";
 
 export const root = resolve(import.meta.dir, "..");
-export const ttscBin = join(root, "node_modules", ".bin", "ttsc");
+
+/** Windows `.cmd` shims. The extensionless file is the POSIX launcher. */
+export function compilerBinName(
+  name: "ttsc" | "tsc",
+  platform: NodeJS.Platform = process.platform,
+): string {
+  return platform === "win32" ? `${name}.cmd` : name;
+}
+
+export const ttscBin = join(root, "node_modules", ".bin", compilerBinName("ttsc"));
 
 /** Windows needs the `.cmd` shim. The extensionless file is the POSIX launcher. */
 export function ttsxUnderNodeName(platform: NodeJS.Platform = process.platform): string {
@@ -26,7 +35,8 @@ export function evidenceEnv(cacheDir?: string): Record<string, string | undefine
 }
 
 export function runTtsc(args: string[], cwd = root, cacheDir?: string): CommandResult {
-  if (!ttscBin.endsWith(join("node_modules", ".bin", "ttsc"))) {
+  const expectedBin = join("node_modules", ".bin", compilerBinName("ttsc"));
+  if (!ttscBin.endsWith(expectedBin)) {
     throw new Error(`refusing non-ttsc command: ${ttscBin}`);
   }
   const commandArgs = [ttscBin, ...args];

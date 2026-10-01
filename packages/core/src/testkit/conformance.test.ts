@@ -747,6 +747,84 @@ describe("PR-03 resume isolation", () => {
     expect(dated.ok).toBe(false);
     expect(dated.applicable).toBe(true);
     expect(dated.summary).toContain("JSON");
+    const negativeZero = checkResumeFromJson(
+      {
+        ...scenario,
+        initial: {
+          ...scenario.initial,
+          vars: { buys: 0, marker: -0 } as unknown as Vars,
+        },
+        strategy: {
+          id: "negative-zero",
+          decide: () => [],
+          snapshotState: () => ({ marker: -0 }),
+          restoreState: () => {},
+        },
+      },
+      2,
+    );
+    expect(negativeZero.ok).toBe(false);
+    expect(negativeZero.applicable).toBe(true);
+    expect(negativeZero.summary).toContain("JSON");
+    const items = [1];
+    Object.assign(items, { extra: 2 });
+    const extraItems = checkResumeFromJson(
+      {
+        ...scenario,
+        initial: {
+          ...scenario.initial,
+          vars: { buys: 0, items } as unknown as Vars,
+        },
+        strategy: {
+          id: "extra-items",
+          decide: () => [],
+          snapshotState: () => ({ items }),
+          restoreState: () => {},
+        },
+      },
+      2,
+    );
+    expect(extraItems.ok).toBe(false);
+    expect(extraItems.applicable).toBe(true);
+    expect(extraItems.summary).toContain("JSON");
+    const tagged = [1] as number[] & { [tag: symbol]: number };
+    tagged[Symbol("tag")] = 1;
+    const taggedItems = checkResumeFromJson(
+      {
+        ...scenario,
+        initial: {
+          ...scenario.initial,
+          vars: { buys: 0, items: tagged } as unknown as Vars,
+        },
+        strategy: {
+          id: "tagged-items",
+          decide: () => [],
+          snapshotState: () => ({ items: tagged }),
+          restoreState: () => {},
+        },
+      },
+      2,
+    );
+    expect(taggedItems.ok).toBe(false);
+    expect(taggedItems.applicable).toBe(true);
+    expect(taggedItems.summary).toContain("JSON");
+    const marked = { visible: 1 } as { visible: number; [tag: symbol]: number };
+    marked[Symbol("tag")] = 1;
+    const markedSnapshot = checkResumeFromJson(
+      {
+        ...scenario,
+        strategy: {
+          id: "marked-snapshot",
+          decide: () => [],
+          snapshotState: () => marked,
+          restoreState: () => {},
+        },
+      },
+      2,
+    );
+    expect(markedSnapshot.ok).toBe(false);
+    expect(markedSnapshot.applicable).toBe(true);
+    expect(markedSnapshot.summary).toContain("JSON");
   });
 });
 

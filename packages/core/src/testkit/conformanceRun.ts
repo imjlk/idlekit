@@ -471,16 +471,20 @@ type TailStart<N, U extends string, Vars> = {
 function jsonCheckpointPreserves(value: unknown, seen = new Set<object>()): boolean {
   if (value === null) return true;
   if (typeof value === "string" || typeof value === "boolean") return true;
-  if (typeof value === "number") return Number.isFinite(value);
+  if (typeof value === "number") return Number.isFinite(value) && !Object.is(value, -0);
   if (typeof value !== "object") return false;
   if (seen.has(value)) return false;
   seen.add(value);
+  if (Object.getOwnPropertySymbols(value).length > 0) return false;
   if (Array.isArray(value)) {
     for (let index = 0; index < value.length; index += 1) {
       if (!(index in value)) return false;
       const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
       if (!descriptor || descriptor.get !== undefined || !("value" in descriptor)) return false;
       if (!jsonCheckpointPreserves(descriptor.value, seen)) return false;
+    }
+    for (const key of Object.keys(value)) {
+      if (!/^(?:0|[1-9][0-9]*)$/.test(key) || Number(key) >= value.length) return false;
     }
     return true;
   }
