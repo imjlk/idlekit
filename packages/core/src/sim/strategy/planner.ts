@@ -4,7 +4,13 @@ import type { StepOnceFn } from "../stepTypes";
 import { parseMoney } from "../../notation/parseMoney";
 import type { Action, BulkQuote, Model, SimContext, SimState } from "../types";
 import type { PlannerStrategyParamsV1 } from "./params";
-import { actionOccurrence, quotedDecisionSize, stableActions, stableBulkQuotes } from "./stability";
+import {
+  actionOccurrence,
+  quotedDecisionSize,
+  rankableQuotes,
+  stableActions,
+  stableBulkQuotes,
+} from "./stability";
 
 /**
  * Planner MUST use stepOnce for rollouts.
@@ -90,23 +96,27 @@ function selectBulkQuote<N, U extends string, Vars>(
   action: Action<N, U, Vars>,
   ctx: SimContext<N, U, Vars>,
   state: SimState<N, U, Vars>,
-): BulkQuote<N, U> {
+): BulkQuote<N, U> | undefined {
   const quotes = action.bulk?.(ctx, state);
-  const stable = quotes && quotes.length > 0
-    ? stableBulkQuotes(quotes)
-    : [{ size: 1, cost: action.cost(ctx, state), equivalentCost: action.equivalentCost?.(ctx, state) }];
+  const stable =
+    quotes && quotes.length > 0
+      ? stableBulkQuotes(quotes)
+      : [{ size: 1, cost: action.cost(ctx, state), equivalentCost: action.equivalentCost?.(ctx, state) }];
+  const usable = rankableQuotes(ctx, state, stable);
+  // Ranking drops an invalid quote only when a settleable quote can replace it.
+  const pool = usable.length > 0 ? usable : stable;
 
   if ((params.bulk?.mode ?? "bestQuote") === "size1") {
-    return stable.find((q) => q.size === 1) ?? stable[0]!;
+    return pool.find((quote) => quote.size === 1) ?? stable[0];
   }
 
-  let best = stable[0]!;
+  let best = pool[0]!;
   let bestScore = scoreQuote(params, ctx, best);
-  for (let i = 1; i < stable.length; i++) {
-    const q = stable[i]!;
-    const score = scoreQuote(params, ctx, q);
+  for (let i = 1; i < pool.length; i++) {
+    const quote = pool[i]!;
+    const score = scoreQuote(params, ctx, quote);
     if (score > bestScore) {
-      best = q;
+      best = quote;
       bestScore = score;
     }
   }
@@ -121,17 +131,20 @@ function buildStepCandidates<N, U extends string, Vars>(
 ): readonly Decision<N, U, Vars>[] {
   const raw = model.actions(ctx, state);
   const actions = stableActions(raw).filter((action) => action.canApply(ctx, state));
-  const decisions = actions.map((action) => {
+  const decisions = actions.flatMap((action) => {
     const quote = selectBulkQuote(params, action, ctx, state);
+    if (!quote) return [];
     const score = scoreQuote(params, ctx, quote);
-    return {
-      score: Number.isFinite(score) ? score : Number.NEGATIVE_INFINITY,
-      decision: {
-        action,
-        bulkSize: quotedDecisionSize(quote.size),
-        occurrence: actionOccurrence(raw, action),
-      } satisfies Decision<N, U, Vars>,
-    };
+    return [
+      {
+        score: Number.isFinite(score) ? score : Number.NEGATIVE_INFINITY,
+        decision: {
+          action,
+          bulkSize: quotedDecisionSize(quote.size),
+          occurrence: actionOccurrence(raw, action),
+        } satisfies Decision<N, U, Vars>,
+      },
+    ];
   });
 
   decisions.sort((a, b) => {

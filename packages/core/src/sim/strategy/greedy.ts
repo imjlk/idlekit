@@ -5,6 +5,7 @@ import {
   actionOccurrence,
   compareCandidateKey,
   quotedDecisionSize,
+  rankableQuotes,
   stableActions,
   stableBulkQuotes,
 } from "./stability";
@@ -73,7 +74,9 @@ function chooseQuotes<N, U extends string, Vars>(
     return [chosen ?? quotes[0]!];
   }
 
-  return quotes;
+  const rankable = rankableQuotes(ctx, state, quotes);
+  // Ranking drops an invalid quote only when a settleable quote can replace it.
+  return rankable.length > 0 ? rankable : quotes;
 }
 
 function scoreQuote<N, U extends string, Vars>(

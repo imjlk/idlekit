@@ -1,5 +1,35 @@
-import { singleBuySize } from "../step";
-import type { Action, BulkQuote } from "../types";
+import { canSettleCost, singleBuySize } from "../step";
+import type { Action, BulkQuote, SimContext, SimState } from "../types";
+
+/** A quote `stepOnce` would skip as `invalidQuote` cannot be the ranked candidate. */
+export function settlementAcceptsQuote<N, U extends string, Vars>(
+  ctx: SimContext<N, U, Vars>,
+  state: SimState<N, U, Vars>,
+  quote: BulkQuote<N, U>,
+): boolean {
+  if (!Number.isInteger(quote.size) || quote.size < singleBuySize) return false;
+  if (quote.size === singleBuySize) return true;
+  const cost = quote.cost;
+  if (cost === null) return true;
+  if (!cost || cost.unit.code !== state.wallet.money.unit.code) return false;
+  if (cost.amount == null || !ctx.E.isFinite(cost.amount)) return false;
+  return canSettleCost(ctx.E, cost.amount, ctx.E.zero());
+}
+
+/** Drop settlement-invalid quotes, including two bulk quotes that share one size. */
+export function rankableQuotes<N, U extends string, Vars>(
+  ctx: SimContext<N, U, Vars>,
+  state: SimState<N, U, Vars>,
+  quotes: readonly BulkQuote<N, U>[],
+): BulkQuote<N, U>[] {
+  const accepted = quotes.filter((quote) => settlementAcceptsQuote(ctx, state, quote));
+  const counts = new Map<number, number>();
+  for (const quote of accepted) {
+    if (quote.size === singleBuySize) continue;
+    counts.set(quote.size, (counts.get(quote.size) ?? 0) + 1);
+  }
+  return accepted.filter((quote) => quote.size === singleBuySize || counts.get(quote.size) === 1);
+}
 
 /** Size 1 pays `Action.cost`. A missing size stays rejectable. Every other selected size is settled as a quote. */
 export function quotedDecisionSize(size: number | undefined): number | undefined {

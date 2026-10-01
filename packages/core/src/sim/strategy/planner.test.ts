@@ -230,6 +230,74 @@ describe("createPlannerStrategy", () => {
     expect(out[0]?.action.id).toBe("z.high");
   });
 
+  it("keeps a settleable quote when a higher-scoring quote cannot settle", () => {
+    const ctx = makeContext(1);
+    const action: Action<number, UnitCode, Vars> = {
+      id: "buy",
+      kind: "buy",
+      canApply: () => true,
+      cost: () => null,
+      bulk: () => [
+        {
+          size: 2,
+          cost: null,
+          equivalentCost: { unit: { code: "COIN" }, amount: 2 },
+          deltaIncomePerSec: { unit: { code: "COIN" }, amount: 1 },
+        },
+        {
+          size: 2.5,
+          cost: null,
+          equivalentCost: { unit: { code: "COIN" }, amount: 1 },
+          deltaIncomePerSec: { unit: { code: "COIN" }, amount: 5 },
+        },
+      ],
+      apply: (_ctx, state) => state,
+    };
+    const model: Model<number, UnitCode, Vars> = {
+      id: "m",
+      version: 1,
+      income: () => ({ unit: { code: "COIN" }, amount: 0 }),
+      actions: () => [action],
+      netWorth: (_ctx, state) => state.wallet.money,
+    };
+    const strategy = createPlannerStrategy<number, UnitCode, Vars>(
+      {
+        schemaVersion: 1,
+        horizonSteps: 1,
+        beamWidth: 1,
+        objective: "maximizeNetWorthAtEnd",
+      },
+      {
+        stepOnce(input) {
+          const decided = (input.decisions?.length ?? 0) > 0;
+          const delta = decided ? 10 : 0;
+          return {
+            prev: input.state,
+            next: {
+              ...input.state,
+              t: input.state.t + input.dt,
+              wallet: {
+                ...input.state.wallet,
+                money: {
+                  ...input.state.wallet.money,
+                  amount: input.state.wallet.money.amount + delta,
+                },
+              },
+              maxMoneyEver: {
+                ...input.state.maxMoneyEver,
+                amount: Math.max(input.state.maxMoneyEver.amount, input.state.wallet.money.amount + delta),
+              },
+            },
+            events: [],
+          };
+        },
+      },
+    );
+    const out = strategy.decide(ctx, model, makeState(0));
+    expect(out.length).toBe(1);
+    expect(out[0]?.bulkSize).toBe(2);
+  });
+
   it("throws when minTimeToTargetWorth has invalid targetWorth", () => {
     const ctx = makeContext();
 
