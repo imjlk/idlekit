@@ -246,7 +246,8 @@ export function headingAnchors(markdown: string): string[] {
       pending = undefined;
       continue;
     }
-    if (opener) {
+    // CommonMark: a backtick opener whose info string contains a backtick is not a fence.
+    if (opener && !(opener.startsWith("`") && info.includes("`"))) {
       fenceChar = opener.startsWith("`") ? "`" : "~";
       fenceLength = opener.length;
       pending = undefined;
@@ -705,17 +706,28 @@ function citesAnchor(text: string, doc: string, anchor: string): boolean {
   return new RegExp(pattern).test(text);
 }
 
-/** The block comment immediately above this export, with no nested terminator. */
+/** The block comment immediately above this export, ignoring matches inside strings. */
 function adjacentExportComment(body: string, exportName: string): string | undefined {
-  const fn = exportName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const match = new RegExp(
+  const fn = escapeRegExp(exportName);
+  const pattern = new RegExp(
     `\\/\\*\\*((?:(?!\\*\\/)[\\s\\S])*)\\*\\/\\s*export\\s+(?:async\\s+)?function\\s+${fn}\\b`,
-  ).exec(body);
-  return match?.[1];
+    "g",
+  );
+  const hidden = stringSpans(body);
+  for (const match of body.matchAll(pattern)) {
+    if (match.index !== undefined && insideSpan(hidden, match.index)) continue;
+    return match[1];
+  }
+  return undefined;
 }
 
 /** The doc comment on the exported test must cite this requirement, not only share its file. */
-function citesRequirement(body: string, exportName: string, doc: string, anchor: string): boolean {
+export function citesRequirement(
+  body: string,
+  exportName: string,
+  doc: string,
+  anchor: string,
+): boolean {
   const comment = adjacentExportComment(body, exportName);
   return comment !== undefined && citesAnchor(comment, doc, anchor);
 }
@@ -880,26 +892,82 @@ function referencePopulation(reference: unknown): string[] {
 const enabledClaimHosts = [
   {
     name: "active requirements have production implementations",
+    type: "typescript",
+    symbols: ["function", "property"],
     files: productionFiles,
     references: ["docs/requirements/active/**/*.md"],
+    referenceType: "markdown",
+    referenceSymbols: ["h2"],
   },
   {
     name: "active requirements have executed test hosts",
+    type: "typescript",
+    symbols: ["function"],
     files: testFiles,
     references: ["docs/requirements/active/**/*.md"],
+    referenceType: "markdown",
+    referenceSymbols: ["h2"],
   },
   {
     name: "executed tests cite the implementation they run",
+    type: "typescript",
+    symbols: ["function"],
     files: testFiles,
     references: productionFiles,
+    referenceType: "typescript",
+    referenceSymbols: ["property", "function"],
   },
 ] as const;
 
-/** Each enabled evidence claim must keep its own host list and reference population. */
+function symbolPopulation(symbol: unknown): string[] {
+  if (typeof symbol === "string") return [symbol];
+  if (!Array.isArray(symbol)) return [];
+  const names: string[] = [];
+  for (const item of symbol) {
+    if (typeof item === "string") names.push(item);
+  }
+  return names;
+}
+
+function referenceEntries(reference: unknown): object[] {
+  const references = Array.isArray(reference) ? reference : [reference];
+  const entries: object[] = [];
+  for (const entry of references) {
+    if (entry && typeof entry === "object") entries.push(entry);
+  }
+  return entries;
+}
+
+function referenceTypes(reference: unknown): string[] {
+  const types: string[] = [];
+  for (const entry of referenceEntries(reference)) {
+    const type = (entry as { type?: unknown }).type;
+    if (typeof type === "string") types.push(type);
+  }
+  return types;
+}
+
+function referenceSymbolPopulation(reference: unknown): string[] {
+  const symbols: string[] = [];
+  for (const entry of referenceEntries(reference)) {
+    symbols.push(...symbolPopulation((entry as { symbol?: unknown }).symbol));
+  }
+  return symbols;
+}
+
+function referenceFlag(reference: unknown, flag: "requireReview" | "noEvidenceExclude"): boolean {
+  const entries = referenceEntries(reference);
+  if (entries.length === 0) return false;
+  return entries.every((entry) => (entry as Record<string, unknown>)[flag] === true);
+}
+
+/** Each enabled evidence claim must keep its symbols, hosts, and reference review flags. */
 export function enabledClaimFailures(
   claims: readonly {
     name?: string;
     disabled?: boolean;
+    type?: unknown;
+    symbol?: unknown;
     files?: readonly string[];
     reference?: unknown;
   }[] = evidenceGraph.claims,
@@ -913,11 +981,38 @@ export function enabledClaimFailures(
       continue;
     }
     const claim = matches[0];
+    if (claim?.type !== expected.type) {
+      fail(failures, `enabled claim ${expected.name} type is not ${expected.type}`);
+    }
+    if (!claim || !samePopulation(symbolPopulation(claim.symbol), expected.symbols)) {
+      fail(failures, `enabled claim ${expected.name} symbols are not its symbol population`);
+    }
     if (!claim || !samePopulation(claim.files ?? [], expected.files)) {
       fail(failures, `enabled claim ${expected.name} files are not its host population`);
     }
     if (!claim || !samePopulation(referencePopulation(claim.reference), expected.references)) {
       fail(failures, `enabled claim ${expected.name} references are not its reference population`);
+    }
+    if (!claim || !samePopulation(referenceTypes(claim.reference), [expected.referenceType])) {
+      fail(
+        failures,
+        `enabled claim ${expected.name} reference type is not ${expected.referenceType}`,
+      );
+    }
+    if (
+      !claim ||
+      !samePopulation(referenceSymbolPopulation(claim.reference), expected.referenceSymbols)
+    ) {
+      fail(
+        failures,
+        `enabled claim ${expected.name} reference symbols are not its reference symbol population`,
+      );
+    }
+    if (!claim || !referenceFlag(claim.reference, "requireReview")) {
+      fail(failures, `enabled claim ${expected.name} reference requireReview is not true`);
+    }
+    if (!claim || !referenceFlag(claim.reference, "noEvidenceExclude")) {
+      fail(failures, `enabled claim ${expected.name} reference noEvidenceExclude is not true`);
     }
   }
   return failures;

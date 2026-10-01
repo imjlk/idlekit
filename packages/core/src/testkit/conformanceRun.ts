@@ -193,6 +193,7 @@ export function replayShrinkReport(report: ShrinkReport): {
       pathOk = false;
       continue;
     }
+    if (!shrinkTowardZero(current).includes(step.to)) pathOk = false;
     const holds = shrinkGapHolds(step.to);
     if (step.kept) {
       if (holds || step.from !== current) pathOk = false;
@@ -271,10 +272,50 @@ function runSeededProperty<T>(run: PropertyRun<T>): { ok: true } | { ok: false; 
   return { ok: true };
 }
 
+function serializeCounterexample(value: unknown): string {
+  const seen = new WeakSet<object>();
+  try {
+    const text = JSON.stringify(
+      value,
+      (_key, current: unknown) => {
+        if (typeof current === "bigint") return `${current}n`;
+        if (typeof current === "object" && current !== null) {
+          if (seen.has(current)) return "[Circular]";
+          seen.add(current);
+        }
+        return current;
+      },
+      2,
+    );
+    if (typeof text === "string") return text;
+  } catch {
+    // A throwing getter or toJSON still has to leave the seed and path readable.
+  }
+  if (!value || typeof value !== "object") return "unserializable counterexample";
+  try {
+    const report = value as {
+      predicateId?: unknown;
+      testSeed?: unknown;
+      caseIndex?: unknown;
+      shrinkingPath?: unknown;
+    };
+    const path = Array.isArray(report.shrinkingPath) ? String(report.shrinkingPath.length) : "?";
+    return [
+      "unserializable counterexample",
+      `predicate=${String(report.predicateId)}`,
+      `seed=${String(report.testSeed)}`,
+      `case=${String(report.caseIndex)}`,
+      `path=${path}`,
+    ].join(" ");
+  } catch {
+    return "unserializable counterexample";
+  }
+}
+
 export function expectProperty<T>(run: PropertyRun<T>): void {
   const result = runSeededProperty(run);
   if (!result.ok) {
-    throw new Error(`conformance counterexample\n${JSON.stringify(result.report, null, 2)}`);
+    throw new Error(`conformance counterexample\n${serializeCounterexample(result.report)}`);
   }
 }
 
@@ -645,6 +686,7 @@ export function checkObserver<N, U extends string, Vars>(
       ctx: { ...scenario.ctx, emit: undefined },
     });
     if (withObserver !== withoutObserver) return fail(`${withObserver} != ${withoutObserver}`);
+    if (observed === 0) return skip("observer saw no events");
     return pass(`${withObserver}; observed batches ${observed}`);
   } finally {
     bracket.restore(initial);

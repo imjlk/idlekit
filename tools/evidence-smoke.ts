@@ -9,6 +9,7 @@ import {
   commandTargetsFile,
   duplicateFullNames,
   duplicateFullNamesAcross,
+  citesRequirement,
   enabledClaimFailures,
   headingAnchors,
   registeredSuites,
@@ -306,8 +307,22 @@ try {
       "text <!-- ## Mid {#mid} -->",
     ].join("\n"),
   );
-  const fenceOk = anchors.length === 1 && anchors[0] === "visible";
-  record("fenced-headings", "zero", fenceOk ? 0 : 1, fenceOk, JSON.stringify(anchors));
+  const backtickInfo = headingAnchors("```js `not`\n## Kept {#kept}\n");
+  const tildeInfo = headingAnchors("~~~js `code`\n## Hidden {#hidden}\n~~~\n## After {#after}\n");
+  const fenceOk =
+    anchors.length === 1 &&
+    anchors[0] === "visible" &&
+    backtickInfo.length === 1 &&
+    backtickInfo[0] === "kept" &&
+    tildeInfo.length === 1 &&
+    tildeInfo[0] === "after";
+  record(
+    "fenced-headings",
+    "zero",
+    fenceOk ? 0 : 1,
+    fenceOk,
+    JSON.stringify({ anchors, backtickInfo, tildeInfo }),
+  );
 
   const nested = headingAnchors(
     ["````md", "```ts", "## Example {#example}", "```", "````", "## After {#after}"].join("\n"),
@@ -379,17 +394,76 @@ try {
   const citationOk =
     !productionFileCites(spoofedCitation, "docs/requirements/active/x.md", "anchor") &&
     productionFileCites(realCitation, "docs/requirements/active/x.md", "anchor");
+  const spoofedRequirement =
+    "const text = `/** @evidence docs/requirements/active/x.md#anchor */ export function sameName`;\n";
+  const realRequirement =
+    "/** @evidence docs/requirements/active/x.md#anchor */\nexport function sameName() {}\n";
+  const requirementCiteOk =
+    !citesRequirement(spoofedRequirement, "sameName", "docs/requirements/active/x.md", "anchor") &&
+    citesRequirement(realRequirement, "sameName", "docs/requirements/active/x.md", "anchor") &&
+    citesRequirement(
+      spoofedRequirement + realRequirement,
+      "sameName",
+      "docs/requirements/active/x.md",
+      "anchor",
+    );
+  const reviewedOff = enabledClaimFailures([
+    {
+      name: "active requirements have production implementations",
+      type: "typescript",
+      symbol: ["function", "property"],
+      files: productionHosts,
+      reference: {
+        type: "markdown",
+        files: activeDocs,
+        symbol: "h2",
+        noEvidenceExclude: true,
+        requireReview: false,
+      },
+    },
+    {
+      name: "active requirements have executed test hosts",
+      type: "typescript",
+      symbol: "function",
+      files: testHosts,
+      reference: {
+        type: "markdown",
+        files: activeDocs,
+        symbol: "h2",
+        noEvidenceExclude: true,
+        requireReview: true,
+      },
+    },
+    {
+      name: "executed tests cite the implementation they run",
+      type: "typescript",
+      symbol: "function",
+      files: testHosts,
+      reference: {
+        type: "typescript",
+        files: productionHosts,
+        symbol: ["property", "function"],
+        noEvidenceExclude: true,
+        requireReview: true,
+      },
+    },
+  ]);
+  const reviewOffOk = reviewedOff.some((message) => message.includes("requireReview"));
   const claimOk =
     enabledClaimFailures().length === 0 &&
     enabledClaimFailures([]).length > 0 &&
     rebound.length > 0 &&
-    citationOk;
+    citationOk &&
+    requirementCiteOk &&
+    reviewOffOk;
   record(
     "claim-populations",
     "zero",
     claimOk ? 0 : 1,
     claimOk,
-    `live=${enabledClaimFailures().join("; ")} rebound=${rebound.join("; ")}`,
+    `live=${enabledClaimFailures().join("; ")} rebound=${rebound.join("; ")} reviewOff=${reviewedOff.join(
+      "; ",
+    )}`,
   );
 
   const tabbed = headingAnchors("##\tMissing\n##\tKept {#kept}\n");

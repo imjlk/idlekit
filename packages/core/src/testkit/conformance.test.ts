@@ -155,7 +155,7 @@ function thresholdScenario(stepSec: number): CompiledScenario<number, UnitCode, 
  * @evidence ./conformanceRun.ts#demonstrateShrinkGap Builds the shrink-gap report whose value is 1 and whose testSeed is 0xd101.
  * @evidenceReview ./conformanceRun.ts#demonstrateShrinkGap #e31f17f Builds the shrink-gap report whose value is 1 and whose testSeed is 0xd101.
  * @evidence ./conformanceRun.ts#replayShrinkReport Replays the saved report and expects the path to fail closed at 1.
- * @evidenceReview ./conformanceRun.ts#replayShrinkReport #f1c80fe Replays the saved report and expects the path to fail closed at 1. A rejected step whose from is not the current value fails the path.
+ * @evidenceReview ./conformanceRun.ts#replayShrinkReport #dc2d0cf Replays the saved report and expects the path to fail closed at 1. A rejected step whose from is not the current value fails the path. A to value the shrinker would not propose fails the path.
  * @evidence ./conformanceRun.ts#gameSeedForCase Derives a game seed from 0x51ed and index 0 that is an integer other than that test seed.
  * @evidenceReview ./conformanceRun.ts#gameSeedForCase #39c73b9 Derives a game seed from 0x51ed and index 0 that is an integer other than that test seed.
  * @evidence ./conformanceRun.ts#ShrinkReport.value Expects the shrunk value to be 1.
@@ -206,6 +206,13 @@ export function replaysConstantIncomeAndShrinksGap(): void {
     shrinkingPath: [...saved.shrinkingPath, { from: 999, to: 0, kept: false }],
   });
   expect(skipped.pathOk).toBe(false);
+  const widened = replayShrinkReport({
+    ...saved,
+    original: 2,
+    shrinkingPath: [{ from: 2, to: 7, kept: true }],
+    value: 7,
+  });
+  expect(widened.pathOk).toBe(false);
 
   const scenario = constantScenario({ rate: 3, durationSec: 4, stepSec: 1, seed: 11 });
   expectApplicable(checkReplay(scenario));
@@ -218,7 +225,7 @@ export function replaysConstantIncomeAndShrinksGap(): void {
  * @evidence docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness A property draw records the test seed and a separate game seed, and a JSON round-trip preserves the economy snapshot.
  * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #a195f0e Re-read the section, then ran this function: every constant-replay case passes checkReplay and checkJsonRoundTrip.
  * @evidence ./conformanceRun.ts#expectProperty Runs the constant-replay corpus and expects every case to pass.
- * @evidenceReview ./conformanceRun.ts#expectProperty #3189395 Runs the constant-replay corpus and expects every case to pass.
+ * @evidenceReview ./conformanceRun.ts#expectProperty #46079f1 Runs the constant-replay corpus and expects every case to pass. A bigint or cyclic counterexample still reports the seed, case index, and shrink path.
  * @evidence ./conformanceRun.ts#conformanceCaseCount Uses the harness case count as the corpus size.
  * @evidenceReview ./conformanceRun.ts#conformanceCaseCount #3d7ef65 Uses the harness case count as the corpus size.
  * @evidence ./conformanceRun.ts#PropertyRun.predicateId Sets predicateId to constant-replay.
@@ -405,7 +412,7 @@ describe("PR-02 time boundaries", () => {
  * @evidence ./conformanceRun.ts#checkRetention Retention applies to the scripted grant.
  * @evidenceReview ./conformanceRun.ts#checkRetention #e5801c6 Retention applies to the scripted grant. A negative eventLog.maxEvents fails before the check substitutes another capacity.
  * @evidence ./conformanceRun.ts#checkObserver The observer check applies to the scripted grant.
- * @evidenceReview ./conformanceRun.ts#checkObserver #918ed45 The observer check applies to the scripted grant.
+ * @evidenceReview ./conformanceRun.ts#checkObserver #31b124c The observer check applies to the scripted grant. A run that emits no events is inapplicable.
  */
 export function replaysOneShotScriptedGrantFromTheSameCursor(): void {
   const scenario = scriptedGrant(2);
@@ -610,6 +617,48 @@ describe("PR-03 resume isolation", () => {
   );
 });
 
+describe("counterexample report", () => {
+  it("keeps the seed when the counterexample is cyclic or a bigint", () => {
+    const cyclic: { self?: unknown } = {};
+    cyclic.self = cyclic;
+    expect(() =>
+      expectProperty({
+        predicateId: "cyclic-value",
+        testSeed: 0xabc,
+        cases: 1,
+        generate: () => cyclic,
+        shrink: () => [],
+        predicate: () => false,
+        describeCase: () => ({
+          gameSeed: 7,
+          engineId: "number",
+          modelId: "cyclic",
+          strategyId: null,
+          tickSchedule: null,
+        }),
+      }),
+    ).toThrow(/"testSeed": 2748/);
+
+    expect(() =>
+      expectProperty({
+        predicateId: "bigint-value",
+        testSeed: 0xdef,
+        cases: 1,
+        generate: () => 1n,
+        shrink: (value) => (value === 1n ? [0n] : []),
+        predicate: () => false,
+        describeCase: () => ({
+          gameSeed: null,
+          engineId: null,
+          modelId: null,
+          strategyId: null,
+          tickSchedule: null,
+        }),
+      }),
+    ).toThrow(/1n/);
+  });
+});
+
 describe("PR-05 observation retention", () => {
   it("keeps the economy when retention or a recording observer changes", () => {
     const scenario = constantScenario({ rate: 4, durationSec: 3, stepSec: 1, seed: 23 });
@@ -620,6 +669,13 @@ describe("PR-05 observation retention", () => {
     const observer = checkObserver(scenario);
     expectApplicable(observer);
     expect(observer.summary).toContain("observed batches");
+    const silent = constantScenario({ rate: 0, durationSec: 1, stepSec: 1, seed: 1 });
+    const silentObserver = checkObserver({
+      ...silent,
+      ctx: { ...silent.ctx, collectMoneyEvents: false },
+    });
+    expect(silentObserver.ok).toBe(true);
+    expect(silentObserver.applicable).toBe(false);
   });
 
   it(
