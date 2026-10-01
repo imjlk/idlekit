@@ -128,3 +128,13 @@ macOS arm64, Bun `1.4.2`, `@ttsc/graph` `0.30.4`, protocol `2025-11-25`에서 �
 `createPlannerStrategy`의 forward execution trace(`maxDepth` 3, `maxNodes` 32)는 여전히 `stepOnce`를 가리키지 않는다. rollout 호출은 `packages/core/src/sim/strategy/planner.ts:358`의 `PlannerDeps.d.stepOnce`다. 그 edge는 미관측이다.
 
 `bun run graph:check`는 종료 코드 0이다. 이 변경에서 `bench:sim:check`, `bench:sim:suite:check`, `tune:regress`, `kpi:report`, `kpi:regress`, `bunx ttsc -p tsconfig.tools.json`, `bunx ttsc -p tsconfig.examples.json`, `test:conformance:extended`는 실행하지 않았다.
+
+## PR-08 호출자
+
+macOS arm64, Bun `1.3.10`, `@ttsc/graph` `0.30.4`, protocol `2025-11-25`에서 조회했다. 생성 식별자는 없다. 서버 cwd는 이 작업 트리이고 프로그램은 `tsconfig.graph.json`이다. lookup은 `buildAnalysisArtifact`를 `packages/core/src/sim/analysis/metrics.ts:332`에 둔다. 같은 lookup은 `packages/core/src/sim/analysis/contracts.ts:99`의 `AnalysisArtifactV1`, `tools/contract-files.ts:53`의 `buildAnalysisContractDocument`, `packages/core/src/sim/analysis/contracts.ts:124`의 `parseAnalysisArtifact`도 가리킨다. `evaluateGoalForEta` lookup은 `packages/core/src/sim/analysis/metrics.ts:278`과 함께 `evaluateMilestoneTime`, `evaluateVisibleProgress`를 돌려준다. 뒤의 둘은 이 계약이 아니다.
+
+`evaluateGoal`의 reverse execution trace(`maxDepth` 3, `maxNodes` 32)는 `packages/core/src/sim/analysis/metrics.ts:278`의 `evaluateGoalForEta`, `metrics.ts:286`의 `evaluateGoalForExperiment`, `metrics.ts:294`의 `evaluateGoalForCheck`, `analysisContract.test.ts:56`의 `agree`, `analysisContract.test.ts:84`의 `sharesDefaultGoalEvaluation`을 가리킨다.
+
+`buildAnalysisArtifact`의 reverse execution trace(`maxDepth` 3, `maxNodes` 32)는 `analysisContract.test.ts:208`의 `roundTripsAnalysisArtifact`와 `analysisContract.test.ts:263`의 호출을 가리킨다.
+
+이 변경에서 `bun run graph:check`는 다시 실행하지 않았다. `bench:sim:check`, `bench:sim:suite:check`, `tune:regress`, `kpi:report`, `kpi:regress`, `bunx ttsc -p tsconfig.tools.json`, `bunx ttsc -p tsconfig.examples.json`, `test:conformance:extended`도 실행하지 않았다.

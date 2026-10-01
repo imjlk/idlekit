@@ -15,6 +15,8 @@
     "packages/core/src/scenario/concreteValidator.test.ts",
     "packages/core/src/scenario/scenarioContract.ts",
     "packages/core/src/scenario/scenarioContract.test.ts",
+    "packages/core/src/sim/analysis/contracts.ts",
+    "packages/core/src/sim/analysis/analysisContract.test.ts",
     "packages/core/src/sim/step.ts",
     "packages/core/src/sim/step.bulk.test.ts",
     "packages/core/src/sim/timeBoundary.ts",

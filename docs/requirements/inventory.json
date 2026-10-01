@@ -362,6 +362,54 @@
           "args": ["test", "--timeout", "180000", "src/scenario/scenarioContract.test.ts"]
         }
       ]
+    },
+    {
+      "id": "REQ-PR08-SHARED-GOAL",
+      "pr": "PR-08",
+      "anchor": "req-pr08-shared-goal",
+      "doc": "docs/requirements/active/analysis-contracts.md",
+      "production": ["packages/core/src/sim/analysis/contracts.ts"],
+      "tests": [
+        {
+          "file": "packages/core/src/sim/analysis/analysisContract.test.ts",
+          "exportName": "sharesDefaultGoalEvaluation",
+          "registeredAs": "PR-08 analysis contracts > shares one goal evaluation",
+          "cwd": "packages/core",
+          "args": ["test", "--timeout", "120000", "src/sim/analysis/analysisContract.test.ts"]
+        }
+      ]
+    },
+    {
+      "id": "REQ-PR08-CUSTOM-METRIC",
+      "pr": "PR-08",
+      "anchor": "req-pr08-custom-metric",
+      "doc": "docs/requirements/active/analysis-contracts.md",
+      "production": ["packages/core/src/sim/analysis/contracts.ts"],
+      "tests": [
+        {
+          "file": "packages/core/src/sim/analysis/analysisContract.test.ts",
+          "exportName": "registersCustomMetric",
+          "registeredAs": "PR-08 analysis contracts > registers a custom metric",
+          "cwd": "packages/core",
+          "args": ["test", "--timeout", "120000", "src/sim/analysis/analysisContract.test.ts"]
+        }
+      ]
+    },
+    {
+      "id": "REQ-PR08-ANALYSIS-ARTIFACT",
+      "pr": "PR-08",
+      "anchor": "req-pr08-analysis-artifact",
+      "doc": "docs/requirements/active/analysis-contracts.md",
+      "production": ["packages/core/src/sim/analysis/contracts.ts"],
+      "tests": [
+        {
+          "file": "packages/core/src/sim/analysis/analysisContract.test.ts",
+          "exportName": "roundTripsAnalysisArtifact",
+          "registeredAs": "PR-08 analysis contracts > round-trips the analysis artifact",
+          "cwd": "packages/core",
+          "args": ["test", "--timeout", "120000", "src/sim/analysis/analysisContract.test.ts"]
+        }
+      ]
     }
   ]
 }

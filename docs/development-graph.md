@@ -128,3 +128,13 @@ A reverse execution trace of `writeContracts` (`maxDepth` 2, `maxNodes` 16) name
 A forward execution trace of `createPlannerStrategy` (`maxDepth` 3, `maxNodes` 32) still does not name `stepOnce`. The rollout call remains `d.stepOnce` on `PlannerDeps` at `packages/core/src/sim/strategy/planner.ts:358`. That edge stays unobserved.
 
 `bun run graph:check` exited 0. `bench:sim:check`, `bench:sim:suite:check`, `tune:regress`, `kpi:report`, `kpi:regress`, `bunx ttsc -p tsconfig.tools.json`, `bunx ttsc -p tsconfig.examples.json`, and `test:conformance:extended` were not run on this change.
+
+## PR-08 callers
+
+Queried on macOS arm64 with Bun `1.3.10`, `@ttsc/graph` `0.30.4`, protocol `2025-11-25`. No generation identifier. The server cwd was this worktree and the program was `tsconfig.graph.json`. Lookup places `buildAnalysisArtifact` at `packages/core/src/sim/analysis/metrics.ts:332`. The same lookup also names `AnalysisArtifactV1` at `packages/core/src/sim/analysis/contracts.ts:99`, `buildAnalysisContractDocument` at `tools/contract-files.ts:53`, and `parseAnalysisArtifact` at `packages/core/src/sim/analysis/contracts.ts:124`. Lookup of `evaluateGoalForEta` places it at `packages/core/src/sim/analysis/metrics.ts:278` and also returns `evaluateMilestoneTime` and `evaluateVisibleProgress`. Those two are not this contract.
+
+A reverse execution trace of `evaluateGoal` (`maxDepth` 3, `maxNodes` 32) names `evaluateGoalForEta` at `packages/core/src/sim/analysis/metrics.ts:278`, `evaluateGoalForExperiment` at `packages/core/src/sim/analysis/metrics.ts:286`, `evaluateGoalForCheck` at `packages/core/src/sim/analysis/metrics.ts:294`, `agree` at `packages/core/src/sim/analysis/analysisContract.test.ts:56`, and `sharesDefaultGoalEvaluation` at `packages/core/src/sim/analysis/analysisContract.test.ts:84`.
+
+A reverse execution trace of `buildAnalysisArtifact` (`maxDepth` 3, `maxNodes` 32) names `roundTripsAnalysisArtifact` at `packages/core/src/sim/analysis/analysisContract.test.ts:208` and the call at `packages/core/src/sim/analysis/analysisContract.test.ts:263`.
+
+`bun run graph:check` was not re-run on this change. `bench:sim:check`, `bench:sim:suite:check`, `tune:regress`, `kpi:report`, `kpi:regress`, `bunx ttsc -p tsconfig.tools.json`, `bunx ttsc -p tsconfig.examples.json`, and `test:conformance:extended` were not run.

@@ -20,7 +20,7 @@ These are the canonical JSON output contracts for the CLI.
 - `replay.verify.output.schema.json`
 - `kpi.regress.output.schema.json`
 
-`docs/schemas/generated/scenario.v1.schema.json` is the generated structural schema for `ScenarioV1`. It is not a CLI output schema. See [Contract generation](../contract-generation.md).
+`docs/schemas/generated/scenario.v1.schema.json` is the generated structural schema for `ScenarioV1`. `docs/schemas/generated/analysis.artifact.v1.schema.json` is analysis artifact v1. Neither is a CLI `_meta` schema. Replay `artifact.v1.schema.json` stays the replay envelope. See [Contract generation](../contract-generation.md) and [Analysis contracts](../analysis-contracts.md).
 
 ## Notes
 

@@ -16,8 +16,8 @@ const TYPIA_VERSION = "14.0.6" as const;
 const SCENARIO_SCHEMA_ID = "https://idlekit.dev/schemas/scenario.v1.schema.json" as const;
 
 /**
- * @evidence docs/requirements/active/typed-contract-generation.md#req-tc05-typed-contract-single-source ScenarioV1 is the generated structural contract. The registry lists that id only.
- * @evidenceReview docs/requirements/active/typed-contract-generation.md#req-tc05-typed-contract-single-source #edaebf8 Re-read the section: the id is idlekit.scenario.v1 and the export is typia.json.schema 3.1.
+ * @evidence docs/requirements/active/typed-contract-generation.md#req-tc05-typed-contract-single-source ScenarioV1 is the generated structural contract. The registry starts with that id.
+ * @evidenceReview docs/requirements/active/typed-contract-generation.md#req-tc05-typed-contract-single-source #4326433 Re-read the section: the id is idlekit.scenario.v1 and the export is typia.json.schema 3.1. PR-08 appends the analysis artifact id.
  */
 export const typedContractSingleSource = "idlekit.scenario.v1" as const;
 
@@ -39,6 +39,12 @@ const contractRegistry = [
     kind: "scenario" as const,
     typeName: "ScenarioV1",
     source: "packages/core/src/scenario/types.ts",
+  },
+  {
+    id: "idlekit.analysis.artifact.v1" as const,
+    kind: "analysis-artifact" as const,
+    typeName: "AnalysisArtifactV1",
+    source: "packages/core/src/sim/analysis/contracts.ts",
   },
 ] as const;
 

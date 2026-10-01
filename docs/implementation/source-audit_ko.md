@@ -87,4 +87,4 @@ root `tsconfig.json`은 없다. 패키지 설정은 `tsconfig.base.json`을 확�
 
 ## 트리에 없는 계획 이름
 
-`265c6ed`에는 아래 이름이 없었다. `toolchain:doctor`와 `toolchain:prepare`는 `TC-01`에서 생겼다. `evidence:check`, `evidence:smoke`, `docs/requirements/active/`는 `TC-03`에서 생겼다. `graph:check`와 `tsconfig.graph.json`은 `TC-04`에서 생겼다. `test:conformance`는 `DX-01`에서 생겼다. `contracts:generate`와 `contracts:check`는 `TC-05`에서 `ScenarioV1`에 대해 생겼다. 아직 목표인 것: `idk inspect`, `idk analyze`, `ExecutionPlan`, `RunInstance`, `AnalyzerRegistry`.
+`265c6ed`에는 아래 이름이 없었다. `toolchain:doctor`와 `toolchain:prepare`는 `TC-01`에서 생겼다. `evidence:check`, `evidence:smoke`, `docs/requirements/active/`는 `TC-03`에서 생겼다. `graph:check`와 `tsconfig.graph.json`은 `TC-04`에서 생겼다. `test:conformance`는 `DX-01`에서 생겼다. `contracts:generate`와 `contracts:check`는 `TC-05`에서 `ScenarioV1`에 대해 생겼다. `PR-08`이 같은 generator에 분석 artifact v1을 추가했다. 아직 목표인 것: `idk inspect`, `idk analyze`, `ExecutionPlan`, `RunInstance`, `AnalyzerRegistry`.
