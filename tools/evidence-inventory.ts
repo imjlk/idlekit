@@ -381,6 +381,36 @@ function stripBlockquotes(line: string, depth: number): string | undefined {
   return rest;
 }
 
+/** One list marker and the column where its content starts. Indented code is not a list. */
+function listContainer(line: string): { indent: number; text: string } | undefined {
+  const match = /^( {0,3})([-*+]|\d{1,9}[.)])([ \t]+)(.*)$/.exec(line);
+  if (!match) return undefined;
+  const leading = match[1] ?? "";
+  const marker = match[2] ?? "";
+  const gap = match[3] ?? "";
+  const rest = match[4] ?? "";
+  const markerEnd = leading.length + marker.length;
+  if (gap.length === 1 || gap.length >= 5) {
+    const text = gap.length === 1 ? rest : `${gap.slice(1)}${rest}`;
+    return { indent: markerEnd + 1, text };
+  }
+  return { indent: markerEnd + gap.length, text: rest };
+}
+
+/** A setext underline after the shared list indent. Column 0 is not inside the item. */
+function setextMarker(line: string, listIndent: number): "-" | "=" | undefined {
+  let rest = line;
+  if (listIndent > 0) {
+    if (!rest.startsWith(" ".repeat(listIndent))) return undefined;
+    rest = rest.slice(listIndent);
+  }
+  const underlineText = rest.replace(/^ {0,3}/, "");
+  const underline = /^(-+|=+)[ \t]*$/.exec(underlineText);
+  const token = underline?.[1];
+  if (!token) return undefined;
+  return token.startsWith("-") ? "-" : "=";
+}
+
 /** Blockquote and list markers can wrap an ATX heading. A setext pair shares its quote prefix. */
 function atxText(heading: string): string {
   let rest = heading;
@@ -421,7 +451,7 @@ export function headingAnchors(markdown: string): string[] {
   let fenceLength = 0;
   let inComment = false;
   let htmlBlock: HtmlBlock | undefined;
-  let pending: { text: string; depth: number } | undefined;
+  let pending: { text: string; depth: number; listIndent: number } | undefined;
   for (const rawLine of markdown.split(/\r?\n/)) {
     const marker = /^( {0,3})(`{3,}|~{3,})(.*)$/.exec(atxText(rawLine));
     const opener = marker?.[2];
@@ -467,10 +497,10 @@ export function headingAnchors(markdown: string): string[] {
     const heading = opened.replace(/^ {0,3}/, "");
     if (pending) {
       const sameQuote = stripBlockquotes(line, pending.depth);
-      const underlineText = sameQuote?.replace(/^ {0,3}/, "");
-      const underline = underlineText ? /^(-+|=+)[ \t]*$/.exec(underlineText) : undefined;
-      if (underline?.[1]) {
-        if (underline[1].startsWith("-")) {
+      const marker =
+        sameQuote === undefined ? undefined : setextMarker(sameQuote, pending.listIndent);
+      if (marker) {
+        if (marker === "-") {
           const setext = /\{#([A-Za-z0-9][A-Za-z0-9._:-]*)\}[ \t]*$/.exec(pending.text.trim());
           anchors.push(setext?.[1] ?? "");
         }
@@ -492,9 +522,13 @@ export function headingAnchors(markdown: string): string[] {
       pending = undefined;
       continue;
     }
-    const paragraph = heading.trim();
+    const listed = listContainer(opened);
+    const paragraphSource = listed ? listed.text : heading;
+    const paragraph = paragraphSource.trim();
     pending =
-      paragraph.length > 0 && isSetextParagraph(paragraph) ? { text: heading, depth } : undefined;
+      paragraph.length > 0 && isSetextParagraph(paragraph)
+        ? { text: paragraphSource, depth, listIndent: listed?.indent ?? 0 }
+        : undefined;
   }
   return anchors;
 }
@@ -1595,6 +1629,88 @@ function readImportRunnerAliases(
   return { entries, namespaces: [], end: spec.end };
 }
 
+function runnerModuleSpec(spec: string): boolean {
+  return spec === "bun:test" || spec === "node:test";
+}
+
+/** `await import("bun:test")`, including one pair of parentheses around the call. */
+function readDynamicRunnerImport(
+  body: string,
+  index: number,
+): { end: number } | undefined {
+  let cursor = skipSpaceAndComments(body, index);
+  if (body[cursor] === "(") {
+    const inner = readDynamicRunnerImport(body, cursor + 1);
+    if (!inner) return undefined;
+    const close = skipSpaceAndComments(body, inner.end);
+    if (body[close] !== ")") return undefined;
+    return { end: close + 1 };
+  }
+  const awaitWord = readIdentifier(body, cursor);
+  if (awaitWord?.value === "await") cursor = skipSpaceAndComments(body, awaitWord.end);
+  const importWord = readIdentifier(body, cursor);
+  if (importWord?.value !== "import") return undefined;
+  const open = skipSpaceAndComments(body, importWord.end);
+  if (body[open] !== "(") return undefined;
+  const spec = readQuoted(body, open + 1) ?? readStaticTemplate(body, open + 1);
+  if (!spec || !runnerModuleSpec(spec.value)) return undefined;
+  const close = skipPair(body, open);
+  if (close < 0) return undefined;
+  return { end: close };
+}
+
+/**
+ * `const { it: register } = await import("bun:test")` names `register` as `it`.
+ * A default, a nested pattern, or any other module is not a runner binding.
+ */
+function readDestructuredRunnerImport(
+  body: string,
+  index: number,
+): { entries: Array<{ name: string; kind: RunnerKind }>; end: number } | undefined {
+  if (body[index] !== "{") return undefined;
+  const entries: Array<{ name: string; kind: RunnerKind }> = [];
+  let cursor = index + 1;
+  while (cursor < body.length) {
+    cursor = skipSpaceAndComments(body, cursor);
+    if (body[cursor] === "}") {
+      cursor += 1;
+      break;
+    }
+    if (body.startsWith("...", cursor)) {
+      const rest = readIdentifier(body, cursor + 3);
+      if (!rest) return undefined;
+      cursor = skipSpaceAndComments(body, rest.end);
+    } else {
+      const imported = readIdentifier(body, cursor);
+      if (!imported) return undefined;
+      cursor = skipSpaceAndComments(body, imported.end);
+      let local = imported.value;
+      if (body[cursor] === ":") {
+        const renamed = readIdentifier(body, skipSpaceAndComments(body, cursor + 1));
+        if (!renamed) return undefined;
+        local = renamed.value;
+        cursor = skipSpaceAndComments(body, renamed.end);
+      }
+      if (body[cursor] === "=") return undefined;
+      if (isRunnerKind(imported.value)) entries.push({ name: local, kind: imported.value });
+    }
+    if (body[cursor] === ",") {
+      cursor += 1;
+      continue;
+    }
+    if (body[cursor] === "}") {
+      cursor += 1;
+      break;
+    }
+    return undefined;
+  }
+  cursor = skipSpaceAndComments(body, cursor);
+  if (body[cursor] !== "=") return undefined;
+  const imported = readDynamicRunnerImport(body, cursor + 1);
+  if (!imported) return undefined;
+  return { entries, end: imported.end };
+}
+
 /** Every `it`/`test` title in this source, including ones inside a false condition. */
 function collectRegistrations(body: string, unresolved: string[] = []): Registration[] {
   const ranges = localRanges(body);
@@ -1730,7 +1846,23 @@ function collectRegistrations(body: string, unresolved: string[] = []): Registra
       let bindingAt = skipSpaceAndComments(body, word.end);
       const bindingDepth = forParens.length > 0 ? depth + 1 : depth;
       for (;;) {
-        if (body[bindingAt] === "{" || body[bindingAt] === "[") break;
+        if (body[bindingAt] === "{") {
+          const destructured = readDestructuredRunnerImport(body, bindingAt);
+          if (!destructured) break;
+          for (const entry of destructured.entries) {
+            aliases.push({
+              name: entry.name,
+              kind: entry.kind,
+              modifiers: [],
+              depth: bindingDepth,
+            });
+          }
+          bindingAt = skipSpaceAndComments(body, destructured.end);
+          if (body[bindingAt] !== ",") break;
+          bindingAt = skipSpaceAndComments(body, bindingAt + 1);
+          continue;
+        }
+        if (body[bindingAt] === "[") break;
         const ident = readIdentifier(body, bindingAt);
         if (!ident) break;
         const after = skipSpaceAndComments(body, ident.end);
@@ -2259,11 +2391,9 @@ export function productionFileCites(body: string, doc: string, anchor: string): 
 
 export function commandTargetsFile(test: InventoryTest): boolean {
   if (test.args[0] !== "test") return false;
-  const fromCwd = relative(test.cwd, test.file).replaceAll("\\", "/");
-  return test.args.slice(1).some((arg) => {
-    const normalized = arg.replaceAll("\\", "/");
-    return normalized === fromCwd || normalized === test.file;
-  });
+  return commandedTestFiles(test.args).some((target) =>
+    sameCommandFile(test.cwd, target, test.file),
+  );
 }
 
 const PRELOAD_FLAGS = ["--preload", "--require"] as const;
