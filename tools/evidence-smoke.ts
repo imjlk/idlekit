@@ -849,6 +849,7 @@ try {
   let unresolvedImport = false;
   let packageImport = false;
   let resolvedImport = false;
+  let helperComputed = false;
   try {
     const bodies = sourceGraph([specifierHost]);
     const joined = bodies.join("\n");
@@ -929,6 +930,27 @@ try {
       ].join("\n"),
     );
     commentRequire = unresolvedLocalRequires([requireHost]).length === 0;
+    writeFileSync(
+      requireHelper,
+      [
+        "export function register() {",
+        '  it(["cred", "ited"].join(""), unrelated);',
+        "}",
+        "// from-computed-helper",
+      ].join("\n"),
+    );
+    const computedHost = [
+      'import { register } from "./required-helper";',
+      'if (false) it("credited", citedExport);',
+      "register();",
+    ].join("\n");
+    writeFileSync(requireHost, computedHost);
+    const computedBodies = sourceGraph([requireHost]);
+    helperComputed =
+      computedBodies.some((body) => body.includes("from-computed-helper")) &&
+      !duplicateFullNamesAcross(computedBodies).includes("credited") &&
+      unresolvedRunnerCalls(computedHost).length === 0 &&
+      computedBodies.some((body) => unresolvedRunnerCalls(body).length > 0);
   } finally {
     rmSync(specifierDir, { recursive: true, force: true });
   }
@@ -1351,6 +1373,7 @@ try {
     resolvedImport &&
     foreignImport.length === 0 &&
     foreignNamespace.length === 0 &&
+    helperComputed &&
     namedDuplicate &&
     namedLive &&
     arrowLive &&
@@ -1514,6 +1537,9 @@ try {
   const updateBlocked = blockedTestArgs(["test", "-u", "src/example.test.ts"]);
   const updateNamed = blockedTestArgs(["test", "--update-snapshots", "src/example.test.ts"]);
   const plainCommand = blockedTestArgs(["test", "src/example.test.ts"]);
+  const cwdEquals = blockedTestArgs(["test", "--cwd=../other", "src/x.test.ts"]);
+  const cwdSplit = blockedTestArgs(["test", "--cwd", "../other", "src/x.test.ts"]);
+  const cwdAfterSeparator = blockedTestArgs(["test", "src/x.test.ts", "--", "--cwd"]);
   const reporterAt = reporterArgs.indexOf("--reporter=junit");
   const separatorAt = reporterArgs.indexOf("--");
   const commandOk =
@@ -1538,7 +1564,10 @@ try {
     watchBlocked === "--watch" &&
     updateBlocked === "-u" &&
     updateNamed === "--update-snapshots" &&
-    plainCommand === undefined;
+    plainCommand === undefined &&
+    cwdEquals === "--cwd" &&
+    cwdSplit === "--cwd" &&
+    cwdAfterSeparator === undefined;
   record(
     "test-subcommand",
     "zero",
