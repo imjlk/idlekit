@@ -14,6 +14,7 @@ import type { ITtscLintConfig } from "@ttsc/lint";
 export const productionFiles = [
   "packages/core/src/scenario/concreteValidator.ts",
   "packages/core/src/scenario/typiaTransformMissing.ts",
+  "packages/core/src/scenario/standardSchema.ts",
   "packages/core/src/testkit/conformance.ts",
   "packages/core/src/testkit/conformanceRun.ts",
   "packages/core/src/testkit/compareAmounts.ts",

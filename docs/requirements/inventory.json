@@ -7,7 +7,8 @@
       "doc": "docs/requirements/active/typia-transform.md",
       "production": [
         "packages/core/src/scenario/concreteValidator.ts",
-        "packages/core/src/scenario/typiaTransformMissing.ts"
+        "packages/core/src/scenario/typiaTransformMissing.ts",
+        "packages/core/src/scenario/standardSchema.ts"
       ],
       "tests": [
         {

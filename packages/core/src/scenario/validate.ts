@@ -1,58 +1,15 @@
-import type { IValidation } from "typia";
 import type { ZodType } from "zod";
+import type { StandardIssue, StandardResult, StandardSchema } from "./standardSchema";
 import type { ScenarioV1 } from "./types";
 
 export { TypiaTransformMissingError, typiaStandardSchema } from "./typiaTransformMissing";
-
-export type StandardIssue = Readonly<{
-  path?: string;
-  message: string;
-  expected?: string;
-  value?: unknown;
-}>;
-
-export type StandardResult<T> =
-  | Readonly<{ success: true; value: T }>
-  | Readonly<{ success: false; issues: StandardIssue[] }>;
-
-export type StandardSchema<T> = Readonly<{
-  "~standard": Readonly<{
-    validate: (input: unknown) => StandardResult<T>;
-  }>;
-}>;
-
-function issuesFromTypiaErrors(errors: readonly IValidation.IError[]): StandardIssue[] {
-  return errors.map((err) => ({
-    path: err.path,
-    message: err.description ?? `Expected ${err.expected}`,
-    expected: err.expected,
-    value: err.value,
-  }));
-}
-
-function standardResultFromValidation<T>(validated: IValidation<T>): StandardResult<T> {
-  if (validated.success) {
-    return { success: true, value: validated.data };
-  }
-  return { success: false, issues: issuesFromTypiaErrors(validated.errors) };
-}
-
-/**
- * Adapts a validator that was generated at a concrete call site.
- * `typia.createValidate<Concrete>()` is the supported generator. An unresolved
- * `typia.validate<T>()` inside {@link typiaStandardSchema} is not.
- */
-export function standardSchemaFromValidate<T>(
-  validate: (input: unknown) => IValidation<T>,
-): StandardSchema<T> {
-  return {
-    "~standard": {
-      validate(input) {
-        return standardResultFromValidation(validate(input));
-      },
-    },
-  };
-}
+export {
+  standardResultFromValidation,
+  standardSchemaFromValidate,
+  type StandardIssue,
+  type StandardResult,
+  type StandardSchema,
+} from "./standardSchema";
 
 export function zodStandardSchema<T>(schema: ZodType<T>): StandardSchema<T> {
   return {

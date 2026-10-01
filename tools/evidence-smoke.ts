@@ -1113,6 +1113,19 @@ try {
     "unrelated",
     "credited",
   );
+  const requiredBody = [
+    'const { it: register } = require("bun:test")',
+    'if (false) it("credited", citedExport)',
+    'register("credited", unrelated)',
+  ].join("\n");
+  const requiredLive = registeredSuites(requiredBody, "unrelated", "credited");
+  const requiredDead = registeredSuites(requiredBody, "citedExport", "credited");
+  const requiredNames = duplicateFullNames(requiredBody);
+  const otherRequire = registeredSuites(
+    ['const { it: register } = require("other")', 'register("credited", unrelated)'].join("\n"),
+    "unrelated",
+    "credited",
+  );
   const duplicateOk =
     duplicateNames.length === 1 &&
     duplicateNames[0] === "kept > quota is documented" &&
@@ -1191,6 +1204,10 @@ try {
     destructuredDead.length === 1 &&
     destructuredNames.length === 1 &&
     otherDestructure.length === 0 &&
+    requiredLive.length === 1 &&
+    requiredDead.length === 1 &&
+    requiredNames.length === 1 &&
+    otherRequire.length === 0 &&
     computedNames.length === 0 &&
     computedDead.length === 1 &&
     computedCalls.length === 1 &&
