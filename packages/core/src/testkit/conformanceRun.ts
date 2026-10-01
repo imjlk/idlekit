@@ -187,7 +187,7 @@ export function replayShrinkReport(report: ShrinkReport): {
   shrunk: number;
 } {
   let current = report.original;
-  let pathOk = true;
+  let pathOk = typeof report.original === "number" && !shrinkGapHolds(report.original);
   for (const step of report.shrinkingPath) {
     if (typeof step.to !== "number" || typeof step.from !== "number") {
       pathOk = false;
@@ -259,6 +259,26 @@ function runSeededProperty<T>(run: PropertyRun<T>): { ok: true } | { ok: false; 
         value: undefined,
         shrinkingPath: [],
         thrown: "cases must be a positive integer",
+      },
+    };
+  }
+  if (!Number.isFinite(run.testSeed) || !Number.isInteger(run.testSeed)) {
+    return {
+      ok: false,
+      report: {
+        predicateId: run.predicateId,
+        generatorVersion: conformanceGeneratorVersion,
+        testSeed: run.testSeed,
+        gameSeed: null,
+        engineId: null,
+        modelId: null,
+        strategyId: null,
+        tickSchedule: null,
+        caseIndex: 0,
+        original: undefined,
+        value: undefined,
+        shrinkingPath: [],
+        thrown: "testSeed must be a finite integer",
       },
     };
   }
@@ -524,16 +544,18 @@ function jsonCheckpointPreserves(
       if (!descriptor || descriptor.get !== undefined || !("value" in descriptor)) return false;
       if (!jsonCheckpointPreserves(descriptor.value, seen, userData)) return false;
     }
-    for (const key of Object.keys(value)) {
+    for (const key of Object.getOwnPropertyNames(value)) {
+      if (key === "length") continue;
       if (!/^(?:0|[1-9][0-9]*)$/.test(key) || Number(key) >= value.length) return false;
     }
     return true;
   }
   const proto = Object.getPrototypeOf(value);
   if (proto !== Object.prototype && proto !== null) return false;
-  for (const key of Object.keys(value)) {
+  for (const key of Object.getOwnPropertyNames(value)) {
     const descriptor = Object.getOwnPropertyDescriptor(value, key);
     if (!descriptor || descriptor.get !== undefined || !("value" in descriptor)) return false;
+    if (descriptor.enumerable !== true) return false;
     if (descriptor.value === undefined) {
       if (userData || key === "vars" || key === "state") return false;
       continue;
@@ -571,14 +593,23 @@ function jsonResumeCheckpoint<N, U extends string, Vars>(
   } catch {
     return fail("checkpoint is not JSON");
   }
-  const parsed = parseSimStateJSON(JSON.parse(text) as unknown);
-  return {
-    state: deserializeSimState(scenario.ctx.E, parsed, {
-      unitFactory: unitFactoryFor(scenario),
-    }),
-    strategyState: parsed.strategy?.state,
-    persistedStrategy,
-  };
+  let parsed: ReturnType<typeof parseSimStateJSON>;
+  try {
+    parsed = parseSimStateJSON(JSON.parse(text) as unknown);
+  } catch {
+    return fail("checkpoint is not JSON");
+  }
+  try {
+    return {
+      state: deserializeSimState(scenario.ctx.E, parsed, {
+        unitFactory: unitFactoryFor(scenario),
+      }),
+      strategyState: parsed.strategy?.state,
+      persistedStrategy,
+    };
+  } catch {
+    return fail("checkpoint is not JSON");
+  }
 }
 
 function resumeFromCheckpoint<N, U extends string, Vars>(
@@ -616,11 +647,13 @@ function resumeFromCheckpoint<N, U extends string, Vars>(
     } else {
       bracket.restore(bracket.snap());
     }
-    const durationTicks = wholeTickCount(duration, step);
-    if (splitTicks === null || durationTicks === null || durationTicks - splitTicks < 1) {
+    const durationTicks =
+      additionsUntilDuration(scenario.initial.t, step, duration) ?? wholeTickCount(duration, step);
+    const countedSplit = additionsUntilDuration(scenario.initial.t, step, splitSec) ?? splitTicks;
+    if (countedSplit === null || durationTicks === null || durationTicks - countedSplit < 1) {
       return skip("split is not on the original tick grid");
     }
-    const remainingTicks = durationTicks - splitTicks;
+    const remainingTicks = durationTicks - countedSplit;
     const tailStart = started.state.t;
     const tailDuration = advancedTimestamp(tailStart, step, remainingTicks) - tailStart;
     const tail = economyAfter({
