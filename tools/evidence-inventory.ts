@@ -1513,6 +1513,74 @@ function namespaceRunnerMember(
   return { kind: member.value, end: member.end };
 }
 
+/** An arrow or `function` value is a helper, not a binding of `it` / `test` / `describe`. */
+function isFunctionValue(body: string, index: number): boolean {
+  let cursor = skipSpaceAndComments(body, index);
+  if (body.startsWith("async", cursor) && /\s|\(/.test(body[cursor + 5] ?? "")) {
+    const afterAsync = skipSpaceAndComments(body, cursor + 5);
+    if (body.startsWith("function", afterAsync)) return true;
+    cursor = afterAsync;
+  }
+  if (body.startsWith("function", cursor)) return true;
+  if (body[cursor] === "<") {
+    const close = skipPair(body, cursor);
+    if (close < 0) return false;
+    cursor = skipSpaceAndComments(body, close);
+  }
+  const ident = readIdentifier(body, cursor);
+  if (ident) return body.startsWith("=>", skipSpaceAndComments(body, ident.end));
+  if (body[cursor] !== "(") return false;
+  const close = skipPair(body, cursor);
+  if (close < 0) return false;
+  let after = skipSpaceAndComments(body, close);
+  if (body[after] === ":") return typeAnnotationEndsAtArrow(body, after + 1);
+  return body.startsWith("=>", after);
+}
+
+function typeAnnotationEndsAtArrow(body: string, index: number): boolean {
+  let cursor = index;
+  let depth = 0;
+  while (cursor < body.length) {
+    const char = body[cursor] ?? "";
+    if (char === "'" || char === '"') {
+      cursor = skipQuoted(body, cursor);
+      continue;
+    }
+    if (char === "`") {
+      const end = skipTemplateLiteral(body, cursor);
+      if (end < 0) return false;
+      cursor = end;
+      continue;
+    }
+    if (char === "/" && body[cursor + 1] === "/") {
+      const line = body.indexOf("\n", cursor);
+      cursor = line < 0 ? body.length : line + 1;
+      continue;
+    }
+    if (char === "/" && body[cursor + 1] === "*") {
+      const close = body.indexOf("*/", cursor + 2);
+      cursor = close < 0 ? body.length : close + 2;
+      continue;
+    }
+    if (char === "(" || char === "{" || char === "[" || char === "<") {
+      depth += 1;
+      cursor += 1;
+      continue;
+    }
+    const closesGroup =
+      char === ")" || char === "}" || char === "]" || (char === ">" && body[cursor - 1] !== "=");
+    if (closesGroup) {
+      depth = Math.max(0, depth - 1);
+      cursor += 1;
+      continue;
+    }
+    if (depth === 0 && body.startsWith("=>", cursor)) return true;
+    if (depth === 0 && (char === ";" || char === "," || char === "\n")) return false;
+    cursor += 1;
+  }
+  return false;
+}
+
 /** `const register = it.only` and `const again = register` name the same runner. */
 function readRunnerRef(
   body: string,
@@ -1918,6 +1986,7 @@ function collectRegistrations(
           break;
         }
         const ref = readRunnerRef(body, equalsAt + 1, aliases);
+        if (!ref && isFunctionValue(body, equalsAt + 1)) break;
         aliases.push({
           name: ident.value,
           kind: ref?.kind,
