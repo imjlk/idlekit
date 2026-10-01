@@ -18,6 +18,7 @@ import {
   citesRequirement,
   enabledClaimFailures,
   formatGateFailures,
+  formatIncludeRoots,
   graphRuleFailures,
   headingAnchors,
   missingProtectedDocs,
@@ -34,7 +35,14 @@ import {
   productionFileCites,
   retainedCoverage,
 } from "./evidence-inventory";
-import { commandText, root, runTtsc, ttsxUnderNodeName, type CommandResult } from "./evidence-host";
+import {
+  commandText,
+  compilerBinName,
+  root,
+  runTtsc,
+  ttsxUnderNodeName,
+  type CommandResult,
+} from "./evidence-host";
 
 type Step = {
   name: string;
@@ -384,6 +392,12 @@ try {
   const backtickInfo = headingAnchors("```js `not`\n## Kept {#kept}\n");
   const tildeInfo = headingAnchors("~~~js `code`\n## Hidden {#hidden}\n~~~\n## After {#after}\n");
   const inlineComment = headingAnchors("Document the `<!--` marker\n## Kept {#kept}\n");
+  const quotedFence = headingAnchors(
+    ["> ```md", "> ## Example {#example}", "> ```", "## Kept {#kept}"].join("\n"),
+  );
+  const listedFence = headingAnchors(
+    ["- ```md", "- ## Example {#example}", "- ```", "## Kept {#kept}"].join("\n"),
+  );
   const fenceOk =
     anchors.length === 1 &&
     anchors[0] === "visible" &&
@@ -392,13 +406,17 @@ try {
     tildeInfo.length === 1 &&
     tildeInfo[0] === "after" &&
     inlineComment.length === 1 &&
-    inlineComment[0] === "kept";
+    inlineComment[0] === "kept" &&
+    quotedFence.length === 1 &&
+    quotedFence[0] === "kept" &&
+    listedFence.length === 1 &&
+    listedFence[0] === "kept";
   record(
     "fenced-headings",
     "zero",
     fenceOk ? 0 : 1,
     fenceOk,
-    JSON.stringify({ anchors, backtickInfo, tildeInfo }),
+    JSON.stringify({ anchors, backtickInfo, tildeInfo, quotedFence, listedFence }),
   );
 
   const nested = headingAnchors(
@@ -689,11 +707,31 @@ try {
     hostPath,
     'import "./helper";\ndescribe("kept", () => {\n  it("quota is documented", exportedName);\n});\n',
   );
+  const stalePath = join(graphDir, "old-helper.ts");
+  const commentHostPath = join(graphDir, "comment-host.test.ts");
+  writeFileSync(
+    stalePath,
+    'describe("kept", () => {\n  it("quota is documented", exportedName);\n});\n',
+  );
+  writeFileSync(
+    commentHostPath,
+    [
+      '// import "./old-helper";',
+      '/* import "./old-helper"; */',
+      "const note = 'import \"./old-helper\"';",
+      'import "./helper";',
+    ].join("\n"),
+  );
   let graphDuplicate = false;
+  let commentIgnored = false;
   try {
     graphDuplicate = duplicateFullNamesAcross(sourceGraph([hostPath])).includes(
       "kept > quota is documented",
     );
+    const commentBodies = sourceGraph([commentHostPath]);
+    commentIgnored =
+      commentBodies.length === 2 &&
+      !duplicateFullNamesAcross(commentBodies).includes("kept > quota is documented");
   } finally {
     rmSync(graphDir, { recursive: true, force: true });
   }
@@ -711,6 +749,7 @@ try {
     duplicateStillRegistered.length === 1 &&
     acrossFiles.includes("kept > quota is documented") &&
     graphDuplicate &&
+    commentIgnored &&
     focusedNames.length === 1 &&
     focusedNames[0] === "kept > quota is documented" &&
     focusedCallback.length === 1;
@@ -719,7 +758,7 @@ try {
     "zero",
     duplicateOk ? 0 : 1,
     duplicateOk,
-    JSON.stringify({ duplicateNames, duplicateStillRegistered }),
+    JSON.stringify({ duplicateNames, duplicateStillRegistered, commentIgnored }),
   );
 
   const indentedFence = headingAnchors("    ```\n## Visible {#quota}\n");
@@ -949,7 +988,12 @@ try {
   const program = evidenceProgramSourceFiles(join(root, "tsconfig.evidence.json"));
   const hostPresent = program.includes("packages/core/src/scenario/typiaTransformMissing.ts");
   const launcherOk =
-    ttsxUnderNodeName("win32") === "ttsx-under-node.cmd" && ttsxUnderNodeName("darwin") === "ttsx-under-node";
+    ttsxUnderNodeName("win32") === "ttsx-under-node.cmd" &&
+    ttsxUnderNodeName("darwin") === "ttsx-under-node" &&
+    compilerBinName("ttsc", "win32") === "ttsc.cmd" &&
+    compilerBinName("tsc", "win32") === "tsc.cmd" &&
+    compilerBinName("ttsc", "darwin") === "ttsc" &&
+    compilerBinName("tsc", "linux") === "tsc";
   const programOk = omitted.length === 1 && omitted[0] === "src/b.ts" && hostPresent && launcherOk;
   record(
     "program-hosts",
@@ -972,13 +1016,48 @@ try {
       include: ["tools/format-check.ts"],
     }),
   });
+  const formatWith = (exclude: readonly string[]) =>
+    formatGateFailures({
+      tsconfigText: JSON.stringify({
+        compilerOptions: {
+          plugins: [{ transform: "@ttsc/lint", configFile: "./lint.format.config.ts" }],
+        },
+        include: formatIncludeRoots,
+        exclude,
+      }),
+    });
+  const dropsSmoke = (failures: readonly string[]) =>
+    failures.some((message) => message.includes("exclude dropped tools/evidence-smoke.ts"));
+  const excludedExact = formatWith(["tools/evidence-smoke.ts"]);
+  const excludedStar = formatWith(["tools/*"]);
+  const excludedTree = formatWith(["tools/**"]);
+  const excludedDeep = formatWith(["tools/**/*.ts"]);
+  const excludedAny = formatWith(["**/evidence-smoke.ts"]);
+  const excludedBase = formatWith(["evidence-smoke.ts"]);
+  const excludedDir = formatWith(["tools"]);
+  const excludedSlash = formatWith(["tools/**/"]);
+  const excludedDot = formatWith(["./tools/evidence-smoke.ts"]);
+  const unrelatedExclude = formatWith(["fixtures/**"]);
+  const keepsConfig = (failures: readonly string[]) =>
+    !failures.some((message) => message.includes("evidence.config.ts"));
   const formatOk =
     badFormat.exitCode !== 0 &&
     /\[format\/(?:quotes|semi)\]/.test(badFormatText) &&
     rootFormatOk &&
     warningFormat.some((message) => message.includes("severity")) &&
     droppedFormat.some((message) => message.includes("tools/evidence-check.ts")) &&
-    droppedFormat.some((message) => message.includes("tools/evidence-smoke.ts"));
+    droppedFormat.some((message) => message.includes("tools/evidence-smoke.ts")) &&
+    dropsSmoke(excludedExact) &&
+    dropsSmoke(excludedStar) &&
+    dropsSmoke(excludedTree) &&
+    dropsSmoke(excludedDeep) &&
+    dropsSmoke(excludedAny) &&
+    dropsSmoke(excludedBase) &&
+    dropsSmoke(excludedDir) &&
+    keepsConfig(excludedDir) &&
+    dropsSmoke(excludedSlash) &&
+    dropsSmoke(excludedDot) &&
+    unrelatedExclude.length === 0;
   record(
     "format-severity",
     "nonzero",
