@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, realpathSync, rmSync } from "fs";
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { dirname, join, relative, resolve } from "path";
 import lintConfig from "../lint.config";
@@ -9,6 +9,7 @@ import {
   productionFiles,
   testFiles,
 } from "../evidence.config";
+import formatConfig from "../lint.format.config";
 import { root } from "./evidence-host";
 
 type InventoryTest = {
@@ -42,19 +43,15 @@ export type ShrinkResult = {
   missing: string[];
 };
 
-const NON_PRODUCTION_SUFFIXES = [
-  ".test.ts",
-  ".test.tsx",
-  ".spec.ts",
-  ".spec.tsx",
-  ".generated.ts",
-  ".d.ts",
-];
+const SOURCE_EXTENSION = /\.(?:[cm]?tsx?)$/;
+const NON_PRODUCTION_ROLE = /\.(?:test|spec|generated|d)$/;
 const NON_PRODUCTION_SEGMENTS = new Set(["fixtures", "dist"]);
 
 export function isNonProductionPath(rel: string): boolean {
   const normalized = rel.replaceAll("\\", "/");
-  if (NON_PRODUCTION_SUFFIXES.some((suffix) => normalized.endsWith(suffix))) return true;
+  const file = normalized.split("/").at(-1) ?? normalized;
+  const stem = file.replace(SOURCE_EXTENSION, "");
+  if (stem !== file && NON_PRODUCTION_ROLE.test(stem)) return true;
   return normalized.split("/").some((segment) => NON_PRODUCTION_SEGMENTS.has(segment));
 }
 
@@ -223,6 +220,53 @@ export function assertExecutedTests(output: string, exitCode: number, names: rea
   return failures;
 }
 
+function inlineCodeSpans(line: string): Array<[number, number]> {
+  const spans: Array<[number, number]> = [];
+  let index = 0;
+  while (index < line.length) {
+    if (line[index] !== "`") {
+      index += 1;
+      continue;
+    }
+    let length = 0;
+    while (line[index + length] === "`") length += 1;
+    let search = index + length;
+    let found = -1;
+    while (search < line.length) {
+      if (line[search] !== "`") {
+        search += 1;
+        continue;
+      }
+      let run = 0;
+      while (line[search + run] === "`") run += 1;
+      if (run === length) {
+        found = search;
+        break;
+      }
+      search += run;
+    }
+    if (found === -1) {
+      index += length;
+      continue;
+    }
+    spans.push([index, found + length]);
+    index = found + length;
+  }
+  return spans;
+}
+
+function indexOutsideInline(line: string, token: string, from = 0): number {
+  const spans = inlineCodeSpans(line);
+  let search = from;
+  while (search < line.length) {
+    const at = line.indexOf(token, search);
+    if (at < 0) return -1;
+    if (!spans.some((span) => at >= span[0] && at < span[1])) return at;
+    search = at + token.length;
+  }
+  return -1;
+}
+
 export function headingAnchors(markdown: string): string[] {
   const anchors: string[] = [];
   let fenceChar: "`" | "~" | undefined;
@@ -242,7 +286,7 @@ export function headingAnchors(markdown: string): string[] {
       continue;
     }
     if (inComment) {
-      if (rawLine.includes("-->")) inComment = false;
+      if (indexOutsideInline(rawLine, "-->") !== -1) inComment = false;
       pending = undefined;
       continue;
     }
@@ -253,9 +297,10 @@ export function headingAnchors(markdown: string): string[] {
       pending = undefined;
       continue;
     }
-    const commentAt = rawLine.indexOf("<!--");
+    const commentAt = indexOutsideInline(rawLine, "<!--");
     const line = commentAt === -1 ? rawLine : rawLine.slice(0, commentAt);
-    if (commentAt !== -1 && !rawLine.includes("-->", commentAt + 4)) inComment = true;
+    const commentCloses = commentAt !== -1 && indexOutsideInline(rawLine, "-->", commentAt + 4) !== -1;
+    if (commentAt !== -1 && !commentCloses) inComment = true;
     const heading = line.replace(/^ {0,3}/, "");
     const underline = /^(-+|=+)[ \t]*$/.exec(heading);
     if (underline && pending !== undefined) {
@@ -598,7 +643,9 @@ function stringSpans(body: string): Array<[number, number]> {
     const char = body[index] ?? "";
     if (char === "/" && body[index + 1] === "/") {
       const next = body.indexOf("\n", index);
-      index = next < 0 ? body.length : next + 1;
+      const end = next < 0 ? body.length : next + 1;
+      spans.push([index, end]);
+      index = end;
       continue;
     }
     if (char === "/" && body[index + 1] === "*") {
@@ -653,7 +700,9 @@ function stringSpans(body: string): Array<[number, number]> {
             }
             if (nested === "/" && body[index + 1] === "/") {
               const next = body.indexOf("\n", index);
-              index = next < 0 ? body.length : next + 1;
+              const end = next < 0 ? body.length : next + 1;
+              spans.push([index, end]);
+              index = end;
               continue;
             }
             if (nested === "/" && body[index + 1] === "*") {
@@ -830,6 +879,69 @@ export function commandTargetsFile(test: InventoryTest): boolean {
   });
 }
 
+const TEST_SOURCE = /(?:^|\/)[^/]+\.(?:test|spec)\.[cm]?tsx?$/;
+
+function commandedTestFiles(args: readonly string[]): string[] {
+  const files: string[] = [];
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index] ?? "";
+    if (arg === "--preload" || arg === "--require") {
+      const next = args[index + 1];
+      if (next && !next.startsWith("-")) {
+        files.push(next);
+        index += 1;
+      }
+      continue;
+    }
+    if (arg.startsWith("--preload=") || arg.startsWith("--require=")) {
+      files.push(arg.slice(arg.indexOf("=") + 1));
+      continue;
+    }
+    if (arg.startsWith("-")) continue;
+    const normalized = arg.replaceAll("\\", "/");
+    if (TEST_SOURCE.test(normalized)) files.push(normalized);
+  }
+  return files;
+}
+
+function sameCommandFile(cwd: string, target: string, inventoried: string): boolean {
+  const wanted = target.replaceAll("\\", "/");
+  const file = inventoried.replaceAll("\\", "/");
+  const fromCwd = relative(cwd, file).replaceAll("\\", "/");
+  return wanted === file || wanted === fromCwd;
+}
+
+/** Test paths named by the command that are not already inventory entries for that command. */
+export function uninventoriedCommandTargets(
+  args: readonly string[],
+  cwd: string,
+  inventoried: readonly string[],
+): string[] {
+  return commandedTestFiles(args).filter(
+    (target) => !inventoried.some((file) => sameCommandFile(cwd, target, file)),
+  );
+}
+
+function localPreloadFiles(cwd: string, args: readonly string[]): string[] {
+  const names = commandedTestFiles(args).filter((file) => !TEST_SOURCE.test(file));
+  const bunfig = join(cwd, "bunfig.toml");
+  if (existsSync(bunfig)) {
+    const text = readFileSync(bunfig, "utf8");
+    for (const match of text.matchAll(/preload\s*=\s*\[([^\]]*)\]/g)) {
+      for (const item of match[1]?.matchAll(/"([^"]+)"|'([^']+)'/g) ?? []) {
+        const value = item[1] ?? item[2];
+        if (value) names.push(value);
+      }
+    }
+  }
+  const files: string[] = [];
+  for (const name of names) {
+    const path = resolve(cwd, name);
+    if (existsSync(path)) files.push(path);
+  }
+  return files;
+}
+
 async function approvalIds(): Promise<string[]> {
   const dir = join(root, "docs", "requirements", "approvals");
   let files: string[] = [];
@@ -959,6 +1071,39 @@ function referenceFlag(reference: unknown, flag: "requireReview" | "noEvidenceEx
   const entries = referenceEntries(reference);
   if (entries.length === 0) return false;
   return entries.every((entry) => (entry as Record<string, unknown>)[flag] === true);
+}
+
+/** The loaded `evidence/graph` rule must be the same object inventory validates. */
+export function graphRuleFailures(rules: { readonly ["evidence/graph"]?: unknown } | undefined): string[] {
+  const graphRule = rules?.["evidence/graph"];
+  if (!Array.isArray(graphRule) || graphRule[0] !== "error" || graphRule[1] !== evidenceGraph) {
+    return ["evidence/graph must load evidenceGraph at error severity"];
+  }
+  return [];
+}
+
+/** Root format config must still fail the process when a file is unformatted. */
+export function formatGateFailures(options?: { tsconfigText?: string; severity?: unknown }): string[] {
+  const text = options?.tsconfigText ?? readFileSync(join(root, "tsconfig.format.json"), "utf8");
+  const failures: string[] = [];
+  let plugins: Array<{ transform?: string; configFile?: string; enabled?: boolean }> = [];
+  try {
+    const parsed = JSON.parse(text) as {
+      compilerOptions?: {
+        plugins?: Array<{ transform?: string; configFile?: string; enabled?: boolean }>;
+      };
+    };
+    plugins = parsed.compilerOptions?.plugins ?? [];
+  } catch (error) {
+    return [error instanceof Error ? error.message : String(error)];
+  }
+  const lint = plugins.find((plugin) => plugin.transform === "@ttsc/lint");
+  if (!lint || lint.enabled === false || lint.configFile !== "./lint.format.config.ts") {
+    failures.push("tsconfig.format.json must enable @ttsc/lint for lint.format.config.ts");
+  }
+  const severity = options?.severity ?? formatConfig.format?.severity;
+  if (severity !== "error") failures.push("format.severity must be error");
+  return failures;
 }
 
 /** Each enabled evidence claim must keep its symbols, hosts, and reference review flags. */
@@ -1141,9 +1286,16 @@ export async function checkInventory(projectRoot = root): Promise<string[]> {
           .filter((candidate) => `${candidate.cwd}\n${candidate.args.join("\0")}` === commandKey)
           .map((candidate) => candidate.file),
       );
-      const commandSources = [...new Set(commandBodies)].map((file) =>
-        readFileSync(join(projectRoot, file), "utf8"),
-      );
+      const inventoriedFiles = [...new Set(commandBodies)];
+      const commandCwd = join(projectRoot, test.cwd);
+      const extras = uninventoriedCommandTargets(test.args, test.cwd, inventoriedFiles);
+      if (extras.length > 0) {
+        fail(failures, `${requirement.id} command runs uninventoried tests: ${extras.join(", ")}`);
+      }
+      const commandSources = [
+        ...inventoriedFiles.map((file) => readFileSync(join(projectRoot, file), "utf8")),
+        ...localPreloadFiles(commandCwd, test.args).map((file) => readFileSync(file, "utf8")),
+      ];
       if (duplicateFullNamesAcross(commandSources).includes(test.registeredAs)) {
         fail(failures, `${requirement.id} registers ${test.registeredAs} more than once`);
       }
@@ -1282,14 +1434,10 @@ export async function checkInventory(projectRoot = root): Promise<string[]> {
   const loadedRules = lintConfig.rules;
   const graphRule = loadedRules["evidence/graph"];
   const reviewRule = loadedRules["evidence/review"];
-  const graphOn =
-    Array.isArray(graphRule) &&
-    graphRule[0] === "error" &&
-    typeof graphRule[1] === "object" &&
-    graphRule[1] !== null;
+  failures.push(...graphRuleFailures(loadedRules));
   const reviewOn = reviewRule === "error" || (Array.isArray(reviewRule) && reviewRule[0] === "error");
-  if (!graphOn || !reviewOn) {
-    fail(failures, "lint.config.ts must enable evidence/graph and evidence/review");
+  if (!reviewOn) {
+    fail(failures, "lint.config.ts must enable evidence/review");
   }
   const evidencePackage = readJson<{ ttsc?: unknown }>(
     join(projectRoot, "node_modules", "@ttsc", "evidence", "package.json"),

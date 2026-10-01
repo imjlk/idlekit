@@ -1,6 +1,7 @@
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
+import lintConfig from "../lint.config";
 import {
   approvalApplies,
   assertExecutedTests,
@@ -11,11 +12,14 @@ import {
   duplicateFullNamesAcross,
   citesRequirement,
   enabledClaimFailures,
+  formatGateFailures,
+  graphRuleFailures,
   headingAnchors,
   registeredSuites,
   isNonProductionPath,
   recordedBaseSpec,
   requireFetchedRevision,
+  uninventoriedCommandTargets,
   unregisteredImplementationHost,
   includedSourceCount,
   omittedProgramHosts,
@@ -309,13 +313,16 @@ try {
   );
   const backtickInfo = headingAnchors("```js `not`\n## Kept {#kept}\n");
   const tildeInfo = headingAnchors("~~~js `code`\n## Hidden {#hidden}\n~~~\n## After {#after}\n");
+  const inlineComment = headingAnchors("Document the `<!--` marker\n## Kept {#kept}\n");
   const fenceOk =
     anchors.length === 1 &&
     anchors[0] === "visible" &&
     backtickInfo.length === 1 &&
     backtickInfo[0] === "kept" &&
     tildeInfo.length === 1 &&
-    tildeInfo[0] === "after";
+    tildeInfo[0] === "after" &&
+    inlineComment.length === 1 &&
+    inlineComment[0] === "kept";
   record(
     "fenced-headings",
     "zero",
@@ -398,6 +405,8 @@ try {
     "const text = `/** @evidence docs/requirements/active/x.md#anchor */ export function sameName`;\n";
   const realRequirement =
     "/** @evidence docs/requirements/active/x.md#anchor */\nexport function sameName() {}\n";
+  const lineCommentRequirement =
+    "// /** @evidence docs/requirements/active/x.md#anchor */\nexport function sameName() {}\n";
   const requirementCiteOk =
     !citesRequirement(spoofedRequirement, "sameName", "docs/requirements/active/x.md", "anchor") &&
     citesRequirement(realRequirement, "sameName", "docs/requirements/active/x.md", "anchor") &&
@@ -406,7 +415,9 @@ try {
       "sameName",
       "docs/requirements/active/x.md",
       "anchor",
-    );
+    ) &&
+    !citesRequirement(lineCommentRequirement, "sameName", "docs/requirements/active/x.md", "anchor") &&
+    !productionFileCites(lineCommentRequirement, "docs/requirements/active/x.md", "anchor");
   const reviewedOff = enabledClaimFailures([
     {
       name: "active requirements have production implementations",
@@ -449,13 +460,16 @@ try {
     },
   ]);
   const reviewOffOk = reviewedOff.some((message) => message.includes("requireReview"));
+  const reboundGraph = graphRuleFailures({ "evidence/graph": ["error", { claims: [] }] });
+  const graphBound = graphRuleFailures(lintConfig.rules).length === 0 && reboundGraph.length > 0;
   const claimOk =
     enabledClaimFailures().length === 0 &&
     enabledClaimFailures([]).length > 0 &&
     rebound.length > 0 &&
     citationOk &&
     requirementCiteOk &&
-    reviewOffOk;
+    reviewOffOk &&
+    graphBound;
   record(
     "claim-populations",
     "zero",
@@ -611,7 +625,16 @@ try {
     cwd: ".",
     args: ["test", "src/example.test.ts"],
   });
-  const commandOk = wrapped === false && direct === true;
+  const extraTargets = uninventoriedCommandTargets(
+    ["test", "src/example.test.ts", "src/other.test.ts"],
+    ".",
+    ["src/example.test.ts"],
+  );
+  const onlyTarget = uninventoriedCommandTargets(["test", "src/example.test.ts"], ".", [
+    "src/example.test.ts",
+  ]);
+  const commandOk =
+    wrapped === false && direct === true && extraTargets.length === 1 && onlyTarget.length === 0;
   record(
     "test-subcommand",
     "zero",
@@ -621,7 +644,11 @@ try {
   );
 
   const specTsx = isNonProductionPath("packages/web/src/widget.spec.tsx");
-  record("spec-tsx", "nonzero", specTsx ? 1 : 0, specTsx, String(specTsx));
+  const specMts = isNonProductionPath("packages/web/src/widget.spec.mts");
+  const generatedTsx = isNonProductionPath("packages/web/src/widget.generated.tsx");
+  const productionTs = !isNonProductionPath("packages/core/src/scenario/concreteValidator.ts");
+  const specOk = specTsx && specMts && generatedTsx && productionTs;
+  record("spec-tsx", "nonzero", specOk ? 1 : 0, specOk, String(specOk));
 
   let fetchThrew = false;
   try {
@@ -707,10 +734,21 @@ try {
   );
 
   const formatBad = join(root, "fixtures", "evidence", "format-bad");
-  expectNonZero(
+  const badFormat = runTtsc(["-p", "tsconfig.json", "--noEmit", "--cwd", formatBad], formatBad);
+  const badFormatText = commandText(badFormat);
+  const rootFormatOk = formatGateFailures().length === 0;
+  const warningFormat = formatGateFailures({ severity: "warning" });
+  const formatOk =
+    badFormat.exitCode !== 0 &&
+    /\[format\/(?:quotes|semi)\]/.test(badFormatText) &&
+    rootFormatOk &&
+    warningFormat.some((message) => message.includes("severity"));
+  record(
     "format-severity",
-    runTtsc(["-p", "tsconfig.json", "--noEmit", "--cwd", formatBad], formatBad),
-    /\[format\/(?:quotes|semi)\]/,
+    "nonzero",
+    badFormat.exitCode,
+    formatOk,
+    `${badFormatText.slice(0, 500)}\nroot=${rootFormatOk} warning=${warningFormat.join("; ")}`,
   );
 } finally {
   rmSync(cacheRoot, { recursive: true, force: true });
