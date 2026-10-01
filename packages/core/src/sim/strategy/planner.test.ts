@@ -511,6 +511,59 @@ describe("createPlannerStrategy", () => {
     expect(emptyOut[0]?.bulkSize).toBeUndefined();
   });
 
+  it("does not revive a size-1 quote that settlement already rejected", () => {
+    const ctx = makeContext(1);
+    const action: Action<number, UnitCode, Vars> = {
+      id: "buy",
+      kind: "buy",
+      canApply: () => true,
+      cost: () => ({ unit: { code: "COIN" }, amount: Number.NaN }),
+      bulk: () => [
+        {
+          size: 1,
+          cost: null,
+          deltaIncomePerSec: { unit: { code: "COIN" }, amount: 9 },
+        },
+        {
+          size: 2,
+          cost: null,
+          deltaIncomePerSec: { unit: { code: "COIN" }, amount: 1 },
+        },
+      ],
+      apply: (_ctx, state) => state,
+    };
+    const model: Model<number, UnitCode, Vars> = {
+      id: "m",
+      version: 1,
+      income: () => ({ unit: { code: "COIN" }, amount: 0 }),
+      actions: () => [action],
+      netWorth: (_ctx, state) => state.wallet.money,
+    };
+    const strategy = createPlannerStrategy<number, UnitCode, Vars>(
+      {
+        schemaVersion: 1,
+        horizonSteps: 1,
+        beamWidth: 1,
+        objective: "maximizeNetWorthAtEnd",
+        bulk: { mode: "size1" },
+      },
+      {
+        stepOnce(input) {
+          return { prev: input.state, next: input.state, events: [] };
+        },
+      },
+    );
+    expect(strategy.decide(ctx, model, makeState(0))).toEqual([]);
+    const valid: Action<number, UnitCode, Vars> = {
+      ...action,
+      id: "valid",
+      cost: () => null,
+    };
+    const chosen = strategy.decide(ctx, { ...model, actions: () => [valid] }, makeState(0));
+    expect(chosen.length).toBe(1);
+    expect(chosen[0]?.bulkSize).toBeUndefined();
+  });
+
   it("throws when minTimeToTargetWorth has invalid targetWorth", () => {
     const ctx = makeContext();
 

@@ -117,7 +117,7 @@ function selectBulkQuote<N, U extends string, Vars>(
   const pool = usable.length > 0 ? usable : stable;
 
   if ((params.bulk?.mode ?? "bestQuote") === "size1") {
-    return pool.find((quote) => quote.size === 1) ?? stable[0];
+    return usable.find((quote) => quote.size === singleBuySize);
   }
 
   let best = pool[0]!;
