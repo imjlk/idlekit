@@ -1,6 +1,6 @@
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
-import { join } from "path";
+import { join, resolve } from "path";
 import lintConfig from "../lint.config";
 import {
   approvalApplies,
@@ -14,6 +14,7 @@ import {
   junitCases,
   blockedTestArgs,
   junitReporterArgs,
+  localPreloadFiles,
   unresolvedRunnerCalls,
   registrationLines,
   sourceGraph,
@@ -794,6 +795,104 @@ try {
   } finally {
     rmSync(graphDir, { recursive: true, force: true });
   }
+  const computedBody = [
+    'if (false) it("credited", citedExport);',
+    'it(["cred", "ited"].join(""), unrelated);',
+  ].join("\n");
+  const computedNames = duplicateFullNames(computedBody);
+  const computedDead = registeredSuites(computedBody, "citedExport", "credited");
+  const computedCalls = unresolvedRunnerCalls(computedBody);
+  const interpolatedCalls = unresolvedRunnerCalls("it(`quota ${name}`, exportedName);");
+  const specifierDir = mkdtempSync(join(tmpdir(), "idlekit-evidence-specifier-"));
+  const specifierHelper = join(specifierDir, "helper.ts");
+  const specifierHost = join(specifierDir, "host.test.ts");
+  const mjsHelper = join(specifierDir, "helper.mts");
+  const mjsHost = join(specifierDir, "mjs-host.test.ts");
+  const decoy = join(specifierDir, "helper.m.ts");
+  writeFileSync(
+    specifierHelper,
+    [
+      "export function register(it) {",
+      '  it("credited", unrelated);',
+      "}",
+      "// from-typescript-helper",
+    ].join("\n"),
+  );
+  writeFileSync(
+    specifierHost,
+    [
+      'import { register } from "./helper.js";',
+      'if (false) it("credited", citedExport);',
+      "register(it);",
+    ].join("\n"),
+  );
+  writeFileSync(decoy, "// from-decoy-helper\n");
+  writeFileSync(
+    mjsHelper,
+    ["export function register(it) {", '  it("mjs-credited", unrelated);', "}"].join("\n"),
+  );
+  writeFileSync(mjsHost, 'import { register } from "./helper.mjs";\nregister(it);\n');
+  let specifierDuplicate = false;
+  let specifierResolved = false;
+  let javascriptWins = false;
+  let mjsResolved = false;
+  try {
+    const bodies = sourceGraph([specifierHost]);
+    const joined = bodies.join("\n");
+    specifierDuplicate = duplicateFullNamesAcross(bodies).includes("credited");
+    specifierResolved =
+      bodies.length === 2 &&
+      joined.includes("from-typescript-helper") &&
+      !joined.includes("from-decoy-helper");
+    writeFileSync(
+      join(specifierDir, "helper.js"),
+      [
+        "export function register(it) {",
+        '  it("other", unrelated);',
+        "}",
+        "// from-javascript-helper",
+      ].join("\n"),
+    );
+    const exactBodies = sourceGraph([specifierHost]);
+    const exactJoined = exactBodies.join("\n");
+    javascriptWins =
+      exactBodies.length === 2 &&
+      exactJoined.includes("from-javascript-helper") &&
+      !exactJoined.includes("from-typescript-helper") &&
+      !duplicateFullNamesAcross(exactBodies).includes("credited");
+    const mjsBodies = sourceGraph([mjsHost]);
+    mjsResolved =
+      mjsBodies.length === 2 &&
+      mjsBodies.some((body) => body.includes("mjs-credited")) &&
+      !mjsBodies.some((body) => body.includes("from-decoy-helper"));
+  } finally {
+    rmSync(specifierDir, { recursive: true, force: true });
+  }
+  const preloadDir = mkdtempSync(join(tmpdir(), "idlekit-evidence-preload-"));
+  const setupPath = resolve(preloadDir, "setup.ts");
+  const preloadHost = join(preloadDir, "host.test.ts");
+  writeFileSync(setupPath, 'export function wrap(it) {\n  it("credited", unrelated);\n}\n');
+  writeFileSync(preloadHost, 'if (false) it("credited", citedExport);\n');
+  let scalarPreload = false;
+  let quotedPreload = false;
+  let arrayPreload = false;
+  try {
+    writeFileSync(join(preloadDir, "bunfig.toml"), '[test]\npreload = "./setup.ts"\n');
+    const scalar = localPreloadFiles(preloadDir, ["test"]);
+    const scalarBodies = sourceGraph([preloadHost, ...scalar]);
+    scalarPreload =
+      scalar.length === 1 &&
+      scalar[0] === setupPath &&
+      duplicateFullNamesAcross(scalarBodies).includes("credited");
+    writeFileSync(join(preloadDir, "bunfig.toml"), "[test]\npreload = './setup.ts'\n");
+    const quoted = localPreloadFiles(preloadDir, ["test"]);
+    quotedPreload = quoted.length === 1 && quoted[0] === setupPath;
+    writeFileSync(join(preloadDir, "bunfig.toml"), '[test]\npreload = ["./setup.ts"]\n');
+    const listed = localPreloadFiles(preloadDir, ["test"]);
+    arrayPreload = listed.length === 1 && listed[0] === setupPath;
+  } finally {
+    rmSync(preloadDir, { recursive: true, force: true });
+  }
   const focusedBody = [
     'describe("kept", () => {',
     '  if (false) it("quota is documented", exportedName);',
@@ -1091,7 +1190,19 @@ try {
     destructuredLive.length === 1 &&
     destructuredDead.length === 1 &&
     destructuredNames.length === 1 &&
-    otherDestructure.length === 0;
+    otherDestructure.length === 0 &&
+    computedNames.length === 0 &&
+    computedDead.length === 1 &&
+    computedCalls.length === 1 &&
+    computedCalls[0] === "it" &&
+    interpolatedCalls.length === 1 &&
+    specifierDuplicate &&
+    specifierResolved &&
+    javascriptWins &&
+    mjsResolved &&
+    scalarPreload &&
+    quotedPreload &&
+    arrayPreload;
   record(
     "duplicate-title",
     "zero",
