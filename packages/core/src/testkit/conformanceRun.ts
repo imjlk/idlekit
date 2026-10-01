@@ -236,18 +236,24 @@ function predicateOutcome<T>(
 function shrinkValue<T>(predicate: (value: T) => boolean, shrink: (value: T) => readonly T[], original: T): {
   value: T;
   shrinkingPath: ShrinkStep[];
+  thrown?: string;
 } {
   const shrinkingPath: ShrinkStep[] = [];
   let current = original;
   for (let guard = 0; guard < 64; guard += 1) {
     let improved = false;
-    for (const candidate of shrink(current)) {
-      const kept = predicateOutcome(predicate, candidate).failed;
-      shrinkingPath.push({ from: current, to: candidate, kept });
-      if (!kept) continue;
-      current = candidate;
-      improved = true;
-      break;
+    try {
+      for (const candidate of shrink(current)) {
+        const kept = predicateOutcome(predicate, candidate).failed;
+        shrinkingPath.push({ from: current, to: candidate, kept });
+        if (!kept) continue;
+        current = candidate;
+        improved = true;
+        break;
+      }
+    } catch (error) {
+      const thrown = error instanceof Error ? error.message : String(error);
+      return { value: current, shrinkingPath, thrown };
     }
     if (!improved) break;
   }
@@ -324,6 +330,26 @@ function runSeededProperty<T>(run: PropertyRun<T>): { ok: true } | { ok: false; 
     const outcome = predicateOutcome(run.predicate, original);
     if (!outcome.failed) continue;
     const shrunk = shrinkValue(run.predicate, run.shrink, original);
+    if (shrunk.thrown !== undefined) {
+      return {
+        ok: false,
+        report: {
+          predicateId: run.predicateId,
+          generatorVersion: conformanceGeneratorVersion,
+          testSeed: run.testSeed,
+          gameSeed: null,
+          engineId: null,
+          modelId: null,
+          strategyId: null,
+          tickSchedule: null,
+          caseIndex: index,
+          original,
+          value: shrunk.value,
+          shrinkingPath: shrunk.shrinkingPath,
+          thrown: shrunk.thrown,
+        },
+      };
+    }
     const shrunkOutcome = predicateOutcome(run.predicate, shrunk.value);
     const identity = run.describeCase(shrunk.value, index);
     return {
@@ -407,20 +433,26 @@ function skip(summary: string): RelationCheck {
   return { ok: true, applicable: false, summary };
 }
 
+/** A special value's encoding is an object, so it cannot match a user string such as "nan". */
+function snapshotTag(tag: string, value?: string): { tag: string; value?: string } {
+  if (value === undefined) return { tag };
+  return { tag, value };
+}
+
 function snapshotData(item: unknown, seen: WeakMap<object, number>, nextId: { value: number }): unknown {
-  if (typeof item === "bigint") return `bigint:${item.toString()}`;
-  if (typeof item === "symbol") return "symbol";
-  if (typeof item === "function") return "function";
-  if (item === undefined) return "undefined";
+  if (typeof item === "bigint") return snapshotTag("bigint", item.toString());
+  if (typeof item === "symbol") return snapshotTag("symbol");
+  if (typeof item === "function") return snapshotTag("function");
+  if (item === undefined) return snapshotTag("undefined");
   if (typeof item === "number") {
-    if (Number.isNaN(item)) return "nan";
-    if (item === Number.POSITIVE_INFINITY) return "infinity";
-    if (item === Number.NEGATIVE_INFINITY) return "-infinity";
+    if (Number.isNaN(item)) return snapshotTag("nan");
+    if (item === Number.POSITIVE_INFINITY) return snapshotTag("infinity");
+    if (item === Number.NEGATIVE_INFINITY) return snapshotTag("-infinity");
     return item;
   }
   if (item === null || typeof item !== "object") return item;
   const known = seen.get(item);
-  if (known !== undefined) return `cycle:${known}`;
+  if (known !== undefined) return snapshotTag("cycle", String(known));
   const id = nextId.value;
   nextId.value += 1;
   seen.set(item, id);
@@ -437,7 +469,7 @@ function snapshotData(item: unknown, seen: WeakMap<object, number>, nextId: { va
     for (const index of indexes) {
       const descriptor = Object.getOwnPropertyDescriptor(item, String(index));
       if (!descriptor || descriptor.get !== undefined || !("value" in descriptor)) {
-        elements.push("getter");
+        elements.push(snapshotTag("getter"));
         continue;
       }
       elements.push(snapshotData(descriptor.value, seen, nextId));
@@ -450,7 +482,7 @@ function snapshotData(item: unknown, seen: WeakMap<object, number>, nextId: { va
       if (!descriptor || descriptor.enumerable !== true) continue;
       extraCount += 1;
       if (descriptor.get !== undefined || !("value" in descriptor)) {
-        extras[key] = "getter";
+        extras[key] = snapshotTag("getter");
         continue;
       }
       extras[key] = snapshotData(descriptor.value, seen, nextId);
@@ -461,10 +493,20 @@ function snapshotData(item: unknown, seen: WeakMap<object, number>, nextId: { va
       extraCount += 1;
       const label = `symbol:${String(key)}`;
       if (descriptor.get !== undefined || !("value" in descriptor)) {
-        extras[label] = "getter";
+        extras[label] = snapshotTag("getter");
         continue;
       }
       extras[label] = snapshotData(descriptor.value, seen, nextId);
+    }
+    if (indexes.length !== item.length) {
+      const entries: Record<string, unknown> = {};
+      for (let slot = 0; slot < indexes.length; slot += 1) {
+        const index = indexes[slot];
+        if (index === undefined) continue;
+        entries[String(index)] = elements[slot];
+      }
+      if (extraCount === 0) return { length: item.length, entries };
+      return { length: item.length, entries, extras };
     }
     if (extraCount === 0) return elements;
     return { items: elements, extras };
@@ -474,7 +516,7 @@ function snapshotData(item: unknown, seen: WeakMap<object, number>, nextId: { va
     const descriptor = Object.getOwnPropertyDescriptor(item, key);
     if (!descriptor || descriptor.enumerable !== true) continue;
     if (descriptor.get !== undefined || !("value" in descriptor)) {
-      record[key] = "getter";
+      record[key] = snapshotTag("getter");
       continue;
     }
     record[key] = snapshotData(descriptor.value, seen, nextId);
@@ -484,7 +526,7 @@ function snapshotData(item: unknown, seen: WeakMap<object, number>, nextId: { va
     if (!descriptor) continue;
     const label = `symbol:${String(key)}`;
     if (descriptor.get !== undefined || !("value" in descriptor)) {
-      record[label] = "getter";
+      record[label] = snapshotTag("getter");
       continue;
     }
     record[label] = snapshotData(descriptor.value, seen, nextId);
@@ -503,6 +545,7 @@ function jsonSilentlyDrops(item: unknown, seen = new Set<object>()): boolean {
   if (seen.has(item)) return false;
   seen.add(item);
   if (Array.isArray(item)) {
+    if (arrayIndexCount(item) !== item.length) return true;
     for (const key of Object.getOwnPropertyNames(item)) {
       if (key === "length") continue;
       if (!isArrayIndexName(key, item.length)) {
