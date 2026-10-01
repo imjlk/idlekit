@@ -69,14 +69,27 @@ function plainTestEnv(): Record<string, string | undefined> {
   return env;
 }
 
+const XML_TEXT: Record<string, string> = {
+  "&amp;gt;": ">",
+  "&amp;lt;": "<",
+  "&amp;quot;": '"',
+  "&amp;apos;": "'",
+  "&amp;amp;": "&",
+  "&gt;": ">",
+  "&lt;": "<",
+  "&quot;": '"',
+  "&apos;": "'",
+  "&amp;": "&",
+};
+
 function xmlAttr(tag: string, name: string): string {
   const match = new RegExp(`\\b${name}="([^"]*)"`).exec(tag);
-  return (match?.[1] ?? "")
-    .replaceAll("&amp;", "&")
-    .replaceAll("&lt;", "<")
-    .replaceAll("&gt;", ">")
-    .replaceAll("&quot;", '"')
-    .replaceAll("&apos;", "'");
+  // One pass. Bun stores `>` as `&gt;`, then the attribute encoder escapes `&`.
+  // Longer names stay ahead of `&amp;` so the replacement is not decoded again.
+  return (match?.[1] ?? "").replace(
+    /&(?:amp;gt|amp;lt|amp;quot|amp;apos|amp;amp|gt|lt|quot|apos|amp);/g,
+    (entity) => XML_TEXT[entity] ?? entity,
+  );
 }
 
 /** A file suite's `name` is the path. Describe suites keep their own names. */
