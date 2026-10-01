@@ -10,6 +10,8 @@ import {
   commandTargetsFile,
   duplicateFullNames,
   duplicateFullNamesAcross,
+  duplicateRequirementAnchors,
+  junitCases,
   citesRequirement,
   enabledClaimFailures,
   formatGateFailures,
@@ -252,7 +254,21 @@ try {
 
   const shrunk = retainedCoverage(["REQ-KEEP", "REQ-DROP"], ["REQ-KEEP"], []);
   const approved = retainedCoverage(["REQ-KEEP", "REQ-DROP"], ["REQ-KEEP"], ["REQ-DROP"]);
-  const shrinkOk = !shrunk.ok && shrunk.missing.includes("REQ-DROP") && approved.ok;
+  const repeatedAnchor = duplicateRequirementAnchors([
+    { doc: "docs/a.md", anchor: "same" },
+    { doc: "docs/a.md", anchor: "same" },
+    { doc: "docs/b.md", anchor: "same" },
+  ]);
+  const distinctAnchors = duplicateRequirementAnchors([
+    { doc: "docs/a.md", anchor: "one" },
+    { doc: "docs/a.md", anchor: "two" },
+  ]);
+  const shrinkOk =
+    !shrunk.ok &&
+    shrunk.missing.includes("REQ-DROP") &&
+    approved.ok &&
+    repeatedAnchor.length === 1 &&
+    distinctAnchors.length === 0;
   record(
     "coverage-shrink",
     "nonzero",
@@ -290,7 +306,24 @@ try {
   const qualified = assertExecutedTests(qualifiedOut, 0, ["alpha > quota is documented"]);
   const bareTitle = assertExecutedTests(qualifiedOut, 0, ["quota is documented"]);
   const printed = assertExecutedTests(printedOut, 0, ["alpha > quota is documented"]);
-  const qualifiedOk = qualified.length === 0 && bareTitle.length > 0 && printed.length > 0;
+  const classnameReport = [
+    '<testsuites><testsuite name="concreteValidator.test.ts">',
+    '<testcase name="accepts a numeric" classname="inner &amp;gt; concrete typia validator" />',
+    "</testsuite></testsuites>",
+  ].join("");
+  const filelessReport = [
+    '<testsuite name="concreteValidator.test.ts">',
+    '<testcase name="accepts a numeric" classname="concrete typia validator" />',
+    "</testsuite>",
+  ].join("");
+  const classnameName = junitCases(classnameReport)[0]?.name;
+  const filelessName = junitCases(filelessReport)[0]?.name;
+  const qualifiedOk =
+    qualified.length === 0 &&
+    bareTitle.length > 0 &&
+    printed.length > 0 &&
+    classnameName === "concrete typia validator > inner > accepts a numeric" &&
+    filelessName === "concrete typia validator > accepts a numeric";
   record(
     "suite-qualified",
     "zero",
@@ -584,8 +617,24 @@ try {
   const gap = unregisteredImplementationHost(splitHost, "docs/spec.md", "quota", [
     "registeredOnly",
   ]);
+  const partialHost = [
+    "/** @evidence docs/spec.md#quota Cites the section only. */",
+    "export function requirementOnly(): void {}",
+    "/** @evidence ./host.ts#quotaHost Calls the host. */",
+    "export function covered(): void {}",
+  ].join("\n");
+  const partialGap = unregisteredImplementationHost(
+    partialHost,
+    "docs/spec.md",
+    "quota",
+    ["requirementOnly", "covered"],
+    { file: "pkg/case.test.ts", production: ["pkg/host.ts"] },
+  );
   const gapOk =
-    typeof gap === "object" && gap?.kind === "unregistered" && gap.name === "helper";
+    typeof gap === "object" &&
+    gap?.kind === "unregistered" &&
+    gap.name === "helper" &&
+    partialGap === "";
   record("registered-implementation", "nonzero", gapOk ? 1 : 0, gapOk, JSON.stringify(gap));
 
   const siblingBody = [
