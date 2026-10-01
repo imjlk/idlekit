@@ -18,6 +18,8 @@ import {
   unresolvedRunnerCalls,
   registrationLines,
   sourceGraph,
+  unresolvedLocalRequires,
+  ambiguousSuiteSeparators,
   citesRequirement,
   enabledClaimFailures,
   formatGateFailures,
@@ -836,6 +838,13 @@ try {
   let specifierResolved = false;
   let javascriptWins = false;
   let mjsResolved = false;
+  let requireDuplicate = false;
+  let requireResolved = false;
+  let templateRequire = false;
+  let unresolvedRequire = false;
+  let dynamicRequire = false;
+  let packageRequire = false;
+  let commentRequire = false;
   try {
     const bodies = sourceGraph([specifierHost]);
     const joined = bodies.join("\n");
@@ -865,6 +874,44 @@ try {
       mjsBodies.length === 2 &&
       mjsBodies.some((body) => body.includes("mjs-credited")) &&
       !mjsBodies.some((body) => body.includes("from-decoy-helper"));
+    const requireHelper = join(specifierDir, "required-helper.ts");
+    const requireHost = join(specifierDir, "require-host.test.ts");
+    writeFileSync(
+      requireHelper,
+      [
+        "function register(it) {",
+        '  it("credited", unrelated);',
+        "}",
+        "register(it);",
+        "// from-required-helper",
+      ].join("\n"),
+    );
+    writeFileSync(
+      requireHost,
+      ['require("./required-helper");', 'if (false) it("credited", citedExport);'].join("\n"),
+    );
+    const requireBodies = sourceGraph([requireHost]);
+    requireDuplicate = duplicateFullNamesAcross(requireBodies).includes("credited");
+    requireResolved = requireBodies.some((body) => body.includes("from-required-helper"));
+    writeFileSync(requireHost, "require(`./required-helper`);\n");
+    templateRequire = sourceGraph([requireHost]).some((body) =>
+      body.includes("from-required-helper"),
+    );
+    writeFileSync(requireHost, 'require("./missing");\n');
+    unresolvedRequire = unresolvedLocalRequires([requireHost]).includes("./missing");
+    writeFileSync(requireHost, "require(name);\n");
+    dynamicRequire = unresolvedLocalRequires([requireHost]).includes("dynamic require");
+    writeFileSync(requireHost, 'require("bun:test");\nrequire("node:fs");\n');
+    const packageFaults = unresolvedLocalRequires([requireHost]);
+    packageRequire = packageFaults.length === 0 && sourceGraph([requireHost]).length === 1;
+    writeFileSync(
+      requireHost,
+      [
+        '// require("./missing-comment");',
+        "const text = 'require(\"./missing-string\")';",
+      ].join("\n"),
+    );
+    commentRequire = unresolvedLocalRequires([requireHost]).length === 0;
   } finally {
     rmSync(specifierDir, { recursive: true, force: true });
   }
@@ -1126,6 +1173,53 @@ try {
     "unrelated",
     "credited",
   );
+  const namedBody = [
+    "function liveSuite() {",
+    '  it("credited", unrelated);',
+    "}",
+    'if (false) describe("suite", () => it("credited", citedExport));',
+    'describe("suite", liveSuite);',
+  ].join("\n");
+  const namedDuplicate = duplicateFullNames(namedBody).includes("suite > credited");
+  const namedLive = registeredSuites(namedBody, "unrelated", "credited").some(
+    (path) => path.length === 1 && path[0] === "suite",
+  );
+  const arrowBody = [
+    "const liveSuite = () => {",
+    '  it("credited", unrelated);',
+    "};",
+    'describe("suite", liveSuite);',
+  ].join("\n");
+  const arrowLive = registeredSuites(arrowBody, "unrelated", "credited").some(
+    (path) => path.length === 1 && path[0] === "suite",
+  );
+  const laterBody = [
+    'describe("suite", liveSuite);',
+    "function liveSuite() {",
+    '  it("credited", unrelated);',
+    "}",
+  ].join("\n");
+  const laterLive = registeredSuites(laterBody, "unrelated", "credited").some(
+    (path) => path.length === 1 && path[0] === "suite",
+  );
+  const afterBody = [
+    "function liveSuite() {",
+    '  it("credited", unrelated);',
+    "}",
+    'describe("suite", liveSuite);',
+    'it("after", citedExport);',
+  ].join("\n");
+  const afterSuites = registeredSuites(afterBody, "citedExport", "after");
+  const pendingHeld = afterSuites.length === 1 && afterSuites[0]?.length === 0;
+  const missingSuite = unresolvedRunnerCalls('describe("suite", missingSuite);');
+  const separatorBody = [
+    'if (false) describe("outer", () => describe("inner", () => it("credited", citedExport)));',
+    'describe("inner > outer", () => it("credited", unrelated));',
+  ].join("\n");
+  const separatorTitles = ambiguousSuiteSeparators([separatorBody]);
+  const separatorClosed =
+    separatorTitles.includes("inner > outer") &&
+    ambiguousSuiteSeparators(['it("a > b", unrelated);']).includes("a > b");
   const duplicateOk =
     duplicateNames.length === 1 &&
     duplicateNames[0] === "kept > quota is documented" &&
@@ -1217,6 +1311,20 @@ try {
     specifierResolved &&
     javascriptWins &&
     mjsResolved &&
+    requireDuplicate &&
+    requireResolved &&
+    templateRequire &&
+    unresolvedRequire &&
+    dynamicRequire &&
+    packageRequire &&
+    commentRequire &&
+    namedDuplicate &&
+    namedLive &&
+    arrowLive &&
+    laterLive &&
+    pendingHeld &&
+    missingSuite.length === 1 &&
+    separatorClosed &&
     scalarPreload &&
     quotedPreload &&
     arrayPreload;
