@@ -20,6 +20,7 @@ import {
   formatGateFailures,
   graphRuleFailures,
   headingAnchors,
+  missingProtectedDocs,
   registeredSuites,
   isNonProductionPath,
   recordedBaseSpec,
@@ -267,12 +268,23 @@ try {
     { doc: "docs/a.md", anchor: "one" },
     { doc: "docs/a.md", anchor: "two" },
   ]);
+  const droppedDoc = missingProtectedDocs(
+    ["docs/requirements/active/quota.md"],
+    ["packages/core/src/host.ts"],
+  );
+  const keptDoc = missingProtectedDocs(
+    ["docs/requirements/active/quota.md"],
+    ["docs/requirements/active/quota.md"],
+  );
   const shrinkOk =
     !shrunk.ok &&
     shrunk.missing.includes("REQ-DROP") &&
     approved.ok &&
     repeatedAnchor.length === 1 &&
-    distinctAnchors.length === 0;
+    distinctAnchors.length === 0 &&
+    droppedDoc.length === 1 &&
+    droppedDoc[0] === "docs/requirements/active/quota.md" &&
+    keptDoc.length === 0;
   record(
     "coverage-shrink",
     "nonzero",
@@ -430,6 +442,10 @@ try {
   const htmlScript = headingAnchors(
     "<script>\n\n## Example {#example}\n</script>\n## Kept {#kept}\n",
   );
+  const quotedHeading = headingAnchors("> ## Requirement {#req-id}\n## Kept {#kept}\n");
+  const listedHeading = headingAnchors("- ## Listed {#listed}\n## Kept {#kept}\n");
+  const commentCloser = headingAnchors("<!--\n`-->`\n## Kept {#kept}\n");
+  const sameLineCloser = headingAnchors("<!-- `-->`\n## Kept {#kept}\n");
   const setextOk =
     setext.length === 3 &&
     setext[0] === "req-id" &&
@@ -444,7 +460,17 @@ try {
     htmlEnded.length === 1 &&
     htmlEnded[0] === "example" &&
     htmlScript.length === 1 &&
-    htmlScript[0] === "kept";
+    htmlScript[0] === "kept" &&
+    quotedHeading.length === 2 &&
+    quotedHeading[0] === "req-id" &&
+    quotedHeading[1] === "kept" &&
+    listedHeading.length === 2 &&
+    listedHeading[0] === "listed" &&
+    listedHeading[1] === "kept" &&
+    commentCloser.length === 1 &&
+    commentCloser[0] === "kept" &&
+    sameLineCloser.length === 1 &&
+    sameLineCloser[0] === "kept";
   record("setext-heading", "zero", setextOk ? 0 : 1, setextOk, JSON.stringify(setext));
 
   const activeDocs = ["docs/requirements/active/**/*.md"];
@@ -904,11 +930,21 @@ try {
   const badFormatText = commandText(badFormat);
   const rootFormatOk = formatGateFailures().length === 0;
   const warningFormat = formatGateFailures({ severity: "warning" });
+  const droppedFormat = formatGateFailures({
+    tsconfigText: JSON.stringify({
+      compilerOptions: {
+        plugins: [{ transform: "@ttsc/lint", configFile: "./lint.format.config.ts" }],
+      },
+      include: ["tools/format-check.ts"],
+    }),
+  });
   const formatOk =
     badFormat.exitCode !== 0 &&
     /\[format\/(?:quotes|semi)\]/.test(badFormatText) &&
     rootFormatOk &&
-    warningFormat.some((message) => message.includes("severity"));
+    warningFormat.some((message) => message.includes("severity")) &&
+    droppedFormat.some((message) => message.includes("tools/evidence-check.ts")) &&
+    droppedFormat.some((message) => message.includes("tools/evidence-smoke.ts"));
   record(
     "format-severity",
     "nonzero",
