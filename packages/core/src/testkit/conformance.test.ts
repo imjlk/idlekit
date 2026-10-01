@@ -326,6 +326,8 @@ export function stopsOnAPositiveTickGridAndRefusesANonPositiveStep(): void {
   const fractional = constantScenario({ rate: 2, durationSec: 0.3, stepSec: 0.1 });
   expectApplicable(checkDurationBoundary(fractional));
   expectApplicable(checkResume(fractional, 0.2));
+  const fineGrid = constantScenario({ rate: 2, durationSec: 0.07, stepSec: 0.01 });
+  expectApplicable(checkResume(fineGrid, 0.06));
   const shiftedBase = constantScenario({ rate: 2, durationSec: 0.3, stepSec: 0.1 });
   const shifted = { ...shiftedBase, initial: { ...shiftedBase.initial, t: 1 } };
   expectApplicable(checkDurationBoundary(shifted));
@@ -478,7 +480,7 @@ export function recordsWalletAndMaxMoneyUnitsOnTheEconomySnapshot(): void {
  * @evidence docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness An on-grid checkpoint replays from memory and from JSON, and independent trials are compared by game seed.
  * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #a195f0e Re-read the section, then ran this function: memory resume, JSON resume, and the JSON round-trip apply, and the two game seeds stay ordered.
  * @evidence ./conformanceRun.ts#checkJsonRoundTrip The constant-income scenario matches after a JSON round trip.
- * @evidenceReview ./conformanceRun.ts#checkJsonRoundTrip #4ab8239 Re-read the function: it restores the strategy around the run, accepts a dense array and an empty array, rejects shared refs, symbol keys, non-enumerable names, sparse holes, frozen data, non-extensible objects and arrays, and enumerable getters before stringify, and the constant-income round trip matches. Ran this function: the dense round trip passed, and the sparse, frozen, non-extensible, and getter round trips did not.
+ * @evidenceReview ./conformanceRun.ts#checkJsonRoundTrip #4ab8239 Re-read the function: it restores the strategy around the run, accepts a dense array and an empty array, rejects shared refs, symbol keys, non-enumerable names, sparse holes, frozen data, non-extensible objects and arrays, a non-writable array length, a nonstandard array prototype, and enumerable getters before stringify, and the constant-income round trip matches. Ran this function: the dense round trip passed, and the sparse, frozen, non-extensible, locked-length, custom-prototype, and getter round trips did not.
  * @evidence ./conformanceRun.ts#checkTrialOrder Two distinct game seeds keep distinct economy snapshots.
  * @evidenceReview ./conformanceRun.ts#checkTrialOrder #5e85ee7 Two game seeds keep ordered snapshots. This run uses a seed-dependent income rate, and the two economy snapshots differ.
  */
@@ -545,6 +547,25 @@ export function resumesOnTheSameTickGridFromMemoryAndJson(): void {
     },
   });
   expect(lockedArray.ok).toBe(false);
+  const lockedLengthItems = [1];
+  Object.defineProperty(lockedLengthItems, "length", { writable: false });
+  const lockedLength = checkJsonRoundTrip({
+    ...scenario,
+    initial: {
+      ...scenario.initial,
+      vars: { items: lockedLengthItems } as unknown as Vars,
+    },
+  });
+  expect(lockedLength.ok).toBe(false);
+  const customPrototype = Object.setPrototypeOf([1], { marker: true });
+  const customPrototypeRound = checkJsonRoundTrip({
+    ...scenario,
+    initial: {
+      ...scenario.initial,
+      vars: { items: customPrototype } as unknown as Vars,
+    },
+  });
+  expect(customPrototypeRound.ok).toBe(false);
   const gameA = gameSeedForCase(0x51ed, 1);
   const gameB = gameSeedForCase(0x51ed, 2);
   const trial = (gameSeed: number) =>

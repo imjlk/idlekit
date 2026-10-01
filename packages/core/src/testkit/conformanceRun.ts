@@ -474,10 +474,17 @@ function resumeFromCheckpoint<N, U extends string, Vars>(
     } else {
       bracket.restore(bracket.snap());
     }
+    const durationTicks = wholeTickCount(duration, step);
+    if (splitTicks === null || durationTicks === null || durationTicks - splitTicks < 1) {
+      return skip("split is not on the original tick grid");
+    }
+    const remainingTicks = durationTicks - splitTicks;
+    const tailStart = started.state.t;
+    const tailDuration = advancedTimestamp(tailStart, step, remainingTicks) - tailStart;
     const tail = economyAfter({
       ...scenario,
       initial: started.state,
-      run: { ...scenario.run, durationSec: duration - splitSec },
+      run: { ...scenario.run, durationSec: tailDuration },
     });
     return full === tail ? pass(full) : fail(`${full} != ${tail}`);
   } finally {
@@ -533,6 +540,18 @@ function jsonRoundTripPreserves(value: unknown, seen: Set<object> = new Set()): 
       return Number(key) >= length;
     });
     if (foreign) return false;
+    if (Object.getPrototypeOf(value) !== Array.prototype) return false;
+    const lengthDescriptor = Object.getOwnPropertyDescriptor(value, "length");
+    if (
+      lengthDescriptor?.writable !== true ||
+      lengthDescriptor.enumerable !== false ||
+      lengthDescriptor.configurable !== false ||
+      !Object.prototype.hasOwnProperty.call(lengthDescriptor, "value") ||
+      lengthDescriptor.get !== undefined ||
+      lengthDescriptor.set !== undefined
+    ) {
+      return false;
+    }
     for (let index = 0; index < length; index += 1) {
       const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
       if (!(index in value) || !ordinaryJsonData(descriptor) || !jsonRoundTripPreserves(value[index], seen)) {
