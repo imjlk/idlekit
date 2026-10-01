@@ -81,8 +81,15 @@ function chooseQuotes<N, U extends string, Vars>(
   const none: QuoteChoice<N, U> = { selected: [], rejected: [] };
 
   if (mode === "size1") {
-    const q1 = quotes.find((q) => q.size === 1);
-    return { selected: [q1 ?? quotes[0]!], rejected: [] };
+    const listed = Boolean(raw && raw.length > 0);
+    let singleCost = quotes[0]!.cost;
+    if (listed && quotes.some((quote) => quote.size === singleBuySize)) {
+      singleCost = action.cost(ctx, state);
+    }
+    const preferred = quotes.find((quote) => quote.size === singleBuySize) ?? quotes[0]!;
+    const accepted = rankableQuotes(ctx, state, [preferred], singleCost);
+    if (accepted.length > 0) return { selected: accepted, rejected: [] };
+    return { selected: [], rejected: quotes };
   }
 
   if (mode === "maxAffordable") {

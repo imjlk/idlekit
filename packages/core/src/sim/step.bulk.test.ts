@@ -689,6 +689,18 @@ function growingQuoteModel<N>(engine: Engine<N>): Model<N, UnitCode, Vars> {
 describe("PR-01 bulk quote settlement", () => {
   it("settles a quoted bulk buy and rejects a bad quote", settlesQuotedBulkAndRejectsBadQuotes);
 
+  it("orders negative decimals by signed scale and defers lossy infinity text", () => {
+    const engine = createNumberEngine();
+    expect(canSettleCost(engine, -10, -2)).toBe(false);
+    expect(canSettleCost(engine, -2, -10)).toBe(true);
+    const lossy = {
+      toString: () => "Infinity",
+      isFinite: () => true,
+      exactOrder: () => 1 as const,
+    };
+    expect(canSettleCost(lossy, { tag: "wallet" }, { tag: "cost" })).toBe(true);
+  });
+
   it("reprices a later buy from the updated ownership", () => {
     const engine = createNumberEngine();
     const model = growingQuoteModel(engine);

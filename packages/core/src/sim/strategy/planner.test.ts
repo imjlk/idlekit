@@ -564,6 +564,70 @@ describe("createPlannerStrategy", () => {
     expect(chosen[0]?.bulkSize).toBeUndefined();
   });
 
+  it("does not roll out an action whose quotes cannot settle", () => {
+    const ctx = makeContext(1);
+    const invalid: Action<number, UnitCode, Vars> = {
+      id: "invalid",
+      kind: "buy",
+      canApply: () => true,
+      cost: () => ({ unit: { code: "COIN" }, amount: -1 }),
+      bulk: () => [
+        {
+          size: 1,
+          cost: { unit: { code: "COIN" }, amount: -1 },
+          deltaIncomePerSec: { unit: { code: "COIN" }, amount: 9 },
+        },
+      ],
+      apply: (_ctx, state) => state,
+    };
+    const valid: Action<number, UnitCode, Vars> = {
+      id: "valid",
+      kind: "buy",
+      canApply: () => true,
+      cost: () => null,
+      bulk: () => [
+        {
+          size: 1,
+          cost: null,
+          deltaIncomePerSec: { unit: { code: "COIN" }, amount: 1 },
+        },
+      ],
+      apply: (_ctx, state) => state,
+    };
+    const model: Model<number, UnitCode, Vars> = {
+      id: "m",
+      version: 1,
+      income: () => ({ unit: { code: "COIN" }, amount: 0 }),
+      actions: () => [invalid],
+      netWorth: (_ctx, state) => state.wallet.money,
+    };
+    const strategy = createPlannerStrategy<number, UnitCode, Vars>(
+      {
+        schemaVersion: 1,
+        horizonSteps: 1,
+        beamWidth: 1,
+        objective: "maximizeNetWorthAtEnd",
+      },
+      {
+        stepOnce(input) {
+          return { prev: input.state, next: input.state, events: [] };
+        },
+      },
+    );
+    expect(strategy.decide(ctx, model, makeState(0))).toEqual([]);
+    const mixed = strategy.decide(ctx, { ...model, actions: () => [invalid, valid] }, makeState(0));
+    expect(mixed.length).toBe(1);
+    expect(mixed[0]?.action.id).toBe("valid");
+    const nullable = {
+      ...valid,
+      id: "nullable",
+      bulk: () => null as unknown as ReturnType<NonNullable<Action<number, UnitCode, Vars>["bulk"]>>,
+    };
+    expect(() =>
+      strategy.decide(ctx, { ...model, actions: () => [nullable] }, makeState(0)),
+    ).not.toThrow();
+  });
+
   it("throws when minTimeToTargetWorth has invalid targetWorth", () => {
     const ctx = makeContext();
 

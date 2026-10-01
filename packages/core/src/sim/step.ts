@@ -158,7 +158,11 @@ function exactTextOrder(leftText: string, rightText: string): -1 | 0 | 1 | undef
   const rightDigits = right.coeff.toString();
   const leftScale = left.exp + BigInt(leftDigits.length);
   const rightScale = right.exp + BigInt(rightDigits.length);
-  if (leftScale !== rightScale) return leftScale < rightScale ? -1 : 1;
+  if (leftScale !== rightScale) {
+    const magnitude = leftScale < rightScale ? -1 : 1;
+    if (left.sign === 1) return magnitude;
+    return magnitude === -1 ? 1 : -1;
+  }
   const width = Math.max(leftDigits.length, rightDigits.length);
   const leftPadded = leftDigits.padEnd(width, "0");
   const rightPadded = rightDigits.padEnd(width, "0");
@@ -170,6 +174,7 @@ function exactTextOrder(leftText: string, rightText: string): -1 | 0 | 1 | undef
 type ExactEngine<N> = {
   toString(value: N): string;
   exactOrder?(left: N, right: N): -1 | 0 | 1;
+  isFinite?(value: N): boolean;
 };
 
 /** Settlement boundaries ignore `cmp`, which treats an epsilon-sized gap as equality. */
@@ -177,7 +182,11 @@ function exactAmountOrder<N>(engine: ExactEngine<N>, left: N, right: N): -1 | 0 
   const leftText = engine.toString(left);
   const rightText = engine.toString(right);
   if (leftText === "NaN" || rightText === "NaN") return undefined;
-  if (rightText === "Infinity" || rightText === "-Infinity") return undefined;
+  if (rightText === "Infinity" || rightText === "-Infinity") {
+    const finiteText = engine.isFinite?.(right) === true;
+    if (finiteText && engine.exactOrder) return engine.exactOrder(left, right);
+    return undefined;
+  }
   if ((leftText === "Infinity" || leftText === "-Infinity") && exactDecimal(rightText)) {
     return leftText === "-Infinity" ? -1 : 1;
   }

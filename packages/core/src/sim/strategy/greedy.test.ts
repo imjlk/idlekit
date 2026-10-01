@@ -278,6 +278,56 @@ describe("createGreedyStrategy", () => {
     expect(onlyInvalid[0]?.bulkSize).toBe(2.5);
   });
 
+  it("does not let an unsettled size-one cost outrank a settleable action", () => {
+    const ctx: SimContext<number, UnitCode, Vars> = {
+      E: createNumberEngine(),
+      unit: { code: "COIN" },
+      tickPolicy: { mode: "drop" },
+    };
+    const unsettled: Action<number, UnitCode, Vars> = {
+      id: "unsettled",
+      kind: "buy",
+      canApply: () => true,
+      cost: () => ({ unit: { code: "COIN" }, amount: -5 }),
+      bulk: () => [
+        {
+          size: 1,
+          cost: { unit: { code: "COIN" }, amount: 1 },
+          deltaIncomePerSec: { unit: { code: "COIN" }, amount: 9 },
+        },
+      ],
+      apply: (_ctx, state) => state,
+    };
+    const settleable: Action<number, UnitCode, Vars> = {
+      id: "settleable",
+      kind: "buy",
+      canApply: () => true,
+      cost: () => null,
+      bulk: () => [
+        {
+          size: 1,
+          cost: null,
+          deltaIncomePerSec: { unit: { code: "COIN" }, amount: 1 },
+        },
+      ],
+      apply: (_ctx, state) => state,
+    };
+    const model: Model<number, UnitCode, Vars> = {
+      id: "m",
+      version: 1,
+      income: () => ({ unit: { code: "COIN" }, amount: 0 }),
+      actions: () => [unsettled, settleable],
+    };
+    const strategy = createGreedyStrategy<number, UnitCode, Vars>({
+      schemaVersion: 1,
+      objective: "maximizeIncome",
+      bulk: { mode: "size1" },
+    });
+    const out = strategy.decide(ctx, model, makeState(0));
+    expect(out.length).toBe(1);
+    expect(out[0]?.action.id).toBe("settleable");
+  });
+
   it("ranks a settleable quote ahead of a cost that has no unit", () => {
     const ctx: SimContext<number, UnitCode, Vars> = {
       E: createNumberEngine(),

@@ -98,7 +98,7 @@ function selectBulkQuote<N, U extends string, Vars>(
   state: SimState<N, U, Vars>,
 ): BulkQuote<N, U> | undefined {
   const raw = action.bulk?.(ctx, state);
-  const listed = raw !== undefined && raw.length > 0;
+  const listed = Array.isArray(raw) && raw.length > 0;
   const stable = listed
     ? stableBulkQuotes(raw)
     : [
@@ -113,17 +113,16 @@ function selectBulkQuote<N, U extends string, Vars>(
     singleCost = action.cost(ctx, state);
   }
   const usable = rankableQuotes(ctx, state, stable, singleCost);
-  // Ranking drops an invalid quote only when a settleable quote can replace it.
-  const pool = usable.length > 0 ? usable : stable;
+  if (usable.length === 0) return undefined;
 
   if ((params.bulk?.mode ?? "bestQuote") === "size1") {
     return usable.find((quote) => quote.size === singleBuySize);
   }
 
-  let best = pool[0]!;
+  let best = usable[0]!;
   let bestScore = scoreQuote(params, ctx, best);
-  for (let i = 1; i < pool.length; i++) {
-    const quote = pool[i]!;
+  for (let i = 1; i < usable.length; i++) {
+    const quote = usable[i]!;
     const score = scoreQuote(params, ctx, quote);
     if (score > bestScore) {
       best = quote;
