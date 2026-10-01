@@ -425,6 +425,11 @@ try {
   );
   const quotedBreak = headingAnchors("> Example {#example}\n---\n## Kept {#kept}\n");
   const listedBreak = headingAnchors("- Example {#listed}\n---\n## Kept {#kept}\n");
+  const htmlBlock = headingAnchors("<div>\n## Example {#example}\n</div>\n\n## Kept {#kept}\n");
+  const htmlEnded = headingAnchors("<div>\n\n## Example {#example}\n");
+  const htmlScript = headingAnchors(
+    "<script>\n\n## Example {#example}\n</script>\n## Kept {#kept}\n",
+  );
   const setextOk =
     setext.length === 3 &&
     setext[0] === "req-id" &&
@@ -433,7 +438,13 @@ try {
     quotedBreak.length === 1 &&
     quotedBreak[0] === "kept" &&
     listedBreak.length === 1 &&
-    listedBreak[0] === "kept";
+    listedBreak[0] === "kept" &&
+    htmlBlock.length === 1 &&
+    htmlBlock[0] === "kept" &&
+    htmlEnded.length === 1 &&
+    htmlEnded[0] === "example" &&
+    htmlScript.length === 1 &&
+    htmlScript[0] === "kept";
   record("setext-heading", "zero", setextOk ? 0 : 1, setextOk, JSON.stringify(setext));
 
   const activeDocs = ["docs/requirements/active/**/*.md"];

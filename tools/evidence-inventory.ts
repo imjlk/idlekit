@@ -298,6 +298,43 @@ function inlineCodeSpans(line: string): Array<[number, number]> {
   return spans;
 }
 
+const HTML_BLOCK_TAGS = [
+  "address|article|aside|base|basefont|blockquote|body|caption|center|col|colgroup",
+  "dd|details|dialog|dir|div|dl|dt|fieldset|figcaption|figure|footer|form|frame|frameset",
+  "h[1-6]|head|header|hr|html|iframe|legend|li|link|main|menu|menuitem|nav|noframes",
+  "ol|optgroup|option|p|param|search|section|summary|table|tbody|td|textarea|tfoot",
+  "th|thead|title|tr|track|ul",
+].join("|");
+
+type HtmlBlock = { kind: "blank" } | { kind: "contains"; token: string; ignoreCase: boolean };
+
+/** CommonMark HTML blocks hide later ATX lines. A blank line ends types 6 and 7. */
+function htmlBlockStart(line: string, inParagraph: boolean): HtmlBlock | undefined {
+  const text = line.replace(/^ {0,3}/, "");
+  const embedded = /^<(script|pre|style|textarea)(?:[ \t>]|$)/i.exec(text);
+  const embeddedName = embedded?.[1];
+  if (embeddedName) {
+    return { kind: "contains", token: `</${embeddedName.toLowerCase()}>`, ignoreCase: true };
+  }
+  if (/^<\?/.test(text)) return { kind: "contains", token: "?>", ignoreCase: false };
+  if (/^<![A-Za-z]/.test(text)) return { kind: "contains", token: ">", ignoreCase: false };
+  if (/^<!\[CDATA\[/i.test(text)) return { kind: "contains", token: "]]>", ignoreCase: false };
+  const blockTag = new RegExp(`^</?(?:${HTML_BLOCK_TAGS})(?:[ \\t>]|$)`, "i");
+  if (blockTag.test(text)) return { kind: "blank" };
+  if (inParagraph) return undefined;
+  const name = "[A-Za-z][A-Za-z0-9-]*";
+  const value = "(?:[^ \\t\"'=<>`]+|\"[^\"]*\"|'[^']*')";
+  const attr = `[A-Za-z_:][A-Za-z0-9_.:-]*(?:\\s*=\\s*${value})?`;
+  const complete = new RegExp(`^</?${name}(?:\\s+${attr})*\\s*/?>\\s*$`);
+  return complete.test(text) ? { kind: "blank" } : undefined;
+}
+
+function htmlBlockClosed(line: string, block: HtmlBlock): boolean {
+  if (block.kind === "blank") return line.trim() === "";
+  const haystack = block.ignoreCase ? line.toLowerCase() : line;
+  return haystack.includes(block.token);
+}
+
 /** A setext heading text is a paragraph. Quotes, lists, and breaks are not. */
 function isSetextParagraph(text: string): boolean {
   if (text.startsWith(">")) return false;
@@ -325,6 +362,7 @@ export function headingAnchors(markdown: string): string[] {
   let fenceChar: "`" | "~" | undefined;
   let fenceLength = 0;
   let inComment = false;
+  let htmlBlock: HtmlBlock | undefined;
   let pending: string | undefined;
   for (const rawLine of markdown.split(/\r?\n/)) {
     const marker = /^( {0,3})(`{3,}|~{3,})(.*)$/.exec(rawLine);
@@ -343,11 +381,22 @@ export function headingAnchors(markdown: string): string[] {
       pending = undefined;
       continue;
     }
+    if (htmlBlock) {
+      pending = undefined;
+      if (htmlBlockClosed(rawLine, htmlBlock)) htmlBlock = undefined;
+      continue;
+    }
     // CommonMark: a backtick opener whose info string contains a backtick is not a fence.
     if (opener && !(opener.startsWith("`") && info.includes("`"))) {
       fenceChar = opener.startsWith("`") ? "`" : "~";
       fenceLength = opener.length;
       pending = undefined;
+      continue;
+    }
+    const htmlStart = htmlBlockStart(rawLine, pending !== undefined);
+    if (htmlStart) {
+      pending = undefined;
+      if (!htmlBlockClosed(rawLine, htmlStart)) htmlBlock = htmlStart;
       continue;
     }
     const commentAt = indexOutsideInline(rawLine, "<!--");
