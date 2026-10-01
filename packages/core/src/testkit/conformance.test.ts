@@ -151,7 +151,7 @@ function thresholdScenario(stepSec: number): CompiledScenario<number, UnitCode, 
  * @evidence ./conformance.ts#conformanceGeneratorVersion Reads generator version 1 from the shrink report and from this export.
  * @evidenceReview ./conformance.ts#conformanceGeneratorVersion #80e01c8 The declaration is the number 1. The shrink report stores that same generatorVersion.
  * @evidence ./conformanceRun.ts#checkReplay Replays the constant-income scenario through the harness.
- * @evidenceReview ./conformanceRun.ts#checkReplay #c6a3c78 checkReplay applies to the constant-income scenario at rate 3, duration 4, and step 1.
+ * @evidenceReview ./conformanceRun.ts#checkReplay #6a8d862 checkReplay applies to the constant-income scenario at rate 3, duration 4, and step 1. A run that completes no step does not apply.
  * @evidence ./conformanceRun.ts#demonstrateShrinkGap Builds the shrink-gap report whose value is 1 and whose testSeed is 0xd101.
  * @evidenceReview ./conformanceRun.ts#demonstrateShrinkGap #e31f17f Builds the shrink-gap report whose value is 1 and whose testSeed is 0xd101.
  * @evidence ./conformanceRun.ts#replayShrinkReport Replays the saved report and expects the path to fail closed at 1.
@@ -216,6 +216,15 @@ export function replaysConstantIncomeAndShrinksGap(): void {
 
   const scenario = constantScenario({ rate: 3, durationSec: 4, stepSec: 1, seed: 11 });
   expectApplicable(checkReplay(scenario));
+  const idleReplay = checkReplay({ ...scenario, run: { ...scenario.run, durationSec: 0 } });
+  expect(idleReplay.ok).toBe(true);
+  expect(idleReplay.applicable).toBe(false);
+  const idleUntil = checkReplay({
+    ...scenario,
+    run: { ...scenario.run, until: () => true },
+  });
+  expect(idleUntil.ok).toBe(true);
+  expect(idleUntil.applicable).toBe(false);
   const gameSeed = gameSeedForCase(0x51ed, 0);
   expect(gameSeed).not.toBe(0x51ed);
   expect(Number.isInteger(gameSeed)).toBe(true);
@@ -344,8 +353,8 @@ describe("PR-01 bulk equivalence", () => {
 /**
  * @evidence docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness The same scenario replays from an on-grid checkpoint, and an off-grid checkpoint does not apply.
  * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #a195f0e Re-read the section: the 0.1 grid resume at 0.2 applies, and the resume at 1.5 does not.
- * @evidence ./conformanceRun.ts#checkDurationBoundary A 4s run at step 1 and a 0.3s run at step 0.1 both apply; an until at t greater than or equal to 3 does not. A maxSteps that is not an integer, or that is at most the tick count, does not apply.
- * @evidenceReview ./conformanceRun.ts#checkDurationBoundary #5b5b407 Re-read the function: it snapshots and restores the strategy around the run, and it compares the end time with the timestamp advanced from the run's own start. A maxSteps that is not an integer, or that is at most the tick count, skips before the run.
+ * @evidence ./conformanceRun.ts#checkDurationBoundary A 4s run at step 1 and a 0.3s run at step 0.1 both apply; an until at t greater than or equal to 3 does not. A maxSteps that is not an integer, or that cannot cover the simulator's repeated step additions, does not apply.
+ * @evidenceReview ./conformanceRun.ts#checkDurationBoundary #31a9c6f Re-read the function: it snapshots and restores the strategy around the run, and it compares the end time with the timestamp advanced from the run's own start. A maxSteps that is not an integer, or that cannot cover the simulator's repeated step additions, skips before the run.
  * @evidence ./conformanceRun.ts#rejectNonPositiveStep Step 0 is a failing applicable check.
  * @evidenceReview ./conformanceRun.ts#rejectNonPositiveStep #31155b2 Step 0 is a failing applicable check.
  * @evidence ./conformanceRun.ts#checkResume An off-grid resume at 1.5 does not apply; a 0.2 resume on the 0.1 grid does.
@@ -393,6 +402,21 @@ export function stopsOnAPositiveTickGridAndRefusesANonPositiveStep(): void {
   expect(cappedJson.applicable).toBe(false);
   expect(cappedJson.ok).toBe(true);
   expectApplicable(checkResume({ ...scenario, run: { ...scenario.run, maxSteps: 5 } }, 2));
+  const driftedBase = constantScenario({ rate: 1, durationSec: 0.021, stepSec: 0.003 });
+  const drifted = checkDurationBoundary({
+    ...driftedBase,
+    run: { ...driftedBase.run, maxSteps: 8 },
+  });
+  expect(drifted.ok).toBe(true);
+  expect(drifted.applicable).toBe(false);
+  expect(drifted.summary).toContain("maxSteps");
+  const driftedResume = checkResume(
+    { ...driftedBase, run: { ...driftedBase.run, maxSteps: 8 } },
+    0.006,
+  );
+  expect(driftedResume.ok).toBe(true);
+  expect(driftedResume.applicable).toBe(false);
+  expect(driftedResume.summary).toContain("maxSteps");
 }
 
 /**
@@ -825,10 +849,58 @@ describe("PR-03 resume isolation", () => {
     expect(markedSnapshot.ok).toBe(false);
     expect(markedSnapshot.applicable).toBe(true);
     expect(markedSnapshot.summary).toContain("JSON");
+    const missingMarker = checkResumeFromJson(
+      {
+        ...scenario,
+        initial: {
+          ...scenario.initial,
+          vars: { buys: 0, marker: undefined } as unknown as Vars,
+        },
+      },
+      2,
+    );
+    expect(missingMarker.ok).toBe(false);
+    expect(missingMarker.applicable).toBe(true);
+    expect(missingMarker.summary).toContain("JSON");
+    const missingSnapshot = checkResumeFromJson(
+      {
+        ...scenario,
+        strategy: {
+          id: "missing-marker",
+          decide: () => [],
+          snapshotState: () => ({ marker: undefined }),
+          restoreState: () => {},
+        },
+      },
+      2,
+    );
+    expect(missingSnapshot.ok).toBe(false);
+    expect(missingSnapshot.applicable).toBe(true);
+    expect(missingSnapshot.summary).toContain("JSON");
   });
 });
 
 describe("counterexample report", () => {
+  it("rejects a property run that executes no cases", () => {
+    const empty = {
+      predicateId: "empty-cases",
+      testSeed: 1,
+      generate: () => 0,
+      shrink: () => [],
+      predicate: () => false,
+      describeCase: () => ({
+        gameSeed: null,
+        engineId: null,
+        modelId: null,
+        strategyId: null,
+        tickSchedule: null,
+      }),
+    };
+    expect(() => expectProperty({ ...empty, cases: 0 })).toThrow(/positive integer/);
+    expect(() => expectProperty({ ...empty, cases: -1 })).toThrow(/positive integer/);
+    expect(() => expectProperty({ ...empty, cases: Number.NaN })).toThrow(/positive integer/);
+  });
+
   it("keeps the seed when the counterexample is cyclic or a bigint", () => {
     const cyclic: { self?: unknown } = {};
     cyclic.self = cyclic;

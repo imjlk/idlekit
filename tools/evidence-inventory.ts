@@ -416,7 +416,7 @@ export function headingAnchors(markdown: string): string[] {
     }
     if (htmlBlock) {
       pending = undefined;
-      if (htmlBlockClosed(rawLine, htmlBlock)) htmlBlock = undefined;
+      if (htmlBlockClosed(atxText(rawLine), htmlBlock)) htmlBlock = undefined;
       continue;
     }
     // CommonMark: a backtick opener whose info string contains a backtick is not a fence.
@@ -426,10 +426,11 @@ export function headingAnchors(markdown: string): string[] {
       pending = undefined;
       continue;
     }
-    const htmlStart = htmlBlockStart(rawLine, pending !== undefined);
+    const htmlLine = atxText(rawLine);
+    const htmlStart = htmlBlockStart(htmlLine, pending !== undefined);
     if (htmlStart) {
       pending = undefined;
-      if (!htmlBlockClosed(rawLine, htmlStart)) htmlBlock = htmlStart;
+      if (!htmlBlockClosed(htmlLine, htmlStart)) htmlBlock = htmlStart;
       continue;
     }
     const commentAt = indexOutsideInline(rawLine, "<!--");
@@ -596,6 +597,39 @@ function readQuoted(body: string, index: number): { value: string; end: number }
   const end = skipQuoted(body, cursor);
   const raw = body.slice(cursor + 1, end - 1);
   return { value: raw.replace(/\\(["'\\])/g, "$1"), end };
+}
+
+/** A static template title. Interpolation and an unclosed backtick are not titles. */
+function readStaticTemplate(
+  body: string,
+  index: number,
+): { value: string; end: number } | undefined {
+  const cursor = skipWhitespace(body, index);
+  if (body[cursor] !== "`") return undefined;
+  let value = "";
+  let cursorAt = cursor + 1;
+  while (cursorAt < body.length) {
+    const char = body[cursorAt] ?? "";
+    if (char === "\\") {
+      const next = body[cursorAt + 1];
+      if (next === undefined) return undefined;
+      if (next === "n") value += "\n";
+      else if (next === "r") value += "\r";
+      else if (next === "t") value += "\t";
+      else value += next;
+      cursorAt += 2;
+      continue;
+    }
+    if (char === "$" && body[cursorAt + 1] === "{") return undefined;
+    if (char === "`") return { value, end: cursorAt + 1 };
+    value += char;
+    cursorAt += 1;
+  }
+  return undefined;
+}
+
+function readTestTitle(body: string, index: number): { value: string; end: number } | undefined {
+  return readQuoted(body, index) ?? readStaticTemplate(body, index);
 }
 
 function regexCanStart(body: string, index: number): boolean {
@@ -1062,7 +1096,7 @@ function collectRegistrations(body: string): Registration[] {
       index = word.end;
       continue;
     }
-    const quoted = readQuoted(body, open + 1);
+    const quoted = readTestTitle(body, open + 1);
     if (!quoted) {
       index = word.end;
       continue;
@@ -1365,6 +1399,115 @@ export function duplicateRequirementAnchors(
   return duplicates;
 }
 
+function skipTemplate(body: string, index: number): number {
+  let cursor = index + 1;
+  while (cursor < body.length) {
+    const char = body[cursor] ?? "";
+    if (char === "\\") {
+      cursor += 2;
+      continue;
+    }
+    if (char === "`") return cursor + 1;
+    if (char === "$" && body[cursor + 1] === "{") {
+      cursor += 2;
+      let depth = 1;
+      while (cursor < body.length && depth > 0) {
+        const nested = body[cursor] ?? "";
+        if (nested === "'" || nested === '"') {
+          cursor = skipQuoted(body, cursor);
+          continue;
+        }
+        if (nested === "`") {
+          cursor = skipTemplate(body, cursor);
+          continue;
+        }
+        if (nested === "/" && body[cursor + 1] === "/") {
+          const next = body.indexOf("\n", cursor);
+          cursor = next < 0 ? body.length : next + 1;
+          continue;
+        }
+        if (nested === "/" && body[cursor + 1] === "*") {
+          const next = body.indexOf("*/", cursor + 2);
+          cursor = next < 0 ? body.length : next + 2;
+          continue;
+        }
+        if (nested === "{") depth += 1;
+        else if (nested === "}") depth -= 1;
+        cursor += 1;
+      }
+      continue;
+    }
+    cursor += 1;
+  }
+  return cursor;
+}
+
+function exportedContainerHeader(body: string, brace: number): boolean {
+  const head = body.slice(Math.max(0, brace - 240), brace).trimEnd();
+  const lead = "(?:^|[^\\w$])export\\s+(?:default\\s+)?";
+  const mods = "(?:(?:declare|abstract)\\s+)*";
+  const kind = "(?:class|interface)\\b[^;{}]*$";
+  return new RegExp(`${lead}${mods}${kind}`).test(head);
+}
+
+/** True when `index` is a direct member of an exported class or interface. */
+function directExportedMember(body: string, index: number): boolean {
+  let depth = 0;
+  const containers: number[] = [];
+  let cursor = 0;
+  while (cursor < index) {
+    const char = body[cursor] ?? "";
+    if (char === "/" && body[cursor + 1] === "/") {
+      const next = body.indexOf("\n", cursor);
+      cursor = next < 0 ? body.length : next + 1;
+      continue;
+    }
+    if (char === "/" && body[cursor + 1] === "*") {
+      const next = body.indexOf("*/", cursor + 2);
+      cursor = next < 0 ? body.length : next + 2;
+      continue;
+    }
+    if (char === "'" || char === '"') {
+      cursor = skipQuoted(body, cursor);
+      continue;
+    }
+    if (char === "`") {
+      cursor = skipTemplate(body, cursor);
+      continue;
+    }
+    if (char === "{") {
+      if (exportedContainerHeader(body, cursor)) containers.push(depth + 1);
+      depth += 1;
+      cursor += 1;
+      continue;
+    }
+    if (char === "}") {
+      depth = Math.max(0, depth - 1);
+      let openDepth = containers[containers.length - 1];
+      while (openDepth !== undefined && openDepth > depth) {
+        containers.pop();
+        openDepth = containers[containers.length - 1];
+      }
+      cursor += 1;
+      continue;
+    }
+    cursor += 1;
+  }
+  return containers.includes(depth);
+}
+
+/** Public field or interface property. Accessors and private members stay out. */
+function propertyDeclarationFollows(after: string): boolean {
+  const text = after.replace(/^(?:\s|\/\/[^\n]*(?:\n|$))*/, "");
+  if (/^(?:private|protected|get|set|accessor)\b/.test(text)) return false;
+  if (text.startsWith("#") || text.startsWith("[")) return false;
+  if (/^static\s*\{/.test(text)) return false;
+  const modifiers = "(?:(?:public|readonly|static|abstract|declare|override)\\s+)*";
+  const name = "[A-Za-z_$][\\w$]*\\s*";
+  const tail = "(?:[?!]?\\s*:|[?!]?\\s*=|[?!]?\\s*;)";
+  return new RegExp(`^${modifiers}${name}${tail}`).test(text);
+}
+
 export function productionFileCites(body: string, doc: string, anchor: string): boolean {
   const hidden = stringSpans(body);
   for (const match of body.matchAll(/\/\*\*((?:(?!\*\/)[\s\S])*)\*\//g)) {
@@ -1376,6 +1519,7 @@ export function productionFileCites(body: string, doc: string, anchor: string): 
       "^(?:\\s|//[^\\n]*(?:\\n|$))*export\\s+(?:default\\s+)?(?:async\\s+)?(?:function|const)\\b",
     );
     if (exportFollows.test(after)) return true;
+    if (propertyDeclarationFollows(after) && directExportedMember(body, match.index)) return true;
   }
   return false;
 }
@@ -1389,7 +1533,6 @@ export function commandTargetsFile(test: InventoryTest): boolean {
   });
 }
 
-const TEST_SOURCE = /(?:^|\/)[^/]+\.(?:test|spec)\.[cm]?tsx?$/;
 const PRELOAD_FLAGS = ["--preload", "--require"] as const;
 
 function preloadValue(arg: string): string | undefined {
@@ -1422,8 +1565,13 @@ function preloadArguments(args: readonly string[]): string[] {
 function commandedTestFiles(args: readonly string[]): string[] {
   const files: string[] = [];
   let patterns = false;
+  let skippedCommand = false;
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index] ?? "";
+    if (!skippedCommand && !patterns && arg === "test") {
+      skippedCommand = true;
+      continue;
+    }
     if (!patterns && arg === "--") {
       patterns = true;
       continue;
@@ -1434,8 +1582,7 @@ function commandedTestFiles(args: readonly string[]): string[] {
     }
     if (!patterns && preloadValue(arg) !== undefined) continue;
     if (!patterns && arg.startsWith("-")) continue;
-    const normalized = arg.replaceAll("\\", "/");
-    if (TEST_SOURCE.test(normalized)) files.push(normalized);
+    files.push(arg.replaceAll("\\", "/"));
   }
   return files;
 }

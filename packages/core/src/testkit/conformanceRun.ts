@@ -242,6 +242,26 @@ function shrinkValue<T>(predicate: (value: T) => boolean, shrink: (value: T) => 
 }
 
 function runSeededProperty<T>(run: PropertyRun<T>): { ok: true } | { ok: false; report: FailureReport } {
+  if (!Number.isInteger(run.cases) || run.cases < 1) {
+    return {
+      ok: false,
+      report: {
+        predicateId: run.predicateId,
+        generatorVersion: conformanceGeneratorVersion,
+        testSeed: run.testSeed,
+        gameSeed: null,
+        engineId: null,
+        modelId: null,
+        strategyId: null,
+        tickSchedule: null,
+        caseIndex: 0,
+        original: undefined,
+        value: undefined,
+        shrinkingPath: [],
+        thrown: "cases must be a positive integer",
+      },
+    };
+  }
   const rng = createTestRng(run.testSeed);
   for (let index = 0; index < run.cases; index += 1) {
     const original = run.generate(index, rng);
@@ -390,7 +410,9 @@ export function checkReplay<N, U extends string, Vars>(scenario: CompiledScenari
   if (isRelationCheck(bracket)) return bracket;
   const initial = bracket.snap();
   try {
-    const left = economyAfter(scenario);
+    const first = runScenario(scenario);
+    if (first.end.t === scenario.initial.t) return skip("replay completed no step");
+    const left = snapshotEconomy(scenario.ctx.E, first.end);
     bracket.restore(initial);
     const right = economyAfter(scenario);
     return left === right ? pass(left) : fail(`${left} != ${right}`);
@@ -416,6 +438,20 @@ function advancedTimestamp(start: number, step: number, ticks: number): number {
   return time;
 }
 
+/** Additions the simulator finishes before `time - start` reaches `duration`. */
+function additionsUntilDuration(start: number, step: number, duration: number): number | null {
+  if (!(step > 0) || !(duration > 0)) return null;
+  if (!Number.isFinite(start) || !Number.isFinite(step) || !Number.isFinite(duration)) return null;
+  let time = start;
+  let steps = 0;
+  while (time - start < duration) {
+    time += step;
+    steps += 1;
+    if (steps > 1_000_000) return null;
+  }
+  return steps;
+}
+
 function onGrid<N, U extends string, Vars>(
   scenario: CompiledScenario<N, U, Vars>,
   splitSec: number,
@@ -432,7 +468,8 @@ function onGrid<N, U extends string, Vars>(
     return skip("split is not on the original tick grid");
   }
   const maxSteps = scenario.run.maxSteps;
-  if (maxSteps !== undefined && (!Number.isInteger(maxSteps) || maxSteps <= durationTicks)) {
+  const stepsTaken = additionsUntilDuration(scenario.initial.t, step, duration) ?? durationTicks;
+  if (maxSteps !== undefined && (!Number.isInteger(maxSteps) || maxSteps <= stepsTaken)) {
     return skip("maxSteps can stop the run before durationSec");
   }
   return null;
@@ -468,7 +505,11 @@ type TailStart<N, U extends string, Vars> = {
 };
 
 /** `JSON.stringify` turns `NaN` into `null`. Reject that corrupted checkpoint. */
-function jsonCheckpointPreserves(value: unknown, seen = new Set<object>()): boolean {
+function jsonCheckpointPreserves(
+  value: unknown,
+  seen = new Set<object>(),
+  userData = false,
+): boolean {
   if (value === null) return true;
   if (typeof value === "string" || typeof value === "boolean") return true;
   if (typeof value === "number") return Number.isFinite(value) && !Object.is(value, -0);
@@ -481,7 +522,7 @@ function jsonCheckpointPreserves(value: unknown, seen = new Set<object>()): bool
       if (!(index in value)) return false;
       const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
       if (!descriptor || descriptor.get !== undefined || !("value" in descriptor)) return false;
-      if (!jsonCheckpointPreserves(descriptor.value, seen)) return false;
+      if (!jsonCheckpointPreserves(descriptor.value, seen, userData)) return false;
     }
     for (const key of Object.keys(value)) {
       if (!/^(?:0|[1-9][0-9]*)$/.test(key) || Number(key) >= value.length) return false;
@@ -493,8 +534,12 @@ function jsonCheckpointPreserves(value: unknown, seen = new Set<object>()): bool
   for (const key of Object.keys(value)) {
     const descriptor = Object.getOwnPropertyDescriptor(value, key);
     if (!descriptor || descriptor.get !== undefined || !("value" in descriptor)) return false;
-    if (descriptor.value === undefined) continue;
-    if (!jsonCheckpointPreserves(descriptor.value, seen)) return false;
+    if (descriptor.value === undefined) {
+      if (userData || key === "vars" || key === "state") return false;
+      continue;
+    }
+    const nestedUser = userData || key === "vars" || key === "state";
+    if (!jsonCheckpointPreserves(descriptor.value, seen, nestedUser)) return false;
   }
   return true;
 }
@@ -841,7 +886,8 @@ export function checkDurationBoundary<N, U extends string, Vars>(
   const ticks = wholeTickCount(duration, step);
   if (ticks === null) return skip("duration is not a multiple of stepSec");
   const maxSteps = scenario.run.maxSteps;
-  if (maxSteps !== undefined && (!Number.isInteger(maxSteps) || maxSteps <= ticks)) {
+  const stepsTaken = additionsUntilDuration(scenario.initial.t, step, duration) ?? ticks;
+  if (maxSteps !== undefined && (!Number.isInteger(maxSteps) || maxSteps <= stepsTaken)) {
     return skip("maxSteps can stop the run before durationSec");
   }
   const bracket = strategyBracket(scenario);
