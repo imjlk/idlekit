@@ -1,0 +1,11 @@
+{
+  "id": "constant-reset-reward",
+  "rewardPerReset": "1",
+  "intervalSec": 10,
+  "completedCycles": 4,
+  "completedCycleTimeSec": 40,
+  "horizonSec": 45,
+  "expectedRate": "0.1",
+  "denominator": "completed-cycle-time",
+  "note": "Known rate is committed reward divided by completed cycle time. Matching it is not a steady-state proof."
+}

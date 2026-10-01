@@ -23,7 +23,12 @@
     "REQ-PR10-REWARD-DELTA",
     "REQ-PR12-SHAPE-SPEED",
     "REQ-PR12-SCALE-DOMAIN",
-    "REQ-PR12-LEGACY-PRESERVED"
+    "REQ-PR12-LEGACY-PRESERVED",
+    "REQ-PR11-REWARD-RATE",
+    "REQ-PR11-EMPIRICAL-STABILITY",
+    "REQ-PR11-RECOVERY-CROSSING",
+    "REQ-PR11-SESSION-RESET",
+    "REQ-PR11-SCAN-RANK"
   ],
   "protectedFiles": [
     "docs/requirements/active/typia-transform.md",
@@ -83,6 +88,10 @@
     "fixtures/conformance/shrink-gap.json",
     "fixtures/toolchain/evidence/lint.config.ts",
     "fixtures/toolchain/evidence/src/quotaHost.ts",
-    "fixtures/toolchain/evidence/src/quotaHost.test.ts"
+    "fixtures/toolchain/evidence/src/quotaHost.test.ts",
+    "docs/requirements/active/reset-cycle-analysis.md",
+    "packages/core/src/sim/analysis/resetOptimization.ts",
+    "packages/core/src/sim/analysis/resetOptimization.test.ts",
+    "fixtures/conformance/reset-policy-rate.json"
   ]
 }

@@ -23,6 +23,8 @@
     "packages/core/src/sim/analysis/resetCycle.test.ts",
     "packages/core/src/sim/analysis/growthFit.ts",
     "packages/core/src/sim/analysis/growth.fit.test.ts",
+    "packages/core/src/sim/analysis/resetOptimization.ts",
+    "packages/core/src/sim/analysis/resetOptimization.test.ts",
     "packages/core/src/sim/step.ts",
     "packages/core/src/sim/step.bulk.test.ts",
     "packages/core/src/sim/timeBoundary.ts",

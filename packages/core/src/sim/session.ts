@@ -206,6 +206,16 @@ function blocksFor(pattern: SessionPatternSpec): ActiveBlock[] {
   return buildBlocks(pattern);
 }
 
+/**
+ * Active blocks for a preset or an explicit schedule. Wall time is day * 86400 + offset.
+ *
+ * @evidence docs/requirements/active/reset-cycle-analysis.md#req-pr11-session-reset Reset policy analysis reads the active wall spans from these blocks.
+ * @evidenceReview docs/requirements/active/reset-cycle-analysis.md#req-pr11-session-reset #0ea6f15 Re-read the section: a twice-daily day has active spans [0, 1800) and [43200, 45000), which are these blocks.
+ */
+export function sessionActiveBlocks(pattern: SessionPatternSpec): readonly SessionOffsetBlock[] {
+  return blocksFor(pattern);
+}
+
 function modelReadsClocks<N, U extends string, Vars>(scenario: CompiledScenario<N, U, Vars>): boolean {
   return (scenario.model.clocks?.respondsTo?.length ?? 0) > 0;
 }

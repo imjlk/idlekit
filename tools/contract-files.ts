@@ -18,6 +18,11 @@ import {
   growthFitSchemaId,
 } from "../packages/core/src/sim/analysis/growthFit";
 import {
+  resetPolicyAlgorithmVersion,
+  resetPolicyJsonSchema,
+  resetPolicySchemaId,
+} from "../packages/core/src/sim/analysis/resetOptimization";
+import {
   resetCycleAlgorithmVersion,
   resetCycleJsonSchema,
   resetCycleSchemaId,
@@ -45,6 +50,8 @@ export const resetSchemaName = "reset.cycle.v1.schema.json";
 export const resetFieldsName = "reset.cycle.v1.fields.json";
 export const growthSchemaName = "growth.fit.v1.schema.json";
 export const growthFieldsName = "growth.fit.v1.fields.json";
+export const policySchemaName = "reset.policy.v1.schema.json";
+export const policyFieldsName = "reset.policy.v1.fields.json";
 
 const inputs = [
   "packages/core/src/scenario/offlinePolicy.ts",
@@ -63,6 +70,7 @@ const etaInputs = ["packages/core/src/sim/analysis/contracts.ts", "packages/core
 const resetInputs = ["packages/core/src/sim/analysis/resetCycle.ts"];
 // GrowthFitArtifactV1 embeds AnalysisStatus from contracts.ts.
 const growthInputs = ["packages/core/src/sim/analysis/contracts.ts", "packages/core/src/sim/analysis/growthFit.ts"];
+const policyInputs = ["packages/core/src/sim/analysis/resetOptimization.ts"];
 
 /** Digest each source with LF line endings, so a CRLF checkout matches the tracked contract. */
 export function digestSources(paths: readonly string[], base = root): SourceDigest[] {
@@ -90,6 +98,10 @@ export function resetSourceDigests(base = root): SourceDigest[] {
 
 export function growthSourceDigests(base = root): SourceDigest[] {
   return digestSources(growthInputs, base);
+}
+
+export function policySourceDigests(base = root): SourceDigest[] {
+  return digestSources(policyInputs, base);
 }
 
 export function buildEtaContractDocument(sources: readonly SourceDigest[]) {
@@ -179,6 +191,35 @@ export function buildGrowthContractDocument(sources: readonly SourceDigest[]) {
   });
 }
 
+export function buildPolicyContractDocument(sources: readonly SourceDigest[]) {
+  const ordered = [...sources].sort((left, right) => (left.path < right.path ? -1 : left.path > right.path ? 1 : 0));
+  const sourceHash = sha256Text(
+    canonicalJson({
+      algorithmVersion: resetPolicyAlgorithmVersion(),
+      contractId: "idlekit.reset-policy.v1",
+      dialect: "openapi-3.1",
+      exportApi: "typia.json.schema",
+      generator: "idlekit.contract-generator",
+      generatorVersion: 1,
+      schemaId: resetPolicySchemaId(),
+      sources: ordered,
+      typia: "14.0.6",
+    }),
+  );
+  return rootSchemaDocument(resetPolicySchemaId(), resetPolicyJsonSchema(), {
+    generator: "idlekit.contract-generator" as const,
+    generatorVersion: 1 as const,
+    exportApi: "typia.json.schema" as const,
+    dialect: "openapi-3.1" as const,
+    typia: "14.0.6" as const,
+    schemaId: resetPolicySchemaId(),
+    contractId: "idlekit.reset-policy.v1",
+    algorithmVersion: resetPolicyAlgorithmVersion(),
+    sourceHash,
+    sources: ordered,
+  });
+}
+
 export function buildAnalysisContractDocument(sources: readonly SourceDigest[]) {
   const ordered = [...sources].sort((left, right) => (left.path < right.path ? -1 : left.path > right.path ? 1 : 0));
   const sourceHash = sha256Text(
@@ -219,20 +260,25 @@ export function renderedContracts(base = root): {
   resetFields: string;
   growthSchema: string;
   growthFields: string;
+  policySchema: string;
+  policyFields: string;
 } {
   const sources = sourceDigests(base);
   const analysisSources = analysisSourceDigests(base);
   const etaSources = etaSourceDigests(base);
   const resetSources = resetSourceDigests(base);
   const growthSources = growthSourceDigests(base);
+  const policySources = policySourceDigests(base);
   const analysisDocument = buildAnalysisContractDocument(analysisSources);
   const etaDocument = buildEtaContractDocument(etaSources);
   const resetDocument = buildResetContractDocument(resetSources);
   const growthDocument = buildGrowthContractDocument(growthSources);
+  const policyDocument = buildPolicyContractDocument(policySources);
   const analysisFields = structuralFieldMetadata(analysisArtifactJsonSchema());
   const etaFields = structuralFieldMetadata(etaEstimateJsonSchema());
   const resetFields = structuralFieldMetadata(resetCycleJsonSchema());
   const growthFields = structuralFieldMetadata(growthFitJsonSchema());
+  const policyFields = structuralFieldMetadata(resetPolicyJsonSchema());
   return {
     schema: `${canonicalJson(buildContractDocument(sources))}\n`,
     fields: `${canonicalJson(buildFieldMetadata(sources))}\n`,
@@ -284,6 +330,18 @@ export function renderedContracts(base = root): {
       enums: growthFields.enums,
       comments: growthFields.comments,
     })}\n`,
+    policySchema: `${analysisCanonicalJson(policyDocument)}\n`,
+    policyFields: `${analysisCanonicalJson({
+      idlekitContract: {
+        kind: "structural-metadata",
+        schemaId: resetPolicySchemaId(),
+        sourceHash: policyDocument.idlekitContract.sourceHash,
+        note: "Names, enum values, and schema descriptions only. No design intent, example balances, or translations.",
+      },
+      properties: policyFields.properties,
+      enums: policyFields.enums,
+      comments: policyFields.comments,
+    })}\n`,
   };
 }
 
@@ -300,6 +358,8 @@ export function writeContracts(dir: string, base = root): void {
   writeFileSync(join(dir, resetFieldsName), rendered.resetFields);
   writeFileSync(join(dir, growthSchemaName), rendered.growthSchema);
   writeFileSync(join(dir, growthFieldsName), rendered.growthFields);
+  writeFileSync(join(dir, policySchemaName), rendered.policySchema);
+  writeFileSync(join(dir, policyFieldsName), rendered.policyFields);
 }
 
 export function compareContracts(dir: string, base = root): string[] {
@@ -316,6 +376,8 @@ export function compareContracts(dir: string, base = root): string[] {
     [resetFieldsName, rendered.resetFields],
     [growthSchemaName, rendered.growthSchema],
     [growthFieldsName, rendered.growthFields],
+    [policySchemaName, rendered.policySchema],
+    [policyFieldsName, rendered.policyFields],
   ] as const) {
     const path = join(dir, name);
     let current = "";

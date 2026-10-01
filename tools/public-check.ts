@@ -32,6 +32,7 @@ const DOCS_WITH_KO = [
   "docs/analysis-contracts.md",
   "docs/eta-semantics.md",
   "docs/reset-cycle.md",
+  "docs/reset-cycle-analysis.md",
   "docs/growth-classification.md",
   "examples/adapter-pattern/README.md",
   "examples/money-package/README.md",

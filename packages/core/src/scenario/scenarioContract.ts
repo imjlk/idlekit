@@ -7,6 +7,7 @@ import type { ScenarioV1 } from "./types";
  * Semantic checks stay in validateScenarioV1. This module does not replace them.
  * PR-08 appends analysis DTOs to contractRegistry. PR-09 appends the ETA estimate.
  * PR-10 appends the reset-cycle artifact. PR-12 appends the growth fit.
+ * PR-11 appends the reset-policy artifact.
  * The registry does not migrate every existing DTO.
  */
 
@@ -65,6 +66,12 @@ const contractRegistry = [
     kind: "growth-fit" as const,
     typeName: "GrowthFitArtifactV1",
     source: "packages/core/src/sim/analysis/growthFit.ts",
+  },
+  {
+    id: "idlekit.reset-policy.v1" as const,
+    kind: "reset-policy" as const,
+    typeName: "ResetPolicyArtifactV1",
+    source: "packages/core/src/sim/analysis/resetOptimization.ts",
   },
 ] as const;
 

@@ -8,6 +8,6 @@ English version: [reset-cycle.md](./reset-cycle.md)
 
 각 회차는 절대 `startSec`와 `endSec`, 회차 로컬 `durationSec`, `resetAtSec`, `rewardDelta`, `accumulatedReward`를 기록한다. delta는 그 reset이 만든 보상이다. 이미 가진 재고를 다시 더하지 않는다. 조건, 비용, cooldown 실패는 `resetSkippedReason`이며 보상을 지급하지 않는다. `cycles`가 `0`, `NaN`, `Infinity`이거나 간격이 `0`이면 거부한다. horizon, `maxCycles`, step budget은 남은 reset을 만들지 않고 멈춘다.
 
-`analyzePrestigeCycle`은 기존 interval scan으로 남는다. 그 `stability`, `breakEvenSec`, 복사된 `cycles`는 커밋된 reset의 증거가 아니다. 반환값의 경고가 그 뜻을 말한다. 이 artifact에는 그 필드가 없다. 정책 비교와 정상상태 판정은 이후 변경이다.
+`analyzePrestigeCycle`은 기존 interval scan으로 남는다. 그 `stability`, `breakEvenSec`, 복사된 `cycles`는 커밋된 reset의 증거가 아니다. 반환값의 경고가 그 뜻을 말한다. 이 artifact에는 그 필드가 없다. [리셋 정책 분석](./reset-cycle-analysis_ko.md)이 한 horizon에서 간격을 비교한다. 그 경험적 stability는 증명된 정상상태가 아니다.
 
 Node.js와 브라우저 런타임은 v1 호환 계약에 포함되지 않는다.

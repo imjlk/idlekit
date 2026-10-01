@@ -8,6 +8,6 @@ The default adapter uses a prestige action when the model has one. `pointsFrom`,
 
 Each cycle records absolute `startSec` and `endSec`, cycle-local `durationSec`, `resetAtSec`, `rewardDelta`, and `accumulatedReward`. The delta is the reward gained by that reset. Stock already held is not counted again. A failed condition, cost, or cooldown is `resetSkippedReason` and pays nothing. `cycles` of `0`, `NaN`, or `Infinity`, and an interval of `0`, are rejected. A horizon, `maxCycles`, or step budget stops the run instead of inventing resets.
 
-`analyzePrestigeCycle` remains the legacy interval scan. Its `stability`, `breakEvenSec`, and copied `cycles` values are not evidence of a committed reset. The warnings on that return say so. This artifact does not include those fields. Comparing reset policies and declaring a steady state belong to a later change.
+`analyzePrestigeCycle` remains the legacy interval scan. Its `stability`, `breakEvenSec`, and copied `cycles` values are not evidence of a committed reset. The warnings on that return say so. This artifact does not include those fields. [Reset policy analysis](./reset-cycle-analysis.md) compares intervals on one horizon. Its empirical stability is not a proved steady state.
 
 Node.js and browser runtimes are not part of the v1 compatibility contract.

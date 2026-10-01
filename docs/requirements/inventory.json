@@ -558,6 +558,86 @@
           "args": ["test", "--timeout", "120000", "src/sim/analysis/growth.fit.test.ts"]
         }
       ]
+    },
+    {
+      "id": "REQ-PR11-REWARD-RATE",
+      "pr": "PR-11",
+      "anchor": "req-pr11-reward-rate",
+      "doc": "docs/requirements/active/reset-cycle-analysis.md",
+      "production": ["packages/core/src/sim/analysis/resetOptimization.ts"],
+      "tests": [
+        {
+          "file": "packages/core/src/sim/analysis/resetOptimization.test.ts",
+          "exportName": "matchesTheoreticalRewardRate",
+          "registeredAs": "reset policy analysis > matches the theoretical reset reward rate",
+          "cwd": "packages/core",
+          "args": ["test", "--timeout", "120000", "src/sim/analysis/resetOptimization.test.ts"]
+        }
+      ]
+    },
+    {
+      "id": "REQ-PR11-EMPIRICAL-STABILITY",
+      "pr": "PR-11",
+      "anchor": "req-pr11-empirical-stability",
+      "doc": "docs/requirements/active/reset-cycle-analysis.md",
+      "production": ["packages/core/src/sim/analysis/resetOptimization.ts"],
+      "tests": [
+        {
+          "file": "packages/core/src/sim/analysis/resetOptimization.test.ts",
+          "exportName": "separatesEmpiricalStability",
+          "registeredAs": "reset policy analysis > separates empirical stability from cycle count",
+          "cwd": "packages/core",
+          "args": ["test", "--timeout", "120000", "src/sim/analysis/resetOptimization.test.ts"]
+        }
+      ]
+    },
+    {
+      "id": "REQ-PR11-RECOVERY-CROSSING",
+      "pr": "PR-11",
+      "anchor": "req-pr11-recovery-crossing",
+      "doc": "docs/requirements/active/reset-cycle-analysis.md",
+      "production": ["packages/core/src/sim/analysis/resetOptimization.ts"],
+      "tests": [
+        {
+          "file": "packages/core/src/sim/analysis/resetOptimization.test.ts",
+          "exportName": "reportsRecoveryCrossing",
+          "registeredAs": "reset policy analysis > reports the recovery crossing or censors it",
+          "cwd": "packages/core",
+          "args": ["test", "--timeout", "120000", "src/sim/analysis/resetOptimization.test.ts"]
+        }
+      ]
+    },
+    {
+      "id": "REQ-PR11-SESSION-RESET",
+      "pr": "PR-11",
+      "anchor": "req-pr11-session-reset",
+      "doc": "docs/requirements/active/reset-cycle-analysis.md",
+      "production": ["packages/core/src/sim/analysis/resetOptimization.ts", "packages/core/src/sim/session.ts"],
+      "tests": [
+        {
+          "file": "packages/core/src/sim/analysis/resetOptimization.test.ts",
+          "exportName": "keepsManualResetInsideSession",
+          "registeredAs": "reset policy analysis > keeps a manual reset inside the active session",
+          "cwd": "packages/core",
+          "args": ["test", "--timeout", "120000", "src/sim/analysis/resetOptimization.test.ts"]
+        }
+      ]
+    },
+    {
+      "id": "REQ-PR11-SCAN-RANK",
+      "pr": "PR-11",
+      "anchor": "req-pr11-scan-rank",
+      "doc": "docs/requirements/active/reset-cycle-analysis.md",
+      "production": ["packages/core/src/sim/analysis/resetOptimization.ts"],
+      "tests": [
+        {
+          "file": "packages/core/src/sim/analysis/resetOptimization.test.ts",
+          "exportName": "ranksScanWithoutNumberCollapse",
+          "registeredAs": "reset policy analysis > ranks the scan with engine compare",
+          "cwd": "packages/core",
+          "args": ["test", "--timeout", "120000", "src/sim/analysis/resetOptimization.test.ts"]
+        }
+      ]
     }
   ]
 }
