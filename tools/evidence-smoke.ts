@@ -845,6 +845,10 @@ try {
   let dynamicRequire = false;
   let packageRequire = false;
   let commentRequire = false;
+  let dynamicImport = false;
+  let unresolvedImport = false;
+  let packageImport = false;
+  let resolvedImport = false;
   try {
     const bodies = sourceGraph([specifierHost]);
     const joined = bodies.join("\n");
@@ -901,9 +905,22 @@ try {
     unresolvedRequire = unresolvedLocalRequires([requireHost]).includes("./missing");
     writeFileSync(requireHost, "require(name);\n");
     dynamicRequire = unresolvedLocalRequires([requireHost]).includes("dynamic require");
-    writeFileSync(requireHost, 'require("bun:test");\nrequire("node:fs");\n');
+    writeFileSync(
+      requireHost,
+      `require("bun:test");\nrequire(${JSON.stringify("node:" + "fs")});\n`,
+    );
     const packageFaults = unresolvedLocalRequires([requireHost]);
     packageRequire = packageFaults.length === 0 && sourceGraph([requireHost]).length === 1;
+    writeFileSync(requireHost, 'import("./" + "required-helper");\n');
+    dynamicImport = unresolvedLocalRequires([requireHost]).includes("dynamic import");
+    writeFileSync(requireHost, 'import("./missing-import");\n');
+    unresolvedImport = unresolvedLocalRequires([requireHost]).includes("./missing-import");
+    writeFileSync(requireHost, 'import("bun:test");\n');
+    packageImport = unresolvedLocalRequires([requireHost]).length === 0;
+    writeFileSync(requireHost, 'import("./required-helper");\n');
+    resolvedImport = sourceGraph([requireHost]).some((body) =>
+      body.includes("from-required-helper"),
+    );
     writeFileSync(
       requireHost,
       [
@@ -1173,6 +1190,16 @@ try {
     "unrelated",
     "credited",
   );
+  const foreignImport = registeredSuites(
+    ['import { it as register } from "./wrapper"', 'register("credited", unrelated)'].join("\n"),
+    "unrelated",
+    "credited",
+  );
+  const foreignNamespace = registeredSuites(
+    ['import * as runner from "./wrapper"', 'runner.it("credited", unrelated)'].join("\n"),
+    "unrelated",
+    "credited",
+  );
   const namedBody = [
     "function liveSuite() {",
     '  it("credited", unrelated);',
@@ -1318,6 +1345,12 @@ try {
     dynamicRequire &&
     packageRequire &&
     commentRequire &&
+    dynamicImport &&
+    unresolvedImport &&
+    packageImport &&
+    resolvedImport &&
+    foreignImport.length === 0 &&
+    foreignNamespace.length === 0 &&
     namedDuplicate &&
     namedLive &&
     arrowLive &&

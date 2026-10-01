@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "fs";
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync } from "fs";
 import { tmpdir } from "os";
 import { dirname, isAbsolute, join, relative, resolve } from "path";
 import lintConfig from "../lint.config";
@@ -1579,6 +1579,8 @@ function readImportRunnerAliases(
     if (fromWord?.value !== "from") return undefined;
     const spec = readQuoted(body, fromWord.end) ?? readStaticTemplate(body, fromWord.end);
     if (!spec) return undefined;
+    // A local wrapper can re-export a runner and discard the cited callback.
+    if (!runnerModuleSpec(spec.value)) return { entries: [], namespaces: [], end: spec.end };
     return { entries: [], namespaces: [local.value], end: spec.end };
   }
   if (body[cursor] !== "{") return undefined;
@@ -1626,6 +1628,7 @@ function readImportRunnerAliases(
   if (fromWord?.value !== "from") return undefined;
   const spec = readQuoted(body, fromWord.end) ?? readStaticTemplate(body, fromWord.end);
   if (!spec) return undefined;
+  if (!runnerModuleSpec(spec.value)) return { entries: [], namespaces: [], end: spec.end };
   return { entries, namespaces: [], end: spec.end };
 }
 
@@ -2840,6 +2843,49 @@ function localRequireCalls(
   return found;
 }
 
+/** `import("./helper")` is static. `import("./" + "helper")` is not a resolvable local file. */
+function importCalls(
+  body: string,
+  hidden: ReadonlyArray<readonly [number, number]>,
+): LocalRequire[] {
+  const found: LocalRequire[] = [];
+  let index = 0;
+  while (index < body.length) {
+    const hiddenEnd = spanEndAt(hidden, index);
+    if (hiddenEnd >= 0) {
+      index = hiddenEnd;
+      continue;
+    }
+    if (!body.startsWith("import", index)) {
+      index += 1;
+      continue;
+    }
+    const previous = body[index - 1];
+    const tail = body[index + "import".length] ?? "";
+    if (
+      previous === "." ||
+      (previous !== undefined && /[A-Za-z0-9_$]/.test(previous)) ||
+      /[A-Za-z0-9_$]/.test(tail)
+    ) {
+      index += "import".length;
+      continue;
+    }
+    const open = skipSpaceAndComments(body, index + "import".length);
+    if (body[open] !== "(") {
+      index += "import".length;
+      continue;
+    }
+    const argAt = skipSpaceAndComments(body, open + 1);
+    const quoted = readQuoted(body, argAt) ?? readStaticTemplate(body, argAt);
+    if (quoted && argumentBoundary(body, quoted.end)) {
+      found.push({ kind: "static", spec: quoted.value });
+    } else found.push({ kind: "dynamic" });
+    const close = skipPair(body, open);
+    index = close < 0 ? open + 1 : close;
+  }
+  return found;
+}
+
 const RELATIVE_IMPORT = /(?:from\s+|import\s*\(\s*|import\s+)["'](\.[^"']+)["']/g;
 
 function typescriptImportCandidates(base: string): string[] {
@@ -2869,7 +2915,13 @@ function resolveRelativeImport(fromFile: string, spec: string): string | undefin
     join(base, "index.ts"),
     join(base, "index.tsx"),
   ];
-  return candidates.find((candidate) => existsSync(candidate));
+  return candidates.find((candidate) => {
+    try {
+      return statSync(candidate).isFile();
+    } catch {
+      return false;
+    }
+  });
 }
 
 type SourceWalk = { bodies: string[]; faults: string[] };
@@ -2893,6 +2945,14 @@ function walkSources(files: readonly string[]): SourceWalk {
       if (match.index !== undefined && insideSpan(hidden, match.index)) continue;
       const spec = match[1];
       if (!spec) continue;
+      const matched = match[0] ?? "";
+      if (
+        /^import\s*\(/.test(matched) &&
+        match.index !== undefined &&
+        !argumentBoundary(body, match.index + matched.length)
+      ) {
+        continue;
+      }
       const next = resolveRelativeImport(real, spec);
       if (next) queue.push(next);
     }
@@ -2905,6 +2965,19 @@ function walkSources(files: readonly string[]): SourceWalk {
       const next = resolveRelativeImport(real, required.spec);
       if (!next) {
         faults.push(required.spec);
+        continue;
+      }
+      queue.push(next);
+    }
+    for (const imported of importCalls(body, hidden)) {
+      if (imported.kind === "dynamic") {
+        faults.push("dynamic import");
+        continue;
+      }
+      if (!imported.spec.startsWith(".")) continue;
+      const next = resolveRelativeImport(real, imported.spec);
+      if (!next) {
+        faults.push(imported.spec);
         continue;
       }
       queue.push(next);

@@ -18,6 +18,9 @@ jobs:
     env:
       GITHUB_BEFORE: ${{ github.event.before }}
       GITHUB_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      # Smoke still uses a fresh plugin directory, so the cold/warm assertion stays.
+      # The Go object cache is the part that otherwise recompiles for several minutes.
+      TTSC_GO_CACHE_DIR: ${{ github.workspace }}/node_modules/.cache/ttsc/go-build
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -34,6 +37,16 @@ jobs:
 
       - name: Install
         run: bun install --frozen-lockfile
+
+      - name: Cache ttsc plugins
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            node_modules/.cache/ttsc/plugins
+            node_modules/.cache/ttsc/go-build
+          key: ${{ runner.os }}-${{ runner.arch }}-ttsc-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-ttsc-
 
       - name: Fetch pull request base
         if: github.event_name == 'pull_request'
