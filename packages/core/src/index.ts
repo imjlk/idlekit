@@ -59,6 +59,7 @@ export * from "./sim/analysis/eta";
 export * from "./sim/analysis/prestigeCycle";
 export * from "./sim/analysis/resetCycle";
 export * from "./sim/analysis/resetOptimization";
+export * from "./sim/analysis/distribution";
 export * from "./sim/analysis/growth";
 export * from "./sim/analysis/growthFit";
 export * from "./sim/analysis/milestones";

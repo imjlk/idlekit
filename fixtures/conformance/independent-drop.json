@@ -1,0 +1,8 @@
+{
+  "id": "independent-drop-one-percent",
+  "seed": 28947,
+  "draws": 10000,
+  "probability": 0.01,
+  "absoluteTolerance": 0.005,
+  "note": "One uniform per logical draw. The empirical rate must sit inside the tolerance. It is not required to equal 0.01."
+}

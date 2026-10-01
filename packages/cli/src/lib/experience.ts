@@ -1,10 +1,15 @@
 import {
+  analyzeDistribution,
   analyzeGrowth,
   analyzeMilestones,
+  canonicalQuantileKey,
+  firstVisibleDistributionSample,
+  quantileInclusiveFloor,
   simulateMonteCarlo,
   simulateSessionPattern,
   VisibilityTracker,
   type CompiledScenario,
+  type DistributionArtifactV1,
   type GrowthReport,
   type MilestoneReport,
   type RunBindOptions,
@@ -69,27 +74,29 @@ export type ExperienceMonteCarloSummary = Readonly<{
   endNetWorthLog10: ExperienceNumericSummary;
   visibleChangesPerMinute: ExperienceNumericSummary;
   maxNoRewardGapSec: ExperienceNumericSummary;
-  firstVisibleChangeSec: ExperienceNumericSummary;
+  /** Legacy numeric view of observed changes only. Null when every draw is censored. */
+  firstVisibleChangeSec: ExperienceNumericSummary | null;
+  /** Population and conditional quantiles. A missing change stays censored. */
+  firstVisible: DistributionArtifactV1;
 }>;
 
-function quantile(values: number[], q: number): number {
-  if (values.length === 0) return 0;
-  const sorted = [...values].sort((a, b) => a - b);
-  const idx = Math.max(0, Math.min(sorted.length - 1, Math.floor((sorted.length - 1) * q)));
-  return sorted[idx] ?? 0;
+function quantile(values: number[], q: number): number | undefined {
+  return quantileInclusiveFloor(values, q) ?? undefined;
 }
 
-function summarizeNumeric(values: number[], quantiles: readonly number[]): ExperienceNumericSummary {
-  if (values.length === 0) {
-    return {
-      mean: 0,
-      quantiles: Object.fromEntries(quantiles.map((q) => [`q${Math.round(q * 100)}`, 0])),
-    };
-  }
+function quantileKey(quantiles: readonly number[], q: number): string {
+  const legacy = `q${Math.round(q * 100)}`;
+  const collided = quantiles.some((other) => other !== q && `q${Math.round(other * 100)}` === legacy);
+  return collided ? canonicalQuantileKey(q) : legacy;
+}
 
+function summarizeNumeric(values: number[], quantiles: readonly number[]): ExperienceNumericSummary | null {
+  if (values.length === 0) return null;
   return {
     mean: values.reduce((sum, value) => sum + value, 0) / values.length,
-    quantiles: Object.fromEntries(quantiles.map((q) => [`q${Math.round(q * 100)}`, quantile(values, q)])),
+    quantiles: Object.fromEntries(
+      quantiles.map((q) => [quantileKey(quantiles, q), quantileInclusiveFloor(values, q) ?? Number.NaN]),
+    ),
   };
 }
 
@@ -350,30 +357,52 @@ export function summarizeExperienceMonteCarlo<N, U extends string, Vars>(args: {
     seed: args.seed,
     registries: args.registries,
     isolation: args.isolation,
-    metrics: ({ scenario, session }) => {
+    metrics: ({ scenario, session, drawIndex, seed }) => {
       const snapshot = snapshotFromSession({
         scenario,
         session: session!,
         series: args.series,
       });
       return {
+        drawIndex,
+        seed,
         endNetWorthLog10: snapshot.endNetWorthLog10,
         visibleChangesPerMinute: snapshot.perceived.visibleChangesPerMinute,
         maxNoRewardGapSec: snapshot.perceived.maxNoRewardGapSec,
-        firstVisibleChangeSec: snapshot.perceived.firstVisibleChangeSec ?? session?.summary.totalActiveSec ?? 0,
+        firstVisibleChangeSec: snapshot.perceived.firstVisibleChangeSec,
       };
     },
   });
 
   const values = summary.results.map((entry) => entry.metrics);
+  const observedVisible = values
+    .map((entry) => entry.firstVisibleChangeSec)
+    .filter((value): value is number => value !== undefined);
+  const numeric = (name: string, series: number[]): ExperienceNumericSummary => {
+    const summarized = summarizeNumeric(series, args.quantiles);
+    if (!summarized) throw new Error(`experience summary ${name} has no observed values`);
+    return summarized;
+  };
   return {
     draws: summary.draws,
     seed: summary.seed,
     quantiles: args.quantiles,
-    endNetWorthLog10: summarizeNumeric(values.map((x) => x.endNetWorthLog10), args.quantiles),
-    visibleChangesPerMinute: summarizeNumeric(values.map((x) => x.visibleChangesPerMinute), args.quantiles),
-    maxNoRewardGapSec: summarizeNumeric(values.map((x) => x.maxNoRewardGapSec), args.quantiles),
-    firstVisibleChangeSec: summarizeNumeric(values.map((x) => x.firstVisibleChangeSec), args.quantiles),
+    endNetWorthLog10: numeric("endNetWorthLog10", values.map((x) => x.endNetWorthLog10)),
+    visibleChangesPerMinute: numeric("visibleChangesPerMinute", values.map((x) => x.visibleChangesPerMinute)),
+    maxNoRewardGapSec: numeric("maxNoRewardGapSec", values.map((x) => x.maxNoRewardGapSec)),
+    firstVisibleChangeSec: summarizeNumeric(observedVisible, args.quantiles),
+    firstVisible: analyzeDistribution({
+      samples: values.map((entry) =>
+        firstVisibleDistributionSample({
+          drawIndex: entry.drawIndex,
+          seed: entry.seed,
+          firstVisibleChangeSec: entry.firstVisibleChangeSec,
+        }),
+      ),
+      quantiles: args.quantiles,
+      horizonSec: null,
+      populationProbability: 0.95,
+    }),
   };
 }
 
@@ -465,8 +494,10 @@ export function summarizeComparableExperienceMetric<N, U extends string, Vars>(a
     },
   });
 
+  const summarized = summarizeNumeric(summary.results.map((entry) => entry.metrics.value), args.quantiles);
+  if (!summarized) throw new Error("experience comparison has no observed values");
   return {
-    ...summarizeNumeric(summary.results.map((entry) => entry.metrics.value), args.quantiles),
+    ...summarized,
     sessions: summary.results.map((entry) => entry.metrics.session),
   };
 }
@@ -598,6 +629,12 @@ export function renderExperienceMarkdown(args: {
       `- Net worth log10 mean: ${formatMetric(monteCarlo.endNetWorthLog10.mean, 3)}`,
       `- Visible changes / minute mean: ${formatMetric(monteCarlo.visibleChangesPerMinute.mean, 3)}`,
       `- No-reward gap mean: ${formatMetric(monteCarlo.maxNoRewardGapSec.mean, 2)}s`,
+      `- First visible completion: ${monteCarlo.firstVisible.accounting.completionRate ?? "unavailable"}`,
+      `- First visible population p95: ${
+        monteCarlo.firstVisible.population.status === "observed"
+          ? `${monteCarlo.firstVisible.population.value}s`
+          : monteCarlo.firstVisible.population.status
+      }`,
     );
   }
 

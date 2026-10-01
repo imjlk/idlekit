@@ -28,7 +28,12 @@
     "REQ-PR11-EMPIRICAL-STABILITY",
     "REQ-PR11-RECOVERY-CROSSING",
     "REQ-PR11-SESSION-RESET",
-    "REQ-PR11-SCAN-RANK"
+    "REQ-PR11-SCAN-RANK",
+    "REQ-PR13-SAMPLE-ACCOUNTING",
+    "REQ-PR13-QUANTILE-CONVENTION",
+    "REQ-PR13-LOGICAL-DRAWS",
+    "REQ-PR13-EMPIRICAL-DROP",
+    "REQ-PR13-MEAN-IDENTITY"
   ],
   "protectedFiles": [
     "docs/requirements/active/typia-transform.md",
@@ -92,6 +97,11 @@
     "docs/requirements/active/reset-cycle-analysis.md",
     "packages/core/src/sim/analysis/resetOptimization.ts",
     "packages/core/src/sim/analysis/resetOptimization.test.ts",
-    "fixtures/conformance/reset-policy-rate.json"
+    "fixtures/conformance/reset-policy-rate.json",
+    "docs/requirements/active/simulation-distribution.md",
+    "packages/core/src/sim/analysis/distribution.ts",
+    "packages/core/src/sim/analysis/distribution.test.ts",
+    "packages/core/src/sim/monteCarlo.ts",
+    "fixtures/conformance/independent-drop.json"
   ]
 }

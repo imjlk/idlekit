@@ -638,6 +638,86 @@
           "args": ["test", "--timeout", "120000", "src/sim/analysis/resetOptimization.test.ts"]
         }
       ]
+    },
+    {
+      "id": "REQ-PR13-SAMPLE-ACCOUNTING",
+      "pr": "PR-13",
+      "anchor": "req-pr13-sample-accounting",
+      "doc": "docs/requirements/active/simulation-distribution.md",
+      "production": ["packages/core/src/sim/analysis/distribution.ts"],
+      "tests": [
+        {
+          "file": "packages/core/src/sim/analysis/distribution.test.ts",
+          "exportName": "separatesCensoringFromObservedQuantiles",
+          "registeredAs": "simulation distribution > separates censored samples from the population quantile",
+          "cwd": "packages/core",
+          "args": ["test", "--timeout", "120000", "src/sim/analysis/distribution.test.ts"]
+        }
+      ]
+    },
+    {
+      "id": "REQ-PR13-QUANTILE-CONVENTION",
+      "pr": "PR-13",
+      "anchor": "req-pr13-quantile-convention",
+      "doc": "docs/requirements/active/simulation-distribution.md",
+      "production": ["packages/core/src/sim/analysis/distribution.ts"],
+      "tests": [
+        {
+          "file": "packages/core/src/sim/analysis/distribution.test.ts",
+          "exportName": "fixesQuantileRanksAndKeys",
+          "registeredAs": "simulation distribution > fixes quantile ranks, bounds, and canonical keys",
+          "cwd": "packages/core",
+          "args": ["test", "--timeout", "120000", "src/sim/analysis/distribution.test.ts"]
+        }
+      ]
+    },
+    {
+      "id": "REQ-PR13-LOGICAL-DRAWS",
+      "pr": "PR-13",
+      "anchor": "req-pr13-logical-draws",
+      "doc": "docs/requirements/active/simulation-distribution.md",
+      "production": ["packages/core/src/sim/analysis/distribution.ts", "packages/core/src/sim/monteCarlo.ts"],
+      "tests": [
+        {
+          "file": "packages/core/src/sim/analysis/distribution.test.ts",
+          "exportName": "keepsLogicalDrawsIndependentOfOrder",
+          "registeredAs": "simulation distribution > keeps logical draws independent of call order",
+          "cwd": "packages/core",
+          "args": ["test", "--timeout", "120000", "src/sim/analysis/distribution.test.ts"]
+        }
+      ]
+    },
+    {
+      "id": "REQ-PR13-EMPIRICAL-DROP",
+      "pr": "PR-13",
+      "anchor": "req-pr13-empirical-drop",
+      "doc": "docs/requirements/active/simulation-distribution.md",
+      "production": ["packages/core/src/sim/analysis/distribution.ts"],
+      "tests": [
+        {
+          "file": "packages/core/src/sim/analysis/distribution.test.ts",
+          "exportName": "checksSeededDropAndZeroVariance",
+          "registeredAs": "simulation distribution > checks a seeded drop inside tolerance and zero variance",
+          "cwd": "packages/core",
+          "args": ["test", "--timeout", "120000", "src/sim/analysis/distribution.test.ts"]
+        }
+      ]
+    },
+    {
+      "id": "REQ-PR13-MEAN-IDENTITY",
+      "pr": "PR-13",
+      "anchor": "req-pr13-mean-identity",
+      "doc": "docs/requirements/active/simulation-distribution.md",
+      "production": ["packages/core/src/sim/analysis/distribution.ts"],
+      "tests": [
+        {
+          "file": "packages/core/src/sim/analysis/distribution.test.ts",
+          "exportName": "separatesMeansAndCensorsMissingVisibleChange",
+          "registeredAs": "simulation distribution > separates log means and censors a missing visible change",
+          "cwd": "packages/core",
+          "args": ["test", "--timeout", "120000", "src/sim/analysis/distribution.test.ts"]
+        }
+      ]
     }
   ]
 }
