@@ -106,7 +106,7 @@ Checked only when the fixture says the relation holds:
 | negative balance | the payment policy disallows debt |
 | number vs break-infinity | finite log distance; non-finite `toNumber` is not equality |
 
-Formula seconds are labeled `formula`. `etaSimulate` and `etaAnalytic` stay `executed`. `PR-01`, `PR-02`, `PR-03`, and `PR-05` add further invariants on these helpers. `bun run test:conformance` uses eight property cases. `CONFORMANCE_CASES=200` via `test:conformance:extended` is the scheduled corpus (`.github/workflows/conformance-extended.yml`). The negative half copies fixtures under `tmp/` and expects a missing typia transform, a deleted evidence citation, and an empty graph lookup to miss.
+Formula seconds are labeled `formula`. `etaSimulate` and `etaAnalytic` stay `executed`. `PR-01`, `PR-02`, `PR-03`, and `PR-05` add further invariants on these helpers. `bun run test:conformance` uses eight property cases. `CONFORMANCE_CASES=200` via `test:conformance:extended` is the scheduled corpus (`.github/workflows/conformance-extended.yml`). `bun run test:conformance:negative` copies fixtures under `tmp/` and expects a missing typia transform, a deleted evidence citation, and an empty graph lookup to miss. It is not part of `test:conformance`.
 
 Graph does not see the JSON fixture, the workflow file, or the package script string. Those are unobserved dynamic edges. Query `runScenario`, `conformanceGeneratorVersion`, and `compareAmounts` in source before editing the helpers.
 
@@ -116,7 +116,7 @@ Host: macOS arm64, Bun `1.3.10`, `ttsc 0.30.4 (Version 7.0.2)`. Requirement file
 
 | Command | Exit |
 |---|---|
-| `bun run test:conformance` | 1 |
+| `bun run test:conformance` (that commit also ran the negative runner) | 1 |
 | `bun run evidence:check` | 0 |
 | `bun run format:check` | 0 |
 | `bun run --cwd packages/money typecheck` | 0 |
@@ -129,7 +129,7 @@ Host: macOS arm64, Bun `1.3.10`, `ttsc 0.30.4 (Version 7.0.2)`. Requirement file
 | `bun run build` | unrun |
 | `bun run test:conformance:extended` | unrun |
 
-The conformance unit tests and the shrink replay exited 0. The negative runner's `transform-present` step hit `TtscUnstableGenerationError`, so the combined script exited 1.
+The conformance unit tests and the shrink replay exited 0. That commit's `test:conformance` also ran the negative runner, and its `transform-present` step hit `TtscUnstableGenerationError`, so the script exited 1. The short gate is now the unit tests plus the shrink replay. `bun run test:conformance:negative` stays out of that gate until `transform-present` is stable.
 
 `conformanceGeneratorVersion` lookup on project `tsconfig.graph.json` returned `packages/core/src/testkit/conformance.ts:10`. Reverse trace reached `replaysConstantIncomeAndShrinksGap` at `packages/core/src/testkit/conformance.test.ts:191`. `compareAmounts` is declared at line 36 in both testkits. Built `dist/` does not contain `testkit`. The shrink fixture's minimal value is `1`.
 

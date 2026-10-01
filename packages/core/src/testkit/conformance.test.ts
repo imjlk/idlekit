@@ -429,8 +429,8 @@ export function replaysOneShotScriptedGrantFromTheSameCursor(): void {
 /**
  * @evidence docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness The checkpoint replay applies only when that checkpoint is inside the run.
  * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #a195f0e Re-read the section: a checkpoint at t=5 does not apply when until stops at t=3, and the skipped check stays ok.
- * @evidence ./conformanceRun.ts#checkResume A checkpoint at t=5 does not apply when until stops at t=3.
- * @evidenceReview ./conformanceRun.ts#checkResume #db56c7a A checkpoint at t=5 does not apply when until stops at t=3.
+ * @evidence ./conformanceRun.ts#checkResume A checkpoint at t=5 does not apply when until stops at t=3. A checkpoint where until is already true does not apply.
+ * @evidenceReview ./conformanceRun.ts#checkResume #db56c7a A checkpoint at t=5 does not apply when until stops at t=3. A checkpoint where until is already true does not apply.
  * @evidence ./conformanceRun.ts#RelationCheck.ok That skipped resume is ok.
  * @evidenceReview ./conformanceRun.ts#RelationCheck.ok #e196dd9 That skipped resume is ok.
  * @evidence ./conformanceRun.ts#RelationCheck.applicable That skipped resume is not applicable.
@@ -450,6 +450,10 @@ export function skipsResumeWhoseUntilStopsBeforeTheCheckpoint(): void {
   expect(memory.ok).toBe(true);
   expect(json.applicable).toBe(false);
   expect(json.summary).toContain("checkpoint");
+  const atCheckpoint = checkResume(early, 3);
+  expect(atCheckpoint.ok).toBe(true);
+  expect(atCheckpoint.applicable).toBe(false);
+  expect(atCheckpoint.summary).toContain("until is already true");
 }
 
 describe("stateful strategy and currency identity", () => {
@@ -697,6 +701,25 @@ describe("PR-03 resume isolation", () => {
     expect(lossy.ok).toBe(false);
     expect(lossy.applicable).toBe(true);
     expect(lossy.summary).toContain("JSON");
+    const dated = checkResumeFromJson(
+      {
+        ...scenario,
+        initial: {
+          ...scenario.initial,
+          vars: { buys: 0, marker: new Date(0) } as unknown as Vars,
+        },
+        strategy: {
+          id: "dated",
+          decide: () => [],
+          snapshotState: () => ({ marker: new Date(0) }),
+          restoreState: () => {},
+        },
+      },
+      2,
+    );
+    expect(dated.ok).toBe(false);
+    expect(dated.applicable).toBe(true);
+    expect(dated.summary).toContain("JSON");
   });
 });
 
@@ -776,8 +799,8 @@ describe("PR-05 observation retention", () => {
 /**
  * @evidence docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness A negative balance fails the check only when the payment policy disallows debt.
  * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #a195f0e Re-read the section: checkNonNegative applies when debt is disallowed and does not apply when debt is allowed.
- * @evidence ./conformanceRun.ts#checkNonNegative A non-negative wallet applies when debt is disallowed, and a negative wallet does not apply when debt is allowed.
- * @evidenceReview ./conformanceRun.ts#checkNonNegative #d87668f A non-negative wallet applies when debt is disallowed, and a negative wallet does not apply when debt is allowed.
+ * @evidence ./conformanceRun.ts#checkNonNegative A non-negative wallet applies when debt is disallowed. A negative wallet fails when debt is disallowed, and does not apply when debt is allowed.
+ * @evidenceReview ./conformanceRun.ts#checkNonNegative #d87668f A non-negative wallet applies when debt is disallowed. A negative wallet fails when debt is disallowed, and does not apply when debt is allowed.
  */
 export function bansNegativeBalanceOnlyWhenDebtIsDisallowed(): void {
   const engine = createNumberEngine();
@@ -824,6 +847,10 @@ export function bansNegativeBalanceOnlyWhenDebtIsDisallowed(): void {
   expect(after).toContain('"amount":"-4"');
   const skipped = checkNonNegative(true, true);
   expect(skipped.applicable).toBe(false);
+  const forbidden = checkNonNegative(false, true);
+  expect(forbidden.ok).toBe(false);
+  expect(forbidden.applicable).toBe(true);
+  expect(forbidden.summary).toContain("negative");
 }
 
 describe("analysis source labels", () => {

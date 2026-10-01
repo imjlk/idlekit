@@ -484,6 +484,8 @@ function jsonCheckpointPreserves(value: unknown, seen = new Set<object>()): bool
     }
     return true;
   }
+  const proto = Object.getPrototypeOf(value);
+  if (proto !== Object.prototype && proto !== null) return false;
   for (const key of Object.keys(value)) {
     const descriptor = Object.getOwnPropertyDescriptor(value, key);
     if (!descriptor || descriptor.get !== undefined || !("value" in descriptor)) return false;
@@ -553,6 +555,9 @@ function resumeFromCheckpoint<N, U extends string, Vars>(
     const expected = splitTicks === null ? undefined : advancedTimestamp(scenario.initial.t, step, splitTicks);
     if (expected === undefined || head.end.t !== expected) {
       return skip("head stopped before the checkpoint");
+    }
+    if (scenario.run.until?.(head.end)) {
+      return skip("until is already true at the checkpoint");
     }
     const started = startTail(head.end);
     if ("applicable" in started) return started;
