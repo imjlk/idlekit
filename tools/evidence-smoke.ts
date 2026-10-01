@@ -368,12 +368,16 @@ try {
 
   const duplicateBody = [
     'describe("kept", () => {',
-    "  if (false) it(\"quota is documented\", exportedName);",
+    '  if (false) it("quota is documented", exportedName);',
     '  it("quota is documented", otherName);',
     "});",
   ].join("\n");
   const duplicateNames = duplicateFullNames(duplicateBody);
-  const duplicateStillRegistered = registeredSuites(duplicateBody, "exportedName", "quota is documented");
+  const duplicateStillRegistered = registeredSuites(
+    duplicateBody,
+    "exportedName",
+    "quota is documented",
+  );
   const duplicateOk =
     duplicateNames.length === 1 &&
     duplicateNames[0] === "kept > quota is documented" &&
