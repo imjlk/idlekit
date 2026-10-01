@@ -13,6 +13,9 @@ describe("breakInfinity engine adapters", () => {
     wide.exponent = 1e21;
     expect(E.isFinite(wide)).toBe(true);
     expect(E.toString(wide)).toBe(`1e${"1"}${"0".repeat(21)}`);
+    const tiny = new Decimal(1);
+    tiny.exponent = -1e21;
+    expect(E.toString(tiny)).toBe(`1e-${"1"}${"0".repeat(21)}`);
   });
 
   it("compares using decimal epsilon", () => {

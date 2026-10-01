@@ -140,6 +140,47 @@ describe("createGreedyStrategy", () => {
     expect(out[0]?.bulkSize).toBeUndefined();
   });
 
+  it("keeps an integer quote when a later free quote has a fractional size", () => {
+    const ctx: SimContext<number, UnitCode, Vars> = {
+      E: createNumberEngine(),
+      unit: { code: "COIN" },
+      tickPolicy: { mode: "drop" },
+    };
+    const action: Action<number, UnitCode, Vars> = {
+      id: "buy",
+      kind: "buy",
+      canApply: () => true,
+      cost: () => null,
+      bulk: () => [
+        {
+          size: 2,
+          cost: null,
+          deltaIncomePerSec: { unit: { code: "COIN" }, amount: 1 },
+        },
+        {
+          size: 2.5,
+          cost: null,
+          deltaIncomePerSec: { unit: { code: "COIN" }, amount: 2 },
+        },
+      ],
+      apply: (_ctx, state) => state,
+    };
+    const model: Model<number, UnitCode, Vars> = {
+      id: "m",
+      version: 1,
+      income: () => ({ unit: { code: "COIN" }, amount: 0 }),
+      actions: () => [action],
+    };
+    const strategy = createGreedyStrategy<number, UnitCode, Vars>({
+      schemaVersion: 1,
+      objective: "maximizeIncome",
+      bulk: { mode: "maxAffordable" },
+    });
+    const out = strategy.decide(ctx, model, makeState(0));
+    expect(out.length).toBe(1);
+    expect(out[0]?.bulkSize).toBe(2);
+  });
+
   it("accepts occurrence on a contextually typed decision", () => {
     const ctx: SimContext<number, UnitCode, Vars> = {
       E: createNumberEngine(),

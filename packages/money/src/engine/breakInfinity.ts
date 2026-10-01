@@ -91,7 +91,8 @@ export function createBreakInfinityEngine(opts?: BreakInfinityEngineOptions): En
     isFinite: decimalIsFinite,
     toString(value) {
       const text = value.toString();
-      if (text !== "Infinity" && text !== "-Infinity") return text;
+      const underflow = (text === "0" || text === "-0") && value.mantissa !== 0;
+      if (!underflow && text !== "Infinity" && text !== "-Infinity") return text;
       if (!decimalIsFinite(value)) return text;
       const sign = value.mantissa < 0 ? "-" : "";
       const digits = String(Math.abs(value.mantissa));

@@ -1,4 +1,4 @@
-import { canSettleCost } from "../step";
+import { canSettleCost, singleBuySize } from "../step";
 import type { Action, BulkQuote, Model, SimContext, SimState } from "../types";
 import type { GreedyStrategyParamsV1 } from "./params";
 import {
@@ -65,6 +65,7 @@ function chooseQuotes<N, U extends string, Vars>(
     const cap = params.bulk?.maxSizeCap ?? Number.POSITIVE_INFINITY;
     let chosen: BulkQuote<N, U> | null = null;
     for (const q of quotes) {
+      if (!Number.isInteger(q.size) || q.size < singleBuySize) continue;
       if (q.size > cap) continue;
       if (!isAffordable(ctx, state, q.cost)) continue;
       chosen = q;
