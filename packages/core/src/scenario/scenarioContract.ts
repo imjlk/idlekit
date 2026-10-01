@@ -5,7 +5,8 @@ import type { ScenarioV1 } from "./types";
 /**
  * Structural contract for ScenarioV1.
  * Semantic checks stay in validateScenarioV1. This module does not replace them.
- * PR-08 appends analysis DTOs to contractRegistry. It does not migrate every existing DTO.
+ * PR-08 appends analysis DTOs to contractRegistry. PR-09 appends the ETA estimate.
+ * The registry does not migrate every existing DTO.
  */
 
 const CONTRACT_GENERATOR = "idlekit.contract-generator" as const;
@@ -45,6 +46,12 @@ const contractRegistry = [
     kind: "analysis-artifact" as const,
     typeName: "AnalysisArtifactV1",
     source: "packages/core/src/sim/analysis/contracts.ts",
+  },
+  {
+    id: "idlekit.eta.estimate.v1" as const,
+    kind: "eta-estimate" as const,
+    typeName: "EtaEstimateV1",
+    source: "packages/core/src/sim/analysis/eta.ts",
   },
 ] as const;
 

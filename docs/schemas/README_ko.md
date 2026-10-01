@@ -12,7 +12,7 @@
 - `replay.verify.output.schema.json`
 - `kpi.regress.output.schema.json`
 
-`docs/schemas/generated/scenario.v1.schema.json`은 `ScenarioV1`의 생성 구조 schema다. `docs/schemas/generated/analysis.artifact.v1.schema.json`은 분석 artifact v1이다. 둘 다 CLI `_meta` schema가 아니다. replay `artifact.v1.schema.json`은 replay envelope로 남는다. [계약 생성](../contract-generation_ko.md)과 [분석 계약](../analysis-contracts_ko.md)을 본다.
+`docs/schemas/generated/scenario.v1.schema.json`은 `ScenarioV1`의 생성 구조 schema다. `docs/schemas/generated/analysis.artifact.v1.schema.json`은 분석 artifact v1이다. `docs/schemas/generated/eta.estimate.v1.schema.json`은 ETA estimate다. 이것들은 CLI `_meta` schema가 아니다. 손으로 쓴 `eta.output.schema.json`이 legacy ETA 출력으로 남는다. replay `artifact.v1.schema.json`은 replay envelope로 남는다. [계약 생성](../contract-generation_ko.md), [분석 계약](../analysis-contracts_ko.md), [ETA 의미](../eta-semantics_ko.md)를 본다.
 
 주의:
 

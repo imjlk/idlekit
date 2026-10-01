@@ -123,7 +123,7 @@ export default defineCommand({
     await writeOutput({
       format: flags.format,
       outPath: flags.out,
-      data: output,
+      data: { ...output, analysis: output.estimate },
       meta: buildOutputMeta({
         command: "eta",
         scenarioPath,

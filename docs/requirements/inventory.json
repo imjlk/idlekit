@@ -410,6 +410,54 @@
           "args": ["test", "--timeout", "120000", "src/sim/analysis/analysisContract.test.ts"]
         }
       ]
+    },
+    {
+      "id": "REQ-PR09-ENGINE-RATIO",
+      "pr": "PR-09",
+      "anchor": "req-pr09-engine-ratio",
+      "doc": "docs/requirements/active/eta-numeric-and-goal-semantics.md",
+      "production": ["packages/core/src/sim/analysis/eta.ts"],
+      "tests": [
+        {
+          "file": "packages/core/src/sim/analysis/eta.semantics.test.ts",
+          "exportName": "keepsEngineRatioBeforeNarrowing",
+          "registeredAs": "PR-09 eta semantics > keeps engine ratios finite before narrowing seconds",
+          "cwd": "packages/core",
+          "args": ["test", "--timeout", "120000", "src/sim/analysis/eta.semantics.test.ts"]
+        }
+      ]
+    },
+    {
+      "id": "REQ-PR09-EXACT-LOCAL",
+      "pr": "PR-09",
+      "anchor": "req-pr09-exact-local",
+      "doc": "docs/requirements/active/eta-numeric-and-goal-semantics.md",
+      "production": ["packages/core/src/sim/analysis/eta.ts"],
+      "tests": [
+        {
+          "file": "packages/core/src/sim/analysis/eta.semantics.test.ts",
+          "exportName": "separatesExactAndLocalEta",
+          "registeredAs": "PR-09 eta semantics > labels exact and local eta separately",
+          "cwd": "packages/core",
+          "args": ["test", "--timeout", "120000", "src/sim/analysis/eta.semantics.test.ts"]
+        }
+      ]
+    },
+    {
+      "id": "REQ-PR09-CENSORED-OBSERVATION",
+      "pr": "PR-09",
+      "anchor": "req-pr09-censored-observation",
+      "doc": "docs/requirements/active/eta-numeric-and-goal-semantics.md",
+      "production": ["packages/core/src/sim/analysis/eta.ts"],
+      "tests": [
+        {
+          "file": "packages/core/src/sim/analysis/eta.semantics.test.ts",
+          "exportName": "censorsUnreachedHorizon",
+          "registeredAs": "PR-09 eta semantics > censors an unreached horizon without calling it unreachable",
+          "cwd": "packages/core",
+          "args": ["test", "--timeout", "120000", "src/sim/analysis/eta.semantics.test.ts"]
+        }
+      ]
     }
   ]
 }
