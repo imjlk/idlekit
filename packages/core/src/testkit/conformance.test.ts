@@ -579,14 +579,15 @@ export function recordsWalletAndMaxMoneyUnitsOnTheEconomySnapshot(): void {
     ...gemState,
     vars: { buys: 1n } as unknown as Vars,
   });
-  expect(bigintVars).toContain("bigint:1");
+  expect(bigintVars).toContain('"tag":"bigint"');
+  expect(bigintVars).toContain('"value":"1"');
   const cyclic: { buys: number; self?: unknown } = { buys: 2 };
   cyclic.self = cyclic;
   const cyclicVars = snapshotEconomy(engine, {
     ...gemState,
     vars: cyclic as unknown as Vars,
   });
-  expect(cyclicVars).toContain("cycle:");
+  expect(cyclicVars).toContain('"tag":"cycle"');
   expect(cyclicVars).not.toBe(bigintVars);
   const nanVars = snapshotEconomy(engine, {
     ...gemState,
@@ -598,6 +599,11 @@ export function recordsWalletAndMaxMoneyUnitsOnTheEconomySnapshot(): void {
   });
   expect(nanVars).not.toBe(nullVars);
   expect(nanVars).toContain("nan");
+  const nanText = snapshotEconomy(engine, {
+    ...gemState,
+    vars: { buys: "nan" } as unknown as Vars,
+  });
+  expect(nanVars).not.toBe(nanText);
   const missingExtra = snapshotEconomy(engine, {
     ...gemState,
     vars: { buys: 1 } as unknown as Vars,
@@ -631,6 +637,20 @@ export function recordsWalletAndMaxMoneyUnitsOnTheEconomySnapshot(): void {
   });
   expect(namedItemsSnap).not.toBe(plainItemsSnap);
   expect(namedItemsSnap).toContain("extra");
+  const holeItems = Array(1);
+  const nullItems = [null];
+  const holeSnap = snapshotEconomy(engine, {
+    ...gemState,
+    vars: { buys: 1, items: holeItems } as unknown as Vars,
+  });
+  const nullItemsSnap = snapshotEconomy(engine, {
+    ...gemState,
+    vars: { buys: 1, items: nullItems } as unknown as Vars,
+  });
+  expect(holeSnap).not.toBe(nullItemsSnap);
+  expect(holeSnap).toContain('"length":1');
+  expect(0 in holeItems).toBe(false);
+  expect(0 in nullItems).toBe(true);
   const hiddenItems = [1];
   Object.defineProperty(hiddenItems, "extra", { value: 2, enumerable: false });
   const hiddenItemsSnap = snapshotEconomy(engine, {
@@ -1260,6 +1280,25 @@ describe("counterexample report", () => {
       }),
     ).toThrow(/"testSeed": 41[\s\S]*"caseIndex": 5[\s\S]*draw rejected/);
   });
+
+  it("reports a shrink throw with the seed, case, original, and path", () => {
+    expect(() =>
+      expectProperty({
+        predicateId: "shrink-throws",
+        testSeed: 41,
+        cases: 1,
+        generate: () => 7,
+        shrink: (value) => {
+          if (value === 7) return [3];
+          throw new Error("shrink rejected");
+        },
+        predicate: () => false,
+        describeCase: () => {
+          throw new Error("describe should not run");
+        },
+      }),
+    ).toThrow(/"testSeed": 41[\s\S]*"caseIndex": 0[\s\S]*"original": 7[\s\S]*shrink rejected/);
+  });
 });
 
 describe("PR-05 observation retention", () => {
@@ -1336,6 +1375,30 @@ describe("PR-05 observation retention", () => {
     });
     expect(namedObserver.ok).toBe(false);
     expect(namedObserver.applicable).toBe(true);
+    const nanObserver = checkObserver({
+      ...scenario,
+      model: {
+        ...scenario.model,
+        evolve: (ctx, current) => ({
+          ...current,
+          vars: { buys: ctx.emit ? Number.NaN : "nan" } as unknown as Vars,
+        }),
+      },
+    });
+    expect(nanObserver.ok).toBe(false);
+    expect(nanObserver.applicable).toBe(true);
+    const holeObserver = checkObserver({
+      ...scenario,
+      model: {
+        ...scenario.model,
+        evolve: (ctx, current) => ({
+          ...current,
+          vars: { buys: 0, items: ctx.emit ? Array(1) : [null] } as unknown as Vars,
+        }),
+      },
+    });
+    expect(holeObserver.ok).toBe(false);
+    expect(holeObserver.applicable).toBe(true);
   });
 
   it("snapshots vars whose serializer throws", () => {
