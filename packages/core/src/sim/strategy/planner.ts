@@ -91,6 +91,12 @@ function scoreQuote<N, U extends string, Vars>(
   return delta - cost;
 }
 
+function listedBulkQuotes<N, U extends string>(
+  raw: readonly BulkQuote<N, U>[] | null | undefined,
+): raw is readonly BulkQuote<N, U>[] {
+  return Array.isArray(raw) && raw.length > 0;
+}
+
 function selectBulkQuote<N, U extends string, Vars>(
   params: PlannerStrategyParamsV1,
   action: Action<N, U, Vars>,
@@ -98,7 +104,7 @@ function selectBulkQuote<N, U extends string, Vars>(
   state: SimState<N, U, Vars>,
 ): BulkQuote<N, U> | undefined {
   const raw = action.bulk?.(ctx, state);
-  const listed = Array.isArray(raw) && raw.length > 0;
+  const listed = listedBulkQuotes(raw);
   const stable = listed
     ? stableBulkQuotes(raw)
     : [
