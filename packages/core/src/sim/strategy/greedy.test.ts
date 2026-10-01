@@ -266,6 +266,161 @@ describe("createGreedyStrategy", () => {
     expect(out[0]?.bulkSize).toBe(2);
   });
 
+  it("ranks a valid bulk quote ahead of a size-1 quote with a negative action cost", () => {
+    const ctx: SimContext<number, UnitCode, Vars> = {
+      E: createNumberEngine(),
+      unit: { code: "COIN" },
+      tickPolicy: { mode: "drop" },
+    };
+    const action: Action<number, UnitCode, Vars> = {
+      id: "buy",
+      kind: "buy",
+      canApply: () => true,
+      cost: () => ({ unit: { code: "COIN" }, amount: -1 }),
+      bulk: () => [
+        {
+          size: 1,
+          cost: null,
+          deltaIncomePerSec: { unit: { code: "COIN" }, amount: 9 },
+        },
+        {
+          size: 2,
+          cost: null,
+          deltaIncomePerSec: { unit: { code: "COIN" }, amount: 1 },
+        },
+      ],
+      apply: (_ctx, state) => state,
+    };
+    const model: Model<number, UnitCode, Vars> = {
+      id: "m",
+      version: 1,
+      income: () => ({ unit: { code: "COIN" }, amount: 0 }),
+      actions: () => [action],
+    };
+    const strategy = createGreedyStrategy<number, UnitCode, Vars>({
+      schemaVersion: 1,
+      objective: "maximizeIncome",
+    });
+    const out = strategy.decide(ctx, model, makeState(100));
+    expect(out.length).toBe(1);
+    expect(out[0]?.bulkSize).toBe(2);
+  });
+
+  it("keeps a size-1 quote when its quote cost is negative and the action cost can settle", () => {
+    const ctx: SimContext<number, UnitCode, Vars> = {
+      E: createNumberEngine(),
+      unit: { code: "COIN" },
+      tickPolicy: { mode: "drop" },
+    };
+    const action: Action<number, UnitCode, Vars> = {
+      id: "buy",
+      kind: "buy",
+      canApply: () => true,
+      cost: () => ({ unit: { code: "COIN" }, amount: 10 }),
+      bulk: () => [
+        {
+          size: 1,
+          cost: { unit: { code: "COIN" }, amount: -1 },
+          deltaIncomePerSec: { unit: { code: "COIN" }, amount: 9 },
+        },
+        {
+          size: 2,
+          cost: null,
+          deltaIncomePerSec: { unit: { code: "COIN" }, amount: 1 },
+        },
+      ],
+      apply: (_ctx, state) => state,
+    };
+    const model: Model<number, UnitCode, Vars> = {
+      id: "m",
+      version: 1,
+      income: () => ({ unit: { code: "COIN" }, amount: 0 }),
+      actions: () => [action],
+    };
+    const strategy = createGreedyStrategy<number, UnitCode, Vars>({
+      schemaVersion: 1,
+      objective: "maximizeIncome",
+    });
+    const out = strategy.decide(ctx, model, makeState(100));
+    expect(out.length).toBe(1);
+    expect(out[0]?.bulkSize).toBeUndefined();
+  });
+
+  it("keeps an unaffordable size-1 quote ahead of a lower-scoring bulk quote", () => {
+    const ctx: SimContext<number, UnitCode, Vars> = {
+      E: createNumberEngine(),
+      unit: { code: "COIN" },
+      tickPolicy: { mode: "drop" },
+    };
+    const action: Action<number, UnitCode, Vars> = {
+      id: "buy",
+      kind: "buy",
+      canApply: () => true,
+      cost: () => ({ unit: { code: "COIN" }, amount: 10 }),
+      bulk: () => [
+        {
+          size: 1,
+          cost: null,
+          deltaIncomePerSec: { unit: { code: "COIN" }, amount: 9 },
+        },
+        {
+          size: 2,
+          cost: null,
+          deltaIncomePerSec: { unit: { code: "COIN" }, amount: 1 },
+        },
+      ],
+      apply: (_ctx, state) => state,
+    };
+    const model: Model<number, UnitCode, Vars> = {
+      id: "m",
+      version: 1,
+      income: () => ({ unit: { code: "COIN" }, amount: 0 }),
+      actions: () => [action],
+    };
+    const strategy = createGreedyStrategy<number, UnitCode, Vars>({
+      schemaVersion: 1,
+      objective: "maximizeIncome",
+    });
+    const out = strategy.decide(ctx, model, makeState(0));
+    expect(out.length).toBe(1);
+    expect(out[0]?.bulkSize).toBeUndefined();
+  });
+
+  it("still emits a lone size-1 quote when the action cost cannot settle", () => {
+    const ctx: SimContext<number, UnitCode, Vars> = {
+      E: createNumberEngine(),
+      unit: { code: "COIN" },
+      tickPolicy: { mode: "drop" },
+    };
+    const action: Action<number, UnitCode, Vars> = {
+      id: "buy",
+      kind: "buy",
+      canApply: () => true,
+      cost: () => ({ unit: { code: "COIN" }, amount: Number.NaN }),
+      bulk: () => [
+        {
+          size: 1,
+          cost: null,
+          deltaIncomePerSec: { unit: { code: "COIN" }, amount: 1 },
+        },
+      ],
+      apply: (_ctx, state) => state,
+    };
+    const model: Model<number, UnitCode, Vars> = {
+      id: "m",
+      version: 1,
+      income: () => ({ unit: { code: "COIN" }, amount: 0 }),
+      actions: () => [action],
+    };
+    const strategy = createGreedyStrategy<number, UnitCode, Vars>({
+      schemaVersion: 1,
+      objective: "maximizeIncome",
+    });
+    const out = strategy.decide(ctx, model, makeState(100));
+    expect(out.length).toBe(1);
+    expect(out[0]?.bulkSize).toBeUndefined();
+  });
+
   it("keeps the smaller affordable quote when a larger size is duplicated", () => {
     const ctx: SimContext<number, UnitCode, Vars> = {
       E: createNumberEngine(),

@@ -70,8 +70,8 @@ function actionPriceKey<N, U extends string, Vars>(
 
 /**
  * `occurrence` is the duplicate's place in the list from the start of the step.
- * Later lists can drop or insert siblings, so match the price at this state
- * instead of reading that same index again.
+ * Match that action's price first, so a same-length swap keeps the same buy.
+ * When the price moved and the length did not, keep the slot.
  */
 function alignFreshDuplicate<N, U extends string, Vars>(
   baseline: readonly Action<N, U, Vars>[],
@@ -82,26 +82,27 @@ function alignFreshDuplicate<N, U extends string, Vars>(
 ): Action<N, U, Vars> | undefined {
   const origin = baseline[occurrence];
   if (!origin) return undefined;
-  // Same cardinality keeps the original slot. A later price must not move it.
-  if (fresh.length === baseline.length) return fresh[occurrence];
   const originKey = actionPriceKey(origin, ctx, state);
-  if (originKey === undefined) return undefined;
-  const used = new Set<number>();
-  for (const action of fresh) {
-    const key = actionPriceKey(action, ctx, state);
-    if (key === undefined) continue;
-    let index = -1;
-    for (let cursor = 0; cursor < baseline.length; cursor += 1) {
-      if (used.has(cursor)) continue;
-      if (actionPriceKey(baseline[cursor]!, ctx, state) === key) {
-        index = cursor;
-        break;
+  if (originKey !== undefined) {
+    const used = new Set<number>();
+    for (const action of fresh) {
+      const key = actionPriceKey(action, ctx, state);
+      if (key === undefined) continue;
+      let index = -1;
+      for (let cursor = 0; cursor < baseline.length; cursor += 1) {
+        if (used.has(cursor)) continue;
+        if (actionPriceKey(baseline[cursor]!, ctx, state) === key) {
+          index = cursor;
+          break;
+        }
       }
+      if (index < 0) continue;
+      used.add(index);
+      if (index === occurrence) return action;
     }
-    if (index < 0) continue;
-    used.add(index);
-    if (index === occurrence) return action;
   }
+  // The price moved and the list length did not. Keep the slot.
+  if (fresh.length === baseline.length) return fresh[occurrence];
   return undefined;
 }
 

@@ -79,7 +79,8 @@ function chooseQuotes<N, U extends string, Vars>(
     return [chosen ?? quotes[0]!];
   }
 
-  const rankable = rankableQuotes(ctx, state, quotes);
+  const singleCost = raw && raw.length > 0 ? action.cost(ctx, state) : quotes[0]!.cost;
+  const rankable = rankableQuotes(ctx, state, quotes, singleCost);
   // Ranking drops an invalid quote only when a settleable quote can replace it.
   return rankable.length > 0 ? rankable : quotes;
 }

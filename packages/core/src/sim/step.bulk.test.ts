@@ -104,7 +104,7 @@ function skippedReason(events: readonly SimEvent<unknown>[]): string | undefined
  * @evidence ./step.ts#canSettleCost A zero wallet cannot pay 1e-13, and it can pay a zero cost.
  * @evidenceReview ./step.ts#canSettleCost #af1aab3 Re-read canSettleCost: a zero wallet cannot pay 1e-13, and it can pay a zero cost, without using cmp.
  * @evidence ./step.ts#stepOnce Calls stepOnce for the quoted buy and the rejected quotes.
- * @evidenceReview ./step.ts#stepOnce #c824a04 Re-read stepOnce: each decision re-reads model.actions for the state so far, a quoted size pays BulkQuote.cost once through exact decimal order scaled to the smaller exponent, a non-finite cost is skipped before toString, duplicate id and kind keep their slot when the list length is unchanged even if the price changes, a removed or inserted sibling still matches the start-of-step price, an action-free tick does not enumerate actions, and a rejected quote does not apply. Ran this function: a sentinel amount whose toString throws was skipped as invalidQuote, and the second same-id action paid 40.
+ * @evidenceReview ./step.ts#stepOnce #c824a04 Re-read stepOnce: each decision re-reads model.actions for the state so far, a quoted size pays BulkQuote.cost once through exact decimal order scaled to the smaller exponent, a non-finite cost is skipped before toString, duplicate id and kind match the start-of-step price when a same-length list swaps order and keep that slot when the price moved, a removed or inserted sibling still matches the start-of-step price, an action-free tick does not enumerate actions, and a rejected quote does not apply. Ran this function: a sentinel amount whose toString throws was skipped as invalidQuote, and the second same-id action paid 40.
  */
 export function settlesQuotedBulkAndRejectsBadQuotes(): void {
   expect(singleBuySize).toBe(1);
@@ -998,6 +998,54 @@ describe("PR-01 bulk quote settlement", () => {
     });
     expect(out.next.vars.owned).toBe(6);
     expect(engine.toNumber(out.next.wallet.money.amount)).toBe(949);
+    expect(skippedReason(out.events)).toBeUndefined();
+  });
+
+  it("keeps a duplicate when a same-length list swaps its order", () => {
+    const engine = createNumberEngine();
+    let swapped = false;
+    const model: Model<number, UnitCode, Vars> = {
+      id: "swap-order",
+      version: 1,
+      income: () => coin(engine, engine.zero()),
+      actions: () => {
+        const cheap: Action<number, UnitCode, Vars> = {
+          id: "buy",
+          kind: "buy",
+          canApply: () => true,
+          cost: () => coin(engine, engine.from(10)),
+          apply: (_ctx, current) => {
+            swapped = true;
+            return { ...current, vars: { ...current.vars, owned: current.vars.owned + 1 } };
+          },
+        };
+        const dear: Action<number, UnitCode, Vars> = {
+          id: "buy",
+          kind: "buy",
+          canApply: () => true,
+          cost: () => coin(engine, engine.from(40)),
+          apply: (_ctx, current) => ({
+            ...current,
+            vars: { ...current.vars, owned: current.vars.owned + 5 },
+          }),
+        };
+        return swapped ? [dear, cheap] : [cheap, dear];
+      },
+    };
+    const start = state(engine, 1000);
+    const initial = model.actions(context(engine), start);
+    const out = stepOnce({
+      ctx: context(engine),
+      model,
+      state: start,
+      dt: 0,
+      decisions: [
+        { action: initial[0]!, occurrence: 0 },
+        { action: initial[1]!, occurrence: 1 },
+      ],
+    });
+    expect(out.next.vars.owned).toBe(6);
+    expect(engine.toNumber(out.next.wallet.money.amount)).toBe(950);
     expect(skippedReason(out.events)).toBeUndefined();
   });
 

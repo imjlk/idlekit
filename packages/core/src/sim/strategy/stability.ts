@@ -9,15 +9,19 @@ export function structuredUnitCode(
   return typeof code === "string" && code.length > 0 ? code : undefined;
 }
 
-/** A quote `stepOnce` would skip as `invalidQuote` cannot be the ranked candidate. */
+/**
+ * A quote `stepOnce` would skip as `invalidQuote` cannot be the ranked candidate.
+ * Size 1 pays `singleCost` (`Action.cost`). A larger size pays `quote.cost`.
+ * An unaffordable but well-formed cost stays rankable.
+ */
 export function settlementAcceptsQuote<N, U extends string, Vars>(
   ctx: SimContext<N, U, Vars>,
   state: SimState<N, U, Vars>,
   quote: BulkQuote<N, U>,
+  singleCost: BulkQuote<N, U>["cost"],
 ): boolean {
   if (!Number.isInteger(quote.size) || quote.size < singleBuySize) return false;
-  if (quote.size === singleBuySize) return true;
-  const cost = quote.cost;
+  const cost = quote.size === singleBuySize ? singleCost : quote.cost;
   if (cost === null) return true;
   const costCode = structuredUnitCode(cost);
   const walletCode = structuredUnitCode(state.wallet.money);
@@ -31,8 +35,11 @@ export function rankableQuotes<N, U extends string, Vars>(
   ctx: SimContext<N, U, Vars>,
   state: SimState<N, U, Vars>,
   quotes: readonly BulkQuote<N, U>[],
+  singleCost: BulkQuote<N, U>["cost"],
 ): BulkQuote<N, U>[] {
-  return uniqueQuotedSizes(quotes.filter((quote) => settlementAcceptsQuote(ctx, state, quote)));
+  return uniqueQuotedSizes(
+    quotes.filter((quote) => settlementAcceptsQuote(ctx, state, quote, singleCost)),
+  );
 }
 
 /** Keep size 1 and every other size that appears once. Settlement rejects a repeated bulk size. */

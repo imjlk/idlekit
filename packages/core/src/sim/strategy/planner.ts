@@ -98,11 +98,12 @@ function selectBulkQuote<N, U extends string, Vars>(
   state: SimState<N, U, Vars>,
 ): BulkQuote<N, U> | undefined {
   const quotes = action.bulk?.(ctx, state);
+  const singleCost = action.cost(ctx, state);
   const stable =
     quotes && quotes.length > 0
       ? stableBulkQuotes(quotes)
-      : [{ size: 1, cost: action.cost(ctx, state), equivalentCost: action.equivalentCost?.(ctx, state) }];
-  const usable = rankableQuotes(ctx, state, stable);
+      : [{ size: 1, cost: singleCost, equivalentCost: action.equivalentCost?.(ctx, state) }];
+  const usable = rankableQuotes(ctx, state, stable, singleCost);
   // Ranking drops an invalid quote only when a settleable quote can replace it.
   const pool = usable.length > 0 ? usable : stable;
 
