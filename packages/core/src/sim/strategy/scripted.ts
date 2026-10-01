@@ -1,4 +1,5 @@
 import type { ScriptedStrategyParamsV1 } from "./params";
+import { actionOccurrence } from "./stability";
 import type { Strategy } from "./types";
 
 export type ScriptedStep = Readonly<{
@@ -25,14 +26,21 @@ export function createScriptedStrategy<N, U extends string, Vars>(
       }
       const target = plan[cursor];
       if (!target) return [];
-      const action = model.actions(ctx, state).find((a) => a.id === target.actionId);
+      const actions = model.actions(ctx, state);
+      const action = actions.find((candidate) => candidate.id === target.actionId);
       if (!action) {
         if (onCannotApply === "stop") return [];
         cursor += 1;
         return [];
       }
       cursor += 1;
-      return [{ action, bulkSize: target.bulkSize }];
+      return [
+        {
+          action,
+          bulkSize: target.bulkSize,
+          occurrence: actionOccurrence(actions, action),
+        },
+      ];
     },
     snapshotState() {
       return {

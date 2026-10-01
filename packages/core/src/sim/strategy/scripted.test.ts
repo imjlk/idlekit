@@ -70,6 +70,21 @@ describe("createScriptedStrategy", () => {
     expect(resumedNext[0]?.action.id).toBe("b");
   });
 
+  it("records the first occurrence when two actions share an id", () => {
+    const duplicate: Model<number, UnitCode, Vars> = {
+      ...model,
+      actions: () => [makeAction("a"), makeAction("a")],
+    };
+    const strategy = createScriptedStrategy<number, UnitCode, Vars>({
+      schemaVersion: 1,
+      program: [{ actionId: "a" }],
+      loop: false,
+    });
+    const decision = strategy.decide(ctx, duplicate, makeState())[0];
+    expect(decision?.action.id).toBe("a");
+    expect(decision?.occurrence).toBe(0);
+  });
+
   it("rejects invalid cursor state", () => {
     const strategy = createScriptedStrategy<number, UnitCode, Vars>({
       schemaVersion: 1,
