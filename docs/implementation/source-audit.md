@@ -45,12 +45,12 @@ These are control-flow facts. Items 2 and 3 name the fixtures that now execute t
 7. **Session wall time is not `state.t`.** `PR-06` schedules the next block from wall elapsed. `applyOfflineSeconds` still advances `state.t` by simulated reward seconds. `offline.requestedSec` remains the caller's absence. Cap and decay add `lostRewardSec` and do not start the next active block early. The default offline action policy is `legacy-all`. `none` does not call `decide`. Fixture: `packages/core/src/sim/session.test.ts`. The repro label is `0x7106`.
 8. **Analytic ETA narrows both sides to `number`.** `etaAnalytic` parses the target with `E.from`, converts the income and the gap with `E.toNumber`, and divides. `constant` income is the high-confidence hint. Follow-up: `PR-09`.
 9. **Growth regime is a slope threshold.** `classify` maps slope `< 1e-6` to `stall`, `< 0.01` to `softcap`, `< 0.1` to `exp`, and the rest to `super-exp`. `valueOfState` passes the amount through `Number(...)`. Follow-up: `PR-12`.
-10. **`evaluate` does not pass one run configuration to every stage.** The command constructs `createNumberEngine()`. The simulate stage receives `overrideStrategy`, `flags.step`, and `flags.fast`. `collectExperienceSnapshot` receives `seededScenario` without that strategy or those run overrides. Follow-up: `PR-07`.
+10. **`evaluate` opens each stage from one resolved plan.** `PR-07` compiles once in `prepareResolvedRun`. Simulate, experience, and ltv each call `createRunFactory` `fresh`. `--strategy` is a registered id and reaches all three stages. `--step` and `--fast` stay on simulate and ltv unless `--consistent-overrides` is set. `scenario.engine` is metadata. The default engine remains `number`. `breakInfinity` is explicit. `breakEternity` throws. Amount `until` paths use `parseMoney` and do not take the numeric `Number(rawRight)` branch. `scenarioHash` stays the original scenario object. `effectiveRunHash` omits `generatedAt` and absolute paths. `idlekit.resolved-run-configuration` is not registered until TC-05. Fixture: `packages/cli/src/lib/runConfiguration.test.ts`. The repro label is `0x7107`. The runs use seed `1`.
 11. **A missing first visible change becomes a duration or zero in the Monte Carlo summary.** `summarizeExperienceMonteCarlo` uses `firstVisibleChangeSec ?? session.summary.totalActiveSec ?? 0` before quantile summary. Follow-up: `PR-13`.
 12. **KPI regression fills some missing guardrail numbers with zero.** Horizons are fixed to `at7d`, `at30d`, and `at90d`. `stallRatio`, `droppedRate`, `visibleChangesPerMinute`, and `maxNoRewardGapSec` use `Number(value ?? 0)`. Follow-up: `PR-17`.
 13. **The tuner spec is strategy parameters.** `TuneSpec` carries `strategy.baseParams` and `strategy.space`. Follow-up: `PR-14`, as a separate experiment spec rather than a replacement tuner.
 
-`packages/core/src/scenario/compile.ts` does not contain `Number(rawRight)` at this commit. A suffix-versus-runtime comparison bug is not a confirmed defect here. `PR-07` still has to re-read amount comparison before treating it as one.
+`packages/core/src/scenario/compile.ts` still uses `Number(rawRight)` for `t`, `prestige.count`, and unknown numeric paths. Amount paths no longer do. A numeric left value does not move `money` and the other amount paths onto that `Number` branch.
 
 ## Risks that still need a runtime fixture
 
@@ -58,7 +58,7 @@ These are control-flow facts. Items 2 and 3 name the fixtures that now execute t
 - Horizon `10` with `stepSec` `6` is the `PR-02` fixture. A goal that becomes true on the same step as `maxSteps` still needs a fixture when `until` and the budget meet on one tick.
 - An amount and a rate that do not fit in `number` while their ratio does.
 - Slow and fast exponential series that `classify` currently labels differently.
-- `idk evaluate --strategy` compared with the experience stage of the same command.
+- `idk evaluate --strategy` compared with the experience stage of the same command. `PR-07` covers that with `keepsResolvedRunConfiguration`.
 
 Do not freeze the current numbers into a new golden file as the expected correct result.
 

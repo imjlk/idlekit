@@ -176,6 +176,16 @@ bun run --cwd packages/cli dev -- simulate ../../examples/simple-linear.json \
   --format json
 ```
 
+실행 구성:
+
+- `evaluate`, `simulate`, `experience`, `ltv`, `review evaluate`의 `--strategy`는 등록된 strategy id다. `greedy`, `planner`, `scripted`는 그대로 내장이다. 모르는 id는 거부한다. flag에 적었다고 plugin을 자동으로 불러오지 않는다. `compare`와 `review compare`는 그 세 builtin enum만 받는다.
+- `--engine`의 기본값은 `number`다. `scenario.engine`은 기록되는 metadata이며 실행 엔진을 고르지 않는다. `breakInfinity`는 명시 선택이다. `breakEternity`는 지원하지 않는 오류다. custom engine은 호출자가 이미 가진 trusted factory에서만 만든다.
+- `--step`과 `--fast`는 simulate와 ltv에 적용된다. `evaluate`에서 experience까지 적용하려면 `--consistent-overrides true`가 필요하다. 단독 `experience` 명령에는 `--step`과 `--fast`가 없다. session pattern과 `--days`는 experience에 남는다.
+- `scenarioHash`는 원래 시나리오 객체의 해시다. `effectiveRunHash`, `effectiveEngine`, `stageScope`는 선택적 `_meta`다. 그 해시는 `generatedAt`, 작업 디렉터리, 절대 경로를 빼며, 같은 digest 값이면 디렉터리가 달라도 같다. `idlekit.resolved-run-configuration`은 TC-05 전에는 generator에 등록하지 않는다.
+- `money >= 1aa` 같은 금액 목표는 number 엔진과 `breakInfinity` 모두 amount 경로의 `parseMoney`를 쓴다. `1e400`은 `breakInfinity`에 남고 `Number`로 먼저 바꾸지 않는다.
+- strategy params는 기본이 legacy raw다. 내부 schema adapter는 외부 Standard Schema 패키지와 같은 계약이 아니다.
+- `evaluate`는 시나리오를 한 번 컴파일하고, simulate, experience, ltv는 그 plan에서 새 model과 strategy를 연다.
+
 리플레이 아티팩트 저장(표준 포맷):
 
 ```bash

@@ -102,3 +102,15 @@ macOS arm64, Bun `1.3.10`, `@ttsc/graph` `0.30.4`, protocol `2025-11-25`에서 �
 `applyOfflineSeconds`의 reverse execution trace(`maxDepth` 3, `maxNodes` 32)는 `packages/core/src/sim/session.ts:273`의 `simulateSessionPattern.appendOffline`, `packages/core/src/sim/session.test.ts:186`의 `keepsSessionClocksDistinct`, `packages/core/src/sim/simulator.time.test.ts:105`의 `stopsOnTheRequestedHorizon`, `packages/core/src/sim/strategy/planner.regression.test.ts:85`의 `keepsPlannerRolloutFaithful`을 가리킨다. forward execution trace(`maxDepth` 2, `maxNodes` 32)는 `packages/core/src/sim/offline.ts:110`의 `resolveOfflineActionPolicy`와 `packages/core/src/sim/timeBoundary.ts:70`의 `assertSimulationClock`을 가리키고 `packages/core/src/sim/step.ts:220`을 포함한다.
 
 `createPlannerStrategy`의 forward execution trace(`maxDepth` 3, `maxNodes` 32)는 여전히 `stepOnce`를 가리키지 않는다. rollout 호출은 `packages/core/src/sim/strategy/planner.ts:322`의 `PlannerDeps.d.stepOnce`다. 그 edge는 미관측이다.
+
+## PR-07 호출자
+
+macOS arm64, Bun `1.3.10`, `@ttsc/graph` `0.30.4`, protocol `2025-11-25`에서 조회했다. 생성 식별자는 없다. lookup은 `prepareResolvedRun`을 `packages/cli/src/lib/runConfiguration.ts:331`, `resolvedRunContract`를 `packages/cli/src/lib/runConfiguration.ts:27`, `strategyCreateParams`를 `packages/core/src/scenario/compile.ts:354`, `compileScenario`를 `packages/core/src/scenario/compile.ts:545`, `keepsResolvedRunConfiguration`을 `packages/cli/src/lib/runConfiguration.test.ts:91`, `createRunFactory`를 `packages/core/src/sim/runFactory.ts:369`에 둔다.
+
+`prepareResolvedRun`의 reverse execution trace(`maxDepth` 3, `maxNodes` 32)는 `packages/cli/src/lib/runConfiguration.test.ts:91`의 `keepsResolvedRunConfiguration`을 가리킨다. 명령 핸들러는 가리키지 않는다. 소스 확인상 호출은 `packages/cli/src/commands/evaluate.ts:154`, `packages/cli/src/commands/simulate.ts:159`, `packages/cli/src/commands/experience.ts:74`, `packages/cli/src/commands/ltv.ts:475`다. 그 줄은 리뷰다. 추가 graph hop이 아니다.
+
+`prepareResolvedRun`의 forward execution trace(`maxDepth` 2, `maxNodes` 32)는 `resolveEffectiveEngine`, `compileScenario`, `resolveStrategySelection`, `effectiveRunHash`, `pluginDigestValues`, `stagePlan`, `openResolvedStage`, `createNumberEngine`을 가리킨다. `packages/cli/src/lib/runConfiguration.ts:311`의 이름 없는 span이 포함되며, 그 줄은 `openResolvedStage` 안의 `createRunFactory` 호출이다. trace는 `createRunFactory`라는 이름을 주지 않는다.
+
+`createPlannerStrategy`의 forward execution trace(`maxDepth` 3, `maxNodes` 32)는 여전히 `stepOnce`를 가리키지 않는다. rollout 호출은 `packages/core/src/sim/strategy/planner.ts:322`의 `PlannerDeps.d.stepOnce`다. 그 edge는 미관측이다.
+
+`bun run graph:check`는 종료 코드 0이다. `bench:sim:check`, `bench:sim:suite:check`, `tune:regress`, `kpi:report`, `kpi:regress`, `bunx ttsc -p tsconfig.tools.json`, `bunx ttsc -p tsconfig.examples.json`, `test:conformance:extended`는 실행하지 않았다.

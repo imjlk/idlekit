@@ -42,6 +42,21 @@
         "runId": { "type": "string" },
         "seed": { "type": "number" },
         "scenarioHash": { "type": "string" },
+        "effectiveRunHash": { "type": "string" },
+        "effectiveEngine": { "type": "string" },
+        "stageScope": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "required": ["strategy", "step", "fast", "session"],
+            "properties": {
+              "strategy": { "type": "boolean" },
+              "step": { "type": "boolean" },
+              "fast": { "type": "boolean" },
+              "session": { "type": "boolean" }
+            }
+          }
+        },
         "pluginDigest": {
           "type": "object",
           "additionalProperties": { "type": "string" }

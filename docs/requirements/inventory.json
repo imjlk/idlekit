@@ -245,6 +245,22 @@
           "args": ["test", "src/sim/session.test.ts"]
         }
       ]
+    },
+    {
+      "id": "REQ-PR07-RESOLVED-RUN",
+      "pr": "PR-07",
+      "anchor": "req-pr07-resolved-run",
+      "doc": "docs/requirements/active/cli-resolved-run.md",
+      "production": ["packages/cli/src/lib/runConfiguration.ts"],
+      "tests": [
+        {
+          "file": "packages/cli/src/lib/runConfiguration.test.ts",
+          "exportName": "keepsResolvedRunConfiguration",
+          "registeredAs": "keeps resolved run configuration",
+          "cwd": "packages/cli",
+          "args": ["test", "src/lib/runConfiguration.test.ts"]
+        }
+      ]
     }
   ]
 }

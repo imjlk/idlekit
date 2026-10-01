@@ -7,7 +7,8 @@
     "REQ-PR03-RUN-LIFECYCLE-ISOLATION",
     "REQ-PR05-OBSERVATION-RETENTION",
     "REQ-PR04-PLANNER-ROLLOUT",
-    "REQ-PR06-SESSION-CLOCK"
+    "REQ-PR06-SESSION-CLOCK",
+    "REQ-PR07-RESOLVED-RUN"
   ],
   "protectedFiles": [
     "docs/requirements/active/typia-transform.md",
@@ -45,6 +46,9 @@
     "packages/core/src/sim/session.ts",
     "packages/core/src/sim/session.test.ts",
     "docs/requirements/active/session-clock.md",
+    "docs/requirements/active/cli-resolved-run.md",
+    "packages/cli/src/lib/runConfiguration.ts",
+    "packages/cli/src/lib/runConfiguration.test.ts",
     "fixtures/conformance/shrink-gap.json",
     "fixtures/toolchain/evidence/lint.config.ts",
     "fixtures/toolchain/evidence/src/quotaHost.ts",

@@ -45,12 +45,12 @@ export나 명령이 있다는 것은 분석이 끝났다는 뜻이 아니다.
 7. **Session 벽시계는 `state.t`가 아니다.** `PR-06`은 다음 블록을 wall elapsed로 잡는다. `applyOfflineSeconds`는 여전히 시뮬레이션된 보상 초만큼 `state.t`를 진행한다. `offline.requestedSec`는 호출자가 준 부재 시간이다. cap과 decay는 `lostRewardSec`를 더하고 다음 active 블록을 앞당기지 않는다. 기본 오프라인 행동 정책은 `legacy-all`이다. `none`은 `decide`를 호출하지 않는다. Fixture: `packages/core/src/sim/session.test.ts`. 재현 라벨은 `0x7106`이다.
 8. **Analytic ETA는 양쪽을 `number`로 줄인다.** `etaAnalytic`은 목표를 `E.from`으로 읽고, 수입과 차액을 `E.toNumber`로 바꾼 뒤 나눈다. `constant` 수입이 high-confidence hint다. 후속: `PR-09`.
 9. **Growth regime은 slope 임계값이다.** `classify`는 slope `< 1e-6`을 `stall`, `< 0.01`을 `softcap`, `< 0.1`을 `exp`, 나머지를 `super-exp`로 둔다. `valueOfState`는 양을 `Number(...)`에 통과시킨다. 후속: `PR-12`.
-10. **`evaluate`는 모든 단계에 하나의 실행 구성을 넘기지 않는다.** 명령은 `createNumberEngine()`을 만든다. simulate 단계는 `overrideStrategy`, `flags.step`, `flags.fast`를 받는다. `collectExperienceSnapshot`은 그 strategy와 run override가 없는 `seededScenario`를 받는다. 후속: `PR-07`.
+10. **`evaluate`는 하나의 resolved plan에서 각 단계를 연다.** `PR-07`은 `prepareResolvedRun`에서 한 번 컴파일한다. simulate, experience, ltv는 각각 `createRunFactory`의 `fresh`를 호출한다. `--strategy`는 등록된 id이며 세 단계에 닿는다. `--step`과 `--fast`는 `--consistent-overrides`가 없으면 simulate와 ltv에 남는다. `scenario.engine`은 metadata다. 기본 엔진은 `number`다. `breakInfinity`는 명시 선택이다. `breakEternity`는 throw한다. 금액 `until` 경로는 `parseMoney`를 쓰고 숫자의 `Number(rawRight)` 분기로 가지 않는다. `scenarioHash`는 원래 시나리오 객체다. `effectiveRunHash`는 `generatedAt`과 절대 경로를 빼 둔다. `idlekit.resolved-run-configuration`은 TC-05 전에 등록하지 않는다. Fixture: `packages/cli/src/lib/runConfiguration.test.ts`. 재현 라벨은 `0x7107`이다. 실행 seed는 `1`이다.
 11. **첫 가시 변화가 없으면 Monte Carlo 요약에서 구간 길이 또는 0이 된다.** `summarizeExperienceMonteCarlo`는 분위수 요약 전에 `firstVisibleChangeSec ?? session.summary.totalActiveSec ?? 0`을 쓴다. 후속: `PR-13`.
 12. **KPI 회귀는 빠진 일부 guardrail 숫자를 0으로 채운다.** horizon은 `at7d`, `at30d`, `at90d`로 고정된다. `stallRatio`, `droppedRate`, `visibleChangesPerMinute`, `maxNoRewardGapSec`는 `Number(value ?? 0)`을 쓴다. 후속: `PR-17`.
 13. **Tuner spec은 strategy 파라미터다.** `TuneSpec`은 `strategy.baseParams`와 `strategy.space`를 가진다. 후속: `PR-14`. 기존 tuner를 교체하는 대신 별도 실험 spec으로 확장한다.
 
-이 커밋의 `packages/core/src/scenario/compile.ts`에는 `Number(rawRight)`가 없다. suffix와 런타임 비교 버그는 여기서 확정된 결함이 아니다. `PR-07`은 금액 비교를 다시 읽고 결함인지 판단한다.
+이 커밋의 `packages/core/src/scenario/compile.ts`는 `t`, `prestige.count`, 그리고 모르는 숫자 경로에 `Number(rawRight)`를 남긴다. 금액 경로는 그렇게 하지 않는다. 왼쪽이 숫자여도 `money`와 다른 금액 경로는 그 `Number` 분기로 옮기지 않는다.
 
 ## 아직 런타임 fixture가 필요한 위험
 
@@ -58,7 +58,7 @@ export나 명령이 있다는 것은 분석이 끝났다는 뜻이 아니다.
 - horizon `10`, `stepSec` `6`은 `PR-02` fixture다. `until`과 budget이 같은 틱에서 만나는 목표는 아직 별도 fixture가 필요하다.
 - 양과 속도는 `number`에 들어가지 않고 비율은 유한한 경우.
 - `classify`가 현재 다른 이름을 붙이는 느린 지수와 빠른 지수.
-- `idk evaluate --strategy`와 같은 명령의 experience 단계 비교.
+- `idk evaluate --strategy`와 같은 명령의 experience 단계 비교. `PR-07`이 `keepsResolvedRunConfiguration`으로 그 경우를 다룬다.
 
 현재 숫자를 새 golden 파일의 정답으로 고정하지 않는다.
 

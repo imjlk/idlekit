@@ -178,13 +178,94 @@ function prevalidateUntilTerm<N, U extends string>(args: {
   }
 
   if (UNTIL_AMOUNT_PATHS.has(term.path)) {
-    parseRightAsAmount({
+    const parsed = parseRightAsAmount({
       E: args.E,
       unit: args.unit,
       rawRight: term.rawRight,
       allowSuffixNotation: args.allowSuffixNotation,
     });
+    if (!args.E.isFinite(parsed)) {
+      throw new Error(`untilExpr amount comparison requires a finite amount: ${term.rawRight}`);
+    }
   }
+}
+
+function matchesUntilTerm<N, U extends string>(args: {
+  state: any;
+  term: ExprTerm;
+  E: Engine<N>;
+  unit: Unit<U>;
+  allowSuffixNotation: boolean;
+}): boolean {
+  const left = resolveUntilLeft(args.state, args.term.path);
+  if (left === undefined) return false;
+  const { term } = args;
+
+  if (UNTIL_NUMBER_PATHS.has(term.path)) {
+    if (typeof left !== "number" || !Number.isFinite(left)) return false;
+    const rightNum = Number(term.rawRight);
+    if (!Number.isFinite(rightNum)) return false;
+    const cmp: -1 | 0 | 1 = left === rightNum ? 0 : left < rightNum ? -1 : 1;
+    return compareByOp(cmp, term.op);
+  }
+
+  if (UNTIL_BOOLEAN_PATHS.has(term.path)) {
+    if (typeof left !== "boolean") return false;
+    if (term.rawRight !== "true" && term.rawRight !== "false") return false;
+    const rightBool = term.rawRight === "true";
+    const cmp: -1 | 0 | 1 = left === rightBool ? 0 : left ? 1 : -1;
+    return compareByOp(cmp, term.op);
+  }
+
+  if (UNTIL_AMOUNT_PATHS.has(term.path)) {
+    let rightAmount: N;
+    try {
+      rightAmount = parseRightAsAmount({
+        E: args.E,
+        unit: args.unit,
+        rawRight: term.rawRight,
+        allowSuffixNotation: args.allowSuffixNotation,
+      });
+    } catch {
+      return false;
+    }
+    if (!args.E.isFinite(rightAmount)) return false;
+    const cmp = args.E.cmp(args.E.from(left as never), rightAmount);
+    return compareByOp(cmp, term.op);
+  }
+
+  if (typeof left === "number") {
+    const rightNum = Number(term.rawRight);
+    if (!Number.isFinite(rightNum)) return false;
+    const cmp: -1 | 0 | 1 = left === rightNum ? 0 : left < rightNum ? -1 : 1;
+    return compareByOp(cmp, term.op);
+  }
+
+  if (typeof left === "boolean") {
+    if (term.rawRight !== "true" && term.rawRight !== "false") return false;
+    const rightBool = term.rawRight === "true";
+    const cmp: -1 | 0 | 1 = left === rightBool ? 0 : left ? 1 : -1;
+    return compareByOp(cmp, term.op);
+  }
+
+  if (typeof left === "string") {
+    if (term.op !== "==" && term.op !== "!=") return false;
+    return term.op === "==" ? left === term.rawRight : left !== term.rawRight;
+  }
+
+  let rightAmount: N;
+  try {
+    rightAmount = parseRightAsAmount({
+      E: args.E,
+      unit: args.unit,
+      rawRight: term.rawRight,
+      allowSuffixNotation: args.allowSuffixNotation,
+    });
+  } catch {
+    return false;
+  }
+  const cmp = args.E.cmp(args.E.from(left as never), rightAmount);
+  return compareByOp(cmp, term.op);
 }
 
 function compileUntilExpr<N, U extends string>(args: {
@@ -214,75 +295,21 @@ function compileUntilExpr<N, U extends string>(args: {
       for (const conjunction of parsed) {
         let matched = true;
         for (const term of conjunction) {
-          const left = resolveUntilLeft(state, term.path);
-          if (left === undefined) {
-            matched = false;
-            break;
-          }
-
-          if (typeof left === "number") {
-            const rightNum = Number(term.rawRight);
-            if (!Number.isFinite(rightNum)) {
-              matched = false;
-              break;
-            }
-            const cmp: -1 | 0 | 1 = left === rightNum ? 0 : left < rightNum ? -1 : 1;
-            if (!compareByOp(cmp, term.op)) {
-              matched = false;
-              break;
-            }
-            continue;
-          }
-
-          if (typeof left === "boolean") {
-            if (term.rawRight !== "true" && term.rawRight !== "false") {
-              matched = false;
-              break;
-            }
-            const rightBool = term.rawRight === "true";
-            const cmp: -1 | 0 | 1 = left === rightBool ? 0 : left ? 1 : -1;
-            if (!compareByOp(cmp, term.op)) {
-              matched = false;
-              break;
-            }
-            continue;
-          }
-
-          if (typeof left === "string") {
-            if (term.op !== "==" && term.op !== "!=") {
-              matched = false;
-              break;
-            }
-            const ok = term.op === "==" ? left === term.rawRight : left !== term.rawRight;
-            if (!ok) {
-              matched = false;
-              break;
-            }
-            continue;
-          }
-
-          let rightAmount: N;
-          try {
-            rightAmount = parseRightAsAmount({
+          if (
+            !matchesUntilTerm({
+              state,
+              term,
               E,
               unit,
-              rawRight: term.rawRight,
               allowSuffixNotation: args.allowSuffixNotation,
-            });
-          } catch {
-            matched = false;
-            break;
-          }
-          const cmp = E.cmp(E.from(left as any), rightAmount);
-          if (!compareByOp(cmp, term.op)) {
+            })
+          ) {
             matched = false;
             break;
           }
         }
-
         if (matched) return true;
       }
-
       return false;
     };
   } catch (error) {
@@ -312,6 +339,34 @@ function standardIssues(result: unknown): string[] {
   }
 
   return ["invalid schema result shape"];
+}
+
+export type StrategyParamsMode = "legacy-raw" | "validated";
+
+/**
+ * Internal `StandardSchema` adapter. This is not the external Standard Schema package.
+ * `legacy-raw` checks the schema and still passes the caller object to `create`.
+ * `validated` passes `result.value`, which may be coerced or defaulted.
+ *
+ * @evidence docs/requirements/active/cli-resolved-run.md#req-pr07-resolved-run Amount comparisons use parseMoney. Strategy params stay legacy-raw unless validated is requested.
+ * @evidenceReview docs/requirements/active/cli-resolved-run.md#req-pr07-resolved-run #01b9284 Re-read the section: legacy-raw keeps the caller object, and an amount path does not use Number(rawRight).
+ */
+export function strategyCreateParams(args: {
+  raw: unknown;
+  schema?: { "~standard": { validate: (input: unknown) => unknown } };
+  mode?: StrategyParamsMode;
+}): Readonly<{ mode: StrategyParamsMode; params: unknown }> {
+  const mode = args.mode ?? "legacy-raw";
+  if (!args.schema) return { mode, params: args.raw };
+  const result = args.schema["~standard"].validate(args.raw) as {
+    success?: boolean;
+    value?: unknown;
+    issues?: unknown;
+  };
+  if (result?.success !== true) {
+    throw new Error(`Invalid strategy params: ${standardIssues(result).join("; ")}`);
+  }
+  return { mode, params: mode === "validated" ? result.value : args.raw };
 }
 
 function buildUnit<U extends string>(args: {
@@ -417,14 +472,13 @@ function buildStrategy<N, U extends string, Vars>(args: {
   }
 
   const rawParams = scenario.strategy.params ?? factory.defaultParams ?? {};
-  if (factory.paramsSchema) {
-    const issues = standardIssues(factory.paramsSchema["~standard"].validate(rawParams));
-    if (issues.length > 0) {
-      throw new Error(`Invalid strategy params: ${issues.join("; ")}`);
-    }
-  }
+  const resolved = strategyCreateParams({
+    raw: rawParams,
+    schema: factory.paramsSchema,
+    mode: "legacy-raw",
+  });
 
-  return factory.create(rawParams) as CompiledScenario<N, U, Vars>["strategy"];
+  return factory.create(resolved.params) as CompiledScenario<N, U, Vars>["strategy"];
 }
 
 function buildContext<N, U extends string, Vars>(args: {

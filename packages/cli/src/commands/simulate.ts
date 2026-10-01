@@ -1,8 +1,6 @@
 import { defineCommand, option } from "@bunli/core";
 import {
   applyOfflineSeconds,
-  compileScenario,
-  createNumberEngine,
   deserializeSimState,
   parseSimStateJSON,
   runScenario,
@@ -18,7 +16,6 @@ import {
   errorDetail,
   resumeStrategyMismatchError,
   scenarioInvalidError,
-  unknownStrategyError,
   usageError,
 } from "../errors";
 import { buildOutputMeta, deriveDeterministicRunId, deriveDeterministicSeed, hashContent } from "../io/outputMeta";
@@ -26,9 +23,10 @@ import { printNextSteps } from "../io/nextSteps";
 import { writeCommandReplayArtifact } from "../io/replayPolicy";
 import { readScenarioFile } from "../io/readScenario";
 import { writeOutput } from "../io/writeOutput";
+import { prepareResolvedRun } from "../lib/runConfiguration";
 import { readJsonFile, writeTextFile } from "../runtime/bun";
 
-const strategySchema = z.enum(["greedy", "planner", "scripted"]).optional();
+const strategySchema = z.string().min(1).optional();
 
 function assertValidScenario(valid: ReturnType<typeof validateScenarioV1>) {
   if (!valid.ok || !valid.scenario) {
@@ -37,20 +35,8 @@ function assertValidScenario(valid: ReturnType<typeof validateScenarioV1>) {
   return valid.scenario;
 }
 
-function resolveStrategy(args: {
-  compiled: ReturnType<typeof compileScenario<number, string, Record<string, unknown>>>;
-  overrideId?: z.infer<typeof strategySchema>;
-  loaded: Awaited<ReturnType<typeof loadRegistriesFromFlags>>;
-}) {
-  if (!args.overrideId) return args.compiled.strategy;
-  const factory = args.loaded.strategyRegistry.get(args.overrideId);
-  if (!factory) throw unknownStrategyError(args.overrideId);
-  const params = factory.defaultParams ?? {};
-  return factory.create(params) as typeof args.compiled.strategy;
-}
-
 function restoreStrategyState(args: {
-  strategy: ReturnType<typeof resolveStrategy>;
+  strategy: ReturnType<typeof prepareResolvedRun>["definition"]["strategy"];
   resumedJson: ReturnType<typeof parseSimStateJSON> | undefined;
 }) {
   if (!args.resumedJson?.strategy) return;
@@ -85,7 +71,12 @@ export default defineCommand({
     ...pluginOptions(),
     duration: option(z.coerce.number().optional(), { description: "Override durationSec" }),
     step: option(z.coerce.number().optional(), { description: "Override stepSec" }),
-    strategy: option(strategySchema, { description: "greedy|planner|scripted" }),
+    strategy: option(strategySchema, {
+      description: "Registered strategy id. Builtins remain greedy, planner, and scripted.",
+    }),
+    engine: option(z.string().min(1).optional(), {
+      description: "Execution engine. Default number. scenario.engine is metadata. breakInfinity is explicit. breakEternity is unsupported.",
+    }),
     fast: option(z.coerce.boolean().default(false), { description: "Enable fast(log-domain) mode" }),
     "event-log-enabled": option(z.coerce.boolean().optional(), {
       description: "Override event log retention enabled flag",
@@ -116,15 +107,6 @@ export default defineCommand({
     const loaded = await loadRegistriesFromFlags(flags);
     const scenario = assertValidScenario(validateScenarioV1(input, loaded.modelRegistry));
 
-    const E = createNumberEngine();
-    const compiled = compileScenario<number, string, Record<string, unknown>>({
-      E,
-      scenario,
-      registry: loaded.modelRegistry,
-      strategyRegistry: loaded.strategyRegistry,
-      opts: { allowSuffixNotation: true },
-    });
-
     const resumedJson = flags.resume
       ? await readJsonFile<unknown>(resolve(process.cwd(), flags.resume))
           .then((raw) => {
@@ -146,29 +128,7 @@ export default defineCommand({
           })
       : undefined;
 
-    const strategy = resolveStrategy({
-      compiled,
-      overrideId: flags.strategy,
-      loaded,
-    });
-    restoreStrategyState({
-      strategy,
-      resumedJson,
-    });
-
-    const eventLog = resolveEventLog({
-      defaultEventLog: compiled.run.eventLog,
-      eventLogEnabled: flags["event-log-enabled"],
-      eventLogMax: flags["event-log-max"],
-    });
-
-    const resumedState = resumedJson
-      ? deserializeSimState<number, string, Record<string, unknown>>(E, resumedJson, {
-          expectedUnit: compiled.ctx.unit.code,
-          unitFactory: (code) => ({ code }),
-        })
-      : undefined;
-
+    const strategyId = flags.strategy ?? scenario.strategy?.id;
     const deterministicSeed =
       flags.seed ??
       deriveDeterministicSeed({
@@ -177,11 +137,12 @@ export default defineCommand({
         scenarioPath: resolve(process.cwd(), scenarioPath),
         resumeHash: resumedJson ? hashContent(resumedJson) : null,
         options: {
-          duration: flags.duration ?? compiled.run.durationSec,
-          step: flags.step ?? compiled.run.stepSec,
-          strategy: flags.strategy ?? strategy?.id,
+          duration: flags.duration ?? scenario.clock.durationSec,
+          step: flags.step ?? scenario.clock.stepSec,
+          strategy: strategyId,
           fast: flags.fast,
           offlineSeconds: flags["offline-seconds"] ?? 0,
+          ...(flags.engine ? { engine: flags.engine } : {}),
         },
       });
     const runId =
@@ -192,9 +153,38 @@ export default defineCommand({
         scope: {
           scenarioPath: resolve(process.cwd(), scenarioPath),
           resumeHash: resumedJson ? hashContent(resumedJson) : null,
-          strategyId: strategy?.id,
+          strategyId,
         },
       });
+    const prepared = prepareResolvedRun({
+      scenario,
+      modelRegistry: loaded.modelRegistry,
+      strategyRegistry: loaded.strategyRegistry,
+      pluginDigest: loaded.pluginDigest,
+      engineRequest: flags.engine,
+      strategyOverride: flags.strategy,
+      stepSec: flags.step,
+      fast: flags.fast,
+      seed: deterministicSeed,
+    });
+    const opened = prepared.open("simulate", `simulate:${runId}`);
+    const E = prepared.engine.engine as typeof prepared.definition.ctx.E;
+    const strategy = opened.scenario.strategy;
+    restoreStrategyState({
+      strategy,
+      resumedJson,
+    });
+    const eventLog = resolveEventLog({
+      defaultEventLog: opened.scenario.run.eventLog,
+      eventLogEnabled: flags["event-log-enabled"],
+      eventLogMax: flags["event-log-max"],
+    });
+    const resumedState = resumedJson
+      ? deserializeSimState<number, string, Record<string, unknown>>(E, resumedJson, {
+          expectedUnit: opened.scenario.ctx.unit.code,
+          unitFactory: (code) => ({ code }),
+        })
+      : undefined;
     const outputMeta = buildOutputMeta({
       command: "simulate",
       scenarioPath,
@@ -202,28 +192,19 @@ export default defineCommand({
       runId,
       seed: deterministicSeed,
       pluginDigest: loaded.pluginDigest,
+      effectiveRunHash: prepared.hash,
+      effectiveEngine: prepared.engine.effectiveId,
+      stageScope: { simulate: opened.plan.stage.applies },
     });
     const generatedAt = outputMeta.generatedAt;
 
     const runScenarioInput = {
-      ...compiled,
-      initial: resumedState ?? compiled.initial,
-      ctx: {
-        ...compiled.ctx,
-        seed: deterministicSeed,
-      },
+      ...opened.scenario,
+      initial: resumedState ?? opened.scenario.initial,
       strategy,
       run: {
-        ...compiled.run,
-        stepSec: flags.step ?? compiled.run.stepSec,
-        durationSec: flags.duration ?? compiled.run.durationSec,
-        fast: flags.fast
-          ? {
-              enabled: true,
-              kind: "log-domain" as const,
-              disableMoneyEvents: true,
-            }
-          : compiled.run.fast,
+        ...opened.scenario.run,
+        durationSec: flags.duration ?? opened.scenario.run.durationSec,
         eventLog,
       },
     };
@@ -256,7 +237,7 @@ export default defineCommand({
 
     const run = runScenario(effectiveScenario);
     const netWorth = effectiveScenario.model.netWorth?.(effectiveScenario.ctx, run.end) ?? run.end.wallet.money;
-    const totalElapsedSec = run.end.t - compiled.initial.t;
+    const totalElapsedSec = run.end.t - prepared.definition.initial.t;
     const stateOutPath = flags["state-out"] ? resolve(process.cwd(), flags["state-out"]) : undefined;
     const seed = deterministicSeed;
     const offlineEndWorth =
@@ -265,7 +246,7 @@ export default defineCommand({
     if (stateOutPath) {
       const strategyState = strategy?.snapshotState ? strategy.snapshotState() : undefined;
       const serialized = serializeSimState(E, run.end, {
-        engineName: "number",
+        engineName: prepared.engine.effectiveId,
         engineVersion: "1",
         scenarioPath,
         savedAt: generatedAt,

@@ -24,6 +24,8 @@
     "packages/core/src/sim/strategy/planner.regression.test.ts",
     "packages/core/src/sim/session.ts",
     "packages/core/src/sim/session.test.ts",
+    "packages/cli/src/lib/runConfiguration.ts",
+    "packages/cli/src/lib/runConfiguration.test.ts",
     "packages/core/src/sim/simulator.ts",
     "packages/core/src/sim/offline.ts",
     "packages/core/src/sim/simulator.time.test.ts",

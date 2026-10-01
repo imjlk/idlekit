@@ -1,8 +1,9 @@
 import { defineCommand, option } from "@bunli/core";
-import { compileScenario, createNumberEngine, validateScenarioV1 } from "@idlekit/core";
+import { validateScenarioV1 } from "@idlekit/core";
 import { z } from "zod";
 import { loadRegistriesFromFlags, pluginOptions } from "./_shared/plugin";
 import { scenarioInvalidError, usageError } from "../errors";
+import { prepareResolvedRun } from "../lib/runConfiguration";
 import {
   collectExperienceSnapshot,
   renderExperienceMarkdown,
@@ -29,6 +30,12 @@ export default defineCommand({
     ),
     days: option(z.coerce.number().int().positive().optional(), { description: "Days to simulate for the session pattern" }),
     draws: option(z.coerce.number().int().positive().optional(), { description: "Monte Carlo draw count (1 = deterministic)" }),
+    strategy: option(z.string().min(1).optional(), {
+      description: "Registered strategy id. Builtins remain greedy, planner, and scripted.",
+    }),
+    engine: option(z.string().min(1).optional(), {
+      description: "Execution engine. Default number. scenario.engine is metadata. breakInfinity is explicit. breakEternity is unsupported.",
+    }),
     seed: option(z.coerce.number().optional(), { description: "Deterministic seed" }),
     out: option(z.string().optional(), { description: "Output path" }),
     format: option(z.enum(["json", "md"]).default("json"), { description: "Output format" }),
@@ -59,24 +66,23 @@ export default defineCommand({
           sessionPattern: flags["session-pattern"],
           days: flags.days,
           draws: flags.draws,
+          ...(flags.strategy ? { strategy: flags.strategy } : {}),
+          ...(flags.engine ? { engine: flags.engine } : {}),
         },
       });
 
-    const E = createNumberEngine();
-    const compiled = compileScenario<number, string, Record<string, unknown>>({
-      E,
+    const prepared = prepareResolvedRun({
       scenario: valid.scenario,
-      registry: loaded.modelRegistry,
+      modelRegistry: loaded.modelRegistry,
       strategyRegistry: loaded.strategyRegistry,
-      opts: { allowSuffixNotation: true },
+      pluginDigest: loaded.pluginDigest,
+      engineRequest: flags.engine,
+      strategyOverride: flags.strategy,
+      seed,
+      sessionId: flags["session-pattern"],
+      days: flags.days,
     });
-    const seededScenario = {
-      ...compiled,
-      ctx: {
-        ...compiled.ctx,
-        seed,
-      },
-    };
+    const seededScenario = prepared.open("experience", `experience:${seed}`).scenario;
 
     const sessionPattern = resolveSessionPatternSpec({
       scenario: seededScenario,
@@ -148,6 +154,9 @@ export default defineCommand({
 
     const outputMeta = buildOutputMeta({
       command: "experience",
+      effectiveRunHash: prepared.hash,
+      effectiveEngine: prepared.engine.effectiveId,
+      stageScope: { experience: { strategy: true, step: false, fast: false, session: true } },
       runId,
       seed,
       scenarioPath,

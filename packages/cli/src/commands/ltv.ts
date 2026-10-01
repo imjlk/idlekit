@@ -1,7 +1,5 @@
 import { defineCommand, option } from "@bunli/core";
 import {
-  compileScenario,
-  createNumberEngine,
   runScenario,
   validateScenarioV1,
   type CompiledScenario,
@@ -10,9 +8,10 @@ import {
 import { resolve } from "path";
 import { z } from "zod";
 import { loadRegistriesFromFlags, pluginOptions } from "./_shared/plugin";
-import { cliError, scenarioInvalidError, unknownStrategyError, usageError } from "../errors";
+import { cliError, scenarioInvalidError, usageError } from "../errors";
 import { buildOutputMeta, deriveDeterministicRunId, deriveDeterministicSeed } from "../io/outputMeta";
 import { writeCommandReplayArtifact } from "../io/replayPolicy";
+import { prepareResolvedRun } from "../lib/runConfiguration";
 import { readScenarioFile } from "../io/readScenario";
 import { writeOutput } from "../io/writeOutput";
 import {
@@ -22,7 +21,7 @@ import {
   progressionFactor,
 } from "../lib/ltvModel";
 
-const strategySchema = z.enum(["greedy", "planner", "scripted"]).optional();
+const strategySchema = z.string().min(1).optional();
 
 type HorizonPoint = Readonly<{
   label: string;
@@ -262,6 +261,7 @@ export function runLtvAnalysis(args: {
       ctx: {
         ...args.compiled.ctx,
         seed: args.seed,
+        stepSec,
       },
       run: {
         ...args.compiled.run,
@@ -423,7 +423,12 @@ export default defineCommand({
     step: option(z.coerce.number().positive().optional(), {
       description: "Override stepSec for long-horizon runs",
     }),
-    strategy: option(strategySchema, { description: "Override strategy id (greedy|planner|scripted)" }),
+    strategy: option(strategySchema, {
+      description: "Registered strategy id. Builtins remain greedy, planner, and scripted.",
+    }),
+    engine: option(z.string().min(1).optional(), {
+      description: "Execution engine. Default number. scenario.engine is metadata. breakInfinity is explicit. breakEternity is unsupported.",
+    }),
     fast: option(z.coerce.boolean().default(false), {
       description: "Enable fast(log-domain) mode for long horizons",
     }),
@@ -454,22 +459,6 @@ export default defineCommand({
       throw scenarioInvalidError(valid.issues);
     }
 
-    const E = createNumberEngine();
-    const compiled = compileScenario<number, string, Record<string, unknown>>({
-      E,
-      scenario: valid.scenario,
-      registry: loaded.modelRegistry,
-      strategyRegistry: loaded.strategyRegistry,
-      opts: { allowSuffixNotation: true },
-    });
-
-    const strategy = (() => {
-      if (!flags.strategy) return compiled.strategy;
-      const f = loaded.strategyRegistry.get(flags.strategy);
-      if (!f) throw unknownStrategyError(flags.strategy);
-      return f.create(f.defaultParams ?? {}) as typeof compiled.strategy;
-    })();
-
     const baseSeed =
       flags.seed ??
       deriveDeterministicSeed({
@@ -477,20 +466,33 @@ export default defineCommand({
         scenario: valid.scenario,
         options: {
           horizons: flags.horizons,
-          step: flags.step ?? compiled.run.stepSec,
+          step: flags.step ?? valid.scenario.clock.stepSec,
           strategy: flags.strategy,
           fast: flags.fast,
+          ...(flags.engine ? { engine: flags.engine } : {}),
           draws: flags.draws,
           valuePerWorth: flags["value-per-worth"],
         },
       });
 
     const seed = baseSeed;
+    const prepared = prepareResolvedRun({
+      scenario: valid.scenario,
+      modelRegistry: loaded.modelRegistry,
+      strategyRegistry: loaded.strategyRegistry,
+      pluginDigest: loaded.pluginDigest,
+      engineRequest: flags.engine,
+      strategyOverride: flags.strategy,
+      stepSec: flags.step,
+      fast: flags.fast,
+      seed,
+    });
+    const opened = prepared.open("ltv", `ltv:${seed}`);
     const analysis = runLtvAnalysis({
       scenario: valid.scenario,
       scenarioPath,
-      compiled,
-      strategy,
+      compiled: opened.scenario,
+      strategy: opened.scenario.strategy,
       horizonsRaw: flags.horizons,
       step: flags.step,
       fast: flags.fast,
@@ -506,6 +508,9 @@ export default defineCommand({
       scenario: valid.scenario,
       seed,
       pluginDigest: loaded.pluginDigest,
+      effectiveRunHash: prepared.hash,
+      effectiveEngine: prepared.engine.effectiveId,
+      stageScope: { ltv: opened.plan.stage.applies },
     });
     const jsonOutput = {
       scenario: scenarioPath,

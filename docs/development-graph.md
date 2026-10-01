@@ -102,3 +102,15 @@ A forward execution trace of `simulateSessionPattern` (`maxDepth` 2, `maxNodes` 
 A reverse execution trace of `applyOfflineSeconds` (`maxDepth` 3, `maxNodes` 32) names `simulateSessionPattern.appendOffline` at `packages/core/src/sim/session.ts:273`, `keepsSessionClocksDistinct` at `packages/core/src/sim/session.test.ts:186`, `stopsOnTheRequestedHorizon` at `packages/core/src/sim/simulator.time.test.ts:105`, and `keepsPlannerRolloutFaithful` at `packages/core/src/sim/strategy/planner.regression.test.ts:85`. A forward execution trace (`maxDepth` 2, `maxNodes` 32) names `resolveOfflineActionPolicy` at `packages/core/src/sim/offline.ts:110` and `assertSimulationClock` at `packages/core/src/sim/timeBoundary.ts:70`, and includes `packages/core/src/sim/step.ts:220`.
 
 A forward execution trace of `createPlannerStrategy` (`maxDepth` 3, `maxNodes` 32) still does not name `stepOnce`. The rollout call remains `d.stepOnce` on `PlannerDeps` at `packages/core/src/sim/strategy/planner.ts:322`. That edge stays unobserved.
+
+## PR-07 callers
+
+Queried on macOS arm64 with Bun `1.3.10`, `@ttsc/graph` `0.30.4`, protocol `2025-11-25`. No generation identifier. Lookup places `prepareResolvedRun` at `packages/cli/src/lib/runConfiguration.ts:331`, `resolvedRunContract` at `packages/cli/src/lib/runConfiguration.ts:27`, `strategyCreateParams` at `packages/core/src/scenario/compile.ts:354`, `compileScenario` at `packages/core/src/scenario/compile.ts:545`, `keepsResolvedRunConfiguration` at `packages/cli/src/lib/runConfiguration.test.ts:91`, and `createRunFactory` at `packages/core/src/sim/runFactory.ts:369`.
+
+A reverse execution trace of `prepareResolvedRun` (`maxDepth` 3, `maxNodes` 32) names `keepsResolvedRunConfiguration` at `packages/cli/src/lib/runConfiguration.test.ts:91`. It does not name the command handlers. Source review shows the calls at `packages/cli/src/commands/evaluate.ts:154`, `packages/cli/src/commands/simulate.ts:159`, `packages/cli/src/commands/experience.ts:74`, and `packages/cli/src/commands/ltv.ts:475`. Those lines are the review. They are not extra graph hops.
+
+A forward execution trace of `prepareResolvedRun` (`maxDepth` 2, `maxNodes` 32) names `resolveEffectiveEngine`, `compileScenario`, `resolveStrategySelection`, `effectiveRunHash`, `pluginDigestValues`, `stagePlan`, `openResolvedStage`, and `createNumberEngine`. It includes an unnamed span at `packages/cli/src/lib/runConfiguration.ts:311`, which is the `createRunFactory` call inside `openResolvedStage`. The trace does not name `createRunFactory`.
+
+A forward execution trace of `createPlannerStrategy` (`maxDepth` 3, `maxNodes` 32) still does not name `stepOnce`. The rollout call remains `d.stepOnce` on `PlannerDeps` at `packages/core/src/sim/strategy/planner.ts:322`. That edge stays unobserved.
+
+`bun run graph:check` exited 0. `bench:sim:check`, `bench:sim:suite:check`, `tune:regress`, `kpi:report`, `kpi:regress`, `bunx ttsc -p tsconfig.tools.json`, `bunx ttsc -p tsconfig.examples.json`, and `test:conformance:extended` were not run.

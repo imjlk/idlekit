@@ -7,6 +7,7 @@ export type CliErrorCode =
   | "SCENARIO_READ_FAILED"
   | "TUNE_SPEC_INVALID"
   | "UNKNOWN_STRATEGY"
+  | "UNSUPPORTED_ENGINE"
   | "PLUGIN_DISABLED"
   | "PLUGIN_POLICY_VIOLATION"
   | "SIM_STATE_INVALID_JSON"
@@ -162,6 +163,10 @@ export function toCliError(error: unknown): CliError {
 
   if (message.startsWith("Unknown strategy:")) {
     return cliError("UNKNOWN_STRATEGY", message, { cause: error });
+  }
+
+  if (message.startsWith("breakEternityEngine is experimental") || message.startsWith("Unknown engine ")) {
+    return cliError("UNSUPPORTED_ENGINE", message, { cause: error });
   }
 
   if (message.startsWith("Resume strategy") || message.startsWith("Resume state contains strategy") || message.includes("does not support state restore")) {
