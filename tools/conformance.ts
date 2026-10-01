@@ -1,6 +1,6 @@
-import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "fs";
+import { cpSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "fs";
 import { join, resolve } from "path";
-import { demonstrateShrinkGap, replayShrinkReport } from "../packages/core/src/testkit/conformanceRun";
+import { demonstrateShrinkGap, replayShrinkReport } from "../packages/core/src/testkit/conformance";
 import { commandText, root, runTtsc } from "./evidence-host";
 import { fixtureEnv } from "./toolchain-host";
 
@@ -68,12 +68,13 @@ function spawn(
 }
 
 function graphLookup(dir: string, query: string): { exitCode: number; text: string } {
+  const project = realpathSync(dir);
   return spawn(
     [
       process.execPath,
-      join(root, "tools/graph-query.ts"),
+      realpathSync(join(root, "tools/graph-query.ts")),
       "--cwd",
-      dir,
+      project,
       "--tsconfig",
       "tsconfig.json",
       "--question",
@@ -81,7 +82,7 @@ function graphLookup(dir: string, query: string): { exitCode: number; text: stri
       "--request",
       JSON.stringify({ type: "lookup", query, limit: 5 }),
     ],
-    root,
+    project,
   );
 }
 
@@ -94,7 +95,9 @@ export function runNegativeConformanceChecks(): void {
 }
 
 function negative(): void {
-  const work = join(root, "tmp", `conformance-negative-${process.pid}`);
+  // macOS /tmp is a symlink of /private/tmp. ttsc rejects a project seen through both.
+  const base = realpathSync(root);
+  const work = join(base, "tmp", `conformance-negative-${process.pid}`);
   rmSync(work, { recursive: true, force: true });
   mkdirSync(work, { recursive: true });
   try {
@@ -127,7 +130,7 @@ function negative(): void {
     const preloadEnv = fixtureEnv();
     // bun test sets NODE_ENV=test, and ttsc then refuses this preload project's generation.
     delete preloadEnv.NODE_ENV;
-    preloadEnv.TTSC_TTSX_BINARY = join(root, "tools/ttsx-under-node");
+    preloadEnv.TTSC_TTSX_BINARY = join(base, "tools/ttsx-under-node");
     const preloaded = spawn([process.execPath, "src/entry.ts"], preload, preloadEnv);
     record(
       "transform-present",

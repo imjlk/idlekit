@@ -197,7 +197,7 @@ export function replayShrinkReport(report: ShrinkReport): {
     if (step.kept) {
       if (holds || step.from !== current) pathOk = false;
       current = step.to;
-    } else if (!holds) {
+    } else if (!holds || step.from !== current) {
       pathOk = false;
     }
   }
@@ -523,6 +523,7 @@ function jsonRoundTripPreserves(value: unknown, seen: Set<object> = new Set()): 
   if (seen.has(value)) return false;
   seen.add(value);
   if (Object.getOwnPropertySymbols(value).length > 0) return false;
+  if (!Object.isExtensible(value)) return false;
   if (Array.isArray(value)) {
     const names = Object.getOwnPropertyNames(value);
     const length = value.length;
@@ -580,6 +581,9 @@ export function checkRetention<N, U extends string, Vars>(
   const initial = bracket.snap();
   try {
     const log = scenario.run.eventLog;
+    if (log?.maxEvents !== undefined && (!Number.isInteger(log.maxEvents) || log.maxEvents < 0)) {
+      return fail(`eventLog.maxEvents ${String(log.maxEvents)} is not an integer >= 0`);
+    }
     const records = (log?.enabled ?? true) && (log?.maxEvents === undefined || log.maxEvents > 0);
     const keptScenario = records
       ? scenario
