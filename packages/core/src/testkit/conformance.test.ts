@@ -446,8 +446,8 @@ describe("PR-02 time boundaries", () => {
  * @evidenceReview ./conformanceRun.ts#checkResumeFromJson #91c215a Resumes a 4s scripted grant from JSON at t=2.
  * @evidence ./conformanceRun.ts#checkRetention Retention applies to the scripted grant.
  * @evidenceReview ./conformanceRun.ts#checkRetention #2924eaf Retention applies to the scripted grant. A negative eventLog.maxEvents fails before the check substitutes another capacity. A run that retains no events is inapplicable.
- * @evidence ./conformanceRun.ts#checkObserver The observer check applies to the scripted grant. An emitter already on the scenario still runs on both sides.
- * @evidenceReview ./conformanceRun.ts#checkObserver #ca8b4f4 The observer check applies to the scripted grant. A run that emits no events is inapplicable. An emitter already on the scenario still runs on both sides; the observed side records the batches and then delegates.
+ * @evidence ./conformanceRun.ts#checkObserver The observer check applies to the scripted grant. A scenario that already has an emitter does not apply.
+ * @evidenceReview ./conformanceRun.ts#checkObserver #cbc894e The observer check applies to the scripted grant. A run that emits no events is inapplicable. A scenario that already has an emitter does not apply, so that emitter is left untouched.
  */
 export function replaysOneShotScriptedGrantFromTheSameCursor(): void {
   const scenario = scriptedGrant(2);
@@ -625,6 +625,14 @@ export function resumesOnTheSameTickGridFromMemoryAndJson(): void {
     initial: { ...scenario.initial, vars: { items: sparse } as unknown as Vars },
   });
   expect(sparseRound.ok).toBe(false);
+  const wideSparse = [1];
+  wideSparse.length = 100_000;
+  const wideSparseRound = checkJsonRoundTrip({
+    ...scenario,
+    initial: { ...scenario.initial, vars: { items: wideSparse } as unknown as Vars },
+  });
+  expect(wideSparseRound.ok).toBe(false);
+  expect(wideSparseRound.applicable).toBe(true);
   const frozenRound = checkJsonRoundTrip({
     ...scenario,
     initial: { ...scenario.initial, vars: Object.freeze({ x: 1 }) as unknown as Vars },
@@ -1035,6 +1043,20 @@ describe("PR-03 resume isolation", () => {
     expect(nullProto.ok).toBe(false);
     expect(nullProto.applicable).toBe(true);
     expect(nullProto.summary).toContain("JSON");
+    const stateless = checkResumeFromJson(
+      {
+        ...scenario,
+        strategy: {
+          id: "stateless",
+          decide: () => [],
+          snapshotState: () => undefined,
+          restoreState: () => {},
+        },
+      },
+      2,
+    );
+    expect(stateless.ok).toBe(true);
+    expect(stateless.applicable).toBe(true);
   });
 });
 
@@ -1142,8 +1164,45 @@ describe("PR-05 observation retention", () => {
         },
       },
     });
-    expectApplicable(watched);
-    expect(emitted).toBeGreaterThan(0);
+    expect(watched.ok).toBe(true);
+    expect(watched.applicable).toBe(false);
+    expect(emitted).toBe(0);
+  });
+
+  it("snapshots vars whose serializer throws", () => {
+    const base = constantScenario({ rate: 1, durationSec: 1, stepSec: 1, seed: 3 });
+    const vars = {
+      buys: 0,
+      toJSON(): unknown {
+        throw new Error("vars toJSON");
+      },
+    };
+    const scenario = {
+      ...base,
+      initial: { ...base.initial, vars: vars as unknown as Vars },
+    };
+    const replay = checkReplay(scenario);
+    const observer = checkObserver(scenario);
+    const retention = checkRetention(scenario);
+    expect(replay.ok).toBe(true);
+    expect(replay.applicable).toBe(true);
+    expect(observer.ok).toBe(true);
+    expect(retention.ok).toBe(true);
+    const getterVars = { buys: 0 };
+    Object.defineProperty(getterVars, "boom", {
+      enumerable: true,
+      configurable: true,
+      get(): never {
+        throw new Error("vars getter");
+      },
+    });
+    const getterScenario = {
+      ...base,
+      initial: { ...base.initial, vars: getterVars as unknown as Vars },
+    };
+    expect(checkReplay(getterScenario).ok).toBe(true);
+    expect(checkObserver(getterScenario).ok).toBe(true);
+    expect(checkRetention(getterScenario).ok).toBe(true);
   });
 
   it(

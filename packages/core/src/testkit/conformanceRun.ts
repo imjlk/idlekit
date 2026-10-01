@@ -371,23 +371,58 @@ function skip(summary: string): RelationCheck {
   return { ok: true, applicable: false, summary };
 }
 
+function snapshotData(item: unknown, seen: WeakMap<object, number>, nextId: { value: number }): unknown {
+  if (typeof item === "bigint") return `bigint:${item.toString()}`;
+  if (typeof item === "symbol") return "symbol";
+  if (item === null || typeof item !== "object") return item;
+  const known = seen.get(item);
+  if (known !== undefined) return `cycle:${known}`;
+  const id = nextId.value;
+  nextId.value += 1;
+  seen.set(item, id);
+  if (Array.isArray(item)) {
+    const indexes: number[] = [];
+    for (const key of Object.getOwnPropertyNames(item)) {
+      if (key === "length") continue;
+      if (!/^(?:0|[1-9][0-9]*)$/.test(key)) continue;
+      const index = Number(key);
+      if (index < item.length) indexes.push(index);
+    }
+    indexes.sort((left, right) => left - right);
+    const elements: unknown[] = [];
+    for (const index of indexes) {
+      const descriptor = Object.getOwnPropertyDescriptor(item, String(index));
+      if (!descriptor || descriptor.get !== undefined || !("value" in descriptor)) {
+        elements.push("getter");
+        continue;
+      }
+      elements.push(snapshotData(descriptor.value, seen, nextId));
+    }
+    return elements;
+  }
+  const record: Record<string, unknown> = {};
+  for (const key of Object.getOwnPropertyNames(item)) {
+    const descriptor = Object.getOwnPropertyDescriptor(item, key);
+    if (!descriptor || descriptor.enumerable !== true) continue;
+    if (descriptor.get !== undefined || !("value" in descriptor)) {
+      record[key] = "getter";
+      continue;
+    }
+    record[key] = snapshotData(descriptor.value, seen, nextId);
+  }
+  return record;
+}
+
 function snapshotText(value: unknown): string {
   try {
     return JSON.stringify(value);
   } catch {
-    const seen = new WeakMap<object, number>();
-    let nextId = 0;
-    return JSON.stringify(value, (_key, item: unknown) => {
-      if (typeof item === "bigint") return `bigint:${item.toString()}`;
-      if (typeof item === "symbol") return "symbol";
-      if (item !== null && typeof item === "object") {
-        const known = seen.get(item);
-        if (known !== undefined) return `cycle:${known}`;
-        seen.set(item, nextId);
-        nextId += 1;
-      }
-      return item;
-    });
+    const plain = snapshotData(value, new WeakMap(), { value: 0 });
+    try {
+      return JSON.stringify(plain) ?? "unsupported";
+    } catch {
+      return "unsupported";
+    }
   }
 }
 
@@ -576,6 +611,7 @@ function jsonCheckpointPreserves(
   if (Object.getOwnPropertySymbols(value).length > 0) return false;
   if (Array.isArray(value)) {
     if (userData && !extensibleUserArray(value)) return false;
+    if (arrayIndexCount(value) !== value.length) return false;
     for (let index = 0; index < value.length; index += 1) {
       if (!(index in value)) return false;
       const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
@@ -598,7 +634,8 @@ function jsonCheckpointPreserves(
     if (descriptor.enumerable !== true) return false;
     if (userData && (descriptor.writable !== true || descriptor.configurable !== true)) return false;
     if (descriptor.value === undefined) {
-      if (userData || key === "vars" || key === "state") return false;
+      // The serializer shell may omit `strategy.state`. Undefined inside that snapshot still fails.
+      if (userData || key === "vars") return false;
       continue;
     }
     const nestedUser = userData || key === "vars" || key === "state";
@@ -753,13 +790,26 @@ function ordinaryJsonData(descriptor: PropertyDescriptor | undefined): boolean {
   );
 }
 
+function arrayIndexCount(value: readonly unknown[]): number {
+  let count = 0;
+  for (const key of Object.getOwnPropertyNames(value)) {
+    if (key === "length") continue;
+    if (!/^(?:0|[1-9][0-9]*)$/.test(key)) continue;
+    if (Number(key) >= value.length) continue;
+    count += 1;
+  }
+  return count;
+}
+
 function collectObjects(value: unknown, seen: Set<object>): void {
   if (value === null || typeof value !== "object") return;
   if (seen.has(value)) return;
   seen.add(value);
   if (Array.isArray(value)) {
-    for (let index = 0; index < value.length; index += 1) {
-      collectData(value, String(index), seen);
+    for (const key of Object.getOwnPropertyNames(value)) {
+      if (key === "length") continue;
+      if (!/^(?:0|[1-9][0-9]*)$/.test(key)) continue;
+      collectData(value, key, seen);
     }
     return;
   }
@@ -823,6 +873,7 @@ function jsonRoundTripPreserves(value: unknown, seen: Set<object> = new Set()): 
     ) {
       return false;
     }
+    if (arrayIndexCount(value) !== length) return false;
     for (let index = 0; index < length; index += 1) {
       const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
       if (!(index in value) || !ordinaryJsonData(descriptor) || !jsonRoundTripPreserves(value[index], seen)) {
@@ -908,19 +959,18 @@ export function checkRetention<N, U extends string, Vars>(
 export function checkObserver<N, U extends string, Vars>(
   scenario: CompiledScenario<N, U, Vars>,
 ): RelationCheck {
+  if (scenario.ctx.emit !== undefined) return skip("scenario already has an emitter");
   const bracket = strategyBracket(scenario);
   if (isRelationCheck(bracket)) return bracket;
   const initial = bracket.snap();
   try {
     let observed = 0;
-    const originalEmit = scenario.ctx.emit;
     const withObserver = economyAfter({
       ...scenario,
       ctx: {
         ...scenario.ctx,
         emit: (events) => {
           observed += events.length;
-          originalEmit?.(events);
         },
       },
     });
