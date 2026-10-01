@@ -1279,6 +1279,7 @@ type RunnerAlias = {
   kind: RunnerKind | undefined;
   modifiers: string[];
   depth: number;
+  namespace?: boolean;
 };
 
 function isRunnerKind(value: string): value is RunnerKind {
@@ -1419,6 +1420,18 @@ function titleCallAt(body: string, index: number): boolean {
   return body[skipWhitespace(body, quoted.end)] === ",";
 }
 
+/** `.it` / `.test` / `.describe` on a namespace import. Other members are not runners. */
+function namespaceRunnerMember(
+  body: string,
+  index: number,
+): { kind: RunnerKind; end: number } | undefined {
+  const dot = skipSpaceAndComments(body, index);
+  if (body[dot] !== ".") return undefined;
+  const member = readIdentifier(body, skipSpaceAndComments(body, dot + 1));
+  if (!member || !isRunnerKind(member.value)) return undefined;
+  return { kind: member.value, end: member.end };
+}
+
 /** `const register = it.only` and `const again = register` name the same runner. */
 function readRunnerRef(
   body: string,
@@ -1441,14 +1454,24 @@ function readRunnerRef(
   if (!ident) return undefined;
   let kind: RunnerKind | undefined;
   let modifiers: string[] = [];
-  if (isRunnerKind(ident.value)) kind = ident.value;
-  else {
+  let afterIdent = ident.end;
+  if (isRunnerKind(ident.value)) {
+    kind = ident.value;
+  } else {
     const alias = aliasAt(aliases, ident.value);
-    if (!alias?.kind) return undefined;
-    kind = alias.kind;
-    modifiers = [...alias.modifiers];
+    if (alias?.namespace) {
+      const member = namespaceRunnerMember(body, ident.end);
+      if (!member) return undefined;
+      kind = member.kind;
+      afterIdent = member.end;
+    } else if (alias?.kind) {
+      kind = alias.kind;
+      modifiers = [...alias.modifiers];
+    } else {
+      return undefined;
+    }
   }
-  const dotted = readDottedModifiers(body, ident.end, modifiers);
+  const dotted = readDottedModifiers(body, afterIdent, modifiers);
   const end = skipTypeOnlySuffix(body, dotted);
   if (end < 0 || !bindingBoundary(body, end)) return undefined;
   return { kind, modifiers, end };
@@ -1457,9 +1480,24 @@ function readRunnerRef(
 function readImportRunnerAliases(
   body: string,
   index: number,
-): { entries: Array<{ name: string; kind: RunnerKind }>; end: number } | undefined {
+): {
+  entries: Array<{ name: string; kind: RunnerKind }>;
+  namespaces: string[];
+  end: number;
+} | undefined {
   let cursor = skipSpaceAndComments(body, index);
   if (readIdentifier(body, cursor)?.value === "type") return undefined;
+  if (body[cursor] === "*") {
+    const asWord = readIdentifier(body, skipSpaceAndComments(body, cursor + 1));
+    if (asWord?.value !== "as") return undefined;
+    const local = readIdentifier(body, skipSpaceAndComments(body, asWord.end));
+    if (!local) return undefined;
+    const fromWord = readIdentifier(body, skipSpaceAndComments(body, local.end));
+    if (fromWord?.value !== "from") return undefined;
+    const spec = readQuoted(body, fromWord.end) ?? readStaticTemplate(body, fromWord.end);
+    if (!spec) return undefined;
+    return { entries: [], namespaces: [local.value], end: spec.end };
+  }
   if (body[cursor] !== "{") return undefined;
   const entries: Array<{ name: string; kind: RunnerKind }> = [];
   cursor += 1;
@@ -1505,7 +1543,7 @@ function readImportRunnerAliases(
   if (fromWord?.value !== "from") return undefined;
   const spec = readQuoted(body, fromWord.end) ?? readStaticTemplate(body, fromWord.end);
   if (!spec) return undefined;
-  return { entries, end: spec.end };
+  return { entries, namespaces: [], end: spec.end };
 }
 
 /** Every `it`/`test` title in this source, including ones inside a false condition. */
@@ -1630,6 +1668,9 @@ function collectRegistrations(body: string, unresolved: string[] = []): Registra
         for (const entry of imported.entries) {
           aliases.push({ name: entry.name, kind: entry.kind, modifiers: [], depth });
         }
+        for (const name of imported.namespaces) {
+          aliases.push({ name, kind: undefined, modifiers: [], depth, namespace: true });
+        }
         index = imported.end;
         continue;
       }
@@ -1690,9 +1731,18 @@ function collectRegistrations(body: string, unresolved: string[] = []): Registra
       index = word.end;
       continue;
     }
+    let callFrom = word.end;
     let kind: RunnerKind | undefined;
     let modifiers: string[] = [];
-    if (alias) {
+    if (alias?.namespace) {
+      const member = namespaceRunnerMember(body, word.end);
+      if (!member) {
+        index = word.end;
+        continue;
+      }
+      kind = member.kind;
+      callFrom = member.end;
+    } else if (alias) {
       if (alias.kind) {
         kind = alias.kind;
         modifiers = [...alias.modifiers];
@@ -1705,7 +1755,7 @@ function collectRegistrations(body: string, unresolved: string[] = []): Registra
       index = word.end;
       continue;
     }
-    const dotted = readDottedModifiers(body, word.end, modifiers);
+    const dotted = readDottedModifiers(body, callFrom, modifiers);
     const parameterized = modifiers.includes("each");
     let open = skipWhitespace(body, dotted);
     if (parameterized) {
