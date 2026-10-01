@@ -1,4 +1,5 @@
-import { readFileSync, realpathSync } from "fs";
+import { mkdtempSync, readFileSync, realpathSync, rmSync } from "fs";
+import { tmpdir } from "os";
 import { dirname, join, relative, resolve } from "path";
 import lintConfig from "../lint.config";
 import {
@@ -63,10 +64,6 @@ function hasProductionExport(body: string): boolean {
     || /\bexport\s*\{/.test(body);
 }
 
-function stripAnsi(text: string): string {
-  return text.replaceAll(/\u001b\[[0-9;]*m/g, "");
-}
-
 function plainTestEnv(): Record<string, string | undefined> {
   const env: Record<string, string | undefined> = { ...process.env };
   delete env.FORCE_COLOR;
@@ -75,10 +72,39 @@ function plainTestEnv(): Record<string, string | undefined> {
   return env;
 }
 
-function reporterEntry(line: string): { status: string; name: string } | undefined {
-  const match = /^\s*\((pass|fail|skip|todo)\)\s+(.+?)\s*(?:\[[^\]]*\])?\s*$/.exec(stripAnsi(line));
-  if (!match?.[1] || !match[2]) return undefined;
-  return { status: match[1], name: match[2] };
+function xmlAttr(tag: string, name: string): string {
+  const match = new RegExp(`\\b${name}="([^"]*)"`).exec(tag);
+  return (match?.[1] ?? "")
+    .replaceAll("&lt;", "<")
+    .replaceAll("&gt;", ">")
+    .replaceAll("&quot;", '"')
+    .replaceAll("&apos;", "'")
+    .replaceAll("&amp;", "&");
+}
+
+/** Bun's junit file, not the stdout stream tests can print into. */
+export function junitCases(xml: string): { status: string; name: string }[] {
+  const cases: { status: string; name: string }[] = [];
+  const stack: string[] = [];
+  const token = /<testsuite\b[^>]*>|<\/testsuite>|<testcase\b[^>]*\/>|<testcase\b[^>]*>[\s\S]*?<\/testcase>/g;
+  for (const match of xml.matchAll(token)) {
+    const tag = match[0];
+    if (tag.startsWith("</testsuite")) {
+      stack.pop();
+      continue;
+    }
+    if (tag.startsWith("<testsuite")) {
+      const name = xmlAttr(tag, "name");
+      if (name.length > 0 && name !== xmlAttr(tag, "file")) stack.push(name);
+      continue;
+    }
+    const title = xmlAttr(tag, "name");
+    let status = "pass";
+    if (/<failure\b|<error\b/.test(tag)) status = "fail";
+    else if (/<skipped\b/.test(tag)) status = "skip";
+    cases.push({ status, name: [...stack, title].filter((part) => part.length > 0).join(" > ") });
+  }
+  return cases;
 }
 
 /** Bun prints `suite > nested > test title`. The ledger stores that full name. */
@@ -177,26 +203,20 @@ export function retainedCoverage(
 export function assertExecutedTests(output: string, exitCode: number, names: readonly string[]): string[] {
   const failures: string[] = [];
   if (names.length === 0) fail(failures, "execution ledger has no test names");
-  const passLine = /(\d+)\s+pass\b/.exec(output);
-  const passCount = passLine ? Number(passLine[1]) : 0;
+  const entries = junitCases(output);
+  const passCount = entries.filter((entry) => entry.status === "pass").length;
   if (exitCode !== 0) fail(failures, `bun test exited ${exitCode}`);
   if (!Number.isFinite(passCount) || passCount === 0) {
     fail(failures, "bun test pass count is 0");
   }
   for (const name of names) {
-    const entries = output
-      .split("\n")
-      .map(reporterEntry)
-      .filter(
-        (entry): entry is { status: string; name: string } =>
-          entry !== undefined && reporterNameMatches(entry.name, name),
-      );
-    const reportedNames = new Set(entries.map((entry) => entry.name));
+    const matched = entries.filter((entry) => reporterNameMatches(entry.name, name));
+    const reportedNames = new Set(matched.map((entry) => entry.name));
     if (reportedNames.size > 1) {
       fail(failures, `executed reporter matched more than one suite for ${name}`);
       continue;
     }
-    if (!entries.some((entry) => entry.status === "pass")) {
+    if (!matched.some((entry) => entry.status === "pass")) {
       fail(failures, `executed reporter missed a passing ${name}`);
     }
   }
@@ -208,6 +228,7 @@ export function headingAnchors(markdown: string): string[] {
   let fenceChar: "`" | "~" | undefined;
   let fenceLength = 0;
   let inComment = false;
+  let pending: string | undefined;
   for (const rawLine of markdown.split(/\r?\n/)) {
     const marker = /^( {0,3})(`{3,}|~{3,})(.*)$/.exec(rawLine);
     const opener = marker?.[2];
@@ -217,27 +238,45 @@ export function headingAnchors(markdown: string): string[] {
         fenceChar = undefined;
         fenceLength = 0;
       }
+      pending = undefined;
       continue;
     }
     if (inComment) {
       if (rawLine.includes("-->")) inComment = false;
+      pending = undefined;
       continue;
     }
     if (opener) {
       fenceChar = opener.startsWith("`") ? "`" : "~";
       fenceLength = opener.length;
+      pending = undefined;
       continue;
     }
     const commentAt = rawLine.indexOf("<!--");
     const line = commentAt === -1 ? rawLine : rawLine.slice(0, commentAt);
     if (commentAt !== -1 && !rawLine.includes("-->", commentAt + 4)) inComment = true;
     const heading = line.replace(/^ {0,3}/, "");
+    const underline = /^(-+|=+)[ \t]*$/.exec(heading);
+    if (underline && pending !== undefined) {
+      if (underline[1]?.startsWith("-")) {
+        const setext = /\{#([A-Za-z0-9][A-Za-z0-9._:-]*)\}[ \t]*$/.exec(pending.trim());
+        anchors.push(setext?.[1] ?? "");
+      }
+      pending = undefined;
+      continue;
+    }
     const match = /^##[ \t]+.+\{#([A-Za-z0-9][A-Za-z0-9._:-]*)\}[ \t]*$/.exec(heading);
     if (/^##[ \t]/.test(heading) && !match) {
       anchors.push("");
+      pending = undefined;
       continue;
     }
-    if (match?.[1]) anchors.push(match[1]);
+    if (match?.[1]) {
+      anchors.push(match[1]);
+      pending = undefined;
+      continue;
+    }
+    pending = heading.trim() === "" ? undefined : heading;
   }
   return anchors;
 }
@@ -534,14 +573,116 @@ export function registeredSuites(body: string, exportName: string, title: string
     .map((registration) => registration.suites);
 }
 
-/** Full `suite > title` names registered more than once. One passing row cannot choose among them. */
-export function duplicateFullNames(body: string): string[] {
+/** Full `suite > title` names registered more than once across these sources. */
+export function duplicateFullNamesAcross(bodies: readonly string[]): string[] {
   const counts = new Map<string, number>();
-  for (const registration of collectRegistrations(body)) {
-    const full = [...registration.suites, registration.title].join(" > ");
-    counts.set(full, (counts.get(full) ?? 0) + 1);
+  for (const body of bodies) {
+    for (const registration of collectRegistrations(body)) {
+      const full = [...registration.suites, registration.title].join(" > ");
+      counts.set(full, (counts.get(full) ?? 0) + 1);
+    }
   }
   return [...counts.entries()].filter((entry) => entry[1] > 1).map((entry) => entry[0]);
+}
+
+/** Full `suite > title` names registered more than once. One passing row cannot choose among them. */
+export function duplicateFullNames(body: string): string[] {
+  return duplicateFullNamesAcross([body]);
+}
+
+function stringSpans(body: string): Array<[number, number]> {
+  const spans: Array<[number, number]> = [];
+  let index = 0;
+  while (index < body.length) {
+    const char = body[index] ?? "";
+    if (char === "/" && body[index + 1] === "/") {
+      const next = body.indexOf("\n", index);
+      index = next < 0 ? body.length : next + 1;
+      continue;
+    }
+    if (char === "/" && body[index + 1] === "*") {
+      const next = body.indexOf("*/", index + 2);
+      index = next < 0 ? body.length : next + 2;
+      continue;
+    }
+    if (char === "'" || char === '"') {
+      const end = skipQuoted(body, index);
+      spans.push([index, end]);
+      index = end;
+      continue;
+    }
+    if (char === "`") {
+      let start = index;
+      index += 1;
+      let closed = false;
+      while (index < body.length) {
+        const current = body[index] ?? "";
+        if (current === "\\") {
+          index += 2;
+          continue;
+        }
+        if (current === "`") {
+          index += 1;
+          spans.push([start, index]);
+          closed = true;
+          break;
+        }
+        if (current === "$" && body[index + 1] === "{") {
+          spans.push([start, index]);
+          index += 2;
+          let depth = 1;
+          while (index < body.length && depth > 0) {
+            const nested = body[index] ?? "";
+            if (nested === "'" || nested === '"') {
+              const end = skipQuoted(body, index);
+              spans.push([index, end]);
+              index = end;
+              continue;
+            }
+            if (nested === "`") {
+              const nestedStart = index;
+              index += 1;
+              while (index < body.length && body[index] !== "`") {
+                if (body[index] === "\\") index += 2;
+                else index += 1;
+              }
+              index = Math.min(body.length, index + 1);
+              spans.push([nestedStart, index]);
+              continue;
+            }
+            if (nested === "/" && body[index + 1] === "/") {
+              const next = body.indexOf("\n", index);
+              index = next < 0 ? body.length : next + 1;
+              continue;
+            }
+            if (nested === "/" && body[index + 1] === "*") {
+              const next = body.indexOf("*/", index + 2);
+              index = next < 0 ? body.length : next + 2;
+              continue;
+            }
+            if (nested === "{") depth += 1;
+            else if (nested === "}") depth -= 1;
+            index += 1;
+          }
+          start = index;
+          continue;
+        }
+        index += 1;
+      }
+      if (!closed) spans.push([start, index]);
+      continue;
+    }
+    if (char === "/" && regexCanStart(body, index)) {
+      index = skipRegex(body, index);
+      continue;
+    }
+    index += 1;
+  }
+  return spans;
+}
+
+function insideSpan(spans: ReadonlyArray<readonly [number, number]>, index: number): boolean {
+  return spans.some((span) => index >= span[0] && index < span[1]);
 }
 
 function registersNamedTest(body: string, registeredAs: string, exportName: string): boolean {
@@ -630,10 +771,12 @@ export function unregisteredImplementationHost(
 ): ImplementationHostGap {
   const names = new Set(scope.fileRegistered ?? registered);
   const own = new Set(registered);
+  const hidden = stringSpans(body);
   let ownCites = false;
   for (const match of body.matchAll(
     /\/\*\*((?:(?!\*\/)[\s\S])*)\*\/\s*export\s+(?:async\s+)?function\s+([A-Za-z0-9_]+)/g,
   )) {
+    if (match.index !== undefined && insideSpan(hidden, match.index)) continue;
     const comment = match[1] ?? "";
     const name = match[2];
     if (!name) continue;
@@ -652,8 +795,10 @@ export function unregisteredImplementationHost(
 }
 
 export function productionFileCites(body: string, doc: string, anchor: string): boolean {
+  const hidden = stringSpans(body);
   for (const match of body.matchAll(/\/\*\*((?:(?!\*\/)[\s\S])*)\*\//g)) {
-    if (!match[1] || !citesAnchor(match[1], doc, anchor) || match.index === undefined) continue;
+    if (!match[1] || match.index === undefined || insideSpan(hidden, match.index)) continue;
+    if (!citesAnchor(match[1], doc, anchor)) continue;
     const after = body.slice(match.index + match[0].length);
     // A // note may sit between the doc block and the export. Another block comment may not.
     const exportFollows = new RegExp(
@@ -703,6 +848,79 @@ function claimFiles(): string[] {
     files.push(...claim.files);
   }
   return files;
+}
+
+function samePopulation(left: readonly string[], right: readonly string[]): boolean {
+  if (left.length !== right.length) return false;
+  const counts = new Map<string, number>();
+  for (const item of left) counts.set(item, (counts.get(item) ?? 0) + 1);
+  for (const item of right) {
+    const count = counts.get(item);
+    if (!count) return false;
+    if (count === 1) counts.delete(item);
+    else counts.set(item, count - 1);
+  }
+  return counts.size === 0;
+}
+
+function referencePopulation(reference: unknown): string[] {
+  const references = Array.isArray(reference) ? reference : [reference];
+  const files: string[] = [];
+  for (const entry of references) {
+    if (!entry || typeof entry !== "object" || !("files" in entry)) continue;
+    const value = entry.files;
+    if (!Array.isArray(value)) continue;
+    for (const file of value) {
+      if (typeof file === "string") files.push(file);
+    }
+  }
+  return files;
+}
+
+const enabledClaimHosts = [
+  {
+    name: "active requirements have production implementations",
+    files: productionFiles,
+    references: ["docs/requirements/active/**/*.md"],
+  },
+  {
+    name: "active requirements have executed test hosts",
+    files: testFiles,
+    references: ["docs/requirements/active/**/*.md"],
+  },
+  {
+    name: "executed tests cite the implementation they run",
+    files: testFiles,
+    references: productionFiles,
+  },
+] as const;
+
+/** Each enabled evidence claim must keep its own host list and reference population. */
+export function enabledClaimFailures(
+  claims: readonly {
+    name?: string;
+    disabled?: boolean;
+    files?: readonly string[];
+    reference?: unknown;
+  }[] = evidenceGraph.claims,
+): string[] {
+  const failures: string[] = [];
+  const enabled = claims.filter((claim) => !claim.disabled && claim.name !== undefined);
+  for (const expected of enabledClaimHosts) {
+    const matches = enabled.filter((claim) => claim.name === expected.name);
+    if (matches.length !== 1) {
+      fail(failures, `enabled claim ${expected.name} must appear once`);
+      continue;
+    }
+    const claim = matches[0];
+    if (!claim || !samePopulation(claim.files ?? [], expected.files)) {
+      fail(failures, `enabled claim ${expected.name} files are not its host population`);
+    }
+    if (!claim || !samePopulation(referencePopulation(claim.reference), expected.references)) {
+      fail(failures, `enabled claim ${expected.name} references are not its reference population`);
+    }
+  }
+  return failures;
 }
 
 export async function checkInventory(projectRoot = root): Promise<string[]> {
@@ -822,7 +1040,16 @@ export async function checkInventory(projectRoot = root): Promise<string[]> {
       if (!registersNamedTest(body, test.registeredAs, test.exportName)) {
         fail(failures, `${requirement.id} does not register ${test.exportName} with the runner`);
       }
-      if (duplicateFullNames(body).includes(test.registeredAs)) {
+      const commandKey = `${test.cwd}\n${test.args.join("\0")}`;
+      const commandBodies = inventory.requirements.flatMap((entry) =>
+        entry.tests
+          .filter((candidate) => `${candidate.cwd}\n${candidate.args.join("\0")}` === commandKey)
+          .map((candidate) => candidate.file),
+      );
+      const commandSources = [...new Set(commandBodies)].map((file) =>
+        readFileSync(join(projectRoot, file), "utf8"),
+      );
+      if (duplicateFullNamesAcross(commandSources).includes(test.registeredAs)) {
         fail(failures, `${requirement.id} registers ${test.registeredAs} more than once`);
       }
       if (!commandTargetsFile(test)) {
@@ -912,6 +1139,7 @@ export async function checkInventory(projectRoot = root): Promise<string[]> {
   );
   failures.push(...globFailures);
 
+  failures.push(...enabledClaimFailures());
   for (const rel of claimFiles()) {
     if (isNonProductionPath(rel) && productionFiles.includes(rel)) {
       fail(failures, `production claim includes a non-production file: ${rel}`);
@@ -1031,13 +1259,24 @@ export async function checkInventory(projectRoot = root): Promise<string[]> {
   for (const tests of groups.values()) {
     const first = tests[0];
     if (!first) continue;
-    const proc = Bun.spawnSync([process.execPath, ...first.args], {
-      cwd: resolve(projectRoot, first.cwd),
-      stdout: "pipe",
-      stderr: "pipe",
-      env: plainTestEnv(),
-    });
-    const output = `${proc.stdout.toString()}\n${proc.stderr.toString()}`;
+    const reportDir = mkdtempSync(join(tmpdir(), "idlekit-evidence-"));
+    const reportPath = join(reportDir, "junit.xml");
+    const proc = Bun.spawnSync(
+      [process.execPath, ...first.args, "--reporter=junit", "--reporter-outfile", reportPath],
+      {
+        cwd: resolve(projectRoot, first.cwd),
+        stdout: "pipe",
+        stderr: "pipe",
+        env: plainTestEnv(),
+      },
+    );
+    let output = "";
+    try {
+      output = readFileSync(reportPath, "utf8");
+    } catch {
+      output = "";
+    }
+    rmSync(reportDir, { recursive: true, force: true });
     failures.push(
       ...assertExecutedTests(
         output,
