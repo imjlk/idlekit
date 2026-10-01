@@ -1,6 +1,6 @@
 import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "fs";
 import { tmpdir } from "os";
-import { dirname, join, relative, resolve } from "path";
+import { dirname, isAbsolute, join, relative, resolve } from "path";
 import lintConfig from "../lint.config";
 import {
   disabledClaimLedger,
@@ -107,31 +107,41 @@ function describePath(classname: string): string {
   return classname.split(" > ").reverse().join(" > ");
 }
 
+export type JUnitCase = { status: string; name: string; file: string; line: number };
+
 /** Bun's junit file, not the stdout stream tests can print into. */
-export function junitCases(xml: string): { status: string; name: string }[] {
-  const cases: { status: string; name: string }[] = [];
+export function junitCases(xml: string): JUnitCase[] {
+  const cases: JUnitCase[] = [];
   const stack: string[] = [];
+  const files: string[] = [];
   const token = /<testsuite\b[^>]*>|<\/testsuite>|<testcase\b[^>]*\/>|<testcase\b[^>]*>[\s\S]*?<\/testcase>/g;
   for (const match of xml.matchAll(token)) {
     const tag = match[0];
     if (tag.startsWith("</testsuite")) {
       stack.pop();
+      files.pop();
       continue;
     }
     if (tag.startsWith("<testsuite")) {
+      const file = xmlAttr(tag, "file");
+      files.push(file);
       const name = xmlAttr(tag, "name");
-      if (name.length > 0 && !isFileSuite(name, xmlAttr(tag, "file"))) stack.push(name);
+      if (name.length > 0 && !isFileSuite(name, file)) stack.push(name);
       continue;
     }
     const title = xmlAttr(tag, "name");
     const described = describePath(xmlAttr(tag, "classname"));
     const suite = described.length > 0 ? described : stack.join(" > ");
+    const ownFile = xmlAttr(tag, "file");
+    const parsedLine = Number(xmlAttr(tag, "line"));
     let status = "pass";
     if (/<failure\b|<error\b/.test(tag)) status = "fail";
     else if (/<skipped\b/.test(tag)) status = "skip";
     cases.push({
       status,
       name: [suite, title].filter((part) => part.length > 0).join(" > "),
+      file: ownFile.length > 0 ? ownFile : (files.at(-1) ?? ""),
+      line: Number.isInteger(parsedLine) ? parsedLine : 0,
     });
   }
   return cases;
@@ -288,6 +298,16 @@ function inlineCodeSpans(line: string): Array<[number, number]> {
   return spans;
 }
 
+/** A setext heading text is a paragraph. Quotes, lists, and breaks are not. */
+function isSetextParagraph(text: string): boolean {
+  if (text.startsWith(">")) return false;
+  if (/^[-*+](?:[ \t]|$)/.test(text)) return false;
+  if (/^\d{1,9}[.)](?:[ \t]|$)/.test(text)) return false;
+  if (/^#{1,6}(?:[ \t]|$)/.test(text)) return false;
+  if (/^(?:-{3,}|\*{3,}|_{3,})[ \t]*$/.test(text)) return false;
+  return true;
+}
+
 function indexOutsideInline(line: string, token: string, from = 0): number {
   const spans = inlineCodeSpans(line);
   let search = from;
@@ -355,7 +375,8 @@ export function headingAnchors(markdown: string): string[] {
       pending = undefined;
       continue;
     }
-    pending = heading.trim() === "" ? undefined : heading;
+    const paragraph = heading.trim();
+    pending = paragraph.length > 0 && isSetextParagraph(paragraph) ? heading : undefined;
   }
   return anchors;
 }
@@ -545,10 +566,324 @@ function readIdentifier(body: string, index: number): { value: string; end: numb
   return { value: match[0], end: cursor + match[0].length };
 }
 
-type Registration = { suites: string[]; title: string; callback?: string };
+type Registration = { suites: string[]; title: string; callback?: string; line: number };
+
+/**
+ * Names bound inside a block, a catch clause, or a function parameter list.
+ * A module-level declaration does not hide the exported callback.
+ */
+function matchingGroup(body: string, open: number, left: string, right: string): number {
+  let cursor = open + 1;
+  let depth = 1;
+  while (cursor < body.length && depth > 0) {
+    const char = body[cursor] ?? "";
+    if (char === "'" || char === '"') {
+      cursor = skipQuoted(body, cursor);
+      continue;
+    }
+    if (char === "/" && body[cursor + 1] === "/") {
+      const line = body.indexOf("\n", cursor);
+      cursor = line < 0 ? body.length : line + 1;
+      continue;
+    }
+    if (char === "/" && body[cursor + 1] === "*") {
+      const close = body.indexOf("*/", cursor + 2);
+      cursor = close < 0 ? body.length : close + 2;
+      continue;
+    }
+    if (char === left) depth += 1;
+    else if (char === right) depth -= 1;
+    cursor += 1;
+  }
+  return depth === 0 ? cursor - 1 : -1;
+}
+
+function localRanges(body: string): Array<[string, number, number]> {
+  const ranges: Array<[string, number, number]> = [];
+  const scopes: { start: number; names: string[] }[] = [{ start: 0, names: [] }];
+  let pending: string[] = [];
+  let index = 0;
+
+  const declareHere = (name: string): void => {
+    if (scopes.length <= 1) return;
+    scopes[scopes.length - 1]?.names.push(name);
+  };
+  const openScope = (start: number): void => {
+    scopes.push({ start, names: pending });
+    pending = [];
+  };
+  const closeScope = (end: number): void => {
+    const scope = scopes.pop();
+    if (!scope || scopes.length === 0) return;
+    for (const name of scope.names) ranges.push([name, scope.start, end]);
+  };
+  const previousWord = (at: number): string => {
+    let cursor = at - 1;
+    while (cursor >= 0 && /\s/.test(body[cursor] ?? "")) cursor -= 1;
+    const match = /[A-Za-z_$][A-Za-z0-9_$]*$/.exec(body.slice(0, cursor + 1));
+    if (!match || match.index + match[0].length !== cursor + 1) return "";
+    return match[0];
+  };
+  const skipSpaceAndComments = (cursor: number): number => {
+    let next = cursor;
+    while (next < body.length) {
+      const char = body[next] ?? "";
+      if (/\s/.test(char)) {
+        next += 1;
+        continue;
+      }
+      if (char === "/" && body[next + 1] === "/") {
+        const line = body.indexOf("\n", next);
+        next = line < 0 ? body.length : line + 1;
+        continue;
+      }
+      if (char === "/" && body[next + 1] === "*") {
+        const close = body.indexOf("*/", next + 2);
+        next = close < 0 ? body.length : close + 2;
+        continue;
+      }
+      break;
+    }
+    return next;
+  };
+  const bindNames = (names: readonly string[], intoPending: boolean): void => {
+    for (const name of names) {
+      if (intoPending) pending.push(name);
+      else declareHere(name);
+    }
+  };
+  const skipNested = (cursor: number, limit: number): number => {
+    let depth = 0;
+    while (cursor < limit) {
+      const mark = body[cursor] ?? "";
+      if (mark === "'" || mark === '"') {
+        cursor = skipQuoted(body, cursor);
+        continue;
+      }
+      if (mark === "<" || mark === "(" || mark === "{" || mark === "[") depth += 1;
+      else if (mark === ">" || mark === ")" || mark === "}" || mark === "]") {
+        if (depth === 0) break;
+        depth -= 1;
+      } else if (depth === 0 && (mark === "," || mark === "=" || mark === ";")) break;
+      cursor += 1;
+    }
+    return cursor;
+  };
+  const bindingNames = (open: number, close: number): string[] => {
+    const names: string[] = [];
+    let cursor = open + 1;
+    let depth = 0;
+    while (cursor < close) {
+      const char = body[cursor] ?? "";
+      if (char === "'" || char === '"') {
+        cursor = skipQuoted(body, cursor);
+        continue;
+      }
+      if (char === "{" || char === "[") {
+        depth += 1;
+        cursor += 1;
+        continue;
+      }
+      if (char === "}" || char === "]") {
+        depth = Math.max(0, depth - 1);
+        cursor += 1;
+        continue;
+      }
+      if (depth !== 0 || !/[A-Za-z_$]/.test(char)) {
+        cursor += 1;
+        continue;
+      }
+      const id = readIdentifier(body, cursor);
+      if (!id || id.end > close) break;
+      const after = skipSpaceAndComments(id.end);
+      if (body[after] === ":") {
+        const alias = readIdentifier(body, skipSpaceAndComments(after + 1));
+        if (alias) names.push(alias.value);
+        cursor = alias ? skipNested(alias.end, close) : after + 1;
+        continue;
+      }
+      names.push(id.value);
+      cursor = id.end;
+    }
+    return names;
+  };
+  const parameterNames = (open: number, close: number): string[] => {
+    const names: string[] = [];
+    let cursor = open + 1;
+    while (cursor < close) {
+      cursor = skipSpaceAndComments(cursor);
+      if (cursor >= close) break;
+      const char = body[cursor] ?? "";
+      if (char === "{" || char === "[") {
+        const end = matchingGroup(body, cursor, char, char === "{" ? "}" : "]");
+        if (end < 0 || end > close) break;
+        names.push(...bindingNames(cursor, end));
+        cursor = skipSpaceAndComments(end + 1);
+        if (body[cursor] === ":") cursor = skipNested(cursor + 1, close);
+        if (body[cursor] === "=") cursor = skipNested(cursor + 1, close);
+        if (body[cursor] === ",") cursor += 1;
+        continue;
+      }
+      if (body.startsWith("...", cursor)) {
+        cursor += 3;
+        continue;
+      }
+      const id = readIdentifier(body, cursor);
+      if (!id || id.end > close) {
+        cursor += 1;
+        continue;
+      }
+      names.push(id.value);
+      cursor = skipSpaceAndComments(id.end);
+      if (body[cursor] === ":") cursor = skipNested(cursor + 1, close);
+      if (body[cursor] === "=") cursor = skipNested(cursor + 1, close);
+      if (body[cursor] === ",") cursor += 1;
+    }
+    return names;
+  };
+  const loopBound = (at: number): boolean => {
+    let cursor = at - 1;
+    while (cursor >= 0 && /\s/.test(body[cursor] ?? "")) cursor -= 1;
+    if (body[cursor] !== "(") return false;
+    const word = previousWord(cursor);
+    if (word === "for") return true;
+    return word === "await" && previousWord(cursor - "await".length) === "for";
+  };
+  const matchingParen = (open: number): number => matchingGroup(body, open, "(", ")");
+
+  while (index < body.length) {
+    const char = body[index] ?? "";
+    if (char === "/" && body[index + 1] === "/") {
+      const next = body.indexOf("\n", index);
+      index = next < 0 ? body.length : next + 1;
+      continue;
+    }
+    if (char === "/" && body[index + 1] === "*") {
+      const next = body.indexOf("*/", index + 2);
+      index = next < 0 ? body.length : next + 2;
+      continue;
+    }
+    if (char === "'" || char === '"') {
+      index = skipQuoted(body, index);
+      continue;
+    }
+    if (char === "`") {
+      index += 1;
+      while (index < body.length && body[index] !== "`") {
+        if (body[index] === "\\") index += 2;
+        else index += 1;
+      }
+      index += 1;
+      continue;
+    }
+    if (char === "/" && regexCanStart(body, index)) {
+      index = skipRegex(body, index);
+      continue;
+    }
+    if (char === "{") {
+      openScope(index);
+      index += 1;
+      continue;
+    }
+    if (char === "}") {
+      closeScope(index + 1);
+      index += 1;
+      continue;
+    }
+    if (char === "(") {
+      const word = previousWord(index);
+      const close = matchingParen(index);
+      const after = close < 0 ? index : skipSpaceAndComments(close + 1);
+      const params =
+        close >= 0 && (word === "function" || word === "catch" || body.startsWith("=>", after));
+      if (params && close >= 0) {
+        bindNames(parameterNames(index, close), true);
+        index = close + 1;
+        continue;
+      }
+      index += 1;
+      continue;
+    }
+    if (!/[A-Za-z_$]/.test(char)) {
+      index += 1;
+      continue;
+    }
+    const word = readIdentifier(body, index);
+    if (!word) {
+      index += 1;
+      continue;
+    }
+    const previous = body[index - 1];
+    if (previous === "." || (previous !== undefined && /[A-Za-z0-9_$]/.test(previous))) {
+      index = word.end;
+      continue;
+    }
+    if (word.value === "const" || word.value === "let" || word.value === "var") {
+      const intoPending = loopBound(index);
+      let cursor = skipSpaceAndComments(word.end);
+      while (cursor < body.length) {
+        if (body[cursor] === "{" || body[cursor] === "[") {
+          const left = body[cursor] ?? "{";
+          const end = matchingGroup(body, cursor, left, left === "{" ? "}" : "]");
+          if (end < 0) break;
+          bindNames(bindingNames(cursor, end), intoPending);
+          cursor = end + 1;
+        } else {
+          const id = readIdentifier(body, cursor);
+          if (!id || id.value === "of" || id.value === "in") break;
+          bindNames([id.value], intoPending);
+          cursor = id.end;
+        }
+        cursor = skipSpaceAndComments(cursor);
+        if (body[cursor] === ":") cursor = skipNested(cursor + 1, body.length);
+        cursor = skipSpaceAndComments(cursor);
+        if (body[cursor] === "=") cursor = skipNested(cursor + 1, body.length);
+        cursor = skipSpaceAndComments(cursor);
+        if (body[cursor] === ",") {
+          cursor = skipSpaceAndComments(cursor + 1);
+          continue;
+        }
+        break;
+      }
+      index = cursor;
+      continue;
+    }
+    if (word.value === "function" || word.value === "class") {
+      const name = readIdentifier(body, skipSpaceAndComments(word.end));
+      if (name) {
+        const intro = previousWord(index);
+        let markAt = index;
+        if (intro === "async") markAt = index - intro.length;
+        let cursor = markAt - 1;
+        while (cursor >= 0 && /\s/.test(body[cursor] ?? "")) cursor -= 1;
+        const mark = cursor < 0 ? "" : (body[cursor] ?? "");
+        const declared =
+          intro === "export" || mark === "" || mark === "{" || mark === "}" || mark === ";";
+        if (declared) declareHere(name.value);
+        else pending.push(name.value);
+        index = name.end;
+      } else index = word.end;
+      continue;
+    }
+    const ahead = skipSpaceAndComments(word.end);
+    if (body.startsWith("=>", ahead)) pending.push(word.value);
+    index = word.end;
+  }
+  while (scopes.length > 1) closeScope(body.length);
+  return ranges;
+}
+
+function locallyBound(
+  ranges: ReadonlyArray<readonly [string, number, number]>,
+  name: string,
+  at: number,
+): boolean {
+  return ranges.some(([bound, from, to]) => bound === name && at >= from && at < to);
+}
 
 /** Every `it`/`test` title in this source, including ones inside a false condition. */
 function collectRegistrations(body: string): Registration[] {
+  const ranges = localRanges(body);
   const found: Registration[] = [];
   const stack: { title: string; depth: number }[] = [];
   let depth = 0;
@@ -638,11 +973,29 @@ function collectRegistrations(body: string): Registration[] {
       const callback = body[comma] === "," ? readIdentifier(body, comma + 1) : undefined;
       const suites = stack.map((frame) => frame.title);
       if (pending) suites.push(pending.title);
-      found.push({ suites, title: quoted.value, callback: callback?.value });
+      const at = callback ? callback.end - callback.value.length : -1;
+      const visible =
+        callback !== undefined && !locallyBound(ranges, callback.value, at);
+      found.push({
+        suites,
+        title: quoted.value,
+        callback: visible ? callback.value : undefined,
+        line: body.slice(0, word.end).split("\n").length,
+      });
     }
     index = open;
   }
   return found;
+}
+
+/** 1-based lines where this full reporter name is registered. */
+export function registrationLines(body: string, registeredAs: string): number[] {
+  return collectRegistrations(body)
+    .filter((registration) => {
+      const full = [...registration.suites, registration.title].join(" > ");
+      return full === registeredAs;
+    })
+    .map((registration) => registration.line);
 }
 
 /** Suite names wrapping this `it`/`test` callback, from the outermost `describe`. */
@@ -683,7 +1036,10 @@ function stringSpans(body: string): Array<[number, number]> {
     }
     if (char === "/" && body[index + 1] === "*") {
       const next = body.indexOf("*/", index + 2);
-      index = next < 0 ? body.length : next + 2;
+      const end = next < 0 ? body.length : next + 2;
+      // `/*` is one comment. A nested `/**` inside it is not a JSDoc block.
+      if (body[index + 2] !== "*") spans.push([index, end]);
+      index = end;
       continue;
     }
     if (char === "'" || char === '"') {
@@ -933,11 +1289,21 @@ export function commandTargetsFile(test: InventoryTest): boolean {
 }
 
 const TEST_SOURCE = /(?:^|\/)[^/]+\.(?:test|spec)\.[cm]?tsx?$/;
+const PRELOAD_FLAGS = ["--preload", "--require"] as const;
 
-function commandedTestFiles(args: readonly string[]): string[] {
+function preloadValue(arg: string): string | undefined {
+  for (const flag of PRELOAD_FLAGS) {
+    if (arg.startsWith(`${flag}=`)) return arg.slice(flag.length + 1);
+  }
+  return undefined;
+}
+
+/** Modules imported before the test files. They are not test targets. */
+function preloadArguments(args: readonly string[]): string[] {
   const files: string[] = [];
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index] ?? "";
+    if (arg === "--") break;
     if (arg === "--preload" || arg === "--require") {
       const next = args[index + 1];
       if (next && !next.startsWith("-")) {
@@ -946,11 +1312,27 @@ function commandedTestFiles(args: readonly string[]): string[] {
       }
       continue;
     }
-    if (arg.startsWith("--preload=") || arg.startsWith("--require=")) {
-      files.push(arg.slice(arg.indexOf("=") + 1));
+    const inline = preloadValue(arg);
+    if (inline !== undefined) files.push(inline);
+  }
+  return files;
+}
+
+function commandedTestFiles(args: readonly string[]): string[] {
+  const files: string[] = [];
+  let patterns = false;
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index] ?? "";
+    if (!patterns && arg === "--") {
+      patterns = true;
       continue;
     }
-    if (arg.startsWith("-")) continue;
+    if (!patterns && (arg === "--preload" || arg === "--require")) {
+      index += 1;
+      continue;
+    }
+    if (!patterns && preloadValue(arg) !== undefined) continue;
+    if (!patterns && arg.startsWith("-")) continue;
     const normalized = arg.replaceAll("\\", "/");
     if (TEST_SOURCE.test(normalized)) files.push(normalized);
   }
@@ -958,10 +1340,12 @@ function commandedTestFiles(args: readonly string[]): string[] {
 }
 
 function sameCommandFile(cwd: string, target: string, inventoried: string): boolean {
-  const wanted = target.replaceAll("\\", "/");
+  const wanted = target.replaceAll("\\", "/").replace(/^\.\//, "");
   const file = inventoried.replaceAll("\\", "/");
   const fromCwd = relative(cwd, file).replaceAll("\\", "/");
-  return wanted === file || wanted === fromCwd;
+  if (wanted === file || wanted === fromCwd) return true;
+  if (!isAbsolute(target)) return false;
+  return resolve(target) === resolve(cwd, fromCwd);
 }
 
 /** Test paths named by the command that are not already inventory entries for that command. */
@@ -976,7 +1360,7 @@ export function uninventoriedCommandTargets(
 }
 
 function localPreloadFiles(cwd: string, args: readonly string[]): string[] {
-  const names = commandedTestFiles(args).filter((file) => !TEST_SOURCE.test(file));
+  const names = preloadArguments(args);
   const bunfig = join(cwd, "bunfig.toml");
   if (existsSync(bunfig)) {
     const text = readFileSync(bunfig, "utf8");
@@ -993,6 +1377,46 @@ function localPreloadFiles(cwd: string, args: readonly string[]): string[] {
     if (existsSync(path)) files.push(path);
   }
   return files;
+}
+
+const RELATIVE_IMPORT = /(?:from\s+|import\s*\(\s*|import\s+)["'](\.[^"']+)["']/g;
+
+function resolveRelativeImport(fromFile: string, spec: string): string | undefined {
+  const base = resolve(dirname(fromFile), spec);
+  const candidates = [
+    base,
+    `${base}.ts`,
+    `${base}.tsx`,
+    `${base}.mts`,
+    `${base}.cts`,
+    join(base, "index.ts"),
+    join(base, "index.tsx"),
+  ];
+  return candidates.find((candidate) => existsSync(candidate));
+}
+
+/** The file plus the local modules it imports, so a helper registration stays visible. */
+export function sourceGraph(files: readonly string[]): string[] {
+  const seen = new Set<string>();
+  const bodies: string[] = [];
+  const queue = [...files];
+  while (queue.length > 0) {
+    const file = queue.pop();
+    if (!file || !existsSync(file)) continue;
+    const real = realpathSync(file);
+    if (seen.has(real)) continue;
+    seen.add(real);
+    if (real.split(/[/\\]/).includes("node_modules")) continue;
+    const body = readFileSync(real, "utf8");
+    bodies.push(body);
+    for (const match of body.matchAll(RELATIVE_IMPORT)) {
+      const spec = match[1];
+      if (!spec) continue;
+      const next = resolveRelativeImport(real, spec);
+      if (next) queue.push(next);
+    }
+  }
+  return bodies;
 }
 
 async function approvalIds(): Promise<string[]> {
@@ -1216,6 +1640,14 @@ export function enabledClaimFailures(
   return failures;
 }
 
+/** Reporter flags are options, so they stay before a `--` pattern separator. */
+export function junitReporterArgs(args: readonly string[], reportPath: string): string[] {
+  const flags = ["--reporter=junit", "--reporter-outfile", reportPath];
+  const separator = args.indexOf("--");
+  if (separator < 0) return [...args, ...flags];
+  return [...args.slice(0, separator), ...flags, ...args.slice(separator)];
+}
+
 export async function checkInventory(projectRoot = root): Promise<string[]> {
   const failures: string[] = [];
   const inventory = readJson<InventoryFile>(join(projectRoot, "docs/requirements/inventory.json"));
@@ -1348,10 +1780,10 @@ export async function checkInventory(projectRoot = root): Promise<string[]> {
       if (extras.length > 0) {
         fail(failures, `${requirement.id} command runs uninventoried tests: ${extras.join(", ")}`);
       }
-      const commandSources = [
-        ...inventoriedFiles.map((file) => readFileSync(join(projectRoot, file), "utf8")),
-        ...localPreloadFiles(commandCwd, test.args).map((file) => readFileSync(file, "utf8")),
-      ];
+      const commandSources = sourceGraph([
+        ...inventoriedFiles.map((file) => join(projectRoot, file)),
+        ...localPreloadFiles(commandCwd, test.args),
+      ]);
       if (duplicateFullNamesAcross(commandSources).includes(test.registeredAs)) {
         fail(failures, `${requirement.id} registers ${test.registeredAs} more than once`);
       }
@@ -1555,20 +1987,19 @@ export async function checkInventory(projectRoot = root): Promise<string[]> {
       groups.set(key, list);
     }
   }
+
   for (const tests of groups.values()) {
     const first = tests[0];
     if (!first) continue;
     const reportDir = mkdtempSync(join(tmpdir(), "idlekit-evidence-"));
     const reportPath = join(reportDir, "junit.xml");
-    const proc = Bun.spawnSync(
-      [process.execPath, ...first.args, "--reporter=junit", "--reporter-outfile", reportPath],
-      {
-        cwd: resolve(projectRoot, first.cwd),
-        stdout: "pipe",
-        stderr: "pipe",
-        env: plainTestEnv(),
-      },
-    );
+    const command = [process.execPath, ...junitReporterArgs(first.args, reportPath)];
+    const proc = Bun.spawnSync(command, {
+      cwd: resolve(projectRoot, first.cwd),
+      stdout: "pipe",
+      stderr: "pipe",
+      env: plainTestEnv(),
+    });
     let output = "";
     try {
       output = readFileSync(reportPath, "utf8");
@@ -1583,6 +2014,23 @@ export async function checkInventory(projectRoot = root): Promise<string[]> {
         tests.map((test) => test.registeredAs),
       ),
     );
+    const entries = junitCases(output);
+    for (const test of tests) {
+      // Bun records the loader's line, not the source line, after ttsc runs.
+      // The imported module graph rejects a second registration of this name.
+      const bound = entries.some(
+        (entry) =>
+          entry.status === "pass" &&
+          reporterNameMatches(entry.name, test.registeredAs) &&
+          sameCommandFile(test.cwd, entry.file, test.file),
+      );
+      if (!bound) {
+        fail(
+          failures,
+          `executed ${test.registeredAs} did not pass from its registration in ${test.file}`,
+        );
+      }
+    }
   }
   if (names.length === 0) fail(failures, "inventory execution list is empty");
   return failures;
