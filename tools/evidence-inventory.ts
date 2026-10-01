@@ -45,7 +45,14 @@ export type ShrinkResult = {
 
 const SOURCE_EXTENSION = /\.(?:[cm]?tsx?)$/;
 const NON_PRODUCTION_ROLE = /\.(?:test|spec|generated|d)$/;
-const NON_PRODUCTION_SEGMENTS = new Set(["fixtures", "dist"]);
+const NON_PRODUCTION_SEGMENTS = new Set([
+  "fixtures",
+  "dist",
+  "__tests__",
+  "test",
+  "tests",
+]);
+const TEST_MODIFIERS = new Set(["only", "skip", "todo"]);
 
 export function isNonProductionPath(rel: string): boolean {
   const normalized = rel.replaceAll("\\", "/");
@@ -53,6 +60,12 @@ export function isNonProductionPath(rel: string): boolean {
   const stem = file.replace(SOURCE_EXTENSION, "");
   if (stem !== file && NON_PRODUCTION_ROLE.test(stem)) return true;
   return normalized.split("/").some((segment) => NON_PRODUCTION_SEGMENTS.has(segment));
+}
+
+/** Package sources the inventory must keep, including `.tsx`, `.mts`, and `.cts`. */
+export function isInventoryPackageHost(rel: string): boolean {
+  const normalized = rel.replaceAll("\\", "/");
+  return normalized.startsWith("packages/") && SOURCE_EXTENSION.test(normalized);
 }
 
 export function hasProductionExport(body: string): boolean {
@@ -70,26 +83,28 @@ function plainTestEnv(): Record<string, string | undefined> {
 }
 
 const XML_TEXT: Record<string, string> = {
-  "&amp;gt;": ">",
-  "&amp;lt;": "<",
-  "&amp;quot;": '"',
-  "&amp;apos;": "'",
-  "&amp;amp;": "&",
+  "&amp;": "&",
   "&gt;": ">",
   "&lt;": "<",
   "&quot;": '"',
   "&apos;": "'",
-  "&amp;": "&",
 };
 
-function xmlAttr(tag: string, name: string): string {
-  const match = new RegExp(`\\b${name}="([^"]*)"`).exec(tag);
-  // One pass. Bun stores `>` as `&gt;`, then the attribute encoder escapes `&`.
-  // Longer names stay ahead of `&amp;` so the replacement is not decoded again.
-  return (match?.[1] ?? "").replace(
-    /&(?:amp;gt|amp;lt|amp;quot|amp;apos|amp;amp|gt|lt|quot|apos|amp);/g,
+/** One XML layer. `&gt;` becomes `>`, and `&amp;gt;` stays the text `&gt;`. */
+function decodeXmlText(text: string): string {
+  return text.replace(
+    /&(?:amp|gt|lt|quot|apos);/g,
     (entity) => XML_TEXT[entity] ?? entity,
   );
+}
+
+function rawAttr(tag: string, name: string): string {
+  const match = new RegExp(`\\b${name}="([^"]*)"`).exec(tag);
+  return match?.[1] ?? "";
+}
+
+function xmlAttr(tag: string, name: string): string {
+  return decodeXmlText(rawAttr(tag, name));
 }
 
 /** A file suite's `name` is the path. Describe suites keep their own names. */
@@ -102,9 +117,14 @@ function isFileSuite(name: string, file: string): boolean {
  * Bun stores describe ancestry in `classname`, inside-out, and often omits
  * `file` on the outer suite. Nested `testsuite` names remain the fallback.
  */
-function describePath(classname: string): string {
-  if (classname.length === 0) return "";
-  return classname.split(" > ").reverse().join(" > ");
+function describePath(rawClassname: string): string {
+  if (rawClassname.length === 0) return "";
+  // Bun joins suites with ` > `. The attribute stores that join as ` &amp;gt; `.
+  const encodedSeparator = " &amp;gt; ";
+  const names = rawClassname.includes(encodedSeparator)
+    ? rawClassname.split(encodedSeparator).map((piece) => decodeXmlText(piece))
+    : decodeXmlText(rawClassname).split(" > ");
+  return names.reverse().join(" > ");
 }
 
 export type JUnitCase = { status: string; name: string; file: string; line: number };
@@ -130,7 +150,7 @@ export function junitCases(xml: string): JUnitCase[] {
       continue;
     }
     const title = xmlAttr(tag, "name");
-    const described = describePath(xmlAttr(tag, "classname"));
+    const described = describePath(rawAttr(tag, "classname"));
     const suite = described.length > 0 ? described : stack.join(" > ");
     const ownFile = xmlAttr(tag, "file");
     const parsedLine = Number(xmlAttr(tag, "line"));
@@ -1031,13 +1051,31 @@ function collectRegistrations(body: string): Registration[] {
       continue;
     }
     const previous = body[word.end - word.value.length - 1];
-    index = word.end;
-    if (previous === "." || (previous !== undefined && /[A-Za-z0-9_$]/.test(previous))) continue;
-    if (word.value !== "describe" && word.value !== "it" && word.value !== "test") continue;
-    const open = skipWhitespace(body, index);
-    if (body[open] !== "(") continue;
+    if (previous === "." || (previous !== undefined && /[A-Za-z0-9_$]/.test(previous))) {
+      index = word.end;
+      continue;
+    }
+    if (word.value !== "describe" && word.value !== "it" && word.value !== "test") {
+      index = word.end;
+      continue;
+    }
+    let cursor = word.end;
+    for (;;) {
+      if (body[cursor] !== ".") break;
+      const modifier = readIdentifier(body, cursor + 1);
+      if (!modifier || !TEST_MODIFIERS.has(modifier.value)) break;
+      cursor = modifier.end;
+    }
+    const open = skipWhitespace(body, cursor);
+    if (body[open] !== "(") {
+      index = word.end;
+      continue;
+    }
     const quoted = readQuoted(body, open + 1);
-    if (!quoted) continue;
+    if (!quoted) {
+      index = word.end;
+      continue;
+    }
     if (word.value === "describe") {
       pending = { title: quoted.value, parens };
     } else {
@@ -1799,7 +1837,7 @@ export async function checkInventory(projectRoot = root): Promise<string[]> {
     } catch {
       fail(failures, `protected evidence file is missing: ${rel}`);
     }
-    const isPackageHost = rel.startsWith("packages/") && rel.endsWith(".ts");
+    const isPackageHost = isInventoryPackageHost(rel);
     const listed = inventory.requirements.some(
       (requirement) =>
         requirement.production.includes(rel) || requirement.tests.some((test) => test.file === rel),

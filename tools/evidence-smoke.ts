@@ -22,6 +22,7 @@ import {
   headingAnchors,
   missingProtectedDocs,
   registeredSuites,
+  isInventoryPackageHost,
   isNonProductionPath,
   recordedBaseSpec,
   requireFetchedRevision,
@@ -355,6 +356,8 @@ try {
     printed.length > 0 &&
     classnameName === "concrete typia validator > inner > accepts a numeric" &&
     filelessName === "concrete typia validator > accepts a numeric" &&
+    junitCases('<testcase name="literal &gt; sign" />')[0]?.name === "literal > sign" &&
+    junitCases('<testcase name="literal &amp;gt; sign" />')[0]?.name === "literal &gt; sign" &&
     located?.file === "src/host.test.ts" &&
     located.line === locatedLine &&
     locatedLine === 2;
@@ -694,12 +697,23 @@ try {
   } finally {
     rmSync(graphDir, { recursive: true, force: true });
   }
+  const focusedBody = [
+    'describe("kept", () => {',
+    '  if (false) it("quota is documented", exportedName);',
+    '  it.only("quota is documented", otherName);',
+    "});",
+  ].join("\n");
+  const focusedNames = duplicateFullNames(focusedBody);
+  const focusedCallback = registeredSuites(focusedBody, "otherName", "quota is documented");
   const duplicateOk =
     duplicateNames.length === 1 &&
     duplicateNames[0] === "kept > quota is documented" &&
     duplicateStillRegistered.length === 1 &&
     acrossFiles.includes("kept > quota is documented") &&
-    graphDuplicate;
+    graphDuplicate &&
+    focusedNames.length === 1 &&
+    focusedNames[0] === "kept > quota is documented" &&
+    focusedCallback.length === 1;
   record(
     "duplicate-title",
     "zero",
@@ -827,7 +841,27 @@ try {
   const specMts = isNonProductionPath("packages/web/src/widget.spec.mts");
   const generatedTsx = isNonProductionPath("packages/web/src/widget.generated.tsx");
   const productionTs = !isNonProductionPath("packages/core/src/scenario/concreteValidator.ts");
-  const specOk = specTsx && specMts && generatedTsx && productionTs;
+  const testsDir = isNonProductionPath("packages/core/src/__tests__/quota.ts");
+  const testDir = isNonProductionPath("packages/core/src/test/quota.ts");
+  const testsSegment = isNonProductionPath("packages/core/src/tests/quota.ts");
+  const testkit = !isNonProductionPath("packages/core/src/testkit/conformance.ts");
+  const tsxHost = isInventoryPackageHost("packages/web/src/quota.tsx");
+  const mtsHost = isInventoryPackageHost("packages/web/src/quota.mts");
+  const ctsHost = isInventoryPackageHost("packages/web/src/quota.cts");
+  const markdownHost = !isInventoryPackageHost("docs/quota.md");
+  const specOk =
+    specTsx &&
+    specMts &&
+    generatedTsx &&
+    productionTs &&
+    testsDir &&
+    testDir &&
+    testsSegment &&
+    testkit &&
+    tsxHost &&
+    mtsHost &&
+    ctsHost &&
+    markdownHost;
   record("spec-tsx", "nonzero", specOk ? 1 : 0, specOk, String(specOk));
 
   let fetchThrew = false;
