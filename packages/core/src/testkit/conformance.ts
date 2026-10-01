@@ -15,6 +15,8 @@ import type { MilestoneReport } from "../sim/analysis/milestones";
 import { executeResetCycles } from "../sim/analysis/resetCycle";
 import type { ResetCycleExecution, ResetCyclePolicy } from "../sim/analysis/resetCycle";
 import { analyzeResetPolicies } from "../sim/analysis/resetOptimization";
+import { applyOfflineSeconds } from "../sim/offline";
+import { runScenario } from "../sim/simulator";
 import { stepOnce } from "../sim/step";
 import { createStrategyRegistry } from "../sim/strategy/registry";
 import type { Action, CompiledScenario, Model, SimState } from "../sim/types";
@@ -368,6 +370,96 @@ export function checkConstantIncomeExperiment(declared: boolean, value: Constant
     ok: reachOk && elasticityOk && directionOk,
     applicable: true,
     summary: `target ${target}, rates ${baselineRate} and ${probeRate}: reach ${reach("baseline")} and ${reach(`oat:incomeRate:${probeRate}`)}, elasticity ${row?.elasticity} against ${expected}`,
+  };
+}
+
+/** Inputs of the guarded-advance relation: a constant-income model with no action, evolve, milestone, or seed. */
+type GuardedAdvanceCase = Readonly<{
+  incomePerSec: number;
+  initialMoney: number;
+  mode: "drop" | "accumulate";
+  stepSec: number;
+  durationSec: number;
+  chunkSec: number;
+  /** Money that meets the goal and the until stop. Null runs to the horizon. */
+  goalAmount: number | null;
+  maxSteps: number | null;
+  fast: boolean;
+}>;
+
+/**
+ * A declared constant-income interval advanced by exact chunks ends where fixed-step ends.
+ * The relation runs the same scenario with `run.advance` omitted and enabled, online and offline, and compares the
+ * economy, every traced state, stats, the observation, and the stop. The advanced run must take no fallback step.
+ *
+ * @evidence docs/requirements/active/guarded-analytic-advance.md#req-pr16-exact-match Runs fixed-step and exact chunks on the same constant-income case and compares wallet, trace, counters, goals, and stop.
+ * @evidenceReview docs/requirements/active/guarded-analytic-advance.md#req-pr16-exact-match #4a3881f Re-read the section: the relation compares the reference and the chunked run online and offline, and an undeclared case does not apply.
+ */
+export function checkGuardedAdvance(declared: boolean, value: GuardedAdvanceCase): RelationCheck {
+  if (!declared) return { ok: true, applicable: false, summary: "guarded advance relation is not declared" };
+  const engine = createNumberEngine();
+  const unit = { code: "COIN" as const };
+  const model: Model<number, "COIN", FlatVars> = {
+    id: "conformance-guarded-advance",
+    version: 1,
+    income: (ctx) => ({ unit: ctx.unit, amount: value.incomePerSec }),
+    actions: () => [],
+    analytic: () => ({ incomeKind: "constant" }),
+  };
+  const goal = value.goalAmount;
+  const scenario = (advance: boolean): CompiledScenario<number, "COIN", FlatVars> => ({
+    ctx: { E: engine, unit, tickPolicy: { mode: value.mode } },
+    model,
+    initial: {
+      t: 0,
+      wallet: { money: { unit, amount: value.initialMoney }, bucket: engine.zero() },
+      maxMoneyEver: { unit, amount: value.initialMoney },
+      prestige: { count: 0, points: engine.zero(), multiplier: engine.from(1) },
+      vars: { buys: 0 },
+    },
+    run: {
+      stepSec: value.stepSec,
+      durationSec: value.durationSec,
+      ...(value.maxSteps !== null ? { maxSteps: value.maxSteps } : {}),
+      ...(goal !== null
+        ? {
+            until: (current: SimState<number, "COIN", FlatVars>) => current.wallet.money.amount >= goal,
+            goals: [{ id: "wallet", met: (current: SimState<number, "COIN", FlatVars>) => current.wallet.money.amount >= goal }],
+          }
+        : {}),
+      ...(value.fast ? { fast: { enabled: true, disableMoneyEvents: true } } : {}),
+      trace: { everySteps: 1 },
+      ...(advance ? { advance: { enabled: true, chunkSec: value.chunkSec } } : {}),
+    },
+  });
+  const view = (result: ReturnType<typeof runScenario<number, "COIN", FlatVars>>) =>
+    canonicalJson({
+      end: snapshotEconomy(engine, result.end),
+      trace: (result.trace ?? []).map((state) => snapshotEconomy(engine, state)),
+      stats: result.stats ?? null,
+      observation: result.observation ?? null,
+      stop: result.stop ?? null,
+    });
+  const reference = runScenario(scenario(false));
+  const chunked = runScenario(scenario(true));
+  const offlineScenario = (advance: boolean) => {
+    const base = scenario(advance);
+    return { ...base, run: { ...base.run, trace: undefined } };
+  };
+  const offlineOptions = {
+    useStrategy: false,
+    ...(value.maxSteps !== null ? { maxSteps: value.maxSteps } : {}),
+    ...(goal !== null ? { until: (current: SimState<number, "COIN", FlatVars>) => current.wallet.money.amount >= goal } : {}),
+  };
+  const offlineReference = applyOfflineSeconds({ scenario: offlineScenario(false), seconds: value.durationSec, options: offlineOptions });
+  const offlineChunked = applyOfflineSeconds({ scenario: offlineScenario(true), seconds: value.durationSec, options: offlineOptions });
+  const exact = (report: typeof chunked.advance) => report?.fallbackSteps === 0 && (report.exactSteps === 0 || report.status === "exact");
+  const online = view(chunked) === view(reference);
+  const offline = view(offlineChunked) === view(offlineReference);
+  return {
+    ok: online && offline && exact(chunked.advance) && exact(offlineChunked.advance),
+    applicable: true,
+    summary: `income ${value.incomePerSec} ${value.mode}, step ${value.stepSec}, horizon ${value.durationSec}, chunk ${value.chunkSec}: online ${online ? "same" : "different"} (${chunked.advance?.status} ${chunked.advance?.exactSteps}/${chunked.advance?.fallbackSteps}), offline ${offline ? "same" : "different"} (${offlineChunked.advance?.status} ${offlineChunked.advance?.exactSteps}/${offlineChunked.advance?.fallbackSteps})`,
   };
 }
 

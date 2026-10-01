@@ -1,5 +1,6 @@
 import type { OfflineActionPolicy, OfflinePolicy } from "../scenario/offlinePolicy";
 import { deepClonePreservingPrototype } from "../utils/deepClone";
+import { advanceCapabilityOf, consumeExactChunk, createAdvanceLedger, finishAdvanceReport } from "./advance";
 import { analyzeUX } from "./analysis/ux";
 import { recordPrestigeReset } from "./constraints";
 import { createBoundedLog, createEventBuffer } from "./eventBuffer";
@@ -83,6 +84,8 @@ function allowsOfflineAction(
  * @evidenceReview docs/requirements/active/simulation-time-boundaries.md#req-pr02-simulation-time-boundaries #c6da01b Re-read the section: offline uses that partial tick, a short maxSteps returns budget instead of discarding the run, and a committed tick that does not move state.t throws through assertTickAdvanced, including a sub-ulp partial tick before any tick moved t.
  * @evidence docs/requirements/active/session-clock.md#req-pr06-session-clock Steps reward time only. `requestedSec` stays the caller absence, and `useStrategy: false` or policy `none` does not call `decide`.
  * @evidenceReview docs/requirements/active/session-clock.md#req-pr06-session-clock #6fee79f Re-read the section: state.t moves by simulated reward seconds, and a direct call does not turn the requested absence into state.t. The gap-end rule for a stop inside an offline gap belongs to the session, not to this direct call, and so does reading until on a copy: this call hands options.until the state.
+ * @evidence docs/requirements/active/guarded-analytic-advance.md#req-pr16-exact-match Without a strategy call, run.advance takes exact chunks on the simulated-seconds clock, and any refused step runs stepOnce.
+ * @evidenceReview docs/requirements/active/guarded-analytic-advance.md#req-pr16-exact-match #4a3881f Re-read the section: the chunk takes the dt nextBoundary chose, adds each sample's dt to simulatedSec, and a strategy call keeps every step on fixed-step.
  */
 export function applyOfflineSeconds<N, U extends string, Vars>(args: {
   scenario: CompiledScenario<N, U, Vars>;
@@ -150,6 +153,11 @@ export function applyOfflineSeconds<N, U extends string, Vars>(args: {
   let constraints = scenario.constraints;
   recorder.recordStart(start);
   let stop: RunStop | undefined;
+  const advance = scenario.run.advance;
+  const advanceLedger = advance?.enabled
+    ? createAdvanceLedger(advance.tolerance !== undefined ? "approximation" : "exact", advance.tolerance ?? null)
+    : undefined;
+  const advanceCapability = advanceLedger ? advanceCapabilityOf(scenario.model, scenario.ctx, start) : undefined;
 
   while (stop === undefined) {
     const decision = nextBoundary({
@@ -169,10 +177,48 @@ export function applyOfflineSeconds<N, U extends string, Vars>(args: {
       break;
     }
 
-    const stepCtx = stepContext(
-      { ...scenario.ctx, ...(constraints ? { constraints } : {}) },
-      decision.dt,
-    );
+    const tickCtx = { ...scenario.ctx, ...(constraints ? { constraints } : {}) };
+    const strategyReason = "purchase strategy is not in the exact interval";
+    if (advanceLedger && useStrategy && !advanceLedger.reasons.includes(strategyReason)) advanceLedger.reasons.push(strategyReason);
+    if (advanceLedger && !useStrategy) {
+      const consumed = consumeExactChunk({
+        ctx: tickCtx,
+        model: scenario.model,
+        state,
+        firstDt: decision.dt,
+        stepSec,
+        chunkSec: advance?.chunkSec ?? decision.dt,
+        elapsedSec: simulatedSec,
+        steps,
+        durationSec: resolved.effectiveSec,
+        maxSteps,
+        until: untilFn,
+        requested: advanceLedger.requested,
+      });
+      if (consumed.ok) {
+        // One observation sample per reference step. The chunk adds no events, so the event log is not a per-tick transcript.
+        for (const sample of consumed.samples) {
+          assertTickAdvanced("offline", sample.t0, sample.t1, sample.dt, stepSec, start.t);
+          state = sample.state;
+          simulatedSec += sample.dt;
+          steps += 1;
+          recorder.recordStep({
+            t0: sample.t0,
+            t1: sample.t1,
+            dt: sample.dt,
+            events: [],
+            observedMoney: { applied: 1, dropped: 0, queued: 0, flushed: 0, blocked: 0, rewarded: sample.rewarded },
+            prestigeApplied: false,
+            state,
+          });
+        }
+        advanceLedger.exactSteps += consumed.samples.length;
+        advanceLedger.chunks += 1;
+        continue;
+      }
+      if (!advanceLedger.reasons.includes(consumed.reason)) advanceLedger.reasons.push(consumed.reason);
+    }
+    const stepCtx = stepContext(tickCtx, decision.dt);
     // A snapshot pair may save undefined. It is still the state to restore.
     const restorable =
       resolvedPolicy.policy.mode === "allow" &&
@@ -224,6 +270,7 @@ export function applyOfflineSeconds<N, U extends string, Vars>(args: {
     state = out.next;
     simulatedSec += decision.dt;
     steps += 1;
+    if (advanceLedger) advanceLedger.fallbackSteps += 1;
     recorder.recordStep({
       t0: actionStartT,
       t1: state.t,
@@ -272,6 +319,7 @@ export function applyOfflineSeconds<N, U extends string, Vars>(args: {
     uxFlags,
     eventLog: retained.eventLog,
     stop,
+    ...(advanceLedger && advanceCapability ? { advance: finishAdvanceReport(advanceLedger, advanceCapability) } : {}),
     offline: {
       requestedSec: seconds,
       preDecaySec: resolved.preDecaySec,

@@ -40,6 +40,7 @@ const DOCS_WITH_KO = [
   "docs/balance-checks.md",
   "docs/optional-analysis-judge.md",
   "docs/flow-observability.md",
+  "docs/guarded-analytic-advance.md",
   "examples/adapter-pattern/README.md",
   "examples/money-package/README.md",
   "examples/plugins/README.md",

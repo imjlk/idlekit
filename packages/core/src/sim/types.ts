@@ -295,6 +295,16 @@ export type SimRunOptions = Readonly<{
     disableMoneyEvents?: boolean;
   }>;
 
+  /**
+   * Opt-in analytic chunks. Omitted means every tick stays on fixed-step.
+   * `tolerance` asks for an approximation, which this runner does not apply.
+   */
+  advance?: Readonly<{
+    enabled: boolean;
+    chunkSec?: number;
+    tolerance?: string;
+  }>;
+
   /** Records a committed prestige reset. Preview does not receive this callback. */
   onPrestigeReset?: (t: number) => void;
 }>;
@@ -351,4 +361,7 @@ export type RunResult<N, U extends string, Vars> = Readonly<{
   }>;
 
   stop?: RunStop;
+
+  /** Present only when `run.advance.enabled` is true. */
+  advance?: import("./advance").AdvanceReportV1;
 }>;

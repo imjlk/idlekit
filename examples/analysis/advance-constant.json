@@ -1,0 +1,12 @@
+{
+  "seed": "16",
+  "incomePerSec": 2,
+  "stepSec": 1,
+  "durationSec": 8,
+  "goalAmount": 10,
+  "chunks": [1, 8],
+  "bench": [
+    { "label": "30d", "horizonSec": 2592000, "stepSec": 3600 },
+    { "label": "90d", "horizonSec": 7776000, "stepSec": 3600 }
+  ]
+}

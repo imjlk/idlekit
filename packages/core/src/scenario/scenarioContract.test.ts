@@ -124,6 +124,7 @@ export function keepsTypedContractSingleSource(): void {
     "idlekit.balance-checks.v1",
     "idlekit.judge.v1",
     "idlekit.flow.v1",
+    "idlekit.advance.v1",
   ]);
   const text = canonicalJson(buildContractDocument(sources));
   expect(canonicalJson(buildContractDocument(sources))).toBe(text);

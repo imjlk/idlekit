@@ -17,6 +17,7 @@ import {
   checkCooldownResumeFromJson,
   checkDurationBoundary,
   checkGrowthShapes,
+  checkGuardedAdvance,
   checkJsonRoundTrip,
   checkMilestoneRetention,
   checkNonNegative,
@@ -2236,6 +2237,81 @@ describe("PR-14 experiment relation", () => {
     "replays constant-income reach and elasticity across the seed corpus",
     replaysConstantIncomeExperimentAcrossTheSeedCorpus,
   );
+});
+
+const advanceFixture = JSON.parse(
+  readFileSync(join(import.meta.dir, "../../../../examples/analysis/advance-constant.json"), "utf8"),
+) as { seed: string; incomePerSec: number; stepSec: number; durationSec: number; goalAmount: number; chunks: number[] };
+
+const advanceIncomes = [0, 0.1, 1 / 3, 2, 7.5, -1] as const;
+const advanceMoney = [0, 3, 1e6] as const;
+const advanceSteps = [0.1, 0.25, 1, 3, 3600] as const;
+
+/**
+ * @evidence docs/requirements/active/guarded-analytic-advance.md#req-pr16-exact-match Runs the guarded-advance relation over the seed corpus: fractional steps, a near-epsilon or partial last tick, chunks off the step grid, goals, budgets, and both tick policies.
+ * @evidenceReview docs/requirements/active/guarded-analytic-advance.md#req-pr16-exact-match #4a3881f Re-read the section, then ran this function on the short and extended corpus: every case ends, traces, counts, and stops as fixed-step, online and offline, and an undeclared case does not apply.
+ * @evidence ./conformance.ts#checkGuardedAdvance The seed corpus asks the harness to run each guarded-advance case.
+ * @evidenceReview ./conformance.ts#checkGuardedAdvance #c83d980 Re-read checkGuardedAdvance: it runs the case with advance omitted and enabled, online and offline, compares economy, trace, stats, observation, and stop, and requires no fallback step.
+ */
+export function replaysGuardedAdvanceAcrossTheSeedCorpus(): void {
+  const testSeed = 0xad16;
+  expectProperty({
+    predicateId: "declared-guarded-advance",
+    testSeed,
+    cases: conformanceCaseCount(),
+    generate: (index, rng) => {
+      if (index === 0) {
+        // The fixture case: 2 coin per second, step 1, horizon 8, one chunk for the whole horizon, goal 10.
+        return {
+          incomePerSec: advanceFixture.incomePerSec,
+          initialMoney: 0,
+          mode: "drop" as const,
+          stepSec: advanceFixture.stepSec,
+          durationSec: advanceFixture.durationSec,
+          chunkSec: advanceFixture.durationSec,
+          goalAmount: advanceFixture.goalAmount,
+          maxSteps: null,
+          fast: false,
+        };
+      }
+      const stepSec = advanceSteps[rng.int(0, advanceSteps.length - 1)]!;
+      const whole = rng.int(0, 40);
+      // A partial last tick, none, or one inside the horizon epsilon.
+      const tail = [0, stepSec / 2, stepSec * 1e-13][rng.int(0, 2)]!;
+      const durationSec = whole * stepSec + tail;
+      const incomePerSec = advanceIncomes[rng.int(0, advanceIncomes.length - 1)]!;
+      const initialMoney = advanceMoney[rng.int(0, advanceMoney.length - 1)]!;
+      const chunkSec = [stepSec / 2, stepSec, stepSec * 2.5, Math.max(stepSec, durationSec)][rng.int(0, 3)]!;
+      return {
+        incomePerSec,
+        initialMoney,
+        mode: rng.int(0, 1) === 0 ? ("drop" as const) : ("accumulate" as const),
+        stepSec,
+        durationSec,
+        chunkSec,
+        goalAmount: rng.int(0, 2) === 0 ? initialMoney + incomePerSec * stepSec * rng.int(1, 30) : null,
+        maxSteps: rng.int(0, 3) === 0 ? rng.int(0, 45) : null,
+        fast: rng.int(0, 1) === 1,
+      };
+    },
+    shrink: (value) => (value.durationSec > value.stepSec ? [{ ...value, durationSec: value.durationSec - value.stepSec }] : []),
+    predicate: (value) => {
+      expectApplicable(checkGuardedAdvance(true, value));
+      expect(checkGuardedAdvance(false, value).applicable).toBe(false);
+      return true;
+    },
+    describeCase: (value) => ({
+      gameSeed: null,
+      engineId: "number",
+      modelId: "conformance-guarded-advance",
+      strategyId: null,
+      tickSchedule: { stepSec: value.stepSec, durationSec: value.durationSec },
+    }),
+  });
+}
+
+describe("PR-16 guarded advance relation", () => {
+  it("replays guarded advance against fixed-step across the seed corpus", replaysGuardedAdvanceAcrossTheSeedCorpus);
 });
 
 const seededDropFixture = JSON.parse(

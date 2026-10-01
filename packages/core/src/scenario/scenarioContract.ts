@@ -13,6 +13,7 @@ import type { ScenarioV1 } from "./types";
  * PR-17 appends the balance-check document.
  * PR-18 appends the rules judge report.
  * PR-15 appends the flow report.
+ * PR-16 appends the guarded advance report.
  * The registry does not migrate every existing DTO.
  */
 
@@ -107,6 +108,12 @@ const contractRegistry = [
     kind: "flow" as const,
     typeName: "FlowReportV1",
     source: "packages/core/src/sim/analysis/flow.ts",
+  },
+  {
+    id: "idlekit.advance.v1" as const,
+    kind: "advance" as const,
+    typeName: "AdvanceReportV1",
+    source: "packages/core/src/sim/advance.ts",
   },
 ] as const;
 

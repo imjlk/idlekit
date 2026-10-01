@@ -1,3 +1,4 @@
+import { advanceCapabilityOf, consumeExactChunk, createAdvanceLedger, finishAdvanceReport } from "./advance";
 import { analyzeUX } from "./analysis/ux";
 import { recordPrestigeReset } from "./constraints";
 import { createBoundedLog, createEventBuffer } from "./eventBuffer";
@@ -24,6 +25,8 @@ function finishTrace<N, U extends string, Vars>(
  *
  * @evidence docs/requirements/active/simulation-time-boundaries.md#req-pr02-simulation-time-boundaries Stops on the economic horizon, including a shorter last tick, and checks that horizon before maxSteps.
  * @evidenceReview docs/requirements/active/simulation-time-boundaries.md#req-pr02-simulation-time-boundaries #c6da01b Re-read the section: a duration or until that is already met stops before maxSteps, the last tick stays inside the horizon, and a committed tick that does not move state.t throws through assertTickAdvanced, including a sub-ulp partial tick before any tick moved t.
+ * @evidence docs/requirements/active/guarded-analytic-advance.md#req-pr16-exact-match With run.advance enabled, an exact chunk records one sample per reference step on the summed clock, and any refused step runs stepOnce.
+ * @evidenceReview docs/requirements/active/guarded-analytic-advance.md#req-pr16-exact-match #4a3881f Re-read the section: the chunk takes the dt nextBoundary chose, adds each sample's dt to elapsedSec, and records the sample with no events.
  */
 export function runScenario<N, U extends string, Vars>(
   sc: CompiledScenario<N, U, Vars>,
@@ -77,6 +80,11 @@ export function runScenario<N, U extends string, Vars>(
 
   recorder.recordStart(state);
   let stop: RunStop | undefined;
+  const advance = sc.run.advance;
+  const advanceLedger = advance?.enabled
+    ? createAdvanceLedger(advance.tolerance !== undefined ? "approximation" : "exact", advance.tolerance ?? null)
+    : undefined;
+  const advanceCapability = advanceLedger ? advanceCapabilityOf(sc.model, sc.ctx, state) : undefined;
   while (stop === undefined) {
     const decision = nextBoundary({
       elapsedSec,
@@ -95,10 +103,51 @@ export function runScenario<N, U extends string, Vars>(
       break;
     }
 
-    const stepCtx = stepContext(
-      { ...sc.ctx, ...(constraints ? { constraints } : {}) },
-      decision.dt,
-    );
+    const tickCtx = { ...sc.ctx, ...(constraints ? { constraints } : {}) };
+    if (advanceLedger) {
+      const consumed = consumeExactChunk({
+        ctx: tickCtx,
+        model: sc.model,
+        state,
+        firstDt: decision.dt,
+        stepSec,
+        chunkSec: advance?.chunkSec ?? decision.dt,
+        elapsedSec,
+        steps,
+        durationSec,
+        maxSteps,
+        until: sc.run.until,
+        requested: advanceLedger.requested,
+        strategy: sc.strategy,
+      });
+      if (consumed.ok) {
+        // One observation sample per reference step. The chunk adds no events, so the event log is not a per-tick transcript.
+        for (const sample of consumed.samples) {
+          assertTickAdvanced("runScenario", sample.t0, sample.t1, sample.dt, stepSec, start.t);
+          recorder.recordStep({
+            t0: sample.t0,
+            t1: sample.t1,
+            dt: sample.dt,
+            events: [],
+            observedMoney: { applied: 1, dropped: 0, queued: 0, flushed: 0, blocked: 0, rewarded: sample.rewarded },
+            prestigeApplied: false,
+            state: sample.state,
+          });
+          state = sample.state;
+          steps += 1;
+          elapsedSec += sample.dt;
+          if (traceLog && steps % everySteps === 0) {
+            traceLog.push(state);
+            lastTraced = state;
+          } else if (sc.run.trace && traceLog === undefined && steps % everySteps === 0) trace.push(state);
+        }
+        advanceLedger.exactSteps += consumed.samples.length;
+        advanceLedger.chunks += 1;
+        continue;
+      }
+      if (!advanceLedger.reasons.includes(consumed.reason)) advanceLedger.reasons.push(consumed.reason);
+    }
+    const stepCtx = stepContext(tickCtx, decision.dt);
     const decisions = (sc.strategy?.decide(stepCtx, sc.model, state) ?? []).slice(0, maxActionsPerStep);
     const actionStartT = state.t;
     const step = stepOnce({
@@ -140,6 +189,7 @@ export function runScenario<N, U extends string, Vars>(
 
     steps += 1;
     elapsedSec += decision.dt;
+    if (advanceLedger) advanceLedger.fallbackSteps += 1;
     if (traceLog && steps % everySteps === 0) {
       traceLog.push(state);
       lastTraced = state;
@@ -191,5 +241,6 @@ export function runScenario<N, U extends string, Vars>(
       : {}),
     eventLog: retained.eventLog,
     stop,
+    ...(advanceLedger && advanceCapability ? { advance: finishAdvanceReport(advanceLedger, advanceCapability) } : {}),
   };
 }
