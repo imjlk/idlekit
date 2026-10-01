@@ -38,6 +38,9 @@ export function compareAmounts<A, B>(
   right: AmountSide<B>,
   logTolerance = DEFAULT_LOG_TOLERANCE,
 ): AmountComparison {
+  if (!Number.isFinite(logTolerance) || logTolerance < 0) {
+    throw new Error("logTolerance must be a finite non-negative number");
+  }
   const leftText = left.engine.toString(left.amount);
   const rightText = right.engine.toString(right.amount);
   const leftFiniteAmount = left.engine.isFinite(left.amount);

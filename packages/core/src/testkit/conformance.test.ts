@@ -372,8 +372,8 @@ describe("PR-01 bulk equivalence", () => {
 /**
  * @evidence docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness The same scenario replays from an on-grid checkpoint, and an off-grid checkpoint does not apply.
  * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #a195f0e Re-read the section: the 0.1 grid resume at 0.2 applies, and the resume at 1.5 does not.
- * @evidence ./conformanceRun.ts#checkDurationBoundary A 4s run at step 1 and a 0.3s run at step 0.1 both apply; an until at t greater than or equal to 3 does not. A maxSteps that is not an integer, or that cannot cover the simulator's repeated step additions, does not apply.
- * @evidenceReview ./conformanceRun.ts#checkDurationBoundary #31a9c6f Re-read the function: it snapshots and restores the strategy around the run, and it compares the end time with the timestamp advanced from the run's own start. A maxSteps that is not an integer, or that cannot cover the simulator's repeated step additions, skips before the run.
+ * @evidence ./conformanceRun.ts#checkDurationBoundary A 4s run at step 1 and a 0.3s run at step 0.1 both apply; an until at t greater than or equal to 3 does not. A maxSteps that is not an integer, or that cannot cover the simulator's repeated step additions, does not apply. A timestamp that stepSec cannot advance does not apply.
+ * @evidenceReview ./conformanceRun.ts#checkDurationBoundary #7e3db38 Re-read the function: it snapshots and restores the strategy around the run, and it compares the end time with the timestamp advanced from the run's own start. A maxSteps that is not an integer, or that cannot cover the simulator's repeated step additions, skips before the run. A null addition count skips before the run.
  * @evidence ./conformanceRun.ts#rejectNonPositiveStep Step 0 is a failing applicable check.
  * @evidenceReview ./conformanceRun.ts#rejectNonPositiveStep #31155b2 Step 0 is a failing applicable check.
  * @evidence ./conformanceRun.ts#checkResume An off-grid resume at 1.5 does not apply; a 0.2 resume on the 0.1 grid does.
@@ -442,6 +442,26 @@ export function stopsOnAPositiveTickGridAndRefusesANonPositiveStep(): void {
   const driftedOpenJson = checkResumeFromJson(driftedBase, 0.006);
   expect(driftedOpenJson.ok).toBe(true);
   expect(driftedOpenJson.applicable).toBe(true);
+  const stuckBase = constantScenario({ rate: 1, durationSec: 1, stepSec: 1 });
+  const stuckBoundary = checkDurationBoundary({
+    ...stuckBase,
+    initial: { ...stuckBase.initial, t: 1e20 },
+    run: { ...stuckBase.run, maxSteps: 2 },
+  });
+  expect(stuckBoundary.ok).toBe(true);
+  expect(stuckBoundary.applicable).toBe(false);
+  expect(stuckBoundary.summary).toContain("advance");
+  const stuckResume = checkResume(
+    {
+      ...stuckBase,
+      initial: { ...stuckBase.initial, t: 1e20 },
+      run: { ...stuckBase.run, durationSec: 2 },
+    },
+    1,
+  );
+  expect(stuckResume.ok).toBe(true);
+  expect(stuckResume.applicable).toBe(false);
+  expect(stuckResume.summary).toContain("advance");
 }
 
 /**
@@ -625,6 +645,39 @@ export function recordsWalletAndMaxMoneyUnitsOnTheEconomySnapshot(): void {
     vars: { buys: 1, tag: Symbol("t") } as unknown as Vars,
   });
   expect(symbolValue).toContain("symbol");
+  const plainItems = [1];
+  const namedItems = [1] as number[] & { extra?: number };
+  namedItems.extra = 2;
+  const plainItemsSnap = snapshotEconomy(engine, {
+    ...gemState,
+    vars: { buys: 1, items: plainItems } as unknown as Vars,
+  });
+  const namedItemsSnap = snapshotEconomy(engine, {
+    ...gemState,
+    vars: { buys: 1, items: namedItems } as unknown as Vars,
+  });
+  expect(namedItemsSnap).not.toBe(plainItemsSnap);
+  expect(namedItemsSnap).toContain("extra");
+  const hiddenItems = [1];
+  Object.defineProperty(hiddenItems, "extra", { value: 2, enumerable: false });
+  const hiddenItemsSnap = snapshotEconomy(engine, {
+    ...gemState,
+    vars: { buys: 1, items: hiddenItems } as unknown as Vars,
+  });
+  expect(hiddenItemsSnap).toBe(plainItemsSnap);
+  const symbolKey = Symbol("extra");
+  const markedVars = { buys: 1 };
+  Object.defineProperty(markedVars, symbolKey, { value: 3, enumerable: true });
+  const markedSnap = snapshotEconomy(engine, {
+    ...gemState,
+    vars: markedVars as unknown as Vars,
+  });
+  const unmarkedSnap = snapshotEconomy(engine, {
+    ...gemState,
+    vars: { buys: 1 } as unknown as Vars,
+  });
+  expect(markedSnap).not.toBe(unmarkedSnap);
+  expect(markedSnap).toContain("Symbol(extra)");
   const bigintReplay = checkReplay({
     ...constantScenario({ rate: 1, durationSec: 1, stepSec: 1 }),
     initial: {
@@ -1211,6 +1264,29 @@ describe("counterexample report", () => {
       }),
     ).toThrow(/1n/);
   });
+
+  it("reports a generator throw with the seed and case index", () => {
+    expect(() =>
+      expectProperty({
+        predicateId: "rejected-draw",
+        testSeed: 41,
+        cases: 6,
+        generate: (index) => {
+          if (index === 5) throw new Error("draw rejected");
+          return index;
+        },
+        shrink: () => [],
+        predicate: () => true,
+        describeCase: () => ({
+          gameSeed: null,
+          engineId: null,
+          modelId: null,
+          strategyId: null,
+          tickSchedule: null,
+        }),
+      }),
+    ).toThrow(/"testSeed": 41[\s\S]*"caseIndex": 5[\s\S]*draw rejected/);
+  });
 });
 
 describe("PR-05 observation retention", () => {
@@ -1274,6 +1350,19 @@ describe("PR-05 observation retention", () => {
     });
     expect(lossyObserver.ok).toBe(false);
     expect(lossyObserver.applicable).toBe(true);
+    const namedObserver = checkObserver({
+      ...scenario,
+      model: {
+        ...scenario.model,
+        evolve: (ctx, current) => {
+          const items = [1] as number[] & { extra?: number };
+          if (ctx.emit) items.extra = 1;
+          return { ...current, vars: { buys: current.vars.buys, items } as unknown as Vars };
+        },
+      },
+    });
+    expect(namedObserver.ok).toBe(false);
+    expect(namedObserver.applicable).toBe(true);
   });
 
   it("snapshots vars whose serializer throws", () => {
@@ -1416,8 +1505,8 @@ export function keepsFormulaSecondsApartFromExecutedEtaResults(): void {
 /**
  * @evidence docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness Cross-engine comparison matches a finite constant-income amount and refuses a number Infinity collapse.
  * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #a195f0e Re-read the section, then ran this function: 24 matches across engines and 1e400 is refused on the number engine.
- * @evidence ./compareAmounts.ts#compareAmounts The number engine and break-infinity engine agree on 24, and 1e400 collapses only on the number engine.
- * @evidenceReview ./compareAmounts.ts#compareAmounts #4af6dfc Re-read compareAmounts: 24 matches by absLog10, and 1e400 returns refused-number-collapse because the number engine is not finite.
+ * @evidence ./compareAmounts.ts#compareAmounts The number engine and break-infinity engine agree on 24, and 1e400 collapses only on the number engine. A negative or non-finite logTolerance is rejected before the status is calculated.
+ * @evidenceReview ./compareAmounts.ts#compareAmounts #98e12f6 Re-read compareAmounts: 24 matches by absLog10, and 1e400 returns refused-number-collapse because the number engine is not finite. A negative or non-finite logTolerance throws before the status is calculated.
  * @evidence ./compareAmounts.ts#AmountComparison.status Expects equal for 24, refused-number-collapse for 1e400, and different for the near-zero and opposite-sign pairs.
  * @evidenceReview ./compareAmounts.ts#AmountComparison.status #62a5942 Expects equal for 24, refused-number-collapse for 1e400, and different for the near-zero and opposite-sign pairs.
  * @evidence ./compareAmounts.ts#AmountComparison.left The collapsed number text is not the break-infinity text.
@@ -1463,6 +1552,13 @@ export function matchesASafeConstantRunAndRefusesNumberInfinityCollapse(): void 
     { engineId: "number", engine: numberEngine, amount: numberEngine.from(-1e-13) },
   );
   expect(opposite.status).toBe("different");
+  const sameSide = {
+    engineId: "number",
+    engine: numberEngine,
+    amount: numberEngine.from(24),
+  };
+  expect(() => compareAmounts(sameSide, sameSide, -1)).toThrow(/logTolerance/);
+  expect(() => compareAmounts(sameSide, sameSide, Number.POSITIVE_INFINITY)).toThrow(/logTolerance/);
 }
 
 describe("engine differential", () => {

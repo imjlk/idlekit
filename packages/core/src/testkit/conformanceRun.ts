@@ -297,7 +297,30 @@ function runSeededProperty<T>(run: PropertyRun<T>): { ok: true } | { ok: false; 
   }
   const rng = createTestRng(run.testSeed);
   for (let index = 0; index < run.cases; index += 1) {
-    const original = run.generate(index, rng);
+    let original: T;
+    try {
+      original = run.generate(index, rng);
+    } catch (error) {
+      const thrown = error instanceof Error ? error.message : String(error);
+      return {
+        ok: false,
+        report: {
+          predicateId: run.predicateId,
+          generatorVersion: conformanceGeneratorVersion,
+          testSeed: run.testSeed,
+          gameSeed: null,
+          engineId: null,
+          modelId: null,
+          strategyId: null,
+          tickSchedule: null,
+          caseIndex: index,
+          original: undefined,
+          value: undefined,
+          shrinkingPath: [],
+          thrown,
+        },
+      };
+    }
     const outcome = predicateOutcome(run.predicate, original);
     if (!outcome.failed) continue;
     const shrunk = shrinkValue(run.predicate, run.shrink, original);
@@ -419,7 +442,32 @@ function snapshotData(item: unknown, seen: WeakMap<object, number>, nextId: { va
       }
       elements.push(snapshotData(descriptor.value, seen, nextId));
     }
-    return elements;
+    const extras: Record<string, unknown> = {};
+    let extraCount = 0;
+    for (const key of Object.getOwnPropertyNames(item)) {
+      if (key === "length" || isArrayIndexName(key, item.length)) continue;
+      const descriptor = Object.getOwnPropertyDescriptor(item, key);
+      if (!descriptor || descriptor.enumerable !== true) continue;
+      extraCount += 1;
+      if (descriptor.get !== undefined || !("value" in descriptor)) {
+        extras[key] = "getter";
+        continue;
+      }
+      extras[key] = snapshotData(descriptor.value, seen, nextId);
+    }
+    for (const key of enumerableSymbolKeys(item)) {
+      const descriptor = Object.getOwnPropertyDescriptor(item, key);
+      if (!descriptor) continue;
+      extraCount += 1;
+      const label = `symbol:${String(key)}`;
+      if (descriptor.get !== undefined || !("value" in descriptor)) {
+        extras[label] = "getter";
+        continue;
+      }
+      extras[label] = snapshotData(descriptor.value, seen, nextId);
+    }
+    if (extraCount === 0) return elements;
+    return { items: elements, extras };
   }
   const record: Record<string, unknown> = {};
   for (const key of Object.getOwnPropertyNames(item)) {
@@ -430,6 +478,16 @@ function snapshotData(item: unknown, seen: WeakMap<object, number>, nextId: { va
       continue;
     }
     record[key] = snapshotData(descriptor.value, seen, nextId);
+  }
+  for (const key of enumerableSymbolKeys(item)) {
+    const descriptor = Object.getOwnPropertyDescriptor(item, key);
+    if (!descriptor) continue;
+    const label = `symbol:${String(key)}`;
+    if (descriptor.get !== undefined || !("value" in descriptor)) {
+      record[label] = "getter";
+      continue;
+    }
+    record[label] = snapshotData(descriptor.value, seen, nextId);
   }
   return record;
 }
@@ -447,14 +505,18 @@ function jsonSilentlyDrops(item: unknown, seen = new Set<object>()): boolean {
   if (Array.isArray(item)) {
     for (const key of Object.getOwnPropertyNames(item)) {
       if (key === "length") continue;
-      if (!/^(?:0|[1-9][0-9]*)$/.test(key)) continue;
-      if (Number(key) >= item.length) continue;
+      if (!isArrayIndexName(key, item.length)) {
+        const descriptor = Object.getOwnPropertyDescriptor(item, key);
+        if (descriptor?.enumerable === true) return true;
+        continue;
+      }
       const descriptor = Object.getOwnPropertyDescriptor(item, key);
       if (!descriptor || descriptor.get !== undefined || !("value" in descriptor)) continue;
       if (jsonSilentlyDrops(descriptor.value, seen)) return true;
     }
-    return false;
+    return enumerableSymbolKeys(item).length > 0;
   }
+  if (enumerableSymbolKeys(item).length > 0) return true;
   for (const key of Object.getOwnPropertyNames(item)) {
     const descriptor = Object.getOwnPropertyDescriptor(item, key);
     if (!descriptor || descriptor.enumerable !== true) continue;
@@ -598,7 +660,8 @@ function onGrid<N, U extends string, Vars>(
     return skip("split is not on the original tick grid");
   }
   const maxSteps = scenario.run.maxSteps;
-  const stepsTaken = additionsUntilDuration(scenario.initial.t, step, duration) ?? durationTicks;
+  const stepsTaken = additionsUntilDuration(scenario.initial.t, step, duration);
+  if (stepsTaken === null) return skip("timestamp cannot advance by stepSec");
   if (maxSteps !== undefined && (!Number.isInteger(maxSteps) || maxSteps <= stepsTaken)) {
     return skip("maxSteps can stop the run before durationSec");
   }
@@ -846,6 +909,19 @@ function ordinaryJsonData(descriptor: PropertyDescriptor | undefined): boolean {
   );
 }
 
+function isArrayIndexName(key: string, length: number): boolean {
+  return /^(?:0|[1-9][0-9]*)$/.test(key) && Number(key) < length;
+}
+
+function enumerableSymbolKeys(item: object): symbol[] {
+  const keys: symbol[] = [];
+  for (const key of Object.getOwnPropertySymbols(item)) {
+    const descriptor = Object.getOwnPropertyDescriptor(item, key);
+    if (descriptor?.enumerable === true) keys.push(key);
+  }
+  return keys;
+}
+
 function arrayIndexCount(value: readonly unknown[]): number {
   let count = 0;
   for (const key of Object.getOwnPropertyNames(value)) {
@@ -1084,7 +1160,8 @@ export function checkDurationBoundary<N, U extends string, Vars>(
   const ticks = wholeTickCount(duration, step);
   if (ticks === null) return skip("duration is not a multiple of stepSec");
   const maxSteps = scenario.run.maxSteps;
-  const stepsTaken = additionsUntilDuration(scenario.initial.t, step, duration) ?? ticks;
+  const stepsTaken = additionsUntilDuration(scenario.initial.t, step, duration);
+  if (stepsTaken === null) return skip("timestamp cannot advance by stepSec");
   if (maxSteps !== undefined && (!Number.isInteger(maxSteps) || maxSteps <= stepsTaken)) {
     return skip("maxSteps can stop the run before durationSec");
   }
