@@ -10,7 +10,7 @@ import {
   testFiles,
 } from "../evidence.config";
 import formatConfig from "../lint.format.config";
-import { root } from "./evidence-host";
+import { compilerBinName, root } from "./evidence-host";
 
 type InventoryTest = {
   file: string;
@@ -215,7 +215,7 @@ export function omittedProgramHosts(programFiles: readonly string[], hosts: read
 /** Source files of the evidence program, including imports of the included roots. */
 export function evidenceProgramSourceFiles(tsconfigPath: string): string[] {
   const base = realpathSync(dirname(tsconfigPath));
-  const tsc = join(base, "node_modules", ".bin", "tsc");
+  const tsc = join(base, "node_modules", ".bin", compilerBinName("tsc"));
   const proc = Bun.spawnSync(
     [tsc, "-p", tsconfigPath, "--listFilesOnly", "--noEmit", "--pretty", "false"],
     { cwd: base, stdout: "pipe", stderr: "pipe" },
@@ -398,7 +398,7 @@ export function headingAnchors(markdown: string): string[] {
   let htmlBlock: HtmlBlock | undefined;
   let pending: string | undefined;
   for (const rawLine of markdown.split(/\r?\n/)) {
-    const marker = /^( {0,3})(`{3,}|~{3,})(.*)$/.exec(rawLine);
+    const marker = /^( {0,3})(`{3,}|~{3,})(.*)$/.exec(atxText(rawLine));
     const opener = marker?.[2];
     const info = marker?.[3] ?? "";
     if (fenceChar) {
@@ -1510,7 +1510,9 @@ export function sourceGraph(files: readonly string[]): string[] {
     if (real.split(/[/\\]/).includes("node_modules")) continue;
     const body = readFileSync(real, "utf8");
     bodies.push(body);
+    const hidden = stringSpans(body);
     for (const match of body.matchAll(RELATIVE_IMPORT)) {
+      if (match.index !== undefined && insideSpan(hidden, match.index)) continue;
       const spec = match[1];
       if (!spec) continue;
       const next = resolveRelativeImport(real, spec);
@@ -1660,7 +1662,7 @@ export function graphRuleFailures(rules: { readonly ["evidence/graph"]?: unknown
   return [];
 }
 
-const formatIncludeRoots = [
+export const formatIncludeRoots = [
   "evidence.config.ts",
   "lint.config.ts",
   "lint.format.config.ts",
@@ -1671,21 +1673,84 @@ const formatIncludeRoots = [
   "tools/format-check.ts",
 ];
 
+function segmentGlob(pattern: string, part: string): boolean {
+  if (pattern === "*") return true;
+  const source = pattern
+    .split("*")
+    .map((piece) => piece.replace(/[.+?^${}()|[\]\\]/g, "\\$&"))
+    .join("[^/]*");
+  return new RegExp(`^${source}$`).test(part);
+}
+
+/** `**` matches any number of directories, including none. `*` stays in one segment. */
+function excludeGlobMatches(pattern: readonly string[], parts: readonly string[]): boolean {
+  let patternIndex = 0;
+  let partIndex = 0;
+  let star = -1;
+  let mark = -1;
+  while (partIndex < parts.length) {
+    const token = pattern[patternIndex];
+    if (patternIndex < pattern.length && token === "**") {
+      star = patternIndex;
+      mark = partIndex;
+      patternIndex += 1;
+      continue;
+    }
+    if (
+      patternIndex < pattern.length &&
+      token !== undefined &&
+      segmentGlob(token, parts[partIndex] ?? "")
+    ) {
+      patternIndex += 1;
+      partIndex += 1;
+      continue;
+    }
+    if (star < 0) return false;
+    patternIndex = star + 1;
+    mark += 1;
+    partIndex = mark;
+  }
+  while (patternIndex < pattern.length && pattern[patternIndex] === "**") patternIndex += 1;
+  return patternIndex === pattern.length;
+}
+
+function lastGlobSegment(glob: string): string {
+  return glob.split("/").at(-1) ?? glob;
+}
+
+/**
+ * Exact path, basename, `*` / `**` glob, or an extensionless directory.
+ * `tools` excludes `tools/evidence-smoke.ts`. A trailing slash does too.
+ */
+function formatExcludeDropsRoot(pattern: string, rel: string): boolean {
+  const glob = pattern.replaceAll("\\", "/").replace(/^\.\//, "").replace(/\/+$/, "");
+  if (glob.length === 0 || glob === ".") return false;
+  const rooted = glob.includes("/") ? glob : `**/${glob}`;
+  const parts = rel.split("/");
+  if (excludeGlobMatches(rooted.split("/"), parts)) return true;
+  const fileLike = glob.includes("*") || lastGlobSegment(glob).includes(".");
+  if (fileLike) return false;
+  return excludeGlobMatches(`${rooted}/**`.split("/"), parts);
+}
+
 /** Root format config must lint these roots and fail when a file is unformatted. */
 export function formatGateFailures(options?: { tsconfigText?: string; severity?: unknown }): string[] {
   const text = options?.tsconfigText ?? readFileSync(join(root, "tsconfig.format.json"), "utf8");
   const failures: string[] = [];
   let plugins: Array<{ transform?: string; configFile?: string; enabled?: boolean }> = [];
   let include: unknown;
+  let exclude: unknown;
   try {
     const parsed = JSON.parse(text) as {
       compilerOptions?: {
         plugins?: Array<{ transform?: string; configFile?: string; enabled?: boolean }>;
       };
       include?: unknown;
+      exclude?: unknown;
     };
     plugins = parsed.compilerOptions?.plugins ?? [];
     include = parsed.include;
+    exclude = parsed.exclude;
   } catch (error) {
     return [error instanceof Error ? error.message : String(error)];
   }
@@ -1698,6 +1763,19 @@ export function formatGateFailures(options?: { tsconfigText?: string; severity?:
   } else {
     for (const rel of formatIncludeRoots) {
       if (!include.includes(rel)) failures.push(`tsconfig.format.json include dropped ${rel}`);
+    }
+  }
+  if (exclude !== undefined) {
+    const patterns = Array.isArray(exclude) ? exclude : [];
+    const strings = patterns.every((entry) => typeof entry === "string");
+    if (!Array.isArray(exclude) || !strings) {
+      failures.push("tsconfig.format.json exclude must be a list of strings");
+    } else {
+      for (const rel of formatIncludeRoots) {
+        if (patterns.some((pattern) => formatExcludeDropsRoot(pattern, rel))) {
+          failures.push(`tsconfig.format.json exclude dropped ${rel}`);
+        }
+      }
     }
   }
   const severity = options?.severity ?? formatConfig.format?.severity;
