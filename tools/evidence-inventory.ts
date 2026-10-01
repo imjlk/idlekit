@@ -72,11 +72,26 @@ function plainTestEnv(): Record<string, string | undefined> {
 function xmlAttr(tag: string, name: string): string {
   const match = new RegExp(`\\b${name}="([^"]*)"`).exec(tag);
   return (match?.[1] ?? "")
+    .replaceAll("&amp;", "&")
     .replaceAll("&lt;", "<")
     .replaceAll("&gt;", ">")
     .replaceAll("&quot;", '"')
-    .replaceAll("&apos;", "'")
-    .replaceAll("&amp;", "&");
+    .replaceAll("&apos;", "'");
+}
+
+/** A file suite's `name` is the path. Describe suites keep their own names. */
+function isFileSuite(name: string, file: string): boolean {
+  if (file.length > 0 && name === file) return true;
+  return /(?:^|\/)[^/]+\.[cm]?tsx?$/.test(name);
+}
+
+/**
+ * Bun stores describe ancestry in `classname`, inside-out, and often omits
+ * `file` on the outer suite. Nested `testsuite` names remain the fallback.
+ */
+function describePath(classname: string): string {
+  if (classname.length === 0) return "";
+  return classname.split(" > ").reverse().join(" > ");
 }
 
 /** Bun's junit file, not the stdout stream tests can print into. */
@@ -92,14 +107,19 @@ export function junitCases(xml: string): { status: string; name: string }[] {
     }
     if (tag.startsWith("<testsuite")) {
       const name = xmlAttr(tag, "name");
-      if (name.length > 0 && name !== xmlAttr(tag, "file")) stack.push(name);
+      if (name.length > 0 && !isFileSuite(name, xmlAttr(tag, "file"))) stack.push(name);
       continue;
     }
     const title = xmlAttr(tag, "name");
+    const described = describePath(xmlAttr(tag, "classname"));
+    const suite = described.length > 0 ? described : stack.join(" > ");
     let status = "pass";
     if (/<failure\b|<error\b/.test(tag)) status = "fail";
     else if (/<skipped\b/.test(tag)) status = "skip";
-    cases.push({ status, name: [...stack, title].filter((part) => part.length > 0).join(" > ") });
+    cases.push({
+      status,
+      name: [suite, title].filter((part) => part.length > 0).join(" > "),
+    });
   }
   return cases;
 }
@@ -833,7 +853,7 @@ export function unregisteredImplementationHost(
   const names = new Set(scope.fileRegistered ?? registered);
   const own = new Set(registered);
   const hidden = stringSpans(body);
-  let ownCites = false;
+  const covered = new Set<string>();
   for (const match of body.matchAll(
     /\/\*\*((?:(?!\*\/)[\s\S])*)\*\/\s*export\s+(?:async\s+)?function\s+([A-Za-z0-9_]+)/g,
   )) {
@@ -844,15 +864,35 @@ export function unregisteredImplementationHost(
     const implementation = evidenceTargets(comment).filter((target) =>
       isImplementationTarget(target, doc, anchor),
     );
-    if (implementation.length === 0) continue;
-    if (!names.has(name)) return { kind: "unregistered", name };
+    if (!names.has(name)) {
+      if (implementation.length > 0) return { kind: "unregistered", name };
+      continue;
+    }
     if (!own.has(name)) continue;
+    if (implementation.length === 0) continue;
     if (implementation.some((target) => !citesProduction(target, scope.file, scope.production))) {
       return { kind: "foreign", name };
     }
-    ownCites = true;
+    covered.add(name);
   }
-  return ownCites ? undefined : "";
+  for (const name of registered) {
+    if (!covered.has(name)) return "";
+  }
+  return undefined;
+}
+
+/** Two inventory rows must not claim the same active heading. */
+export function duplicateRequirementAnchors(
+  requirements: readonly { doc: string; anchor: string }[],
+): string[] {
+  const seen = new Set<string>();
+  const duplicates: string[] = [];
+  for (const requirement of requirements) {
+    const pair = `${requirement.doc}#${requirement.anchor}`;
+    if (seen.has(pair)) duplicates.push(pair);
+    else seen.add(pair);
+  }
+  return duplicates;
 }
 
 export function productionFileCites(body: string, doc: string, anchor: string): boolean {
@@ -1173,6 +1213,9 @@ export async function checkInventory(projectRoot = root): Promise<string[]> {
   if (inventoryIds.length === 0) fail(failures, "active inventory has no requirements");
   if (new Set(inventoryIds).size !== inventoryIds.length) {
     fail(failures, "inventory requirement ids are duplicated");
+  }
+  if (duplicateRequirementAnchors(inventory.requirements).length > 0) {
+    fail(failures, "inventory document anchors are duplicated");
   }
   const baselineIds = [...baseline.ids];
   if (new Set(baselineIds).size !== baselineIds.length) {
