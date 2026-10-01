@@ -248,6 +248,14 @@ export function replaysConstantIncomeAndShrinksGap(): void {
     predicateId: "other",
   } as unknown as typeof saved);
   expect(wrongPredicate.pathOk).toBe(false);
+  const laterFailure = replayShrinkReport({
+    ...saved,
+    caseIndex: 2,
+    original: 1,
+    shrinkingPath: [{ from: 1, to: 0, kept: false }],
+    value: 1,
+  });
+  expect(laterFailure.pathOk).toBe(false);
 
   const scenario = constantScenario({ rate: 3, durationSec: 4, stepSec: 1, seed: 11 });
   expectApplicable(checkReplay(scenario));
@@ -748,6 +756,62 @@ export function recordsWalletAndMaxMoneyUnitsOnTheEconomySnapshot(): void {
   });
   expect(negativeZeroSnap).not.toBe(zeroSnap);
   expect(negativeZeroSnap).toContain('"-0"');
+  const observedSymbol = snapshotEconomy(engine, {
+    ...gemState,
+    vars: { buys: 1, tag: Symbol("observed") } as unknown as Vars,
+  });
+  const plainSymbol = snapshotEconomy(engine, {
+    ...gemState,
+    vars: { buys: 1, tag: Symbol("plain") } as unknown as Vars,
+  });
+  expect(observedSymbol).not.toBe(plainSymbol);
+  expect(observedSymbol).toContain("Symbol(observed)");
+  const observedFn = snapshotEconomy(engine, {
+    ...gemState,
+    vars: { buys: 1, fn: () => "observed" } as unknown as Vars,
+  });
+  const plainFn = snapshotEconomy(engine, {
+    ...gemState,
+    vars: { buys: 1, fn: () => "plain" } as unknown as Vars,
+  });
+  expect(observedFn).not.toBe(plainFn);
+  const sharedMarker = {};
+  const sharedSnap = snapshotEconomy(engine, {
+    ...gemState,
+    vars: { buys: 1, a: sharedMarker, b: sharedMarker } as unknown as Vars,
+  });
+  const copiedSnap = snapshotEconomy(engine, {
+    ...gemState,
+    vars: { buys: 1, a: {}, b: {} } as unknown as Vars,
+  });
+  expect(sharedSnap).not.toBe(copiedSnap);
+  const extraItems = [1] as number[] & { extra?: number };
+  extraItems.extra = 2;
+  const extraSnap = snapshotEconomy(engine, {
+    ...gemState,
+    vars: { buys: 1, items: extraItems } as unknown as Vars,
+  });
+  const literalExtrasSnap = snapshotEconomy(engine, {
+    ...gemState,
+    vars: { buys: 1, items: { items: [1], extras: { extra: 2 } } } as unknown as Vars,
+  });
+  expect(extraSnap).not.toBe(literalExtrasSnap);
+  expect(extraSnap).toContain("array-extras");
+  let getterReads = 0;
+  const withGetter = { buys: 1 };
+  Object.defineProperty(withGetter, "secret", {
+    enumerable: true,
+    get() {
+      getterReads += 1;
+      return 1;
+    },
+  });
+  const getterSnap = snapshotEconomy(engine, {
+    ...gemState,
+    vars: withGetter as unknown as Vars,
+  });
+  expect(getterReads).toBe(0);
+  expect(getterSnap).toContain("getter");
   const bigintReplay = checkReplay({
     ...constantScenario({ rate: 1, durationSec: 1, stepSec: 1 }),
     initial: {
@@ -1342,6 +1406,34 @@ describe("counterexample report", () => {
         }),
       }),
     ).toThrow(/1n/);
+  });
+
+  it("encodes non-json counterexample values", () => {
+    const named = function named(): number {
+      return 1;
+    };
+    expect(() =>
+      expectProperty({
+        predicateId: "non-json-value",
+        testSeed: 11,
+        cases: 1,
+        generate: () => ({
+          n: Number.NaN,
+          s: Symbol("observed"),
+          u: undefined,
+          f: named,
+        }),
+        shrink: () => [],
+        predicate: () => false,
+        describeCase: () => ({
+          gameSeed: null,
+          engineId: null,
+          modelId: null,
+          strategyId: null,
+          tickSchedule: null,
+        }),
+      }),
+    ).toThrow(/"NaN"[\s\S]*Symbol\(observed\)[\s\S]*\[undefined\][\s\S]*\[function named\]/);
   });
 
   it("reports a generator throw with the seed and case index", () => {

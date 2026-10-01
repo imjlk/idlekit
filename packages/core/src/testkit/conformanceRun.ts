@@ -187,7 +187,12 @@ function recordedShrinkIdentity(report: ShrinkReport): boolean {
   if (!Number.isInteger(report.caseIndex)) return false;
   if (report.caseIndex < 0 || report.caseIndex >= SHRINK_GAP_CASES) return false;
   const domain = seededDomain(report.testSeed, SHRINK_GAP_MIN, SHRINK_GAP_MAX);
-  return domain[report.caseIndex] === report.original;
+  if (domain[report.caseIndex] !== report.original) return false;
+  for (let index = 0; index < report.caseIndex; index += 1) {
+    const earlier = domain[index];
+    if (earlier === undefined || !shrinkGapHolds(earlier)) return false;
+  }
+  return true;
 }
 
 export function replayShrinkReport(report: ShrinkReport): {
@@ -416,6 +421,15 @@ function serializeCounterexample(value: unknown): string {
       value,
       (_key, current: unknown) => {
         if (typeof current === "bigint") return `${current}n`;
+        if (typeof current === "number" && !Number.isFinite(current)) {
+          if (Number.isNaN(current)) return "NaN";
+          if (current === Number.NEGATIVE_INFINITY) return "-Infinity";
+          return "Infinity";
+        }
+        if (typeof current === "number" && Object.is(current, -0)) return "-0";
+        if (typeof current === "symbol") return String(current);
+        if (typeof current === "function") return `[function ${current.name}]`;
+        if (current === undefined) return "[undefined]";
         if (typeof current === "object" && current !== null) {
           if (seen.has(current)) return "[Circular]";
           seen.add(current);
@@ -524,10 +538,26 @@ function withSymbolKeys(value: unknown, symbols: readonly unknown[]): unknown {
   return { [SENTINEL_KEY]: "symbol-keys", value, symbols };
 }
 
+function describeSymbol(item: symbol): string {
+  const key = Symbol.keyFor(item);
+  if (key === undefined) return String(item);
+  return `${String(item)} for ${key}`;
+}
+
+function describeFunction(item: Function): string {
+  let source = "unavailable";
+  try {
+    source = item.toString();
+  } catch {
+    // Some host functions refuse toString. The name still distinguishes them.
+  }
+  return `${item.name} ${item.length} ${source}`;
+}
+
 function snapshotData(item: unknown, seen: WeakMap<object, number>, nextId: { value: number }): unknown {
   if (typeof item === "bigint") return snapshotTag("bigint", item.toString());
-  if (typeof item === "symbol") return snapshotTag("symbol");
-  if (typeof item === "function") return snapshotTag("function");
+  if (typeof item === "symbol") return snapshotTag("symbol", describeSymbol(item));
+  if (typeof item === "function") return snapshotTag("function", describeFunction(item));
   if (item === undefined) return snapshotTag("undefined");
   if (typeof item === "number") {
     if (Object.is(item, -0)) return snapshotTag("-0");
@@ -581,11 +611,17 @@ function snapshotData(item: unknown, seen: WeakMap<object, number>, nextId: { va
         if (index === undefined) continue;
         entries[String(index)] = elements[slot];
       }
-      if (extraCount === 0) return withSymbolKeys({ length: item.length, entries }, symbols);
-      return withSymbolKeys({ length: item.length, entries, extras }, symbols);
+      const sparse =
+        extraCount === 0
+          ? { [SENTINEL_KEY]: "sparse-array", length: item.length, entries }
+          : { [SENTINEL_KEY]: "sparse-array", length: item.length, entries, extras };
+      return withSymbolKeys(sparse, symbols);
     }
     if (extraCount === 0) return withSymbolKeys(elements, symbols);
-    return withSymbolKeys({ items: elements, extras }, symbols);
+    return withSymbolKeys(
+      { [SENTINEL_KEY]: "array-extras", items: elements, extras },
+      symbols,
+    );
   }
   const record: Record<string, unknown> = {};
   for (const key of Object.getOwnPropertyNames(item)) {
@@ -608,20 +644,24 @@ function jsonSilentlyDrops(item: unknown, seen = new Set<object>()): boolean {
   if (type === "number") return !Number.isFinite(item) || Object.is(item, -0);
   if (type === "function" || type === "symbol" || type === "bigint") return true;
   if (type !== "object") return false;
-  if (seen.has(item)) return false;
+  if (seen.has(item)) return true;
   seen.add(item);
   if (Array.isArray(item)) {
     if (arrayIndexCount(item) !== item.length) return true;
     for (const key of Object.getOwnPropertyNames(item)) {
       if (key === "length") continue;
-      if (!isArrayIndexName(key, item.length)) {
-        const descriptor = Object.getOwnPropertyDescriptor(item, key);
-        if (descriptor?.enumerable === true) return true;
+      const descriptor = Object.getOwnPropertyDescriptor(item, key);
+      if (!descriptor) continue;
+      const accessor =
+        descriptor.get !== undefined ||
+        descriptor.set !== undefined ||
+        !("value" in descriptor);
+      if (isArrayIndexName(key, item.length)) {
+        if (accessor) return true;
+        if (jsonSilentlyDrops(descriptor.value, seen)) return true;
         continue;
       }
-      const descriptor = Object.getOwnPropertyDescriptor(item, key);
-      if (!descriptor || descriptor.get !== undefined || !("value" in descriptor)) continue;
-      if (jsonSilentlyDrops(descriptor.value, seen)) return true;
+      if (descriptor.enumerable === true) return true;
     }
     return enumerableSymbolKeys(item).length > 0;
   }
@@ -629,7 +669,9 @@ function jsonSilentlyDrops(item: unknown, seen = new Set<object>()): boolean {
   for (const key of Object.getOwnPropertyNames(item)) {
     const descriptor = Object.getOwnPropertyDescriptor(item, key);
     if (!descriptor || descriptor.enumerable !== true) continue;
-    if (descriptor.get !== undefined || !("value" in descriptor)) continue;
+    if (descriptor.get !== undefined || descriptor.set !== undefined || !("value" in descriptor)) {
+      return true;
+    }
     if (jsonSilentlyDrops(descriptor.value, seen)) return true;
   }
   return false;
