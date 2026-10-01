@@ -77,11 +77,12 @@ function chooseQuotes<N, U extends string, Vars>(
     for (const quote of uniqueQuotedSizes(quotes)) {
       if (!Number.isInteger(quote.size) || quote.size < singleBuySize) continue;
       if (quote.size > cap) continue;
-      if (!isAffordable(ctx, state, quote.cost)) continue;
+      const quotedCost = quote.size === singleBuySize ? action.cost(ctx, state) : quote.cost;
+      if (!isAffordable(ctx, state, quotedCost)) continue;
       eligible.push(quote);
     }
-    const chosen = eligible.length > 0 ? eligible[eligible.length - 1] : undefined;
-    return [chosen ?? quotes[0]!];
+    if (eligible.length === 0) return [];
+    return [eligible[eligible.length - 1]!];
   }
 
   const singleCost = raw && raw.length > 0 ? action.cost(ctx, state) : quotes[0]!.cost;

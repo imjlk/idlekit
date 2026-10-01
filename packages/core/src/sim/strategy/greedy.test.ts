@@ -600,6 +600,77 @@ describe("createGreedyStrategy", () => {
     expect(out[0]?.bulkSize).toBe(2);
   });
 
+  it("uses Action.cost when maxAffordable checks a size of one", () => {
+    const ctx: SimContext<number, UnitCode, Vars> = {
+      E: createNumberEngine(),
+      unit: { code: "COIN" },
+      tickPolicy: { mode: "drop" },
+    };
+    const expensiveQuotes: BulkQuote<number, UnitCode>[] = [
+      {
+        size: 1,
+        cost: null,
+        deltaIncomePerSec: { unit: { code: "COIN" }, amount: 100 },
+      },
+    ];
+    const expensive: Action<number, UnitCode, Vars> = {
+      id: "expensive",
+      kind: "buy",
+      canApply: () => true,
+      cost: () => ({ unit: { code: "COIN" }, amount: 10 }),
+      bulk: () => expensiveQuotes,
+      apply: (_ctx, current) => current,
+    };
+    const cheap: Action<number, UnitCode, Vars> = {
+      id: "cheap",
+      kind: "buy",
+      canApply: () => true,
+      cost: () => null,
+      bulk: () => [
+        {
+          size: 1,
+          cost: null,
+          deltaIncomePerSec: { unit: { code: "COIN" }, amount: 1 },
+        },
+      ],
+      apply: (_ctx, current) => current,
+    };
+    const model: Model<number, UnitCode, Vars> = {
+      id: "m",
+      version: 1,
+      income: () => ({ unit: { code: "COIN" }, amount: 0 }),
+      actions: () => [expensive, cheap],
+    };
+    const strategy = createGreedyStrategy<number, UnitCode, Vars>({
+      schemaVersion: 1,
+      objective: "maximizeIncome",
+      bulk: { mode: "maxAffordable" },
+    });
+    const out = strategy.decide(ctx, model, makeState(0));
+    expect(out.length).toBe(1);
+    expect(out[0]?.action.id).toBe("cheap");
+    const mixedQuotes: BulkQuote<number, UnitCode>[] = [
+      {
+        size: 1,
+        cost: null,
+        deltaIncomePerSec: { unit: { code: "COIN" }, amount: 100 },
+      },
+      {
+        size: 2,
+        cost: null,
+        deltaIncomePerSec: { unit: { code: "COIN" }, amount: 1 },
+      },
+    ];
+    const mixed: Action<number, UnitCode, Vars> = {
+      ...expensive,
+      id: "mixed",
+      bulk: () => mixedQuotes,
+    };
+    const sized = strategy.decide(ctx, { ...model, actions: () => [mixed] }, makeState(0));
+    expect(sized.length).toBe(1);
+    expect(sized[0]?.bulkSize).toBe(2);
+  });
+
   it("accepts occurrence on a contextually typed decision", () => {
     const ctx: SimContext<number, UnitCode, Vars> = {
       E: createNumberEngine(),
