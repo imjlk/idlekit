@@ -155,7 +155,7 @@ function thresholdScenario(stepSec: number): CompiledScenario<number, UnitCode, 
  * @evidence ./conformanceRun.ts#demonstrateShrinkGap Builds the shrink-gap report whose value is 1 and whose testSeed is 0xd101.
  * @evidenceReview ./conformanceRun.ts#demonstrateShrinkGap #e31f17f Builds the shrink-gap report whose value is 1 and whose testSeed is 0xd101.
  * @evidence ./conformanceRun.ts#replayShrinkReport Replays the saved report and expects the path to fail closed at 1.
- * @evidenceReview ./conformanceRun.ts#replayShrinkReport #dc2d0cf Replays the saved report and expects the path to fail closed at 1. A rejected step whose from is not the current value fails the path. A to value the shrinker would not propose fails the path.
+ * @evidenceReview ./conformanceRun.ts#replayShrinkReport #dc00b76 Replays the saved report and expects the path to fail closed at 1. A rejected step whose from is not the current value fails the path. A to value the shrinker would not propose fails the path. An original value that already satisfies the predicate fails the path.
  * @evidence ./conformanceRun.ts#gameSeedForCase Derives a game seed from 0x51ed and index 0 that is an integer other than that test seed.
  * @evidenceReview ./conformanceRun.ts#gameSeedForCase #39c73b9 Derives a game seed from 0x51ed and index 0 that is an integer other than that test seed.
  * @evidence ./conformanceRun.ts#ShrinkReport.value Expects the shrunk value to be 1.
@@ -213,6 +213,17 @@ export function replaysConstantIncomeAndShrinksGap(): void {
     value: 7,
   });
   expect(widened.pathOk).toBe(false);
+  const satisfied = replayShrinkReport({
+    ...saved,
+    original: 8,
+    shrinkingPath: [
+      { from: 8, to: 0, kept: false },
+      { from: 8, to: 4, kept: true },
+    ],
+    value: 4,
+  });
+  expect(satisfied.failed).toBe(true);
+  expect(satisfied.pathOk).toBe(false);
 
   const scenario = constantScenario({ rate: 3, durationSec: 4, stepSec: 1, seed: 11 });
   expectApplicable(checkReplay(scenario));
@@ -417,6 +428,12 @@ export function stopsOnAPositiveTickGridAndRefusesANonPositiveStep(): void {
   expect(driftedResume.ok).toBe(true);
   expect(driftedResume.applicable).toBe(false);
   expect(driftedResume.summary).toContain("maxSteps");
+  const driftedOpen = checkResume(driftedBase, 0.006);
+  expect(driftedOpen.ok).toBe(true);
+  expect(driftedOpen.applicable).toBe(true);
+  const driftedOpenJson = checkResumeFromJson(driftedBase, 0.006);
+  expect(driftedOpenJson.ok).toBe(true);
+  expect(driftedOpenJson.applicable).toBe(true);
 }
 
 /**
@@ -877,6 +894,82 @@ describe("PR-03 resume isolation", () => {
     expect(missingSnapshot.ok).toBe(false);
     expect(missingSnapshot.applicable).toBe(true);
     expect(missingSnapshot.summary).toContain("JSON");
+    const hiddenVars = { buys: 0 };
+    Object.defineProperty(hiddenVars, "marker", { value: 1, enumerable: false });
+    const hidden = checkResumeFromJson(
+      {
+        ...scenario,
+        initial: { ...scenario.initial, vars: hiddenVars as unknown as Vars },
+      },
+      2,
+    );
+    expect(hidden.ok).toBe(false);
+    expect(hidden.applicable).toBe(true);
+    expect(hidden.summary).toContain("JSON");
+    const hiddenState = {};
+    Object.defineProperty(hiddenState, "marker", { value: 1, enumerable: false });
+    const hiddenSnapshot = checkResumeFromJson(
+      {
+        ...scenario,
+        strategy: {
+          id: "hidden-marker",
+          decide: () => [],
+          snapshotState: () => hiddenState,
+          restoreState: () => {},
+        },
+      },
+      2,
+    );
+    expect(hiddenSnapshot.ok).toBe(false);
+    expect(hiddenSnapshot.applicable).toBe(true);
+    expect(hiddenSnapshot.summary).toContain("JSON");
+    const versionZero = checkResumeFromJson(
+      {
+        ...scenario,
+        strategy: {
+          id: "version-zero",
+          stateVersion: 0,
+          decide: () => [],
+          snapshotState: () => ({ marker: 1 }),
+          restoreState: () => {},
+        },
+      },
+      2,
+    );
+    expect(versionZero.ok).toBe(false);
+    expect(versionZero.applicable).toBe(true);
+    expect(versionZero.summary).toContain("JSON");
+    const fractionalVersion = checkResumeFromJson(
+      {
+        ...scenario,
+        strategy: {
+          id: "fractional-version",
+          stateVersion: 1.5,
+          decide: () => [],
+          snapshotState: () => ({ marker: 1 }),
+          restoreState: () => {},
+        },
+      },
+      2,
+    );
+    expect(fractionalVersion.ok).toBe(false);
+    expect(fractionalVersion.applicable).toBe(true);
+    const emptyId = checkResumeFromJson(
+      {
+        ...scenario,
+        strategy: {
+          id: "",
+          stateVersion: 1,
+          decide: () => [],
+          snapshotState: () => ({ marker: 1 }),
+          restoreState: () => {},
+        },
+      },
+      2,
+    );
+    expect(emptyId.ok).toBe(false);
+    expect(emptyId.applicable).toBe(true);
+    expect(emptyId.summary).toContain("JSON");
   });
 });
 
@@ -899,6 +992,15 @@ describe("counterexample report", () => {
     expect(() => expectProperty({ ...empty, cases: 0 })).toThrow(/positive integer/);
     expect(() => expectProperty({ ...empty, cases: -1 })).toThrow(/positive integer/);
     expect(() => expectProperty({ ...empty, cases: Number.NaN })).toThrow(/positive integer/);
+    expect(() => expectProperty({ ...empty, cases: 1, testSeed: Number.NaN })).toThrow(
+      /finite integer/,
+    );
+    expect(() =>
+      expectProperty({ ...empty, cases: 1, testSeed: Number.POSITIVE_INFINITY }),
+    ).toThrow(/finite integer/);
+    expect(() =>
+      expectProperty({ ...empty, cases: 1, testSeed: Number.NEGATIVE_INFINITY }),
+    ).toThrow(/finite integer/);
   });
 
   it("keeps the seed when the counterexample is cyclic or a bigint", () => {
