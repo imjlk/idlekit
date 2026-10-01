@@ -784,6 +784,44 @@ try {
   );
   const nestedLive = registeredSuites('`${`${it("yes", unrelated)}`}`', "unrelated", "yes");
   const nestedDead = registeredSuites('`${`it("no", citedExport)`}`', "citedExport", "no");
+  const eachBody = [
+    'if (false) it("credited", citedExport);',
+    'it.each([[1]])("credited", unrelated);',
+  ].join("\n");
+  const eachNames = duplicateFullNames(eachBody);
+  const eachLive = registeredSuites(eachBody, "unrelated", "credited");
+  const eachDead = registeredSuites(eachBody, "citedExport", "credited");
+  const eachOnly = registeredSuites(
+    'test.each([[1]])("credited", unrelated);',
+    "unrelated",
+    "credited",
+  );
+  const eachSuite = registeredSuites(
+    ['describe.each([[1]])("kept", () => {', '  it("credited", unrelated);', "});"].join("\n"),
+    "unrelated",
+    "credited",
+  );
+  const conjunction = registeredSuites(
+    'it("credited", citedExport && unrelated);',
+    "citedExport",
+    "credited",
+  );
+  const conjunctionOther = registeredSuites(
+    'it("credited", citedExport && unrelated);',
+    "unrelated",
+    "credited",
+  );
+  const asserted = registeredSuites(
+    'it("credited", citedExport as TestFn);',
+    "citedExport",
+    "credited",
+  );
+  const assertedLive = registeredSuites(
+    'it("credited", citedExport as TestFn && unrelated);',
+    "citedExport",
+    "credited",
+  );
+  const member = registeredSuites('it("credited", citedExport.method);', "citedExport", "credited");
   const duplicateOk =
     duplicateNames.length === 1 &&
     duplicateNames[0] === "kept > quota is documented" &&
@@ -805,7 +843,19 @@ try {
     substitutedLive.length === 1 &&
     substitutedDead.length === 0 &&
     nestedLive.length === 1 &&
-    nestedDead.length === 0;
+    nestedDead.length === 0 &&
+    eachNames.length === 1 &&
+    eachNames[0] === "credited" &&
+    eachLive.length === 1 &&
+    eachDead.length === 1 &&
+    eachOnly.length === 1 &&
+    eachSuite.length === 1 &&
+    eachSuite[0]?.join(" > ") === "kept" &&
+    conjunction.length === 0 &&
+    conjunctionOther.length === 0 &&
+    asserted.length === 1 &&
+    assertedLive.length === 0 &&
+    member.length === 0;
   record(
     "duplicate-title",
     "zero",
