@@ -6,6 +6,7 @@ import {
   assertNonEmptyGlobs,
   evidenceProgramSourceFiles,
   commandTargetsFile,
+  duplicateFullNames,
   headingAnchors,
   registeredSuites,
   isNonProductionPath,
@@ -307,6 +308,10 @@ try {
     JSON.stringify(commentFence),
   );
 
+  const crlf = headingAnchors("## Kept {#kept}\r\n## Missing\r\n");
+  const crlfOk = crlf.length === 2 && crlf[0] === "kept" && crlf[1] === "";
+  record("crlf-heading", "zero", crlfOk ? 0 : 1, crlfOk, JSON.stringify(crlf));
+
   const tabbed = headingAnchors("##\tMissing\n##\tKept {#kept}\n");
   const tabbedOk = tabbed.length === 2 && tabbed[0] === "" && tabbed[1] === "kept";
   record("tab-heading", "zero", tabbedOk ? 0 : 1, tabbedOk, JSON.stringify(tabbed));
@@ -359,6 +364,26 @@ try {
     regexSuiteOk ? 0 : 1,
     regexSuiteOk,
     JSON.stringify({ regexKept, regexLater }),
+  );
+
+  const duplicateBody = [
+    'describe("kept", () => {',
+    "  if (false) it(\"quota is documented\", exportedName);",
+    '  it("quota is documented", otherName);',
+    "});",
+  ].join("\n");
+  const duplicateNames = duplicateFullNames(duplicateBody);
+  const duplicateStillRegistered = registeredSuites(duplicateBody, "exportedName", "quota is documented");
+  const duplicateOk =
+    duplicateNames.length === 1 &&
+    duplicateNames[0] === "kept > quota is documented" &&
+    duplicateStillRegistered.length === 1;
+  record(
+    "duplicate-title",
+    "zero",
+    duplicateOk ? 0 : 1,
+    duplicateOk,
+    JSON.stringify({ duplicateNames, duplicateStillRegistered }),
   );
 
   const indentedFence = headingAnchors("    ```\n## Visible {#quota}\n");

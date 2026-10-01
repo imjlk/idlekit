@@ -14,7 +14,7 @@ bun tools/graph-query.ts --question "Where is runScenario declared?" --request '
 
 `graph-query.ts`는 `ttsc-graph --cwd <root> --tsconfig tsconfig.graph.json`을 띄우고, MCP `initialize` 다음 `tools/list`에서 `inspect_typescript_graph`의 schema를 읽는다. 그 schema가 공개한 필드만 보낸다. `question`, `draft`, `review`, `request`는 schema에서 온다. live branch에 없는 필드는 프로세스를 끝낸다. 출력은 symbol, 파일, 줄이다. 선언 signature가 있는 span은 위치 뒤에 그 signature를 찍는다. trace는 node id 대신 symbol 이름으로 `from -> to` hop 줄도 찍는다. raw dump는 아니다.
 
-`bun run graph:check`가 gate다. initialize, tool discovery, lookup, caller/callee trace, workspace source span, scratch의 rename / signature / citation을 새 프로세스로 확인하고, stdin을 닫아 종료한다. `--help`만으로는 통과가 아니다.
+`bun run graph:check`가 gate다. initialize, tool discovery, lookup, caller/callee trace, workspace source span, scratch의 rename / signature / citation, 이미 열린 세션이 읽는 signature 수정, stdin 종료를 확인한다. `--help`만으로는 통과가 아니다.
 
 ## 프로그램
 
@@ -22,7 +22,7 @@ bun tools/graph-query.ts --question "Where is runScenario declared?" --request '
 
 ## 에이전트 설정
 
-`.mcp.json.example`은 Claude Code 프로젝트 MCP 형식이고 로컬 bin을 가리킨다. `.codex/config.toml.example`은 Codex 프로젝트 설정의 `command`, `args`, `cwd`, `startup_timeout_sec`, `tool_timeout_sec`이다. 근거는 <https://learn.chatgpt.com/codex/extend/mcp> (2026-09-30). 프로젝트 로컬 파일로 복사한다. `~/.codex/config.toml`은 이 변경에서 고치지 않는다. handshake 다음에 인덱스가 만들어지므로 Codex tool timeout을 기본 60초보다 늘린다.
+`.mcp.json.example`은 Claude Code 프로젝트 MCP 형식이고 로컬 bin을 가리킨다. POSIX `command`는 `node_modules/.bin/ttsc-graph`다. Windows에서는 `windowsCommand`인 `node_modules/.bin/ttsc-graph.cmd`를 그 `command`에 넣고 복사한다. `.codex/config.toml.example`은 Codex 프로젝트 설정의 `command`, `args`, `cwd`, `startup_timeout_sec`, `tool_timeout_sec`이고 같은 Windows `.cmd` 경로를 적는다. 근거는 <https://learn.chatgpt.com/codex/extend/mcp> (2026-09-30). 프로젝트 로컬 파일로 복사한다. `~/.codex/config.toml`은 이 변경에서 고치지 않는다. handshake 다음에 인덱스가 만들어지므로 Codex tool timeout을 기본 60초보다 늘린다.
 
 ## 미관측
 
@@ -30,7 +30,7 @@ JSON/YAML 시나리오, shell과 package script, `packages/cli/src/plugin/load.t
 
 ## TC-04 검증
 
-macOS arm64, Bun `1.3.10`, `@ttsc/graph` `0.30.4`, protocol `2025-11-25`, commit `878707f92c6c80552bf3e76a65e889908aa3b021`에서 조회했다. generation 필드는 없었다. scratch 수정은 새 프로세스에서 다시 읽었다. `bun run graph:check`는 exit 0이다. tour payload에도 아래 `runScenario`와 `stepOnce` span이 있다.
+macOS arm64, Bun `1.3.10`, `@ttsc/graph` `0.30.4`, protocol `2025-11-25`, commit `9f527f25ff3be3c363de1ce47e8a5d17b5eaff36`에서 조회했다. generation 필드는 없었다. scratch 수정은 새 프로세스에서 다시 읽었고, 이미 열린 세션은 signature 수정 뒤 `quotaHost`를 `(): 4`로 보고했다. `bun run graph:check`는 exit 0이다. tour payload에도 아래 `runScenario`와 `stepOnce` span이 있다.
 
 | Symbol | Span | 결과 |
 |---|---|---|
