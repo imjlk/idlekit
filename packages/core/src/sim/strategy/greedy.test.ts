@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { createNumberEngine } from "../../engine/breakInfinity";
 import { createGreedyStrategy } from "./greedy";
-import type { Action, Model, SimContext, SimState } from "../types";
+import type { Action, BulkQuote, Model, SimContext, SimState } from "../types";
 import type { Strategy } from "./types";
 
 type UnitCode = "COIN";
@@ -220,6 +220,80 @@ describe("createGreedyStrategy", () => {
     const strategy = createGreedyStrategy<number, UnitCode, Vars>({
       schemaVersion: 1,
       objective: "maximizeIncome",
+    });
+    const out = strategy.decide(ctx, model, makeState(0));
+    expect(out.length).toBe(1);
+    expect(out[0]?.bulkSize).toBe(2);
+  });
+
+  it("ranks a settleable quote ahead of a cost that has no unit", () => {
+    const ctx: SimContext<number, UnitCode, Vars> = {
+      E: createNumberEngine(),
+      unit: { code: "COIN" },
+      tickPolicy: { mode: "drop" },
+    };
+    const action: Action<number, UnitCode, Vars> = {
+      id: "buy",
+      kind: "buy",
+      canApply: () => true,
+      cost: () => null,
+      bulk: () => [
+        {
+          size: 2,
+          cost: null,
+          deltaIncomePerSec: { unit: { code: "COIN" }, amount: 1 },
+        },
+        {
+          size: 3,
+          cost: { amount: 1 } as BulkQuote<number, UnitCode>["cost"],
+          deltaIncomePerSec: { unit: { code: "COIN" }, amount: 9 },
+        },
+      ],
+      apply: (_ctx, state) => state,
+    };
+    const model: Model<number, UnitCode, Vars> = {
+      id: "m",
+      version: 1,
+      income: () => ({ unit: { code: "COIN" }, amount: 0 }),
+      actions: () => [action],
+    };
+    const strategy = createGreedyStrategy<number, UnitCode, Vars>({
+      schemaVersion: 1,
+      objective: "maximizeIncome",
+    });
+    const out = strategy.decide(ctx, model, makeState(0));
+    expect(out.length).toBe(1);
+    expect(out[0]?.bulkSize).toBe(2);
+  });
+
+  it("keeps the smaller affordable quote when a larger size is duplicated", () => {
+    const ctx: SimContext<number, UnitCode, Vars> = {
+      E: createNumberEngine(),
+      unit: { code: "COIN" },
+      tickPolicy: { mode: "drop" },
+    };
+    const action: Action<number, UnitCode, Vars> = {
+      id: "buy",
+      kind: "buy",
+      canApply: () => true,
+      cost: () => null,
+      bulk: () => [
+        { size: 2, cost: null, deltaIncomePerSec: { unit: { code: "COIN" }, amount: 1 } },
+        { size: 10, cost: null, deltaIncomePerSec: { unit: { code: "COIN" }, amount: 4 } },
+        { size: 10, cost: null, deltaIncomePerSec: { unit: { code: "COIN" }, amount: 4 } },
+      ],
+      apply: (_ctx, state) => state,
+    };
+    const model: Model<number, UnitCode, Vars> = {
+      id: "m",
+      version: 1,
+      income: () => ({ unit: { code: "COIN" }, amount: 0 }),
+      actions: () => [action],
+    };
+    const strategy = createGreedyStrategy<number, UnitCode, Vars>({
+      schemaVersion: 1,
+      objective: "maximizeIncome",
+      bulk: { mode: "maxAffordable" },
     });
     const out = strategy.decide(ctx, model, makeState(0));
     expect(out.length).toBe(1);

@@ -8,6 +8,8 @@ import {
   rankableQuotes,
   stableActions,
   stableBulkQuotes,
+  structuredUnitCode,
+  uniqueQuotedSizes,
 } from "./stability";
 import type { Strategy } from "./types";
 
@@ -40,7 +42,8 @@ function isAffordable<N, U extends string, Vars>(
   cost: BulkQuote<N, U>["cost"],
 ): boolean {
   if (!cost) return true;
-  if (cost.unit.code !== state.wallet.money.unit.code) return false;
+  const costCode = structuredUnitCode(cost);
+  if (costCode === undefined || costCode !== structuredUnitCode(state.wallet.money)) return false;
   if (!ctx.E.isFinite(cost.amount)) return false;
   // A negative cost passes a wallet comparison and is then rejected at settlement.
   if (!canSettleCost(ctx.E, cost.amount, ctx.E.zero())) return false;
@@ -64,13 +67,15 @@ function chooseQuotes<N, U extends string, Vars>(
 
   if (mode === "maxAffordable") {
     const cap = params.bulk?.maxSizeCap ?? Number.POSITIVE_INFINITY;
-    let chosen: BulkQuote<N, U> | null = null;
-    for (const q of quotes) {
-      if (!Number.isInteger(q.size) || q.size < singleBuySize) continue;
-      if (q.size > cap) continue;
-      if (!isAffordable(ctx, state, q.cost)) continue;
-      chosen = q;
+    const eligible: BulkQuote<N, U>[] = [];
+    for (const quote of quotes) {
+      if (!Number.isInteger(quote.size) || quote.size < singleBuySize) continue;
+      if (quote.size > cap) continue;
+      if (!isAffordable(ctx, state, quote.cost)) continue;
+      eligible.push(quote);
     }
+    const unique = uniqueQuotedSizes(eligible);
+    const chosen = unique.length > 0 ? unique[unique.length - 1] : undefined;
     return [chosen ?? quotes[0]!];
   }
 

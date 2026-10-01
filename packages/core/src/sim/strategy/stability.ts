@@ -1,6 +1,14 @@
 import { canSettleCost, singleBuySize } from "../step";
 import type { Action, BulkQuote, SimContext, SimState } from "../types";
 
+/** A missing or non-string unit is malformed. Do not read `unit.code` until it is present. */
+export function structuredUnitCode(
+  money: { unit?: { code?: unknown } | null } | null | undefined,
+): string | undefined {
+  const code = money?.unit?.code;
+  return typeof code === "string" && code.length > 0 ? code : undefined;
+}
+
 /** A quote `stepOnce` would skip as `invalidQuote` cannot be the ranked candidate. */
 export function settlementAcceptsQuote<N, U extends string, Vars>(
   ctx: SimContext<N, U, Vars>,
@@ -11,7 +19,9 @@ export function settlementAcceptsQuote<N, U extends string, Vars>(
   if (quote.size === singleBuySize) return true;
   const cost = quote.cost;
   if (cost === null) return true;
-  if (!cost || cost.unit.code !== state.wallet.money.unit.code) return false;
+  const costCode = structuredUnitCode(cost);
+  const walletCode = structuredUnitCode(state.wallet.money);
+  if (!cost || costCode === undefined || costCode !== walletCode) return false;
   if (cost.amount == null || !ctx.E.isFinite(cost.amount)) return false;
   return canSettleCost(ctx.E, cost.amount, ctx.E.zero());
 }
@@ -22,13 +32,19 @@ export function rankableQuotes<N, U extends string, Vars>(
   state: SimState<N, U, Vars>,
   quotes: readonly BulkQuote<N, U>[],
 ): BulkQuote<N, U>[] {
-  const accepted = quotes.filter((quote) => settlementAcceptsQuote(ctx, state, quote));
+  return uniqueQuotedSizes(quotes.filter((quote) => settlementAcceptsQuote(ctx, state, quote)));
+}
+
+/** Keep size 1 and every other size that appears once. Settlement rejects a repeated bulk size. */
+export function uniqueQuotedSizes<N, U extends string>(
+  quotes: readonly BulkQuote<N, U>[],
+): BulkQuote<N, U>[] {
   const counts = new Map<number, number>();
-  for (const quote of accepted) {
+  for (const quote of quotes) {
     if (quote.size === singleBuySize) continue;
     counts.set(quote.size, (counts.get(quote.size) ?? 0) + 1);
   }
-  return accepted.filter((quote) => quote.size === singleBuySize || counts.get(quote.size) === 1);
+  return quotes.filter((quote) => quote.size === singleBuySize || counts.get(quote.size) === 1);
 }
 
 /** Size 1 pays `Action.cost`. A missing size stays rejectable. Every other selected size is settled as a quote. */
