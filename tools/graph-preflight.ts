@@ -42,6 +42,20 @@ function symbolFile(label: string, file: string | undefined): string | undefined
   return hash > 0 ? label.slice(0, hash) : undefined;
 }
 
+/** Trace ids are `path#qualifiedName:kind`. The declared symbol is the last member. */
+function terminalSymbol(label: string): string {
+  const hash = label.lastIndexOf("#");
+  const qualified = hash >= 0 ? label.slice(hash + 1) : label;
+  const kindSep = qualified.lastIndexOf(":");
+  const withoutKind = kindSep > 0 ? qualified.slice(0, kindSep) : qualified;
+  const dot = withoutKind.lastIndexOf(".");
+  return dot >= 0 ? withoutKind.slice(dot + 1) : withoutKind;
+}
+
+function namesSymbol(label: string, symbol: string): boolean {
+  return terminalSymbol(label) === symbol;
+}
+
 function isCliCommandFile(file: string | undefined): boolean {
   if (!file) return false;
   return file.includes("packages/cli/src/commands/") || /(^|\/)src\/commands\//.test(file);
@@ -50,8 +64,8 @@ function isCliCommandFile(file: string | undefined): boolean {
 function citesCliRun(payload: unknown): boolean {
   if (resultType(payload) !== "trace") return false;
   return collectHops(payload).some((hop) => {
-    const fromRun = hop.from.includes("runScenario");
-    const toRun = hop.to.includes("runScenario");
+    const fromRun = namesSymbol(hop.from, "runScenario");
+    const toRun = namesSymbol(hop.to, "runScenario");
     if (fromRun === toRun) return false;
     const command = fromRun ? symbolFile(hop.to, hop.toFile) : symbolFile(hop.from, hop.fromFile);
     return isCliCommandFile(command);
@@ -81,8 +95,8 @@ function endpointsConnect(
   };
   for (const hop of hops) union(hop.from, hop.to);
   const names = [...parent.keys()];
-  const leftNames = names.filter((name) => name.includes(left));
-  const rightNames = names.filter((name) => name.includes(right));
+  const leftNames = names.filter((name) => namesSymbol(name, left));
+  const rightNames = names.filter((name) => namesSymbol(name, right));
   return leftNames.some((from) => rightNames.some((to) => find(from) === find(to)));
 }
 
@@ -236,7 +250,7 @@ async function scratch(): Promise<void> {
       );
       const traceType = resultType(traced);
       const linked = collectHops(traced).some(
-        (hop) => hop.from.includes("useQuota") && hop.to.includes("quotaHost"),
+        (hop) => namesSymbol(hop.from, "useQuota") && namesSymbol(hop.to, "quotaHost"),
       );
       if (traceType !== "trace" || !linked) {
         fail(`scratch trace useQuota did not reach quotaHost in src/host.ts (${traceType ?? "untyped"})`);
@@ -452,7 +466,7 @@ async function main(): Promise<void> {
     );
     const forwardType = resultType(forward);
     const forwardHop = collectHops(forward).some(
-      (hop) => hop.from.includes("runScenario") && hop.to.includes("stepOnce"),
+      (hop) => namesSymbol(hop.from, "runScenario") && namesSymbol(hop.to, "stepOnce"),
     );
     if (forwardType !== "trace" || !forwardHop) {
       fail("trace runScenario forward missed the runScenario -> stepOnce hop");
@@ -473,8 +487,8 @@ async function main(): Promise<void> {
     const reverseType = resultType(reverse);
     const reverseHop = collectHops(reverse).some(
       (hop) =>
-        (hop.from.includes("runScenario") && hop.to.includes("stepOnce")) ||
-        (hop.from.includes("stepOnce") && hop.to.includes("runScenario")),
+        (namesSymbol(hop.from, "runScenario") && namesSymbol(hop.to, "stepOnce")) ||
+        (namesSymbol(hop.from, "stepOnce") && namesSymbol(hop.to, "runScenario")),
     );
     if (reverseType !== "trace" || !reverseHop) {
       fail("trace stepOnce reverse missed the runScenario -> stepOnce hop");
