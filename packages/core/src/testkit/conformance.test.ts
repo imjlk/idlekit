@@ -446,8 +446,8 @@ describe("PR-02 time boundaries", () => {
  * @evidenceReview ./conformanceRun.ts#checkResumeFromJson #91c215a Resumes a 4s scripted grant from JSON at t=2.
  * @evidence ./conformanceRun.ts#checkRetention Retention applies to the scripted grant.
  * @evidenceReview ./conformanceRun.ts#checkRetention #2924eaf Retention applies to the scripted grant. A negative eventLog.maxEvents fails before the check substitutes another capacity. A run that retains no events is inapplicable.
- * @evidence ./conformanceRun.ts#checkObserver The observer check applies to the scripted grant.
- * @evidenceReview ./conformanceRun.ts#checkObserver #31b124c The observer check applies to the scripted grant. A run that emits no events is inapplicable.
+ * @evidence ./conformanceRun.ts#checkObserver The observer check applies to the scripted grant. An emitter already on the scenario still runs on both sides.
+ * @evidenceReview ./conformanceRun.ts#checkObserver #ca8b4f4 The observer check applies to the scripted grant. A run that emits no events is inapplicable. An emitter already on the scenario still runs on both sides; the observed side records the batches and then delegates.
  */
 export function replaysOneShotScriptedGrantFromTheSameCursor(): void {
   const scenario = scriptedGrant(2);
@@ -529,8 +529,8 @@ describe("stateful strategy and currency identity", () => {
 /**
  * @evidence docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness The harness economy snapshot records the wallet unit and the max-money unit.
  * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #a195f0e Re-read the section, then ran this function: the COIN snapshot records COIN for both units, and a GEM snapshot is a different string.
- * @evidence ./conformanceRun.ts#snapshotEconomy Reads amountUnit and maxUnit for COIN, and a GEM snapshot is a different string.
- * @evidenceReview ./conformanceRun.ts#snapshotEconomy #e1778bf Reads amountUnit and maxUnit for COIN, and a GEM snapshot is a different string.
+ * @evidence ./conformanceRun.ts#snapshotEconomy Reads amountUnit and maxUnit for COIN, and a GEM snapshot is a different string. A bigint or cyclic vars value stays in the snapshot.
+ * @evidenceReview ./conformanceRun.ts#snapshotEconomy #66ecfea Reads amountUnit and maxUnit for COIN, and a GEM snapshot is a different string. A bigint or cyclic vars value stays in the snapshot string instead of throwing.
  */
 export function recordsWalletAndMaxMoneyUnitsOnTheEconomySnapshot(): void {
   const engine = createNumberEngine();
@@ -547,6 +547,28 @@ export function recordsWalletAndMaxMoneyUnitsOnTheEconomySnapshot(): void {
   };
   const gem = snapshotEconomy(engine, gemState);
   expect(gem).not.toBe(coin);
+  const bigintVars = snapshotEconomy(engine, {
+    ...gemState,
+    vars: { buys: 1n } as unknown as Vars,
+  });
+  expect(bigintVars).toContain("bigint:1");
+  const cyclic: { buys: number; self?: unknown } = { buys: 2 };
+  cyclic.self = cyclic;
+  const cyclicVars = snapshotEconomy(engine, {
+    ...gemState,
+    vars: cyclic as unknown as Vars,
+  });
+  expect(cyclicVars).toContain("cycle:");
+  expect(cyclicVars).not.toBe(bigintVars);
+  const bigintReplay = checkReplay({
+    ...constantScenario({ rate: 1, durationSec: 1, stepSec: 1 }),
+    initial: {
+      ...state(engine, 0),
+      vars: { buys: 1n } as unknown as Vars,
+    },
+  });
+  expect(bigintReplay.ok).toBe(true);
+  expect(bigintReplay.applicable).toBe(true);
 }
 
 /**
@@ -1001,6 +1023,18 @@ describe("PR-03 resume isolation", () => {
     expect(frozenSnapshot.ok).toBe(false);
     expect(frozenSnapshot.applicable).toBe(true);
     expect(frozenSnapshot.summary).toContain("JSON");
+    const bareVars = Object.create(null) as { buys?: number };
+    bareVars.buys = 0;
+    const nullProto = checkResumeFromJson(
+      {
+        ...scenario,
+        initial: { ...scenario.initial, vars: bareVars as unknown as Vars },
+      },
+      2,
+    );
+    expect(nullProto.ok).toBe(false);
+    expect(nullProto.applicable).toBe(true);
+    expect(nullProto.summary).toContain("JSON");
   });
 });
 
@@ -1098,6 +1132,18 @@ describe("PR-05 observation retention", () => {
     });
     expect(silentRetention.ok).toBe(true);
     expect(silentRetention.applicable).toBe(false);
+    let emitted = 0;
+    const watched = checkObserver({
+      ...scenario,
+      ctx: {
+        ...scenario.ctx,
+        emit: () => {
+          emitted += 1;
+        },
+      },
+    });
+    expectApplicable(watched);
+    expect(emitted).toBeGreaterThan(0);
   });
 
   it(

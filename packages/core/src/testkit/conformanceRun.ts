@@ -371,11 +371,31 @@ function skip(summary: string): RelationCheck {
   return { ok: true, applicable: false, summary };
 }
 
+function snapshotText(value: unknown): string {
+  try {
+    return JSON.stringify(value);
+  } catch {
+    const seen = new WeakMap<object, number>();
+    let nextId = 0;
+    return JSON.stringify(value, (_key, item: unknown) => {
+      if (typeof item === "bigint") return `bigint:${item.toString()}`;
+      if (typeof item === "symbol") return "symbol";
+      if (item !== null && typeof item === "object") {
+        const known = seen.get(item);
+        if (known !== undefined) return `cycle:${known}`;
+        seen.set(item, nextId);
+        nextId += 1;
+      }
+      return item;
+    });
+  }
+}
+
 export function snapshotEconomy<N, U extends string, Vars>(
   engine: Engine<N>,
   state: SimState<N, U, Vars>,
 ): string {
-  return JSON.stringify({
+  return snapshotText({
     t: state.t,
     amount: engine.toString(state.wallet.money.amount),
     amountUnit: state.wallet.money.unit.code,
@@ -570,7 +590,7 @@ function jsonCheckpointPreserves(
     return true;
   }
   const proto = Object.getPrototypeOf(value);
-  if (proto !== Object.prototype && proto !== null) return false;
+  if (proto !== Object.prototype) return false;
   if (userData && !Object.isExtensible(value)) return false;
   for (const key of Object.getOwnPropertyNames(value)) {
     const descriptor = Object.getOwnPropertyDescriptor(value, key);
@@ -893,20 +913,19 @@ export function checkObserver<N, U extends string, Vars>(
   const initial = bracket.snap();
   try {
     let observed = 0;
+    const originalEmit = scenario.ctx.emit;
     const withObserver = economyAfter({
       ...scenario,
       ctx: {
         ...scenario.ctx,
         emit: (events) => {
           observed += events.length;
+          originalEmit?.(events);
         },
       },
     });
     bracket.restore(initial);
-    const withoutObserver = economyAfter({
-      ...scenario,
-      ctx: { ...scenario.ctx, emit: undefined },
-    });
+    const withoutObserver = economyAfter(scenario);
     if (withObserver !== withoutObserver) return fail(`${withObserver} != ${withoutObserver}`);
     if (observed === 0) return skip("observer saw no events");
     return pass(`${withObserver}; observed batches ${observed}`);
