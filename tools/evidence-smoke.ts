@@ -467,6 +467,16 @@ try {
     ["> > Requirement {#req-id}", "> > ---", "## Kept {#kept}"].join("\n"),
   );
   const quotedH1 = headingAnchors(["> Title {#h1}", "> ===", "## Kept {#kept}"].join("\n"));
+  const listedSetext = headingAnchors(
+    ["- Requirement {#req-id}", "  ---", "## Kept {#kept}"].join("\n"),
+  );
+  const listedH1 = headingAnchors(["- Title {#h1}", "  ===", "## Kept {#kept}"].join("\n"));
+  const orderedSetext = headingAnchors(
+    ["1. Requirement {#req-id}", "   ---", "## Kept {#kept}"].join("\n"),
+  );
+  const quotedListSetext = headingAnchors(
+    ["> - Requirement {#req-id}", ">   ---", "## Kept {#kept}"].join("\n"),
+  );
   const listedBreak = headingAnchors("- Example {#listed}\n---\n## Kept {#kept}\n");
   const htmlBlock = headingAnchors("<div>\n## Example {#example}\n</div>\n\n## Kept {#kept}\n");
   const htmlEnded = headingAnchors("<div>\n\n## Example {#example}\n");
@@ -499,6 +509,17 @@ try {
     nestedSetext[1] === "kept" &&
     quotedH1.length === 1 &&
     quotedH1[0] === "kept" &&
+    listedSetext.length === 2 &&
+    listedSetext[0] === "req-id" &&
+    listedSetext[1] === "kept" &&
+    listedH1.length === 1 &&
+    listedH1[0] === "kept" &&
+    orderedSetext.length === 2 &&
+    orderedSetext[0] === "req-id" &&
+    orderedSetext[1] === "kept" &&
+    quotedListSetext.length === 2 &&
+    quotedListSetext[0] === "req-id" &&
+    quotedListSetext[1] === "kept" &&
     listedBreak.length === 1 &&
     listedBreak[0] === "kept" &&
     htmlBlock.length === 1 &&
@@ -977,6 +998,22 @@ try {
   const unknownBody = 'it.concurrent("credited", unrelated)';
   const unknownLive = registeredSuites(unknownBody, "unrelated", "credited");
   const unknownCalls = unresolvedRunnerCalls(unknownBody);
+  const destructuredBody = [
+    'const { it: register } = await import("bun:test")',
+    'if (false) it("credited", citedExport)',
+    'register("credited", unrelated)',
+  ].join("\n");
+  const destructuredLive = registeredSuites(destructuredBody, "unrelated", "credited");
+  const destructuredDead = registeredSuites(destructuredBody, "citedExport", "credited");
+  const destructuredNames = duplicateFullNames(destructuredBody);
+  const otherDestructure = registeredSuites(
+    [
+      'const { it: register } = await import("other")',
+      'register("credited", unrelated)',
+    ].join("\n"),
+    "unrelated",
+    "credited",
+  );
   const duplicateOk =
     duplicateNames.length === 1 &&
     duplicateNames[0] === "kept > quota is documented" &&
@@ -1050,7 +1087,11 @@ try {
     ifLive.length === 1 &&
     conditionalEach.length === 1 &&
     unknownLive.length === 0 &&
-    unknownCalls.length === 1;
+    unknownCalls.length === 1 &&
+    destructuredLive.length === 1 &&
+    destructuredDead.length === 1 &&
+    destructuredNames.length === 1 &&
+    otherDestructure.length === 0;
   record(
     "duplicate-title",
     "zero",
@@ -1135,6 +1176,27 @@ try {
     cwd: ".",
     args: ["test", "src/example.test.ts"],
   });
+  const optionOnly = commandTargetsFile({
+    file: "src/a.test.ts",
+    exportName: "example",
+    registeredAs: "example",
+    cwd: ".",
+    args: ["test", "--reporter-outfile", "src/a.test.ts"],
+  });
+  const optionThenFile = commandTargetsFile({
+    file: "src/a.test.ts",
+    exportName: "example",
+    registeredAs: "example",
+    cwd: ".",
+    args: ["test", "--reporter-outfile", "out.xml", "src/a.test.ts"],
+  });
+  const optionEquals = commandTargetsFile({
+    file: "src/a.test.ts",
+    exportName: "example",
+    registeredAs: "example",
+    cwd: ".",
+    args: ["test", "--reporter-outfile=src/a.test.ts"],
+  });
   const extraTargets = uninventoriedCommandTargets(
     ["test", "src/example.test.ts", "src/other.test.ts"],
     ".",
@@ -1188,6 +1250,9 @@ try {
   const commandOk =
     wrapped === false &&
     direct === true &&
+    optionOnly === false &&
+    optionThenFile === true &&
+    optionEquals === false &&
     extraTargets.length === 1 &&
     onlyTarget.length === 0 &&
     preloaded.length === 0 &&
