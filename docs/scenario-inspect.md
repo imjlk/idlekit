@@ -1,0 +1,33 @@
+# Scenario inspect
+
+Korean version: [scenario-inspect_ko.md](./scenario-inspect_ko.md)
+
+`DX-03` adds `idk inspect <scenario> --format json|md`. It explains the resolved run plan. It is not `doctor`. The default path does not tick, does not call Jev, and does not use the network.
+
+The explanation and the run that would start share `prepareResolvedRun` `planFor`. That reads the stage plan and does not call `fresh`. `scenario.engine` stays metadata. The default engine is `number`. `breakInfinity` is an explicit flag and is not passed through `Number`. `breakEternity` is rejected. The JSON report is still written, and the process exits non-zero.
+
+A fixed duration counts every tick, including a shorter last tick, through `nextBoundary`. An until-only clock with no `durationSec` reports step count `unknown`. A planner expansion is an upper bound from the horizon, beam, and branch caps. `measuredDurationSec` is null. The warning is a budget proposal, not a measured duration.
+
+Builtin model capabilities are `unknown` when no analysis adapter is registered. `unsupported` is a declared no. An unloaded plugin stays `unknown`. `--resolve-plugins` is the only path that imports a plugin, and only after the existing allow, root, and sha256 checks. That mode warns that user code may run. The report lists factory ids and versions. It does not include plugin source, secrets, or environment values.
+
+Diagnostics use a code and evidence values. Invalid engine is an error. Decimal range, missing reset, insufficient observation, unit mismatch, unlimited trace, and planner cost are warnings and exit 0.
+
+Registered analyzers from `DX-02` are attached with their observation demand and whether the configured supply meets it. The analyzer body does not run.
+
+Node.js and browser runtimes are not part of the v1 compatibility contract.
+
+## Verification
+
+Commands below were run from this worktree on macOS arm64 with Bun 1.4.2 and ttsc 0.30.4. `contracts:check` is unrun.
+
+| Command | Exit |
+|---|---|
+| `bun test --timeout 120000 src/sim/analysis/inspect.test.ts` in `packages/core` | 0 |
+| `bun run generate` and `bun run generate:check` in `packages/cli` | 0 |
+| `bun test --timeout 60000 src/commands/inspect.test.ts` in `packages/cli` | 0 |
+| `bun run evidence:check` | 0 |
+| `bun run format:check` | 0 |
+| `bun run graph:check` | 0 |
+| `bun run public:check` | 0 |
+
+The first core run exited 1. The first two CLI runs exited 1. The first `evidence:check` exited 2 on placeholder reviews. Those reruns exited 0. `graph:check` left `createPlannerStrategy` to `stepOnce` unobserved at hops 0. `contracts:check` is unrun.

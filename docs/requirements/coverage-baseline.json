@@ -48,7 +48,15 @@
     "REQ-DX02-SAME-ALGORITHM",
     "REQ-DX02-OBSERVATION-PLAN",
     "REQ-DX02-PLUGIN-ISOLATION",
-    "REQ-DX02-LOCAL-OUTPUT"
+    "REQ-DX02-LOCAL-OUTPUT",
+    "REQ-DX03-PARTIAL-TICK",
+    "REQ-DX03-UNTIL-UNKNOWN",
+    "REQ-DX03-DECIMAL-RANGE",
+    "REQ-DX03-STAGE-OVERRIDE",
+    "REQ-DX03-PLUGINS-DEFAULT",
+    "REQ-DX03-PLUGIN-METADATA",
+    "REQ-DX03-CAPABILITY-SPLIT",
+    "REQ-DX03-NO-RUN"
   ],
   "protectedFiles": [
     "docs/requirements/active/typia-transform.md",
@@ -124,6 +132,9 @@
     "fixtures/conformance/parameter-experiment.json",
     "docs/requirements/active/analyzer-registry.md",
     "packages/core/src/sim/analysis/analyzers.ts",
-    "packages/core/src/sim/analysis/analyzers.test.ts"
+    "packages/core/src/sim/analysis/analyzers.test.ts",
+    "docs/requirements/active/scenario-inspect.md",
+    "packages/core/src/sim/analysis/inspect.ts",
+    "packages/core/src/sim/analysis/inspect.test.ts"
   ]
 }

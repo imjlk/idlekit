@@ -26,7 +26,7 @@ export나 명령이 있다는 것은 분석이 끝났다는 뜻이 아니다.
 | Doctor | `packages/cli/src/commands/doctor.ts` | 환경과 설정 진단. 경제 판단은 이후 judge이며 이 명령이 아니다. |
 | 큰 수 | `createBreakInfinityEngine` | 실제 adapter. `createBreakEternityEngine`은 모든 메서드에서 throw한다. |
 
-`packages/cli/src/main.ts`에 등록된 명령은 `validate`, `analyze`, `simulate`, `eta`, `experiment`, `prestige-cycle`, `growth`, `experience`, `evaluate`, `tune`, `compare`, `ltv`, `report`, `calibrate`, `doctor`, `setup`과 `models`, `strategies`, `objectives`, `init`, `replay`, `kpi`, `review` 그룹이다. `analyze`는 analyzer 레지스트리를 호출한다. `eta`, `growth`, `prestige-cycle`은 별도 명령으로 남는다.
+`packages/cli/src/main.ts`에 등록된 명령은 `validate`, `analyze`, `inspect`, `simulate`, `eta`, `experiment`, `prestige-cycle`, `growth`, `experience`, `evaluate`, `tune`, `compare`, `ltv`, `report`, `calibrate`, `doctor`, `setup`과 `models`, `strategies`, `objectives`, `init`, `replay`, `kpi`, `review` 그룹이다. `analyze`는 analyzer 레지스트리를 호출한다. `inspect`는 resolved plan을 설명하고 tick하지 않는다. `eta`, `growth`, `prestige-cycle`은 별도 명령으로 남는다.
 
 재사용할 것도 있다. `stepOnce`, `Engine`의 `divN` / `cmp` / `absLog10`, strategy snapshot/restore, `deepClonePreservingPrototype`, `eventBuffer`, `OUTPUT_CONTRACT_VERSION`, Sampo, compat, replay, KPI gate.
 
@@ -87,4 +87,4 @@ root `tsconfig.json`은 없다. 패키지 설정은 `tsconfig.base.json`을 확�
 
 ## 트리에 없는 계획 이름
 
-`265c6ed`에는 아래 이름이 없었다. `toolchain:doctor`와 `toolchain:prepare`는 `TC-01`에서 생겼다. `evidence:check`, `evidence:smoke`, `docs/requirements/active/`는 `TC-03`에서 생겼다. `graph:check`와 `tsconfig.graph.json`은 `TC-04`에서 생겼다. `test:conformance`는 `DX-01`에서 생겼다. `contracts:generate`와 `contracts:check`는 `TC-05`에서 `ScenarioV1`에 대해 생겼다. `PR-08`이 같은 generator에 분석 artifact v1을 추가했다. 아직 목표인 것: `idk inspect`, `idk analyze`, `ExecutionPlan`, `RunInstance`, `AnalyzerRegistry`.
+`265c6ed`에는 아래 이름이 없었다. `toolchain:doctor`와 `toolchain:prepare`는 `TC-01`에서 생겼다. `evidence:check`, `evidence:smoke`, `docs/requirements/active/`는 `TC-03`에서 생겼다. `graph:check`와 `tsconfig.graph.json`은 `TC-04`에서 생겼다. `test:conformance`는 `DX-01`에서 생겼다. `contracts:generate`와 `contracts:check`는 `TC-05`에서 `ScenarioV1`에 대해 생겼다. `PR-08`이 같은 generator에 분석 artifact v1을 추가했다. `idk analyze`와 `AnalyzerRegistry`는 `DX-02`에서 생겼다. `idk inspect`는 `DX-03`에서 생겼고 resolved plan을 tick 없이 설명한다. 아직 목표인 것: `ExecutionPlan`, `RunInstance`.

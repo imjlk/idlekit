@@ -958,6 +958,134 @@
           "args": ["test", "--timeout", "120000", "src/sim/analysis/analyzers.test.ts"]
         }
       ]
+    },
+    {
+      "id": "REQ-DX03-PARTIAL-TICK",
+      "pr": "DX-03",
+      "anchor": "req-dx03-partial-tick",
+      "doc": "docs/requirements/active/scenario-inspect.md",
+      "production": ["packages/core/src/sim/analysis/inspect.ts"],
+      "tests": [
+        {
+          "file": "packages/core/src/sim/analysis/inspect.test.ts",
+          "exportName": "countsFixedDurationSteps",
+          "registeredAs": "scenario inspect > counts a fixed duration through the last partial tick",
+          "cwd": "packages/core",
+          "args": ["test", "--timeout", "120000", "src/sim/analysis/inspect.test.ts"]
+        }
+      ]
+    },
+    {
+      "id": "REQ-DX03-UNTIL-UNKNOWN",
+      "pr": "DX-03",
+      "anchor": "req-dx03-until-unknown",
+      "doc": "docs/requirements/active/scenario-inspect.md",
+      "production": ["packages/core/src/sim/analysis/inspect.ts"],
+      "tests": [
+        {
+          "file": "packages/core/src/sim/analysis/inspect.test.ts",
+          "exportName": "marksUntilOnlyUnknown",
+          "registeredAs": "scenario inspect > marks an until-only run unknown",
+          "cwd": "packages/core",
+          "args": ["test", "--timeout", "120000", "src/sim/analysis/inspect.test.ts"]
+        }
+      ]
+    },
+    {
+      "id": "REQ-DX03-DECIMAL-RANGE",
+      "pr": "DX-03",
+      "anchor": "req-dx03-decimal-range",
+      "doc": "docs/requirements/active/scenario-inspect.md",
+      "production": ["packages/core/src/sim/analysis/inspect.ts"],
+      "tests": [
+        {
+          "file": "packages/core/src/sim/analysis/inspect.test.ts",
+          "exportName": "warnsOnDecimalRange",
+          "registeredAs": "scenario inspect > warns when a decimal leaves the number domain",
+          "cwd": "packages/core",
+          "args": ["test", "--timeout", "120000", "src/sim/analysis/inspect.test.ts"]
+        }
+      ]
+    },
+    {
+      "id": "REQ-DX03-STAGE-OVERRIDE",
+      "pr": "DX-03",
+      "anchor": "req-dx03-stage-override",
+      "doc": "docs/requirements/active/scenario-inspect.md",
+      "production": ["packages/core/src/sim/analysis/inspect.ts", "packages/core/src/sim/strategy/planner.ts"],
+      "tests": [
+        {
+          "file": "packages/core/src/sim/analysis/inspect.test.ts",
+          "exportName": "explainsStageOverrides",
+          "registeredAs": "scenario inspect > explains stage overrides and a planner bound",
+          "cwd": "packages/core",
+          "args": ["test", "--timeout", "120000", "src/sim/analysis/inspect.test.ts"]
+        }
+      ]
+    },
+    {
+      "id": "REQ-DX03-PLUGINS-DEFAULT",
+      "pr": "DX-03",
+      "anchor": "req-dx03-plugins-default",
+      "doc": "docs/requirements/active/scenario-inspect.md",
+      "production": ["packages/core/src/sim/analysis/inspect.ts"],
+      "tests": [
+        {
+          "file": "packages/core/src/sim/analysis/inspect.test.ts",
+          "exportName": "leavesPluginsUnloaded",
+          "registeredAs": "scenario inspect > leaves named plugins unloaded",
+          "cwd": "packages/core",
+          "args": ["test", "--timeout", "120000", "src/sim/analysis/inspect.test.ts"]
+        }
+      ]
+    },
+    {
+      "id": "REQ-DX03-PLUGIN-METADATA",
+      "pr": "DX-03",
+      "anchor": "req-dx03-plugin-metadata",
+      "doc": "docs/requirements/active/scenario-inspect.md",
+      "production": ["packages/core/src/sim/analysis/inspect.ts"],
+      "tests": [
+        {
+          "file": "packages/core/src/sim/analysis/inspect.test.ts",
+          "exportName": "reportsResolvedPluginMetadata",
+          "registeredAs": "scenario inspect > reports resolved plugin metadata without source",
+          "cwd": "packages/core",
+          "args": ["test", "--timeout", "120000", "src/sim/analysis/inspect.test.ts"]
+        }
+      ]
+    },
+    {
+      "id": "REQ-DX03-CAPABILITY-SPLIT",
+      "pr": "DX-03",
+      "anchor": "req-dx03-capability-split",
+      "doc": "docs/requirements/active/scenario-inspect.md",
+      "production": ["packages/core/src/sim/analysis/inspect.ts"],
+      "tests": [
+        {
+          "file": "packages/core/src/sim/analysis/inspect.test.ts",
+          "exportName": "separatesUnsupportedFromUnknown",
+          "registeredAs": "scenario inspect > separates unsupported from unknown",
+          "cwd": "packages/core",
+          "args": ["test", "--timeout", "120000", "src/sim/analysis/inspect.test.ts"]
+        }
+      ]
+    },
+    {
+      "id": "REQ-DX03-NO-RUN",
+      "pr": "DX-03",
+      "anchor": "req-dx03-no-run",
+      "doc": "docs/requirements/active/scenario-inspect.md",
+      "production": ["packages/core/src/sim/analysis/inspect.ts"],
+      "tests": [
+        {
+          "file": "packages/core/src/sim/analysis/inspect.test.ts",
+          "exportName": "doesNotSimulateOrFetch",
+          "registeredAs": "scenario inspect > does not simulate or fetch",
+          "cwd": "packages/core",
+          "args": ["test", "--timeout", "120000", "src/sim/analysis/inspect.test.ts"]
+        }
+      ]
     }
   ]
 }

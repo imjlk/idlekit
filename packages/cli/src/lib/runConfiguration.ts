@@ -103,6 +103,8 @@ export type PreparedRun = Readonly<{
    * they read only what every stage applies.
    */
   defaultSeed: (base: Readonly<Record<string, unknown>>, stages: readonly SeedStage[]) => number;
+  /** The resolved plan a stage would apply, without opening it. */
+  planFor: (stage: StageName) => ResolvedRunPlan;
   /** The same prepared run with this seed in every stage plan. */
   withSeed: (seed: number) => PreparedRun;
   /** `outputs` change only what the stage keeps or reports, so the digest reads them and the default seed does not. */
@@ -487,6 +489,9 @@ export function prepareResolvedRun(args: PrepareArgs): PreparedRun {
           })),
           ...(stages.length > 1 ? { keys: sharedIdentityKeys } : {}),
         });
+      },
+      planFor(stage) {
+        return stagePlan({ ...run, engine, stage });
       },
       withSeed(seed) {
         return build({ ...run, seed });
