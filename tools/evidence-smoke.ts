@@ -473,6 +473,7 @@ try {
   const listedHeading = headingAnchors("- ## Listed {#listed}\n## Kept {#kept}\n");
   const commentCloser = headingAnchors("<!--\n`-->`\n## Kept {#kept}\n");
   const sameLineCloser = headingAnchors("<!-- `-->`\n## Kept {#kept}\n");
+  const closedHeading = headingAnchors("## Requirement {#req-id} ##\n## Kept {#kept}\n");
   const setextOk =
     setext.length === 3 &&
     setext[0] === "req-id" &&
@@ -501,7 +502,10 @@ try {
     commentCloser.length === 1 &&
     commentCloser[0] === "kept" &&
     sameLineCloser.length === 1 &&
-    sameLineCloser[0] === "kept";
+    sameLineCloser[0] === "kept" &&
+    closedHeading.length === 2 &&
+    closedHeading[0] === "req-id" &&
+    closedHeading[1] === "kept";
   record("setext-heading", "zero", setextOk ? 0 : 1, setextOk, JSON.stringify(setext));
 
   const activeDocs = ["docs/requirements/active/**/*.md"];
@@ -767,6 +771,19 @@ try {
     "quota is documented",
   );
   const unclosedNames = duplicateFullNames("it(`quota is documented, exportedName);");
+  const substitutedBody = [
+    'if (false) it("credited", citedExport);',
+    '`${it("credited", unrelated)}`',
+  ].join("\n");
+  const substitutedNames = duplicateFullNames(substitutedBody);
+  const substitutedLive = registeredSuites(substitutedBody, "unrelated", "credited");
+  const substitutedDead = registeredSuites(
+    '`it("credited", citedExport)`',
+    "citedExport",
+    "credited",
+  );
+  const nestedLive = registeredSuites('`${`${it("yes", unrelated)}`}`', "unrelated", "yes");
+  const nestedDead = registeredSuites('`${`it("no", citedExport)`}`', "citedExport", "no");
   const duplicateOk =
     duplicateNames.length === 1 &&
     duplicateNames[0] === "kept > quota is documented" &&
@@ -782,7 +799,13 @@ try {
     templateSuites.length === 1 &&
     templateSuites[0]?.join(" > ") === "kept" &&
     interpolated.length === 0 &&
-    unclosedNames.length === 0;
+    unclosedNames.length === 0 &&
+    substitutedNames.length === 1 &&
+    substitutedNames[0] === "credited" &&
+    substitutedLive.length === 1 &&
+    substitutedDead.length === 0 &&
+    nestedLive.length === 1 &&
+    nestedDead.length === 0;
   record(
     "duplicate-title",
     "zero",
@@ -890,6 +913,26 @@ try {
     ".",
     ["src/example.test.ts"],
   );
+  const namedPattern = uninventoriedCommandTargets(
+    ["test", "--test-name-pattern", "credited", "src/example.test.ts"],
+    ".",
+    ["src/example.test.ts"],
+  );
+  const namedEquals = uninventoriedCommandTargets(
+    ["test", "--test-name-pattern=credited", "src/example.test.ts"],
+    ".",
+    ["src/example.test.ts"],
+  );
+  const shortNamed = uninventoriedCommandTargets(
+    ["test", "-t", "credited", "src/example.test.ts"],
+    ".",
+    ["src/example.test.ts"],
+  );
+  const reported = uninventoriedCommandTargets(
+    ["test", "--reporter", "junit", "--reporter-outfile", "out.xml", "src/example.test.ts"],
+    ".",
+    ["src/example.test.ts"],
+  );
   const reporterArgs = junitReporterArgs(["test", "--", "src/example.test.ts"], "out.xml");
   const reporterAt = reporterArgs.indexOf("--reporter=junit");
   const separatorAt = reporterArgs.indexOf("--");
@@ -902,6 +945,10 @@ try {
     preloadedEq.length === 0 &&
     directoryPattern.length === 1 &&
     directoryPattern[0] === "src" &&
+    namedPattern.length === 0 &&
+    namedEquals.length === 0 &&
+    shortNamed.length === 0 &&
+    reported.length === 0 &&
     reporterAt >= 0 &&
     separatorAt > reporterAt &&
     reporterArgs.at(-1) === "src/example.test.ts";

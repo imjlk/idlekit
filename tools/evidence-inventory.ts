@@ -448,7 +448,9 @@ export function headingAnchors(markdown: string): string[] {
       continue;
     }
     const atx = atxText(heading);
-    const match = /^##[ \t]+.+\{#([A-Za-z0-9][A-Za-z0-9._:-]*)\}[ \t]*$/.exec(atx);
+    // CommonMark lets an ATX heading close with a space and a run of hashes.
+    const match =
+      /^##[ \t]+.+\{#([A-Za-z0-9][A-Za-z0-9._:-]*)\}(?:[ \t]+#+)?[ \t]*$/.exec(atx);
     if (/^##[ \t]/.test(atx) && !match) {
       anchors.push("");
       pending = undefined;
@@ -1007,6 +1009,8 @@ function collectRegistrations(body: string): Registration[] {
   let parens = 0;
   let pending: { title: string; parens: number } | undefined;
   let index = 0;
+  let inTemplate = false;
+  const templateCloseDepths: number[] = [];
 
   const pushPending = (): void => {
     if (!pending) return;
@@ -1016,6 +1020,25 @@ function collectRegistrations(body: string): Registration[] {
 
   while (index < body.length) {
     const char = body[index] ?? "";
+    if (inTemplate) {
+      if (char === "\\") {
+        index += 2;
+        continue;
+      }
+      if (char === "$" && body[index + 1] === "{") {
+        inTemplate = false;
+        templateCloseDepths.push(depth + 1);
+        index += 1;
+        continue;
+      }
+      if (char === "`") {
+        inTemplate = false;
+        index += 1;
+        continue;
+      }
+      index += 1;
+      continue;
+    }
     if (char === "/" && body[index + 1] === "/") {
       const next = body.indexOf("\n", index);
       index = next < 0 ? body.length : next + 1;
@@ -1031,11 +1054,7 @@ function collectRegistrations(body: string): Registration[] {
       continue;
     }
     if (char === "`") {
-      index += 1;
-      while (index < body.length && body[index] !== "`") {
-        if (body[index] === "\\") index += 2;
-        else index += 1;
-      }
+      inTemplate = true;
       index += 1;
       continue;
     }
@@ -1051,7 +1070,12 @@ function collectRegistrations(body: string): Registration[] {
     }
     if (char === "}") {
       while (stack.length > 0 && stack[stack.length - 1]?.depth === depth) stack.pop();
+      const closedDepth = depth;
       depth = Math.max(0, depth - 1);
+      if (templateCloseDepths.at(-1) === closedDepth) {
+        templateCloseDepths.pop();
+        inTemplate = true;
+      }
       index += 1;
       continue;
     }
@@ -1562,6 +1586,28 @@ function preloadArguments(args: readonly string[]): string[] {
   return files;
 }
 
+const TEST_VALUE_FLAGS = new Set([
+  "-t",
+  "--bail",
+  "--coverage-dir",
+  "--coverage-reporter",
+  "--max-concurrency",
+  "--reporter",
+  "--reporter-outfile",
+  "--rerun-each",
+  "--retry",
+  "--seed",
+  "--test-name-pattern",
+  "--timeout",
+]);
+
+/** `--flag value` consumes the value. `--flag=value` and boolean flags do not. */
+function consumesTestValue(flag: string, next: string | undefined): boolean {
+  if (next === undefined || !TEST_VALUE_FLAGS.has(flag)) return false;
+  if (flag === "--bail") return /^\d+$/.test(next);
+  return !next.startsWith("-");
+}
+
 function commandedTestFiles(args: readonly string[]): string[] {
   const files: string[] = [];
   let patterns = false;
@@ -1581,7 +1627,12 @@ function commandedTestFiles(args: readonly string[]): string[] {
       continue;
     }
     if (!patterns && preloadValue(arg) !== undefined) continue;
-    if (!patterns && arg.startsWith("-")) continue;
+    if (!patterns && arg.startsWith("-")) {
+      const equals = arg.indexOf("=");
+      const flag = equals === -1 ? arg : arg.slice(0, equals);
+      if (equals === -1 && consumesTestValue(flag, args[index + 1])) index += 1;
+      continue;
+    }
     files.push(arg.replaceAll("\\", "/"));
   }
   return files;
