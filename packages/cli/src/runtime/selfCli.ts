@@ -1,4 +1,5 @@
-import { resolve } from "path";
+import { existsSync } from "fs";
+import { dirname, resolve } from "path";
 
 function currentEntry(): string {
   return Bun.main;
@@ -7,11 +8,38 @@ function currentEntry(): string {
 const CLI_ROOT = resolve(import.meta.dir, "../..");
 const MAX_CAPTURE_BYTES = 8 * 1024 * 1024;
 
+function isJavaScriptEntry(entry: string): boolean {
+  return entry.endsWith(".js") || entry.endsWith(".mjs");
+}
+
+export function isBundledCliProcess(): boolean {
+  return isJavaScriptEntry(Bun.main);
+}
+
+export function cliPackageRoot(): string {
+  if (isBundledCliProcess()) return resolve(dirname(Bun.main), "..");
+  return resolve(import.meta.dir, "../..");
+}
+
+function bundledCliConfig(entry: string): string | undefined {
+  const config = resolve(dirname(entry), "../../../tools/bundled-cli-bunfig.toml");
+  if (!existsSync(config)) return undefined;
+  return config;
+}
+
 export function selfCliCommand(args: readonly string[]) {
   const entry = currentEntry();
+  const bun = process.argv[0] ?? "bun";
+  if (isJavaScriptEntry(entry)) {
+    const config = bundledCliConfig(entry);
+    if (config) return [bun, `--config=${config}`, entry, ...args];
+    return [bun, entry, ...args];
+  }
   const bunfigApplies = resolve(process.cwd()) === CLI_ROOT;
-  const preload = entry.endsWith(".ts") && !bunfigApplies ? ["--preload", "@ttsc/unplugin/bun-register"] : [];
-  return [process.argv[0] ?? "bun", ...preload, entry, ...args];
+  if (entry.endsWith(".ts") && !bunfigApplies) {
+    return [bun, "--preload", "@ttsc/unplugin/bun-register", entry, ...args];
+  }
+  return [bun, entry, ...args];
 }
 
 export function runSelfCli(args: readonly string[]): Readonly<{
