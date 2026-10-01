@@ -82,6 +82,8 @@ function alignFreshDuplicate<N, U extends string, Vars>(
 ): Action<N, U, Vars> | undefined {
   const origin = baseline[occurrence];
   if (!origin) return undefined;
+  // Same cardinality keeps the original slot. A later price must not move it.
+  if (fresh.length === baseline.length) return fresh[occurrence];
   const originKey = actionPriceKey(origin, ctx, state);
   if (originKey === undefined) return undefined;
   const used = new Set<number>();
@@ -109,7 +111,7 @@ function currentAction<N, U extends string, Vars>(
   state: SimState<N, U, Vars>,
   selected: Action<N, U, Vars>,
   occurrence: number | undefined,
-  baseline: readonly Action<N, U, Vars>[],
+  baseline: () => readonly Action<N, U, Vars>[],
 ): Action<N, U, Vars> | undefined {
   const fresh = model.actions(ctx, state);
   const byRef = fresh.find((candidate) => candidate === selected);
@@ -118,7 +120,7 @@ function currentAction<N, U extends string, Vars>(
     candidate.id === selected.id && candidate.kind === selected.kind;
   const matches = fresh.filter(sameIdentity);
   if (occurrence === undefined) return matches.length === 1 ? matches[0] : undefined;
-  return alignFreshDuplicate(baseline.filter(sameIdentity), matches, ctx, state, occurrence);
+  return alignFreshDuplicate(baseline().filter(sameIdentity), matches, ctx, state, occurrence);
 }
 
 function rejectBulk<N>(events: SimEvent<N>[], actionId: string, code: string, detail: unknown): void {
@@ -325,10 +327,11 @@ export function stepOnce<N, U extends string, Vars>(
 
   const maxActionsPerStep = constraints?.maxActionsPerStep ?? Number.POSITIVE_INFINITY;
   const decisions = (input.decisions ?? []).slice(0, Math.max(0, maxActionsPerStep));
-  const baseline = model.actions(ctx, prev);
+  let baseline: readonly Action<N, U, Vars>[] | undefined;
+  const baselineActions = () => (baseline ??= model.actions(ctx, prev));
 
   for (const d of decisions) {
-    const action = currentAction(model, ctx, next, d.action, d.occurrence, baseline);
+    const action = currentAction(model, ctx, next, d.action, d.occurrence, baselineActions);
     if (!action) {
       events.push({
         type: "action.skipped",

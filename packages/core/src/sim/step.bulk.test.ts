@@ -104,7 +104,7 @@ function skippedReason(events: readonly SimEvent<unknown>[]): string | undefined
  * @evidence ./step.ts#canSettleCost A zero wallet cannot pay 1e-13, and it can pay a zero cost.
  * @evidenceReview ./step.ts#canSettleCost #af1aab3 Re-read canSettleCost: a zero wallet cannot pay 1e-13, and it can pay a zero cost, without using cmp.
  * @evidence ./step.ts#stepOnce Calls stepOnce for the quoted buy and the rejected quotes.
- * @evidenceReview ./step.ts#stepOnce #9812c28 Re-read stepOnce: each decision re-reads model.actions for the state so far, a quoted size pays BulkQuote.cost once through exact decimal order scaled to the smaller exponent, a non-finite cost is skipped before toString, duplicate id and kind keep the price identity from the start of the step when a sibling is removed or inserted, and a rejected quote does not apply. Ran this function: a sentinel amount whose toString throws was skipped as invalidQuote, and the second same-id action paid 40.
+ * @evidenceReview ./step.ts#stepOnce #c824a04 Re-read stepOnce: each decision re-reads model.actions for the state so far, a quoted size pays BulkQuote.cost once through exact decimal order scaled to the smaller exponent, a non-finite cost is skipped before toString, duplicate id and kind keep their slot when the list length is unchanged even if the price changes, a removed or inserted sibling still matches the start-of-step price, an action-free tick does not enumerate actions, and a rejected quote does not apply. Ran this function: a sentinel amount whose toString throws was skipped as invalidQuote, and the second same-id action paid 40.
  */
 export function settlesQuotedBulkAndRejectsBadQuotes(): void {
   expect(singleBuySize).toBe(1);
@@ -957,6 +957,82 @@ describe("PR-01 bulk quote settlement", () => {
     expect(shifted.next.vars.tier).toBe(0);
     expect(engine.toNumber(shifted.next.wallet.money.amount)).toBe(950);
     expect(skippedReason(shifted.events)).toBeUndefined();
+  });
+
+  it("keeps a duplicate when a later list prices it from the updated state", () => {
+    const engine = createNumberEngine();
+    const model: Model<number, UnitCode, Vars> = {
+      id: "reprice-closure",
+      version: 1,
+      income: () => coin(engine, engine.zero()),
+      actions: (_ctx, current) => {
+        const owned = current.vars.owned;
+        const first: Action<number, UnitCode, Vars> = {
+          id: "buy",
+          kind: "buy",
+          canApply: () => true,
+          cost: () => coin(engine, engine.from(10 + owned)),
+          apply: (_ctx, next) => ({ ...next, vars: { ...next.vars, owned: next.vars.owned + 1 } }),
+        };
+        const second: Action<number, UnitCode, Vars> = {
+          id: "buy",
+          kind: "buy",
+          canApply: () => true,
+          cost: () => coin(engine, engine.from(40 + owned)),
+          apply: (_ctx, next) => ({ ...next, vars: { ...next.vars, owned: next.vars.owned + 5 } }),
+        };
+        return [first, second];
+      },
+    };
+    const start = state(engine, 1000);
+    const initial = model.actions(context(engine), start);
+    const out = stepOnce({
+      ctx: context(engine),
+      model,
+      state: start,
+      dt: 0,
+      decisions: [
+        { action: initial[0]!, occurrence: 0 },
+        { action: initial[1]!, occurrence: 1 },
+      ],
+    });
+    expect(out.next.vars.owned).toBe(6);
+    expect(engine.toNumber(out.next.wallet.money.amount)).toBe(949);
+    expect(skippedReason(out.events)).toBeUndefined();
+  });
+
+  it("does not enumerate actions when the step has no decisions", () => {
+    const engine = createNumberEngine();
+    const model: Model<number, UnitCode, Vars> = {
+      id: "no-decisions",
+      version: 1,
+      income: () => coin(engine, engine.zero()),
+      actions: () => {
+        throw new Error("enumerated");
+      },
+    };
+    const start = state(engine, 1000);
+    const idle = stepOnce({ ctx: context(engine), model, state: start, dt: 0 });
+    const blocked = stepOnce({
+      ctx: context(engine),
+      model,
+      state: start,
+      dt: 0,
+      decisions: [
+        {
+          action: {
+            id: "buy",
+            kind: "buy",
+            canApply: () => true,
+            cost: () => null,
+            apply: (_ctx, current) => current,
+          },
+        },
+      ],
+      constraints: { maxActionsPerStep: 0 },
+    });
+    expect(engine.toNumber(idle.next.wallet.money.amount)).toBe(1000);
+    expect(engine.toNumber(blocked.next.wallet.money.amount)).toBe(1000);
   });
 
   it("skips a later decision when the model no longer offers that action", () => {
