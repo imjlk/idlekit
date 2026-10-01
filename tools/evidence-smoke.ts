@@ -1269,6 +1269,134 @@ try {
   const separatorClosed =
     separatorTitles.includes("inner > outer") &&
     ambiguousSuiteSeparators(['it("a > b", unrelated);']).includes("a > b");
+  const aliasRoot = mkdtempSync(join(tmpdir(), "idlekit-evidence-alias-"));
+  const aliasHelper = join(aliasRoot, "helper.ts");
+  const aliasHost = join(aliasRoot, "host.test.ts");
+  const aliasMissing = join(aliasRoot, "missing.test.ts");
+  writeFileSync(
+    join(aliasRoot, "tsconfig.json"),
+    JSON.stringify({
+      compilerOptions: {
+        paths: { "@helper": ["./helper.ts"], "@missing/*": ["./gone/*"] },
+      },
+    }),
+  );
+  writeFileSync(
+    aliasHelper,
+    [
+      "export function register(it) {",
+      '  it("credited", unrelated);',
+      "}",
+      "// from-aliased-helper",
+    ].join("\n"),
+  );
+  writeFileSync(
+    aliasHost,
+    [
+      'import { register } from "@helper";',
+      'if (false) it("credited", citedExport);',
+      "register(it);",
+    ].join("\n"),
+  );
+  writeFileSync(aliasMissing, 'import { missing } from "@missing/file";\n');
+  const workspaceRoot = mkdtempSync(join(tmpdir(), "idlekit-evidence-workspace-"));
+  const workspacePkg = join(workspaceRoot, "pkgs", "helper");
+  mkdirSync(workspacePkg, { recursive: true });
+  writeFileSync(join(workspaceRoot, "package.json"), JSON.stringify({ workspaces: ["pkgs/*"] }));
+  writeFileSync(
+    join(workspacePkg, "package.json"),
+    JSON.stringify({
+      name: "@helper/pkg",
+      exports: { ".": { bun: "./register.ts" } },
+    }),
+  );
+  writeFileSync(
+    join(workspacePkg, "register.ts"),
+    [
+      "export function register(it) {",
+      '  it("credited", unrelated);',
+      "}",
+      "// from-workspace-helper",
+    ].join("\n"),
+  );
+  const workspaceHost = join(workspaceRoot, "host.test.ts");
+  const workspaceTypeHost = join(workspaceRoot, "type-host.test.ts");
+  writeFileSync(
+    workspaceHost,
+    [
+      'import { register } from "@helper/pkg";',
+      'if (false) it("credited", citedExport);',
+      "register();",
+    ].join("\n"),
+  );
+  writeFileSync(workspaceTypeHost, 'import type { register } from "@helper/pkg";\n');
+  let aliasedDuplicate = false;
+  let aliasedResolved = false;
+  let aliasedMissing = false;
+  let workspaceDuplicate = false;
+  let workspaceResolved = false;
+  let workspaceTypeSkipped = false;
+  try {
+    const aliasBodies = sourceGraph([aliasHost]);
+    aliasedDuplicate = duplicateFullNamesAcross(aliasBodies).includes("credited");
+    aliasedResolved = aliasBodies.some((body) => body.includes("from-aliased-helper"));
+    aliasedMissing = unresolvedLocalRequires([aliasMissing]).includes("@missing/file");
+    const workspaceBodies = sourceGraph([workspaceHost]);
+    workspaceDuplicate = duplicateFullNamesAcross(workspaceBodies).includes("credited");
+    workspaceResolved = workspaceBodies.some((body) => body.includes("from-workspace-helper"));
+    const typeBodies = sourceGraph([workspaceTypeHost]);
+    workspaceTypeSkipped =
+      typeBodies.length === 1 && !typeBodies.some((body) => body.includes("from-workspace-helper"));
+  } finally {
+    rmSync(aliasRoot, { recursive: true, force: true });
+    rmSync(workspaceRoot, { recursive: true, force: true });
+  }
+  const indirectCalls = unresolvedRunnerCalls(
+    [
+      'if (false) it("credited", citedExport);',
+      'Reflect.apply(it, undefined, ["credited", unrelated]);',
+    ].join("\n"),
+  );
+  const boundCalls = unresolvedRunnerCalls(
+    ["const register = it;", 'register("credited", unrelated);'].join("\n"),
+  );
+  const groupedBound = unresolvedRunnerCalls(
+    ["const register = (it);", 'register("credited", unrelated);'].join("\n"),
+  );
+  const reassigned = registeredSuites(
+    ["citedExport = unrelated;", 'it("credited", citedExport);'].join("\n"),
+    "citedExport",
+    "credited",
+  );
+  const assignedAfter = registeredSuites(
+    ['it("credited", citedExport);', "citedExport = unrelated;"].join("\n"),
+    "citedExport",
+    "credited",
+  );
+  const shadowedAssign = registeredSuites(
+    [
+      "{",
+      "  let citedExport = other;",
+      "  citedExport = unrelated;",
+      "}",
+      'it("credited", citedExport);',
+    ].join("\n"),
+    "citedExport",
+    "credited",
+  );
+  const creditGuards =
+    aliasedDuplicate &&
+    aliasedResolved &&
+    aliasedMissing &&
+    workspaceDuplicate &&
+    workspaceResolved &&
+    workspaceTypeSkipped &&
+    indirectCalls.includes("it") &&
+    boundCalls.length === 0 &&
+    groupedBound.length === 0 &&
+    reassigned.length === 0 &&
+    assignedAfter.length === 1 &&
+    shadowedAssign.length === 1;
   const duplicateOk =
     duplicateNames.length === 1 &&
     duplicateNames[0] === "kept > quota is documented" &&
@@ -1390,6 +1518,26 @@ try {
     duplicateOk ? 0 : 1,
     duplicateOk,
     JSON.stringify({ duplicateNames, duplicateStillRegistered, commentIgnored }),
+  );
+  record(
+    "alias-credit",
+    "zero",
+    creditGuards ? 0 : 1,
+    creditGuards,
+    JSON.stringify({
+      aliasedDuplicate,
+      aliasedResolved,
+      aliasedMissing,
+      workspaceDuplicate,
+      workspaceResolved,
+      workspaceTypeSkipped,
+      indirectCalls,
+      boundCalls,
+      groupedBound,
+      reassigned,
+      assignedAfter,
+      shadowedAssign,
+    }),
   );
 
   const indentedFence = headingAnchors("    ```\n## Visible {#quota}\n");
