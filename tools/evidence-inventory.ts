@@ -45,13 +45,7 @@ export type ShrinkResult = {
 
 const SOURCE_EXTENSION = /\.(?:[cm]?tsx?)$/;
 const NON_PRODUCTION_ROLE = /\.(?:test|spec|generated|d)$/;
-const NON_PRODUCTION_SEGMENTS = new Set([
-  "fixtures",
-  "dist",
-  "__tests__",
-  "test",
-  "tests",
-]);
+const NON_PRODUCTION_SEGMENTS = new Set(["fixtures", "dist", "__tests__", "test", "tests"]);
 const TEST_MODIFIERS = new Set(["only", "skip", "todo"]);
 
 export function isNonProductionPath(rel: string): boolean {
@@ -92,10 +86,7 @@ const XML_TEXT: Record<string, string> = {
 
 /** One XML layer. `&gt;` becomes `>`, and `&amp;gt;` stays the text `&gt;`. */
 function decodeXmlText(text: string): string {
-  return text.replace(
-    /&(?:amp|gt|lt|quot|apos);/g,
-    (entity) => XML_TEXT[entity] ?? entity,
-  );
+  return text.replace(/&(?:amp|gt|lt|quot|apos);/g, (entity) => XML_TEXT[entity] ?? entity);
 }
 
 function rawAttr(tag: string, name: string): string {
