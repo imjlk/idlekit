@@ -36,7 +36,9 @@ This guide summarizes the public ScenarioV1 and TuneSpec contracts used by `idle
 ## Design-facing fields
 
 - `design.intent`: descriptive label for the intended play feel
-- `design.sessionPattern`: default pattern/days for `idk experience`
+- `design.sessionPattern`: default pattern/days for `idk experience`. The five preset ids stay. An offset list is a program API on `SessionPatternSpec.schedule`, not a calendar field in this JSON.
+- `sim.offline.maxSec` / `overflowPolicy` / `decay`: reward-time cap and decay. They do not move the next session block earlier. `state.t` stays reward time.
+- `sim.offline.actions`: `legacy-all` (default), `none`, or `allow` with action kinds and optional `player` / `automation` actors. `none` does not call `decide` while away.
 - `analysis.experience.series`: `"money"` or `"netWorth"`
 - `analysis.experience.draws`: Monte Carlo draw default
 - `analysis.experience.quantiles`: summary quantiles for experience Monte Carlo

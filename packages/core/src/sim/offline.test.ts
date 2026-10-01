@@ -192,4 +192,27 @@ describe("applyOfflineSeconds", () => {
     expect(out.offline.effectiveSec).toBeCloseTo(2, 8);
     expect(out.end.t).toBeCloseTo(2, 8);
   });
+
+  it("keeps a direct cap on reward time and can refuse offline actions", () => {
+    const scenario = {
+      ...makeScenario({ incomePerSec: 1, initialMoney: 4 }),
+      run: {
+        ...makeScenario({ incomePerSec: 1, initialMoney: 4 }).run,
+        offline: { maxSec: 5, overflowPolicy: "clamp" as const, actions: { mode: "none" as const } },
+      },
+      strategy: {
+        id: "buy-first",
+        decide(_ctx: SimContext<number, U, Vars>, model: Model<number, U, Vars>, state: SimState<number, U, Vars>) {
+          const buy = model.actions(_ctx, state).find((action) => action.id === "buy");
+          return buy ? [{ action: buy }] : [];
+        },
+      } satisfies Strategy<number, U, Vars>,
+    };
+    const out = applyOfflineSeconds({ scenario, seconds: 12 * 3600 });
+    expect(out.offline.requestedSec).toBe(12 * 3600);
+    expect(out.offline.effectiveSec).toBe(5);
+    expect(out.end.t).toBe(5);
+    expect(out.end.vars.bought).toBe(0);
+    expect(out.offline.actionPolicy).toBe("none");
+  });
 });

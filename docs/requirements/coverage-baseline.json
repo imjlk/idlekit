@@ -6,7 +6,8 @@
     "REQ-PR02-SIMULATION-TIME-BOUNDARIES",
     "REQ-PR03-RUN-LIFECYCLE-ISOLATION",
     "REQ-PR05-OBSERVATION-RETENTION",
-    "REQ-PR04-PLANNER-ROLLOUT"
+    "REQ-PR04-PLANNER-ROLLOUT",
+    "REQ-PR06-SESSION-CLOCK"
   ],
   "protectedFiles": [
     "docs/requirements/active/typia-transform.md",
@@ -42,6 +43,8 @@
     "packages/core/src/sim/strategy/planner.ts",
     "packages/core/src/sim/strategy/planner.regression.test.ts",
     "packages/core/src/sim/session.ts",
+    "packages/core/src/sim/session.test.ts",
+    "docs/requirements/active/session-clock.md",
     "fixtures/conformance/shrink-gap.json",
     "fixtures/toolchain/evidence/lint.config.ts",
     "fixtures/toolchain/evidence/src/quotaHost.ts",

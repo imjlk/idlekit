@@ -1,8 +1,11 @@
 import { describe, expect, it } from "bun:test";
 import { createNumberEngine } from "../engine/breakInfinity";
 import { mergeObservations } from "./observation";
-import { simulateSessionPattern } from "./session";
-import type { CompiledScenario, Model, SimState } from "./types";
+import { applyOfflineSeconds } from "./offline";
+import { sessionClockContract, simulateSessionPattern, type SessionPatternSpec, type SessionRunResult } from "./session";
+import { createScriptedStrategy } from "./strategy/scripted";
+import type { Action, CompiledScenario, Model, SimState } from "./types";
+import type { Strategy } from "./strategy/types";
 
 type UnitCode = "COIN";
 type Vars = { owned: number };
@@ -80,4 +83,467 @@ describe("simulateSessionPattern", () => {
     expect(kept.run.stats?.money).toEqual(out.run.stats?.money);
     expect(kept.end.wallet.money.amount).toBe(out.end.wallet.money.amount);
   });
+});
+
+/** Repro label. The runs below do not draw from this value. */
+export const sessionCaseSeed = 0x7106;
+
+type ClockVars = { bought: number; auto: number; manual: number; a: number; b: number };
+
+function clockState(amount = 0, t = 0): SimState<number, UnitCode, ClockVars> {
+  return {
+    t,
+    wallet: { money: { unit: { code: "COIN" }, amount }, bucket: 0 },
+    maxMoneyEver: { unit: { code: "COIN" }, amount },
+    prestige: { count: 0, points: 0, multiplier: 1 },
+    vars: { bought: 0, auto: 0, manual: 0, a: 0, b: 0 },
+  };
+}
+
+function coin(amount: number) {
+  return { unit: { code: "COIN" as const }, amount };
+}
+
+function buyAction(id: string, field: keyof ClockVars, actor?: "player" | "automation"): Action<number, UnitCode, ClockVars> {
+  return {
+    id,
+    kind: "buy",
+    ...(actor ? { actor } : {}),
+    canApply: () => true,
+    cost: () => coin(1),
+    apply: (_ctx, state) => ({ ...state, vars: { ...state.vars, [field]: state.vars[field] + 1 } }),
+  };
+}
+
+function prestigeAction(): Action<number, UnitCode, ClockVars> {
+  return {
+    id: "prestige",
+    kind: "prestige",
+    actor: "player",
+    canApply: () => true,
+    cost: () => null,
+    apply: (_ctx, state) => ({
+      ...state,
+      prestige: { ...state.prestige, count: state.prestige.count + 1 },
+    }),
+  };
+}
+
+function clockScenario(args: {
+  income?: number;
+  money?: number;
+  actions?: readonly Action<number, UnitCode, ClockVars>[];
+  strategy?: Strategy<number, UnitCode, ClockVars>;
+  offline?: CompiledScenario<number, UnitCode, ClockVars>["run"]["offline"];
+  until?: (state: SimState<number, UnitCode, ClockVars>) => boolean;
+  goals?: CompiledScenario<number, UnitCode, ClockVars>["run"]["goals"];
+  maxSteps?: number;
+  eventLog?: CompiledScenario<number, UnitCode, ClockVars>["run"]["eventLog"];
+  clocks?: Model<number, UnitCode, ClockVars>["clocks"];
+  seen?: Array<CompiledScenario<number, UnitCode, ClockVars>["ctx"]["clocks"]>;
+}): CompiledScenario<number, UnitCode, ClockVars> {
+  const E = createNumberEngine();
+  const model: Model<number, UnitCode, ClockVars> = {
+    id: "clock",
+    version: 1,
+    income: (ctx) => {
+      args.seen?.push(ctx.clocks);
+      return coin(args.income ?? 0);
+    },
+    actions: () => args.actions ?? [],
+    ...(args.clocks ? { clocks: args.clocks } : {}),
+  };
+  return {
+    ctx: { E, unit: { code: "COIN" }, tickPolicy: { mode: "drop" }, seed: 1 },
+    model,
+    initial: clockState(args.money ?? 0),
+    ...(args.strategy ? { strategy: args.strategy } : {}),
+    run: {
+      stepSec: 1,
+      durationSec: 1,
+      ...(args.offline ? { offline: args.offline } : {}),
+      ...(args.until ? { until: args.until } : {}),
+      ...(args.goals ? { goals: args.goals } : {}),
+      ...(args.maxSteps !== undefined ? { maxSteps: args.maxSteps } : {}),
+      ...(args.eventLog ? { eventLog: args.eventLog } : {}),
+    },
+  };
+}
+
+function runPattern(
+  scenario: CompiledScenario<number, UnitCode, ClockVars>,
+  pattern: SessionPatternSpec,
+): SessionRunResult<number, UnitCode, ClockVars> {
+  return simulateSessionPattern({ scenario, pattern, seed: 1 });
+}
+
+/**
+ * @evidence docs/requirements/active/session-clock.md#req-pr06-session-clock Runs the 12-hour cap, the 24-hour horizon, offline policies, schedule rejection, and an early stop.
+ * @evidenceReview docs/requirements/active/session-clock.md#req-pr06-session-clock #79e7d8e Re-read the section, then ran this function: 12 hours away credits 1 hour, the one-day horizon stays 86400, and policy none does not move the scripted cursor.
+ * @evidence ./session.ts#sessionClockContract Reads the session clock contract and checks wall elapsed against reward time.
+ * @evidenceReview ./session.ts#sessionClockContract #bd7e206 The declaration is idlekit.session-clock. This test reads that property and expects a capped gap to keep those clocks apart.
+ */
+export function keepsSessionClocksDistinct(): void {
+  expect(sessionClockContract).toBe("idlekit.session-clock");
+  expect(sessionCaseSeed).toBe(0x7106);
+
+  const capped = clockScenario({
+    income: 1,
+    offline: { maxSec: 3600, overflowPolicy: "clamp" },
+  });
+  const heavy = runPattern(capped, { id: "offline-heavy", days: 1 });
+  expect(heavy.summary.elapsedSec).toBe(86400);
+  expect(heavy.summary.horizonSec).toBe(86400);
+  expect(heavy.summary.activeSec).toBe(300);
+  expect(heavy.summary.totalActiveSec).toBe(300);
+  expect(heavy.summary.offlineElapsedSec).toBe(86100);
+  expect(heavy.summary.offlineCreditedSec).toBe(3600);
+  expect(heavy.summary.totalOfflineSec).toBe(3600);
+  expect(heavy.summary.lostRewardSec).toBe(82500);
+  expect(heavy.summary.rewardSec).toBe(3900);
+  expect(heavy.end.t).toBe(3900);
+  expect(heavy.end.wallet.money.amount).toBe(3900);
+  expect(heavy.summary.stop.reason).toBe("horizon");
+  expect(heavy.summary.offlineActions).toBe("legacy-all");
+  expect(heavy.segments.map((segment) => segment.kind)).toEqual(["active", "offline"]);
+  expect(heavy.segments[1]?.wallStartT).toBe(300);
+  expect(heavy.segments[1]?.wallEndT).toBe(86400);
+  expect(heavy.segments[1]?.clock.elapsedSec).toBe(86100);
+  expect(heavy.segments[1]?.clock.creditedSec).toBe(3600);
+
+  const away = runPattern(capped, {
+    id: "offline-heavy",
+    days: 1,
+    schedule: [{ day: 0, startOffsetSec: 12 * 3600, durationSec: 60 }],
+  });
+  expect(away.segments[0]?.kind).toBe("offline");
+  expect(away.segments[0]?.clock.elapsedSec).toBe(12 * 3600);
+  expect(away.segments[0]?.clock.creditedSec).toBe(3600);
+  expect(away.segments[0]?.endT).toBe(3600);
+  expect(away.segments[0]?.wallEndT).toBe(12 * 3600);
+  expect(away.segments[1]?.kind).toBe("active");
+  expect(away.segments[1]?.wallStartT).toBe(12 * 3600);
+  expect(away.summary.elapsedSec).toBe(86400);
+  expect(away.summary.horizonSec).toBe(86400);
+  expect(away.end.t).not.toBe(86400);
+  let wall = away.start.t;
+  for (const segment of away.segments) {
+    expect(segment.wallStartT).toBe(wall);
+    expect(segment.wallEndT - segment.wallStartT).toBe(segment.clock.elapsedSec);
+    wall = segment.wallEndT;
+  }
+  expect(wall).toBe(86400);
+
+  const decayed = runPattern(
+    clockScenario({
+      income: 1,
+      offline: { maxSec: 3600, overflowPolicy: "clamp", decay: { kind: "linear", floorRatio: 0.25 } },
+    }),
+    { id: "offline-heavy", days: 1 },
+  );
+  expect(decayed.summary.elapsedSec).toBe(86400);
+  expect(decayed.summary.offlineCreditedSec).toBe(900);
+  expect(decayed.summary.lostRewardSec).toBe(85200);
+  expect(decayed.end.t).toBe(1200);
+
+  const bursts = runPattern(clockScenario({ income: 1 }), { id: "short-bursts", days: 1 });
+  expect(bursts.end.t).toBe(86400);
+  expect(bursts.summary.activeSec).toBe(600);
+  expect(bursts.summary.totalOfflineSec).toBe(85800);
+  expect(bursts.summary.offlineElapsedSec).toBe(85800);
+  expect(bursts.summary.lostRewardSec).toBe(0);
+  expect(bursts.summary.elapsedSec).toBe(86400);
+  expect(bursts.summary.activeBlocks).toBe(10);
+
+  const explicit = runPattern(
+    clockScenario({
+      income: 1,
+      offline: { maxSec: 3600, overflowPolicy: "clamp", actions: { mode: "legacy-all" } },
+    }),
+    { id: "offline-heavy", days: 1 },
+  );
+  expect(explicit.end.t).toBe(heavy.end.t);
+  expect(explicit.end.wallet.money.amount).toBe(heavy.end.wallet.money.amount);
+  expect(explicit.summary.lostRewardSec).toBe(heavy.summary.lostRewardSec);
+
+  const buy = buyAction("buy", "bought", "player");
+  const prestige = prestigeAction();
+  const scripted = (loop: boolean) =>
+    createScriptedStrategy<number, UnitCode, ClockVars>({
+      schemaVersion: 1,
+      loop,
+      program: [{ actionId: "buy" }, { actionId: "prestige" }, { actionId: "buy" }, { actionId: "buy" }],
+    });
+  const quiet = {
+    id: "offline-heavy" as const,
+    days: 1,
+    schedule: [{ day: 0, startOffsetSec: 2, durationSec: 1 }],
+  };
+  const noneStrategy = scripted(false);
+  const noneRun = runPattern(
+    clockScenario({
+      money: 10,
+      actions: [buy, prestige],
+      strategy: noneStrategy,
+      offline: { actions: { mode: "none" } },
+      until: (state) => state.t >= 3,
+    }),
+    quiet,
+  );
+  expect(noneRun.end.vars.bought).toBe(1);
+  expect(noneRun.end.prestige.count).toBe(0);
+  expect(noneStrategy.snapshotState?.()).toEqual({ cursor: 1 });
+  expect(noneRun.segments[0]?.kind).toBe("offline");
+  expect(noneRun.segments[0]?.run.end.vars.bought).toBe(0);
+
+  const legacyStrategy = scripted(false);
+  const legacyRun = runPattern(
+    clockScenario({
+      money: 10,
+      actions: [buy, prestige],
+      strategy: legacyStrategy,
+      offline: { actions: { mode: "legacy-all" } },
+      until: (state) => state.t >= 3,
+    }),
+    quiet,
+  );
+  expect(legacyRun.end.vars.bought).toBe(2);
+  expect(legacyRun.end.prestige.count).toBe(1);
+  expect(legacyStrategy.snapshotState?.()).toEqual({ cursor: 3 });
+
+  const auto = buyAction("auto", "auto", "automation");
+  const manual = buyAction("manual", "manual", "player");
+  const allowRun = runPattern(
+    clockScenario({
+      money: 10,
+      actions: [auto, manual, prestige],
+      strategy: {
+        id: "all",
+        decide(_ctx, model, current) {
+          return model.actions(_ctx, current).map((action) => ({ action }));
+        },
+      },
+      offline: { actions: { mode: "allow", categories: ["buy"], actors: ["automation"] } },
+      until: (state) => state.t >= 2,
+    }),
+    { id: "offline-heavy", days: 1, schedule: [{ day: 0, startOffsetSec: 1, durationSec: 1 }] },
+  );
+  expect(allowRun.segments[0]?.run.end.vars.auto).toBe(1);
+  expect(allowRun.segments[0]?.run.end.vars.manual).toBe(0);
+  expect(allowRun.segments[0]?.run.end.prestige.count).toBe(0);
+
+  const actionA = buyAction("a", "a", "player");
+  const actionB = buyAction("b", "b", "player");
+  const filtered = createScriptedStrategy<number, UnitCode, ClockVars>({
+    schemaVersion: 1,
+    loop: false,
+    program: [{ actionId: "a" }, { actionId: "b" }],
+  });
+  const filteredRun = runPattern(
+    clockScenario({
+      money: 10,
+      actions: [actionA, actionB],
+      strategy: filtered,
+      offline: { actions: { mode: "allow", categories: ["buy"], actors: ["automation"] } },
+      until: (state) => state.t >= 2,
+    }),
+    { id: "offline-heavy", days: 1, schedule: [{ day: 0, startOffsetSec: 1, durationSec: 1 }] },
+  );
+  expect(filteredRun.segments[0]?.run.end.vars.a).toBe(0);
+  expect(filteredRun.end.vars.a).toBe(1);
+  expect(filteredRun.end.vars.b).toBe(0);
+  expect(filtered.snapshotState?.()).toEqual({ cursor: 1 });
+
+  const freshA = scripted(false);
+  const freshB = scripted(false);
+  const once = { id: "offline-heavy" as const, days: 1, schedule: [{ day: 0, startOffsetSec: 0, durationSec: 1 }] };
+  const first = runPattern(
+    clockScenario({
+      money: 5,
+      actions: [buy, prestige],
+      strategy: freshA,
+      offline: { actions: { mode: "none" } },
+      until: (state) => state.t >= 1,
+    }),
+    once,
+  );
+  const second = runPattern(
+    clockScenario({
+      money: 5,
+      actions: [buy, prestige],
+      strategy: freshB,
+      offline: { actions: { mode: "none" } },
+      until: (state) => state.t >= 1,
+    }),
+    once,
+  );
+  expect(first.end.vars.bought).toBe(1);
+  expect(second.end.vars.bought).toBe(1);
+
+  const continued = createScriptedStrategy<number, UnitCode, ClockVars>({
+    schemaVersion: 1,
+    loop: false,
+    program: [{ actionId: "buy" }, { actionId: "buy" }],
+  });
+  const continuedRun = runPattern(
+    clockScenario({
+      money: 5,
+      actions: [buy],
+      strategy: continued,
+      offline: { actions: { mode: "none" } },
+      until: (state) => state.t >= 3,
+    }),
+    {
+      id: "offline-heavy",
+      days: 1,
+      schedule: [
+        { day: 0, startOffsetSec: 0, durationSec: 1 },
+        { day: 0, startOffsetSec: 2, durationSec: 1 },
+      ],
+    },
+  );
+  expect(continuedRun.summary.activeBlocks).toBe(2);
+  expect(continuedRun.end.vars.bought).toBe(2);
+  expect(continued.snapshotState?.()).toEqual({ cursor: 2 });
+  expect(continuedRun.segments.filter((segment) => segment.kind === "offline")[0]?.run.end.vars.bought).toBe(1);
+
+  const direct = applyOfflineSeconds({
+    scenario: clockScenario({ income: 1, offline: { maxSec: 5, overflowPolicy: "clamp" } }),
+    seconds: 10,
+  });
+  expect(direct.offline.requestedSec).toBe(10);
+  expect(direct.offline.effectiveSec).toBe(5);
+  expect(direct.end.t).toBe(5);
+  expect(direct.offline.actionPolicy).toBe("legacy-all");
+
+  expect(() =>
+    runPattern(clockScenario({}), { id: "offline-heavy", days: 1, schedule: [] }),
+  ).toThrow("session schedule is empty");
+  expect(() =>
+    runPattern(clockScenario({}), {
+      id: "offline-heavy",
+      days: 1,
+      schedule: [{ day: 0, startOffsetSec: -1, durationSec: 1 }],
+    }),
+  ).toThrow("session schedule offset must be finite and >= 0");
+  expect(() =>
+    runPattern(clockScenario({}), {
+      id: "offline-heavy",
+      days: 1,
+      schedule: [{ day: 0, startOffsetSec: 0, durationSec: -5 }],
+    }),
+  ).toThrow("session schedule duration must be finite and > 0");
+  expect(() =>
+    runPattern(clockScenario({}), {
+      id: "offline-heavy",
+      days: 1,
+      schedule: [
+        { day: 0, startOffsetSec: 0, durationSec: 10 },
+        { day: 0, startOffsetSec: 5, durationSec: 10 },
+      ],
+    }),
+  ).toThrow("session schedule blocks overlap");
+
+  const early = runPattern(
+    clockScenario({ income: 1, until: (state) => state.t >= 10 }),
+    {
+      id: "offline-heavy",
+      days: 1,
+      schedule: [
+        { day: 0, startOffsetSec: 0, durationSec: 100 },
+        { day: 0, startOffsetSec: 500, durationSec: 100 },
+      ],
+    },
+  );
+  expect(early.summary.stop.reason).toBe("until");
+  expect(early.summary.activeBlocks).toBe(1);
+  expect(early.end.t).toBe(10);
+  expect(early.summary.elapsedSec).toBe(10);
+  expect(early.segments.some((segment) => segment.wallStartT === 500)).toBe(false);
+
+  const goal = runPattern(
+    clockScenario({
+      income: 1,
+      goals: [{ id: "ten", met: (state) => state.t >= 10 }],
+    }),
+    {
+      id: "offline-heavy",
+      days: 1,
+      schedule: [
+        { day: 0, startOffsetSec: 0, durationSec: 100 },
+        { day: 0, startOffsetSec: 500, durationSec: 100 },
+      ],
+    },
+  );
+  expect(goal.summary.stop.reason).toBe("goal");
+  expect(goal.summary.activeBlocks).toBe(1);
+  expect(goal.end.t).toBe(10);
+  expect(goal.segments.some((segment) => segment.wallStartT === 500)).toBe(false);
+
+  const budget = runPattern(
+    clockScenario({ income: 1, maxSteps: 2 }),
+    { id: "offline-heavy", days: 1, schedule: [{ day: 0, startOffsetSec: 100, durationSec: 10 }] },
+  );
+  expect(budget.summary.stop.reason).toBe("budget");
+  expect(budget.summary.activeBlocks).toBe(0);
+  expect(budget.end.t).toBe(2);
+  expect(budget.summary.elapsedSec).toBe(100);
+  expect(budget.summary.offlineCreditedSec).toBe(2);
+  expect(budget.summary.lostRewardSec).toBe(0);
+
+  const undeclaredSeen: Array<CompiledScenario<number, UnitCode, ClockVars>["ctx"]["clocks"]> = [];
+  const undeclared = runPattern(
+    clockScenario({
+      income: 1,
+      offline: { maxSec: 3600, overflowPolicy: "clamp" },
+      seen: undeclaredSeen,
+    }),
+    { id: "offline-heavy", days: 1, schedule: [{ day: 0, startOffsetSec: 12 * 3600, durationSec: 60 }] },
+  );
+  expect(undeclaredSeen[0]).toBeUndefined();
+  expect(undeclared.segments[0]?.endT).toBe(3600);
+  expect(undeclared.segments[0]?.wallEndT).toBe(12 * 3600);
+
+  const declaredSeen: Array<CompiledScenario<number, UnitCode, ClockVars>["ctx"]["clocks"]> = [];
+  const declared = runPattern(
+    clockScenario({
+      income: 1,
+      offline: { maxSec: 3600, overflowPolicy: "clamp" },
+      clocks: { respondsTo: ["wall", "reward", "active"] },
+      seen: declaredSeen,
+    }),
+    { id: "offline-heavy", days: 1, schedule: [{ day: 0, startOffsetSec: 12 * 3600, durationSec: 60 }] },
+  );
+  expect(declaredSeen[0]?.wallT).toBe(0);
+  expect(declaredSeen[0]?.wallEndT).toBe(12 * 3600);
+  expect(declaredSeen[0]?.rewardT).toBe(0);
+  expect(declared.segments[0]?.endT).toBe(3600);
+
+  const truncated = runPattern(
+    clockScenario({
+      income: 1,
+      offline: { maxSec: 3600, overflowPolicy: "clamp" },
+      eventLog: { enabled: true, maxEvents: 0 },
+    }),
+    { id: "offline-heavy", days: 1 },
+  );
+  const retained = runPattern(
+    clockScenario({
+      income: 1,
+      offline: { maxSec: 3600, overflowPolicy: "clamp" },
+      eventLog: { enabled: true },
+    }),
+    { id: "offline-heavy", days: 1 },
+  );
+  expect(truncated.summary.elapsedSec).toBe(retained.summary.elapsedSec);
+  expect(truncated.summary.offlineCreditedSec).toBe(retained.summary.offlineCreditedSec);
+  expect(truncated.summary.activeSec).toBe(retained.summary.activeSec);
+  expect(truncated.summary.lostRewardSec).toBe(retained.summary.lostRewardSec);
+  expect(truncated.run.stats?.money).toEqual(retained.run.stats?.money);
+  expect(truncated.end.wallet.money.amount).toBe(retained.end.wallet.money.amount);
+  expect(truncated.run.observation?.legacyEventFallback).toBe(false);
+}
+
+describe("PR-06 session clocks", () => {
+  it("keeps session clocks distinct", keepsSessionClocksDistinct);
 });

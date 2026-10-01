@@ -1,5 +1,6 @@
 import type { Engine } from "../engine/types";
 import type { Money, MoneyState, Unit } from "../money/types";
+import type { OfflineActor, OfflinePolicy } from "../scenario/offlinePolicy";
 import type { Emitter } from "../policy/emitter";
 import type { MoneyEvent, TickPolicy } from "../policy/types";
 
@@ -82,6 +83,18 @@ export type SimContext<N, U extends string, Vars> = Readonly<{
   // Optional deterministic seed for stochastic strategy/model extensions.
   seed?: number;
 
+  /**
+   * Set only when the model declares `clocks.respondsTo`.
+   * Wall time is the session schedule. Reward time is `state.t`.
+   * Writing this view does not change `state.t`.
+   */
+  clocks?: Readonly<{
+    wallT: number;
+    wallEndT: number;
+    rewardT: number;
+    activeT: number;
+  }>;
+
   tickPolicy: TickPolicy;
   collectMoneyEvents?: boolean;
 
@@ -105,6 +118,11 @@ export type BulkQuote<N, U extends string> = Readonly<{
 export type Action<N, U extends string, Vars> = Readonly<{
   id: string;
   kind: "buy" | "prestige" | "grant" | "custom";
+  /**
+   * Optional offline actor. A missing actor does not match an actor filter.
+   * It is not treated as automation.
+   */
+  actor?: OfflineActor;
   label?: string;
 
   canApply: (ctx: SimContext<N, U, Vars>, state: SimState<N, U, Vars>) => boolean;
@@ -185,6 +203,14 @@ export interface Model<N, U extends string, Vars> {
     prev: SimState<N, U, Vars>,
     next: SimState<N, U, Vars>,
   ) => string[];
+
+  /**
+   * Clocks this model reads. Omitting one means the session must not
+   * pretend that `state.t` is that clock.
+   */
+  clocks?: Readonly<{
+    respondsTo?: readonly ("wall" | "reward" | "active")[];
+  }>;
 }
 
 export type ScenarioConstraints = Readonly<{
@@ -209,15 +235,7 @@ export type SimRunOptions = Readonly<{
    */
   maxSteps?: number;
 
-  offline?: Readonly<{
-    maxSec?: number;
-    overflowPolicy?: "clamp" | "reject";
-    decay?: Readonly<{
-      kind: "none" | "linear";
-      // Only used when kind=linear. 0..1
-      floorRatio?: number;
-    }>;
-  }>;
+  offline?: OfflinePolicy;
 
   // Event retention policy for long-running simulations.
   eventLog?: Readonly<{

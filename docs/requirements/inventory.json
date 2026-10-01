@@ -229,6 +229,22 @@
           "args": ["test", "src/sim/strategy/planner.regression.test.ts"]
         }
       ]
+    },
+    {
+      "id": "REQ-PR06-SESSION-CLOCK",
+      "pr": "PR-06",
+      "anchor": "req-pr06-session-clock",
+      "doc": "docs/requirements/active/session-clock.md",
+      "production": ["packages/core/src/sim/session.ts"],
+      "tests": [
+        {
+          "file": "packages/core/src/sim/session.test.ts",
+          "exportName": "keepsSessionClocksDistinct",
+          "registeredAs": "keeps session clocks distinct",
+          "cwd": "packages/core",
+          "args": ["test", "src/sim/session.test.ts"]
+        }
+      ]
     }
   ]
 }

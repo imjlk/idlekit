@@ -36,6 +36,8 @@
 - `sim.offline.overflowPolicy`: `clamp | reject`
 - `sim.offline.decay.kind`: `none | linear`
 - `sim.offline.decay.floorRatio`: linear decay 하한 비율(0..1)
+- `sim.offline.actions`: `legacy-all`(기본), `none`, 또는 `allow`. `allow`는 action kind와 선택적 `player` / `automation` actor를 받는다. `none`은 부재 중에 `decide`를 호출하지 않는다. cap/decay는 보상 시간만 줄이며 다음 접속 블록을 앞당기지 않는다. `state.t`는 보상 시간이다.
+- `design.sessionPattern`: 다섯 preset id는 유지한다. offset 목록은 JSON calendar가 아니라 `SessionPatternSpec.schedule` 프로그램 API다.
 - `outputs.report`: trace/checkpoint/UX 포함 여부
 
 ## 3. 전략 파라미터 기본 주입 규칙

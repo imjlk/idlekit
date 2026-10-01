@@ -114,6 +114,20 @@ describe("validateScenarioV1 clock stop conditions", () => {
     expect(out.ok).toBeTrue();
   });
 
+  it("rejects an offline action policy with an unknown mode", () => {
+    const sc = {
+      ...baseScenario(),
+      sim: {
+        offline: {
+          actions: { mode: "all" },
+        },
+      },
+    };
+    const out = validateScenarioV1(sc as ScenarioV1);
+    expect(out.ok).toBeFalse();
+    expect(out.issues.some((issue) => issue.path === "sim.offline.actions.mode")).toBeTrue();
+  });
+
   it("fails closed when model params schema returns unknown shape", () => {
     const badModelFactory: ModelFactory = {
       id: "m",

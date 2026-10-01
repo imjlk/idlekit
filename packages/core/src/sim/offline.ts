@@ -1,10 +1,11 @@
+import type { OfflineActionPolicy, OfflinePolicy } from "../scenario/offlinePolicy";
 import { analyzeUX } from "./analysis/ux";
 import { recordPrestigeReset } from "./constraints";
 import { createBoundedLog, createEventBuffer } from "./eventBuffer";
 import { createObservationRecorder, statsFromObservation } from "./observation";
 import { stepOnce } from "./step";
 import { assertSimulationClock, nextBoundary, stepContext, timeEpsilon, timeStepEvents } from "./timeBoundary";
-import type { CompiledScenario, RunResult, RunStop, SimState } from "./types";
+import type { Action, CompiledScenario, RunResult, RunStop, SimState } from "./types";
 
 export type OfflineRunOptions<N, U extends string, Vars> = Readonly<{
   fromState?: SimState<N, U, Vars>;
@@ -13,7 +14,14 @@ export type OfflineRunOptions<N, U extends string, Vars> = Readonly<{
   maxSteps?: number;
   fast?: CompiledScenario<N, U, Vars>["run"]["fast"];
   eventLog?: CompiledScenario<N, U, Vars>["run"]["eventLog"];
-  policy?: CompiledScenario<N, U, Vars>["run"]["offline"];
+  policy?: OfflinePolicy;
+  /** Overrides `policy.actions` and `scenario.run.offline.actions` for this call. */
+  actions?: OfflineActionPolicy;
+  /**
+   * Session stop. Omitted means this call ignores `scenario.run.until`.
+   * That is the legacy direct contract.
+   */
+  until?: (state: SimState<N, U, Vars>) => boolean;
 }>;
 
 export type OfflineRunResult<N, U extends string, Vars> = Readonly<
@@ -27,6 +35,7 @@ export type OfflineRunResult<N, U extends string, Vars> = Readonly<
       fullSteps: number;
       remainderSec: number;
       usedStrategy: boolean;
+      actionPolicy: "legacy-all" | "none" | "allow";
       overflow: "none" | "clamped";
       decay: Readonly<{
         kind: "none" | "linear";
@@ -86,13 +95,43 @@ function resolveOfflineSeconds(
 }
 
 /**
- * Catch up `effectiveSec` with the same partial-tick and budget rules as `runScenario`.
+ * Catch up reward time with the same partial-tick and budget rules as `runScenario`.
+ * `state.t` advances by simulated reward seconds, not by the requested absence.
  * A short `maxSteps` stops with reason `budget` instead of throwing the completed time away.
  * `stepOnce` is still the only economy transition.
+ * Omitting `options.until` does not read `scenario.run.until`.
  *
  * @evidence docs/requirements/active/simulation-time-boundaries.md#req-pr02-simulation-time-boundaries Applies the same horizon, partial tick, and step budget as the online runner.
  * @evidenceReview docs/requirements/active/simulation-time-boundaries.md#req-pr02-simulation-time-boundaries #89f7aa9 Re-read the section: offline uses that partial tick, and a short maxSteps returns budget instead of discarding the run.
+ * @evidence docs/requirements/active/session-clock.md#req-pr06-session-clock Steps reward time only. `requestedSec` stays the caller absence, and `useStrategy: false` or policy `none` does not call `decide`.
+ * @evidenceReview docs/requirements/active/session-clock.md#req-pr06-session-clock #79e7d8e Re-read the section: state.t moves by simulated reward seconds, and a direct call does not turn the requested absence into state.t.
  */
+
+export function resolveOfflineActionPolicy(args: {
+  policy?: OfflineActionPolicy;
+  useStrategy?: boolean;
+  hasStrategy: boolean;
+}): Readonly<{ callStrategy: boolean; policy: OfflineActionPolicy }> {
+  if (args.useStrategy === false) return { callStrategy: false, policy: { mode: "none" } };
+  const policy = args.policy ?? { mode: "legacy-all" };
+  if (policy.mode === "none") return { callStrategy: false, policy: { mode: "none" } };
+  if (policy.mode === "allow") return { callStrategy: true, policy };
+  return {
+    callStrategy: args.useStrategy ?? args.hasStrategy,
+    policy: { mode: "legacy-all" },
+  };
+}
+
+function allowsOfflineAction(
+  action: Pick<Action<unknown, string, unknown>, "kind" | "actor">,
+  policy: OfflineActionPolicy,
+): boolean {
+  if (policy.mode !== "allow") return true;
+  if (!policy.categories.includes(action.kind)) return false;
+  if (policy.actors === undefined) return true;
+  if (action.actor === undefined) return false;
+  return policy.actors.includes(action.actor);
+}
 export function applyOfflineSeconds<N, U extends string, Vars>(args: {
   scenario: CompiledScenario<N, U, Vars>;
   seconds: number;
@@ -109,7 +148,14 @@ export function applyOfflineSeconds<N, U extends string, Vars>(args: {
   const maxSteps = opts?.maxSteps;
   assertSimulationClock("offline", { stepSec, maxSteps });
 
-  const useStrategy = opts?.useStrategy ?? !!scenario.strategy;
+  const capPolicy = opts?.policy ?? scenario.run.offline;
+  const resolvedPolicy = resolveOfflineActionPolicy({
+    policy: opts?.actions ?? capPolicy?.actions,
+    useStrategy: opts?.useStrategy,
+    hasStrategy: !!scenario.strategy,
+  });
+  const useStrategy = resolvedPolicy.callStrategy;
+  const untilFn = opts?.until;
   const start = opts?.fromState ?? scenario.initial;
 
   const eventLogEnabled = opts?.eventLog?.enabled ?? scenario.run.eventLog?.enabled ?? true;
@@ -119,7 +165,7 @@ export function applyOfflineSeconds<N, U extends string, Vars>(args: {
     throw new Error("offline eventLog.maxEvents must be an integer >= 0");
   }
 
-  const resolved = resolveOfflineSeconds(seconds, opts?.policy ?? scenario.run.offline);
+  const resolved = resolveOfflineSeconds(seconds, capPolicy);
   assertSimulationClock("offline", { stepSec, durationSec: resolved.effectiveSec, maxSteps });
   const fullSteps = Math.floor(resolved.effectiveSec / stepSec);
   const remainderRaw = resolved.effectiveSec - fullSteps * stepSec;
@@ -157,8 +203,8 @@ export function applyOfflineSeconds<N, U extends string, Vars>(args: {
       steps,
       stepSec,
       durationSec: resolved.effectiveSec,
-      untilMet: false,
-      hasUntil: false,
+      untilMet: untilFn?.(state) ?? false,
+      hasUntil: untilFn !== undefined,
       maxSteps,
     });
     if (decision.kind === "guard") {
@@ -173,9 +219,21 @@ export function applyOfflineSeconds<N, U extends string, Vars>(args: {
       { ...scenario.ctx, ...(constraints ? { constraints } : {}) },
       decision.dt,
     );
-    const decisions = useStrategy
-      ? (scenario.strategy?.decide(stepCtx, scenario.model, state) ?? []).slice(0, maxActionsPerStep)
-      : [];
+    const saved =
+      resolvedPolicy.policy.mode === "allow" && scenario.strategy?.snapshotState
+        ? scenario.strategy.snapshotState()
+        : undefined;
+    const raw = useStrategy ? (scenario.strategy?.decide(stepCtx, scenario.model, state) ?? []) : [];
+    const filtered = raw.filter((decision) => allowsOfflineAction(decision.action, resolvedPolicy.policy));
+    if (
+      resolvedPolicy.policy.mode === "allow" &&
+      filtered.length === 0 &&
+      saved !== undefined &&
+      scenario.strategy?.restoreState
+    ) {
+      scenario.strategy.restoreState(saved);
+    }
+    const decisions = filtered.slice(0, maxActionsPerStep);
     const actionStartT = state.t;
     const out = stepOnce({
       ctx: stepCtx,
@@ -248,6 +306,7 @@ export function applyOfflineSeconds<N, U extends string, Vars>(args: {
       fullSteps,
       remainderSec,
       usedStrategy: useStrategy,
+      actionPolicy: resolvedPolicy.policy.mode,
       overflow: resolved.overflow,
       decay: {
         kind: resolved.decayKind,

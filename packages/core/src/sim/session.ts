@@ -1,9 +1,19 @@
+import type { OfflineActionPolicy } from "../scenario/offlinePolicy";
 import { analyzeUX } from "./analysis/ux";
 import { createEventBuffer } from "./eventBuffer";
 import { mergeObservations, observationFromLegacyEvents, statsFromObservation, type RunObservation } from "./observation";
 import { applyOfflineSeconds, type OfflineRunResult } from "./offline";
 import { runScenario } from "./simulator";
 import type { CompiledScenario, RunResult, SimState } from "./types";
+
+/**
+ * Session schedule contract. TC-05 has not registered this DTO.
+ * `state.t` stays the reward clock. Wall time is only on the session report.
+ *
+ * @evidence docs/requirements/active/session-clock.md#req-pr06-session-clock Wall elapsed, reward time, and active time are separate fields. Cap and decay do not move the next block earlier.
+ * @evidenceReview docs/requirements/active/session-clock.md#req-pr06-session-clock #79e7d8e Re-read the section: a 12-hour absence with a 1-hour cap stays elapsed 43200 and credited 3600, and state.t is not rewritten to wall time.
+ */
+export const sessionClockContract = "idlekit.session-clock" as const;
 
 export type SessionPatternId =
   | "always-on"
@@ -12,9 +22,29 @@ export type SessionPatternId =
   | "offline-heavy"
   | "weekend-marathon";
 
+export type SessionOffsetBlock = Readonly<{
+  day: number;
+  startOffsetSec: number;
+  durationSec: number;
+}>;
+
 export type SessionPatternSpec = Readonly<{
   id: SessionPatternId;
   days: number;
+  /** Opt-in offsets in seconds. Absent means the preset named by `id`. */
+  schedule?: readonly SessionOffsetBlock[];
+}>;
+
+export type SessionStopReason = "horizon" | "until" | "goal" | "budget";
+
+export type SessionClock = Readonly<{
+  /** Wall length of this segment. */
+  elapsedSec: number;
+  /** Reward seconds actually stepped. */
+  creditedSec: number;
+  activeSec: number;
+  /** Reward seconds removed by offline cap or decay. Not a step-budget shortfall. */
+  lostRewardSec: number;
 }>;
 
 export type SessionSegment<N, U extends string, Vars> =
@@ -24,6 +54,9 @@ export type SessionSegment<N, U extends string, Vars> =
       startT: number;
       endT: number;
       durationSec: number;
+      wallStartT: number;
+      wallEndT: number;
+      clock: SessionClock;
       run: RunResult<N, U, Vars>;
     }>
   | Readonly<{
@@ -32,6 +65,9 @@ export type SessionSegment<N, U extends string, Vars> =
       startT: number;
       endT: number;
       durationSec: number;
+      wallStartT: number;
+      wallEndT: number;
+      clock: SessionClock;
       run: OfflineRunResult<N, U, Vars>;
     }>;
 
@@ -44,16 +80,27 @@ export type SessionRunResult<N, U extends string, Vars> = Readonly<{
   summary: Readonly<{
     days: number;
     activeBlocks: number;
+    /** Active reward seconds. Equal to `activeSec`. */
     totalActiveSec: number;
+    /**
+     * Stepped offline reward seconds.
+     * This is not the wall absence when cap or decay applies.
+     */
     totalOfflineSec: number;
+    elapsedSec: number;
+    horizonSec: number;
+    activeSec: number;
+    offlineElapsedSec: number;
+    offlineCreditedSec: number;
+    lostRewardSec: number;
+    /** `end.t - start.t`. Reward time, not wall time. */
+    rewardSec: number;
+    offlineActions: OfflineActionPolicy["mode"];
+    stop: Readonly<{ reason: SessionStopReason }>;
   }>;
 }>;
 
-type ActiveBlock = Readonly<{
-  day: number;
-  startOffsetSec: number;
-  durationSec: number;
-}>;
+type ActiveBlock = SessionOffsetBlock;
 
 function buildBlocks(pattern: SessionPatternSpec): ActiveBlock[] {
   const blocks: ActiveBlock[] = [];
@@ -94,6 +141,77 @@ function buildBlocks(pattern: SessionPatternSpec): ActiveBlock[] {
   return blocks.sort((a, b) => a.day * 86400 + a.startOffsetSec - (b.day * 86400 + b.startOffsetSec));
 }
 
+/** Throws when an opt-in offset list is empty, negative, overlapping, or outside the horizon. */
+export function assertSessionSchedule(pattern: SessionPatternSpec): SessionOffsetBlock[] {
+  if (!Number.isInteger(pattern.days) || pattern.days <= 0) {
+    throw new Error("session days must be a positive integer");
+  }
+  const schedule = pattern.schedule;
+  if (!schedule || schedule.length === 0) {
+    throw new Error("session schedule is empty");
+  }
+  const horizon = pattern.days * 86400;
+  const blocks = schedule.map((block) => {
+    if (!Number.isInteger(block.day) || block.day < 0) {
+      throw new Error("session schedule day must be an integer >= 0");
+    }
+    if (!Number.isFinite(block.startOffsetSec) || block.startOffsetSec < 0) {
+      throw new Error("session schedule offset must be finite and >= 0");
+    }
+    if (!Number.isFinite(block.durationSec) || !(block.durationSec > 0)) {
+      throw new Error("session schedule duration must be finite and > 0");
+    }
+    const start = block.day * 86400 + block.startOffsetSec;
+    const end = start + block.durationSec;
+    if (end > horizon) throw new Error("session schedule block ends after the horizon");
+    return { day: block.day, startOffsetSec: block.startOffsetSec, durationSec: block.durationSec };
+  });
+  const ordered = [...blocks].sort(
+    (a, b) => a.day * 86400 + a.startOffsetSec - (b.day * 86400 + b.startOffsetSec),
+  );
+  for (let i = 1; i < ordered.length; i += 1) {
+    const prev = ordered[i - 1]!;
+    const next = ordered[i]!;
+    const prevEnd = prev.day * 86400 + prev.startOffsetSec + prev.durationSec;
+    const nextStart = next.day * 86400 + next.startOffsetSec;
+    if (nextStart < prevEnd) throw new Error("session schedule blocks overlap");
+  }
+  return ordered;
+}
+
+function blocksFor(pattern: SessionPatternSpec): ActiveBlock[] {
+  if (pattern.schedule) return assertSessionSchedule(pattern);
+  return buildBlocks(pattern);
+}
+
+function modelReadsClocks<N, U extends string, Vars>(scenario: CompiledScenario<N, U, Vars>): boolean {
+  return (scenario.model.clocks?.respondsTo?.length ?? 0) > 0;
+}
+
+function withClocks<N, U extends string, Vars>(
+  scenario: CompiledScenario<N, U, Vars>,
+  wallT: number,
+  wallEndT: number,
+  rewardT: number,
+  activeT: number,
+): CompiledScenario<N, U, Vars> {
+  if (!modelReadsClocks(scenario)) return scenario;
+  return {
+    ...scenario,
+    ctx: {
+      ...scenario.ctx,
+      clocks: { wallT, wallEndT, rewardT, activeT },
+    },
+  };
+}
+
+/**
+ * One continued play. Wall time follows the schedule. `state.t` stays reward time.
+ * A later call is fresh only when the caller supplies a new strategy instance.
+ *
+ * @evidence docs/requirements/active/session-clock.md#req-pr06-session-clock Schedules the next block on wall time and reports elapsed, credited, and active time separately.
+ * @evidenceReview docs/requirements/active/session-clock.md#req-pr06-session-clock #79e7d8e Re-read the section: cap and decay do not pull the next active block forward, and policy none does not call decide.
+ */
 export function simulateSessionPattern<N, U extends string, Vars>(args: {
   scenario: CompiledScenario<N, U, Vars>;
   pattern: SessionPatternSpec;
@@ -112,9 +230,20 @@ export function simulateSessionPattern<N, U extends string, Vars>(args: {
   });
   const segmentObservations: RunObservation[] = [];
   let state = start;
-  let totalActiveSec = 0;
-  let totalOfflineSec = 0;
+  let wallT = startT;
+  let activeSec = 0;
+  let offlineElapsedSec = 0;
+  let offlineCreditedSec = 0;
+  let lostRewardSec = 0;
   let activeBlocks = 0;
+  let stopReason: SessionStopReason = "horizon";
+  const actionPolicy = sc.run.offline?.actions ?? { mode: "legacy-all" as const };
+  const originalUntil = sc.run.until;
+  const goals = sc.run.goals ?? [];
+  const stopFn =
+    originalUntil !== undefined || goals.length > 0
+      ? (next: SimState<N, U, Vars>) => (originalUntil?.(next) ?? false) || goals.some((goal) => goal.met(next))
+      : undefined;
 
   const retainRun = (run: RunResult<N, U, Vars>) => {
     segmentObservations.push(
@@ -128,39 +257,74 @@ export function simulateSessionPattern<N, U extends string, Vars>(args: {
     eventBuffer.pushRun(run);
   };
 
-  const blocks = buildBlocks(args.pattern);
-  for (const block of blocks) {
-    const absoluteStart = startT + block.day * 86400 + block.startOffsetSec;
-    if (state.t < absoluteStart) {
-      const offlineRun = applyOfflineSeconds({
-        scenario: sc,
-        seconds: absoluteStart - state.t,
-        options: {
-          fromState: state,
-          useStrategy: true,
-          fast: sc.run.fast,
-          eventLog: {
-            enabled: sc.run.eventLog?.enabled ?? true,
-            maxEvents: sc.run.eventLog?.maxEvents,
-          },
-          policy: sc.run.offline,
-        },
-      });
-      totalOfflineSec += offlineRun.offline.simulatedSec;
-      retainRun(offlineRun);
-      segments.push({
-        kind: "offline",
-        day: block.day,
-        startT: state.t,
-        endT: offlineRun.end.t,
-        durationSec: offlineRun.offline.simulatedSec,
-        run: offlineRun,
-      });
-      state = offlineRun.end;
-    }
+  const classify = (run: RunResult<N, U, Vars>): SessionStopReason | undefined => {
+    const goalMet = run.observation?.goals.some((goal) => goal.status === "reached") ?? false;
+    if (run.stop?.reason === "budget") return "budget";
+    if (originalUntil?.(run.end)) return "until";
+    if (run.stop?.reason === "until") return "goal";
+    if (goalMet) return "goal";
+    return undefined;
+  };
 
+  const appendOffline = (wallEnd: number, day: number) => {
+    if (stopReason !== "horizon" || !(wallT < wallEnd)) return;
+    const requested = wallEnd - wallT;
+    const wallStart = wallT;
+    const offlineRun = applyOfflineSeconds({
+      scenario: withClocks(sc, wallStart, wallEnd, state.t, activeSec),
+      seconds: requested,
+      options: {
+        fromState: state,
+        actions: actionPolicy,
+        fast: sc.run.fast,
+        eventLog: {
+          enabled: sc.run.eventLog?.enabled ?? true,
+          maxEvents: sc.run.eventLog?.maxEvents,
+        },
+        policy: sc.run.offline,
+        ...(sc.run.maxSteps !== undefined ? { maxSteps: sc.run.maxSteps } : {}),
+        ...(stopFn ? { until: stopFn } : {}),
+      },
+    });
+    const credited = offlineRun.offline.simulatedSec;
+    const lost = Math.max(0, requested - offlineRun.offline.effectiveSec);
+    offlineElapsedSec += requested;
+    offlineCreditedSec += credited;
+    lostRewardSec += lost;
+    retainRun(offlineRun);
+    segments.push({
+      kind: "offline",
+      day,
+      startT: state.t,
+      endT: offlineRun.end.t,
+      durationSec: credited,
+      wallStartT: wallStart,
+      wallEndT: wallEnd,
+      clock: {
+        elapsedSec: requested,
+        creditedSec: credited,
+        activeSec: 0,
+        lostRewardSec: lost,
+      },
+      run: offlineRun,
+    });
+    state = offlineRun.end;
+    wallT = wallEnd;
+    const reason = classify(offlineRun);
+    if (reason) stopReason = reason;
+  };
+
+  const blocks = blocksFor(args.pattern);
+  for (const block of blocks) {
+    if (stopReason !== "horizon") break;
+    const scheduledStart = startT + block.day * 86400 + block.startOffsetSec;
+    appendOffline(scheduledStart, block.day);
+    if (stopReason !== "horizon") break;
+
+    const wallStart = wallT;
+    const plannedEnd = wallStart + block.durationSec;
     const activeRun = runScenario({
-      ...sc,
+      ...withClocks(sc, wallStart, plannedEnd, state.t, activeSec),
       initial: state,
       run: {
         ...sc.run,
@@ -170,10 +334,11 @@ export function simulateSessionPattern<N, U extends string, Vars>(args: {
           enabled: sc.run.eventLog?.enabled ?? true,
           maxEvents: sc.run.eventLog?.maxEvents,
         },
+        ...(stopFn ? { until: stopFn } : {}),
       },
     });
-
-    totalActiveSec += activeRun.end.t - activeRun.start.t;
+    const simulated = activeRun.end.t - activeRun.start.t;
+    activeSec += simulated;
     activeBlocks += 1;
     retainRun(activeRun);
     if (activeRun.trace?.length) {
@@ -184,45 +349,30 @@ export function simulateSessionPattern<N, U extends string, Vars>(args: {
       }
     }
     if (activeRun.actionsLog?.length) actionsLog.push(...activeRun.actionsLog);
-
     segments.push({
       kind: "active",
       day: block.day,
       startT: activeRun.start.t,
       endT: activeRun.end.t,
-      durationSec: activeRun.end.t - activeRun.start.t,
+      durationSec: simulated,
+      wallStartT: wallStart,
+      wallEndT: wallStart + simulated,
+      clock: {
+        elapsedSec: simulated,
+        creditedSec: simulated,
+        activeSec: simulated,
+        lostRewardSec: 0,
+      },
       run: activeRun,
     });
     state = activeRun.end;
+    wallT = wallStart + simulated;
+    const reason = classify(activeRun);
+    if (reason) stopReason = reason;
   }
 
-  const horizonEnd = startT + horizonSec;
-  if (state.t < horizonEnd) {
-    const offlineRun = applyOfflineSeconds({
-      scenario: sc,
-      seconds: horizonEnd - state.t,
-      options: {
-        fromState: state,
-        useStrategy: true,
-        fast: sc.run.fast,
-        eventLog: {
-          enabled: sc.run.eventLog?.enabled ?? true,
-          maxEvents: sc.run.eventLog?.maxEvents,
-        },
-        policy: sc.run.offline,
-      },
-    });
-    totalOfflineSec += offlineRun.offline.simulatedSec;
-    retainRun(offlineRun);
-    segments.push({
-      kind: "offline",
-      day: Math.floor((state.t - startT) / 86400),
-      startT: state.t,
-      endT: offlineRun.end.t,
-      durationSec: offlineRun.offline.simulatedSec,
-      run: offlineRun,
-    });
-    state = offlineRun.end;
+  if (stopReason === "horizon") {
+    appendOffline(startT + horizonSec, Math.floor((wallT - startT) / 86400));
   }
 
   const observation = mergeObservations(segmentObservations);
@@ -250,8 +400,17 @@ export function simulateSessionPattern<N, U extends string, Vars>(args: {
     summary: {
       days: args.pattern.days,
       activeBlocks,
-      totalActiveSec,
-      totalOfflineSec,
+      totalActiveSec: activeSec,
+      totalOfflineSec: offlineCreditedSec,
+      elapsedSec: wallT - startT,
+      horizonSec,
+      activeSec,
+      offlineElapsedSec,
+      offlineCreditedSec,
+      lostRewardSec,
+      rewardSec: state.t - startT,
+      offlineActions: actionPolicy.mode,
+      stop: { reason: stopReason },
     },
   };
 }

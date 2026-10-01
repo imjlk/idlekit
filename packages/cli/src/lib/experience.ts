@@ -38,6 +38,14 @@ export type ExperienceSnapshot = Readonly<{
     activeBlocks: number;
     totalActiveSec: number;
     totalOfflineSec: number;
+    elapsedSec: number;
+    horizonSec: number;
+    activeSec: number;
+    offlineElapsedSec: number;
+    offlineCreditedSec: number;
+    lostRewardSec: number;
+    rewardSec: number;
+    stopReason: SessionRunResult<unknown, string, unknown>["summary"]["stop"]["reason"];
   }>;
 }>;
 
@@ -136,6 +144,7 @@ export function analyzePerceivedProgression<N, U extends string, Vars>(args: {
   let totalActiveSec = 0;
   let maxNoRewardGapSec = 0;
 
+  // Active segments only. `durationSec` and `state.t` are reward time, not wall elapsed.
   for (const segment of activeSegments(session)) {
     const trace = segment.run.trace ?? [segment.run.start, segment.run.end];
     if (trace.length === 0) continue;
@@ -219,6 +228,14 @@ export function snapshotFromSession<N, U extends string, Vars>(args: {
       activeBlocks: args.session.summary.activeBlocks,
       totalActiveSec: args.session.summary.totalActiveSec,
       totalOfflineSec: args.session.summary.totalOfflineSec,
+      elapsedSec: args.session.summary.elapsedSec,
+      horizonSec: args.session.summary.horizonSec,
+      activeSec: args.session.summary.activeSec,
+      offlineElapsedSec: args.session.summary.offlineElapsedSec,
+      offlineCreditedSec: args.session.summary.offlineCreditedSec,
+      lostRewardSec: args.session.summary.lostRewardSec,
+      rewardSec: args.session.summary.rewardSec,
+      stopReason: args.session.summary.stop.reason,
     },
   };
 }
@@ -388,6 +405,10 @@ export function renderExperienceMarkdown(args: {
     `- Session pattern: \`${snapshot.session.pattern.id}\` for ${snapshot.session.pattern.days} day(s)`,
     `- Active blocks: ${snapshot.session.activeBlocks}`,
     `- Active / offline: ${formatMetric(snapshot.session.totalActiveSec, 0)}s / ${formatMetric(snapshot.session.totalOfflineSec, 0)}s`,
+    `- Wall elapsed / horizon: ${formatMetric(snapshot.session.elapsedSec, 0)}s / ${formatMetric(snapshot.session.horizonSec, 0)}s (${snapshot.session.stopReason})`,
+    `- Reward time: ${formatMetric(snapshot.session.rewardSec, 0)}s`,
+    `- Active time: ${formatMetric(snapshot.session.activeSec, 0)}s`,
+    `- Offline wall / credited / lost: ${formatMetric(snapshot.session.offlineElapsedSec, 0)}s / ${formatMetric(snapshot.session.offlineCreditedSec, 0)}s / ${formatMetric(snapshot.session.lostRewardSec, 0)}s`,
     "",
     "## End State",
     "",
