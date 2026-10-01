@@ -130,7 +130,8 @@ function negative(): void {
     const preloadEnv = fixtureEnv();
     // bun test sets NODE_ENV=test, and ttsc then refuses this preload project's generation.
     delete preloadEnv.NODE_ENV;
-    preloadEnv.TTSC_TTSX_BINARY = join(base, "tools/ttsx-under-node");
+    const ttsxName = process.platform === "win32" ? "ttsx-under-node.cmd" : "ttsx-under-node";
+    preloadEnv.TTSC_TTSX_BINARY = join(base, "tools", ttsxName);
     const preloaded = spawn([process.execPath, "src/entry.ts"], preload, preloadEnv);
     record(
       "transform-present",
