@@ -18,7 +18,12 @@ export interface Strategy<N, U extends string, Vars> {
     ctx: SimContext<N, U, Vars>,
     model: Model<N, U, Vars>,
     state: SimState<N, U, Vars>,
-  ) => readonly Readonly<{ action: Action<N, U, Vars>; bulkSize?: number }>[];
+  ) => readonly Readonly<{
+    action: Action<N, U, Vars>;
+    bulkSize?: number;
+    /** Set when several actions share an id. `currentAction` requires it for duplicates. */
+    occurrence?: number;
+  }>[];
 
   // Optional state hooks for deterministic resume/replay.
   snapshotState?: () => unknown;

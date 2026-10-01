@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { createNumberEngine } from "../../engine/breakInfinity";
 import { createGreedyStrategy } from "./greedy";
 import type { Action, Model, SimContext, SimState } from "../types";
+import type { Strategy } from "./types";
 
 type UnitCode = "COIN";
 type Vars = Record<string, never>;
@@ -93,5 +94,69 @@ describe("createGreedyStrategy", () => {
     expect(out.length).toBe(2);
     expect(out[0]?.action.id).toBe("a.action");
     expect(out[1]?.action.id).toBe("b.action");
+  });
+
+  it("keeps the smaller positive quote when a larger quote has a negative cost", () => {
+    const ctx: SimContext<number, UnitCode, Vars> = {
+      E: createNumberEngine(),
+      unit: { code: "COIN" },
+      tickPolicy: { mode: "drop" },
+    };
+    const action: Action<number, UnitCode, Vars> = {
+      id: "buy",
+      kind: "buy",
+      canApply: () => true,
+      cost: () => ({ unit: { code: "COIN" }, amount: 10 }),
+      bulk: () => [
+        {
+          size: 1,
+          cost: { unit: { code: "COIN" }, amount: 10 },
+          equivalentCost: { unit: { code: "COIN" }, amount: 10 },
+          deltaIncomePerSec: { unit: { code: "COIN" }, amount: 1 },
+        },
+        {
+          size: 5,
+          cost: { unit: { code: "COIN" }, amount: -1 },
+          equivalentCost: { unit: { code: "COIN" }, amount: -1 },
+          deltaIncomePerSec: { unit: { code: "COIN" }, amount: 5 },
+        },
+      ],
+      apply: (_ctx, state) => state,
+    };
+    const model: Model<number, UnitCode, Vars> = {
+      id: "m",
+      version: 1,
+      income: () => ({ unit: { code: "COIN" }, amount: 0 }),
+      actions: () => [action],
+    };
+    const strategy = createGreedyStrategy<number, UnitCode, Vars>({
+      schemaVersion: 1,
+      objective: "maximizeIncome",
+      bulk: { mode: "maxAffordable" },
+    });
+    const out = strategy.decide(ctx, model, makeState(20));
+    expect(out.length).toBe(1);
+    expect(out[0]?.action.id).toBe("buy");
+    expect(out[0]?.bulkSize).toBeUndefined();
+  });
+
+  it("accepts occurrence on a contextually typed decision", () => {
+    const ctx: SimContext<number, UnitCode, Vars> = {
+      E: createNumberEngine(),
+      unit: { code: "COIN" },
+      tickPolicy: { mode: "drop" },
+    };
+    const action = makeAction("buy");
+    const model: Model<number, UnitCode, Vars> = {
+      id: "m",
+      version: 1,
+      income: () => ({ unit: { code: "COIN" }, amount: 0 }),
+      actions: () => [action],
+    };
+    const strategy: Strategy<number, UnitCode, Vars> = {
+      id: "custom",
+      decide: () => [{ action, occurrence: 0 }],
+    };
+    expect(strategy.decide(ctx, model, makeState(20))[0]?.occurrence).toBe(0);
   });
 });

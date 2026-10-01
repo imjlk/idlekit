@@ -40,6 +40,9 @@ function isAffordable<N, U extends string, Vars>(
 ): boolean {
   if (!cost) return true;
   if (cost.unit.code !== state.wallet.money.unit.code) return false;
+  if (!ctx.E.isFinite(cost.amount)) return false;
+  // A negative cost passes a wallet comparison and is then rejected at settlement.
+  if (!canSettleCost(ctx.E, cost.amount, ctx.E.zero())) return false;
   return canSettleCost(ctx.E, state.wallet.money.amount, cost.amount);
 }
 
