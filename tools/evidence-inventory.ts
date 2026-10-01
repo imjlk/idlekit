@@ -1000,6 +1000,215 @@ function locallyBound(
   return ranges.some(([bound, from, to]) => bound === name && at >= from && at < to);
 }
 
+function skipSpaceAndComments(body: string, index: number): number {
+  let cursor = index;
+  while (cursor < body.length) {
+    const char = body[cursor] ?? "";
+    if (/\s/.test(char)) {
+      cursor += 1;
+      continue;
+    }
+    if (char === "/" && body[cursor + 1] === "/") {
+      const line = body.indexOf("\n", cursor);
+      cursor = line < 0 ? body.length : line + 1;
+      continue;
+    }
+    if (char === "/" && body[cursor + 1] === "*") {
+      const close = body.indexOf("*/", cursor + 2);
+      cursor = close < 0 ? body.length : close + 2;
+      continue;
+    }
+    break;
+  }
+  return cursor;
+}
+
+/** A `` `...` `` literal, including `${...}` substitutions that themselves contain code. */
+function skipTemplateLiteral(body: string, index: number): number {
+  if (body[index] !== "`") return -1;
+  let cursor = index + 1;
+  while (cursor < body.length) {
+    const char = body[cursor] ?? "";
+    if (char === "\\") {
+      cursor += 2;
+      continue;
+    }
+    if (char === "$" && body[cursor + 1] === "{") {
+      const end = skipPair(body, cursor + 1);
+      if (end < 0) return -1;
+      cursor = end;
+      continue;
+    }
+    if (char === "`") return cursor + 1;
+    cursor += 1;
+  }
+  return -1;
+}
+
+function pairClose(open: string): string {
+  if (open === "(") return ")";
+  if (open === "{") return "}";
+  if (open === "<") return ">";
+  return "";
+}
+
+/** The group that starts at `index` (`()`, `{}`, or `<>`). `=>` is not a `>` closer. */
+function skipPair(body: string, index: number): number {
+  const open = body[index] ?? "";
+  const close = pairClose(open);
+  if (close === "") return -1;
+  let cursor = index + 1;
+  let depth = 1;
+  while (cursor < body.length && depth > 0) {
+    const char = body[cursor] ?? "";
+    if (char === "'" || char === '"') {
+      cursor = skipQuoted(body, cursor);
+      continue;
+    }
+    if (char === "`") {
+      const end = skipTemplateLiteral(body, cursor);
+      if (end < 0) return -1;
+      cursor = end;
+      continue;
+    }
+    if (char === "/" && body[cursor + 1] === "/") {
+      const line = body.indexOf("\n", cursor);
+      cursor = line < 0 ? body.length : line + 1;
+      continue;
+    }
+    if (char === "/" && body[cursor + 1] === "*") {
+      const closeComment = body.indexOf("*/", cursor + 2);
+      cursor = closeComment < 0 ? body.length : closeComment + 2;
+      continue;
+    }
+    if (char === "/" && regexCanStart(body, cursor)) {
+      cursor = skipRegex(body, cursor);
+      continue;
+    }
+    if (char === open) depth += 1;
+    else if (char === close && !(open === "<" && body[cursor - 1] === "=")) depth -= 1;
+    cursor += 1;
+  }
+  return depth === 0 ? cursor : -1;
+}
+
+/** Table argument of `it.each` / `test.each`: optional type args, then `(` or a template. */
+function skipEachTable(body: string, index: number): number {
+  let cursor = skipSpaceAndComments(body, index);
+  if (body[cursor] === "<") {
+    const after = skipPair(body, cursor);
+    if (after < 0) return -1;
+    cursor = skipSpaceAndComments(body, after);
+  }
+  if (body[cursor] === "(" || body[cursor] === "`") return skipPairOrTemplate(body, cursor);
+  return -1;
+}
+
+function skipPairOrTemplate(body: string, index: number): number {
+  if (body[index] === "`") return skipTemplateLiteral(body, index);
+  if (body[index] === "(") return skipPair(body, index);
+  return -1;
+}
+
+function argumentBoundary(body: string, index: number): boolean {
+  const cursor = skipSpaceAndComments(body, index);
+  const char = body[cursor];
+  return char === undefined || char === ")" || char === ",";
+}
+
+/** Type text after `as` / `satisfies`, stopping at the callback argument's comma or `)`. */
+function skipTypeExpression(body: string, index: number): number {
+  let cursor = skipSpaceAndComments(body, index);
+  let depth = 0;
+  while (cursor < body.length) {
+    const char = body[cursor] ?? "";
+    if (char === "'" || char === '"') {
+      cursor = skipQuoted(body, cursor);
+      continue;
+    }
+    if (char === "`") {
+      const end = skipTemplateLiteral(body, cursor);
+      if (end < 0) return -1;
+      cursor = end;
+      continue;
+    }
+    if (char === "/" && body[cursor + 1] === "/") {
+      const line = body.indexOf("\n", cursor);
+      cursor = line < 0 ? body.length : line + 1;
+      continue;
+    }
+    if (char === "/" && body[cursor + 1] === "*") {
+      const close = body.indexOf("*/", cursor + 2);
+      cursor = close < 0 ? body.length : close + 2;
+      continue;
+    }
+    if (char === "(" || char === "{" || char === "[" || char === "<") {
+      depth += 1;
+      cursor += 1;
+      continue;
+    }
+    if (char === ")" || char === "}" || char === "]" || char === ">") {
+      if (depth === 0) return cursor;
+      depth -= 1;
+      cursor += 1;
+      continue;
+    }
+    if (depth === 0 && (char === "&" || char === "|" || char === "?")) {
+      const next = body[cursor + 1] ?? "";
+      if (char === "?" || next === char) return -1;
+    }
+    if (depth === 0 && char === ",") return cursor;
+    cursor += 1;
+  }
+  return cursor;
+}
+
+function skipTypeOnlySuffix(body: string, index: number): number {
+  let cursor = skipSpaceAndComments(body, index);
+  while (body[cursor] === "!" && body[cursor + 1] !== "=") {
+    cursor = skipSpaceAndComments(body, cursor + 1);
+  }
+  const word = readIdentifier(body, cursor);
+  if (word && (word.value === "as" || word.value === "satisfies")) {
+    const typeEnd = skipTypeExpression(body, word.end);
+    if (typeEnd < 0) return -1;
+    return skipTypeOnlySuffix(body, typeEnd);
+  }
+  if (body[cursor] === "<") {
+    const after = skipPair(body, cursor);
+    if (after < 0) return -1;
+    if (body[skipSpaceAndComments(body, after)] === "(") return -1;
+    return skipTypeOnlySuffix(body, after);
+  }
+  return cursor;
+}
+
+/**
+ * The callback is one identifier, optionally wrapped or followed by type-only syntax.
+ * `citedExport && unrelated` is not that identifier: Bun invokes the other operand.
+ */
+function readDirectCallback(
+  body: string,
+  index: number,
+): { value: string; at: number; end: number } | undefined {
+  const cursor = skipSpaceAndComments(body, index);
+  if (body[cursor] === "(") {
+    const inner = readDirectCallback(body, cursor + 1);
+    if (!inner) return undefined;
+    const close = skipSpaceAndComments(body, inner.end);
+    if (body[close] !== ")") return undefined;
+    const end = skipTypeOnlySuffix(body, close + 1);
+    if (end < 0 || !argumentBoundary(body, end)) return undefined;
+    return { value: inner.value, at: inner.at, end };
+  }
+  const ident = readIdentifier(body, cursor);
+  if (!ident) return undefined;
+  const end = skipTypeOnlySuffix(body, ident.end);
+  if (end < 0 || !argumentBoundary(body, end)) return undefined;
+  const at = ident.end - ident.value.length;
+  return { value: ident.value, at, end };
+}
+
 /** Every `it`/`test` title in this source, including ones inside a false condition. */
 function collectRegistrations(body: string): Registration[] {
   const ranges = localRanges(body);
@@ -1109,13 +1318,28 @@ function collectRegistrations(body: string): Registration[] {
       continue;
     }
     let cursor = word.end;
+    let parameterized = false;
     for (;;) {
       if (body[cursor] !== ".") break;
       const modifier = readIdentifier(body, cursor + 1);
-      if (!modifier || !TEST_MODIFIERS.has(modifier.value)) break;
+      if (!modifier) break;
+      if (modifier.value === "each") {
+        parameterized = true;
+        cursor = modifier.end;
+        continue;
+      }
+      if (!TEST_MODIFIERS.has(modifier.value)) break;
       cursor = modifier.end;
     }
-    const open = skipWhitespace(body, cursor);
+    let open = skipWhitespace(body, cursor);
+    if (parameterized) {
+      const tableEnd = skipEachTable(body, cursor);
+      if (tableEnd < 0) {
+        index = word.end;
+        continue;
+      }
+      open = skipWhitespace(body, tableEnd);
+    }
     if (body[open] !== "(") {
       index = word.end;
       continue;
@@ -1129,12 +1353,10 @@ function collectRegistrations(body: string): Registration[] {
       pending = { title: quoted.value, parens };
     } else {
       const comma = skipWhitespace(body, quoted.end);
-      const callback = body[comma] === "," ? readIdentifier(body, comma + 1) : undefined;
+      const callback = body[comma] === "," ? readDirectCallback(body, comma + 1) : undefined;
       const suites = stack.map((frame) => frame.title);
       if (pending) suites.push(pending.title);
-      const at = callback ? callback.end - callback.value.length : -1;
-      const visible =
-        callback !== undefined && !locallyBound(ranges, callback.value, at);
+      const visible = callback !== undefined && !locallyBound(ranges, callback.value, callback.at);
       found.push({
         suites,
         title: quoted.value,
