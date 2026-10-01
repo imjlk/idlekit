@@ -345,6 +345,28 @@ function isSetextParagraph(text: string): boolean {
   return true;
 }
 
+/** Blockquote and list markers can wrap an ATX heading. Setext text keeps its marker. */
+function atxText(heading: string): string {
+  let rest = heading;
+  let opened = false;
+  for (;;) {
+    const quoted = /^ {0,3}> ?/.exec(rest);
+    if (quoted) {
+      rest = rest.slice(quoted[0].length);
+      opened = true;
+      continue;
+    }
+    const listed = /^(?:[-*+]|\d{1,9}[.)])[ \t]+/.exec(rest);
+    if (listed) {
+      rest = rest.slice(listed[0].length);
+      opened = true;
+      continue;
+    }
+    break;
+  }
+  return opened ? rest.replace(/^ {0,3}/, "") : rest;
+}
+
 function indexOutsideInline(line: string, token: string, from = 0): number {
   const spans = inlineCodeSpans(line);
   let search = from;
@@ -377,7 +399,7 @@ export function headingAnchors(markdown: string): string[] {
       continue;
     }
     if (inComment) {
-      if (indexOutsideInline(rawLine, "-->") !== -1) inComment = false;
+      if (rawLine.includes("-->")) inComment = false;
       pending = undefined;
       continue;
     }
@@ -401,7 +423,7 @@ export function headingAnchors(markdown: string): string[] {
     }
     const commentAt = indexOutsideInline(rawLine, "<!--");
     const line = commentAt === -1 ? rawLine : rawLine.slice(0, commentAt);
-    const commentCloses = commentAt !== -1 && indexOutsideInline(rawLine, "-->", commentAt + 4) !== -1;
+    const commentCloses = commentAt !== -1 && rawLine.indexOf("-->", commentAt + 4) !== -1;
     if (commentAt !== -1 && !commentCloses) inComment = true;
     const heading = line.replace(/^ {0,3}/, "");
     const underline = /^(-+|=+)[ \t]*$/.exec(heading);
@@ -413,8 +435,9 @@ export function headingAnchors(markdown: string): string[] {
       pending = undefined;
       continue;
     }
-    const match = /^##[ \t]+.+\{#([A-Za-z0-9][A-Za-z0-9._:-]*)\}[ \t]*$/.exec(heading);
-    if (/^##[ \t]/.test(heading) && !match) {
+    const atx = atxText(heading);
+    const match = /^##[ \t]+.+\{#([A-Za-z0-9][A-Za-z0-9._:-]*)\}[ \t]*$/.exec(atx);
+    if (/^##[ \t]/.test(atx) && !match) {
       anchors.push("");
       pending = undefined;
       continue;
@@ -1608,18 +1631,32 @@ export function graphRuleFailures(rules: { readonly ["evidence/graph"]?: unknown
   return [];
 }
 
-/** Root format config must still fail the process when a file is unformatted. */
+const formatIncludeRoots = [
+  "evidence.config.ts",
+  "lint.config.ts",
+  "lint.format.config.ts",
+  "tools/evidence-host.ts",
+  "tools/evidence-inventory.ts",
+  "tools/evidence-check.ts",
+  "tools/evidence-smoke.ts",
+  "tools/format-check.ts",
+];
+
+/** Root format config must lint these roots and fail when a file is unformatted. */
 export function formatGateFailures(options?: { tsconfigText?: string; severity?: unknown }): string[] {
   const text = options?.tsconfigText ?? readFileSync(join(root, "tsconfig.format.json"), "utf8");
   const failures: string[] = [];
   let plugins: Array<{ transform?: string; configFile?: string; enabled?: boolean }> = [];
+  let include: unknown;
   try {
     const parsed = JSON.parse(text) as {
       compilerOptions?: {
         plugins?: Array<{ transform?: string; configFile?: string; enabled?: boolean }>;
       };
+      include?: unknown;
     };
     plugins = parsed.compilerOptions?.plugins ?? [];
+    include = parsed.include;
   } catch (error) {
     return [error instanceof Error ? error.message : String(error)];
   }
@@ -1627,9 +1664,24 @@ export function formatGateFailures(options?: { tsconfigText?: string; severity?:
   if (!lint || lint.enabled === false || lint.configFile !== "./lint.format.config.ts") {
     failures.push("tsconfig.format.json must enable @ttsc/lint for lint.format.config.ts");
   }
+  if (!Array.isArray(include)) {
+    failures.push("tsconfig.format.json must include the format roots");
+  } else {
+    for (const rel of formatIncludeRoots) {
+      if (!include.includes(rel)) failures.push(`tsconfig.format.json include dropped ${rel}`);
+    }
+  }
   const severity = options?.severity ?? formatConfig.format?.severity;
   if (severity !== "error") failures.push("format.severity must be error");
   return failures;
+}
+
+/** Requirement documents join the protected population next to their hosts. */
+export function missingProtectedDocs(
+  docs: readonly string[],
+  protectedFiles: readonly string[],
+): string[] {
+  return docs.filter((doc) => !protectedFiles.includes(doc));
 }
 
 /** Each enabled evidence claim must keep its symbols, hosts, and reference review flags. */
@@ -1853,6 +1905,9 @@ export async function checkInventory(projectRoot = root): Promise<string[]> {
       if (!baseline.protectedFiles.includes(rel)) {
         fail(failures, `inventory host is not protected: ${rel}`);
       }
+    }
+    for (const rel of missingProtectedDocs([requirement.doc], baseline.protectedFiles)) {
+      fail(failures, `inventory host is not protected: ${rel}`);
     }
     const files = [...new Set(requirement.tests.map((test) => test.file))];
     for (const file of files) {

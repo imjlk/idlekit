@@ -537,7 +537,7 @@ export function recordsWalletAndMaxMoneyUnitsOnTheEconomySnapshot(): void {
  * @evidence ./conformanceRun.ts#checkJsonRoundTrip The constant-income scenario matches after a JSON round trip, and the restored wallet and max-money units are the scenario unit when the codes match.
  * @evidenceReview ./conformanceRun.ts#checkJsonRoundTrip #2b25391 Re-read the function: it restores the strategy around the run, accepts a dense array and an empty array, rejects shared refs, symbol keys, non-enumerable names, sparse holes, frozen data, non-extensible objects and arrays, a non-writable array length, a nonstandard array prototype, and enumerable getters before stringify, and the constant-income round trip matches. A restored unit that shares the scenario code must be the scenario unit object. A vars object that also appears on the wallet, max-money, or prestige graph is inapplicable. Ran this function: the dense round trip passed, and the sparse, frozen, non-extensible, locked-length, custom-prototype, and getter round trips did not.
  * @evidence ./conformanceRun.ts#checkTrialOrder Two distinct game seeds keep distinct economy snapshots. Fewer than two distinct seeds does not apply.
- * @evidenceReview ./conformanceRun.ts#checkTrialOrder #088b936 Two game seeds keep ordered snapshots. Fewer than two distinct seeds skips the check. This run uses a seed-dependent income rate, and the two economy snapshots differ.
+ * @evidenceReview ./conformanceRun.ts#checkTrialOrder #1b0de3d Two game seeds keep ordered snapshots. Fewer than two distinct seeds skips the check. A reversed list that repeats the same call order skips the check. This run uses a seed-dependent income rate, and the two economy snapshots differ.
  */
 export function resumesOnTheSameTickGridFromMemoryAndJson(): void {
   const scenario = constantScenario({ rate: 5, durationSec: 6, stepSec: 1, seed: 19 });
@@ -643,6 +643,9 @@ export function resumesOnTheSameTickGridFromMemoryAndJson(): void {
   const repeatedSeed = checkTrialOrder(trial, [gameA, gameA]);
   expect(repeatedSeed.ok).toBe(true);
   expect(repeatedSeed.applicable).toBe(false);
+  const palindrome = checkTrialOrder(trial, [gameA, gameB, gameA]);
+  expect(palindrome.ok).toBe(true);
+  expect(palindrome.applicable).toBe(false);
 }
 
 describe("PR-03 resume isolation", () => {
@@ -702,6 +705,25 @@ describe("PR-03 resume isolation", () => {
     expect(thrown.ok).toBe(false);
     expect(thrown.applicable).toBe(true);
     expect(thrown.summary).toContain("JSON");
+    const lossy = checkResumeFromJson(
+      {
+        ...scenario,
+        initial: {
+          ...scenario.initial,
+          vars: { buys: 0, marker: Number.NaN } as unknown as Vars,
+        },
+        strategy: {
+          id: "nan",
+          decide: () => [],
+          snapshotState: () => ({ marker: Number.NaN }),
+          restoreState: () => {},
+        },
+      },
+      2,
+    );
+    expect(lossy.ok).toBe(false);
+    expect(lossy.applicable).toBe(true);
+    expect(lossy.summary).toContain("JSON");
   });
 });
 

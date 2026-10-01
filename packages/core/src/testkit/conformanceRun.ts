@@ -467,6 +467,32 @@ type TailStart<N, U extends string, Vars> = {
   persistedStrategy: boolean;
 };
 
+/** `JSON.stringify` turns `NaN` into `null`. Reject that corrupted checkpoint. */
+function jsonCheckpointPreserves(value: unknown, seen = new Set<object>()): boolean {
+  if (value === null) return true;
+  if (typeof value === "string" || typeof value === "boolean") return true;
+  if (typeof value === "number") return Number.isFinite(value);
+  if (typeof value !== "object") return false;
+  if (seen.has(value)) return false;
+  seen.add(value);
+  if (Array.isArray(value)) {
+    for (let index = 0; index < value.length; index += 1) {
+      if (!(index in value)) return false;
+      const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
+      if (!descriptor || descriptor.get !== undefined || !("value" in descriptor)) return false;
+      if (!jsonCheckpointPreserves(descriptor.value, seen)) return false;
+    }
+    return true;
+  }
+  for (const key of Object.keys(value)) {
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (!descriptor || descriptor.get !== undefined || !("value" in descriptor)) return false;
+    if (descriptor.value === undefined) continue;
+    if (!jsonCheckpointPreserves(descriptor.value, seen)) return false;
+  }
+  return true;
+}
+
 /** A JSON reload starts from the initial strategy, then applies the saved snapshot. */
 function jsonResumeCheckpoint<N, U extends string, Vars>(
   scenario: CompiledScenario<N, U, Vars>,
@@ -475,22 +501,22 @@ function jsonResumeCheckpoint<N, U extends string, Vars>(
 ): TailStart<N, U, Vars> | RelationCheck {
   const strategy = scenario.strategy;
   const persistedStrategy = typeof strategy?.snapshotState === "function";
+  const payload = serializeSimState(scenario.ctx.E, state, {
+    seed: scenario.ctx.seed,
+    engineName,
+    strategy:
+      strategy && persistedStrategy
+        ? {
+            id: strategy.id,
+            version: strategy.stateVersion,
+            state: strategy.snapshotState?.(),
+          }
+        : undefined,
+  });
+  if (!jsonCheckpointPreserves(payload)) return fail("checkpoint is not JSON");
   let text: string;
   try {
-    text = JSON.stringify(
-      serializeSimState(scenario.ctx.E, state, {
-        seed: scenario.ctx.seed,
-        engineName,
-        strategy:
-          strategy && persistedStrategy
-            ? {
-                id: strategy.id,
-                version: strategy.stateVersion,
-                state: strategy.snapshotState?.(),
-              }
-            : undefined,
-      }),
-    );
+    text = JSON.stringify(payload);
   } catch {
     return fail("checkpoint is not JSON");
   }
@@ -765,8 +791,12 @@ export function checkObserver<N, U extends string, Vars>(
 
 export function checkTrialOrder(run: (gameSeed: number) => string, seeds: readonly number[]): RelationCheck {
   if (new Set(seeds).size < 2) return skip("trial order needs at least two distinct seeds");
+  const reversed = [...seeds].reverse();
+  if (reversed.every((seed, index) => seed === seeds[index])) {
+    return skip("reversing the seeds does not change the call order");
+  }
   const forward = seeds.map((seed) => ({ seed, snapshot: run(seed) }));
-  const backward = [...seeds].reverse().map((seed) => ({ seed, snapshot: run(seed) }));
+  const backward = reversed.map((seed) => ({ seed, snapshot: run(seed) }));
   const normalize = (rows: readonly { seed: number; snapshot: string }[]) =>
     JSON.stringify([...rows].sort((left, right) => left.seed - right.seed));
   const left = normalize(forward);

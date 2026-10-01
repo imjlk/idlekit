@@ -112,11 +112,11 @@ Graph does not see the JSON fixture, the workflow file, or the package script st
 
 ### DX-01 verification
 
-Host: macOS arm64, Bun `1.3.10`, `ttsc 0.30.4 (Version 7.0.2)`. Requirement file sha256 `0efed87200a7893388d45bad58aa389235bc0ddb2169f8293eb3d53c98cfaf13`. Graph server `ttsc-graph 0.30.4`, protocol `2025-11-25`, no generation identifier. Verified commit `58eba05b478c380c8308a6d8f802634f5c86b54a`. Its parent is `4078aa3ff3526d106c5860a461c6ca8475dc0014`.
+Host: macOS arm64, Bun `1.3.10`, `ttsc 0.30.4 (Version 7.0.2)`. Requirement file sha256 `0efed87200a7893388d45bad58aa389235bc0ddb2169f8293eb3d53c98cfaf13`. Graph server `ttsc-graph 0.30.4`, protocol `2025-11-25`, no generation identifier. Verified commit `87ae394de944c86b2c59c62c257414ea3f814e5e`. Its parent is `51dfd43bccfc7d29d18c5b51cb463d66c34d0c51`.
 
 | Command | Exit |
 |---|---|
-| `bun run test:conformance` | 0 |
+| `bun run test:conformance` | 1 |
 | `bun run evidence:check` | 0 |
 | `bun run format:check` | 0 |
 | `bun run --cwd packages/money typecheck` | 0 |
@@ -128,6 +128,8 @@ Host: macOS arm64, Bun `1.3.10`, `ttsc 0.30.4 (Version 7.0.2)`. Requirement file
 | `bun run test` | unrun |
 | `bun run build` | unrun |
 | `bun run test:conformance:extended` | unrun |
+
+The conformance unit tests and the shrink replay exited 0. The negative runner's `transform-present` step hit `TtscUnstableGenerationError`, so the combined script exited 1.
 
 `conformanceGeneratorVersion` lookup on project `tsconfig.graph.json` returned `packages/core/src/testkit/conformance.ts:10`. Reverse trace reached `replaysConstantIncomeAndShrinksGap` at `packages/core/src/testkit/conformance.test.ts:191`. `compareAmounts` is declared at line 36 in both testkits. Built `dist/` does not contain `testkit`. The shrink fixture's minimal value is `1`.
 
