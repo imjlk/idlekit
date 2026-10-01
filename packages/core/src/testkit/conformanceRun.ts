@@ -459,35 +459,40 @@ function jsonResumeCheckpoint<N, U extends string, Vars>(
   scenario: CompiledScenario<N, U, Vars>,
   state: SimState<N, U, Vars>,
   engineName: string,
-): TailStart<N, U, Vars> {
+): TailStart<N, U, Vars> | RelationCheck {
   const strategy = scenario.strategy;
   const persistedStrategy = typeof strategy?.snapshotState === "function";
-  const text = JSON.stringify(
-    serializeSimState(scenario.ctx.E, state, {
-      seed: scenario.ctx.seed,
-      engineName,
-      strategy:
-        strategy && persistedStrategy
-          ? {
-              id: strategy.id,
-              version: strategy.stateVersion,
-              state: strategy.snapshotState?.(),
-            }
-          : undefined,
-    }),
-  );
-  const parsed = parseSimStateJSON(JSON.parse(text) as unknown);
-  return {
-    state: deserializeSimState(scenario.ctx.E, parsed),
-    strategyState: parsed.strategy?.state,
-    persistedStrategy,
-  };
+  try {
+    const text = JSON.stringify(
+      serializeSimState(scenario.ctx.E, state, {
+        seed: scenario.ctx.seed,
+        engineName,
+        strategy:
+          strategy && persistedStrategy
+            ? {
+                id: strategy.id,
+                version: strategy.stateVersion,
+                state: strategy.snapshotState?.(),
+              }
+            : undefined,
+      }),
+    );
+    const parsed = parseSimStateJSON(JSON.parse(text) as unknown);
+    return {
+      state: deserializeSimState(scenario.ctx.E, parsed),
+      strategyState: parsed.strategy?.state,
+      persistedStrategy,
+    };
+  } catch (error) {
+    if (error instanceof TypeError) return fail("checkpoint is not JSON");
+    throw error;
+  }
 }
 
 function resumeFromCheckpoint<N, U extends string, Vars>(
   scenario: CompiledScenario<N, U, Vars>,
   splitSec: number,
-  startTail: (headEnd: SimState<N, U, Vars>) => TailStart<N, U, Vars>,
+  startTail: (headEnd: SimState<N, U, Vars>) => TailStart<N, U, Vars> | RelationCheck,
 ): RelationCheck {
   const refused = onGrid(scenario, splitSec);
   if (refused) return refused;
@@ -509,6 +514,7 @@ function resumeFromCheckpoint<N, U extends string, Vars>(
       return skip("head stopped before the checkpoint");
     }
     const started = startTail(head.end);
+    if ("applicable" in started) return started;
     if (started.persistedStrategy) {
       bracket.restore(initial);
       bracket.restore(started.strategyState);
@@ -568,13 +574,25 @@ function collectObjects(value: unknown, seen: Set<object>): void {
   if (seen.has(value)) return;
   seen.add(value);
   if (Array.isArray(value)) {
-    // A replaced prototype drops @@iterator, so index access stays safe.
     for (let index = 0; index < value.length; index += 1) {
-      if (index in value) collectObjects(value[index], seen);
+      collectData(value, String(index), seen);
     }
     return;
   }
-  for (const child of Object.values(value)) collectObjects(child, seen);
+  for (const key of Object.keys(value)) collectData(value, key, seen);
+}
+
+function collectData(value: object, key: string, seen: Set<object>): void {
+  const descriptor = Object.getOwnPropertyDescriptor(value, key);
+  // Reading a getter can throw before the JSON shape check runs.
+  if (
+    !descriptor ||
+    descriptor.get !== undefined ||
+    !Object.prototype.hasOwnProperty.call(descriptor, "value")
+  ) {
+    return;
+  }
+  collectObjects(descriptor.value, seen);
 }
 
 /** JSON copies every object, so a vars alias into wallet or prestige cannot round-trip. */

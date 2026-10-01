@@ -25,10 +25,11 @@ import {
   unregisteredImplementationHost,
   includedSourceCount,
   omittedProgramHosts,
+  hasProductionExport,
   productionFileCites,
   retainedCoverage,
 } from "./evidence-inventory";
-import { commandText, root, runTtsc, type CommandResult } from "./evidence-host";
+import { commandText, root, runTtsc, ttsxUnderNodeName, type CommandResult } from "./evidence-host";
 
 type Step = {
   name: string;
@@ -742,13 +743,23 @@ try {
     "docs/spec.md",
     "quota",
   );
-  const citeOk = functionCites && constCites && !typeCites;
+  const defaultCites = productionFileCites(
+    "/** @evidence docs/spec.md#quota */\nexport default function quotaHost() {\n  return 3;\n}\n",
+    "docs/spec.md",
+    "quota",
+  );
+  const defaultExport = hasProductionExport(
+    "export default async function quotaHost() {\n  return 3;\n}\n",
+  );
+  const hiddenExport = hasProductionExport("function quotaHost() {\n  return 3;\n}\n");
+  const citeOk =
+    functionCites && constCites && !typeCites && defaultCites && defaultExport && !hiddenExport;
   record(
     "production-citation-kind",
     "zero",
     citeOk ? 0 : 1,
     citeOk,
-    `function=${functionCites} const=${constCites} type=${typeCites}`,
+    `function=${functionCites} const=${constCites} type=${typeCites} default=${defaultCites}`,
   );
 
   const exactAnchor = productionFileCites(
@@ -773,7 +784,9 @@ try {
   const omitted = omittedProgramHosts(["src/a.ts"], ["src/a.ts", "src/b.ts"]);
   const program = evidenceProgramSourceFiles(join(root, "tsconfig.evidence.json"));
   const hostPresent = program.includes("packages/core/src/scenario/typiaTransformMissing.ts");
-  const programOk = omitted.length === 1 && omitted[0] === "src/b.ts" && hostPresent;
+  const launcherOk =
+    ttsxUnderNodeName("win32") === "ttsx-under-node.cmd" && ttsxUnderNodeName("darwin") === "ttsx-under-node";
+  const programOk = omitted.length === 1 && omitted[0] === "src/b.ts" && hostPresent && launcherOk;
   record(
     "program-hosts",
     "zero",
