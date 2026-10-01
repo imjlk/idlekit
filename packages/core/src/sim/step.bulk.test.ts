@@ -111,6 +111,11 @@ export function settlesQuotedBulkAndRejectsBadQuotes(): void {
   const engine = createNumberEngine();
   expect(canSettleCost(engine, 0, 1e-13)).toBe(false);
   expect(canSettleCost(engine, 0, 0)).toBe(true);
+  expect(canSettleCost(engine, Number.POSITIVE_INFINITY, 1)).toBe(true);
+  expect(canSettleCost(engine, Number.NEGATIVE_INFINITY, 1)).toBe(false);
+  expect(canSettleCost(engine, Number.NaN, 1)).toBe(false);
+  expect(canSettleCost(engine, Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY)).toBe(false);
+  expect(canSettleCost(engine, 1, Number.POSITIVE_INFINITY)).toBe(false);
   const calls = { cost: 0, bulk: 0, apply: 0 };
   const action = flatBuy(engine, calls);
   const ctx = context(engine);

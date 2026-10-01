@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { createNumberEngine } from "../../engine/breakInfinity";
+import { createBreakInfinityEngine, createNumberEngine, type Decimal } from "../../engine/breakInfinity";
 import { createGreedyStrategy } from "./greedy";
 import type { Action, BulkQuote, Model, SimContext, SimState } from "../types";
 import type { Strategy } from "./types";
@@ -547,6 +547,57 @@ describe("createGreedyStrategy", () => {
     const cappedOut = capped.decide(ctx, model, makeState(0));
     expect(cappedOut.length).toBe(1);
     expect(cappedOut[0]?.bulkSize).toBe(2);
+  });
+
+  it("ignores a maxAffordable quote that omits its amount", () => {
+    const engine = createBreakInfinityEngine();
+    const ctx: SimContext<Decimal, UnitCode, Vars> = {
+      E: engine,
+      unit: { code: "COIN" },
+      tickPolicy: { mode: "drop" },
+    };
+    const wallet = engine.from(20);
+    const state: SimState<Decimal, UnitCode, Vars> = {
+      t: 0,
+      wallet: { money: { unit: { code: "COIN" }, amount: wallet }, bucket: engine.zero() },
+      maxMoneyEver: { unit: { code: "COIN" }, amount: wallet },
+      prestige: { count: 0, points: engine.zero(), multiplier: engine.from(1) },
+      vars: {},
+    };
+    const quotes = [
+      {
+        size: 2,
+        cost: { unit: { code: "COIN" as const }, amount: engine.from(1) },
+        deltaIncomePerSec: { unit: { code: "COIN" as const }, amount: engine.from(1) },
+      },
+      {
+        size: 10,
+        cost: { unit: { code: "COIN" as const } },
+        deltaIncomePerSec: { unit: { code: "COIN" as const }, amount: engine.from(9) },
+      },
+    ] as unknown as BulkQuote<Decimal, UnitCode>[];
+    const action: Action<Decimal, UnitCode, Vars> = {
+      id: "buy",
+      kind: "buy",
+      canApply: () => true,
+      cost: () => null,
+      bulk: () => quotes,
+      apply: (_ctx, current) => current,
+    };
+    const model: Model<Decimal, UnitCode, Vars> = {
+      id: "m",
+      version: 1,
+      income: () => ({ unit: { code: "COIN" }, amount: engine.zero() }),
+      actions: () => [action],
+    };
+    const strategy = createGreedyStrategy<Decimal, UnitCode, Vars>({
+      schemaVersion: 1,
+      objective: "maximizeIncome",
+      bulk: { mode: "maxAffordable" },
+    });
+    const out = strategy.decide(ctx, model, state);
+    expect(out.length).toBe(1);
+    expect(out[0]?.bulkSize).toBe(2);
   });
 
   it("accepts occurrence on a contextually typed decision", () => {

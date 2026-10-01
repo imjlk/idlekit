@@ -36,6 +36,10 @@ function toFallbackQuote<N, U extends string, Vars>(
   };
 }
 
+function missingAmount(amount: unknown): boolean {
+  return amount === undefined || amount === null;
+}
+
 function isAffordable<N, U extends string, Vars>(
   ctx: SimContext<N, U, Vars>,
   state: SimState<N, U, Vars>,
@@ -45,7 +49,8 @@ function isAffordable<N, U extends string, Vars>(
   if (!cost) return false;
   const costCode = structuredUnitCode(cost);
   if (costCode === undefined || costCode !== structuredUnitCode(state.wallet.money)) return false;
-  if (!ctx.E.isFinite(cost.amount)) return false;
+  // Break-infinity reads `mantissa` inside isFinite. A missing amount is not a cost.
+  if (missingAmount(cost.amount) || !ctx.E.isFinite(cost.amount)) return false;
   // A negative cost passes a wallet comparison and is then rejected at settlement.
   if (!canSettleCost(ctx.E, cost.amount, ctx.E.zero())) return false;
   return canSettleCost(ctx.E, state.wallet.money.amount, cost.amount);

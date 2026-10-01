@@ -173,7 +173,15 @@ type ExactEngine<N> = {
 
 /** Settlement boundaries ignore `cmp`, which treats an epsilon-sized gap as equality. */
 function exactAmountOrder<N>(engine: ExactEngine<N>, left: N, right: N): -1 | 0 | 1 | undefined {
-  const parsed = exactTextOrder(engine.toString(left), engine.toString(right));
+  const leftText = engine.toString(left);
+  const rightText = engine.toString(right);
+  if (leftText === "NaN" || rightText === "NaN") return undefined;
+  if (rightText === "Infinity" || rightText === "-Infinity") return undefined;
+  if (leftText === "Infinity" || leftText === "-Infinity") {
+    if (!exactDecimal(rightText)) return undefined;
+    return leftText === "-Infinity" ? -1 : 1;
+  }
+  const parsed = exactTextOrder(leftText, rightText);
   if (parsed !== undefined) return parsed;
   return engine.exactOrder?.(left, right);
 }
