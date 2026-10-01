@@ -1,0 +1,14 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "types": ["node", "bun"],
+    "plugins": [{ "transform": "@ttsc/lint", "enabled": false }]
+  },
+  "include": [
+    "./**/*.ts",
+    "../packages/core/src/scenario/scenarioContract.ts",
+    "../packages/core/src/scenario/types.ts",
+    "../packages/core/src/scenario/offlinePolicy.ts"
+  ]
+}

@@ -20,6 +20,7 @@ export * from "./scenario/types";
 export * from "./scenario/registry";
 export * from "./scenario/validate";
 export * from "./scenario/concreteValidator";
+export * from "./scenario/scenarioContract";
 export * from "./scenario/migrate";
 export * from "./scenario/compile";
 

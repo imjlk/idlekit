@@ -57,7 +57,9 @@
     "release:dry-run": "bun tools/release-dry-run.ts",
     "toolchain:doctor": "bun tools/toolchain-doctor.ts",
     "toolchain:prepare": "bun tools/toolchain-prepare.ts",
-    "toolchain:smoke": "bun tools/toolchain-smoke.ts"
+    "toolchain:smoke": "bun tools/toolchain-smoke.ts",
+    "contracts:generate": "bun --preload @ttsc/unplugin/bun-register tools/generate-contracts.ts",
+    "contracts:check": "bun --preload @ttsc/unplugin/bun-register tools/contracts-check.ts"
   },
   "devDependencies": {
     "@babel/parser": "8.0.7",
