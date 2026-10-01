@@ -1958,6 +1958,7 @@ function collectRegistrations(body: string, unresolved: string[] = []): Registra
     }
     const quoted = readTestTitle(body, open + 1);
     if (!quoted) {
+      unresolved.push(word.value);
       index = word.end;
       continue;
     }
@@ -2515,7 +2516,7 @@ export function uninventoriedCommandTargets(
   );
 }
 
-function localPreloadFiles(cwd: string, args: readonly string[]): string[] {
+export function localPreloadFiles(cwd: string, args: readonly string[]): string[] {
   const names = preloadArguments(args);
   const bunfig = join(cwd, "bunfig.toml");
   if (existsSync(bunfig)) {
@@ -2525,6 +2526,10 @@ function localPreloadFiles(cwd: string, args: readonly string[]): string[] {
         const value = item[1] ?? item[2];
         if (value) names.push(value);
       }
+    }
+    for (const match of text.matchAll(/preload\s*=\s*(?:"([^"]+)"|'([^']+)')/g)) {
+      const value = match[1] ?? match[2];
+      if (value) names.push(value);
     }
   }
   const files: string[] = [];
@@ -2537,10 +2542,26 @@ function localPreloadFiles(cwd: string, args: readonly string[]): string[] {
 
 const RELATIVE_IMPORT = /(?:from\s+|import\s*\(\s*|import\s+)["'](\.[^"']+)["']/g;
 
+function typescriptImportCandidates(base: string): string[] {
+  const replacements = [
+    [".mjs", [".mts"]],
+    [".cjs", [".cts"]],
+    [".jsx", [".tsx"]],
+    [".js", [".ts", ".tsx"]],
+  ] as const;
+  for (const [extension, targets] of replacements) {
+    if (!base.endsWith(extension)) continue;
+    const stem = base.slice(0, -extension.length);
+    return targets.map((target) => `${stem}${target}`);
+  }
+  return [];
+}
+
 function resolveRelativeImport(fromFile: string, spec: string): string | undefined {
   const base = resolve(dirname(fromFile), spec);
   const candidates = [
     base,
+    ...typescriptImportCandidates(base),
     `${base}.ts`,
     `${base}.tsx`,
     `${base}.mts`,
