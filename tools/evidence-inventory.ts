@@ -1735,7 +1735,14 @@ function readRunnerRequire(body: string, index: number): { end: number } | undef
 }
 
 /** Every `it`/`test` title in this source, including ones inside a false condition. */
-function collectRegistrations(body: string, unresolved: string[] = []): Registration[] {
+function collectRegistrations(
+  body: string,
+  unresolved: string[] = [],
+  prefix: readonly string[] = [],
+  expanding?: Set<string>,
+  lookupSource?: string,
+): Registration[] {
+  const source = lookupSource ?? body;
   const ranges = localRanges(body);
   const found: Registration[] = [];
   const stack: { title: string; depth: number }[] = [];
@@ -1986,11 +1993,31 @@ function collectRegistrations(body: string, unresolved: string[] = []): Registra
       continue;
     }
     if (kind === "describe") {
-      pending = { title: quoted.value, parens };
+      const comma = skipWhitespace(body, quoted.end);
+      const named = body[comma] === "," ? readDirectCallback(body, comma + 1) : undefined;
+      if (named) {
+        const suites = [...prefix, ...stack.map((frame) => frame.title)];
+        if (pending) suites.push(pending.title);
+        suites.push(quoted.value);
+        const seen = expanding ?? new Set<string>();
+        const hidden = locallyBound(ranges, named.value, named.at);
+        if (hidden || seen.has(named.value)) unresolved.push(named.value);
+        else {
+          const block = namedCallbackBody(source, named.value);
+          if (!block) unresolved.push(named.value);
+          else {
+            seen.add(named.value);
+            found.push(...collectRegistrations(block, unresolved, suites, seen, source));
+            seen.delete(named.value);
+          }
+        }
+      } else {
+        pending = { title: quoted.value, parens };
+      }
     } else {
       const comma = skipWhitespace(body, quoted.end);
       const callback = body[comma] === "," ? readDirectCallback(body, comma + 1) : undefined;
-      const suites = stack.map((frame) => frame.title);
+      const suites = [...prefix, ...stack.map((frame) => frame.title)];
       if (pending) suites.push(pending.title);
       const visible = callback !== undefined && !locallyBound(ranges, callback.value, callback.at);
       found.push({
@@ -2044,6 +2071,25 @@ export function duplicateFullNamesAcross(bodies: readonly string[]): string[] {
 /** Full `suite > title` names registered more than once. One passing row cannot choose among them. */
 export function duplicateFullNames(body: string): string[] {
   return duplicateFullNamesAcross([body]);
+}
+
+/**
+ * Suite or title text that itself contains ` > `. Bun encodes that the same way as
+ * the nesting separator, and reversing the classname can credit a different callback.
+ */
+export function ambiguousSuiteSeparators(bodies: readonly string[]): string[] {
+  const found: string[] = [];
+  for (const body of bodies) {
+    for (const registration of collectRegistrations(body)) {
+      for (const suite of registration.suites) {
+        if (suite.includes(" > ") && !found.includes(suite)) found.push(suite);
+      }
+      if (registration.title.includes(" > ") && !found.includes(registration.title)) {
+        found.push(registration.title);
+      }
+    }
+  }
+  return found;
 }
 
 function stringSpans(body: string): Array<[number, number]> {
@@ -2563,6 +2609,237 @@ export function localPreloadFiles(cwd: string, args: readonly string[]): string[
   return files;
 }
 
+function spanEndAt(
+  spans: ReadonlyArray<readonly [number, number]>,
+  index: number,
+): number {
+  for (const span of spans) {
+    if (index >= span[0] && index < span[1]) return span[1];
+  }
+  return -1;
+}
+
+function wordBefore(body: string, index: number): string {
+  let cursor = index - 1;
+  while (cursor >= 0 && /\s/.test(body[cursor] ?? "")) cursor -= 1;
+  const match = /[A-Za-z_$][A-Za-z0-9_$]*$/.exec(body.slice(0, cursor + 1));
+  if (!match || match.index + match[0].length !== cursor + 1) return "";
+  return match[0];
+}
+
+/** Return type, stopping at the function body `{` or an arrow `=>`. */
+function skipReturnType(source: string, index: number): number {
+  let cursor = skipSpaceAndComments(source, index);
+  while (cursor < source.length) {
+    const char = source[cursor] ?? "";
+    if (char === "'" || char === '"') {
+      cursor = skipQuoted(source, cursor);
+      continue;
+    }
+    if (char === "`") {
+      const end = skipTemplateLiteral(source, cursor);
+      if (end < 0) return -1;
+      cursor = end;
+      continue;
+    }
+    if (char === "/" && source[cursor + 1] === "/") {
+      const line = source.indexOf("\n", cursor);
+      cursor = line < 0 ? source.length : line + 1;
+      continue;
+    }
+    if (char === "/" && source[cursor + 1] === "*") {
+      const close = source.indexOf("*/", cursor + 2);
+      cursor = close < 0 ? source.length : close + 2;
+      continue;
+    }
+    if (char === "(" || char === "[" || char === "<") {
+      const end = skipPair(source, cursor);
+      if (end < 0) return -1;
+      cursor = end;
+      continue;
+    }
+    if (char === "{") {
+      const end = skipPair(source, cursor);
+      if (end < 0) return -1;
+      const after = skipSpaceAndComments(source, end);
+      if (source[after] === "{" || source.startsWith("=>", after)) {
+        cursor = after;
+        continue;
+      }
+      return cursor;
+    }
+    if (source.startsWith("=>", cursor)) return cursor;
+    cursor += 1;
+  }
+  return -1;
+}
+
+/** `{ ... }` body of a function or arrow. A braceless arrow has no body to attribute. */
+function readFunctionBlock(source: string, index: number, arrow: boolean): string | undefined {
+  let cursor = skipSpaceAndComments(source, index);
+  if (!arrow) {
+    if (source[cursor] === "*") cursor = skipSpaceAndComments(source, cursor + 1);
+    const named = readIdentifier(source, cursor);
+    const afterName = named ? skipSpaceAndComments(source, named.end) : cursor;
+    if (named && source[afterName] === "(") cursor = named.end;
+  }
+  cursor = skipSpaceAndComments(source, cursor);
+  if (source[cursor] === "<") {
+    const after = skipPair(source, cursor);
+    if (after < 0) return undefined;
+    cursor = skipSpaceAndComments(source, after);
+  }
+  if (source[cursor] !== "(") {
+    if (!arrow) return undefined;
+    const single = readIdentifier(source, cursor);
+    if (!single) return undefined;
+    cursor = skipSpaceAndComments(source, single.end);
+  } else {
+    const close = skipPair(source, cursor);
+    if (close < 0) return undefined;
+    cursor = skipSpaceAndComments(source, close);
+    if (source[cursor] === ":") {
+      cursor = skipReturnType(source, cursor + 1);
+      if (cursor < 0) return undefined;
+    }
+  }
+  if (arrow) {
+    if (!source.startsWith("=>", cursor)) return undefined;
+    cursor = skipSpaceAndComments(source, cursor + 2);
+  }
+  if (source[cursor] !== "{") return undefined;
+  const end = skipPair(source, cursor);
+  if (end < 0) return undefined;
+  return source.slice(cursor, end);
+}
+
+function readAssignedFunctionBlock(source: string, index: number): string | undefined {
+  let cursor = skipSpaceAndComments(source, index);
+  const word = readIdentifier(source, cursor);
+  if (word?.value === "async") {
+    cursor = skipSpaceAndComments(source, word.end);
+    const next = readIdentifier(source, cursor);
+    if (next?.value === "function") return readFunctionBlock(source, next.end, false);
+    return readFunctionBlock(source, cursor, true);
+  }
+  if (word?.value === "function") return readFunctionBlock(source, word.end, false);
+  return readFunctionBlock(source, cursor, true);
+}
+
+/** Body of `function name` or `const name = () => {}` in this source. */
+function namedCallbackBody(source: string, name: string): string | undefined {
+  const hidden = stringSpans(source);
+  let index = 0;
+  while (index < source.length) {
+    const hiddenEnd = spanEndAt(hidden, index);
+    if (hiddenEnd >= 0) {
+      index = hiddenEnd;
+      continue;
+    }
+    const word = readIdentifier(source, index);
+    if (!word) {
+      index += 1;
+      continue;
+    }
+    const start = word.end - word.value.length;
+    if (start !== index) {
+      index = start;
+      continue;
+    }
+    const previous = source[index - 1];
+    if (previous === "." || (previous !== undefined && /[A-Za-z0-9_$]/.test(previous))) {
+      index = word.end;
+      continue;
+    }
+    if (word.value === "function") {
+      let next = skipSpaceAndComments(source, word.end);
+      if (source[next] === "*") next = skipSpaceAndComments(source, next + 1);
+      const ident = readIdentifier(source, next);
+      if (ident?.value === name) {
+        const block = readFunctionBlock(source, ident.end, false);
+        if (block) return block;
+      }
+      index = word.end;
+      continue;
+    }
+    if (word.value === "async") {
+      const next = skipSpaceAndComments(source, word.end);
+      const fn = readIdentifier(source, next);
+      if (fn?.value === "function") {
+        let nameAt = skipSpaceAndComments(source, fn.end);
+        if (source[nameAt] === "*") nameAt = skipSpaceAndComments(source, nameAt + 1);
+        const ident = readIdentifier(source, nameAt);
+        if (ident?.value === name) {
+          const block = readFunctionBlock(source, ident.end, false);
+          if (block) return block;
+        }
+      }
+      index = word.end;
+      continue;
+    }
+    if (word.value === "const" || word.value === "let" || word.value === "var") {
+      const ident = readIdentifier(source, skipSpaceAndComments(source, word.end));
+      if (ident?.value === name) {
+        const eq = skipSpaceAndComments(source, ident.end);
+        if (source[eq] === "=") {
+          const block = readAssignedFunctionBlock(source, eq + 1);
+          if (block) return block;
+        }
+      }
+      index = word.end;
+      continue;
+    }
+    index = word.end;
+  }
+  return undefined;
+}
+
+type LocalRequire = { kind: "static"; spec: string } | { kind: "dynamic" };
+
+/** `require("./helper")` and `require(\`./helper\`)`. Package specifiers are static too. */
+function localRequireCalls(
+  body: string,
+  hidden: ReadonlyArray<readonly [number, number]>,
+): LocalRequire[] {
+  const found: LocalRequire[] = [];
+  let index = 0;
+  while (index < body.length) {
+    const hiddenEnd = spanEndAt(hidden, index);
+    if (hiddenEnd >= 0) {
+      index = hiddenEnd;
+      continue;
+    }
+    if (!body.startsWith("require", index)) {
+      index += 1;
+      continue;
+    }
+    const previous = body[index - 1];
+    const tail = body[index + "require".length] ?? "";
+    if (
+      previous === "." ||
+      (previous !== undefined && /[A-Za-z0-9_$]/.test(previous)) ||
+      /[A-Za-z0-9_$]/.test(tail) ||
+      wordBefore(body, index) === "function"
+    ) {
+      index += "require".length;
+      continue;
+    }
+    const open = skipSpaceAndComments(body, index + "require".length);
+    if (body[open] !== "(") {
+      index += "require".length;
+      continue;
+    }
+    const argAt = skipSpaceAndComments(body, open + 1);
+    const quoted = readQuoted(body, argAt) ?? readStaticTemplate(body, argAt);
+    if (quoted && argumentBoundary(body, quoted.end)) {
+      found.push({ kind: "static", spec: quoted.value });
+    } else found.push({ kind: "dynamic" });
+    const close = skipPair(body, open);
+    index = close < 0 ? open + 1 : close;
+  }
+  return found;
+}
+
 const RELATIVE_IMPORT = /(?:from\s+|import\s*\(\s*|import\s+)["'](\.[^"']+)["']/g;
 
 function typescriptImportCandidates(base: string): string[] {
@@ -2595,10 +2872,12 @@ function resolveRelativeImport(fromFile: string, spec: string): string | undefin
   return candidates.find((candidate) => existsSync(candidate));
 }
 
-/** The file plus the local modules it imports, so a helper registration stays visible. */
-export function sourceGraph(files: readonly string[]): string[] {
+type SourceWalk = { bodies: string[]; faults: string[] };
+
+function walkSources(files: readonly string[]): SourceWalk {
   const seen = new Set<string>();
   const bodies: string[] = [];
+  const faults: string[] = [];
   const queue = [...files];
   while (queue.length > 0) {
     const file = queue.pop();
@@ -2617,8 +2896,31 @@ export function sourceGraph(files: readonly string[]): string[] {
       const next = resolveRelativeImport(real, spec);
       if (next) queue.push(next);
     }
+    for (const required of localRequireCalls(body, hidden)) {
+      if (required.kind === "dynamic") {
+        faults.push("dynamic require");
+        continue;
+      }
+      if (!required.spec.startsWith(".")) continue;
+      const next = resolveRelativeImport(real, required.spec);
+      if (!next) {
+        faults.push(required.spec);
+        continue;
+      }
+      queue.push(next);
+    }
   }
-  return bodies;
+  return { bodies, faults };
+}
+
+/** The file plus local import and `require("./...")` modules, so a helper stays visible. */
+export function sourceGraph(files: readonly string[]): string[] {
+  return walkSources(files).bodies;
+}
+
+/** Relative requires that do not resolve, and requires whose specifier is not a literal. */
+export function unresolvedLocalRequires(files: readonly string[]): string[] {
+  return walkSources(files).faults;
 }
 
 async function approvalIds(): Promise<string[]> {
@@ -3087,10 +3389,25 @@ export async function checkInventory(projectRoot = root): Promise<string[]> {
       if (extras.length > 0) {
         fail(failures, `${requirement.id} command runs uninventoried tests: ${extras.join(", ")}`);
       }
-      const commandSources = sourceGraph([
+      const commandFiles = [
         ...inventoriedFiles.map((file) => join(projectRoot, file)),
         ...localPreloadFiles(commandCwd, test.args),
-      ]);
+      ];
+      const commandSources = sourceGraph(commandFiles);
+      const requireFaults = unresolvedLocalRequires(commandFiles);
+      if (requireFaults.length > 0) {
+        fail(
+          failures,
+          `${requirement.id} has an unresolved local require: ${requireFaults.join(", ")}`,
+        );
+      }
+      const ambiguous = ambiguousSuiteSeparators(commandSources);
+      if (ambiguous.length > 0) {
+        fail(
+          failures,
+          `${requirement.id} suite title contains the JUnit separator: ${ambiguous.join(", ")}`,
+        );
+      }
       if (duplicateFullNamesAcross(commandSources).includes(test.registeredAs)) {
         fail(failures, `${requirement.id} registers ${test.registeredAs} more than once`);
       }
