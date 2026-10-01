@@ -155,7 +155,7 @@ function thresholdScenario(stepSec: number): CompiledScenario<number, UnitCode, 
  * @evidence ./conformanceRun.ts#demonstrateShrinkGap Builds the shrink-gap report whose value is 1 and whose testSeed is 0xd101.
  * @evidenceReview ./conformanceRun.ts#demonstrateShrinkGap #e31f17f Builds the shrink-gap report whose value is 1 and whose testSeed is 0xd101.
  * @evidence ./conformanceRun.ts#replayShrinkReport Replays the saved report and expects the path to fail closed at 1.
- * @evidenceReview ./conformanceRun.ts#replayShrinkReport #dc00b76 Replays the saved report and expects the path to fail closed at 1. A rejected step whose from is not the current value fails the path. A to value the shrinker would not propose fails the path. An original value that already satisfies the predicate fails the path.
+ * @evidenceReview ./conformanceRun.ts#replayShrinkReport #6226016 Replays the saved report and expects the path to fail closed at 1. A rejected step whose from is not the current value fails the path. A to value the shrinker would not propose fails the path. An original value that already satisfies the predicate fails the path. A kept step that skips an earlier candidate fails the path.
  * @evidence ./conformanceRun.ts#gameSeedForCase Derives a game seed from 0x51ed and index 0 that is an integer other than that test seed.
  * @evidenceReview ./conformanceRun.ts#gameSeedForCase #39c73b9 Derives a game seed from 0x51ed and index 0 that is an integer other than that test seed.
  * @evidence ./conformanceRun.ts#ShrinkReport.value Expects the shrunk value to be 1.
@@ -224,6 +224,14 @@ export function replaysConstantIncomeAndShrinksGap(): void {
   });
   expect(satisfied.failed).toBe(true);
   expect(satisfied.pathOk).toBe(false);
+  const skippedAttempt = replayShrinkReport({
+    ...saved,
+    original: 7,
+    shrinkingPath: [{ from: 7, to: 6, kept: true }],
+    value: 6,
+  });
+  expect(skippedAttempt.failed).toBe(true);
+  expect(skippedAttempt.pathOk).toBe(false);
 
   const scenario = constantScenario({ rate: 3, durationSec: 4, stepSec: 1, seed: 11 });
   expectApplicable(checkReplay(scenario));
@@ -471,8 +479,8 @@ describe("PR-02 time boundaries", () => {
  * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #a195f0e Re-read the section, then ran this function: replay, resume, JSON resume, retention, and the observer all apply, and buys stays 1.
  * @evidence ./conformanceRun.ts#checkResumeFromJson Resumes a 4s scripted grant from JSON at t=2.
  * @evidenceReview ./conformanceRun.ts#checkResumeFromJson #91c215a Resumes a 4s scripted grant from JSON at t=2.
- * @evidence ./conformanceRun.ts#checkRetention Retention applies to the scripted grant.
- * @evidenceReview ./conformanceRun.ts#checkRetention #2924eaf Retention applies to the scripted grant. A negative eventLog.maxEvents fails before the check substitutes another capacity. A run that retains no events is inapplicable.
+ * @evidence ./conformanceRun.ts#checkRetention Retention applies to the scripted grant. A scenario that already has an emitter does not apply.
+ * @evidenceReview ./conformanceRun.ts#checkRetention #5a8a4e8 Retention applies to the scripted grant. A negative eventLog.maxEvents fails before the check substitutes another capacity. A run that retains no events is inapplicable. A scenario that already has an emitter does not apply, so that emitter is left untouched.
  * @evidence ./conformanceRun.ts#checkObserver The observer check applies to the scripted grant. A scenario that already has an emitter does not apply.
  * @evidenceReview ./conformanceRun.ts#checkObserver #cbc894e The observer check applies to the scripted grant. A run that emits no events is inapplicable. A scenario that already has an emitter does not apply, so that emitter is left untouched.
  */
@@ -587,6 +595,36 @@ export function recordsWalletAndMaxMoneyUnitsOnTheEconomySnapshot(): void {
   });
   expect(cyclicVars).toContain("cycle:");
   expect(cyclicVars).not.toBe(bigintVars);
+  const nanVars = snapshotEconomy(engine, {
+    ...gemState,
+    vars: { buys: Number.NaN } as unknown as Vars,
+  });
+  const nullVars = snapshotEconomy(engine, {
+    ...gemState,
+    vars: { buys: null } as unknown as Vars,
+  });
+  expect(nanVars).not.toBe(nullVars);
+  expect(nanVars).toContain("nan");
+  const missingExtra = snapshotEconomy(engine, {
+    ...gemState,
+    vars: { buys: 1 } as unknown as Vars,
+  });
+  const explicitUndefined = snapshotEconomy(engine, {
+    ...gemState,
+    vars: { buys: 1, extra: undefined } as unknown as Vars,
+  });
+  expect(explicitUndefined).not.toBe(missingExtra);
+  expect(explicitUndefined).toContain("undefined");
+  const functionVars = snapshotEconomy(engine, {
+    ...gemState,
+    vars: { buys: 1, fn: () => 1 } as unknown as Vars,
+  });
+  expect(functionVars).toContain("function");
+  const symbolValue = snapshotEconomy(engine, {
+    ...gemState,
+    vars: { buys: 1, tag: Symbol("t") } as unknown as Vars,
+  });
+  expect(symbolValue).toContain("symbol");
   const bigintReplay = checkReplay({
     ...constantScenario({ rate: 1, durationSec: 1, stepSec: 1 }),
     initial: {
@@ -721,6 +759,23 @@ export function resumesOnTheSameTickGridFromMemoryAndJson(): void {
   const palindrome = checkTrialOrder(trial, [gameA, gameB, gameA]);
   expect(palindrome.ok).toBe(true);
   expect(palindrome.applicable).toBe(false);
+  const aliasScenario = constantScenario({ rate: 1, durationSec: 4, stepSec: 1, seed: 19 });
+  const aliasedResume = checkResumeFromJson(
+    {
+      ...aliasScenario,
+      model: {
+        ...aliasScenario.model,
+        evolve: (_ctx, current) => ({
+          ...current,
+          vars: { wallet: current.wallet } as unknown as Vars,
+        }),
+      },
+    },
+    2,
+  );
+  expect(aliasedResume.ok).toBe(true);
+  expect(aliasedResume.applicable).toBe(false);
+  expect(aliasedResume.summary).toContain("alias");
 }
 
 describe("PR-03 resume isolation", () => {
@@ -1194,6 +1249,31 @@ describe("PR-05 observation retention", () => {
     expect(watched.ok).toBe(true);
     expect(watched.applicable).toBe(false);
     expect(emitted).toBe(0);
+    let retentionCalls = 0;
+    const retained = checkRetention({
+      ...scenario,
+      ctx: {
+        ...scenario.ctx,
+        emit: () => {
+          retentionCalls += 1;
+        },
+      },
+    });
+    expect(retained.ok).toBe(true);
+    expect(retained.applicable).toBe(false);
+    expect(retentionCalls).toBe(0);
+    const lossyObserver = checkObserver({
+      ...scenario,
+      model: {
+        ...scenario.model,
+        evolve: (ctx, current) => ({
+          ...current,
+          vars: { buys: ctx.emit ? Number.NaN : null } as unknown as Vars,
+        }),
+      },
+    });
+    expect(lossyObserver.ok).toBe(false);
+    expect(lossyObserver.applicable).toBe(true);
   });
 
   it("snapshots vars whose serializer throws", () => {
