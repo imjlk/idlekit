@@ -115,7 +115,7 @@ PR/커밋 전에:
 6. `bun run templates:check`
 7. `bun run install:smoke`
 
-CI(`.github/workflows/ci.yml`)는 typecheck/runtime import check/test/build + docs quick + replay verify gate + 성능 체크 + KPI A/B 리포트 + KPI 리그레션 게이트를 실행합니다.
+CI(`.github/workflows/ci.yml`)는 typecheck/runtime import check/test/build + replay verify gate + 성능 체크 + KPI A/B 리포트 + KPI 리그레션 게이트를 실행합니다. 문서 검증은 `.github/workflows/docs-verify.yml`의 `docs:verify` 한 번으로 돌고, quick 모드는 그 안에 포함됩니다.
 패키지 배포 스모크는 `bun run install:smoke`로 tarball 설치 + Bun import + `idk validate`까지 함께 확인합니다.
 
 성능 리그레션은 `bench:sim:check`에서 평균/`p95` 실행시간 임계값으로 추가 검증합니다.

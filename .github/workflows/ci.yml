@@ -6,6 +6,11 @@ on:
     branches:
       - main
 
+# A new push to the same branch replaces the run already in progress.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   quality:
     runs-on: ubuntu-latest
@@ -72,9 +77,6 @@ jobs:
 
       - name: Perf Check (simulate benchmark suite)
         run: bun run bench:sim:suite:check
-
-      - name: Docs Verify (quick)
-        run: bun run docs:verify:quick
 
       - name: Template Governance Check
         run: bun run templates:check
