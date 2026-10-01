@@ -596,6 +596,40 @@ describe("PR-03 resume isolation", () => {
     "resumes on the same tick grid from memory and from JSON",
     resumesOnTheSameTickGridFromMemoryAndJson,
   );
+
+  it("reports a non-JSON strategy snapshot instead of throwing", () => {
+    const scenario = constantScenario({ rate: 5, durationSec: 6, stepSec: 1, seed: 19 });
+    const cyclic: { self?: unknown } = {};
+    cyclic.self = cyclic;
+    const cycle = checkResumeFromJson(
+      {
+        ...scenario,
+        strategy: {
+          id: "cyclic",
+          decide: () => [],
+          snapshotState: () => cyclic,
+          restoreState: () => {},
+        },
+      },
+      2,
+    );
+    expect(cycle.ok).toBe(false);
+    expect(cycle.applicable).toBe(true);
+    const bigint = checkResumeFromJson(
+      {
+        ...scenario,
+        strategy: {
+          id: "bigint",
+          decide: () => [],
+          snapshotState: () => 1n,
+          restoreState: () => {},
+        },
+      },
+      2,
+    );
+    expect(bigint.ok).toBe(false);
+    expect(bigint.summary).toContain("JSON");
+  });
 });
 
 describe("counterexample report", () => {
