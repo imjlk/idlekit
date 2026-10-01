@@ -154,7 +154,7 @@ function thresholdScenario(stepSec: number): CompiledScenario<number, UnitCode, 
  * @evidence ./conformanceRun.ts#demonstrateShrinkGap Builds the shrink-gap report whose value is 1 and whose testSeed is 0xd101.
  * @evidenceReview ./conformanceRun.ts#demonstrateShrinkGap #e31f17f Builds the shrink-gap report whose value is 1 and whose testSeed is 0xd101.
  * @evidence ./conformanceRun.ts#replayShrinkReport Replays the saved report and expects the path to fail closed at 1.
- * @evidenceReview ./conformanceRun.ts#replayShrinkReport #6226016 Replays the saved report and expects the path to fail closed at 1. A rejected step whose from is not the current value fails the path. A to value the shrinker would not propose fails the path. An original value that already satisfies the predicate fails the path. A kept step that skips an earlier candidate fails the path.
+ * @evidenceReview ./conformanceRun.ts#replayShrinkReport #1d3ba72 Replays the saved report and expects the path to fail closed at 1. A rejected step whose from is not the current value fails the path. A to value the shrinker would not propose fails the path. An original value that already satisfies the predicate fails the path. A kept step that skips an earlier candidate fails the path.
  * @evidence ./conformanceRun.ts#gameSeedForCase Derives a game seed from 0x51ed and index 0 that is an integer other than that test seed.
  * @evidenceReview ./conformanceRun.ts#gameSeedForCase #39c73b9 Derives a game seed from 0x51ed and index 0 that is an integer other than that test seed.
  * @evidence ./conformanceRun.ts#ShrinkReport.value Expects the shrunk value to be 1.
@@ -231,6 +231,23 @@ export function replaysConstantIncomeAndShrinksGap(): void {
   });
   expect(skippedAttempt.failed).toBe(true);
   expect(skippedAttempt.pathOk).toBe(false);
+  const wrongSeed = replayShrinkReport({ ...saved, testSeed: saved.testSeed + 1 });
+  expect(wrongSeed.pathOk).toBe(false);
+  const wrongIndex = replayShrinkReport({
+    ...saved,
+    caseIndex: saved.caseIndex === 0 ? 1 : 0,
+  });
+  expect(wrongIndex.pathOk).toBe(false);
+  const wrongVersion = replayShrinkReport({
+    ...saved,
+    generatorVersion: saved.generatorVersion + 1,
+  });
+  expect(wrongVersion.pathOk).toBe(false);
+  const wrongPredicate = replayShrinkReport({
+    ...saved,
+    predicateId: "other",
+  } as unknown as typeof saved);
+  expect(wrongPredicate.pathOk).toBe(false);
 
   const scenario = constantScenario({ rate: 3, durationSec: 4, stepSec: 1, seed: 11 });
   expectApplicable(checkReplay(scenario));
@@ -681,6 +698,56 @@ export function recordsWalletAndMaxMoneyUnitsOnTheEconomySnapshot(): void {
   });
   expect(markedSnap).not.toBe(unmarkedSnap);
   expect(markedSnap).toContain("Symbol(extra)");
+  const literalKey = { buys: 1, "symbol:Symbol(extra)": 3 };
+  const literalSnap = snapshotEconomy(engine, {
+    ...gemState,
+    vars: literalKey as unknown as Vars,
+  });
+  expect(literalSnap).not.toBe(markedSnap);
+  const sameName = { buys: 1 } as { buys: number; [key: symbol]: number };
+  const symbolA = Symbol("extra");
+  const symbolB = Symbol("extra");
+  Object.defineProperty(sameName, symbolA, { value: 1, enumerable: true });
+  Object.defineProperty(sameName, symbolB, { value: 2, enumerable: true });
+  const sameNameSnap = snapshotEconomy(engine, {
+    ...gemState,
+    vars: sameName as unknown as Vars,
+  });
+  expect(sameNameSnap).not.toBe(markedSnap);
+  expect(sameNameSnap).toContain('"value":1');
+  expect(sameNameSnap).toContain('"value":2');
+  const taggedItems = [1] as number[] & { [key: symbol]: number };
+  Object.defineProperty(taggedItems, Symbol("extra"), { value: 4, enumerable: true });
+  const taggedSnap = snapshotEconomy(engine, {
+    ...gemState,
+    vars: { buys: 1, items: taggedItems } as unknown as Vars,
+  });
+  const stringExtra = [1] as number[] & { "symbol:Symbol(extra)"?: number };
+  stringExtra["symbol:Symbol(extra)"] = 4;
+  const stringExtraSnap = snapshotEconomy(engine, {
+    ...gemState,
+    vars: { buys: 1, items: stringExtra } as unknown as Vars,
+  });
+  expect(taggedSnap).not.toBe(stringExtraSnap);
+  const lengthNan = snapshotEconomy(engine, {
+    ...gemState,
+    vars: { buys: 1, length: Number.NaN } as unknown as Vars,
+  });
+  const lengthTag = snapshotEconomy(engine, {
+    ...gemState,
+    vars: { buys: 1, length: { "~idlekit": "nan" } } as unknown as Vars,
+  });
+  expect(lengthNan).not.toBe(lengthTag);
+  const negativeZeroSnap = snapshotEconomy(engine, {
+    ...gemState,
+    vars: { buys: 0, marker: -0 } as unknown as Vars,
+  });
+  const zeroSnap = snapshotEconomy(engine, {
+    ...gemState,
+    vars: { buys: 0, marker: 0 } as unknown as Vars,
+  });
+  expect(negativeZeroSnap).not.toBe(zeroSnap);
+  expect(negativeZeroSnap).toContain('"-0"');
   const bigintReplay = checkReplay({
     ...constantScenario({ rate: 1, durationSec: 1, stepSec: 1 }),
     initial: {
@@ -948,6 +1015,15 @@ describe("PR-03 resume isolation", () => {
     expect(negativeZero.ok).toBe(false);
     expect(negativeZero.applicable).toBe(true);
     expect(negativeZero.summary).toContain("JSON");
+    const negativeZeroSnap = snapshotEconomy(scenario.ctx.E, {
+      ...scenario.initial,
+      vars: { buys: 0, marker: -0 } as unknown as Vars,
+    });
+    const zeroSnap = snapshotEconomy(scenario.ctx.E, {
+      ...scenario.initial,
+      vars: { buys: 0, marker: 0 } as unknown as Vars,
+    });
+    expect(negativeZeroSnap).not.toBe(zeroSnap);
     const items = [1];
     Object.assign(items, { extra: 2 });
     const extraItems = checkResumeFromJson(
