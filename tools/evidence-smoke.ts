@@ -1,4 +1,5 @@
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
+import { tmpdir } from "os";
 import { join } from "path";
 import {
   approvalApplies,
@@ -7,6 +8,8 @@ import {
   evidenceProgramSourceFiles,
   commandTargetsFile,
   duplicateFullNames,
+  duplicateFullNamesAcross,
+  enabledClaimFailures,
   headingAnchors,
   registeredSuites,
   isNonProductionPath,
@@ -161,12 +164,30 @@ try {
     "unregistered-evidence",
     checkFixture(unregistered, join(cacheRoot, "cache-unregistered")),
   );
-  const unregisteredTest = Bun.spawnSync([process.execPath, "test", "src/host.test.ts"], {
-    cwd: unregistered,
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  const unregisteredOut = `${unregisteredTest.stdout.toString()}\n${unregisteredTest.stderr.toString()}`;
+  const unregisteredReportDir = mkdtempSync(join(tmpdir(), "idlekit-evidence-"));
+  const unregisteredReport = join(unregisteredReportDir, "junit.xml");
+  const unregisteredTest = Bun.spawnSync(
+    [
+      process.execPath,
+      "test",
+      "src/host.test.ts",
+      "--reporter=junit",
+      "--reporter-outfile",
+      unregisteredReport,
+    ],
+    {
+      cwd: unregistered,
+      stdout: "pipe",
+      stderr: "pipe",
+    },
+  );
+  let unregisteredOut = "";
+  try {
+    unregisteredOut = readFileSync(unregisteredReport, "utf8");
+  } catch {
+    unregisteredOut = "";
+  }
+  rmSync(unregisteredReportDir, { recursive: true, force: true });
   const unregisteredFailures = assertExecutedTests(
     unregisteredOut,
     unregisteredTest.exitCode ?? 1,
@@ -246,15 +267,25 @@ try {
     "a stale approval must not cover a later removal",
   );
 
-  const ambiguousOut = ["(pass) beta > quota is documented", "1 pass"].join("\n");
+  const ambiguousOut = [
+    '<testsuites tests="1"><testsuite name="file.ts" file="file.ts">',
+    '<testsuite name="beta"><testcase name="quota is documented" /></testsuite>',
+    "</testsuite></testsuites>",
+  ].join("");
   const ambiguous = assertExecutedTests(ambiguousOut, 0, ["alpha > quota is documented"]);
   const ambiguousOk = ambiguous.some((message) => message.includes("missed"));
   record("ambiguous-suite", "nonzero", ambiguousOk ? 1 : 0, ambiguousOk, ambiguous.join("\n"));
 
-  const qualifiedOut = ["(pass) alpha > quota is documented", "1 pass"].join("\n");
+  const qualifiedOut = [
+    '<testsuites tests="1"><testsuite name="file.ts" file="file.ts">',
+    '<testsuite name="alpha"><testcase name="quota is documented" /></testsuite>',
+    "</testsuite></testsuites>",
+  ].join("");
+  const printedOut = ["(pass) alpha > quota is documented", "1 pass"].join("\n");
   const qualified = assertExecutedTests(qualifiedOut, 0, ["alpha > quota is documented"]);
   const bareTitle = assertExecutedTests(qualifiedOut, 0, ["quota is documented"]);
-  const qualifiedOk = qualified.length === 0 && bareTitle.length > 0;
+  const printed = assertExecutedTests(printedOut, 0, ["alpha > quota is documented"]);
+  const qualifiedOk = qualified.length === 0 && bareTitle.length > 0 && printed.length > 0;
   record(
     "suite-qualified",
     "zero",
@@ -311,6 +342,55 @@ try {
   const crlf = headingAnchors("## Kept {#kept}\r\n## Missing\r\n");
   const crlfOk = crlf.length === 2 && crlf[0] === "kept" && crlf[1] === "";
   record("crlf-heading", "zero", crlfOk ? 0 : 1, crlfOk, JSON.stringify(crlf));
+
+  const setext = headingAnchors(
+    "Requirement {#req-id}\n---\nTitle {#h1}\n===\n## Kept {#kept}\nParagraph\n---\n",
+  );
+  const setextOk =
+    setext.length === 3 && setext[0] === "req-id" && setext[1] === "kept" && setext[2] === "";
+  record("setext-heading", "zero", setextOk ? 0 : 1, setextOk, JSON.stringify(setext));
+
+  const activeDocs = ["docs/requirements/active/**/*.md"];
+  const productionHosts = [
+    "packages/core/src/scenario/concreteValidator.ts",
+    "packages/core/src/scenario/typiaTransformMissing.ts",
+  ];
+  const testHosts = ["packages/core/src/scenario/concreteValidator.test.ts"];
+  const rebound = enabledClaimFailures([
+    {
+      name: "active requirements have production implementations",
+      files: testHosts,
+      reference: { files: activeDocs },
+    },
+    {
+      name: "active requirements have executed test hosts",
+      files: testHosts,
+      reference: { files: activeDocs },
+    },
+    {
+      name: "executed tests cite the implementation they run",
+      files: testHosts,
+      reference: { files: productionHosts },
+    },
+  ]);
+  const spoofedCitation =
+    "const text = `/** @evidence docs/requirements/active/x.md#anchor */ export function fake`;\n";
+  const realCitation = "/** @evidence docs/requirements/active/x.md#anchor */\nexport function real() {}\n";
+  const citationOk =
+    !productionFileCites(spoofedCitation, "docs/requirements/active/x.md", "anchor") &&
+    productionFileCites(realCitation, "docs/requirements/active/x.md", "anchor");
+  const claimOk =
+    enabledClaimFailures().length === 0 &&
+    enabledClaimFailures([]).length > 0 &&
+    rebound.length > 0 &&
+    citationOk;
+  record(
+    "claim-populations",
+    "zero",
+    claimOk ? 0 : 1,
+    claimOk,
+    `live=${enabledClaimFailures().join("; ")} rebound=${rebound.join("; ")}`,
+  );
 
   const tabbed = headingAnchors("##\tMissing\n##\tKept {#kept}\n");
   const tabbedOk = tabbed.length === 2 && tabbed[0] === "" && tabbed[1] === "kept";
@@ -378,10 +458,17 @@ try {
     "exportedName",
     "quota is documented",
   );
+  const otherFile = [
+    'describe("kept", () => {',
+    '  it("quota is documented", exportedName);',
+    "});",
+  ].join("\n");
+  const acrossFiles = duplicateFullNamesAcross([otherFile, duplicateBody]);
   const duplicateOk =
     duplicateNames.length === 1 &&
     duplicateNames[0] === "kept > quota is documented" &&
-    duplicateStillRegistered.length === 1;
+    duplicateStillRegistered.length === 1 &&
+    acrossFiles.includes("kept > quota is documented");
   record(
     "duplicate-title",
     "zero",
