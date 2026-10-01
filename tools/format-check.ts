@@ -1,4 +1,11 @@
 import { commandText, root, runTtsc } from "./evidence-host";
+import { formatGateFailures } from "./evidence-inventory";
+
+const gate = formatGateFailures();
+if (gate.length > 0) {
+  console.error(gate.join("\n"));
+  process.exit(1);
+}
 
 const result = runTtsc(["-p", "tsconfig.format.json", "--noEmit", "--cwd", root], root);
 process.stdout.write(result.stdout);
