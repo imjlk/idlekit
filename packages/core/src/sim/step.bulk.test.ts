@@ -1054,6 +1054,49 @@ describe("PR-01 bulk quote settlement", () => {
     expect(skippedReason(out.events)).toBeUndefined();
   });
 
+  it("does not price a sole refreshed action before a quoted bulk buy", () => {
+    const engine = createNumberEngine();
+    let costCalls = 0;
+    let bulkCalls = 0;
+    const model: Model<number, UnitCode, Vars> = {
+      id: "refresh-sole",
+      version: 1,
+      income: () => coin(engine, engine.zero()),
+      actions: () => [
+        {
+          id: "buy",
+          kind: "buy",
+          canApply: () => true,
+          cost: () => {
+            costCalls += 1;
+            return coin(engine, engine.from(10));
+          },
+          bulk: () => {
+            bulkCalls += 1;
+            return [{ size: 2, cost: coin(engine, engine.from(4)) }];
+          },
+          apply: (_ctx, current) => current,
+        },
+      ],
+    };
+    const start = state(engine, 100);
+    const selected = model.actions(context(engine), start)[0];
+    expect(selected).toBeDefined();
+    costCalls = 0;
+    bulkCalls = 0;
+    const out = stepOnce({
+      ctx: context(engine),
+      model,
+      state: start,
+      dt: 0,
+      decisions: [{ action: selected!, occurrence: 0, bulkSize: 2 }],
+    });
+    expect(costCalls).toBe(0);
+    expect(bulkCalls).toBe(1);
+    expect(engine.toNumber(out.next.wallet.money.amount)).toBe(96);
+    expect(skippedReason(out.events)).toBeUndefined();
+  });
+
   it("does not enumerate actions when the step has no decisions", () => {
     const engine = createNumberEngine();
     const model: Model<number, UnitCode, Vars> = {

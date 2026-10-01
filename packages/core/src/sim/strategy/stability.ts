@@ -40,9 +40,16 @@ export function rankableQuotes<N, U extends string, Vars>(
   quotes: readonly BulkQuote<N, U>[],
   singleCost: BulkQuote<N, U>["cost"],
 ): BulkQuote<N, U>[] {
-  return uniqueQuotedSizes(quotes).filter((quote) =>
-    settlementAcceptsQuote(ctx, state, quote, singleCost),
-  );
+  const accepted: BulkQuote<N, U>[] = [];
+  for (const quote of uniqueQuotedSizes(quotes)) {
+    if (!settlementAcceptsQuote(ctx, state, quote, singleCost)) continue;
+    if (quote.size !== singleBuySize || quote.cost === singleCost) {
+      accepted.push(quote);
+      continue;
+    }
+    accepted.push({ ...quote, cost: singleCost });
+  }
+  return accepted;
 }
 
 /** Keep size 1 and every other size that appears once. Settlement rejects a repeated bulk size. */

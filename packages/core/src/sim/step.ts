@@ -120,7 +120,8 @@ function currentAction<N, U extends string, Vars>(
   const sameIdentity = (candidate: Action<N, U, Vars>) =>
     candidate.id === selected.id && candidate.kind === selected.kind;
   const matches = fresh.filter(sameIdentity);
-  if (occurrence === undefined) return matches.length === 1 ? matches[0] : undefined;
+  if (matches.length === 1) return matches[0];
+  if (occurrence === undefined) return undefined;
   return alignFreshDuplicate(baseline().filter(sameIdentity), matches, ctx, state, occurrence);
 }
 
