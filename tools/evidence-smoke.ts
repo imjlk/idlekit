@@ -37,6 +37,7 @@ import {
   productionFileCites,
   retainedCoverage,
 } from "./evidence-inventory";
+import { plannerStepOnceBound } from "./planner-binding";
 import {
   commandText,
   compilerBinName,
@@ -877,6 +878,48 @@ try {
     'register("credited", unrelated)',
   ].join("\n");
   const forLive = registeredSuites(forBody, "unrelated", "credited");
+  const namespaceBody = [
+    'import * as runner from "bun:test"',
+    'if (false) it("credited", citedExport)',
+    'runner.it("credited", unrelated)',
+  ].join("\n");
+  const namespaceLive = registeredSuites(namespaceBody, "unrelated", "credited");
+  const namespaceExpect = unresolvedRunnerCalls(
+    'import * as runner from "bun:test"\nrunner.expect("saved", "msg")',
+  );
+  const namespaceAlias = registeredSuites(
+    [
+      'import * as runner from "bun:test"',
+      "const register = runner.it",
+      'register("credited", unrelated)',
+    ].join("\n"),
+    "unrelated",
+    "credited",
+  );
+  const namespaceType = registeredSuites(
+    'import type * as runner from "bun:test"\nrunner.it("credited", unrelated)',
+    "unrelated",
+    "credited",
+  );
+  const namespaceShadowBody = [
+    'import * as runner from "bun:test"',
+    "{",
+    "const runner = other",
+    'runner.it("inner", unrelated)',
+    "}",
+    'runner.it("credited", citedExport)',
+  ].join("\n");
+  const namespaceShadow = registeredSuites(namespaceShadowBody, "citedExport", "credited");
+  const namespaceShadowLive = registeredSuites(namespaceShadowBody, "unrelated", "inner");
+  const plannerFile = readFileSync(join(root, "packages/core/src/sim/strategy/planner.ts"), "utf8");
+  const plannerBound = plannerStepOnceBound(plannerFile);
+  const plannerComment = plannerStepOnceBound("// ({ stepOnce }\n// d.stepOnce(\n");
+  const plannerString = plannerStepOnceBound(
+    'const label = "({ stepOnce }";\nconst call = "d.stepOnce(";\n',
+  );
+  const plannerTemplate = plannerStepOnceBound("const label = `({ stepOnce } d.stepOnce(`;\n");
+  const plannerRenamed = plannerStepOnceBound("const d = ({ stepOnce });\nold.stepOnce();\n");
+  const plannerLive = plannerStepOnceBound("const d = ({ stepOnce });\nd.stepOnce();\n");
   const duplicateOk =
     duplicateNames.length === 1 &&
     duplicateNames[0] === "kept > quota is documented" &&
@@ -927,7 +970,19 @@ try {
     reboundUnresolved.length === 1 &&
     wrappedLive.length === 0 &&
     wrappedUnresolved.length === 1 &&
-    forLive.length === 1;
+    forLive.length === 1 &&
+    namespaceLive.length === 1 &&
+    namespaceExpect.length === 0 &&
+    namespaceAlias.length === 1 &&
+    namespaceType.length === 0 &&
+    namespaceShadow.length === 1 &&
+    namespaceShadowLive.length === 0 &&
+    plannerBound &&
+    plannerComment === false &&
+    plannerString === false &&
+    plannerTemplate === false &&
+    plannerRenamed === false &&
+    plannerLive;
   record(
     "duplicate-title",
     "zero",

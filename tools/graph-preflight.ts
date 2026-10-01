@@ -16,6 +16,7 @@ import {
   type JsonSchema,
   type Span,
 } from "./graph-query";
+import { plannerStepOnceBound } from "./planner-binding";
 
 const failures: string[] = [];
 
@@ -522,7 +523,7 @@ async function main(): Promise<void> {
     );
     const plannerSource = readFileSync(join(root, "packages/core/src/sim/strategy/planner.ts"), "utf8");
     const plannerBody = plannerDecl ? declarationSource(plannerSource, plannerDecl.line) : "";
-    const bindsDefault = plannerBody.includes("({ stepOnce }") && plannerBody.includes("d.stepOnce(");
+    const bindsDefault = plannerStepOnceBound(plannerBody);
     const plannerLinked = endpointsConnect(collectHops(plannerPath), "createPlannerStrategy", "stepOnce");
     if (plannerLinked) {
       ok("trace createPlannerStrategy -> stepOnce");
