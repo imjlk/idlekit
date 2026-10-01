@@ -26,7 +26,7 @@ Export or command presence is not a finished analysis.
 | Doctor | `packages/cli/src/commands/doctor.ts` | Environment and setup diagnosis. Economic judgment is a later judge, not this command. |
 | Large numbers | `createBreakInfinityEngine` | Real adapter. `createBreakEternityEngine` throws from every method. |
 
-CLI registration in `packages/cli/src/main.ts` includes `validate`, `simulate`, `eta`, `experiment`, `prestige-cycle`, `growth`, `experience`, `evaluate`, `tune`, `compare`, `ltv`, `report`, `calibrate`, `doctor`, `setup`, and the `models`, `strategies`, `objectives`, `init`, `replay`, `kpi`, and `review` groups.
+CLI registration in `packages/cli/src/main.ts` includes `validate`, `analyze`, `simulate`, `eta`, `experiment`, `prestige-cycle`, `growth`, `experience`, `evaluate`, `tune`, `compare`, `ltv`, `report`, `calibrate`, `doctor`, `setup`, and the `models`, `strategies`, `objectives`, `init`, `replay`, `kpi`, and `review` groups. `analyze` calls the analyzer registry. `eta`, `growth`, and `prestige-cycle` stay separate commands.
 
 Also present and meant to be reused: `stepOnce`, `Engine` `divN` / `cmp` / `absLog10`, strategy snapshot/restore, `deepClonePreservingPrototype`, `eventBuffer`, `OUTPUT_CONTRACT_VERSION`, and the Sampo, compat, replay, and KPI gates.
 

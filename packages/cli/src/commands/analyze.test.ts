@@ -1,0 +1,97 @@
+import { describe, expect, it } from "bun:test";
+import { resolve } from "node:path";
+import { loadRegistries } from "../plugin/load";
+import { createTempDir, readText, removePath, runCli, runCliJson, writeText } from "../testkit/bun";
+
+const scenarioSource = resolve(import.meta.dir, "../../../../examples/simple-linear.json");
+
+async function shortScenario(dir: string): Promise<string> {
+  const raw = JSON.parse(await readText(scenarioSource)) as { clock: { durationSec: number } };
+  raw.clock.durationSec = 8;
+  const scenario = resolve(dir, "short.json");
+  await writeText(scenario, JSON.stringify(raw));
+  return scenario;
+}
+
+describe("idk analyze", () => {
+  it("renders growth json and markdown from the registry adapter", async () => {
+    const dir = await createTempDir("idlekit-analyze-growth");
+    const scenario = await shortScenario(dir);
+    const json = runCliJson<any>(["analyze", "growth", scenario, "--window", "2", "--format", "json"]);
+    expect(json.algorithmVersion).toBe("growth-report-v1");
+    expect(json.kind).toBe("postprocess");
+    expect(json.value.seriesRequested).toBe("money");
+    expect(json._meta.command).toBe("analyze");
+    const markdown = runCli(["analyze", "growth", scenario, "--window", "5", "--format", "md"]);
+    expect(markdown.stdout).toContain("growth-report-v1");
+    expect(markdown.stdout).toContain("```json");
+    await removePath(dir);
+  }, 60000);
+
+  it("matches eta algorithm version without a network call", async () => {
+    const dir = await createTempDir("idlekit-analyze-eta");
+    const scenario = await shortScenario(dir);
+    const json = runCliJson<any>([
+      "analyze",
+      "eta",
+      scenario,
+      "--target-money",
+      "5",
+      "--max-duration",
+      "20",
+      "--budget-duration",
+      "20",
+      "--format",
+      "json",
+    ]);
+    expect(json.algorithmVersion).toBe("eta-estimate-v1");
+    expect(json.value.estimate.algorithmVersion).toBe("eta-estimate-v1");
+    expect(json.value.mode).toBe("simulate");
+    expect(json.provenance.freshRuns).toBe(1);
+    await removePath(dir);
+  }, 60000);
+
+  it("does not import a plugin before allow-plugin and isolates a bad analyzer", async () => {
+    const dir = await createTempDir("idlekit-analyze-plugin");
+    const blocked = resolve(dir, "blocked.ts");
+    await writeText(blocked, `throw new Error("PLUGIN_LOADED_SENTINEL");\n`);
+    const failed = runCli(["analyze", "growth", "--plugin", blocked], { check: false });
+    expect(failed.exitCode).not.toBe(0);
+    expect(`${failed.stderr}\n${failed.stdout}`).not.toContain("PLUGIN_LOADED_SENTINEL");
+    expect(`${failed.stderr}\n${failed.stdout}`).toContain("Plugin loading is disabled");
+
+    const plugin = resolve(dir, "analyzers.ts");
+    await writeText(
+      plugin,
+      `export const analyzers = [
+        { id: "growth", version: "1", kind: "postprocess" },
+        {
+          id: "plugin.note",
+          version: "1",
+          kind: "postprocess",
+          validateParams: () => ({ ok: true, params: {} }),
+          requires: { capabilities: [], metricIds: [], observationSchema: "idlekit.run-observation" },
+          observation: { windowSec: null, sampleCadenceSec: null, coverage: "summary", metricIds: [], observationSchema: "idlekit.run-observation" },
+          outputContract: "test.analyzer",
+          algorithmVersion: "plugin-note-v1",
+          cost: { freshRuns: 0, samples: 0 },
+          dependencies: [],
+          postprocess: () => ({ status: "ok", value: "note" }),
+        },
+      ];
+      `,
+    );
+    const loaded = await loadRegistries([plugin], { allowedRoots: [dir] });
+    expect(loaded.analyzerFailures.length).toBe(1);
+    expect(loaded.analyzerRegistry.get("growth", "1")).toBeDefined();
+    expect(loaded.analyzerRegistry.get("eta", "1")).toBeDefined();
+    expect(loaded.analyzerRegistry.get("plugin.note", "1")).toBeDefined();
+    const note = loaded.analyzerRegistry.run({
+      requests: [{ id: "plugin.note", version: "1", params: {} }],
+      semantics: { sessionKey: "none", strategyKey: "none", horizonSec: 1, stepSec: 1, seed: null },
+      allowExecution: false,
+    });
+    expect(note.results[0]?.value).toBe("note");
+    await removePath(dir);
+  }, 60000);
+});

@@ -29,6 +29,8 @@
     "packages/core/src/sim/analysis/distribution.test.ts",
     "packages/core/src/sim/analysis/experiment.ts",
     "packages/core/src/sim/analysis/experiment.test.ts",
+    "packages/core/src/sim/analysis/analyzers.ts",
+    "packages/core/src/sim/analysis/analyzers.test.ts",
     "packages/core/src/sim/monteCarlo.ts",
     "packages/core/src/sim/step.ts",
     "packages/core/src/sim/step.bulk.test.ts",

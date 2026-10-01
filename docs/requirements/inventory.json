@@ -830,6 +830,134 @@
           "args": ["test", "--timeout", "120000", "src/sim/analysis/experiment.test.ts"]
         }
       ]
+    },
+    {
+      "id": "REQ-DX02-REGISTRY-CONFLICTS",
+      "pr": "DX-02",
+      "anchor": "req-dx02-registry-conflicts",
+      "doc": "docs/requirements/active/analyzer-registry.md",
+      "production": ["packages/core/src/sim/analysis/analyzers.ts"],
+      "tests": [
+        {
+          "file": "packages/core/src/sim/analysis/analyzers.test.ts",
+          "exportName": "rejectsRegistryConflictsBeforeRun",
+          "registeredAs": "analyzer registry > rejects registry conflicts before a run",
+          "cwd": "packages/core",
+          "args": ["test", "--timeout", "120000", "src/sim/analysis/analyzers.test.ts"]
+        }
+      ]
+    },
+    {
+      "id": "REQ-DX02-CUSTOM-ANALYZER",
+      "pr": "DX-02",
+      "anchor": "req-dx02-custom-analyzer",
+      "doc": "docs/requirements/active/analyzer-registry.md",
+      "production": ["packages/core/src/sim/analysis/analyzers.ts"],
+      "tests": [
+        {
+          "file": "packages/core/src/sim/analysis/analyzers.test.ts",
+          "exportName": "runsCustomMetricAnalyzer",
+          "registeredAs": "analyzer registry > runs a custom metric analyzer",
+          "cwd": "packages/core",
+          "args": ["test", "--timeout", "120000", "src/sim/analysis/analyzers.test.ts"]
+        }
+      ]
+    },
+    {
+      "id": "REQ-DX02-INSUFFICIENT-OBSERVATION",
+      "pr": "DX-02",
+      "anchor": "req-dx02-insufficient-observation",
+      "doc": "docs/requirements/active/analyzer-registry.md",
+      "production": ["packages/core/src/sim/analysis/analyzers.ts"],
+      "tests": [
+        {
+          "file": "packages/core/src/sim/analysis/analyzers.test.ts",
+          "exportName": "reportsInsufficientObservation",
+          "registeredAs": "analyzer registry > reports insufficient observation",
+          "cwd": "packages/core",
+          "args": ["test", "--timeout", "120000", "src/sim/analysis/analyzers.test.ts"]
+        }
+      ]
+    },
+    {
+      "id": "REQ-DX02-EXECUTION-BUDGET",
+      "pr": "DX-02",
+      "anchor": "req-dx02-execution-budget",
+      "doc": "docs/requirements/active/analyzer-registry.md",
+      "production": ["packages/core/src/sim/analysis/analyzers.ts"],
+      "tests": [
+        {
+          "file": "packages/core/src/sim/analysis/analyzers.test.ts",
+          "exportName": "enforcesExecutionBudget",
+          "registeredAs": "analyzer registry > enforces the execution budget",
+          "cwd": "packages/core",
+          "args": ["test", "--timeout", "120000", "src/sim/analysis/analyzers.test.ts"]
+        }
+      ]
+    },
+    {
+      "id": "REQ-DX02-SAME-ALGORITHM",
+      "pr": "DX-02",
+      "anchor": "req-dx02-same-algorithm",
+      "doc": "docs/requirements/active/analyzer-registry.md",
+      "production": ["packages/core/src/sim/analysis/analyzers.ts"],
+      "tests": [
+        {
+          "file": "packages/core/src/sim/analysis/analyzers.test.ts",
+          "exportName": "matchesExistingAlgorithmVersions",
+          "registeredAs": "analyzer registry > matches existing algorithm versions",
+          "cwd": "packages/core",
+          "args": ["test", "--timeout", "120000", "src/sim/analysis/analyzers.test.ts"]
+        }
+      ]
+    },
+    {
+      "id": "REQ-DX02-OBSERVATION-PLAN",
+      "pr": "DX-02",
+      "anchor": "req-dx02-observation-plan",
+      "doc": "docs/requirements/active/analyzer-registry.md",
+      "production": ["packages/core/src/sim/analysis/analyzers.ts"],
+      "tests": [
+        {
+          "file": "packages/core/src/sim/analysis/analyzers.test.ts",
+          "exportName": "recordsObservationDemandOnThePlan",
+          "registeredAs": "analyzer registry > records observation demand on the plan",
+          "cwd": "packages/core",
+          "args": ["test", "--timeout", "120000", "src/sim/analysis/analyzers.test.ts"]
+        }
+      ]
+    },
+    {
+      "id": "REQ-DX02-PLUGIN-ISOLATION",
+      "pr": "DX-02",
+      "anchor": "req-dx02-plugin-isolation",
+      "doc": "docs/requirements/active/analyzer-registry.md",
+      "production": ["packages/core/src/sim/analysis/analyzers.ts"],
+      "tests": [
+        {
+          "file": "packages/core/src/sim/analysis/analyzers.test.ts",
+          "exportName": "isolatesPluginAnalyzerFailure",
+          "registeredAs": "analyzer registry > isolates a plugin analyzer failure",
+          "cwd": "packages/core",
+          "args": ["test", "--timeout", "120000", "src/sim/analysis/analyzers.test.ts"]
+        }
+      ]
+    },
+    {
+      "id": "REQ-DX02-LOCAL-OUTPUT",
+      "pr": "DX-02",
+      "anchor": "req-dx02-local-output",
+      "doc": "docs/requirements/active/analyzer-registry.md",
+      "production": ["packages/core/src/sim/analysis/analyzers.ts"],
+      "tests": [
+        {
+          "file": "packages/core/src/sim/analysis/analyzers.test.ts",
+          "exportName": "rendersLocalAnalyzerOutput",
+          "registeredAs": "analyzer registry > renders local analyzer output",
+          "cwd": "packages/core",
+          "args": ["test", "--timeout", "120000", "src/sim/analysis/analyzers.test.ts"]
+        }
+      ]
     }
   ]
 }

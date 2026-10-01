@@ -26,7 +26,7 @@ export나 명령이 있다는 것은 분석이 끝났다는 뜻이 아니다.
 | Doctor | `packages/cli/src/commands/doctor.ts` | 환경과 설정 진단. 경제 판단은 이후 judge이며 이 명령이 아니다. |
 | 큰 수 | `createBreakInfinityEngine` | 실제 adapter. `createBreakEternityEngine`은 모든 메서드에서 throw한다. |
 
-`packages/cli/src/main.ts`에 등록된 명령은 `validate`, `simulate`, `eta`, `experiment`, `prestige-cycle`, `growth`, `experience`, `evaluate`, `tune`, `compare`, `ltv`, `report`, `calibrate`, `doctor`, `setup`과 `models`, `strategies`, `objectives`, `init`, `replay`, `kpi`, `review` 그룹이다.
+`packages/cli/src/main.ts`에 등록된 명령은 `validate`, `analyze`, `simulate`, `eta`, `experiment`, `prestige-cycle`, `growth`, `experience`, `evaluate`, `tune`, `compare`, `ltv`, `report`, `calibrate`, `doctor`, `setup`과 `models`, `strategies`, `objectives`, `init`, `replay`, `kpi`, `review` 그룹이다. `analyze`는 analyzer 레지스트리를 호출한다. `eta`, `growth`, `prestige-cycle`은 별도 명령으로 남는다.
 
 재사용할 것도 있다. `stepOnce`, `Engine`의 `divN` / `cmp` / `absLog10`, strategy snapshot/restore, `deepClonePreservingPrototype`, `eventBuffer`, `OUTPUT_CONTRACT_VERSION`, Sampo, compat, replay, KPI gate.
 
