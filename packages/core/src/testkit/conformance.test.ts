@@ -151,7 +151,7 @@ function thresholdScenario(stepSec: number): CompiledScenario<number, UnitCode, 
  * @evidence ./conformance.ts#conformanceGeneratorVersion Reads generator version 1 from the shrink report and from this export.
  * @evidenceReview ./conformance.ts#conformanceGeneratorVersion #80e01c8 The declaration is the number 1. The shrink report stores that same generatorVersion.
  * @evidence ./conformanceRun.ts#checkReplay Replays the constant-income scenario through the harness.
- * @evidenceReview ./conformanceRun.ts#checkReplay #6a8d862 checkReplay applies to the constant-income scenario at rate 3, duration 4, and step 1. A run that completes no step does not apply.
+ * @evidenceReview ./conformanceRun.ts#checkReplay #f57d5ea checkReplay applies to the constant-income scenario at rate 3, duration 4, and step 1. A run that completes no step does not apply.
  * @evidence ./conformanceRun.ts#demonstrateShrinkGap Builds the shrink-gap report whose value is 1 and whose testSeed is 0xd101.
  * @evidenceReview ./conformanceRun.ts#demonstrateShrinkGap #e31f17f Builds the shrink-gap report whose value is 1 and whose testSeed is 0xd101.
  * @evidence ./conformanceRun.ts#replayShrinkReport Replays the saved report and expects the path to fail closed at 1.
@@ -793,6 +793,38 @@ export function recordsWalletAndMaxMoneyUnitsOnTheEconomySnapshot(): void {
   });
   expect(observedSymbol).not.toBe(plainSymbol);
   expect(observedSymbol).toContain("Symbol(observed)");
+  const repeatedSymbol = Symbol("x");
+  const firstSymbolSnap = snapshotEconomy(engine, {
+    ...gemState,
+    vars: { buys: 1, tag: repeatedSymbol } as unknown as Vars,
+  });
+  const secondSymbolSnap = snapshotEconomy(engine, {
+    ...gemState,
+    vars: { buys: 1, tag: Symbol("x") } as unknown as Vars,
+  });
+  const sameSymbolSnap = snapshotEconomy(engine, {
+    ...gemState,
+    vars: { buys: 1, tag: repeatedSymbol } as unknown as Vars,
+  });
+  expect(firstSymbolSnap).not.toBe(secondSymbolSnap);
+  expect(firstSymbolSnap).toBe(sameSymbolSnap);
+  class FrozenVars {
+    constructor(readonly marker: number) {}
+    toJSON(): { marker: number } {
+      return { marker: 0 };
+    }
+  }
+  const frozenOne = snapshotEconomy(engine, {
+    ...gemState,
+    vars: new FrozenVars(1) as unknown as Vars,
+  });
+  const frozenTwo = snapshotEconomy(engine, {
+    ...gemState,
+    vars: new FrozenVars(2) as unknown as Vars,
+  });
+  expect(frozenOne).not.toBe(frozenTwo);
+  expect(frozenOne).toContain("1");
+  expect(frozenTwo).toContain("2");
   const observedFn = snapshotEconomy(engine, {
     ...gemState,
     vars: { buys: 1, fn: () => "observed" } as unknown as Vars,
@@ -854,7 +886,7 @@ export function recordsWalletAndMaxMoneyUnitsOnTheEconomySnapshot(): void {
  * @evidence docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness An on-grid checkpoint replays from memory and from JSON, and independent trials are compared by game seed.
  * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #a195f0e Re-read the section, then ran this function: memory resume, JSON resume, and the JSON round-trip apply, and the two game seeds stay ordered.
  * @evidence ./conformanceRun.ts#checkJsonRoundTrip The constant-income scenario matches after a JSON round trip, and the restored wallet and max-money units are the scenario unit when the codes match.
- * @evidenceReview ./conformanceRun.ts#checkJsonRoundTrip #dc57e3c Re-read the function: it restores the strategy around the run, accepts a dense array and an empty array, rejects shared refs, symbol keys, non-enumerable names, sparse holes, frozen data, non-extensible objects and arrays, a non-writable array length, a nonstandard array prototype, and enumerable getters before stringify, and the constant-income round trip matches. A restored unit that shares the scenario code must be the scenario unit object. A vars object that also appears on the wallet, max-money, or prestige graph is inapplicable. When the run stores one object as both wallet money and max-money, the restored checkpoint keeps that same object. Ran this function: the dense round trip passed, and the sparse, frozen, non-extensible, locked-length, custom-prototype, and getter round trips did not.
+ * @evidenceReview ./conformanceRun.ts#checkJsonRoundTrip #2b25391 Re-read the function: it restores the strategy around the run, accepts a dense array and an empty array, rejects shared refs, symbol keys, non-enumerable names, sparse holes, frozen data, non-extensible objects and arrays, a non-writable array length, a nonstandard array prototype, and enumerable getters before stringify, and the constant-income round trip matches. A restored unit that shares the scenario code must be the scenario unit object. A vars object that also appears on the wallet, max-money, or prestige graph is inapplicable. The round trip matches economy snapshot strings, so wallet money and max-money may deserialize as distinct objects. Ran this function: the dense round trip passed, and the sparse, frozen, non-extensible, locked-length, custom-prototype, and getter round trips did not.
  * @evidence ./conformanceRun.ts#checkTrialOrder Two distinct game seeds keep distinct economy snapshots. Fewer than two distinct seeds does not apply.
  * @evidenceReview ./conformanceRun.ts#checkTrialOrder #1b0de3d Two game seeds keep ordered snapshots. Fewer than two distinct seeds skips the check. A reversed list that repeats the same call order skips the check. This run uses a seed-dependent income rate, and the two economy snapshots differ.
  */
@@ -1460,7 +1492,26 @@ describe("counterexample report", () => {
           tickSchedule: null,
         }),
       }),
-    ).toThrow(/"NaN"[\s\S]*Symbol\(observed\)[\s\S]*\[undefined\][\s\S]*\[function named\]/);
+    ).toThrow(
+      /"~idlekit": "nan"[\s\S]*Symbol\(observed\)[\s\S]*"~idlekit": "undefined"[\s\S]*"~idlekit": "function"[\s\S]*"value": "named"/,
+    );
+    expect(() =>
+      expectProperty({
+        predicateId: "json-text",
+        testSeed: 12,
+        cases: 1,
+        generate: () => ({ n: "NaN", z: "-0", u: "[undefined]", f: "[function named]" }),
+        shrink: () => [],
+        predicate: () => false,
+        describeCase: () => ({
+          gameSeed: null,
+          engineId: null,
+          modelId: null,
+          strategyId: null,
+          tickSchedule: null,
+        }),
+      }),
+    ).toThrow(/"NaN"[\s\S]*"-0"[\s\S]*"\[undefined\]"[\s\S]*"\[function named\]"/);
   });
 
   it("reports a generator throw with the seed and case index", () => {
@@ -1573,6 +1624,19 @@ describe("PR-05 observation retention", () => {
     expect(retained.ok).toBe(true);
     expect(retained.applicable).toBe(false);
     expect(retentionCalls).toBe(0);
+    let replayCalls = 0;
+    const replayWatched = checkReplay({
+      ...scenario,
+      ctx: {
+        ...scenario.ctx,
+        emit: () => {
+          replayCalls += 1;
+        },
+      },
+    });
+    expect(replayWatched.ok).toBe(true);
+    expect(replayWatched.applicable).toBe(false);
+    expect(replayCalls).toBe(0);
     const lossyObserver = checkObserver({
       ...scenario,
       model: {

@@ -2513,9 +2513,9 @@ const TEST_VALUE_FLAGS = new Set([
   "--timeout",
 ]);
 
-const BLOCKED_TEST_FLAGS = new Set(["--watch", "-u", "--update-snapshots"]);
+const BLOCKED_TEST_FLAGS = new Set(["--watch", "-u", "--update-snapshots", "--cwd"]);
 
-/** Flags that hang the evidence run or rewrite snapshots while reporting a pass. */
+/** Flags that hang the run, rewrite snapshots, or move Bun to another cwd. */
 export function blockedTestArgs(args: readonly string[]): string | undefined {
   let patterns = false;
   for (const arg of args) {
@@ -3480,6 +3480,9 @@ export async function checkInventory(projectRoot = root): Promise<string[]> {
           failures,
           `${requirement.id} suite title contains the JUnit separator: ${ambiguous.join(", ")}`,
         );
+      }
+      if (commandSources.some((source) => unresolvedRunnerCalls(source).length > 0)) {
+        fail(failures, `${requirement.id} has a registration call that is not the test runner`);
       }
       if (duplicateFullNamesAcross(commandSources).includes(test.registeredAs)) {
         fail(failures, `${requirement.id} registers ${test.registeredAs} more than once`);
