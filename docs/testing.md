@@ -28,11 +28,17 @@ bun run bench:sim
 bun run bench:sim:suite
 bun run bench:sim:check
 bun run bench:sim:suite:check
+bun run bench:planner -- --runtime-ms 100,200 --workload 30
+bun run bench:monte-carlo -- --runtime-ms 100,200 --draws 1000 --workload 30
 bun run kpi:report
 bun run kpi:regress
 bun run tune:regress --baseline ./tmp/tune-baseline.json --current ./tmp/tune-latest.json --tolerance 0.05
 bun tools/analysis-baseline-check.ts
 ```
+
+## Performance budgets
+
+`bench:sim:check` scores the short representative scenario with trace off. The mean and p95 are runtime samples. Compiler prepare is a separate phase and is not steps/sec. A gate failure needs enough repeats, a relative slowdown, and an absolute median floor. A failure does not rewrite the baseline. The long corpus is `bench:sim:suite:check` on the scheduled workflow `.github/workflows/performance-corpus.yml`. `kpi:report` and `kpi:regress` stay the economic gate. See [Performance budgets](./performance-budget.md).
 
 ## Test runtime rules
 

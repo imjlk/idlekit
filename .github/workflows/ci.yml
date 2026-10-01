@@ -110,11 +110,8 @@ jobs:
       - name: Release Dry Run
         run: bun run release:dry-run
 
-      - name: Perf Check (simulate benchmark)
+      - name: Perf Check (representative benchmark)
         run: bun run bench:sim:check
-
-      - name: Perf Check (simulate benchmark suite)
-        run: bun run bench:sim:suite:check
 
       - name: Template Governance Check
         run: bun run templates:check

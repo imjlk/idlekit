@@ -36,6 +36,7 @@ const DOCS_WITH_KO = [
   "docs/growth-classification.md",
   "docs/analyzer-registry.md",
   "docs/scenario-inspect.md",
+  "docs/performance-budget.md",
   "examples/adapter-pattern/README.md",
   "examples/money-package/README.md",
   "examples/plugins/README.md",
