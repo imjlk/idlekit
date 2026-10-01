@@ -463,6 +463,12 @@ try {
   const htmlScript = headingAnchors(
     "<script>\n\n## Example {#example}\n</script>\n## Kept {#kept}\n",
   );
+  const quotedHtml = headingAnchors(
+    "> <div>\n> ## Example {#example}\n> </div>\n\n## Kept {#kept}\n",
+  );
+  const listedHtml = headingAnchors(
+    "- <div>\n- ## Example {#example}\n- </div>\n\n## Kept {#kept}\n",
+  );
   const quotedHeading = headingAnchors("> ## Requirement {#req-id}\n## Kept {#kept}\n");
   const listedHeading = headingAnchors("- ## Listed {#listed}\n## Kept {#kept}\n");
   const commentCloser = headingAnchors("<!--\n`-->`\n## Kept {#kept}\n");
@@ -482,6 +488,10 @@ try {
     htmlEnded[0] === "example" &&
     htmlScript.length === 1 &&
     htmlScript[0] === "kept" &&
+    quotedHtml.length === 1 &&
+    quotedHtml[0] === "kept" &&
+    listedHtml.length === 1 &&
+    listedHtml[0] === "kept" &&
     quotedHeading.length === 2 &&
     quotedHeading[0] === "req-id" &&
     quotedHeading[1] === "kept" &&
@@ -743,6 +753,20 @@ try {
   ].join("\n");
   const focusedNames = duplicateFullNames(focusedBody);
   const focusedCallback = registeredSuites(focusedBody, "otherName", "quota is documented");
+  const templateBody = [
+    "describe(`kept`, () => {",
+    '  if (false) it("quota is documented", exportedName);',
+    "  it(`quota is documented`, unrelated);",
+    "});",
+  ].join("\n");
+  const templateNames = duplicateFullNames(templateBody);
+  const templateSuites = registeredSuites(templateBody, "unrelated", "quota is documented");
+  const interpolated = registeredSuites(
+    "it(`quota ${name}`, exportedName);",
+    "exportedName",
+    "quota is documented",
+  );
+  const unclosedNames = duplicateFullNames("it(`quota is documented, exportedName);");
   const duplicateOk =
     duplicateNames.length === 1 &&
     duplicateNames[0] === "kept > quota is documented" &&
@@ -752,7 +776,13 @@ try {
     commentIgnored &&
     focusedNames.length === 1 &&
     focusedNames[0] === "kept > quota is documented" &&
-    focusedCallback.length === 1;
+    focusedCallback.length === 1 &&
+    templateNames.length === 1 &&
+    templateNames[0] === "kept > quota is documented" &&
+    templateSuites.length === 1 &&
+    templateSuites[0]?.join(" > ") === "kept" &&
+    interpolated.length === 0 &&
+    unclosedNames.length === 0;
   record(
     "duplicate-title",
     "zero",
@@ -855,6 +885,11 @@ try {
     ".",
     ["src/example.test.ts"],
   );
+  const directoryPattern = uninventoriedCommandTargets(
+    ["test", "src/example.test.ts", "src"],
+    ".",
+    ["src/example.test.ts"],
+  );
   const reporterArgs = junitReporterArgs(["test", "--", "src/example.test.ts"], "out.xml");
   const reporterAt = reporterArgs.indexOf("--reporter=junit");
   const separatorAt = reporterArgs.indexOf("--");
@@ -865,6 +900,8 @@ try {
     onlyTarget.length === 0 &&
     preloaded.length === 0 &&
     preloadedEq.length === 0 &&
+    directoryPattern.length === 1 &&
+    directoryPattern[0] === "src" &&
     reporterAt >= 0 &&
     separatorAt > reporterAt &&
     reporterArgs.at(-1) === "src/example.test.ts";
@@ -955,8 +992,70 @@ try {
     "export default async function quotaHost() {\n  return 3;\n}\n",
   );
   const hiddenExport = hasProductionExport("function quotaHost() {\n  return 3;\n}\n");
+  const classCites = productionFileCites(
+    [
+      "export class QuotaHost {",
+      "  /** @evidence docs/spec.md#quota */",
+      "  readonly marker = 1;",
+      "}",
+    ].join("\n"),
+    "docs/spec.md",
+    "quota",
+  );
+  const interfaceCites = productionFileCites(
+    [
+      "export interface QuotaHost {",
+      "  /** @evidence docs/spec.md#quota */",
+      "  marker: number;",
+      "}",
+    ].join("\n"),
+    "docs/spec.md",
+    "quota",
+  );
+  const localClass = productionFileCites(
+    [
+      "class QuotaHost {",
+      "  /** @evidence docs/spec.md#quota */",
+      "  marker = 1;",
+      "}",
+    ].join("\n"),
+    "docs/spec.md",
+    "quota",
+  );
+  const privateField = productionFileCites(
+    [
+      "export class QuotaHost {",
+      "  /** @evidence docs/spec.md#quota */",
+      "  private marker = 1;",
+      "}",
+    ].join("\n"),
+    "docs/spec.md",
+    "quota",
+  );
+  const nestedAssignment = productionFileCites(
+    [
+      "export class QuotaHost {",
+      "  method(): void {",
+      "    /** @evidence docs/spec.md#quota */",
+      "    marker = 1;",
+      "  }",
+      "}",
+    ].join("\n"),
+    "docs/spec.md",
+    "quota",
+  );
   const citeOk =
-    functionCites && constCites && !typeCites && defaultCites && defaultExport && !hiddenExport;
+    functionCites &&
+    constCites &&
+    !typeCites &&
+    defaultCites &&
+    defaultExport &&
+    !hiddenExport &&
+    classCites &&
+    interfaceCites &&
+    !localClass &&
+    !privateField &&
+    !nestedAssignment;
   record(
     "production-citation-kind",
     "zero",
