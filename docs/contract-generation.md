@@ -19,7 +19,7 @@ The installed export is `typia.json.schema` from typia `14.0.6`, OpenAPI `3.1`. 
 
 ## What is registered
 
-`contractRegistry` in `packages/core/src/scenario/scenarioContract.ts` lists `idlekit.scenario.v1` and `idlekit.analysis.artifact.v1`. `PR-09` appends `idlekit.eta.estimate.v1` from `typia.json.schema<EtaEstimateV1, "3.1">()`. `PR-10` appends `idlekit.reset-cycle.v1` from `typia.json.schema<ResetCycleArtifactV1, "3.1">()`. The analysis entry is `typia.json.schema<AnalysisArtifactV1, "3.1">()`. Do not point that list at every legacy output schema. CLI output schemas under `docs/schemas/*.output.schema.json` stay handwritten. `eta.output.schema.json` stays handwritten. Replay `artifact.v1.schema.json` is not this contract.
+`contractRegistry` in `packages/core/src/scenario/scenarioContract.ts` lists `idlekit.scenario.v1` and `idlekit.analysis.artifact.v1`. `PR-09` appends `idlekit.eta.estimate.v1` from `typia.json.schema<EtaEstimateV1, "3.1">()`. `PR-10` appends `idlekit.reset-cycle.v1` from `typia.json.schema<ResetCycleArtifactV1, "3.1">()`. `PR-12` appends `idlekit.growth-fit.v1` from `typia.json.schema<GrowthFitArtifactV1, "3.1">()`. The analysis entry is `typia.json.schema<AnalysisArtifactV1, "3.1">()`. Do not point that list at every legacy output schema. CLI output schemas under `docs/schemas/*.output.schema.json` stay handwritten. `eta.output.schema.json` stays handwritten. Replay `artifact.v1.schema.json` is not this contract.
 
 `scenario.v1.fields.json` is names, const values, and descriptions copied from the generated schema. Design intent, example numbers, and Korean text stay in authored docs.
 

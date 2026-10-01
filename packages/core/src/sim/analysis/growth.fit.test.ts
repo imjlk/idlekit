@@ -1,0 +1,434 @@
+import { readFileSync } from "fs";
+import { resolve } from "path";
+import { describe, expect, it } from "bun:test";
+import { createBreakInfinityEngine, createNumberEngine, type Decimal } from "../../engine/breakInfinity";
+import { runScenario } from "../simulator";
+import type { CompiledScenario, Model, RunResult, SimState } from "../types";
+import { analyzeGrowth } from "./growth";
+import {
+  fitGrowth,
+  fitGrowthFromRun,
+  growthDomainNotDisguised,
+  growthFitAlgorithmVersion,
+  growthFitJsonSchema,
+  growthFitSchemaId,
+  growthFitSlopeTolerance,
+  growthLegacyObservationPreserved,
+  growthShapeIndependentOfSpeed,
+  validateGrowthFitArtifact,
+  type GrowthFitArtifactV1,
+  type GrowthSamplingContract,
+  type GrowthSampleInput,
+} from "./growthFit";
+
+
+/*
+ * PR-12 inventory host. The analyzeGrowth cases stay in growth.test.ts, whose printf-titled
+ * it.each row is not a static runner registration.
+ */
+
+type UnitCode = "COIN";
+type Vars = { owned: number };
+type CaseSpec = {
+  id: string;
+  kind: "exponential" | "power" | "linear" | "exp-quadratic" | "saturating" | "constant" | "reset-drop";
+  k?: number;
+  c?: number;
+  power?: number;
+  intercept?: number;
+  slope?: number;
+  limit?: number;
+  value?: number;
+  scale?: number;
+  split?: number;
+  scaleLog10?: number;
+  engine?: "breakInfinity";
+  t0?: number;
+  t1?: number;
+  step?: number;
+  times?: number[];
+  simulate?: boolean;
+};
+
+const fixture = JSON.parse(
+  readFileSync(resolve(import.meta.dir, "../../../../../fixtures/conformance/growth-shapes.json"), "utf8"),
+) as {
+  windowSec: number;
+  samplingBudget: number;
+  slopeTolerance: number;
+  cases: CaseSpec[];
+};
+
+function sampling(windowSec = fixture.windowSec, cadenceSec?: number): GrowthSamplingContract {
+  return {
+    samplingBudget: fixture.samplingBudget,
+    method: "growth-fit-v1",
+    methodVersion: 1,
+    windowSec,
+    ...(cadenceSec !== undefined ? { cadenceSec } : {}),
+  };
+}
+
+function makeState(t: number, money: number, owned = 0): SimState<number, UnitCode, Vars> {
+  return {
+    t,
+    wallet: { money: { unit: { code: "COIN" }, amount: money }, bucket: 0 },
+    maxMoneyEver: { unit: { code: "COIN" }, amount: money },
+    prestige: { count: 0, points: 0, multiplier: 1 },
+    vars: { owned },
+  };
+}
+
+function timesOf(spec: CaseSpec): number[] {
+  if (spec.times) return spec.times;
+  const start = spec.t0 ?? 0;
+  const end = spec.t1 ?? start;
+  const step = spec.step ?? 1;
+  const times: number[] = [];
+  for (let t = start; t <= end + 1e-9; t += step) times.push(t);
+  return times;
+}
+
+function formula(spec: CaseSpec, t: number): number {
+  if (spec.kind === "exponential") return Math.exp((spec.k ?? 0) * t);
+  if (spec.kind === "power") return (t + 1) ** (spec.power ?? 2);
+  if (spec.kind === "linear") return (spec.intercept ?? 0) + (spec.slope ?? 0) * t;
+  if (spec.kind === "exp-quadratic") return Math.exp((spec.c ?? 0) * t * t);
+  if (spec.kind === "saturating") return (spec.limit ?? 1) * (1 - Math.exp(-(spec.k ?? 0) * t));
+  if (spec.kind === "constant") return spec.value ?? 0;
+  if (spec.kind === "reset-drop") {
+    const split = spec.split ?? 0;
+    if (t <= split) return Math.exp((spec.k ?? 0) * t);
+    return (spec.scale ?? 1) * Math.exp((spec.k ?? 0) * (t - split));
+  }
+  return 0;
+}
+
+function samplesFor(spec: CaseSpec): GrowthSampleInput<number>[] {
+  return timesOf(spec).map((t) => ({ t, amount: formula(spec, t) }));
+}
+
+function largeSamples(spec: CaseSpec): GrowthSampleInput<Decimal>[] {
+  const E = createBreakInfinityEngine();
+  return timesOf(spec).map((t) => {
+    const log10 = (spec.scaleLog10 ?? 0) + ((spec.k ?? 0) * t) / Math.LN10;
+    return { t, amount: E.from(`1e${log10}`) };
+  });
+}
+
+function fitSpec(spec: CaseSpec, windowSec = fixture.windowSec): GrowthFitArtifactV1 {
+  if (spec.engine === "breakInfinity") {
+    return fitGrowth({
+      E: createBreakInfinityEngine(),
+      samples: largeSamples(spec),
+      seriesRequested: "money",
+      valueSource: "money",
+      sampling: sampling(windowSec),
+      softcap: "absent",
+    });
+  }
+  return fitGrowth({
+    E: createNumberEngine(),
+    samples: samplesFor(spec),
+    seriesRequested: "money",
+    valueSource: "money",
+    sampling: sampling(windowSec),
+    softcap: "absent",
+  });
+}
+
+function caseById(id: string): CaseSpec {
+  const found = fixture.cases.find((item) => item.id === id);
+  if (!found) throw new Error(`missing growth fixture ${id}`);
+  return found;
+}
+
+function onlyWindow(artifact: GrowthFitArtifactV1) {
+  expect(artifact.windows.length).toBe(1);
+  return artifact.windows[0]!;
+}
+
+function model(income: number, evolve?: Model<number, UnitCode, Vars>["evolve"], analytic?: Model<number, UnitCode, Vars>["analytic"]): Model<number, UnitCode, Vars> {
+  return {
+    id: "growth-fixture",
+    version: 1,
+    income: () => ({ unit: { code: "COIN" }, amount: income }),
+    actions: () => [],
+    ...(evolve ? { evolve } : {}),
+    ...(analytic ? { analytic } : {}),
+  };
+}
+
+function scenarioFor(amount: number, durationSec: number, next: Model<number, UnitCode, Vars>): CompiledScenario<number, UnitCode, Vars> {
+  const E = createNumberEngine();
+  return {
+    ctx: { E, unit: { code: "COIN" }, tickPolicy: { mode: "drop" } },
+    model: next,
+    initial: makeState(0, amount),
+    run: { stepSec: 1, durationSec, trace: { everySteps: 1, keepActionsLog: false } },
+  };
+}
+
+function simulate(spec: CaseSpec): RunResult<number, UnitCode, Vars> {
+  const evolve: Model<number, UnitCode, Vars>["evolve"] = (_ctx, state, dt) => {
+    const t = state.t + dt;
+    return {
+      ...state,
+      wallet: { ...state.wallet, money: { unit: { code: "COIN" }, amount: formula(spec, t) } },
+      maxMoneyEver: { unit: { code: "COIN" }, amount: formula(spec, t) },
+    };
+  };
+  const compiled = scenarioFor(formula(spec, 0), spec.t1 ?? 0, model(0, evolve));
+  return runScenario(compiled);
+}
+
+/**
+ * @evidence docs/requirements/active/growth-model-classification.md#req-pr12-shape-speed Slow and fast exponentials match in shape, and the other formulas do not.
+ * @evidenceReview docs/requirements/active/growth-model-classification.md#req-pr12-shape-speed #acbd473 Re-read the section: both exponentials are exponential, and a short trace is unknown.
+ * @evidence ./growthFit.ts#growthShapeIndependentOfSpeed Reads the shape contract id.
+ * @evidenceReview ./growthFit.ts#growthShapeIndependentOfSpeed #311b592 The declaration is shape-independent-of-log-slope.
+ * @evidence ./growthFit.ts#validateGrowthFitArtifact Runs the generated validator.
+ * @evidenceReview ./growthFit.ts#validateGrowthFitArtifact #c0e6c97 The arrow builds typia.createValidate of GrowthFitArtifactV1 on first call and reuses it.
+ * @evidence ./growthFit.ts#growthFitJsonSchema Reads the generated schema.
+ * @evidenceReview ./growthFit.ts#growthFitJsonSchema #ff8650e The function memoizes typia.json.schema of GrowthFitArtifactV1.
+ * @evidence ./growthFit.ts#fitGrowth Fits slow, fast, and softcap-configured literal series.
+ * @evidenceReview ./growthFit.ts#fitGrowth #968cc16 The function keeps amounts in the Engine until log10, evenly reduces to the sampling budget, splits windows at sign changes and drops, and classifies each slice.
+ * @evidence ./growthFit.ts#fitGrowthFromRun Fits executed runs of the slow and fast models.
+ * @evidenceReview ./growthFit.ts#fitGrowthFromRun #c7ef04c The function reads the trace or start and end, marks action and prestige count changes as breaks, uses netWorthFallback without a model netWorth, and calls fitGrowth.
+ * @evidence ./growthFit.ts#growthFitSchemaId Reads the growth fit schema id.
+ * @evidenceReview ./growthFit.ts#growthFitSchemaId #5247d65 The function returns the growth.fit.v1 schema URL constant.
+ * @evidence ./growthFit.ts#growthFitAlgorithmVersion Reads the algorithm version on the artifact.
+ * @evidenceReview ./growthFit.ts#growthFitAlgorithmVersion #af32797 The function returns the growth-fit-v1 constant.
+ * @evidence ./growthFit.ts#growthFitSlopeTolerance Bounds the fitted slopes against the generating rates.
+ * @evidenceReview ./growthFit.ts#growthFitSlopeTolerance #a83b3c7 The function returns the 1e-4 slope tolerance constant.
+ */
+export function separatesShapeFromSpeed(): void {
+  expect(growthShapeIndependentOfSpeed).toBe("shape-independent-of-log-slope");
+  expect(growthFitJsonSchema().version).toBe("3.1");
+  const slow = fitSpec(caseById("slow-exp"));
+  const fast = fitSpec(caseById("fast-exp"));
+  expect(validateGrowthFitArtifact(slow).success).toBe(true);
+  expect(validateGrowthFitArtifact(fast).success).toBe(true);
+  expect(growthFitSchemaId()).toBe("https://idlekit.dev/schemas/growth.fit.v1.schema.json");
+  expect(slow.algorithmVersion).toBe(growthFitAlgorithmVersion());
+  expect(growthFitSlopeTolerance()).toBe(1e-4);
+  const slowWindow = onlyWindow(slow);
+  const fastWindow = onlyWindow(fast);
+  expect(slowWindow.shape).toBe("exponential");
+  expect(fastWindow.shape).toBe("exponential");
+  expect(slowWindow.speed.logSlopePerSec).not.toBe(fastWindow.speed.logSlopePerSec);
+  expect(slowWindow.legacySpeedBucket).toBe("softcap");
+  expect(fastWindow.legacySpeedBucket).toBe("exp");
+  expect(Math.abs((slowWindow.speed.logSlopePerSec ?? 0) - 0.001 / Math.LN10)).toBeLessThan(growthFitSlopeTolerance());
+  expect(Math.abs((fastWindow.speed.logSlopePerSec ?? 0) - 0.2 / Math.LN10)).toBeLessThan(growthFitSlopeTolerance());
+  expect(slow.method).toBe("heuristic-fit");
+  expect(slow.algorithmVersion).toBe("growth-fit-v1");
+  expect(slow.fitWindow.windowSec).toBe(fixture.windowSec);
+  expect(slow.sampleCount).toBeGreaterThanOrEqual(8);
+  expect(slowWindow.residual.rmse).not.toBeNull();
+  expect(slow.claimsResourceBottleneck).toBe(false);
+
+  expect(onlyWindow(fitSpec(caseById("polynomial-power"))).shape).toBe("polynomial");
+  expect(onlyWindow(fitSpec(caseById("polynomial-linear"))).shape).toBe("polynomial");
+  expect(onlyWindow(fitSpec(caseById("accelerating"))).shape).toBe("accelerating-log");
+  expect(onlyWindow(fitSpec(caseById("saturating"))).shape).toBe("saturating");
+  expect(onlyWindow(fitSpec(caseById("constant"))).shape).toBe("constant");
+  const short = fitSpec(caseById("short-exp"));
+  expect(onlyWindow(short).shape).toBe("unknown");
+  expect(short.status).toBe("insufficient-data");
+
+  const slowRun = simulate(caseById("slow-exp"));
+  const fastRun = simulate(caseById("fast-exp"));
+  const linearRun = simulate(caseById("polynomial-linear"));
+  const slowFit = fitGrowthFromRun({
+    run: slowRun,
+    series: "money",
+    scenario: scenarioFor(1, 80, model(0)),
+    sampling: sampling(),
+    softcap: "absent",
+  });
+  expect(onlyWindow(slowFit).shape).toBe("exponential");
+  expect(onlyWindow(fitGrowthFromRun({
+    run: fastRun,
+    series: "money",
+    scenario: scenarioFor(1, 80, model(0)),
+    sampling: sampling(),
+  })).shape).toBe("exponential");
+  expect(onlyWindow(fitGrowthFromRun({
+    run: linearRun,
+    series: "money",
+    scenario: scenarioFor(10, 60, model(0)),
+    sampling: sampling(60),
+  })).shape).toBe("polynomial");
+  const legacySlow = analyzeGrowth({ run: slowRun, series: "money", windowSec: 80 });
+  expect(legacySlow.segments.length).toBeGreaterThan(1);
+  expect(legacySlow.segments.every((segment) => segment.regime === "softcap")).toBe(true);
+  const configured = fitGrowth({
+    E: createNumberEngine(),
+    samples: samplesFor(caseById("slow-exp")),
+    seriesRequested: "money",
+    valueSource: "money",
+    sampling: sampling(),
+    softcap: "configured",
+  });
+  expect(configured.softcap).toBe("configured");
+  expect(onlyWindow(configured).shape).toBe("exponential");
+  expect(configured.warnings.some((warning) => warning.includes("configured softcap"))).toBe(true);
+}
+
+/**
+ * @evidence docs/requirements/active/growth-model-classification.md#req-pr12-scale-domain Huge rescaled series match. Refused domains do not become stall or super-exp.
+ * @evidenceReview docs/requirements/active/growth-model-classification.md#req-pr12-scale-domain #38e5c42 Re-read the section: the 1e400 slope matches the rescaled slope, and a drop is split.
+ * @evidence ./growthFit.ts#growthDomainNotDisguised Reads the domain contract id.
+ * @evidenceReview ./growthFit.ts#growthDomainNotDisguised #cb12cc1 The declaration is non-positive-and-discontinuity-are-not-speed.
+ */
+export function refusesDisguisedDomains(): void {
+  expect(growthDomainNotDisguised).toBe("non-positive-and-discontinuity-are-not-speed");
+  const large = fitSpec(caseById("large-exp"), 40);
+  const scaled = fitSpec(caseById("large-exp-rescaled"), 40);
+  expect(onlyWindow(large).shape).toBe("exponential");
+  expect(onlyWindow(scaled).shape).toBe(onlyWindow(large).shape);
+  expect(
+    Math.abs((onlyWindow(large).speed.logSlopePerSec ?? 0) - (onlyWindow(scaled).speed.logSlopePerSec ?? 0)),
+  ).toBeLessThan(fixture.slopeTolerance);
+  expect(createBreakInfinityEngine().absLog10(largeSamples(caseById("large-exp"))[0]!.amount)).toBeGreaterThan(300);
+
+  const coarse = fitSpec(caseById("coarse-exp"));
+  const fine = fitSpec(caseById("fast-exp"));
+  expect(onlyWindow(coarse).shape).toBe("exponential");
+  expect(
+    Math.abs((onlyWindow(coarse).speed.logSlopePerSec ?? 0) - (onlyWindow(fine).speed.logSlopePerSec ?? 0)),
+  ).toBeLessThan(fixture.slopeTolerance);
+
+  const zero = fitSpec(caseById("zero"));
+  const negative = fitSpec(caseById("negative"));
+  const single = fitSpec(caseById("single"));
+  expect(onlyWindow(zero).domain).toBe("zero");
+  expect(onlyWindow(zero).shape).toBe("unknown");
+  expect(onlyWindow(zero).legacySpeedBucket).toBeNull();
+  expect(zero.status).toBe("invalid");
+  expect(onlyWindow(negative).domain).toBe("negative");
+  expect(onlyWindow(negative).shape).toBe("unknown");
+  expect(negative.status).toBe("invalid");
+  expect(single.status).toBe("insufficient-data");
+  expect(onlyWindow(single).shape).toBe("unknown");
+  for (const artifact of [zero, negative, single]) {
+    expect(artifact.claimsResourceBottleneck).toBe(false);
+    expect(JSON.stringify(artifact.windows)).not.toContain("stall");
+    expect(JSON.stringify(artifact.windows)).not.toContain("super-exp");
+  }
+
+  const irregular = fitSpec(caseById("irregular-exp"));
+  expect(irregular.irregular).toBe(true);
+  expect(onlyWindow(irregular).shape).toBe("exponential");
+  expect(onlyWindow(irregular).legacySpeedBucket).not.toBe("super-exp");
+  expect(onlyWindow(irregular).legacySpeedBucket).not.toBe("stall");
+
+  const reset = fitSpec(caseById("reset-drop"));
+  expect(reset.windows.length).toBe(2);
+  expect(reset.windows.every((window) => window.shape === "exponential")).toBe(true);
+  expect(reset.windows.every((window) => window.legacySpeedBucket !== "super-exp" && window.legacySpeedBucket !== "stall")).toBe(true);
+  expect(reset.windows[1]?.discontinuity).toBe("drop");
+  const resetRun = simulate(caseById("reset-drop"));
+  const resetFit = fitGrowthFromRun({
+    run: resetRun,
+    series: "money",
+    scenario: scenarioFor(1, 80, model(0)),
+    sampling: sampling(),
+  });
+  expect(resetFit.windows.length).toBe(2);
+  expect(resetFit.windows.every((window) => window.shape === "exponential")).toBe(true);
+
+  const purchased = fitGrowth({
+    E: createNumberEngine(),
+    samples: samplesFor(caseById("fast-exp")),
+    seriesRequested: "money",
+    valueSource: "money",
+    sampling: sampling(),
+    discontinuities: [{ t: 40, kind: "purchase" }],
+  });
+  expect(purchased.windows.length).toBe(2);
+  expect(purchased.windows.every((window) => window.shape === "exponential")).toBe(true);
+  expect(purchased.windows[1]?.discontinuity).toBe("purchase");
+
+  const cadence = fitGrowth({
+    E: createNumberEngine(),
+    samples: samplesFor(caseById("fast-exp")),
+    seriesRequested: "money",
+    valueSource: "money",
+    sampling: sampling(80, 80),
+  });
+  expect(cadence.cadenceCoarserThanWindow).toBe(true);
+  expect(cadence.status).toBe("insufficient-data");
+  expect(onlyWindow(cadence).shape).toBe("unknown");
+
+  const retained = fitGrowth({
+    E: createNumberEngine(),
+    samples: samplesFor(caseById("short-exp")),
+    seriesRequested: "money",
+    valueSource: "money",
+    sampling: sampling(),
+    retention: { totalSeen: 80, retained: 7, dropped: 73 },
+  });
+  expect(retained.status).toBe("insufficient-data");
+  expect(retained.warnings.some((warning) => warning.includes("retained trace"))).toBe(true);
+  expect(onlyWindow(retained).shape).toBe("unknown");
+}
+
+/**
+ * @evidence docs/requirements/active/growth-model-classification.md#req-pr12-legacy-preserved netWorthFallback remains, and the legacy regime is not rewritten.
+ * @evidenceReview docs/requirements/active/growth-model-classification.md#req-pr12-legacy-preserved #1355aa0 Re-read the section: the net-worth fixture still names netWorth, and a missing net worth falls back.
+ * @evidence ./growthFit.ts#growthLegacyObservationPreserved Reads the legacy contract id.
+ * @evidenceReview ./growthFit.ts#growthLegacyObservationPreserved #dfb88c0 The declaration is legacy-report-and-net-worth-fallback.
+ */
+export function preservesLegacyNetWorthFallback(): void {
+  expect(growthLegacyObservationPreserved).toBe("legacy-report-and-net-worth-fallback");
+  const E = createNumberEngine();
+  const withWorth: Model<number, UnitCode, Vars> = {
+    id: "m",
+    version: 1,
+    income: () => ({ unit: { code: "COIN" }, amount: 0 }),
+    actions: () => [],
+    netWorth: (_ctx, state) => ({ unit: { code: "COIN" }, amount: state.wallet.money.amount + state.vars.owned * 100 }),
+  };
+  const compiled: CompiledScenario<number, UnitCode, Vars> = {
+    ctx: { E, unit: { code: "COIN" }, tickPolicy: { mode: "drop" } },
+    model: withWorth,
+    initial: makeState(0, 10, 0),
+    run: { stepSec: 1, durationSec: 2 },
+  };
+  const run: RunResult<number, UnitCode, Vars> = {
+    start: makeState(0, 10, 0),
+    end: makeState(2, 20, 2),
+    events: [],
+    trace: [makeState(0, 10, 0), makeState(1, 15, 1), makeState(2, 20, 2)],
+  };
+  const legacy = analyzeGrowth({ run, scenario: compiled, series: "netWorth", windowSec: 60 });
+  expect(legacy.seriesRequested).toBe("netWorth");
+  expect(legacy.valueSource).toBe("netWorth");
+  expect(legacy.segments.length).toBe(2);
+  const fit = fitGrowthFromRun({ run, scenario: compiled, series: "netWorth", sampling: sampling(60) });
+  expect(fit.valueSource).toBe("netWorth");
+  expect(fit.claimsResourceBottleneck).toBe(false);
+
+  const noWorth = model(0);
+  const fallbackScenario = scenarioFor(1, 2, noWorth);
+  const fallbackRun: RunResult<number, UnitCode, Vars> = {
+    start: makeState(0, 1),
+    end: makeState(2, 3),
+    events: [],
+    trace: [makeState(0, 1), makeState(1, 2), makeState(2, 3)],
+  };
+  expect(analyzeGrowth({ run: fallbackRun, scenario: fallbackScenario, series: "netWorth", windowSec: 60 }).valueSource).toBe(
+    "netWorthFallback",
+  );
+  expect(
+    fitGrowthFromRun({ run: fallbackRun, scenario: fallbackScenario, series: "netWorth", sampling: sampling(60) }).valueSource,
+  ).toBe("netWorthFallback");
+}
+
+describe("growth fit", () => {
+  it("separates shape from speed", separatesShapeFromSpeed);
+  it("refuses disguised domains", refusesDisguisedDomains);
+  it("preserves the legacy net worth fallback", preservesLegacyNetWorthFallback);
+});

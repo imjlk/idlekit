@@ -20,7 +20,10 @@
     "REQ-PR09-CENSORED-OBSERVATION",
     "REQ-PR10-COMMITTED-RESET",
     "REQ-PR10-REFUSED-RESET",
-    "REQ-PR10-REWARD-DELTA"
+    "REQ-PR10-REWARD-DELTA",
+    "REQ-PR12-SHAPE-SPEED",
+    "REQ-PR12-SCALE-DOMAIN",
+    "REQ-PR12-LEGACY-PRESERVED"
   ],
   "protectedFiles": [
     "docs/requirements/active/typia-transform.md",
@@ -71,6 +74,10 @@
     "docs/requirements/active/reset-cycle-execution.md",
     "packages/core/src/sim/analysis/resetCycle.ts",
     "packages/core/src/sim/analysis/resetCycle.test.ts",
+    "docs/requirements/active/growth-model-classification.md",
+    "packages/core/src/sim/analysis/growthFit.ts",
+    "packages/core/src/sim/analysis/growth.fit.test.ts",
+    "fixtures/conformance/growth-shapes.json",
     "packages/cli/src/lib/runConfiguration.ts",
     "packages/cli/src/lib/runConfiguration.test.ts",
     "fixtures/conformance/shrink-gap.json",

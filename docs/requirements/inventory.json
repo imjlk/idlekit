@@ -510,6 +510,54 @@
           "args": ["test", "--timeout", "120000", "src/sim/analysis/resetCycle.test.ts"]
         }
       ]
+    },
+    {
+      "id": "REQ-PR12-SHAPE-SPEED",
+      "pr": "PR-12",
+      "anchor": "req-pr12-shape-speed",
+      "doc": "docs/requirements/active/growth-model-classification.md",
+      "production": ["packages/core/src/sim/analysis/growthFit.ts"],
+      "tests": [
+        {
+          "file": "packages/core/src/sim/analysis/growth.fit.test.ts",
+          "exportName": "separatesShapeFromSpeed",
+          "registeredAs": "growth fit > separates shape from speed",
+          "cwd": "packages/core",
+          "args": ["test", "--timeout", "120000", "src/sim/analysis/growth.fit.test.ts"]
+        }
+      ]
+    },
+    {
+      "id": "REQ-PR12-SCALE-DOMAIN",
+      "pr": "PR-12",
+      "anchor": "req-pr12-scale-domain",
+      "doc": "docs/requirements/active/growth-model-classification.md",
+      "production": ["packages/core/src/sim/analysis/growthFit.ts"],
+      "tests": [
+        {
+          "file": "packages/core/src/sim/analysis/growth.fit.test.ts",
+          "exportName": "refusesDisguisedDomains",
+          "registeredAs": "growth fit > refuses disguised domains",
+          "cwd": "packages/core",
+          "args": ["test", "--timeout", "120000", "src/sim/analysis/growth.fit.test.ts"]
+        }
+      ]
+    },
+    {
+      "id": "REQ-PR12-LEGACY-PRESERVED",
+      "pr": "PR-12",
+      "anchor": "req-pr12-legacy-preserved",
+      "doc": "docs/requirements/active/growth-model-classification.md",
+      "production": ["packages/core/src/sim/analysis/growthFit.ts"],
+      "tests": [
+        {
+          "file": "packages/core/src/sim/analysis/growth.fit.test.ts",
+          "exportName": "preservesLegacyNetWorthFallback",
+          "registeredAs": "growth fit > preserves the legacy net worth fallback",
+          "cwd": "packages/core",
+          "args": ["test", "--timeout", "120000", "src/sim/analysis/growth.fit.test.ts"]
+        }
+      ]
     }
   ]
 }
