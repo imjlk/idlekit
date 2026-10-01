@@ -18,8 +18,7 @@ Protect `main` with these defaults:
 Required checks on `main`:
 
 - `quality`
-- `docs-verify (quick)`
-- `docs-verify (full)`
+- `docs-verify`
 - `Analyze (javascript-typescript)`
 
 Do not require the `Release` workflow as a merge gate.
