@@ -46,7 +46,8 @@ export type ShrinkResult = {
 const SOURCE_EXTENSION = /\.(?:[cm]?tsx?)$/;
 const NON_PRODUCTION_ROLE = /\.(?:test|spec|generated|d)$/;
 const NON_PRODUCTION_SEGMENTS = new Set(["fixtures", "dist", "__tests__", "test", "tests"]);
-const TEST_MODIFIERS = new Set(["only", "skip", "todo"]);
+const DIRECT_TEST_MODIFIERS = new Set(["only", "skip", "todo", "failing"]);
+const CONDITIONAL_TEST_MODIFIERS = new Set(["skipIf", "todoIf", "if"]);
 
 export function isNonProductionPath(rel: string): boolean {
   const normalized = rel.replaceAll("\\", "/");
@@ -356,7 +357,31 @@ function isSetextParagraph(text: string): boolean {
   return true;
 }
 
-/** Blockquote and list markers can wrap an ATX heading. Setext text keeps its marker. */
+/** How many blockquote markers open this line. */
+function blockquoteDepth(line: string): number {
+  let rest = line;
+  let depth = 0;
+  for (;;) {
+    const marker = /^ {0,3}> ?/.exec(rest);
+    if (!marker) return depth;
+    depth += 1;
+    rest = rest.slice(marker[0].length);
+  }
+}
+
+/** Strip exactly `depth` blockquote markers. A deeper or shallower line does not match. */
+function stripBlockquotes(line: string, depth: number): string | undefined {
+  let rest = line;
+  for (let count = 0; count < depth; count += 1) {
+    const marker = /^ {0,3}> ?/.exec(rest);
+    if (!marker) return undefined;
+    rest = rest.slice(marker[0].length);
+  }
+  if (/^ {0,3}>/.test(rest)) return undefined;
+  return rest;
+}
+
+/** Blockquote and list markers can wrap an ATX heading. A setext pair shares its quote prefix. */
 function atxText(heading: string): string {
   let rest = heading;
   let opened = false;
@@ -396,7 +421,7 @@ export function headingAnchors(markdown: string): string[] {
   let fenceLength = 0;
   let inComment = false;
   let htmlBlock: HtmlBlock | undefined;
-  let pending: string | undefined;
+  let pending: { text: string; depth: number } | undefined;
   for (const rawLine of markdown.split(/\r?\n/)) {
     const marker = /^( {0,3})(`{3,}|~{3,})(.*)$/.exec(atxText(rawLine));
     const opener = marker?.[2];
@@ -437,15 +462,21 @@ export function headingAnchors(markdown: string): string[] {
     const line = commentAt === -1 ? rawLine : rawLine.slice(0, commentAt);
     const commentCloses = commentAt !== -1 && rawLine.indexOf("-->", commentAt + 4) !== -1;
     if (commentAt !== -1 && !commentCloses) inComment = true;
-    const heading = line.replace(/^ {0,3}/, "");
-    const underline = /^(-+|=+)[ \t]*$/.exec(heading);
-    if (underline && pending !== undefined) {
-      if (underline[1]?.startsWith("-")) {
-        const setext = /\{#([A-Za-z0-9][A-Za-z0-9._:-]*)\}[ \t]*$/.exec(pending.trim());
-        anchors.push(setext?.[1] ?? "");
+    const depth = blockquoteDepth(line);
+    const opened = stripBlockquotes(line, depth) ?? line;
+    const heading = opened.replace(/^ {0,3}/, "");
+    if (pending) {
+      const sameQuote = stripBlockquotes(line, pending.depth);
+      const underlineText = sameQuote?.replace(/^ {0,3}/, "");
+      const underline = underlineText ? /^(-+|=+)[ \t]*$/.exec(underlineText) : undefined;
+      if (underline?.[1]) {
+        if (underline[1].startsWith("-")) {
+          const setext = /\{#([A-Za-z0-9][A-Za-z0-9._:-]*)\}[ \t]*$/.exec(pending.text.trim());
+          anchors.push(setext?.[1] ?? "");
+        }
+        pending = undefined;
+        continue;
       }
-      pending = undefined;
-      continue;
     }
     const atx = atxText(heading);
     // CommonMark lets an ATX heading close with a space and a run of hashes.
@@ -462,7 +493,8 @@ export function headingAnchors(markdown: string): string[] {
       continue;
     }
     const paragraph = heading.trim();
-    pending = paragraph.length > 0 && isSetextParagraph(paragraph) ? heading : undefined;
+    pending =
+      paragraph.length > 0 && isSetextParagraph(paragraph) ? { text: heading, depth } : undefined;
   }
   return anchors;
 }
@@ -1311,16 +1343,30 @@ function bindingBoundary(body: string, index: number): boolean {
   return word.value !== "in" && word.value !== "instanceof";
 }
 
-/** `.only` / `.skip` / `.todo` / `.each`, including a newline before the dot. */
+/**
+ * `.only` / `.skip` / `.todo` / `.failing` / `.each` stay on this call.
+ * `.skipIf` / `.todoIf` / `.if` take one argument and return the runner.
+ * Any other member is unrecognized (`-1`) so the call is not skipped.
+ */
 function readDottedModifiers(body: string, index: number, modifiers: string[]): number {
   let at = index;
   for (;;) {
     const dot = skipSpaceAndComments(body, at);
     if (body[dot] !== ".") return at;
     const modifier = readIdentifier(body, dot + 1);
-    if (!modifier || (modifier.value !== "each" && !TEST_MODIFIERS.has(modifier.value))) return at;
+    if (!modifier) return -1;
+    if (modifier.value === "each" || DIRECT_TEST_MODIFIERS.has(modifier.value)) {
+      modifiers.push(modifier.value);
+      at = modifier.end;
+      continue;
+    }
+    if (!CONDITIONAL_TEST_MODIFIERS.has(modifier.value)) return -1;
+    const open = skipSpaceAndComments(body, modifier.end);
+    if (body[open] !== "(") return -1;
+    const close = skipPair(body, open);
+    if (close < 0) return -1;
     modifiers.push(modifier.value);
-    at = modifier.end;
+    at = close;
   }
 }
 
@@ -1408,6 +1454,7 @@ function assignmentAt(body: string, index: number): { at: number; plain: boolean
 function titleCallAt(body: string, index: number): boolean {
   const modifiers: string[] = [];
   const dotted = readDottedModifiers(body, index, modifiers);
+  if (dotted < 0) return false;
   let open = skipWhitespace(body, dotted);
   if (modifiers.includes("each")) {
     const tableEnd = skipEachTable(body, dotted);
@@ -1446,6 +1493,7 @@ function readRunnerRef(
     if (body[close] !== ")") return undefined;
     const modifiers = [...inner.modifiers];
     const dotted = readDottedModifiers(body, close + 1, modifiers);
+    if (dotted < 0) return undefined;
     const end = skipTypeOnlySuffix(body, dotted);
     if (end < 0 || !bindingBoundary(body, end)) return undefined;
     return { kind: inner.kind, modifiers, end };
@@ -1472,6 +1520,7 @@ function readRunnerRef(
     }
   }
   const dotted = readDottedModifiers(body, afterIdent, modifiers);
+  if (dotted < 0) return undefined;
   const end = skipTypeOnlySuffix(body, dotted);
   if (end < 0 || !bindingBoundary(body, end)) return undefined;
   return { kind, modifiers, end };
@@ -1756,6 +1805,11 @@ function collectRegistrations(body: string, unresolved: string[] = []): Registra
       continue;
     }
     const dotted = readDottedModifiers(body, callFrom, modifiers);
+    if (dotted < 0) {
+      unresolved.push(word.value);
+      index = word.end;
+      continue;
+    }
     const parameterized = modifiers.includes("each");
     let open = skipWhitespace(body, dotted);
     if (parameterized) {

@@ -460,6 +460,13 @@ try {
     "Requirement {#req-id}\n---\nTitle {#h1}\n===\n## Kept {#kept}\nParagraph\n---\n",
   );
   const quotedBreak = headingAnchors("> Example {#example}\n---\n## Kept {#kept}\n");
+  const quotedSetext = headingAnchors(
+    ["> Requirement {#req-id}", "> ---", "## Kept {#kept}"].join("\n"),
+  );
+  const nestedSetext = headingAnchors(
+    ["> > Requirement {#req-id}", "> > ---", "## Kept {#kept}"].join("\n"),
+  );
+  const quotedH1 = headingAnchors(["> Title {#h1}", "> ===", "## Kept {#kept}"].join("\n"));
   const listedBreak = headingAnchors("- Example {#listed}\n---\n## Kept {#kept}\n");
   const htmlBlock = headingAnchors("<div>\n## Example {#example}\n</div>\n\n## Kept {#kept}\n");
   const htmlEnded = headingAnchors("<div>\n\n## Example {#example}\n");
@@ -484,6 +491,14 @@ try {
     setext[2] === "" &&
     quotedBreak.length === 1 &&
     quotedBreak[0] === "kept" &&
+    quotedSetext.length === 2 &&
+    quotedSetext[0] === "req-id" &&
+    quotedSetext[1] === "kept" &&
+    nestedSetext.length === 2 &&
+    nestedSetext[0] === "req-id" &&
+    nestedSetext[1] === "kept" &&
+    quotedH1.length === 1 &&
+    quotedH1[0] === "kept" &&
     listedBreak.length === 1 &&
     listedBreak[0] === "kept" &&
     htmlBlock.length === 1 &&
@@ -509,7 +524,13 @@ try {
     closedHeading.length === 2 &&
     closedHeading[0] === "req-id" &&
     closedHeading[1] === "kept";
-  record("setext-heading", "zero", setextOk ? 0 : 1, setextOk, JSON.stringify(setext));
+  record(
+    "setext-heading",
+    "zero",
+    setextOk ? 0 : 1,
+    setextOk,
+    JSON.stringify({ setext, quotedSetext, nestedSetext, quotedH1 }),
+  );
 
   const activeDocs = ["docs/requirements/active/**/*.md"];
   const productionHosts = [
@@ -920,6 +941,42 @@ try {
   const plannerTemplate = plannerStepOnceBound("const label = `({ stepOnce } d.stepOnce(`;\n");
   const plannerRenamed = plannerStepOnceBound("const d = ({ stepOnce });\nold.stepOnce();\n");
   const plannerLive = plannerStepOnceBound("const d = ({ stepOnce });\nd.stepOnce();\n");
+  const failingBody = [
+    'if (false) it("credited", citedExport)',
+    'it.failing("credited", unrelated)',
+  ].join("\n");
+  const failingLive = registeredSuites(failingBody, "unrelated", "credited");
+  const failingDead = registeredSuites(failingBody, "citedExport", "credited");
+  const failingNames = duplicateFullNames(failingBody);
+  const failingAlias = registeredSuites(
+    ["const register = it.failing", 'register("credited", unrelated)'].join("\n"),
+    "unrelated",
+    "credited",
+  );
+  const namespaceFailing = registeredSuites(
+    ['import * as runner from "bun:test"', 'runner.it.failing("credited", unrelated)'].join("\n"),
+    "unrelated",
+    "credited",
+  );
+  const skipIfLive = registeredSuites(
+    'it.skipIf(ready)("credited", unrelated)',
+    "unrelated",
+    "credited",
+  );
+  const todoIfLive = registeredSuites(
+    'it.todoIf(ready)("credited", unrelated)',
+    "unrelated",
+    "credited",
+  );
+  const ifLive = registeredSuites('it.if(ready)("credited", unrelated)', "unrelated", "credited");
+  const conditionalEach = registeredSuites(
+    'it.skipIf(ready).each([1])("credited", unrelated)',
+    "unrelated",
+    "credited",
+  );
+  const unknownBody = 'it.concurrent("credited", unrelated)';
+  const unknownLive = registeredSuites(unknownBody, "unrelated", "credited");
+  const unknownCalls = unresolvedRunnerCalls(unknownBody);
   const duplicateOk =
     duplicateNames.length === 1 &&
     duplicateNames[0] === "kept > quota is documented" &&
@@ -982,7 +1039,18 @@ try {
     plannerString === false &&
     plannerTemplate === false &&
     plannerRenamed === false &&
-    plannerLive;
+    plannerLive &&
+    failingLive.length === 1 &&
+    failingDead.length === 1 &&
+    failingNames.length === 1 &&
+    failingAlias.length === 1 &&
+    namespaceFailing.length === 1 &&
+    skipIfLive.length === 1 &&
+    todoIfLive.length === 1 &&
+    ifLive.length === 1 &&
+    conditionalEach.length === 1 &&
+    unknownLive.length === 0 &&
+    unknownCalls.length === 1;
   record(
     "duplicate-title",
     "zero",
