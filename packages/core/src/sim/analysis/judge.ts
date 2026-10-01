@@ -1,0 +1,405 @@
+import typia, { type IValidation } from "typia";
+import { analysisAlgorithmVersion, type AnalysisArtifactV1, type MetricReadingV1 } from "./contracts";
+import {
+  evaluateBalanceChecks,
+  type BalanceCheckReportV1,
+  type BalanceCheckV1,
+  type BalanceObservationV1,
+  type CheckOperator,
+  type CheckSeverity,
+  type FailOnToken,
+  type MissingPolicy,
+} from "./checks";
+
+/**
+ * Optional rules judge. It reads a finished analysis artifact and a versioned rubric.
+ * Numeric comparisons go through the balance-check engine. This module does not run a simulation,
+ * does not rewrite that engine's report, and does not call an external provider.
+ */
+
+const JUDGE_SCHEMA_ID = "https://idlekit.dev/schemas/judge.output.schema.json" as const;
+const JUDGE_ALGORITHM_VERSION = "judge-rules-1" as const;
+
+export function judgeSchemaId(): typeof JUDGE_SCHEMA_ID {
+  return JUDGE_SCHEMA_ID;
+}
+
+export function judgeAlgorithmVersion(): typeof JUDGE_ALGORITHM_VERSION {
+  return JUDGE_ALGORITHM_VERSION;
+}
+
+export type RecommendationId =
+  | "rec.metric.within-threshold"
+  | "rec.metric.outside-threshold"
+  | "rec.metric.insufficient"
+  | "rec.metric.estimate-not-measured"
+  | "rec.metric.unsupported";
+
+export type JudgeLayer = "rule" | "estimate" | "semantic";
+export type DiagnosticStatus = "conflict" | "insufficient" | "unsupported" | "noted" | "indeterminate";
+
+export type JudgeRuleV1 = Readonly<{
+  id: string;
+  metricId: string;
+  operator: CheckOperator;
+  threshold: number;
+  upperThreshold: number | null;
+  unit: string;
+  severity: CheckSeverity;
+  missingPolicy: MissingPolicy;
+  definition: string;
+  method: string;
+  scenarioVersion: string | null;
+  specVersion: string | null;
+  engineId: string | null;
+  pluginVersion: string | null;
+  seed: string | null;
+  algorithmVersion: string | null;
+  recommendationId: RecommendationId;
+}>;
+
+export type JudgeRubricV1 = Readonly<{
+  schemaVersion: 1;
+  contract: "idlekit.judge.rubric.v1";
+  rubricVersion: string;
+  failOn: readonly FailOnToken[];
+  rules: readonly JudgeRuleV1[];
+}>;
+
+export type JudgeDiagnosticV1 = Readonly<{
+  id: string;
+  category: JudgeLayer;
+  severity: "error" | "warn" | "info";
+  evidenceRefs: readonly string[];
+  assumptionRefs: readonly string[];
+  recommendationId: RecommendationId;
+  status: DiagnosticStatus;
+  text: Readonly<{ en: string; ko: string }>;
+}>;
+
+export type EstimatedObservationV1 = Readonly<{
+  metricId: string;
+  value: number | null;
+  reason: string | null;
+}>;
+
+export type JudgeReportV1 = Readonly<{
+  schemaVersion: 1;
+  contract: "idlekit.judge.v1";
+  algorithmVersion: typeof JUDGE_ALGORITHM_VERSION;
+  provider: "rules";
+  rubricVersion: string;
+  advisoryDigest: string;
+  numerical: BalanceCheckReportV1;
+  estimatedObservations: readonly EstimatedObservationV1[];
+  diagnostics: readonly JudgeDiagnosticV1[];
+  externalProvider: false;
+  baselineRewrite: false;
+}>;
+
+/**
+ * @evidence docs/requirements/active/optional-analysis-judge.md#req-pr18-rules-provider The provider is rules. The output contract does not carry a vendor response.
+ * @evidenceReview docs/requirements/active/optional-analysis-judge.md#req-pr18-rules-provider #bb58b8a Re-read the section: provider is rules and externalProvider is false.
+ */
+export const judgeRulesProvider = "rules-not-vendor" as const;
+
+/**
+ * @evidence docs/requirements/active/optional-analysis-judge.md#req-pr18-check-reuse A numeric threshold is decided by the balance-check engine.
+ * @evidenceReview docs/requirements/active/optional-analysis-judge.md#req-pr18-check-reuse #33488b3 Re-read the section: the judge does not recompute the metric.
+ */
+export const judgeCheckReuse = "checks-not-recomputed" as const;
+
+/**
+ * @evidence docs/requirements/active/optional-analysis-judge.md#req-pr18-evidence-refs A rubric ref must name a metric that exists on the artifact.
+ * @evidenceReview docs/requirements/active/optional-analysis-judge.md#req-pr18-evidence-refs #a078dea Re-read the section: a bad version or a missing ref is rejected.
+ */
+export const judgeEvidenceRefs = "existing-refs-only" as const;
+
+/**
+ * @evidence docs/requirements/active/optional-analysis-judge.md#req-pr18-separated-report Numerical results, estimates, and semantic notes stay in separate fields.
+ * @evidenceReview docs/requirements/active/optional-analysis-judge.md#req-pr18-separated-report #0fb3aa6 Re-read the section: a conflict does not rewrite the numerical verdict.
+ */
+export const judgeSeparatedReport = "layers-stay-apart" as const;
+
+/**
+ * @evidence docs/requirements/active/optional-analysis-judge.md#req-pr18-insufficient Missing information stays insufficient.
+ * @evidenceReview docs/requirements/active/optional-analysis-judge.md#req-pr18-insufficient #ed2626d Re-read the section: the report does not assign a health label.
+ */
+export const judgeInsufficient = "not-a-health-label" as const;
+
+/*
+ * typia runs on first call, not at module load. A plugin that the bundled CLI loads
+ * imports core source without the transform, and a module-load call would throw there.
+ */
+let validateJudgeReportValidator: ((input: unknown) => IValidation<JudgeReportV1>) | undefined;
+let validateRubricValidator: ((input: unknown) => IValidation<JudgeRubricV1>) | undefined;
+
+/**
+ * @evidence docs/requirements/active/optional-analysis-judge.md#req-pr18-rules-provider The published validator is createValidate of the judge report.
+ * @evidenceReview docs/requirements/active/optional-analysis-judge.md#req-pr18-rules-provider #bb58b8a Re-read the section: the structural document is JudgeReportV1.
+ */
+export const validateJudgeReport = (input: unknown): IValidation<JudgeReportV1> =>
+  (validateJudgeReportValidator ??= typia.createValidate<JudgeReportV1>())(input);
+
+function buildJudgeJsonSchema() {
+  return typia.json.schema<JudgeReportV1, "3.1">();
+}
+
+let judgeJsonSchemaUnit: ReturnType<typeof buildJudgeJsonSchema> | undefined;
+
+/**
+ * @evidence docs/requirements/active/optional-analysis-judge.md#req-pr18-rules-provider The structural schema is OpenAPI 3.1 from typia.
+ * @evidenceReview docs/requirements/active/optional-analysis-judge.md#req-pr18-rules-provider #bb58b8a Re-read the section: schema version is 3.1 and the contract id is idlekit.judge.v1.
+ */
+export function judgeJsonSchema(): ReturnType<typeof buildJudgeJsonSchema> {
+  judgeJsonSchemaUnit ??= buildJudgeJsonSchema();
+  return judgeJsonSchemaUnit;
+}
+
+const validateRubric = (input: unknown): IValidation<JudgeRubricV1> =>
+  (validateRubricValidator ??= typia.createValidate<JudgeRubricV1>())(input);
+
+const TEMPLATES: Readonly<Record<RecommendationId, Readonly<{ en: string; ko: string }>>> = {
+  "rec.metric.within-threshold": {
+    en: "Metric {metricId} meets the rubric threshold. This note does not rewrite the numerical verdict.",
+    ko: "지표 {metricId}가 rubric threshold를 만족한다. 이 문장은 수치 verdict를 바꾸지 않는다.",
+  },
+  "rec.metric.outside-threshold": {
+    en: "Metric {metricId} conflicts with the rubric threshold. The numerical verdict stays as recorded.",
+    ko: "지표 {metricId}가 rubric threshold와 충돌한다. 수치 verdict는 기록된 그대로다.",
+  },
+  "rec.metric.insufficient": {
+    en: "Metric {metricId} has no measured value. The rules provider does not fill one in.",
+    ko: "지표 {metricId}의 측정값이 없다. rules provider는 값을 채우지 않는다.",
+  },
+  "rec.metric.estimate-not-measured": {
+    en: "Metric {metricId} is an estimate. It is not used as a measured numerical fact.",
+    ko: "지표 {metricId}는 추정이다. 측정된 수치 사실로 쓰지 않는다.",
+  },
+  "rec.metric.unsupported": {
+    en: "Metric {metricId} cannot be compared by the rules provider.",
+    ko: "지표 {metricId}는 rules provider가 비교할 수 없다.",
+  },
+};
+
+export function parseJudgeRubric(
+  input: unknown,
+): { ok: true; rubric: JudgeRubricV1 } | { ok: false; issues: readonly string[] } {
+  const validated = validateRubric(input);
+  if (!validated.success) {
+    return { ok: false, issues: validated.errors.map((error) => `${error.path} ${error.expected}`) };
+  }
+  if (validated.data.rules.length === 0) return { ok: false, issues: ["rubric has no rules"] };
+  return { ok: true, rubric: validated.data };
+}
+
+function readingUnit(reading: MetricReadingV1): string {
+  if (reading.domain === "amount") return reading.amount?.unit ?? "amount";
+  return reading.domain;
+}
+
+function findReading(artifact: AnalysisArtifactV1, metricId: string): MetricReadingV1 | undefined {
+  return artifact.metrics.find((reading) => reading.metricId === metricId);
+}
+
+function toObservation(
+  artifact: AnalysisArtifactV1,
+  reading: MetricReadingV1,
+): { observation: BalanceObservationV1; estimated: EstimatedObservationV1 | null } {
+  const identity = {
+    metricId: reading.metricId,
+    definition: reading.meaning,
+    method: reading.method ?? "unspecified",
+    scenarioVersion: "unspecified",
+    specVersion: "unspecified",
+    engineId: "unspecified",
+    pluginVersion: "unspecified",
+    seed: "unspecified",
+    unit: readingUnit(reading),
+    algorithmVersion: artifact.algorithmVersion,
+  };
+  if (reading.reading === "estimated") {
+    return {
+      observation: { identity, status: "missing", value: null, lower: null, upper: null },
+      estimated: {
+        metricId: reading.metricId,
+        value: typeof reading.value === "number" && Number.isFinite(reading.value) ? reading.value : null,
+        reason: reading.reason ?? null,
+      },
+    };
+  }
+  if (reading.domain === "amount") {
+    return {
+      observation: { identity, status: "unsupported", value: null, lower: null, upper: null },
+      estimated: null,
+    };
+  }
+  if (
+    reading.reading === "observed" &&
+    reading.status === "ok" &&
+    typeof reading.value === "number" &&
+    Number.isFinite(reading.value)
+  ) {
+    return {
+      observation: {
+        identity,
+        status: "measured",
+        value: reading.value,
+        lower: reading.value,
+        upper: reading.value,
+      },
+      estimated: null,
+    };
+  }
+  if (reading.status === "unsupported") {
+    return {
+      observation: { identity, status: "unsupported", value: null, lower: null, upper: null },
+      estimated: null,
+    };
+  }
+  if (reading.status === "censored") {
+    return {
+      observation: { identity, status: "censored", value: null, lower: null, upper: null },
+      estimated: null,
+    };
+  }
+  return {
+    observation: { identity, status: "missing", value: null, lower: null, upper: null },
+    estimated: null,
+  };
+}
+
+function fillTemplate(id: RecommendationId, metricId: string): Readonly<{ en: string; ko: string }> {
+  const template = TEMPLATES[id];
+  return {
+    en: template.en.replaceAll("{metricId}", metricId),
+    ko: template.ko.replaceAll("{metricId}", metricId),
+  };
+}
+
+function outcomeFor(
+  verdict: BalanceCheckReportV1["results"][number]["verdict"],
+  estimated: boolean,
+): { recommendationId: RecommendationId; status: DiagnosticStatus; category: JudgeLayer; severity: "error" | "warn" | "info" } {
+  if (estimated) {
+    return {
+      recommendationId: "rec.metric.estimate-not-measured",
+      status: "insufficient",
+      category: "estimate",
+      severity: "info",
+    };
+  }
+  if (verdict === "pass") {
+    return {
+      recommendationId: "rec.metric.within-threshold",
+      status: "noted",
+      category: "semantic",
+      severity: "info",
+    };
+  }
+  if (verdict === "fail") {
+    return {
+      recommendationId: "rec.metric.outside-threshold",
+      status: "conflict",
+      category: "semantic",
+      severity: "warn",
+    };
+  }
+  if (verdict === "unsupported") {
+    return {
+      recommendationId: "rec.metric.unsupported",
+      status: "unsupported",
+      category: "semantic",
+      severity: "info",
+    };
+  }
+  return {
+    recommendationId: "rec.metric.insufficient",
+    status: "insufficient",
+    category: "semantic",
+    severity: "info",
+  };
+}
+
+export function judgeArtifact(
+  artifact: AnalysisArtifactV1,
+  rubric: JudgeRubricV1,
+): { ok: true; report: JudgeReportV1 } | { ok: false; issues: readonly string[] } {
+  if (artifact.schemaVersion !== 1) return { ok: false, issues: ["artifact schemaVersion"] };
+  if (artifact.algorithmVersion !== analysisAlgorithmVersion()) {
+    return { ok: false, issues: ["artifact algorithmVersion"] };
+  }
+  if (rubric.rules.length === 0) return { ok: false, issues: ["rubric has no rules"] };
+  const issues: string[] = [];
+  const observations: BalanceObservationV1[] = [];
+  const estimatedObservations: EstimatedObservationV1[] = [];
+  const prepared: Array<{ rule: JudgeRuleV1; estimated: EstimatedObservationV1 | null; ref: string }> = [];
+  for (const rule of rubric.rules) {
+    const reading = findReading(artifact, rule.metricId);
+    if (!reading) {
+      issues.push(`missing evidenceRef metric:${rule.metricId}`);
+      continue;
+    }
+    const mapped = toObservation(artifact, reading);
+    observations.push(mapped.observation);
+    if (mapped.estimated) estimatedObservations.push(mapped.estimated);
+    prepared.push({ rule, estimated: mapped.estimated, ref: `metric:${rule.metricId}` });
+  }
+  if (issues.length > 0) return { ok: false, issues };
+  const checks: BalanceCheckV1[] = rubric.rules.map((rule) => ({
+    id: rule.id,
+    metricId: rule.metricId,
+    operator: rule.operator,
+    threshold: rule.threshold,
+    upperThreshold: rule.upperThreshold,
+    unit: rule.unit,
+    severity: rule.severity,
+    missingPolicy: rule.missingPolicy,
+    definition: rule.definition,
+    method: rule.method,
+    scenarioVersion: rule.scenarioVersion,
+    specVersion: rule.specVersion,
+    engineId: rule.engineId,
+    pluginVersion: rule.pluginVersion,
+    seed: rule.seed,
+    algorithmVersion: rule.algorithmVersion,
+  }));
+  const numerical = evaluateBalanceChecks({
+    schemaVersion: 1,
+    contract: "idlekit.balance-checks.v1",
+    failOn: rubric.failOn,
+    checks,
+    observations,
+    advisory: null,
+  });
+  const assumptionRefs = artifact.assumptions.filter((item) => item.length > 0);
+  const diagnostics: JudgeDiagnosticV1[] = prepared.map((item, index) => {
+    const result = numerical.results[index];
+    const outcome = outcomeFor(result?.verdict ?? "inconclusive", item.estimated !== null);
+    return {
+      id: item.rule.id,
+      category: outcome.category,
+      severity: outcome.severity,
+      evidenceRefs: [item.ref],
+      assumptionRefs,
+      recommendationId: outcome.recommendationId,
+      status: outcome.status,
+      text: fillTemplate(outcome.recommendationId, item.rule.metricId),
+    };
+  });
+  const advisoryDigest = `rules:${rubric.rubricVersion}:${diagnostics.map((item) => item.recommendationId).join(",")}`;
+  const report: JudgeReportV1 = {
+    schemaVersion: 1,
+    contract: "idlekit.judge.v1",
+    algorithmVersion: JUDGE_ALGORITHM_VERSION,
+    provider: "rules",
+    rubricVersion: rubric.rubricVersion,
+    advisoryDigest,
+    numerical,
+    estimatedObservations,
+    diagnostics,
+    externalProvider: false,
+    baselineRewrite: false,
+  };
+  return { ok: true, report };
+}

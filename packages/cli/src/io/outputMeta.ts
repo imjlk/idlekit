@@ -22,6 +22,7 @@ const OUTPUT_SCHEMA_REF: Readonly<Record<string, string>> = {
   doctor: "docs/schemas/doctor.output.schema.json",
   evaluate: "docs/schemas/evaluate.output.schema.json",
   "evaluate.checks": "docs/schemas/balance-checks.v1.schema.json",
+  judge: "docs/schemas/judge.output.schema.json",
   experience: "docs/schemas/experience.output.schema.json",
   "setup.completions": "docs/schemas/setup.output.schema.json",
   "setup.plugin-trust": "docs/schemas/setup.output.schema.json",

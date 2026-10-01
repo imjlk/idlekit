@@ -11,6 +11,7 @@ import type { ScenarioV1 } from "./types";
  * PR-13 appends the distribution artifact.
  * PR-14 appends the experiment artifact.
  * PR-17 appends the balance-check document.
+ * PR-18 appends the rules judge report.
  * The registry does not migrate every existing DTO.
  */
 
@@ -93,6 +94,12 @@ const contractRegistry = [
     kind: "balance-checks" as const,
     typeName: "BalanceCheckReportV1",
     source: "packages/core/src/sim/analysis/checks.ts",
+  },
+  {
+    id: "idlekit.judge.v1" as const,
+    kind: "judge" as const,
+    typeName: "JudgeReportV1",
+    source: "packages/core/src/sim/analysis/judge.ts",
   },
 ] as const;
 
