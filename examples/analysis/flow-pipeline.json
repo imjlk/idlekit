@@ -1,0 +1,187 @@
+{
+  "seed": "15",
+  "cases": {
+    "steady": {
+      "schemaVersion": 1,
+      "contract": "idlekit.flow.observation.v1",
+      "capability": "statically-known",
+      "steady": true,
+      "samples": [
+        { "processId": "mine", "resourceId": "ore", "kind": "throughput", "amount": "100", "unit": "ore/min", "startSec": 0, "endSec": 60 },
+        { "processId": "process", "resourceId": "ore", "kind": "throughput", "amount": "20", "unit": "ore/min", "startSec": 0, "endSec": 60 },
+        { "processId": "process", "resourceId": "ore", "kind": "capacity", "amount": "20", "unit": "ore/min", "startSec": 0, "endSec": 60 },
+        { "processId": "process", "resourceId": "ore", "kind": "queue", "amount": "10", "unit": "ore", "startSec": 0, "endSec": 60 },
+        { "processId": "sell", "resourceId": "ore", "kind": "throughput", "amount": "20", "unit": "ore/min", "startSec": 0, "endSec": 60 },
+        { "processId": "sell", "resourceId": "ore", "kind": "capacity", "amount": "30", "unit": "ore/min", "startSec": 0, "endSec": 60 }
+      ],
+      "edges": [
+        { "fromProcessId": "mine", "toProcessId": "process", "fromResourceId": "ore", "toResourceId": "ore", "numerator": "1", "denominator": "1", "loss": "0" },
+        { "fromProcessId": "process", "toProcessId": "sell", "fromResourceId": "ore", "toResourceId": "ore", "numerator": "1", "denominator": "1", "loss": "0" }
+      ],
+      "causal": { "kind": "model", "processId": "process" },
+      "littles": null
+    },
+    "doubledMine": {
+      "schemaVersion": 1,
+      "contract": "idlekit.flow.observation.v1",
+      "capability": "statically-known",
+      "steady": true,
+      "samples": [
+        { "processId": "mine", "resourceId": "ore", "kind": "throughput", "amount": "200", "unit": "ore/min", "startSec": 0, "endSec": 60 },
+        { "processId": "process", "resourceId": "ore", "kind": "throughput", "amount": "20", "unit": "ore/min", "startSec": 0, "endSec": 60 },
+        { "processId": "process", "resourceId": "ore", "kind": "capacity", "amount": "20", "unit": "ore/min", "startSec": 0, "endSec": 60 },
+        { "processId": "process", "resourceId": "ore", "kind": "queue", "amount": "80", "unit": "ore", "startSec": 0, "endSec": 60 },
+        { "processId": "sell", "resourceId": "ore", "kind": "throughput", "amount": "20", "unit": "ore/min", "startSec": 0, "endSec": 60 },
+        { "processId": "sell", "resourceId": "ore", "kind": "capacity", "amount": "30", "unit": "ore/min", "startSec": 0, "endSec": 60 }
+      ],
+      "edges": [
+        { "fromProcessId": "mine", "toProcessId": "process", "fromResourceId": "ore", "toResourceId": "ore", "numerator": "1", "denominator": "1", "loss": "0" },
+        { "fromProcessId": "process", "toProcessId": "sell", "fromResourceId": "ore", "toResourceId": "ore", "numerator": "1", "denominator": "1", "loss": "0" }
+      ],
+      "causal": { "kind": "model", "processId": "process" },
+      "littles": null
+    },
+    "conversion": {
+      "schemaVersion": 1,
+      "contract": "idlekit.flow.observation.v1",
+      "capability": "statically-known",
+      "steady": true,
+      "samples": [
+        { "processId": "source", "resourceId": "ore", "kind": "inflow", "amount": "100", "unit": "ore/min", "startSec": 0, "endSec": 60 },
+        { "processId": "dest", "resourceId": "ingot", "kind": "queue", "amount": "40", "unit": "ingot/min", "startSec": 0, "endSec": 60 },
+        { "processId": "dest", "resourceId": "ingot", "kind": "unretained", "amount": "5", "unit": "ingot/min", "startSec": 0, "endSec": 60 }
+      ],
+      "edges": [
+        { "fromProcessId": "source", "toProcessId": "dest", "fromResourceId": "ore", "toResourceId": "ingot", "numerator": "1", "denominator": "2", "loss": "0.1" }
+      ],
+      "causal": null,
+      "littles": null
+    },
+    "logistics": {
+      "schemaVersion": 1,
+      "contract": "idlekit.flow.observation.v1",
+      "capability": "statically-known",
+      "steady": true,
+      "samples": [
+        { "processId": "haul", "resourceId": "crate", "kind": "throughput", "amount": "100", "unit": "crate/min", "startSec": 0, "endSec": 60 },
+        { "processId": "pack", "resourceId": "crate", "kind": "throughput", "amount": "20", "unit": "crate/min", "startSec": 0, "endSec": 60 },
+        { "processId": "pack", "resourceId": "crate", "kind": "capacity", "amount": "20", "unit": "crate/min", "startSec": 0, "endSec": 60 },
+        { "processId": "pack", "resourceId": "crate", "kind": "queue", "amount": "10", "unit": "crate", "startSec": 0, "endSec": 60 },
+        { "processId": "ship", "resourceId": "crate", "kind": "throughput", "amount": "20", "unit": "crate/min", "startSec": 0, "endSec": 60 },
+        { "processId": "ship", "resourceId": "crate", "kind": "capacity", "amount": "30", "unit": "crate/min", "startSec": 0, "endSec": 60 }
+      ],
+      "edges": [
+        { "fromProcessId": "haul", "toProcessId": "pack", "fromResourceId": "crate", "toResourceId": "crate", "numerator": "1", "denominator": "1", "loss": "0" },
+        { "fromProcessId": "pack", "toProcessId": "ship", "fromResourceId": "crate", "toResourceId": "crate", "numerator": "1", "denominator": "1", "loss": "0" }
+      ],
+      "causal": { "kind": "model", "processId": "pack" },
+      "littles": null
+    },
+    "crafting": {
+      "schemaVersion": 1,
+      "contract": "idlekit.flow.observation.v1",
+      "capability": "statically-known",
+      "steady": true,
+      "samples": [
+        { "processId": "cut", "resourceId": "part", "kind": "throughput", "amount": "100", "unit": "part/min", "startSec": 0, "endSec": 60 },
+        { "processId": "assemble", "resourceId": "part", "kind": "throughput", "amount": "20", "unit": "part/min", "startSec": 0, "endSec": 60 },
+        { "processId": "assemble", "resourceId": "part", "kind": "capacity", "amount": "20", "unit": "part/min", "startSec": 0, "endSec": 60 },
+        { "processId": "assemble", "resourceId": "part", "kind": "queue", "amount": "10", "unit": "part", "startSec": 0, "endSec": 60 },
+        { "processId": "deliver", "resourceId": "part", "kind": "throughput", "amount": "20", "unit": "part/min", "startSec": 0, "endSec": 60 },
+        { "processId": "deliver", "resourceId": "part", "kind": "capacity", "amount": "30", "unit": "part/min", "startSec": 0, "endSec": 60 }
+      ],
+      "edges": [
+        { "fromProcessId": "cut", "toProcessId": "assemble", "fromResourceId": "part", "toResourceId": "part", "numerator": "1", "denominator": "1", "loss": "0" },
+        { "fromProcessId": "assemble", "toProcessId": "deliver", "fromResourceId": "part", "toResourceId": "part", "numerator": "1", "denominator": "1", "loss": "0" }
+      ],
+      "causal": { "kind": "model", "processId": "assemble" },
+      "littles": null
+    },
+    "expedition": {
+      "schemaVersion": 1,
+      "contract": "idlekit.flow.observation.v1",
+      "capability": "statically-known",
+      "steady": true,
+      "samples": [
+        { "processId": "scout", "resourceId": "slot", "kind": "throughput", "amount": "100", "unit": "slot/min", "startSec": 0, "endSec": 60 },
+        { "processId": "camp", "resourceId": "slot", "kind": "throughput", "amount": "20", "unit": "slot/min", "startSec": 0, "endSec": 60 },
+        { "processId": "camp", "resourceId": "slot", "kind": "capacity", "amount": "20", "unit": "slot/min", "startSec": 0, "endSec": 60 },
+        { "processId": "camp", "resourceId": "slot", "kind": "queue", "amount": "10", "unit": "slot", "startSec": 0, "endSec": 60 },
+        { "processId": "return", "resourceId": "slot", "kind": "throughput", "amount": "20", "unit": "slot/min", "startSec": 0, "endSec": 60 },
+        { "processId": "return", "resourceId": "slot", "kind": "capacity", "amount": "30", "unit": "slot/min", "startSec": 0, "endSec": 60 }
+      ],
+      "edges": [
+        { "fromProcessId": "scout", "toProcessId": "camp", "fromResourceId": "slot", "toResourceId": "slot", "numerator": "1", "denominator": "1", "loss": "0" },
+        { "fromProcessId": "camp", "toProcessId": "return", "fromResourceId": "slot", "toResourceId": "slot", "numerator": "1", "denominator": "1", "loss": "0" }
+      ],
+      "causal": { "kind": "model", "processId": "camp" },
+      "littles": null
+    },
+    "noFlow": {
+      "schemaVersion": 1,
+      "contract": "idlekit.flow.observation.v1",
+      "capability": "unsupported",
+      "steady": false,
+      "samples": [],
+      "edges": [],
+      "causal": null,
+      "littles": null
+    },
+    "ambiguous": {
+      "schemaVersion": 1,
+      "contract": "idlekit.flow.observation.v1",
+      "capability": "statically-known",
+      "steady": true,
+      "samples": [
+        { "processId": "only", "resourceId": "item", "kind": "throughput", "amount": "10", "unit": "item/min", "startSec": 0, "endSec": 60 }
+      ],
+      "edges": [],
+      "causal": null,
+      "littles": null
+    },
+    "ramp": {
+      "schemaVersion": 1,
+      "contract": "idlekit.flow.observation.v1",
+      "capability": "statically-known",
+      "steady": false,
+      "samples": [],
+      "edges": [],
+      "causal": null,
+      "littles": { "inventory": "10", "arrivalPerSec": "2", "waitSec": "5", "steady": false, "workFlowDefined": true }
+    },
+    "steadyLittles": {
+      "schemaVersion": 1,
+      "contract": "idlekit.flow.observation.v1",
+      "capability": "statically-known",
+      "steady": true,
+      "samples": [],
+      "edges": [],
+      "causal": null,
+      "littles": { "inventory": "10", "arrivalPerSec": "2", "waitSec": "5", "steady": true, "workFlowDefined": true }
+    },
+    "starved": {
+      "schemaVersion": 1,
+      "contract": "idlekit.flow.observation.v1",
+      "capability": "statically-known",
+      "steady": true,
+      "samples": [
+        { "processId": "stage", "resourceId": "item", "kind": "starved-time", "amount": "4", "unit": "s", "startSec": 0, "endSec": 60 }
+      ],
+      "edges": [],
+      "causal": null,
+      "littles": null
+    },
+    "blocked": {
+      "schemaVersion": 1,
+      "contract": "idlekit.flow.observation.v1",
+      "capability": "statically-known",
+      "steady": true,
+      "samples": [
+        { "processId": "stage", "resourceId": "item", "kind": "blocked-time", "amount": "3", "unit": "s", "startSec": 0, "endSec": 60 }
+      ],
+      "edges": [],
+      "causal": null,
+      "littles": null
+    }
+  }
+}

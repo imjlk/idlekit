@@ -1483,6 +1483,86 @@
           "args": ["test", "--timeout", "120000", "src/sim/analysis/judge.test.ts"]
         }
       ]
+    },
+    {
+      "id": "REQ-PR15-FLOW-ADAPTER",
+      "pr": "PR-15",
+      "anchor": "req-pr15-flow-adapter",
+      "doc": "docs/requirements/active/flow-observability.md",
+      "production": ["packages/core/src/sim/analysis/flow.ts", "packages/core/src/sim/observation.ts"],
+      "tests": [
+        {
+          "file": "packages/core/src/sim/analysis/flow.test.ts",
+          "exportName": "declaresFlowAdapter",
+          "registeredAs": "flow observability > declares an optional flow adapter",
+          "cwd": "packages/core",
+          "args": ["test", "--timeout", "120000", "src/sim/analysis/flow.test.ts"]
+        }
+      ]
+    },
+    {
+      "id": "REQ-PR15-PIPELINE",
+      "pr": "PR-15",
+      "anchor": "req-pr15-pipeline",
+      "doc": "docs/requirements/active/flow-observability.md",
+      "production": ["packages/core/src/sim/analysis/flow.ts"],
+      "tests": [
+        {
+          "file": "packages/core/src/sim/analysis/flow.test.ts",
+          "exportName": "diagnosesSteadyPipeline",
+          "registeredAs": "flow observability > diagnoses a steady pipeline",
+          "cwd": "packages/core",
+          "args": ["test", "--timeout", "120000", "src/sim/analysis/flow.test.ts"]
+        }
+      ]
+    },
+    {
+      "id": "REQ-PR15-CONSERVATION",
+      "pr": "PR-15",
+      "anchor": "req-pr15-conservation",
+      "doc": "docs/requirements/active/flow-observability.md",
+      "production": ["packages/core/src/sim/analysis/flow.ts"],
+      "tests": [
+        {
+          "file": "packages/core/src/sim/analysis/flow.test.ts",
+          "exportName": "checksFlowConservation",
+          "registeredAs": "flow observability > checks flow conservation",
+          "cwd": "packages/core",
+          "args": ["test", "--timeout", "120000", "src/sim/analysis/flow.test.ts"]
+        }
+      ]
+    },
+    {
+      "id": "REQ-PR15-UNSUPPORTED",
+      "pr": "PR-15",
+      "anchor": "req-pr15-unsupported",
+      "doc": "docs/requirements/active/flow-observability.md",
+      "production": ["packages/core/src/sim/analysis/flow.ts"],
+      "tests": [
+        {
+          "file": "packages/core/src/sim/analysis/flow.test.ts",
+          "exportName": "leavesUnknownModelsUnsupported",
+          "registeredAs": "flow observability > leaves an unknown model unsupported",
+          "cwd": "packages/core",
+          "args": ["test", "--timeout", "120000", "src/sim/analysis/flow.test.ts"]
+        }
+      ]
+    },
+    {
+      "id": "REQ-PR15-SUSPECTED",
+      "pr": "PR-15",
+      "anchor": "req-pr15-suspected",
+      "doc": "docs/requirements/active/flow-observability.md",
+      "production": ["packages/core/src/sim/analysis/flow.ts"],
+      "tests": [
+        {
+          "file": "packages/core/src/sim/analysis/flow.test.ts",
+          "exportName": "separatesFactsFromCauses",
+          "registeredAs": "flow observability > separates facts from causes",
+          "cwd": "packages/core",
+          "args": ["test", "--timeout", "120000", "src/sim/analysis/flow.test.ts"]
+        }
+      ]
     }
   ]
 }

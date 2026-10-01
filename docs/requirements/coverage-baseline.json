@@ -76,7 +76,12 @@
     "REQ-PR18-CHECK-REUSE",
     "REQ-PR18-EVIDENCE-REFS",
     "REQ-PR18-SEPARATED-REPORT",
-    "REQ-PR18-INSUFFICIENT"
+    "REQ-PR18-INSUFFICIENT",
+    "REQ-PR15-FLOW-ADAPTER",
+    "REQ-PR15-PIPELINE",
+    "REQ-PR15-CONSERVATION",
+    "REQ-PR15-UNSUPPORTED",
+    "REQ-PR15-SUSPECTED"
   ],
   "protectedFiles": [
     "docs/requirements/active/typia-transform.md",
@@ -165,6 +170,10 @@
     "packages/core/src/sim/analysis/checks.test.ts",
     "docs/requirements/active/optional-analysis-judge.md",
     "packages/core/src/sim/analysis/judge.ts",
-    "packages/core/src/sim/analysis/judge.test.ts"
+    "packages/core/src/sim/analysis/judge.test.ts",
+    "docs/requirements/active/flow-observability.md",
+    "packages/core/src/sim/analysis/flow.ts",
+    "packages/core/src/sim/analysis/flow.test.ts",
+    "examples/analysis/flow-pipeline.json"
   ]
 }

@@ -5,7 +5,7 @@ import type { GoalDefinition, MetricDefinition } from "./metrics";
 /**
  * What one model version can explain.
  * AnalyzerRegistry, which chooses an analysis method, is DX-02 and is not this type.
- * Flow and advance method bodies stay in later PRs.
+ * Flow diagnosis is diagnoseFlow and needs observations. Advance stays in a later PR.
  */
 export type ModelAnalysisAdapter<N, U extends string, Vars> = Readonly<{
   modelId: string;
@@ -54,14 +54,15 @@ export function flowResult(knowledge: CapabilityKnowledge): Readonly<{
   capability: "flow";
   knowledge: CapabilityKnowledge;
   status: "unsupported" | "insufficient-data";
-}> | Readonly<{ capability: "flow"; knowledge: "statically-known"; status: "unsupported"; reason: string }> {
+  reason?: string;
+}> {
   if (knowledge === "unknown") return { capability: "flow", knowledge, status: "insufficient-data" };
   if (knowledge === "statically-known") {
     return {
       capability: "flow",
       knowledge,
-      status: "unsupported",
-      reason: "flow method body is not in this PR",
+      status: "insufficient-data",
+      reason: "flow observations were not supplied",
     };
   }
   return { capability: "flow", knowledge: "unsupported", status: "unsupported" };
