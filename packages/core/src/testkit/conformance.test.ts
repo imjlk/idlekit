@@ -8,7 +8,6 @@ import { createScriptedStrategy } from "../sim/strategy/scripted";
 import type { Action, CompiledScenario, Model, SimState } from "../sim/types";
 import type { Strategy } from "../sim/strategy/types";
 import { compareAmounts } from "./compareAmounts";
-import { conformanceGeneratorVersion, declaredFlatBulkMatches } from "./conformance";
 import {
   checkBulk,
   checkDurationBoundary,
@@ -23,6 +22,8 @@ import {
   checkTimedSources,
   checkTrialOrder,
   conformanceCaseCount,
+  conformanceGeneratorVersion,
+  declaredFlatBulkMatches,
   demonstrateShrinkGap,
   economyAfter,
   expectProperty,
@@ -30,8 +31,8 @@ import {
   rejectNonPositiveStep,
   replayShrinkReport,
   snapshotEconomy,
-  type RelationCheck,
-} from "./conformanceRun";
+} from "./conformance";
+import type { RelationCheck } from "./conformanceRun";
 
 type UnitCode = "COIN";
 type Vars = { buys: number };
@@ -154,7 +155,7 @@ function thresholdScenario(stepSec: number): CompiledScenario<number, UnitCode, 
  * @evidence ./conformanceRun.ts#demonstrateShrinkGap Builds the shrink-gap report whose value is 1 and whose testSeed is 0xd101.
  * @evidenceReview ./conformanceRun.ts#demonstrateShrinkGap #e31f17f Builds the shrink-gap report whose value is 1 and whose testSeed is 0xd101.
  * @evidence ./conformanceRun.ts#replayShrinkReport Replays the saved report and expects the path to fail closed at 1.
- * @evidenceReview ./conformanceRun.ts#replayShrinkReport #bd11c06 Replays the saved report and expects the path to fail closed at 1.
+ * @evidenceReview ./conformanceRun.ts#replayShrinkReport #f1c80fe Replays the saved report and expects the path to fail closed at 1. A rejected step whose from is not the current value fails the path.
  * @evidence ./conformanceRun.ts#gameSeedForCase Derives a game seed from 0x51ed and index 0 that is an integer other than that test seed.
  * @evidenceReview ./conformanceRun.ts#gameSeedForCase #39c73b9 Derives a game seed from 0x51ed and index 0 that is an integer other than that test seed.
  * @evidence ./conformanceRun.ts#ShrinkReport.value Expects the shrunk value to be 1.
@@ -200,6 +201,11 @@ export function replaysConstantIncomeAndShrinksGap(): void {
   expect(replay.failed).toBe(true);
   expect(replay.pathOk).toBe(true);
   expect(replay.shrunk).toBe(1);
+  const skipped = replayShrinkReport({
+    ...saved,
+    shrinkingPath: [...saved.shrinkingPath, { from: 999, to: 0, kept: false }],
+  });
+  expect(skipped.pathOk).toBe(false);
 
   const scenario = constantScenario({ rate: 3, durationSec: 4, stepSec: 1, seed: 11 });
   expectApplicable(checkReplay(scenario));
@@ -395,7 +401,7 @@ describe("PR-02 time boundaries", () => {
  * @evidence ./conformanceRun.ts#checkResumeFromJson Resumes a 4s scripted grant from JSON at t=2.
  * @evidenceReview ./conformanceRun.ts#checkResumeFromJson #91c215a Resumes a 4s scripted grant from JSON at t=2.
  * @evidence ./conformanceRun.ts#checkRetention Retention applies to the scripted grant.
- * @evidenceReview ./conformanceRun.ts#checkRetention #16e87d2 Retention applies to the scripted grant.
+ * @evidenceReview ./conformanceRun.ts#checkRetention #e5801c6 Retention applies to the scripted grant. A negative eventLog.maxEvents fails before the check substitutes another capacity.
  * @evidence ./conformanceRun.ts#checkObserver The observer check applies to the scripted grant.
  * @evidenceReview ./conformanceRun.ts#checkObserver #918ed45 The observer check applies to the scripted grant.
  */
@@ -409,6 +415,11 @@ export function replaysOneShotScriptedGrantFromTheSameCursor(): void {
   expectApplicable(checkResume(scenario, 1));
   expectApplicable(checkResumeFromJson(scriptedGrant(4), 2));
   expectApplicable(checkRetention(scenario));
+  const invalidRetention = checkRetention({
+    ...scenario,
+    run: { ...scenario.run, eventLog: { enabled: true, maxEvents: -1 } },
+  });
+  expect(invalidRetention.ok).toBe(false);
   expectApplicable(checkObserver(scenario));
 }
 
@@ -494,7 +505,7 @@ export function recordsWalletAndMaxMoneyUnitsOnTheEconomySnapshot(): void {
  * @evidence docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness An on-grid checkpoint replays from memory and from JSON, and independent trials are compared by game seed.
  * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #a195f0e Re-read the section, then ran this function: memory resume, JSON resume, and the JSON round-trip apply, and the two game seeds stay ordered.
  * @evidence ./conformanceRun.ts#checkJsonRoundTrip The constant-income scenario matches after a JSON round trip.
- * @evidenceReview ./conformanceRun.ts#checkJsonRoundTrip #4ab8239 Re-read the function: it restores the strategy around the run, accepts a dense array and an empty array, rejects shared refs, symbol keys, non-enumerable names, sparse holes, frozen data, and enumerable getters before stringify, and the constant-income round trip matches. Ran this function: the dense round trip passed, and the sparse, frozen, and getter round trips did not.
+ * @evidenceReview ./conformanceRun.ts#checkJsonRoundTrip #4ab8239 Re-read the function: it restores the strategy around the run, accepts a dense array and an empty array, rejects shared refs, symbol keys, non-enumerable names, sparse holes, frozen data, non-extensible objects and arrays, and enumerable getters before stringify, and the constant-income round trip matches. Ran this function: the dense round trip passed, and the sparse, frozen, non-extensible, and getter round trips did not.
  * @evidence ./conformanceRun.ts#checkTrialOrder Two distinct game seeds keep distinct economy snapshots.
  * @evidenceReview ./conformanceRun.ts#checkTrialOrder #5e85ee7 Two game seeds keep ordered snapshots. This run uses a seed-dependent income rate, and the two economy snapshots differ.
  */
@@ -548,6 +559,19 @@ export function resumesOnTheSameTickGridFromMemoryAndJson(): void {
     initial: { ...scenario.initial, vars: getterVars as unknown as Vars },
   });
   expect(getterRound.ok).toBe(false);
+  const lockedObject = checkJsonRoundTrip({
+    ...scenario,
+    initial: { ...scenario.initial, vars: Object.preventExtensions({ x: 1 }) as unknown as Vars },
+  });
+  expect(lockedObject.ok).toBe(false);
+  const lockedArray = checkJsonRoundTrip({
+    ...scenario,
+    initial: {
+      ...scenario.initial,
+      vars: { items: Object.preventExtensions([1]) } as unknown as Vars,
+    },
+  });
+  expect(lockedArray.ok).toBe(false);
   const gameA = gameSeedForCase(0x51ed, 1);
   const gameB = gameSeedForCase(0x51ed, 2);
   const trial = (gameSeed: number) =>

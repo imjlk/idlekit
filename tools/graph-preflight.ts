@@ -189,6 +189,20 @@ async function scratch(): Promise<void> {
       if (traceType !== "trace" || !linked) {
         fail(`scratch trace useQuota did not reach quotaHost in src/host.ts (${traceType ?? "untyped"})`);
       } else ok("scratch trace useQuota -> quotaHost");
+      const originalHost = readFileSync(hostPath, "utf8");
+      writeFileSync(hostPath, originalHost.replace("(): 3", "(): 4").replace("return 3", "return 4"));
+      const live = await ask(
+        base.session,
+        base.schema,
+        "What is the quotaHost signature after this edit?",
+        optionalRequest(base.schema, "details", { handles: ["quotaHost"] }),
+      );
+      const liveDecl = namedSource(live, "quotaHost", "src/host.ts");
+      const liveSignature = liveDecl?.signature ?? "";
+      if (!liveSignature.includes("(): 4") || liveSignature.includes("(): 3")) {
+        fail(`scratch live session kept ${liveSignature || "missing"}`);
+      } else ok(`scratch live session ${liveSignature}`);
+      writeFileSync(hostPath, originalHost);
     } finally {
       const code = await base.session.close();
       if (code !== 0) fail(`scratch baseline shutdown ${code}`);
@@ -339,6 +353,17 @@ async function main(): Promise<void> {
       optionalRequest(schema, "entrypoints", { query: "runScenario stepOnce", limit: 4 }),
     );
     expectType("entrypoints", entrypoints, "entrypoints");
+    const entryRun = namedSource(entrypoints, "runScenario", "packages/core/src/sim/simulator.ts");
+    const entryStep = namedSource(entrypoints, "stepOnce", "packages/core/src/sim/step.ts");
+    if (!entryRun && !entryStep) {
+      fail("entrypoints missed runScenario and stepOnce");
+    } else {
+      const parts = [
+        entryRun ? `runScenario ${entryRun.file}:${entryRun.line}` : "",
+        entryStep ? `stepOnce ${entryStep.file}:${entryStep.line}` : "",
+      ].filter((part) => part.length > 0);
+      ok(`entrypoints ${parts.join("; ")}`);
+    }
 
     const runLookup = await ask(
       opened.session,

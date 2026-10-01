@@ -1,6 +1,6 @@
 import { cpSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "fs";
 import { join, resolve } from "path";
-import { demonstrateShrinkGap, replayShrinkReport } from "../packages/core/src/testkit/conformanceRun";
+import { demonstrateShrinkGap, replayShrinkReport } from "../packages/core/src/testkit/conformance";
 import { commandText, root, runTtsc } from "./evidence-host";
 import { fixtureEnv } from "./toolchain-host";
 

@@ -1,5 +1,6 @@
 import { readFileSync, realpathSync } from "fs";
 import { dirname, join, relative, resolve } from "path";
+import lintConfig from "../lint.config";
 import {
   disabledClaimLedger,
   evidenceGraph,
@@ -207,7 +208,7 @@ export function headingAnchors(markdown: string): string[] {
   let fenceChar: "`" | "~" | undefined;
   let fenceLength = 0;
   let inComment = false;
-  for (const rawLine of markdown.split("\n")) {
+  for (const rawLine of markdown.split(/\r?\n/)) {
     const marker = /^( {0,3})(`{3,}|~{3,})(.*)$/.exec(rawLine);
     const opener = marker?.[2];
     const info = marker?.[3] ?? "";
@@ -426,9 +427,11 @@ function readIdentifier(body: string, index: number): { value: string; end: numb
   return { value: match[0], end: cursor + match[0].length };
 }
 
-/** Suite names wrapping this `it`/`test` callback, from the outermost `describe`. */
-export function registeredSuites(body: string, exportName: string, title: string): string[][] {
-  const found: string[][] = [];
+type Registration = { suites: string[]; title: string; callback?: string };
+
+/** Every `it`/`test` title in this source, including ones inside a false condition. */
+function collectRegistrations(body: string): Registration[] {
+  const found: Registration[] = [];
   const stack: { title: string; depth: number }[] = [];
   let depth = 0;
   let parens = 0;
@@ -515,15 +518,30 @@ export function registeredSuites(body: string, exportName: string, title: string
     } else {
       const comma = skipWhitespace(body, quoted.end);
       const callback = body[comma] === "," ? readIdentifier(body, comma + 1) : undefined;
-      if (callback?.value === exportName && quoted.value === title) {
-        const suites = stack.map((frame) => frame.title);
-        if (pending) suites.push(pending.title);
-        found.push(suites);
-      }
+      const suites = stack.map((frame) => frame.title);
+      if (pending) suites.push(pending.title);
+      found.push({ suites, title: quoted.value, callback: callback?.value });
     }
     index = open;
   }
   return found;
+}
+
+/** Suite names wrapping this `it`/`test` callback, from the outermost `describe`. */
+export function registeredSuites(body: string, exportName: string, title: string): string[][] {
+  return collectRegistrations(body)
+    .filter((registration) => registration.callback === exportName && registration.title === title)
+    .map((registration) => registration.suites);
+}
+
+/** Full `suite > title` names registered more than once. One passing row cannot choose among them. */
+export function duplicateFullNames(body: string): string[] {
+  const counts = new Map<string, number>();
+  for (const registration of collectRegistrations(body)) {
+    const full = [...registration.suites, registration.title].join(" > ");
+    counts.set(full, (counts.get(full) ?? 0) + 1);
+  }
+  return [...counts.entries()].filter((entry) => entry[1] > 1).map((entry) => entry[0]);
 }
 
 function registersNamedTest(body: string, registeredAs: string, exportName: string): boolean {
@@ -804,6 +822,9 @@ export async function checkInventory(projectRoot = root): Promise<string[]> {
       if (!registersNamedTest(body, test.registeredAs, test.exportName)) {
         fail(failures, `${requirement.id} does not register ${test.exportName} with the runner`);
       }
+      if (duplicateFullNames(body).includes(test.registeredAs)) {
+        fail(failures, `${requirement.id} registers ${test.registeredAs} more than once`);
+      }
       if (!commandTargetsFile(test)) {
         fail(failures, `${requirement.id} command does not run ${test.file}`);
       }
@@ -932,7 +953,10 @@ export async function checkInventory(projectRoot = root): Promise<string[]> {
   if (!lintEnabled) {
     fail(failures, "tsconfig.evidence.json must enable @ttsc/lint for lint.config.ts");
   }
-  const loadedRules = graphLintConfig.rules;
+  if (lintConfig !== graphLintConfig) {
+    fail(failures, "lint.config.ts must export graphLintConfig");
+  }
+  const loadedRules = lintConfig.rules;
   const graphRule = loadedRules["evidence/graph"];
   const reviewRule = loadedRules["evidence/review"];
   const graphOn =

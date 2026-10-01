@@ -1,7 +1,8 @@
 /**
- * Evidence host for the conformance harness. Types and runners live in
- * `conformanceRun.ts`. This file keeps the generator version and the declared
- * flat-bulk relation. Runners stay out so this file does not export their types.
+ * Evidence host for the conformance harness. Relation functions are
+ * re-exported from `conformanceRun.ts`. Types stay in that file, so this
+ * module does not export their properties. The declared flat-bulk relation
+ * lives here. Do not export this module from a package barrel.
  */
 import { createNumberEngine } from "../engine/breakInfinity";
 import { stepOnce } from "../sim/step";
@@ -72,3 +73,26 @@ function flatBulkSnapshot(size: number, mode: "bulk" | "repeated"): string {
 export function declaredFlatBulkMatches(size: number): boolean {
   return flatBulkSnapshot(size, "repeated") === flatBulkSnapshot(size, "bulk");
 }
+
+export {
+  checkBulk,
+  checkDurationBoundary,
+  checkJsonRoundTrip,
+  checkNonNegative,
+  checkObserver,
+  checkReplay,
+  checkResume,
+  checkResumeFromJson,
+  checkRetention,
+  checkSnapshots,
+  checkTimedSources,
+  checkTrialOrder,
+  conformanceCaseCount,
+  demonstrateShrinkGap,
+  economyAfter,
+  expectProperty,
+  gameSeedForCase,
+  rejectNonPositiveStep,
+  replayShrinkReport,
+  snapshotEconomy,
+} from "./conformanceRun";

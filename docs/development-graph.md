@@ -14,7 +14,7 @@ bun tools/graph-query.ts --question "Where is runScenario declared?" --request '
 
 `graph-query.ts` starts `ttsc-graph --cwd <root> --tsconfig tsconfig.graph.json`, performs MCP `initialize`, reads `inspect_typescript_graph` from `tools/list`, and sends only fields that schema publishes. Wrapper fields (`question`, `draft`, `review`, `request`) come from that schema. A field that is not in the live branch exits the process. The printed lines are symbol, file, and line. A span that carries a declaration signature prints that signature after the location. A trace also prints `from -> to` hop lines, using symbol names rather than node ids. The output is not a raw dump.
 
-`bun run graph:check` is the gate. It checks initialize, tool discovery, lookup, caller and callee traces, workspace source spans, scratch rename / signature / citation updates in a fresh process, and stdin shutdown. `--help` alone is not a pass.
+`bun run graph:check` is the gate. It checks initialize, tool discovery, lookup, caller and callee traces, workspace source spans, scratch rename / signature / citation updates, one signature edit read by the session that was already open, and stdin shutdown. `--help` alone is not a pass.
 
 ## Program
 
@@ -22,7 +22,7 @@ bun tools/graph-query.ts --question "Where is runScenario declared?" --request '
 
 ## Agent config
 
-`.mcp.json.example` matches Claude Code's project MCP file, pointed at the local bin. `.codex/config.toml.example` matches the Codex project config keys documented at <https://learn.chatgpt.com/codex/extend/mcp> (`command`, `args`, `cwd`, `startup_timeout_sec`, `tool_timeout_sec`). Copy them into the project-local file. Do not edit `~/.codex/config.toml` from this change. The Codex tool timeout is raised because the first `inspect_typescript_graph` call builds the index after the handshake.
+`.mcp.json.example` matches Claude Code's project MCP file, pointed at the local bin. Its POSIX `command` is `node_modules/.bin/ttsc-graph`. On Windows, copy `windowsCommand` (`node_modules/.bin/ttsc-graph.cmd`) into that `command` before use. `.codex/config.toml.example` matches the Codex project config keys documented at <https://learn.chatgpt.com/codex/extend/mcp> (`command`, `args`, `cwd`, `startup_timeout_sec`, `tool_timeout_sec`) and names the same Windows `.cmd` path. Copy them into the project-local file. Do not edit `~/.codex/config.toml` from this change. The Codex tool timeout is raised because the first `inspect_typescript_graph` call builds the index after the handshake.
 
 ## Unobserved
 
@@ -30,7 +30,7 @@ The checker does not see JSON or YAML scenarios, shell and package scripts, dyna
 
 ## TC-04 verification
 
-Queried on macOS arm64 with Bun `1.3.10`, `@ttsc/graph` `0.30.4`, protocol `2025-11-25`, at commit `878707f92c6c80552bf3e76a65e889908aa3b021`. No generation field was returned. Scratch edits were re-read in a new process. `bun run graph:check` exited 0. The tour payload includes the `runScenario` and `stepOnce` spans below.
+Queried on macOS arm64 with Bun `1.3.10`, `@ttsc/graph` `0.30.4`, protocol `2025-11-25`, at commit `9f527f25ff3be3c363de1ce47e8a5d17b5eaff36`. No generation field was returned. Scratch edits were re-read in a new process, and the already open session reported `quotaHost` as `(): 4` after the signature edit. `bun run graph:check` exited 0. The tour payload includes the `runScenario` and `stepOnce` spans below.
 
 | Symbol | Span | Graph result |
 |---|---|---|
