@@ -143,19 +143,25 @@ function inspectOverride(
   return { set: true, origin, path: value };
 }
 
+function readJson(path: string): unknown {
+  return JSON.parse(readFileSync(path, "utf8"));
+}
+
 export function inspectToolchain(): DoctorReport {
   const failures: string[] = [];
   const pins = readPins();
-  const rootPkg = require(join(root, "package.json")) as {
+  const rootPkg = readJson(join(root, "package.json")) as {
     packageManager?: string;
     devDependencies?: Record<string, string>;
   };
-  const corePkg = require(join(root, "packages/core/package.json")) as {
+  const corePkg = readJson(join(root, "packages/core/package.json")) as {
     dependencies?: Record<string, string>;
   };
   const dev = rootPkg.devDependencies ?? {};
   for (const [name, pin] of Object.entries(pins.packages)) {
-    const installed = require(join(root, "node_modules", name, "package.json")) as { version?: string };
+    const installed = readJson(join(root, "node_modules", name, "package.json")) as {
+      version?: string;
+    };
     if (installed.version !== pin.version) {
       failures.push(`${name} installed ${installed.version ?? "missing"}, pin is ${pin.version}`);
     }
