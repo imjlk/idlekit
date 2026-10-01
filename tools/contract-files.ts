@@ -14,6 +14,11 @@ import {
   etaEstimateSchemaId,
 } from "../packages/core/src/sim/analysis/eta";
 import {
+  resetCycleAlgorithmVersion,
+  resetCycleJsonSchema,
+  resetCycleSchemaId,
+} from "../packages/core/src/sim/analysis/resetCycle";
+import {
   buildContractDocument,
   buildFieldMetadata,
   canonicalJson,
@@ -30,6 +35,8 @@ export const analysisSchemaName = "analysis.artifact.v1.schema.json";
 export const analysisFieldsName = "analysis.artifact.v1.fields.json";
 export const etaSchemaName = "eta.estimate.v1.schema.json";
 export const etaFieldsName = "eta.estimate.v1.fields.json";
+export const resetSchemaName = "reset.cycle.v1.schema.json";
+export const resetFieldsName = "reset.cycle.v1.fields.json";
 
 const inputs = [
   "packages/core/src/scenario/offlinePolicy.ts",
@@ -44,6 +51,7 @@ const analysisInputs = [
 ];
 
 const etaInputs = ["packages/core/src/sim/analysis/eta.ts"];
+const resetInputs = ["packages/core/src/sim/analysis/resetCycle.ts"];
 
 export function sourceDigests(base = root): SourceDigest[] {
   return inputs.map((path) => ({
@@ -61,6 +69,13 @@ export function analysisSourceDigests(base = root): SourceDigest[] {
 
 export function etaSourceDigests(base = root): SourceDigest[] {
   return etaInputs.map((path) => ({
+    path,
+    sha256: createHash("sha256").update(readFileSync(join(base, path))).digest("hex"),
+  }));
+}
+
+export function resetSourceDigests(base = root): SourceDigest[] {
+  return resetInputs.map((path) => ({
     path,
     sha256: createHash("sha256").update(readFileSync(join(base, path))).digest("hex"),
   }));
@@ -99,6 +114,43 @@ export function buildEtaContractDocument(sources: readonly SourceDigest[]) {
       version: etaEstimateJsonSchema().version,
       schema: etaEstimateJsonSchema().schema,
       components: etaEstimateJsonSchema().components,
+    },
+  };
+}
+
+export function buildResetContractDocument(sources: readonly SourceDigest[]) {
+  const ordered = [...sources].sort((left, right) => (left.path < right.path ? -1 : left.path > right.path ? 1 : 0));
+  const sourceHash = sha256Text(
+    canonicalJson({
+      algorithmVersion: resetCycleAlgorithmVersion(),
+      contractId: "idlekit.reset-cycle.v1",
+      dialect: "openapi-3.1",
+      exportApi: "typia.json.schema",
+      generator: "idlekit.contract-generator",
+      generatorVersion: 1,
+      schemaId: resetCycleSchemaId(),
+      sources: ordered,
+      typia: "14.0.6",
+    }),
+  );
+  return {
+    idlekitContract: {
+      generator: "idlekit.contract-generator" as const,
+      generatorVersion: 1 as const,
+      exportApi: "typia.json.schema" as const,
+      dialect: "openapi-3.1" as const,
+      typia: "14.0.6" as const,
+      schemaId: resetCycleSchemaId(),
+      contractId: "idlekit.reset-cycle.v1",
+      algorithmVersion: resetCycleAlgorithmVersion(),
+      sourceHash,
+      sources: ordered,
+    },
+    schema: {
+      $id: resetCycleSchemaId(),
+      version: resetCycleJsonSchema().version,
+      schema: resetCycleJsonSchema().schema,
+      components: resetCycleJsonSchema().components,
     },
   };
 }
@@ -147,14 +199,19 @@ export function renderedContracts(base = root): {
   analysisFields: string;
   etaSchema: string;
   etaFields: string;
+  resetSchema: string;
+  resetFields: string;
 } {
   const sources = sourceDigests(base);
   const analysisSources = analysisSourceDigests(base);
   const etaSources = etaSourceDigests(base);
+  const resetSources = resetSourceDigests(base);
   const analysisDocument = buildAnalysisContractDocument(analysisSources);
   const etaDocument = buildEtaContractDocument(etaSources);
+  const resetDocument = buildResetContractDocument(resetSources);
   const analysisFields = structuralFieldMetadata(analysisArtifactJsonSchema());
   const etaFields = structuralFieldMetadata(etaEstimateJsonSchema());
+  const resetFields = structuralFieldMetadata(resetCycleJsonSchema());
   return {
     schema: `${canonicalJson(buildContractDocument(sources))}\n`,
     fields: `${canonicalJson(buildFieldMetadata(sources))}\n`,
@@ -182,6 +239,18 @@ export function renderedContracts(base = root): {
       enums: etaFields.enums,
       comments: etaFields.comments,
     })}\n`,
+    resetSchema: `${analysisCanonicalJson(resetDocument)}\n`,
+    resetFields: `${analysisCanonicalJson({
+      idlekitContract: {
+        kind: "structural-metadata",
+        schemaId: resetCycleSchemaId(),
+        sourceHash: resetDocument.idlekitContract.sourceHash,
+        note: "Names, enum values, and schema descriptions only. No design intent, example balances, or translations.",
+      },
+      properties: resetFields.properties,
+      enums: resetFields.enums,
+      comments: resetFields.comments,
+    })}\n`,
   };
 }
 
@@ -194,6 +263,8 @@ export function writeContracts(dir: string, base = root): void {
   writeFileSync(join(dir, analysisFieldsName), rendered.analysisFields);
   writeFileSync(join(dir, etaSchemaName), rendered.etaSchema);
   writeFileSync(join(dir, etaFieldsName), rendered.etaFields);
+  writeFileSync(join(dir, resetSchemaName), rendered.resetSchema);
+  writeFileSync(join(dir, resetFieldsName), rendered.resetFields);
 }
 
 export function compareContracts(dir: string, base = root): string[] {
@@ -206,6 +277,8 @@ export function compareContracts(dir: string, base = root): string[] {
     [analysisFieldsName, rendered.analysisFields],
     [etaSchemaName, rendered.etaSchema],
     [etaFieldsName, rendered.etaFields],
+    [resetSchemaName, rendered.resetSchema],
+    [resetFieldsName, rendered.resetFields],
   ] as const) {
     const path = join(dir, name);
     let current = "";

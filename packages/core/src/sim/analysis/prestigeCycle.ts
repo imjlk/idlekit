@@ -12,6 +12,16 @@ export type PrestigeCycleRow = Readonly<{
   stability: "stable" | "drifting";
 }>;
 
+/**
+ * The row fields above are the legacy interval scan.
+ * They are not counts of committed resets and not a steady state.
+ */
+export const legacyPrestigeCycleWarnings = [
+  "stability is cycles >= 5 and is not a measured steady state",
+  "breakEvenSec is min(interval, horizon) and is not a committed reset",
+  "cycles is copied onto each row and is not a count of committed resets",
+] as const;
+
 function metric(row: PrestigeCycleRow, objective: PrestigeCycleObjective): number {
   return Number(objective === "netWorthPerHour" ? row.netWorthPerHour : row.pointsPerHour);
 }
@@ -24,7 +34,7 @@ export function analyzePrestigeCycle<N, U extends string, Vars>(args: {
   horizonSec: number;
   cycles: number;
   objective: PrestigeCycleObjective;
-}): Readonly<{ best: PrestigeCycleRow; rows: PrestigeCycleRow[] }> {
+}): Readonly<{ best: PrestigeCycleRow; rows: PrestigeCycleRow[]; warnings: readonly string[] }> {
   const rows: PrestigeCycleRow[] = [];
   const { fromSec, toSec, stepSec } = args.scan;
   // `interval += stepSec` never ends for a step <= 0, or once the step is below an ulp of the interval.
@@ -106,5 +116,5 @@ export function analyzePrestigeCycle<N, U extends string, Vars>(args: {
     throw new Error(`analyzePrestigeCycle has no finite ${args.objective} to rank`);
   }
 
-  return { best, rows };
+  return { best, rows, warnings: legacyPrestigeCycleWarnings };
 }

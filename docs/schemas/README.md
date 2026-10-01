@@ -20,7 +20,7 @@ These are the canonical JSON output contracts for the CLI.
 - `replay.verify.output.schema.json`
 - `kpi.regress.output.schema.json`
 
-`docs/schemas/generated/scenario.v1.schema.json` is the generated structural schema for `ScenarioV1`. `docs/schemas/generated/analysis.artifact.v1.schema.json` is analysis artifact v1. `docs/schemas/generated/eta.estimate.v1.schema.json` is the ETA estimate. None of those is a CLI `_meta` schema. Handwritten `eta.output.schema.json` stays the legacy ETA output. Replay `artifact.v1.schema.json` stays the replay envelope. See [Contract generation](../contract-generation.md), [Analysis contracts](../analysis-contracts.md), and [ETA semantics](../eta-semantics.md).
+`docs/schemas/generated/scenario.v1.schema.json` is the generated structural schema for `ScenarioV1`. `docs/schemas/generated/analysis.artifact.v1.schema.json` is analysis artifact v1. `docs/schemas/generated/eta.estimate.v1.schema.json` is the ETA estimate. `docs/schemas/generated/reset.cycle.v1.schema.json` is the reset-cycle artifact. None of those is a CLI `_meta` schema. Handwritten `eta.output.schema.json` stays the legacy ETA output. Replay `artifact.v1.schema.json` stays the replay envelope. See [Contract generation](../contract-generation.md), [Analysis contracts](../analysis-contracts.md), [ETA semantics](../eta-semantics.md), and [Reset cycle execution](../reset-cycle.md).
 
 ## Notes
 

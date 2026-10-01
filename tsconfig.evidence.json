@@ -19,6 +19,8 @@
     "packages/core/src/sim/analysis/analysisContract.test.ts",
     "packages/core/src/sim/analysis/eta.ts",
     "packages/core/src/sim/analysis/eta.semantics.test.ts",
+    "packages/core/src/sim/analysis/resetCycle.ts",
+    "packages/core/src/sim/analysis/resetCycle.test.ts",
     "packages/core/src/sim/step.ts",
     "packages/core/src/sim/step.bulk.test.ts",
     "packages/core/src/sim/timeBoundary.ts",

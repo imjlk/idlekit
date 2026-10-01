@@ -6,7 +6,7 @@ import type { ScenarioV1 } from "./types";
  * Structural contract for ScenarioV1.
  * Semantic checks stay in validateScenarioV1. This module does not replace them.
  * PR-08 appends analysis DTOs to contractRegistry. PR-09 appends the ETA estimate.
- * The registry does not migrate every existing DTO.
+ * PR-10 appends the reset-cycle artifact. The registry does not migrate every existing DTO.
  */
 
 const CONTRACT_GENERATOR = "idlekit.contract-generator" as const;
@@ -52,6 +52,12 @@ const contractRegistry = [
     kind: "eta-estimate" as const,
     typeName: "EtaEstimateV1",
     source: "packages/core/src/sim/analysis/eta.ts",
+  },
+  {
+    id: "idlekit.reset-cycle.v1" as const,
+    kind: "reset-cycle" as const,
+    typeName: "ResetCycleArtifactV1",
+    source: "packages/core/src/sim/analysis/resetCycle.ts",
   },
 ] as const;
 

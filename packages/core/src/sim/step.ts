@@ -3,6 +3,30 @@ import { tickMoney } from "../policy/tickMoney";
 import { decidePrestigeCooldown } from "./constraints";
 import type { Action, BulkQuote, Model, ScenarioConstraints, SimContext, SimEvent, SimState } from "./types";
 
+export type ResetSnapshot = Readonly<{
+  t: number;
+  money: string;
+  points: string;
+  multiplier: string;
+  count: number;
+}>;
+
+/**
+ * One committed reset action.
+ * `rewardDelta` is the prestige point change from this action.
+ * A cycle adapter may replace it with its own metric before notifying.
+ */
+export type CommittedResetFact = Readonly<{
+  actionId: string;
+  kind: "prestige" | "custom";
+  t: number;
+  wallT: number | null;
+  cost: Readonly<{ unit: string; decimal: string }> | null;
+  rewardDelta: string;
+  before: ResetSnapshot;
+  after: ResetSnapshot;
+}>;
+
 export type StepDecision<N, U extends string, Vars> = Readonly<{
   action: Action<N, U, Vars>;
   bulkSize?: number;
@@ -62,6 +86,12 @@ export type StepOutput<N, U extends string, Vars> = Readonly<{
   prestigeResetT?: number;
 
   walletDelta?: Money<N, U>;
+
+  /**
+   * Prestige or custom actions that committed in this call.
+   * Absent when none committed. A count change without one of these is not a reset.
+   */
+  committedResets?: readonly CommittedResetFact[];
 }>;
 
 /**
@@ -318,7 +348,7 @@ function settleBulk<N, U extends string, Vars>(
   state: SimState<N, U, Vars>,
   size: number,
   events: SimEvent<N>[],
-): SimState<N, U, Vars> | undefined {
+): { state: SimState<N, U, Vars>; cost: Money<N, U> | null } | undefined {
   if (typeof size !== "number" || !isQuotedBulkSize(size)) {
     rejectBulk(events, action.id, "INVALID_BULK_SIZE", { actionId: action.id, size });
     return undefined;
@@ -339,39 +369,75 @@ function settleBulk<N, U extends string, Vars>(
   }
   const quote = matched[0];
   if (!quote) return undefined;
-  return payQuote(ctx, state, action.id, quote.cost, events);
+  const paid = payQuote(ctx, state, action.id, quote.cost, events);
+  if (!paid) return undefined;
+  return { state: paid, cost: quote.cost };
+}
+
+function resetSnapshot<N, U extends string, Vars>(
+  ctx: SimContext<N, U, Vars>,
+  state: SimState<N, U, Vars>,
+): ResetSnapshot {
+  return {
+    t: state.t,
+    money: ctx.E.toString(state.wallet.money.amount),
+    points: ctx.E.toString(state.prestige.points),
+    multiplier: ctx.E.toString(state.prestige.multiplier),
+    count: state.prestige.count,
+  };
+}
+
+function wallNow<N, U extends string, Vars>(ctx: SimContext<N, U, Vars>): number | null {
+  const wallT = ctx.clocks?.wallT;
+  return typeof wallT === "number" && Number.isFinite(wallT) ? wallT : null;
 }
 
 /**
- * Single source of truth for one tick.
- * An omitted size or `singleBuySize` pays `Action.cost` once, then `apply` once.
- * A larger integer size pays the matching `BulkQuote.cost` once, then `apply` once.
- * `apply` does not pay again. A rejected quote leaves this state unchanged.
+ * Pay and apply already chosen actions.
+ * This is the payment path inside `stepOnce`. It does not tick income, evolve, or advance `t`.
  * Each decision re-reads `model.actions` for the state so far, so a later buy is quoted after earlier applies.
- * Plugin callbacks are not a transaction.
  *
- * @evidence docs/requirements/active/bulk-quote-settlement.md#req-pr01-bulk-quote-settlement Pays the current matching BulkQuote once for a quoted bulk size and keeps the single-cost path for size 1.
- * @evidenceReview docs/requirements/active/bulk-quote-settlement.md#req-pr01-bulk-quote-settlement #f2fb3d7 Re-read the section: size 10 pays the quote total, a missing quote does not fall back to the unit cost, and a failed check does not change wallet or vars.
+ * @evidence docs/requirements/active/reset-cycle-execution.md#req-pr10-committed-reset A reset commits through this payment path and does not mint a tick of income.
+ * @evidenceReview docs/requirements/active/reset-cycle-execution.md#req-pr10-committed-reset #dff6bbb Re-read the section: the reset call does not tick income or advance t.
  */
-export function stepOnce<N, U extends string, Vars>(
-  input: StepInput<N, U, Vars>,
-): StepOutput<N, U, Vars> {
-  const { ctx, model, dt, constraints, fast } = input;
-  const prev = input.state;
+export function applyDecisions<N, U extends string, Vars>(args: {
+  ctx: SimContext<N, U, Vars>;
+  model: Model<N, U, Vars>;
+  state: SimState<N, U, Vars>;
+  decisions?: readonly StepDecision<N, U, Vars>[];
+  constraints?: ScenarioConstraints;
+  admits?: (action: Action<N, U, Vars>) => boolean;
+  resetKinds?: ReadonlySet<"prestige" | "custom">;
+  /**
+   * Default true: re-read `model.actions` and drop a decision the model no longer lists.
+   * A reset adapter passes false. Its action was built for this state and may not be a model action.
+   */
+  resolveAgainstModel?: boolean;
+}): {
+  state: SimState<N, U, Vars>;
+  events: SimEvent<N>[];
+  actionsApplied: Array<{ t: number; actionId: string; label?: string; bulkSize?: number }>;
+  prestigeResetT?: number;
+  committedResets: CommittedResetFact[];
+} {
+  const { ctx, model, constraints } = args;
   const { E } = ctx;
-
-  let next = prev;
+  const resetKinds = args.resetKinds ?? new Set<"prestige" | "custom">(["prestige"]);
+  let next = args.state;
   const events: SimEvent<N>[] = [];
   const actionsApplied: Array<{ t: number; actionId: string; label?: string; bulkSize?: number }> = [];
-
-  const maxActionsPerStep = constraints?.maxActionsPerStep ?? Number.POSITIVE_INFINITY;
-  const decisions = (input.decisions ?? []).slice(0, Math.max(0, maxActionsPerStep));
+  const committedResets: CommittedResetFact[] = [];
   let baseline: readonly Action<N, U, Vars>[] | undefined;
-  const baselineActions = () => (baseline ??= model.actions(ctx, prev));
+  const baselineActions = () => (baseline ??= model.actions(ctx, args.state));
   let prestigeResetT: number | undefined;
+  const maxActionsPerStep = constraints?.maxActionsPerStep ?? Number.POSITIVE_INFINITY;
+  const decisions = (args.decisions ?? []).slice(0, Math.max(0, maxActionsPerStep));
 
+  const resolveAgainstModel = args.resolveAgainstModel ?? true;
   for (const d of decisions) {
-    const action = currentAction(model, ctx, next, d.action, d.occurrence, baselineActions);
+    const action = resolveAgainstModel
+      ? currentAction(model, ctx, next, d.action, d.occurrence, baselineActions)
+      : d.action;
     if (!action) {
       events.push({
         type: "action.skipped",
@@ -380,7 +446,7 @@ export function stepOnce<N, U extends string, Vars>(
       });
       continue;
     }
-    if (input.admits && !input.admits(action)) continue;
+    if (args.admits && !args.admits(action)) continue;
     if (!action.canApply(ctx, next)) {
       events.push({
         type: "action.skipped",
@@ -419,11 +485,14 @@ export function stepOnce<N, U extends string, Vars>(
       }
     }
 
+    const before = resetSnapshot(ctx, next);
     let settledSize = d.bulkSize;
+    let paid: Money<N, U> | null = null;
     if (d.bulkSize !== undefined && d.bulkSize !== singleBuySize) {
       const settled = settleBulk(ctx, action, next, d.bulkSize, events);
       if (!settled) continue;
-      next = settled;
+      next = settled.state;
+      paid = settled.cost;
       settledSize = d.bulkSize;
     } else {
       const cost = action.cost(ctx, next);
@@ -489,10 +558,12 @@ export function stepOnce<N, U extends string, Vars>(
             },
           },
         };
+        paid = cost;
       }
     }
 
     const decisionT = next.t;
+    const pointsBefore = next.prestige.points;
     next = action.apply(ctx, next, settledSize);
     if (action.kind === "prestige") prestigeResetT = decisionT;
     events.push({
@@ -507,7 +578,62 @@ export function stepOnce<N, U extends string, Vars>(
       label: action.label,
       bulkSize: settledSize,
     });
+    if (action.kind === "prestige" || action.kind === "custom") {
+      if (resetKinds.has(action.kind)) {
+        committedResets.push({
+          actionId: action.id,
+          kind: action.kind,
+          t: decisionT,
+          wallT: wallNow(ctx),
+          cost: paid
+            ? { unit: paid.unit.code, decimal: E.toString(paid.amount) }
+            : null,
+          rewardDelta: E.toString(E.sub(next.prestige.points, pointsBefore)),
+          before,
+          after: resetSnapshot(ctx, next),
+        });
+      }
+    }
   }
+
+  return {
+    state: next,
+    events,
+    actionsApplied,
+    ...(prestigeResetT !== undefined ? { prestigeResetT } : {}),
+    committedResets,
+  };
+}
+
+/**
+ * Single source of truth for one tick.
+ * An omitted size or `singleBuySize` pays `Action.cost` once, then `apply` once.
+ * A larger integer size pays the matching `BulkQuote.cost` once, then `apply` once.
+ * `apply` does not pay again. A rejected quote leaves this state unchanged.
+ * Plugin callbacks are not a transaction.
+ *
+ * @evidence docs/requirements/active/bulk-quote-settlement.md#req-pr01-bulk-quote-settlement Pays the current matching BulkQuote once for a quoted bulk size and keeps the single-cost path for size 1.
+ * @evidenceReview docs/requirements/active/bulk-quote-settlement.md#req-pr01-bulk-quote-settlement #f2fb3d7 Re-read the section: size 10 pays the quote total, a missing quote does not fall back to the unit cost, and a failed check does not change wallet or vars.
+ */
+export function stepOnce<N, U extends string, Vars>(
+  input: StepInput<N, U, Vars>,
+): StepOutput<N, U, Vars> {
+  const { ctx, model, dt, constraints, fast } = input;
+  const prev = input.state;
+  const { E } = ctx;
+
+  const applied = applyDecisions({
+    ctx,
+    model,
+    state: prev,
+    decisions: input.decisions,
+    constraints,
+    ...(input.admits ? { admits: input.admits } : {}),
+  });
+  let next = applied.state;
+  const events = applied.events;
+  const actionsApplied = applied.actionsApplied;
+  const prestigeResetT = applied.prestigeResetT;
 
   const income = model.income(ctx, next);
   const scaledIncome = {
@@ -594,6 +720,7 @@ export function stepOnce<N, U extends string, Vars>(
     actionsApplied: actionsApplied.length > 0 ? actionsApplied : undefined,
     observedMoney,
     ...(prestigeResetT !== undefined ? { prestigeResetT } : {}),
+    ...(applied.committedResets.length > 0 ? { committedResets: applied.committedResets } : {}),
     walletDelta,
   };
 }

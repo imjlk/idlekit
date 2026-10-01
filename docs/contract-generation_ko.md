@@ -19,7 +19,7 @@ bun run contracts:generate
 
 ## 등록 범위
 
-`packages/core/src/scenario/scenarioContract.ts`의 `contractRegistry`는 `idlekit.scenario.v1`과 `idlekit.analysis.artifact.v1`을 담는다. `PR-09`는 `typia.json.schema<EtaEstimateV1, "3.1">()`의 `idlekit.eta.estimate.v1`을 더한다. 분석 항목은 `typia.json.schema<AnalysisArtifactV1, "3.1">()`이다. 기존 출력 schema를 이 목록으로 옮기지 않는다. `docs/schemas/*.output.schema.json`의 CLI 출력 schema는 손으로 쓴 계약이다. `eta.output.schema.json`도 손으로 쓴 계약으로 남는다. replay `artifact.v1.schema.json`은 이 계약이 아니다.
+`packages/core/src/scenario/scenarioContract.ts`의 `contractRegistry`는 `idlekit.scenario.v1`과 `idlekit.analysis.artifact.v1`을 담는다. `PR-09`는 `typia.json.schema<EtaEstimateV1, "3.1">()`의 `idlekit.eta.estimate.v1`을 더한다. `PR-10`은 `typia.json.schema<ResetCycleArtifactV1, "3.1">()`의 `idlekit.reset-cycle.v1`을 더한다. 분석 항목은 `typia.json.schema<AnalysisArtifactV1, "3.1">()`이다. 기존 출력 schema를 이 목록으로 옮기지 않는다. `docs/schemas/*.output.schema.json`의 CLI 출력 schema는 손으로 쓴 계약이다. `eta.output.schema.json`도 손으로 쓴 계약으로 남는다. replay `artifact.v1.schema.json`은 이 계약이 아니다.
 
 `scenario.v1.fields.json`은 생성된 schema에 이미 있는 이름, const 값, description이다. 설계 의도, 예시 숫자, 한국어 문장은 authored 문서에 둔다.
 

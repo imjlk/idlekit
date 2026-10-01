@@ -2,7 +2,7 @@ import { analyzeUX } from "./analysis/ux";
 import { recordPrestigeReset } from "./constraints";
 import { createBoundedLog, createEventBuffer } from "./eventBuffer";
 import { observationLedger } from "./goalRead";
-import { createObservationRecorder, statsFromObservation } from "./observation";
+import { createObservationRecorder, emitCommittedResets, statsFromObservation } from "./observation";
 import { stepOnce } from "./step";
 import { assertSimulationClock, assertTickAdvanced, nextBoundary, stepContext, timeStepEvents } from "./timeBoundary";
 import type { CompiledScenario, RunResult, RunStop, SimState } from "./types";
@@ -112,6 +112,7 @@ export function runScenario<N, U extends string, Vars>(
     });
     assertTickAdvanced("runScenario", actionStartT, step.next.t, decision.dt, stepSec, start.t);
     constraints = recordPrestigeReset(constraints, step.prestigeResetT, sc.run.onPrestigeReset);
+    emitCommittedResets(sc.run.observer, step.committedResets ?? []);
 
     state = step.next;
     recorder.recordStep({

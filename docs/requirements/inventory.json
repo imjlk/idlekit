@@ -458,6 +458,58 @@
           "args": ["test", "--timeout", "120000", "src/sim/analysis/eta.semantics.test.ts"]
         }
       ]
+    },
+    {
+      "id": "REQ-PR10-COMMITTED-RESET",
+      "pr": "PR-10",
+      "anchor": "req-pr10-committed-reset",
+      "doc": "docs/requirements/active/reset-cycle-execution.md",
+      "production": [
+        "packages/core/src/sim/analysis/resetCycle.ts",
+        "packages/core/src/sim/step.ts",
+        "packages/core/src/sim/observation.ts"
+      ],
+      "tests": [
+        {
+          "file": "packages/core/src/sim/analysis/resetCycle.test.ts",
+          "exportName": "runsThreeCommittedResets",
+          "registeredAs": "reset cycle execution > commits three resets and resumes the same economy",
+          "cwd": "packages/core",
+          "args": ["test", "--timeout", "120000", "src/sim/analysis/resetCycle.test.ts"]
+        }
+      ]
+    },
+    {
+      "id": "REQ-PR10-REFUSED-RESET",
+      "pr": "PR-10",
+      "anchor": "req-pr10-refused-reset",
+      "doc": "docs/requirements/active/reset-cycle-execution.md",
+      "production": ["packages/core/src/sim/analysis/resetCycle.ts"],
+      "tests": [
+        {
+          "file": "packages/core/src/sim/analysis/resetCycle.test.ts",
+          "exportName": "recordsRejectedResetWithoutReward",
+          "registeredAs": "reset cycle execution > records a refused reset without paying a reward",
+          "cwd": "packages/core",
+          "args": ["test", "--timeout", "120000", "src/sim/analysis/resetCycle.test.ts"]
+        }
+      ]
+    },
+    {
+      "id": "REQ-PR10-REWARD-DELTA",
+      "pr": "PR-10",
+      "anchor": "req-pr10-reward-delta",
+      "doc": "docs/requirements/active/reset-cycle-execution.md",
+      "production": ["packages/core/src/sim/analysis/resetCycle.ts"],
+      "tests": [
+        {
+          "file": "packages/core/src/sim/analysis/resetCycle.test.ts",
+          "exportName": "excludesOpeningRewardFromDelta",
+          "registeredAs": "reset cycle execution > keeps opening points out of the reward delta",
+          "cwd": "packages/core",
+          "args": ["test", "--timeout", "120000", "src/sim/analysis/resetCycle.test.ts"]
+        }
+      ]
     }
   ]
 }

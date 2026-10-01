@@ -1,6 +1,7 @@
 import { assertLogBudget } from "./eventBuffer";
 import { createObservationLedger, readGoal, type ObservationLedger } from "./goalRead";
 import { simStatsFromCounters, type MetricStatus, type SimStats } from "./analysis/ux";
+import type { CommittedResetFact } from "./step";
 import type { SimEvent, SimState } from "./types";
 
 /**
@@ -76,7 +77,29 @@ export type RunObserver = Readonly<{
   onAction?: (fact: Readonly<{ t: number; actionId: string; outcome: "applied" | "skipped"; reason?: string }>) => void;
   onMilestone?: (fact: Readonly<{ t: number; key: string }>) => void;
   onGoal?: (fact: Readonly<{ t: number; goalId: string }>) => void;
+  /**
+   * A committed reset action. A `prestige.count` change is not this fact.
+   * `wallT` is the session wall clock when the model declared one. It is not an OS clock.
+   */
+  onReset?: (fact: CommittedResetFact) => void;
 }>;
+
+/**
+ * Tell the observer about reset actions that actually committed.
+ * Callers pass the action receipt. This function does not read `prestige.count`.
+ *
+ * @evidence docs/requirements/active/reset-cycle-execution.md#req-pr10-committed-reset Reset facts come from the committed action, not from a prestige count change.
+ * @evidenceReview docs/requirements/active/reset-cycle-execution.md#req-pr10-committed-reset #dff6bbb Re-read the section: onReset is the action receipt, and a count change alone is not a reset.
+ */
+export function emitCommittedResets(
+  observer: RunObserver | undefined,
+  resets: readonly CommittedResetFact[],
+): void {
+  if (!observer?.onReset || resets.length === 0) return;
+  for (const fact of resets) {
+    notify(() => observer.onReset?.(fact));
+  }
+}
 
 export type RunGoal<N, U extends string, Vars> = Readonly<{
   id: string;

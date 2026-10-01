@@ -4,7 +4,7 @@ import { analyzeUX } from "./analysis/ux";
 import { recordPrestigeReset } from "./constraints";
 import { createBoundedLog, createEventBuffer } from "./eventBuffer";
 import { observationLedger } from "./goalRead";
-import { createObservationRecorder, statsFromObservation } from "./observation";
+import { createObservationRecorder, emitCommittedResets, statsFromObservation } from "./observation";
 import { resolveOfflineSeconds } from "./offlineCredit";
 import { stepOnce } from "./step";
 import { assertSimulationClock, assertTickAdvanced, nextBoundary, stepContext, timeEpsilon, timeStepEvents } from "./timeBoundary";
@@ -216,6 +216,7 @@ export function applyOfflineSeconds<N, U extends string, Vars>(args: {
       scenario.strategy?.restoreState?.(saved);
     }
     constraints = recordPrestigeReset(constraints, out.prestigeResetT, scenario.run.onPrestigeReset);
+    emitCommittedResets(scenario.run.observer, out.committedResets ?? []);
 
     state = out.next;
     simulatedSec += decision.dt;
