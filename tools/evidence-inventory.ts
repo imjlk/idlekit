@@ -55,8 +55,8 @@ export function isNonProductionPath(rel: string): boolean {
   return normalized.split("/").some((segment) => NON_PRODUCTION_SEGMENTS.has(segment));
 }
 
-function hasProductionExport(body: string): boolean {
-  return /\bexport\s+(?:async\s+)?function\b/.test(body)
+export function hasProductionExport(body: string): boolean {
+  return /\bexport\s+(?:default\s+)?(?:async\s+)?function\b/.test(body)
     || /\bexport\s+(?:const|class|type|interface|enum)\b/.test(body)
     || /\bexport\s*\{/.test(body);
 }
@@ -903,7 +903,7 @@ export function productionFileCites(body: string, doc: string, anchor: string): 
     const after = body.slice(match.index + match[0].length);
     // A // note may sit between the doc block and the export. Another block comment may not.
     const exportFollows = new RegExp(
-      "^(?:\\s|//[^\\n]*(?:\\n|$))*export\\s+(?:async\\s+)?(?:function|const)\\b",
+      "^(?:\\s|//[^\\n]*(?:\\n|$))*export\\s+(?:default\\s+)?(?:async\\s+)?(?:function|const)\\b",
     );
     if (exportFollows.test(after)) return true;
   }
