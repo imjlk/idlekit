@@ -359,6 +359,13 @@ export function stopsOnAPositiveTickGridAndRefusesANonPositiveStep(): void {
     run: { ...scenario.run, maxSteps: 5 },
   });
   expectApplicable(roomy);
+  const cappedResume = checkResume({ ...scenario, run: { ...scenario.run, maxSteps: 4 } }, 2);
+  expect(cappedResume.applicable).toBe(false);
+  expect(cappedResume.ok).toBe(true);
+  const cappedJson = checkResumeFromJson({ ...scenario, run: { ...scenario.run, maxSteps: 4 } }, 2);
+  expect(cappedJson.applicable).toBe(false);
+  expect(cappedJson.ok).toBe(true);
+  expectApplicable(checkResume({ ...scenario, run: { ...scenario.run, maxSteps: 5 } }, 2));
 }
 
 /**
@@ -649,6 +656,25 @@ describe("PR-03 resume isolation", () => {
     );
     expect(bigint.ok).toBe(false);
     expect(bigint.summary).toContain("JSON");
+    const thrown = checkResumeFromJson(
+      {
+        ...scenario,
+        strategy: {
+          id: "throwing",
+          decide: () => [],
+          snapshotState: () => ({
+            toJSON() {
+              throw new Error("snapshot failed");
+            },
+          }),
+          restoreState: () => {},
+        },
+      },
+      2,
+    );
+    expect(thrown.ok).toBe(false);
+    expect(thrown.applicable).toBe(true);
+    expect(thrown.summary).toContain("JSON");
   });
 });
 

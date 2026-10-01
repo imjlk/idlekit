@@ -431,6 +431,10 @@ function onGrid<N, U extends string, Vars>(
   if (durationTicks === null || splitTicks === null || splitTicks >= durationTicks) {
     return skip("split is not on the original tick grid");
   }
+  const maxSteps = scenario.run.maxSteps;
+  if (maxSteps !== undefined && (!Number.isInteger(maxSteps) || maxSteps <= durationTicks)) {
+    return skip("maxSteps can stop the run before durationSec");
+  }
   return null;
 }
 
@@ -471,8 +475,9 @@ function jsonResumeCheckpoint<N, U extends string, Vars>(
 ): TailStart<N, U, Vars> | RelationCheck {
   const strategy = scenario.strategy;
   const persistedStrategy = typeof strategy?.snapshotState === "function";
+  let text: string;
   try {
-    const text = JSON.stringify(
+    text = JSON.stringify(
       serializeSimState(scenario.ctx.E, state, {
         seed: scenario.ctx.seed,
         engineName,
@@ -486,18 +491,17 @@ function jsonResumeCheckpoint<N, U extends string, Vars>(
             : undefined,
       }),
     );
-    const parsed = parseSimStateJSON(JSON.parse(text) as unknown);
-    return {
-      state: deserializeSimState(scenario.ctx.E, parsed, {
-        unitFactory: unitFactoryFor(scenario),
-      }),
-      strategyState: parsed.strategy?.state,
-      persistedStrategy,
-    };
-  } catch (error) {
-    if (error instanceof TypeError) return fail("checkpoint is not JSON");
-    throw error;
+  } catch {
+    return fail("checkpoint is not JSON");
   }
+  const parsed = parseSimStateJSON(JSON.parse(text) as unknown);
+  return {
+    state: deserializeSimState(scenario.ctx.E, parsed, {
+      unitFactory: unitFactoryFor(scenario),
+    }),
+    strategyState: parsed.strategy?.state,
+    persistedStrategy,
+  };
 }
 
 function resumeFromCheckpoint<N, U extends string, Vars>(
