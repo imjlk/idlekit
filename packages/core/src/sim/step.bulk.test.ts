@@ -104,7 +104,7 @@ function skippedReason(events: readonly SimEvent<unknown>[]): string | undefined
  * @evidence ./step.ts#canSettleCost A zero wallet cannot pay 1e-13, and it can pay a zero cost.
  * @evidenceReview ./step.ts#canSettleCost #af1aab3 Re-read canSettleCost: a zero wallet cannot pay 1e-13, and it can pay a zero cost, without using cmp.
  * @evidence ./step.ts#stepOnce Calls stepOnce for the quoted buy and the rejected quotes.
- * @evidenceReview ./step.ts#stepOnce #ab12ceb Re-read stepOnce: each decision re-reads model.actions for the state so far, a quoted size pays BulkQuote.cost once through exact decimal order scaled to the smaller exponent, a non-finite cost is skipped before toString, duplicate id and kind stay on their occurrence, and a rejected quote does not apply. Ran this function: a sentinel amount whose toString throws was skipped as invalidQuote, and the second same-id action paid 40.
+ * @evidenceReview ./step.ts#stepOnce #9812c28 Re-read stepOnce: each decision re-reads model.actions for the state so far, a quoted size pays BulkQuote.cost once through exact decimal order scaled to the smaller exponent, a non-finite cost is skipped before toString, duplicate id and kind keep the price identity from the start of the step when a sibling is removed or inserted, and a rejected quote does not apply. Ran this function: a sentinel amount whose toString throws was skipped as invalidQuote, and the second same-id action paid 40.
  */
 export function settlesQuotedBulkAndRejectsBadQuotes(): void {
   expect(singleBuySize).toBe(1);
@@ -852,6 +852,111 @@ describe("PR-01 bulk quote settlement", () => {
     expect(out.next.vars.bonus).toBe(7);
     expect(engine.toNumber(out.next.wallet.money.amount)).toBe(1000);
     expect(skippedReason(out.events)).toBeUndefined();
+  });
+
+  it("keeps a duplicate when an earlier sibling leaves or a new one is inserted", () => {
+    const engine = createNumberEngine();
+    let hideFirst = false;
+    let inserted = false;
+    const removedModel: Model<number, UnitCode, Vars> = {
+      id: "shift-remove",
+      version: 1,
+      income: () => coin(engine, engine.zero()),
+      actions: () => {
+        const first: Action<number, UnitCode, Vars> = {
+          id: "buy",
+          kind: "buy",
+          canApply: () => true,
+          cost: () => coin(engine, engine.from(10)),
+          apply: (_ctx, current) => {
+            hideFirst = true;
+            return { ...current, vars: { ...current.vars, owned: current.vars.owned + 1 } };
+          },
+        };
+        const second: Action<number, UnitCode, Vars> = {
+          id: "buy",
+          kind: "buy",
+          canApply: () => true,
+          cost: () => coin(engine, engine.from(40)),
+          apply: (_ctx, current) => ({
+            ...current,
+            vars: { ...current.vars, owned: current.vars.owned + 5 },
+          }),
+        };
+        return hideFirst ? [second] : [first, second];
+      },
+    };
+    const removedStart = state(engine, 1000);
+    const removedInitial = removedModel.actions(context(engine), removedStart);
+    const removed = stepOnce({
+      ctx: context(engine),
+      model: removedModel,
+      state: removedStart,
+      dt: 0,
+      decisions: [
+        { action: removedInitial[0]!, occurrence: 0 },
+        { action: removedInitial[1]!, occurrence: 1 },
+      ],
+    });
+    expect(removed.next.vars.owned).toBe(6);
+    expect(engine.toNumber(removed.next.wallet.money.amount)).toBe(950);
+    expect(skippedReason(removed.events)).toBeUndefined();
+
+    const insertedModel: Model<number, UnitCode, Vars> = {
+      id: "shift-insert",
+      version: 1,
+      income: () => coin(engine, engine.zero()),
+      actions: () => {
+        const first: Action<number, UnitCode, Vars> = {
+          id: "buy",
+          kind: "buy",
+          canApply: () => true,
+          cost: () => coin(engine, engine.from(10)),
+          apply: (_ctx, current) => {
+            inserted = true;
+            return { ...current, vars: { ...current.vars, owned: current.vars.owned + 1 } };
+          },
+        };
+        const second: Action<number, UnitCode, Vars> = {
+          id: "buy",
+          kind: "buy",
+          canApply: () => true,
+          cost: () => coin(engine, engine.from(40)),
+          apply: (_ctx, current) => ({
+            ...current,
+            vars: { ...current.vars, bonus: current.vars.bonus + 5 },
+          }),
+        };
+        const extra: Action<number, UnitCode, Vars> = {
+          id: "buy",
+          kind: "buy",
+          canApply: () => true,
+          cost: () => coin(engine, engine.from(7)),
+          apply: (_ctx, current) => ({
+            ...current,
+            vars: { ...current.vars, tier: current.vars.tier + 9 },
+          }),
+        };
+        return inserted ? [extra, first, second] : [first, second];
+      },
+    };
+    const insertedStart = state(engine, 1000);
+    const insertedInitial = insertedModel.actions(context(engine), insertedStart);
+    const shifted = stepOnce({
+      ctx: context(engine),
+      model: insertedModel,
+      state: insertedStart,
+      dt: 0,
+      decisions: [
+        { action: insertedInitial[0]!, occurrence: 0 },
+        { action: insertedInitial[1]!, occurrence: 1 },
+      ],
+    });
+    expect(shifted.next.vars.owned).toBe(1);
+    expect(shifted.next.vars.bonus).toBe(5);
+    expect(shifted.next.vars.tier).toBe(0);
+    expect(engine.toNumber(shifted.next.wallet.money.amount)).toBe(950);
+    expect(skippedReason(shifted.events)).toBeUndefined();
   });
 
   it("skips a later decision when the model no longer offers that action", () => {

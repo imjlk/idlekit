@@ -52,22 +52,73 @@ export type StepOutput<N, U extends string, Vars> = Readonly<{
  */
 export const singleBuySize = 1;
 
+function actionPriceKey<N, U extends string, Vars>(
+  action: Action<N, U, Vars>,
+  ctx: SimContext<N, U, Vars>,
+  state: SimState<N, U, Vars>,
+): string | undefined {
+  try {
+    const cost = action.cost(ctx, state);
+    const label = action.label ?? "";
+    if (cost == null) return `${label}\0`;
+    if (!ctx.E.isFinite(cost.amount)) return undefined;
+    return `${label}\0${cost.unit.code}\0${ctx.E.toString(cost.amount)}`;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * `occurrence` is the duplicate's place in the list from the start of the step.
+ * Later lists can drop or insert siblings, so match the price at this state
+ * instead of reading that same index again.
+ */
+function alignFreshDuplicate<N, U extends string, Vars>(
+  baseline: readonly Action<N, U, Vars>[],
+  fresh: readonly Action<N, U, Vars>[],
+  ctx: SimContext<N, U, Vars>,
+  state: SimState<N, U, Vars>,
+  occurrence: number,
+): Action<N, U, Vars> | undefined {
+  const origin = baseline[occurrence];
+  if (!origin) return undefined;
+  const originKey = actionPriceKey(origin, ctx, state);
+  if (originKey === undefined) return undefined;
+  const used = new Set<number>();
+  for (const action of fresh) {
+    const key = actionPriceKey(action, ctx, state);
+    if (key === undefined) continue;
+    let index = -1;
+    for (let cursor = 0; cursor < baseline.length; cursor += 1) {
+      if (used.has(cursor)) continue;
+      if (actionPriceKey(baseline[cursor]!, ctx, state) === key) {
+        index = cursor;
+        break;
+      }
+    }
+    if (index < 0) continue;
+    used.add(index);
+    if (index === occurrence) return action;
+  }
+  return undefined;
+}
+
 function currentAction<N, U extends string, Vars>(
   model: Model<N, U, Vars>,
   ctx: SimContext<N, U, Vars>,
   state: SimState<N, U, Vars>,
   selected: Action<N, U, Vars>,
-  occurrence?: number,
+  occurrence: number | undefined,
+  baseline: readonly Action<N, U, Vars>[],
 ): Action<N, U, Vars> | undefined {
   const fresh = model.actions(ctx, state);
   const byRef = fresh.find((candidate) => candidate === selected);
   if (byRef) return byRef;
-  const matches = fresh.filter(
-    (candidate) => candidate.id === selected.id && candidate.kind === selected.kind,
-  );
-  if (occurrence !== undefined) return matches[occurrence];
-  if (matches.length === 1) return matches[0];
-  return undefined;
+  const sameIdentity = (candidate: Action<N, U, Vars>) =>
+    candidate.id === selected.id && candidate.kind === selected.kind;
+  const matches = fresh.filter(sameIdentity);
+  if (occurrence === undefined) return matches.length === 1 ? matches[0] : undefined;
+  return alignFreshDuplicate(baseline.filter(sameIdentity), matches, ctx, state, occurrence);
 }
 
 function rejectBulk<N>(events: SimEvent<N>[], actionId: string, code: string, detail: unknown): void {
@@ -274,9 +325,10 @@ export function stepOnce<N, U extends string, Vars>(
 
   const maxActionsPerStep = constraints?.maxActionsPerStep ?? Number.POSITIVE_INFINITY;
   const decisions = (input.decisions ?? []).slice(0, Math.max(0, maxActionsPerStep));
+  const baseline = model.actions(ctx, prev);
 
   for (const d of decisions) {
-    const action = currentAction(model, ctx, next, d.action, d.occurrence);
+    const action = currentAction(model, ctx, next, d.action, d.occurrence, baseline);
     if (!action) {
       events.push({
         type: "action.skipped",
