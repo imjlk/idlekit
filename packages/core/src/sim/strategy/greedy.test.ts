@@ -455,6 +455,46 @@ describe("createGreedyStrategy", () => {
     expect(out[0]?.bulkSize).toBe(2);
   });
 
+  it("keeps a smaller affordable quote when a larger cost is omitted", () => {
+    const ctx: SimContext<number, UnitCode, Vars> = {
+      E: createNumberEngine(),
+      unit: { code: "COIN" },
+      tickPolicy: { mode: "drop" },
+    };
+    const action: Action<number, UnitCode, Vars> = {
+      id: "buy",
+      kind: "buy",
+      canApply: () => true,
+      cost: () => ({ unit: { code: "COIN" }, amount: 10 }),
+      bulk: () => [
+        {
+          size: 2,
+          cost: { unit: { code: "COIN" }, amount: 10 },
+          deltaIncomePerSec: { unit: { code: "COIN" }, amount: 1 },
+        },
+        {
+          size: 10,
+          deltaIncomePerSec: { unit: { code: "COIN" }, amount: 4 },
+        } as unknown as BulkQuote<number, UnitCode>,
+      ],
+      apply: (_ctx, state) => state,
+    };
+    const model: Model<number, UnitCode, Vars> = {
+      id: "m",
+      version: 1,
+      income: () => ({ unit: { code: "COIN" }, amount: 0 }),
+      actions: () => [action],
+    };
+    const strategy = createGreedyStrategy<number, UnitCode, Vars>({
+      schemaVersion: 1,
+      objective: "maximizeIncome",
+      bulk: { mode: "maxAffordable" },
+    });
+    const out = strategy.decide(ctx, model, makeState(20));
+    expect(out.length).toBe(1);
+    expect(out[0]?.bulkSize).toBe(2);
+  });
+
   it("accepts occurrence on a contextually typed decision", () => {
     const ctx: SimContext<number, UnitCode, Vars> = {
       E: createNumberEngine(),

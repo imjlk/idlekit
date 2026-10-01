@@ -41,7 +41,8 @@ function isAffordable<N, U extends string, Vars>(
   state: SimState<N, U, Vars>,
   cost: BulkQuote<N, U>["cost"],
 ): boolean {
-  if (!cost) return true;
+  if (cost === null) return true;
+  if (!cost) return false;
   const costCode = structuredUnitCode(cost);
   if (costCode === undefined || costCode !== structuredUnitCode(state.wallet.money)) return false;
   if (!ctx.E.isFinite(cost.amount)) return false;
