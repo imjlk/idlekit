@@ -501,7 +501,7 @@ describe("createGreedyStrategy", () => {
       unit: { code: "COIN" },
       tickPolicy: { mode: "drop" },
     };
-    const quotes = [
+    const quotes: BulkQuote<number, UnitCode>[] = [
       {
         size: 2,
         cost: null,
