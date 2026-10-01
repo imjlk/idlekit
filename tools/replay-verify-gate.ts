@@ -1,17 +1,23 @@
 import { resolve } from "path";
-import { ROOT, ensureDir, readText, removePath, runJson, sha256Hex, writeText } from "./_bun";
+import {
+  ROOT,
+  cliCommand,
+  ensureDir,
+  readText,
+  removePath,
+  runJson,
+  sha256Hex,
+  writeText,
+} from "./_bun";
 
 const TMP_DIR = resolve(ROOT, "tmp", "replay-verify-gate");
 
 function runCliFromRoot(args: string[]): unknown {
-  return runJson(["bun", "--preload", "@ttsc/unplugin/bun-register", "packages/cli/src/main.ts", ...args], { cwd: ROOT });
+  return runJson(cliCommand(args), { cwd: ROOT });
 }
 
 function runCliDevJson(args: string[]): Record<string, unknown> {
-  return runJson(["bun", "run", "--cwd", "packages/cli", "dev", "--", ...args], { cwd: ROOT }) as Record<
-    string,
-    unknown
-  >;
+  return runCliFromRoot(args) as Record<string, unknown>;
 }
 
 function assert(condition: unknown, message: string): asserts condition {

@@ -1,4 +1,6 @@
 import { defineCommand, option } from "@bunli/core";
+import { resolve } from "path";
+import { pathToFileURL } from "url";
 import { z } from "zod";
 import { CLI_NAME, CLI_VERSION } from "../cliMeta";
 import { buildOutputMeta } from "../io/outputMeta";
@@ -12,7 +14,7 @@ import {
   writePluginTrust,
 } from "../lib/setup";
 import { fileExists } from "../runtime/bun";
-import { runSelfCli } from "../runtime/selfCli";
+import { cliPackageRoot, isBundledCliProcess, runSelfCli } from "../runtime/selfCli";
 import { usageError } from "../errors";
 
 function parseMinimumVersion(range: string): string {
@@ -167,7 +169,9 @@ export default defineCommand({
   },
   async handler({ flags, prompt, terminal, cwd }) {
     const packageJson = await import("../../package.json", { with: { type: "json" } });
-    const generatedUrl = new URL("../../.bunli/commands.gen.ts", import.meta.url);
+    const generatedUrl = isBundledCliProcess()
+      ? pathToFileURL(resolve(cliPackageRoot(), ".bunli/commands.gen.ts"))
+      : new URL("../../.bunli/commands.gen.ts", import.meta.url);
     const generatedExists = await fileExists(generatedUrl.pathname);
 
     const requiredBun = parseMinimumVersion((packageJson.default?.engines as { bun?: string } | undefined)?.bun ?? ">=1.3.0");

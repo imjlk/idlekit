@@ -1,8 +1,14 @@
-import { resolve } from "path";
+import { dirname, resolve } from "path";
 import cliPackageJson from "../../package.json" with { type: "json" };
 import { runText, sha256Hex } from "../runtime/bun";
+import { isBundledCliProcess } from "../runtime/selfCli";
 
-const REPO_ROOT = resolve(import.meta.dir, "../../..");
+function repoRoot(): string {
+  if (isBundledCliProcess()) return resolve(dirname(Bun.main), "../..");
+  return resolve(import.meta.dir, "../../..");
+}
+
+const REPO_ROOT = repoRoot();
 export const OUTPUT_CONTRACT_VERSION = "1.4.0";
 const UNKNOWN_GIT_SHA = "unknown";
 

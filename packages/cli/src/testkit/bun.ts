@@ -55,13 +55,33 @@ export function sha256Hex(value: string | Uint8Array): string {
   return hasher.digest("hex");
 }
 
-export function runCli(args: string[], opts?: CliRunOptions): CliRunResult {
-  const cwd = opts?.cwd ?? CLI_CWD;
+function isJavaScriptEntry(entry: string): boolean {
+  return entry.endsWith(".js") || entry.endsWith(".mjs");
+}
+
+function bundledEntry(): string | undefined {
+  const configured = process.env.IDLEKIT_CLI_ENTRY;
+  if (!configured) return undefined;
+  if (configured.startsWith("/")) return configured;
+  return resolve(CLI_CWD, configured);
+}
+
+function launchPrefix(cwd: string, entry: string): string[] {
+  if (isJavaScriptEntry(entry)) {
+    const config = resolve(REPO_ROOT, "tools/bundled-cli-bunfig.toml");
+    return ["bun", `--config=${config}`];
+  }
   // Package bunfig.toml applies only when cwd is that package. Repo-root
   // launches do not walk up to packages/cli/bunfig.toml, so the typia
   // transform has to be named on the command.
-  const command = cwd === CLI_CWD ? ["bun"] : ["bun", "--preload", "@ttsc/unplugin/bun-register"];
-  const proc = Bun.spawnSync([...command, opts?.entry ?? "src/main.ts", ...args], {
+  if (cwd === CLI_CWD) return ["bun"];
+  return ["bun", "--preload", "@ttsc/unplugin/bun-register"];
+}
+
+export function runCli(args: string[], opts?: CliRunOptions): CliRunResult {
+  const cwd = opts?.cwd ?? CLI_CWD;
+  const entry = opts?.entry ?? bundledEntry() ?? "src/main.ts";
+  const proc = Bun.spawnSync([...launchPrefix(cwd, entry), entry, ...args], {
     cwd,
     env: opts?.env,
     stdout: "pipe",
@@ -103,7 +123,7 @@ export function runCliJsonFromRepoRoot<T = any>(args: string[]): T {
   return JSON.parse(
     runCli(args, {
       cwd: REPO_ROOT,
-      entry: "packages/cli/src/main.ts",
+      entry: bundledEntry() ?? "packages/cli/src/main.ts",
       env: process.env,
     }).stdout,
   ) as T;
