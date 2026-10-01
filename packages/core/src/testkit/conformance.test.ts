@@ -410,7 +410,7 @@ describe("PR-02 time boundaries", () => {
  * @evidence ./conformanceRun.ts#checkResumeFromJson Resumes a 4s scripted grant from JSON at t=2.
  * @evidenceReview ./conformanceRun.ts#checkResumeFromJson #91c215a Resumes a 4s scripted grant from JSON at t=2.
  * @evidence ./conformanceRun.ts#checkRetention Retention applies to the scripted grant.
- * @evidenceReview ./conformanceRun.ts#checkRetention #e5801c6 Retention applies to the scripted grant. A negative eventLog.maxEvents fails before the check substitutes another capacity.
+ * @evidenceReview ./conformanceRun.ts#checkRetention #2924eaf Retention applies to the scripted grant. A negative eventLog.maxEvents fails before the check substitutes another capacity. A run that retains no events is inapplicable.
  * @evidence ./conformanceRun.ts#checkObserver The observer check applies to the scripted grant.
  * @evidenceReview ./conformanceRun.ts#checkObserver #31b124c The observer check applies to the scripted grant. A run that emits no events is inapplicable.
  */
@@ -676,6 +676,12 @@ describe("PR-05 observation retention", () => {
     });
     expect(silentObserver.ok).toBe(true);
     expect(silentObserver.applicable).toBe(false);
+    const silentRetention = checkRetention({
+      ...silent,
+      ctx: { ...silent.ctx, collectMoneyEvents: false },
+    });
+    expect(silentRetention.ok).toBe(true);
+    expect(silentRetention.applicable).toBe(false);
   });
 
   it(
