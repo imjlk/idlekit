@@ -8,9 +8,10 @@ on:
   schedule:
     - cron: "0 3 * * 1"
 
-# A new push to the same branch replaces the run already in progress.
+# A new push to the same pull request or branch replaces the run already in progress.
+# The pull request number keeps two forks that share a branch name from cancelling each other.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 permissions:
