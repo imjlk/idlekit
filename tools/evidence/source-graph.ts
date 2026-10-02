@@ -574,14 +574,17 @@ function exportTarget(exportsField: unknown, subpath: string): string | undefine
 function packageEntry(pkg: WorkspacePackage, subpath: string): string | undefined {
   if (pkg.exports !== undefined) return exportTarget(pkg.exports, subpath);
   if (subpath !== ".") return undefined;
-  return pkg.types ?? pkg.module ?? pkg.main;
-}
-
-/** Runtime entry. Type declarations are not the file Bun loads for a directory import. */
-function runtimePackageEntry(pkg: WorkspacePackage): string | undefined {
-  if (pkg.exports !== undefined) return exportTarget(pkg.exports, ".");
   if (pkg.module) return pkg.module;
   return pkg.main;
+}
+
+/** Runtime entry. Type declarations are not the file Bun loads. */
+function runtimePackageEntry(pkg: WorkspacePackage): string | undefined {
+  return packageEntry(pkg, ".");
+}
+
+function declarationFile(file: string): boolean {
+  return file.endsWith(".d.ts") || file.endsWith(".d.mts") || file.endsWith(".d.cts");
 }
 
 function workspaceFile(startDir: string, spec: string): "none" | "file" | "missing" {
@@ -599,7 +602,7 @@ function workspaceFile(startDir: string, spec: string): "none" | "file" | "missi
   const target = packageEntry(owner, subpath);
   if (!target) return "missing";
   const file = resolveExistingFile(resolve(owner.dir, target));
-  if (!file) return "missing";
+  if (!file || declarationFile(file)) return "missing";
   let real = file;
   try {
     real = realpathSync(file);
@@ -624,7 +627,9 @@ function resolveWorkspaceFile(startDir: string, spec: string): string | undefine
   if (!owner) return undefined;
   const target = packageEntry(owner, subpath);
   if (!target) return undefined;
-  return resolveExistingFile(resolve(owner.dir, target));
+  const file = resolveExistingFile(resolve(owner.dir, target));
+  if (!file || declarationFile(file)) return undefined;
+  return file;
 }
 
 function queueNonRelative(fromFile: string, spec: string, queue: string[], faults: string[]): void {

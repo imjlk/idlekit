@@ -203,21 +203,31 @@ function staticBracketKey(
   return { value: quoted.value, end: close + 1 };
 }
 
-/** `.it` / `["it"]` on a namespace import. Other members are not runners. */
+function runnerKindForMember(spec: string | undefined, member: string): RunnerKind | undefined {
+  if (isRunnerKind(member)) return member;
+  if (!spec) return undefined;
+  return runnerKindForImport(spec, member);
+}
+
+/** `.it` / `["it"]` on a namespace import. `node:test`'s `suite` is a describe. */
 export function namespaceRunnerMember(
   body: string,
   index: number,
+  spec?: string,
 ): { kind: RunnerKind; end: number } | undefined {
   const bracket = staticBracketKey(body, index);
   if (bracket) {
-    if (!isRunnerKind(bracket.value)) return undefined;
-    return { kind: bracket.value, end: bracket.end };
+    const kind = runnerKindForMember(spec, bracket.value);
+    if (!kind) return undefined;
+    return { kind, end: bracket.end };
   }
   const dot = skipSpaceAndComments(body, index);
   if (body[dot] !== ".") return undefined;
   const member = readIdentifier(body, skipSpaceAndComments(body, dot + 1));
-  if (!member || !isRunnerKind(member.value)) return undefined;
-  return { kind: member.value, end: member.end };
+  if (!member) return undefined;
+  const kind = runnerKindForMember(spec, member.value);
+  if (!kind) return undefined;
+  return { kind, end: member.end };
 }
 
 /** An arrow or `function` value is a helper, not a binding of `it` / `test` / `describe`. */
@@ -317,7 +327,7 @@ export function readRunnerRef(
   } else {
     const alias = aliasAt(aliases, ident.value);
     if (alias?.namespace) {
-      const member = namespaceRunnerMember(body, ident.end);
+      const member = namespaceRunnerMember(body, ident.end, alias.spec);
       if (!member) return undefined;
       kind = member.kind;
       afterIdent = member.end;
@@ -447,6 +457,25 @@ export function readRunnerNamespaceValue(
   if (end < 0 || body[skipSpaceAndComments(body, end)] === ".") return undefined;
   if (!bindingBoundary(body, end)) return undefined;
   return { end, spec: imported.spec };
+}
+
+/** `require("bun:test").it(...)` and `await import("bun:test").suite(...)`. */
+export function readDirectModuleRunner(
+  body: string,
+  index: number,
+): { kind: RunnerKind; callFrom: number } | undefined {
+  const imported = readRunnerRequire(body, index) ?? readDynamicRunnerImport(body, index);
+  if (!imported) return undefined;
+  let cursor = imported.end;
+  const grouped = skipSpaceAndComments(body, cursor);
+  if (body[grouped] === ")") cursor = grouped + 1;
+  const dot = skipSpaceAndComments(body, cursor);
+  if (body[dot] !== ".") return undefined;
+  const member = readIdentifier(body, skipSpaceAndComments(body, dot + 1));
+  if (!member) return undefined;
+  const kind = runnerKindForImport(imported.spec, member.value);
+  if (!kind) return undefined;
+  return { kind, callFrom: member.end };
 }
 
 /** `await import("bun:test")`, including one pair of parentheses around the call. */

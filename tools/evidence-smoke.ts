@@ -402,6 +402,7 @@ try {
   const quotedFence = headingAnchors(
     ["> ```md", "> ## Example {#example}", "> ```", "## Kept {#kept}"].join("\n"),
   );
+  const quotedFenceBreak = headingAnchors(["> ```", "## Requirement {#req-id}"].join("\n"));
   const listedFence = headingAnchors(
     ["- ```md", "- ## Example {#example}", "- ```", "## Kept {#kept}"].join("\n"),
   );
@@ -416,6 +417,8 @@ try {
     inlineComment[0] === "kept" &&
     quotedFence.length === 1 &&
     quotedFence[0] === "kept" &&
+    quotedFenceBreak.length === 1 &&
+    quotedFenceBreak[0] === "req-id" &&
     listedFence.length === 1 &&
     listedFence[0] === "kept";
   record(
@@ -423,7 +426,7 @@ try {
     "zero",
     fenceOk ? 0 : 1,
     fenceOk,
-    JSON.stringify({ anchors, backtickInfo, tildeInfo, quotedFence, listedFence }),
+    JSON.stringify({ anchors, backtickInfo, tildeInfo, quotedFence, quotedFenceBreak, listedFence }),
   );
 
   const nested = headingAnchors(
@@ -1432,6 +1435,38 @@ try {
       'if (false) it("credited", citedExport)',
     ].join("\n"),
   ).includes("credited");
+  const nodeNamespaceSuite = duplicateFullNames(
+    [
+      `import * as runner from ${nodeTest}`,
+      'runner.suite("s", () => test("credited", unrelated))',
+      'describe("s", () => test("credited", citedExport))',
+    ].join("\n"),
+  ).includes("s > credited");
+  const bunNamespaceSuite = duplicateFullNames(
+    [
+      'import * as runner from "bun:test"',
+      'runner.suite("s", () => test("credited", unrelated))',
+      'describe("s", () => test("credited", citedExport))',
+    ].join("\n"),
+  ).includes("s > credited");
+  const directRequire = duplicateFullNames(
+    [
+      'require("bun:test").it("credited", unrelated)',
+      'if (false) it("credited", citedExport)',
+    ].join("\n"),
+  ).includes("credited");
+  const directSuite = duplicateFullNames(
+    [
+      `require(${nodeTest}).suite("s", () => test("credited", unrelated))`,
+      'describe("s", () => test("credited", citedExport))',
+    ].join("\n"),
+  ).includes("s > credited");
+  const directExpect = duplicateFullNames(
+    [
+      'require("bun:test").expect("saved")',
+      'if (false) it("credited", citedExport)',
+    ].join("\n"),
+  ).includes("credited");
   const namespaceSuite = duplicateFullNames(
     [
       `import * as runner from ${nodeTest}`,
@@ -1558,12 +1593,55 @@ try {
     ].join("\n"),
   );
   writeFileSync(workspaceTypeHost, 'import type { register } from "@helper/pkg";\n');
+  const runtimePkg = join(workspaceRoot, "pkgs", "runtime");
+  mkdirSync(runtimePkg);
+  writeFileSync(
+    join(runtimePkg, "package.json"),
+    JSON.stringify({
+      name: "@helper/runtime",
+      types: "./register.d.ts",
+      module: "./register.ts",
+    }),
+  );
+  writeFileSync(
+    join(runtimePkg, "register.d.ts"),
+    "export function register(): void;\n// from-runtime-declaration\n",
+  );
+  writeFileSync(
+    join(runtimePkg, "register.ts"),
+    [
+      "export function register() {",
+      '  it("credited", unrelated);',
+      "}",
+      "// from-runtime-entry",
+    ].join("\n"),
+  );
+  const runtimeHost = join(workspaceRoot, "runtime-host.test.ts");
+  writeFileSync(
+    runtimeHost,
+    [
+      'import { register } from "@helper/runtime";',
+      'if (false) it("credited", citedExport);',
+      "register();",
+    ].join("\n"),
+  );
+  const declPkg = join(workspaceRoot, "pkgs", "decls");
+  mkdirSync(declPkg);
+  writeFileSync(
+    join(declPkg, "package.json"),
+    JSON.stringify({ name: "@helper/decls", types: "./only.d.ts" }),
+  );
+  writeFileSync(join(declPkg, "only.d.ts"), "export function register(): void;\n");
+  const declHost = join(workspaceRoot, "decl-host.test.ts");
+  writeFileSync(declHost, 'import { register } from "@helper/decls";\n');
   let aliasedDuplicate = false;
   let aliasedResolved = false;
   let aliasedMissing = false;
   let workspaceDuplicate = false;
   let workspaceResolved = false;
   let workspaceTypeSkipped = false;
+  let runtimeEntry = false;
+  let declarationOnly = false;
   try {
     const aliasBodies = sourceGraph([aliasHost]);
     aliasedDuplicate = duplicateFullNamesAcross(aliasBodies).includes("credited");
@@ -1575,6 +1653,12 @@ try {
     const typeBodies = sourceGraph([workspaceTypeHost]);
     workspaceTypeSkipped =
       typeBodies.length === 1 && !typeBodies.some((body) => body.includes("from-workspace-helper"));
+    const runtimeBodies = sourceGraph([runtimeHost]);
+    runtimeEntry =
+      runtimeBodies.some((body) => body.includes("from-runtime-entry")) &&
+      !runtimeBodies.some((body) => body.includes("from-runtime-declaration")) &&
+      duplicateFullNamesAcross(runtimeBodies).includes("credited");
+    declarationOnly = unresolvedLocalRequires([declHost]).includes("@helper/decls");
   } finally {
     rmSync(aliasRoot, { recursive: true, force: true });
     rmSync(workspaceRoot, { recursive: true, force: true });
@@ -1675,6 +1759,8 @@ try {
     workspaceDuplicate &&
     workspaceResolved &&
     workspaceTypeSkipped &&
+    runtimeEntry &&
+    declarationOnly &&
     indirectCalls.includes("it") &&
     boundCalls.length === 0 &&
     groupedBound.length === 0 &&
@@ -1790,6 +1876,11 @@ try {
     !bunDefaultDuplicate &&
     namespaceDestructure &&
     namespaceSuite &&
+    nodeNamespaceSuite &&
+    !bunNamespaceSuite &&
+    directRequire &&
+    directSuite &&
+    !directExpect &&
     dynamicNamespace &&
     requiredNamespace &&
     !otherDynamicNamespace &&
@@ -1866,6 +1957,11 @@ try {
       bunDefaultDuplicate,
       namespaceDestructure,
       namespaceSuite,
+      nodeNamespaceSuite,
+      bunNamespaceSuite,
+      directRequire,
+      directSuite,
+      directExpect,
       dynamicNamespace,
       requiredNamespace,
       otherDynamicNamespace,
@@ -1891,6 +1987,8 @@ try {
       workspaceDuplicate,
       workspaceResolved,
       workspaceTypeSkipped,
+      runtimeEntry,
+      declarationOnly,
       indirectCalls,
       boundCalls,
       groupedBound,

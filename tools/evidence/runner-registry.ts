@@ -27,6 +27,7 @@ import {
   readDestructuredRunnerImport,
   readDottedModifiers,
   readImportRunnerAliases,
+  readDirectModuleRunner,
   readRunnerNamespaceValue,
   readRunnerRef,
   titleCallAt,
@@ -178,8 +179,10 @@ function collectRegistrations(
         index = imported.end;
         continue;
       }
-      index = word.end;
-      continue;
+      if (!readDirectModuleRunner(body, index)) {
+        index = word.end;
+        continue;
+      }
     }
     if (word.value === "const" || word.value === "let" || word.value === "var") {
       let bindingAt = skipSpaceAndComments(body, word.end);
@@ -288,8 +291,15 @@ function collectRegistrations(
     let callFrom = word.end;
     let kind: RunnerKind | undefined;
     let modifiers: string[] = [];
-    if (alias?.namespace) {
-      const member = namespaceRunnerMember(body, word.end);
+    const direct =
+      word.value === "require" || word.value === "import" || word.value === "await"
+        ? readDirectModuleRunner(body, index)
+        : undefined;
+    if (direct) {
+      kind = direct.kind;
+      callFrom = direct.callFrom;
+    } else if (alias?.namespace) {
+      const member = namespaceRunnerMember(body, word.end, alias.spec);
       if (!member) {
         if (optionalNamespaceRunner(body, word.end) || bracketNamespaceRunner(body, word.end)) {
           unresolved.push(word.value);

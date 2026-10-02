@@ -172,6 +172,7 @@ export function headingAnchors(markdown: string): string[] {
   const anchors: string[] = [];
   let fenceChar: "`" | "~" | undefined;
   let fenceLength = 0;
+  let fenceQuoteDepth = 0;
   let inComment = false;
   let htmlBlock: HtmlBlock | undefined;
   let pending: { text: string; depth: number; listIndent: number } | undefined;
@@ -180,6 +181,10 @@ export function headingAnchors(markdown: string): string[] {
     const marker = /^( {0,3})(`{3,}|~{3,})(.*)$/.exec(atxText(rawLine));
     const opener = marker?.[2];
     const info = marker?.[3] ?? "";
+    if (fenceChar && blockquoteDepth(rawLine) < fenceQuoteDepth) {
+      fenceChar = undefined;
+      fenceLength = 0;
+    }
     if (fenceChar) {
       if (opener && opener.startsWith(fenceChar) && opener.length >= fenceLength && info.trim() === "") {
         fenceChar = undefined;
@@ -202,6 +207,7 @@ export function headingAnchors(markdown: string): string[] {
     if (opener && !(opener.startsWith("`") && info.includes("`"))) {
       fenceChar = opener.startsWith("`") ? "`" : "~";
       fenceLength = opener.length;
+      fenceQuoteDepth = blockquoteDepth(rawLine);
       pending = undefined;
       continue;
     }
