@@ -206,6 +206,22 @@ function tomlSource(text: string): string {
   return source;
 }
 
+function tomlQuotedValue(
+  source: string,
+  start: number,
+): { value: string; end: number } | undefined {
+  const quote = source[start];
+  if (quote !== '"' && quote !== "'") return undefined;
+  const end = tomlStringEnd(source, start);
+  if (end <= start + 1) return undefined;
+  const triple = quote + quote + quote;
+  if (source.startsWith(triple, start)) {
+    if (end < start + 6) return undefined;
+    return { value: source.slice(start + 3, end - 3), end };
+  }
+  return { value: source.slice(start + 1, end - 1), end };
+}
+
 function tomlStringEnd(text: string, start: number): number {
   const quote = text[start] ?? "";
   const closer = quote + quote + quote;
@@ -314,18 +330,45 @@ function applicablePreloadText(source: string): string {
   return kept;
 }
 
+/** Array values through the closing `]`. A `]` inside quotes stays in the path. */
+function preloadArrayAt(
+  source: string,
+  open: number,
+): { values: string[]; end: number } | undefined {
+  if (source[open] !== "[") return undefined;
+  const values: string[] = [];
+  let index = open + 1;
+  while (index < source.length) {
+    const char = source[index] ?? "";
+    if (char === '"' || char === "'") {
+      const quoted = tomlQuotedValue(source, index);
+      if (!quoted) return undefined;
+      if (quoted.value.length > 0) values.push(quoted.value);
+      index = quoted.end;
+      continue;
+    }
+    if (char === "]") return { values, end: index + 1 };
+    index += 1;
+  }
+  return undefined;
+}
+
 function preloadNamesIn(text: string): string[] {
   const names: string[] = [];
   const source = applicablePreloadText(tomlSource(text));
-  const listed = new RegExp(`${PRELOAD_KEY.source}\\s*=\\s*\\[([^\\]]*)\\]`, "g");
+  const listed = new RegExp(`${PRELOAD_KEY.source}\\s*=\\s*\\[`, "g");
   const scalar = new RegExp(`${PRELOAD_KEY.source}\\s*=\\s*(?:"([^"]+)"|'([^']+)')`, "g");
+  const spans: Array<{ start: number; end: number }> = [];
   for (const match of source.matchAll(listed)) {
-    for (const item of match[1]?.matchAll(/"([^"]+)"|'([^']+)'/g) ?? []) {
-      const value = item[1] ?? item[2];
-      if (value) names.push(value);
-    }
+    const at = match.index ?? 0;
+    const parsed = preloadArrayAt(source, at + match[0].length - 1);
+    if (!parsed) continue;
+    spans.push({ start: at, end: parsed.end });
+    for (const value of parsed.values) names.push(value);
   }
   for (const match of source.matchAll(scalar)) {
+    const at = match.index ?? 0;
+    if (spans.some((span) => at >= span.start && at < span.end)) continue;
     const value = match[1] ?? match[2];
     if (value) names.push(value);
   }

@@ -876,8 +876,16 @@ function staticImportSpecifiers(
   return found;
 }
 
+/** `#helper` and `#helper/sub` are package `imports`. `#/` and a later `#` are not. */
+function packageImportSpec(spec: string): boolean {
+  if (!spec.startsWith("#") || spec.length < 2 || spec[1] === "/") return false;
+  if (spec.indexOf("?") >= 0) return false;
+  return spec.indexOf("#", 1) < 0;
+}
+
 /** Query suffixes are the file Bun loads. A fragment before `?` is not a file. */
 function importSpecifier(spec: string): { kind: "path"; spec: string } | { kind: "opaque" } {
+  if (packageImportSpec(spec)) return { kind: "path", spec };
   const query = spec.indexOf("?");
   const hash = spec.indexOf("#");
   if (hash >= 0 && (query < 0 || hash < query)) return { kind: "opaque" };
@@ -1498,11 +1506,52 @@ function bareScheme(spec: string): string | undefined {
   return match?.[1]?.toLowerCase();
 }
 
+function packageImportTarget(
+  fromFile: string,
+  spec: string,
+  style: ModuleStyle,
+): string | undefined {
+  const root = packageRootOf(fromFile);
+  if (!root) return undefined;
+  let importsField: unknown;
+  try {
+    const parsed = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as {
+      imports?: unknown;
+    };
+    importsField = parsed.imports;
+  } catch {
+    return undefined;
+  }
+  return exportTarget(importsField, spec, style);
+}
+
+/** `#helper` resolves from the nearest package.json `imports` before any URL fragment. */
+function resolvePackageImport(fromFile: string, spec: string, style: ModuleStyle): ResolvedSpec {
+  const target = packageImportTarget(fromFile, spec, style);
+  if (!target) return { kind: "missing" };
+  const root = packageRootOf(fromFile);
+  if (!root) return { kind: "missing" };
+  if (target.startsWith("./") || target.startsWith("../")) {
+    const file = resolveExistingFile(resolve(root, target), style);
+    if (!file || declarationFile(file)) return { kind: "missing" };
+    return { kind: "file", file };
+  }
+  const scheme = bareScheme(target);
+  if (scheme === "bun" || scheme === "node" || scheme === "npm") return { kind: "external" };
+  if (scheme || target.startsWith("#") || target.startsWith("/")) return { kind: "missing" };
+  return resolveBareSpecifier(fromFile, target, style);
+}
+
 /** Path aliases and workspace packages are local source. Other bare specifiers are packages. */
 function resolveNonRelative(fromFile: string, spec: string, style: ModuleStyle): ResolvedSpec {
   const scheme = bareScheme(spec);
   if (scheme === "bun" || scheme === "node" || scheme === "npm") return { kind: "external" };
   if (scheme) return { kind: "missing" };
+  if (packageImportSpec(spec)) return resolvePackageImport(fromFile, spec, style);
+  return resolveBareSpecifier(fromFile, spec, style);
+}
+
+function resolveBareSpecifier(fromFile: string, spec: string, style: ModuleStyle): ResolvedSpec {
   const alias = pathAliasStatus(fromFile, spec);
   if (alias === "missing") return { kind: "missing" };
   if (alias === "file") {

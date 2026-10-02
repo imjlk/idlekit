@@ -179,25 +179,51 @@ function darwinProfile(files: readonly string[]): string {
   return lines.join("\n");
 }
 
+function sandboxArgv(
+  platform: string,
+  directory: string,
+  command: readonly string[],
+  files: readonly string[],
+): string[] | undefined {
+  if (platform === "darwin") {
+    if (!existsSync("/usr/bin/sandbox-exec")) return undefined;
+    const profile = join(directory, "source-lock.sb");
+    writeFileSync(profile, darwinProfile(files));
+    return ["/usr/bin/sandbox-exec", "-f", profile, ...command];
+  }
+  if (platform === "linux") {
+    const script = join(directory, "source-lock-mount.sh");
+    writeFileSync(script, LINUX_SEAL);
+    return ["/bin/bash", script, ...command];
+  }
+  return undefined;
+}
+
+/**
+ * Darwin uses `sandbox-exec`. Linux uses a mount namespace.
+ * Other platforms have no sandbox: the result is `undefined`, not an unsealed command.
+ * An empty file list is the command unchanged on every platform.
+ */
+export function sourceLockCommand(
+  platform: string,
+  directory: string,
+  command: readonly string[],
+  files: readonly string[],
+): string[] | undefined {
+  if (files.length === 0) return [...command];
+  if (platform !== "darwin" && platform !== "linux") return undefined;
+  const wrapped = sandboxArgv(platform, directory, command, files);
+  if (!wrapped) throw new Error("evidence source lock could not sandbox the test");
+  return wrapped;
+}
+
 /** Run the test where it cannot chmod, replace, or unlink the scanned files. */
 export function sealedCommand(
   directory: string,
   command: readonly string[],
   files: readonly string[],
 ): string[] {
-  if (files.length === 0) return [...command];
-  if (process.platform === "darwin") {
-    if (!existsSync("/usr/bin/sandbox-exec")) {
-      throw new Error("evidence source lock could not sandbox the test");
-    }
-    const profile = join(directory, "source-lock.sb");
-    writeFileSync(profile, darwinProfile(files));
-    return ["/usr/bin/sandbox-exec", "-f", profile, ...command];
-  }
-  if (process.platform === "linux") {
-    const script = join(directory, "source-lock-mount.sh");
-    writeFileSync(script, LINUX_SEAL);
-    return ["/bin/bash", script, ...command];
-  }
-  throw new Error("evidence source lock could not sandbox the test");
+  const wrapped = sourceLockCommand(process.platform, directory, command, files);
+  if (!wrapped) throw new Error("evidence source lock could not sandbox the test");
+  return wrapped;
 }

@@ -80,7 +80,7 @@ import {
   changedSources,
   installSourceLock,
   preloadTestArgs,
-  sealedCommand,
+  sourceLockCommand,
   sealSources,
   sourceDigests,
   unsealSources,
@@ -525,14 +525,14 @@ export async function checkInventory(projectRoot = root): Promise<string[]> {
     let exitCode = 1;
     let output = "";
     try {
-      const command = sealedCommand(
-        reportDir,
-        [
-          process.execPath,
-          ...preloadTestArgs(junitReporterArgs(first.args, reportPath), lock.preload),
-        ],
-        locked,
-      );
+      const bare = [
+        process.execPath,
+        ...preloadTestArgs(junitReporterArgs(first.args, reportPath), lock.preload),
+      ];
+      // Windows has no source-lock sandbox. Typecheck still runs the inventoried
+      // command there. sealedCommand keeps refusing to return that unsealed argv.
+      const wrapped = sourceLockCommand(process.platform, reportDir, bare, locked);
+      const command = wrapped ?? bare;
       const proc = Bun.spawnSync(command, {
         cwd: commandCwd,
         stdout: "pipe",

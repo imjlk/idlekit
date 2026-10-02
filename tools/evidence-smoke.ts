@@ -5,6 +5,7 @@ import { plainTestEnv } from "./evidence/junit";
 import {
   installSourceLock,
   sealedCommand,
+  sourceLockCommand,
   sealSources,
   unsealSources,
 } from "./evidence/source-lock";
@@ -904,6 +905,7 @@ try {
   let directoryEntry = false;
   let queryImport = false;
   let fragmentImport = false;
+  let packageHashImport = false;
   let directoryQuery = false;
   let installedPackage = false;
   let nestedPackage = false;
@@ -1372,6 +1374,55 @@ try {
       !textJoined.includes("from-text-helper") &&
       textJoined.includes("from-json-helper") &&
       unresolvedLocalRequires([textHost]).length === 0;
+    const hashHelper = join(specifierDir, "hash-helper.ts");
+    const hashLib = join(specifierDir, "lib");
+    mkdirSync(hashLib);
+    writeFileSync(hashHelper, 'it("credited", unrelated);\n// from-hash-helper\n');
+    writeFileSync(join(hashLib, "sub.ts"), 'it("credited", unrelated);\n// from-hash-sub\n');
+    writeFileSync(
+      join(specifierDir, "package.json"),
+      `${JSON.stringify({
+        name: "hash-fixture",
+        imports: {
+          "#helper": "./hash-helper.ts",
+          "#esm": { import: "./hash-helper.ts" },
+          "#req": { require: "./hash-helper.ts", import: "./gone-helper.ts" },
+          "#picked": { bun: "./hash-helper.ts", default: "./gone-helper.ts" },
+          "#listed": ["./hash-helper.ts"],
+          "#blocked": ["./gone-helper.ts", "./hash-helper.ts"],
+          "#lib/*": "./lib/*.ts",
+          "#missing": "./gone-helper.ts",
+        },
+      })}\n`,
+    );
+    const hashHost = join(specifierDir, "hash-host.test.ts");
+    writeFileSync(
+      hashHost,
+      [
+        'import "#helper";',
+        'import "#esm";',
+        'import "#picked";',
+        'import "#listed";',
+        'import "#lib/sub";',
+        'if (false) it("credited", citedExport);',
+      ].join("\n"),
+    );
+    const hashJoined = sourceGraph([hashHost]).join("\n");
+    const requireHashHost = join(specifierDir, "hash-require-host.test.ts");
+    writeFileSync(requireHashHost, 'require("#req");\n');
+    const blockedHashHost = join(specifierDir, "hash-blocked-host.test.ts");
+    writeFileSync(blockedHashHost, 'import "#blocked";\n');
+    const missingHashHost = join(specifierDir, "hash-missing-host.test.ts");
+    writeFileSync(missingHashHost, 'import "#missing";\n');
+    const requireHashBodies = sourceGraph([requireHashHost]);
+    packageHashImport =
+      hashJoined.includes("from-hash-helper") &&
+      hashJoined.includes("from-hash-sub") &&
+      unresolvedLocalRequires([hashHost]).length === 0 &&
+      requireHashBodies.some((body) => body.includes("from-hash-helper")) &&
+      unresolvedLocalRequires([requireHashHost]).length === 0 &&
+      unresolvedLocalRequires([blockedHashHost]).includes("#blocked") &&
+      unresolvedLocalRequires([missingHashHost]).includes("#missing");
   } finally {
     rmSync(specifierDir, { recursive: true, force: true });
   }
@@ -1383,6 +1434,7 @@ try {
   let scalarPreload = false;
   let quotedPreload = false;
   let arrayPreload = false;
+  let bracketPreload = false;
   let packagePreload = false;
   let missingPackagePreload = false;
   let missingRelativePreload = false;
@@ -1409,6 +1461,19 @@ try {
     writeFileSync(join(preloadDir, "bunfig.toml"), '[test]\npreload = ["./setup.ts"]\n');
     const listed = localPreloadFiles(preloadDir, ["test"]);
     arrayPreload = listed.length === 1 && listed[0] === setupPath;
+    const bracketPath = resolve(preloadDir, "setup]x.ts");
+    writeFileSync(bracketPath, "export {};\n");
+    writeFileSync(
+      join(preloadDir, "bunfig.toml"),
+      ["preload = [", '  "./setup]x.ts",', "  './gone]x.ts',", "]", ""].join("\n"),
+    );
+    const bracketFiles = localPreloadFiles(preloadDir, ["test"]);
+    const bracketMissing = unresolvedPreloadSpecifiers(preloadDir, ["test"]);
+    bracketPreload =
+      bracketFiles.length === 1 &&
+      bracketFiles[0] === bracketPath &&
+      bracketMissing.includes("./gone]x.ts") &&
+      !bracketMissing.includes("./setup]x.ts");
     const setupPkg = join(preloadDir, "node_modules", "test-setup");
     mkdirSync(setupPkg, { recursive: true });
     writeFileSync(
@@ -2710,7 +2775,15 @@ try {
       const intact = readFileSync(lockedHelper, "utf8").includes("marker = 1");
       const blocked =
         output.includes("EPERM") || output.includes("EROFS") || output.includes("read-only");
-      sourceLock = (proc.exitCode ?? 1) !== 0 && intact && blocked;
+      const windowsLock =
+        sourceLockCommand("win32", lockDir, ["bun", "test"], [lockedHelper]) === undefined &&
+        sourceLockCommand("win32", lockDir, ["bun", "test"], [])?.join("\0") === "bun\0test";
+      const linuxLock = sourceLockCommand("linux", lockDir, ["bun", "test"], [lockedHelper]);
+      const linuxPlanned =
+        linuxLock?.[0] === "/bin/bash" &&
+        linuxLock[1]?.endsWith("source-lock-mount.sh") === true;
+      sourceLock =
+        (proc.exitCode ?? 1) !== 0 && intact && blocked && windowsLock && linuxPlanned;
     } finally {
       unsealSources(modes);
     }
@@ -2853,6 +2926,7 @@ try {
     directoryEntry &&
     queryImport &&
     fragmentImport &&
+    packageHashImport &&
     directoryQuery &&
     installedPackage &&
     nestedPackage &&
@@ -2924,6 +2998,7 @@ try {
     scalarPreload &&
     quotedPreload &&
     arrayPreload &&
+    bracketPreload &&
     packagePreload &&
     scopedPreload &&
     missingPackagePreload &&
@@ -2970,6 +3045,7 @@ try {
       directoryEntry,
       queryImport,
       fragmentImport,
+      packageHashImport,
       directoryQuery,
       installedPackage,
       nestedPackage,
@@ -2980,6 +3056,7 @@ try {
       dataImport,
       textImport,
       packagePreload,
+      bracketPreload,
       scopedPreload,
       missingPackagePreload,
       missingRelativePreload,
