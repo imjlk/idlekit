@@ -632,21 +632,32 @@ try {
     'import { assertSimulationClock } from "./timeBoundary";',
     'assertSimulationClock("offline", clock);',
     'const read = new Function("s", "return s.t");',
+    'const ok = /x/.test("x");',
   ].join("\n");
-  const runnerHelper = ['import { it } from "bun:test";', 'register("credited", unrelated);'].join(
-    "\n",
-  );
-  const scopedSources = runnerSources([productionHelper, runnerHelper]);
+  const importedRunnerHelper = [
+    'import { it } from "bun:test";',
+    'import { register } from "./helpers";',
+    'register("credited", unrelated);',
+  ].join("\n");
+  const globalRunnerHelper = [
+    "export function eachCase(rows) {",
+    "  for (const row of rows) it(row.name, row.run);",
+    "}",
+  ].join("\n");
+  const scopedSources = runnerSources([productionHelper, importedRunnerHelper, globalRunnerHelper]);
   const runnerScopeOk =
     unresolvedRunnerCalls(productionHelper).length > 0 &&
-    scopedSources.length === 1 &&
-    scopedSources[0] === runnerHelper;
+    unresolvedRunnerCalls(importedRunnerHelper).length > 0 &&
+    scopedSources.length === 2 &&
+    !scopedSources.includes(productionHelper) &&
+    scopedSources.includes(importedRunnerHelper) &&
+    scopedSources.includes(globalRunnerHelper);
   record(
     "runner-scope",
     "zero",
     runnerScopeOk ? 0 : 1,
     runnerScopeOk,
-    "only sources that name the runner module are scanned for hidden registrations",
+    "production code is not scanned for hidden registrations; runner-importing and global-runner helpers are",
   );
   const declaredDoc = [
     "## A {#a}",
