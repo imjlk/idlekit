@@ -578,4 +578,50 @@ describe("run factory review fixes", () => {
       }),
     ).toThrow("restore failed");
   });
+  it("checks bound strategy and model params against the factory schema", () => {
+    const positive = {
+      "~standard": {
+        validate: (input: unknown) =>
+          typeof (input as { n?: unknown })?.n === "number" && (input as { n: number }).n > 0
+            ? { success: true as const, value: input }
+            : { success: false as const, issues: [{ message: "n must be positive" }] },
+      },
+    };
+    const created: unknown[] = [];
+    const strategies = createStrategyRegistry([
+      {
+        id: "checked",
+        paramsSchema: positive,
+        create: (params) => {
+          created.push(params);
+          return { id: "checked", decide: () => [] };
+        },
+      },
+    ]);
+    const models = createModelRegistry([
+      defineModelFactory<number, UnitCode, { buys: number }>({
+        id: "checked-model",
+        version: 1,
+        paramsSchema: positive,
+        create: (params) => {
+          created.push(params);
+          return buyModel();
+        },
+      }),
+    ]);
+    const scenario = compiled({ stepSec: 1, durationSec: 1, vars: { buys: 0 }, model: buyModel() });
+    const factory = createRunFactory({ strategies, models });
+    expect(() => factory.bind(scenario, { strategy: { id: "checked", params: { n: 0 } } })).toThrow(
+      "Invalid strategy params: n must be positive",
+    );
+    expect(() => factory.bind(scenario, { model: { id: "checked-model", version: 1, params: { n: -1 } } })).toThrow(
+      "Invalid model params: n must be positive",
+    );
+    expect(created).toEqual([]);
+    const ok = factory
+      .bind(scenario, { strategy: { id: "checked", params: { n: 1 } }, model: { id: "checked-model", version: 1, params: { n: 2 } } })
+      .fresh({ trialId: "ok", seed: 1 });
+    expect(ok.scenario.strategy?.id).toBe("checked");
+    expect(created).toEqual([{ n: 1 }, { n: 2 }]);
+  });
 });

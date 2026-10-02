@@ -1,3 +1,4 @@
+import { modelCreateParams, strategyCreateParams } from "../scenario/compile";
 import type { ModelFactory, ModelRegistry } from "../scenario/registry";
 import { deepClonePreservingPrototype } from "../utils/deepClone";
 import { constraintsWithAnchor, prestigeAnchorFromCheckpoint } from "./constraints";
@@ -300,10 +301,13 @@ function strategyHold<N, U extends string, Vars>(
   if (requested) {
     const factory = registries.strategies?.get(requested.id);
     if (!factory) throw new Error(`Unknown strategy: ${requested.id}`);
-    return {
-      kind: "factory",
-      factory: { factory, params: requested.params ?? factory.defaultParams ?? {} },
-    };
+    // Same check and error as compileScenario, before any trial is built.
+    const { params } = strategyCreateParams({
+      raw: requested.params ?? factory.defaultParams ?? {},
+      schema: factory.paramsSchema,
+      mode: "legacy-raw",
+    });
+    return { kind: "factory", factory: { factory, params } };
   }
 
   const strategy = scenario.strategy;
@@ -336,7 +340,7 @@ function modelFactoryOf(
   }
   const factory = registries.models?.get(options.model.id, options.model.version);
   if (!factory) throw new Error(`Model not found: ${options.model.id}@${options.model.version}`);
-  return { factory, params: options.model.params };
+  return { factory, params: modelCreateParams({ raw: options.model.params, schema: factory.paramsSchema }) };
 }
 
 function planStrategy<N, U extends string, Vars>(

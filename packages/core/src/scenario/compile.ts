@@ -369,6 +369,19 @@ export function strategyCreateParams(args: {
   return { mode, params: mode === "validated" ? result.value : args.raw };
 }
 
+/** Check model params like `strategyCreateParams` in `legacy-raw` mode. The caller object is returned. */
+export function modelCreateParams(args: {
+  raw: unknown;
+  schema?: { "~standard": { validate: (input: unknown) => unknown } };
+}): unknown {
+  if (!args.schema) return args.raw;
+  const result = args.schema["~standard"].validate(args.raw) as { success?: boolean };
+  if (result?.success !== true) {
+    throw new Error(`Invalid model params: ${standardIssues(result).join("; ")}`);
+  }
+  return args.raw;
+}
+
 function buildUnit<U extends string>(args: {
   scenario: ScenarioV1;
   unitFactory?: (code: string) => Unit<U>;
