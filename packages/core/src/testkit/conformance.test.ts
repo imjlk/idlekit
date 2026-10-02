@@ -450,13 +450,14 @@ export function stopsOnAPositiveTickGridAndRefusesANonPositiveStep(): void {
   const driftedBase = constantScenario({ rate: 1, durationSec: 0.021, stepSec: 0.003 });
   const drifted = checkDurationBoundary({
     ...driftedBase,
-    run: { ...driftedBase.run, maxSteps: 8 },
+    run: { ...driftedBase.run, maxSteps: 7 },
   });
   expect(drifted.ok).toBe(true);
   expect(drifted.applicable).toBe(false);
   expect(drifted.summary).toContain("maxSteps");
+  expectApplicable(checkDurationBoundary({ ...driftedBase, run: { ...driftedBase.run, maxSteps: 8 } }));
   const driftedResume = checkResume(
-    { ...driftedBase, run: { ...driftedBase.run, maxSteps: 8 } },
+    { ...driftedBase, run: { ...driftedBase.run, maxSteps: 7 } },
     0.006,
   );
   expect(driftedResume.ok).toBe(true);
@@ -468,6 +469,17 @@ export function stopsOnAPositiveTickGridAndRefusesANonPositiveStep(): void {
   const driftedOpenJson = checkResumeFromJson(driftedBase, 0.006);
   expect(driftedOpenJson.ok).toBe(true);
   expect(driftedOpenJson.applicable).toBe(true);
+  // Eight ticks reach 0.7999999999999999, inside the horizon's epsilon. A ninth addition is not the runner.
+  const eighths = constantScenario({ rate: 2, durationSec: 0.8, stepSec: 0.1 });
+  expectApplicable(checkDurationBoundary(eighths));
+  expectApplicable(checkDurationBoundary({ ...eighths, run: { ...eighths.run, maxSteps: 9 } }));
+  for (const splitSec of [0.1, 0.5, 0.7]) expectApplicable(checkResume(eighths, splitSec));
+  expectApplicable(checkResume({ ...eighths, run: { ...eighths.run, maxSteps: 9 } }, 0.5));
+  expectApplicable(checkResumeFromJson(eighths, 0.5));
+  // After three ticks, neither 0.8 - 0.30000000000000004 nor five summed ticks ends on a full last tick.
+  const unreplayable = checkResume(eighths, 0.3);
+  expect(unreplayable.ok).toBe(true);
+  expect(unreplayable.applicable).toBe(false);
   const stuckBase = constantScenario({ rate: 1, durationSec: 1, stepSec: 1 });
   const stuckBoundary = checkDurationBoundary({
     ...stuckBase,

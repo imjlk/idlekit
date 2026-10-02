@@ -1,6 +1,7 @@
 import type { Engine } from "../engine/types";
 import { deriveDrawSeed, mulberry32 } from "../sim/random";
 import { runScenario } from "../sim/simulator";
+import { nextBoundary } from "../sim/timeBoundary";
 import type { CompiledScenario, SimState } from "../sim/types";
 import { deserializeSimState, parseSimStateJSON, serializeSimState } from "../serde/simState";
 import { conformanceGeneratorVersion } from "./conformance";
@@ -882,25 +883,35 @@ function wholeTickCount(total: number, step: number): number | null {
   return nearest;
 }
 
-/** The same repeated addition the simulator uses, starting from the run's own timestamp. */
-function advancedTimestamp(start: number, step: number, ticks: number): number {
-  let time = start;
-  for (let index = 0; index < ticks; index += 1) time += step;
-  return time;
-}
+type RunnerTicks = { readonly dts: readonly number[]; readonly endT: number; readonly elapsedSec: number };
 
-/** Additions the simulator finishes before `time - start` reaches `duration`. */
-function additionsUntilDuration(start: number, step: number, duration: number): number | null {
+/** The runner's own clock: `nextBoundary` picks each dt and elapsed is their sum. Null when t cannot move. */
+function runnerTicks(start: number, step: number, duration: number, maxSteps?: number): RunnerTicks | null {
   if (!(step > 0) || !(duration > 0)) return null;
   if (!Number.isFinite(start) || !Number.isFinite(step) || !Number.isFinite(duration)) return null;
+  const dts: number[] = [];
   let time = start;
-  let steps = 0;
-  while (time - start < duration) {
-    time += step;
-    steps += 1;
-    if (steps > 1_000_000) return null;
+  let elapsedSec = 0;
+  for (;;) {
+    const decision = nextBoundary({
+      elapsedSec,
+      steps: dts.length,
+      stepSec: step,
+      durationSec: duration,
+      untilMet: false,
+      hasUntil: false,
+      maxSteps,
+    });
+    if (decision.kind !== "step") return { dts, endT: time, elapsedSec };
+    if (time + decision.dt === time || dts.length >= 1_000_000) return null;
+    time += decision.dt;
+    elapsedSec += decision.dt;
+    dts.push(decision.dt);
   }
-  return steps;
+}
+
+function sameTicks(left: readonly number[], right: readonly number[]): boolean {
+  return left.length === right.length && left.every((dt, index) => dt === right[index]);
 }
 
 function onGrid<N, U extends string, Vars>(
@@ -919,9 +930,9 @@ function onGrid<N, U extends string, Vars>(
     return skip("split is not on the original tick grid");
   }
   const maxSteps = scenario.run.maxSteps;
-  const stepsTaken = additionsUntilDuration(scenario.initial.t, step, duration);
-  if (stepsTaken === null) return skip("timestamp cannot advance by stepSec");
-  if (maxSteps !== undefined && (!Number.isInteger(maxSteps) || maxSteps <= stepsTaken)) {
+  const full = runnerTicks(scenario.initial.t, step, duration);
+  if (full === null) return skip("timestamp cannot advance by stepSec");
+  if (maxSteps !== undefined && (!Number.isInteger(maxSteps) || maxSteps <= full.dts.length)) {
     return skip("maxSteps can stop the run before durationSec");
   }
   return null;
@@ -1062,17 +1073,31 @@ function resumeFromCheckpoint<N, U extends string, Vars>(
   if (isRelationCheck(bracket)) return bracket;
   const step = scenario.run.stepSec;
   const duration = scenario.run.durationSec ?? 0;
-  const splitTicks = wholeTickCount(splitSec, step);
+  const splitTicks = wholeTickCount(splitSec, step) ?? 0;
+  // The head is the full run's first ticks. A head with its own shorter horizon can clamp
+  // its last tick differently. The tail horizon must replay the rest tick for tick.
+  const fullTicks = runnerTicks(scenario.initial.t, step, duration);
+  const headTicks = runnerTicks(scenario.initial.t, step, duration, splitTicks);
+  if (fullTicks === null || headTicks === null) return skip("timestamp cannot advance by stepSec");
+  const restTicks = fullTicks.dts.slice(splitTicks);
+  const tailDuration = [duration - headTicks.elapsedSec, restTicks.reduce((sum, dt) => sum + dt, 0)].find(
+    (candidate) => {
+      const tailTicks = runnerTicks(headTicks.endT, step, candidate);
+      return tailTicks !== null && tailTicks.endT === fullTicks.endT && sameTicks(tailTicks.dts, restTicks);
+    },
+  );
+  if (tailDuration === undefined) {
+    return skip("no tail horizon replays the full run's remaining ticks");
+  }
   const initial = bracket.snap();
   try {
     const full = economyAfter(scenario);
     bracket.restore(initial);
     const head = runScenario({
       ...scenario,
-      run: { ...scenario.run, durationSec: splitSec },
+      run: { ...scenario.run, maxSteps: splitTicks },
     });
-    const expected = splitTicks === null ? undefined : advancedTimestamp(scenario.initial.t, step, splitTicks);
-    if (expected === undefined || head.end.t !== expected) {
+    if (head.end.t !== headTicks.endT) {
       return skip("head stopped before the checkpoint");
     }
     if (scenario.run.until?.(head.end)) {
@@ -1086,15 +1111,6 @@ function resumeFromCheckpoint<N, U extends string, Vars>(
     } else {
       bracket.restore(bracket.snap());
     }
-    const durationTicks =
-      additionsUntilDuration(scenario.initial.t, step, duration) ?? wholeTickCount(duration, step);
-    const countedSplit = additionsUntilDuration(scenario.initial.t, step, splitSec) ?? splitTicks;
-    if (countedSplit === null || durationTicks === null || durationTicks - countedSplit < 1) {
-      return skip("split is not on the original tick grid");
-    }
-    const remainingTicks = durationTicks - countedSplit;
-    const tailStart = started.state.t;
-    const tailDuration = advancedTimestamp(tailStart, step, remainingTicks) - tailStart;
     const tail = economyAfter({
       ...scenario,
       initial: started.state,
@@ -1399,21 +1415,23 @@ export function checkDurationBoundary<N, U extends string, Vars>(
   const ticks = wholeTickCount(duration, step);
   if (ticks === null) return skip("duration is not a multiple of stepSec");
   const maxSteps = scenario.run.maxSteps;
-  const stepsTaken = additionsUntilDuration(scenario.initial.t, step, duration);
-  if (stepsTaken === null) return skip("timestamp cannot advance by stepSec");
-  if (maxSteps !== undefined && (!Number.isInteger(maxSteps) || maxSteps <= stepsTaken)) {
+  const expected = runnerTicks(scenario.initial.t, step, duration);
+  if (expected === null) return skip("timestamp cannot advance by stepSec");
+  if (maxSteps !== undefined && (!Number.isInteger(maxSteps) || maxSteps <= expected.dts.length)) {
     return skip("maxSteps can stop the run before durationSec");
   }
   const bracket = strategyBracket(scenario);
   if (isRelationCheck(bracket)) return bracket;
   const initial = bracket.snap();
   try {
-    const end = runScenario(scenario).end;
-    const expected = advancedTimestamp(scenario.initial.t, step, ticks);
-    if (end.t !== expected) {
-      return fail(`elapsed ${end.t} did not stop at ${expected}`);
+    const run = runScenario(scenario);
+    if (run.end.t !== expected.endT) {
+      return fail(`elapsed ${run.end.t} did not stop at ${expected.endT}`);
     }
-    return pass(`stopped at t=${end.t}`);
+    if (run.stop?.steps !== ticks) {
+      return fail(`${run.stop?.steps} ticks for ${ticks} whole steps`);
+    }
+    return pass(`stopped at t=${run.end.t}`);
   } finally {
     bracket.restore(initial);
   }
