@@ -62,6 +62,8 @@ bun run --cwd packages/cli dev -- experience ../../examples/tutorials/14-orbital
 `@idlekit/money` and `@idlekit/core` use the `Engine<N>` interface to abstract numeric backends.
 That lets you switch between `number`, `break_infinity.js`, or your own fixed-point / bigint engine.
 
+`stepOnce` is the payment boundary. An omitted `bulkSize`, or size `1`, pays `Action.cost` once and then calls `apply` once. A larger integer size re-reads `Action.bulk` on the current state and pays the one matching `BulkQuote.cost` once. `apply` does not pay again. A size chosen by a planner is not a stored price. A missing, duplicate, non-integer, non-finite, negative, or wrong-unit quote is rejected before `apply`.
+
 Use the adapter example to see a custom `Engine<bigint>` wired into the simulator:
 
 - [../examples/adapter-pattern/README.md](../examples/adapter-pattern/README.md)

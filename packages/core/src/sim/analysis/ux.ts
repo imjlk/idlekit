@@ -15,6 +15,8 @@ export type SimStats = Readonly<{
     applied: number;
     skippedCannotApply: number;
     skippedInsufficientFunds: number;
+    /** Absent on a stats object built before this counter existed. New results still set it. */
+    skippedInvalidQuote?: number;
   }>;
 }>;
 
@@ -33,6 +35,7 @@ type SimStatsMutable = {
   actionApplied: number;
   skippedCannotApply: number;
   skippedInsufficientFunds: number;
+  skippedInvalidQuote: number;
 };
 
 function applySimEvent<N>(m: SimStatsMutable, e: SimEvent<N>): void {
@@ -64,6 +67,7 @@ function applySimEvent<N>(m: SimStatsMutable, e: SimEvent<N>): void {
   if (e.type === "action.skipped") {
     if (e.reason === "cannotApply") m.skippedCannotApply += 1;
     if (e.reason === "insufficientFunds") m.skippedInsufficientFunds += 1;
+    if (e.reason === "invalidQuote") m.skippedInvalidQuote += 1;
   }
 }
 
@@ -86,6 +90,7 @@ function toSimStats(m: SimStatsMutable): SimStats {
       applied: m.actionApplied,
       skippedCannotApply: m.skippedCannotApply,
       skippedInsufficientFunds: m.skippedInsufficientFunds,
+      skippedInvalidQuote: m.skippedInvalidQuote,
     },
   };
 }
@@ -105,6 +110,7 @@ export function createSimStatsAccumulator(): SimStatsAccumulator {
     actionApplied: 0,
     skippedCannotApply: 0,
     skippedInsufficientFunds: 0,
+    skippedInvalidQuote: 0,
   };
 
   return {

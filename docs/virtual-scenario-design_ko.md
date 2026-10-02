@@ -46,7 +46,7 @@ bun run --cwd packages/cli dev -- init scenario --track personal --preset longru
 
 권장 매핑 템플릿:
 
-- 재화 `COIN`: `unit.code`, `wallet.money`, `Action.cost`
+- 재화 `COIN`: `unit.code`, `wallet.money`, 단건은 `Action.cost`, 견적 벌크는 `BulkQuote.cost`
 - 재화 `GEM`: `vars.gems`, `exchange.gem` 결과, objective 가중치
 - 생산 요소: `vars.producers`
 - 배율 요소: `vars.upgrades`
@@ -71,7 +71,7 @@ V1 목표:
 
 - `COIN`:
   - Scenario `unit.code`
-  - 모든 `Action.cost()` 지불 재화
+  - 단건은 `Action.cost()`, 견적 벌크는 `BulkQuote.cost`로 지불하는 재화
 - `GEM`:
   - `initial.vars.gems`, `exchange.gem` 액션 결과
   - Objective `plugin.gemsAndWorthLog10`에서 가치 보정에 사용

@@ -1,12 +1,15 @@
 {
-  "ids": ["REQ-TC02-TYPIA-TRANSFORM-MISSING", "REQ-DX01-CONFORMANCE-HARNESS"],
+  "ids": ["REQ-TC02-TYPIA-TRANSFORM-MISSING", "REQ-DX01-CONFORMANCE-HARNESS", "REQ-PR01-BULK-QUOTE-SETTLEMENT"],
   "protectedFiles": [
     "docs/requirements/active/typia-transform.md",
     "docs/requirements/active/simulation-conformance.md",
+    "docs/requirements/active/bulk-quote-settlement.md",
     "packages/core/src/scenario/concreteValidator.ts",
     "packages/core/src/scenario/typiaTransformMissing.ts",
     "packages/core/src/scenario/standardSchema.ts",
     "packages/core/src/scenario/concreteValidator.test.ts",
+    "packages/core/src/sim/step.ts",
+    "packages/core/src/sim/step.bulk.test.ts",
     "packages/core/src/testkit/conformance.ts",
     "packages/core/src/testkit/conformance.test.ts",
     "packages/core/src/testkit/conformanceRun.ts",

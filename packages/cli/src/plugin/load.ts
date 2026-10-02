@@ -33,6 +33,10 @@ type LinearVars = {
   owned?: number;
 };
 
+function ownedCount(state: { vars?: LinearVars } | undefined): number {
+  return Number(state?.vars?.owned ?? 0);
+}
+
 function geometricCost(base: number, growth: number, start: number, count: number): number {
   if (count <= 0) return 0;
   if (growth === 1) return base * count;
@@ -85,7 +89,6 @@ function createLinearFactory(): ModelFactory {
           return { unit: ctx.unit, amount };
         },
         actions(ctx: any, state: any) {
-          const owned = Number((state.vars as LinearVars).owned ?? 0);
           const base = Number(p.buyCostBase ?? "10");
           const growth = Number(p.buyCostGrowth ?? 1.15);
           const perOwned = Number(p.buyIncomeDelta ?? "1");
@@ -97,21 +100,22 @@ function createLinearFactory(): ModelFactory {
             canApply() {
               return true;
             },
-            cost() {
-              const c = base * Math.pow(growth, owned);
+            cost(_ctx: any, priced: any) {
+              const c = base * Math.pow(growth, ownedCount(priced ?? state));
               return {
                 unit: ctx.unit,
                 amount: ctx.E.from(String(c)),
               };
             },
-            equivalentCost() {
-              const c = base * Math.pow(growth, owned);
+            equivalentCost(_ctx: any, priced: any) {
+              const c = base * Math.pow(growth, ownedCount(priced ?? state));
               return {
                 unit: ctx.unit,
                 amount: ctx.E.from(String(c)),
               };
             },
-            bulk() {
+            bulk(_ctx: any, priced: any) {
+              const owned = ownedCount(priced ?? state);
               const sizes = [1, 10, 25, 100];
               return sizes.map((size) => {
                 const total = geometricCost(base, growth, owned, size);

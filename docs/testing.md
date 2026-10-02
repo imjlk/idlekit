@@ -106,7 +106,7 @@ Checked only when the fixture says the relation holds:
 | negative balance | the payment policy disallows debt |
 | number vs break-infinity | finite log distance; non-finite `toNumber` is not equality |
 
-Formula seconds are labeled `formula`. `etaSimulate` and `etaAnalytic` stay `executed`. `PR-01`, `PR-02`, `PR-03`, and `PR-05` add further invariants on these helpers. `bun run test:conformance` uses eight property cases. `CONFORMANCE_CASES=200` via `test:conformance:extended` is the scheduled corpus (`.github/workflows/conformance-extended.yml`). `bun run test:conformance:negative` copies fixtures under `tmp/` and expects a missing typia transform, a deleted evidence citation, and an empty graph lookup to miss. It is not part of `test:conformance`.
+Formula seconds are labeled `formula`. `etaSimulate` and `etaAnalytic` stay `executed`. `PR-01` uses `checkBulk` for a flat price that declares equivalence and leaves a mid-buy bonus undeclared. `PR-02`, `PR-03`, and `PR-05` add further invariants on these helpers. `bun run test:conformance` uses eight property cases. `CONFORMANCE_CASES=200` via `test:conformance:extended` is the scheduled corpus (`.github/workflows/conformance-extended.yml`). `bun run test:conformance:negative` copies fixtures under `tmp/` and expects a missing typia transform, a deleted evidence citation, and an empty graph lookup to miss. It is not part of `test:conformance`.
 
 Graph does not see the JSON fixture, the workflow file, or the package script string. Those are unobserved dynamic edges. Query `runScenario`, `conformanceGeneratorVersion`, and `compareAmounts` in source before editing the helpers.
 

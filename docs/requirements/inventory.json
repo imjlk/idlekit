@@ -63,6 +63,13 @@
         },
         {
           "file": "packages/core/src/testkit/conformance.test.ts",
+          "exportName": "replaysDeclaredFlatBulkAcrossTheSeedCorpus",
+          "registeredAs": "PR-01 bulk equivalence > replays declared flat bulk across the seed corpus",
+          "cwd": "packages/core",
+          "args": ["test", "src/testkit/conformance.test.ts"]
+        },
+        {
+          "file": "packages/core/src/testkit/conformance.test.ts",
           "exportName": "stopsOnAPositiveTickGridAndRefusesANonPositiveStep",
           "registeredAs": "PR-02 time boundaries > stops on a positive tick grid and refuses a non-positive step",
           "cwd": "packages/core",
@@ -137,6 +144,22 @@
           "registeredAs": "money conformance comparator > matches finite amounts by log distance and refuses Infinity collapse",
           "cwd": "packages/money",
           "args": ["test", "src/testkit/compareAmounts.test.ts"]
+        }
+      ]
+    },
+    {
+      "id": "REQ-PR01-BULK-QUOTE-SETTLEMENT",
+      "pr": "PR-01",
+      "anchor": "req-pr01-bulk-quote-settlement",
+      "doc": "docs/requirements/active/bulk-quote-settlement.md",
+      "production": ["packages/core/src/sim/step.ts"],
+      "tests": [
+        {
+          "file": "packages/core/src/sim/step.bulk.test.ts",
+          "exportName": "settlesQuotedBulkAndRejectsBadQuotes",
+          "registeredAs": "PR-01 bulk quote settlement > settles a quoted bulk buy and rejects a bad quote",
+          "cwd": "packages/core",
+          "args": ["test", "src/sim/step.bulk.test.ts"]
         }
       ]
     }

@@ -37,7 +37,7 @@ export나 명령이 있다는 것은 분석이 끝났다는 뜻이 아니다.
 아래는 제어 흐름 사실이다. 이 변경에서 그 사실을 실행한 fixture는 없다.
 
 1. **Prestige cycle은 interval scan이다.** `analyzePrestigeCycle`은 interval마다 `durationSec`를 그 간격으로 두고 원래 scenario를 한 번 실행한다. reset을 반복하지 않는다. `breakEvenSec`는 `Math.min(interval, horizonSec)`다. `netWorthPerHour`와 `pointsPerHour`는 `Engine.toNumber`를 시간으로 나눈 값이다. 후속: `PR-10`, `PR-11`.
-2. **벌크 결제는 단건 비용을 차감할 수 있다.** `stepOnce`는 `action.cost(ctx, next)`를 빼고 `action.apply(ctx, next, bulkSize)`를 호출한다. `Action.bulk()`는 size별 `BulkQuote.cost`를 반환하는데 `stepOnce`는 그 값을 읽지 않는다. 후속: `PR-01`. 실제 과소 결제 fixture는 아직 필요하다.
+2. **벌크 결제는 현재 견적을 한 번 낸다.** `PR-01`이 `stepOnce`를 바꿨다. `bulkSize`가 없거나 `1`이면 여전히 `Action.cost`를 한 번 뺀다. 그보다 큰 정수는 현재 상태에서 `Action.bulk`를 다시 읽고 그 `BulkQuote.cost`를 한 번 뺀 다음 `apply`를 한 번 호출한다. size가 없거나 중복이거나, 정수가 아니거나, 유한하지 않거나, 음수이거나, 단위가 다른 견적은 `apply` 전에 거부한다. 단건 비용만 빼고 `bulkSize`를 적용하던 이전 경로는 지금 제어 흐름이 아니다. Fixture: `packages/core/src/sim/step.bulk.test.ts`.
 3. **`runScenario`는 `stepSec` 전체를 진행하고, `maxSteps`를 종료 조건보다 먼저 본다.** duration 검사는 step 전의 `state.t`를 본다. horizon이 `stepSec`의 배수가 아니면 경계를 넘는 step까지 진행한다. `maxSteps`는 duration이나 `until` 검사 전에 `steps >= maxSteps`이면 throw한다. `applyOfflineSeconds`는 나머지를 나눈다. 후속: `PR-02`.
 4. **Planner rollout은 `node.firstDecision ?? decision`으로 첫 결정을 유지한다.** 첫 결정이 없는 상태와 명시적 no-op이 같은 빈 값이라, 이후 행동이 첫 대기를 바꿀 수 있다. rollout은 살아있는 `ctx`로 `stepOnce`를 호출한다. 후속: `PR-04`.
 5. **Monte Carlo는 model과 strategy 객체를 공유한다.** `deepClonePreservingPrototype`에 들어가는 것은 `initial`뿐이다. closure에 cursor를 두는 strategy는 draw 사이에 공유된다. 후속: `PR-03`.

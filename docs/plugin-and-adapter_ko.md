@@ -102,6 +102,7 @@ planner/optimizer 롤아웃은 `runScenario` 로직 복제가 아니라 `stepOnc
 
 - 단일 틱 전이 SSOT: `packages/core/src/sim/step.ts`
 - planner deps: `packages/core/src/sim/strategy/planner.ts`
+- `bulkSize`가 없거나 `1`이면 `Action.cost`를 한 번 내고 `apply`를 한 번 호출한다. 더 큰 정수는 실행 직전 `Action.bulk`에서 size가 같은 견적 하나만 골라 그 `cost`를 한 번 낸다. `apply`는 두 번째 결제를 하지 않는다. planner가 고른 size는 힌트이고, 저장된 이전 비용은 결제 금액이 아니다.
 
 ## 5. 어댑터 예제 프로젝트
 

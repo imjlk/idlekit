@@ -23,6 +23,7 @@ import {
   checkTrialOrder,
   conformanceCaseCount,
   conformanceGeneratorVersion,
+  declaredFlatBulkMatches,
   demonstrateShrinkGap,
   economyAfter,
   expectProperty,
@@ -360,11 +361,37 @@ export function checksBulkEqualityOnlyWhenTheFixtureDeclaresIt(): void {
   expect(repeated).not.toBe(bulk);
 }
 
+/**
+ * @evidence docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness bulk(n) matches repeated single buys only when the fixture declares that equivalence.
+ * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #a195f0e Re-read the section: the seed corpus calls the declared flat-bulk relation, and an undeclared mismatch stays in the other check.
+ * @evidence ./conformance.ts#declaredFlatBulkMatches The seed corpus asks the harness whether one quoted flat bulk buy matches the same number of single buys.
+ * @evidenceReview ./conformance.ts#declaredFlatBulkMatches #89115c0 Re-read declaredFlatBulkMatches: one quoted flat bulk buy and the same number of single buys return the same wallet string and buy count. Ran this function across the seed corpus.
+ */
+export function replaysDeclaredFlatBulkAcrossTheSeedCorpus(): void {
+  expectProperty({
+    predicateId: "declared-flat-bulk",
+    testSeed: 0xb011,
+    cases: conformanceCaseCount(),
+    generate: (_index, rng) => rng.int(2, 12),
+    shrink: (value) => (value > 2 ? [value - 1] : []),
+    predicate: (size) => declaredFlatBulkMatches(size),
+    describeCase: (size, index) => ({
+      gameSeed: gameSeedForCase(0xb011, index),
+      engineId: "number",
+      modelId: "flat-bulk",
+      strategyId: null,
+      tickSchedule: { stepSec: 0, durationSec: size },
+    }),
+  });
+}
+
 describe("PR-01 bulk equivalence", () => {
   it(
     "checks bulk equality only when the fixture declares it",
     checksBulkEqualityOnlyWhenTheFixtureDeclaresIt,
   );
+
+  it("replays declared flat bulk across the seed corpus", replaysDeclaredFlatBulkAcrossTheSeedCorpus);
 });
 
 /**

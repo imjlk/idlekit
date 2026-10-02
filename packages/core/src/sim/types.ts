@@ -31,7 +31,7 @@ export type SimEvent<N> =
   | {
       type: "action.skipped";
       actionId: string;
-      reason: "cannotApply" | "insufficientFunds";
+      reason: "cannotApply" | "insufficientFunds" | "invalidQuote";
     }
   | {
       type: "milestone";

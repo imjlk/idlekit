@@ -46,3 +46,11 @@ Queried on macOS arm64 with Bun `1.3.10`, `@ttsc/graph` `0.30.4`, protocol `2025
 The same gate copied `fixtures/graph/base` to a temp directory. Lookup found `quotaHost` at `src/host.ts:5`. A fresh process after renaming it to `quotaHostRenamed` returned that name. Changing the return type to `4` showed up in `details`. Changing `@evidence docs/spec.md#quota` to `docs/spec.md#quota-next` changed the `docTags` text. The old target was no longer an exact tag. Stdin shutdown exited 0.
 
 Follow-up queries and `graph:check` do not store node ids. `bun run runtime:check` exited 0. `bun tools/analysis-baseline-check.ts` exited 0. `typecheck`, `format:check`, `test`, a Linux host, and CI `graph:check` were not run.
+
+## PR-01 callers
+
+Queried on macOS arm64 with Bun `1.3.10`, `@ttsc/graph` `0.30.4`, protocol `2025-11-25`, from the repository root with `tsconfig.graph.json`, at commit `d7ac8635ffae3a71fc835ac000cfc82f8c164bb6`. No generation identifier. Lookup places `stepOnce` at `packages/core/src/sim/step.ts:264` and `singleBuySize` at `packages/core/src/sim/step.ts:53`.
+
+A reverse execution trace of `stepOnce` (`focus` execution, `maxDepth` 3, `maxNodes` 32) has direct hops from `packages/core/src/sim/simulator.ts#runScenario` (span `simulator.ts:49`), `packages/core/src/sim/offline.ts#applyOfflineSeconds` (span `offline.ts:139`), `packages/core/src/testkit/conformance.ts#flatBulkSnapshot`, and `packages/core/src/sim/step.bulk.test.ts` functions `settlesQuotedBulkAndRejectsBadQuotes`, `runFlat`, and `runBonus`. Through `runScenario` it reaches `session.ts`, `monteCarlo.ts`, `eta.ts`, `prestigeCycle.ts`, `strategy/opt/runner.ts`, and CLI `compare.ts`, `ltv.ts`, `tune.ts`, `lib/designObjectives.ts`, and `lib/experience.ts`. The 32-node cap is not every caller.
+
+`createPlannerStrategy` was not a hop. It still calls `d.stepOnce` on `PlannerDeps`. That edge stays unobserved. Source review also shows a second `stepOnce` call in `applyOfflineSeconds` at `packages/core/src/sim/offline.ts:162` for the remainder step. The trace names the function, not that second call site.

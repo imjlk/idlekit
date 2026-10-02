@@ -1,10 +1,16 @@
 import type { Strategy } from "./types";
-import { stepOnce } from "../step";
+import { singleBuySize, stepOnce } from "../step";
 import type { StepOnceFn } from "../stepTypes";
 import { parseMoney } from "../../notation/parseMoney";
 import type { Action, BulkQuote, Model, SimContext, SimState } from "../types";
 import type { PlannerStrategyParamsV1 } from "./params";
-import { stableActions, stableBulkQuotes } from "./stability";
+import {
+  actionOccurrence,
+  quotedDecisionSize,
+  rankableQuotes,
+  stableActions,
+  stableBulkQuotes,
+} from "./stability";
 
 /**
  * Planner MUST use stepOnce for rollouts.
@@ -17,6 +23,7 @@ export type PlannerDeps<N, U extends string, Vars> = Readonly<{
 type Decision<N, U extends string, Vars> = Readonly<{
   action: Action<N, U, Vars>;
   bulkSize?: number;
+  occurrence?: number;
 }>;
 
 type PlannerNode<N, U extends string, Vars> = Readonly<{
@@ -84,28 +91,47 @@ function scoreQuote<N, U extends string, Vars>(
   return delta - cost;
 }
 
+function listedBulkQuotes<N, U extends string>(
+  raw: readonly BulkQuote<N, U>[] | null | undefined,
+): raw is readonly BulkQuote<N, U>[] {
+  return Array.isArray(raw) && raw.length > 0;
+}
+
 function selectBulkQuote<N, U extends string, Vars>(
   params: PlannerStrategyParamsV1,
   action: Action<N, U, Vars>,
   ctx: SimContext<N, U, Vars>,
   state: SimState<N, U, Vars>,
-): BulkQuote<N, U> {
-  const quotes = action.bulk?.(ctx, state);
-  const stable = quotes && quotes.length > 0
-    ? stableBulkQuotes(quotes)
-    : [{ size: 1, cost: action.cost(ctx, state), equivalentCost: action.equivalentCost?.(ctx, state) }];
+): BulkQuote<N, U> | undefined {
+  const raw = action.bulk?.(ctx, state);
+  const listed = listedBulkQuotes(raw);
+  const stable = listed
+    ? stableBulkQuotes(raw)
+    : [
+        {
+          size: 1,
+          cost: action.cost(ctx, state),
+          equivalentCost: action.equivalentCost?.(ctx, state),
+        },
+      ];
+  let singleCost = stable[0]!.cost;
+  if (listed && stable.some((quote) => quote.size === singleBuySize)) {
+    singleCost = action.cost(ctx, state);
+  }
+  const usable = rankableQuotes(ctx, state, stable, singleCost);
+  if (usable.length === 0) return undefined;
 
   if ((params.bulk?.mode ?? "bestQuote") === "size1") {
-    return stable.find((q) => q.size === 1) ?? stable[0]!;
+    return usable.find((quote) => quote.size === singleBuySize);
   }
 
-  let best = stable[0]!;
+  let best = usable[0]!;
   let bestScore = scoreQuote(params, ctx, best);
-  for (let i = 1; i < stable.length; i++) {
-    const q = stable[i]!;
-    const score = scoreQuote(params, ctx, q);
+  for (let i = 1; i < usable.length; i++) {
+    const quote = usable[i]!;
+    const score = scoreQuote(params, ctx, quote);
     if (score > bestScore) {
-      best = q;
+      best = quote;
       bestScore = score;
     }
   }
@@ -118,17 +144,22 @@ function buildStepCandidates<N, U extends string, Vars>(
   model: Model<N, U, Vars>,
   state: SimState<N, U, Vars>,
 ): readonly Decision<N, U, Vars>[] {
-  const actions = stableActions(model.actions(ctx, state)).filter((action) => action.canApply(ctx, state));
-  const decisions = actions.map((action) => {
+  const raw = model.actions(ctx, state);
+  const actions = stableActions(raw).filter((action) => action.canApply(ctx, state));
+  const decisions = actions.flatMap((action) => {
     const quote = selectBulkQuote(params, action, ctx, state);
+    if (!quote) return [];
     const score = scoreQuote(params, ctx, quote);
-    return {
-      score: Number.isFinite(score) ? score : Number.NEGATIVE_INFINITY,
-      decision: {
-        action,
-        bulkSize: quote.size > 1 ? quote.size : undefined,
-      } satisfies Decision<N, U, Vars>,
-    };
+    return [
+      {
+        score: Number.isFinite(score) ? score : Number.NEGATIVE_INFINITY,
+        decision: {
+          action,
+          bulkSize: quotedDecisionSize(quote.size),
+          occurrence: actionOccurrence(raw, action),
+        } satisfies Decision<N, U, Vars>,
+      },
+    ];
   });
 
   decisions.sort((a, b) => {
