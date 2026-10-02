@@ -1712,6 +1712,31 @@ function queueSpecifier(
   if (acceptLocalFile(next, fromReal, roots, faults, spec)) queue.push(next);
 }
 
+type ParsedSpecifiers = {
+  staticImports: string[];
+  requires: ReturnType<typeof localRequireCalls>;
+  importCalls: ReturnType<typeof importCalls>;
+};
+
+// Keyed by file text. Every inventoried command walks the same core sources, and
+// lexing a large module costs seconds; equal text always parses the same way.
+const parsedByBody = new Map<string, ParsedSpecifiers>();
+
+function parsedSpecifiers(body: string): ParsedSpecifiers {
+  const cached = parsedByBody.get(body);
+  if (cached) return cached;
+  const hidden = stringSpans(body);
+  const parsed: ParsedSpecifiers = {
+    staticImports: staticImportSpecifiers(body, hidden)
+      .filter((imported) => !typeOnlyImport(body, imported.at))
+      .map((imported) => imported.spec),
+    requires: [...localRequireCalls(body, hidden), ...createRequireCalls(body, hidden)],
+    importCalls: importCalls(body, hidden),
+  };
+  parsedByBody.set(body, parsed);
+  return parsed;
+}
+
 function walkSources(files: readonly string[]): SourceWalk {
   const packageRoots = preloadPackageRoots(files);
   const seen = new Set<string>();
@@ -1735,20 +1760,18 @@ function walkSources(files: readonly string[]): SourceWalk {
     const packaged = real.split(/[/\\]/).includes("node_modules");
     locals.push(real);
     if (!packaged || publishPackageBody(body)) bodies.push(body);
-    const hidden = stringSpans(body);
-    for (const imported of staticImportSpecifiers(body, hidden)) {
-      if (typeOnlyImport(body, imported.at)) continue;
-      queueSpecifier(real, imported.spec, "import", queue, faults, packageRoots, false);
+    const parsed = parsedSpecifiers(body);
+    for (const spec of parsed.staticImports) {
+      queueSpecifier(real, spec, "import", queue, faults, packageRoots, false);
     }
-    const requiredCalls = [...localRequireCalls(body, hidden), ...createRequireCalls(body, hidden)];
-    for (const required of requiredCalls) {
+    for (const required of parsed.requires) {
       if (required.kind === "dynamic") {
         if (!packaged) faults.push("dynamic require");
         continue;
       }
       queueSpecifier(real, required.spec, "require", queue, faults, packageRoots, true);
     }
-    for (const imported of importCalls(body, hidden)) {
+    for (const imported of parsed.importCalls) {
       if (imported.kind === "dynamic") {
         if (!packaged) faults.push("dynamic import");
         continue;
