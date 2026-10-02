@@ -1969,15 +1969,41 @@ try {
       'if (false) it("credited", citedExport);',
     ].join("\n"),
   );
-  const forwardedRunner = unresolvedRunnerCalls(
-    [
-      "function register(run) {",
-      '  run("credited", unrelated);',
-      "}",
-      "register(it);",
-      'if (false) it("credited", citedExport);',
-    ].join("\n"),
-  ).includes("it");
+  const forwardedBody = [
+    "function register(run) {",
+    '  run("credited", unrelated);',
+    "}",
+    "register(it);",
+    'if (false) it("credited", citedExport);',
+  ].join("\n");
+  const argumentBody = [
+    "function register(run) {",
+    '  run("credited", unrelated);',
+    "}",
+    "register(true ? it : test);",
+    'if (false) it("credited", citedExport);',
+  ].join("\n");
+  const argumentCalls = unresolvedRunnerCalls(argumentBody);
+  const groupedArgument = unresolvedRunnerCalls("register((true ? it.only : test));");
+  const orArgument = unresolvedRunnerCalls("register(it || test);");
+  const boundTernary = unresolvedRunnerCalls("const register = (true ? it : test);");
+  const callbackBindBody = [
+    "register(() => {",
+    "  const local = it;",
+    '  local("credited", citedExport);',
+    "});",
+  ].join("\n");
+  const forwardedRunner =
+    unresolvedRunnerCalls(forwardedBody).includes("it") &&
+    argumentCalls.includes("it") &&
+    argumentCalls.includes("test") &&
+    groupedArgument.includes("it") &&
+    groupedArgument.includes("test") &&
+    orArgument.includes("it") &&
+    orArgument.includes("test") &&
+    boundTernary.length === 0 &&
+    unresolvedRunnerCalls(callbackBindBody).length === 0 &&
+    registeredSuites(callbackBindBody, "citedExport", "credited").length === 1;
   const propertyRunner =
     unresolvedRunnerCalls(
       [

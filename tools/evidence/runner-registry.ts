@@ -14,6 +14,7 @@ import {
   skipSpaceAndComments,
   skipTemplateLiteral,
   skipWhitespace,
+  insideSpan,
   spanEndAt,
   stringSpans,
   wordBefore,
@@ -1355,19 +1356,152 @@ function assignedToProperty(body: string, wordStart: number): boolean {
   return before >= 0 && body[before] === ".";
 }
 
-/** `register(it)` forwards the runner into a helper parameter the scanner cannot see. */
+const CALL_HEADER = new Set(["catch", "for", "function", "if", "switch", "while", "with"]);
+
+const STATEMENT_WORD = new Set([
+  "break",
+  "case",
+  "catch",
+  "class",
+  "const",
+  "continue",
+  "debugger",
+  "default",
+  "do",
+  "else",
+  "enum",
+  "export",
+  "finally",
+  "for",
+  "function",
+  "if",
+  "import",
+  "interface",
+  "let",
+  "return",
+  "switch",
+  "throw",
+  "try",
+  "type",
+  "var",
+  "while",
+]);
+
+/** `register(...)` and `helper?.(`. `if (` / `function (` open a header, not a call. */
+function isCallParen(body: string, open: number): boolean {
+  const prev = previousCodeIndex(body, open);
+  if (prev < 0) return false;
+  const mark = body[prev] ?? "";
+  if (mark === ")" || mark === "]") return true;
+  if (mark === "?" && body[prev - 1] === ".") return true;
+  const word = wordEndingAt(body, prev);
+  if (!word) return false;
+  return !CALL_HEADER.has(word.value);
+}
+
+/** `{` of a function, class, or control-flow body. An object literal stays an expression. */
+function braceIsBlock(body: string, braceAt: number): boolean {
+  if (opensClassBody(body, braceAt)) return true;
+  const prev = previousCodeIndex(body, braceAt);
+  if (prev < 0) return true;
+  const mark = body[prev] ?? "";
+  if (mark === ")") return true;
+  if (mark === ">" && body[prev - 1] === "=") return true;
+  const word = wordEndingAt(body, prev);
+  if (!word) return false;
+  return (
+    word.value === "do" ||
+    word.value === "else" ||
+    word.value === "finally" ||
+    word.value === "try"
+  );
+}
+
+function spanStartContaining(
+  spans: ReadonlyArray<readonly [number, number]>,
+  index: number,
+): number {
+  for (let cursor = spans.length - 1; cursor >= 0; cursor -= 1) {
+    const span = spans[cursor];
+    if (!span) continue;
+    if (index >= span[0] && index < span[1]) return span[0];
+  }
+  return -1;
+}
+
+/**
+ * A runner token nested in a call argument, such as `register(true ? it : test)`.
+ * Bindings and function bodies stay registrations.
+ */
+function nestedInCallArgument(body: string, wordStart: number): boolean {
+  const spans = stringSpans(body);
+  let depth = 0;
+  let cursor = wordStart - 1;
+  while (cursor >= 0) {
+    if (insideSpan(spans, cursor)) {
+      const start = spanStartContaining(spans, cursor);
+      cursor = start < 0 ? cursor - 1 : start - 1;
+      continue;
+    }
+    const char = body[cursor] ?? "";
+    if (char === "/" && body[cursor - 1] === "/") {
+      const line = body.lastIndexOf("\n", cursor);
+      cursor = line < 0 ? -1 : line - 1;
+      continue;
+    }
+    if (char === "/" && body[cursor - 1] === "*") {
+      const open = body.lastIndexOf("/*", cursor - 1);
+      cursor = open < 0 ? -1 : open - 1;
+      continue;
+    }
+    if (/\s/.test(char)) {
+      cursor -= 1;
+      continue;
+    }
+    if (char === ")" || char === "]" || char === "}") {
+      depth += 1;
+      cursor -= 1;
+      continue;
+    }
+    if (char === "(" || char === "[" || char === "{") {
+      if (depth > 0) {
+        depth -= 1;
+        cursor -= 1;
+        continue;
+      }
+      if (char === "(" && isCallParen(body, cursor)) return true;
+      if (char === "{" && braceIsBlock(body, cursor)) return false;
+      cursor -= 1;
+      continue;
+    }
+    if (depth === 0 && char === ";") return false;
+    if (depth === 0 && /[A-Za-z0-9_$]/.test(char)) {
+      const word = wordEndingAt(body, cursor);
+      if (word && STATEMENT_WORD.has(word.value)) return false;
+      cursor = word ? word.start - 1 : cursor - 1;
+      continue;
+    }
+    cursor -= 1;
+  }
+  return false;
+}
+
+/** `register(it)` and `register(true ? it : test)` forward a runner the scanner cannot see. */
 function passedAsArgument(body: string, wordStart: number, afterExpr: number): boolean {
   const word = readIdentifier(body, wordStart);
   if (!word) return false;
   const prevAt = previousCodeIndex(body, wordStart);
-  if (prevAt < 0) return false;
-  const prev = body[prevAt] ?? "";
-  let open = -1;
-  if (prev === "(") open = prevAt;
-  else if (prev === ",") open = callOpenBefore(body, prevAt);
-  if (open < 0 || isGroupedBinding(body, open)) return false;
-  const next = body[skipSpaceAndComments(body, afterExpr)] ?? "";
-  return next === "," || next === ")";
+  if (prevAt >= 0) {
+    const prev = body[prevAt] ?? "";
+    let open = -1;
+    if (prev === "(") open = prevAt;
+    else if (prev === ",") open = callOpenBefore(body, prevAt);
+    if (open >= 0 && !isGroupedBinding(body, open)) {
+      const next = body[skipSpaceAndComments(body, afterExpr)] ?? "";
+      if (next === "," || next === ")") return true;
+    }
+  }
+  return nestedInCallArgument(body, wordStart);
 }
 
 /**
