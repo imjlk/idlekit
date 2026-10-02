@@ -844,6 +844,60 @@ export function recordsWalletAndMaxMoneyUnitsOnTheEconomySnapshot(): void {
   });
   expect(getterReads).toBe(0);
   expect(getterSnap).toContain("getter");
+  const mapSnapA = snapshotEconomy(engine, {
+    ...gemState,
+    vars: { buys: 1, bag: new Map<string, number>([["a", 1]]) } as unknown as Vars,
+  });
+  const mapSnapB = snapshotEconomy(engine, {
+    ...gemState,
+    vars: { buys: 1, bag: new Map<string, number>([["b", 2]]) } as unknown as Vars,
+  });
+  expect(mapSnapA).toContain('"~idlekit":"map"');
+  expect(mapSnapA).not.toBe(mapSnapB);
+  const setSnapA = snapshotEconomy(engine, {
+    ...gemState,
+    vars: { buys: 1, bag: new Set(["a"]) } as unknown as Vars,
+  });
+  const setSnapB = snapshotEconomy(engine, {
+    ...gemState,
+    vars: { buys: 1, bag: new Set(["b"]) } as unknown as Vars,
+  });
+  expect(setSnapA).toContain('"~idlekit":"set"');
+  expect(setSnapA).not.toBe(setSnapB);
+  const snapVars = (vars: unknown) =>
+    snapshotEconomy(engine, { ...gemState, vars: vars as unknown as Vars });
+  expect(snapVars({ when: new Date(0), bag: new Map() })).not.toBe(
+    snapVars({ when: new Date(1), bag: new Map() }),
+  );
+  expect(snapVars({ bag: new Map([["t", new Date(0)]]) })).not.toBe(
+    snapVars({ bag: new Map([["t", new Date(1)]]) }),
+  );
+  expect(snapVars({ page: new URL("https://example.com/a"), bag: new Set() })).not.toBe(
+    snapVars({ page: new URL("https://example.com/b"), bag: new Set() }),
+  );
+  expect(snapVars({ when: new Date(Number.NaN) })).not.toBe(snapVars({ when: null }));
+  class Claim extends Date {
+    constructor(
+      ms: number,
+      readonly source: string,
+    ) {
+      super(ms);
+    }
+  }
+  expect(snapVars({ bag: new Map(), when: new Claim(0, "ore") })).not.toBe(
+    snapVars({ bag: new Map(), when: new Claim(0, "gem") }),
+  );
+  class Bag extends Map<string, number> {
+    capacity = 1;
+  }
+  const small = new Bag([["a", 1]]);
+  const large = new Bag([["a", 1]]);
+  large.capacity = 2;
+  expect(snapVars({ bag: small })).not.toBe(snapVars({ bag: large }));
+  const brand = Symbol("brand");
+  const oreBag = Object.assign(new Map([["a", 1]]), { [brand]: "ore" });
+  const gemBag = Object.assign(new Map([["a", 1]]), { [brand]: "gem" });
+  expect(snapVars({ bag: oreBag })).not.toBe(snapVars({ bag: gemBag }));
   const bigintReplay = checkReplay({
     ...constantScenario({ rate: 1, durationSec: 1, stepSec: 1 }),
     initial: {
