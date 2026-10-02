@@ -3,6 +3,7 @@ import { analyzeUX } from "./analysis/ux";
 import { recordPrestigeReset } from "./constraints";
 import { createBoundedLog, createEventBuffer } from "./eventBuffer";
 import { createObservationRecorder, statsFromObservation } from "./observation";
+import { resolveOfflineSeconds } from "./offlineCredit";
 import { stepOnce } from "./step";
 import { assertSimulationClock, nextBoundary, stepContext, timeEpsilon, timeStepEvents } from "./timeBoundary";
 import type { Action, CompiledScenario, RunResult, RunStop, SimState } from "./types";
@@ -45,55 +46,6 @@ export type OfflineRunResult<N, U extends string, Vars> = Readonly<
   }
 >;
 
-function clamp01(v: number): number {
-  if (v < 0) return 0;
-  if (v > 1) return 1;
-  return v;
-}
-
-function resolveOfflineSeconds(
-  requestedSec: number,
-  policy: CompiledScenario<any, any, any>["run"]["offline"] | undefined,
-): Readonly<{
-  preDecaySec: number;
-  effectiveSec: number;
-  overflow: "none" | "clamped";
-  decayKind: "none" | "linear";
-  decayRatio: number;
-}> {
-  const maxSec = policy?.maxSec;
-  const overflowPolicy = policy?.overflowPolicy ?? "clamp";
-
-  let preDecaySec = requestedSec;
-  let overflow: "none" | "clamped" = "none";
-
-  if (maxSec !== undefined && requestedSec > maxSec) {
-    if (overflowPolicy === "reject") {
-      throw new Error(`offline seconds exceed policy maxSec (${maxSec})`);
-    }
-    preDecaySec = maxSec;
-    overflow = "clamped";
-  }
-
-  const decayKind = policy?.decay?.kind ?? "none";
-  const floorRatio = clamp01(policy?.decay?.floorRatio ?? 0.25);
-
-  let decayRatio = 1;
-  if (decayKind === "linear" && maxSec !== undefined && maxSec > 0) {
-    const progress = clamp01(preDecaySec / maxSec);
-    // 0 sec => ratio 1, maxSec => floorRatio
-    decayRatio = floorRatio + (1 - floorRatio) * (1 - progress);
-  }
-
-  return {
-    preDecaySec,
-    effectiveSec: preDecaySec * decayRatio,
-    overflow,
-    decayKind,
-    decayRatio,
-  };
-}
-
 export function resolveOfflineActionPolicy(args: {
   policy?: OfflineActionPolicy;
   useStrategy?: boolean;
@@ -130,7 +82,7 @@ function allowsOfflineAction(
  * @evidence docs/requirements/active/simulation-time-boundaries.md#req-pr02-simulation-time-boundaries Applies the same horizon, partial tick, and step budget as the online runner.
  * @evidenceReview docs/requirements/active/simulation-time-boundaries.md#req-pr02-simulation-time-boundaries #89f7aa9 Re-read the section: offline uses that partial tick, and a short maxSteps returns budget instead of discarding the run.
  * @evidence docs/requirements/active/session-clock.md#req-pr06-session-clock Steps reward time only. `requestedSec` stays the caller absence, and `useStrategy: false` or policy `none` does not call `decide`.
- * @evidenceReview docs/requirements/active/session-clock.md#req-pr06-session-clock #9c09e59 Re-read the section: state.t moves by simulated reward seconds, and a direct call does not turn the requested absence into state.t.
+ * @evidenceReview docs/requirements/active/session-clock.md#req-pr06-session-clock #3c24d94 Re-read the section: state.t moves by simulated reward seconds, and a direct call does not turn the requested absence into state.t. The gap-end rule for a stop inside an offline gap belongs to the session, not to this direct call.
  */
 export function applyOfflineSeconds<N, U extends string, Vars>(args: {
   scenario: CompiledScenario<N, U, Vars>;

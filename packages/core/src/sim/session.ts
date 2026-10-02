@@ -4,6 +4,7 @@ import { constraintsWithAnchor } from "./constraints";
 import { createBoundedLog, createEventBuffer } from "./eventBuffer";
 import { mergeObservations, observationFromLegacyEvents, statsFromObservation, type RunObservation } from "./observation";
 import { applyOfflineSeconds, type OfflineRunResult } from "./offline";
+import { offlineAbsenceForCredit, resolveOfflineSeconds } from "./offlineCredit";
 import { runScenario } from "./simulator";
 import type { CompiledScenario, RunResult, SimState } from "./types";
 
@@ -12,7 +13,7 @@ import type { CompiledScenario, RunResult, SimState } from "./types";
  * `state.t` stays the reward clock. Wall time is only on the session report.
  *
  * @evidence docs/requirements/active/session-clock.md#req-pr06-session-clock Wall elapsed, reward time, and active time are separate fields. Cap and decay do not move the next block earlier.
- * @evidenceReview docs/requirements/active/session-clock.md#req-pr06-session-clock #9c09e59 Re-read the section: a 12-hour absence with a 1-hour cap stays elapsed 43200 and credited 3600, and state.t is not rewritten to wall time.
+ * @evidenceReview docs/requirements/active/session-clock.md#req-pr06-session-clock #3c24d94 Re-read the section: a completed 12-hour absence with a 1-hour cap stays elapsed 43200 and credited 3600, a gap cut by a stop reports only the absence that earned its stepped reward, and state.t is not rewritten to wall time.
  */
 export const sessionClockContract = "idlekit.session-clock" as const;
 
@@ -39,7 +40,7 @@ export type SessionPatternSpec = Readonly<{
 export type SessionStopReason = "horizon" | "until" | "goal";
 
 export type SessionClock = Readonly<{
-  /** Wall length of this segment. */
+  /** Wall length of this segment. A gap cut by a stop ends where its stepped reward was earned. */
   elapsedSec: number;
   /** Reward seconds actually stepped. */
   creditedSec: number;
@@ -216,9 +217,11 @@ function withClocks<N, U extends string, Vars>(
 /**
  * One continued play. Wall time follows the schedule. `state.t` stays reward time.
  * A later call is fresh only when the caller supplies a new strategy instance.
+ * An `until` or goal stop inside an offline gap ends that gap at the smallest wall absence
+ * whose cap- and decay-adjusted reward reaches the stepped reward, not at the scheduled gap end.
  *
  * @evidence docs/requirements/active/session-clock.md#req-pr06-session-clock Schedules the next block on wall time and reports elapsed, credited, and active time separately.
- * @evidenceReview docs/requirements/active/session-clock.md#req-pr06-session-clock #9c09e59 Re-read the section: cap and decay do not pull the next active block forward, policy none does not call decide, goals stop only once every goal is reached, and maxSteps is a per-block budget counted in budgetStops, after which wall time still reaches the planned block end without crediting the rest as offline time.
+ * @evidenceReview docs/requirements/active/session-clock.md#req-pr06-session-clock #3c24d94 Re-read the section: cap and decay do not pull the next active block forward, policy none does not call decide, goals stop only once every goal is reached, a stop inside an offline gap ends that gap at the smallest absence whose cap- and decay-adjusted reward reaches the stepped reward, and maxSteps is a per-block budget counted in budgetStops, after which wall time still reaches the planned block end without crediting the rest as offline time.
  */
 export function simulateSessionPattern<N, U extends string, Vars>(args: {
   scenario: CompiledScenario<N, U, Vars>;
@@ -321,8 +324,17 @@ export function simulateSessionPattern<N, U extends string, Vars>(args: {
       },
     });
     const credited = offlineRun.offline.simulatedSec;
-    const lost = Math.max(0, requested - offlineRun.offline.effectiveSec);
-    offlineElapsedSec += requested;
+    // A stop inside the gap ends it at the smallest absence that earns the stepped reward.
+    // A gap that steps all of its effective seconds keeps the scheduled wall end.
+    const absence =
+      offlineRun.stop?.reason === "until"
+        ? offlineAbsenceForCredit(credited, requested, sc.run.offline)
+        : requested;
+    const gapEnd = wallStart + absence;
+    const effective =
+      absence === requested ? offlineRun.offline.effectiveSec : resolveOfflineSeconds(absence, sc.run.offline).effectiveSec;
+    const lost = Math.max(0, absence - effective);
+    offlineElapsedSec += absence;
     offlineCreditedSec += credited;
     lostRewardSec += lost;
     retainRun(offlineRun);
@@ -333,9 +345,9 @@ export function simulateSessionPattern<N, U extends string, Vars>(args: {
       endT: offlineRun.end.t,
       durationSec: credited,
       wallStartT: wallStart,
-      wallEndT: wallEnd,
+      wallEndT: gapEnd,
       clock: {
-        elapsedSec: requested,
+        elapsedSec: absence,
         creditedSec: credited,
         activeSec: 0,
         lostRewardSec: lost,
@@ -343,7 +355,7 @@ export function simulateSessionPattern<N, U extends string, Vars>(args: {
       run: offlineRun,
     });
     state = offlineRun.end;
-    wallT = wallEnd;
+    wallT = gapEnd;
     const reason = classify(offlineRun);
     if (reason) stopReason = reason;
   };

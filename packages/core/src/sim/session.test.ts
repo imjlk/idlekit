@@ -181,13 +181,13 @@ function runPattern(
 
 /**
  * @evidence docs/requirements/active/session-clock.md#req-pr06-session-clock Runs the 12-hour cap, the 24-hour horizon, offline policies, schedule rejection, and an early stop.
- * @evidenceReview docs/requirements/active/session-clock.md#req-pr06-session-clock #9c09e59 Re-read the section, then ran this function: 12 hours away credits 1 hour, the one-day horizon stays 86400, policy none does not move the scripted cursor, maxSteps 2 ends each active block as budget while the session reaches the horizon, the next offline gap starts at the planned block end, and an always-on session cut by maxSteps has no offline time for a reject policy to refuse.
+ * @evidenceReview docs/requirements/active/session-clock.md#req-pr06-session-clock #3c24d94 Re-read the section, then ran this function: 12 hours away credits 1 hour, the one-day horizon stays 86400, policy none does not move the scripted cursor, maxSteps 2 ends each active block as budget while the session reaches the horizon, the next offline gap starts at the planned block end, and an always-on session cut by maxSteps has no offline time for a reject policy to refuse.
  * @evidence ./session.ts#sessionClockContract Reads the session clock contract and checks wall elapsed against reward time.
  * @evidenceReview ./session.ts#sessionClockContract #bd7e206 The declaration is idlekit.session-clock. This test reads that property and expects a capped gap to keep those clocks apart.
  * @evidence ./session.ts#assertSessionSchedule An empty schedule, a negative offset, a negative duration, and overlapping blocks throw, and a 12-hour offset block starts on wall time 43200.
  * @evidenceReview ./session.ts#assertSessionSchedule #86f2edc Re-read assertSessionSchedule: days must be a positive integer, the list must be non-empty, each day an integer >= 0, each offset finite and >= 0, each duration finite and > 0, no block may end past the horizon, and sorted blocks may not overlap. Ran this function: the empty, negative offset, negative duration, and overlap cases threw those messages, and the 12-hour block ran after a 43200s offline segment.
  * @evidence ./session.ts#simulateSessionPattern A 12-hour gap with a 1-hour cap stays elapsed 43200 and credited 3600, presets keep the 86400 horizon, until and goals stop before the next block, and maxSteps cuts each active block without ending the session.
- * @evidenceReview ./session.ts#simulateSessionPattern #10d4bd4 Re-read simulateSessionPattern: it runs offline gaps through applyOfflineSeconds up to each scheduled wall start, runs each block through runScenario with that block's duration, keeps state.t as reward time, stops on until or once every goal is reached, counts budget stops per block and still moves wall time to a cut block's planned end, and merges segment observations. Ran this function: offline-heavy elapsed 86400 with 3600 credited and 82500 lost, early until and goal stopped at t 10 after one block, and maxSteps 2 gave two budget stops with the session ending on the 86400 horizon.
+ * @evidenceReview ./session.ts#simulateSessionPattern #e24fc3d Re-read simulateSessionPattern: it runs offline gaps through applyOfflineSeconds up to each scheduled wall start, ends a gap cut by until or a goal at the smallest absence whose cap- and decay-adjusted reward reaches the stepped reward, runs each block through runScenario with that block's duration, keeps state.t as reward time, stops on until or once every goal is reached, counts budget stops per block and still moves wall time to a cut block's planned end, and merges segment observations. Ran this function: offline-heavy elapsed 86400 with 3600 credited and 82500 lost, early until and goal stopped at t 10 after one block, and maxSteps 2 gave two budget stops with the session ending on the 86400 horizon.
  * @evidence ./offline.ts#resolveOfflineActionPolicy Policy none keeps the scripted cursor at 1, legacy-all moves it to 3, and allow applies only the automation buy.
  * @evidenceReview ./offline.ts#resolveOfflineActionPolicy #b424f6a Re-read resolveOfflineActionPolicy: useStrategy false and policy none never call the strategy, allow calls it and keeps the policy, and legacy-all calls it when useStrategy or a strategy is present. Ran this function: none left the scripted cursor at 1 and bought once, legacy-all reached cursor 3 with one prestige, and allow applied the automation buy only.
  */
@@ -741,5 +741,86 @@ describe("session segments", () => {
     expect(perSegment).toEqual([5, 2, 86393]);
     expect(session.run.observation?.actions.skippedInvalidQuote).toBe(86400);
     expect(session.run.observation?.actions.applied).toBe(0);
+  });
+});
+
+describe("offline gaps cut by a session stop", () => {
+  const twelveHourGap: SessionPatternSpec = {
+    id: "offline-heavy",
+    days: 1,
+    schedule: [{ day: 0, startOffsetSec: 12 * 3600, durationSec: 60 }],
+  };
+
+  it("ends an uncapped gap at the stop time, not at the scheduled gap end", () => {
+    const out = runPattern(
+      clockScenario({ income: 1, goals: [{ id: "thousand", met: (state) => state.t >= 1000 }] }),
+      { id: "offline-heavy", days: 1 },
+    );
+    expect(out.summary.stop.reason).toBe("goal");
+    expect(out.end.t).toBe(1000);
+    expect(out.summary.activeSec).toBe(300);
+    expect(out.summary.elapsedSec).toBe(1000);
+    expect(out.summary.offlineElapsedSec).toBe(700);
+    expect(out.summary.offlineCreditedSec).toBe(700);
+    expect(out.summary.lostRewardSec).toBe(0);
+    const gap = out.segments.at(-1)!;
+    expect(gap.kind).toBe("offline");
+    expect(gap.wallStartT).toBe(300);
+    expect(gap.wallEndT).toBe(1000);
+    expect(gap.clock).toEqual({ elapsedSec: 700, creditedSec: 700, activeSec: 0, lostRewardSec: 0 });
+
+    const until = runPattern(clockScenario({ income: 1, until: (state) => state.t >= 1000 }), {
+      id: "offline-heavy",
+      days: 1,
+    });
+    expect(until.summary.stop.reason).toBe("until");
+    expect(until.summary.elapsedSec).toBe(1000);
+  });
+
+  it("ends a clamped gap at the wall time that earned the stepped reward", () => {
+    const out = runPattern(
+      clockScenario({
+        income: 1,
+        offline: { maxSec: 3600, overflowPolicy: "clamp" },
+        goals: [{ id: "thousand", met: (state) => state.t >= 1000 }],
+      }),
+      twelveHourGap,
+    );
+    expect(out.summary.stop.reason).toBe("goal");
+    expect(out.summary.activeBlocks).toBe(0);
+    expect(out.end.t).toBe(1000);
+    const gap = out.segments[0]!;
+    expect(gap.wallStartT).toBe(0);
+    expect(gap.wallEndT).toBe(1000);
+    expect(gap.clock).toEqual({ elapsedSec: 1000, creditedSec: 1000, activeSec: 0, lostRewardSec: 0 });
+    expect(out.summary.elapsedSec).toBe(1000);
+    expect(out.summary.offlineElapsedSec).toBe(1000);
+    expect(out.summary.lostRewardSec).toBe(0);
+  });
+
+  it("ends a decayed gap at the inverse of the decay curve at the stepped reward", () => {
+    const offline = { maxSec: 3600, overflowPolicy: "clamp" as const, decay: { kind: "linear" as const, floorRatio: 0.25 } };
+    const out = runPattern(
+      clockScenario({ income: 1, offline, goals: [{ id: "six-hundred", met: (state) => state.t >= 600 }] }),
+      twelveHourGap,
+    );
+    expect(out.summary.stop.reason).toBe("goal");
+    expect(out.end.t).toBe(600);
+    const gap = out.segments[0]!;
+    // effective(r) = r - 0.75 r^2 / 3600 for r <= 3600, so the smallest r with 600 credited is
+    // 2 * 600 / (1 + sqrt(1 - 4 * 600 * 0.75 / 3600)).
+    const expected = 1200 / (1 + Math.sqrt(0.5));
+    expect(gap.wallEndT).toBeCloseTo(expected, 9);
+    expect(gap.clock.elapsedSec).toBeCloseTo(expected, 9);
+    expect(gap.clock.creditedSec).toBe(600);
+    expect(gap.clock.creditedSec).toBeLessThanOrEqual(gap.clock.elapsedSec);
+    expect(gap.clock.lostRewardSec).toBeCloseTo(expected - 600, 9);
+    expect(out.summary.elapsedSec).toBeCloseTo(expected, 9);
+    expect(out.summary.lostRewardSec).toBeCloseTo(expected - 600, 9);
+
+    const scenario = clockScenario({ income: 1, offline });
+    const at = (seconds: number) => applyOfflineSeconds({ scenario, seconds }).offline.effectiveSec;
+    expect(at(gap.clock.elapsedSec)).toBeCloseTo(600, 9);
+    expect(at(gap.clock.elapsedSec - 1)).toBeLessThan(600);
   });
 });
