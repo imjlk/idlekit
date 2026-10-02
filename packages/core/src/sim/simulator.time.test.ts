@@ -350,6 +350,34 @@ export function stopsOnTheRequestedHorizon(): void {
   expect(bigRun.stop?.reason).toBe("duration");
 }
 
+/** A fractional horizon at a large start time still ends on the horizon, online and offline. */
+export function stopsOnTheHorizonAtALargeStartTime(): void {
+  const durations = [3.1234567891];
+  for (let index = 1; index <= 24; index += 1) durations.push(index * 0.7071067811 + index / 997);
+  for (const t0 of [86400, 2.592e6, 1e7]) {
+    for (const stepSec of [1, 0.25]) {
+      for (const durationSec of durations) {
+        const base = runScenario(scenario({ rate: 1, stepSec, durationSec, maxSteps: 1000 }));
+        const online = runScenario(
+          scenario({ rate: 1, stepSec, durationSec, maxSteps: 1000, initial: state(0, t0) }),
+        );
+        const offline = applyOfflineSeconds({
+          scenario: scenario({ rate: 1, stepSec, durationSec: 0 }),
+          seconds: durationSec,
+          options: { stepSec, maxSteps: 1000, useStrategy: false, fromState: state(0, t0) },
+        });
+        for (const run of [online, offline]) {
+          expect(run.stop?.reason).toBe("duration");
+          expect(run.stop?.steps).toBe(base.stop?.steps);
+          expect(run.end.wallet.money.amount).toBe(base.end.wallet.money.amount);
+          expect(Math.abs(run.end.t - t0 - durationSec)).toBeLessThan(1e-6);
+        }
+      }
+    }
+  }
+}
+
 describe("PR-02 simulation time boundaries", () => {
   it("stops on the requested horizon", stopsOnTheRequestedHorizon);
+  it("stops on the horizon at a large start time", stopsOnTheHorizonAtALargeStartTime);
 });

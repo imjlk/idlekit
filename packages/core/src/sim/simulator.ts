@@ -60,8 +60,8 @@ export function runScenario<N, U extends string, Vars>(
     maxEvents,
   });
 
-  const startT = state.t;
   let steps = 0;
+  let elapsedSec = 0;
   if (durationSec === undefined && !sc.run.until && maxSteps === undefined) {
     throw new Error("runScenario requires at least one stop condition: durationSec, until, or maxSteps");
   }
@@ -74,7 +74,7 @@ export function runScenario<N, U extends string, Vars>(
   let stop: RunStop | undefined;
   while (stop === undefined) {
     const decision = nextBoundary({
-      elapsedSec: state.t - startT,
+      elapsedSec,
       steps,
       stepSec,
       durationSec,
@@ -130,6 +130,7 @@ export function runScenario<N, U extends string, Vars>(
     }
 
     steps += 1;
+    elapsedSec += decision.dt;
     if (traceLog && steps % everySteps === 0) traceLog.push(state);
     else if (sc.run.trace && traceLog === undefined && steps % everySteps === 0) trace.push(state);
   }

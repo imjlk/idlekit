@@ -199,7 +199,7 @@ export function applyOfflineSeconds<N, U extends string, Vars>(args: {
 
   while (stop === undefined) {
     const decision = nextBoundary({
-      elapsedSec: state.t - start.t,
+      elapsedSec: simulatedSec,
       steps,
       stepSec,
       durationSec: resolved.effectiveSec,

@@ -11,6 +11,7 @@ import type { RunStop, RunStopReason, SimEvent, TimedSimEvent } from "./types";
 export const timeBoundaryEpsilonScale = 1e-12;
 
 export type BoundaryClock = Readonly<{
+  /** Sum of tick dt. At a large state.t, `t - startT` cannot see a sub-ulp remainder and stalls. */
   elapsedSec: number;
   steps: number;
   stepSec: number;
