@@ -89,7 +89,7 @@ function chooseQuotes<N, U extends string, Vars>(
     const preferred = quotes.find((quote) => quote.size === singleBuySize) ?? quotes[0]!;
     const accepted = rankableQuotes(ctx, state, [preferred], singleCost);
     if (accepted.length > 0) return { selected: accepted, rejected: [] };
-    return { selected: [], rejected: quotes };
+    return { selected: [], rejected: [preferred] };
   }
 
   if (mode === "maxAffordable") {

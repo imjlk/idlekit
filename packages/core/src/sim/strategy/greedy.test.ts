@@ -488,6 +488,47 @@ describe("createGreedyStrategy", () => {
     expect(out[0]?.bulkSize).toBeUndefined();
   });
 
+  it("does not fall back to a bulk quote in size1 mode when the size-1 cost is rejected", () => {
+    const ctx: SimContext<number, UnitCode, Vars> = {
+      E: createNumberEngine(),
+      unit: { code: "COIN" },
+      tickPolicy: { mode: "drop" },
+    };
+    const action: Action<number, UnitCode, Vars> = {
+      id: "buy",
+      kind: "buy",
+      canApply: () => true,
+      // A modelling mistake: the action cost is in another unit.
+      cost: () => ({ unit: { code: "GEM" as UnitCode }, amount: 10 }),
+      bulk: () => [
+        {
+          size: 1,
+          cost: { unit: { code: "COIN" }, amount: 10 },
+          deltaIncomePerSec: { unit: { code: "COIN" }, amount: 1 },
+        },
+        {
+          size: 10,
+          cost: { unit: { code: "COIN" }, amount: 100 },
+          deltaIncomePerSec: { unit: { code: "COIN" }, amount: 10 },
+        },
+      ],
+      apply: (_ctx, state) => state,
+    };
+    const model: Model<number, UnitCode, Vars> = {
+      id: "m",
+      version: 1,
+      income: () => ({ unit: { code: "COIN" }, amount: 0 }),
+      actions: () => [action],
+    };
+    const strategy = createGreedyStrategy<number, UnitCode, Vars>({
+      schemaVersion: 1,
+      objective: "maximizeIncome",
+      bulk: { mode: "size1" },
+    });
+    const out = strategy.decide(ctx, model, makeState(1000));
+    expect(out.every((decision) => decision.bulkSize !== 10)).toBe(true);
+  });
+
   it("still emits a lone size-1 quote when the action cost cannot settle", () => {
     const ctx: SimContext<number, UnitCode, Vars> = {
       E: createNumberEngine(),
