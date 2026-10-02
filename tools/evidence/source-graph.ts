@@ -3,13 +3,17 @@ import { dirname, join, resolve } from "path";
 
 import {
   argumentBoundary,
+  localRanges,
+  locallyBound,
   readIdentifier,
   readQuoted,
   readStaticTemplate,
   regexCanStart,
   skipPair,
+  skipQuoted,
   skipRegex,
   skipSpaceAndComments,
+  skipTemplateLiteral,
   spanEndAt,
   stringSpans,
   wordBefore,
@@ -46,11 +50,411 @@ function importMetaRequire(body: string, index: number): boolean {
   return true;
 }
 
+type BindingScan = { binds: boolean; end: number };
+
+function forLoopBinding(body: string, at: number): boolean {
+  let cursor = at - 1;
+  while (cursor >= 0 && /\s/.test(body[cursor] ?? "")) cursor -= 1;
+  if (body[cursor] !== "(") return false;
+  const word = wordBefore(body, cursor);
+  if (word === "for") return true;
+  if (word !== "await") return false;
+  let mark = cursor - 1;
+  while (mark >= 0 && /\s/.test(body[mark] ?? "")) mark -= 1;
+  return wordBefore(body, mark - word.length + 1) === "for";
+}
+
+function skipExpression(body: string, at: number): number {
+  let index = at;
+  let depth = 0;
+  while (index < body.length) {
+    index = skipSpaceAndComments(body, index);
+    const char = body[index] ?? "";
+    if (char === "") return index;
+    if (depth === 0 && (char === "," || char === "}" || char === "]" || char === ";")) return index;
+    if (char === "'" || char === '"') {
+      index = skipQuoted(body, index);
+      continue;
+    }
+    if (char === "`") {
+      const end = skipTemplateLiteral(body, index);
+      index = end < 0 ? index + 1 : end;
+      continue;
+    }
+    if (char === "/" && regexCanStart(body, index)) {
+      const end = skipRegex(body, index);
+      index = end < 0 ? index + 1 : end;
+      continue;
+    }
+    if (char === "(" || char === "[" || char === "{") {
+      depth += 1;
+      index += 1;
+      continue;
+    }
+    if (char === ")" || char === "]" || char === "}") {
+      if (depth === 0) return index;
+      depth -= 1;
+      index += 1;
+      continue;
+    }
+    index += 1;
+  }
+  return index;
+}
+
+function skipInitializer(body: string, at: number): number {
+  const index = skipSpaceAndComments(body, at);
+  if (body[index] !== "=") return index;
+  return skipExpression(body, index + 1);
+}
+
+function bindingPattern(body: string, at: number): BindingScan {
+  let index = skipSpaceAndComments(body, at);
+  if (body.startsWith("...", index)) index = skipSpaceAndComments(body, index + 3);
+  const char = body[index] ?? "";
+  if (char === "{") return objectPattern(body, index);
+  if (char === "[") return arrayPattern(body, index);
+  const word = readIdentifier(body, index);
+  if (!word) return { binds: false, end: Math.min(body.length, index + 1) };
+  return { binds: word.value === "require", end: word.end };
+}
+
+function objectPattern(body: string, open: number): BindingScan {
+  let index = open + 1;
+  let binds = false;
+  while (index < body.length) {
+    index = skipSpaceAndComments(body, index);
+    const char = body[index] ?? "";
+    if (char === "}") return { binds, end: index + 1 };
+    if (char === ",") {
+      index += 1;
+      continue;
+    }
+    if (char === "'" || char === '"') {
+      const quoted = skipQuoted(body, index);
+      const after = skipSpaceAndComments(body, quoted);
+      if (body[after] !== ":") {
+        index = quoted;
+        continue;
+      }
+      const bound = bindingPattern(body, after + 1);
+      binds = binds || bound.binds;
+      index = skipInitializer(body, bound.end);
+      continue;
+    }
+    if (char === "[") {
+      const end = skipPair(body, index);
+      const after = skipSpaceAndComments(body, end < 0 ? index + 1 : end);
+      if (body[after] !== ":") {
+        index = after;
+        continue;
+      }
+      const bound = bindingPattern(body, after + 1);
+      binds = binds || bound.binds;
+      index = skipInitializer(body, bound.end);
+      continue;
+    }
+    if (body.startsWith("...", index)) {
+      const rest = bindingPattern(body, index + 3);
+      binds = binds || rest.binds;
+      index = skipInitializer(body, rest.end);
+      continue;
+    }
+    const key = readIdentifier(body, index);
+    if (!key) {
+      index += 1;
+      continue;
+    }
+    const after = skipSpaceAndComments(body, key.end);
+    if (body[after] === ":") {
+      const bound = bindingPattern(body, after + 1);
+      binds = binds || bound.binds;
+      index = skipInitializer(body, bound.end);
+      continue;
+    }
+    if (key.value === "require") binds = true;
+    index = skipInitializer(body, key.end);
+  }
+  return { binds, end: index };
+}
+
+function arrayPattern(body: string, open: number): BindingScan {
+  let index = open + 1;
+  let binds = false;
+  while (index < body.length) {
+    index = skipSpaceAndComments(body, index);
+    const char = body[index] ?? "";
+    if (char === "]") return { binds, end: index + 1 };
+    if (char === ",") {
+      index += 1;
+      continue;
+    }
+    const pattern = bindingPattern(body, index);
+    binds = binds || pattern.binds;
+    index = skipInitializer(body, pattern.end);
+  }
+  return { binds, end: index };
+}
+
+function declarationBindsRequire(body: string, at: number): boolean {
+  let index = at;
+  while (index < body.length) {
+    index = skipSpaceAndComments(body, index);
+    const char = body[index] ?? "";
+    if (char === "" || char === ";" || char === "\n") return false;
+    if (char === ",") {
+      index += 1;
+      continue;
+    }
+    const pattern = bindingPattern(body, index);
+    if (pattern.binds) return true;
+    const next = skipSpaceAndComments(body, skipInitializer(body, pattern.end));
+    if (body[next] !== ",") return false;
+    index = next;
+  }
+  return false;
+}
+
+function importSpecifiersBindRequire(body: string, open: number): BindingScan {
+  let index = open + 1;
+  let binds = false;
+  while (index < body.length) {
+    index = skipSpaceAndComments(body, index);
+    const char = body[index] ?? "";
+    if (char === "}") return { binds, end: index + 1 };
+    if (char === ",") {
+      index += 1;
+      continue;
+    }
+    const name = readIdentifier(body, index);
+    if (!name) {
+      index += 1;
+      continue;
+    }
+    const afterName = skipSpaceAndComments(body, name.end);
+    const next = readIdentifier(body, afterName);
+    if (name.value === "type" && next && next.value !== "as") {
+      index = next.end;
+      const aliasAt = skipSpaceAndComments(body, index);
+      const alias = readIdentifier(body, aliasAt);
+      if (alias?.value === "as") {
+        const local = readIdentifier(body, skipSpaceAndComments(body, alias.end));
+        index = local?.end ?? alias.end;
+      }
+      continue;
+    }
+    let local = name.value;
+    index = name.end;
+    if (next?.value === "as") {
+      const bound = readIdentifier(body, skipSpaceAndComments(body, next.end));
+      if (bound) {
+        local = bound.value;
+        index = bound.end;
+      }
+    }
+    if (local === "require") binds = true;
+  }
+  return { binds, end: index };
+}
+
+function importBindsRequire(body: string, at: number): boolean {
+  let index = skipSpaceAndComments(body, at);
+  const opener = body[index] ?? "";
+  if (opener === "." || opener === "'" || opener === '"' || opener === "`") return false;
+  const first = readIdentifier(body, index);
+  if (first?.value === "type") {
+    const after = skipSpaceAndComments(body, first.end);
+    const next = body[after] ?? "";
+    if (next === "{" || next === "*" || /[A-Za-z_$]/.test(next)) return false;
+  }
+  let binds = false;
+  while (index < body.length) {
+    index = skipSpaceAndComments(body, index);
+    const char = body[index] ?? "";
+    if (char === "" || char === ";" || char === ".") return binds;
+    if (char === "'" || char === '"') {
+      index = skipQuoted(body, index);
+      continue;
+    }
+    if (char === "`") {
+      const end = skipTemplateLiteral(body, index);
+      index = end < 0 ? index + 1 : end;
+      continue;
+    }
+    const fromWord = body.startsWith("from", index);
+    const fromTail = body[index + 4] ?? "";
+    if (fromWord && !/[A-Za-z0-9_$]/.test(fromTail)) return binds;
+    if (char === "{") {
+      const group = importSpecifiersBindRequire(body, index);
+      binds = binds || group.binds;
+      index = group.end;
+      continue;
+    }
+    if (char === "*") {
+      const asWord = readIdentifier(body, skipSpaceAndComments(body, index + 1));
+      if (asWord?.value !== "as") return binds;
+      const name = readIdentifier(body, skipSpaceAndComments(body, asWord.end));
+      if (name?.value === "require") binds = true;
+      index = name?.end ?? asWord.end;
+      continue;
+    }
+    if (char === ",") {
+      index += 1;
+      continue;
+    }
+    const ident = readIdentifier(body, index);
+    if (!ident) {
+      index += 1;
+      continue;
+    }
+    if (ident.value === "require") binds = true;
+    index = ident.end;
+  }
+  return binds;
+}
+
+function isParameterList(body: string, open: number, close: number): boolean {
+  const word = wordBefore(body, open);
+  if (word === "function" || word === "catch") return true;
+  if (word.length > 0) {
+    let mark = open - 1;
+    while (mark >= 0 && /\s/.test(body[mark] ?? "")) mark -= 1;
+    if (wordBefore(body, mark - word.length + 1) === "function") return true;
+  }
+  return body.startsWith("=>", skipSpaceAndComments(body, close));
+}
+
+function parameterListBindsRequire(body: string, open: number, close: number): boolean {
+  let index = open + 1;
+  while (index < close) {
+    index = skipSpaceAndComments(body, index);
+    if (index >= close) return false;
+    if (body[index] === ",") {
+      index += 1;
+      continue;
+    }
+    const pattern = bindingPattern(body, index);
+    if (pattern.binds) return true;
+    let after = skipInitializer(body, pattern.end);
+    after = skipSpaceAndComments(body, after);
+    if (body[after] === ":") after = skipExpression(body, after + 1);
+    index = after;
+  }
+  return false;
+}
+
+/** Bodies whose parameter list binds `require`, including `function hide(require)`. */
+function parameterRequireRanges(body: string): Array<[number, number]> {
+  const hidden = stringSpans(body);
+  const ranges: Array<[number, number]> = [];
+  let index = 0;
+  while (index < body.length) {
+    const hiddenEnd = spanEndAt(hidden, index);
+    if (hiddenEnd >= 0) {
+      index = hiddenEnd;
+      continue;
+    }
+    if (body[index] === "/" && body[index + 1] === "*") {
+      const comment = body.indexOf("*/", index + 2);
+      index = comment < 0 ? body.length : comment + 2;
+      continue;
+    }
+    if (body[index] === "/" && regexCanStart(body, index)) {
+      const end = skipRegex(body, index);
+      index = end < 0 ? index + 1 : end;
+      continue;
+    }
+    if (body[index] !== "(") {
+      index += 1;
+      continue;
+    }
+    const close = skipPair(body, index);
+    const listed = close > 0 && isParameterList(body, index, close);
+    const parameters = listed && parameterListBindsRequire(body, index, close);
+    if (parameters) {
+      let bodyAt = skipSpaceAndComments(body, close);
+      const arrow = body.startsWith("=>", bodyAt);
+      if (arrow) bodyAt = skipSpaceAndComments(body, bodyAt + 2);
+      if (body[bodyAt] === "{") {
+        const end = skipPair(body, bodyAt);
+        if (end > 0) ranges.push([bodyAt, end]);
+      } else if (arrow) ranges.push([bodyAt, skipExpression(body, bodyAt)]);
+    }
+    index += 1;
+  }
+  return ranges;
+}
+
+/** A module-level `require` binding hides every bare `require()` in that file. */
+function moduleBindsRequire(body: string): boolean {
+  const hidden = stringSpans(body);
+  let index = 0;
+  let depth = 0;
+  while (index < body.length) {
+    const hiddenEnd = spanEndAt(hidden, index);
+    if (hiddenEnd >= 0) {
+      index = hiddenEnd;
+      continue;
+    }
+    if (body[index] === "/" && body[index + 1] === "*") {
+      const close = body.indexOf("*/", index + 2);
+      index = close < 0 ? body.length : close + 2;
+      continue;
+    }
+    if (body[index] === "/" && regexCanStart(body, index)) {
+      const end = skipRegex(body, index);
+      index = end < 0 ? index + 1 : end;
+      continue;
+    }
+    const char = body[index] ?? "";
+    if (char === "{") {
+      depth += 1;
+      index += 1;
+      continue;
+    }
+    if (char === "}") {
+      if (depth > 0) depth -= 1;
+      index += 1;
+      continue;
+    }
+    if (depth > 0 || body[index - 1] === "." || !/[A-Za-z_$]/.test(char)) {
+      index += 1;
+      continue;
+    }
+    const word = readIdentifier(body, index);
+    if (!word) {
+      index += 1;
+      continue;
+    }
+    if (word.value === "function") {
+      const name = readIdentifier(body, skipSpaceAndComments(body, word.end));
+      if (name?.value === "require") return true;
+      index = word.end;
+      continue;
+    }
+    if (word.value === "import") {
+      const after = skipSpaceAndComments(body, word.end);
+      if (body[after] !== "(" && importBindsRequire(body, word.end)) return true;
+      index = word.end;
+      continue;
+    }
+    const declaration = word.value === "const" || word.value === "let" || word.value === "var";
+    if (declaration && !forLoopBinding(body, index) && declarationBindsRequire(body, word.end)) {
+      return true;
+    }
+    index = word.end;
+  }
+  return false;
+}
+
 /** `require("./helper")`, a static template require, and `module.require`. */
 function localRequireCalls(
   body: string,
   hidden: ReadonlyArray<readonly [number, number]>,
 ): LocalRequire[] {
+  const ranges = localRanges(body);
+  const moduleShadow = moduleBindsRequire(body);
+  const parameterRanges = moduleShadow ? [] : parameterRequireRanges(body);
   const found: LocalRequire[] = [];
   let index = 0;
   while (index < body.length) {
@@ -79,6 +483,12 @@ function localRequireCalls(
     const open = skipSpaceAndComments(body, index + "require".length);
     if (body[open] !== "(") {
       index += "require".length;
+      continue;
+    }
+    const parameterShadow = parameterRanges.some(([from, to]) => index >= from && index < to);
+    if (moduleShadow || locallyBound(ranges, "require", index) || parameterShadow) {
+      const close = skipPair(body, open);
+      index = close < 0 ? open + 1 : close;
       continue;
     }
     const argAt = skipSpaceAndComments(body, open + 1);

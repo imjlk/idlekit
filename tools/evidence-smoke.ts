@@ -2,7 +2,12 @@ import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } f
 import { tmpdir } from "os";
 import { join, resolve } from "path";
 import { plainTestEnv } from "./evidence/junit";
-import { installSourceLock, sealSources, unsealSources } from "./evidence/source-lock";
+import {
+  installSourceLock,
+  sealedCommand,
+  sealSources,
+  unsealSources,
+} from "./evidence/source-lock";
 import lintConfig from "../lint.config";
 import {
   approvalApplies,
@@ -877,6 +882,7 @@ try {
   let dynamicRequire = false;
   let packageRequire = false;
   let commentRequire = false;
+  let shadowedRequire = false;
   let commentImport = false;
   let relativeTypeSkipped = false;
   let dynamicImport = false;
@@ -1061,6 +1067,58 @@ try {
       ].join("\n"),
     );
     commentRequire = unresolvedLocalRequires([requireHost]).length === 0;
+    writeFileSync(
+      requireHost,
+      ["const require = (value: string) => value;", 'require("./missing.ts");'].join("\n"),
+    );
+    const localRequire = unresolvedLocalRequires([requireHost]);
+    writeFileSync(
+      requireHost,
+      ['require("./missing-before.ts");', "const require = (value: string) => value;"].join("\n"),
+    );
+    const earlyRequire = unresolvedLocalRequires([requireHost]);
+    writeFileSync(
+      requireHost,
+      [
+        "function hide(require) {",
+        '  require("./missing-shadow.ts");',
+        "}",
+        'require("./missing-real.ts");',
+      ].join("\n"),
+    );
+    const nestedRequire = unresolvedLocalRequires([requireHost]);
+    writeFileSync(
+      requireHost,
+      ["// const require = (value: string) => value;", 'require("./missing-comment.ts");'].join(
+        "\n",
+      ),
+    );
+    const commentBinding = unresolvedLocalRequires([requireHost]);
+    writeFileSync(
+      requireHost,
+      [
+        "const { require } = { require: (value) => value };",
+        'require("./missing-destructure.ts");',
+      ].join("\n"),
+    );
+    const destructuredRequire = unresolvedLocalRequires([requireHost]);
+    writeFileSync(
+      requireHost,
+      [
+        "const box = { a: 1 };",
+        "const { a = require } = box;",
+        'require("./missing-default.ts");',
+      ].join("\n"),
+    );
+    const defaultRequire = unresolvedLocalRequires([requireHost]);
+    shadowedRequire =
+      localRequire.length === 0 &&
+      earlyRequire.length === 0 &&
+      nestedRequire.includes("./missing-real.ts") &&
+      !nestedRequire.includes("./missing-shadow.ts") &&
+      commentBinding.includes("./missing-comment.ts") &&
+      destructuredRequire.length === 0 &&
+      defaultRequire.includes("./missing-default.ts");
     writeFileSync(
       requireHelper,
       [
@@ -1256,6 +1314,7 @@ try {
   let configSplitPreload = false;
   let missingConfigPreload = false;
   let quotedKeyPreload = false;
+  let commentedPreload = false;
   let shortPreload = false;
   let attachedPreload = false;
   let importPreload = false;
@@ -1319,6 +1378,33 @@ try {
     const singleKey = localPreloadFiles(preloadDir, ["test"]);
     const quotedKeyHit = quotedKey.length === 1 && quotedKey[0] === setupPath;
     quotedKeyPreload = quotedKeyHit && singleKey.length === 1 && singleKey[0] === setupPath;
+    writeFileSync(
+      join(preloadDir, "bunfig.toml"),
+      ['# preload = ["./old-setup.ts"]', 'preload = ["./setup.ts"]'].join("\n"),
+    );
+    const commented = localPreloadFiles(preloadDir, ["test"]);
+    const commentedMissing = unresolvedPreloadSpecifiers(preloadDir, ["test"]);
+    const hashed = 'note = "hash # " preload = "./setup.ts"\n';
+    writeFileSync(join(preloadDir, "bunfig.toml"), hashed);
+    const quotedHash = localPreloadFiles(preloadDir, ["test"]);
+    writeFileSync(join(preloadDir, "bunfig.toml"), '# preload = ["./old-setup.ts"]\n');
+    const commentOnly = localPreloadFiles(preloadDir, ["test"]);
+    const commentOnlyMissing = unresolvedPreloadSpecifiers(preloadDir, ["test"]);
+    writeFileSync(
+      join(preloadDir, "bunfig.toml"),
+      ['note = """', 'hash # " preload = "./setup.ts"', '"""'].join("\n"),
+    );
+    const tripleHash = localPreloadFiles(preloadDir, ["test"]);
+    commentedPreload =
+      commented.length === 1 &&
+      commented[0] === setupPath &&
+      !commentedMissing.includes("./old-setup.ts") &&
+      quotedHash.length === 1 &&
+      quotedHash[0] === setupPath &&
+      commentOnly.length === 0 &&
+      !commentOnlyMissing.includes("./old-setup.ts") &&
+      tripleHash.length === 1 &&
+      tripleHash[0] === setupPath;
     const equalsPreload = localPreloadFiles(preloadDir, ["test", "-r=./setup.ts"]);
     const splitPreload = localPreloadFiles(preloadDir, ["test", "-r", "./setup.ts"]);
     shortPreload =
@@ -1783,6 +1869,49 @@ try {
   const plainArray = unresolvedRunnerCalls(
     [
       'const runners = ["kept"];',
+      'runners[0]("credited", unrelated);',
+      'if (false) it("credited", citedExport);',
+    ].join("\n"),
+  );
+  const spreadRunner =
+    unresolvedRunnerCalls(
+      [
+        "const runners = { ...{ run: it } };",
+        'runners.run("credited", unrelated);',
+        'if (false) it("credited", citedExport);',
+      ].join("\n"),
+    ).includes("runners") &&
+    unresolvedRunnerCalls(
+      [
+        "const runners = { ...{ ...{ run: it } } };",
+        'runners.run("credited", unrelated);',
+        'if (false) it("credited", citedExport);',
+      ].join("\n"),
+    ).includes("runners") &&
+    unresolvedRunnerCalls(
+      [
+        "const runners = { ...hidden };",
+        'runners.run("credited", unrelated);',
+        'if (false) it("credited", citedExport);',
+      ].join("\n"),
+    ).includes("runners");
+  const spreadArray = unresolvedRunnerCalls(
+    [
+      "const runners = [...[it]];",
+      'runners[0]("credited", unrelated);',
+      'if (false) it("credited", citedExport);',
+    ].join("\n"),
+  ).includes("runners");
+  const plainSpread = unresolvedRunnerCalls(
+    [
+      'const runners = { ...{ label: "kept" } };',
+      'runners.label("credited", unrelated);',
+      'if (false) it("credited", citedExport);',
+    ].join("\n"),
+  );
+  const plainSpreadArray = unresolvedRunnerCalls(
+    [
+      'const runners = [...["kept"]];',
       'runners[0]("credited", unrelated);',
       'if (false) it("credited", citedExport);',
     ].join("\n"),
@@ -2288,11 +2417,11 @@ try {
     writeFileSync(
       attackFile,
       [
-        'import { afterAll, test } from "bun:test";',
+        'import { chmodSync, writeFileSync } from "fs";',
+        'import { test } from "bun:test";',
         `const helper = ${JSON.stringify(lockedHelper)};`,
-        "const original = await Bun.file(helper).text();",
-        "afterAll(async () => { await Bun.write(helper, original); });",
-        'await Bun.write(helper, "export const marker = 2;\\n");',
+        "chmodSync(helper, 0o644);",
+        'writeFileSync(helper, "export const marker = 2;\\n");',
         'await import("./helper.ts");',
         'test("credited", () => {});',
       ].join("\n"),
@@ -2301,7 +2430,11 @@ try {
     const modes = sealSources([lockedHelper]);
     try {
       const proc = Bun.spawnSync(
-        [process.execPath, "test", "--preload", lock.preload, "attack.test.ts"],
+        sealedCommand(
+          lockDir,
+          [process.execPath, "test", "--preload", lock.preload, "attack.test.ts"],
+          [lockedHelper],
+        ),
         {
           cwd: lockDir,
           stdout: "pipe",
@@ -2311,7 +2444,9 @@ try {
       );
       const output = `${proc.stdout.toString()}\n${proc.stderr.toString()}`;
       const intact = readFileSync(lockedHelper, "utf8").includes("marker = 1");
-      sourceLock = (proc.exitCode ?? 1) !== 0 && intact && output.includes("read-only");
+      const blocked =
+        output.includes("EPERM") || output.includes("EROFS") || output.includes("read-only");
+      sourceLock = (proc.exitCode ?? 1) !== 0 && intact && blocked;
     } finally {
       unsealSources(modes);
     }
@@ -2442,6 +2577,7 @@ try {
     templateRequire &&
     unresolvedRequire &&
     dynamicRequire &&
+    shadowedRequire &&
     packageRequire &&
     commentRequire &&
     dynamicImport &&
@@ -2472,6 +2608,10 @@ try {
     plainObject.length === 0 &&
     arrayRunner &&
     plainArray.length === 0 &&
+    spreadRunner &&
+    spreadArray &&
+    plainSpread.length === 0 &&
+    plainSpreadArray.length === 0 &&
     forwardedRunner &&
     commentImport &&
     relativeTypeSkipped &&
@@ -2493,6 +2633,7 @@ try {
     mockOptional &&
     mockIgnored &&
     quotedKeyPreload &&
+    commentedPreload &&
     shortPreload &&
     attachedPreload &&
     importPreload &&
@@ -2574,7 +2715,12 @@ try {
       plainObject,
       arrayRunner,
       plainArray,
+      spreadRunner,
+      spreadArray,
+      plainSpread,
+      plainSpreadArray,
       forwardedRunner,
+      shadowedRequire,
       commentImport,
       relativeTypeSkipped,
       sourceLock,
@@ -2583,6 +2729,7 @@ try {
       mockOptional,
       mockIgnored,
       quotedKeyPreload,
+      commentedPreload,
       shortPreload,
       attachedPreload,
       importPreload,

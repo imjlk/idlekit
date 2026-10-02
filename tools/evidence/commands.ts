@@ -182,17 +182,72 @@ function bunfigSelection(
 
 const PRELOAD_KEY = /(?:preload|"preload"|'preload')/;
 
+/** `#` starts a TOML comment. A hash inside quotes, including triple quotes, stays. */
+function tomlSource(text: string): string {
+  let source = "";
+  let index = 0;
+  while (index < text.length) {
+    const char = text[index] ?? "";
+    if (char === '"' || char === "'") {
+      const end = tomlStringEnd(text, index);
+      source += text.slice(index, end);
+      index = end;
+      continue;
+    }
+    if (char === "#") {
+      const line = text.indexOf("\n", index);
+      index = line < 0 ? text.length : line;
+      continue;
+    }
+    source += char;
+    index += 1;
+  }
+  return source;
+}
+
+function tomlStringEnd(text: string, start: number): number {
+  const quote = text[start] ?? "";
+  const closer = quote + quote + quote;
+  if (!text.startsWith(closer, start)) {
+    let index = start + 1;
+    if (quote === "'") {
+      const end = text.indexOf("'", index);
+      return end < 0 ? text.length : end + 1;
+    }
+    while (index < text.length) {
+      if (text[index] === "\\") {
+        index += 2;
+        continue;
+      }
+      if (text[index] === '"') return index + 1;
+      index += 1;
+    }
+    return text.length;
+  }
+  let index = start + 3;
+  while (index < text.length) {
+    if (quote === '"' && text[index] === "\\") {
+      index += 2;
+      continue;
+    }
+    if (text.startsWith(closer, index)) return index + 3;
+    index += 1;
+  }
+  return text.length;
+}
+
 function preloadNamesIn(text: string): string[] {
   const names: string[] = [];
+  const source = tomlSource(text);
   const listed = new RegExp(`${PRELOAD_KEY.source}\\s*=\\s*\\[([^\\]]*)\\]`, "g");
   const scalar = new RegExp(`${PRELOAD_KEY.source}\\s*=\\s*(?:"([^"]+)"|'([^']+)')`, "g");
-  for (const match of text.matchAll(listed)) {
+  for (const match of source.matchAll(listed)) {
     for (const item of match[1]?.matchAll(/"([^"]+)"|'([^']+)'/g) ?? []) {
       const value = item[1] ?? item[2];
       if (value) names.push(value);
     }
   }
-  for (const match of text.matchAll(scalar)) {
+  for (const match of source.matchAll(scalar)) {
     const value = match[1] ?? match[2];
     if (value) names.push(value);
   }

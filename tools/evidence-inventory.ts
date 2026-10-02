@@ -80,6 +80,7 @@ import {
   changedSources,
   installSourceLock,
   preloadTestArgs,
+  sealedCommand,
   sealSources,
   sourceDigests,
   unsealSources,
@@ -515,13 +516,17 @@ export async function checkInventory(projectRoot = root): Promise<string[]> {
     const digests = sourceDigests(locked);
     const lock = installSourceLock(reportDir, locked);
     const modes = sealSources(locked);
-    const command = [
-      process.execPath,
-      ...preloadTestArgs(junitReporterArgs(first.args, reportPath), lock.preload),
-    ];
     let exitCode = 1;
     let output = "";
     try {
+      const command = sealedCommand(
+        reportDir,
+        [
+          process.execPath,
+          ...preloadTestArgs(junitReporterArgs(first.args, reportPath), lock.preload),
+        ],
+        locked,
+      );
       const proc = Bun.spawnSync(command, {
         cwd: commandCwd,
         stdout: "pipe",

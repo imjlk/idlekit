@@ -1,4 +1,4 @@
-import { chmodSync, readFileSync, statSync, writeFileSync } from "fs";
+import { chmodSync, existsSync, readFileSync, realpathSync, statSync, writeFileSync } from "fs";
 import { join } from "path";
 
 const GUARD = [
@@ -117,4 +117,87 @@ export function unsealSources(modes: ReadonlyMap<string, number>): void {
       continue;
     }
   }
+}
+
+const LINUX_SEAL = [
+  "#!/bin/bash",
+  "set -euo pipefail",
+  "seal() {",
+  "  while IFS= read -r file; do",
+  '    [ -n "$file" ] || continue',
+  '    target=$(readlink -f -- "$file")',
+  '    mount --bind -- "$target" "$target"',
+  '    mount -o remount,bind,ro -- "$target"',
+  '  done <<< "${IDLEKIT_EVIDENCE_LOCK:-}"',
+  "}",
+  'if [ "${IDLEKIT_EVIDENCE_SEALED:-}" = "1" ]; then',
+  "  seal",
+  "  unset IDLEKIT_EVIDENCE_SEALED",
+  '  if [ "$(id -u)" = "0" ] && [ -n "${SUDO_UID:-}" ]; then',
+  '    exec setpriv --reuid="$SUDO_UID" --regid="$SUDO_GID" --init-groups -- "$@"',
+  "  fi",
+  '  exec "$@"',
+  "fi",
+  "if unshare --user --map-root-user --mount --propagation private \\",
+  "  /bin/bash -c 'mount --bind /etc/hosts /etc/hosts' >/dev/null 2>&1; then",
+  "  export IDLEKIT_EVIDENCE_SEALED=1",
+  "  exec unshare --user --map-root-user --mount --propagation private \\",
+  '    /bin/bash "$0" "$@"',
+  "fi",
+  "if sudo -n -E true >/dev/null 2>&1; then",
+  "  export IDLEKIT_EVIDENCE_SEALED=1",
+  "  exec sudo -n -E unshare --mount --propagation private \\",
+  '    /bin/bash "$0" "$@"',
+  "fi",
+  'echo "evidence source lock could not sandbox the test" >&2',
+  "exit 1",
+  "",
+].join("\n");
+
+function sandboxQuoted(path: string): string {
+  const escaped = path.split("\\").join("\\\\").split('"').join('\\"');
+  return `"${escaped}"`;
+}
+
+function sealedPaths(files: readonly string[]): string[] {
+  const paths = new Set<string>();
+  for (const file of files) {
+    paths.add(file);
+    try {
+      paths.add(realpathSync(file));
+    } catch {
+      continue;
+    }
+  }
+  return [...paths];
+}
+
+function darwinProfile(files: readonly string[]): string {
+  const lines = ["(version 1)", "(allow default)", "(deny file-write*"];
+  for (const file of sealedPaths(files)) lines.push(`  (literal ${sandboxQuoted(file)})`);
+  lines.push(")", "");
+  return lines.join("\n");
+}
+
+/** Run the test where it cannot chmod, replace, or unlink the scanned files. */
+export function sealedCommand(
+  directory: string,
+  command: readonly string[],
+  files: readonly string[],
+): string[] {
+  if (files.length === 0) return [...command];
+  if (process.platform === "darwin") {
+    if (!existsSync("/usr/bin/sandbox-exec")) {
+      throw new Error("evidence source lock could not sandbox the test");
+    }
+    const profile = join(directory, "source-lock.sb");
+    writeFileSync(profile, darwinProfile(files));
+    return ["/usr/bin/sandbox-exec", "-f", profile, ...command];
+  }
+  if (process.platform === "linux") {
+    const script = join(directory, "source-lock-mount.sh");
+    writeFileSync(script, LINUX_SEAL);
+    return ["/bin/bash", script, ...command];
+  }
+  throw new Error("evidence source lock could not sandbox the test");
 }

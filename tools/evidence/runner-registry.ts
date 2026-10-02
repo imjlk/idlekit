@@ -79,6 +79,18 @@ function skipObjectValue(body: string, index: number, limit: number): number {
   return cursor;
 }
 
+/** `{ ...{ run: it } }` still stores a runner. An unparsed spread is treated as one. */
+function spreadStoresRunner(
+  body: string,
+  dots: number,
+  aliases: readonly RunnerAlias[],
+): boolean {
+  const operand = skipSpaceAndComments(body, dots + 3);
+  const grouped = body[operand] === "{" || body[operand] === "[";
+  if (grouped) return valueHoldsRunner(body, operand, aliases);
+  return true;
+}
+
 /** An array or object element that stores a runner, including one nested inside. */
 function valueHoldsRunner(
   body: string,
@@ -110,6 +122,7 @@ function arrayHoldsRunner(
       continue;
     }
     if (body.startsWith("...", index)) {
+      if (spreadStoresRunner(body, index, aliases)) return true;
       index = skipObjectValue(body, index + 3, close);
       continue;
     }
@@ -138,6 +151,7 @@ function objectHoldsRunner(
       continue;
     }
     if (body.startsWith("...", index)) {
+      if (spreadStoresRunner(body, index, aliases)) return true;
       index = skipObjectValue(body, index + 3, close);
       continue;
     }
