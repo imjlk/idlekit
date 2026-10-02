@@ -422,7 +422,7 @@ export function readImportRunnerAliases(
     const kind = runnerKindForImport(spec.value, item.imported);
     if (kind) entries.push({ name: item.name, kind });
   }
-  // `import register from "node:test"` is the test function. `bun:test` has no default runner.
+  // The default export of node:test is the test runner. bun:test has none.
   if (defaultLocal !== undefined && spec.value === "node:test") {
     entries.push({ name: defaultLocal, kind: "test" });
   }
