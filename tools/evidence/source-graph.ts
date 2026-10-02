@@ -780,6 +780,54 @@ function importCalls(
 
 const PACKAGE_SIGNAL = /\b(?:it|test|describe|eval|Function)\s*\(|\bplugin\b/;
 
+const DATA_LOADERS = new Set(["bytes", "file", "text"]);
+
+/** `type` inside `with { ... }` or `assert { ... }`. Other keys stay ignored. */
+function attributeType(body: string, open: number, close: number): string | undefined {
+  let index = open + 1;
+  while (index < close) {
+    index = skipSpaceAndComments(body, index);
+    if (index >= close || body[index] === "}") break;
+    if (body[index] === ",") {
+      index += 1;
+      continue;
+    }
+    let key = "";
+    if (body[index] === "'" || body[index] === '"') {
+      const quoted = readQuoted(body, index);
+      if (!quoted || quoted.end > close) return undefined;
+      key = quoted.value;
+      index = quoted.end;
+    } else {
+      const ident = readIdentifier(body, index);
+      if (!ident || ident.end > close) return undefined;
+      key = ident.value;
+      index = ident.end;
+    }
+    index = skipSpaceAndComments(body, index);
+    if (body[index] !== ":") return undefined;
+    index = skipSpaceAndComments(body, index + 1);
+    const value = readQuoted(body, index);
+    if (!value || value.end > close) return undefined;
+    if (key === "type") return value.value;
+    index = value.end;
+  }
+  return undefined;
+}
+
+/** Bun returns `text`, `file`, and `bytes` imports as data instead of running them. */
+function dataImportSpecifier(body: string, afterSpec: number): boolean {
+  const cursor = skipSpaceAndComments(body, afterSpec);
+  const word = readIdentifier(body, cursor);
+  if (!word || (word.value !== "with" && word.value !== "assert")) return false;
+  const brace = skipSpaceAndComments(body, word.end);
+  if (body[brace] !== "{") return false;
+  const close = skipPair(body, brace);
+  if (close < 0) return false;
+  const loader = attributeType(body, brace, close);
+  return loader !== undefined && DATA_LOADERS.has(loader);
+}
+
 /** Static `from` and side-effect `import` specifiers. Comments may sit before the string. */
 function staticImportSpecifiers(
   body: string,
@@ -816,7 +864,9 @@ function staticImportSpecifiers(
     if (clause && !member) {
       const quoted = readQuoted(body, skipSpaceAndComments(body, ident.end));
       if (quoted) {
-        found.push({ spec: quoted.value, at: start });
+        if (!dataImportSpecifier(body, quoted.end)) {
+          found.push({ spec: quoted.value, at: start });
+        }
         index = quoted.end;
         continue;
       }

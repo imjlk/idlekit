@@ -16,9 +16,23 @@ const XML_TEXT: Record<string, string> = {
   "&apos;": "'",
 };
 
-/** One XML layer. `&gt;` becomes `>`, and `&amp;gt;` stays the text `&gt;`. */
+/** `&#10;` and `&#x0A;` are one character. An out-of-range reference stays text. */
+function numericCharacter(entity: string): string | undefined {
+  const hex = entity.startsWith("&#x") || entity.startsWith("&#X");
+  const digits = hex ? entity.slice(3, -1) : entity.slice(2, -1);
+  if (digits.length === 0) return undefined;
+  const code = Number.parseInt(digits, hex ? 16 : 10);
+  if (!Number.isInteger(code) || code < 0 || code > 0x10ffff) return undefined;
+  return String.fromCodePoint(code);
+}
+
+/** One XML layer. `&gt;` becomes `>`, `&amp;#10;` stays `&#10;`, and `&#10;` becomes a newline. */
 function decodeXmlText(text: string): string {
-  return text.replace(/&(?:amp|gt|lt|quot|apos);/g, (entity) => XML_TEXT[entity] ?? entity);
+  return text.replace(/&(?:amp|gt|lt|quot|apos|#[xX][0-9A-Fa-f]+|#\d+);/g, (entity) => {
+    const named = XML_TEXT[entity];
+    if (named !== undefined) return named;
+    return numericCharacter(entity) ?? entity;
+  });
 }
 
 function rawAttr(tag: string, name: string): string {

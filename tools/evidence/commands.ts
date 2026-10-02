@@ -237,9 +237,86 @@ function tomlStringEnd(text: string, start: number): number {
   return text.length;
 }
 
+/** `[test]` and `["test"]`. `[test.coverage]` and `[[test]]` are different tables. */
+function readTableHeader(source: string, open: number): { name: string; end: number } | undefined {
+  if (source[open] !== "[") return undefined;
+  if (source[open + 1] === "[") {
+    const close = source.indexOf("]]", open + 2);
+    if (close < 0) return undefined;
+    return { name: "", end: close + 2 };
+  }
+  let cursor = open + 1;
+  while (source[cursor] === " " || source[cursor] === "\t") cursor += 1;
+  const parts: string[] = [];
+  while (cursor < source.length) {
+    let part = "";
+    if (source[cursor] === '"' || source[cursor] === "'") {
+      const end = tomlStringEnd(source, cursor);
+      part = source.slice(cursor + 1, Math.max(cursor + 1, end - 1));
+      cursor = end;
+    } else if (/[A-Za-z_]/.test(source[cursor] ?? "")) {
+      const start = cursor;
+      cursor += 1;
+      while (/[A-Za-z0-9_-]/.test(source[cursor] ?? "")) cursor += 1;
+      part = source.slice(start, cursor);
+    } else return undefined;
+    if (!/^[A-Za-z_][A-Za-z0-9_-]*$/.test(part)) return undefined;
+    parts.push(part);
+    while (source[cursor] === " " || source[cursor] === "\t") cursor += 1;
+    if (source[cursor] !== ".") break;
+    cursor += 1;
+    while (source[cursor] === " " || source[cursor] === "\t") cursor += 1;
+  }
+  if (source[cursor] !== "]") return undefined;
+  return { name: parts.join("."), end: cursor + 1 };
+}
+
+/** Root keys and `[test]` keys. `[install]` preload does not run under `bun test`. */
+function applicablePreloadText(source: string): string {
+  let kept = "";
+  let index = 0;
+  let table = "root";
+  let lineStart = true;
+  while (index < source.length) {
+    const char = source[index] ?? "";
+    if (char === '"' || char === "'") {
+      const end = tomlStringEnd(source, index);
+      if (table === "root" || table === "test") kept += source.slice(index, end);
+      index = end;
+      lineStart = false;
+      continue;
+    }
+    if (char === "\n") {
+      if (table === "root" || table === "test") kept += "\n";
+      index += 1;
+      lineStart = true;
+      continue;
+    }
+    if (lineStart && (char === " " || char === "\t" || char === "\r")) {
+      if (table === "root" || table === "test") kept += char;
+      index += 1;
+      continue;
+    }
+    if (lineStart && char === "[") {
+      const header = readTableHeader(source, index);
+      if (header) {
+        table = header.name === "test" ? "test" : "other";
+        const newline = source.indexOf("\n", header.end);
+        index = newline < 0 ? source.length : newline + 1;
+        lineStart = true;
+        continue;
+      }
+    }
+    lineStart = false;
+    if (table === "root" || table === "test") kept += char;
+    index += 1;
+  }
+  return kept;
+}
+
 function preloadNamesIn(text: string): string[] {
   const names: string[] = [];
-  const source = tomlSource(text);
+  const source = applicablePreloadText(tomlSource(text));
   const listed = new RegExp(`${PRELOAD_KEY.source}\\s*=\\s*\\[([^\\]]*)\\]`, "g");
   const scalar = new RegExp(`${PRELOAD_KEY.source}\\s*=\\s*(?:"([^"]+)"|'([^']+)')`, "g");
   for (const match of source.matchAll(listed)) {

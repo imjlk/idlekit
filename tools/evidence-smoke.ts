@@ -383,6 +383,9 @@ try {
     filelessName === "concrete typia validator > accepts a numeric" &&
     junitCases('<testcase name="literal &gt; sign" />')[0]?.name === "literal > sign" &&
     junitCases('<testcase name="literal &amp;gt; sign" />')[0]?.name === "literal &gt; sign" &&
+    junitCases('<testcase name="line&#10;break" />')[0]?.name === "line\nbreak" &&
+    junitCases('<testcase name="hex&#x0A;break" />')[0]?.name === "hex\nbreak" &&
+    junitCases('<testcase name="kept&amp;#10;text" />')[0]?.name === "kept&#10;text" &&
     located?.file === "src/host.test.ts" &&
     located.line === locatedLine &&
     locatedLine === 2;
@@ -909,6 +912,7 @@ try {
   let missingInstalled = false;
   let dynamicPackage = false;
   let dataImport = false;
+  let textImport = false;
   try {
     const bodies = sourceGraph([specifierHost]);
     const joined = bodies.join("\n");
@@ -1347,6 +1351,27 @@ try {
     dataImport =
       sourceGraph([dataHost]).length === 1 &&
       unresolvedLocalRequires([dataHost]).includes(dataSpec);
+    const textHelper = join(specifierDir, "text-helper.ts");
+    const jsonHelper = join(specifierDir, "json-helper.ts");
+    const textHost = join(specifierDir, "text-host.test.ts");
+    writeFileSync(textHelper, 'it("credited", unrelated);\n// from-text-helper\n');
+    writeFileSync(jsonHelper, 'it("credited", unrelated);\n// from-json-helper\n');
+    writeFileSync(
+      textHost,
+      [
+        'import text from "./text-helper.ts" with { type: "text" };',
+        'import file from "./text-helper.ts" with { type: "file" };',
+        'import bytes from "./text-helper.ts" assert { type: "bytes" };',
+        'import still from "./json-helper.ts" with { type: "json" };',
+        'if (false) it("credited", citedExport);',
+      ].join("\n"),
+    );
+    const textBodies = sourceGraph([textHost]);
+    const textJoined = textBodies.join("\n");
+    textImport =
+      !textJoined.includes("from-text-helper") &&
+      textJoined.includes("from-json-helper") &&
+      unresolvedLocalRequires([textHost]).length === 0;
   } finally {
     rmSync(specifierDir, { recursive: true, force: true });
   }
@@ -1369,6 +1394,7 @@ try {
   let shortPreload = false;
   let attachedPreload = false;
   let importPreload = false;
+  let scopedPreload = false;
   try {
     writeFileSync(join(preloadDir, "bunfig.toml"), '[test]\npreload = "./setup.ts"\n');
     const scalar = localPreloadFiles(preloadDir, ["test"]);
@@ -1469,6 +1495,27 @@ try {
     importPreload = localPreloadFiles(preloadDir, ["test", "--import=./setup.ts"]).some(
       (file) => file === setupPath,
     );
+    writeFileSync(
+      join(preloadDir, "bunfig.toml"),
+      [
+        'preload = ["./setup.ts"]',
+        "[install]",
+        'preload = ["./missing-setup.ts"]',
+        "[test]",
+        'preload = ["./setup.ts"]',
+        "[run]",
+        'preload = ["./also-missing.ts"]',
+        "[test.coverage]",
+        'preload = ["./coverage-missing.ts"]',
+      ].join("\n"),
+    );
+    const scopedFiles = localPreloadFiles(preloadDir, ["test"]);
+    const scopedMissing = unresolvedPreloadSpecifiers(preloadDir, ["test"]);
+    scopedPreload =
+      scopedFiles.includes(setupPath) &&
+      !scopedMissing.includes("./missing-setup.ts") &&
+      !scopedMissing.includes("./also-missing.ts") &&
+      !scopedMissing.includes("./coverage-missing.ts");
   } finally {
     rmSync(preloadDir, { recursive: true, force: true });
   }
@@ -2814,6 +2861,7 @@ try {
     missingInstalled &&
     dynamicPackage &&
     dataImport &&
+    textImport &&
     foreignImport.length === 0 &&
     foreignNamespace.length === 0 &&
     helperComputed &&
@@ -2877,6 +2925,7 @@ try {
     quotedPreload &&
     arrayPreload &&
     packagePreload &&
+    scopedPreload &&
     missingPackagePreload &&
     missingRelativePreload &&
     configPreload &&
@@ -2929,7 +2978,9 @@ try {
       missingInstalled,
       dynamicPackage,
       dataImport,
+      textImport,
       packagePreload,
+      scopedPreload,
       missingPackagePreload,
       missingRelativePreload,
       configPreload,
