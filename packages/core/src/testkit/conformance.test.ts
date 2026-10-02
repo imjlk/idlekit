@@ -1,0 +1,1931 @@
+import { describe, expect, it } from "bun:test";
+import { readFileSync } from "fs";
+import { join } from "path";
+import { createBreakInfinityEngine, createNumberEngine } from "../engine/breakInfinity";
+import type { Engine } from "../engine/types";
+import { etaAnalytic, etaSimulate } from "../sim/analysis/eta";
+import { createScriptedStrategy } from "../sim/strategy/scripted";
+import type { Action, CompiledScenario, Model, SimState } from "../sim/types";
+import type { Strategy } from "../sim/strategy/types";
+import { compareAmounts } from "./compareAmounts";
+import {
+  checkBulk,
+  checkDurationBoundary,
+  checkJsonRoundTrip,
+  checkNonNegative,
+  checkObserver,
+  checkReplay,
+  checkResume,
+  checkResumeFromJson,
+  checkRetention,
+  checkSnapshots,
+  checkTimedSources,
+  checkTrialOrder,
+  conformanceCaseCount,
+  conformanceGeneratorVersion,
+  demonstrateShrinkGap,
+  economyAfter,
+  expectProperty,
+  gameSeedForCase,
+  rejectNonPositiveStep,
+  replayShrinkReport,
+  snapshotEconomy,
+} from "./conformance";
+import type { RelationCheck } from "./conformanceRun";
+
+type UnitCode = "COIN";
+type Vars = { buys: number };
+
+const fixturePath = join(import.meta.dir, "../../../../fixtures/conformance/shrink-gap.json");
+
+function expectApplicable(result: RelationCheck): void {
+  if (!result.ok || !result.applicable) throw new Error(result.summary);
+}
+
+function state(engine: Engine<number>, amount: number, buys = 0): SimState<number, UnitCode, Vars> {
+  return {
+    t: 0,
+    wallet: { money: { unit: { code: "COIN" }, amount }, bucket: engine.zero() },
+    maxMoneyEver: { unit: { code: "COIN" }, amount },
+    prestige: { count: 0, points: engine.zero(), multiplier: engine.from(1) },
+    vars: { buys },
+  };
+}
+
+function constantScenario(args: {
+  rate: number;
+  durationSec: number;
+  stepSec: number;
+  seed?: number;
+}): CompiledScenario<number, UnitCode, Vars> {
+  const engine = createNumberEngine();
+  const unit = { code: "COIN" as const };
+  const model: Model<number, UnitCode, Vars> = {
+    id: "constant-income",
+    version: 1,
+    income: () => ({ unit, amount: args.rate }),
+    actions: () => [],
+    analytic: () => ({ incomeKind: "constant" }),
+  };
+  return {
+    ctx: {
+      E: engine,
+      unit,
+      tickPolicy: { mode: "drop" },
+      seed: args.seed,
+      stepSec: args.stepSec,
+    },
+    model,
+    initial: state(engine, 0),
+    run: { stepSec: args.stepSec, durationSec: args.durationSec },
+  };
+}
+
+function scriptedGrant(durationSec: number): CompiledScenario<number, UnitCode, Vars> {
+  const engine = createNumberEngine();
+  const unit = { code: "COIN" as const };
+  const grant: Action<number, UnitCode, Vars> = {
+    id: "grant",
+    kind: "grant",
+    canApply: () => true,
+    cost: () => null,
+    apply: (_ctx, current) => ({
+      ...current,
+      vars: { buys: current.vars.buys + 1 },
+    }),
+  };
+  return {
+    ctx: { E: engine, unit, tickPolicy: { mode: "drop" }, stepSec: 1 },
+    model: {
+      id: "scripted-grant",
+      version: 1,
+      income: () => ({ unit, amount: 0 }),
+      actions: () => [grant],
+    },
+    initial: state(engine, 0),
+    strategy: createScriptedStrategy<number, UnitCode, Vars>({
+      schemaVersion: 1,
+      program: [{ actionId: "grant" }],
+      loop: false,
+    }),
+    run: { stepSec: 1, durationSec },
+  };
+}
+
+function thresholdScenario(stepSec: number): CompiledScenario<number, UnitCode, Vars> {
+  const engine = createNumberEngine();
+  const unit = { code: "COIN" as const };
+  const buy: Action<number, UnitCode, Vars> = {
+    id: "buy",
+    kind: "buy",
+    canApply: () => true,
+    cost: () => ({ unit, amount: 15 }),
+    apply: (_ctx, current) => ({
+      ...current,
+      vars: { buys: current.vars.buys + 1 },
+    }),
+  };
+  const model: Model<number, UnitCode, Vars> = {
+    id: "threshold-buy",
+    version: 1,
+    income: () => ({ unit, amount: 10 }),
+    actions: () => [buy],
+  };
+  const strategy: Strategy<number, UnitCode, Vars> = {
+    id: "always-buy",
+    decide: () => [{ action: buy }],
+  };
+  return {
+    ctx: { E: engine, unit, tickPolicy: { mode: "drop" }, stepSec },
+    model,
+    initial: state(engine, 0),
+    strategy,
+    run: { stepSec, durationSec: 2 },
+  };
+}
+
+/**
+ * @evidence docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness Replays the saved shrink-gap counterexample and one constant-income run.
+ * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #a195f0e Re-read the section, then ran this function: the gap shrinks to 1 and the constant-income replay matches.
+ * @evidence ./conformance.ts#conformanceGeneratorVersion Reads generator version 1 from the shrink report and from this export.
+ * @evidenceReview ./conformance.ts#conformanceGeneratorVersion #80e01c8 The declaration is the number 1. The shrink report stores that same generatorVersion.
+ * @evidence ./conformanceRun.ts#checkReplay Replays the constant-income scenario through the harness.
+ * @evidenceReview ./conformanceRun.ts#checkReplay #f57d5ea checkReplay applies to the constant-income scenario at rate 3, duration 4, and step 1. A run that completes no step does not apply.
+ * @evidence ./conformanceRun.ts#demonstrateShrinkGap Builds the shrink-gap report whose value is 1 and whose testSeed is 0xd101.
+ * @evidenceReview ./conformanceRun.ts#demonstrateShrinkGap #e31f17f Builds the shrink-gap report whose value is 1 and whose testSeed is 0xd101.
+ * @evidence ./conformanceRun.ts#replayShrinkReport Replays the saved report and expects the path to fail closed at 1.
+ * @evidenceReview ./conformanceRun.ts#replayShrinkReport #1d3ba72 Replays the saved report and expects the path to fail closed at 1. A rejected step whose from is not the current value fails the path. A to value the shrinker would not propose fails the path. An original value that already satisfies the predicate fails the path. A kept step that skips an earlier candidate fails the path.
+ * @evidence ./conformanceRun.ts#gameSeedForCase Derives a game seed from 0x51ed and index 0 that is an integer other than that test seed.
+ * @evidenceReview ./conformanceRun.ts#gameSeedForCase #39c73b9 Derives a game seed from 0x51ed and index 0 that is an integer other than that test seed.
+ * @evidence ./conformanceRun.ts#ShrinkReport.value Expects the shrunk value to be 1.
+ * @evidenceReview ./conformanceRun.ts#ShrinkReport.value #302e9b3 Expects the shrunk value to be 1.
+ * @evidence ./conformanceRun.ts#ShrinkReport.generatorVersion Expects the report generator version to equal conformanceGeneratorVersion.
+ * @evidenceReview ./conformanceRun.ts#ShrinkReport.generatorVersion #3a33f3a Expects the report generator version to equal conformanceGeneratorVersion.
+ * @evidence ./conformanceRun.ts#ShrinkReport.gameSeed Expects the shrink-gap report game seed to be null.
+ * @evidenceReview ./conformanceRun.ts#ShrinkReport.gameSeed #7cfdfda Expects the shrink-gap report game seed to be null.
+ * @evidence ./conformanceRun.ts#ShrinkReport.testSeed Expects the shrink-gap report test seed to be 0xd101.
+ * @evidenceReview ./conformanceRun.ts#ShrinkReport.testSeed #9feb10a Expects the shrink-gap report test seed to be 0xd101.
+ * @evidence ./conformanceRun.ts#ShrinkReport.predicateId The fixture deep-equals the report, including predicateId shrink-gap.
+ * @evidenceReview ./conformanceRun.ts#ShrinkReport.predicateId #de50b55 The fixture deep-equals the report, including predicateId shrink-gap.
+ * @evidence ./conformanceRun.ts#ShrinkReport.engineId The fixture deep-equals the report, including a null engineId.
+ * @evidenceReview ./conformanceRun.ts#ShrinkReport.engineId #da43186 The fixture deep-equals the report, including a null engineId.
+ * @evidence ./conformanceRun.ts#ShrinkReport.modelId The fixture deep-equals the report, including a null modelId.
+ * @evidenceReview ./conformanceRun.ts#ShrinkReport.modelId #25b280a The fixture deep-equals the report, including a null modelId.
+ * @evidence ./conformanceRun.ts#ShrinkReport.strategyId The fixture deep-equals the report, including a null strategyId.
+ * @evidenceReview ./conformanceRun.ts#ShrinkReport.strategyId #d04084f The fixture deep-equals the report, including a null strategyId.
+ * @evidence ./conformanceRun.ts#ShrinkReport.tickSchedule The fixture deep-equals the report, including a null tick schedule.
+ * @evidenceReview ./conformanceRun.ts#ShrinkReport.tickSchedule #5ec8725 The fixture deep-equals the report, including a null tick schedule.
+ * @evidence ./conformanceRun.ts#ShrinkReport.caseIndex The fixture deep-equals the report, including the failing case index.
+ * @evidenceReview ./conformanceRun.ts#ShrinkReport.caseIndex #734ed99 The fixture deep-equals the report, including the failing case index.
+ * @evidence ./conformanceRun.ts#ShrinkReport.original The fixture deep-equals the report, including the original failing integer.
+ * @evidenceReview ./conformanceRun.ts#ShrinkReport.original #f5b7108 The fixture deep-equals the report, including the original failing integer.
+ * @evidence ./conformanceRun.ts#ShrinkReport.shrinkingPath The fixture deep-equals the report, including the shrinking path.
+ * @evidenceReview ./conformanceRun.ts#ShrinkReport.shrinkingPath #7bad00f The fixture deep-equals the report, including the shrinking path.
+ * @evidence ./conformanceRun.ts#ShrinkStep.from The fixture deep-equals each shrinking step's from value.
+ * @evidenceReview ./conformanceRun.ts#ShrinkStep.from #5c04bd3 The fixture deep-equals each shrinking step's from value.
+ * @evidence ./conformanceRun.ts#ShrinkStep.to The fixture deep-equals each shrinking step's to value.
+ * @evidenceReview ./conformanceRun.ts#ShrinkStep.to #95c10f1 The fixture deep-equals each shrinking step's to value.
+ * @evidence ./conformanceRun.ts#ShrinkStep.kept The fixture deep-equals each shrinking step's kept flag.
+ * @evidenceReview ./conformanceRun.ts#ShrinkStep.kept #9e0b459 The fixture deep-equals each shrinking step's kept flag.
+ */
+export function replaysConstantIncomeAndShrinksGap(): void {
+  const report = demonstrateShrinkGap();
+  const saved = JSON.parse(readFileSync(fixturePath, "utf8")) as typeof report;
+  expect(saved).toEqual(report);
+  expect(report.value).toBe(1);
+  expect(report.generatorVersion).toBe(conformanceGeneratorVersion);
+  expect(report.gameSeed).toBeNull();
+  expect(report.testSeed).toBe(0xd101);
+  const replay = replayShrinkReport(saved);
+  expect(replay.failed).toBe(true);
+  expect(replay.pathOk).toBe(true);
+  expect(replay.shrunk).toBe(1);
+  const skipped = replayShrinkReport({
+    ...saved,
+    shrinkingPath: [...saved.shrinkingPath, { from: 999, to: 0, kept: false }],
+  });
+  expect(skipped.pathOk).toBe(false);
+  const widened = replayShrinkReport({
+    ...saved,
+    original: 2,
+    shrinkingPath: [{ from: 2, to: 7, kept: true }],
+    value: 7,
+  });
+  expect(widened.pathOk).toBe(false);
+  const satisfied = replayShrinkReport({
+    ...saved,
+    original: 8,
+    shrinkingPath: [
+      { from: 8, to: 0, kept: false },
+      { from: 8, to: 4, kept: true },
+    ],
+    value: 4,
+  });
+  expect(satisfied.failed).toBe(true);
+  expect(satisfied.pathOk).toBe(false);
+  const skippedAttempt = replayShrinkReport({
+    ...saved,
+    original: 7,
+    shrinkingPath: [{ from: 7, to: 6, kept: true }],
+    value: 6,
+  });
+  expect(skippedAttempt.failed).toBe(true);
+  expect(skippedAttempt.pathOk).toBe(false);
+  const wrongSeed = replayShrinkReport({ ...saved, testSeed: saved.testSeed + 1 });
+  expect(wrongSeed.pathOk).toBe(false);
+  const wrongIndex = replayShrinkReport({
+    ...saved,
+    caseIndex: saved.caseIndex === 0 ? 1 : 0,
+  });
+  expect(wrongIndex.pathOk).toBe(false);
+  const wrongVersion = replayShrinkReport({
+    ...saved,
+    generatorVersion: saved.generatorVersion + 1,
+  });
+  expect(wrongVersion.pathOk).toBe(false);
+  const wrongPredicate = replayShrinkReport({
+    ...saved,
+    predicateId: "other",
+  } as unknown as typeof saved);
+  expect(wrongPredicate.pathOk).toBe(false);
+  const laterFailure = replayShrinkReport({
+    ...saved,
+    caseIndex: 2,
+    original: 1,
+    shrinkingPath: [{ from: 1, to: 0, kept: false }],
+    value: 1,
+  });
+  expect(laterFailure.pathOk).toBe(false);
+
+  const scenario = constantScenario({ rate: 3, durationSec: 4, stepSec: 1, seed: 11 });
+  expectApplicable(checkReplay(scenario));
+  const idleReplay = checkReplay({ ...scenario, run: { ...scenario.run, durationSec: 0 } });
+  expect(idleReplay.ok).toBe(true);
+  expect(idleReplay.applicable).toBe(false);
+  const idleUntil = checkReplay({
+    ...scenario,
+    run: { ...scenario.run, until: () => true },
+  });
+  expect(idleUntil.ok).toBe(true);
+  expect(idleUntil.applicable).toBe(false);
+  const gameSeed = gameSeedForCase(0x51ed, 0);
+  expect(gameSeed).not.toBe(0x51ed);
+  expect(Number.isInteger(gameSeed)).toBe(true);
+}
+
+/**
+ * @evidence docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness A property draw records the test seed and a separate game seed, and a JSON round-trip preserves the economy snapshot.
+ * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #a195f0e Re-read the section, then ran this function: every constant-replay case passes checkReplay and checkJsonRoundTrip, and both checks apply.
+ * @evidence ./conformanceRun.ts#expectProperty Runs the constant-replay corpus and expects every case to pass.
+ * @evidenceReview ./conformanceRun.ts#expectProperty #46079f1 Runs the constant-replay corpus and expects every case to pass. A bigint or cyclic counterexample still reports the seed, case index, and shrink path.
+ * @evidence ./conformanceRun.ts#conformanceCaseCount Uses the harness case count as the corpus size.
+ * @evidenceReview ./conformanceRun.ts#conformanceCaseCount #3d7ef65 Uses the harness case count as the corpus size.
+ * @evidence ./conformanceRun.ts#PropertyRun.predicateId Sets predicateId to constant-replay.
+ * @evidenceReview ./conformanceRun.ts#PropertyRun.predicateId #8bb6534 Sets predicateId to constant-replay.
+ * @evidence ./conformanceRun.ts#PropertyRun.testSeed Sets testSeed to 0xc0ffee.
+ * @evidenceReview ./conformanceRun.ts#PropertyRun.testSeed #df04338 Sets testSeed to 0xc0ffee.
+ * @evidence ./conformanceRun.ts#PropertyRun.cases Sets cases from conformanceCaseCount.
+ * @evidenceReview ./conformanceRun.ts#PropertyRun.cases #99d1521 Sets cases from conformanceCaseCount.
+ * @evidence ./conformanceRun.ts#PropertyRun.generate Draws rate and duration with rng.int and a derived game seed.
+ * @evidenceReview ./conformanceRun.ts#PropertyRun.generate #6180b34 Draws rate and duration with rng.int and a derived game seed.
+ * @evidence ./conformanceRun.ts#PropertyRun.shrink Shrinks durationSec and rate toward the minimums.
+ * @evidenceReview ./conformanceRun.ts#PropertyRun.shrink #84e219d Shrinks durationSec and rate toward the minimums.
+ * @evidence ./conformanceRun.ts#PropertyRun.predicate Requires checkReplay and checkJsonRoundTrip to pass.
+ * @evidenceReview ./conformanceRun.ts#PropertyRun.predicate #d795845 Requires checkReplay and checkJsonRoundTrip to pass.
+ * @evidence ./conformanceRun.ts#PropertyRun.describeCase Records the game seed, number engine, constant-income model, and tick schedule.
+ * @evidenceReview ./conformanceRun.ts#PropertyRun.describeCase #f8f25e9 Records the game seed, number engine, constant-income model, and tick schedule.
+ */
+export function replaysConstantIncomeAcrossTheFixedSeedCorpus(): void {
+  expectProperty({
+    predicateId: "constant-replay",
+    testSeed: 0xc0ffee,
+    cases: conformanceCaseCount(),
+    generate: (index, rng) => ({
+      rate: rng.int(1, 5),
+      durationSec: rng.int(2, 8),
+      stepSec: 1,
+      seed: gameSeedForCase(0xc0ffee, index),
+    }),
+    shrink: (value) => {
+      const smaller = [];
+      if (value.durationSec > 2) smaller.push({ ...value, durationSec: value.durationSec - 1 });
+      if (value.rate > 1) smaller.push({ ...value, rate: value.rate - 1 });
+      return smaller;
+    },
+    predicate: (value) => {
+      const replay = checkReplay(constantScenario(value));
+      const roundTrip = checkJsonRoundTrip(constantScenario(value));
+      return replay.ok && replay.applicable && roundTrip.ok && roundTrip.applicable;
+    },
+    describeCase: (value) => ({
+      gameSeed: value.seed,
+      engineId: "number",
+      modelId: "constant-income",
+      strategyId: null,
+      tickSchedule: { stepSec: value.stepSec, durationSec: value.durationSec },
+    }),
+  });
+}
+
+describe("DX-01 conformance harness", () => {
+  it("replays a constant-income run and shrinks the gap predicate", replaysConstantIncomeAndShrinksGap);
+
+  it(
+    "replays constant income across the fixed seed corpus",
+    replaysConstantIncomeAcrossTheFixedSeedCorpus,
+  );
+});
+
+/**
+ * @evidence docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness bulk matches repeated single buys only when the fixture declares that equivalence.
+ * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #a195f0e Re-read the section: a declared equal total applies, and an undeclared bonus mismatch is skipped.
+ * @evidence ./conformanceRun.ts#checkBulk Declared equal totals apply; an undeclared bonus mismatch is skipped.
+ * @evidenceReview ./conformanceRun.ts#checkBulk #e513eda Declared equal totals apply; an undeclared bonus mismatch is skipped.
+ */
+export function checksBulkEqualityOnlyWhenTheFixtureDeclaresIt(): void {
+  const linear = (count: number, times: number) => JSON.stringify({ count: count + times, bonus: 0 });
+  const declared = checkBulk(true, linear(0, 3), linear(0, 3));
+  expectApplicable(declared);
+
+  let stepped = { count: 0, bonus: 0 };
+  for (let index = 0; index < 2; index += 1) {
+    const count = stepped.count + 1;
+    stepped = { count, bonus: count === 2 ? stepped.bonus + 10 : stepped.bonus };
+  }
+  const bulk = JSON.stringify({ count: 2, bonus: 0 });
+  const repeated = JSON.stringify(stepped);
+  const undeclared = checkBulk(false, repeated, bulk);
+  expect(undeclared.applicable).toBe(false);
+  expect(undeclared.ok).toBe(true);
+  expect(repeated).not.toBe(bulk);
+}
+
+describe("PR-01 bulk equivalence", () => {
+  it(
+    "checks bulk equality only when the fixture declares it",
+    checksBulkEqualityOnlyWhenTheFixtureDeclaresIt,
+  );
+});
+
+/**
+ * @evidence docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness The same scenario replays from an on-grid checkpoint, and an off-grid checkpoint does not apply.
+ * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #a195f0e Re-read the section: the 0.1 grid resume at 0.2 applies, and the resume at 1.5 does not.
+ * @evidence ./conformanceRun.ts#checkDurationBoundary A 4s run at step 1 and a 0.3s run at step 0.1 both apply; an until at t greater than or equal to 3 does not. A maxSteps that is not an integer, or that cannot cover the simulator's repeated step additions, does not apply. A timestamp that stepSec cannot advance does not apply.
+ * @evidenceReview ./conformanceRun.ts#checkDurationBoundary #7e3db38 Re-read the function: it snapshots and restores the strategy around the run, and it compares the end time with the timestamp advanced from the run's own start. A maxSteps that is not an integer, or that cannot cover the simulator's repeated step additions, skips before the run. A null addition count skips before the run.
+ * @evidence ./conformanceRun.ts#rejectNonPositiveStep Step 0 is a failing applicable check.
+ * @evidenceReview ./conformanceRun.ts#rejectNonPositiveStep #31155b2 Step 0 is a failing applicable check.
+ * @evidence ./conformanceRun.ts#checkResume An off-grid resume at 1.5 does not apply; a 0.2 resume on the 0.1 grid does.
+ * @evidenceReview ./conformanceRun.ts#checkResume #db56c7a An off-grid resume at 1.5 does not apply; a 0.2 resume on the 0.1 grid does.
+ */
+export function stopsOnAPositiveTickGridAndRefusesANonPositiveStep(): void {
+  const scenario = constantScenario({ rate: 2, durationSec: 4, stepSec: 1 });
+  expectApplicable(checkDurationBoundary(scenario));
+  const refused = rejectNonPositiveStep(0);
+  expect(refused.ok).toBe(false);
+  expect(refused.applicable).toBe(true);
+  const offGrid = checkResume(scenario, 1.5);
+  expect(offGrid.applicable).toBe(false);
+
+  const fractional = constantScenario({ rate: 2, durationSec: 0.3, stepSec: 0.1 });
+  expectApplicable(checkDurationBoundary(fractional));
+  expectApplicable(checkResume(fractional, 0.2));
+  const fineGrid = constantScenario({ rate: 2, durationSec: 0.07, stepSec: 0.01 });
+  expectApplicable(checkResume(fineGrid, 0.06));
+  const shiftedBase = constantScenario({ rate: 2, durationSec: 0.3, stepSec: 0.1 });
+  const shifted = { ...shiftedBase, initial: { ...shiftedBase.initial, t: 1 } };
+  expectApplicable(checkDurationBoundary(shifted));
+  expectApplicable(checkResume(shifted, 0.2));
+  const earlyStop = checkDurationBoundary({
+    ...scenario,
+    run: { ...scenario.run, until: (current) => current.t >= 3 },
+  });
+  expect(earlyStop.applicable).toBe(false);
+  expect(earlyStop.ok).toBe(true);
+  const capped = checkDurationBoundary({
+    ...scenario,
+    run: { ...scenario.run, maxSteps: 4 },
+  });
+  expect(capped.applicable).toBe(false);
+  expect(capped.ok).toBe(true);
+  const roomy = checkDurationBoundary({
+    ...scenario,
+    run: { ...scenario.run, maxSteps: 5 },
+  });
+  expectApplicable(roomy);
+  const cappedResume = checkResume({ ...scenario, run: { ...scenario.run, maxSteps: 4 } }, 2);
+  expect(cappedResume.applicable).toBe(false);
+  expect(cappedResume.ok).toBe(true);
+  const cappedJson = checkResumeFromJson({ ...scenario, run: { ...scenario.run, maxSteps: 4 } }, 2);
+  expect(cappedJson.applicable).toBe(false);
+  expect(cappedJson.ok).toBe(true);
+  expectApplicable(checkResume({ ...scenario, run: { ...scenario.run, maxSteps: 5 } }, 2));
+  const driftedBase = constantScenario({ rate: 1, durationSec: 0.021, stepSec: 0.003 });
+  const drifted = checkDurationBoundary({
+    ...driftedBase,
+    run: { ...driftedBase.run, maxSteps: 8 },
+  });
+  expect(drifted.ok).toBe(true);
+  expect(drifted.applicable).toBe(false);
+  expect(drifted.summary).toContain("maxSteps");
+  const driftedResume = checkResume(
+    { ...driftedBase, run: { ...driftedBase.run, maxSteps: 8 } },
+    0.006,
+  );
+  expect(driftedResume.ok).toBe(true);
+  expect(driftedResume.applicable).toBe(false);
+  expect(driftedResume.summary).toContain("maxSteps");
+  const driftedOpen = checkResume(driftedBase, 0.006);
+  expect(driftedOpen.ok).toBe(true);
+  expect(driftedOpen.applicable).toBe(true);
+  const driftedOpenJson = checkResumeFromJson(driftedBase, 0.006);
+  expect(driftedOpenJson.ok).toBe(true);
+  expect(driftedOpenJson.applicable).toBe(true);
+  const stuckBase = constantScenario({ rate: 1, durationSec: 1, stepSec: 1 });
+  const stuckBoundary = checkDurationBoundary({
+    ...stuckBase,
+    initial: { ...stuckBase.initial, t: 1e20 },
+    run: { ...stuckBase.run, maxSteps: 2 },
+  });
+  expect(stuckBoundary.ok).toBe(true);
+  expect(stuckBoundary.applicable).toBe(false);
+  expect(stuckBoundary.summary).toContain("advance");
+  const stuckResume = checkResume(
+    {
+      ...stuckBase,
+      initial: { ...stuckBase.initial, t: 1e20 },
+      run: { ...stuckBase.run, durationSec: 2 },
+    },
+    1,
+  );
+  expect(stuckResume.ok).toBe(true);
+  expect(stuckResume.applicable).toBe(false);
+  expect(stuckResume.summary).toContain("advance");
+}
+
+/**
+ * @evidence docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness Step 1 and 0.5 match for constant income and differ when a purchase threshold sits between them.
+ * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #a195f0e Re-read the section, then ran this function: constant income matches across those steps and the threshold buy does not.
+ * @evidence ./conformanceRun.ts#economyAfter Runs constant income and the threshold buy at steps 1 and 0.5.
+ * @evidenceReview ./conformanceRun.ts#economyAfter #749e95e Runs constant income and the threshold buy at steps 1 and 0.5.
+ * @evidence ./conformanceRun.ts#checkSnapshots Constant income matches across those steps; the threshold buy does not.
+ * @evidenceReview ./conformanceRun.ts#checkSnapshots #3b0fa96 Constant income matches across those steps; the threshold buy does not.
+ */
+export function treatsStepSizesAsEqualOnlyForConstantIncome(): void {
+  const coarse = economyAfter(constantScenario({ rate: 4, durationSec: 4, stepSec: 1 }));
+  const fine = economyAfter(constantScenario({ rate: 4, durationSec: 4, stepSec: 0.5 }));
+  expectApplicable(checkSnapshots(coarse, fine, "same"));
+
+  const coarseBuy = economyAfter(thresholdScenario(1));
+  const fineBuy = economyAfter(thresholdScenario(0.5));
+  expectApplicable(checkSnapshots(coarseBuy, fineBuy, "different"));
+}
+
+describe("PR-02 time boundaries", () => {
+  it(
+    "stops on a positive tick grid and refuses a non-positive step",
+    stopsOnAPositiveTickGridAndRefusesANonPositiveStep,
+  );
+
+  it(
+    "treats step 1 and 0.5 as equal only for constant income",
+    treatsStepSizesAsEqualOnlyForConstantIncome,
+  );
+});
+
+/**
+ * @evidence docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness The same scripted grant replays, resumes on grid, keeps its economy under retention and a recording observer, and preserves the JSON snapshot.
+ * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #a195f0e Re-read the section, then ran this function: replay, resume, JSON resume, retention, and the observer all apply, and buys stays 1.
+ * @evidence ./conformanceRun.ts#checkResumeFromJson Resumes a 4s scripted grant from JSON at t=2.
+ * @evidenceReview ./conformanceRun.ts#checkResumeFromJson #91c215a Resumes a 4s scripted grant from JSON at t=2.
+ * @evidence ./conformanceRun.ts#checkRetention Retention applies to the scripted grant. A scenario that already has an emitter does not apply.
+ * @evidenceReview ./conformanceRun.ts#checkRetention #5a8a4e8 Retention applies to the scripted grant. A negative eventLog.maxEvents fails before the check substitutes another capacity. A run that retains no events is inapplicable. A scenario that already has an emitter does not apply, so that emitter is left untouched.
+ * @evidence ./conformanceRun.ts#checkObserver The observer check applies to the scripted grant. A scenario that already has an emitter does not apply.
+ * @evidenceReview ./conformanceRun.ts#checkObserver #cbc894e The observer check applies to the scripted grant. A run that emits no events is inapplicable. A scenario that already has an emitter does not apply, so that emitter is left untouched.
+ */
+export function replaysOneShotScriptedGrantFromTheSameCursor(): void {
+  const scenario = scriptedGrant(2);
+  expectApplicable(checkDurationBoundary(scenario));
+  expectApplicable(checkJsonRoundTrip(scenario));
+  const replay = checkReplay(scenario);
+  expectApplicable(replay);
+  expect((JSON.parse(replay.summary) as { vars: Vars }).vars.buys).toBe(1);
+  expectApplicable(checkResume(scenario, 1));
+  expectApplicable(checkResumeFromJson(scriptedGrant(4), 2));
+  expectApplicable(checkRetention(scenario));
+  const invalidRetention = checkRetention({
+    ...scenario,
+    run: { ...scenario.run, eventLog: { enabled: true, maxEvents: -1 } },
+  });
+  expect(invalidRetention.ok).toBe(false);
+  expectApplicable(checkObserver(scenario));
+}
+
+/**
+ * @evidence docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness The checkpoint replay applies only when that checkpoint is inside the run.
+ * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #a195f0e Re-read the section: a checkpoint at t=5 does not apply when until stops at t=3, and the skipped check stays ok.
+ * @evidence ./conformanceRun.ts#checkResume A checkpoint at t=5 does not apply when until stops at t=3. A checkpoint where until is already true does not apply.
+ * @evidenceReview ./conformanceRun.ts#checkResume #db56c7a A checkpoint at t=5 does not apply when until stops at t=3. A checkpoint where until is already true does not apply.
+ * @evidence ./conformanceRun.ts#RelationCheck.ok That skipped resume is ok.
+ * @evidenceReview ./conformanceRun.ts#RelationCheck.ok #e196dd9 That skipped resume is ok.
+ * @evidence ./conformanceRun.ts#RelationCheck.applicable That skipped resume is not applicable.
+ * @evidenceReview ./conformanceRun.ts#RelationCheck.applicable #f6fa89c That skipped resume is not applicable.
+ * @evidence ./conformanceRun.ts#RelationCheck.summary The JSON summary contains checkpoint.
+ * @evidenceReview ./conformanceRun.ts#RelationCheck.summary #7777be8 The JSON summary contains checkpoint.
+ */
+export function skipsResumeWhoseUntilStopsBeforeTheCheckpoint(): void {
+  const scenario = constantScenario({ rate: 1, durationSec: 10, stepSec: 1 });
+  const early = {
+    ...scenario,
+    run: { ...scenario.run, until: (current: SimState<number, UnitCode, Vars>) => current.t >= 3 },
+  };
+  const memory = checkResume(early, 5);
+  const json = checkResumeFromJson(early, 5);
+  expect(memory.applicable).toBe(false);
+  expect(memory.ok).toBe(true);
+  expect(json.applicable).toBe(false);
+  expect(json.summary).toContain("checkpoint");
+  const atCheckpoint = checkResume(early, 3);
+  expect(atCheckpoint.ok).toBe(true);
+  expect(atCheckpoint.applicable).toBe(false);
+  expect(atCheckpoint.summary).toContain("until is already true");
+}
+
+describe("stateful strategy and currency identity", () => {
+  it(
+    "replays a one-shot scripted grant from the same cursor",
+    replaysOneShotScriptedGrantFromTheSameCursor,
+  );
+
+  it(
+    "skips a resume whose until stops before the checkpoint",
+    skipsResumeWhoseUntilStopsBeforeTheCheckpoint,
+  );
+
+  it("skips a strategy that cannot restore the snapshot it exposes", () => {
+    const scenario = constantScenario({ rate: 1, durationSec: 2, stepSec: 1 });
+    const partial: Strategy<number, UnitCode, Vars> = {
+      id: "partial",
+      snapshotState: () => ({ cursor: 0 }),
+      decide: () => [],
+    };
+    const refused = checkReplay({ ...scenario, strategy: partial });
+    expect(refused.applicable).toBe(false);
+    expect(refused.ok).toBe(true);
+  });
+
+  it(
+    "records wallet and max-money units on the economy snapshot",
+    recordsWalletAndMaxMoneyUnitsOnTheEconomySnapshot,
+  );
+});
+
+/**
+ * @evidence docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness The harness economy snapshot records the wallet unit and the max-money unit.
+ * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #a195f0e Re-read the section, then ran this function: the COIN snapshot records COIN for both units, and a GEM snapshot is a different string.
+ * @evidence ./conformanceRun.ts#snapshotEconomy Reads amountUnit and maxUnit for COIN, and a GEM snapshot is a different string. A bigint or cyclic vars value stays in the snapshot.
+ * @evidenceReview ./conformanceRun.ts#snapshotEconomy #66ecfea Reads amountUnit and maxUnit for COIN, and a GEM snapshot is a different string. A bigint or cyclic vars value stays in the snapshot string instead of throwing.
+ */
+export function recordsWalletAndMaxMoneyUnitsOnTheEconomySnapshot(): void {
+  const engine = createNumberEngine();
+  const coin = snapshotEconomy(engine, state(engine, 10));
+  const parsed = JSON.parse(coin) as { amountUnit: string; maxUnit: string };
+  expect(parsed.amountUnit).toBe("COIN");
+  expect(parsed.maxUnit).toBe("COIN");
+  const gemState: SimState<number, "GEM", Vars> = {
+    t: 0,
+    wallet: { money: { unit: { code: "GEM" }, amount: 10 }, bucket: engine.zero() },
+    maxMoneyEver: { unit: { code: "GEM" }, amount: 10 },
+    prestige: { count: 0, points: engine.zero(), multiplier: engine.from(1) },
+    vars: { buys: 0 },
+  };
+  const gem = snapshotEconomy(engine, gemState);
+  expect(gem).not.toBe(coin);
+  const bigintVars = snapshotEconomy(engine, {
+    ...gemState,
+    vars: { buys: 1n } as unknown as Vars,
+  });
+  expect(bigintVars).toContain('"~idlekit":"bigint"');
+  expect(bigintVars).toContain('"value":"1"');
+  const cyclic: { buys: number; self?: unknown } = { buys: 2 };
+  cyclic.self = cyclic;
+  const cyclicVars = snapshotEconomy(engine, {
+    ...gemState,
+    vars: cyclic as unknown as Vars,
+  });
+  expect(cyclicVars).toContain('"~idlekit":"cycle"');
+  expect(cyclicVars).not.toBe(bigintVars);
+  const nanVars = snapshotEconomy(engine, {
+    ...gemState,
+    vars: { buys: Number.NaN } as unknown as Vars,
+  });
+  const nullVars = snapshotEconomy(engine, {
+    ...gemState,
+    vars: { buys: null } as unknown as Vars,
+  });
+  expect(nanVars).not.toBe(nullVars);
+  expect(nanVars).toContain("nan");
+  const nanText = snapshotEconomy(engine, {
+    ...gemState,
+    vars: { buys: "nan" } as unknown as Vars,
+  });
+  expect(nanVars).not.toBe(nanText);
+  const nanTag = snapshotEconomy(engine, {
+    ...gemState,
+    vars: { buys: { tag: "nan" } } as unknown as Vars,
+  });
+  const nanSentinel = snapshotEconomy(engine, {
+    ...gemState,
+    vars: { buys: { "~idlekit": "nan" } } as unknown as Vars,
+  });
+  expect(nanVars).not.toBe(nanTag);
+  expect(nanVars).not.toBe(nanSentinel);
+  const missingExtra = snapshotEconomy(engine, {
+    ...gemState,
+    vars: { buys: 1 } as unknown as Vars,
+  });
+  const explicitUndefined = snapshotEconomy(engine, {
+    ...gemState,
+    vars: { buys: 1, extra: undefined } as unknown as Vars,
+  });
+  expect(explicitUndefined).not.toBe(missingExtra);
+  expect(explicitUndefined).toContain("undefined");
+  const functionVars = snapshotEconomy(engine, {
+    ...gemState,
+    vars: { buys: 1, fn: () => 1 } as unknown as Vars,
+  });
+  expect(functionVars).toContain("function");
+  const symbolValue = snapshotEconomy(engine, {
+    ...gemState,
+    vars: { buys: 1, tag: Symbol("t") } as unknown as Vars,
+  });
+  expect(symbolValue).toContain("symbol");
+  const plainItems = [1];
+  const namedItems = [1] as number[] & { extra?: number };
+  namedItems.extra = 2;
+  const plainItemsSnap = snapshotEconomy(engine, {
+    ...gemState,
+    vars: { buys: 1, items: plainItems } as unknown as Vars,
+  });
+  const namedItemsSnap = snapshotEconomy(engine, {
+    ...gemState,
+    vars: { buys: 1, items: namedItems } as unknown as Vars,
+  });
+  expect(namedItemsSnap).not.toBe(plainItemsSnap);
+  expect(namedItemsSnap).toContain("extra");
+  const holeItems = Array(1);
+  const nullItems = [null];
+  const holeSnap = snapshotEconomy(engine, {
+    ...gemState,
+    vars: { buys: 1, items: holeItems } as unknown as Vars,
+  });
+  const nullItemsSnap = snapshotEconomy(engine, {
+    ...gemState,
+    vars: { buys: 1, items: nullItems } as unknown as Vars,
+  });
+  expect(holeSnap).not.toBe(nullItemsSnap);
+  expect(holeSnap).toContain('"length":1');
+  expect(0 in holeItems).toBe(false);
+  expect(0 in nullItems).toBe(true);
+  const hiddenItems = [1];
+  Object.defineProperty(hiddenItems, "extra", { value: 2, enumerable: false });
+  const hiddenItemsSnap = snapshotEconomy(engine, {
+    ...gemState,
+    vars: { buys: 1, items: hiddenItems } as unknown as Vars,
+  });
+  expect(hiddenItemsSnap).toBe(plainItemsSnap);
+  const symbolKey = Symbol("extra");
+  const markedVars = { buys: 1 };
+  Object.defineProperty(markedVars, symbolKey, { value: 3, enumerable: true });
+  const markedSnap = snapshotEconomy(engine, {
+    ...gemState,
+    vars: markedVars as unknown as Vars,
+  });
+  const unmarkedSnap = snapshotEconomy(engine, {
+    ...gemState,
+    vars: { buys: 1 } as unknown as Vars,
+  });
+  expect(markedSnap).not.toBe(unmarkedSnap);
+  expect(markedSnap).toContain("Symbol(extra)");
+  const literalKey = { buys: 1, "symbol:Symbol(extra)": 3 };
+  const literalSnap = snapshotEconomy(engine, {
+    ...gemState,
+    vars: literalKey as unknown as Vars,
+  });
+  expect(literalSnap).not.toBe(markedSnap);
+  const sameName = { buys: 1 } as { buys: number; [key: symbol]: number };
+  const symbolA = Symbol("extra");
+  const symbolB = Symbol("extra");
+  Object.defineProperty(sameName, symbolA, { value: 1, enumerable: true });
+  Object.defineProperty(sameName, symbolB, { value: 2, enumerable: true });
+  const sameNameSnap = snapshotEconomy(engine, {
+    ...gemState,
+    vars: sameName as unknown as Vars,
+  });
+  expect(sameNameSnap).not.toBe(markedSnap);
+  expect(sameNameSnap).toContain('"value":1');
+  expect(sameNameSnap).toContain('"value":2');
+  const taggedItems = [1] as number[] & { [key: symbol]: number };
+  Object.defineProperty(taggedItems, Symbol("extra"), { value: 4, enumerable: true });
+  const taggedSnap = snapshotEconomy(engine, {
+    ...gemState,
+    vars: { buys: 1, items: taggedItems } as unknown as Vars,
+  });
+  const stringExtra = [1] as number[] & { "symbol:Symbol(extra)"?: number };
+  stringExtra["symbol:Symbol(extra)"] = 4;
+  const stringExtraSnap = snapshotEconomy(engine, {
+    ...gemState,
+    vars: { buys: 1, items: stringExtra } as unknown as Vars,
+  });
+  expect(taggedSnap).not.toBe(stringExtraSnap);
+  const lengthNan = snapshotEconomy(engine, {
+    ...gemState,
+    vars: { buys: 1, length: Number.NaN } as unknown as Vars,
+  });
+  const lengthTag = snapshotEconomy(engine, {
+    ...gemState,
+    vars: { buys: 1, length: { "~idlekit": "nan" } } as unknown as Vars,
+  });
+  expect(lengthNan).not.toBe(lengthTag);
+  const negativeZeroSnap = snapshotEconomy(engine, {
+    ...gemState,
+    vars: { buys: 0, marker: -0 } as unknown as Vars,
+  });
+  const zeroSnap = snapshotEconomy(engine, {
+    ...gemState,
+    vars: { buys: 0, marker: 0 } as unknown as Vars,
+  });
+  expect(negativeZeroSnap).not.toBe(zeroSnap);
+  expect(negativeZeroSnap).toContain('"-0"');
+  const observedSymbol = snapshotEconomy(engine, {
+    ...gemState,
+    vars: { buys: 1, tag: Symbol("observed") } as unknown as Vars,
+  });
+  const plainSymbol = snapshotEconomy(engine, {
+    ...gemState,
+    vars: { buys: 1, tag: Symbol("plain") } as unknown as Vars,
+  });
+  expect(observedSymbol).not.toBe(plainSymbol);
+  expect(observedSymbol).toContain("Symbol(observed)");
+  const repeatedSymbol = Symbol("x");
+  const firstSymbolSnap = snapshotEconomy(engine, {
+    ...gemState,
+    vars: { buys: 1, tag: repeatedSymbol } as unknown as Vars,
+  });
+  const secondSymbolSnap = snapshotEconomy(engine, {
+    ...gemState,
+    vars: { buys: 1, tag: Symbol("x") } as unknown as Vars,
+  });
+  const sameSymbolSnap = snapshotEconomy(engine, {
+    ...gemState,
+    vars: { buys: 1, tag: repeatedSymbol } as unknown as Vars,
+  });
+  expect(firstSymbolSnap).not.toBe(secondSymbolSnap);
+  expect(firstSymbolSnap).toBe(sameSymbolSnap);
+  class FrozenVars {
+    constructor(readonly marker: number) {}
+    toJSON(): { marker: number } {
+      return { marker: 0 };
+    }
+  }
+  const frozenOne = snapshotEconomy(engine, {
+    ...gemState,
+    vars: new FrozenVars(1) as unknown as Vars,
+  });
+  const frozenTwo = snapshotEconomy(engine, {
+    ...gemState,
+    vars: new FrozenVars(2) as unknown as Vars,
+  });
+  expect(frozenOne).not.toBe(frozenTwo);
+  expect(frozenOne).toContain("1");
+  expect(frozenTwo).toContain("2");
+  const observedFn = snapshotEconomy(engine, {
+    ...gemState,
+    vars: { buys: 1, fn: () => "observed" } as unknown as Vars,
+  });
+  const plainFn = snapshotEconomy(engine, {
+    ...gemState,
+    vars: { buys: 1, fn: () => "plain" } as unknown as Vars,
+  });
+  expect(observedFn).not.toBe(plainFn);
+  const sharedMarker = {};
+  const sharedSnap = snapshotEconomy(engine, {
+    ...gemState,
+    vars: { buys: 1, a: sharedMarker, b: sharedMarker } as unknown as Vars,
+  });
+  const copiedSnap = snapshotEconomy(engine, {
+    ...gemState,
+    vars: { buys: 1, a: {}, b: {} } as unknown as Vars,
+  });
+  expect(sharedSnap).not.toBe(copiedSnap);
+  const extraItems = [1] as number[] & { extra?: number };
+  extraItems.extra = 2;
+  const extraSnap = snapshotEconomy(engine, {
+    ...gemState,
+    vars: { buys: 1, items: extraItems } as unknown as Vars,
+  });
+  const literalExtrasSnap = snapshotEconomy(engine, {
+    ...gemState,
+    vars: { buys: 1, items: { items: [1], extras: { extra: 2 } } } as unknown as Vars,
+  });
+  expect(extraSnap).not.toBe(literalExtrasSnap);
+  expect(extraSnap).toContain("array-extras");
+  let getterReads = 0;
+  const withGetter = { buys: 1 };
+  Object.defineProperty(withGetter, "secret", {
+    enumerable: true,
+    get() {
+      getterReads += 1;
+      return 1;
+    },
+  });
+  const getterSnap = snapshotEconomy(engine, {
+    ...gemState,
+    vars: withGetter as unknown as Vars,
+  });
+  expect(getterReads).toBe(0);
+  expect(getterSnap).toContain("getter");
+  const mapSnapA = snapshotEconomy(engine, {
+    ...gemState,
+    vars: { buys: 1, bag: new Map<string, number>([["a", 1]]) } as unknown as Vars,
+  });
+  const mapSnapB = snapshotEconomy(engine, {
+    ...gemState,
+    vars: { buys: 1, bag: new Map<string, number>([["b", 2]]) } as unknown as Vars,
+  });
+  expect(mapSnapA).toContain('"~idlekit":"map"');
+  expect(mapSnapA).not.toBe(mapSnapB);
+  const setSnapA = snapshotEconomy(engine, {
+    ...gemState,
+    vars: { buys: 1, bag: new Set(["a"]) } as unknown as Vars,
+  });
+  const setSnapB = snapshotEconomy(engine, {
+    ...gemState,
+    vars: { buys: 1, bag: new Set(["b"]) } as unknown as Vars,
+  });
+  expect(setSnapA).toContain('"~idlekit":"set"');
+  expect(setSnapA).not.toBe(setSnapB);
+  const snapVars = (vars: unknown) =>
+    snapshotEconomy(engine, { ...gemState, vars: vars as unknown as Vars });
+  expect(snapVars({ when: new Date(0), bag: new Map() })).not.toBe(
+    snapVars({ when: new Date(1), bag: new Map() }),
+  );
+  expect(snapVars({ bag: new Map([["t", new Date(0)]]) })).not.toBe(
+    snapVars({ bag: new Map([["t", new Date(1)]]) }),
+  );
+  expect(snapVars({ page: new URL("https://example.com/a"), bag: new Set() })).not.toBe(
+    snapVars({ page: new URL("https://example.com/b"), bag: new Set() }),
+  );
+  expect(snapVars({ when: new Date(Number.NaN) })).not.toBe(snapVars({ when: null }));
+  class Claim extends Date {
+    constructor(
+      ms: number,
+      readonly source: string,
+    ) {
+      super(ms);
+    }
+  }
+  expect(snapVars({ bag: new Map(), when: new Claim(0, "ore") })).not.toBe(
+    snapVars({ bag: new Map(), when: new Claim(0, "gem") }),
+  );
+  class Bag extends Map<string, number> {
+    capacity = 1;
+  }
+  const small = new Bag([["a", 1]]);
+  const large = new Bag([["a", 1]]);
+  large.capacity = 2;
+  expect(snapVars({ bag: small })).not.toBe(snapVars({ bag: large }));
+  const brand = Symbol("brand");
+  const oreBag = Object.assign(new Map([["a", 1]]), { [brand]: "ore" });
+  const gemBag = Object.assign(new Map([["a", 1]]), { [brand]: "gem" });
+  expect(snapVars({ bag: oreBag })).not.toBe(snapVars({ bag: gemBag }));
+  const bigintReplay = checkReplay({
+    ...constantScenario({ rate: 1, durationSec: 1, stepSec: 1 }),
+    initial: {
+      ...state(engine, 0),
+      vars: { buys: 1n } as unknown as Vars,
+    },
+  });
+  expect(bigintReplay.ok).toBe(true);
+  expect(bigintReplay.applicable).toBe(true);
+}
+
+/**
+ * @evidence docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness An on-grid checkpoint replays from memory and from JSON, and independent trials are compared by game seed.
+ * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #a195f0e Re-read the section, then ran this function: memory resume, JSON resume, and the JSON round-trip apply, and the two game seeds stay ordered.
+ * @evidence ./conformanceRun.ts#checkJsonRoundTrip The constant-income scenario matches after a JSON round trip, and the restored wallet and max-money units are the scenario unit when the codes match.
+ * @evidenceReview ./conformanceRun.ts#checkJsonRoundTrip #2b25391 Re-read the function: it restores the strategy around the run, accepts a dense array and an empty array, rejects shared refs, symbol keys, non-enumerable names, sparse holes, frozen data, non-extensible objects and arrays, a non-writable array length, a nonstandard array prototype, and enumerable getters before stringify, and the constant-income round trip matches. A restored unit that shares the scenario code must be the scenario unit object. A vars object that also appears on the wallet, max-money, or prestige graph is inapplicable. The round trip matches economy snapshot strings, so wallet money and max-money may deserialize as distinct objects. Ran this function: the dense round trip passed, and the sparse, frozen, non-extensible, locked-length, custom-prototype, and getter round trips did not.
+ * @evidence ./conformanceRun.ts#checkTrialOrder Two distinct game seeds keep distinct economy snapshots. Fewer than two distinct seeds does not apply.
+ * @evidenceReview ./conformanceRun.ts#checkTrialOrder #1b0de3d Two game seeds keep ordered snapshots. Fewer than two distinct seeds skips the check. A reversed list that repeats the same call order skips the check. This run uses a seed-dependent income rate, and the two economy snapshots differ.
+ */
+export function resumesOnTheSameTickGridFromMemoryAndJson(): void {
+  const scenario = constantScenario({ rate: 5, durationSec: 6, stepSec: 1, seed: 19 });
+  expectApplicable(checkResume(scenario, 2));
+  expectApplicable(checkResumeFromJson(scenario, 2));
+  expectApplicable(checkJsonRoundTrip(scenario));
+  const shared = { n: 1 };
+  const aliased = {
+    ...scenario,
+    initial: { ...scenario.initial, vars: { left: shared, right: shared } as unknown as Vars },
+  };
+  const sharedRound = checkJsonRoundTrip(aliased);
+  expect(sharedRound.ok).toBe(false);
+  expect(sharedRound.summary).toContain("JSON");
+  const unit = scenario.initial.wallet.money.unit;
+  const aliasedUnit = checkJsonRoundTrip({
+    ...scenario,
+    run: { ...scenario.run, durationSec: 0 },
+    initial: { ...scenario.initial, vars: { unit } as unknown as Vars },
+  });
+  expect(aliasedUnit.ok).toBe(true);
+  expect(aliasedUnit.applicable).toBe(false);
+  const hidden = Object.defineProperty({ visible: 1 }, "secret", { value: 2, enumerable: false });
+  const hiddenRound = checkJsonRoundTrip({
+    ...scenario,
+    initial: { ...scenario.initial, vars: hidden as unknown as Vars },
+  });
+  expect(hiddenRound.ok).toBe(false);
+  const marked = { visible: 1 } as { visible: number; [tag: symbol]: number };
+  marked[Symbol("tag")] = 1;
+  const symbolRound = checkJsonRoundTrip({
+    ...scenario,
+    initial: { ...scenario.initial, vars: marked as unknown as Vars },
+  });
+  expect(symbolRound.ok).toBe(false);
+  const denseRound = checkJsonRoundTrip({
+    ...scenario,
+    initial: { ...scenario.initial, vars: { items: [1, 2], empty: [] } as unknown as Vars },
+  });
+  expect(denseRound.ok).toBe(true);
+  const sparse = [1];
+  delete sparse[0];
+  const sparseRound = checkJsonRoundTrip({
+    ...scenario,
+    initial: { ...scenario.initial, vars: { items: sparse } as unknown as Vars },
+  });
+  expect(sparseRound.ok).toBe(false);
+  const wideSparse = [1];
+  wideSparse.length = 100_000;
+  const wideSparseRound = checkJsonRoundTrip({
+    ...scenario,
+    initial: { ...scenario.initial, vars: { items: wideSparse } as unknown as Vars },
+  });
+  expect(wideSparseRound.ok).toBe(false);
+  expect(wideSparseRound.applicable).toBe(true);
+  const frozenRound = checkJsonRoundTrip({
+    ...scenario,
+    initial: { ...scenario.initial, vars: Object.freeze({ x: 1 }) as unknown as Vars },
+  });
+  expect(frozenRound.ok).toBe(false);
+  const getterVars = {};
+  Object.defineProperty(getterVars, "x", { enumerable: true, configurable: true, get: () => 1 });
+  const getterRound = checkJsonRoundTrip({
+    ...scenario,
+    initial: { ...scenario.initial, vars: getterVars as unknown as Vars },
+  });
+  expect(getterRound.ok).toBe(false);
+  const lockedObject = checkJsonRoundTrip({
+    ...scenario,
+    initial: { ...scenario.initial, vars: Object.preventExtensions({ x: 1 }) as unknown as Vars },
+  });
+  expect(lockedObject.ok).toBe(false);
+  const lockedArray = checkJsonRoundTrip({
+    ...scenario,
+    initial: {
+      ...scenario.initial,
+      vars: { items: Object.preventExtensions([1]) } as unknown as Vars,
+    },
+  });
+  expect(lockedArray.ok).toBe(false);
+  const lockedLengthItems = [1];
+  Object.defineProperty(lockedLengthItems, "length", { writable: false });
+  const lockedLength = checkJsonRoundTrip({
+    ...scenario,
+    initial: {
+      ...scenario.initial,
+      vars: { items: lockedLengthItems } as unknown as Vars,
+    },
+  });
+  expect(lockedLength.ok).toBe(false);
+  const customPrototype = Object.setPrototypeOf([1], { marker: true });
+  const customPrototypeRound = checkJsonRoundTrip({
+    ...scenario,
+    initial: {
+      ...scenario.initial,
+      vars: { items: customPrototype } as unknown as Vars,
+    },
+  });
+  expect(customPrototypeRound.ok).toBe(false);
+  const gameA = gameSeedForCase(0x51ed, 1);
+  const gameB = gameSeedForCase(0x51ed, 2);
+  const trial = (gameSeed: number) =>
+    economyAfter(
+      constantScenario({ rate: 1 + (gameSeed % 97), durationSec: 3, stepSec: 1, seed: gameSeed }),
+    );
+  expect(trial(gameA)).not.toBe(trial(gameB));
+  expectApplicable(checkTrialOrder(trial, [gameA, gameB]));
+  const vacuous = checkTrialOrder(trial, []);
+  expect(vacuous.ok).toBe(true);
+  expect(vacuous.applicable).toBe(false);
+  const repeatedSeed = checkTrialOrder(trial, [gameA, gameA]);
+  expect(repeatedSeed.ok).toBe(true);
+  expect(repeatedSeed.applicable).toBe(false);
+  const palindrome = checkTrialOrder(trial, [gameA, gameB, gameA]);
+  expect(palindrome.ok).toBe(true);
+  expect(palindrome.applicable).toBe(false);
+  const aliasScenario = constantScenario({ rate: 1, durationSec: 4, stepSec: 1, seed: 19 });
+  const aliasedResume = checkResumeFromJson(
+    {
+      ...aliasScenario,
+      model: {
+        ...aliasScenario.model,
+        evolve: (_ctx, current) => ({
+          ...current,
+          vars: { wallet: current.wallet } as unknown as Vars,
+        }),
+      },
+    },
+    2,
+  );
+  expect(aliasedResume.ok).toBe(true);
+  expect(aliasedResume.applicable).toBe(false);
+  expect(aliasedResume.summary).toContain("alias");
+}
+
+describe("PR-03 resume isolation", () => {
+  it(
+    "resumes on the same tick grid from memory and from JSON",
+    resumesOnTheSameTickGridFromMemoryAndJson,
+  );
+
+  it("reports a non-JSON strategy snapshot instead of throwing", () => {
+    const scenario = constantScenario({ rate: 5, durationSec: 6, stepSec: 1, seed: 19 });
+    const cyclic: { self?: unknown } = {};
+    cyclic.self = cyclic;
+    const cycle = checkResumeFromJson(
+      {
+        ...scenario,
+        strategy: {
+          id: "cyclic",
+          decide: () => [],
+          snapshotState: () => cyclic,
+          restoreState: () => {},
+        },
+      },
+      2,
+    );
+    expect(cycle.ok).toBe(false);
+    expect(cycle.applicable).toBe(true);
+    const bigint = checkResumeFromJson(
+      {
+        ...scenario,
+        strategy: {
+          id: "bigint",
+          decide: () => [],
+          snapshotState: () => 1n,
+          restoreState: () => {},
+        },
+      },
+      2,
+    );
+    expect(bigint.ok).toBe(false);
+    expect(bigint.summary).toContain("JSON");
+    const thrown = checkResumeFromJson(
+      {
+        ...scenario,
+        strategy: {
+          id: "throwing",
+          decide: () => [],
+          snapshotState: () => ({
+            toJSON() {
+              throw new Error("snapshot failed");
+            },
+          }),
+          restoreState: () => {},
+        },
+      },
+      2,
+    );
+    expect(thrown.ok).toBe(false);
+    expect(thrown.applicable).toBe(true);
+    expect(thrown.summary).toContain("JSON");
+    const lossy = checkResumeFromJson(
+      {
+        ...scenario,
+        initial: {
+          ...scenario.initial,
+          vars: { buys: 0, marker: Number.NaN } as unknown as Vars,
+        },
+        strategy: {
+          id: "nan",
+          decide: () => [],
+          snapshotState: () => ({ marker: Number.NaN }),
+          restoreState: () => {},
+        },
+      },
+      2,
+    );
+    expect(lossy.ok).toBe(false);
+    expect(lossy.applicable).toBe(true);
+    expect(lossy.summary).toContain("JSON");
+    const dated = checkResumeFromJson(
+      {
+        ...scenario,
+        initial: {
+          ...scenario.initial,
+          vars: { buys: 0, marker: new Date(0) } as unknown as Vars,
+        },
+        strategy: {
+          id: "dated",
+          decide: () => [],
+          snapshotState: () => ({ marker: new Date(0) }),
+          restoreState: () => {},
+        },
+      },
+      2,
+    );
+    expect(dated.ok).toBe(false);
+    expect(dated.applicable).toBe(true);
+    expect(dated.summary).toContain("JSON");
+    const negativeZero = checkResumeFromJson(
+      {
+        ...scenario,
+        initial: {
+          ...scenario.initial,
+          vars: { buys: 0, marker: -0 } as unknown as Vars,
+        },
+        strategy: {
+          id: "negative-zero",
+          decide: () => [],
+          snapshotState: () => ({ marker: -0 }),
+          restoreState: () => {},
+        },
+      },
+      2,
+    );
+    expect(negativeZero.ok).toBe(false);
+    expect(negativeZero.applicable).toBe(true);
+    expect(negativeZero.summary).toContain("JSON");
+    const negativeZeroSnap = snapshotEconomy(scenario.ctx.E, {
+      ...scenario.initial,
+      vars: { buys: 0, marker: -0 } as unknown as Vars,
+    });
+    const zeroSnap = snapshotEconomy(scenario.ctx.E, {
+      ...scenario.initial,
+      vars: { buys: 0, marker: 0 } as unknown as Vars,
+    });
+    expect(negativeZeroSnap).not.toBe(zeroSnap);
+    const items = [1];
+    Object.assign(items, { extra: 2 });
+    const extraItems = checkResumeFromJson(
+      {
+        ...scenario,
+        initial: {
+          ...scenario.initial,
+          vars: { buys: 0, items } as unknown as Vars,
+        },
+        strategy: {
+          id: "extra-items",
+          decide: () => [],
+          snapshotState: () => ({ items }),
+          restoreState: () => {},
+        },
+      },
+      2,
+    );
+    expect(extraItems.ok).toBe(false);
+    expect(extraItems.applicable).toBe(true);
+    expect(extraItems.summary).toContain("JSON");
+    const tagged = [1] as number[] & { [tag: symbol]: number };
+    tagged[Symbol("tag")] = 1;
+    const taggedItems = checkResumeFromJson(
+      {
+        ...scenario,
+        initial: {
+          ...scenario.initial,
+          vars: { buys: 0, items: tagged } as unknown as Vars,
+        },
+        strategy: {
+          id: "tagged-items",
+          decide: () => [],
+          snapshotState: () => ({ items: tagged }),
+          restoreState: () => {},
+        },
+      },
+      2,
+    );
+    expect(taggedItems.ok).toBe(false);
+    expect(taggedItems.applicable).toBe(true);
+    expect(taggedItems.summary).toContain("JSON");
+    const marked = { visible: 1 } as { visible: number; [tag: symbol]: number };
+    marked[Symbol("tag")] = 1;
+    const markedSnapshot = checkResumeFromJson(
+      {
+        ...scenario,
+        strategy: {
+          id: "marked-snapshot",
+          decide: () => [],
+          snapshotState: () => marked,
+          restoreState: () => {},
+        },
+      },
+      2,
+    );
+    expect(markedSnapshot.ok).toBe(false);
+    expect(markedSnapshot.applicable).toBe(true);
+    expect(markedSnapshot.summary).toContain("JSON");
+    const missingMarker = checkResumeFromJson(
+      {
+        ...scenario,
+        initial: {
+          ...scenario.initial,
+          vars: { buys: 0, marker: undefined } as unknown as Vars,
+        },
+      },
+      2,
+    );
+    expect(missingMarker.ok).toBe(false);
+    expect(missingMarker.applicable).toBe(true);
+    expect(missingMarker.summary).toContain("JSON");
+    const missingSnapshot = checkResumeFromJson(
+      {
+        ...scenario,
+        strategy: {
+          id: "missing-marker",
+          decide: () => [],
+          snapshotState: () => ({ marker: undefined }),
+          restoreState: () => {},
+        },
+      },
+      2,
+    );
+    expect(missingSnapshot.ok).toBe(false);
+    expect(missingSnapshot.applicable).toBe(true);
+    expect(missingSnapshot.summary).toContain("JSON");
+    const hiddenVars = { buys: 0 };
+    Object.defineProperty(hiddenVars, "marker", { value: 1, enumerable: false });
+    const hidden = checkResumeFromJson(
+      {
+        ...scenario,
+        initial: { ...scenario.initial, vars: hiddenVars as unknown as Vars },
+      },
+      2,
+    );
+    expect(hidden.ok).toBe(false);
+    expect(hidden.applicable).toBe(true);
+    expect(hidden.summary).toContain("JSON");
+    const hiddenState = {};
+    Object.defineProperty(hiddenState, "marker", { value: 1, enumerable: false });
+    const hiddenSnapshot = checkResumeFromJson(
+      {
+        ...scenario,
+        strategy: {
+          id: "hidden-marker",
+          decide: () => [],
+          snapshotState: () => hiddenState,
+          restoreState: () => {},
+        },
+      },
+      2,
+    );
+    expect(hiddenSnapshot.ok).toBe(false);
+    expect(hiddenSnapshot.applicable).toBe(true);
+    expect(hiddenSnapshot.summary).toContain("JSON");
+    const versionZero = checkResumeFromJson(
+      {
+        ...scenario,
+        strategy: {
+          id: "version-zero",
+          stateVersion: 0,
+          decide: () => [],
+          snapshotState: () => ({ marker: 1 }),
+          restoreState: () => {},
+        },
+      },
+      2,
+    );
+    expect(versionZero.ok).toBe(false);
+    expect(versionZero.applicable).toBe(true);
+    expect(versionZero.summary).toContain("JSON");
+    const fractionalVersion = checkResumeFromJson(
+      {
+        ...scenario,
+        strategy: {
+          id: "fractional-version",
+          stateVersion: 1.5,
+          decide: () => [],
+          snapshotState: () => ({ marker: 1 }),
+          restoreState: () => {},
+        },
+      },
+      2,
+    );
+    expect(fractionalVersion.ok).toBe(false);
+    expect(fractionalVersion.applicable).toBe(true);
+    const emptyId = checkResumeFromJson(
+      {
+        ...scenario,
+        strategy: {
+          id: "",
+          stateVersion: 1,
+          decide: () => [],
+          snapshotState: () => ({ marker: 1 }),
+          restoreState: () => {},
+        },
+      },
+      2,
+    );
+    expect(emptyId.ok).toBe(false);
+    expect(emptyId.applicable).toBe(true);
+    expect(emptyId.summary).toContain("JSON");
+    const frozenVars = checkResumeFromJson(
+      {
+        ...scenario,
+        initial: {
+          ...scenario.initial,
+          vars: Object.freeze({ buys: 0 }) as unknown as Vars,
+        },
+      },
+      2,
+    );
+    expect(frozenVars.ok).toBe(false);
+    expect(frozenVars.applicable).toBe(true);
+    expect(frozenVars.summary).toContain("JSON");
+    const sealedVars = { buys: 0 };
+    Object.seal(sealedVars);
+    const sealed = checkResumeFromJson(
+      {
+        ...scenario,
+        initial: { ...scenario.initial, vars: sealedVars as unknown as Vars },
+      },
+      2,
+    );
+    expect(sealed.ok).toBe(false);
+    expect(sealed.applicable).toBe(true);
+    expect(sealed.summary).toContain("JSON");
+    const lockedVars = { buys: 0 };
+    Object.defineProperty(lockedVars, "marker", {
+      value: 1,
+      writable: false,
+      enumerable: true,
+      configurable: true,
+    });
+    const locked = checkResumeFromJson(
+      {
+        ...scenario,
+        initial: { ...scenario.initial, vars: lockedVars as unknown as Vars },
+      },
+      2,
+    );
+    expect(locked.ok).toBe(false);
+    expect(locked.applicable).toBe(true);
+    expect(locked.summary).toContain("JSON");
+    const frozenSnapshot = checkResumeFromJson(
+      {
+        ...scenario,
+        strategy: {
+          id: "frozen-state",
+          stateVersion: 1,
+          decide: () => [],
+          snapshotState: () => Object.freeze({ marker: 1 }),
+          restoreState: () => {},
+        },
+      },
+      2,
+    );
+    expect(frozenSnapshot.ok).toBe(false);
+    expect(frozenSnapshot.applicable).toBe(true);
+    expect(frozenSnapshot.summary).toContain("JSON");
+    const bareVars = Object.create(null) as { buys?: number };
+    bareVars.buys = 0;
+    const nullProto = checkResumeFromJson(
+      {
+        ...scenario,
+        initial: { ...scenario.initial, vars: bareVars as unknown as Vars },
+      },
+      2,
+    );
+    expect(nullProto.ok).toBe(false);
+    expect(nullProto.applicable).toBe(true);
+    expect(nullProto.summary).toContain("JSON");
+    const stateless = checkResumeFromJson(
+      {
+        ...scenario,
+        strategy: {
+          id: "stateless",
+          decide: () => [],
+          snapshotState: () => undefined,
+          restoreState: () => {},
+        },
+      },
+      2,
+    );
+    expect(stateless.ok).toBe(true);
+    expect(stateless.applicable).toBe(true);
+  });
+});
+
+describe("counterexample report", () => {
+  it("rejects a property run that executes no cases", () => {
+    const empty = {
+      predicateId: "empty-cases",
+      testSeed: 1,
+      generate: () => 0,
+      shrink: () => [],
+      predicate: () => false,
+      describeCase: () => ({
+        gameSeed: null,
+        engineId: null,
+        modelId: null,
+        strategyId: null,
+        tickSchedule: null,
+      }),
+    };
+    expect(() => expectProperty({ ...empty, cases: 0 })).toThrow(/positive integer/);
+    expect(() => expectProperty({ ...empty, cases: -1 })).toThrow(/positive integer/);
+    expect(() => expectProperty({ ...empty, cases: Number.NaN })).toThrow(/positive integer/);
+    expect(() => expectProperty({ ...empty, cases: 1, testSeed: Number.NaN })).toThrow(
+      /finite integer/,
+    );
+    expect(() =>
+      expectProperty({ ...empty, cases: 1, testSeed: Number.POSITIVE_INFINITY }),
+    ).toThrow(/finite integer/);
+    expect(() =>
+      expectProperty({ ...empty, cases: 1, testSeed: Number.NEGATIVE_INFINITY }),
+    ).toThrow(/finite integer/);
+  });
+
+  it("keeps the seed when the counterexample is cyclic or a bigint", () => {
+    const cyclic: { self?: unknown } = {};
+    cyclic.self = cyclic;
+    expect(() =>
+      expectProperty({
+        predicateId: "cyclic-value",
+        testSeed: 0xabc,
+        cases: 1,
+        generate: () => cyclic,
+        shrink: () => [],
+        predicate: () => false,
+        describeCase: () => ({
+          gameSeed: 7,
+          engineId: "number",
+          modelId: "cyclic",
+          strategyId: null,
+          tickSchedule: null,
+        }),
+      }),
+    ).toThrow(/"testSeed": 2748/);
+
+    expect(() =>
+      expectProperty({
+        predicateId: "bigint-value",
+        testSeed: 0xdef,
+        cases: 1,
+        generate: () => 1n,
+        shrink: (value) => (value === 1n ? [0n] : []),
+        predicate: () => false,
+        describeCase: () => ({
+          gameSeed: null,
+          engineId: null,
+          modelId: null,
+          strategyId: null,
+          tickSchedule: null,
+        }),
+      }),
+    ).toThrow(/1n/);
+  });
+
+  it("encodes non-json counterexample values", () => {
+    const named = function named(): number {
+      return 1;
+    };
+    expect(() =>
+      expectProperty({
+        predicateId: "non-json-value",
+        testSeed: 11,
+        cases: 1,
+        generate: () => ({
+          n: Number.NaN,
+          s: Symbol("observed"),
+          u: undefined,
+          f: named,
+        }),
+        shrink: () => [],
+        predicate: () => false,
+        describeCase: () => ({
+          gameSeed: null,
+          engineId: null,
+          modelId: null,
+          strategyId: null,
+          tickSchedule: null,
+        }),
+      }),
+    ).toThrow(
+      /"~idlekit": "nan"[\s\S]*Symbol\(observed\)[\s\S]*"~idlekit": "undefined"[\s\S]*"~idlekit": "function"[\s\S]*"value": "named"/,
+    );
+    expect(() =>
+      expectProperty({
+        predicateId: "json-text",
+        testSeed: 12,
+        cases: 1,
+        generate: () => ({ n: "NaN", z: "-0", u: "[undefined]", f: "[function named]" }),
+        shrink: () => [],
+        predicate: () => false,
+        describeCase: () => ({
+          gameSeed: null,
+          engineId: null,
+          modelId: null,
+          strategyId: null,
+          tickSchedule: null,
+        }),
+      }),
+    ).toThrow(/"NaN"[\s\S]*"-0"[\s\S]*"\[undefined\]"[\s\S]*"\[function named\]"/);
+  });
+
+  it("reports a generator throw with the seed and case index", () => {
+    expect(() =>
+      expectProperty({
+        predicateId: "rejected-draw",
+        testSeed: 41,
+        cases: 6,
+        generate: (index) => {
+          if (index === 5) throw new Error("draw rejected");
+          return index;
+        },
+        shrink: () => [],
+        predicate: () => true,
+        describeCase: () => ({
+          gameSeed: null,
+          engineId: null,
+          modelId: null,
+          strategyId: null,
+          tickSchedule: null,
+        }),
+      }),
+    ).toThrow(/"testSeed": 41[\s\S]*"caseIndex": 5[\s\S]*draw rejected/);
+  });
+
+  it("reports a shrink throw with the seed, case, original, and path", () => {
+    expect(() =>
+      expectProperty({
+        predicateId: "shrink-throws",
+        testSeed: 41,
+        cases: 1,
+        generate: () => 7,
+        shrink: (value) => {
+          if (value === 7) return [3];
+          throw new Error("shrink rejected");
+        },
+        predicate: () => false,
+        describeCase: () => {
+          throw new Error("describe should not run");
+        },
+      }),
+    ).toThrow(/"testSeed": 41[\s\S]*"caseIndex": 0[\s\S]*"original": 7[\s\S]*shrink rejected/);
+  });
+
+  it("reports a describeCase throw with the seed, case, original, and path", () => {
+    expect(() =>
+      expectProperty({
+        predicateId: "describe-throws",
+        testSeed: 41,
+        cases: 1,
+        generate: () => 7,
+        shrink: (value) => (value === 7 ? [3] : []),
+        predicate: () => false,
+        describeCase: () => {
+          throw new Error("describe rejected");
+        },
+      }),
+    ).toThrow(
+      /"testSeed": 41[\s\S]*"caseIndex": 0[\s\S]*"original": 7[\s\S]*"shrinkingPath":[\s\S]*describe rejected/,
+    );
+  });
+});
+
+describe("PR-05 observation retention", () => {
+  it("keeps the economy when retention or a recording observer changes", () => {
+    const scenario = constantScenario({ rate: 4, durationSec: 3, stepSec: 1, seed: 23 });
+    const retention = checkRetention(scenario);
+    expectApplicable(retention);
+    expect(retention.summary).toContain("retained");
+    expect(retention.summary).toContain("dropped 0");
+    const observer = checkObserver(scenario);
+    expectApplicable(observer);
+    expect(observer.summary).toContain("observed batches");
+    const silent = constantScenario({ rate: 0, durationSec: 1, stepSec: 1, seed: 1 });
+    const silentObserver = checkObserver({
+      ...silent,
+      ctx: { ...silent.ctx, collectMoneyEvents: false },
+    });
+    expect(silentObserver.ok).toBe(true);
+    expect(silentObserver.applicable).toBe(false);
+    const silentRetention = checkRetention({
+      ...silent,
+      ctx: { ...silent.ctx, collectMoneyEvents: false },
+    });
+    expect(silentRetention.ok).toBe(true);
+    expect(silentRetention.applicable).toBe(false);
+    let emitted = 0;
+    const watched = checkObserver({
+      ...scenario,
+      ctx: {
+        ...scenario.ctx,
+        emit: () => {
+          emitted += 1;
+        },
+      },
+    });
+    expect(watched.ok).toBe(true);
+    expect(watched.applicable).toBe(false);
+    expect(emitted).toBe(0);
+    let retentionCalls = 0;
+    const retained = checkRetention({
+      ...scenario,
+      ctx: {
+        ...scenario.ctx,
+        emit: () => {
+          retentionCalls += 1;
+        },
+      },
+    });
+    expect(retained.ok).toBe(true);
+    expect(retained.applicable).toBe(false);
+    expect(retentionCalls).toBe(0);
+    let replayCalls = 0;
+    const replayWatched = checkReplay({
+      ...scenario,
+      ctx: {
+        ...scenario.ctx,
+        emit: () => {
+          replayCalls += 1;
+        },
+      },
+    });
+    expect(replayWatched.ok).toBe(true);
+    expect(replayWatched.applicable).toBe(false);
+    expect(replayCalls).toBe(0);
+    const lossyObserver = checkObserver({
+      ...scenario,
+      model: {
+        ...scenario.model,
+        evolve: (ctx, current) => ({
+          ...current,
+          vars: { buys: ctx.emit ? Number.NaN : null } as unknown as Vars,
+        }),
+      },
+    });
+    expect(lossyObserver.ok).toBe(false);
+    expect(lossyObserver.applicable).toBe(true);
+    const namedObserver = checkObserver({
+      ...scenario,
+      model: {
+        ...scenario.model,
+        evolve: (ctx, current) => {
+          const items = [1] as number[] & { extra?: number };
+          if (ctx.emit) items.extra = 1;
+          return { ...current, vars: { buys: current.vars.buys, items } as unknown as Vars };
+        },
+      },
+    });
+    expect(namedObserver.ok).toBe(false);
+    expect(namedObserver.applicable).toBe(true);
+    const nanObserver = checkObserver({
+      ...scenario,
+      model: {
+        ...scenario.model,
+        evolve: (ctx, current) => ({
+          ...current,
+          vars: { buys: ctx.emit ? Number.NaN : "nan" } as unknown as Vars,
+        }),
+      },
+    });
+    expect(nanObserver.ok).toBe(false);
+    expect(nanObserver.applicable).toBe(true);
+    const sentinelObserver = checkObserver({
+      ...scenario,
+      model: {
+        ...scenario.model,
+        evolve: (ctx, current) => ({
+          ...current,
+          vars: { buys: ctx.emit ? Number.NaN : { "~idlekit": "nan" } } as unknown as Vars,
+        }),
+      },
+    });
+    expect(sentinelObserver.ok).toBe(false);
+    expect(sentinelObserver.applicable).toBe(true);
+    const holeObserver = checkObserver({
+      ...scenario,
+      model: {
+        ...scenario.model,
+        evolve: (ctx, current) => ({
+          ...current,
+          vars: { buys: 0, items: ctx.emit ? Array(1) : [null] } as unknown as Vars,
+        }),
+      },
+    });
+    expect(holeObserver.ok).toBe(false);
+    expect(holeObserver.applicable).toBe(true);
+  });
+
+  it("snapshots vars whose serializer throws", () => {
+    const base = constantScenario({ rate: 1, durationSec: 1, stepSec: 1, seed: 3 });
+    const vars = {
+      buys: 0,
+      toJSON(): unknown {
+        throw new Error("vars toJSON");
+      },
+    };
+    const scenario = {
+      ...base,
+      initial: { ...base.initial, vars: vars as unknown as Vars },
+    };
+    const replay = checkReplay(scenario);
+    const observer = checkObserver(scenario);
+    const retention = checkRetention(scenario);
+    expect(replay.ok).toBe(true);
+    expect(replay.applicable).toBe(true);
+    expect(observer.ok).toBe(true);
+    expect(retention.ok).toBe(true);
+    const getterVars = { buys: 0 };
+    Object.defineProperty(getterVars, "boom", {
+      enumerable: true,
+      configurable: true,
+      get(): never {
+        throw new Error("vars getter");
+      },
+    });
+    const getterScenario = {
+      ...base,
+      initial: { ...base.initial, vars: getterVars as unknown as Vars },
+    };
+    expect(checkReplay(getterScenario).ok).toBe(true);
+    expect(checkObserver(getterScenario).ok).toBe(true);
+    expect(checkRetention(getterScenario).ok).toBe(true);
+  });
+
+  it(
+    "bans a negative balance only when debt is disallowed",
+    bansNegativeBalanceOnlyWhenDebtIsDisallowed,
+  );
+});
+
+/**
+ * @evidence docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness A negative balance fails the check only when the payment policy disallows debt.
+ * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #a195f0e Re-read the section: checkNonNegative applies when debt is disallowed and does not apply when debt is allowed.
+ * @evidence ./conformanceRun.ts#checkNonNegative A non-negative wallet applies when debt is disallowed. A negative wallet fails when debt is disallowed, and does not apply when debt is allowed.
+ * @evidenceReview ./conformanceRun.ts#checkNonNegative #d87668f A non-negative wallet applies when debt is disallowed. A negative wallet fails when debt is disallowed, and does not apply when debt is allowed.
+ */
+export function bansNegativeBalanceOnlyWhenDebtIsDisallowed(): void {
+  const engine = createNumberEngine();
+  const unit = { code: "COIN" as const };
+  const buy: Action<number, UnitCode, Vars> = {
+    id: "buy",
+    kind: "buy",
+    canApply: () => true,
+    cost: () => ({ unit, amount: 5 }),
+    apply: (_ctx, current) => current,
+  };
+  const blocked: CompiledScenario<number, UnitCode, Vars> = {
+    ctx: { E: engine, unit, tickPolicy: { mode: "drop" }, payment: { onInsufficientFunds: "skip" } },
+    model: { id: "skip-payment", version: 1, income: () => ({ unit, amount: 0 }), actions: () => [buy] },
+    initial: state(engine, 1),
+    strategy: { id: "always-buy", decide: () => [{ action: buy }] },
+    run: { stepSec: 1, durationSec: 1 },
+  };
+  const blockedEnd = economyAfter(blocked);
+  expect(blockedEnd).toContain('"amount":"1"');
+  expectApplicable(checkNonNegative(false, false));
+
+  const debt: Action<number, UnitCode, Vars> = {
+    id: "debt",
+    kind: "custom",
+    canApply: () => true,
+    cost: () => null,
+    apply: (ctx, current) => ({
+      ...current,
+      wallet: {
+        ...current.wallet,
+        money: { ...current.wallet.money, amount: ctx.E.sub(current.wallet.money.amount, ctx.E.from(5)) },
+      },
+    }),
+  };
+  const allowed: CompiledScenario<number, UnitCode, Vars> = {
+    ctx: { E: engine, unit, tickPolicy: { mode: "drop" } },
+    model: { id: "allows-debt", version: 1, income: () => ({ unit, amount: 0 }), actions: () => [debt] },
+    initial: state(engine, 1),
+    strategy: { id: "take-debt", decide: () => [{ action: debt }] },
+    run: { stepSec: 1, durationSec: 1 },
+  };
+  const after = economyAfter(allowed);
+  expect(after).toContain('"amount":"-4"');
+  const skipped = checkNonNegative(true, true);
+  expect(skipped.applicable).toBe(false);
+  const forbidden = checkNonNegative(false, true);
+  expect(forbidden.ok).toBe(false);
+  expect(forbidden.applicable).toBe(true);
+  expect(forbidden.summary).toContain("negative");
+}
+
+describe("analysis source labels", () => {
+  it(
+    "keeps formula seconds apart from executed eta results",
+    keepsFormulaSecondsApartFromExecutedEtaResults,
+  );
+});
+
+/**
+ * @evidence docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness Formula seconds stay labeled apart from executed etaSimulate and etaAnalytic results.
+ * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #a195f0e Re-read the section, then ran this function: formula, simulate, and analytic seconds are 3 and the executed modes stay distinct.
+ * @evidence ./conformanceRun.ts#checkTimedSources Formula, simulate, and analytic seconds are all 3, and the executed modes stay distinct.
+ * @evidenceReview ./conformanceRun.ts#checkTimedSources #25df548 Formula, simulate, and analytic seconds are all 3, and the executed modes stay distinct.
+ */
+export function keepsFormulaSecondsApartFromExecutedEtaResults(): void {
+  const scenario = constantScenario({ rate: 1, durationSec: 10, stepSec: 1 });
+  const simulate = etaSimulate({
+    scenario,
+    target: { kind: "money", value: "3" },
+    maxDurationSec: 10,
+  });
+  const analytic = etaAnalytic({
+    scenario,
+    target: { kind: "money", value: "3" },
+  });
+  const formulaSeconds = 3;
+  const result = checkTimedSources({
+    formulaSeconds,
+    simulate: { mode: simulate.mode, seconds: simulate.seconds },
+    analytic: { mode: analytic.mode, seconds: analytic.seconds },
+  });
+  expectApplicable(result);
+  expect(result.summary).toContain("formula 3");
+  expect(result.summary).toContain("executed simulate 3");
+  expect(result.summary).toContain("executed analytic 3");
+  expect(simulate.mode).toBe("simulate");
+  expect(analytic.mode).toBe("analytic");
+}
+
+/**
+ * @evidence docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness Cross-engine comparison matches a finite constant-income amount and refuses a number Infinity collapse.
+ * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #a195f0e Re-read the section, then ran this function: 24 matches across engines and 1e400 is refused on the number engine.
+ * @evidence ./compareAmounts.ts#compareAmounts The number engine and break-infinity engine agree on 24, and 1e400 collapses only on the number engine. A negative or non-finite logTolerance is rejected before the status is calculated.
+ * @evidenceReview ./compareAmounts.ts#compareAmounts #98e12f6 Re-read compareAmounts: 24 matches by absLog10, and 1e400 returns refused-number-collapse because the number engine is not finite. A negative or non-finite logTolerance throws before the status is calculated.
+ * @evidence ./compareAmounts.ts#AmountComparison.status Expects equal for 24, refused-number-collapse for 1e400, and different for the near-zero and opposite-sign pairs.
+ * @evidenceReview ./compareAmounts.ts#AmountComparison.status #62a5942 Expects equal for 24, refused-number-collapse for 1e400, and different for the near-zero and opposite-sign pairs.
+ * @evidence ./compareAmounts.ts#AmountComparison.left The collapsed number text is not the break-infinity text.
+ * @evidenceReview ./compareAmounts.ts#AmountComparison.left #6b7edef The collapsed number text is not the break-infinity text.
+ * @evidence ./compareAmounts.ts#AmountComparison.right The collapsed break-infinity text is not the number text.
+ * @evidenceReview ./compareAmounts.ts#AmountComparison.right #33c760e The collapsed break-infinity text is not the number text.
+ * @evidence ./compareAmounts.ts#AmountComparison.detail The collapse detail says Infinity collapse is not an amount match.
+ * @evidenceReview ./compareAmounts.ts#AmountComparison.detail #e1d350b The collapse detail says Infinity collapse is not an amount match.
+ * @evidence ./compareAmounts.ts#AmountSide.engineId Passes number and break-infinity as the side ids.
+ * @evidenceReview ./compareAmounts.ts#AmountSide.engineId #f238f2b Passes number and break-infinity as the side ids.
+ * @evidence ./compareAmounts.ts#AmountSide.engine Passes the number engine and the break-infinity engine.
+ * @evidenceReview ./compareAmounts.ts#AmountSide.engine #7ca5927 Passes the number engine and the break-infinity engine.
+ * @evidence ./compareAmounts.ts#AmountSide.amount Passes 24, 1e400, 0, and 1e-13 through the engines' from.
+ * @evidenceReview ./compareAmounts.ts#AmountSide.amount #3fc6861 Passes 24, 1e400, 0, and 1e-13 through the engines' from.
+ */
+export function matchesASafeConstantRunAndRefusesNumberInfinityCollapse(): void {
+  const numberEngine = createNumberEngine();
+  const bigEngine = createBreakInfinityEngine();
+  const scenario = constantScenario({ rate: 6, durationSec: 4, stepSec: 1 });
+  expect(economyAfter(scenario)).toContain('"amount":"24"');
+  const comparison = compareAmounts(
+    { engineId: "number", engine: numberEngine, amount: numberEngine.from(24) },
+    { engineId: "break-infinity", engine: bigEngine, amount: bigEngine.from(24) },
+  );
+  expect(comparison.status).toBe("equal");
+  const collapsed = compareAmounts(
+    { engineId: "number", engine: numberEngine, amount: numberEngine.from("1e400") },
+    { engineId: "break-infinity", engine: bigEngine, amount: bigEngine.from("1e400") },
+  );
+  expect(numberEngine.isFinite(numberEngine.from("1e400"))).toBe(false);
+  expect(bigEngine.isFinite(bigEngine.from("1e400"))).toBe(true);
+  expect(collapsed.status).toBe("refused-number-collapse");
+  expect(collapsed.detail).toContain("Infinity collapse");
+  expect(collapsed.left).not.toBe(collapsed.right);
+
+  const nearZero = compareAmounts(
+    { engineId: "number", engine: numberEngine, amount: numberEngine.from(0) },
+    { engineId: "number", engine: numberEngine, amount: numberEngine.from(1e-13) },
+  );
+  expect(nearZero.status).toBe("different");
+  const opposite = compareAmounts(
+    { engineId: "number", engine: numberEngine, amount: numberEngine.from(1e-13) },
+    { engineId: "number", engine: numberEngine, amount: numberEngine.from(-1e-13) },
+  );
+  expect(opposite.status).toBe("different");
+  const sameSide = {
+    engineId: "number",
+    engine: numberEngine,
+    amount: numberEngine.from(24),
+  };
+  expect(() => compareAmounts(sameSide, sameSide, -1)).toThrow(/logTolerance/);
+  expect(() => compareAmounts(sameSide, sameSide, Number.POSITIVE_INFINITY)).toThrow(/logTolerance/);
+}
+
+describe("engine differential", () => {
+  it(
+    "matches a safe constant run and refuses number Infinity collapse",
+    matchesASafeConstantRunAndRefusesNumberInfinityCollapse,
+  );
+});

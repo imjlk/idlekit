@@ -5,7 +5,8 @@
  * TC-01 updates the host pins in this file when it changes Bun, TypeScript, or typia.
  * TC-02 requires package check and money/core emit to call ttsc, not tsc.
  * toolchain:doctor and toolchain:prepare are real after that pin.
- * Evidence and Graph repository gates stay absent until TC-03 and TC-04.
+ * Evidence and Graph repository gates arrived in TC-03 and TC-04.
+ * DX-01 adds test:conformance. contracts:generate and contracts:check stay absent.
  */
 import { resolve } from "path";
 
@@ -78,11 +79,7 @@ const mustBeAbsent = [
   "tsconfig.json",
 ];
 
-const absentRootScripts = [
-  "contracts:generate",
-  "contracts:check",
-  "test:conformance",
-];
+const absentRootScripts = ["contracts:generate", "contracts:check"];
 
 const cliCommandFiles = [
   "inspect.ts",
@@ -145,6 +142,17 @@ for (const name of ["evidence:check", "evidence:smoke", "format:check"]) {
   if (!(name in scripts)) fail(`TC-03 script is missing: ${name}`);
 }
 if (!("graph:check" in scripts)) fail("TC-04 script is missing: graph:check");
+if (!scripts["test:conformance"]?.includes("tools/conformance.ts")) {
+  fail("DX-01 test:conformance script is missing");
+}
+for (const rel of [
+  "packages/core/src/testkit/conformance.ts",
+  "packages/money/src/testkit/compareAmounts.ts",
+  "fixtures/conformance/shrink-gap.json",
+  "tools/conformance.ts",
+]) {
+  if (!entryExists(resolve(root, rel))) fail(`DX-01 path is missing: ${rel}`);
+}
 for (const rel of [
   "tsconfig.graph.json",
   "tools/graph-preflight.ts",

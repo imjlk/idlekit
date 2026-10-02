@@ -80,16 +80,38 @@ function skipObjectValue(body: string, index: number, limit: number): number {
   return cursor;
 }
 
-/** `{ ...{ run: it } }` still stores a runner. An unparsed spread is treated as one. */
+/**
+ * `{ ...{ run: it } }`, `{ ...runners }`, and `{ ...bt }` store a runner when the
+ * operand is a literal that holds one, a binding already known to hold one, or a
+ * runner namespace. `{ ...state }` of ordinary data is not a runner.
+ */
 function spreadStoresRunner(
   body: string,
   dots: number,
   aliases: readonly RunnerAlias[],
 ): boolean {
-  const operand = skipSpaceAndComments(body, dots + 3);
+  let operand = skipSpaceAndComments(body, dots + 3);
+  while (body[operand] === "(") operand = skipSpaceAndComments(body, operand + 1);
   const grouped = body[operand] === "{" || body[operand] === "[";
   if (grouped) return valueHoldsRunner(body, operand, aliases);
-  return true;
+  const ident = readIdentifier(body, operand);
+  if (!ident) return false;
+  // Spreading a function copies no callable, so `...it` or a local `test` stores no
+  // runner. A bare binding that holds runners as properties, or a runner namespace,
+  // does. `...runners.seeds`, `...runners?.seeds`, and `...make()` spread other data.
+  let after = skipSpaceAndComments(body, ident.end);
+  // `hidden!`, `hidden as Runners`, and `hidden satisfies Runners` still spread `hidden`.
+  if (body[after] === "!") after = skipSpaceAndComments(body, after + 1);
+  const keyword = readIdentifier(body, after);
+  if (keyword?.value === "as" || keyword?.value === "satisfies") return bareRunnerBinding(ident.value, aliases);
+  const bare = after >= body.length || ",}])".includes(body[after] ?? "");
+  if (!bare) return false;
+  return bareRunnerBinding(ident.value, aliases);
+}
+
+function bareRunnerBinding(name: string, aliases: readonly RunnerAlias[]): boolean {
+  const alias = aliasAt(aliases, name);
+  return alias?.objectRunner === true || alias?.namespace === true;
 }
 
 /** An array or object element that stores a runner, including one nested inside. */

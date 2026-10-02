@@ -1,0 +1,30 @@
+{
+  "predicateId": "shrink-gap",
+  "generatorVersion": 1,
+  "testSeed": 53505,
+  "gameSeed": null,
+  "engineId": null,
+  "modelId": null,
+  "strategyId": null,
+  "tickSchedule": null,
+  "caseIndex": 1,
+  "original": 2,
+  "value": 1,
+  "shrinkingPath": [
+    {
+      "from": 2,
+      "to": 0,
+      "kept": false
+    },
+    {
+      "from": 2,
+      "to": 1,
+      "kept": true
+    },
+    {
+      "from": 1,
+      "to": 0,
+      "kept": false
+    }
+  ]
+}

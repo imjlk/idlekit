@@ -71,7 +71,7 @@ Dependabot opens one grouped pull request for `ttsc`, `@ttsc/*`, `typia`, and `@
 | emit | plain `bun` runs emitted JS; `typia.createValidate` is replaced | a leftover `typia.createValidate` or `@ttsc/*` import fails the smoke |
 | TSX | emit imports `@opentui/react` | emit that imports `react/jsx-runtime` fails the smoke |
 
-The toolchain fixture still exercises Evidence and Graph in isolation. `TC-03` adds repository `evidence:check` and `evidence:smoke`. `TC-04` adds `graph:check` for the repository program. `contracts:generate`, `contracts:check`, and `test:conformance` stay absent.
+The toolchain fixture still exercises Evidence and Graph in isolation. `TC-03` adds repository `evidence:check` and `evidence:smoke`. `TC-04` adds `graph:check` for the repository program. `DX-01` adds `test:conformance`. `contracts:generate` and `contracts:check` stay absent.
 
 ## Evidence scope
 

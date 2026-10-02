@@ -26,6 +26,119 @@
           "args": ["test", "src/scenario/concreteValidator.test.ts"]
         }
       ]
+    },
+    {
+      "id": "REQ-DX01-CONFORMANCE-HARNESS",
+      "pr": "DX-01",
+      "anchor": "req-dx01-conformance-harness",
+      "doc": "docs/requirements/active/simulation-conformance.md",
+      "production": [
+        "packages/core/src/testkit/conformance.ts",
+        "packages/core/src/testkit/conformanceRun.ts",
+        "packages/core/src/testkit/compareAmounts.ts",
+        "packages/money/src/testkit/compareAmounts.ts",
+        "tools/conformance.ts"
+      ],
+      "tests": [
+        {
+          "file": "packages/core/src/testkit/conformance.test.ts",
+          "exportName": "replaysConstantIncomeAndShrinksGap",
+          "registeredAs": "DX-01 conformance harness > replays a constant-income run and shrinks the gap predicate",
+          "cwd": "packages/core",
+          "args": ["test", "src/testkit/conformance.test.ts"]
+        },
+        {
+          "file": "packages/core/src/testkit/conformance.test.ts",
+          "exportName": "replaysConstantIncomeAcrossTheFixedSeedCorpus",
+          "registeredAs": "DX-01 conformance harness > replays constant income across the fixed seed corpus",
+          "cwd": "packages/core",
+          "args": ["test", "src/testkit/conformance.test.ts"]
+        },
+        {
+          "file": "packages/core/src/testkit/conformance.test.ts",
+          "exportName": "checksBulkEqualityOnlyWhenTheFixtureDeclaresIt",
+          "registeredAs": "PR-01 bulk equivalence > checks bulk equality only when the fixture declares it",
+          "cwd": "packages/core",
+          "args": ["test", "src/testkit/conformance.test.ts"]
+        },
+        {
+          "file": "packages/core/src/testkit/conformance.test.ts",
+          "exportName": "stopsOnAPositiveTickGridAndRefusesANonPositiveStep",
+          "registeredAs": "PR-02 time boundaries > stops on a positive tick grid and refuses a non-positive step",
+          "cwd": "packages/core",
+          "args": ["test", "src/testkit/conformance.test.ts"]
+        },
+        {
+          "file": "packages/core/src/testkit/conformance.test.ts",
+          "exportName": "treatsStepSizesAsEqualOnlyForConstantIncome",
+          "registeredAs": "PR-02 time boundaries > treats step 1 and 0.5 as equal only for constant income",
+          "cwd": "packages/core",
+          "args": ["test", "src/testkit/conformance.test.ts"]
+        },
+        {
+          "file": "packages/core/src/testkit/conformance.test.ts",
+          "exportName": "replaysOneShotScriptedGrantFromTheSameCursor",
+          "registeredAs": "stateful strategy and currency identity > replays a one-shot scripted grant from the same cursor",
+          "cwd": "packages/core",
+          "args": ["test", "src/testkit/conformance.test.ts"]
+        },
+        {
+          "file": "packages/core/src/testkit/conformance.test.ts",
+          "exportName": "skipsResumeWhoseUntilStopsBeforeTheCheckpoint",
+          "registeredAs": "stateful strategy and currency identity > skips a resume whose until stops before the checkpoint",
+          "cwd": "packages/core",
+          "args": ["test", "src/testkit/conformance.test.ts"]
+        },
+        {
+          "file": "packages/core/src/testkit/conformance.test.ts",
+          "exportName": "recordsWalletAndMaxMoneyUnitsOnTheEconomySnapshot",
+          "registeredAs": "stateful strategy and currency identity > records wallet and max-money units on the economy snapshot",
+          "cwd": "packages/core",
+          "args": ["test", "src/testkit/conformance.test.ts"]
+        },
+        {
+          "file": "packages/core/src/testkit/conformance.test.ts",
+          "exportName": "resumesOnTheSameTickGridFromMemoryAndJson",
+          "registeredAs": "PR-03 resume isolation > resumes on the same tick grid from memory and from JSON",
+          "cwd": "packages/core",
+          "args": ["test", "src/testkit/conformance.test.ts"]
+        },
+        {
+          "file": "packages/core/src/testkit/conformance.test.ts",
+          "exportName": "bansNegativeBalanceOnlyWhenDebtIsDisallowed",
+          "registeredAs": "PR-05 observation retention > bans a negative balance only when debt is disallowed",
+          "cwd": "packages/core",
+          "args": ["test", "src/testkit/conformance.test.ts"]
+        },
+        {
+          "file": "packages/core/src/testkit/conformance.test.ts",
+          "exportName": "keepsFormulaSecondsApartFromExecutedEtaResults",
+          "registeredAs": "analysis source labels > keeps formula seconds apart from executed eta results",
+          "cwd": "packages/core",
+          "args": ["test", "src/testkit/conformance.test.ts"]
+        },
+        {
+          "file": "packages/core/src/testkit/conformance.test.ts",
+          "exportName": "matchesASafeConstantRunAndRefusesNumberInfinityCollapse",
+          "registeredAs": "engine differential > matches a safe constant run and refuses number Infinity collapse",
+          "cwd": "packages/core",
+          "args": ["test", "src/testkit/conformance.test.ts"]
+        },
+        {
+          "file": "tools/conformance.negative.test.ts",
+          "exportName": "runsTheNegativeConformanceRunner",
+          "registeredAs": "DX-01 conformance harness > runs the negative conformance runner",
+          "cwd": ".",
+          "args": ["test", "tools/conformance.negative.test.ts"]
+        },
+        {
+          "file": "packages/money/src/testkit/compareAmounts.test.ts",
+          "exportName": "matchesFiniteAmountsAndRefusesInfinityCollapse",
+          "registeredAs": "money conformance comparator > matches finite amounts by log distance and refuses Infinity collapse",
+          "cwd": "packages/money",
+          "args": ["test", "src/testkit/compareAmounts.test.ts"]
+        }
+      ]
     }
   ]
 }

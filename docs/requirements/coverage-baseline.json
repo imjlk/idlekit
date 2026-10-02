@@ -1,11 +1,21 @@
 {
-  "ids": ["REQ-TC02-TYPIA-TRANSFORM-MISSING"],
+  "ids": ["REQ-TC02-TYPIA-TRANSFORM-MISSING", "REQ-DX01-CONFORMANCE-HARNESS"],
   "protectedFiles": [
     "docs/requirements/active/typia-transform.md",
+    "docs/requirements/active/simulation-conformance.md",
     "packages/core/src/scenario/concreteValidator.ts",
     "packages/core/src/scenario/typiaTransformMissing.ts",
     "packages/core/src/scenario/standardSchema.ts",
     "packages/core/src/scenario/concreteValidator.test.ts",
+    "packages/core/src/testkit/conformance.ts",
+    "packages/core/src/testkit/conformance.test.ts",
+    "packages/core/src/testkit/conformanceRun.ts",
+    "packages/core/src/testkit/compareAmounts.ts",
+    "packages/money/src/testkit/compareAmounts.ts",
+    "packages/money/src/testkit/compareAmounts.test.ts",
+    "tools/conformance.ts",
+    "tools/conformance.negative.test.ts",
+    "fixtures/conformance/shrink-gap.json",
     "fixtures/toolchain/evidence/lint.config.ts",
     "fixtures/toolchain/evidence/src/quotaHost.ts",
     "fixtures/toolchain/evidence/src/quotaHost.test.ts"

@@ -134,7 +134,54 @@ export function declaredRequirementId(docText: string, anchor: string): string |
   return /Requirement `([^`]+)`/.exec(section)?.[1];
 }
 
+type CommandScan = {
+  extras: string[];
+  missingPreloads: string[];
+  requireFaults: string[];
+  ambiguous: string[];
+  unresolvedRunner: boolean;
+  loaderOrMock: boolean;
+  duplicates: Set<string>;
+};
+
+const commandScans = new Map<string, CommandScan>();
+
+/**
+ * Every test on one command shares these results. The source graph of a large
+ * suite takes seconds, so it is built once per command, not once per test.
+ */
+function commandScan(
+  projectRoot: string,
+  test: InventoryTest,
+  commandKey: string,
+  inventoriedFiles: string[],
+): CommandScan {
+  const key = `${projectRoot}\n${commandKey}\n${inventoriedFiles.join("\n")}`;
+  const cached = commandScans.get(key);
+  if (cached) return cached;
+  const commandCwd = join(projectRoot, test.cwd);
+  const commandFiles = [
+    ...inventoriedFiles.map((file) => join(projectRoot, file)),
+    ...localPreloadFiles(commandCwd, test.args),
+  ];
+  const commandSources = sourceGraph(commandFiles);
+  const scan: CommandScan = {
+    extras: uninventoriedCommandTargets(test.args, test.cwd, inventoriedFiles),
+    missingPreloads: unresolvedPreloadSpecifiers(commandCwd, test.args),
+    requireFaults: unresolvedLocalRequires(commandFiles),
+    ambiguous: ambiguousSuiteSeparators(commandSources),
+    unresolvedRunner: commandSources.some((source) => unresolvedRunnerCalls(source).length > 0),
+    loaderOrMock: commandSources.some(
+      (source) => loaderPluginRegistration(source) || mockModuleRegistration(source),
+    ),
+    duplicates: new Set(duplicateFullNamesAcross(commandSources)),
+  };
+  commandScans.set(key, scan);
+  return scan;
+}
+
 export async function checkInventory(projectRoot = root): Promise<string[]> {
+  commandScans.clear();
   const failures: string[] = [];
   const inventory = readJson<InventoryFile>(join(projectRoot, "docs/requirements/inventory.json"));
   const baseline = readJson<BaselineFile>(
@@ -268,49 +315,38 @@ export async function checkInventory(projectRoot = root): Promise<string[]> {
           .filter((candidate) => `${candidate.cwd}\n${candidate.args.join("\0")}` === commandKey)
           .map((candidate) => candidate.file),
       );
-      const inventoriedFiles = [...new Set(commandBodies)];
-      const commandCwd = join(projectRoot, test.cwd);
-      const extras = uninventoriedCommandTargets(test.args, test.cwd, inventoriedFiles);
-      if (extras.length > 0) {
-        fail(failures, `${requirement.id} command runs uninventoried tests: ${extras.join(", ")}`);
-      }
-      const missingPreloads = unresolvedPreloadSpecifiers(commandCwd, test.args);
-      if (missingPreloads.length > 0) {
+      const scan = commandScan(projectRoot, test, commandKey, [...new Set(commandBodies)]);
+      if (scan.extras.length > 0) {
         fail(
           failures,
-          `${requirement.id} preload cannot be scanned: ${missingPreloads.join(", ")}`,
+          `${requirement.id} command runs uninventoried tests: ${scan.extras.join(", ")}`,
         );
       }
-      const commandFiles = [
-        ...inventoriedFiles.map((file) => join(projectRoot, file)),
-        ...localPreloadFiles(commandCwd, test.args),
-      ];
-      const commandSources = sourceGraph(commandFiles);
-      const requireFaults = unresolvedLocalRequires(commandFiles);
-      if (requireFaults.length > 0) {
+      if (scan.missingPreloads.length > 0) {
         fail(
           failures,
-          `${requirement.id} has an unresolved local require: ${requireFaults.join(", ")}`,
+          `${requirement.id} preload cannot be scanned: ${scan.missingPreloads.join(", ")}`,
         );
       }
-      const ambiguous = ambiguousSuiteSeparators(commandSources);
-      if (ambiguous.length > 0) {
+      if (scan.requireFaults.length > 0) {
         fail(
           failures,
-          `${requirement.id} suite title contains the JUnit separator: ${ambiguous.join(", ")}`,
+          `${requirement.id} has an unresolved local require: ${scan.requireFaults.join(", ")}`,
         );
       }
-      if (commandSources.some((source) => unresolvedRunnerCalls(source).length > 0)) {
+      if (scan.ambiguous.length > 0) {
+        fail(
+          failures,
+          `${requirement.id} suite title contains the JUnit separator: ${scan.ambiguous.join(", ")}`,
+        );
+      }
+      if (scan.unresolvedRunner) {
         fail(failures, `${requirement.id} has a registration call that is not the test runner`);
       }
-      if (
-        commandSources.some(
-          (source) => loaderPluginRegistration(source) || mockModuleRegistration(source),
-        )
-      ) {
+      if (scan.loaderOrMock) {
         fail(failures, `${requirement.id} registers a Bun loader plugin or replaces a module`);
       }
-      if (duplicateFullNamesAcross(commandSources).includes(test.registeredAs)) {
+      if (scan.duplicates.has(test.registeredAs)) {
         fail(failures, `${requirement.id} registers ${test.registeredAs} more than once`);
       }
       if (!commandTargetsFile(test)) {

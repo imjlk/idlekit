@@ -15,9 +15,19 @@ export const productionFiles = [
   "packages/core/src/scenario/concreteValidator.ts",
   "packages/core/src/scenario/typiaTransformMissing.ts",
   "packages/core/src/scenario/standardSchema.ts",
+  "packages/core/src/testkit/conformance.ts",
+  "packages/core/src/testkit/conformanceRun.ts",
+  "packages/core/src/testkit/compareAmounts.ts",
+  "packages/money/src/testkit/compareAmounts.ts",
+  "tools/conformance.ts",
 ];
 
-export const testFiles = ["packages/core/src/scenario/concreteValidator.test.ts"];
+export const testFiles = [
+  "packages/core/src/scenario/concreteValidator.test.ts",
+  "packages/core/src/testkit/conformance.test.ts",
+  "packages/money/src/testkit/compareAmounts.test.ts",
+  "tools/conformance.negative.test.ts",
+];
 
 const activeMarkdown = {
   type: "markdown" as const,

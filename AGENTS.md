@@ -36,3 +36,7 @@ A `.d.ts` hit is a boundary, not proof that the implementation was indexed. `tsc
 Do not store opaque graph node ids in docs or commits. Record the commit, the project, and the source span.
 
 Graph output is not a reason to skip `bun run test` or the gate the change claims. Evidence citations are a separate check (`bun run evidence:check`).
+
+## Conformance
+
+Simulation relations that already hold go through `packages/core/src/testkit/conformance.ts`. Do not export that module from a package barrel. `bun run test:conformance` is the short gate. `bun run test:conformance:extended` is the longer seed corpus. A relation that is not declared for the model stays unchecked instead of being forced.
