@@ -18,8 +18,14 @@ function record(name: string, ok: boolean, detail?: string): void {
   if (!ok && detail) console.error(detail.slice(0, 2000));
 }
 
+/**
+ * Throws instead of exiting. `runNegativeConformanceChecks` runs inside `bun test`,
+ * where `process.exit` would end the whole run before the reporter writes a row.
+ */
 function finish(): void {
-  if (steps.some((step) => !step.ok)) process.exit(1);
+  const failed = steps.filter((step) => !step.ok).map((step) => step.name);
+  steps.length = 0;
+  if (failed.length > 0) throw new Error(`conformance steps failed: ${failed.join(", ")}`);
 }
 
 function readReport(path: string): ReturnType<typeof demonstrateShrinkGap> {
@@ -216,6 +222,15 @@ function negative(): void {
   finish();
 }
 
+function runCli(run: () => void): void {
+  try {
+    run();
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exit(1);
+  }
+}
+
 if (import.meta.main) {
   const command = process.argv[2];
   if (command === "replay") {
@@ -224,11 +239,11 @@ if (import.meta.main) {
       console.error("usage: bun tools/conformance.ts replay <fixture>");
       process.exit(2);
     }
-    replay(target);
+    runCli(() => replay(target));
   } else if (command === "print-shrink") {
     printShrink();
   } else if (command === "negative") {
-    runNegativeConformanceChecks();
+    runCli(runNegativeConformanceChecks);
   } else {
     console.error("usage: bun tools/conformance.ts replay <fixture> | negative | print-shrink");
     process.exit(2);
