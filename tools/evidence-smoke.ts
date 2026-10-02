@@ -879,6 +879,7 @@ try {
   let moduleSpacedRequire = false;
   let memberRequireIgnored = false;
   let moduleDynamicRequire = false;
+  let directoryEntry = false;
   try {
     const bodies = sourceGraph([specifierHost]);
     const joined = bodies.join("\n");
@@ -1000,6 +1001,24 @@ try {
       !duplicateFullNamesAcross(computedBodies).includes("credited") &&
       unresolvedRunnerCalls(computedHost).length === 0 &&
       computedBodies.some((body) => unresolvedRunnerCalls(body).length > 0);
+    const entryDir = join(specifierDir, "entry");
+    mkdirSync(entryDir);
+    writeFileSync(join(entryDir, "package.json"), '{ "name": "entry", "main": "./register.ts" }\n');
+    writeFileSync(
+      join(entryDir, "register.ts"),
+      'it("credited", unrelated);\n// from-package-entry\n',
+    );
+    writeFileSync(
+      join(entryDir, "index.ts"),
+      'it("credited", citedExport);\n// from-package-index\n',
+    );
+    const entryHost = join(specifierDir, "entry-host.test.ts");
+    writeFileSync(entryHost, 'import "./entry";\nif (false) it("credited", citedExport);\n');
+    const entryBodies = sourceGraph([entryHost]);
+    directoryEntry =
+      entryBodies.some((body) => body.includes("from-package-entry")) &&
+      !entryBodies.some((body) => body.includes("from-package-index")) &&
+      duplicateFullNamesAcross(entryBodies).includes("credited");
   } finally {
     rmSync(specifierDir, { recursive: true, force: true });
   }
@@ -1352,6 +1371,36 @@ try {
       'describe("s", () => test("credited", citedExport))',
     ].join("\n"),
   ).includes("s > credited");
+  const nodeDefaultDuplicate = duplicateFullNames(
+    [
+      `import register from ${nodeTest}`,
+      'register("credited", unrelated)',
+      'if (false) it("credited", citedExport)',
+    ].join("\n"),
+  ).includes("credited");
+  const bunDefaultDuplicate = duplicateFullNames(
+    [
+      'import register from "bun:test"',
+      'register("credited", unrelated)',
+      'if (false) it("credited", citedExport)',
+    ].join("\n"),
+  ).includes("credited");
+  const namespaceDestructure = duplicateFullNames(
+    [
+      'import * as runner from "bun:test"',
+      "const { it: register } = runner",
+      'if (false) it("credited", citedExport)',
+      'register("credited", unrelated)',
+    ].join("\n"),
+  ).includes("credited");
+  const namespaceSuite = duplicateFullNames(
+    [
+      `import * as runner from ${nodeTest}`,
+      "const { suite: group } = runner",
+      'group("s", () => test("credited", unrelated))',
+      'describe("s", () => test("credited", citedExport))',
+    ].join("\n"),
+  ).includes("s > credited");
   const foreignImport = registeredSuites(
     ['import { it as register } from "./wrapper"', 'register("credited", unrelated)'].join("\n"),
     "unrelated",
@@ -1698,6 +1747,10 @@ try {
     requiredSuite &&
     dynamicSuite &&
     !bunSuiteDuplicate &&
+    nodeDefaultDuplicate &&
+    !bunDefaultDuplicate &&
+    namespaceDestructure &&
+    namespaceSuite &&
     computedNames.length === 0 &&
     computedDead.length === 1 &&
     computedCalls.length === 1 &&
@@ -1722,6 +1775,7 @@ try {
     unresolvedImport &&
     packageImport &&
     resolvedImport &&
+    directoryEntry &&
     foreignImport.length === 0 &&
     foreignNamespace.length === 0 &&
     helperComputed &&
@@ -1763,6 +1817,11 @@ try {
       requiredSuite,
       dynamicSuite,
       bunSuiteDuplicate,
+      nodeDefaultDuplicate,
+      bunDefaultDuplicate,
+      namespaceDestructure,
+      namespaceSuite,
+      directoryEntry,
       packagePreload,
       missingPackagePreload,
       missingRelativePreload,

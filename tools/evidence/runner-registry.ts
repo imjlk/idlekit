@@ -165,7 +165,14 @@ function collectRegistrations(
           aliases.push({ name: entry.name, kind: entry.kind, modifiers: [], depth });
         }
         for (const name of imported.namespaces) {
-          aliases.push({ name, kind: undefined, modifiers: [], depth, namespace: true });
+          aliases.push({
+            name,
+            kind: undefined,
+            modifiers: [],
+            depth,
+            namespace: true,
+            spec: imported.moduleSpec,
+          });
         }
         index = imported.end;
         continue;
@@ -178,7 +185,7 @@ function collectRegistrations(
       const bindingDepth = forParens.length > 0 ? depth + 1 : depth;
       for (;;) {
         if (body[bindingAt] === "{") {
-          const destructured = readDestructuredRunnerImport(body, bindingAt);
+          const destructured = readDestructuredRunnerImport(body, bindingAt, aliases);
           if (!destructured) break;
           for (const entry of destructured.entries) {
             aliases.push({

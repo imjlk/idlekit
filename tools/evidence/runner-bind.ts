@@ -25,6 +25,8 @@ export type RunnerAlias = {
   modifiers: string[];
   depth: number;
   namespace?: boolean;
+  /** Runner module of a namespace import, such as `bun:test` or `node:test`. */
+  spec?: string;
 };
 
 export function isRunnerKind(value: string): value is RunnerKind {
@@ -339,6 +341,7 @@ export function readImportRunnerAliases(
 ): {
   entries: Array<{ name: string; kind: RunnerKind }>;
   namespaces: string[];
+  moduleSpec?: string;
   end: number;
 } | undefined {
   let cursor = skipSpaceAndComments(body, index);
@@ -354,44 +357,58 @@ export function readImportRunnerAliases(
     if (!spec) return undefined;
     // A local wrapper can re-export a runner and discard the cited callback.
     if (!runnerModuleSpec(spec.value)) return { entries: [], namespaces: [], end: spec.end };
-    return { entries: [], namespaces: [local.value], end: spec.end };
+    return { entries: [], namespaces: [local.value], moduleSpec: spec.value, end: spec.end };
   }
-  if (body[cursor] !== "{") return undefined;
+  let defaultLocal: string | undefined;
+  if (body[cursor] !== "{") {
+    const first = readIdentifier(body, cursor);
+    if (!first || first.value === "type") return undefined;
+    const afterName = skipSpaceAndComments(body, first.end);
+    const fromHere = readIdentifier(body, afterName);
+    if (body[afterName] !== "," && fromHere?.value !== "from") return undefined;
+    defaultLocal = first.value;
+    cursor = afterName;
+    if (body[cursor] === ",") cursor = skipSpaceAndComments(body, cursor + 1);
+  }
   const pending: Array<{ name: string; imported: string }> = [];
-  cursor += 1;
-  while (cursor < body.length) {
-    cursor = skipSpaceAndComments(body, cursor);
-    if (body[cursor] === "}") {
-      cursor += 1;
-      break;
+  if (body[cursor] === "{") {
+    cursor += 1;
+    while (cursor < body.length) {
+      cursor = skipSpaceAndComments(body, cursor);
+      if (body[cursor] === "}") {
+        cursor += 1;
+        break;
+      }
+      let imported = readIdentifier(body, cursor);
+      if (!imported) return undefined;
+      let typeOnly = false;
+      if (imported.value === "type") {
+        typeOnly = true;
+        const named = readIdentifier(body, skipSpaceAndComments(body, imported.end));
+        if (!named) return undefined;
+        imported = named;
+      }
+      cursor = skipSpaceAndComments(body, imported.end);
+      let local = imported.value;
+      const asWord = readIdentifier(body, cursor);
+      if (asWord?.value === "as") {
+        const renamed = readIdentifier(body, asWord.end);
+        if (!renamed) return undefined;
+        local = renamed.value;
+        cursor = skipSpaceAndComments(body, renamed.end);
+      }
+      if (!typeOnly) pending.push({ name: local, imported: imported.value });
+      if (body[cursor] === ",") {
+        cursor += 1;
+        continue;
+      }
+      if (body[cursor] === "}") {
+        cursor += 1;
+        break;
+      }
+      return undefined;
     }
-    let imported = readIdentifier(body, cursor);
-    if (!imported) return undefined;
-    let typeOnly = false;
-    if (imported.value === "type") {
-      typeOnly = true;
-      const named = readIdentifier(body, skipSpaceAndComments(body, imported.end));
-      if (!named) return undefined;
-      imported = named;
-    }
-    cursor = skipSpaceAndComments(body, imported.end);
-    let local = imported.value;
-    const asWord = readIdentifier(body, cursor);
-    if (asWord?.value === "as") {
-      const renamed = readIdentifier(body, asWord.end);
-      if (!renamed) return undefined;
-      local = renamed.value;
-      cursor = skipSpaceAndComments(body, renamed.end);
-    }
-    if (!typeOnly) pending.push({ name: local, imported: imported.value });
-    if (body[cursor] === ",") {
-      cursor += 1;
-      continue;
-    }
-    if (body[cursor] === "}") {
-      cursor += 1;
-      break;
-    }
+  } else if (defaultLocal === undefined) {
     return undefined;
   }
   cursor = skipSpaceAndComments(body, cursor);
@@ -404,6 +421,10 @@ export function readImportRunnerAliases(
   for (const item of pending) {
     const kind = runnerKindForImport(spec.value, item.imported);
     if (kind) entries.push({ name: item.name, kind });
+  }
+  // `import register from "node:test"` is the test function. `bun:test` has no default runner.
+  if (defaultLocal !== undefined && spec.value === "node:test") {
+    entries.push({ name: defaultLocal, kind: "test" });
   }
   return { entries, namespaces: [], end: spec.end };
 }
@@ -441,11 +462,13 @@ function readDynamicRunnerImport(
 /**
  * `const { it: register } = await import("bun:test")` names `register` as `it`.
  * `const { it: register } = require("bun:test")` is the same binding.
- * A default, a nested pattern, or any other module is not a runner binding.
+ * `const { it: register } = runner` follows a namespace import of a runner module.
+ * A nested pattern or any other module is not a runner binding.
  */
 export function readDestructuredRunnerImport(
   body: string,
   index: number,
+  aliases: readonly RunnerAlias[] = [],
 ): { entries: Array<{ name: string; kind: RunnerKind }>; end: number } | undefined {
   if (body[index] !== "{") return undefined;
   const pending: Array<{ name: string; imported: string }> = [];
@@ -488,13 +511,25 @@ export function readDestructuredRunnerImport(
   if (body[cursor] !== "=") return undefined;
   const imported =
     readDynamicRunnerImport(body, cursor + 1) ?? readRunnerRequire(body, cursor + 1);
-  if (!imported) return undefined;
+  if (imported) {
+    const entries: Array<{ name: string; kind: RunnerKind }> = [];
+    for (const item of pending) {
+      const kind = runnerKindForImport(imported.spec, item.imported);
+      if (kind) entries.push({ name: item.name, kind });
+    }
+    return { entries, end: imported.end };
+  }
+  const ident = readIdentifier(body, cursor + 1);
+  if (!ident) return undefined;
+  const alias = aliasAt(aliases, ident.value);
+  if (!alias?.namespace || !alias.spec) return undefined;
+  if (!bindingBoundary(body, ident.end)) return undefined;
   const entries: Array<{ name: string; kind: RunnerKind }> = [];
   for (const item of pending) {
-    const kind = runnerKindForImport(imported.spec, item.imported);
+    const kind = runnerKindForImport(alias.spec, item.imported);
     if (kind) entries.push({ name: item.name, kind });
   }
-  return { entries, end: imported.end };
+  return { entries, end: ident.end };
 }
 
 /** `require("bun:test")`, including one pair of parentheses around the call. */

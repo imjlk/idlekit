@@ -126,7 +126,7 @@ function typescriptImportCandidates(base: string): string[] {
   return [];
 }
 
-function resolveExistingFile(base: string): string | undefined {
+function fileCandidates(base: string): string | undefined {
   const candidates = [
     base,
     ...typescriptImportCandidates(base),
@@ -144,6 +144,51 @@ function resolveExistingFile(base: string): string | undefined {
       return false;
     }
   });
+}
+
+/** The file Bun executes for a directory import. `exports` replaces `module` and `main`. */
+function directoryPackageFile(base: string): string | undefined {
+  let info: { isDirectory(): boolean };
+  try {
+    info = statSync(base);
+  } catch {
+    return undefined;
+  }
+  if (!info.isDirectory()) return undefined;
+  const manifest = join(base, "package.json");
+  if (!existsSync(manifest)) return undefined;
+  let parsed: { exports?: unknown; module?: unknown; main?: unknown };
+  try {
+    parsed = JSON.parse(readFileSync(manifest, "utf8")) as typeof parsed;
+  } catch {
+    return undefined;
+  }
+  const pkg: WorkspacePackage = {
+    name: "",
+    dir: base,
+    exports: parsed.exports,
+    module: typeof parsed.module === "string" ? parsed.module : undefined,
+    main: typeof parsed.main === "string" ? parsed.main : undefined,
+  };
+  const target = runtimePackageEntry(pkg);
+  if (!target) return undefined;
+  const resolved = resolve(base, target);
+  if (resolved === resolve(base)) return undefined;
+  return fileCandidates(resolved);
+}
+
+function resolveExistingFile(base: string): string | undefined {
+  let directory = false;
+  try {
+    directory = statSync(base).isDirectory();
+  } catch {
+    directory = false;
+  }
+  if (directory) {
+    const entry = directoryPackageFile(base);
+    if (entry) return entry;
+  }
+  return fileCandidates(base);
 }
 
 function resolveRelativeImport(fromFile: string, spec: string): string | undefined {
@@ -506,6 +551,13 @@ function packageEntry(pkg: WorkspacePackage, subpath: string): string | undefine
   if (pkg.exports !== undefined) return exportTarget(pkg.exports, subpath);
   if (subpath !== ".") return undefined;
   return pkg.types ?? pkg.module ?? pkg.main;
+}
+
+/** Runtime entry. Type declarations are not the file Bun loads for a directory import. */
+function runtimePackageEntry(pkg: WorkspacePackage): string | undefined {
+  if (pkg.exports !== undefined) return exportTarget(pkg.exports, ".");
+  if (pkg.module) return pkg.module;
+  return pkg.main;
 }
 
 function workspaceFile(startDir: string, spec: string): "none" | "file" | "missing" {
