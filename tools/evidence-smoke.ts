@@ -2127,11 +2127,70 @@ try {
     ).includes("runners") &&
     unresolvedRunnerCalls(
       [
+        "const hidden = { run: it };",
         "const runners = { ...hidden };",
         'runners.run("credited", unrelated);',
         'if (false) it("credited", citedExport);',
       ].join("\n"),
+    ).includes("runners") &&
+    unresolvedRunnerCalls(
+      [
+        "const hidden = { run: it };",
+        "const runners = { ...(hidden) };",
+        'runners.run("credited", unrelated);',
+        'if (false) it("credited", citedExport);',
+      ].join("\n"),
+    ).includes("runners") &&
+    unresolvedRunnerCalls(
+      [
+        "const hidden = { run: it };",
+        "const runners = { ...(hidden as Record<string, unknown>) };",
+        'runners.run("credited", unrelated);',
+        'if (false) it("credited", citedExport);',
+      ].join("\n"),
+    ).includes("runners") &&
+    unresolvedRunnerCalls(
+      [
+        "const hidden = { run: it };",
+        "const runners = { ...hidden! };",
+        'runners.run("credited", unrelated);',
+        'if (false) it("credited", citedExport);',
+      ].join("\n"),
+    ).includes("runners") &&
+    unresolvedRunnerCalls(
+      [
+        'import * as bt from "bun:test";',
+        "const runners = { ...bt };",
+        'runners.it("credited", unrelated);',
+        'if (false) bt.it("credited", citedExport);',
+      ].join("\n"),
     ).includes("runners");
+  const dataSpread = unresolvedRunnerCalls(
+    [
+      "const next = { ...prev, t: prev.t + 1 };",
+      "const total = next.wallet.money.amount;",
+      "const reversed = [...seeds].reverse();",
+      "reversed.every((seed) => seed > 0);",
+      "const step = (current) => ({ ...current, buys: 1 });",
+      "for (const test of cases) {",
+      "  const moved = { ...test, t: test.t + 1 };",
+      "  moved.wallet.money.amount;",
+      "}",
+      "const runnersWithData = { run: it, seeds: [1, 2] };",
+      "const copied = [...runnersWithData.seeds].reverse();",
+      "copied.every((seed) => seed > 0);",
+      "const optional = [...runnersWithData?.seeds].reverse();",
+      "optional.every((seed) => seed > 0);",
+      "for (const { test } of rows) {",
+      "  const row = { ...test };",
+      "  row.wallet;",
+      "}",
+      "function evolve(current) {",
+      "  return { ...current, vars: {} };",
+      "}",
+      'it("credited", citedExport);',
+    ].join("\n"),
+  );
   const spreadArray = unresolvedRunnerCalls(
     [
       "const runners = [...[it]];",
@@ -3052,6 +3111,7 @@ try {
     spreadArray &&
     plainSpread.length === 0 &&
     plainSpreadArray.length === 0 &&
+    dataSpread.length === 0 &&
     forwardedRunner &&
     propertyRunner &&
     propertyContainer &&
@@ -3185,6 +3245,7 @@ try {
       spreadArray,
       plainSpread,
       plainSpreadArray,
+      dataSpread,
       forwardedRunner,
       propertyRunner,
       propertyContainer,
