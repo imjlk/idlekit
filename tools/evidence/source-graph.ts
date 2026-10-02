@@ -307,10 +307,38 @@ function importBindsRequire(body: string, at: number): boolean {
       index += 1;
       continue;
     }
+    const after = skipSpaceAndComments(body, ident.end);
+    const equals =
+      body[after] === "=" && body[after + 1] !== "=" && body[after + 1] !== ">";
+    if (equals) {
+      if (ident.value === "require") binds = true;
+      index = skipImportEqualsRhs(body, after + 1);
+      continue;
+    }
     if (ident.value === "require") binds = true;
     index = ident.end;
   }
   return binds;
+}
+
+/** `import helper = require("./helper")` binds `helper`, not `require`. */
+function skipImportEqualsRhs(body: string, at: number): number {
+  let cursor = skipSpaceAndComments(body, at);
+  const name = readIdentifier(body, cursor);
+  if (name?.value === "require") {
+    cursor = skipSpaceAndComments(body, name.end);
+    if (body[cursor] === "<") {
+      const typeEnd = skipPair(body, cursor);
+      if (typeEnd < 0) return cursor + 1;
+      cursor = skipSpaceAndComments(body, typeEnd);
+    }
+    if (body[cursor] === "(") {
+      const close = skipPair(body, cursor);
+      return close < 0 ? cursor + 1 : close;
+    }
+  }
+  while (cursor < body.length && body[cursor] !== ";" && body[cursor] !== "\n") cursor += 1;
+  return cursor < body.length ? cursor + 1 : cursor;
 }
 
 function isParameterList(body: string, open: number, close: number): boolean {
@@ -447,6 +475,24 @@ function moduleBindsRequire(body: string): boolean {
   return false;
 }
 
+/** `import helper = require("./helper")` loads a module. A local `require` binding does not. */
+function importEqualsRequire(body: string, requireAt: number): boolean {
+  const equalsAt = previousCodeIndex(body, requireAt);
+  if (equalsAt < 0 || body[equalsAt] !== "=") return false;
+  if (body[equalsAt + 1] === "=" || body[equalsAt + 1] === ">") return false;
+  const nameEnd = previousCodeIndex(body, equalsAt);
+  if (nameEnd < 0) return false;
+  const name = wordEndingAt(body, nameEnd);
+  if (!name) return false;
+  const nameStart = nameEnd - name.value.length + 1;
+  if (memberReceiver(body, nameStart)) return false;
+  const beforeName = previousCodeIndex(body, nameStart);
+  if (beforeName < 0) return false;
+  const keyword = wordEndingAt(body, beforeName);
+  if (keyword?.value === "type") return false;
+  return keyword?.value === "import";
+}
+
 /** `require("./helper")`, a static template require, and `module.require`. */
 function localRequireCalls(
   body: string,
@@ -486,7 +532,11 @@ function localRequireCalls(
       continue;
     }
     const parameterShadow = parameterRanges.some(([from, to]) => index >= from && index < to);
-    if (moduleShadow || locallyBound(ranges, "require", index) || parameterShadow) {
+    const equalsImport = importEqualsRequire(body, index);
+    if (
+      !equalsImport &&
+      (moduleShadow || locallyBound(ranges, "require", index) || parameterShadow)
+    ) {
       const close = skipPair(body, open);
       index = close < 0 ? open + 1 : close;
       continue;

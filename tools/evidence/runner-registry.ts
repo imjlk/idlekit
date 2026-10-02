@@ -329,6 +329,11 @@ function collectRegistrations(
       index += 1;
       continue;
     }
+    if (char === "=" && body[index + 1] === ">") {
+      if (arrowReturnsRunner(body, index + 2, aliases)) unresolved.push("return");
+      index += 2;
+      continue;
+    }
     if (!/[A-Za-z_$]/.test(char)) {
       index += 1;
       continue;
@@ -356,6 +361,9 @@ function collectRegistrations(
       unresolved.push(word.value);
       index = word.end;
       continue;
+    }
+    if (word.value === "return" && returnedRunnerValue(body, word.end, aliases)) {
+      unresolved.push(word.value);
     }
     if (word.value === "for") {
       let next = skipSpaceAndComments(body, word.end);
@@ -574,12 +582,14 @@ function collectRegistrations(
         optionalRunnerCall(body, open) || optionalCallAfterGrouping(body, open);
       const forwarded = passedAsArgument(body, index, open);
       const storedOnProperty = assignedToProperty(body, index);
+      const returned = returnedFromFunction(body, index);
       if (
         isIndirectInvoke(body, index) ||
         closesThenCalls(body, open) ||
         optional ||
         forwarded ||
-        storedOnProperty
+        storedOnProperty ||
+        returned
       ) {
         unresolved.push(word.value);
       }
@@ -1093,6 +1103,81 @@ function closesThenCalls(body: string, index: number): boolean {
     cursor = skipWhitespace(body, cursor + 1);
   }
   return closes > 0 && body[cursor] === "(";
+}
+
+/** A newline outside a block comment ends `return`. An arrow may cross a newline. */
+function lineBreaksReturn(body: string, from: number, to: number): boolean {
+  const between = body.slice(from, to);
+  let index = 0;
+  while (index < between.length) {
+    if (between.startsWith("//", index)) return true;
+    if (between.startsWith("/*", index)) {
+      const close = between.indexOf("*/", index + 2);
+      if (close < 0) return true;
+      index = close + 2;
+      continue;
+    }
+    if (between[index] === "\n") return true;
+    index += 1;
+  }
+  return false;
+}
+
+/** Parenthesized `{ it }` / `[it]` still holds a runner. A call does not. */
+function runnerExpression(
+  body: string,
+  at: number,
+  aliases: readonly RunnerAlias[],
+): boolean {
+  let cursor = skipSpaceAndComments(body, at);
+  for (let guard = 0; guard < 4; guard += 1) {
+    if (body[cursor] !== "(") break;
+    const inner = skipSpaceAndComments(body, cursor + 1);
+    const grouped = body[inner] === "{" || body[inner] === "[" || body[inner] === "(";
+    if (!grouped) break;
+    cursor = inner;
+  }
+  return valueHoldsRunner(body, cursor, aliases);
+}
+
+/** `return it` and `return { it }`. A newline after `return` is a different statement. */
+function returnedRunnerValue(
+  body: string,
+  at: number,
+  aliases: readonly RunnerAlias[],
+): boolean {
+  const valueAt = skipSpaceAndComments(body, at);
+  if (lineBreaksReturn(body, at, valueAt)) return false;
+  return runnerExpression(body, valueAt, aliases);
+}
+
+/** `() => it` returns a runner. `() => { ... }` is a block, not a value. */
+function arrowReturnsRunner(
+  body: string,
+  at: number,
+  aliases: readonly RunnerAlias[],
+): boolean {
+  const cursor = skipSpaceAndComments(body, at);
+  if (body[cursor] === "{") return false;
+  return runnerExpression(body, cursor, aliases);
+}
+
+/** `return it`, `return (it)`, and `() => it`. `const name = it` stays a binding. */
+function returnedFromFunction(body: string, wordStart: number): boolean {
+  let cursor = wordStart;
+  for (let guard = 0; guard < 8; guard += 1) {
+    const prev = previousCodeIndex(body, cursor);
+    if (prev < 0) return false;
+    if (body[prev] === "(") {
+      cursor = prev;
+      continue;
+    }
+    if (body[prev] === ">" && prev > 0 && body[prev - 1] === "=") return true;
+    const word = wordEndingAt(body, prev);
+    if (word?.value !== "return") return false;
+    return !lineBreaksReturn(body, prev + 1, cursor);
+  }
+  return false;
 }
 
 /** `obj.prop = it` and `obj["prop"] = it`. A plain `const name = it` stays a binding. */

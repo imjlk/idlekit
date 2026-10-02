@@ -883,6 +883,7 @@ try {
   let packageRequire = false;
   let commentRequire = false;
   let shadowedRequire = false;
+  let importEquals = false;
   let commentImport = false;
   let relativeTypeSkipped = false;
   let dynamicImport = false;
@@ -1119,6 +1120,22 @@ try {
       commentBinding.includes("./missing-comment.ts") &&
       destructuredRequire.length === 0 &&
       defaultRequire.includes("./missing-default.ts");
+    writeFileSync(requireHost, 'import helper = require("./required-helper");\n');
+    const equalsBodies = sourceGraph([requireHost]);
+    const equalsResolved = equalsBodies.some((body) => body.includes("from-required-helper"));
+    writeFileSync(requireHost, 'import helper = require("./missing-equals");\n');
+    const equalsFault = unresolvedLocalRequires([requireHost]).includes("./missing-equals");
+    writeFileSync(
+      requireHost,
+      [
+        'import helper = require("./required-helper");',
+        'require("./missing-after-equals.ts");',
+      ].join("\n"),
+    );
+    const equalsKeepsCall = unresolvedLocalRequires([requireHost]).includes(
+      "./missing-after-equals.ts",
+    );
+    importEquals = equalsResolved && equalsFault && equalsKeepsCall;
     writeFileSync(
       requireHelper,
       [
@@ -2001,6 +2018,35 @@ try {
   const typeLocal = unresolvedRunnerCalls(
     ['import { type run } from "./host.ts";', 'run("credited", unrelated);'].join("\n"),
   );
+  const returnedRunner =
+    unresolvedRunnerCalls(
+      [
+        "const get = () => it;",
+        'get()("credited", unrelated);',
+        'if (false) it("credited", citedExport);',
+      ].join("\n"),
+    ).includes("it") &&
+    unresolvedRunnerCalls(["const get = () =>", "  it;"].join("\n")).includes("it") &&
+    unresolvedRunnerCalls(
+      [
+        "function get() {",
+        "  return it;",
+        "}",
+        'get()("credited", unrelated);',
+      ].join("\n"),
+    ).includes("it") &&
+    unresolvedRunnerCalls("function get() {\n  return (it);\n}").includes("it") &&
+    unresolvedRunnerCalls("const get = () => it.only;").includes("it");
+  const returnedContainer = unresolvedRunnerCalls(
+    "const get = () => ({ it });",
+  ).includes("return");
+  const calledArrow = 'const get = () => it("credited", citedExport);';
+  const returnedCall =
+    unresolvedRunnerCalls(calledArrow).length === 0 &&
+    registeredSuites(calledArrow, "citedExport", "credited").length === 1;
+  const returnedAsi = unresolvedRunnerCalls(
+    ["function get() {", "  return", "  it;", "}"].join("\n"),
+  );
   const sameFileExport = registeredSuites(
     ["export const run = it;", 'run("credited", citedExport);'].join("\n"),
     "citedExport",
@@ -2659,6 +2705,7 @@ try {
     unresolvedRequire &&
     dynamicRequire &&
     shadowedRequire &&
+    importEquals &&
     packageRequire &&
     commentRequire &&
     dynamicImport &&
@@ -2703,6 +2750,10 @@ try {
     localUnused.length === 0 &&
     typeLocal.length === 0 &&
     sameFileExport.length === 1 &&
+    returnedRunner &&
+    returnedContainer &&
+    returnedCall &&
+    returnedAsi.length === 0 &&
     commentImport &&
     relativeTypeSkipped &&
     sourceLock &&
@@ -2819,7 +2870,12 @@ try {
       localUnused,
       typeLocal,
       sameFileExport,
+      returnedRunner,
+      returnedContainer,
+      returnedCall,
+      returnedAsi,
       shadowedRequire,
+      importEquals,
       commentImport,
       relativeTypeSkipped,
       sourceLock,
