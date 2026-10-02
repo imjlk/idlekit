@@ -27,7 +27,7 @@ export type RunnerAlias = {
   namespace?: boolean;
   /** Runner module of a namespace import, such as `bun:test` or `node:test`. */
   spec?: string;
-  /** `const runners = { it }` stores a runner where member calls bypass the scanner. */
+  /** `{ it }` or `[it]` stores a runner where member calls bypass the scanner. */
   objectRunner?: boolean;
 };
 
@@ -58,7 +58,8 @@ function bindingBoundary(body: string, index: number): boolean {
     char === ";" ||
     char === ")" ||
     char === "}" ||
-    char === "{"
+    char === "{" ||
+    char === "]"
   ) {
     return true;
   }

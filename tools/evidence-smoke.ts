@@ -875,6 +875,7 @@ try {
   let dynamicRequire = false;
   let packageRequire = false;
   let commentRequire = false;
+  let commentImport = false;
   let dynamicImport = false;
   let unresolvedImport = false;
   let packageImport = false;
@@ -944,6 +945,38 @@ try {
     const requireBodies = sourceGraph([requireHost]);
     requireDuplicate = duplicateFullNamesAcross(requireBodies).includes("credited");
     requireResolved = requireBodies.some((body) => body.includes("from-required-helper"));
+    writeFileSync(
+      requireHost,
+      [
+        'import { register } from /* note */ "./required-helper";',
+        'if (false) it("credited", citedExport);',
+      ].join("\n"),
+    );
+    const blockBodies = sourceGraph([requireHost]);
+    const blockImport =
+      blockBodies.length === 2 && duplicateFullNamesAcross(blockBodies).includes("credited");
+    writeFileSync(
+      requireHost,
+      [
+        "import { register } from // note",
+        '  "./required-helper";',
+        'if (false) it("credited", citedExport);',
+      ].join("\n"),
+    );
+    const lineBodies = sourceGraph([requireHost]);
+    const lineImport =
+      lineBodies.length === 2 && duplicateFullNamesAcross(lineBodies).includes("credited");
+    writeFileSync(
+      requireHost,
+      [
+        'import /* note */ "./required-helper";',
+        'if (false) it("credited", citedExport);',
+      ].join("\n"),
+    );
+    const sideBodies = sourceGraph([requireHost]);
+    const sideImport =
+      sideBodies.length === 2 && duplicateFullNamesAcross(sideBodies).includes("credited");
+    commentImport = blockImport && lineImport && sideImport;
     writeFileSync(
       requireHost,
       ['module.require("./required-helper");', 'if (false) it("credited", citedExport);'].join(
@@ -1709,6 +1742,29 @@ try {
       'if (false) it("credited", citedExport);',
     ].join("\n"),
   );
+  const arrayRunner =
+    unresolvedRunnerCalls(
+      [
+        "const runners = [it.only];",
+        'runners[0]("credited", unrelated);',
+        'if (false) it("credited", citedExport);',
+      ].join("\n"),
+    ).includes("runners") &&
+    unresolvedRunnerCalls(
+      [
+        "const register = it;",
+        "const runners = [register];",
+        'runners?.[0]("credited", unrelated);',
+        'if (false) it("credited", citedExport);',
+      ].join("\n"),
+    ).includes("runners");
+  const plainArray = unresolvedRunnerCalls(
+    [
+      'const runners = ["kept"];',
+      'runners[0]("credited", unrelated);',
+      'if (false) it("credited", citedExport);',
+    ].join("\n"),
+  );
   const laterBody = [
     'describe("suite", liveSuite);',
     "function liveSuite() {",
@@ -2343,6 +2399,9 @@ try {
     objectRunner &&
     renamedObject &&
     plainObject.length === 0 &&
+    arrayRunner &&
+    plainArray.length === 0 &&
+    commentImport &&
     laterLive &&
     pendingHeld &&
     missingSuite.length === 1 &&
@@ -2439,6 +2498,9 @@ try {
       objectRunner,
       renamedObject,
       plainObject,
+      arrayRunner,
+      plainArray,
+      commentImport,
       mockModule,
       mockSpaced,
       mockOptional,

@@ -79,6 +79,46 @@ function skipObjectValue(body: string, index: number, limit: number): number {
   return cursor;
 }
 
+/** An array or object element that stores a runner, including one nested inside. */
+function valueHoldsRunner(
+  body: string,
+  at: number,
+  aliases: readonly RunnerAlias[],
+): boolean {
+  const cursor = skipSpaceAndComments(body, at);
+  if (body[cursor] === "[") return arrayHoldsRunner(body, cursor, aliases);
+  if (body[cursor] === "{") return objectHoldsRunner(body, cursor, aliases);
+  return readRunnerRef(body, at, aliases) !== undefined;
+}
+
+/** `[it]` or `[register]` keeps a runner behind an index call. */
+function arrayHoldsRunner(
+  body: string,
+  open: number,
+  aliases: readonly RunnerAlias[],
+): boolean {
+  const bracket = skipSpaceAndComments(body, open);
+  if (body[bracket] !== "[") return false;
+  const close = skipBracketGroup(body, bracket);
+  if (close < 0) return false;
+  let index = bracket + 1;
+  while (index < close - 1) {
+    index = skipSpaceAndComments(body, index);
+    if (index >= close - 1) return false;
+    if (body[index] === ",") {
+      index += 1;
+      continue;
+    }
+    if (body.startsWith("...", index)) {
+      index = skipObjectValue(body, index + 3, close);
+      continue;
+    }
+    if (valueHoldsRunner(body, index, aliases)) return true;
+    index = skipObjectValue(body, index, close);
+  }
+  return false;
+}
+
 /** `{ it }` or `{ run: it }` keeps a runner behind a property access. */
 function objectHoldsRunner(
   body: string,
@@ -106,7 +146,7 @@ function objectHoldsRunner(
       index = body[bracketEnd] === "]" ? bracketEnd + 1 : bracketEnd;
       index = skipSpaceAndComments(body, index);
       if (body[index] !== ":") continue;
-      if (readRunnerRef(body, index + 1, aliases)) return true;
+      if (valueHoldsRunner(body, index + 1, aliases)) return true;
       index = skipObjectValue(body, index + 1, close);
       continue;
     }
@@ -115,7 +155,7 @@ function objectHoldsRunner(
       index = quoted ? quoted.end : index + 1;
       index = skipSpaceAndComments(body, index);
       if (body[index] !== ":") continue;
-      if (readRunnerRef(body, index + 1, aliases)) return true;
+      if (valueHoldsRunner(body, index + 1, aliases)) return true;
       index = skipObjectValue(body, index + 1, close);
       continue;
     }
@@ -131,7 +171,7 @@ function objectHoldsRunner(
       continue;
     }
     if (body[after] === ":") {
-      if (readRunnerRef(body, after + 1, aliases)) return true;
+      if (valueHoldsRunner(body, after + 1, aliases)) return true;
       index = skipObjectValue(body, after + 1, close);
       continue;
     }
@@ -384,7 +424,11 @@ function collectRegistrations(
     }
     const alias = aliasAt(aliases, word.value);
     const assigned = assignmentAt(body, word.end);
-    if (assigned?.plain && objectHoldsRunner(body, assigned.at + 1, aliases)) {
+    const storedRunner =
+      assigned?.plain === true &&
+      (objectHoldsRunner(body, assigned.at + 1, aliases) ||
+        arrayHoldsRunner(body, assigned.at + 1, aliases));
+    if (storedRunner) {
       aliases.push({
         name: word.value,
         kind: undefined,

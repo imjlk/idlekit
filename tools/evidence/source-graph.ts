@@ -3,7 +3,6 @@ import { dirname, join, resolve } from "path";
 
 import {
   argumentBoundary,
-  insideSpan,
   readIdentifier,
   readQuoted,
   readStaticTemplate,
@@ -136,9 +135,53 @@ function importCalls(
   return found;
 }
 
-const RELATIVE_IMPORT = /(?:from\s+|import\s*\(\s*|import\s+)["'](\.[^"']+)["']/g;
-const NON_RELATIVE_IMPORT = /(?:from\s+|import\s*\(\s*|import\s+)["']([^."'][^"']*)["']/g;
 const PACKAGE_SIGNAL = /\b(?:it|test|describe|eval|Function)\s*\(|\bplugin\b/;
+
+/** Static `from` and side-effect `import` specifiers. Comments may sit before the string. */
+function staticImportSpecifiers(
+  body: string,
+  hidden: ReadonlyArray<readonly [number, number]>,
+): Array<{ spec: string; at: number }> {
+  const found: Array<{ spec: string; at: number }> = [];
+  let index = 0;
+  while (index < body.length) {
+    const hiddenEnd = spanEndAt(hidden, index);
+    if (hiddenEnd >= 0) {
+      index = hiddenEnd;
+      continue;
+    }
+    if (body.startsWith("//", index) || body.startsWith("/*", index)) {
+      const next = skipSpaceAndComments(body, index);
+      index = next > index ? next : index + 1;
+      continue;
+    }
+    if (body[index] === "/" && regexCanStart(body, index)) {
+      const next = skipRegex(body, index);
+      index = next > index ? next : index + 1;
+      continue;
+    }
+    const ident = readIdentifier(body, index);
+    if (!ident || ident.end <= index) {
+      index += 1;
+      continue;
+    }
+    const start = ident.end - ident.value.length;
+    const previous = body[start - 1];
+    const member =
+      previous === "." || (previous !== undefined && /[A-Za-z0-9_$]/.test(previous));
+    const clause = ident.value === "from" || ident.value === "import";
+    if (clause && !member) {
+      const quoted = readQuoted(body, skipSpaceAndComments(body, ident.end));
+      if (quoted) {
+        found.push({ spec: quoted.value, at: start });
+        index = quoted.end;
+        continue;
+      }
+    }
+    index = ident.end;
+  }
+  return found;
+}
 
 /** Query suffixes are the file Bun loads. A fragment before `?` is not a file. */
 function importSpecifier(spec: string): { kind: "path"; spec: string } | { kind: "opaque" } {
@@ -952,28 +995,10 @@ function walkSources(files: readonly string[]): SourceWalk {
     const packaged = real.split(/[/\\]/).includes("node_modules");
     if (!packaged || publishPackageBody(body)) bodies.push(body);
     const hidden = stringSpans(body);
-    for (const match of body.matchAll(RELATIVE_IMPORT)) {
-      if (match.index !== undefined && insideSpan(hidden, match.index)) continue;
-      const spec = match[1];
-      if (!spec) continue;
-      const matched = match[0] ?? "";
-      if (
-        /^import\s*\(/.test(matched) &&
-        match.index !== undefined &&
-        !argumentBoundary(body, match.index + matched.length)
-      ) {
-        continue;
-      }
-      queueSpecifier(real, spec, "import", queue, faults, packageRoots, false);
-    }
-    for (const match of body.matchAll(NON_RELATIVE_IMPORT)) {
-      if (match.index !== undefined && insideSpan(hidden, match.index)) continue;
-      const spec = match[1];
-      if (!spec) continue;
-      const matched = match[0] ?? "";
-      if (/^import\s*\(/.test(matched)) continue;
-      if (typeOnlyImport(body, match.index ?? 0)) continue;
-      queueSpecifier(real, spec, "import", queue, faults, packageRoots, false);
+    for (const imported of staticImportSpecifiers(body, hidden)) {
+      const relative = imported.spec.startsWith(".");
+      if (!relative && typeOnlyImport(body, imported.at)) continue;
+      queueSpecifier(real, imported.spec, "import", queue, faults, packageRoots, false);
     }
     for (const required of localRequireCalls(body, hidden)) {
       if (required.kind === "dynamic") {
