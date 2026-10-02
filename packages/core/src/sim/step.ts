@@ -390,7 +390,8 @@ export function stepOnce<N, U extends string, Vars>(
       const cooldown = decidePrestigeCooldown({
         nowT: next.t,
         minIntervalSec: constraints?.minPrestigeIntervalSec,
-        lastResetT: constraints?.lastPrestigeResetT,
+        // A reset committed earlier in this tick is the newest anchor.
+        lastResetT: prestigeResetT ?? constraints?.lastPrestigeResetT,
       });
       if (cooldown.warning) {
         events.push({

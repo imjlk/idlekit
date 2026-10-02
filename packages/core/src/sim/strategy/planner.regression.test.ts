@@ -403,4 +403,30 @@ describe("prestige cooldown", () => {
     expect(resets[1]?.t).toBeCloseTo(10.5, 9);
     expect(run.end.prestige.count).toBe(2);
   });
+
+  it("blocks a second prestige committed earlier in the same step", () => {
+    const reset = resetAction();
+    const constraints: ScenarioConstraints = { minPrestigeIntervalSec: 60, lastPrestigeResetT: 0 };
+    const out = stepOnce({
+      ctx: context({ constraints }),
+      model: model([reset]),
+      state: state(0, 100),
+      dt: 1,
+      decisions: [{ action: reset }, { action: reset }],
+      constraints,
+    });
+    expect(out.next.prestige.count).toBe(1);
+    expect(out.prestigeResetT).toBe(100);
+    expect(out.events.filter((event) => event.type === "action.skipped" && event.reason === "cooldown").length).toBe(1);
+
+    const unanchored = stepOnce({
+      ctx: context({ constraints: { minPrestigeIntervalSec: 60 } }),
+      model: model([reset]),
+      state: state(0, 100),
+      dt: 1,
+      decisions: [{ action: reset }, { action: reset }],
+      constraints: { minPrestigeIntervalSec: 60 },
+    });
+    expect(unanchored.next.prestige.count).toBe(1);
+  });
 });
