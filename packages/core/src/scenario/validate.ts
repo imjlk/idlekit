@@ -264,7 +264,7 @@ function validateOfflineActions(issues: StandardIssue[], actions: unknown): void
   if (
     !Array.isArray(categories) ||
     categories.length === 0 ||
-    categories.some((item) => !OFFLINE_ACTION_CATEGORIES.has(String(item)))
+    categories.some((item) => typeof item !== "string" || !OFFLINE_ACTION_CATEGORIES.has(item))
   ) {
     pushIssue(
       issues,
@@ -275,7 +275,7 @@ function validateOfflineActions(issues: StandardIssue[], actions: unknown): void
   }
   if (actions.actors !== undefined) {
     const actors = actions.actors;
-    if (!Array.isArray(actors) || actors.some((item) => !OFFLINE_ACTORS.has(String(item)))) {
+    if (!Array.isArray(actors) || actors.some((item) => typeof item !== "string" || !OFFLINE_ACTORS.has(item))) {
       pushIssue(
         issues,
         "sim.offline.actions.actors must list player or automation when provided",
