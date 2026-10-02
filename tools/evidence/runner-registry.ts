@@ -195,6 +195,37 @@ function objectHoldsRunner(
   return false;
 }
 
+/** `carrier.run = it` and `carrier["run"] = it` store a runner behind a property. */
+function propertyAssignedRunner(
+  body: string,
+  index: number,
+  aliases: readonly RunnerAlias[],
+): boolean {
+  let cursor = skipSpaceAndComments(body, index);
+  let sawProperty = false;
+  while (cursor < body.length) {
+    if (body[cursor] === ".") {
+      const member = readIdentifier(body, skipSpaceAndComments(body, cursor + 1));
+      if (!member) return false;
+      sawProperty = true;
+      cursor = skipSpaceAndComments(body, member.end);
+      continue;
+    }
+    if (body[cursor] === "[") {
+      const close = skipBracketGroup(body, cursor);
+      if (close < 0) return false;
+      sawProperty = true;
+      cursor = skipSpaceAndComments(body, close);
+      continue;
+    }
+    break;
+  }
+  if (!sawProperty) return false;
+  const assigned = assignmentAt(body, cursor);
+  if (assigned?.plain !== true) return false;
+  return valueHoldsRunner(body, assigned.at + 1, aliases);
+}
+
 /** Every `it`/`test` title in this source, including ones inside a false condition. */
 function collectRegistrations(
   body: string,
@@ -321,6 +352,11 @@ function collectRegistrations(
       index = word.end;
       continue;
     }
+    if (propertyAssignedRunner(body, word.end, aliases)) {
+      unresolved.push(word.value);
+      index = word.end;
+      continue;
+    }
     if (word.value === "for") {
       let next = skipSpaceAndComments(body, word.end);
       const ahead = readIdentifier(body, next);
@@ -344,6 +380,9 @@ function collectRegistrations(
             namespace: true,
             spec: imported.moduleSpec,
           });
+        }
+        for (const name of imported.opaque ?? []) {
+          aliases.push({ name, kind: undefined, modifiers: [], depth });
         }
         index = imported.end;
         continue;
@@ -534,11 +573,13 @@ function collectRegistrations(
       const optional =
         optionalRunnerCall(body, open) || optionalCallAfterGrouping(body, open);
       const forwarded = passedAsArgument(body, index, open);
+      const storedOnProperty = assignedToProperty(body, index);
       if (
         isIndirectInvoke(body, index) ||
         closesThenCalls(body, open) ||
         optional ||
-        forwarded
+        forwarded ||
+        storedOnProperty
       ) {
         unresolved.push(word.value);
       }
@@ -1052,6 +1093,20 @@ function closesThenCalls(body: string, index: number): boolean {
     cursor = skipWhitespace(body, cursor + 1);
   }
   return closes > 0 && body[cursor] === "(";
+}
+
+/** `obj.prop = it` and `obj["prop"] = it`. A plain `const name = it` stays a binding. */
+function assignedToProperty(body: string, wordStart: number): boolean {
+  const equalsAt = previousCodeIndex(body, wordStart);
+  if (equalsAt < 0 || body[equalsAt] !== "=") return false;
+  if (body[equalsAt + 1] === "=" || body[equalsAt + 1] === ">") return false;
+  const lhsEnd = previousCodeIndex(body, equalsAt);
+  if (lhsEnd < 0) return false;
+  if (body[lhsEnd] === "]") return true;
+  const ident = wordEndingAt(body, lhsEnd);
+  if (!ident) return false;
+  const before = previousCodeIndex(body, ident.start);
+  return before >= 0 && body[before] === ".";
 }
 
 /** `register(it)` forwards the runner into a helper parameter the scanner cannot see. */

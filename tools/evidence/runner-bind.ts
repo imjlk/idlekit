@@ -354,6 +354,8 @@ export function readImportRunnerAliases(
 ): {
   entries: Array<{ name: string; kind: RunnerKind }>;
   namespaces: string[];
+  /** Local names imported from `./` or `../`. A title call through one is unresolved. */
+  opaque?: string[];
   moduleSpec?: string;
   end: number;
 } | undefined {
@@ -429,7 +431,12 @@ export function readImportRunnerAliases(
   if (fromWord?.value !== "from") return undefined;
   const spec = readQuoted(body, fromWord.end) ?? readStaticTemplate(body, fromWord.end);
   if (!spec) return undefined;
-  if (!runnerModuleSpec(spec.value)) return { entries: [], namespaces: [], end: spec.end };
+  if (!runnerModuleSpec(spec.value)) {
+    if (!relativeModuleSpec(spec.value)) return { entries: [], namespaces: [], end: spec.end };
+    const opaque = pending.map((item) => item.name);
+    if (defaultLocal !== undefined) opaque.push(defaultLocal);
+    return { entries: [], namespaces: [], opaque, end: spec.end };
+  }
   const entries: Array<{ name: string; kind: RunnerKind }> = [];
   for (const item of pending) {
     const kind = runnerKindForImport(spec.value, item.imported);
@@ -444,6 +451,10 @@ export function readImportRunnerAliases(
 
 function runnerModuleSpec(spec: string): boolean {
   return spec === "bun:test" || spec === "node:test";
+}
+
+function relativeModuleSpec(spec: string): boolean {
+  return spec.startsWith("./") || spec.startsWith("../");
 }
 
 /**

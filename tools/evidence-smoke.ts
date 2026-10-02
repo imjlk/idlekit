@@ -1925,6 +1925,87 @@ try {
       'if (false) it("credited", citedExport);',
     ].join("\n"),
   ).includes("it");
+  const propertyRunner =
+    unresolvedRunnerCalls(
+      [
+        "const carrier = globalThis;",
+        "carrier.run = it;",
+        'carrier.run("credited", unrelated);',
+        'if (false) it("credited", citedExport);',
+      ].join("\n"),
+    ).includes("it") &&
+    unresolvedRunnerCalls(
+      [
+        "const carrier = globalThis;",
+        "carrier.run = it.only;",
+        'carrier.run("credited", unrelated);',
+        'if (false) it("credited", citedExport);',
+      ].join("\n"),
+    ).includes("it") &&
+    unresolvedRunnerCalls(
+      [
+        "const carrier = globalThis;",
+        'carrier["run"] = it;',
+        'if (false) it("credited", citedExport);',
+      ].join("\n"),
+    ).includes("it");
+  const propertyContainer =
+    unresolvedRunnerCalls(
+      [
+        "const carrier = globalThis;",
+        "carrier.run = { it };",
+        'if (false) it("credited", citedExport);',
+      ].join("\n"),
+    ).includes("carrier") &&
+    unresolvedRunnerCalls(
+      [
+        "const carrier = globalThis;",
+        "carrier.run = [it];",
+        'if (false) it("credited", citedExport);',
+      ].join("\n"),
+    ).includes("carrier");
+  const plainProperty = unresolvedRunnerCalls(
+    [
+      "const carrier = globalThis;",
+      "carrier.run = kept;",
+      'carrier.run("credited", unrelated);',
+      'if (false) it("credited", citedExport);',
+    ].join("\n"),
+  );
+  const plainAssignBody = [
+    "let register = kept;",
+    "register = it;",
+    'register("credited", citedExport);',
+  ].join("\n");
+  const plainAssign =
+    unresolvedRunnerCalls(plainAssignBody).length === 0 &&
+    registeredSuites(plainAssignBody, "citedExport", "credited").length === 1;
+  const localRunner =
+    unresolvedRunnerCalls(
+      ['import { run } from "./host.ts";', 'run("credited", unrelated);'].join("\n"),
+    ).includes("run") &&
+    unresolvedRunnerCalls(
+      ['import run from "../host.ts";', 'run("credited", unrelated);'].join("\n"),
+    ).includes("run") &&
+    unresolvedRunnerCalls(
+      ['import { run as register } from "./host.ts";', 'register("credited", unrelated);'].join(
+        "\n",
+      ),
+    ).includes("register");
+  const packageCall = unresolvedRunnerCalls(
+    ['import { readFile } from "fs";', 'readFile("a", "utf8");'].join("\n"),
+  );
+  const localUnused = unresolvedRunnerCalls(
+    ['import { helper } from "./helper.ts";', "helper(1, 2);"].join("\n"),
+  );
+  const typeLocal = unresolvedRunnerCalls(
+    ['import { type run } from "./host.ts";', 'run("credited", unrelated);'].join("\n"),
+  );
+  const sameFileExport = registeredSuites(
+    ["export const run = it;", 'run("credited", citedExport);'].join("\n"),
+    "citedExport",
+    "credited",
+  );
   const laterBody = [
     'describe("suite", liveSuite);',
     "function liveSuite() {",
@@ -2613,6 +2694,15 @@ try {
     plainSpread.length === 0 &&
     plainSpreadArray.length === 0 &&
     forwardedRunner &&
+    propertyRunner &&
+    propertyContainer &&
+    plainProperty.length === 0 &&
+    plainAssign &&
+    localRunner &&
+    packageCall.length === 0 &&
+    localUnused.length === 0 &&
+    typeLocal.length === 0 &&
+    sameFileExport.length === 1 &&
     commentImport &&
     relativeTypeSkipped &&
     sourceLock &&
@@ -2720,6 +2810,15 @@ try {
       plainSpread,
       plainSpreadArray,
       forwardedRunner,
+      propertyRunner,
+      propertyContainer,
+      plainProperty,
+      plainAssign,
+      localRunner,
+      packageCall,
+      localUnused,
+      typeLocal,
+      sameFileExport,
       shadowedRequire,
       commentImport,
       relativeTypeSkipped,
