@@ -273,6 +273,12 @@ function pathsForFile(file: string): PathConfig | null {
   return config;
 }
 
+function substituteStar(pattern: string, wild: string): string {
+  const star = pattern.indexOf("*");
+  if (star < 0) return pattern;
+  return pattern.slice(0, star) + wild + pattern.slice(star + 1);
+}
+
 function mappedPathFile(spec: string, config: PathConfig): string | undefined {
   let winner: { score: number; wild: string; replacements: string[] } | undefined;
   for (const [pattern, replacements] of Object.entries(config.paths)) {
@@ -297,7 +303,7 @@ function mappedPathFile(spec: string, config: PathConfig): string | undefined {
   }
   if (!winner) return undefined;
   for (const replacement of winner.replacements) {
-    const target = replacement.replace("*", winner.wild);
+    const target = substituteStar(replacement, winner.wild);
     const file = resolveExistingFile(resolve(config.baseDir, target));
     if (!file) continue;
     let real = file;
@@ -485,7 +491,7 @@ function exportTarget(exportsField: unknown, subpath: string): string | undefine
     if (!raw) continue;
     const wild = subpath.slice(prefix.length, subpath.length - suffix.length);
     if (winner && prefix.length <= winner.score) continue;
-    winner = { score: prefix.length, target: raw.replace("*", wild) };
+    winner = { score: prefix.length, target: substituteStar(raw, wild) };
   }
   return winner?.target;
 }
