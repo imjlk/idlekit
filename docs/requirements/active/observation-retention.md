@@ -18,7 +18,7 @@ A reward is a positive applied or flushed amount. A zero apply is not a reward. 
 
 Milestone and goal samples have separate caps. A drop makes coverage `partial`. An unreached goal has no `t`. A reached goal stores the step end. `goal.met` sees a clone of the committed state. Observer callbacks receive plain facts. A callback throw becomes `ObservationError`, and that run does not return a successful result. Reset transitions are not observed here. That wiring is `PR-10`.
 
-`createEventBuffer` remains the event log. `createBoundedLog` is only the optional trace and action-row budget. An unlimited trace still ends through `finishTrace`: the first state, the final state, and no duplicate final.
+`createEventBuffer` remains the event log. `createBoundedLog` is only the optional trace and action-row budget. `simulateSessionPattern` applies `trace.maxPoints` and `trace.maxActions` to the whole session and reports `traceLog` and `actionsLogMeta` the way a single run does. An unlimited trace still ends through `finishTrace`: the first state, the final state, and no duplicate final.
 
 The executed test is `keepsStatsIndependentOfRetention` in `packages/core/src/sim/observation.test.ts`. The repro label is `0x7105`. The runs do not draw from that label.
 

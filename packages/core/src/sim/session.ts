@@ -1,7 +1,7 @@
 import type { OfflineActionPolicy } from "../scenario/offlinePolicy";
 import { analyzeUX } from "./analysis/ux";
 import { constraintsWithAnchor } from "./constraints";
-import { createEventBuffer } from "./eventBuffer";
+import { createBoundedLog, createEventBuffer } from "./eventBuffer";
 import { mergeObservations, observationFromLegacyEvents, statsFromObservation, type RunObservation } from "./observation";
 import { applyOfflineSeconds, type OfflineRunResult } from "./offline";
 import { runScenario } from "./simulator";
@@ -223,8 +223,14 @@ export function simulateSessionPattern<N, U extends string, Vars>(args: {
   const horizonSec = args.pattern.days * 86400;
   const startT = start.t;
   const segments: SessionSegment<N, U, Vars>[] = [];
-  const trace: SimState<N, U, Vars>[] = [];
-  const actionsLog: Array<{ t: number; actionId: string; label?: string; bulkSize?: number }> = [];
+  // The caller's trace budgets bound the whole session, not each block.
+  const traceBudget = sc.run.trace?.maxPoints;
+  const actionBudget = sc.run.trace?.maxActions;
+  const trace = createBoundedLog<SimState<N, U, Vars>>(traceBudget);
+  const actionsLog = createBoundedLog<{ t: number; actionId: string; label?: string; bulkSize?: number }>(actionBudget);
+  let lastTraceT: number | undefined;
+  let segmentTraceDropped = 0;
+  let segmentActionsDropped = 0;
   const eventBuffer = createEventBuffer<N>({
     enabled: sc.run.eventLog?.enabled ?? true,
     maxEvents: sc.run.eventLog?.maxEvents,
@@ -346,7 +352,7 @@ export function simulateSessionPattern<N, U extends string, Vars>(args: {
       run: {
         ...segment.run,
         durationSec: block.durationSec,
-        trace: { everySteps: 1, keepActionsLog: true },
+        trace: { ...sc.run.trace, everySteps: 1, keepActionsLog: true },
         eventLog: {
           enabled: sc.run.eventLog?.enabled ?? true,
           maxEvents: sc.run.eventLog?.maxEvents,
@@ -358,14 +364,14 @@ export function simulateSessionPattern<N, U extends string, Vars>(args: {
     activeSec += simulated;
     activeBlocks += 1;
     retainRun(activeRun);
-    if (activeRun.trace?.length) {
-      if (trace.length > 0 && activeRun.trace[0]?.t === trace[trace.length - 1]?.t) {
-        trace.push(...activeRun.trace.slice(1));
-      } else {
-        trace.push(...activeRun.trace);
-      }
+    const points = activeRun.trace ?? [];
+    for (let i = points.length > 0 && points[0]!.t === lastTraceT ? 1 : 0; i < points.length; i += 1) {
+      trace.push(points[i]!);
     }
-    if (activeRun.actionsLog?.length) actionsLog.push(...activeRun.actionsLog);
+    if (points.length > 0) lastTraceT = points[points.length - 1]!.t;
+    segmentTraceDropped += activeRun.traceLog?.dropped ?? 0;
+    for (const row of activeRun.actionsLog ?? []) actionsLog.push(row);
+    segmentActionsDropped += activeRun.actionsLogMeta?.dropped ?? 0;
     segments.push({
       kind: "active",
       day: block.day,
@@ -395,16 +401,38 @@ export function simulateSessionPattern<N, U extends string, Vars>(args: {
   const observation = mergeObservations(segmentObservations);
   const stats = statsFromObservation(observation);
   const retained = eventBuffer.snapshot();
+  const traced = trace.snapshot();
+  const logged = actionsLog.snapshot();
   const run: RunResult<N, U, Vars> = {
     start,
     end: state,
     events: retained.events,
     eventTimeline: retained.eventTimeline,
-    trace,
-    actionsLog,
+    trace: traced.items,
+    actionsLog: logged.items,
     stats,
     uxFlags: analyzeUX(stats),
     observation,
+    ...(traceBudget !== undefined
+      ? {
+          traceLog: {
+            maxPoints: traceBudget,
+            totalSeen: traced.totalSeen + segmentTraceDropped,
+            dropped: traced.dropped + segmentTraceDropped,
+            retained: traced.retained,
+          },
+        }
+      : {}),
+    ...(actionBudget !== undefined
+      ? {
+          actionsLogMeta: {
+            maxActions: actionBudget,
+            totalSeen: logged.totalSeen + segmentActionsDropped,
+            dropped: logged.dropped + segmentActionsDropped,
+            retained: logged.retained,
+          },
+        }
+      : {}),
     eventLog: retained.eventLog,
   };
 

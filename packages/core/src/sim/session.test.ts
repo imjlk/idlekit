@@ -607,4 +607,37 @@ describe("session segments", () => {
     });
     expect(mc.results[0]?.metrics).toEqual([1, 1]);
   });
+
+  it("keeps the caller's trace and action budgets on a session", () => {
+    const buyEveryStep: Strategy<number, UnitCode, ClockVars> = {
+      id: "buy-every-step",
+      decide(ctx, model, state) {
+        return model.actions(ctx, state).map((action) => ({ action }));
+      },
+    };
+    const base = clockScenario({ income: 1, actions: [buyAction("buy", "bought", "player")], strategy: buyEveryStep });
+    const bounded = runPattern(
+      { ...base, run: { ...base.run, trace: { maxPoints: 5, maxActions: 2 } } },
+      { id: "short-bursts", days: 1 },
+    );
+    expect(bounded.summary.activeBlocks).toBe(10);
+    expect(bounded.run.trace).toHaveLength(5);
+    expect(bounded.run.trace?.at(-1)?.t).toBe(bounded.segments.at(-2)?.endT);
+    expect(bounded.run.traceLog).toEqual({ maxPoints: 5, totalSeen: 610, dropped: 605, retained: 5 });
+    expect(bounded.run.actionsLog).toHaveLength(2);
+    const activeBuys = bounded.segments
+      .filter((segment) => segment.kind === "active")
+      .reduce((sum, segment) => sum + (segment.run.stats?.actions.applied ?? 0), 0);
+    expect(bounded.run.actionsLogMeta).toEqual({ maxActions: 2, totalSeen: activeBuys, dropped: activeBuys - 2, retained: 2 });
+    for (const segment of bounded.segments) {
+      if (segment.kind === "active") expect(segment.run.trace?.length ?? 0).toBeLessThanOrEqual(5);
+    }
+
+    const unbounded = runPattern(base, { id: "short-bursts", days: 1 });
+    expect(unbounded.run.trace).toHaveLength(610);
+    expect(unbounded.run.actionsLog).toHaveLength(activeBuys);
+    expect(unbounded.run.traceLog).toBeUndefined();
+    expect(unbounded.run.actionsLogMeta).toBeUndefined();
+    expect(unbounded.end.vars.bought).toBe(bounded.end.vars.bought);
+  });
 });
