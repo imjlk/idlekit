@@ -1,5 +1,6 @@
 import type { OfflineActionPolicy } from "../scenario/offlinePolicy";
 import { analyzeUX } from "./analysis/ux";
+import { constraintsWithAnchor } from "./constraints";
 import { createEventBuffer } from "./eventBuffer";
 import { mergeObservations, observationFromLegacyEvents, statsFromObservation, type RunObservation } from "./observation";
 import { applyOfflineSeconds, type OfflineRunResult } from "./offline";
@@ -230,6 +231,7 @@ export function simulateSessionPattern<N, U extends string, Vars>(args: {
   });
   const segmentObservations: RunObservation[] = [];
   let state = start;
+  let lastResetT: number | undefined;
   let wallT = startT;
   let activeSec = 0;
   let offlineElapsedSec = 0;
@@ -244,6 +246,20 @@ export function simulateSessionPattern<N, U extends string, Vars>(args: {
     originalUntil !== undefined || goals.length > 0
       ? (next: SimState<N, U, Vars>) => (originalUntil?.(next) ?? false) || goals.some((goal) => goal.met(next))
       : undefined;
+
+  const onPrestigeReset = (t: number) => {
+    lastResetT = t;
+    sc.run.onPrestigeReset?.(t);
+  };
+  // Each segment starts from the last committed reset of an earlier segment.
+  const segmentScenario = (wallStart: number, wallEnd: number): CompiledScenario<N, U, Vars> => {
+    const base = withClocks(sc, wallStart, wallEnd, state.t, activeSec);
+    return {
+      ...base,
+      ...(lastResetT !== undefined ? { constraints: constraintsWithAnchor(base.constraints, lastResetT) } : {}),
+      run: { ...base.run, onPrestigeReset },
+    };
+  };
 
   const retainRun = (run: RunResult<N, U, Vars>) => {
     segmentObservations.push(
@@ -271,7 +287,7 @@ export function simulateSessionPattern<N, U extends string, Vars>(args: {
     const requested = wallEnd - wallT;
     const wallStart = wallT;
     const offlineRun = applyOfflineSeconds({
-      scenario: withClocks(sc, wallStart, wallEnd, state.t, activeSec),
+      scenario: segmentScenario(wallStart, wallEnd),
       seconds: requested,
       options: {
         fromState: state,
@@ -323,11 +339,12 @@ export function simulateSessionPattern<N, U extends string, Vars>(args: {
 
     const wallStart = wallT;
     const plannedEnd = wallStart + block.durationSec;
+    const segment = segmentScenario(wallStart, plannedEnd);
     const activeRun = runScenario({
-      ...withClocks(sc, wallStart, plannedEnd, state.t, activeSec),
+      ...segment,
       initial: state,
       run: {
-        ...sc.run,
+        ...segment.run,
         durationSec: block.durationSec,
         trace: { everySteps: 1, keepActionsLog: true },
         eventLog: {

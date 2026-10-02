@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { createNumberEngine } from "../engine/breakInfinity";
 import { mergeObservations } from "./observation";
+import { simulateMonteCarlo } from "./monteCarlo";
 import { applyOfflineSeconds } from "./offline";
 import { sessionClockContract, simulateSessionPattern, type SessionPatternSpec, type SessionRunResult } from "./session";
 import { createScriptedStrategy } from "./strategy/scripted";
@@ -546,4 +547,64 @@ export function keepsSessionClocksDistinct(): void {
 
 describe("PR-06 session clocks", () => {
   it("keeps session clocks distinct", keepsSessionClocksDistinct);
+});
+
+describe("session segments", () => {
+  const twoBlocks = {
+    id: "offline-heavy" as const,
+    days: 1,
+    schedule: [
+      { day: 0, startOffsetSec: 100, durationSec: 1 },
+      { day: 0, startOffsetSec: 300, durationSec: 1 },
+    ],
+  };
+  const alwaysPrestige: Strategy<number, UnitCode, ClockVars> = {
+    id: "always-prestige",
+    decide(ctx, model, state) {
+      return model.actions(ctx, state).map((action) => ({ action }));
+    },
+  };
+  const cooling = (): CompiledScenario<number, UnitCode, ClockVars> => ({
+    ...clockScenario({
+      actions: [prestigeAction()],
+      strategy: alwaysPrestige,
+      offline: { actions: { mode: "none" } },
+    }),
+    constraints: { minPrestigeIntervalSec: 3600 },
+  });
+  const warnings = (run: { events: readonly { type: string; code?: string }[] }) =>
+    run.events.flatMap((event) => (event.type === "warning" && event.code ? [event.code] : []));
+
+  it("carries the prestige cooldown anchor into later segments", () => {
+    const resets: number[] = [];
+    const base = cooling();
+    const out = runPattern({ ...base, run: { ...base.run, onPrestigeReset: (t) => resets.push(t) } }, twoBlocks);
+    const active = out.segments.filter((segment) => segment.kind === "active");
+    expect(active[0]?.run.end.prestige.count).toBe(1);
+    expect(warnings(active[0]!.run)).toContain("PRESTIGE_COOLDOWN_UNANCHORED");
+    expect(active[1]?.run.end.prestige.count).toBe(1);
+    expect(warnings(active[1]!.run)).toContain("PRESTIGE_COOLDOWN");
+    expect(warnings(active[1]!.run)).not.toContain("PRESTIGE_COOLDOWN_UNANCHORED");
+    expect(resets).toEqual([100]);
+
+    const legacy = cooling();
+    const away = runPattern(
+      { ...legacy, run: { ...legacy.run, offline: { actions: { mode: "legacy-all" } } } },
+      { ...twoBlocks, schedule: twoBlocks.schedule.slice(0, 1) },
+    );
+    const applied = away.segments.flatMap(
+      (segment) => segment.run.eventTimeline?.filter((frame) => frame.event.type === "action.applied").map((frame) => frame.t) ?? [],
+    );
+    expect(applied.slice(0, 3)).toEqual([0, 3600, 7200]);
+    expect(away.segments.filter((segment) => warnings(segment.run).includes("PRESTIGE_COOLDOWN_UNANCHORED"))).toHaveLength(1);
+
+    const mc = simulateMonteCarlo({
+      scenario: cooling(),
+      draws: 1,
+      seed: 1,
+      sessionPattern: twoBlocks,
+      metrics: ({ session }) => session!.segments.filter((segment) => segment.kind === "active").map((segment) => segment.run.end.prestige.count),
+    });
+    expect(mc.results[0]?.metrics).toEqual([1, 1]);
+  });
 });
