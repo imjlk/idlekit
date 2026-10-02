@@ -130,7 +130,7 @@ function allowsOfflineAction(
  * @evidence docs/requirements/active/simulation-time-boundaries.md#req-pr02-simulation-time-boundaries Applies the same horizon, partial tick, and step budget as the online runner.
  * @evidenceReview docs/requirements/active/simulation-time-boundaries.md#req-pr02-simulation-time-boundaries #89f7aa9 Re-read the section: offline uses that partial tick, and a short maxSteps returns budget instead of discarding the run.
  * @evidence docs/requirements/active/session-clock.md#req-pr06-session-clock Steps reward time only. `requestedSec` stays the caller absence, and `useStrategy: false` or policy `none` does not call `decide`.
- * @evidenceReview docs/requirements/active/session-clock.md#req-pr06-session-clock #79e7d8e Re-read the section: state.t moves by simulated reward seconds, and a direct call does not turn the requested absence into state.t.
+ * @evidenceReview docs/requirements/active/session-clock.md#req-pr06-session-clock #e6c87c8 Re-read the section: state.t moves by simulated reward seconds, and a direct call does not turn the requested absence into state.t.
  */
 export function applyOfflineSeconds<N, U extends string, Vars>(args: {
   scenario: CompiledScenario<N, U, Vars>;

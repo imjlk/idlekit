@@ -11,7 +11,7 @@ import type { CompiledScenario, Model, ScenarioConstraints, SimContext, SimRunOp
  * `previewStream` is the other stream. Restoring one over the other throws.
  *
  * @evidence docs/requirements/active/run-lifecycle-isolation.md#req-pr03-run-lifecycle-isolation A fresh trial derives this stream from the logical trial id. Preview is not this stream.
- * @evidenceReview docs/requirements/active/run-lifecycle-isolation.md#req-pr03-run-lifecycle-isolation #f73792f Re-read the section: this is the committed stream, derived from the logical trial id.
+ * @evidenceReview docs/requirements/active/run-lifecycle-isolation.md#req-pr03-run-lifecycle-isolation #4d80f9f Re-read the section: this is the committed stream, derived from the logical trial id.
  */
 export const executionStream = "execution" as const;
 
@@ -20,7 +20,7 @@ export const executionStream = "execution" as const;
  * It is not restored onto `executionStream`.
  *
  * @evidence docs/requirements/active/run-lifecycle-isolation.md#req-pr03-run-lifecycle-isolation Preview uses this stream. A committed step does not advance it.
- * @evidenceReview docs/requirements/active/run-lifecycle-isolation.md#req-pr03-run-lifecycle-isolation #f73792f Re-read the section: preview is a separate stream and is not restored onto execution.
+ * @evidenceReview docs/requirements/active/run-lifecycle-isolation.md#req-pr03-run-lifecycle-isolation #4d80f9f Re-read the section: preview is a separate stream and is not restored onto execution.
  */
 export const previewStream = "preview" as const;
 
@@ -389,7 +389,7 @@ function restoreStrategy<N, U extends string, Vars>(strategy: Strategy<N, U, Var
  * This function does not read CLI flags or plugin files.
  *
  * @evidence docs/requirements/active/run-lifecycle-isolation.md#req-pr03-run-lifecycle-isolation Fresh trials do not share strategy cursors, model closures, or initial vars. Continue keeps the cursor. Resume uses snapshotState.
- * @evidenceReview docs/requirements/active/run-lifecycle-isolation.md#req-pr03-run-lifecycle-isolation #f73792f Re-read the section: fresh trials restore or rebuild strategy state, continue keeps the cursor, and a marked closure without a factory throws.
+ * @evidenceReview docs/requirements/active/run-lifecycle-isolation.md#req-pr03-run-lifecycle-isolation #4d80f9f Re-read the section: fresh trials restore or rebuild strategy state, continue keeps the cursor, and a marked closure without a factory throws.
  */
 export function createRunFactory(deps?: RunFactoryDeps): RunFactory {
   const registries = deps ?? {};

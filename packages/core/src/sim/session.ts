@@ -12,7 +12,7 @@ import type { CompiledScenario, RunResult, SimState } from "./types";
  * `state.t` stays the reward clock. Wall time is only on the session report.
  *
  * @evidence docs/requirements/active/session-clock.md#req-pr06-session-clock Wall elapsed, reward time, and active time are separate fields. Cap and decay do not move the next block earlier.
- * @evidenceReview docs/requirements/active/session-clock.md#req-pr06-session-clock #79e7d8e Re-read the section: a 12-hour absence with a 1-hour cap stays elapsed 43200 and credited 3600, and state.t is not rewritten to wall time.
+ * @evidenceReview docs/requirements/active/session-clock.md#req-pr06-session-clock #e6c87c8 Re-read the section: a 12-hour absence with a 1-hour cap stays elapsed 43200 and credited 3600, and state.t is not rewritten to wall time.
  */
 export const sessionClockContract = "idlekit.session-clock" as const;
 
@@ -216,7 +216,7 @@ function withClocks<N, U extends string, Vars>(
  * A later call is fresh only when the caller supplies a new strategy instance.
  *
  * @evidence docs/requirements/active/session-clock.md#req-pr06-session-clock Schedules the next block on wall time and reports elapsed, credited, and active time separately.
- * @evidenceReview docs/requirements/active/session-clock.md#req-pr06-session-clock #79e7d8e Re-read the section: cap and decay do not pull the next active block forward, and policy none does not call decide.
+ * @evidenceReview docs/requirements/active/session-clock.md#req-pr06-session-clock #e6c87c8 Re-read the section: cap and decay do not pull the next active block forward, policy none does not call decide, goals stop only once every goal is reached, and maxSteps is a per-block budget counted in budgetStops.
  */
 export function simulateSessionPattern<N, U extends string, Vars>(args: {
   scenario: CompiledScenario<N, U, Vars>;

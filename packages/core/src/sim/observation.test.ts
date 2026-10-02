@@ -72,9 +72,21 @@ function scenario(args: {
 
 /**
  * @evidence docs/requirements/active/observation-retention.md#req-pr05-observation-retention Compares four retention policies, a fast run, a milestone cap, a trace budget, and a throwing observer.
- * @evidenceReview docs/requirements/active/observation-retention.md#req-pr05-observation-retention #4c5ab79 Re-read the section, then ran this function: retention changes the log, not the counters. A disabled observation is missing. A boundary gap is not the max of the pieces.
+ * @evidenceReview docs/requirements/active/observation-retention.md#req-pr05-observation-retention #15fc049 Re-read the section, including the session trace budget sentence that the session tests cover, then ran this function: retention changes the log, not the counters. A disabled observation is missing. A boundary gap is not the max of the pieces.
  * @evidence ./observation.ts#observationContract Reads the observation contract and rejects a measured zero for a disabled run.
  * @evidenceReview ./observation.ts#observationContract #7c97372 The declaration is idlekit.run-observation. This test reads that property and expects missing rates to stay null.
+ * @evidence ./observation.ts#maxNoRewardGapSec A run with no reward reports the whole 5s span, and each boundary run reports its 8s edge gap.
+ * @evidenceReview ./observation.ts#maxNoRewardGapSec #ccf099e Re-read maxNoRewardGapSec: a missing gap is null, no reward returns the whole span, and otherwise it is the largest of the leading edge, the trailing edge, and the interior gap. Ran this function: the quiet run gives 5, each boundary run gives 8, and the joined gap gives 16.
+ * @evidence ./observation.ts#mergeRewardGaps Joining the two boundary runs gives a 16s interior gap, not the 8s maximum of either piece.
+ * @evidenceReview ./observation.ts#mergeRewardGaps #2334887 Re-read mergeRewardGaps and its pair merge: an empty list is missing, a missing part makes the result missing, and two observed parts add the gap between the left last reward and the right first reward. Ran this function: rewards at 2 and 18 merge to interior 16.
+ * @evidence ./observation.ts#mergeObservations Two complete runs sum their money counters, a disabled part makes the merge disabled with missing counters, and a legacy part makes it incomplete.
+ * @evidenceReview ./observation.ts#mergeObservations #3a013eb Re-read mergeObservations: coverage takes incomplete, then disabled, then partial, money and action counters are summed only when every part is observed and none is a legacy fallback, and goals keep the earliest reached time. Ran this function: two plain runs sum to twice the applied count, plain with disabled is disabled with missing zero counters, and plain with legacy is incomplete and missing.
+ * @evidence ./observation.ts#statsFromObservation Four retention policies report the same applied money and action counts, and a disabled observation reports missing with a null dropped rate.
+ * @evidenceReview ./observation.ts#statsFromObservation #d271a75 Re-read statsFromObservation: it passes coverage, money, and action counters from the observation to simStatsFromCounters and does not read events. Ran this function: four retention policies report applied money 6 and actions 6, and the disabled run reports status missing, a null dropped rate, and coverage disabled.
+ * @evidence ./observation.ts#createObservationRecorder Counts come from committed steps under every retention policy, a milestone cap marks partial coverage, a goal records its step end, goal.met sees a clone, and an observer throw becomes ObservationError.
+ * @evidenceReview ./observation.ts#createObservationRecorder #ad7a6e1 Re-read createObservationRecorder: recordStep counts observedMoney and action events from each committed step, caps milestones and goals separately, hands goal.met a clone, wraps observer throws in ObservationError, and finish returns a disabled observation when recording is off. Ran this function: counters match across retention, maxMilestones 1 is partial, goal two is reached at t 2, the goal that writes its argument leaves the wallet at 0, and a throwing onStep throws ObservationError.
+ * @evidence ./observation.ts#observationFromLegacyEvents An event-only result is incomplete, marked as a legacy fallback, and has a missing reward gap.
+ * @evidenceReview ./observation.ts#observationFromLegacyEvents #7b6a96d Re-read observationFromLegacyEvents: it counts money and action events from a retained log and marks the result incomplete, legacyEventFallback true, with a missing reward gap. Ran this function: one applied action gives coverage incomplete, the fallback flag, and a missing reward gap.
  */
 export function keepsStatsIndependentOfRetention(): void {
   expect(observationContract).toBe("idlekit.run-observation");
@@ -204,6 +216,19 @@ export function keepsStatsIndependentOfRetention(): void {
   expect(legacy.coverage).toBe("incomplete");
   expect(legacy.legacyEventFallback).toBe(true);
   expect(legacy.rewardGap.status).toBe("missing");
+
+  const merged = mergeObservations([plain.observation!, plain.observation!]);
+  expect(merged.coverage).toBe("complete");
+  expect(merged.money.applied).toBe(2 * plain.observation!.money.applied);
+  const withDisabled = mergeObservations([plain.observation!, disabled.observation!]);
+  expect(withDisabled.coverage).toBe("disabled");
+  expect(withDisabled.money.status).toBe("missing");
+  expect(withDisabled.money.applied).toBe(0);
+  expect(withDisabled.actions.status).toBe("missing");
+  const withLegacy = mergeObservations([plain.observation!, legacy]);
+  expect(withLegacy.coverage).toBe("incomplete");
+  expect(withLegacy.legacyEventFallback).toBe(true);
+  expect(withLegacy.money.status).toBe("missing");
 }
 
 describe("PR-05 observation retention", () => {

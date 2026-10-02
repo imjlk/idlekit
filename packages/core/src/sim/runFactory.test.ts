@@ -142,11 +142,21 @@ function statefulIncomeFactory() {
 
 /**
  * @evidence docs/requirements/active/run-lifecycle-isolation.md#req-pr03-run-lifecycle-isolation Runs a fresh scripted draw twice, a stateful model in both orders, one continued session, a frozen vars input, and an unisolated closure.
- * @evidenceReview docs/requirements/active/run-lifecycle-isolation.md#req-pr03-run-lifecycle-isolation #f73792f Re-read the section, then ran this function: a second scripted draw still buys once, stateful income stays at 3 in both orders, twice-daily applies a0 through a3, and a frozen vars input stays at 0.
+ * @evidenceReview docs/requirements/active/run-lifecycle-isolation.md#req-pr03-run-lifecycle-isolation #4d80f9f Re-read the section, including bind-time params checks, one-hook strategies shared as stateless, and the canonical plan identity, then ran this function: a second scripted draw still buys once, stateful income stays at 3 in both orders, twice-daily applies a0 through a3, and a frozen vars input stays at 0.
  * @evidence ./runFactory.ts#executionStream Reads the committed stream name and derives it from trial id 0x7103.
  * @evidenceReview ./runFactory.ts#executionStream #0a4e437 The declaration is the string execution. This test derives that stream from trial id rng and seed 0x7103.
  * @evidence ./runFactory.ts#previewStream Reads the preview stream name and refuses to restore it onto the committed stream.
  * @evidenceReview ./runFactory.ts#previewStream #56b129a The declaration is the string preview. This test refuses to restore that snapshot onto the execution RNG.
+ * @evidence ./runFactory.ts#cloneRunState An RNG snapshot cloned inside vars still restores the execution stream to the same next draw.
+ * @evidenceReview ./runFactory.ts#cloneRunState #8b9d501 Re-read cloneRunState: it is deepClonePreservingPrototype of the state. Ran this function: the RNG snapshot cloned inside vars restores the execution stream so the next draw equals the second draw.
+ * @evidence ./runFactory.ts#deriveStreamSeed The same seed, trial id, and stream give the same seed, and a different stream or trial id gives another.
+ * @evidenceReview ./runFactory.ts#deriveStreamSeed #f21d17c Re-read deriveStreamSeed: it rejects a non-finite base, an empty trial id, and an unknown stream, then hashes base seed, trial id, and stream name with FNV-1a. Ran this function: the same triple matches, and changing the stream or the trial id changes the seed.
+ * @evidence ./runFactory.ts#createStreamRng A direct execution RNG replays the same draw after restoring its first snapshot.
+ * @evidenceReview ./runFactory.ts#createStreamRng #33f7c52 Re-read createStreamRng: it rejects a non-finite seed, snapshots stream, seed, and state, and restore throws on a stream mismatch. Ran this function: the direct execution RNG repeats its first draw after restore, and restoring a preview snapshot onto the execution RNG throws.
+ * @evidence ./runFactory.ts#executionPlanIdentity A copied plan has the same identity, and a different stepSec changes it.
+ * @evidenceReview ./runFactory.ts#executionPlanIdentity #14dada6 Re-read executionPlanIdentity: it checks the plan contract and returns canonical JSON of the plan fields with object keys sorted at every depth. Ran this function: a spread copy has the same identity and stepSec 3 changes it.
+ * @evidence ./runFactory.ts#createRunFactory Fresh scripted and stateful-model draws do not share state, continue keeps the cursor, resume restores the checkpoint cursor, a plan selects the strategy and clock, and an unisolated closure throws RunIsolationError.
+ * @evidenceReview ./runFactory.ts#createRunFactory #8da908e Re-read createRunFactory: bind holds the strategy as factory, snapshot, stateless, or none, fresh restores the bound snapshot or builds a new factory instance, continue keeps the model and cursor, resume restores checkpoint streams and strategy bytes, and a stateful closure without a factory or snapshot pair throws RunIsolationError. Ran this function: scripted draws buy once each, stateful income stays 3 in both orders, twice-daily applies a0 through a3, continue and resume keep cursor 2, a plan sets seed 9 and step 2, and both isolation flags throw.
  */
 export function isolatesIndependentRuns(): void {
   expect(executionStream).toBe("execution");

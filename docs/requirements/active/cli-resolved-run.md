@@ -4,7 +4,7 @@
 
 Requirement `REQ-PR07-RESOLVED-RUN`. `PR-07` owns it.
 
-`resolvedRunContract` in `packages/cli/src/lib/runConfiguration.ts` is `idlekit.resolved-run-configuration`. `sessionCaseSeed` is `0x7107`. `TC-05` has not registered that DTO. The executed test uses seed `1`. It does not draw from `0x7107`.
+`resolvedRunContract` in `packages/cli/src/lib/runConfiguration.ts` is `idlekit.resolved-run-configuration`. `sessionCaseSeed` is `0x7107`. `TC-05` has not registered that DTO. The executed tests use seed `1`. They do not draw from `0x7107`.
 
 `prepareResolvedRun` reads one validated scenario, resolves the engine and the strategy, compiles once, and rejects an unknown strategy. `open` builds a stage plan and a fresh `createRunFactory` instance. Simulate, experience, and ltv do not share one compiled strategy or model. The plan stores ids, params, step, session, seed, and plugin digest values. It does not store an engine instance, a file handle, a secret, a timestamp, or an absolute path.
 
@@ -20,4 +20,4 @@ Amount `until` paths are `money`, `wallet.money`, `wallet.money.amount`, `bucket
 
 `scenarioHash` remains a hash of the original scenario object. `effectiveRunHash` is a stage digest. It adds the contract, version, scenario, engine id, strategy id, params, params mode, the step and fast the stage applied, the session when the stage applies it, seed, sorted plugin digest values, the stage name and scope, and the command inputs that change that stage result: simulate duration, offline seconds, resume state, and event log flags; experience draws; ltv horizons, draws, and value per worth. It ignores `generatedAt`, the working directory, and absolute paths. The same digest values from different directories match. Changing strategy, step, or one of those inputs changes the hash. Each evaluate stage file carries its own stage digest. The evaluate summary hashes the three stage digests, so `--consistent-overrides` changes it. Evaluate metadata includes the scenario, the hash, the effective engine, and the stage scope.
 
-The executed test is `keepsResolvedRunConfiguration` in `packages/cli/src/lib/runConfiguration.test.ts`.
+The executed tests are `keepsResolvedRunConfiguration` and `digestsEachStageFromItsAppliedPlan` in `packages/cli/src/lib/runConfiguration.test.ts`. The second one checks the stage and workflow digests.

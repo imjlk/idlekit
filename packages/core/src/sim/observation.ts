@@ -6,7 +6,7 @@ import type { SimEvent, SimState } from "./types";
  * Resolved observation contract. TC-05 has not registered this DTO.
  *
  * @evidence docs/requirements/active/observation-retention.md#req-pr05-observation-retention Counters come from the committed step, not from the retained event log.
- * @evidenceReview docs/requirements/active/observation-retention.md#req-pr05-observation-retention #4c5ab79 Re-read the section: retention does not change these counters, and a disabled mode is missing rather than zero.
+ * @evidenceReview docs/requirements/active/observation-retention.md#req-pr05-observation-retention #15fc049 Re-read the section: retention does not change these counters, and a disabled mode is missing rather than zero.
  */
 export const observationContract = "idlekit.run-observation" as const;
 

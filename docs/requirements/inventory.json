@@ -168,12 +168,16 @@
       "pr": "PR-02",
       "anchor": "req-pr02-simulation-time-boundaries",
       "doc": "docs/requirements/active/simulation-time-boundaries.md",
-      "production": ["packages/core/src/sim/timeBoundary.ts"],
+      "production": [
+        "packages/core/src/sim/timeBoundary.ts",
+        "packages/core/src/sim/simulator.ts",
+        "packages/core/src/sim/offline.ts"
+      ],
       "tests": [
         {
           "file": "packages/core/src/sim/simulator.time.test.ts",
           "exportName": "stopsOnTheRequestedHorizon",
-          "registeredAs": "stops on the requested horizon",
+          "registeredAs": "PR-02 simulation time boundaries > stops on the requested horizon",
           "cwd": "packages/core",
           "args": ["test", "src/sim/simulator.time.test.ts"]
         }
@@ -189,7 +193,7 @@
         {
           "file": "packages/core/src/sim/runFactory.test.ts",
           "exportName": "isolatesIndependentRuns",
-          "registeredAs": "isolates independent runs",
+          "registeredAs": "PR-03 run lifecycle isolation > isolates independent runs",
           "cwd": "packages/core",
           "args": ["test", "src/sim/runFactory.test.ts"]
         }
@@ -205,7 +209,7 @@
         {
           "file": "packages/core/src/sim/observation.test.ts",
           "exportName": "keepsStatsIndependentOfRetention",
-          "registeredAs": "keeps stats independent of retention",
+          "registeredAs": "PR-05 observation retention > keeps stats independent of retention",
           "cwd": "packages/core",
           "args": ["test", "src/sim/observation.test.ts"]
         }
@@ -224,7 +228,7 @@
         {
           "file": "packages/core/src/sim/strategy/planner.regression.test.ts",
           "exportName": "keepsPlannerRolloutFaithful",
-          "registeredAs": "keeps planner rollout faithful",
+          "registeredAs": "PR-04 planner rollout > keeps planner rollout faithful",
           "cwd": "packages/core",
           "args": ["test", "src/sim/strategy/planner.regression.test.ts"]
         }
@@ -235,12 +239,12 @@
       "pr": "PR-06",
       "anchor": "req-pr06-session-clock",
       "doc": "docs/requirements/active/session-clock.md",
-      "production": ["packages/core/src/sim/session.ts"],
+      "production": ["packages/core/src/sim/session.ts", "packages/core/src/sim/offline.ts"],
       "tests": [
         {
           "file": "packages/core/src/sim/session.test.ts",
           "exportName": "keepsSessionClocksDistinct",
-          "registeredAs": "keeps session clocks distinct",
+          "registeredAs": "PR-06 session clocks > keeps session clocks distinct",
           "cwd": "packages/core",
           "args": ["test", "src/sim/session.test.ts"]
         }
@@ -256,7 +260,14 @@
         {
           "file": "packages/cli/src/lib/runConfiguration.test.ts",
           "exportName": "keepsResolvedRunConfiguration",
-          "registeredAs": "keeps resolved run configuration",
+          "registeredAs": "PR-07 resolved run > keeps resolved run configuration",
+          "cwd": "packages/cli",
+          "args": ["test", "src/lib/runConfiguration.test.ts"]
+        },
+        {
+          "file": "packages/cli/src/lib/runConfiguration.test.ts",
+          "exportName": "digestsEachStageFromItsAppliedPlan",
+          "registeredAs": "PR-07 resolved run > digests each stage from its applied plan and command inputs",
           "cwd": "packages/cli",
           "args": ["test", "src/lib/runConfiguration.test.ts"]
         }
