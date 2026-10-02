@@ -12,7 +12,7 @@ import type { CompiledScenario, RunResult, SimState } from "./types";
  * `state.t` stays the reward clock. Wall time is only on the session report.
  *
  * @evidence docs/requirements/active/session-clock.md#req-pr06-session-clock Wall elapsed, reward time, and active time are separate fields. Cap and decay do not move the next block earlier.
- * @evidenceReview docs/requirements/active/session-clock.md#req-pr06-session-clock #e6c87c8 Re-read the section: a 12-hour absence with a 1-hour cap stays elapsed 43200 and credited 3600, and state.t is not rewritten to wall time.
+ * @evidenceReview docs/requirements/active/session-clock.md#req-pr06-session-clock #9c09e59 Re-read the section: a 12-hour absence with a 1-hour cap stays elapsed 43200 and credited 3600, and state.t is not rewritten to wall time.
  */
 export const sessionClockContract = "idlekit.session-clock" as const;
 
@@ -100,6 +100,8 @@ export type SessionRunResult<N, U extends string, Vars> = Readonly<{
     /**
      * Active blocks cut short by `run.maxSteps`. That budget is per block.
      * The session continues with the next scheduled block. Offline gaps do not take it.
+     * Wall time still reaches the block's planned end; the unsimulated rest is not
+     * offline time and does not advance the reward clock.
      */
     budgetStops: number;
     stop: Readonly<{ reason: SessionStopReason }>;
@@ -216,7 +218,7 @@ function withClocks<N, U extends string, Vars>(
  * A later call is fresh only when the caller supplies a new strategy instance.
  *
  * @evidence docs/requirements/active/session-clock.md#req-pr06-session-clock Schedules the next block on wall time and reports elapsed, credited, and active time separately.
- * @evidenceReview docs/requirements/active/session-clock.md#req-pr06-session-clock #e6c87c8 Re-read the section: cap and decay do not pull the next active block forward, policy none does not call decide, goals stop only once every goal is reached, and maxSteps is a per-block budget counted in budgetStops.
+ * @evidenceReview docs/requirements/active/session-clock.md#req-pr06-session-clock #9c09e59 Re-read the section: cap and decay do not pull the next active block forward, policy none does not call decide, goals stop only once every goal is reached, and maxSteps is a per-block budget counted in budgetStops, after which wall time still reaches the planned block end without crediting the rest as offline time.
  */
 export function simulateSessionPattern<N, U extends string, Vars>(args: {
   scenario: CompiledScenario<N, U, Vars>;
@@ -400,7 +402,9 @@ export function simulateSessionPattern<N, U extends string, Vars>(args: {
       run: activeRun,
     });
     state = activeRun.end;
-    wallT = wallStart + simulated;
+    // A block cut by maxSteps still ends at its planned wall time. The player was
+    // present for the rest, so it is neither offline absence nor credited reward.
+    wallT = activeRun.stop?.reason === "budget" ? plannedEnd : wallStart + simulated;
     const reason = classify(activeRun);
     if (reason) stopReason = reason;
   }

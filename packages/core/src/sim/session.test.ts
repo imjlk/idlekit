@@ -181,13 +181,13 @@ function runPattern(
 
 /**
  * @evidence docs/requirements/active/session-clock.md#req-pr06-session-clock Runs the 12-hour cap, the 24-hour horizon, offline policies, schedule rejection, and an early stop.
- * @evidenceReview docs/requirements/active/session-clock.md#req-pr06-session-clock #e6c87c8 Re-read the section, then ran this function: 12 hours away credits 1 hour, the one-day horizon stays 86400, policy none does not move the scripted cursor, and maxSteps 2 ends each active block as budget while the session reaches the horizon.
+ * @evidenceReview docs/requirements/active/session-clock.md#req-pr06-session-clock #9c09e59 Re-read the section, then ran this function: 12 hours away credits 1 hour, the one-day horizon stays 86400, policy none does not move the scripted cursor, maxSteps 2 ends each active block as budget while the session reaches the horizon, the next offline gap starts at the planned block end, and an always-on session cut by maxSteps has no offline time for a reject policy to refuse.
  * @evidence ./session.ts#sessionClockContract Reads the session clock contract and checks wall elapsed against reward time.
  * @evidenceReview ./session.ts#sessionClockContract #bd7e206 The declaration is idlekit.session-clock. This test reads that property and expects a capped gap to keep those clocks apart.
  * @evidence ./session.ts#assertSessionSchedule An empty schedule, a negative offset, a negative duration, and overlapping blocks throw, and a 12-hour offset block starts on wall time 43200.
  * @evidenceReview ./session.ts#assertSessionSchedule #86f2edc Re-read assertSessionSchedule: days must be a positive integer, the list must be non-empty, each day an integer >= 0, each offset finite and >= 0, each duration finite and > 0, no block may end past the horizon, and sorted blocks may not overlap. Ran this function: the empty, negative offset, negative duration, and overlap cases threw those messages, and the 12-hour block ran after a 43200s offline segment.
  * @evidence ./session.ts#simulateSessionPattern A 12-hour gap with a 1-hour cap stays elapsed 43200 and credited 3600, presets keep the 86400 horizon, until and goals stop before the next block, and maxSteps cuts each active block without ending the session.
- * @evidenceReview ./session.ts#simulateSessionPattern #e04ac2d Re-read simulateSessionPattern: it runs offline gaps through applyOfflineSeconds up to each scheduled wall start, runs each block through runScenario with that block's duration, keeps state.t as reward time, stops on until or once every goal is reached, counts budget stops per block, and merges segment observations. Ran this function: offline-heavy elapsed 86400 with 3600 credited and 82500 lost, early until and goal stopped at t 10 after one block, and maxSteps 2 gave two budget stops with the session ending on the 86400 horizon.
+ * @evidenceReview ./session.ts#simulateSessionPattern #10d4bd4 Re-read simulateSessionPattern: it runs offline gaps through applyOfflineSeconds up to each scheduled wall start, runs each block through runScenario with that block's duration, keeps state.t as reward time, stops on until or once every goal is reached, counts budget stops per block and still moves wall time to a cut block's planned end, and merges segment observations. Ran this function: offline-heavy elapsed 86400 with 3600 credited and 82500 lost, early until and goal stopped at t 10 after one block, and maxSteps 2 gave two budget stops with the session ending on the 86400 horizon.
  * @evidence ./offline.ts#resolveOfflineActionPolicy Policy none keeps the scripted cursor at 1, legacy-all moves it to 3, and allow applies only the automation buy.
  * @evidenceReview ./offline.ts#resolveOfflineActionPolicy #b424f6a Re-read resolveOfflineActionPolicy: useStrategy false and policy none never call the strategy, allow calls it and keeps the policy, and legacy-all calls it when useStrategy or a strategy is present. Ran this function: none left the scripted cursor at 1 and bought once, legacy-all reached cursor 3 with one prestige, and allow applied the automation buy only.
  */
@@ -509,7 +509,21 @@ export function keepsSessionClocksDistinct(): void {
     "budget",
   ]);
   expect(budget.segments.filter((segment) => segment.kind === "active").map((segment) => segment.wallStartT)).toEqual([100, 500]);
-  expect(budget.end.t).toBe(86400);
+  // The unsimulated rest of a cut block is not offline time: the gap starts at the planned end.
+  expect(budget.segments.filter((segment) => segment.kind === "offline").map((segment) => segment.wallStartT)).toEqual([
+    0, 110, 510,
+  ]);
+  // always-on has no absence. A cut day must not turn its unsimulated rest into an
+  // offline gap that a reject policy would refuse.
+  const alwaysOn = runPattern(
+    clockScenario({ income: 1, maxSteps: 10, offline: { maxSec: 60, overflowPolicy: "reject" } }),
+    { id: "always-on", days: 2 },
+  );
+  expect(alwaysOn.summary.budgetStops).toBe(2);
+  expect(alwaysOn.summary.activeSec).toBe(20);
+  expect(alwaysOn.segments.filter((segment) => segment.kind === "offline").every((segment) => segment.clock.elapsedSec === 0)).toBe(true);
+  // Each cut block leaves 8 unsimulated seconds that are not credited as offline reward.
+  expect(budget.end.t).toBe(86400 - 16);
   expect(budget.summary.elapsedSec).toBe(86400);
   expect(budget.summary.lostRewardSec).toBe(0);
 
