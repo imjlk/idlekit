@@ -201,9 +201,8 @@ export default defineCommand({
       eventLog: simulateRun.eventLog,
     };
 
-    const experienceOpened = prepared.open("experience", `evaluate:experience:${seed}`, {
-      draws: resolveExperienceDraws(prepared.definition, flags.draws),
-    });
+    const experienceInputs = { draws: resolveExperienceDraws(prepared.definition, flags.draws) };
+    const experienceOpened = prepared.open("experience", `evaluate:experience:${seed}`, experienceInputs);
     const experienceScenario = experienceOpened.scenario;
     const sessionPattern = resolveSessionPatternSpec({
       scenario: experienceScenario,
@@ -222,7 +221,9 @@ export default defineCommand({
     const monteCarlo =
       draws > 1
         ? summarizeExperienceMonteCarlo({
-            scenario: experienceScenario,
+            // The deterministic session advanced experienceScenario's strategy cursor, and
+            // Monte Carlo restores every draw to the cursor it sees at bind. Open a fresh trial.
+            scenario: prepared.open("experience", `evaluate:experience:${seed}:monte-carlo`, experienceInputs).scenario,
             sessionPattern,
             draws,
             seed,
