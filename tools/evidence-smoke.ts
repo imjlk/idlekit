@@ -1270,29 +1270,30 @@ try {
     "unrelated",
     "credited",
   );
+  const nodeTest = JSON.stringify("node:" + "test");
   const nodeSuiteBody = [
-    'import { suite } from "node:test"',
+    `import { suite } from ${nodeTest}`,
     'suite("s", () => test("credited", unrelated))',
     'describe("s", () => test("credited", citedExport))',
   ].join("\n");
   const nodeSuiteDuplicate = duplicateFullNames(nodeSuiteBody).includes("s > credited");
   const renamedSuite = duplicateFullNames(
     [
-      'import { suite as group } from "node:test"',
+      `import { suite as group } from ${nodeTest}`,
       'group("s", () => test("credited", unrelated))',
       'describe("s", () => test("credited", citedExport))',
     ].join("\n"),
   ).includes("s > credited");
   const requiredSuite = duplicateFullNames(
     [
-      'const { suite } = require("node:test")',
+      `const { suite } = require(${nodeTest})`,
       'suite("s", () => test("credited", unrelated))',
       'describe("s", () => test("credited", citedExport))',
     ].join("\n"),
   ).includes("s > credited");
   const dynamicSuite = duplicateFullNames(
     [
-      'const { suite } = await import("node:test")',
+      `const { suite } = await import(${nodeTest})`,
       'suite("s", () => test("credited", unrelated))',
       'describe("s", () => test("credited", citedExport))',
     ].join("\n"),
