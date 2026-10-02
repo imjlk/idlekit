@@ -15,6 +15,7 @@ import {
   stringSpans,
   wordBefore,
 } from "./lex";
+import { runnerSignal } from "./runner-registry";
 
 type LocalRequire = { kind: "static"; spec: string } | { kind: "dynamic" };
 
@@ -137,6 +138,18 @@ function importCalls(
 
 const RELATIVE_IMPORT = /(?:from\s+|import\s*\(\s*|import\s+)["'](\.[^"']+)["']/g;
 const NON_RELATIVE_IMPORT = /(?:from\s+|import\s*\(\s*|import\s+)["']([^."'][^"']*)["']/g;
+const PACKAGE_SIGNAL = /\b(?:it|test|describe|eval|Function)\s*\(|\bplugin\b/;
+
+/** Query suffixes are the file Bun loads. A fragment before `?` is not a file. */
+function importSpecifier(spec: string): { kind: "path"; spec: string } | { kind: "opaque" } {
+  const query = spec.indexOf("?");
+  const hash = spec.indexOf("#");
+  if (hash >= 0 && (query < 0 || hash < query)) return { kind: "opaque" };
+  if (query < 0) return { kind: "path", spec };
+  const path = spec.slice(0, query);
+  if (path.length === 0) return { kind: "opaque" };
+  return { kind: "path", spec: path };
+}
 
 function typescriptImportCandidates(base: string): string[] {
   const replacements = [
@@ -161,8 +174,14 @@ function fileCandidates(base: string): string | undefined {
     `${base}.tsx`,
     `${base}.mts`,
     `${base}.cts`,
+    `${base}.js`,
+    `${base}.mjs`,
+    `${base}.cjs`,
     join(base, "index.ts"),
     join(base, "index.tsx"),
+    join(base, "index.js"),
+    join(base, "index.mjs"),
+    join(base, "index.cjs"),
   ];
   return candidates.find((candidate) => {
     try {
@@ -692,16 +711,50 @@ function resolveWorkspaceFile(
   return file;
 }
 
+function installedPackageFile(fromFile: string, spec: string): string | undefined {
+  let resolved = "";
+  try {
+    resolved = Bun.resolveSync(spec, dirname(fromFile));
+  } catch {
+    return undefined;
+  }
+  if (!resolved || !existsSync(resolved) || declarationFile(resolved)) return undefined;
+  let real = resolved;
+  try {
+    real = realpathSync(resolved);
+  } catch {
+    real = resolved;
+  }
+  if (!real.split(/[/\\]/).includes("node_modules")) return undefined;
+  return real;
+}
+
+function rememberPackageRoot(file: string, roots: string[]): void {
+  let real = file;
+  try {
+    real = realpathSync(file);
+  } catch {
+    return;
+  }
+  if (!real.split(/[/\\]/).includes("node_modules")) return;
+  const root = packageRootOf(real);
+  if (!root || roots.includes(root)) return;
+  roots.push(root);
+}
+
 function queueNonRelative(
   fromFile: string,
   spec: string,
   queue: string[],
   faults: string[],
   style: ModuleStyle,
+  roots: string[],
 ): void {
   const resolved = resolveNonRelative(fromFile, spec, style);
-  if (resolved.kind === "file") queue.push(resolved.file);
-  else if (resolved.kind === "missing") faults.push(spec);
+  if (resolved.kind === "file") {
+    rememberPackageRoot(resolved.file, roots);
+    queue.push(resolved.file);
+  } else if (resolved.kind === "missing") faults.push(spec);
 }
 
 /** Path aliases and workspace packages are local source. Other bare specifiers are packages. */
@@ -718,7 +771,11 @@ function resolveNonRelative(fromFile: string, spec: string, style: ModuleStyle):
     return { kind: "missing" };
   }
   const workspace = workspaceFile(dirname(fromFile), spec, style);
-  if (workspace === "none") return { kind: "external" };
+  if (workspace === "none") {
+    const installed = installedPackageFile(fromFile, spec);
+    if (installed) return { kind: "file", file: installed };
+    return { kind: "external" };
+  }
   if (workspace === "missing") return { kind: "missing" };
   const file = resolveWorkspaceFile(dirname(fromFile), spec, style);
   if (!file) return { kind: "missing" };
@@ -836,6 +893,38 @@ function acceptLocalFile(
   return false;
 }
 
+function publishPackageBody(body: string): boolean {
+  if (!PACKAGE_SIGNAL.test(body)) return false;
+  if (loaderPluginRegistration(body)) return true;
+  return runnerSignal(body) !== "none";
+}
+
+function queueSpecifier(
+  fromReal: string,
+  spec: string,
+  style: ModuleStyle,
+  queue: string[],
+  faults: string[],
+  roots: string[],
+  relativeFault: boolean,
+): void {
+  const usable = importSpecifier(spec);
+  if (usable.kind === "opaque") {
+    faults.push(spec);
+    return;
+  }
+  if (!usable.spec.startsWith(".")) {
+    queueNonRelative(fromReal, usable.spec, queue, faults, style, roots);
+    return;
+  }
+  const next = resolveRelativeImport(fromReal, usable.spec, style);
+  if (!next) {
+    if (relativeFault || usable.spec !== spec) faults.push(spec);
+    return;
+  }
+  if (acceptLocalFile(next, fromReal, roots, faults, spec)) queue.push(next);
+}
+
 function walkSources(files: readonly string[]): SourceWalk {
   const packageRoots = preloadPackageRoots(files);
   const seen = new Set<string>();
@@ -855,7 +944,8 @@ function walkSources(files: readonly string[]): SourceWalk {
       continue;
     }
     const body = readFileSync(real, "utf8");
-    bodies.push(body);
+    const packaged = real.split(/[/\\]/).includes("node_modules");
+    if (!packaged || publishPackageBody(body)) bodies.push(body);
     const hidden = stringSpans(body);
     for (const match of body.matchAll(RELATIVE_IMPORT)) {
       if (match.index !== undefined && insideSpan(hidden, match.index)) continue;
@@ -869,8 +959,7 @@ function walkSources(files: readonly string[]): SourceWalk {
       ) {
         continue;
       }
-      const next = resolveRelativeImport(real, spec, "import");
-      if (next && acceptLocalFile(next, real, packageRoots, faults, spec)) queue.push(next);
+      queueSpecifier(real, spec, "import", queue, faults, packageRoots, false);
     }
     for (const match of body.matchAll(NON_RELATIVE_IMPORT)) {
       if (match.index !== undefined && insideSpan(hidden, match.index)) continue;
@@ -879,39 +968,21 @@ function walkSources(files: readonly string[]): SourceWalk {
       const matched = match[0] ?? "";
       if (/^import\s*\(/.test(matched)) continue;
       if (typeOnlyImport(body, match.index ?? 0)) continue;
-      queueNonRelative(real, spec, queue, faults, "import");
+      queueSpecifier(real, spec, "import", queue, faults, packageRoots, false);
     }
     for (const required of localRequireCalls(body, hidden)) {
       if (required.kind === "dynamic") {
-        faults.push("dynamic require");
+        if (!packaged) faults.push("dynamic require");
         continue;
       }
-      if (!required.spec.startsWith(".")) {
-        queueNonRelative(real, required.spec, queue, faults, "require");
-        continue;
-      }
-      const next = resolveRelativeImport(real, required.spec, "require");
-      if (!next) {
-        faults.push(required.spec);
-        continue;
-      }
-      if (acceptLocalFile(next, real, packageRoots, faults, required.spec)) queue.push(next);
+      queueSpecifier(real, required.spec, "require", queue, faults, packageRoots, true);
     }
     for (const imported of importCalls(body, hidden)) {
       if (imported.kind === "dynamic") {
-        faults.push("dynamic import");
+        if (!packaged) faults.push("dynamic import");
         continue;
       }
-      if (!imported.spec.startsWith(".")) {
-        queueNonRelative(real, imported.spec, queue, faults, "import");
-        continue;
-      }
-      const next = resolveRelativeImport(real, imported.spec, "import");
-      if (!next) {
-        faults.push(imported.spec);
-        continue;
-      }
-      if (acceptLocalFile(next, real, packageRoots, faults, imported.spec)) queue.push(next);
+      queueSpecifier(real, imported.spec, "import", queue, faults, packageRoots, true);
     }
   }
   return { bodies, faults };
@@ -927,21 +998,228 @@ export function unresolvedLocalRequires(files: readonly string[]): string[] {
   return walkSources(files).faults;
 }
 
-function bunPluginCall(body: string, bunEnd: number): boolean {
+const BINDING_KEYWORDS = new Set([
+  "await",
+  "case",
+  "class",
+  "const",
+  "export",
+  "extends",
+  "function",
+  "import",
+  "in",
+  "instanceof",
+  "let",
+  "new",
+  "of",
+  "return",
+  "throw",
+  "typeof",
+  "var",
+  "void",
+  "yield",
+]);
+
+function previousCodeIndex(body: string, index: number): number {
+  let cursor = index - 1;
+  while (cursor >= 0) {
+    const char = body[cursor] ?? "";
+    if (/\s/.test(char)) {
+      cursor -= 1;
+      continue;
+    }
+    if (char === "/" && body[cursor - 1] === "/") {
+      const line = body.lastIndexOf("\n", cursor);
+      cursor = line < 0 ? -1 : line - 1;
+      continue;
+    }
+    if (char === "/" && body[cursor - 1] === "*") {
+      const open = body.lastIndexOf("/*", cursor - 1);
+      cursor = open < 0 ? -1 : open - 1;
+      continue;
+    }
+    return cursor;
+  }
+  return -1;
+}
+
+function wordEndingAt(body: string, index: number): { value: string } | undefined {
+  if (!/[A-Za-z0-9_$]/.test(body[index] ?? "")) return undefined;
+  let start = index;
+  while (start > 0 && /[A-Za-z0-9_$]/.test(body[start - 1] ?? "")) start -= 1;
+  return { value: body.slice(start, index + 1) };
+}
+
+function memberReceiver(body: string, identStart: number): boolean {
+  const previous = previousCodeIndex(body, identStart);
+  return previous >= 0 && body[previous] === ".";
+}
+
+function bareReceiver(body: string, identEnd: number): boolean {
+  const next = skipSpaceAndComments(body, identEnd);
+  if (body.startsWith("?.", next)) return false;
+  return body[next] !== "." && body[next] !== "[";
+}
+
+function staticPluginKey(body: string, bracketAt: number): boolean {
+  const keyAt = skipSpaceAndComments(body, bracketAt + 1);
+  const quoted = readQuoted(body, keyAt) ?? readStaticTemplate(body, keyAt);
+  if (!quoted || quoted.value !== "plugin") return false;
+  const after = skipSpaceAndComments(body, quoted.end);
+  return body[after] === "]";
+}
+
+/** `.plugin`, `?.plugin`, or a static `["plugin"]` / `` [`plugin`] `` access. */
+function pluginAccess(body: string, bunEnd: number): boolean {
   let cursor = skipSpaceAndComments(body, bunEnd);
   if (body.startsWith("?.", cursor)) cursor = skipSpaceAndComments(body, cursor + 2);
   else if (body[cursor] === ".") cursor = skipSpaceAndComments(body, cursor + 1);
+  else if (body[cursor] === "[") return staticPluginKey(body, cursor);
   else return false;
+  if (body[cursor] === "[") return staticPluginKey(body, cursor);
   const member = readIdentifier(body, cursor);
-  if (!member || member.value !== "plugin") return false;
-  let open = skipSpaceAndComments(body, member.end);
-  if (body.startsWith("?.", open)) open = skipSpaceAndComments(body, open + 2);
-  return body[open] === "(";
+  return member?.value === "plugin";
 }
 
-/** A called `Bun.plugin`. Comments, strings, and other receivers do not count. */
+function matchOpenBrace(body: string, closeAt: number): number {
+  let depth = 0;
+  for (let cursor = closeAt; cursor >= 0; cursor -= 1) {
+    const char = body[cursor] ?? "";
+    if (char === "'" || char === '"') {
+      cursor -= 1;
+      while (cursor >= 0 && body[cursor] !== char) {
+        if (body[cursor] === "\\") cursor -= 1;
+        cursor -= 1;
+      }
+      continue;
+    }
+    if (char === "/" && body[cursor - 1] === "*") {
+      const open = body.lastIndexOf("/*", cursor - 1);
+      cursor = open < 0 ? -1 : open;
+      continue;
+    }
+    if (char === "}") depth += 1;
+    else if (char === "{") {
+      depth -= 1;
+      if (depth === 0) return cursor;
+    }
+  }
+  return -1;
+}
+
+function skipPatternValue(body: string, index: number, limit: number): number {
+  let cursor = index;
+  let depth = 0;
+  while (cursor < limit) {
+    const char = body[cursor] ?? "";
+    if (char === "'" || char === '"') {
+      const quoted = readQuoted(body, cursor);
+      cursor = quoted ? quoted.end : cursor + 1;
+      continue;
+    }
+    if (char === "/" && body[cursor + 1] === "/") {
+      const line = body.indexOf("\n", cursor);
+      cursor = line < 0 ? limit : line + 1;
+      continue;
+    }
+    if (char === "/" && body[cursor + 1] === "*") {
+      const close = body.indexOf("*/", cursor + 2);
+      cursor = close < 0 ? limit : close + 2;
+      continue;
+    }
+    if (char === "(" || char === "{" || char === "[") {
+      depth += 1;
+      cursor += 1;
+      continue;
+    }
+    if (char === ")" || char === "}" || char === "]") {
+      if (depth === 0) return cursor;
+      depth -= 1;
+      cursor += 1;
+      continue;
+    }
+    if (depth === 0 && char === ",") return cursor;
+    cursor += 1;
+  }
+  return cursor;
+}
+
+/** True when a depth-1 key of this object pattern is `plugin`. */
+function patternPullsPlugin(body: string, open: number, close: number): boolean {
+  let index = open + 1;
+  while (index < close) {
+    index = skipSpaceAndComments(body, index);
+    if (index >= close) return false;
+    if (body.startsWith("...", index)) {
+      index = skipSpaceAndComments(body, index + 3);
+      const rest = readIdentifier(body, index);
+      index = rest ? rest.end : index + 1;
+      continue;
+    }
+    const char = body[index] ?? "";
+    if (char === ",") {
+      index += 1;
+      continue;
+    }
+    if (char === "[") {
+      if (staticPluginKey(body, index)) return true;
+      const bracketEnd = skipPatternValue(body, index + 1, close);
+      index = body[bracketEnd] === "]" ? bracketEnd + 1 : bracketEnd;
+      index = skipPatternValue(body, index, close);
+      continue;
+    }
+    if (char === "{" || char === "(") {
+      const nestedEnd = skipPatternValue(body, index + 1, close);
+      index = nestedEnd < close ? nestedEnd + 1 : nestedEnd;
+      continue;
+    }
+    if (char === "'" || char === '"') {
+      const quoted = readQuoted(body, index);
+      index = quoted ? quoted.end : index + 1;
+      continue;
+    }
+    const ident = readIdentifier(body, index);
+    if (!ident || ident.end > close) {
+      index += 1;
+      continue;
+    }
+    const after = skipSpaceAndComments(body, ident.end);
+    const shorthand = after >= close || body[after] === "," || body[after] === "}";
+    if (body[after] === ":" || body[after] === "=" || shorthand) {
+      if (ident.value === "plugin") return true;
+      if (body[after] === ":" || body[after] === "=") {
+        index = skipPatternValue(body, after + 1, close);
+        continue;
+      }
+    }
+    index = ident.end;
+  }
+  return false;
+}
+
+/** Record `const ns = Bun`. A `{ plugin } = Bun` binding is already a registration. */
+function pullsPluginBinding(body: string, identStart: number, aliases: Set<string>): boolean {
+  const eq = previousCodeIndex(body, identStart);
+  if (eq < 0 || body[eq] !== "=") return false;
+  const before = previousCodeIndex(body, eq);
+  if (before < 0) return false;
+  const mark = body[before] ?? "";
+  if ("=!<>+-*/%&|^?".includes(mark)) return false;
+  if (mark === "}") {
+    const open = matchOpenBrace(body, before);
+    if (open < 0) return false;
+    return patternPullsPlugin(body, open, before);
+  }
+  const word = wordEndingAt(body, before);
+  if (!word || BINDING_KEYWORDS.has(word.value)) return false;
+  aliases.add(word.value);
+  return false;
+}
+
+/** A `Bun.plugin` reference. Comments, strings, and other receivers do not count. */
 export function loaderPluginRegistration(body: string): boolean {
   const spans = stringSpans(body);
+  const aliases = new Set<string>(["Bun"]);
   let index = 0;
   while (index < body.length) {
     const hidden = spanEndAt(spans, index);
@@ -969,7 +1247,16 @@ export function loaderPluginRegistration(body: string): boolean {
       index += 1;
       continue;
     }
-    if (ident.value === "Bun" && bunPluginCall(body, ident.end)) return true;
+    const identStart = ident.end - ident.value.length;
+    if (aliases.has(ident.value) && !memberReceiver(body, identStart)) {
+      if (pluginAccess(body, ident.end)) return true;
+      if (
+        bareReceiver(body, ident.end) &&
+        pullsPluginBinding(body, identStart, aliases)
+      ) {
+        return true;
+      }
+    }
     index = ident.end;
   }
   return false;

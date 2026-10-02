@@ -885,6 +885,15 @@ try {
   let memberRequireIgnored = false;
   let moduleDynamicRequire = false;
   let directoryEntry = false;
+  let queryImport = false;
+  let fragmentImport = false;
+  let directoryQuery = false;
+  let installedPackage = false;
+  let nestedPackage = false;
+  let quietPackage = false;
+  let libraryPackage = false;
+  let missingInstalled = false;
+  let dynamicPackage = false;
   try {
     const bodies = sourceGraph([specifierHost]);
     const joined = bodies.join("\n");
@@ -1034,6 +1043,138 @@ try {
       entryBodies.some((body) => body.includes("from-package-entry")) &&
       !entryBodies.some((body) => body.includes("from-package-index")) &&
       duplicateFullNamesAcross(entryBodies).includes("credited");
+    const queryHelper = join(specifierDir, "query-helper.ts");
+    const queryHost = join(specifierDir, "query-host.test.ts");
+    writeFileSync(queryHelper, 'it("credited", unrelated);\n// from-query-helper\n');
+    writeFileSync(
+      queryHost,
+      [
+        'import "./query-helper.ts?loader=test#section";',
+        'if (false) it("credited", citedExport);',
+      ].join("\n"),
+    );
+    const queryBodies = sourceGraph([queryHost]);
+    queryImport =
+      queryBodies.some((body) => body.includes("from-query-helper")) &&
+      duplicateFullNamesAcross(queryBodies).includes("credited");
+    const fragmentHost = join(specifierDir, "fragment-host.test.ts");
+    writeFileSync(fragmentHost, 'import "./query-helper.ts#section";\n');
+    fragmentImport =
+      unresolvedLocalRequires([fragmentHost]).includes("./query-helper.ts#section") &&
+      !sourceGraph([fragmentHost]).some((body) => body.includes("from-query-helper"));
+    const queryEntryHost = join(specifierDir, "query-entry-host.test.ts");
+    writeFileSync(queryEntryHost, 'import "./entry?x";\n');
+    const queryEntryBodies = sourceGraph([queryEntryHost]);
+    directoryQuery =
+      queryEntryBodies.some((body) => body.includes("from-package-entry")) &&
+      !queryEntryBodies.some((body) => body.includes("from-package-index"));
+    const installedRoot = join(specifierDir, "node_modules");
+    const helperPkg = join(installedRoot, "test-helper");
+    mkdirSync(helperPkg, { recursive: true });
+    writeFileSync(
+      join(helperPkg, "package.json"),
+      '{ "name": "test-helper", "module": "./register.ts", "main": "./register.ts" }\n',
+    );
+    writeFileSync(
+      join(helperPkg, "register.ts"),
+      'it("credited", unrelated);\n// from-installed-helper\n',
+    );
+    const installedHost = join(specifierDir, "installed-host.test.ts");
+    writeFileSync(
+      installedHost,
+      ['import { register } from "test-helper";', 'if (false) it("credited", citedExport);'].join(
+        "\n",
+      ),
+    );
+    const installedBodies = sourceGraph([installedHost]);
+    installedPackage =
+      installedBodies.some((body) => body.includes("from-installed-helper")) &&
+      duplicateFullNamesAcross(installedBodies).includes("credited");
+    const innerPkg = join(installedRoot, "inner-helper");
+    const outerPkg = join(installedRoot, "outer-helper");
+    mkdirSync(innerPkg, { recursive: true });
+    mkdirSync(outerPkg, { recursive: true });
+    writeFileSync(
+      join(innerPkg, "package.json"),
+      '{ "name": "inner-helper", "main": "./register.ts" }\n',
+    );
+    writeFileSync(
+      join(innerPkg, "register.ts"),
+      'it("credited", unrelated);\n// from-inner-helper\n',
+    );
+    writeFileSync(
+      join(outerPkg, "package.json"),
+      '{ "name": "outer-helper", "main": "./index.ts" }\n',
+    );
+    writeFileSync(join(outerPkg, "index.ts"), 'export { register } from "inner-helper";\n');
+    const nestedHost = join(specifierDir, "nested-host.test.ts");
+    writeFileSync(
+      nestedHost,
+      ['import "outer-helper";', 'if (false) it("credited", citedExport);'].join("\n"),
+    );
+    const nestedBodies = sourceGraph([nestedHost]);
+    nestedPackage =
+      nestedBodies.some((body) => body.includes("from-inner-helper")) &&
+      duplicateFullNamesAcross(nestedBodies).includes("credited");
+    const quietPkg = join(installedRoot, "quiet-helper");
+    mkdirSync(quietPkg, { recursive: true });
+    writeFileSync(
+      join(quietPkg, "package.json"),
+      '{ "name": "quiet-helper", "main": "./index.ts" }\n',
+    );
+    writeFileSync(join(quietPkg, "index.ts"), "export const value = 1;\n// from-quiet-helper\n");
+    const quietHost = join(specifierDir, "quiet-host.test.ts");
+    writeFileSync(quietHost, 'import "quiet-helper";\n');
+    const quietBodies = sourceGraph([quietHost]);
+    quietPackage =
+      quietBodies.length === 1 && !quietBodies.some((body) => body.includes("from-quiet-helper"));
+    const libraryPkg = join(installedRoot, "library-helper");
+    mkdirSync(libraryPkg, { recursive: true });
+    writeFileSync(
+      join(libraryPkg, "package.json"),
+      '{ "name": "library-helper", "main": "./index.ts" }\n',
+    );
+    writeFileSync(
+      join(libraryPkg, "index.ts"),
+      [
+        "function describe(lines, extra) {",
+        "  return lines;",
+        "}",
+        'describe(lines, ["min"]);',
+        "// from-library-helper",
+      ].join("\n"),
+    );
+    const libraryHost = join(specifierDir, "library-host.test.ts");
+    writeFileSync(libraryHost, 'import "library-helper";\n');
+    const libraryBodies = sourceGraph([libraryHost]);
+    libraryPackage =
+      !libraryBodies.some((body) => body.includes("from-library-helper")) &&
+      libraryBodies.every((body) => !unresolvedRunnerCalls(body).includes("describe"));
+    const missingHost = join(specifierDir, "missing-installed-host.test.ts");
+    writeFileSync(missingHost, 'import "not-installed-evidence-pkg";\n');
+    const missingFaults = unresolvedLocalRequires([missingHost]).length === 0;
+    missingInstalled = missingFaults && sourceGraph([missingHost]).length === 1;
+    const dynamicPkg = join(installedRoot, "dynamic-helper");
+    mkdirSync(dynamicPkg, { recursive: true });
+    writeFileSync(
+      join(dynamicPkg, "package.json"),
+      '{ "name": "dynamic-helper", "main": "./index.ts" }\n',
+    );
+    writeFileSync(
+      join(dynamicPkg, "index.ts"),
+      'require(name);\nit("credited", unrelated);\n// from-dynamic-package\n',
+    );
+    const dynamicHost = join(specifierDir, "dynamic-host.test.ts");
+    writeFileSync(
+      dynamicHost,
+      ['import "dynamic-helper";', 'if (false) it("credited", citedExport);'].join("\n"),
+    );
+    const dynamicBodies = sourceGraph([dynamicHost]);
+    const dynamicFaults = unresolvedLocalRequires([dynamicHost]);
+    dynamicPackage =
+      dynamicBodies.some((body) => body.includes("from-dynamic-package")) &&
+      duplicateFullNamesAcross(dynamicBodies).includes("credited") &&
+      !dynamicFaults.includes("dynamic require");
   } finally {
     rmSync(specifierDir, { recursive: true, force: true });
   }
@@ -1506,6 +1647,19 @@ try {
   const arrowLive = registeredSuites(arrowBody, "unrelated", "credited").some(
     (path) => path.length === 1 && path[0] === "suite",
   );
+  const suiteReboundBody = [
+    "let suiteBody = () => {",
+    '  it("credited", citedExport);',
+    "};",
+    "suiteBody = () => {",
+    '  it("credited", unrelated);',
+    "};",
+    'describe("s", suiteBody);',
+  ].join("\n");
+  const reboundSuite = unresolvedRunnerCalls(suiteReboundBody).includes("suiteBody");
+  const reboundCredit = registeredSuites(suiteReboundBody, "citedExport", "credited").every(
+    (path) => path[0] !== "s",
+  );
   const laterBody = [
     'describe("suite", liveSuite);',
     "function liveSuite() {",
@@ -1947,23 +2101,37 @@ try {
   const loaderPlugin =
     loaderPluginRegistration('Bun.plugin({ name: "rewriter", setup() {} });') &&
     loaderPluginRegistration("Bun . plugin ({});") &&
-    loaderPluginRegistration("Bun?.plugin({});");
+    loaderPluginRegistration("Bun?.plugin({});") &&
+    loaderPluginRegistration("const saved = Bun.plugin;\n") &&
+    loaderPluginRegistration("const install = Bun.plugin;\ninstall({});\n") &&
+    loaderPluginRegistration("const { plugin } = Bun;\n") &&
+    loaderPluginRegistration("const { plugin: install } = Bun;\n") &&
+    loaderPluginRegistration("const ns = Bun;\nns.plugin({});\n") &&
+    loaderPluginRegistration('Bun["plugin"];\n') &&
+    loaderPluginRegistration("Bun['plugin'];\n") &&
+    loaderPluginRegistration("Bun[`plugin`];\n");
   const loaderIgnored =
     !loaderPluginRegistration("// Bun.plugin({})\nconst kept = 1;\n") &&
     !loaderPluginRegistration("/** Bun.plugin( */\nconst kept = 1;\n") &&
     !loaderPluginRegistration('const text = "Bun.plugin(";\n') &&
     !loaderPluginRegistration("myBun.plugin({});\n") &&
-    !loaderPluginRegistration("const saved = Bun.plugin;\n") &&
-    !loaderPluginRegistration("runtime.plugin({});\n");
+    !loaderPluginRegistration("runtime.plugin({});\n") &&
+    !loaderPluginRegistration("const { other } = Bun;\n") &&
+    !loaderPluginRegistration("const { install: plugin } = Bun;\n") &&
+    !loaderPluginRegistration("const ns = Bun;\nns.file();\n") &&
+    !loaderPluginRegistration("obj.Bun.plugin({});\n");
   const inventoryRoot = join(root, "packages/core");
   const inventoryFile = join(inventoryRoot, "src/scenario/concreteValidator.test.ts");
   const inventoryPreloads = localPreloadFiles(inventoryRoot, [
     "test",
     "src/scenario/concreteValidator.test.ts",
   ]);
-  const inventoryLoader = sourceGraph([inventoryFile, ...inventoryPreloads]).some((source) =>
-    loaderPluginRegistration(source),
+  const inventorySources = sourceGraph([inventoryFile, ...inventoryPreloads]);
+  const inventoryLoader = inventorySources.some((source) => loaderPluginRegistration(source));
+  const inventoryRunners = inventorySources.some(
+    (source) => unresolvedRunnerCalls(source).length > 0,
   );
+  const inventoryFaults = unresolvedLocalRequires([inventoryFile, ...inventoryPreloads]).length;
   const duplicateOk =
     duplicateNames.length === 1 &&
     duplicateNames[0] === "kept > quota is documented" &&
@@ -2094,12 +2262,23 @@ try {
     packageImport &&
     resolvedImport &&
     directoryEntry &&
+    queryImport &&
+    fragmentImport &&
+    directoryQuery &&
+    installedPackage &&
+    nestedPackage &&
+    quietPackage &&
+    libraryPackage &&
+    missingInstalled &&
+    dynamicPackage &&
     foreignImport.length === 0 &&
     foreignNamespace.length === 0 &&
     helperComputed &&
     namedDuplicate &&
     namedLive &&
     arrowLive &&
+    reboundSuite &&
+    reboundCredit &&
     laterLive &&
     pendingHeld &&
     missingSuite.length === 1 &&
@@ -2110,6 +2289,8 @@ try {
     loaderPlugin &&
     loaderIgnored &&
     !inventoryLoader &&
+    !inventoryRunners &&
+    inventoryFaults === 0 &&
     separatorClosed &&
     scalarPreload &&
     quotedPreload &&
@@ -2157,6 +2338,15 @@ try {
       otherDynamicNamespace,
       chainedNamespace,
       directoryEntry,
+      queryImport,
+      fragmentImport,
+      directoryQuery,
+      installedPackage,
+      nestedPackage,
+      quietPackage,
+      libraryPackage,
+      missingInstalled,
+      dynamicPackage,
       packagePreload,
       missingPackagePreload,
       missingRelativePreload,
@@ -2169,6 +2359,10 @@ try {
       loaderPlugin,
       loaderIgnored,
       inventoryLoader,
+      inventoryRunners,
+      inventoryFaults,
+      reboundSuite,
+      reboundCredit,
       missingSuite,
     }),
   );

@@ -51,6 +51,7 @@ function collectRegistrations(
   const stack: { title: string; depth: number }[] = [];
   const aliases: RunnerAlias[] = [];
   const rewritten = new Set<string>();
+  const reboundSuites = new Set<string>();
   const forParens: number[] = [];
   let depth = 0;
   let parens = 0;
@@ -297,7 +298,10 @@ function collectRegistrations(
       index = word.end;
       continue;
     }
-    if (assigned && !locallyBound(ranges, word.value, index)) rewritten.add(word.value);
+    if (assigned && !locallyBound(ranges, word.value, index)) {
+      rewritten.add(word.value);
+      if (!declaratorInitializer(body, index)) reboundSuites.add(word.value);
+    }
     let callFrom = word.end;
     let kind: RunnerKind | undefined;
     let modifiers: string[] = [];
@@ -378,7 +382,8 @@ function collectRegistrations(
         suites.push(quoted.value);
         const seen = expanding ?? new Set<string>();
         const hidden = locallyBound(ranges, named.value, named.at);
-        if (hidden || seen.has(named.value)) unresolved.push(named.value);
+        const rebound = reboundSuites.has(named.value);
+        if (hidden || seen.has(named.value) || rebound) unresolved.push(named.value);
         else {
           const block = namedCallbackBody(source, named.value);
           if (!block) unresolved.push(named.value);
@@ -649,6 +654,23 @@ function namedCallbackBody(source: string, name: string): string | undefined {
     index = word.end;
   }
   return undefined;
+}
+
+function declaratorInitializer(body: string, nameAt: number): boolean {
+  const keywordAt = previousCodeIndex(body, nameAt);
+  if (keywordAt < 0) return false;
+  const word = wordEndingAt(body, keywordAt);
+  if (!word) return false;
+  return word.value === "const" || word.value === "let" || word.value === "var";
+}
+
+/** A package file hides tests when it registers one, or runs `eval` / `Function`. */
+export function runnerSignal(body: string): "dynamic" | "registration" | "none" {
+  const unresolved: string[] = [];
+  const found = collectRegistrations(body, unresolved);
+  if (unresolved.includes("eval") || unresolved.includes("Function")) return "dynamic";
+  if (found.length > 0) return "registration";
+  return "none";
 }
 
 function previousCodeIndex(body: string, index: number): number {
