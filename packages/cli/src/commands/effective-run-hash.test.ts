@@ -24,6 +24,11 @@ describe("effectiveRunHash", () => {
     expect(hashOf(["ltv", BASELINE, "--horizons", "30m", "--value-per-worth", "2"])).not.toBe(ltv);
   });
 
+  it("records the experience scope from its opened plan", () => {
+    const out = runCliJson(["experience", BASELINE, "--days", "1", "--seed", "1", "--format", "json"]);
+    expect(out._meta.stageScope).toEqual({ experience: { strategy: true, step: false, fast: false, session: true } });
+  });
+
   it("gives evaluate stages their own digest", async () => {
     const dir = await createTempDir("idlekit-evaluate-hash");
     try {

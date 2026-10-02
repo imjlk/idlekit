@@ -159,7 +159,7 @@ export default defineCommand({
       command: "experience",
       effectiveRunHash: opened.hash,
       effectiveEngine: prepared.engine.effectiveId,
-      stageScope: { experience: { strategy: true, step: false, fast: false, session: true } },
+      stageScope: { experience: opened.plan.stage.applies },
       runId,
       seed,
       scenarioPath,
