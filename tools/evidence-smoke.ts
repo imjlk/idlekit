@@ -1997,6 +1997,34 @@ try {
   const plainAssign =
     unresolvedRunnerCalls(plainAssignBody).length === 0 &&
     registeredSuites(plainAssignBody, "citedExport", "credited").length === 1;
+  const classField =
+    unresolvedRunnerCalls(
+      [
+        "class Carrier {",
+        "  static run = it;",
+        "}",
+        'Carrier.run("credited", unrelated);',
+        'if (false) it("credited", citedExport);',
+      ].join("\n"),
+    ).includes("it") &&
+    unresolvedRunnerCalls(["class Carrier {", "  run = it;", "}"].join("\n")).includes("it") &&
+    unresolvedRunnerCalls(["class Carrier {", "  #run = it;", "}"].join("\n")).includes("it") &&
+    unresolvedRunnerCalls("class Carrier {\n  static run = it.only;\n}").includes("it") &&
+    unresolvedRunnerCalls('class Carrier {\n  static ["run"] = it;\n}').includes("it");
+  const classContainer = unresolvedRunnerCalls(
+    "class Carrier {\n  static run = { it };\n}",
+  ).includes("run");
+  const classMethodBody = [
+    "class Carrier {",
+    "  method() {",
+    "    const register = it;",
+    '    register("credited", citedExport);',
+    "  }",
+    "}",
+  ].join("\n");
+  const classMethod =
+    unresolvedRunnerCalls(classMethodBody).length === 0 &&
+    registeredSuites(classMethodBody, "citedExport", "credited").length === 1;
   const localRunner =
     unresolvedRunnerCalls(
       ['import { run } from "./host.ts";', 'run("credited", unrelated);'].join("\n"),
@@ -2745,6 +2773,9 @@ try {
     propertyContainer &&
     plainProperty.length === 0 &&
     plainAssign &&
+    classField &&
+    classContainer &&
+    classMethod &&
     localRunner &&
     packageCall.length === 0 &&
     localUnused.length === 0 &&
@@ -2865,6 +2896,9 @@ try {
       propertyContainer,
       plainProperty,
       plainAssign,
+      classField,
+      classContainer,
+      classMethod,
       localRunner,
       packageCall,
       localUnused,

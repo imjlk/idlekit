@@ -242,6 +242,7 @@ function collectRegistrations(
   const rewritten = new Set<string>();
   const reboundSuites = new Set<string>();
   const forParens: number[] = [];
+  const classDepths: number[] = [];
   let depth = 0;
   let parens = 0;
   let pending: { title: string; parens: number } | undefined;
@@ -300,7 +301,9 @@ function collectRegistrations(
       continue;
     }
     if (char === "{") {
+      const classBody = opensClassBody(body, index);
       depth += 1;
+      if (classBody) classDepths.push(depth);
       pushPending();
       index += 1;
       continue;
@@ -309,6 +312,7 @@ function collectRegistrations(
       while (stack.length > 0 && stack[stack.length - 1]?.depth === depth) stack.pop();
       while (aliases.length > 0 && aliases[aliases.length - 1]?.depth === depth) aliases.pop();
       const closedDepth = depth;
+      if (classDepths.at(-1) === closedDepth) classDepths.pop();
       depth = Math.max(0, depth - 1);
       if (templateCloseDepths.at(-1) === closedDepth) {
         templateCloseDepths.pop();
@@ -361,6 +365,11 @@ function collectRegistrations(
       unresolved.push(word.value);
       index = word.end;
       continue;
+    }
+    if (
+      classFieldHoldsRunner(body, index, word.end, classDepths.at(-1) === depth, aliases)
+    ) {
+      unresolved.push(word.value);
     }
     if (word.value === "return" && returnedRunnerValue(body, word.end, aliases)) {
       unresolved.push(word.value);
@@ -582,6 +591,7 @@ function collectRegistrations(
         optionalRunnerCall(body, open) || optionalCallAfterGrouping(body, open);
       const forwarded = passedAsArgument(body, index, open);
       const storedOnProperty = assignedToProperty(body, index);
+      const storedOnField = assignedToClassField(body, index, classDepths.at(-1) === depth);
       const returned = returnedFromFunction(body, index);
       if (
         isIndirectInvoke(body, index) ||
@@ -589,6 +599,7 @@ function collectRegistrations(
         optional ||
         forwarded ||
         storedOnProperty ||
+        storedOnField ||
         returned
       ) {
         unresolved.push(word.value);
@@ -1178,6 +1189,156 @@ function returnedFromFunction(body: string, wordStart: number): boolean {
     return !lineBreaksReturn(body, prev + 1, cursor);
   }
   return false;
+}
+
+const FIELD_MODIFIERS = new Set([
+  "abstract",
+  "accessor",
+  "declare",
+  "override",
+  "private",
+  "protected",
+  "public",
+  "readonly",
+  "static",
+]);
+
+/** `{` after `class Name` or `class Name extends Base`. A method body is not a class body. */
+function opensClassBody(body: string, braceAt: number): boolean {
+  let cursor = braceAt - 1;
+  let nested = 0;
+  let angles = 0;
+  while (cursor >= 0 && braceAt - cursor < 500) {
+    const char = body[cursor] ?? "";
+    if (char === "/" && body[cursor - 1] === "/") {
+      const line = body.lastIndexOf("\n", cursor);
+      cursor = line < 0 ? -1 : line - 1;
+      continue;
+    }
+    if (char === "/" && body[cursor - 1] === "*") {
+      const open = body.lastIndexOf("/*", cursor - 1);
+      cursor = open < 0 ? -1 : open - 1;
+      continue;
+    }
+    if (char === ">" && body[cursor - 1] === "=" && nested === 0 && angles === 0) return false;
+    if (char === ">") {
+      angles += 1;
+      cursor -= 1;
+      continue;
+    }
+    if (char === "<") {
+      if (angles > 0) angles -= 1;
+      cursor -= 1;
+      continue;
+    }
+    if (char === "=" && nested === 0 && angles === 0) return false;
+    if (/[A-Za-z0-9_$]/.test(char)) {
+      const word = wordEndingAt(body, cursor);
+      if (!word) {
+        cursor -= 1;
+        continue;
+      }
+      const headerWord =
+        word.value === "function" ||
+        word.value === "catch" ||
+        word.value === "if" ||
+        word.value === "for" ||
+        word.value === "while" ||
+        word.value === "switch" ||
+        word.value === "do";
+      if (nested === 0 && headerWord) return false;
+      if (nested === 0 && word.value === "class") return true;
+      cursor = word.start - 1;
+      continue;
+    }
+    if (char === "}") nested += 1;
+    else if (char === "{") {
+      if (nested === 0) return false;
+      nested -= 1;
+    }
+    cursor -= 1;
+  }
+  return false;
+}
+
+function hasFieldModifier(body: string, nameStart: number): boolean {
+  let cursor = previousCodeIndex(body, nameStart);
+  if (cursor < 0) return false;
+  if (body[cursor] === "#") return true;
+  let saw = false;
+  while (cursor >= 0) {
+    const word = wordEndingAt(body, cursor);
+    if (!word || !FIELD_MODIFIERS.has(word.value)) break;
+    saw = true;
+    cursor = previousCodeIndex(body, word.start);
+    if (cursor >= 0 && body[cursor] === "#") return true;
+  }
+  return saw;
+}
+
+function isClassField(body: string, nameStart: number, inClass: boolean): boolean {
+  if (hasFieldModifier(body, nameStart)) return true;
+  if (!inClass) return false;
+  const before = previousCodeIndex(body, nameStart);
+  if (before < 0) return false;
+  const mark = body[before] ?? "";
+  return mark === "{" || mark === ";" || mark === "}";
+}
+
+function fieldNameStart(body: string, lhsEnd: number): number {
+  if (body[lhsEnd] === "]") {
+    let nested = 1;
+    let cursor = lhsEnd - 1;
+    while (cursor >= 0 && nested > 0) {
+      const char = body[cursor] ?? "";
+      if (char === "]") nested += 1;
+      else if (char === "[") nested -= 1;
+      if (nested === 0) return cursor;
+      cursor -= 1;
+    }
+    return -1;
+  }
+  const ident = wordEndingAt(body, lhsEnd);
+  if (!ident) return -1;
+  return ident.start;
+}
+
+function classFieldAssignment(body: string, equalsAt: number, inClass: boolean): boolean {
+  if (body[equalsAt] !== "=") return false;
+  if (body[equalsAt + 1] === "=" || body[equalsAt + 1] === ">") return false;
+  const lhsEnd = previousCodeIndex(body, equalsAt);
+  if (lhsEnd < 0) return false;
+  const nameStart = fieldNameStart(body, lhsEnd);
+  if (nameStart < 0) return false;
+  return isClassField(body, nameStart, inClass);
+}
+
+/** `static run = it` and `class Carrier { run = it }`. `const name = it` stays a binding. */
+function assignedToClassField(body: string, wordStart: number, inClass: boolean): boolean {
+  let cursor = wordStart;
+  for (let guard = 0; guard < 4; guard += 1) {
+    const prev = previousCodeIndex(body, cursor);
+    if (prev < 0) return false;
+    if (body[prev] === "(") {
+      cursor = prev;
+      continue;
+    }
+    return classFieldAssignment(body, prev, inClass);
+  }
+  return false;
+}
+
+function classFieldHoldsRunner(
+  body: string,
+  nameStart: number,
+  nameEnd: number,
+  inClass: boolean,
+  aliases: readonly RunnerAlias[],
+): boolean {
+  const assigned = assignmentAt(body, nameEnd);
+  if (assigned?.plain !== true) return false;
+  if (!isClassField(body, nameStart, inClass)) return false;
+  return valueHoldsRunner(body, assigned.at + 1, aliases);
 }
 
 /** `obj.prop = it` and `obj["prop"] = it`. A plain `const name = it` stays a binding. */
