@@ -46,6 +46,7 @@ import {
   localPreloadFiles,
   sameCommandFile,
   uninventoriedCommandTargets,
+  unresolvedPreloadSpecifiers,
 } from "./evidence/commands";
 import {
   citesRequirement,
@@ -89,7 +90,13 @@ export {
   productionFileCites,
   unregisteredImplementationHost,
 };
-export { blockedTestArgs, commandTargetsFile, localPreloadFiles, uninventoriedCommandTargets };
+export {
+  blockedTestArgs,
+  commandTargetsFile,
+  localPreloadFiles,
+  uninventoriedCommandTargets,
+  unresolvedPreloadSpecifiers,
+};
 export { sourceGraph, unresolvedLocalRequires };
 export { enabledClaimFailures, graphRuleFailures, missingProtectedDocs };
 export { formatGateFailures, formatIncludeRoots } from "./evidence/format-gate";
@@ -228,6 +235,13 @@ export async function checkInventory(projectRoot = root): Promise<string[]> {
       const extras = uninventoriedCommandTargets(test.args, test.cwd, inventoriedFiles);
       if (extras.length > 0) {
         fail(failures, `${requirement.id} command runs uninventoried tests: ${extras.join(", ")}`);
+      }
+      const missingPreloads = unresolvedPreloadSpecifiers(commandCwd, test.args);
+      if (missingPreloads.length > 0) {
+        fail(
+          failures,
+          `${requirement.id} preload cannot be scanned: ${missingPreloads.join(", ")}`,
+        );
       }
       const commandFiles = [
         ...inventoriedFiles.map((file) => join(projectRoot, file)),

@@ -15,6 +15,7 @@ import {
   blockedTestArgs,
   junitReporterArgs,
   localPreloadFiles,
+  unresolvedPreloadSpecifiers,
   unresolvedRunnerCalls,
   registrationLines,
   sourceGraph,
@@ -1010,6 +1011,9 @@ try {
   let scalarPreload = false;
   let quotedPreload = false;
   let arrayPreload = false;
+  let packagePreload = false;
+  let missingPackagePreload = false;
+  let missingRelativePreload = false;
   try {
     writeFileSync(join(preloadDir, "bunfig.toml"), '[test]\npreload = "./setup.ts"\n');
     const scalar = localPreloadFiles(preloadDir, ["test"]);
@@ -1024,6 +1028,32 @@ try {
     writeFileSync(join(preloadDir, "bunfig.toml"), '[test]\npreload = ["./setup.ts"]\n');
     const listed = localPreloadFiles(preloadDir, ["test"]);
     arrayPreload = listed.length === 1 && listed[0] === setupPath;
+    const setupPkg = join(preloadDir, "node_modules", "test-setup");
+    mkdirSync(setupPkg, { recursive: true });
+    writeFileSync(
+      join(setupPkg, "package.json"),
+      '{ "name": "test-setup", "main": "./index.ts" }\n',
+    );
+    writeFileSync(join(setupPkg, "index.ts"), 'import "./register";\n');
+    writeFileSync(
+      join(setupPkg, "register.ts"),
+      'it("credited", unrelated);\n// from-package-preload\n',
+    );
+    writeFileSync(join(preloadDir, "bunfig.toml"), '[test]\npreload = ["test-setup"]\n');
+    const packageFiles = localPreloadFiles(preloadDir, ["test"]);
+    const packageBodies = sourceGraph([preloadHost, ...packageFiles]);
+    packagePreload =
+      packageFiles.length === 1 &&
+      packageBodies.some((body) => body.includes("from-package-preload")) &&
+      duplicateFullNamesAcross(packageBodies).includes("credited");
+    writeFileSync(join(preloadDir, "bunfig.toml"), '[test]\npreload = ["not-a-package"]\n');
+    missingPackagePreload = unresolvedPreloadSpecifiers(preloadDir, ["test"]).includes(
+      "not-a-package",
+    );
+    writeFileSync(join(preloadDir, "bunfig.toml"), '[test]\npreload = ["./missing-setup.ts"]\n');
+    missingRelativePreload = unresolvedPreloadSpecifiers(preloadDir, ["test"]).includes(
+      "./missing-setup.ts",
+    );
   } finally {
     rmSync(preloadDir, { recursive: true, force: true });
   }
@@ -1656,7 +1686,10 @@ try {
     separatorClosed &&
     scalarPreload &&
     quotedPreload &&
-    arrayPreload;
+    arrayPreload &&
+    packagePreload &&
+    missingPackagePreload &&
+    missingRelativePreload;
   record(
     "duplicate-title",
     "zero",
@@ -1679,6 +1712,9 @@ try {
       requiredSuite,
       dynamicSuite,
       bunSuiteDuplicate,
+      packagePreload,
+      missingPackagePreload,
+      missingRelativePreload,
     }),
   );
   record(
@@ -1858,6 +1894,14 @@ try {
   const cwdEquals = blockedTestArgs(["test", "--cwd=../other", "src/x.test.ts"]);
   const cwdSplit = blockedTestArgs(["test", "--cwd", "../other", "src/x.test.ts"]);
   const cwdAfterSeparator = blockedTestArgs(["test", "src/x.test.ts", "--", "--cwd"]);
+  const inspectWait = blockedTestArgs(["test", "--inspect-wait", "src/example.test.ts"]);
+  const inspectBrk = blockedTestArgs([
+    "test",
+    "--inspect-brk=127.0.0.1:9229",
+    "src/example.test.ts",
+  ]);
+  const inspectOpen = blockedTestArgs(["test", "--inspect", "src/example.test.ts"]);
+  const inspectAfterSeparator = blockedTestArgs(["test", "src/x.test.ts", "--", "--inspect-wait"]);
   const reporterAt = reporterArgs.indexOf("--reporter=junit");
   const separatorAt = reporterArgs.indexOf("--");
   const commandOk =
@@ -1885,7 +1929,11 @@ try {
     plainCommand === undefined &&
     cwdEquals === "--cwd" &&
     cwdSplit === "--cwd" &&
-    cwdAfterSeparator === undefined;
+    cwdAfterSeparator === undefined &&
+    inspectWait === "--inspect-wait" &&
+    inspectBrk === "--inspect-brk" &&
+    inspectOpen === undefined &&
+    inspectAfterSeparator === undefined;
   record(
     "test-subcommand",
     "zero",

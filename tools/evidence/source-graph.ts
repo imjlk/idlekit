@@ -633,7 +633,64 @@ function typeOnlyImport(body: string, fromIndex: number): boolean {
 
 type SourceWalk = { bodies: string[]; faults: string[] };
 
+function packageRootOf(file: string): string | undefined {
+  let dir = dirname(file);
+  while (true) {
+    if (existsSync(join(dir, "package.json"))) return dir;
+    const parent = dirname(dir);
+    if (parent === dir) return undefined;
+    dir = parent;
+  }
+}
+
+function inDirectory(file: string, root: string): boolean {
+  return file === root || file.startsWith(`${root}/`) || file.startsWith(`${root}\\`);
+}
+
+/** Package roots of explicit node_modules entries. Their local files stay visible. */
+function preloadPackageRoots(files: readonly string[]): string[] {
+  const roots: string[] = [];
+  for (const file of files) {
+    if (!existsSync(file)) continue;
+    let real = file;
+    try {
+      real = realpathSync(file);
+    } catch {
+      continue;
+    }
+    if (!real.split(/[/\\]/).includes("node_modules")) continue;
+    const root = packageRootOf(real);
+    if (!root || roots.includes(root)) continue;
+    roots.push(root);
+  }
+  return roots;
+}
+
+function allowedPackageFile(real: string, roots: readonly string[]): boolean {
+  return roots.some((root) => inDirectory(real, root));
+}
+
+function acceptLocalFile(
+  next: string,
+  fromReal: string,
+  roots: readonly string[],
+  faults: string[],
+  spec: string,
+): boolean {
+  let real = next;
+  try {
+    real = realpathSync(next);
+  } catch {
+    return true;
+  }
+  if (!real.split(/[/\\]/).includes("node_modules")) return true;
+  if (allowedPackageFile(real, roots)) return true;
+  if (allowedPackageFile(fromReal, roots)) faults.push(spec);
+  return false;
+}
+
 function walkSources(files: readonly string[]): SourceWalk {
+  const packageRoots = preloadPackageRoots(files);
   const seen = new Set<string>();
   const bodies: string[] = [];
   const faults: string[] = [];
@@ -644,7 +701,12 @@ function walkSources(files: readonly string[]): SourceWalk {
     const real = realpathSync(file);
     if (seen.has(real)) continue;
     seen.add(real);
-    if (real.split(/[/\\]/).includes("node_modules")) continue;
+    if (
+      real.split(/[/\\]/).includes("node_modules") &&
+      !allowedPackageFile(real, packageRoots)
+    ) {
+      continue;
+    }
     const body = readFileSync(real, "utf8");
     bodies.push(body);
     const hidden = stringSpans(body);
@@ -661,7 +723,7 @@ function walkSources(files: readonly string[]): SourceWalk {
         continue;
       }
       const next = resolveRelativeImport(real, spec);
-      if (next) queue.push(next);
+      if (next && acceptLocalFile(next, real, packageRoots, faults, spec)) queue.push(next);
     }
     for (const match of body.matchAll(NON_RELATIVE_IMPORT)) {
       if (match.index !== undefined && insideSpan(hidden, match.index)) continue;
@@ -686,7 +748,7 @@ function walkSources(files: readonly string[]): SourceWalk {
         faults.push(required.spec);
         continue;
       }
-      queue.push(next);
+      if (acceptLocalFile(next, real, packageRoots, faults, required.spec)) queue.push(next);
     }
     for (const imported of importCalls(body, hidden)) {
       if (imported.kind === "dynamic") {
@@ -702,7 +764,7 @@ function walkSources(files: readonly string[]): SourceWalk {
         faults.push(imported.spec);
         continue;
       }
-      queue.push(next);
+      if (acceptLocalFile(next, real, packageRoots, faults, imported.spec)) queue.push(next);
     }
   }
   return { bodies, faults };

@@ -54,7 +54,14 @@ const TEST_VALUE_FLAGS = new Set([
   "--timeout",
 ]);
 
-const BLOCKED_TEST_FLAGS = new Set(["--watch", "-u", "--update-snapshots", "--cwd"]);
+const BLOCKED_TEST_FLAGS = new Set([
+  "--watch",
+  "-u",
+  "--update-snapshots",
+  "--cwd",
+  "--inspect-wait",
+  "--inspect-brk",
+]);
 
 /** Flags that hang the run, rewrite snapshots, or move Bun to another cwd. */
 export function blockedTestArgs(args: readonly string[]): string | undefined {
@@ -129,26 +136,46 @@ export function uninventoriedCommandTargets(
   );
 }
 
-export function localPreloadFiles(cwd: string, args: readonly string[]): string[] {
+function preloadNames(cwd: string, args: readonly string[]): string[] {
   const names = preloadArguments(args);
   const bunfig = join(cwd, "bunfig.toml");
-  if (existsSync(bunfig)) {
-    const text = readFileSync(bunfig, "utf8");
-    for (const match of text.matchAll(/preload\s*=\s*\[([^\]]*)\]/g)) {
-      for (const item of match[1]?.matchAll(/"([^"]+)"|'([^']+)'/g) ?? []) {
-        const value = item[1] ?? item[2];
-        if (value) names.push(value);
-      }
-    }
-    for (const match of text.matchAll(/preload\s*=\s*(?:"([^"]+)"|'([^']+)')/g)) {
-      const value = match[1] ?? match[2];
+  if (!existsSync(bunfig)) return names;
+  const text = readFileSync(bunfig, "utf8");
+  for (const match of text.matchAll(/preload\s*=\s*\[([^\]]*)\]/g)) {
+    for (const item of match[1]?.matchAll(/"([^"]+)"|'([^']+)'/g) ?? []) {
+      const value = item[1] ?? item[2];
       if (value) names.push(value);
     }
   }
+  for (const match of text.matchAll(/preload\s*=\s*(?:"([^"]+)"|'([^']+)')/g)) {
+    const value = match[1] ?? match[2];
+    if (value) names.push(value);
+  }
+  return names;
+}
+
+function resolvePreload(cwd: string, name: string): string | undefined {
+  const direct = resolve(cwd, name);
+  if (existsSync(direct)) return direct;
+  if (isAbsolute(name) || name.startsWith(".")) return undefined;
+  try {
+    return Bun.resolveSync(name, cwd);
+  } catch {
+    return undefined;
+  }
+}
+
+/** Files Bun loads before the tests, including a package entry such as `test-setup`. */
+export function localPreloadFiles(cwd: string, args: readonly string[]): string[] {
   const files: string[] = [];
-  for (const name of names) {
-    const path = resolve(cwd, name);
-    if (existsSync(path)) files.push(path);
+  for (const name of preloadNames(cwd, args)) {
+    const resolved = resolvePreload(cwd, name);
+    if (resolved) files.push(resolved);
   }
   return files;
+}
+
+/** Preloads that do not resolve to a file, so their registrations cannot be scanned. */
+export function unresolvedPreloadSpecifiers(cwd: string, args: readonly string[]): string[] {
+  return preloadNames(cwd, args).filter((name) => resolvePreload(cwd, name) === undefined);
 }
