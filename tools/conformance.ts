@@ -131,11 +131,24 @@ function negative(): void {
     // bun test sets NODE_ENV=test, and ttsc then refuses this preload project's generation.
     delete preloadEnv.NODE_ENV;
     preloadEnv.TTSC_TTSX_BINARY = join(base, "tools", ttsxUnderNodeName());
-    const preloaded = spawn([process.execPath, "src/entry.ts"], preload, preloadEnv);
+    // On a freshly written project, Bun can report "directory mismatch" while ttsc
+    // captures the transform generation, and ttsc then gives up after its own two
+    // attempts. That is an unstable host, not a missing transform, so run again.
+    // A missing transform fails with a different error and is not retried.
+    let preloaded = spawn([process.execPath, "src/entry.ts"], preload, preloadEnv);
+    let attempts = 1;
+    while (
+      attempts < 3 &&
+      preloaded.exitCode !== 0 &&
+      preloaded.text.includes("TtscUnstableGenerationError")
+    ) {
+      attempts += 1;
+      preloaded = spawn([process.execPath, "src/entry.ts"], preload, preloadEnv);
+    }
     record(
       "transform-present",
       preloaded.exitCode === 0 && preloaded.text.includes("preload-ok"),
-      preloaded.text.slice(0, 1500),
+      `attempts=${attempts}\n${preloaded.text.slice(0, 1500)}`,
     );
 
     const nopreload = join(work, "bun-nopreload");

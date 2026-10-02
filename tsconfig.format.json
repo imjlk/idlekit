@@ -29,6 +29,7 @@
     "tools/evidence/runner-bind.ts",
     "tools/evidence/runner-registry.ts",
     "tools/evidence/source-graph.ts",
+    "tools/evidence/source-lock.ts",
     "tools/evidence-check.ts",
     "tools/evidence-smoke.ts",
     "tools/format-check.ts"

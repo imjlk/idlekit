@@ -652,6 +652,51 @@ function snapshotData(item: unknown, seen: WeakMap<object, number>, nextId: { va
       symbols,
     );
   }
+  if (item instanceof Date && !declaresCustomToJson(item)) {
+    const time = item.getTime();
+    const instant = snapshotTag("date", Number.isNaN(time) ? "invalid" : item.toISOString());
+    const fields = ownPropertySnapshot(item, seen, nextId);
+    const dated =
+      fields.count === 0 ? instant : { [SENTINEL_KEY]: "date-fields", instant, props: fields.value };
+    return withSymbolKeys(dated, symbolKeySnapshots(item, seen, nextId));
+  }
+  if (item instanceof Map) {
+    const entries: Array<{ key: unknown; value: unknown }> = [];
+    for (const [key, value] of item) {
+      entries.push({
+        key: snapshotData(key, seen, nextId),
+        value: snapshotData(value, seen, nextId),
+      });
+    }
+    return collectionSnapshot("map", entries, item, seen, nextId);
+  }
+  if (item instanceof Set) {
+    const entries: unknown[] = [];
+    for (const value of item) entries.push(snapshotData(value, seen, nextId));
+    return collectionSnapshot("set", entries, item, seen, nextId);
+  }
+  const props = ownPropertySnapshot(item, seen, nextId);
+  const symbols = symbolKeySnapshots(item, seen, nextId);
+  if (declaresCustomToJson(item)) {
+    // URL keeps its href only in the hook. A hook that hides fields cannot hide
+    // them here, because the own fields are recorded beside its value.
+    let hooked: unknown;
+    try {
+      hooked = snapshotData((item as { toJSON: () => unknown }).toJSON(), seen, nextId);
+    } catch {
+      hooked = snapshotTag("tojson-threw");
+    }
+    return withSymbolKeys({ [SENTINEL_KEY]: "tojson", value: hooked, props: props.value }, symbols);
+  }
+  return withSymbolKeys(props.value, symbols);
+}
+
+/** Enumerable own string-keyed data, as the generic record walk reads it. */
+function ownPropertySnapshot(
+  item: object,
+  seen: WeakMap<object, number>,
+  nextId: { value: number },
+): { count: number; value: unknown } {
   const record: Record<string, unknown> = {};
   for (const key of Object.getOwnPropertyNames(item)) {
     const descriptor = Object.getOwnPropertyDescriptor(item, key);
@@ -662,7 +707,23 @@ function snapshotData(item: unknown, seen: WeakMap<object, number>, nextId: { va
     }
     record[key] = snapshotData(descriptor.value, seen, nextId);
   }
-  return withSymbolKeys(escapeSentinelKey(record), symbolKeySnapshots(item, seen, nextId));
+  return { count: Object.keys(record).length, value: escapeSentinelKey(record) };
+}
+
+/** A Map or Set subclass can carry fields and symbol keys beside its entries. */
+function collectionSnapshot(
+  kind: "map" | "set",
+  entries: unknown[],
+  item: object,
+  seen: WeakMap<object, number>,
+  nextId: { value: number },
+): unknown {
+  const props = ownPropertySnapshot(item, seen, nextId);
+  const base =
+    props.count === 0
+      ? { [SENTINEL_KEY]: kind, entries }
+      : { [SENTINEL_KEY]: kind, entries, props: props.value };
+  return withSymbolKeys(base, symbolKeySnapshots(item, seen, nextId));
 }
 
 /** A hook JSON would call. `Date.prototype.toJSON` stays on the JSON path so the instant is kept. */
@@ -688,6 +749,9 @@ function jsonSilentlyDrops(item: unknown, seen = new Set<object>()): boolean {
   if (type !== "object") return false;
   if (seen.has(item)) return true;
   seen.add(item);
+  if (item instanceof Map || item instanceof Set) return true;
+  // JSON writes an invalid Date as null, the same text as a null value.
+  if (item instanceof Date && Number.isNaN(item.getTime())) return true;
   if (declaresCustomToJson(item)) return true;
   if (Array.isArray(item)) {
     if (arrayIndexCount(item) !== item.length) return true;

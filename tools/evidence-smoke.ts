@@ -1,6 +1,14 @@
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join, resolve } from "path";
+import { plainTestEnv } from "./evidence/junit";
+import {
+  installSourceLock,
+  sealedCommand,
+  sourceLockCommand,
+  sealSources,
+  unsealSources,
+} from "./evidence/source-lock";
 import lintConfig from "../lint.config";
 import {
   approvalApplies,
@@ -14,10 +22,14 @@ import {
   junitCases,
   blockedTestArgs,
   junitReporterArgs,
+  loaderPluginRegistration,
+  mockModuleRegistration,
   localPreloadFiles,
+  unresolvedPreloadSpecifiers,
   unresolvedRunnerCalls,
   registrationLines,
   sourceGraph,
+  sourceFiles,
   unresolvedLocalRequires,
   ambiguousSuiteSeparators,
   citesRequirement,
@@ -25,6 +37,7 @@ import {
   formatGateFailures,
   formatIncludeRoots,
   graphRuleFailures,
+  declaredRequirementId,
   headingAnchors,
   missingProtectedDocs,
   registeredSuites,
@@ -372,6 +385,9 @@ try {
     filelessName === "concrete typia validator > accepts a numeric" &&
     junitCases('<testcase name="literal &gt; sign" />')[0]?.name === "literal > sign" &&
     junitCases('<testcase name="literal &amp;gt; sign" />')[0]?.name === "literal &gt; sign" &&
+    junitCases('<testcase name="line&#10;break" />')[0]?.name === "line\nbreak" &&
+    junitCases('<testcase name="hex&#x0A;break" />')[0]?.name === "hex\nbreak" &&
+    junitCases('<testcase name="kept&amp;#10;text" />')[0]?.name === "kept&#10;text" &&
     located?.file === "src/host.test.ts" &&
     located.line === locatedLine &&
     locatedLine === 2;
@@ -401,6 +417,7 @@ try {
   const quotedFence = headingAnchors(
     ["> ```md", "> ## Example {#example}", "> ```", "## Kept {#kept}"].join("\n"),
   );
+  const quotedFenceBreak = headingAnchors(["> ```", "## Requirement {#req-id}"].join("\n"));
   const listedFence = headingAnchors(
     ["- ```md", "- ## Example {#example}", "- ```", "## Kept {#kept}"].join("\n"),
   );
@@ -415,6 +432,8 @@ try {
     inlineComment[0] === "kept" &&
     quotedFence.length === 1 &&
     quotedFence[0] === "kept" &&
+    quotedFenceBreak.length === 1 &&
+    quotedFenceBreak[0] === "req-id" &&
     listedFence.length === 1 &&
     listedFence[0] === "kept";
   record(
@@ -422,7 +441,7 @@ try {
     "zero",
     fenceOk ? 0 : 1,
     fenceOk,
-    JSON.stringify({ anchors, backtickInfo, tildeInfo, quotedFence, listedFence }),
+    JSON.stringify({ anchors, backtickInfo, tildeInfo, quotedFence, quotedFenceBreak, listedFence }),
   );
 
   const nested = headingAnchors(
@@ -497,6 +516,15 @@ try {
   const commentCloser = headingAnchors("<!--\n`-->`\n## Kept {#kept}\n");
   const sameLineCloser = headingAnchors("<!-- `-->`\n## Kept {#kept}\n");
   const closedHeading = headingAnchors("## Requirement {#req-id} ##\n## Kept {#kept}\n");
+  const continuedList = headingAnchors(
+    ["123. item", "     ## Requirement {#req-id}", "## Kept {#kept}"].join("\n"),
+  );
+  const continuedBlank = headingAnchors(
+    ["123. item", "", "     ## Requirement {#req-id}"].join("\n"),
+  );
+  const continuedCode = headingAnchors(
+    ["123. item", "    ## Hidden {#hidden}", "## Kept {#kept}"].join("\n"),
+  );
   const setextOk =
     setext.length === 3 &&
     setext[0] === "req-id" &&
@@ -547,13 +575,28 @@ try {
     sameLineCloser[0] === "kept" &&
     closedHeading.length === 2 &&
     closedHeading[0] === "req-id" &&
-    closedHeading[1] === "kept";
+    closedHeading[1] === "kept" &&
+    continuedList.length === 2 &&
+    continuedList[0] === "req-id" &&
+    continuedList[1] === "kept" &&
+    continuedBlank.length === 1 &&
+    continuedBlank[0] === "req-id" &&
+    continuedCode.length === 1 &&
+    continuedCode[0] === "kept";
   record(
     "setext-heading",
     "zero",
     setextOk ? 0 : 1,
     setextOk,
-    JSON.stringify({ setext, quotedSetext, nestedSetext, quotedH1 }),
+    JSON.stringify({
+      setext,
+      quotedSetext,
+      nestedSetext,
+      quotedH1,
+      continuedList,
+      continuedBlank,
+      continuedCode,
+    }),
   );
 
   const activeDocs = ["docs/requirements/active/**/*.md"];
@@ -584,6 +627,32 @@ try {
   const realCitation = "/** @evidence docs/requirements/active/x.md#anchor */\nexport function real() {}\n";
   const ordinaryBlock =
     "/* note /** @evidence docs/requirements/active/x.md#anchor */ export function uncited() {}\n";
+  const declaredDoc = [
+    "## A {#a}",
+    "",
+    "Requirement `REQ-A`.",
+    "",
+    "## B {#b}",
+    "",
+    "Requirement `REQ-B`.",
+    "",
+    "## C {#c}",
+    "",
+    "No identifier.",
+    "",
+  ].join("\n");
+  const declaredOk =
+    declaredRequirementId(declaredDoc, "a") === "REQ-A" &&
+    declaredRequirementId(declaredDoc, "b") === "REQ-B" &&
+    declaredRequirementId(declaredDoc, "c") === undefined &&
+    declaredRequirementId(declaredDoc, "missing") === undefined;
+  record(
+    "declared-requirement-id",
+    "zero",
+    declaredOk ? 0 : 1,
+    declaredOk,
+    "a section binds only the Requirement id written under its own anchor",
+  );
   const citationOk =
     !productionFileCites(spoofedCitation, "docs/requirements/active/x.md", "anchor") &&
     productionFileCites(realCitation, "docs/requirements/active/x.md", "anchor") &&
@@ -845,11 +914,35 @@ try {
   let dynamicRequire = false;
   let packageRequire = false;
   let commentRequire = false;
+  let shadowedRequire = false;
+  let importEquals = false;
+  let createdRequire = false;
+  let commentImport = false;
+  let relativeTypeSkipped = false;
   let dynamicImport = false;
   let unresolvedImport = false;
   let packageImport = false;
   let resolvedImport = false;
   let helperComputed = false;
+  let moduleRequire = false;
+  let metaRequire = false;
+  let moduleSpacedRequire = false;
+  let memberRequireIgnored = false;
+  let moduleDynamicRequire = false;
+  let directoryEntry = false;
+  let queryImport = false;
+  let fragmentImport = false;
+  let packageHashImport = false;
+  let directoryQuery = false;
+  let installedPackage = false;
+  let nestedPackage = false;
+  let quietPackage = false;
+  let libraryPackage = false;
+  let aliasPackage = false;
+  let missingInstalled = false;
+  let dynamicPackage = false;
+  let dataImport = false;
+  let textImport = false;
   try {
     const bodies = sourceGraph([specifierHost]);
     const joined = bodies.join("\n");
@@ -898,6 +991,87 @@ try {
     const requireBodies = sourceGraph([requireHost]);
     requireDuplicate = duplicateFullNamesAcross(requireBodies).includes("credited");
     requireResolved = requireBodies.some((body) => body.includes("from-required-helper"));
+    writeFileSync(
+      requireHost,
+      [
+        'import { register } from /* note */ "./required-helper";',
+        'if (false) it("credited", citedExport);',
+      ].join("\n"),
+    );
+    const blockBodies = sourceGraph([requireHost]);
+    const blockImport =
+      blockBodies.length === 2 && duplicateFullNamesAcross(blockBodies).includes("credited");
+    writeFileSync(
+      requireHost,
+      [
+        "import { register } from // note",
+        '  "./required-helper";',
+        'if (false) it("credited", citedExport);',
+      ].join("\n"),
+    );
+    const lineBodies = sourceGraph([requireHost]);
+    const lineImport =
+      lineBodies.length === 2 && duplicateFullNamesAcross(lineBodies).includes("credited");
+    writeFileSync(
+      requireHost,
+      [
+        'import /* note */ "./required-helper";',
+        'if (false) it("credited", citedExport);',
+      ].join("\n"),
+    );
+    const sideBodies = sourceGraph([requireHost]);
+    const sideImport =
+      sideBodies.length === 2 && duplicateFullNamesAcross(sideBodies).includes("credited");
+    commentImport = blockImport && lineImport && sideImport;
+    writeFileSync(
+      join(specifierDir, "types.ts"),
+      'it("credited", unrelated);\n// from-type-only\n',
+    );
+    writeFileSync(
+      requireHost,
+      ['import type { Box } from "./types";', 'if (false) it("credited", citedExport);'].join("\n"),
+    );
+    const erasedBodies = sourceGraph([requireHost]);
+    const erasedType =
+      erasedBodies.length === 1 && !erasedBodies.some((body) => body.includes("from-type-only"));
+    writeFileSync(
+      requireHost,
+      ['import { type Box } from "./types";', 'if (false) it("credited", citedExport);'].join("\n"),
+    );
+    const inlineBodies = sourceGraph([requireHost]);
+    const inlineType =
+      inlineBodies.length === 1 && !inlineBodies.some((body) => body.includes("from-type-only"));
+    relativeTypeSkipped = erasedType && inlineType;
+    writeFileSync(
+      requireHost,
+      ['module.require("./required-helper");', 'if (false) it("credited", citedExport);'].join(
+        "\n",
+      ),
+    );
+    const moduleBodies = sourceGraph([requireHost]);
+    moduleRequire =
+      duplicateFullNamesAcross(moduleBodies).includes("credited") &&
+      moduleBodies.some((body) => body.includes("from-required-helper"));
+    writeFileSync(
+      requireHost,
+      ['import.meta.require("./required-helper");', 'if (false) it("credited", citedExport);'].join(
+        "\n",
+      ),
+    );
+    const metaBodies = sourceGraph([requireHost]);
+    metaRequire =
+      duplicateFullNamesAcross(metaBodies).includes("credited") &&
+      metaBodies.some((body) => body.includes("from-required-helper"));
+    writeFileSync(requireHost, 'module . require("./required-helper");\n');
+    moduleSpacedRequire = sourceGraph([requireHost]).some((body) =>
+      body.includes("from-required-helper"),
+    );
+    writeFileSync(requireHost, 'foo.require("./required-helper");\n');
+    memberRequireIgnored =
+      sourceGraph([requireHost]).length === 1 &&
+      unresolvedLocalRequires([requireHost]).length === 0;
+    writeFileSync(requireHost, "module.require(name);\n");
+    moduleDynamicRequire = unresolvedLocalRequires([requireHost]).includes("dynamic require");
     writeFileSync(requireHost, "require(`./required-helper`);\n");
     templateRequire = sourceGraph([requireHost]).some((body) =>
       body.includes("from-required-helper"),
@@ -931,6 +1105,106 @@ try {
     );
     commentRequire = unresolvedLocalRequires([requireHost]).length === 0;
     writeFileSync(
+      requireHost,
+      ["const require = (value: string) => value;", 'require("./missing.ts");'].join("\n"),
+    );
+    const localRequire = unresolvedLocalRequires([requireHost]);
+    writeFileSync(
+      requireHost,
+      ['require("./missing-before.ts");', "const require = (value: string) => value;"].join("\n"),
+    );
+    const earlyRequire = unresolvedLocalRequires([requireHost]);
+    writeFileSync(
+      requireHost,
+      [
+        "function hide(require) {",
+        '  require("./missing-shadow.ts");',
+        "}",
+        'require("./missing-real.ts");',
+      ].join("\n"),
+    );
+    const nestedRequire = unresolvedLocalRequires([requireHost]);
+    writeFileSync(
+      requireHost,
+      ["// const require = (value: string) => value;", 'require("./missing-comment.ts");'].join(
+        "\n",
+      ),
+    );
+    const commentBinding = unresolvedLocalRequires([requireHost]);
+    writeFileSync(
+      requireHost,
+      [
+        "const { require } = { require: (value) => value };",
+        'require("./missing-destructure.ts");',
+      ].join("\n"),
+    );
+    const destructuredRequire = unresolvedLocalRequires([requireHost]);
+    writeFileSync(
+      requireHost,
+      [
+        "const box = { a: 1 };",
+        "const { a = require } = box;",
+        'require("./missing-default.ts");',
+      ].join("\n"),
+    );
+    const defaultRequire = unresolvedLocalRequires([requireHost]);
+    shadowedRequire =
+      localRequire.length === 0 &&
+      earlyRequire.length === 0 &&
+      nestedRequire.includes("./missing-real.ts") &&
+      !nestedRequire.includes("./missing-shadow.ts") &&
+      commentBinding.includes("./missing-comment.ts") &&
+      destructuredRequire.length === 0 &&
+      defaultRequire.includes("./missing-default.ts");
+    writeFileSync(requireHost, 'import helper = require("./required-helper");\n');
+    const equalsBodies = sourceGraph([requireHost]);
+    const equalsResolved = equalsBodies.some((body) => body.includes("from-required-helper"));
+    writeFileSync(requireHost, 'import helper = require("./missing-equals");\n');
+    const equalsFault = unresolvedLocalRequires([requireHost]).includes("./missing-equals");
+    writeFileSync(
+      requireHost,
+      [
+        'import helper = require("./required-helper");',
+        'require("./missing-after-equals.ts");',
+      ].join("\n"),
+    );
+    const equalsKeepsCall = unresolvedLocalRequires([requireHost]).includes(
+      "./missing-after-equals.ts",
+    );
+    importEquals = equalsResolved && equalsFault && equalsKeepsCall;
+    const nodeModule = "node:" + "module";
+    writeFileSync(
+      requireHost,
+      [
+        `import { createRequire } from ${JSON.stringify(nodeModule)};`,
+        "const req = createRequire(import.meta.url);",
+        'req("./required-helper");',
+      ].join("\n"),
+    );
+    const createdBodies = sourceGraph([requireHost]);
+    const createdResolved = createdBodies.some((body) => body.includes("from-required-helper"));
+    writeFileSync(
+      requireHost,
+      ["const req = createRequire(import.meta.url);", 'req("./missing-created");'].join("\n"),
+    );
+    const createdFault = unresolvedLocalRequires([requireHost]).includes("./missing-created");
+    writeFileSync(
+      requireHost,
+      [
+        'import { createRequire as makeRequire } from "module";',
+        "const req = makeRequire(import.meta.url);",
+        'req("./required-helper");',
+      ].join("\n"),
+    );
+    const renamedCreated = sourceGraph([requireHost]).some((body) =>
+      body.includes("from-required-helper"),
+    );
+    writeFileSync(requireHost, 'createRequire(import.meta.url)("./required-helper");\n');
+    const directCreated = sourceGraph([requireHost]).some((body) =>
+      body.includes("from-required-helper"),
+    );
+    createdRequire = createdResolved && createdFault && renamedCreated && directCreated;
+    writeFileSync(
       requireHelper,
       [
         "export function register() {",
@@ -951,6 +1225,257 @@ try {
       !duplicateFullNamesAcross(computedBodies).includes("credited") &&
       unresolvedRunnerCalls(computedHost).length === 0 &&
       computedBodies.some((body) => unresolvedRunnerCalls(body).length > 0);
+    const entryDir = join(specifierDir, "entry");
+    mkdirSync(entryDir);
+    writeFileSync(join(entryDir, "package.json"), '{ "name": "entry", "main": "./register.ts" }\n');
+    writeFileSync(
+      join(entryDir, "register.ts"),
+      'it("credited", unrelated);\n// from-package-entry\n',
+    );
+    writeFileSync(
+      join(entryDir, "index.ts"),
+      'it("credited", citedExport);\n// from-package-index\n',
+    );
+    const entryHost = join(specifierDir, "entry-host.test.ts");
+    writeFileSync(entryHost, 'import "./entry";\nif (false) it("credited", citedExport);\n');
+    const entryBodies = sourceGraph([entryHost]);
+    directoryEntry =
+      entryBodies.some((body) => body.includes("from-package-entry")) &&
+      !entryBodies.some((body) => body.includes("from-package-index")) &&
+      duplicateFullNamesAcross(entryBodies).includes("credited");
+    const queryHelper = join(specifierDir, "query-helper.ts");
+    const queryHost = join(specifierDir, "query-host.test.ts");
+    writeFileSync(queryHelper, 'it("credited", unrelated);\n// from-query-helper\n');
+    writeFileSync(
+      queryHost,
+      [
+        'import "./query-helper.ts?loader=test#section";',
+        'if (false) it("credited", citedExport);',
+      ].join("\n"),
+    );
+    const queryBodies = sourceGraph([queryHost]);
+    queryImport =
+      queryBodies.some((body) => body.includes("from-query-helper")) &&
+      duplicateFullNamesAcross(queryBodies).includes("credited");
+    const fragmentHost = join(specifierDir, "fragment-host.test.ts");
+    writeFileSync(fragmentHost, 'import "./query-helper.ts#section";\n');
+    fragmentImport =
+      unresolvedLocalRequires([fragmentHost]).includes("./query-helper.ts#section") &&
+      !sourceGraph([fragmentHost]).some((body) => body.includes("from-query-helper"));
+    const queryEntryHost = join(specifierDir, "query-entry-host.test.ts");
+    writeFileSync(queryEntryHost, 'import "./entry?x";\n');
+    const queryEntryBodies = sourceGraph([queryEntryHost]);
+    directoryQuery =
+      queryEntryBodies.some((body) => body.includes("from-package-entry")) &&
+      !queryEntryBodies.some((body) => body.includes("from-package-index"));
+    const installedRoot = join(specifierDir, "node_modules");
+    const helperPkg = join(installedRoot, "test-helper");
+    mkdirSync(helperPkg, { recursive: true });
+    writeFileSync(
+      join(helperPkg, "package.json"),
+      '{ "name": "test-helper", "module": "./register.ts", "main": "./register.ts" }\n',
+    );
+    writeFileSync(
+      join(helperPkg, "register.ts"),
+      'it("credited", unrelated);\n// from-installed-helper\n',
+    );
+    const installedHost = join(specifierDir, "installed-host.test.ts");
+    writeFileSync(
+      installedHost,
+      ['import { register } from "test-helper";', 'if (false) it("credited", citedExport);'].join(
+        "\n",
+      ),
+    );
+    const installedBodies = sourceGraph([installedHost]);
+    installedPackage =
+      installedBodies.some((body) => body.includes("from-installed-helper")) &&
+      duplicateFullNamesAcross(installedBodies).includes("credited");
+    const innerPkg = join(installedRoot, "inner-helper");
+    const outerPkg = join(installedRoot, "outer-helper");
+    mkdirSync(innerPkg, { recursive: true });
+    mkdirSync(outerPkg, { recursive: true });
+    writeFileSync(
+      join(innerPkg, "package.json"),
+      '{ "name": "inner-helper", "main": "./register.ts" }\n',
+    );
+    writeFileSync(
+      join(innerPkg, "register.ts"),
+      'it("credited", unrelated);\n// from-inner-helper\n',
+    );
+    writeFileSync(
+      join(outerPkg, "package.json"),
+      '{ "name": "outer-helper", "main": "./index.ts" }\n',
+    );
+    writeFileSync(join(outerPkg, "index.ts"), 'export { register } from "inner-helper";\n');
+    const nestedHost = join(specifierDir, "nested-host.test.ts");
+    writeFileSync(
+      nestedHost,
+      ['import "outer-helper";', 'if (false) it("credited", citedExport);'].join("\n"),
+    );
+    const nestedBodies = sourceGraph([nestedHost]);
+    nestedPackage =
+      nestedBodies.some((body) => body.includes("from-inner-helper")) &&
+      duplicateFullNamesAcross(nestedBodies).includes("credited");
+    const quietPkg = join(installedRoot, "quiet-helper");
+    mkdirSync(quietPkg, { recursive: true });
+    writeFileSync(
+      join(quietPkg, "package.json"),
+      '{ "name": "quiet-helper", "main": "./index.ts" }\n',
+    );
+    writeFileSync(join(quietPkg, "index.ts"), "export const value = 1;\n// from-quiet-helper\n");
+    const quietHost = join(specifierDir, "quiet-host.test.ts");
+    writeFileSync(quietHost, 'import "quiet-helper";\n');
+    const quietBodies = sourceGraph([quietHost]);
+    quietPackage =
+      quietBodies.length === 1 && !quietBodies.some((body) => body.includes("from-quiet-helper"));
+    const libraryPkg = join(installedRoot, "library-helper");
+    mkdirSync(libraryPkg, { recursive: true });
+    writeFileSync(
+      join(libraryPkg, "package.json"),
+      '{ "name": "library-helper", "main": "./index.ts" }\n',
+    );
+    writeFileSync(
+      join(libraryPkg, "index.ts"),
+      [
+        "function describe(lines, extra) {",
+        "  return lines;",
+        "}",
+        'describe(lines, ["min"]);',
+        "// from-library-helper",
+      ].join("\n"),
+    );
+    const libraryHost = join(specifierDir, "library-host.test.ts");
+    writeFileSync(libraryHost, 'import "library-helper";\n');
+    const libraryBodies = sourceGraph([libraryHost]);
+    libraryPackage =
+      !libraryBodies.some((body) => body.includes("from-library-helper")) &&
+      libraryBodies.every((body) => !unresolvedRunnerCalls(body).includes("describe"));
+    const missingHost = join(specifierDir, "missing-installed-host.test.ts");
+    writeFileSync(missingHost, 'import "not-installed-evidence-pkg";\n');
+    const missingFaults = unresolvedLocalRequires([missingHost]).length === 0;
+    missingInstalled = missingFaults && sourceGraph([missingHost]).length === 1;
+    const dynamicPkg = join(installedRoot, "dynamic-helper");
+    mkdirSync(dynamicPkg, { recursive: true });
+    writeFileSync(
+      join(dynamicPkg, "package.json"),
+      '{ "name": "dynamic-helper", "main": "./index.ts" }\n',
+    );
+    writeFileSync(
+      join(dynamicPkg, "index.ts"),
+      'require(name);\nit("credited", unrelated);\n// from-dynamic-package\n',
+    );
+    const dynamicHost = join(specifierDir, "dynamic-host.test.ts");
+    writeFileSync(
+      dynamicHost,
+      ['import "dynamic-helper";', 'if (false) it("credited", citedExport);'].join("\n"),
+    );
+    const dynamicBodies = sourceGraph([dynamicHost]);
+    const dynamicFaults = unresolvedLocalRequires([dynamicHost]);
+    dynamicPackage =
+      dynamicBodies.some((body) => body.includes("from-dynamic-package")) &&
+      duplicateFullNamesAcross(dynamicBodies).includes("credited") &&
+      !dynamicFaults.includes("dynamic require");
+    const dataSpec = "data:text/javascript,register";
+    const dataHost = join(specifierDir, "data-host.test.ts");
+    writeFileSync(dataHost, `import ${JSON.stringify(dataSpec)};\n`);
+    dataImport =
+      sourceGraph([dataHost]).length === 1 &&
+      unresolvedLocalRequires([dataHost]).includes(dataSpec);
+    const textHelper = join(specifierDir, "text-helper.ts");
+    const jsonHelper = join(specifierDir, "json-helper.ts");
+    const textHost = join(specifierDir, "text-host.test.ts");
+    writeFileSync(textHelper, 'it("credited", unrelated);\n// from-text-helper\n');
+    writeFileSync(jsonHelper, 'it("credited", unrelated);\n// from-json-helper\n');
+    writeFileSync(
+      textHost,
+      [
+        'import text from "./text-helper.ts" with { type: "text" };',
+        'import file from "./text-helper.ts" with { type: "file" };',
+        'import bytes from "./text-helper.ts" assert { type: "bytes" };',
+        'import still from "./json-helper.ts" with { type: "json" };',
+        'if (false) it("credited", citedExport);',
+      ].join("\n"),
+    );
+    const textBodies = sourceGraph([textHost]);
+    const textJoined = textBodies.join("\n");
+    textImport =
+      !textJoined.includes("from-text-helper") &&
+      textJoined.includes("from-json-helper") &&
+      unresolvedLocalRequires([textHost]).length === 0;
+    const hashHelper = join(specifierDir, "hash-helper.ts");
+    const hashLib = join(specifierDir, "lib");
+    mkdirSync(hashLib);
+    writeFileSync(hashHelper, 'it("credited", unrelated);\n// from-hash-helper\n');
+    writeFileSync(join(hashLib, "sub.ts"), 'it("credited", unrelated);\n// from-hash-sub\n');
+    writeFileSync(
+      join(specifierDir, "package.json"),
+      `${JSON.stringify({
+        name: "hash-fixture",
+        imports: {
+          "#helper": "./hash-helper.ts",
+          "#esm": { import: "./hash-helper.ts" },
+          "#req": { require: "./hash-helper.ts", import: "./gone-helper.ts" },
+          "#picked": { bun: "./hash-helper.ts", default: "./gone-helper.ts" },
+          "#listed": ["./hash-helper.ts"],
+          "#blocked": ["./gone-helper.ts", "./hash-helper.ts"],
+          "#lib/*": "./lib/*.ts",
+          "#missing": "./gone-helper.ts",
+        },
+      })}\n`,
+    );
+    const hashHost = join(specifierDir, "hash-host.test.ts");
+    writeFileSync(
+      hashHost,
+      [
+        'import "#helper";',
+        'import "#esm";',
+        'import "#picked";',
+        'import "#listed";',
+        'import "#lib/sub";',
+        'if (false) it("credited", citedExport);',
+      ].join("\n"),
+    );
+    const hashJoined = sourceGraph([hashHost]).join("\n");
+    const requireHashHost = join(specifierDir, "hash-require-host.test.ts");
+    writeFileSync(requireHashHost, 'require("#req");\n');
+    const blockedHashHost = join(specifierDir, "hash-blocked-host.test.ts");
+    writeFileSync(blockedHashHost, 'import "#blocked";\n');
+    const missingHashHost = join(specifierDir, "hash-missing-host.test.ts");
+    writeFileSync(missingHashHost, 'import "#missing";\n');
+    const requireHashBodies = sourceGraph([requireHashHost]);
+    packageHashImport =
+      hashJoined.includes("from-hash-helper") &&
+      hashJoined.includes("from-hash-sub") &&
+      unresolvedLocalRequires([hashHost]).length === 0 &&
+      requireHashBodies.some((body) => body.includes("from-hash-helper")) &&
+      unresolvedLocalRequires([requireHashHost]).length === 0 &&
+      unresolvedLocalRequires([blockedHashHost]).includes("#blocked") &&
+      unresolvedLocalRequires([missingHashHost]).includes("#missing");
+    const aliasPkg = join(installedRoot, "alias-runner");
+    mkdirSync(aliasPkg, { recursive: true });
+    writeFileSync(
+      join(aliasPkg, "package.json"),
+      '{ "name": "alias-runner", "main": "./index.ts" }\n',
+    );
+    writeFileSync(
+      join(aliasPkg, "index.ts"),
+      [
+        'import { it as run } from "bun:test";',
+        "export function register() {",
+        '  run("credited", unrelated);',
+        "}",
+        "// from-alias-runner",
+      ].join("\n"),
+    );
+    const aliasHost = join(specifierDir, "alias-host.test.ts");
+    writeFileSync(
+      aliasHost,
+      ['import "alias-runner";', 'if (false) it("credited", citedExport);'].join("\n"),
+    );
+    const aliasBodies = sourceGraph([aliasHost]);
+    aliasPackage =
+      aliasBodies.some((body) => body.includes("from-alias-runner")) &&
+      duplicateFullNamesAcross(aliasBodies).includes("credited");
   } finally {
     rmSync(specifierDir, { recursive: true, force: true });
   }
@@ -962,6 +1487,19 @@ try {
   let scalarPreload = false;
   let quotedPreload = false;
   let arrayPreload = false;
+  let bracketPreload = false;
+  let packagePreload = false;
+  let missingPackagePreload = false;
+  let missingRelativePreload = false;
+  let configPreload = false;
+  let configSplitPreload = false;
+  let missingConfigPreload = false;
+  let quotedKeyPreload = false;
+  let commentedPreload = false;
+  let shortPreload = false;
+  let attachedPreload = false;
+  let importPreload = false;
+  let scopedPreload = false;
   try {
     writeFileSync(join(preloadDir, "bunfig.toml"), '[test]\npreload = "./setup.ts"\n');
     const scalar = localPreloadFiles(preloadDir, ["test"]);
@@ -976,6 +1514,126 @@ try {
     writeFileSync(join(preloadDir, "bunfig.toml"), '[test]\npreload = ["./setup.ts"]\n');
     const listed = localPreloadFiles(preloadDir, ["test"]);
     arrayPreload = listed.length === 1 && listed[0] === setupPath;
+    const bracketPath = resolve(preloadDir, "setup]x.ts");
+    writeFileSync(bracketPath, "export {};\n");
+    writeFileSync(
+      join(preloadDir, "bunfig.toml"),
+      ["preload = [", '  "./setup]x.ts",', "  './gone]x.ts',", "]", ""].join("\n"),
+    );
+    const bracketFiles = localPreloadFiles(preloadDir, ["test"]);
+    const bracketMissing = unresolvedPreloadSpecifiers(preloadDir, ["test"]);
+    bracketPreload =
+      bracketFiles.length === 1 &&
+      bracketFiles[0] === bracketPath &&
+      bracketMissing.includes("./gone]x.ts") &&
+      !bracketMissing.includes("./setup]x.ts");
+    const setupPkg = join(preloadDir, "node_modules", "test-setup");
+    mkdirSync(setupPkg, { recursive: true });
+    writeFileSync(
+      join(setupPkg, "package.json"),
+      '{ "name": "test-setup", "main": "./index.ts" }\n',
+    );
+    writeFileSync(join(setupPkg, "index.ts"), 'import "./register";\n');
+    writeFileSync(
+      join(setupPkg, "register.ts"),
+      'it("credited", unrelated);\n// from-package-preload\n',
+    );
+    writeFileSync(join(preloadDir, "bunfig.toml"), '[test]\npreload = ["test-setup"]\n');
+    const packageFiles = localPreloadFiles(preloadDir, ["test"]);
+    const packageBodies = sourceGraph([preloadHost, ...packageFiles]);
+    const packageLocked = sourceFiles([preloadHost, ...packageFiles]);
+    packagePreload =
+      packageFiles.length === 1 &&
+      packageBodies.some((body) => body.includes("from-package-preload")) &&
+      duplicateFullNamesAcross(packageBodies).includes("credited") &&
+      packageLocked.some((file) => file.split(/[/\\]/).includes("node_modules"));
+    writeFileSync(join(preloadDir, "bunfig.toml"), '[test]\npreload = ["not-a-package"]\n');
+    missingPackagePreload = unresolvedPreloadSpecifiers(preloadDir, ["test"]).includes(
+      "not-a-package",
+    );
+    writeFileSync(join(preloadDir, "bunfig.toml"), '[test]\npreload = ["./missing-setup.ts"]\n');
+    missingRelativePreload = unresolvedPreloadSpecifiers(preloadDir, ["test"]).includes(
+      "./missing-setup.ts",
+    );
+    writeFileSync(join(preloadDir, "bunfig.toml"), '[test]\npreload = ["./setup.ts"]\n');
+    writeFileSync(join(preloadDir, "alt.toml"), '[test]\npreload = ["test-setup"]\n');
+    const configured = localPreloadFiles(preloadDir, ["test", "--config=alt.toml"]);
+    const configuredBodies = sourceGraph([preloadHost, ...configured]);
+    configPreload =
+      configured.length === 1 &&
+      configured[0]?.endsWith("index.ts") === true &&
+      duplicateFullNamesAcross(configuredBodies).includes("credited");
+    const splitConfigured = localPreloadFiles(preloadDir, ["test", "--config", "alt.toml"]);
+    configSplitPreload = splitConfigured.length === 1 && splitConfigured[0] === configured[0];
+    missingConfigPreload = unresolvedPreloadSpecifiers(preloadDir, [
+      "test",
+      "--config=missing.toml",
+    ]).includes("missing.toml");
+    writeFileSync(join(preloadDir, "bunfig.toml"), '[test]\n"preload" = ["./setup.ts"]\n');
+    const quotedKey = localPreloadFiles(preloadDir, ["test"]);
+    writeFileSync(join(preloadDir, "bunfig.toml"), "[test]\n'preload' = \"./setup.ts\"\n");
+    const singleKey = localPreloadFiles(preloadDir, ["test"]);
+    const quotedKeyHit = quotedKey.length === 1 && quotedKey[0] === setupPath;
+    quotedKeyPreload = quotedKeyHit && singleKey.length === 1 && singleKey[0] === setupPath;
+    writeFileSync(
+      join(preloadDir, "bunfig.toml"),
+      ['# preload = ["./old-setup.ts"]', 'preload = ["./setup.ts"]'].join("\n"),
+    );
+    const commented = localPreloadFiles(preloadDir, ["test"]);
+    const commentedMissing = unresolvedPreloadSpecifiers(preloadDir, ["test"]);
+    const hashed = 'note = "hash # " preload = "./setup.ts"\n';
+    writeFileSync(join(preloadDir, "bunfig.toml"), hashed);
+    const quotedHash = localPreloadFiles(preloadDir, ["test"]);
+    writeFileSync(join(preloadDir, "bunfig.toml"), '# preload = ["./old-setup.ts"]\n');
+    const commentOnly = localPreloadFiles(preloadDir, ["test"]);
+    const commentOnlyMissing = unresolvedPreloadSpecifiers(preloadDir, ["test"]);
+    writeFileSync(
+      join(preloadDir, "bunfig.toml"),
+      ['note = """', 'hash # " preload = "./setup.ts"', '"""'].join("\n"),
+    );
+    const tripleHash = localPreloadFiles(preloadDir, ["test"]);
+    commentedPreload =
+      commented.length === 1 &&
+      commented[0] === setupPath &&
+      !commentedMissing.includes("./old-setup.ts") &&
+      quotedHash.length === 1 &&
+      quotedHash[0] === setupPath &&
+      commentOnly.length === 0 &&
+      !commentOnlyMissing.includes("./old-setup.ts") &&
+      tripleHash.length === 1 &&
+      tripleHash[0] === setupPath;
+    const equalsPreload = localPreloadFiles(preloadDir, ["test", "-r=./setup.ts"]);
+    const splitPreload = localPreloadFiles(preloadDir, ["test", "-r", "./setup.ts"]);
+    shortPreload =
+      equalsPreload.some((file) => file === setupPath) &&
+      splitPreload.some((file) => file === setupPath);
+    attachedPreload = localPreloadFiles(preloadDir, ["test", "-r./setup.ts"]).some(
+      (file) => file === setupPath,
+    );
+    importPreload = localPreloadFiles(preloadDir, ["test", "--import=./setup.ts"]).some(
+      (file) => file === setupPath,
+    );
+    writeFileSync(
+      join(preloadDir, "bunfig.toml"),
+      [
+        'preload = ["./setup.ts"]',
+        "[install]",
+        'preload = ["./missing-setup.ts"]',
+        "[test]",
+        'preload = ["./setup.ts"]',
+        "[run]",
+        'preload = ["./also-missing.ts"]',
+        "[test.coverage]",
+        'preload = ["./coverage-missing.ts"]',
+      ].join("\n"),
+    );
+    const scopedFiles = localPreloadFiles(preloadDir, ["test"]);
+    const scopedMissing = unresolvedPreloadSpecifiers(preloadDir, ["test"]);
+    scopedPreload =
+      scopedFiles.includes(setupPath) &&
+      !scopedMissing.includes("./missing-setup.ts") &&
+      !scopedMissing.includes("./also-missing.ts") &&
+      !scopedMissing.includes("./coverage-missing.ts");
   } finally {
     rmSync(preloadDir, { recursive: true, force: true });
   }
@@ -1030,6 +1688,16 @@ try {
     ['describe.each([[1]])("kept", () => {', '  it("credited", unrelated);', "});"].join("\n"),
     "unrelated",
     "credited",
+  );
+  const printfEachBody = [
+    'it.each([["ited"]])("cred%s", unrelated);',
+    'it("credited", citedExport);',
+  ].join("\n");
+  const printfEachCalls = unresolvedRunnerCalls(printfEachBody);
+  const printfEachLive = registeredSuites(printfEachBody, "unrelated", "cred%s");
+  const printfEachDead = registeredSuites(printfEachBody, "citedExport", "credited");
+  const printfDescribe = unresolvedRunnerCalls(
+    'describe.each([["kept"]])("name %s", () => it("credited", unrelated));',
   );
   const conjunction = registeredSuites(
     'it("credited", citedExport && unrelated);',
@@ -1113,6 +1781,25 @@ try {
   const namespaceLive = registeredSuites(namespaceBody, "unrelated", "credited");
   const namespaceExpect = unresolvedRunnerCalls(
     'import * as runner from "bun:test"\nrunner.expect("saved", "msg")',
+  );
+  const reflectedNamespace = unresolvedRunnerCalls(
+    [
+      'import * as bt from "bun:test"',
+      'Reflect.get(bt, "it")("credited", unrelated)',
+      'if (false) bt.it("credited", citedExport)',
+    ].join("\n"),
+  );
+  const copiedNamespace = unresolvedRunnerCalls(
+    ['import * as bt from "bun:test"', "const copy = bt", 'copy.it("credited", unrelated)'].join(
+      "\n",
+    ),
+  );
+  const destructureClean = unresolvedRunnerCalls(
+    [
+      'import * as runner from "bun:test"',
+      "const { it: register } = runner",
+      'register("credited", unrelated)',
+    ].join("\n"),
   );
   const namespaceAlias = registeredSuites(
     [
@@ -1212,6 +1899,131 @@ try {
     "unrelated",
     "credited",
   );
+  const nodeTest = JSON.stringify("node:" + "test");
+  const nodeSuiteBody = [
+    `import { suite } from ${nodeTest}`,
+    'suite("s", () => test("credited", unrelated))',
+    'describe("s", () => test("credited", citedExport))',
+  ].join("\n");
+  const nodeSuiteDuplicate = duplicateFullNames(nodeSuiteBody).includes("s > credited");
+  const renamedSuite = duplicateFullNames(
+    [
+      `import { suite as group } from ${nodeTest}`,
+      'group("s", () => test("credited", unrelated))',
+      'describe("s", () => test("credited", citedExport))',
+    ].join("\n"),
+  ).includes("s > credited");
+  const requiredSuite = duplicateFullNames(
+    [
+      `const { suite } = require(${nodeTest})`,
+      'suite("s", () => test("credited", unrelated))',
+      'describe("s", () => test("credited", citedExport))',
+    ].join("\n"),
+  ).includes("s > credited");
+  const dynamicSuite = duplicateFullNames(
+    [
+      `const { suite } = await import(${nodeTest})`,
+      'suite("s", () => test("credited", unrelated))',
+      'describe("s", () => test("credited", citedExport))',
+    ].join("\n"),
+  ).includes("s > credited");
+  const bunSuiteDuplicate = duplicateFullNames(
+    [
+      'import { suite } from "bun:test"',
+      'suite("s", () => test("credited", unrelated))',
+      'describe("s", () => test("credited", citedExport))',
+    ].join("\n"),
+  ).includes("s > credited");
+  const nodeDefaultDuplicate = duplicateFullNames(
+    [
+      `import register from ${nodeTest}`,
+      'register("credited", unrelated)',
+      'if (false) it("credited", citedExport)',
+    ].join("\n"),
+  ).includes("credited");
+  const bunDefaultDuplicate = duplicateFullNames(
+    [
+      'import register from "bun:test"',
+      'register("credited", unrelated)',
+      'if (false) it("credited", citedExport)',
+    ].join("\n"),
+  ).includes("credited");
+  const namespaceDestructure = duplicateFullNames(
+    [
+      'import * as runner from "bun:test"',
+      "const { it: register } = runner",
+      'if (false) it("credited", citedExport)',
+      'register("credited", unrelated)',
+    ].join("\n"),
+  ).includes("credited");
+  const dynamicNamespace = duplicateFullNames(
+    [
+      'const runner = await import("bun:test")',
+      'if (false) it("credited", citedExport)',
+      'runner.it("credited", unrelated)',
+    ].join("\n"),
+  ).includes("credited");
+  const requiredNamespace = duplicateFullNames(
+    [
+      'const runner = require("bun:test")',
+      'if (false) it("credited", citedExport)',
+      'runner.it("credited", unrelated)',
+    ].join("\n"),
+  ).includes("credited");
+  const otherDynamicNamespace = duplicateFullNames(
+    [
+      'const runner = await import("other")',
+      'runner.it("credited", unrelated)',
+      'if (false) it("credited", citedExport)',
+    ].join("\n"),
+  ).includes("credited");
+  const chainedNamespace = duplicateFullNames(
+    [
+      'const runner = await import("bun:test").then((mod) => mod)',
+      'runner.it("credited", unrelated)',
+      'if (false) it("credited", citedExport)',
+    ].join("\n"),
+  ).includes("credited");
+  const nodeNamespaceSuite = duplicateFullNames(
+    [
+      `import * as runner from ${nodeTest}`,
+      'runner.suite("s", () => test("credited", unrelated))',
+      'describe("s", () => test("credited", citedExport))',
+    ].join("\n"),
+  ).includes("s > credited");
+  const bunNamespaceSuite = duplicateFullNames(
+    [
+      'import * as runner from "bun:test"',
+      'runner.suite("s", () => test("credited", unrelated))',
+      'describe("s", () => test("credited", citedExport))',
+    ].join("\n"),
+  ).includes("s > credited");
+  const directRequire = duplicateFullNames(
+    [
+      'require("bun:test").it("credited", unrelated)',
+      'if (false) it("credited", citedExport)',
+    ].join("\n"),
+  ).includes("credited");
+  const directSuite = duplicateFullNames(
+    [
+      `require(${nodeTest}).suite("s", () => test("credited", unrelated))`,
+      'describe("s", () => test("credited", citedExport))',
+    ].join("\n"),
+  ).includes("s > credited");
+  const directExpect = duplicateFullNames(
+    [
+      'require("bun:test").expect("saved")',
+      'if (false) it("credited", citedExport)',
+    ].join("\n"),
+  ).includes("credited");
+  const namespaceSuite = duplicateFullNames(
+    [
+      `import * as runner from ${nodeTest}`,
+      "const { suite: group } = runner",
+      'group("s", () => test("credited", unrelated))',
+      'describe("s", () => test("credited", citedExport))',
+    ].join("\n"),
+  ).includes("s > credited");
   const foreignImport = registeredSuites(
     ['import { it as register } from "./wrapper"', 'register("credited", unrelated)'].join("\n"),
     "unrelated",
@@ -1242,6 +2054,337 @@ try {
   const arrowLive = registeredSuites(arrowBody, "unrelated", "credited").some(
     (path) => path.length === 1 && path[0] === "suite",
   );
+  const suiteReboundBody = [
+    "let suiteBody = () => {",
+    '  it("credited", citedExport);',
+    "};",
+    "suiteBody = () => {",
+    '  it("credited", unrelated);',
+    "};",
+    'describe("s", suiteBody);',
+  ].join("\n");
+  const reboundSuite = unresolvedRunnerCalls(suiteReboundBody).includes("suiteBody");
+  const reboundCredit = registeredSuites(suiteReboundBody, "citedExport", "credited").every(
+    (path) => path[0] !== "s",
+  );
+  const objectBody = [
+    "const runners = { it };",
+    'runners.it("credited", unrelated);',
+    'if (false) it("credited", citedExport);',
+  ].join("\n");
+  const objectRunner = unresolvedRunnerCalls(objectBody).includes("runners");
+  const renamedObject = unresolvedRunnerCalls(
+    [
+      "const runners = { run: it };",
+      'runners.run("credited", unrelated);',
+      'if (false) it("credited", citedExport);',
+    ].join("\n"),
+  ).includes("runners");
+  const plainObject = unresolvedRunnerCalls(
+    [
+      'const runners = { label: "kept" };',
+      'runners.label("credited", unrelated);',
+      'if (false) it("credited", citedExport);',
+    ].join("\n"),
+  );
+  const arrayRunner =
+    unresolvedRunnerCalls(
+      [
+        "const runners = [it.only];",
+        'runners[0]("credited", unrelated);',
+        'if (false) it("credited", citedExport);',
+      ].join("\n"),
+    ).includes("runners") &&
+    unresolvedRunnerCalls(
+      [
+        "const register = it;",
+        "const runners = [register];",
+        'runners?.[0]("credited", unrelated);',
+        'if (false) it("credited", citedExport);',
+      ].join("\n"),
+    ).includes("runners");
+  const plainArray = unresolvedRunnerCalls(
+    [
+      'const runners = ["kept"];',
+      'runners[0]("credited", unrelated);',
+      'if (false) it("credited", citedExport);',
+    ].join("\n"),
+  );
+  const spreadRunner =
+    unresolvedRunnerCalls(
+      [
+        "const runners = { ...{ run: it } };",
+        'runners.run("credited", unrelated);',
+        'if (false) it("credited", citedExport);',
+      ].join("\n"),
+    ).includes("runners") &&
+    unresolvedRunnerCalls(
+      [
+        "const runners = { ...{ ...{ run: it } } };",
+        'runners.run("credited", unrelated);',
+        'if (false) it("credited", citedExport);',
+      ].join("\n"),
+    ).includes("runners") &&
+    unresolvedRunnerCalls(
+      [
+        "const hidden = { run: it };",
+        "const runners = { ...hidden };",
+        'runners.run("credited", unrelated);',
+        'if (false) it("credited", citedExport);',
+      ].join("\n"),
+    ).includes("runners") &&
+    unresolvedRunnerCalls(
+      [
+        "const hidden = { run: it };",
+        "const runners = { ...(hidden) };",
+        'runners.run("credited", unrelated);',
+        'if (false) it("credited", citedExport);',
+      ].join("\n"),
+    ).includes("runners") &&
+    unresolvedRunnerCalls(
+      [
+        "const hidden = { run: it };",
+        "const runners = { ...(hidden as Record<string, unknown>) };",
+        'runners.run("credited", unrelated);',
+        'if (false) it("credited", citedExport);',
+      ].join("\n"),
+    ).includes("runners") &&
+    unresolvedRunnerCalls(
+      [
+        "const hidden = { run: it };",
+        "const runners = { ...hidden! };",
+        'runners.run("credited", unrelated);',
+        'if (false) it("credited", citedExport);',
+      ].join("\n"),
+    ).includes("runners") &&
+    unresolvedRunnerCalls(
+      [
+        'import * as bt from "bun:test";',
+        "const runners = { ...bt };",
+        'runners.it("credited", unrelated);',
+        'if (false) bt.it("credited", citedExport);',
+      ].join("\n"),
+    ).includes("runners");
+  const dataSpread = unresolvedRunnerCalls(
+    [
+      "const next = { ...prev, t: prev.t + 1 };",
+      "const total = next.wallet.money.amount;",
+      "const reversed = [...seeds].reverse();",
+      "reversed.every((seed) => seed > 0);",
+      "const step = (current) => ({ ...current, buys: 1 });",
+      "for (const test of cases) {",
+      "  const moved = { ...test, t: test.t + 1 };",
+      "  moved.wallet.money.amount;",
+      "}",
+      "const runnersWithData = { run: it, seeds: [1, 2] };",
+      "const copied = [...runnersWithData.seeds].reverse();",
+      "copied.every((seed) => seed > 0);",
+      "const optional = [...runnersWithData?.seeds].reverse();",
+      "optional.every((seed) => seed > 0);",
+      "for (const { test } of rows) {",
+      "  const row = { ...test };",
+      "  row.wallet;",
+      "}",
+      "function evolve(current) {",
+      "  return { ...current, vars: {} };",
+      "}",
+      'it("credited", citedExport);',
+    ].join("\n"),
+  );
+  const spreadArray = unresolvedRunnerCalls(
+    [
+      "const runners = [...[it]];",
+      'runners[0]("credited", unrelated);',
+      'if (false) it("credited", citedExport);',
+    ].join("\n"),
+  ).includes("runners");
+  const plainSpread = unresolvedRunnerCalls(
+    [
+      'const runners = { ...{ label: "kept" } };',
+      'runners.label("credited", unrelated);',
+      'if (false) it("credited", citedExport);',
+    ].join("\n"),
+  );
+  const plainSpreadArray = unresolvedRunnerCalls(
+    [
+      'const runners = [...["kept"]];',
+      'runners[0]("credited", unrelated);',
+      'if (false) it("credited", citedExport);',
+    ].join("\n"),
+  );
+  const forwardedBody = [
+    "function register(run) {",
+    '  run("credited", unrelated);',
+    "}",
+    "register(it);",
+    'if (false) it("credited", citedExport);',
+  ].join("\n");
+  const argumentBody = [
+    "function register(run) {",
+    '  run("credited", unrelated);',
+    "}",
+    "register(true ? it : test);",
+    'if (false) it("credited", citedExport);',
+  ].join("\n");
+  const argumentCalls = unresolvedRunnerCalls(argumentBody);
+  const groupedArgument = unresolvedRunnerCalls("register((true ? it.only : test));");
+  const orArgument = unresolvedRunnerCalls("register(it || test);");
+  const boundTernary = unresolvedRunnerCalls("const register = (true ? it : test);");
+  const callbackBindBody = [
+    "register(() => {",
+    "  const local = it;",
+    '  local("credited", citedExport);',
+    "});",
+  ].join("\n");
+  const forwardedRunner =
+    unresolvedRunnerCalls(forwardedBody).includes("it") &&
+    argumentCalls.includes("it") &&
+    argumentCalls.includes("test") &&
+    groupedArgument.includes("it") &&
+    groupedArgument.includes("test") &&
+    orArgument.includes("it") &&
+    orArgument.includes("test") &&
+    boundTernary.length === 0 &&
+    unresolvedRunnerCalls(callbackBindBody).length === 0 &&
+    registeredSuites(callbackBindBody, "citedExport", "credited").length === 1;
+  const propertyRunner =
+    unresolvedRunnerCalls(
+      [
+        "const carrier = globalThis;",
+        "carrier.run = it;",
+        'carrier.run("credited", unrelated);',
+        'if (false) it("credited", citedExport);',
+      ].join("\n"),
+    ).includes("it") &&
+    unresolvedRunnerCalls(
+      [
+        "const carrier = globalThis;",
+        "carrier.run = it.only;",
+        'carrier.run("credited", unrelated);',
+        'if (false) it("credited", citedExport);',
+      ].join("\n"),
+    ).includes("it") &&
+    unresolvedRunnerCalls(
+      [
+        "const carrier = globalThis;",
+        'carrier["run"] = it;',
+        'if (false) it("credited", citedExport);',
+      ].join("\n"),
+    ).includes("it");
+  const propertyContainer =
+    unresolvedRunnerCalls(
+      [
+        "const carrier = globalThis;",
+        "carrier.run = { it };",
+        'if (false) it("credited", citedExport);',
+      ].join("\n"),
+    ).includes("carrier") &&
+    unresolvedRunnerCalls(
+      [
+        "const carrier = globalThis;",
+        "carrier.run = [it];",
+        'if (false) it("credited", citedExport);',
+      ].join("\n"),
+    ).includes("carrier");
+  const plainProperty = unresolvedRunnerCalls(
+    [
+      "const carrier = globalThis;",
+      "carrier.run = kept;",
+      'carrier.run("credited", unrelated);',
+      'if (false) it("credited", citedExport);',
+    ].join("\n"),
+  );
+  const plainAssignBody = [
+    "let register = kept;",
+    "register = it;",
+    'register("credited", citedExport);',
+  ].join("\n");
+  const plainAssign =
+    unresolvedRunnerCalls(plainAssignBody).length === 0 &&
+    registeredSuites(plainAssignBody, "citedExport", "credited").length === 1;
+  const classField =
+    unresolvedRunnerCalls(
+      [
+        "class Carrier {",
+        "  static run = it;",
+        "}",
+        'Carrier.run("credited", unrelated);',
+        'if (false) it("credited", citedExport);',
+      ].join("\n"),
+    ).includes("it") &&
+    unresolvedRunnerCalls(["class Carrier {", "  run = it;", "}"].join("\n")).includes("it") &&
+    unresolvedRunnerCalls(["class Carrier {", "  #run = it;", "}"].join("\n")).includes("it") &&
+    unresolvedRunnerCalls("class Carrier {\n  static run = it.only;\n}").includes("it") &&
+    unresolvedRunnerCalls('class Carrier {\n  static ["run"] = it;\n}').includes("it");
+  const classContainer = unresolvedRunnerCalls(
+    "class Carrier {\n  static run = { it };\n}",
+  ).includes("run");
+  const classMethodBody = [
+    "class Carrier {",
+    "  method() {",
+    "    const register = it;",
+    '    register("credited", citedExport);',
+    "  }",
+    "}",
+  ].join("\n");
+  const classMethod =
+    unresolvedRunnerCalls(classMethodBody).length === 0 &&
+    registeredSuites(classMethodBody, "citedExport", "credited").length === 1;
+  const localRunner =
+    unresolvedRunnerCalls(
+      ['import { run } from "./host.ts";', 'run("credited", unrelated);'].join("\n"),
+    ).includes("run") &&
+    unresolvedRunnerCalls(
+      ['import run from "../host.ts";', 'run("credited", unrelated);'].join("\n"),
+    ).includes("run") &&
+    unresolvedRunnerCalls(
+      ['import { run as register } from "./host.ts";', 'register("credited", unrelated);'].join(
+        "\n",
+      ),
+    ).includes("register");
+  const packageCall = unresolvedRunnerCalls(
+    ['import { readFile } from "fs";', 'readFile("a", "utf8");'].join("\n"),
+  );
+  const localUnused = unresolvedRunnerCalls(
+    ['import { helper } from "./helper.ts";', "helper(1, 2);"].join("\n"),
+  );
+  const typeLocal = unresolvedRunnerCalls(
+    ['import { type run } from "./host.ts";', 'run("credited", unrelated);'].join("\n"),
+  );
+  const returnedRunner =
+    unresolvedRunnerCalls(
+      [
+        "const get = () => it;",
+        'get()("credited", unrelated);',
+        'if (false) it("credited", citedExport);',
+      ].join("\n"),
+    ).includes("it") &&
+    unresolvedRunnerCalls(["const get = () =>", "  it;"].join("\n")).includes("it") &&
+    unresolvedRunnerCalls(
+      [
+        "function get() {",
+        "  return it;",
+        "}",
+        'get()("credited", unrelated);',
+      ].join("\n"),
+    ).includes("it") &&
+    unresolvedRunnerCalls("function get() {\n  return (it);\n}").includes("it") &&
+    unresolvedRunnerCalls("const get = () => it.only;").includes("it");
+  const returnedContainer = unresolvedRunnerCalls(
+    "const get = () => ({ it });",
+  ).includes("return");
+  const calledArrow = 'const get = () => it("credited", citedExport);';
+  const returnedCall =
+    unresolvedRunnerCalls(calledArrow).length === 0 &&
+    registeredSuites(calledArrow, "citedExport", "credited").length === 1;
+  const returnedAsi = unresolvedRunnerCalls(
+    ["function get() {", "  return", "  it;", "}"].join("\n"),
+  );
+  const sameFileExport = registeredSuites(
+    ["export const run = it;", 'run("credited", citedExport);'].join("\n"),
+    "citedExport",
+    "credited",
+  );
   const laterBody = [
     'describe("suite", liveSuite);',
     "function liveSuite() {",
@@ -1261,6 +2404,25 @@ try {
   const afterSuites = registeredSuites(afterBody, "citedExport", "after");
   const pendingHeld = afterSuites.length === 1 && afterSuites[0]?.length === 0;
   const missingSuite = unresolvedRunnerCalls('describe("suite", missingSuite);');
+  const qualifiedBody = [
+    'describe("s", helper.suiteBody);',
+    'it("credited", unrelated);',
+  ].join("\n");
+  const qualifiedDescribe = unresolvedRunnerCalls(qualifiedBody).includes("describe");
+  const qualifiedFlat = registeredSuites(qualifiedBody, "unrelated", "credited").some(
+    (path) => path.length === 0,
+  );
+  const functionDescribe =
+    registeredSuites(
+      'describe("s", function () { it("credited", unrelated); });',
+      "unrelated",
+      "credited",
+    ).some((path) => path.length === 1 && path[0] === "s") &&
+    registeredSuites(
+      'describe("s", async () => { it("credited", unrelated); });',
+      "unrelated",
+      "credited",
+    ).some((path) => path.length === 1 && path[0] === "s");
   const separatorBody = [
     'if (false) describe("outer", () => describe("inner", () => it("credited", citedExport)));',
     'describe("inner > outer", () => it("credited", unrelated));',
@@ -1330,12 +2492,117 @@ try {
     ].join("\n"),
   );
   writeFileSync(workspaceTypeHost, 'import type { register } from "@helper/pkg";\n');
+  const runtimePkg = join(workspaceRoot, "pkgs", "runtime");
+  mkdirSync(runtimePkg);
+  writeFileSync(
+    join(runtimePkg, "package.json"),
+    JSON.stringify({
+      name: "@helper/runtime",
+      types: "./register.d.ts",
+      module: "./register.ts",
+    }),
+  );
+  writeFileSync(
+    join(runtimePkg, "register.d.ts"),
+    "export function register(): void;\n// from-runtime-declaration\n",
+  );
+  writeFileSync(
+    join(runtimePkg, "register.ts"),
+    [
+      "export function register() {",
+      '  it("credited", unrelated);',
+      "}",
+      "// from-runtime-entry",
+    ].join("\n"),
+  );
+  const runtimeHost = join(workspaceRoot, "runtime-host.test.ts");
+  writeFileSync(
+    runtimeHost,
+    [
+      'import { register } from "@helper/runtime";',
+      'if (false) it("credited", citedExport);',
+      "register();",
+    ].join("\n"),
+  );
+  const declPkg = join(workspaceRoot, "pkgs", "decls");
+  mkdirSync(declPkg);
+  writeFileSync(
+    join(declPkg, "package.json"),
+    JSON.stringify({ name: "@helper/decls", types: "./only.d.ts" }),
+  );
+  writeFileSync(join(declPkg, "only.d.ts"), "export function register(): void;\n");
+  const declHost = join(workspaceRoot, "decl-host.test.ts");
+  writeFileSync(declHost, 'import { register } from "@helper/decls";\n');
+  const orderedPkg = join(workspaceRoot, "pkgs", "ordered");
+  mkdirSync(orderedPkg);
+  writeFileSync(
+    join(orderedPkg, "package.json"),
+    JSON.stringify({
+      name: "@helper/ordered",
+      exports: {
+        ".": { import: "./evil.ts", bun: "./safe.ts" },
+        "./bun-first": { bun: "./safe.ts", import: "./evil.ts" },
+        "./require-first": { require: "./evil.ts", import: "./safe.ts" },
+        "./nested": {
+          bun: { import: "./evil.ts", default: "./def.ts" },
+          default: "./safe.ts",
+        },
+        "./types-first": { types: "./types.ts", default: "./safe.ts" },
+        "./blocked": { bun: { browser: "./evil.ts" }, default: "./safe.ts" },
+        "./null-bun": { bun: null, default: "./safe.ts" },
+        "./listed": [{ browser: "./evil.ts" }, "./safe.ts"],
+        "./array-null": [null, "./safe.ts"],
+        "./node-first": { node: "./evil.ts", import: "./safe.ts" },
+        "./browser": { browser: "./evil.ts", default: "./safe.ts" },
+      },
+    }),
+  );
+  writeFileSync(join(orderedPkg, "evil.ts"), "// from-ordered-evil\n");
+  writeFileSync(join(orderedPkg, "safe.ts"), "// from-ordered-safe\n");
+  writeFileSync(join(orderedPkg, "def.ts"), "// from-ordered-default\n");
+  writeFileSync(join(orderedPkg, "types.ts"), "// from-ordered-types\n");
+  const orderedCases: Array<[string, string]> = [
+    ["ordered-import.test.ts", 'import "@helper/ordered";\n'],
+    ["ordered-bun.test.ts", 'import "@helper/ordered/bun-first";\n'],
+    ["ordered-require.test.ts", 'require("@helper/ordered/require-first");\n'],
+    ["ordered-require-import.test.ts", 'import "@helper/ordered/require-first";\n'],
+    ["ordered-nested.test.ts", 'import "@helper/ordered/nested";\n'],
+    ["ordered-nested-require.test.ts", 'require("@helper/ordered/nested");\n'],
+    ["ordered-types.test.ts", 'import "@helper/ordered/types-first";\n'],
+    ["ordered-blocked.test.ts", 'import "@helper/ordered/blocked";\n'],
+    ["ordered-null.test.ts", 'import "@helper/ordered/null-bun";\n'],
+    ["ordered-listed.test.ts", 'import "@helper/ordered/listed";\n'],
+    ["ordered-array-null.test.ts", 'import "@helper/ordered/array-null";\n'],
+    ["ordered-node.test.ts", 'import "@helper/ordered/node-first";\n'],
+    ["ordered-browser.test.ts", 'import "@helper/ordered/browser";\n'],
+  ];
+  const orderedHosts: Record<string, string> = {};
+  for (const [name, source] of orderedCases) {
+    const file = join(workspaceRoot, name);
+    orderedHosts[name] = file;
+    writeFileSync(file, source);
+  }
   let aliasedDuplicate = false;
   let aliasedResolved = false;
   let aliasedMissing = false;
   let workspaceDuplicate = false;
   let workspaceResolved = false;
   let workspaceTypeSkipped = false;
+  let runtimeEntry = false;
+  let declarationOnly = false;
+  let orderedImport = false;
+  let orderedBun = false;
+  let orderedRequire = false;
+  let orderedRequireImport = false;
+  let orderedNested = false;
+  let orderedNestedRequire = false;
+  let orderedTypes = false;
+  let orderedBlocked = false;
+  let orderedNull = false;
+  let orderedListed = false;
+  let orderedArrayNull = false;
+  let orderedNode = false;
+  let orderedBrowser = false;
   try {
     const aliasBodies = sourceGraph([aliasHost]);
     aliasedDuplicate = duplicateFullNamesAcross(aliasBodies).includes("credited");
@@ -1347,6 +2614,66 @@ try {
     const typeBodies = sourceGraph([workspaceTypeHost]);
     workspaceTypeSkipped =
       typeBodies.length === 1 && !typeBodies.some((body) => body.includes("from-workspace-helper"));
+    const runtimeBodies = sourceGraph([runtimeHost]);
+    runtimeEntry =
+      runtimeBodies.some((body) => body.includes("from-runtime-entry")) &&
+      !runtimeBodies.some((body) => body.includes("from-runtime-declaration")) &&
+      duplicateFullNamesAcross(runtimeBodies).includes("credited");
+    declarationOnly = unresolvedLocalRequires([declHost]).includes("@helper/decls");
+    const orderedMarker = (name: string, text: string): boolean => {
+      const file = orderedHosts[name];
+      if (!file) return false;
+      return sourceGraph([file]).some((body) => body.includes(text));
+    };
+    const orderedMissing = (name: string, spec: string): boolean => {
+      const file = orderedHosts[name];
+      if (!file) return false;
+      const bodies = sourceGraph([file]);
+      const leaked = bodies.some(
+        (body) =>
+          body.includes("from-ordered-evil") ||
+          body.includes("from-ordered-safe") ||
+          body.includes("from-ordered-default"),
+      );
+      return unresolvedLocalRequires([file]).includes(spec) && !leaked;
+    };
+    orderedImport =
+      orderedMarker("ordered-import.test.ts", "from-ordered-evil") &&
+      !orderedMarker("ordered-import.test.ts", "from-ordered-safe");
+    orderedBun =
+      orderedMarker("ordered-bun.test.ts", "from-ordered-safe") &&
+      !orderedMarker("ordered-bun.test.ts", "from-ordered-evil");
+    orderedRequire =
+      orderedMarker("ordered-require.test.ts", "from-ordered-evil") &&
+      !orderedMarker("ordered-require.test.ts", "from-ordered-safe");
+    orderedRequireImport =
+      orderedMarker("ordered-require-import.test.ts", "from-ordered-safe") &&
+      !orderedMarker("ordered-require-import.test.ts", "from-ordered-evil");
+    orderedNested =
+      orderedMarker("ordered-nested.test.ts", "from-ordered-evil") &&
+      !orderedMarker("ordered-nested.test.ts", "from-ordered-default") &&
+      !orderedMarker("ordered-nested.test.ts", "from-ordered-safe");
+    orderedNestedRequire =
+      orderedMarker("ordered-nested-require.test.ts", "from-ordered-default") &&
+      !orderedMarker("ordered-nested-require.test.ts", "from-ordered-evil") &&
+      !orderedMarker("ordered-nested-require.test.ts", "from-ordered-safe");
+    orderedTypes =
+      orderedMarker("ordered-types.test.ts", "from-ordered-safe") &&
+      !orderedMarker("ordered-types.test.ts", "from-ordered-types");
+    orderedBlocked =
+      orderedMarker("ordered-blocked.test.ts", "from-ordered-safe") &&
+      !orderedMarker("ordered-blocked.test.ts", "from-ordered-evil");
+    orderedNull = orderedMissing("ordered-null.test.ts", "@helper/ordered/null-bun");
+    orderedListed =
+      orderedMarker("ordered-listed.test.ts", "from-ordered-safe") &&
+      !orderedMarker("ordered-listed.test.ts", "from-ordered-evil");
+    orderedArrayNull = orderedMissing("ordered-array-null.test.ts", "@helper/ordered/array-null");
+    orderedNode =
+      orderedMarker("ordered-node.test.ts", "from-ordered-evil") &&
+      !orderedMarker("ordered-node.test.ts", "from-ordered-safe");
+    orderedBrowser =
+      orderedMarker("ordered-browser.test.ts", "from-ordered-safe") &&
+      !orderedMarker("ordered-browser.test.ts", "from-ordered-evil");
   } finally {
     rmSync(aliasRoot, { recursive: true, force: true });
     rmSync(workspaceRoot, { recursive: true, force: true });
@@ -1362,6 +2689,62 @@ try {
   );
   const groupedBound = unresolvedRunnerCalls(
     ["const register = (it);", 'register("credited", unrelated);'].join("\n"),
+  );
+  const runnerShadowBody = [
+    "const it = (title, _callback, runner) => runner(title, unrelated);",
+    'it("credited", citedExport, realIt);',
+  ].join("\n");
+  const shadowedCalls = unresolvedRunnerCalls(runnerShadowBody);
+  const shadowedCredit = registeredSuites(runnerShadowBody, "citedExport", "credited");
+  const parenBody = [
+    '(it)("credited", unrelated);',
+    '(it.failing)("credited", unrelated);',
+  ].join("\n");
+  const parenCalls = unresolvedRunnerCalls(parenBody);
+  const parenCredit = registeredSuites('(it)("credited", citedExport);', "citedExport", "credited");
+  const optionalBody = [
+    'it?.("credited", unrelated);',
+    'it?.failing("credited", unrelated);',
+    'it.failing?.("credited", unrelated);',
+    '(it)?.("credited", unrelated);',
+    'it?.skipIf(ready)("credited", unrelated);',
+  ].join("\n");
+  const optionalCalls = unresolvedRunnerCalls(optionalBody);
+  const optionalCredit = registeredSuites(
+    'it?.("credited", citedExport);',
+    "citedExport",
+    "credited",
+  );
+  const optionalNamespace = unresolvedRunnerCalls(
+    'import * as runner from "bun:test"\nrunner?.it("credited", unrelated)',
+  );
+  const optionalExpect = unresolvedRunnerCalls(
+    'import * as runner from "bun:test"\nrunner?.expect("saved", "msg")',
+  );
+  const bracketBody = [
+    'import * as runner from "bun:test"',
+    'if (false) it("credited", citedExport)',
+    'runner["it"]("credited", unrelated)',
+  ].join("\n");
+  const bracketDuplicate = duplicateFullNames(bracketBody).includes("credited");
+  const bracketSingle = registeredSuites(
+    'import * as runner from "bun:test"\nrunner[\'it\']("credited", unrelated)',
+    "unrelated",
+    "credited",
+  );
+  const bracketTemplate = registeredSuites(
+    'import * as runner from "bun:test"\nrunner[`it`]("credited", unrelated)',
+    "unrelated",
+    "credited",
+  );
+  const bracketExpect = unresolvedRunnerCalls(
+    'import * as runner from "bun:test"\nrunner["expect"]("saved", "msg")',
+  );
+  const bracketDynamic = unresolvedRunnerCalls(
+    'import * as runner from "bun:test"\nrunner[name]("credited", unrelated)',
+  );
+  const bracketOptional = unresolvedRunnerCalls(
+    'import * as runner from "bun:test"\nrunner?.["it"]("credited", unrelated)',
   );
   const reassigned = registeredSuites(
     ["citedExport = unrelated;", 'it("credited", citedExport);'].join("\n"),
@@ -1384,6 +2767,29 @@ try {
     "citedExport",
     "credited",
   );
+  const dynamicEval = unresolvedRunnerCalls(
+    ['if (false) it("credited", citedExport)', 'eval("it(\\"credited\\", unrelated)")'].join("\n"),
+  );
+  const dynamicFunction = unresolvedRunnerCalls('Function("return it(\\"credited\\", unrelated)")');
+  const dynamicNew = unresolvedRunnerCalls('new Function("it", "it(\\"credited\\", unrelated)")');
+  const dynamicMember = unresolvedRunnerCalls('globalThis.eval("it(\\"credited\\", unrelated)")');
+  const dynamicGrouped = unresolvedRunnerCalls('(eval)("it(\\"credited\\", unrelated)")');
+  const dynamicPlain = unresolvedRunnerCalls('const label = "eval";\nfunction eval() {}\n');
+  const vmModule = "node:" + "vm";
+  const dynamicVm = unresolvedRunnerCalls(
+    [
+      `import { runInNewContext } from ${JSON.stringify(vmModule)};`,
+      'const runner = runInNewContext("0");',
+      'runner.it("credited", unrelated);',
+    ].join("\n"),
+  );
+  const dynamicVmMember = unresolvedRunnerCalls(
+    `import vm from ${JSON.stringify(vmModule)};\nvm.runInThisContext("0");\n`,
+  );
+  const dynamicCompile = unresolvedRunnerCalls('compileFunction("return 1")();\n');
+  const dynamicVmPlain = unresolvedRunnerCalls(
+    "function runInNewContext() {}\nconst label = runInNewContext;\n",
+  );
   const creditGuards =
     aliasedDuplicate &&
     aliasedResolved &&
@@ -1391,12 +2797,153 @@ try {
     workspaceDuplicate &&
     workspaceResolved &&
     workspaceTypeSkipped &&
+    runtimeEntry &&
+    declarationOnly &&
     indirectCalls.includes("it") &&
     boundCalls.length === 0 &&
     groupedBound.length === 0 &&
+    shadowedCalls.includes("it") &&
+    shadowedCredit.length === 0 &&
+    parenCalls.includes("it") &&
+    parenCredit.length === 0 &&
+    optionalCalls.includes("it") &&
+    optionalCredit.length === 0 &&
+    optionalNamespace.includes("runner") &&
+    optionalExpect.length === 0 &&
+    bracketDuplicate &&
+    bracketSingle.length === 1 &&
+    bracketTemplate.length === 1 &&
+    bracketExpect.length === 0 &&
+    bracketDynamic.includes("runner") &&
+    bracketOptional.includes("runner") &&
     reassigned.length === 0 &&
     assignedAfter.length === 1 &&
-    shadowedAssign.length === 1;
+    shadowedAssign.length === 1 &&
+    dynamicEval.includes("eval") &&
+    dynamicFunction.includes("Function") &&
+    dynamicNew.includes("Function") &&
+    dynamicMember.includes("eval") &&
+    dynamicGrouped.includes("eval") &&
+    dynamicPlain.length === 0 &&
+    dynamicVm.includes("runInNewContext") &&
+    dynamicVmMember.includes("runInThisContext") &&
+    dynamicCompile.includes("compileFunction") &&
+    dynamicVmPlain.length === 0 &&
+    orderedImport &&
+    orderedBun &&
+    orderedRequire &&
+    orderedRequireImport &&
+    orderedNested &&
+    orderedNestedRequire &&
+    orderedTypes &&
+    orderedBlocked &&
+    orderedNull &&
+    orderedListed &&
+    orderedArrayNull &&
+    orderedNode &&
+    orderedBrowser;
+  const loaderPlugin =
+    loaderPluginRegistration('Bun.plugin({ name: "rewriter", setup() {} });') &&
+    loaderPluginRegistration("Bun . plugin ({});") &&
+    loaderPluginRegistration("Bun?.plugin({});") &&
+    loaderPluginRegistration("const saved = Bun.plugin;\n") &&
+    loaderPluginRegistration("const install = Bun.plugin;\ninstall({});\n") &&
+    loaderPluginRegistration("const { plugin } = Bun;\n") &&
+    loaderPluginRegistration("const { plugin: install } = Bun;\n") &&
+    loaderPluginRegistration("const ns = Bun;\nns.plugin({});\n") &&
+    loaderPluginRegistration('Bun["plugin"];\n') &&
+    loaderPluginRegistration("Bun['plugin'];\n") &&
+    loaderPluginRegistration("Bun[`plugin`];\n");
+  const loaderIgnored =
+    !loaderPluginRegistration("// Bun.plugin({})\nconst kept = 1;\n") &&
+    !loaderPluginRegistration("/** Bun.plugin( */\nconst kept = 1;\n") &&
+    !loaderPluginRegistration('const text = "Bun.plugin(";\n') &&
+    !loaderPluginRegistration("myBun.plugin({});\n") &&
+    !loaderPluginRegistration("runtime.plugin({});\n") &&
+    !loaderPluginRegistration("const { other } = Bun;\n") &&
+    !loaderPluginRegistration("const { install: plugin } = Bun;\n") &&
+    !loaderPluginRegistration("const ns = Bun;\nns.file();\n") &&
+    !loaderPluginRegistration("obj.Bun.plugin({});\n");
+  const mockModule = mockModuleRegistration(
+    'import { mock } from "bun:test"\nmock.module("./helper.ts", () => ({}));\n',
+  );
+  const mockSpaced = mockModuleRegistration("mock . module('./helper.ts', () => ({}));\n");
+  const mockOptional = mockModuleRegistration("runner.mock?.module('./helper.ts', () => ({}));\n");
+  const mockIgnored =
+    !mockModuleRegistration('// mock.module("./helper.ts", () => {})\nconst kept = 1;\n') &&
+    !mockModuleRegistration('const text = "mock.module(";\n') &&
+    !mockModuleRegistration('myMock.module("./helper.ts", () => ({}));\n');
+  const inventoryRoot = join(root, "packages/core");
+  const inventoryFile = join(inventoryRoot, "src/scenario/concreteValidator.test.ts");
+  const inventoryPreloads = localPreloadFiles(inventoryRoot, [
+    "test",
+    "src/scenario/concreteValidator.test.ts",
+  ]);
+  const inventorySources = sourceGraph([inventoryFile, ...inventoryPreloads]);
+  const inventoryLoader = inventorySources.some(
+    (source) => loaderPluginRegistration(source) || mockModuleRegistration(source),
+  );
+  const inventoryRunners = inventorySources.some(
+    (source) => unresolvedRunnerCalls(source).length > 0,
+  );
+  const inventoryFaults = unresolvedLocalRequires([inventoryFile, ...inventoryPreloads]).length;
+  const lockDir = mkdtempSync(join(tmpdir(), "idlekit-evidence-lock-"));
+  const lockedHelper = join(lockDir, "helper.ts");
+  const attackFile = join(lockDir, "attack.test.ts");
+  let sourceLock = false;
+  try {
+    writeFileSync(lockedHelper, "export const marker = 1;\n");
+    writeFileSync(
+      attackFile,
+      [
+        'import { chmodSync, writeFileSync } from "fs";',
+        'import { test } from "bun:test";',
+        `const helper = ${JSON.stringify(lockedHelper)};`,
+        "chmodSync(helper, 0o644);",
+        'writeFileSync(helper, "export const marker = 2;\\n");',
+        'await import("./helper.ts");',
+        'test("credited", () => {});',
+      ].join("\n"),
+    );
+    const lock = installSourceLock(lockDir, [lockedHelper]);
+    const modes = sealSources([lockedHelper]);
+    try {
+      const proc = Bun.spawnSync(
+        sealedCommand(
+          lockDir,
+          [process.execPath, "test", "--preload", lock.preload, "attack.test.ts"],
+          [lockedHelper],
+        ),
+        {
+          cwd: lockDir,
+          stdout: "pipe",
+          stderr: "pipe",
+          env: { ...plainTestEnv(), IDLEKIT_EVIDENCE_LOCK: lock.env },
+        },
+      );
+      const output = `${proc.stdout.toString()}\n${proc.stderr.toString()}`;
+      const intact = readFileSync(lockedHelper, "utf8").includes("marker = 1");
+      const blocked =
+        output.includes("EPERM") || output.includes("EROFS") || output.includes("read-only");
+      const windowsLock =
+        sourceLockCommand("win32", lockDir, ["bun", "test"], [lockedHelper]) === undefined &&
+        sourceLockCommand("win32", lockDir, ["bun", "test"], [])?.join("\0") === "bun\0test";
+      const linuxLock = sourceLockCommand("linux", lockDir, ["bun", "test"], [lockedHelper]);
+      const linuxPlanned =
+        linuxLock?.[0] === "/bin/bash" &&
+        linuxLock[1]?.endsWith("source-lock-mount.sh") === true;
+      sourceLock =
+        (proc.exitCode ?? 1) !== 0 &&
+        intact &&
+        blocked &&
+        windowsLock &&
+        linuxPlanned;
+    } finally {
+      unsealSources(modes);
+    }
+  } finally {
+    rmSync(lockDir, { recursive: true, force: true });
+  }
   const duplicateOk =
     duplicateNames.length === 1 &&
     duplicateNames[0] === "kept > quota is documented" &&
@@ -1426,6 +2973,10 @@ try {
     eachOnly.length === 1 &&
     eachSuite.length === 1 &&
     eachSuite[0]?.join(" > ") === "kept" &&
+    printfEachCalls.includes("it") &&
+    printfEachLive.length === 0 &&
+    printfEachDead.length === 1 &&
+    printfDescribe.includes("describe") &&
     conjunction.length === 0 &&
     conjunctionOther.length === 0 &&
     asserted.length === 1 &&
@@ -1446,10 +2997,14 @@ try {
     reboundLive.length === 0 &&
     reboundUnresolved.length === 1 &&
     wrappedLive.length === 0 &&
-    wrappedUnresolved.length === 1 &&
+    wrappedUnresolved.length === 2 &&
+    wrappedUnresolved.includes("it") &&
     forLive.length === 1 &&
     namespaceLive.length === 1 &&
     namespaceExpect.length === 0 &&
+    reflectedNamespace.includes("bt") &&
+    copiedNamespace.includes("bt") &&
+    destructureClean.length === 0 &&
     namespaceAlias.length === 1 &&
     namespaceType.length === 0 &&
     namespaceShadow.length === 1 &&
@@ -1479,6 +3034,24 @@ try {
     requiredDead.length === 1 &&
     requiredNames.length === 1 &&
     otherRequire.length === 0 &&
+    nodeSuiteDuplicate &&
+    renamedSuite &&
+    requiredSuite &&
+    dynamicSuite &&
+    !bunSuiteDuplicate &&
+    nodeDefaultDuplicate &&
+    !bunDefaultDuplicate &&
+    namespaceDestructure &&
+    namespaceSuite &&
+    nodeNamespaceSuite &&
+    !bunNamespaceSuite &&
+    directRequire &&
+    directSuite &&
+    !directExpect &&
+    dynamicNamespace &&
+    requiredNamespace &&
+    !otherDynamicNamespace &&
+    !chainedNamespace &&
     computedNames.length === 0 &&
     computedDead.length === 1 &&
     computedCalls.length === 1 &&
@@ -1490,34 +3063,223 @@ try {
     mjsResolved &&
     requireDuplicate &&
     requireResolved &&
+    moduleRequire &&
+    metaRequire &&
+    moduleSpacedRequire &&
+    memberRequireIgnored &&
+    moduleDynamicRequire &&
     templateRequire &&
     unresolvedRequire &&
     dynamicRequire &&
+    shadowedRequire &&
+    importEquals &&
+    createdRequire &&
     packageRequire &&
     commentRequire &&
     dynamicImport &&
     unresolvedImport &&
     packageImport &&
     resolvedImport &&
+    directoryEntry &&
+    queryImport &&
+    fragmentImport &&
+    packageHashImport &&
+    directoryQuery &&
+    installedPackage &&
+    nestedPackage &&
+    quietPackage &&
+    libraryPackage &&
+    aliasPackage &&
+    missingInstalled &&
+    dynamicPackage &&
+    dataImport &&
+    textImport &&
     foreignImport.length === 0 &&
     foreignNamespace.length === 0 &&
     helperComputed &&
     namedDuplicate &&
     namedLive &&
     arrowLive &&
+    reboundSuite &&
+    reboundCredit &&
+    objectRunner &&
+    renamedObject &&
+    plainObject.length === 0 &&
+    arrayRunner &&
+    plainArray.length === 0 &&
+    spreadRunner &&
+    spreadArray &&
+    plainSpread.length === 0 &&
+    plainSpreadArray.length === 0 &&
+    dataSpread.length === 0 &&
+    forwardedRunner &&
+    propertyRunner &&
+    propertyContainer &&
+    plainProperty.length === 0 &&
+    plainAssign &&
+    classField &&
+    classContainer &&
+    classMethod &&
+    localRunner &&
+    packageCall.length === 0 &&
+    localUnused.length === 0 &&
+    typeLocal.length === 0 &&
+    sameFileExport.length === 1 &&
+    returnedRunner &&
+    returnedContainer &&
+    returnedCall &&
+    returnedAsi.length === 0 &&
+    commentImport &&
+    relativeTypeSkipped &&
+    sourceLock &&
     laterLive &&
     pendingHeld &&
     missingSuite.length === 1 &&
+    missingSuite[0] === "missingSuite" &&
+    qualifiedDescribe &&
+    qualifiedFlat &&
+    functionDescribe &&
+    loaderPlugin &&
+    loaderIgnored &&
+    !inventoryLoader &&
+    !inventoryRunners &&
+    inventoryFaults === 0 &&
+    mockModule &&
+    mockSpaced &&
+    mockOptional &&
+    mockIgnored &&
+    quotedKeyPreload &&
+    commentedPreload &&
+    shortPreload &&
+    attachedPreload &&
+    importPreload &&
     separatorClosed &&
     scalarPreload &&
     quotedPreload &&
-    arrayPreload;
+    arrayPreload &&
+    bracketPreload &&
+    packagePreload &&
+    scopedPreload &&
+    missingPackagePreload &&
+    missingRelativePreload &&
+    configPreload &&
+    configSplitPreload &&
+    missingConfigPreload;
   record(
     "duplicate-title",
     "zero",
     duplicateOk ? 0 : 1,
     duplicateOk,
-    JSON.stringify({ duplicateNames, duplicateStillRegistered, commentIgnored }),
+    JSON.stringify({
+      duplicateNames,
+      duplicateStillRegistered,
+      commentIgnored,
+      moduleRequire,
+      metaRequire,
+      moduleSpacedRequire,
+      memberRequireIgnored,
+      moduleDynamicRequire,
+      printfEachCalls,
+      printfEachLive,
+      printfEachDead,
+      printfDescribe,
+      nodeSuiteDuplicate,
+      renamedSuite,
+      requiredSuite,
+      dynamicSuite,
+      bunSuiteDuplicate,
+      nodeDefaultDuplicate,
+      bunDefaultDuplicate,
+      namespaceDestructure,
+      reflectedNamespace,
+      copiedNamespace,
+      destructureClean,
+      namespaceSuite,
+      nodeNamespaceSuite,
+      bunNamespaceSuite,
+      directRequire,
+      directSuite,
+      directExpect,
+      dynamicNamespace,
+      requiredNamespace,
+      otherDynamicNamespace,
+      chainedNamespace,
+      directoryEntry,
+      queryImport,
+      fragmentImport,
+      packageHashImport,
+      directoryQuery,
+      installedPackage,
+      nestedPackage,
+      quietPackage,
+      libraryPackage,
+      aliasPackage,
+      missingInstalled,
+      dynamicPackage,
+      dataImport,
+      textImport,
+      packagePreload,
+      bracketPreload,
+      scopedPreload,
+      missingPackagePreload,
+      missingRelativePreload,
+      configPreload,
+      configSplitPreload,
+      missingConfigPreload,
+      qualifiedDescribe,
+      qualifiedFlat,
+      functionDescribe,
+      loaderPlugin,
+      loaderIgnored,
+      inventoryLoader,
+      inventoryRunners,
+      inventoryFaults,
+      reboundSuite,
+      reboundCredit,
+      objectRunner,
+      renamedObject,
+      plainObject,
+      arrayRunner,
+      plainArray,
+      spreadRunner,
+      spreadArray,
+      plainSpread,
+      plainSpreadArray,
+      dataSpread,
+      forwardedRunner,
+      propertyRunner,
+      propertyContainer,
+      plainProperty,
+      plainAssign,
+      classField,
+      classContainer,
+      classMethod,
+      localRunner,
+      packageCall,
+      localUnused,
+      typeLocal,
+      sameFileExport,
+      returnedRunner,
+      returnedContainer,
+      returnedCall,
+      returnedAsi,
+      shadowedRequire,
+      importEquals,
+      createdRequire,
+      commentImport,
+      relativeTypeSkipped,
+      sourceLock,
+      mockModule,
+      mockSpaced,
+      mockOptional,
+      mockIgnored,
+      quotedKeyPreload,
+      commentedPreload,
+      shortPreload,
+      attachedPreload,
+      importPreload,
+      missingSuite,
+    }),
   );
   record(
     "alias-credit",
@@ -1531,12 +3293,47 @@ try {
       workspaceDuplicate,
       workspaceResolved,
       workspaceTypeSkipped,
+      runtimeEntry,
+      declarationOnly,
       indirectCalls,
       boundCalls,
       groupedBound,
+      shadowedCalls,
+      shadowedCredit,
+      parenCalls,
+      parenCredit,
+      optionalCalls,
+      optionalCredit,
+      optionalNamespace,
+      optionalExpect,
+      bracketDuplicate,
+      bracketSingle,
+      bracketTemplate,
+      bracketExpect,
+      bracketDynamic,
+      bracketOptional,
       reassigned,
       assignedAfter,
       shadowedAssign,
+      dynamicEval,
+      dynamicFunction,
+      dynamicNew,
+      dynamicMember,
+      dynamicGrouped,
+      dynamicPlain,
+      orderedImport,
+      orderedBun,
+      orderedRequire,
+      orderedRequireImport,
+      orderedNested,
+      orderedNestedRequire,
+      orderedTypes,
+      orderedBlocked,
+      orderedNull,
+      orderedListed,
+      orderedArrayNull,
+      orderedNode,
+      orderedBrowser,
     }),
   );
 
@@ -1590,8 +3387,43 @@ try {
     production: ["pkg/host.ts"],
     fileRegistered: ["owned", "sibling"],
   });
-  const siblingOk = sibling === undefined;
-  record("sibling-inventory", "zero", siblingOk ? 0 : 1, siblingOk, JSON.stringify(sibling));
+  const moduleHost = [
+    "/** @evidence packages/web/src/quota.mts#quotaHost Calls the host. */",
+    "export function owned(): void {}",
+  ].join("\n");
+  const moduleCitation = unregisteredImplementationHost(
+    moduleHost,
+    "docs/spec.md",
+    "quota",
+    ["owned"],
+    {
+      file: "packages/web/src/quota.test.ts",
+      production: ["packages/web/src/quota.mts"],
+    },
+  );
+  const scriptHost = [
+    "/** @evidence packages/web/src/quota.cts#quotaHost Calls the host. */",
+    "export function owned(): void {}",
+  ].join("\n");
+  const scriptCitation = unregisteredImplementationHost(
+    scriptHost,
+    "docs/spec.md",
+    "quota",
+    ["owned"],
+    {
+      file: "packages/web/src/quota.test.ts",
+      production: ["packages/web/src/quota.cts"],
+    },
+  );
+  const siblingOk =
+    sibling === undefined && moduleCitation === undefined && scriptCitation === undefined;
+  record(
+    "sibling-inventory",
+    "zero",
+    siblingOk ? 0 : 1,
+    siblingOk,
+    JSON.stringify({ sibling, moduleCitation, scriptCitation }),
+  );
 
   const foreign = unregisteredImplementationHost(siblingBody, "docs/spec.md", "quota", ["owned"], {
     file: "pkg/case.test.ts",
@@ -1650,8 +3482,38 @@ try {
     ".",
     ["src/example.test.ts"],
   );
+  const configuredTarget = uninventoriedCommandTargets(
+    ["test", "--config", "alt.toml", "src/example.test.ts"],
+    ".",
+    ["src/example.test.ts"],
+  );
+  const configuredEquals = uninventoriedCommandTargets(
+    ["test", "--config=alt.toml", "src/example.test.ts"],
+    ".",
+    ["src/example.test.ts"],
+  );
   const preloadedEq = uninventoriedCommandTargets(
     ["test", "--preload=./setup.ts", "src/example.test.ts"],
+    ".",
+    ["src/example.test.ts"],
+  );
+  const shortRequired = uninventoriedCommandTargets(
+    ["test", "-r", "./setup.ts", "src/example.test.ts"],
+    ".",
+    ["src/example.test.ts"],
+  );
+  const shortEquals = uninventoriedCommandTargets(
+    ["test", "-r=./setup.ts", "src/example.test.ts"],
+    ".",
+    ["src/example.test.ts"],
+  );
+  const shortAttached = uninventoriedCommandTargets(
+    ["test", "-r./setup.ts", "src/example.test.ts"],
+    ".",
+    ["src/example.test.ts"],
+  );
+  const importedPreload = uninventoriedCommandTargets(
+    ["test", "--import=./setup.ts", "src/example.test.ts"],
     ".",
     ["src/example.test.ts"],
   );
@@ -1688,6 +3550,17 @@ try {
   const cwdEquals = blockedTestArgs(["test", "--cwd=../other", "src/x.test.ts"]);
   const cwdSplit = blockedTestArgs(["test", "--cwd", "../other", "src/x.test.ts"]);
   const cwdAfterSeparator = blockedTestArgs(["test", "src/x.test.ts", "--", "--cwd"]);
+  const inspectWait = blockedTestArgs(["test", "--inspect-wait", "src/example.test.ts"]);
+  const inspectBrk = blockedTestArgs([
+    "test",
+    "--inspect-brk=127.0.0.1:9229",
+    "src/example.test.ts",
+  ]);
+  const inspectOpen = blockedTestArgs(["test", "--inspect", "src/example.test.ts"]);
+  const inspectAfterSeparator = blockedTestArgs(["test", "src/x.test.ts", "--", "--inspect-wait"]);
+  const conditionsBlocked = blockedTestArgs(["test", "--conditions=evil", "src/example.test.ts"]);
+  const conditionsSplit = blockedTestArgs(["test", "--conditions", "evil", "src/example.test.ts"]);
+  const conditionsAfter = blockedTestArgs(["test", "src/x.test.ts", "--", "--conditions=evil"]);
   const reporterAt = reporterArgs.indexOf("--reporter=junit");
   const separatorAt = reporterArgs.indexOf("--");
   const commandOk =
@@ -1700,6 +3573,12 @@ try {
     onlyTarget.length === 0 &&
     preloaded.length === 0 &&
     preloadedEq.length === 0 &&
+    shortRequired.length === 0 &&
+    shortEquals.length === 0 &&
+    shortAttached.length === 0 &&
+    importedPreload.length === 0 &&
+    configuredTarget.length === 0 &&
+    configuredEquals.length === 0 &&
     directoryPattern.length === 1 &&
     directoryPattern[0] === "src" &&
     namedPattern.length === 0 &&
@@ -1715,7 +3594,14 @@ try {
     plainCommand === undefined &&
     cwdEquals === "--cwd" &&
     cwdSplit === "--cwd" &&
-    cwdAfterSeparator === undefined;
+    cwdAfterSeparator === undefined &&
+    inspectWait === "--inspect-wait" &&
+    inspectBrk === "--inspect-brk" &&
+    inspectOpen === undefined &&
+    inspectAfterSeparator === undefined &&
+    conditionsBlocked === "--conditions" &&
+    conditionsSplit === "--conditions" &&
+    conditionsAfter === undefined;
   record(
     "test-subcommand",
     "zero",

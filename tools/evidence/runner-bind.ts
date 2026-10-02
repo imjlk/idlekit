@@ -25,10 +25,21 @@ export type RunnerAlias = {
   modifiers: string[];
   depth: number;
   namespace?: boolean;
+  /** Runner module of a namespace import, such as `bun:test` or `node:test`. */
+  spec?: string;
+  /** `{ it }` or `[it]` stores a runner where member calls bypass the scanner. */
+  objectRunner?: boolean;
 };
 
 export function isRunnerKind(value: string): value is RunnerKind {
   return value === "describe" || value === "it" || value === "test";
+}
+
+/** `suite` from `node:test` is a describe-style suite in Bun. `bun:test` has no `suite`. */
+function runnerKindForImport(spec: string, imported: string): RunnerKind | undefined {
+  if (isRunnerKind(imported)) return imported;
+  if (spec === "node:test" && imported === "suite") return "describe";
+  return undefined;
 }
 
 export function aliasAt(aliases: readonly RunnerAlias[], name: string): RunnerAlias | undefined {
@@ -47,7 +58,8 @@ function bindingBoundary(body: string, index: number): boolean {
     char === ";" ||
     char === ")" ||
     char === "}" ||
-    char === "{"
+    char === "{" ||
+    char === "]"
   ) {
     return true;
   }
@@ -180,16 +192,45 @@ export function titleCallAt(body: string, index: number): boolean {
   return body[skipWhitespace(body, quoted.end)] === ",";
 }
 
-/** `.it` / `.test` / `.describe` on a namespace import. Other members are not runners. */
+function staticBracketKey(
+  body: string,
+  index: number,
+): { value: string; end: number } | undefined {
+  const open = skipSpaceAndComments(body, index);
+  if (body[open] !== "[") return undefined;
+  const keyAt = skipSpaceAndComments(body, open + 1);
+  const quoted = readQuoted(body, keyAt) ?? readStaticTemplate(body, keyAt);
+  if (!quoted) return undefined;
+  const close = skipSpaceAndComments(body, quoted.end);
+  if (body[close] !== "]") return undefined;
+  return { value: quoted.value, end: close + 1 };
+}
+
+function runnerKindForMember(spec: string | undefined, member: string): RunnerKind | undefined {
+  if (isRunnerKind(member)) return member;
+  if (!spec) return undefined;
+  return runnerKindForImport(spec, member);
+}
+
+/** `.it` / `["it"]` on a namespace import. `node:test`'s `suite` is a describe. */
 export function namespaceRunnerMember(
   body: string,
   index: number,
+  spec?: string,
 ): { kind: RunnerKind; end: number } | undefined {
+  const bracket = staticBracketKey(body, index);
+  if (bracket) {
+    const kind = runnerKindForMember(spec, bracket.value);
+    if (!kind) return undefined;
+    return { kind, end: bracket.end };
+  }
   const dot = skipSpaceAndComments(body, index);
   if (body[dot] !== ".") return undefined;
   const member = readIdentifier(body, skipSpaceAndComments(body, dot + 1));
-  if (!member || !isRunnerKind(member.value)) return undefined;
-  return { kind: member.value, end: member.end };
+  if (!member) return undefined;
+  const kind = runnerKindForMember(spec, member.value);
+  if (!kind) return undefined;
+  return { kind, end: member.end };
 }
 
 /** An arrow or `function` value is a helper, not a binding of `it` / `test` / `describe`. */
@@ -289,7 +330,7 @@ export function readRunnerRef(
   } else {
     const alias = aliasAt(aliases, ident.value);
     if (alias?.namespace) {
-      const member = namespaceRunnerMember(body, ident.end);
+      const member = namespaceRunnerMember(body, ident.end, alias.spec);
       if (!member) return undefined;
       kind = member.kind;
       afterIdent = member.end;
@@ -313,6 +354,9 @@ export function readImportRunnerAliases(
 ): {
   entries: Array<{ name: string; kind: RunnerKind }>;
   namespaces: string[];
+  /** Local names imported from `./` or `../`. A title call through one is unresolved. */
+  opaque?: string[];
+  moduleSpec?: string;
   end: number;
 } | undefined {
   let cursor = skipSpaceAndComments(body, index);
@@ -328,46 +372,58 @@ export function readImportRunnerAliases(
     if (!spec) return undefined;
     // A local wrapper can re-export a runner and discard the cited callback.
     if (!runnerModuleSpec(spec.value)) return { entries: [], namespaces: [], end: spec.end };
-    return { entries: [], namespaces: [local.value], end: spec.end };
+    return { entries: [], namespaces: [local.value], moduleSpec: spec.value, end: spec.end };
   }
-  if (body[cursor] !== "{") return undefined;
-  const entries: Array<{ name: string; kind: RunnerKind }> = [];
-  cursor += 1;
-  while (cursor < body.length) {
-    cursor = skipSpaceAndComments(body, cursor);
-    if (body[cursor] === "}") {
-      cursor += 1;
-      break;
+  let defaultLocal: string | undefined;
+  if (body[cursor] !== "{") {
+    const first = readIdentifier(body, cursor);
+    if (!first || first.value === "type") return undefined;
+    const afterName = skipSpaceAndComments(body, first.end);
+    const fromHere = readIdentifier(body, afterName);
+    if (body[afterName] !== "," && fromHere?.value !== "from") return undefined;
+    defaultLocal = first.value;
+    cursor = afterName;
+    if (body[cursor] === ",") cursor = skipSpaceAndComments(body, cursor + 1);
+  }
+  const pending: Array<{ name: string; imported: string }> = [];
+  if (body[cursor] === "{") {
+    cursor += 1;
+    while (cursor < body.length) {
+      cursor = skipSpaceAndComments(body, cursor);
+      if (body[cursor] === "}") {
+        cursor += 1;
+        break;
+      }
+      let imported = readIdentifier(body, cursor);
+      if (!imported) return undefined;
+      let typeOnly = false;
+      if (imported.value === "type") {
+        typeOnly = true;
+        const named = readIdentifier(body, skipSpaceAndComments(body, imported.end));
+        if (!named) return undefined;
+        imported = named;
+      }
+      cursor = skipSpaceAndComments(body, imported.end);
+      let local = imported.value;
+      const asWord = readIdentifier(body, cursor);
+      if (asWord?.value === "as") {
+        const renamed = readIdentifier(body, asWord.end);
+        if (!renamed) return undefined;
+        local = renamed.value;
+        cursor = skipSpaceAndComments(body, renamed.end);
+      }
+      if (!typeOnly) pending.push({ name: local, imported: imported.value });
+      if (body[cursor] === ",") {
+        cursor += 1;
+        continue;
+      }
+      if (body[cursor] === "}") {
+        cursor += 1;
+        break;
+      }
+      return undefined;
     }
-    let imported = readIdentifier(body, cursor);
-    if (!imported) return undefined;
-    let typeOnly = false;
-    if (imported.value === "type") {
-      typeOnly = true;
-      const named = readIdentifier(body, skipSpaceAndComments(body, imported.end));
-      if (!named) return undefined;
-      imported = named;
-    }
-    cursor = skipSpaceAndComments(body, imported.end);
-    let local = imported.value;
-    const asWord = readIdentifier(body, cursor);
-    if (asWord?.value === "as") {
-      const renamed = readIdentifier(body, asWord.end);
-      if (!renamed) return undefined;
-      local = renamed.value;
-      cursor = skipSpaceAndComments(body, renamed.end);
-    }
-    if (!typeOnly && isRunnerKind(imported.value)) {
-      entries.push({ name: local, kind: imported.value });
-    }
-    if (body[cursor] === ",") {
-      cursor += 1;
-      continue;
-    }
-    if (body[cursor] === "}") {
-      cursor += 1;
-      break;
-    }
+  } else if (defaultLocal === undefined) {
     return undefined;
   }
   cursor = skipSpaceAndComments(body, cursor);
@@ -375,7 +431,21 @@ export function readImportRunnerAliases(
   if (fromWord?.value !== "from") return undefined;
   const spec = readQuoted(body, fromWord.end) ?? readStaticTemplate(body, fromWord.end);
   if (!spec) return undefined;
-  if (!runnerModuleSpec(spec.value)) return { entries: [], namespaces: [], end: spec.end };
+  if (!runnerModuleSpec(spec.value)) {
+    if (!relativeModuleSpec(spec.value)) return { entries: [], namespaces: [], end: spec.end };
+    const opaque = pending.map((item) => item.name);
+    if (defaultLocal !== undefined) opaque.push(defaultLocal);
+    return { entries: [], namespaces: [], opaque, end: spec.end };
+  }
+  const entries: Array<{ name: string; kind: RunnerKind }> = [];
+  for (const item of pending) {
+    const kind = runnerKindForImport(spec.value, item.imported);
+    if (kind) entries.push({ name: item.name, kind });
+  }
+  // The default export of node:test is the test runner. bun:test has none.
+  if (defaultLocal !== undefined && spec.value === "node:test") {
+    entries.push({ name: defaultLocal, kind: "test" });
+  }
   return { entries, namespaces: [], end: spec.end };
 }
 
@@ -383,18 +453,57 @@ function runnerModuleSpec(spec: string): boolean {
   return spec === "bun:test" || spec === "node:test";
 }
 
+function relativeModuleSpec(spec: string): boolean {
+  return spec.startsWith("./") || spec.startsWith("../");
+}
+
+/**
+ * `const runner = await import("bun:test")` and `const runner = require("bun:test")`.
+ * A following member, such as `.then`, is a different value.
+ */
+export function readRunnerNamespaceValue(
+  body: string,
+  index: number,
+): { end: number; spec: string } | undefined {
+  const imported = readDynamicRunnerImport(body, index) ?? readRunnerRequire(body, index);
+  if (!imported) return undefined;
+  const end = skipTypeOnlySuffix(body, imported.end);
+  if (end < 0 || body[skipSpaceAndComments(body, end)] === ".") return undefined;
+  if (!bindingBoundary(body, end)) return undefined;
+  return { end, spec: imported.spec };
+}
+
+/** `require("bun:test").it(...)` and `await import("bun:test").suite(...)`. */
+export function readDirectModuleRunner(
+  body: string,
+  index: number,
+): { kind: RunnerKind; callFrom: number } | undefined {
+  const imported = readRunnerRequire(body, index) ?? readDynamicRunnerImport(body, index);
+  if (!imported) return undefined;
+  let cursor = imported.end;
+  const grouped = skipSpaceAndComments(body, cursor);
+  if (body[grouped] === ")") cursor = grouped + 1;
+  const dot = skipSpaceAndComments(body, cursor);
+  if (body[dot] !== ".") return undefined;
+  const member = readIdentifier(body, skipSpaceAndComments(body, dot + 1));
+  if (!member) return undefined;
+  const kind = runnerKindForImport(imported.spec, member.value);
+  if (!kind) return undefined;
+  return { kind, callFrom: member.end };
+}
+
 /** `await import("bun:test")`, including one pair of parentheses around the call. */
 function readDynamicRunnerImport(
   body: string,
   index: number,
-): { end: number } | undefined {
+): { end: number; spec: string } | undefined {
   let cursor = skipSpaceAndComments(body, index);
   if (body[cursor] === "(") {
     const inner = readDynamicRunnerImport(body, cursor + 1);
     if (!inner) return undefined;
     const close = skipSpaceAndComments(body, inner.end);
     if (body[close] !== ")") return undefined;
-    return { end: close + 1 };
+    return { end: close + 1, spec: inner.spec };
   }
   const awaitWord = readIdentifier(body, cursor);
   if (awaitWord?.value === "await") cursor = skipSpaceAndComments(body, awaitWord.end);
@@ -406,20 +515,22 @@ function readDynamicRunnerImport(
   if (!spec || !runnerModuleSpec(spec.value)) return undefined;
   const close = skipPair(body, open);
   if (close < 0) return undefined;
-  return { end: close };
+  return { end: close, spec: spec.value };
 }
 
 /**
  * `const { it: register } = await import("bun:test")` names `register` as `it`.
  * `const { it: register } = require("bun:test")` is the same binding.
- * A default, a nested pattern, or any other module is not a runner binding.
+ * `const { it: register } = runner` follows a namespace import of a runner module.
+ * A nested pattern or any other module is not a runner binding.
  */
 export function readDestructuredRunnerImport(
   body: string,
   index: number,
+  aliases: readonly RunnerAlias[] = [],
 ): { entries: Array<{ name: string; kind: RunnerKind }>; end: number } | undefined {
   if (body[index] !== "{") return undefined;
-  const entries: Array<{ name: string; kind: RunnerKind }> = [];
+  const pending: Array<{ name: string; imported: string }> = [];
   let cursor = index + 1;
   while (cursor < body.length) {
     cursor = skipSpaceAndComments(body, cursor);
@@ -443,7 +554,7 @@ export function readDestructuredRunnerImport(
         cursor = skipSpaceAndComments(body, renamed.end);
       }
       if (body[cursor] === "=") return undefined;
-      if (isRunnerKind(imported.value)) entries.push({ name: local, kind: imported.value });
+      pending.push({ name: local, imported: imported.value });
     }
     if (body[cursor] === ",") {
       cursor += 1;
@@ -459,19 +570,36 @@ export function readDestructuredRunnerImport(
   if (body[cursor] !== "=") return undefined;
   const imported =
     readDynamicRunnerImport(body, cursor + 1) ?? readRunnerRequire(body, cursor + 1);
-  if (!imported) return undefined;
-  return { entries, end: imported.end };
+  if (imported) {
+    const entries: Array<{ name: string; kind: RunnerKind }> = [];
+    for (const item of pending) {
+      const kind = runnerKindForImport(imported.spec, item.imported);
+      if (kind) entries.push({ name: item.name, kind });
+    }
+    return { entries, end: imported.end };
+  }
+  const ident = readIdentifier(body, cursor + 1);
+  if (!ident) return undefined;
+  const alias = aliasAt(aliases, ident.value);
+  if (!alias?.namespace || !alias.spec) return undefined;
+  if (!bindingBoundary(body, ident.end)) return undefined;
+  const entries: Array<{ name: string; kind: RunnerKind }> = [];
+  for (const item of pending) {
+    const kind = runnerKindForImport(alias.spec, item.imported);
+    if (kind) entries.push({ name: item.name, kind });
+  }
+  return { entries, end: ident.end };
 }
 
 /** `require("bun:test")`, including one pair of parentheses around the call. */
-function readRunnerRequire(body: string, index: number): { end: number } | undefined {
+function readRunnerRequire(body: string, index: number): { end: number; spec: string } | undefined {
   let cursor = skipSpaceAndComments(body, index);
   if (body[cursor] === "(") {
     const inner = readRunnerRequire(body, cursor + 1);
     if (!inner) return undefined;
     const close = skipSpaceAndComments(body, inner.end);
     if (body[close] !== ")") return undefined;
-    return { end: close + 1 };
+    return { end: close + 1, spec: inner.spec };
   }
   const word = readIdentifier(body, cursor);
   if (word?.value !== "require") return undefined;
@@ -481,5 +609,5 @@ function readRunnerRequire(body: string, index: number): { end: number } | undef
   if (!spec || !runnerModuleSpec(spec.value)) return undefined;
   const close = skipPair(body, open);
   if (close < 0) return undefined;
-  return { end: close };
+  return { end: close, spec: spec.value };
 }
