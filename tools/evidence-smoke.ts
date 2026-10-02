@@ -1363,6 +1363,18 @@ try {
   const groupedBound = unresolvedRunnerCalls(
     ["const register = (it);", 'register("credited", unrelated);'].join("\n"),
   );
+  const runnerShadowBody = [
+    "const it = (title, _callback, runner) => runner(title, unrelated);",
+    'it("credited", citedExport, realIt);',
+  ].join("\n");
+  const shadowedCalls = unresolvedRunnerCalls(runnerShadowBody);
+  const shadowedCredit = registeredSuites(runnerShadowBody, "citedExport", "credited");
+  const parenBody = [
+    '(it)("credited", unrelated);',
+    '(it.failing)("credited", unrelated);',
+  ].join("\n");
+  const parenCalls = unresolvedRunnerCalls(parenBody);
+  const parenCredit = registeredSuites('(it)("credited", citedExport);', "citedExport", "credited");
   const reassigned = registeredSuites(
     ["citedExport = unrelated;", 'it("credited", citedExport);'].join("\n"),
     "citedExport",
@@ -1394,6 +1406,10 @@ try {
     indirectCalls.includes("it") &&
     boundCalls.length === 0 &&
     groupedBound.length === 0 &&
+    shadowedCalls.includes("it") &&
+    shadowedCredit.length === 0 &&
+    parenCalls.includes("it") &&
+    parenCredit.length === 0 &&
     reassigned.length === 0 &&
     assignedAfter.length === 1 &&
     shadowedAssign.length === 1;
@@ -1534,6 +1550,10 @@ try {
       indirectCalls,
       boundCalls,
       groupedBound,
+      shadowedCalls,
+      shadowedCredit,
+      parenCalls,
+      parenCredit,
       reassigned,
       assignedAfter,
       shadowedAssign,

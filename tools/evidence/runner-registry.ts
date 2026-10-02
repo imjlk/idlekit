@@ -214,7 +214,17 @@ function collectRegistrations(
           break;
         }
         const ref = readRunnerRef(body, equalsAt + 1, aliases);
-        if (!ref && isFunctionValue(body, equalsAt + 1)) break;
+        if (!ref && isFunctionValue(body, equalsAt + 1)) {
+          if (isRunnerKind(ident.value)) {
+            aliases.push({
+              name: ident.value,
+              kind: undefined,
+              modifiers: [],
+              depth: bindingDepth,
+            });
+          }
+          break;
+        }
         aliases.push({
           name: ident.value,
           kind: ref?.kind,
@@ -284,7 +294,7 @@ function collectRegistrations(
       open = skipWhitespace(body, tableEnd);
     }
     if (body[open] !== "(") {
-      if (isIndirectInvoke(body, index)) unresolved.push(word.value);
+      if (isIndirectInvoke(body, index) || closesThenCalls(body, open)) unresolved.push(word.value);
       index = word.end;
       continue;
     }
@@ -637,6 +647,17 @@ function callOpenBefore(body: string, index: number): number {
     }
   }
   return -1;
+}
+
+/** `(it)("title", callback)` and `((it.failing))("title", callback)` still invoke the runner. */
+function closesThenCalls(body: string, index: number): boolean {
+  let cursor = index;
+  let closes = 0;
+  while (cursor < body.length && body[cursor] === ")") {
+    closes += 1;
+    cursor = skipWhitespace(body, cursor + 1);
+  }
+  return closes > 0 && body[cursor] === "(";
 }
 
 /**
