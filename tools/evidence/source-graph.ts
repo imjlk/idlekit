@@ -4,9 +4,12 @@ import { dirname, join, resolve } from "path";
 import {
   argumentBoundary,
   insideSpan,
+  readIdentifier,
   readQuoted,
   readStaticTemplate,
+  regexCanStart,
   skipPair,
+  skipRegex,
   skipSpaceAndComments,
   spanEndAt,
   stringSpans,
@@ -171,7 +174,7 @@ function fileCandidates(base: string): string | undefined {
 }
 
 /** The file Bun executes for a directory import. `exports` replaces `module` and `main`. */
-function directoryPackageFile(base: string): string | undefined {
+function directoryPackageFile(base: string, style: ModuleStyle): string | undefined {
   let info: { isDirectory(): boolean };
   try {
     info = statSync(base);
@@ -194,14 +197,14 @@ function directoryPackageFile(base: string): string | undefined {
     module: typeof parsed.module === "string" ? parsed.module : undefined,
     main: typeof parsed.main === "string" ? parsed.main : undefined,
   };
-  const target = runtimePackageEntry(pkg);
+  const target = runtimePackageEntry(pkg, style);
   if (!target) return undefined;
   const resolved = resolve(base, target);
   if (resolved === resolve(base)) return undefined;
   return fileCandidates(resolved);
 }
 
-function resolveExistingFile(base: string): string | undefined {
+function resolveExistingFile(base: string, style: ModuleStyle = "import"): string | undefined {
   let directory = false;
   try {
     directory = statSync(base).isDirectory();
@@ -209,14 +212,18 @@ function resolveExistingFile(base: string): string | undefined {
     directory = false;
   }
   if (directory) {
-    const entry = directoryPackageFile(base);
+    const entry = directoryPackageFile(base, style);
     if (entry) return entry;
   }
   return fileCandidates(base);
 }
 
-function resolveRelativeImport(fromFile: string, spec: string): string | undefined {
-  return resolveExistingFile(resolve(dirname(fromFile), spec));
+function resolveRelativeImport(
+  fromFile: string,
+  spec: string,
+  style: ModuleStyle,
+): string | undefined {
+  return resolveExistingFile(resolve(dirname(fromFile), spec), style);
 }
 
 type ResolvedSpec = { kind: "external" } | { kind: "file"; file: string } | { kind: "missing" };
@@ -536,24 +543,65 @@ function workspacePackages(rootDir: string): WorkspacePackage[] {
   return packages;
 }
 
-function conditionTarget(entry: unknown): string | undefined {
-  if (typeof entry === "string") return entry;
-  if (!entry || typeof entry !== "object" || Array.isArray(entry)) return undefined;
+type ModuleStyle = "import" | "require";
+
+type ConditionHit =
+  | { kind: "target"; value: string }
+  | { kind: "blocked" }
+  | { kind: "none" };
+
+/** Conditions Bun honors for an ESM import, matched in key order. */
+const IMPORT_CONDITIONS = new Set(["bun", "node", "import", "default"]);
+
+/** Conditions Bun honors for a CommonJS require, matched in key order. */
+const REQUIRE_CONDITIONS = new Set(["bun", "node", "require", "default"]);
+
+/**
+ * First active condition in insertion order.
+ * `null` blocks the specifier. An object with no active key falls through.
+ */
+function resolveCondition(entry: unknown, style: ModuleStyle): ConditionHit {
+  if (entry === null) return { kind: "blocked" };
+  if (typeof entry === "string") return { kind: "target", value: entry };
+  if (Array.isArray(entry)) {
+    for (const item of entry) {
+      const found = resolveCondition(item, style);
+      if (found.kind === "none") continue;
+      return found;
+    }
+    return { kind: "none" };
+  }
+  if (typeof entry !== "object") return { kind: "none" };
+  const active = style === "require" ? REQUIRE_CONDITIONS : IMPORT_CONDITIONS;
   const record = entry as Record<string, unknown>;
-  if (typeof record.bun === "string") return record.bun;
-  if (typeof record.import === "string") return record.import;
-  if (typeof record.default === "string") return record.default;
-  if (typeof record.types === "string") return record.types;
+  for (const key of Object.keys(record)) {
+    if (!active.has(key)) continue;
+    const found = resolveCondition(record[key], style);
+    if (found.kind === "none") continue;
+    return found;
+  }
+  return { kind: "none" };
+}
+
+function conditionTarget(entry: unknown, style: ModuleStyle): string | undefined {
+  const found = resolveCondition(entry, style);
+  if (found.kind === "target") return found.value;
   return undefined;
 }
 
-function exportTarget(exportsField: unknown, subpath: string): string | undefined {
+function exportTarget(
+  exportsField: unknown,
+  subpath: string,
+  style: ModuleStyle,
+): string | undefined {
   if (typeof exportsField === "string") return subpath === "." ? exportsField : undefined;
   if (!exportsField || typeof exportsField !== "object" || Array.isArray(exportsField)) {
     return undefined;
   }
   const table = exportsField as Record<string, unknown>;
-  if (Object.prototype.hasOwnProperty.call(table, subpath)) return conditionTarget(table[subpath]);
+  if (Object.prototype.hasOwnProperty.call(table, subpath)) {
+    return conditionTarget(table[subpath], style);
+  }
   let winner: { score: number; target: string } | undefined;
   for (const key of Object.keys(table)) {
     const star = key.indexOf("*");
@@ -562,7 +610,7 @@ function exportTarget(exportsField: unknown, subpath: string): string | undefine
     const suffix = key.slice(star + 1);
     if (!subpath.startsWith(prefix) || !subpath.endsWith(suffix)) continue;
     if (subpath.length < prefix.length + suffix.length) continue;
-    const raw = conditionTarget(table[key]);
+    const raw = conditionTarget(table[key], style);
     if (!raw) continue;
     const wild = subpath.slice(prefix.length, subpath.length - suffix.length);
     if (winner && prefix.length <= winner.score) continue;
@@ -571,23 +619,31 @@ function exportTarget(exportsField: unknown, subpath: string): string | undefine
   return winner?.target;
 }
 
-function packageEntry(pkg: WorkspacePackage, subpath: string): string | undefined {
-  if (pkg.exports !== undefined) return exportTarget(pkg.exports, subpath);
+function packageEntry(
+  pkg: WorkspacePackage,
+  subpath: string,
+  style: ModuleStyle,
+): string | undefined {
+  if (pkg.exports !== undefined) return exportTarget(pkg.exports, subpath, style);
   if (subpath !== ".") return undefined;
   if (pkg.module) return pkg.module;
   return pkg.main;
 }
 
 /** Runtime entry. Type declarations are not the file Bun loads. */
-function runtimePackageEntry(pkg: WorkspacePackage): string | undefined {
-  return packageEntry(pkg, ".");
+function runtimePackageEntry(pkg: WorkspacePackage, style: ModuleStyle): string | undefined {
+  return packageEntry(pkg, ".", style);
 }
 
 function declarationFile(file: string): boolean {
   return file.endsWith(".d.ts") || file.endsWith(".d.mts") || file.endsWith(".d.cts");
 }
 
-function workspaceFile(startDir: string, spec: string): "none" | "file" | "missing" {
+function workspaceFile(
+  startDir: string,
+  spec: string,
+  style: ModuleStyle,
+): "none" | "file" | "missing" {
   const rootDir = nearestWorkspaceRoot(startDir);
   if (!rootDir) return "none";
   let owner: WorkspacePackage | undefined;
@@ -599,9 +655,9 @@ function workspaceFile(startDir: string, spec: string): "none" | "file" | "missi
     subpath = spec === pkg.name ? "." : `./${spec.slice(pkg.name.length + 1)}`;
   }
   if (!owner) return "none";
-  const target = packageEntry(owner, subpath);
+  const target = packageEntry(owner, subpath, style);
   if (!target) return "missing";
-  const file = resolveExistingFile(resolve(owner.dir, target));
+  const file = resolveExistingFile(resolve(owner.dir, target), style);
   if (!file || declarationFile(file)) return "missing";
   let real = file;
   try {
@@ -613,7 +669,11 @@ function workspaceFile(startDir: string, spec: string): "none" | "file" | "missi
   return "file";
 }
 
-function resolveWorkspaceFile(startDir: string, spec: string): string | undefined {
+function resolveWorkspaceFile(
+  startDir: string,
+  spec: string,
+  style: ModuleStyle,
+): string | undefined {
   const rootDir = nearestWorkspaceRoot(startDir);
   if (!rootDir) return undefined;
   let owner: WorkspacePackage | undefined;
@@ -625,21 +685,27 @@ function resolveWorkspaceFile(startDir: string, spec: string): string | undefine
     subpath = spec === pkg.name ? "." : `./${spec.slice(pkg.name.length + 1)}`;
   }
   if (!owner) return undefined;
-  const target = packageEntry(owner, subpath);
+  const target = packageEntry(owner, subpath, style);
   if (!target) return undefined;
-  const file = resolveExistingFile(resolve(owner.dir, target));
+  const file = resolveExistingFile(resolve(owner.dir, target), style);
   if (!file || declarationFile(file)) return undefined;
   return file;
 }
 
-function queueNonRelative(fromFile: string, spec: string, queue: string[], faults: string[]): void {
-  const resolved = resolveNonRelative(fromFile, spec);
+function queueNonRelative(
+  fromFile: string,
+  spec: string,
+  queue: string[],
+  faults: string[],
+  style: ModuleStyle,
+): void {
+  const resolved = resolveNonRelative(fromFile, spec, style);
   if (resolved.kind === "file") queue.push(resolved.file);
   else if (resolved.kind === "missing") faults.push(spec);
 }
 
 /** Path aliases and workspace packages are local source. Other bare specifiers are packages. */
-function resolveNonRelative(fromFile: string, spec: string): ResolvedSpec {
+function resolveNonRelative(fromFile: string, spec: string, style: ModuleStyle): ResolvedSpec {
   if (spec.startsWith("bun:") || spec.startsWith("node:") || spec.startsWith("npm:")) {
     return { kind: "external" };
   }
@@ -651,10 +717,10 @@ function resolveNonRelative(fromFile: string, spec: string): ResolvedSpec {
     if (file) return { kind: "file", file };
     return { kind: "missing" };
   }
-  const workspace = workspaceFile(dirname(fromFile), spec);
+  const workspace = workspaceFile(dirname(fromFile), spec, style);
   if (workspace === "none") return { kind: "external" };
   if (workspace === "missing") return { kind: "missing" };
-  const file = resolveWorkspaceFile(dirname(fromFile), spec);
+  const file = resolveWorkspaceFile(dirname(fromFile), spec, style);
   if (!file) return { kind: "missing" };
   return { kind: "file", file };
 }
@@ -803,7 +869,7 @@ function walkSources(files: readonly string[]): SourceWalk {
       ) {
         continue;
       }
-      const next = resolveRelativeImport(real, spec);
+      const next = resolveRelativeImport(real, spec, "import");
       if (next && acceptLocalFile(next, real, packageRoots, faults, spec)) queue.push(next);
     }
     for (const match of body.matchAll(NON_RELATIVE_IMPORT)) {
@@ -813,7 +879,7 @@ function walkSources(files: readonly string[]): SourceWalk {
       const matched = match[0] ?? "";
       if (/^import\s*\(/.test(matched)) continue;
       if (typeOnlyImport(body, match.index ?? 0)) continue;
-      queueNonRelative(real, spec, queue, faults);
+      queueNonRelative(real, spec, queue, faults, "import");
     }
     for (const required of localRequireCalls(body, hidden)) {
       if (required.kind === "dynamic") {
@@ -821,10 +887,10 @@ function walkSources(files: readonly string[]): SourceWalk {
         continue;
       }
       if (!required.spec.startsWith(".")) {
-        queueNonRelative(real, required.spec, queue, faults);
+        queueNonRelative(real, required.spec, queue, faults, "require");
         continue;
       }
-      const next = resolveRelativeImport(real, required.spec);
+      const next = resolveRelativeImport(real, required.spec, "require");
       if (!next) {
         faults.push(required.spec);
         continue;
@@ -837,10 +903,10 @@ function walkSources(files: readonly string[]): SourceWalk {
         continue;
       }
       if (!imported.spec.startsWith(".")) {
-        queueNonRelative(real, imported.spec, queue, faults);
+        queueNonRelative(real, imported.spec, queue, faults, "import");
         continue;
       }
-      const next = resolveRelativeImport(real, imported.spec);
+      const next = resolveRelativeImport(real, imported.spec, "import");
       if (!next) {
         faults.push(imported.spec);
         continue;
@@ -859,4 +925,52 @@ export function sourceGraph(files: readonly string[]): string[] {
 /** Relative requires that do not resolve, and requires whose specifier is not a literal. */
 export function unresolvedLocalRequires(files: readonly string[]): string[] {
   return walkSources(files).faults;
+}
+
+function bunPluginCall(body: string, bunEnd: number): boolean {
+  let cursor = skipSpaceAndComments(body, bunEnd);
+  if (body.startsWith("?.", cursor)) cursor = skipSpaceAndComments(body, cursor + 2);
+  else if (body[cursor] === ".") cursor = skipSpaceAndComments(body, cursor + 1);
+  else return false;
+  const member = readIdentifier(body, cursor);
+  if (!member || member.value !== "plugin") return false;
+  let open = skipSpaceAndComments(body, member.end);
+  if (body.startsWith("?.", open)) open = skipSpaceAndComments(body, open + 2);
+  return body[open] === "(";
+}
+
+/** A called `Bun.plugin`. Comments, strings, and other receivers do not count. */
+export function loaderPluginRegistration(body: string): boolean {
+  const spans = stringSpans(body);
+  let index = 0;
+  while (index < body.length) {
+    const hidden = spanEndAt(spans, index);
+    if (hidden >= 0) {
+      index = hidden;
+      continue;
+    }
+    if (body.startsWith("/*", index)) {
+      const close = body.indexOf("*/", index + 2);
+      index = close < 0 ? body.length : close + 2;
+      continue;
+    }
+    if (body.startsWith("//", index)) {
+      const line = body.indexOf("\n", index);
+      index = line < 0 ? body.length : line + 1;
+      continue;
+    }
+    if (body[index] === "/" && regexCanStart(body, index)) {
+      const next = skipRegex(body, index);
+      index = next > index ? next : index + 1;
+      continue;
+    }
+    const ident = readIdentifier(body, index);
+    if (!ident || ident.end <= index) {
+      index += 1;
+      continue;
+    }
+    if (ident.value === "Bun" && bunPluginCall(body, ident.end)) return true;
+    index = ident.end;
+  }
+  return false;
 }

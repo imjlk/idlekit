@@ -388,8 +388,10 @@ function collectRegistrations(
             seen.delete(named.value);
           }
         }
-      } else {
+      } else if (body[comma] !== "," || isFunctionValue(body, comma + 1)) {
         pending = { title: quoted.value, parens };
+      } else {
+        unresolved.push(word.value);
       }
     } else {
       const comma = skipWhitespace(body, quoted.end);

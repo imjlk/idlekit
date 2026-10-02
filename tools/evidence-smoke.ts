@@ -14,6 +14,7 @@ import {
   junitCases,
   blockedTestArgs,
   junitReporterArgs,
+  loaderPluginRegistration,
   localPreloadFiles,
   unresolvedPreloadSpecifiers,
   unresolvedRunnerCalls,
@@ -1524,6 +1525,25 @@ try {
   const afterSuites = registeredSuites(afterBody, "citedExport", "after");
   const pendingHeld = afterSuites.length === 1 && afterSuites[0]?.length === 0;
   const missingSuite = unresolvedRunnerCalls('describe("suite", missingSuite);');
+  const qualifiedBody = [
+    'describe("s", helper.suiteBody);',
+    'it("credited", unrelated);',
+  ].join("\n");
+  const qualifiedDescribe = unresolvedRunnerCalls(qualifiedBody).includes("describe");
+  const qualifiedFlat = registeredSuites(qualifiedBody, "unrelated", "credited").some(
+    (path) => path.length === 0,
+  );
+  const functionDescribe =
+    registeredSuites(
+      'describe("s", function () { it("credited", unrelated); });',
+      "unrelated",
+      "credited",
+    ).some((path) => path.length === 1 && path[0] === "s") &&
+    registeredSuites(
+      'describe("s", async () => { it("credited", unrelated); });',
+      "unrelated",
+      "credited",
+    ).some((path) => path.length === 1 && path[0] === "s");
   const separatorBody = [
     'if (false) describe("outer", () => describe("inner", () => it("credited", citedExport)));',
     'describe("inner > outer", () => it("credited", unrelated));',
@@ -1634,6 +1654,55 @@ try {
   writeFileSync(join(declPkg, "only.d.ts"), "export function register(): void;\n");
   const declHost = join(workspaceRoot, "decl-host.test.ts");
   writeFileSync(declHost, 'import { register } from "@helper/decls";\n');
+  const orderedPkg = join(workspaceRoot, "pkgs", "ordered");
+  mkdirSync(orderedPkg);
+  writeFileSync(
+    join(orderedPkg, "package.json"),
+    JSON.stringify({
+      name: "@helper/ordered",
+      exports: {
+        ".": { import: "./evil.ts", bun: "./safe.ts" },
+        "./bun-first": { bun: "./safe.ts", import: "./evil.ts" },
+        "./require-first": { require: "./evil.ts", import: "./safe.ts" },
+        "./nested": {
+          bun: { import: "./evil.ts", default: "./def.ts" },
+          default: "./safe.ts",
+        },
+        "./types-first": { types: "./types.ts", default: "./safe.ts" },
+        "./blocked": { bun: { browser: "./evil.ts" }, default: "./safe.ts" },
+        "./null-bun": { bun: null, default: "./safe.ts" },
+        "./listed": [{ browser: "./evil.ts" }, "./safe.ts"],
+        "./array-null": [null, "./safe.ts"],
+        "./node-first": { node: "./evil.ts", import: "./safe.ts" },
+        "./browser": { browser: "./evil.ts", default: "./safe.ts" },
+      },
+    }),
+  );
+  writeFileSync(join(orderedPkg, "evil.ts"), "// from-ordered-evil\n");
+  writeFileSync(join(orderedPkg, "safe.ts"), "// from-ordered-safe\n");
+  writeFileSync(join(orderedPkg, "def.ts"), "// from-ordered-default\n");
+  writeFileSync(join(orderedPkg, "types.ts"), "// from-ordered-types\n");
+  const orderedCases: Array<[string, string]> = [
+    ["ordered-import.test.ts", 'import "@helper/ordered";\n'],
+    ["ordered-bun.test.ts", 'import "@helper/ordered/bun-first";\n'],
+    ["ordered-require.test.ts", 'require("@helper/ordered/require-first");\n'],
+    ["ordered-require-import.test.ts", 'import "@helper/ordered/require-first";\n'],
+    ["ordered-nested.test.ts", 'import "@helper/ordered/nested";\n'],
+    ["ordered-nested-require.test.ts", 'require("@helper/ordered/nested");\n'],
+    ["ordered-types.test.ts", 'import "@helper/ordered/types-first";\n'],
+    ["ordered-blocked.test.ts", 'import "@helper/ordered/blocked";\n'],
+    ["ordered-null.test.ts", 'import "@helper/ordered/null-bun";\n'],
+    ["ordered-listed.test.ts", 'import "@helper/ordered/listed";\n'],
+    ["ordered-array-null.test.ts", 'import "@helper/ordered/array-null";\n'],
+    ["ordered-node.test.ts", 'import "@helper/ordered/node-first";\n'],
+    ["ordered-browser.test.ts", 'import "@helper/ordered/browser";\n'],
+  ];
+  const orderedHosts: Record<string, string> = {};
+  for (const [name, source] of orderedCases) {
+    const file = join(workspaceRoot, name);
+    orderedHosts[name] = file;
+    writeFileSync(file, source);
+  }
   let aliasedDuplicate = false;
   let aliasedResolved = false;
   let aliasedMissing = false;
@@ -1642,6 +1711,19 @@ try {
   let workspaceTypeSkipped = false;
   let runtimeEntry = false;
   let declarationOnly = false;
+  let orderedImport = false;
+  let orderedBun = false;
+  let orderedRequire = false;
+  let orderedRequireImport = false;
+  let orderedNested = false;
+  let orderedNestedRequire = false;
+  let orderedTypes = false;
+  let orderedBlocked = false;
+  let orderedNull = false;
+  let orderedListed = false;
+  let orderedArrayNull = false;
+  let orderedNode = false;
+  let orderedBrowser = false;
   try {
     const aliasBodies = sourceGraph([aliasHost]);
     aliasedDuplicate = duplicateFullNamesAcross(aliasBodies).includes("credited");
@@ -1659,6 +1741,60 @@ try {
       !runtimeBodies.some((body) => body.includes("from-runtime-declaration")) &&
       duplicateFullNamesAcross(runtimeBodies).includes("credited");
     declarationOnly = unresolvedLocalRequires([declHost]).includes("@helper/decls");
+    const orderedMarker = (name: string, text: string): boolean => {
+      const file = orderedHosts[name];
+      if (!file) return false;
+      return sourceGraph([file]).some((body) => body.includes(text));
+    };
+    const orderedMissing = (name: string, spec: string): boolean => {
+      const file = orderedHosts[name];
+      if (!file) return false;
+      const bodies = sourceGraph([file]);
+      const leaked = bodies.some(
+        (body) =>
+          body.includes("from-ordered-evil") ||
+          body.includes("from-ordered-safe") ||
+          body.includes("from-ordered-default"),
+      );
+      return unresolvedLocalRequires([file]).includes(spec) && !leaked;
+    };
+    orderedImport =
+      orderedMarker("ordered-import.test.ts", "from-ordered-evil") &&
+      !orderedMarker("ordered-import.test.ts", "from-ordered-safe");
+    orderedBun =
+      orderedMarker("ordered-bun.test.ts", "from-ordered-safe") &&
+      !orderedMarker("ordered-bun.test.ts", "from-ordered-evil");
+    orderedRequire =
+      orderedMarker("ordered-require.test.ts", "from-ordered-evil") &&
+      !orderedMarker("ordered-require.test.ts", "from-ordered-safe");
+    orderedRequireImport =
+      orderedMarker("ordered-require-import.test.ts", "from-ordered-safe") &&
+      !orderedMarker("ordered-require-import.test.ts", "from-ordered-evil");
+    orderedNested =
+      orderedMarker("ordered-nested.test.ts", "from-ordered-evil") &&
+      !orderedMarker("ordered-nested.test.ts", "from-ordered-default") &&
+      !orderedMarker("ordered-nested.test.ts", "from-ordered-safe");
+    orderedNestedRequire =
+      orderedMarker("ordered-nested-require.test.ts", "from-ordered-default") &&
+      !orderedMarker("ordered-nested-require.test.ts", "from-ordered-evil") &&
+      !orderedMarker("ordered-nested-require.test.ts", "from-ordered-safe");
+    orderedTypes =
+      orderedMarker("ordered-types.test.ts", "from-ordered-safe") &&
+      !orderedMarker("ordered-types.test.ts", "from-ordered-types");
+    orderedBlocked =
+      orderedMarker("ordered-blocked.test.ts", "from-ordered-safe") &&
+      !orderedMarker("ordered-blocked.test.ts", "from-ordered-evil");
+    orderedNull = orderedMissing("ordered-null.test.ts", "@helper/ordered/null-bun");
+    orderedListed =
+      orderedMarker("ordered-listed.test.ts", "from-ordered-safe") &&
+      !orderedMarker("ordered-listed.test.ts", "from-ordered-evil");
+    orderedArrayNull = orderedMissing("ordered-array-null.test.ts", "@helper/ordered/array-null");
+    orderedNode =
+      orderedMarker("ordered-node.test.ts", "from-ordered-evil") &&
+      !orderedMarker("ordered-node.test.ts", "from-ordered-safe");
+    orderedBrowser =
+      orderedMarker("ordered-browser.test.ts", "from-ordered-safe") &&
+      !orderedMarker("ordered-browser.test.ts", "from-ordered-evil");
   } finally {
     rmSync(aliasRoot, { recursive: true, force: true });
     rmSync(workspaceRoot, { recursive: true, force: true });
@@ -1794,7 +1930,40 @@ try {
     dynamicNew.includes("Function") &&
     dynamicMember.includes("eval") &&
     dynamicGrouped.includes("eval") &&
-    dynamicPlain.length === 0;
+    dynamicPlain.length === 0 &&
+    orderedImport &&
+    orderedBun &&
+    orderedRequire &&
+    orderedRequireImport &&
+    orderedNested &&
+    orderedNestedRequire &&
+    orderedTypes &&
+    orderedBlocked &&
+    orderedNull &&
+    orderedListed &&
+    orderedArrayNull &&
+    orderedNode &&
+    orderedBrowser;
+  const loaderPlugin =
+    loaderPluginRegistration('Bun.plugin({ name: "rewriter", setup() {} });') &&
+    loaderPluginRegistration("Bun . plugin ({});") &&
+    loaderPluginRegistration("Bun?.plugin({});");
+  const loaderIgnored =
+    !loaderPluginRegistration("// Bun.plugin({})\nconst kept = 1;\n") &&
+    !loaderPluginRegistration("/** Bun.plugin( */\nconst kept = 1;\n") &&
+    !loaderPluginRegistration('const text = "Bun.plugin(";\n') &&
+    !loaderPluginRegistration("myBun.plugin({});\n") &&
+    !loaderPluginRegistration("const saved = Bun.plugin;\n") &&
+    !loaderPluginRegistration("runtime.plugin({});\n");
+  const inventoryRoot = join(root, "packages/core");
+  const inventoryFile = join(inventoryRoot, "src/scenario/concreteValidator.test.ts");
+  const inventoryPreloads = localPreloadFiles(inventoryRoot, [
+    "test",
+    "src/scenario/concreteValidator.test.ts",
+  ]);
+  const inventoryLoader = sourceGraph([inventoryFile, ...inventoryPreloads]).some((source) =>
+    loaderPluginRegistration(source),
+  );
   const duplicateOk =
     duplicateNames.length === 1 &&
     duplicateNames[0] === "kept > quota is documented" &&
@@ -1934,6 +2103,13 @@ try {
     laterLive &&
     pendingHeld &&
     missingSuite.length === 1 &&
+    missingSuite[0] === "missingSuite" &&
+    qualifiedDescribe &&
+    qualifiedFlat &&
+    functionDescribe &&
+    loaderPlugin &&
+    loaderIgnored &&
+    !inventoryLoader &&
     separatorClosed &&
     scalarPreload &&
     quotedPreload &&
@@ -1987,6 +2163,13 @@ try {
       configPreload,
       configSplitPreload,
       missingConfigPreload,
+      qualifiedDescribe,
+      qualifiedFlat,
+      functionDescribe,
+      loaderPlugin,
+      loaderIgnored,
+      inventoryLoader,
+      missingSuite,
     }),
   );
   record(
@@ -2029,6 +2212,19 @@ try {
       dynamicMember,
       dynamicGrouped,
       dynamicPlain,
+      orderedImport,
+      orderedBun,
+      orderedRequire,
+      orderedRequireImport,
+      orderedNested,
+      orderedNestedRequire,
+      orderedTypes,
+      orderedBlocked,
+      orderedNull,
+      orderedListed,
+      orderedArrayNull,
+      orderedNode,
+      orderedBrowser,
     }),
   );
 
