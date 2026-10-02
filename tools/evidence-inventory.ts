@@ -134,6 +134,17 @@ export function declaredRequirementId(docText: string, anchor: string): string |
   return /Requirement `([^`]+)`/.exec(section)?.[1];
 }
 
+/**
+ * Sources that can register a test: they name the runner module. Production code
+ * reached through the source graph cannot register one without it, so a call such as
+ * `assertSimulationClock("offline", clock)` or `new Function(...)` there is not a
+ * hidden registration. A runner smuggled in without naming it is adversarial test
+ * code, which this gate does not defend against.
+ */
+export function runnerSources(bodies: readonly string[]): string[] {
+  return bodies.filter((body) => body.includes("bun:test"));
+}
+
 type CommandScan = {
   extras: string[];
   missingPreloads: string[];
@@ -170,7 +181,9 @@ function commandScan(
     missingPreloads: unresolvedPreloadSpecifiers(commandCwd, test.args),
     requireFaults: unresolvedLocalRequires(commandFiles),
     ambiguous: ambiguousSuiteSeparators(commandSources),
-    unresolvedRunner: commandSources.some((source) => unresolvedRunnerCalls(source).length > 0),
+    unresolvedRunner: runnerSources(commandSources).some(
+      (source) => unresolvedRunnerCalls(source).length > 0,
+    ),
     loaderOrMock: commandSources.some(
       (source) => loaderPluginRegistration(source) || mockModuleRegistration(source),
     ),

@@ -38,6 +38,7 @@ import {
   formatIncludeRoots,
   graphRuleFailures,
   declaredRequirementId,
+  runnerSources,
   headingAnchors,
   missingProtectedDocs,
   registeredSuites,
@@ -627,6 +628,26 @@ try {
   const realCitation = "/** @evidence docs/requirements/active/x.md#anchor */\nexport function real() {}\n";
   const ordinaryBlock =
     "/* note /** @evidence docs/requirements/active/x.md#anchor */ export function uncited() {}\n";
+  const productionHelper = [
+    'import { assertSimulationClock } from "./timeBoundary";',
+    'assertSimulationClock("offline", clock);',
+    'const read = new Function("s", "return s.t");',
+  ].join("\n");
+  const runnerHelper = ['import { it } from "bun:test";', 'register("credited", unrelated);'].join(
+    "\n",
+  );
+  const scopedSources = runnerSources([productionHelper, runnerHelper]);
+  const runnerScopeOk =
+    unresolvedRunnerCalls(productionHelper).length > 0 &&
+    scopedSources.length === 1 &&
+    scopedSources[0] === runnerHelper;
+  record(
+    "runner-scope",
+    "zero",
+    runnerScopeOk ? 0 : 1,
+    runnerScopeOk,
+    "only sources that name the runner module are scanned for hidden registrations",
+  );
   const declaredDoc = [
     "## A {#a}",
     "",
