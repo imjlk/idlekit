@@ -71,6 +71,7 @@ import {
 } from "./evidence/coverage";
 import {
   loaderPluginRegistration,
+  mockModuleRegistration,
   sourceGraph,
   unresolvedLocalRequires,
 } from "./evidence/source-graph";
@@ -101,7 +102,7 @@ export {
   uninventoriedCommandTargets,
   unresolvedPreloadSpecifiers,
 };
-export { loaderPluginRegistration, sourceGraph, unresolvedLocalRequires };
+export { loaderPluginRegistration, mockModuleRegistration, sourceGraph, unresolvedLocalRequires };
 export { enabledClaimFailures, graphRuleFailures, missingProtectedDocs };
 export { formatGateFailures, formatIncludeRoots } from "./evidence/format-gate";
 export type { ShrinkResult } from "./evidence/model";
@@ -269,8 +270,12 @@ export async function checkInventory(projectRoot = root): Promise<string[]> {
       if (commandSources.some((source) => unresolvedRunnerCalls(source).length > 0)) {
         fail(failures, `${requirement.id} has a registration call that is not the test runner`);
       }
-      if (commandSources.some((source) => loaderPluginRegistration(source))) {
-        fail(failures, `${requirement.id} registers a Bun loader plugin`);
+      if (
+        commandSources.some(
+          (source) => loaderPluginRegistration(source) || mockModuleRegistration(source),
+        )
+      ) {
+        fail(failures, `${requirement.id} registers a Bun loader plugin or replaces a module`);
       }
       if (duplicateFullNamesAcross(commandSources).includes(test.registeredAs)) {
         fail(failures, `${requirement.id} registers ${test.registeredAs} more than once`);

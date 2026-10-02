@@ -15,6 +15,7 @@ import {
   blockedTestArgs,
   junitReporterArgs,
   loaderPluginRegistration,
+  mockModuleRegistration,
   localPreloadFiles,
   unresolvedPreloadSpecifiers,
   unresolvedRunnerCalls,
@@ -894,6 +895,7 @@ try {
   let libraryPackage = false;
   let missingInstalled = false;
   let dynamicPackage = false;
+  let dataImport = false;
   try {
     const bodies = sourceGraph([specifierHost]);
     const joined = bodies.join("\n");
@@ -1175,6 +1177,12 @@ try {
       dynamicBodies.some((body) => body.includes("from-dynamic-package")) &&
       duplicateFullNamesAcross(dynamicBodies).includes("credited") &&
       !dynamicFaults.includes("dynamic require");
+    const dataSpec = "data:text/javascript,register";
+    const dataHost = join(specifierDir, "data-host.test.ts");
+    writeFileSync(dataHost, `import ${JSON.stringify(dataSpec)};\n`);
+    dataImport =
+      sourceGraph([dataHost]).length === 1 &&
+      unresolvedLocalRequires([dataHost]).includes(dataSpec);
   } finally {
     rmSync(specifierDir, { recursive: true, force: true });
   }
@@ -1192,6 +1200,10 @@ try {
   let configPreload = false;
   let configSplitPreload = false;
   let missingConfigPreload = false;
+  let quotedKeyPreload = false;
+  let shortPreload = false;
+  let attachedPreload = false;
+  let importPreload = false;
   try {
     writeFileSync(join(preloadDir, "bunfig.toml"), '[test]\npreload = "./setup.ts"\n');
     const scalar = localPreloadFiles(preloadDir, ["test"]);
@@ -1246,6 +1258,23 @@ try {
       "test",
       "--config=missing.toml",
     ]).includes("missing.toml");
+    writeFileSync(join(preloadDir, "bunfig.toml"), '[test]\n"preload" = ["./setup.ts"]\n');
+    const quotedKey = localPreloadFiles(preloadDir, ["test"]);
+    writeFileSync(join(preloadDir, "bunfig.toml"), "[test]\n'preload' = \"./setup.ts\"\n");
+    const singleKey = localPreloadFiles(preloadDir, ["test"]);
+    const quotedKeyHit = quotedKey.length === 1 && quotedKey[0] === setupPath;
+    quotedKeyPreload = quotedKeyHit && singleKey.length === 1 && singleKey[0] === setupPath;
+    const equalsPreload = localPreloadFiles(preloadDir, ["test", "-r=./setup.ts"]);
+    const splitPreload = localPreloadFiles(preloadDir, ["test", "-r", "./setup.ts"]);
+    shortPreload =
+      equalsPreload.some((file) => file === setupPath) &&
+      splitPreload.some((file) => file === setupPath);
+    attachedPreload = localPreloadFiles(preloadDir, ["test", "-r./setup.ts"]).some(
+      (file) => file === setupPath,
+    );
+    importPreload = localPreloadFiles(preloadDir, ["test", "--import=./setup.ts"]).some(
+      (file) => file === setupPath,
+    );
   } finally {
     rmSync(preloadDir, { recursive: true, force: true });
   }
@@ -1659,6 +1688,26 @@ try {
   const reboundSuite = unresolvedRunnerCalls(suiteReboundBody).includes("suiteBody");
   const reboundCredit = registeredSuites(suiteReboundBody, "citedExport", "credited").every(
     (path) => path[0] !== "s",
+  );
+  const objectBody = [
+    "const runners = { it };",
+    'runners.it("credited", unrelated);',
+    'if (false) it("credited", citedExport);',
+  ].join("\n");
+  const objectRunner = unresolvedRunnerCalls(objectBody).includes("runners");
+  const renamedObject = unresolvedRunnerCalls(
+    [
+      "const runners = { run: it };",
+      'runners.run("credited", unrelated);',
+      'if (false) it("credited", citedExport);',
+    ].join("\n"),
+  ).includes("runners");
+  const plainObject = unresolvedRunnerCalls(
+    [
+      'const runners = { label: "kept" };',
+      'runners.label("credited", unrelated);',
+      'if (false) it("credited", citedExport);',
+    ].join("\n"),
   );
   const laterBody = [
     'describe("suite", liveSuite);',
@@ -2120,6 +2169,15 @@ try {
     !loaderPluginRegistration("const { install: plugin } = Bun;\n") &&
     !loaderPluginRegistration("const ns = Bun;\nns.file();\n") &&
     !loaderPluginRegistration("obj.Bun.plugin({});\n");
+  const mockModule = mockModuleRegistration(
+    'import { mock } from "bun:test"\nmock.module("./helper.ts", () => ({}));\n',
+  );
+  const mockSpaced = mockModuleRegistration("mock . module('./helper.ts', () => ({}));\n");
+  const mockOptional = mockModuleRegistration("runner.mock?.module('./helper.ts', () => ({}));\n");
+  const mockIgnored =
+    !mockModuleRegistration('// mock.module("./helper.ts", () => {})\nconst kept = 1;\n') &&
+    !mockModuleRegistration('const text = "mock.module(";\n') &&
+    !mockModuleRegistration('myMock.module("./helper.ts", () => ({}));\n');
   const inventoryRoot = join(root, "packages/core");
   const inventoryFile = join(inventoryRoot, "src/scenario/concreteValidator.test.ts");
   const inventoryPreloads = localPreloadFiles(inventoryRoot, [
@@ -2127,7 +2185,9 @@ try {
     "src/scenario/concreteValidator.test.ts",
   ]);
   const inventorySources = sourceGraph([inventoryFile, ...inventoryPreloads]);
-  const inventoryLoader = inventorySources.some((source) => loaderPluginRegistration(source));
+  const inventoryLoader = inventorySources.some(
+    (source) => loaderPluginRegistration(source) || mockModuleRegistration(source),
+  );
   const inventoryRunners = inventorySources.some(
     (source) => unresolvedRunnerCalls(source).length > 0,
   );
@@ -2271,6 +2331,7 @@ try {
     libraryPackage &&
     missingInstalled &&
     dynamicPackage &&
+    dataImport &&
     foreignImport.length === 0 &&
     foreignNamespace.length === 0 &&
     helperComputed &&
@@ -2279,6 +2340,9 @@ try {
     arrowLive &&
     reboundSuite &&
     reboundCredit &&
+    objectRunner &&
+    renamedObject &&
+    plainObject.length === 0 &&
     laterLive &&
     pendingHeld &&
     missingSuite.length === 1 &&
@@ -2291,6 +2355,14 @@ try {
     !inventoryLoader &&
     !inventoryRunners &&
     inventoryFaults === 0 &&
+    mockModule &&
+    mockSpaced &&
+    mockOptional &&
+    mockIgnored &&
+    quotedKeyPreload &&
+    shortPreload &&
+    attachedPreload &&
+    importPreload &&
     separatorClosed &&
     scalarPreload &&
     quotedPreload &&
@@ -2347,6 +2419,7 @@ try {
       libraryPackage,
       missingInstalled,
       dynamicPackage,
+      dataImport,
       packagePreload,
       missingPackagePreload,
       missingRelativePreload,
@@ -2363,6 +2436,17 @@ try {
       inventoryFaults,
       reboundSuite,
       reboundCredit,
+      objectRunner,
+      renamedObject,
+      plainObject,
+      mockModule,
+      mockSpaced,
+      mockOptional,
+      mockIgnored,
+      quotedKeyPreload,
+      shortPreload,
+      attachedPreload,
+      importPreload,
       missingSuite,
     }),
   );
@@ -2582,6 +2666,26 @@ try {
     ".",
     ["src/example.test.ts"],
   );
+  const shortRequired = uninventoriedCommandTargets(
+    ["test", "-r", "./setup.ts", "src/example.test.ts"],
+    ".",
+    ["src/example.test.ts"],
+  );
+  const shortEquals = uninventoriedCommandTargets(
+    ["test", "-r=./setup.ts", "src/example.test.ts"],
+    ".",
+    ["src/example.test.ts"],
+  );
+  const shortAttached = uninventoriedCommandTargets(
+    ["test", "-r./setup.ts", "src/example.test.ts"],
+    ".",
+    ["src/example.test.ts"],
+  );
+  const importedPreload = uninventoriedCommandTargets(
+    ["test", "--import=./setup.ts", "src/example.test.ts"],
+    ".",
+    ["src/example.test.ts"],
+  );
   const directoryPattern = uninventoriedCommandTargets(
     ["test", "src/example.test.ts", "src"],
     ".",
@@ -2635,6 +2739,10 @@ try {
     onlyTarget.length === 0 &&
     preloaded.length === 0 &&
     preloadedEq.length === 0 &&
+    shortRequired.length === 0 &&
+    shortEquals.length === 0 &&
+    shortAttached.length === 0 &&
+    importedPreload.length === 0 &&
     configuredTarget.length === 0 &&
     configuredEquals.length === 0 &&
     directoryPattern.length === 1 &&

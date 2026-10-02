@@ -10,12 +10,21 @@ export function commandTargetsFile(test: InventoryTest): boolean {
   );
 }
 
-const PRELOAD_FLAGS = ["--preload", "--require"] as const;
+const PRELOAD_FLAGS = ["--preload", "--require", "--import"] as const;
 
+function exactPreloadFlag(arg: string): boolean {
+  return arg === "--preload" || arg === "--require" || arg === "--import" || arg === "-r";
+}
+
+/** `--preload=./setup`, `-r=./setup`, and the attached `-r./setup` form. */
 function preloadValue(arg: string): string | undefined {
   for (const flag of PRELOAD_FLAGS) {
     if (arg.startsWith(`${flag}=`)) return arg.slice(flag.length + 1);
   }
+  if (!arg.startsWith("-r") || arg.length < 3) return undefined;
+  const marker = arg[2];
+  if (marker === "=") return arg.slice(3);
+  if (marker !== undefined && !/[A-Za-z0-9_]/.test(marker)) return arg.slice(2);
   return undefined;
 }
 
@@ -25,7 +34,7 @@ function preloadArguments(args: readonly string[]): string[] {
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index] ?? "";
     if (arg === "--") break;
-    if (arg === "--preload" || arg === "--require") {
+    if (exactPreloadFlag(arg)) {
       const next = args[index + 1];
       if (next && !next.startsWith("-")) {
         files.push(next);
@@ -100,7 +109,7 @@ function commandedTestFiles(args: readonly string[]): string[] {
       patterns = true;
       continue;
     }
-    if (!patterns && (arg === "--preload" || arg === "--require" || arg === "--config")) {
+    if (!patterns && (exactPreloadFlag(arg) || arg === "--config")) {
       index += 1;
       continue;
     }
@@ -171,15 +180,19 @@ function bunfigSelection(
   return { path };
 }
 
+const PRELOAD_KEY = /(?:preload|"preload"|'preload')/;
+
 function preloadNamesIn(text: string): string[] {
   const names: string[] = [];
-  for (const match of text.matchAll(/preload\s*=\s*\[([^\]]*)\]/g)) {
+  const listed = new RegExp(`${PRELOAD_KEY.source}\\s*=\\s*\\[([^\\]]*)\\]`, "g");
+  const scalar = new RegExp(`${PRELOAD_KEY.source}\\s*=\\s*(?:"([^"]+)"|'([^']+)')`, "g");
+  for (const match of text.matchAll(listed)) {
     for (const item of match[1]?.matchAll(/"([^"]+)"|'([^']+)'/g) ?? []) {
       const value = item[1] ?? item[2];
       if (value) names.push(value);
     }
   }
-  for (const match of text.matchAll(/preload\s*=\s*(?:"([^"]+)"|'([^']+)')/g)) {
+  for (const match of text.matchAll(scalar)) {
     const value = match[1] ?? match[2];
     if (value) names.push(value);
   }

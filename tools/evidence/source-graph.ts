@@ -757,11 +757,16 @@ function queueNonRelative(
   } else if (resolved.kind === "missing") faults.push(spec);
 }
 
+function bareScheme(spec: string): string | undefined {
+  const match = /^([A-Za-z][A-Za-z0-9+.-]*):/.exec(spec);
+  return match?.[1]?.toLowerCase();
+}
+
 /** Path aliases and workspace packages are local source. Other bare specifiers are packages. */
 function resolveNonRelative(fromFile: string, spec: string, style: ModuleStyle): ResolvedSpec {
-  if (spec.startsWith("bun:") || spec.startsWith("node:") || spec.startsWith("npm:")) {
-    return { kind: "external" };
-  }
+  const scheme = bareScheme(spec);
+  if (scheme === "bun" || scheme === "node" || scheme === "npm") return { kind: "external" };
+  if (scheme) return { kind: "missing" };
   const alias = pathAliasStatus(fromFile, spec);
   if (alias === "missing") return { kind: "missing" };
   if (alias === "file") {
@@ -1256,6 +1261,57 @@ export function loaderPluginRegistration(body: string): boolean {
       ) {
         return true;
       }
+    }
+    index = ident.end;
+  }
+  return false;
+}
+
+/** `mock.module(...)` replaces the file `sourceGraph` would otherwise trust. */
+function mockModuleCall(body: string, moduleAt: number): boolean {
+  let cursor = moduleAt - 1;
+  while (cursor >= 0 && /\s/.test(body[cursor] ?? "")) cursor -= 1;
+  if (body[cursor] !== ".") return false;
+  cursor -= 1;
+  if (body[cursor] === "?") cursor -= 1;
+  while (cursor >= 0 && /\s/.test(body[cursor] ?? "")) cursor -= 1;
+  if (wordEndingAt(body, cursor)?.value !== "mock") return false;
+  const after = skipSpaceAndComments(body, moduleAt + "module".length);
+  return body[after] === "(";
+}
+
+/** A `mock.module` call. Comments, strings, and other receivers do not count. */
+export function mockModuleRegistration(body: string): boolean {
+  const spans = stringSpans(body);
+  let index = 0;
+  while (index < body.length) {
+    const hidden = spanEndAt(spans, index);
+    if (hidden >= 0) {
+      index = hidden;
+      continue;
+    }
+    if (body.startsWith("/*", index)) {
+      const close = body.indexOf("*/", index + 2);
+      index = close < 0 ? body.length : close + 2;
+      continue;
+    }
+    if (body.startsWith("//", index)) {
+      const line = body.indexOf("\n", index);
+      index = line < 0 ? body.length : line + 1;
+      continue;
+    }
+    if (body[index] === "/" && regexCanStart(body, index)) {
+      const next = skipRegex(body, index);
+      index = next > index ? next : index + 1;
+      continue;
+    }
+    const ident = readIdentifier(body, index);
+    if (!ident || ident.end <= index) {
+      index += 1;
+      continue;
+    }
+    if (ident.value === "module" && mockModuleCall(body, ident.end - ident.value.length)) {
+      return true;
     }
     index = ident.end;
   }

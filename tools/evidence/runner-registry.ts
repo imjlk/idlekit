@@ -37,6 +37,110 @@ import {
   type RunnerKind,
 } from "./runner-bind";
 
+function skipObjectValue(body: string, index: number, limit: number): number {
+  let cursor = index;
+  let depth = 0;
+  while (cursor < limit) {
+    const char = body[cursor] ?? "";
+    if (char === "'" || char === '"') {
+      const quoted = readQuoted(body, cursor);
+      cursor = quoted ? quoted.end : cursor + 1;
+      continue;
+    }
+    if (char === "`") {
+      const end = skipTemplateLiteral(body, cursor);
+      cursor = end < 0 ? cursor + 1 : end;
+      continue;
+    }
+    if (char === "/" && body[cursor + 1] === "/") {
+      const line = body.indexOf("\n", cursor);
+      cursor = line < 0 ? limit : line + 1;
+      continue;
+    }
+    if (char === "/" && body[cursor + 1] === "*") {
+      const close = body.indexOf("*/", cursor + 2);
+      cursor = close < 0 ? limit : close + 2;
+      continue;
+    }
+    if (char === "(" || char === "{" || char === "[") {
+      depth += 1;
+      cursor += 1;
+      continue;
+    }
+    if (char === ")" || char === "}" || char === "]") {
+      if (depth === 0) return cursor;
+      depth -= 1;
+      cursor += 1;
+      continue;
+    }
+    if (depth === 0 && char === ",") return cursor;
+    cursor += 1;
+  }
+  return cursor;
+}
+
+/** `{ it }` or `{ run: it }` keeps a runner behind a property access. */
+function objectHoldsRunner(
+  body: string,
+  open: number,
+  aliases: readonly RunnerAlias[],
+): boolean {
+  const brace = skipSpaceAndComments(body, open);
+  if (body[brace] !== "{") return false;
+  const close = skipPair(body, brace);
+  if (close < 0) return false;
+  let index = brace + 1;
+  while (index < close - 1) {
+    index = skipSpaceAndComments(body, index);
+    if (index >= close - 1) return false;
+    if (body[index] === ",") {
+      index += 1;
+      continue;
+    }
+    if (body.startsWith("...", index)) {
+      index = skipObjectValue(body, index + 3, close);
+      continue;
+    }
+    if (body[index] === "[") {
+      const bracketEnd = skipObjectValue(body, index + 1, close);
+      index = body[bracketEnd] === "]" ? bracketEnd + 1 : bracketEnd;
+      index = skipSpaceAndComments(body, index);
+      if (body[index] !== ":") continue;
+      if (readRunnerRef(body, index + 1, aliases)) return true;
+      index = skipObjectValue(body, index + 1, close);
+      continue;
+    }
+    if (body[index] === "'" || body[index] === '"') {
+      const quoted = readQuoted(body, index);
+      index = quoted ? quoted.end : index + 1;
+      index = skipSpaceAndComments(body, index);
+      if (body[index] !== ":") continue;
+      if (readRunnerRef(body, index + 1, aliases)) return true;
+      index = skipObjectValue(body, index + 1, close);
+      continue;
+    }
+    const ident = readIdentifier(body, index);
+    if (!ident || ident.end > close) {
+      index += 1;
+      continue;
+    }
+    const after = skipSpaceAndComments(body, ident.end);
+    if (body[after] === "(") {
+      const end = skipPair(body, after);
+      index = end < 0 ? after + 1 : end;
+      continue;
+    }
+    if (body[after] === ":") {
+      if (readRunnerRef(body, after + 1, aliases)) return true;
+      index = skipObjectValue(body, after + 1, close);
+      continue;
+    }
+    if (readRunnerRef(body, ident.end - ident.value.length, aliases)) return true;
+    index = ident.end;
+  }
+  return false;
+}
+
 /** Every `it`/`test` title in this source, including ones inside a false condition. */
 function collectRegistrations(
   body: string,
@@ -280,6 +384,17 @@ function collectRegistrations(
     }
     const alias = aliasAt(aliases, word.value);
     const assigned = assignmentAt(body, word.end);
+    if (assigned?.plain && objectHoldsRunner(body, assigned.at + 1, aliases)) {
+      aliases.push({
+        name: word.value,
+        kind: undefined,
+        modifiers: [],
+        depth: forParens.length > 0 ? depth + 1 : depth,
+        objectRunner: true,
+      });
+      index = word.end;
+      continue;
+    }
     if (assigned && alias) {
       const ref = assigned.plain ? readRunnerRef(body, assigned.at + 1, aliases) : undefined;
       const namespace =
@@ -312,6 +427,11 @@ function collectRegistrations(
     if (direct) {
       kind = direct.kind;
       callFrom = direct.callFrom;
+    } else if (alias?.objectRunner) {
+      const next = skipSpaceAndComments(body, word.end);
+      const member =
+        body.startsWith("?.", next) || body[next] === "." || body[next] === "[";
+      if (member) unresolved.push(word.value);
     } else if (alias?.namespace) {
       const member = namespaceRunnerMember(body, word.end, alias.spec);
       if (!member) {

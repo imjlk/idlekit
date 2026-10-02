@@ -27,6 +27,8 @@ export type RunnerAlias = {
   namespace?: boolean;
   /** Runner module of a namespace import, such as `bun:test` or `node:test`. */
   spec?: string;
+  /** `const runners = { it }` stores a runner where member calls bypass the scanner. */
+  objectRunner?: boolean;
 };
 
 export function isRunnerKind(value: string): value is RunnerKind {
