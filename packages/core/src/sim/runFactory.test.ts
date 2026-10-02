@@ -514,3 +514,33 @@ export function isolatesIndependentRuns(): void {
 describe("PR-03 run lifecycle isolation", () => {
   it("isolates independent runs", isolatesIndependentRuns);
 });
+
+describe("run factory review fixes", () => {
+  it("shares a strategy with one snapshot hook unless stateful isolation is asked for", () => {
+    const halves: Strategy<number, UnitCode, { buys: number }>[] = [
+      { id: "snapshot-only", snapshotState: () => ({ cursor: 0 }), decide: () => [] },
+      { id: "restore-only", restoreState: () => {}, decide: () => [] },
+    ];
+    for (const half of halves) {
+      const scenario = compiled({ stepSec: 1, durationSec: 2, vars: { buys: 0 }, model: buyModel(), strategy: half });
+      const summary = simulateMonteCarlo({
+        scenario,
+        draws: 2,
+        seed: 1,
+        metrics: ({ run }) => run.end.vars.buys,
+      });
+      expect(summary.results.map((result) => result.metrics)).toEqual([0, 0]);
+      expect(createRunFactory().bind(scenario).fresh({ trialId: "a", seed: 1 }).scenario.strategy).toBe(half);
+      expect(() => createRunFactory().bind(scenario, { statefulStrategy: true })).toThrow(RunIsolationError);
+      expect(() =>
+        simulateMonteCarlo({
+          scenario,
+          draws: 1,
+          seed: 1,
+          isolation: { statefulStrategy: true },
+          metrics: () => 0,
+        }),
+      ).toThrow(RunIsolationError);
+    }
+  });
+});

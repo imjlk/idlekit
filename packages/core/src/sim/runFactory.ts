@@ -115,7 +115,10 @@ export type RunBindOptions = Readonly<{
   strategy?: Readonly<{ id: string; params?: unknown }>;
   /** The model closure keeps state. A factory is required. Sharing the instance is refused. */
   statefulModel?: boolean;
-  /** The strategy closure keeps state. A factory or snapshot pair is required. */
+  /**
+   * The strategy closure keeps state. A factory or snapshot pair is required.
+   * Without this flag, a strategy with only one of the snapshot hooks is shared as stateless.
+   */
   statefulStrategy?: boolean;
 }>;
 
@@ -309,9 +312,9 @@ function strategyHold<N, U extends string, Vars>(
     return { kind: "none" };
   }
 
+  // One hook without the other cannot rebuild a cursor, so it is shared like no pair.
   const hasSnapshot = typeof strategy.snapshotState === "function";
   const hasRestore = typeof strategy.restoreState === "function";
-  if (hasSnapshot !== hasRestore) throw isolationError();
   if (hasSnapshot && hasRestore) {
     return {
       kind: "snapshot",

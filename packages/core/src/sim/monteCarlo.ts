@@ -22,7 +22,7 @@ export type MonteCarloOptions<N, U extends string, Vars, T> = Readonly<{
   registries?: RunFactoryDeps;
   /**
    * Per-draw isolation. A snapshot strategy is restored to the cursor captured
-   * for this call. A stateful closure without a factory or snapshot hooks throws
+   * for this call. A stateful closure without a factory or both snapshot hooks throws
    * when `statefulModel` or `statefulStrategy` is set.
    */
   isolation?: RunBindOptions;
