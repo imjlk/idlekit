@@ -1761,6 +1761,25 @@ try {
   const namespaceExpect = unresolvedRunnerCalls(
     'import * as runner from "bun:test"\nrunner.expect("saved", "msg")',
   );
+  const reflectedNamespace = unresolvedRunnerCalls(
+    [
+      'import * as bt from "bun:test"',
+      'Reflect.get(bt, "it")("credited", unrelated)',
+      'if (false) bt.it("credited", citedExport)',
+    ].join("\n"),
+  );
+  const copiedNamespace = unresolvedRunnerCalls(
+    ['import * as bt from "bun:test"', "const copy = bt", 'copy.it("credited", unrelated)'].join(
+      "\n",
+    ),
+  );
+  const destructureClean = unresolvedRunnerCalls(
+    [
+      'import * as runner from "bun:test"',
+      "const { it: register } = runner",
+      'register("credited", unrelated)',
+    ].join("\n"),
+  );
   const namespaceAlias = registeredSuites(
     [
       'import * as runner from "bun:test"',
@@ -2973,6 +2992,9 @@ try {
     forLive.length === 1 &&
     namespaceLive.length === 1 &&
     namespaceExpect.length === 0 &&
+    reflectedNamespace.includes("bt") &&
+    copiedNamespace.includes("bt") &&
+    destructureClean.length === 0 &&
     namespaceAlias.length === 1 &&
     namespaceType.length === 0 &&
     namespaceShadow.length === 1 &&
@@ -3158,6 +3180,9 @@ try {
       nodeDefaultDuplicate,
       bunDefaultDuplicate,
       namespaceDestructure,
+      reflectedNamespace,
+      copiedNamespace,
+      destructureClean,
       namespaceSuite,
       nodeNamespaceSuite,
       bunNamespaceSuite,

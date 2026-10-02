@@ -550,7 +550,16 @@ function collectRegistrations(
     } else if (alias?.namespace) {
       const member = namespaceRunnerMember(body, word.end, alias.spec);
       if (!member) {
-        if (optionalNamespaceRunner(body, word.end) || bracketNamespaceRunner(body, word.end)) {
+        const reflected =
+          !recognizedNamespaceMember(body, word.end) &&
+          !optionalNamespaceRunner(body, word.end) &&
+          !bracketNamespaceRunner(body, word.end) &&
+          !destructuredNamespaceSource(body, index, aliases);
+        if (
+          optionalNamespaceRunner(body, word.end) ||
+          bracketNamespaceRunner(body, word.end) ||
+          reflected
+        ) {
           unresolved.push(word.value);
         }
         index = word.end;
@@ -1068,6 +1077,68 @@ function skipBracketGroup(body: string, index: number): number {
     cursor += 1;
   }
   return depth === 0 ? cursor : -1;
+}
+
+/** `.expect` and `?.expect` name a member. `Reflect.get(runner, "it")` does not. */
+function recognizedNamespaceMember(body: string, index: number): boolean {
+  let cursor = skipSpaceAndComments(body, index);
+  let optional = false;
+  if (body[cursor] === "?" && body[cursor + 1] === ".") {
+    optional = true;
+    cursor = skipSpaceAndComments(body, cursor + 2);
+  }
+  if (body[cursor] === ".") {
+    return readIdentifier(body, skipSpaceAndComments(body, cursor + 1)) !== undefined;
+  }
+  if (optional && readIdentifier(body, cursor)) return true;
+  if (body[cursor] !== "[") return false;
+  const keyAt = skipSpaceAndComments(body, cursor + 1);
+  const quoted = readQuoted(body, keyAt) ?? readStaticTemplate(body, keyAt);
+  if (!quoted) return false;
+  return body[skipSpaceAndComments(body, quoted.end)] === "]";
+}
+
+/** `const { it } = runner` is already a modeled binding. */
+function destructuredNamespaceSource(
+  body: string,
+  wordStart: number,
+  aliases: readonly RunnerAlias[],
+): boolean {
+  const prevAt = previousCodeIndex(body, wordStart);
+  if (prevAt < 0 || body[prevAt] !== "=") return false;
+  if (body[prevAt + 1] === "=" || body[prevAt + 1] === ">") return false;
+  const closeAt = previousCodeIndex(body, prevAt);
+  if (closeAt < 0 || body[closeAt] !== "}") return false;
+  const open = braceOpenBefore(body, closeAt);
+  if (open < 0) return false;
+  const parsed = readDestructuredRunnerImport(body, open, aliases);
+  if (!parsed) return false;
+  return parsed.end > wordStart;
+}
+
+function braceOpenBefore(body: string, close: number): number {
+  let depth = 0;
+  for (let cursor = close; cursor >= 0; cursor -= 1) {
+    const char = body[cursor] ?? "";
+    if (char === "'" || char === '"') {
+      const quote = char;
+      cursor -= 1;
+      while (cursor >= 0 && body[cursor] !== quote) {
+        if (body[cursor] === "\\") cursor -= 1;
+        cursor -= 1;
+      }
+      continue;
+    }
+    if (char === "}") {
+      depth += 1;
+      continue;
+    }
+    if (char === "{") {
+      depth -= 1;
+      if (depth === 0) return cursor;
+    }
+  }
+  return -1;
 }
 
 /** `runner["it"](...)` and `runner[name](...)`. A static non-runner member stays ignored. */
