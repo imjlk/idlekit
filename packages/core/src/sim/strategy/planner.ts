@@ -2,7 +2,7 @@ import type { Strategy } from "./types";
 import { singleBuySize, stepOnce } from "../step";
 import type { StepOnceFn } from "../stepTypes";
 import { parseMoney } from "../../notation/parseMoney";
-import { decidePrestigeCooldown } from "../constraints";
+import { constraintsWithAnchor, decidePrestigeCooldown } from "../constraints";
 import { cloneRunState } from "../runFactory";
 import type { Action, BulkQuote, Model, SimContext, SimState } from "../types";
 import type { PlannerStrategyParamsV1 } from "./params";
@@ -37,6 +37,8 @@ type PlannerNode<N, U extends string, Vars> = Readonly<{
   state: SimState<N, U, Vars>;
   first: FirstChoice<N, U, Vars>;
   reachedTargetAtSec?: number;
+  /** Cooldown anchor on this branch. A reset simulated in the rollout moves it. */
+  lastResetT?: number;
   score: number;
 }>;
 
@@ -328,6 +330,7 @@ export function createPlannerStrategy<N, U extends string, Vars>(
         state,
         first: { kind: "unset" },
         reachedTargetAtSec: reachedNow,
+        lastResetT: ctx.constraints?.lastPrestigeResetT,
         score: 0,
       };
 
@@ -342,7 +345,9 @@ export function createPlannerStrategy<N, U extends string, Vars>(
         let hitBudget = false;
         for (const node of beam) {
           const view = cloneRunState(node.state);
-          const candidates = buildStepCandidates(params, previewCtx, model, view, maxBranchingActions);
+          const nodeConstraints = constraintsWithAnchor(ctx.constraints, node.lastResetT);
+          const nodeCtx: SimContext<N, U, Vars> = { ...previewCtx, constraints: nodeConstraints };
+          const candidates = buildStepCandidates(params, nodeCtx, model, view, maxBranchingActions);
           const all: readonly (Decision<N, U, Vars> | undefined)[] = [undefined, ...candidates];
           for (const decision of all) {
             if (rollouts >= rolloutBudget) {
@@ -351,12 +356,12 @@ export function createPlannerStrategy<N, U extends string, Vars>(
             }
             rollouts += 1;
             const step = d.stepOnce({
-              ctx: previewCtx,
+              ctx: nodeCtx,
               model,
               state: cloneRunState(node.state),
               dt: previewStepSec,
               decisions: decision ? [decision] : [],
-              constraints: ctx.constraints,
+              constraints: nodeConstraints,
               fast: previewFast,
             });
 
@@ -371,6 +376,7 @@ export function createPlannerStrategy<N, U extends string, Vars>(
               state: step.next,
               first: chooseFirst(node.first, decision),
               reachedTargetAtSec,
+              lastResetT: step.prestigeResetT ?? node.lastResetT,
               score: 0,
             };
             nextBeam.push({

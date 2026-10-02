@@ -429,4 +429,33 @@ describe("prestige cooldown", () => {
     });
     expect(unanchored.next.prestige.count).toBe(1);
   });
+
+  it("carries a rollout reset into the next planner depth", () => {
+    const reset = resetAction();
+    const prestigeModel = model([reset]);
+    for (const constraints of [
+      { minPrestigeIntervalSec: 60, lastPrestigeResetT: -1000 },
+      { minPrestigeIntervalSec: 60 },
+    ] satisfies ScenarioConstraints[]) {
+      const proposed: number[] = [];
+      let maxCount = 0;
+      const planner = createPlannerStrategy<number, UnitCode, Vars>(
+        { schemaVersion: 1, horizonSteps: 3, beamWidth: 4, objective: "maximizePrestigePerHour" },
+        {
+          stepOnce(input) {
+            if (input.decisions?.some((decision) => decision.action.kind === "prestige")) {
+              proposed.push(input.state.prestige.count);
+            }
+            const out = stepOnce(input);
+            maxCount = Math.max(maxCount, out.next.prestige.count);
+            return out;
+          },
+        },
+      );
+      expect(planner.decide(context({ constraints }), prestigeModel, state(0, 100))[0]?.action.id).toBe("reset");
+      expect(proposed.length).toBeGreaterThan(0);
+      expect(proposed.every((count) => count === 0)).toBe(true);
+      expect(maxCount).toBe(1);
+    }
+  });
 });
