@@ -233,8 +233,8 @@ export function simulateSessionPattern<N, U extends string, Vars>(args: {
   // The caller's trace budgets bound the whole session, not each block.
   const traceBudget = sc.run.trace?.maxPoints;
   const actionBudget = sc.run.trace?.maxActions;
-  const trace = createBoundedLog<SimState<N, U, Vars>>(traceBudget);
-  const actionsLog = createBoundedLog<{ t: number; actionId: string; label?: string; bulkSize?: number }>(actionBudget);
+  const trace = createBoundedLog<SimState<N, U, Vars>>(traceBudget, "session trace.maxPoints");
+  const actionsLog = createBoundedLog<{ t: number; actionId: string; label?: string; bulkSize?: number }>(actionBudget, "session trace.maxActions");
   let lastTraceT: number | undefined;
   let segmentTraceDropped = 0;
   let segmentActionsDropped = 0;

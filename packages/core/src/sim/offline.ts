@@ -187,7 +187,7 @@ export function applyOfflineSeconds<N, U extends string, Vars>(args: {
   const actionBudget = scenario.run.trace?.maxActions;
   const actionLog =
     actionBudget !== undefined
-      ? createBoundedLog<{ t: number; actionId: string; label?: string; bulkSize?: number }>(actionBudget)
+      ? createBoundedLog<{ t: number; actionId: string; label?: string; bulkSize?: number }>(actionBudget, "applyOfflineSeconds trace.maxActions")
       : undefined;
 
   let state = start;

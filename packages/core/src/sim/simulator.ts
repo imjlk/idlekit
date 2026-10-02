@@ -31,12 +31,12 @@ export function runScenario<N, U extends string, Vars>(
   const start = sc.initial;
 
   const trace: SimState<N, U, Vars>[] = sc.run.trace && sc.run.trace.maxPoints === undefined ? [state] : [];
-  const traceLog = sc.run.trace && sc.run.trace.maxPoints !== undefined ? createBoundedLog<SimState<N, U, Vars>>(sc.run.trace.maxPoints) : undefined;
+  const traceLog = sc.run.trace && sc.run.trace.maxPoints !== undefined ? createBoundedLog<SimState<N, U, Vars>>(sc.run.trace.maxPoints, "runScenario trace.maxPoints") : undefined;
   if (traceLog) traceLog.push(state);
   const actionsLog: { t: number; actionId: string; label?: string; bulkSize?: number }[] = [];
   const actionLog =
     sc.run.trace?.keepActionsLog && sc.run.trace.maxActions !== undefined
-      ? createBoundedLog<{ t: number; actionId: string; label?: string; bulkSize?: number }>(sc.run.trace.maxActions)
+      ? createBoundedLog<{ t: number; actionId: string; label?: string; bulkSize?: number }>(sc.run.trace.maxActions, "runScenario trace.maxActions")
       : undefined;
   const recorder = createObservationRecorder({
     enabled: sc.run.observation?.enabled !== false,

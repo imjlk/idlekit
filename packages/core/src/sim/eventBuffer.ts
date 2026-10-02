@@ -32,8 +32,16 @@ function retainList<T>(
   target.push(...batch);
 }
 
+/** The same rule as `eventLog.maxEvents`: an integer >= 0, or absent for no bound. */
+export function assertLogBudget(value: number | undefined, label: string): void {
+  if (value !== undefined && (!Number.isInteger(value) || value < 0)) {
+    throw new Error(`${label} must be an integer >= 0`);
+  }
+}
+
 /** Ring buffer for trace points or action rows. This is not a second event log. */
-export function createBoundedLog<T>(maxItems: number | undefined) {
+export function createBoundedLog<T>(maxItems: number | undefined, label = "bounded log size") {
+  assertLogBudget(maxItems, label);
   const items: T[] = [];
   let totalSeen = 0;
   let dropped = 0;

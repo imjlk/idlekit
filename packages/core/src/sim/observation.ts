@@ -1,3 +1,4 @@
+import { assertLogBudget } from "./eventBuffer";
 import { deepClonePreservingPrototype } from "../utils/deepClone";
 import { simStatsFromCounters, type MetricStatus, type SimStats } from "./analysis/ux";
 import type { SimEvent, SimState } from "./types";
@@ -247,6 +248,8 @@ export function createObservationRecorder<N, U extends string, Vars>(args: {
   goals: readonly RunGoal<N, U, Vars>[];
   observer?: RunObserver;
 }) {
+  assertLogBudget(args.maxMilestones, "observation.maxMilestones");
+  assertLogBudget(args.maxGoals, "observation.maxGoals");
   const money = mutableMoney();
   const actions = { applied: 0, skippedCannotApply: 0, skippedInsufficientFunds: 0, skippedInvalidQuote: 0, skippedCooldown: 0 };
   const milestones: MilestoneSample[] = [];

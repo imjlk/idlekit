@@ -273,3 +273,21 @@ describe("prestige cooldown counters", () => {
     expect(accumulator.snapshot().actions.skippedCooldown).toBe(4);
   });
 });
+
+describe("log and observation budgets", () => {
+  it("rejects a trace or observation budget that is not an integer >= 0", () => {
+    for (const bad of [-1, Number.NaN, 1.5]) {
+      expect(() => runScenario(scenario({ income: 1, durationSec: 3, trace: { maxPoints: bad } }))).toThrow(
+        "runScenario trace.maxPoints must be an integer >= 0",
+      );
+      expect(() =>
+        runScenario(scenario({ income: 1, durationSec: 3, trace: { keepActionsLog: true, maxActions: bad } })),
+      ).toThrow("runScenario trace.maxActions must be an integer >= 0");
+      expect(() => runScenario(scenario({ income: 1, durationSec: 3, observation: { maxMilestones: bad } }))).toThrow(
+        "observation.maxMilestones must be an integer >= 0",
+      );
+    }
+    const kept = runScenario(scenario({ income: 1, durationSec: 3, trace: { maxPoints: 2 } }));
+    expect(kept.trace).toHaveLength(2);
+  });
+});
