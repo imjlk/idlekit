@@ -27,6 +27,7 @@ import {
   readDestructuredRunnerImport,
   readDottedModifiers,
   readImportRunnerAliases,
+  readRunnerNamespaceValue,
   readRunnerRef,
   titleCallAt,
   type Registration,
@@ -222,6 +223,21 @@ function collectRegistrations(
           aliases.push({ name: ident.value, kind: undefined, modifiers: [], depth: bindingDepth });
           break;
         }
+        const namespace = readRunnerNamespaceValue(body, equalsAt + 1);
+        if (namespace) {
+          aliases.push({
+            name: ident.value,
+            kind: undefined,
+            modifiers: [],
+            depth: bindingDepth,
+            namespace: true,
+            spec: namespace.spec,
+          });
+          bindingAt = skipSpaceAndComments(body, namespace.end);
+          if (body[bindingAt] !== ",") break;
+          bindingAt = skipSpaceAndComments(body, bindingAt + 1);
+          continue;
+        }
         const ref = readRunnerRef(body, equalsAt + 1, aliases);
         if (!ref && isFunctionValue(body, equalsAt + 1)) {
           if (isRunnerKind(ident.value)) {
@@ -252,12 +268,19 @@ function collectRegistrations(
     const assigned = assignmentAt(body, word.end);
     if (assigned && alias) {
       const ref = assigned.plain ? readRunnerRef(body, assigned.at + 1, aliases) : undefined;
-      aliases.push({
+      const namespace =
+        !ref && assigned.plain ? readRunnerNamespaceValue(body, assigned.at + 1) : undefined;
+      const next: RunnerAlias = {
         name: word.value,
         kind: ref?.kind,
         modifiers: ref?.modifiers ?? [],
         depth: forParens.length > 0 ? depth + 1 : depth,
-      });
+      };
+      if (namespace) {
+        next.namespace = true;
+        next.spec = namespace.spec;
+      }
+      aliases.push(next);
       index = word.end;
       continue;
     }

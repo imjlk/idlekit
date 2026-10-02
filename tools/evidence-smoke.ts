@@ -876,6 +876,7 @@ try {
   let resolvedImport = false;
   let helperComputed = false;
   let moduleRequire = false;
+  let metaRequire = false;
   let moduleSpacedRequire = false;
   let memberRequireIgnored = false;
   let moduleDynamicRequire = false;
@@ -938,6 +939,16 @@ try {
     moduleRequire =
       duplicateFullNamesAcross(moduleBodies).includes("credited") &&
       moduleBodies.some((body) => body.includes("from-required-helper"));
+    writeFileSync(
+      requireHost,
+      ['import.meta.require("./required-helper");', 'if (false) it("credited", citedExport);'].join(
+        "\n",
+      ),
+    );
+    const metaBodies = sourceGraph([requireHost]);
+    metaRequire =
+      duplicateFullNamesAcross(metaBodies).includes("credited") &&
+      metaBodies.some((body) => body.includes("from-required-helper"));
     writeFileSync(requireHost, 'module . require("./required-helper");\n');
     moduleSpacedRequire = sourceGraph([requireHost]).some((body) =>
       body.includes("from-required-helper"),
@@ -1393,6 +1404,34 @@ try {
       'register("credited", unrelated)',
     ].join("\n"),
   ).includes("credited");
+  const dynamicNamespace = duplicateFullNames(
+    [
+      'const runner = await import("bun:test")',
+      'if (false) it("credited", citedExport)',
+      'runner.it("credited", unrelated)',
+    ].join("\n"),
+  ).includes("credited");
+  const requiredNamespace = duplicateFullNames(
+    [
+      'const runner = require("bun:test")',
+      'if (false) it("credited", citedExport)',
+      'runner.it("credited", unrelated)',
+    ].join("\n"),
+  ).includes("credited");
+  const otherDynamicNamespace = duplicateFullNames(
+    [
+      'const runner = await import("other")',
+      'runner.it("credited", unrelated)',
+      'if (false) it("credited", citedExport)',
+    ].join("\n"),
+  ).includes("credited");
+  const chainedNamespace = duplicateFullNames(
+    [
+      'const runner = await import("bun:test").then((mod) => mod)',
+      'runner.it("credited", unrelated)',
+      'if (false) it("credited", citedExport)',
+    ].join("\n"),
+  ).includes("credited");
   const namespaceSuite = duplicateFullNames(
     [
       `import * as runner from ${nodeTest}`,
@@ -1751,6 +1790,10 @@ try {
     !bunDefaultDuplicate &&
     namespaceDestructure &&
     namespaceSuite &&
+    dynamicNamespace &&
+    requiredNamespace &&
+    !otherDynamicNamespace &&
+    !chainedNamespace &&
     computedNames.length === 0 &&
     computedDead.length === 1 &&
     computedCalls.length === 1 &&
@@ -1763,6 +1806,7 @@ try {
     requireDuplicate &&
     requireResolved &&
     moduleRequire &&
+    metaRequire &&
     moduleSpacedRequire &&
     memberRequireIgnored &&
     moduleDynamicRequire &&
@@ -1805,6 +1849,7 @@ try {
       duplicateStillRegistered,
       commentIgnored,
       moduleRequire,
+      metaRequire,
       moduleSpacedRequire,
       memberRequireIgnored,
       moduleDynamicRequire,
@@ -1821,6 +1866,10 @@ try {
       bunDefaultDuplicate,
       namespaceDestructure,
       namespaceSuite,
+      dynamicNamespace,
+      requiredNamespace,
+      otherDynamicNamespace,
+      chainedNamespace,
       directoryEntry,
       packagePreload,
       missingPackagePreload,
@@ -1915,8 +1964,43 @@ try {
     production: ["pkg/host.ts"],
     fileRegistered: ["owned", "sibling"],
   });
-  const siblingOk = sibling === undefined;
-  record("sibling-inventory", "zero", siblingOk ? 0 : 1, siblingOk, JSON.stringify(sibling));
+  const moduleHost = [
+    "/** @evidence packages/web/src/quota.mts#quotaHost Calls the host. */",
+    "export function owned(): void {}",
+  ].join("\n");
+  const moduleCitation = unregisteredImplementationHost(
+    moduleHost,
+    "docs/spec.md",
+    "quota",
+    ["owned"],
+    {
+      file: "packages/web/src/quota.test.ts",
+      production: ["packages/web/src/quota.mts"],
+    },
+  );
+  const scriptHost = [
+    "/** @evidence packages/web/src/quota.cts#quotaHost Calls the host. */",
+    "export function owned(): void {}",
+  ].join("\n");
+  const scriptCitation = unregisteredImplementationHost(
+    scriptHost,
+    "docs/spec.md",
+    "quota",
+    ["owned"],
+    {
+      file: "packages/web/src/quota.test.ts",
+      production: ["packages/web/src/quota.cts"],
+    },
+  );
+  const siblingOk =
+    sibling === undefined && moduleCitation === undefined && scriptCitation === undefined;
+  record(
+    "sibling-inventory",
+    "zero",
+    siblingOk ? 0 : 1,
+    siblingOk,
+    JSON.stringify({ sibling, moduleCitation, scriptCitation }),
+  );
 
   const foreign = unregisteredImplementationHost(siblingBody, "docs/spec.md", "quota", ["owned"], {
     file: "pkg/case.test.ts",

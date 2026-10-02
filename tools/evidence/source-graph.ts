@@ -21,6 +21,28 @@ function moduleDotRequire(body: string, index: number): boolean {
   return wordBefore(body, index - 1) === "module";
 }
 
+/** `import.meta.require`, including spaces around the dots. Other members stay hidden. */
+function importMetaRequire(body: string, index: number): boolean {
+  if (body[index - 1] !== ".") return false;
+  if (wordBefore(body, index - 1) !== "meta") return false;
+  let metaEnd = index - 2;
+  while (metaEnd >= 0 && /\s/.test(body[metaEnd] ?? "")) metaEnd -= 1;
+  const metaStart = metaEnd - "meta".length + 1;
+  if (metaStart < 0 || body.slice(metaStart, metaEnd + 1) !== "meta") return false;
+  let dot = metaStart - 1;
+  while (dot >= 0 && /\s/.test(body[dot] ?? "")) dot -= 1;
+  if (body[dot] !== ".") return false;
+  if (wordBefore(body, dot) !== "import") return false;
+  let importEnd = dot - 1;
+  while (importEnd >= 0 && /\s/.test(body[importEnd] ?? "")) importEnd -= 1;
+  const importStart = importEnd - "import".length + 1;
+  if (importStart < 0 || body.slice(importStart, importEnd + 1) !== "import") return false;
+  const before = body[importStart - 1];
+  if (before === undefined) return true;
+  if (before === "." || /[A-Za-z0-9_$]/.test(before)) return false;
+  return true;
+}
+
 /** `require("./helper")`, a static template require, and `module.require`. */
 function localRequireCalls(
   body: string,
@@ -40,8 +62,10 @@ function localRequireCalls(
     }
     const previous = body[index - 1];
     const tail = body[index + "require".length] ?? "";
+    const memberRequire =
+      previous === "." && !moduleDotRequire(body, index) && !importMetaRequire(body, index);
     if (
-      (previous === "." && !moduleDotRequire(body, index)) ||
+      memberRequire ||
       (previous !== undefined && /[A-Za-z0-9_$]/.test(previous)) ||
       /[A-Za-z0-9_$]/.test(tail) ||
       wordBefore(body, index) === "function"

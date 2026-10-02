@@ -433,6 +433,22 @@ function runnerModuleSpec(spec: string): boolean {
   return spec === "bun:test" || spec === "node:test";
 }
 
+/**
+ * `const runner = await import("bun:test")` and `const runner = require("bun:test")`.
+ * A following member, such as `.then`, is a different value.
+ */
+export function readRunnerNamespaceValue(
+  body: string,
+  index: number,
+): { end: number; spec: string } | undefined {
+  const imported = readDynamicRunnerImport(body, index) ?? readRunnerRequire(body, index);
+  if (!imported) return undefined;
+  const end = skipTypeOnlySuffix(body, imported.end);
+  if (end < 0 || body[skipSpaceAndComments(body, end)] === ".") return undefined;
+  if (!bindingBoundary(body, end)) return undefined;
+  return { end, spec: imported.spec };
+}
+
 /** `await import("bun:test")`, including one pair of parentheses around the call. */
 function readDynamicRunnerImport(
   body: string,
