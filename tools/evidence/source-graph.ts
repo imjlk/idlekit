@@ -493,6 +493,189 @@ function importEqualsRequire(body: string, requireAt: number): boolean {
   return keyword?.value === "import";
 }
 
+function wordAt(body: string, index: number, word: string): boolean {
+  if (!body.startsWith(word, index)) return false;
+  const previous = body[index - 1];
+  const tail = body[index + word.length];
+  if (previous !== undefined && /[A-Za-z0-9_$]/.test(previous)) return false;
+  if (tail !== undefined && /[A-Za-z0-9_$]/.test(tail)) return false;
+  return true;
+}
+
+function createRequireBinding(body: string, fromAt: number): string | undefined {
+  const brace = body.lastIndexOf("{", fromAt);
+  if (brace < 0 || fromAt - brace > 400) return undefined;
+  let cursor = brace + 1;
+  while (cursor < fromAt) {
+    cursor = skipSpaceAndComments(body, cursor);
+    if (cursor >= fromAt || body[cursor] === "}") return undefined;
+    if (body[cursor] === ",") {
+      cursor += 1;
+      continue;
+    }
+    const name = readIdentifier(body, cursor);
+    if (!name) return undefined;
+    const next = readIdentifier(body, skipSpaceAndComments(body, name.end));
+    if (name.value === "type" && next && next.value !== "as") {
+      cursor = next.end;
+      continue;
+    }
+    let imported = name.value;
+    let local = name.value;
+    cursor = name.end;
+    if (next?.value === "as") {
+      const bound = readIdentifier(body, skipSpaceAndComments(body, next.end));
+      if (!bound) return undefined;
+      local = bound.value;
+      cursor = bound.end;
+    }
+    if (imported === "createRequire") return local;
+  }
+  return undefined;
+}
+
+function importedCreateRequire(
+  body: string,
+  hidden: ReadonlyArray<readonly [number, number]>,
+): string[] {
+  const names: string[] = [];
+  let index = 0;
+  while (index < body.length) {
+    const hiddenEnd = spanEndAt(hidden, index);
+    if (hiddenEnd >= 0) {
+      index = hiddenEnd;
+      continue;
+    }
+    if (!wordAt(body, index, "from")) {
+      index += 1;
+      continue;
+    }
+    const specAt = skipSpaceAndComments(body, index + 4);
+    const spec = readQuoted(body, specAt) ?? readStaticTemplate(body, specAt);
+    if (!spec) {
+      index += 4;
+      continue;
+    }
+    const moduleSpec = spec.value === "module" || spec.value === "node:module";
+    if (moduleSpec) {
+      const local = createRequireBinding(body, index);
+      if (local) names.push(local);
+    }
+    index = spec.end;
+  }
+  return names;
+}
+
+function createRequireFactories(
+  body: string,
+  hidden: ReadonlyArray<readonly [number, number]>,
+): string[] {
+  return ["createRequire", ...importedCreateRequire(body, hidden)];
+}
+
+function createRequireAliases(
+  body: string,
+  hidden: ReadonlyArray<readonly [number, number]>,
+  factories: readonly string[],
+): string[] {
+  const aliases: string[] = [];
+  let index = 0;
+  while (index < body.length) {
+    const hiddenEnd = spanEndAt(hidden, index);
+    if (hiddenEnd >= 0) {
+      index = hiddenEnd;
+      continue;
+    }
+    let keyword = "";
+    if (wordAt(body, index, "const")) keyword = "const";
+    else if (wordAt(body, index, "let")) keyword = "let";
+    else if (wordAt(body, index, "var")) keyword = "var";
+    if (keyword.length === 0) {
+      index += 1;
+      continue;
+    }
+    const name = readIdentifier(body, skipSpaceAndComments(body, index + keyword.length));
+    if (!name) {
+      index += keyword.length;
+      continue;
+    }
+    const equalsAt = skipSpaceAndComments(body, name.end);
+    const factory = readIdentifier(body, skipSpaceAndComments(body, equalsAt + 1));
+    const plainEquals =
+      body[equalsAt] === "=" && body[equalsAt + 1] !== "=" && body[equalsAt + 1] !== ">";
+    const called = factory ? factories.includes(factory.value) : false;
+    const open = factory ? skipSpaceAndComments(body, factory.end) : -1;
+    if (plainEquals && called && body[open] === "(") aliases.push(name.value);
+    index = name.end;
+  }
+  return aliases;
+}
+
+function callOpens(body: string, index: number, name: string): number {
+  if (!wordAt(body, index, name)) return -1;
+  const previous = body[index - 1];
+  if (previous === "." || (previous !== undefined && /[A-Za-z0-9_$]/.test(previous))) return -1;
+  if (wordBefore(body, index) === "function") return -1;
+  const open = skipSpaceAndComments(body, index + name.length);
+  if (body[open] !== "(") return -1;
+  return open;
+}
+
+function readCallSpec(body: string, open: number): LocalRequire {
+  const argAt = skipSpaceAndComments(body, open + 1);
+  const quoted = readQuoted(body, argAt) ?? readStaticTemplate(body, argAt);
+  if (quoted && argumentBoundary(body, quoted.end)) {
+    return { kind: "static", spec: quoted.value };
+  }
+  return { kind: "dynamic" };
+}
+
+/** `const req = createRequire(import.meta.url); req("./helper")` loads `helper`. */
+function createRequireCalls(
+  body: string,
+  hidden: ReadonlyArray<readonly [number, number]>,
+): LocalRequire[] {
+  const factories = createRequireFactories(body, hidden);
+  const aliases = createRequireAliases(body, hidden, factories);
+  const found: LocalRequire[] = [];
+  let index = 0;
+  while (index < body.length) {
+    const hiddenEnd = spanEndAt(hidden, index);
+    if (hiddenEnd >= 0) {
+      index = hiddenEnd;
+      continue;
+    }
+    const alias = aliases.find((name) => callOpens(body, index, name) >= 0);
+    if (alias) {
+      const open = callOpens(body, index, alias);
+      found.push(readCallSpec(body, open));
+      const close = skipPair(body, open);
+      index = close < 0 ? open + 1 : close;
+      continue;
+    }
+    const factory = factories.find((name) => callOpens(body, index, name) >= 0);
+    if (factory) {
+      const open = callOpens(body, index, factory);
+      const close = skipPair(body, open);
+      if (close < 0) {
+        index = open + 1;
+        continue;
+      }
+      const next = skipSpaceAndComments(body, close);
+      if (body[next] === "(") {
+        found.push(readCallSpec(body, next));
+        const end = skipPair(body, next);
+        index = end < 0 ? next + 1 : end;
+        continue;
+      }
+      index = close;
+      continue;
+    }
+    index += 1;
+  }
+  return found;
+}
+
 /** `require("./helper")`, a static template require, and `module.require`. */
 function localRequireCalls(
   body: string,
@@ -1454,14 +1637,15 @@ function walkSources(files: readonly string[]): SourceWalk {
     }
     const body = readFileSync(real, "utf8");
     const packaged = real.split(/[/\\]/).includes("node_modules");
-    if (!packaged) locals.push(real);
+    locals.push(real);
     if (!packaged || publishPackageBody(body)) bodies.push(body);
     const hidden = stringSpans(body);
     for (const imported of staticImportSpecifiers(body, hidden)) {
       if (typeOnlyImport(body, imported.at)) continue;
       queueSpecifier(real, imported.spec, "import", queue, faults, packageRoots, false);
     }
-    for (const required of localRequireCalls(body, hidden)) {
+    const requiredCalls = [...localRequireCalls(body, hidden), ...createRequireCalls(body, hidden)];
+    for (const required of requiredCalls) {
       if (required.kind === "dynamic") {
         if (!packaged) faults.push("dynamic require");
         continue;
@@ -1489,7 +1673,7 @@ export function unresolvedLocalRequires(files: readonly string[]): string[] {
   return walkSources(files).faults;
 }
 
-/** Local files whose bytes the test command can execute. Package bodies stay unlocked. */
+/** Local and scanned package files whose bytes the test command can execute. */
 export function sourceFiles(files: readonly string[]): string[] {
   return walkSources(files).files;
 }

@@ -28,6 +28,7 @@ import {
   unresolvedRunnerCalls,
   registrationLines,
   sourceGraph,
+  sourceFiles,
   unresolvedLocalRequires,
   ambiguousSuiteSeparators,
   citesRequirement,
@@ -884,6 +885,7 @@ try {
   let commentRequire = false;
   let shadowedRequire = false;
   let importEquals = false;
+  let createdRequire = false;
   let commentImport = false;
   let relativeTypeSkipped = false;
   let dynamicImport = false;
@@ -1136,6 +1138,38 @@ try {
       "./missing-after-equals.ts",
     );
     importEquals = equalsResolved && equalsFault && equalsKeepsCall;
+    const nodeModule = "node:" + "module";
+    writeFileSync(
+      requireHost,
+      [
+        `import { createRequire } from ${JSON.stringify(nodeModule)};`,
+        "const req = createRequire(import.meta.url);",
+        'req("./required-helper");',
+      ].join("\n"),
+    );
+    const createdBodies = sourceGraph([requireHost]);
+    const createdResolved = createdBodies.some((body) => body.includes("from-required-helper"));
+    writeFileSync(
+      requireHost,
+      ["const req = createRequire(import.meta.url);", 'req("./missing-created");'].join("\n"),
+    );
+    const createdFault = unresolvedLocalRequires([requireHost]).includes("./missing-created");
+    writeFileSync(
+      requireHost,
+      [
+        'import { createRequire as makeRequire } from "module";',
+        "const req = makeRequire(import.meta.url);",
+        'req("./required-helper");',
+      ].join("\n"),
+    );
+    const renamedCreated = sourceGraph([requireHost]).some((body) =>
+      body.includes("from-required-helper"),
+    );
+    writeFileSync(requireHost, 'createRequire(import.meta.url)("./required-helper");\n');
+    const directCreated = sourceGraph([requireHost]).some((body) =>
+      body.includes("from-required-helper"),
+    );
+    createdRequire = createdResolved && createdFault && renamedCreated && directCreated;
     writeFileSync(
       requireHelper,
       [
@@ -1363,10 +1397,12 @@ try {
     writeFileSync(join(preloadDir, "bunfig.toml"), '[test]\npreload = ["test-setup"]\n');
     const packageFiles = localPreloadFiles(preloadDir, ["test"]);
     const packageBodies = sourceGraph([preloadHost, ...packageFiles]);
+    const packageLocked = sourceFiles([preloadHost, ...packageFiles]);
     packagePreload =
       packageFiles.length === 1 &&
       packageBodies.some((body) => body.includes("from-package-preload")) &&
-      duplicateFullNamesAcross(packageBodies).includes("credited");
+      duplicateFullNamesAcross(packageBodies).includes("credited") &&
+      packageLocked.some((file) => file.split(/[/\\]/).includes("node_modules"));
     writeFileSync(join(preloadDir, "bunfig.toml"), '[test]\npreload = ["not-a-package"]\n');
     missingPackagePreload = unresolvedPreloadSpecifiers(preloadDir, ["test"]).includes(
       "not-a-package",
@@ -2734,6 +2770,7 @@ try {
     dynamicRequire &&
     shadowedRequire &&
     importEquals &&
+    createdRequire &&
     packageRequire &&
     commentRequire &&
     dynamicImport &&
@@ -2910,6 +2947,7 @@ try {
       returnedAsi,
       shadowedRequire,
       importEquals,
+      createdRequire,
       commentImport,
       relativeTypeSkipped,
       sourceLock,
@@ -3202,6 +3240,9 @@ try {
   ]);
   const inspectOpen = blockedTestArgs(["test", "--inspect", "src/example.test.ts"]);
   const inspectAfterSeparator = blockedTestArgs(["test", "src/x.test.ts", "--", "--inspect-wait"]);
+  const conditionsBlocked = blockedTestArgs(["test", "--conditions=evil", "src/example.test.ts"]);
+  const conditionsSplit = blockedTestArgs(["test", "--conditions", "evil", "src/example.test.ts"]);
+  const conditionsAfter = blockedTestArgs(["test", "src/x.test.ts", "--", "--conditions=evil"]);
   const reporterAt = reporterArgs.indexOf("--reporter=junit");
   const separatorAt = reporterArgs.indexOf("--");
   const commandOk =
@@ -3239,7 +3280,10 @@ try {
     inspectWait === "--inspect-wait" &&
     inspectBrk === "--inspect-brk" &&
     inspectOpen === undefined &&
-    inspectAfterSeparator === undefined;
+    inspectAfterSeparator === undefined &&
+    conditionsBlocked === "--conditions" &&
+    conditionsSplit === "--conditions" &&
+    conditionsAfter === undefined;
   record(
     "test-subcommand",
     "zero",

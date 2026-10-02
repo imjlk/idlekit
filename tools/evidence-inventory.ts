@@ -112,7 +112,13 @@ export {
   uninventoriedCommandTargets,
   unresolvedPreloadSpecifiers,
 };
-export { loaderPluginRegistration, mockModuleRegistration, sourceGraph, unresolvedLocalRequires };
+export {
+  loaderPluginRegistration,
+  mockModuleRegistration,
+  sourceFiles,
+  sourceGraph,
+  unresolvedLocalRequires,
+};
 export { enabledClaimFailures, graphRuleFailures, missingProtectedDocs };
 export { formatGateFailures, formatIncludeRoots } from "./evidence/format-gate";
 export type { ShrinkResult } from "./evidence/model";

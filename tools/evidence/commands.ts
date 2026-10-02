@@ -70,6 +70,7 @@ const BLOCKED_TEST_FLAGS = new Set([
   "--cwd",
   "--inspect-wait",
   "--inspect-brk",
+  "--conditions",
 ]);
 
 /** Flags that hang the run, rewrite snapshots, or move Bun to another cwd. */
