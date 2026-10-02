@@ -15,7 +15,13 @@ import {
 
 type LocalRequire = { kind: "static"; spec: string } | { kind: "dynamic" };
 
-/** `require("./helper")` and `require(\`./helper\`)`. Package specifiers are static too. */
+/** True when this `require` is the member `module.require`. Other members stay hidden. */
+function moduleDotRequire(body: string, index: number): boolean {
+  if (body[index - 1] !== ".") return false;
+  return wordBefore(body, index - 1) === "module";
+}
+
+/** `require("./helper")`, a static template require, and `module.require`. */
 function localRequireCalls(
   body: string,
   hidden: ReadonlyArray<readonly [number, number]>,
@@ -35,7 +41,7 @@ function localRequireCalls(
     const previous = body[index - 1];
     const tail = body[index + "require".length] ?? "";
     if (
-      previous === "." ||
+      (previous === "." && !moduleDotRequire(body, index)) ||
       (previous !== undefined && /[A-Za-z0-9_$]/.test(previous)) ||
       /[A-Za-z0-9_$]/.test(tail) ||
       wordBefore(body, index) === "function"

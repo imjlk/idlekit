@@ -175,6 +175,7 @@ export function headingAnchors(markdown: string): string[] {
   let inComment = false;
   let htmlBlock: HtmlBlock | undefined;
   let pending: { text: string; depth: number; listIndent: number } | undefined;
+  let listIndent = 0;
   for (const rawLine of markdown.split(/\r?\n/)) {
     const marker = /^( {0,3})(`{3,}|~{3,})(.*)$/.exec(atxText(rawLine));
     const opener = marker?.[2];
@@ -217,6 +218,13 @@ export function headingAnchors(markdown: string): string[] {
     if (commentAt !== -1 && !commentCloses) inComment = true;
     const depth = blockquoteDepth(line);
     const opened = stripBlockquotes(line, depth) ?? line;
+    const started = listContainer(opened);
+    const blank = opened.trim().length === 0;
+    const inherited = listIndent > 0 && opened.startsWith(" ".repeat(listIndent));
+    const strip = inherited ? listIndent : 0;
+    if (started) listIndent = started.indent;
+    else if (!blank && !inherited) listIndent = 0;
+    const continued = strip > 0 ? opened.slice(strip) : opened;
     const heading = opened.replace(/^ {0,3}/, "");
     if (pending) {
       const sameQuote = stripBlockquotes(line, pending.depth);
@@ -231,7 +239,7 @@ export function headingAnchors(markdown: string): string[] {
         continue;
       }
     }
-    const atx = atxText(heading);
+    const atx = atxText(continued.replace(/^ {0,3}/, ""));
     // CommonMark lets an ATX heading close with a space and a run of hashes.
     const match =
       /^##[ \t]+.+\{#([A-Za-z0-9][A-Za-z0-9._:-]*)\}(?:[ \t]+#+)?[ \t]*$/.exec(atx);

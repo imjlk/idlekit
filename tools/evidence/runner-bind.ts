@@ -31,6 +31,13 @@ export function isRunnerKind(value: string): value is RunnerKind {
   return value === "describe" || value === "it" || value === "test";
 }
 
+/** `suite` from `node:test` is a describe-style suite in Bun. `bun:test` has no `suite`. */
+function runnerKindForImport(spec: string, imported: string): RunnerKind | undefined {
+  if (isRunnerKind(imported)) return imported;
+  if (spec === "node:test" && imported === "suite") return "describe";
+  return undefined;
+}
+
 export function aliasAt(aliases: readonly RunnerAlias[], name: string): RunnerAlias | undefined {
   for (let index = aliases.length - 1; index >= 0; index -= 1) {
     if (aliases[index]?.name === name) return aliases[index];
@@ -331,7 +338,7 @@ export function readImportRunnerAliases(
     return { entries: [], namespaces: [local.value], end: spec.end };
   }
   if (body[cursor] !== "{") return undefined;
-  const entries: Array<{ name: string; kind: RunnerKind }> = [];
+  const pending: Array<{ name: string; imported: string }> = [];
   cursor += 1;
   while (cursor < body.length) {
     cursor = skipSpaceAndComments(body, cursor);
@@ -357,9 +364,7 @@ export function readImportRunnerAliases(
       local = renamed.value;
       cursor = skipSpaceAndComments(body, renamed.end);
     }
-    if (!typeOnly && isRunnerKind(imported.value)) {
-      entries.push({ name: local, kind: imported.value });
-    }
+    if (!typeOnly) pending.push({ name: local, imported: imported.value });
     if (body[cursor] === ",") {
       cursor += 1;
       continue;
@@ -376,6 +381,11 @@ export function readImportRunnerAliases(
   const spec = readQuoted(body, fromWord.end) ?? readStaticTemplate(body, fromWord.end);
   if (!spec) return undefined;
   if (!runnerModuleSpec(spec.value)) return { entries: [], namespaces: [], end: spec.end };
+  const entries: Array<{ name: string; kind: RunnerKind }> = [];
+  for (const item of pending) {
+    const kind = runnerKindForImport(spec.value, item.imported);
+    if (kind) entries.push({ name: item.name, kind });
+  }
   return { entries, namespaces: [], end: spec.end };
 }
 
@@ -387,14 +397,14 @@ function runnerModuleSpec(spec: string): boolean {
 function readDynamicRunnerImport(
   body: string,
   index: number,
-): { end: number } | undefined {
+): { end: number; spec: string } | undefined {
   let cursor = skipSpaceAndComments(body, index);
   if (body[cursor] === "(") {
     const inner = readDynamicRunnerImport(body, cursor + 1);
     if (!inner) return undefined;
     const close = skipSpaceAndComments(body, inner.end);
     if (body[close] !== ")") return undefined;
-    return { end: close + 1 };
+    return { end: close + 1, spec: inner.spec };
   }
   const awaitWord = readIdentifier(body, cursor);
   if (awaitWord?.value === "await") cursor = skipSpaceAndComments(body, awaitWord.end);
@@ -406,7 +416,7 @@ function readDynamicRunnerImport(
   if (!spec || !runnerModuleSpec(spec.value)) return undefined;
   const close = skipPair(body, open);
   if (close < 0) return undefined;
-  return { end: close };
+  return { end: close, spec: spec.value };
 }
 
 /**
@@ -419,7 +429,7 @@ export function readDestructuredRunnerImport(
   index: number,
 ): { entries: Array<{ name: string; kind: RunnerKind }>; end: number } | undefined {
   if (body[index] !== "{") return undefined;
-  const entries: Array<{ name: string; kind: RunnerKind }> = [];
+  const pending: Array<{ name: string; imported: string }> = [];
   let cursor = index + 1;
   while (cursor < body.length) {
     cursor = skipSpaceAndComments(body, cursor);
@@ -443,7 +453,7 @@ export function readDestructuredRunnerImport(
         cursor = skipSpaceAndComments(body, renamed.end);
       }
       if (body[cursor] === "=") return undefined;
-      if (isRunnerKind(imported.value)) entries.push({ name: local, kind: imported.value });
+      pending.push({ name: local, imported: imported.value });
     }
     if (body[cursor] === ",") {
       cursor += 1;
@@ -460,18 +470,23 @@ export function readDestructuredRunnerImport(
   const imported =
     readDynamicRunnerImport(body, cursor + 1) ?? readRunnerRequire(body, cursor + 1);
   if (!imported) return undefined;
+  const entries: Array<{ name: string; kind: RunnerKind }> = [];
+  for (const item of pending) {
+    const kind = runnerKindForImport(imported.spec, item.imported);
+    if (kind) entries.push({ name: item.name, kind });
+  }
   return { entries, end: imported.end };
 }
 
 /** `require("bun:test")`, including one pair of parentheses around the call. */
-function readRunnerRequire(body: string, index: number): { end: number } | undefined {
+function readRunnerRequire(body: string, index: number): { end: number; spec: string } | undefined {
   let cursor = skipSpaceAndComments(body, index);
   if (body[cursor] === "(") {
     const inner = readRunnerRequire(body, cursor + 1);
     if (!inner) return undefined;
     const close = skipSpaceAndComments(body, inner.end);
     if (body[close] !== ")") return undefined;
-    return { end: close + 1 };
+    return { end: close + 1, spec: inner.spec };
   }
   const word = readIdentifier(body, cursor);
   if (word?.value !== "require") return undefined;
@@ -481,5 +496,5 @@ function readRunnerRequire(body: string, index: number): { end: number } | undef
   if (!spec || !runnerModuleSpec(spec.value)) return undefined;
   const close = skipPair(body, open);
   if (close < 0) return undefined;
-  return { end: close };
+  return { end: close, spec: spec.value };
 }

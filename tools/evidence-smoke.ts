@@ -497,6 +497,15 @@ try {
   const commentCloser = headingAnchors("<!--\n`-->`\n## Kept {#kept}\n");
   const sameLineCloser = headingAnchors("<!-- `-->`\n## Kept {#kept}\n");
   const closedHeading = headingAnchors("## Requirement {#req-id} ##\n## Kept {#kept}\n");
+  const continuedList = headingAnchors(
+    ["123. item", "     ## Requirement {#req-id}", "## Kept {#kept}"].join("\n"),
+  );
+  const continuedBlank = headingAnchors(
+    ["123. item", "", "     ## Requirement {#req-id}"].join("\n"),
+  );
+  const continuedCode = headingAnchors(
+    ["123. item", "    ## Hidden {#hidden}", "## Kept {#kept}"].join("\n"),
+  );
   const setextOk =
     setext.length === 3 &&
     setext[0] === "req-id" &&
@@ -547,13 +556,28 @@ try {
     sameLineCloser[0] === "kept" &&
     closedHeading.length === 2 &&
     closedHeading[0] === "req-id" &&
-    closedHeading[1] === "kept";
+    closedHeading[1] === "kept" &&
+    continuedList.length === 2 &&
+    continuedList[0] === "req-id" &&
+    continuedList[1] === "kept" &&
+    continuedBlank.length === 1 &&
+    continuedBlank[0] === "req-id" &&
+    continuedCode.length === 1 &&
+    continuedCode[0] === "kept";
   record(
     "setext-heading",
     "zero",
     setextOk ? 0 : 1,
     setextOk,
-    JSON.stringify({ setext, quotedSetext, nestedSetext, quotedH1 }),
+    JSON.stringify({
+      setext,
+      quotedSetext,
+      nestedSetext,
+      quotedH1,
+      continuedList,
+      continuedBlank,
+      continuedCode,
+    }),
   );
 
   const activeDocs = ["docs/requirements/active/**/*.md"];
@@ -850,6 +874,10 @@ try {
   let packageImport = false;
   let resolvedImport = false;
   let helperComputed = false;
+  let moduleRequire = false;
+  let moduleSpacedRequire = false;
+  let memberRequireIgnored = false;
+  let moduleDynamicRequire = false;
   try {
     const bodies = sourceGraph([specifierHost]);
     const joined = bodies.join("\n");
@@ -898,6 +926,26 @@ try {
     const requireBodies = sourceGraph([requireHost]);
     requireDuplicate = duplicateFullNamesAcross(requireBodies).includes("credited");
     requireResolved = requireBodies.some((body) => body.includes("from-required-helper"));
+    writeFileSync(
+      requireHost,
+      ['module.require("./required-helper");', 'if (false) it("credited", citedExport);'].join(
+        "\n",
+      ),
+    );
+    const moduleBodies = sourceGraph([requireHost]);
+    moduleRequire =
+      duplicateFullNamesAcross(moduleBodies).includes("credited") &&
+      moduleBodies.some((body) => body.includes("from-required-helper"));
+    writeFileSync(requireHost, 'module . require("./required-helper");\n');
+    moduleSpacedRequire = sourceGraph([requireHost]).some((body) =>
+      body.includes("from-required-helper"),
+    );
+    writeFileSync(requireHost, 'foo.require("./required-helper");\n');
+    memberRequireIgnored =
+      sourceGraph([requireHost]).length === 1 &&
+      unresolvedLocalRequires([requireHost]).length === 0;
+    writeFileSync(requireHost, "module.require(name);\n");
+    moduleDynamicRequire = unresolvedLocalRequires([requireHost]).includes("dynamic require");
     writeFileSync(requireHost, "require(`./required-helper`);\n");
     templateRequire = sourceGraph([requireHost]).some((body) =>
       body.includes("from-required-helper"),
@@ -1030,6 +1078,16 @@ try {
     ['describe.each([[1]])("kept", () => {', '  it("credited", unrelated);', "});"].join("\n"),
     "unrelated",
     "credited",
+  );
+  const printfEachBody = [
+    'it.each([["ited"]])("cred%s", unrelated);',
+    'it("credited", citedExport);',
+  ].join("\n");
+  const printfEachCalls = unresolvedRunnerCalls(printfEachBody);
+  const printfEachLive = registeredSuites(printfEachBody, "unrelated", "cred%s");
+  const printfEachDead = registeredSuites(printfEachBody, "citedExport", "credited");
+  const printfDescribe = unresolvedRunnerCalls(
+    'describe.each([["kept"]])("name %s", () => it("credited", unrelated));',
   );
   const conjunction = registeredSuites(
     'it("credited", citedExport && unrelated);',
@@ -1212,6 +1270,40 @@ try {
     "unrelated",
     "credited",
   );
+  const nodeSuiteBody = [
+    'import { suite } from "node:test"',
+    'suite("s", () => test("credited", unrelated))',
+    'describe("s", () => test("credited", citedExport))',
+  ].join("\n");
+  const nodeSuiteDuplicate = duplicateFullNames(nodeSuiteBody).includes("s > credited");
+  const renamedSuite = duplicateFullNames(
+    [
+      'import { suite as group } from "node:test"',
+      'group("s", () => test("credited", unrelated))',
+      'describe("s", () => test("credited", citedExport))',
+    ].join("\n"),
+  ).includes("s > credited");
+  const requiredSuite = duplicateFullNames(
+    [
+      'const { suite } = require("node:test")',
+      'suite("s", () => test("credited", unrelated))',
+      'describe("s", () => test("credited", citedExport))',
+    ].join("\n"),
+  ).includes("s > credited");
+  const dynamicSuite = duplicateFullNames(
+    [
+      'const { suite } = await import("node:test")',
+      'suite("s", () => test("credited", unrelated))',
+      'describe("s", () => test("credited", citedExport))',
+    ].join("\n"),
+  ).includes("s > credited");
+  const bunSuiteDuplicate = duplicateFullNames(
+    [
+      'import { suite } from "bun:test"',
+      'suite("s", () => test("credited", unrelated))',
+      'describe("s", () => test("credited", citedExport))',
+    ].join("\n"),
+  ).includes("s > credited");
   const foreignImport = registeredSuites(
     ['import { it as register } from "./wrapper"', 'register("credited", unrelated)'].join("\n"),
     "unrelated",
@@ -1465,6 +1557,10 @@ try {
     eachOnly.length === 1 &&
     eachSuite.length === 1 &&
     eachSuite[0]?.join(" > ") === "kept" &&
+    printfEachCalls.includes("it") &&
+    printfEachLive.length === 0 &&
+    printfEachDead.length === 1 &&
+    printfDescribe.includes("describe") &&
     conjunction.length === 0 &&
     conjunctionOther.length === 0 &&
     asserted.length === 1 &&
@@ -1518,6 +1614,11 @@ try {
     requiredDead.length === 1 &&
     requiredNames.length === 1 &&
     otherRequire.length === 0 &&
+    nodeSuiteDuplicate &&
+    renamedSuite &&
+    requiredSuite &&
+    dynamicSuite &&
+    !bunSuiteDuplicate &&
     computedNames.length === 0 &&
     computedDead.length === 1 &&
     computedCalls.length === 1 &&
@@ -1529,6 +1630,10 @@ try {
     mjsResolved &&
     requireDuplicate &&
     requireResolved &&
+    moduleRequire &&
+    moduleSpacedRequire &&
+    memberRequireIgnored &&
+    moduleDynamicRequire &&
     templateRequire &&
     unresolvedRequire &&
     dynamicRequire &&
@@ -1556,7 +1661,24 @@ try {
     "zero",
     duplicateOk ? 0 : 1,
     duplicateOk,
-    JSON.stringify({ duplicateNames, duplicateStillRegistered, commentIgnored }),
+    JSON.stringify({
+      duplicateNames,
+      duplicateStillRegistered,
+      commentIgnored,
+      moduleRequire,
+      moduleSpacedRequire,
+      memberRequireIgnored,
+      moduleDynamicRequire,
+      printfEachCalls,
+      printfEachLive,
+      printfEachDead,
+      printfDescribe,
+      nodeSuiteDuplicate,
+      renamedSuite,
+      requiredSuite,
+      dynamicSuite,
+      bunSuiteDuplicate,
+    }),
   );
   record(
     "alias-credit",

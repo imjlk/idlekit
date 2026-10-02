@@ -309,6 +309,12 @@ function collectRegistrations(
       index = word.end;
       continue;
     }
+    // Bun printf-formats `.each` titles, so a `%` title is not the JUnit name.
+    if (parameterized && quoted.value.includes("%")) {
+      unresolved.push(word.value);
+      index = word.end;
+      continue;
+    }
     if (kind === "describe") {
       const comma = skipWhitespace(body, quoted.end);
       const named = body[comma] === "," ? readDirectCallback(body, comma + 1) : undefined;
