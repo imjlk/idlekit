@@ -640,4 +640,38 @@ describe("session segments", () => {
     expect(unbounded.run.actionsLogMeta).toBeUndefined();
     expect(unbounded.end.vars.bought).toBe(bounded.end.vars.bought);
   });
+
+  it("stops on goals only after every goal is reached", () => {
+    const out = runPattern(
+      clockScenario({
+        income: 1,
+        goals: [
+          { id: "ten", met: (state) => state.t >= 10 },
+          { id: "five-hundred", met: (state) => state.t >= 500 },
+        ],
+      }),
+      { id: "offline-heavy", days: 1 },
+    );
+    expect(out.summary.stop.reason).toBe("goal");
+    expect(out.summary.activeSec).toBe(300);
+    expect(out.end.t).toBe(500);
+    expect(out.run.observation?.goals).toEqual([
+      { id: "ten", status: "reached", t: 10 },
+      { id: "five-hundred", status: "reached", t: 500 },
+    ]);
+
+    const unreached = runPattern(
+      clockScenario({
+        income: 1,
+        goals: [
+          { id: "ten", met: (state) => state.t >= 10 },
+          { id: "never", met: () => false },
+        ],
+      }),
+      { id: "offline-heavy", days: 1 },
+    );
+    expect(unreached.summary.stop.reason).toBe("horizon");
+    expect(unreached.end.t).toBe(86400);
+    expect(unreached.run.observation?.goals.map((goal) => goal.status)).toEqual(["reached", "unreached"]);
+  });
 });

@@ -248,9 +248,17 @@ export function simulateSessionPattern<N, U extends string, Vars>(args: {
   const actionPolicy = sc.run.offline?.actions ?? { mode: "legacy-all" as const };
   const originalUntil = sc.run.until;
   const goals = sc.run.goals ?? [];
+  // A goal stays reached once met. Goals stop the session only when every goal is reached.
+  const reachedGoals = new Set<number>();
+  const allGoalsReached = () => goals.length > 0 && reachedGoals.size === goals.length;
   const stopFn =
     originalUntil !== undefined || goals.length > 0
-      ? (next: SimState<N, U, Vars>) => (originalUntil?.(next) ?? false) || goals.some((goal) => goal.met(next))
+      ? (next: SimState<N, U, Vars>) => {
+          goals.forEach((goal, i) => {
+            if (!reachedGoals.has(i) && goal.met(next)) reachedGoals.add(i);
+          });
+          return (originalUntil?.(next) ?? false) || allGoalsReached();
+        }
       : undefined;
 
   const onPrestigeReset = (t: number) => {
@@ -280,11 +288,9 @@ export function simulateSessionPattern<N, U extends string, Vars>(args: {
   };
 
   const classify = (run: RunResult<N, U, Vars>): SessionStopReason | undefined => {
-    const goalMet = run.observation?.goals.some((goal) => goal.status === "reached") ?? false;
     if (run.stop?.reason === "budget") return "budget";
     if (originalUntil?.(run.end)) return "until";
-    if (run.stop?.reason === "until") return "goal";
-    if (goalMet) return "goal";
+    if (allGoalsReached()) return "goal";
     return undefined;
   };
 
