@@ -27,6 +27,8 @@ A test that carries `@evidence` must be an exported function and must be registe
 
 `@ttsc/evidence` is registered in `lint.config.ts` as a `@ttsc/lint` contributor. Do not add it to `compilerOptions.plugins`. `@evidenceReview` fingerprints come from the `ttsc` diagnostic after re-reading the cited target. Do not invent them.
 
+The gate catches drift by an honest author. It is not a sandbox for test code written to deceive it; review of the test source covers that. See [Evidence scope](docs/toolchain.md#evidence-scope).
+
 ## Graph
 
 `bun run graph:check` queries the local `ttsc-graph` server for `tsconfig.graph.json`. Start from `tour` or `lookup`, then `details` or `trace`, then read the cited span. Graph rank does not drop the test suite. JSON, YAML, shell, dynamic plugin loads, and `package.json` exports are outside the graph. Do not record opaque node ids. `@ttsc/graph` is a root devDependency and is not imported by published packages.

@@ -73,6 +73,12 @@ Dependabot은 `ttsc`, `@ttsc/*`, `typia`, `@typia/*`를 한 그룹 PR로 연다.
 
 툴체인 fixture는 Evidence와 Graph를 따로 확인한다. `TC-03`이 저장소 `evidence:check`와 `evidence:smoke`를 추가한다. `TC-04`가 저장소 프로그램용 `graph:check`를 추가한다. `DX-01`이 `test:conformance`를 추가한다. `contracts:generate`와 `contracts:check`는 아직 없다.
 
+## Evidence 범위
+
+Evidence와 inventory는 속일 의도가 없는 작성자의 drift를 잡는다. 인용 삭제, export 이름 변경, 더 이상 등록되거나 실행되지 않는 테스트, 잘못 붙인 requirement ID, 줄어든 baseline, 꺼진 rule이 대상이다. 정상 코드를 gate가 거부하면 gate의 버그다.
+
+gate를 속이려고 작성한 테스트 코드에 대한 sandbox는 아니다. 테스트는 개발자 권한으로 실행된다. `node:vm`이나 `Reflect`로 코드를 평가하거나, detached process를 띄우거나, 자기 reporter 출력을 다시 쓸 수 있다. 이 경우는 테스트 소스 코드 리뷰가 담당한다. source lock은 최선 노력의 방어로 남기며 보안 경계가 아니다. 적대적인 테스트 코드를 전제로 한 지적은 `evidence:check`의 범위 밖이다.
+
 ## TC-01 검증
 
 아래 명령은 Bun `1.3.10`으로 실행했다. `ttsc version`은 `ttsc 0.30.4 (Version 7.0.2)`다. Fixture 입력 hash는 `933e8d6f6e411e2cfef0a4b5ce1a121cc8e00ad647c08d009c2cf632543f5b73`이다. Lockfile sha256은 `3b8640456614474f98e6faff990b85fe2e4274438c42f355ec689bfc278e7ab0`다.

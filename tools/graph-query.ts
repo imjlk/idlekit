@@ -308,6 +308,8 @@ export class GraphSession {
   private proc: ReturnType<typeof Bun.spawn> | null = null;
   private reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
   private buffer = "";
+  // A chunk can end inside a UTF-8 sequence. The tail carries over to the next read.
+  private readonly decoder = new TextDecoder();
   private nextId = 1;
   private stderr = "";
 
@@ -347,7 +349,6 @@ export class GraphSession {
   }
 
   private async readResponse(id: number, deadline: number): Promise<unknown> {
-    const decoder = new TextDecoder();
     while (true) {
       const newline = this.buffer.indexOf("\n");
       if (newline === -1) {
@@ -369,7 +370,7 @@ export class GraphSession {
             `graph MCP stdout closed waiting for id ${id}\n${this.stderrTail()}\n${this.buffer.slice(0, 400)}`,
           );
         }
-        this.buffer += decoder.decode(chunk.value, { stream: true });
+        this.buffer += this.decoder.decode(chunk.value, { stream: true });
         continue;
       }
       const line = this.buffer.slice(0, newline).replace(/\r$/, "");

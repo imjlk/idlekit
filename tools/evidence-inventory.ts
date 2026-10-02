@@ -46,6 +46,7 @@ import {
   localPreloadFiles,
   sameCommandFile,
   uninventoriedCommandTargets,
+  unresolvedPreloadSpecifiers,
 } from "./evidence/commands";
 import {
   citesRequirement,
@@ -68,7 +69,22 @@ import {
   retainedCoverage,
   showBaseline,
 } from "./evidence/coverage";
-import { sourceGraph, unresolvedLocalRequires } from "./evidence/source-graph";
+import {
+  loaderPluginRegistration,
+  mockModuleRegistration,
+  sourceFiles,
+  sourceGraph,
+  unresolvedLocalRequires,
+} from "./evidence/source-graph";
+import {
+  changedSources,
+  installSourceLock,
+  preloadTestArgs,
+  sourceLockCommand,
+  sealSources,
+  sourceDigests,
+  unsealSources,
+} from "./evidence/source-lock";
 
 export { hasProductionExport, isInventoryPackageHost, isNonProductionPath };
 export { assertExecutedTests, junitCases, junitReporterArgs };
@@ -89,13 +105,34 @@ export {
   productionFileCites,
   unregisteredImplementationHost,
 };
-export { blockedTestArgs, commandTargetsFile, localPreloadFiles, uninventoriedCommandTargets };
-export { sourceGraph, unresolvedLocalRequires };
+export {
+  blockedTestArgs,
+  commandTargetsFile,
+  localPreloadFiles,
+  uninventoriedCommandTargets,
+  unresolvedPreloadSpecifiers,
+};
+export {
+  loaderPluginRegistration,
+  mockModuleRegistration,
+  sourceFiles,
+  sourceGraph,
+  unresolvedLocalRequires,
+};
 export { enabledClaimFailures, graphRuleFailures, missingProtectedDocs };
 export { formatGateFailures, formatIncludeRoots } from "./evidence/format-gate";
 export type { ShrinkResult } from "./evidence/model";
 export type { JUnitCase } from "./evidence/junit";
 export type { ImplementationHostGap } from "./evidence/citations";
+
+/** The section under `{#anchor}` names its ID once as Requirement `REQ-...`. */
+export function declaredRequirementId(docText: string, anchor: string): string | undefined {
+  const start = docText.indexOf(`{#${anchor}}`);
+  if (start < 0) return undefined;
+  const next = docText.indexOf("\n## ", start);
+  const section = docText.slice(start, next < 0 ? undefined : next);
+  return /Requirement `([^`]+)`/.exec(section)?.[1];
+}
 
 export async function checkInventory(projectRoot = root): Promise<string[]> {
   const failures: string[] = [];
@@ -188,6 +225,14 @@ export async function checkInventory(projectRoot = root): Promise<string[]> {
     const docText = readFileSync(join(projectRoot, requirement.doc), "utf8");
     if (!docText.includes(`{#${requirement.anchor}}`)) {
       fail(failures, `${requirement.id} doc does not contain its anchor`);
+    } else {
+      const declared = declaredRequirementId(docText, requirement.anchor);
+      if (declared !== requirement.id) {
+        fail(
+          failures,
+          `${requirement.id} section ${requirement.anchor} declares ${declared ?? "no requirement id"}`,
+        );
+      }
     }
     if (requirement.production.length === 0) fail(failures, `${requirement.id} has no production files`);
     for (const rel of requirement.production) {
@@ -229,6 +274,13 @@ export async function checkInventory(projectRoot = root): Promise<string[]> {
       if (extras.length > 0) {
         fail(failures, `${requirement.id} command runs uninventoried tests: ${extras.join(", ")}`);
       }
+      const missingPreloads = unresolvedPreloadSpecifiers(commandCwd, test.args);
+      if (missingPreloads.length > 0) {
+        fail(
+          failures,
+          `${requirement.id} preload cannot be scanned: ${missingPreloads.join(", ")}`,
+        );
+      }
       const commandFiles = [
         ...inventoriedFiles.map((file) => join(projectRoot, file)),
         ...localPreloadFiles(commandCwd, test.args),
@@ -250,6 +302,13 @@ export async function checkInventory(projectRoot = root): Promise<string[]> {
       }
       if (commandSources.some((source) => unresolvedRunnerCalls(source).length > 0)) {
         fail(failures, `${requirement.id} has a registration call that is not the test runner`);
+      }
+      if (
+        commandSources.some(
+          (source) => loaderPluginRegistration(source) || mockModuleRegistration(source),
+        )
+      ) {
+        fail(failures, `${requirement.id} registers a Bun loader plugin or replaces a module`);
       }
       if (duplicateFullNamesAcross(commandSources).includes(test.registeredAs)) {
         fail(failures, `${requirement.id} registers ${test.registeredAs} more than once`);
@@ -470,24 +529,52 @@ export async function checkInventory(projectRoot = root): Promise<string[]> {
     }
     const reportDir = mkdtempSync(join(tmpdir(), "idlekit-evidence-"));
     const reportPath = join(reportDir, "junit.xml");
-    const command = [process.execPath, ...junitReporterArgs(first.args, reportPath)];
-    const proc = Bun.spawnSync(command, {
-      cwd: resolve(projectRoot, first.cwd),
-      stdout: "pipe",
-      stderr: "pipe",
-      env: plainTestEnv(),
-    });
+    const commandCwd = resolve(projectRoot, first.cwd);
+    const inventoriedFiles = [...new Set(tests.map((test) => test.file))];
+    const commandFiles = [
+      ...inventoriedFiles.map((file) => join(projectRoot, file)),
+      ...localPreloadFiles(commandCwd, first.args),
+    ];
+    const locked = sourceFiles(commandFiles);
+    const digests = sourceDigests(locked);
+    const lock = installSourceLock(reportDir, locked);
+    const modes = sealSources(locked);
+    let exitCode = 1;
     let output = "";
     try {
-      output = readFileSync(reportPath, "utf8");
-    } catch {
-      output = "";
+      const bare = [
+        process.execPath,
+        ...preloadTestArgs(junitReporterArgs(first.args, reportPath), lock.preload),
+      ];
+      // Windows has no source-lock sandbox. Typecheck still runs the inventoried
+      // command there. sealedCommand keeps refusing to return that unsealed argv.
+      const wrapped = sourceLockCommand(process.platform, reportDir, bare, locked);
+      const command = wrapped ?? bare;
+      const proc = Bun.spawnSync(command, {
+        cwd: commandCwd,
+        stdout: "pipe",
+        stderr: "pipe",
+        env: { ...plainTestEnv(), IDLEKIT_EVIDENCE_LOCK: lock.env },
+      });
+      exitCode = proc.exitCode ?? 1;
+      try {
+        output = readFileSync(reportPath, "utf8");
+      } catch {
+        output = "";
+      }
+    } finally {
+      unsealSources(modes);
+      rmSync(reportDir, { recursive: true, force: true });
     }
-    rmSync(reportDir, { recursive: true, force: true });
+    for (const file of changedSources(digests)) {
+      const prefix = `${projectRoot}/`;
+      const relative = file.startsWith(prefix) ? file.slice(prefix.length) : file;
+      fail(failures, `scanned source changed while tests ran: ${relative}`);
+    }
     failures.push(
       ...assertExecutedTests(
         output,
-        proc.exitCode ?? 1,
+        exitCode,
         tests.map((test) => test.registeredAs),
       ),
     );

@@ -56,9 +56,21 @@ function isRequirementTarget(target: string, doc: string, anchor: string): boole
   return new RegExp(pattern).test(target);
 }
 
+function typescriptSourcePath(pathPart: string): boolean {
+  return (
+    pathPart.endsWith(".ts") ||
+    pathPart.endsWith(".tsx") ||
+    pathPart.endsWith(".mts") ||
+    pathPart.endsWith(".cts")
+  );
+}
+
 function isImplementationTarget(target: string, doc: string, anchor: string): boolean {
   if (isRequirementTarget(target, doc, anchor)) return false;
-  return target.includes(".ts#") || target.startsWith("./") || target.startsWith("../");
+  if (target.startsWith("./") || target.startsWith("../")) return true;
+  const hash = target.indexOf("#");
+  if (hash < 0) return false;
+  return typescriptSourcePath(target.slice(0, hash));
 }
 
 function citedPath(target: string, testFile: string): string | undefined {
@@ -67,7 +79,7 @@ function citedPath(target: string, testFile: string): string | undefined {
   if (pathPart.startsWith("./") || pathPart.startsWith("../")) {
     return relative(root, resolve(root, dirname(testFile), pathPart)).replaceAll("\\", "/");
   }
-  if (pathPart.endsWith(".ts") || pathPart.endsWith(".tsx")) return pathPart;
+  if (typescriptSourcePath(pathPart)) return pathPart;
   return undefined;
 }
 

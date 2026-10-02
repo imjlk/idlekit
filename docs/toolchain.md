@@ -73,6 +73,12 @@ Dependabot opens one grouped pull request for `ttsc`, `@ttsc/*`, `typia`, and `@
 
 The toolchain fixture still exercises Evidence and Graph in isolation. `TC-03` adds repository `evidence:check` and `evidence:smoke`. `TC-04` adds `graph:check` for the repository program. `DX-01` adds `test:conformance`. `contracts:generate` and `contracts:check` stay absent.
 
+## Evidence scope
+
+Evidence and the inventory catch drift by an author who is not trying to fool them: a deleted citation, a renamed export, a test that is no longer registered or no longer runs, a mislabeled requirement ID, a shrunken baseline, a disabled rule. Honest code that the gate rejects is a bug in the gate.
+
+They are not a sandbox for test code written to deceive the gate. A test runs with the developer's rights. It can evaluate code through `node:vm` or `Reflect`, start a detached process, or rewrite its own reporter output. Code review of the test source covers that case. The source lock stays as a best-effort guard, not a security boundary. A finding that needs adversarial test code is out of scope for `evidence:check`.
+
 ## TC-01 verification
 
 Commands below used Bun `1.3.10`. `ttsc version` was `ttsc 0.30.4 (Version 7.0.2)`. Fixture input hash `933e8d6f6e411e2cfef0a4b5ce1a121cc8e00ad647c08d009c2cf632543f5b73`. Lockfile sha256 `3b8640456614474f98e6faff990b85fe2e4274438c42f355ec689bfc278e7ab0`.
