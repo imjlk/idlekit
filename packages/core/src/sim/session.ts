@@ -36,7 +36,7 @@ export type SessionPatternSpec = Readonly<{
   schedule?: readonly SessionOffsetBlock[];
 }>;
 
-export type SessionStopReason = "horizon" | "until" | "goal" | "budget";
+export type SessionStopReason = "horizon" | "until" | "goal";
 
 export type SessionClock = Readonly<{
   /** Wall length of this segment. */
@@ -97,6 +97,11 @@ export type SessionRunResult<N, U extends string, Vars> = Readonly<{
     /** `end.t - start.t`. Reward time, not wall time. */
     rewardSec: number;
     offlineActions: OfflineActionPolicy["mode"];
+    /**
+     * Active blocks cut short by `run.maxSteps`. That budget is per block.
+     * The session continues with the next scheduled block. Offline gaps do not take it.
+     */
+    budgetStops: number;
     stop: Readonly<{ reason: SessionStopReason }>;
   }>;
 }>;
@@ -244,6 +249,7 @@ export function simulateSessionPattern<N, U extends string, Vars>(args: {
   let offlineCreditedSec = 0;
   let lostRewardSec = 0;
   let activeBlocks = 0;
+  let budgetStops = 0;
   let stopReason: SessionStopReason = "horizon";
   const actionPolicy = sc.run.offline?.actions ?? { mode: "legacy-all" as const };
   const originalUntil = sc.run.until;
@@ -288,7 +294,6 @@ export function simulateSessionPattern<N, U extends string, Vars>(args: {
   };
 
   const classify = (run: RunResult<N, U, Vars>): SessionStopReason | undefined => {
-    if (run.stop?.reason === "budget") return "budget";
     if (originalUntil?.(run.end)) return "until";
     if (allGoalsReached()) return "goal";
     return undefined;
@@ -310,7 +315,6 @@ export function simulateSessionPattern<N, U extends string, Vars>(args: {
           maxEvents: sc.run.eventLog?.maxEvents,
         },
         policy: sc.run.offline,
-        ...(sc.run.maxSteps !== undefined ? { maxSteps: sc.run.maxSteps } : {}),
         ...(stopFn ? { until: stopFn } : {}),
       },
     });
@@ -369,6 +373,7 @@ export function simulateSessionPattern<N, U extends string, Vars>(args: {
     const simulated = activeRun.end.t - activeRun.start.t;
     activeSec += simulated;
     activeBlocks += 1;
+    if (activeRun.stop?.reason === "budget") budgetStops += 1;
     retainRun(activeRun);
     const points = activeRun.trace ?? [];
     for (let i = points.length > 0 && points[0]!.t === lastTraceT ? 1 : 0; i < points.length; i += 1) {
@@ -461,6 +466,7 @@ export function simulateSessionPattern<N, U extends string, Vars>(args: {
       lostRewardSec,
       rewardSec: state.t - startT,
       offlineActions: actionPolicy.mode,
+      budgetStops,
       stop: { reason: stopReason },
     },
   };

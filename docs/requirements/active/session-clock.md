@@ -18,7 +18,7 @@ The default offline action policy is `legacy-all`. It calls the strategy, which 
 
 Segments of one `simulateSessionPattern` call are one continued play. A second call starts fresh only when the caller supplies a new strategy instance. This function does not build that instance. `simulateMonteCarlo` already binds a fresh trial before it calls this function.
 
-An `until` stops the session. Goals stop it only when every goal has been reached. A goal stays reached once met, so one early goal does not cut the session and censor the later goals. `runScenario` does not stop on goals. Later blocks do not run after a stop. `summary.stop.reason` is `until`, `goal`, `budget`, or `horizon`. Cap and decay do not stop the schedule. They only add `lostRewardSec`. A step budget stops the session and leaves `lostRewardSec` unchanged.
+An `until` stops the session. Goals stop it only when every goal has been reached. A goal stays reached once met, so one early goal does not cut the session and censor the later goals. `runScenario` does not stop on goals. Later blocks do not run after a stop. `summary.stop.reason` is `until`, `goal`, or `horizon`. Cap and decay do not stop the schedule. They only add `lostRewardSec`. `run.maxSteps` is a safety budget per active block. A block that hits it ends early with run stop `budget`, `summary.budgetStops` counts it, and the session continues with the next scheduled block. Offline gaps do not take that budget. It does not change `lostRewardSec`.
 
 A model may set `clocks.respondsTo` to `wall`, `reward`, or `active`. The session then passes `ctx.clocks` for that segment. It does not write wall time into `state.t`. A model that omits the declaration does not receive `ctx.clocks`.
 

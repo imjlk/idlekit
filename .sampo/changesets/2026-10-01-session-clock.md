@@ -11,5 +11,6 @@ Keep session wall time off the reward clock.
 - offline actions default to `legacy-all`; `none` does not call `decide`
 - `allow` keeps listed action kinds and optional actors
 - an empty, negative, or overlapping offset schedule is rejected
-- `until`, a met goal, or a step budget stops later blocks
+- `until`, or reaching every goal, stops later blocks
+- `maxSteps` is a per-block budget; a cut block is counted in `summary.budgetStops` and the session continues
 - `idlekit.session-clock` is not registered with a contract generator; that waits until TC-05

@@ -483,13 +483,27 @@ export function keepsSessionClocksDistinct(): void {
 
   const budget = runPattern(
     clockScenario({ income: 1, maxSteps: 2 }),
-    { id: "offline-heavy", days: 1, schedule: [{ day: 0, startOffsetSec: 100, durationSec: 10 }] },
+    {
+      id: "offline-heavy",
+      days: 1,
+      schedule: [
+        { day: 0, startOffsetSec: 100, durationSec: 10 },
+        { day: 0, startOffsetSec: 500, durationSec: 10 },
+      ],
+    },
   );
-  expect(budget.summary.stop.reason).toBe("budget");
-  expect(budget.summary.activeBlocks).toBe(0);
-  expect(budget.end.t).toBe(2);
-  expect(budget.summary.elapsedSec).toBe(100);
-  expect(budget.summary.offlineCreditedSec).toBe(2);
+  expect(budget.summary.stop.reason).toBe("horizon");
+  expect(budget.summary.activeBlocks).toBe(2);
+  expect(budget.summary.budgetStops).toBe(2);
+  expect(budget.summary.activeSec).toBe(4);
+  expect(budget.segments[0]?.clock.creditedSec).toBe(100);
+  expect(budget.segments.filter((segment) => segment.kind === "active").map((segment) => segment.run.stop?.reason)).toEqual([
+    "budget",
+    "budget",
+  ]);
+  expect(budget.segments.filter((segment) => segment.kind === "active").map((segment) => segment.wallStartT)).toEqual([100, 500]);
+  expect(budget.end.t).toBe(86400);
+  expect(budget.summary.elapsedSec).toBe(86400);
   expect(budget.summary.lostRewardSec).toBe(0);
 
   const undeclaredSeen: Array<CompiledScenario<number, UnitCode, ClockVars>["ctx"]["clocks"]> = [];
