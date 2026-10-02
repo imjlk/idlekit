@@ -3,6 +3,7 @@ import { createNumberEngine } from "../engine/breakInfinity";
 import type { Action, CompiledScenario, Model, SimContext, SimState } from "./types";
 import type { Strategy } from "./strategy/types";
 import { applyOfflineSeconds } from "./offline";
+import { createScriptedStrategy } from "./strategy/scripted";
 
 type U = "COIN";
 type Vars = { bought: number };
@@ -214,5 +215,46 @@ describe("applyOfflineSeconds", () => {
     expect(out.end.t).toBe(5);
     expect(out.end.vars.bought).toBe(0);
     expect(out.offline.actionPolicy).toBe("none");
+  });
+
+  it("does not roll back a strategy that returned nothing under allow", () => {
+    const strategy = createScriptedStrategy<number, U, Vars>({
+      schemaVersion: 1,
+      loop: false,
+      program: [{ actionId: "unlock-later" }, { actionId: "buy" }],
+    });
+    const scenario = makeScenario({ initialMoney: 5, strategy });
+    const out = applyOfflineSeconds({
+      scenario,
+      seconds: 3,
+      options: { actions: { mode: "allow", categories: ["buy"] } },
+    });
+    expect(out.end.vars.bought).toBe(1);
+    expect(strategy.snapshotState?.()).toEqual({ cursor: 2 });
+  });
+
+  it("applies the listed part of a mixed allow batch without restoring", () => {
+    let calls = 0;
+    const strategy: Strategy<number, U, Vars> = {
+      id: "mixed",
+      decide(ctx, model, state) {
+        calls += 1;
+        if (calls > 1) return [];
+        const buy = model.actions(ctx, state).find((action) => action.id === "buy")!;
+        return [{ action: { ...buy, id: "reset", kind: "prestige" } }, { action: buy }];
+      },
+      snapshotState: () => ({ calls }),
+      restoreState: (saved) => {
+        calls = (saved as { calls: number }).calls;
+      },
+    };
+    const out = applyOfflineSeconds({
+      scenario: makeScenario({ initialMoney: 5, strategy }),
+      seconds: 3,
+      options: { actions: { mode: "allow", categories: ["buy"] } },
+    });
+    expect(out.end.vars.bought).toBe(1);
+    expect(out.end.prestige.count).toBe(0);
+    expect(calls).toBe(3);
   });
 });
