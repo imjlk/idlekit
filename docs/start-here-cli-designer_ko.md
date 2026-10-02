@@ -115,6 +115,7 @@ idk simulate examples/tutorials/11-my-game-v1.json --format json
 - `stats.actions.applied`: 실제로 구매가 일어난 횟수
 - `stats.actions.skippedInsufficientFunds`: 사고 싶었지만 돈이 부족했던 횟수
 - `stats.actions.skippedInvalidQuote`: 견적이 없거나 깨져서 거절된 횟수
+- `stats.actions.skippedCooldown`: 프레스티지 최소 간격(`minPrestigeIntervalSec`) 때문에 막힌 횟수
 
 성공 조건:
 

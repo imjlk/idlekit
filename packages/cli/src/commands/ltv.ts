@@ -89,6 +89,7 @@ type StatsCounts = {
   actionsSkippedCannot: number;
   actionsSkippedFunds: number;
   actionsSkippedInvalid: number;
+  actionsSkippedCooldown: number;
 };
 
 function emptyCounts(): StatsCounts {
@@ -102,6 +103,7 @@ function emptyCounts(): StatsCounts {
     actionsSkippedCannot: 0,
     actionsSkippedFunds: 0,
     actionsSkippedInvalid: 0,
+    actionsSkippedCooldown: 0,
   };
 }
 
@@ -117,6 +119,7 @@ function mergeCounts(base: StatsCounts, runStats: any): StatsCounts {
     actionsSkippedCannot: base.actionsSkippedCannot + Number(runStats.actions?.skippedCannotApply ?? 0),
     actionsSkippedFunds: base.actionsSkippedFunds + Number(runStats.actions?.skippedInsufficientFunds ?? 0),
     actionsSkippedInvalid: base.actionsSkippedInvalid + Number(runStats.actions?.skippedInvalidQuote ?? 0),
+    actionsSkippedCooldown: base.actionsSkippedCooldown + Number(runStats.actions?.skippedCooldown ?? 0),
   };
 }
 
@@ -134,7 +137,7 @@ function buildGuardrailKpi(args: {
 }> {
   const c = args.counts;
   const totalActionAttempts =
-    c.actionsApplied + c.actionsSkippedCannot + c.actionsSkippedFunds + c.actionsSkippedInvalid;
+    c.actionsApplied + c.actionsSkippedCannot + c.actionsSkippedFunds + c.actionsSkippedInvalid + c.actionsSkippedCooldown;
   const stallRatio = totalActionAttempts > 0 ? c.actionsSkippedFunds / totalActionAttempts : 0;
   const totalMoneyEvents = c.moneyApplied + c.moneyDropped + c.moneyQueued;
   const droppedRate = totalMoneyEvents > 0 ? c.moneyDropped / totalMoneyEvents : 0;

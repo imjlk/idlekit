@@ -55,6 +55,7 @@ export type RunObservation = Readonly<{
     skippedCannotApply: number;
     skippedInsufficientFunds: number;
     skippedInvalidQuote: number;
+    skippedCooldown: number;
   }>;
   rewardGap: RewardGapSummary;
   milestones: readonly MilestoneSample[];
@@ -195,6 +196,7 @@ export function mergeObservations(parts: readonly RunObservation[]): RunObservat
       skippedCannotApply: actionsObserved ? parts.reduce((sum, part) => sum + part.actions.skippedCannotApply, 0) : 0,
       skippedInsufficientFunds: actionsObserved ? parts.reduce((sum, part) => sum + part.actions.skippedInsufficientFunds, 0) : 0,
       skippedInvalidQuote: actionsObserved ? parts.reduce((sum, part) => sum + part.actions.skippedInvalidQuote, 0) : 0,
+      skippedCooldown: actionsObserved ? parts.reduce((sum, part) => sum + part.actions.skippedCooldown, 0) : 0,
     },
     rewardGap: mergeRewardGaps(parts.map((part) => part.rewardGap)),
     milestones: earlier(parts.flatMap((part) => part.milestones)),
@@ -219,7 +221,7 @@ function disabledObservation(startT: number, endT: number): RunObservation {
     coverage: "disabled",
     legacyEventFallback: false,
     money: { status: "missing", ...emptyMoney() },
-    actions: { status: "missing", applied: 0, skippedCannotApply: 0, skippedInsufficientFunds: 0, skippedInvalidQuote: 0 },
+    actions: { status: "missing", applied: 0, skippedCannotApply: 0, skippedInsufficientFunds: 0, skippedInvalidQuote: 0, skippedCooldown: 0 },
     rewardGap: { status: "missing", startT, endT, interiorMaxGapSec: 0 },
     milestones: [],
     goals: [],
@@ -246,7 +248,7 @@ export function createObservationRecorder<N, U extends string, Vars>(args: {
   observer?: RunObserver;
 }) {
   const money = mutableMoney();
-  const actions = { applied: 0, skippedCannotApply: 0, skippedInsufficientFunds: 0, skippedInvalidQuote: 0 };
+  const actions = { applied: 0, skippedCannotApply: 0, skippedInsufficientFunds: 0, skippedInvalidQuote: 0, skippedCooldown: 0 };
   const milestones: MilestoneSample[] = [];
   const seenMilestone = new Set<string>();
   const reachedGoals = new Map<string, number>();
@@ -309,6 +311,7 @@ export function createObservationRecorder<N, U extends string, Vars>(args: {
           if (event.reason === "cannotApply") actions.skippedCannotApply += 1;
           if (event.reason === "insufficientFunds") actions.skippedInsufficientFunds += 1;
           if (event.reason === "invalidQuote") actions.skippedInvalidQuote += 1;
+          if (event.reason === "cooldown") actions.skippedCooldown += 1;
           if (args.observer?.onAction) {
             notify(() =>
               args.observer?.onAction?.({
@@ -379,7 +382,7 @@ export function observationFromLegacyEvents<N>(args: {
   events: readonly SimEvent<N>[];
 }): RunObservation {
   const money = mutableMoney();
-  const actions = { applied: 0, skippedCannotApply: 0, skippedInsufficientFunds: 0, skippedInvalidQuote: 0 };
+  const actions = { applied: 0, skippedCannotApply: 0, skippedInsufficientFunds: 0, skippedInvalidQuote: 0, skippedCooldown: 0 };
   for (const event of args.events) {
     if (event.type === "money") {
       for (const moneyEvent of event.events) {
@@ -394,6 +397,7 @@ export function observationFromLegacyEvents<N>(args: {
       if (event.reason === "cannotApply") actions.skippedCannotApply += 1;
       if (event.reason === "insufficientFunds") actions.skippedInsufficientFunds += 1;
       if (event.reason === "invalidQuote") actions.skippedInvalidQuote += 1;
+      if (event.reason === "cooldown") actions.skippedCooldown += 1;
     }
   }
   return {

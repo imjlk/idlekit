@@ -1,7 +1,9 @@
 import { describe, expect, it } from "bun:test";
 import { createNumberEngine } from "../engine/breakInfinity";
 import { analyzeMilestones } from "./analysis/milestones";
-import { maxNoRewardGapSec, mergeRewardGaps, observationContract, observationFromLegacyEvents, ObservationError } from "./observation";
+import { createSimStatsAccumulator } from "./analysis/ux";
+import { maxNoRewardGapSec, mergeObservations, mergeRewardGaps, observationContract, observationFromLegacyEvents, ObservationError } from "./observation";
+import { createGreedyStrategy } from "./strategy/greedy";
 import { runScenario } from "./simulator";
 import type { CompiledScenario, Model, SimState } from "./types";
 
@@ -206,4 +208,43 @@ export function keepsStatsIndependentOfRetention(): void {
 
 describe("PR-05 observation retention", () => {
   it("keeps stats independent of retention", keepsStatsIndependentOfRetention);
+});
+
+describe("prestige cooldown counters", () => {
+  it("counts a cooldown skip from a greedy run", () => {
+    type Vars = { owned: number };
+    const model: Model<number, UnitCode, Vars> = {
+      id: "cooldown",
+      version: 1,
+      income: (ctx) => ({ unit: ctx.unit, amount: 0 }),
+      actions: () => [
+        {
+          id: "reset",
+          kind: "prestige",
+          canApply: () => true,
+          cost: () => null,
+          bulk: () => [{ size: 1, cost: null, deltaIncomePerSec: { unit: { code: "COIN" }, amount: 1 } }],
+          apply: (_ctx, current) => ({ ...current, prestige: { ...current.prestige, count: current.prestige.count + 1 } }),
+        },
+      ],
+    };
+    const run = runScenario<number, UnitCode, Vars>({
+      ctx: { E: createNumberEngine(), unit: { code: "COIN" }, tickPolicy: { mode: "drop" }, seed: observationCaseSeed },
+      model,
+      initial: state(),
+      constraints: { minPrestigeIntervalSec: 60 },
+      strategy: createGreedyStrategy({ schemaVersion: 1, objective: "maximizeIncome" }),
+      run: { stepSec: 1, durationSec: 5 },
+    });
+    expect(run.end.prestige.count).toBe(1);
+    expect(run.observation?.actions.applied).toBe(1);
+    expect(run.observation?.actions.skippedCooldown).toBe(4);
+    expect(run.stats?.actions.skippedCooldown).toBe(4);
+    expect(mergeObservations([run.observation!, run.observation!]).actions.skippedCooldown).toBe(8);
+    const legacy = observationFromLegacyEvents({ startT: 0, endT: 5, events: run.events });
+    expect(legacy.actions.skippedCooldown).toBe(4);
+    const accumulator = createSimStatsAccumulator();
+    accumulator.push(run.events);
+    expect(accumulator.snapshot().actions.skippedCooldown).toBe(4);
+  });
 });

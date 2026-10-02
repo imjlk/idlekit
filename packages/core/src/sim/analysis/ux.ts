@@ -25,6 +25,8 @@ export type SimStats = Readonly<{
     skippedInsufficientFunds: number;
     /** Absent on a stats object built before this counter existed. New results still set it. */
     skippedInvalidQuote?: number;
+    /** Prestige blocked by minPrestigeIntervalSec. Absent on a stats object built before this counter existed. */
+    skippedCooldown?: number;
   }>;
   coverage: "complete" | "partial" | "incomplete" | "disabled";
 }>;
@@ -45,6 +47,7 @@ type SimStatsMutable = {
   skippedCannotApply: number;
   skippedInsufficientFunds: number;
   skippedInvalidQuote: number;
+  skippedCooldown: number;
 };
 
 function applySimEvent<N>(m: SimStatsMutable, e: SimEvent<N>): void {
@@ -77,6 +80,7 @@ function applySimEvent<N>(m: SimStatsMutable, e: SimEvent<N>): void {
     if (e.reason === "cannotApply") m.skippedCannotApply += 1;
     if (e.reason === "insufficientFunds") m.skippedInsufficientFunds += 1;
     if (e.reason === "invalidQuote") m.skippedInvalidQuote += 1;
+    if (e.reason === "cooldown") m.skippedCooldown += 1;
   }
 }
 
@@ -95,6 +99,7 @@ export function simStatsFromCounters(args: {
     skippedCannotApply: number;
     skippedInsufficientFunds: number;
     skippedInvalidQuote: number;
+    skippedCooldown: number;
   }>;
   coverage: SimStats["coverage"];
 }): SimStats {
@@ -117,6 +122,7 @@ export function simStatsFromCounters(args: {
       skippedCannotApply: args.actions.status === "observed" ? args.actions.skippedCannotApply : 0,
       skippedInsufficientFunds: args.actions.status === "observed" ? args.actions.skippedInsufficientFunds : 0,
       skippedInvalidQuote: args.actions.status === "observed" ? args.actions.skippedInvalidQuote : 0,
+      skippedCooldown: args.actions.status === "observed" ? args.actions.skippedCooldown : 0,
     },
     coverage: args.coverage,
   };
@@ -139,6 +145,7 @@ function toSimStats(m: SimStatsMutable): SimStats {
       skippedCannotApply: m.skippedCannotApply,
       skippedInsufficientFunds: m.skippedInsufficientFunds,
       skippedInvalidQuote: m.skippedInvalidQuote,
+      skippedCooldown: m.skippedCooldown,
     },
   });
 }
@@ -159,6 +166,7 @@ export function createSimStatsAccumulator(): SimStatsAccumulator {
     skippedCannotApply: 0,
     skippedInsufficientFunds: 0,
     skippedInvalidQuote: 0,
+    skippedCooldown: 0,
   };
 
   return {
