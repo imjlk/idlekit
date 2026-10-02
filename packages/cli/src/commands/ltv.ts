@@ -79,7 +79,7 @@ function getSummaryBySeconds<T extends { seconds: number }>(rows: T[], seconds: 
   return rows.find((r) => r.seconds === seconds);
 }
 
-type StatsCounts = {
+export type StatsCounts = {
   moneyApplied: number;
   moneyDropped: number;
   moneyQueued: number;
@@ -92,7 +92,7 @@ type StatsCounts = {
   actionsSkippedCooldown: number;
 };
 
-function emptyCounts(): StatsCounts {
+export function emptyCounts(): StatsCounts {
   return {
     moneyApplied: 0,
     moneyDropped: 0,
@@ -107,7 +107,7 @@ function emptyCounts(): StatsCounts {
   };
 }
 
-function mergeCounts(base: StatsCounts, runStats: any): StatsCounts {
+export function mergeCounts(base: StatsCounts, runStats: any): StatsCounts {
   if (!runStats) return base;
   return {
     moneyApplied: base.moneyApplied + Number(runStats.money?.applied ?? 0),
@@ -123,7 +123,7 @@ function mergeCounts(base: StatsCounts, runStats: any): StatsCounts {
   };
 }
 
-function buildGuardrailKpi(args: {
+export function buildGuardrailKpi(args: {
   counts: StatsCounts;
   actionCounts: Record<string, number>;
   firstUpgradeSec: number | null;
@@ -136,8 +136,11 @@ function buildGuardrailKpi(args: {
   growthLog10PerDay: number;
 }> {
   const c = args.counts;
+  // Cooldown skips are counted but stay out of the denominator: a strategy that
+  // retries a prestige every tick would otherwise dilute a real funds stall, and
+  // stallRatio baselines from before the counter existed would shift.
   const totalActionAttempts =
-    c.actionsApplied + c.actionsSkippedCannot + c.actionsSkippedFunds + c.actionsSkippedInvalid + c.actionsSkippedCooldown;
+    c.actionsApplied + c.actionsSkippedCannot + c.actionsSkippedFunds + c.actionsSkippedInvalid;
   const stallRatio = totalActionAttempts > 0 ? c.actionsSkippedFunds / totalActionAttempts : 0;
   const totalMoneyEvents = c.moneyApplied + c.moneyDropped + c.moneyQueued;
   const droppedRate = totalMoneyEvents > 0 ? c.moneyDropped / totalMoneyEvents : 0;
