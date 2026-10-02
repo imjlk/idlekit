@@ -1,4 +1,6 @@
 import { defineCommand, option } from "@bunli/core";
+import { resolve } from "path";
+import { fileURLToPath } from "url";
 import { z } from "zod";
 import { CLI_NAME, CLI_VERSION } from "../cliMeta";
 import { buildOutputMeta } from "../io/outputMeta";
@@ -12,8 +14,22 @@ import {
   writePluginTrust,
 } from "../lib/setup";
 import { fileExists } from "../runtime/bun";
-import { runSelfCli } from "../runtime/selfCli";
+import { cliPackageRoot, isBundledCliProcess, runSelfCli } from "../runtime/selfCli";
 import { usageError } from "../errors";
+
+/** Command names from Bunli's generated list. The module itself imports unpublished sources. */
+function generatedCommandNames(source: string): string[] | undefined {
+  const match = /const names = \[([^\]]*)\]/.exec(source);
+  const body = match?.[1];
+  if (!body) return undefined;
+  const names: string[] = [];
+  for (const item of body.matchAll(/["']([^"']+)["']/g)) {
+    const name = item[1];
+    if (name) names.push(name);
+  }
+  if (names.length === 0) return undefined;
+  return names;
+}
 
 function parseMinimumVersion(range: string): string {
   const match = range.match(/(\d+\.\d+\.\d+)/);
@@ -167,8 +183,10 @@ export default defineCommand({
   },
   async handler({ flags, prompt, terminal, cwd }) {
     const packageJson = await import("../../package.json", { with: { type: "json" } });
-    const generatedUrl = new URL("../../.bunli/commands.gen.ts", import.meta.url);
-    const generatedExists = await fileExists(generatedUrl.pathname);
+    const generatedPath = isBundledCliProcess()
+      ? resolve(cliPackageRoot(), ".bunli/commands.gen.ts")
+      : fileURLToPath(new URL("../../.bunli/commands.gen.ts", import.meta.url));
+    const generatedExists = await fileExists(generatedPath);
 
     const requiredBun = parseMinimumVersion((packageJson.default?.engines as { bun?: string } | undefined)?.bun ?? ">=1.3.0");
     const bunOk = compareVersion(Bun.version, requiredBun) >= 0;
@@ -177,9 +195,9 @@ export default defineCommand({
     let generatedError: string | undefined;
     if (generatedExists) {
       try {
-        const generated = await import(generatedUrl.href);
-        generatedCommands =
-          typeof generated.listCommands === "function" ? (generated.listCommands() as string[]) : [];
+        const names = generatedCommandNames(await Bun.file(generatedPath).text());
+        if (names) generatedCommands = names;
+        else generatedError = "generated command names are missing";
       } catch (error) {
         generatedError = error instanceof Error ? error.message : String(error);
       }

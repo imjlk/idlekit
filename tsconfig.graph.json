@@ -1,0 +1,19 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "jsxImportSource": "@opentui/react",
+    "lib": ["ES2022", "DOM"],
+    "plugins": [{ "transform": "@ttsc/lint", "enabled": false }]
+  },
+  "include": [
+    "packages/money/src/**/*.ts",
+    "packages/core/src/**/*.ts",
+    "packages/cli/src/**/*.ts",
+    "packages/cli/src/**/*.tsx",
+    "packages/cli/scripts/**/*.ts",
+    "packages/cli/.bunli/**/*.ts",
+    "tools/*.ts"
+  ]
+}

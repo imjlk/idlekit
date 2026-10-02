@@ -44,9 +44,12 @@ Bun `1.3.10`은 Node 호환 `process.version`을 보고하지만 `node:module.re
 | tools | `tsconfig.tools.json` | `tools/**/*.ts`, `noEmit`. 목록만 유지한다. |
 | examples | `tsconfig.examples.json` | `examples/**/*.ts`와 `snippets/**/*.ts`, `noEmit`. 목록만 유지한다. |
 | example plugin | `examples/plugins/tsconfig.json` | `custom-econ-plugin.ts`. 패키지 preload가 home `tsconfig.json`까지 올라가지 않도록 이 파일의 nearest project다. private `package.json`이 이 프로그램에 `@ttsc/lint`를 붙이지 않게 한다. |
+| evidence | `tsconfig.evidence.json` | `TC-03` gate. `@ttsc/lint`가 `lint.config.ts`를 읽는다. `@ttsc/evidence`는 compiler plugin이 아니라 lint contributor다. |
+| format | `tsconfig.format.json` | 새 evidence tool만 포함한다. `format.severity`는 `"error"`다. |
+| graph | `tsconfig.graph.json` | `TC-04` 합본 프로그램. `noEmit`. CLI의 `jsx: react-jsx`와 `jsxImportSource: @opentui/react`를 유지한다. `@ttsc/lint`는 `enabled: false`다. |
 | solution | `tsconfig.solution.json` | `files: []`와 references. root `typecheck`는 이 파일을 `ttsc`에 넘기지 않는다. |
 
-root `tsconfig.json`은 없다. root project는 `@ttsc/lint`를 자동으로 붙이고, 그 설정은 `TC-03`이다. 패키지 디렉터리의 `bunfig.toml`이 runtime과 `bun test` 모두에 `@ttsc/unplugin/bun-register`를 preload한다. preload는 프로세스 cwd만 보고 상위로 올라가지 않으므로 fixture의 `bunfig.toml`은 격리된다. 패키지 소스를 root에서 실행할 때는 `--preload @ttsc/unplugin/bun-register`를 붙인다. CLI testkit, `replay:verify`, doctor의 source 재진입은 cwd가 repo root일 때 그렇게 한다. source 실행마다 그 변환 비용이 있으므로 `@idlekit/cli` 테스트는 `bun test --timeout 90000`을 쓰고, 명령을 여러 번 띄우는 경우는 180초를 허용한다. `tools/ttsx-under-node`는 `lint.config.ts` 평가용 Node launcher로 남는다. 제품 런타임은 Bun이다.
+root `tsconfig.json`은 없다. root project는 `@ttsc/lint`를 자동으로 붙이고, 그 설정은 `TC-03`이다. 패키지 디렉터리의 `bunfig.toml`이 runtime과 `bun test` 모두에 `@ttsc/unplugin/bun-register`를 preload한다. preload는 프로세스 cwd만 보고 상위로 올라가지 않으므로 fixture의 `bunfig.toml`은 격리된다. 패키지 소스를 root에서 실행할 때는 `--preload @ttsc/unplugin/bun-register`를 붙인다. CLI testkit과 doctor의 source 재진입은 entry가 TypeScript이고 cwd가 repo root일 때 그 preload를 그대로 붙인다. `@idlekit/cli`의 `test` 스크립트는 CLI를 `ttsc`로 한 번만 `packages/cli/.test-bundle/`에 묶고 `IDLEKIT_CLI_ENTRY`를 설정해서, 스위트는 명령마다 프로그램을 다시 만들지 않고 그 JS를 실행한다. TypeScript entry를 `bun test`로 직접 실행하면 변환 비용이 그대로 든다. 패키지 timeout은 `90000`이고, 명령을 여러 번 띄우는 경우는 180초를 허용한다. `replay:verify`, `kpi:report`, `docs:verify`는 `IDLEKIT_CLI_DIST=1`이고 `packages/cli/dist/main.js`가 있으면 그 파일을 실행한다. 아니면 `.test-bundle/main.js`를 재사용하고, 없으면 처음 한 번만 만든다. 번들 프로세스는 `--config`로 `tools/bundled-cli-bunfig.toml`을 가리켜 패키지 preload가 프로그램을 다시 만들지 않게 한다. `tools/ttsx-under-node`는 `lint.config.ts` 평가용 Node launcher로 남는다. 제품 런타임은 Bun이다.
 
 root `overrides`는 `@opentui/core`와 `@opentui/react`를 `0.4.5`로 고정한다. `@bunli/runtime@0.3.2`는 둘 다 `0.1.97`을 선언한다. 각 복사본이 `Symbol.for("@opentui/core/singleton")`에 `registerEnvVar`를 호출한다. CLI의 React 패키지와 Bunli runtime source를 한 프로세스가 import하면 두 번째 복사본이 같은 env 이름을 등록하다 던진다. override는 monorepo source, 테스트, external bundle이 `0.4.5` 한 벌만 쓰게 한다. 배포 소비자는 root override가 아니라 CLI dependency의 `@opentui/core`를 받는다.
 
@@ -68,7 +71,13 @@ Dependabot은 `ttsc`, `@ttsc/*`, `typia`, `@typia/*`를 한 그룹 PR로 연다.
 | emit | plain `bun`이 생성된 JS를 실행하고 `typia.createValidate`는 대체됨 | 남은 `typia.createValidate`나 `@ttsc/*` import는 smoke 실패 |
 | TSX | emit이 `@opentui/react`를 import | `react/jsx-runtime` import는 smoke 실패 |
 
-Evidence와 Graph는 이 fixture에서만 확인한다. 저장소 `evidence:check`와 `graph:check`는 `TC-03`과 `TC-04` 전까지 없다.
+툴체인 fixture는 Evidence와 Graph를 따로 확인한다. `TC-03`이 저장소 `evidence:check`와 `evidence:smoke`를 추가한다. `TC-04`가 저장소 프로그램용 `graph:check`를 추가한다. `contracts:generate`, `contracts:check`, `test:conformance`는 아직 없다.
+
+## Evidence 범위
+
+Evidence와 inventory는 속일 의도가 없는 작성자의 drift를 잡는다. 인용 삭제, export 이름 변경, 더 이상 등록되거나 실행되지 않는 테스트, 잘못 붙인 requirement ID, 줄어든 baseline, 꺼진 rule이 대상이다. 정상 코드를 gate가 거부하면 gate의 버그다.
+
+gate를 속이려고 작성한 테스트 코드에 대한 sandbox는 아니다. 테스트는 개발자 권한으로 실행된다. `node:vm`이나 `Reflect`로 코드를 평가하거나, detached process를 띄우거나, 자기 reporter 출력을 다시 쓸 수 있다. 이 경우는 테스트 소스 코드 리뷰가 담당한다. source lock은 최선 노력의 방어로 남기며 보안 경계가 아니다. 적대적인 테스트 코드를 전제로 한 지적은 `evidence:check`의 범위 밖이다.
 
 ## TC-01 검증
 
@@ -111,4 +120,39 @@ Host는 macOS arm64다. 명령은 `mise exec bun@1.3.10 -- bun ...`으로 실행
 | `bun run build:bin` | 번들 전에 종료한다. `@opentui/core`는 standalone 실행 파일로 인라인할 수 없다 |
 | Linux host | 미실행 |
 
-`transform:smoke`가 validator 네 경로와 음성 검사를 기록한다. 기대한 nonzero도 통과다. `source-nopreload` 1, `check-type-error` 1 (`TS2322`), `generic-unresolved` 3 (`non-specified generic argument`). 나머지 smoke 행은 exit 0이다. repo 밖 published artifact 실행, `.d.ts` consumer `ttsc --noEmit`, sourcemap, shebang, lazy review marker, plugin load, cold/warm `ttsc prepare`가 여기 포함된다. `tsconfig.tools.json`과 `tsconfig.examples.json`은 목록용 프로그램이다. exit 2는 아직 없는 `TC-03` lint config와 그 파일들의 기존 오류다. root `typecheck` 스크립트에 넣지 않는다. `bun run build:bin`은 `@opentui/core`를 인라인할 수 없어서 standalone 실행 파일을 거절한다. Linux host는 이번 변경에서 실행하지 않았다. Evidence와 Graph는 연결하지 않는다.
+`transform:smoke`가 validator 네 경로와 음성 검사를 기록한다. 기대한 nonzero도 통과다. `source-nopreload` 1, `check-type-error` 1 (`TS2322`), `generic-unresolved` 3 (`non-specified generic argument`). 나머지 smoke 행은 exit 0이다. repo 밖 published artifact 실행, `.d.ts` consumer `ttsc --noEmit`, sourcemap, shebang, lazy review marker, plugin load, cold/warm `ttsc prepare`가 여기 포함된다. `tsconfig.tools.json`과 `tsconfig.examples.json`은 목록용 프로그램이다. `TC-03`은 거기에 `@ttsc/lint` `enabled: false`를 넣어, host가 없는 Program에 저장소 evidence graph를 적용하지 않는다. `bun run build:bin`은 `@opentui/core`를 인라인할 수 없어서 standalone 실행 파일을 거절한다. Linux host는 그 변경에서 실행하지 않았다.
+
+## TC-03 검증
+
+Host는 macOS arm64다. 명령은 `mise exec bun@1.3.10 -- bun ...`으로 실행했다. `ttsc version`은 `ttsc 0.30.4 (Version 7.0.2)`다. `evidence:check`는 active 문서와 config의 sha256, 그리고 `tsconfig.evidence.json`에 대한 `ttsc cache paths --json`을 출력한다. `projectRoot`는 이 저장소다.
+
+| 명령 | Exit |
+|---|---|
+| `bun run typecheck` | 0 |
+| `bun run evidence:check` | 0 |
+| `bun run evidence:smoke` | 0 (42행) |
+| `bun run format:check` | 0 |
+| `bun run runtime:check` | 0 |
+| `bun tools/analysis-baseline-check.ts` | 0 |
+| `packages/core`에서 `bun test src/scenario/concreteValidator.test.ts` | 0 (3 pass) |
+| `bun run graph:check` | 이 변경에서는 미실행 (`TC-04`가 실행) |
+| Linux host | 미실행 |
+
+## TC-04 검증
+
+Host는 macOS arm64다. 명령은 commit `3e16237ec6e5b3c9a5ab6e35e3bf962ab97eef9f`에서 `mise exec bun@1.3.10 -- bun ...`으로 실행했다. `@ttsc/graph`와 `ttsc`는 `0.30.4`다. MCP handshake는 protocol `2025-11-25`, server `ttsc-graph 0.30.4`다. 결과에 generation 식별자가 없어서 scratch fixture는 새 프로세스로 다시 확인했다. 같은 세션은 signature 수정 뒤 `quotaHost`를 `(): 4`로 보고했다. 입력 sha256: `tsconfig.graph.json` `f4c53cefd70090c4437eb4593d837fff966570400dfb663c3b16b4e68035928e`, `tools/graph-query.ts` `fb713ee8f165a5b3d502b3ce0753ad759cd81269f3ee125c846cc6bb1d995114`, `tools/graph-preflight.ts` `fe73e2c2a70a314085183d1054fcf46aba12d462c4982b6dc341071caaef953d`.
+
+| 명령 | Exit |
+|---|---|
+| `bun run graph:check` | 0 |
+| `bun run runtime:check` | 0 |
+| `bun tools/analysis-baseline-check.ts` | 0 |
+| `bun run typecheck` | 미실행 |
+| `bun run format:check` | 미실행 |
+| `bun run test` | 미실행 |
+| Linux host | 미실행 |
+| CI `graph:check` | 미실행 |
+
+`graph:check`는 `runScenario`를 `packages/core/src/sim/simulator.ts:6`, `stepOnce`를 `packages/core/src/sim/step.ts:50`, `compileScenario`를 `packages/core/src/scenario/compile.ts:490`, `tickMoney`를 `packages/money/src/policy/tickMoney.ts:8`으로 풀었다. tour payload에도 그 `runScenario`와 `stepOnce` span이 있다. `runScenario`와 `stepOnce`는 실행 방향과 역방향 trace로 연결된다. `runScenario`의 역방향 trace는 `packages/cli/src`를 가리킨다. `createPlannerStrategy`는 `packages/core/src/sim/strategy/planner.ts:189`다. `stepOnce`까지의 path hop은 0이다. 호출은 `PlannerDeps`의 `d.stepOnce`이고, 기본값 `{ stepOnce }`는 `createPlannerStrategy` 선언에서 읽은 것이지 graph edge가 아니다. Scratch의 rename, signature 변경, `@evidence` target 변경은 보였다. 자세한 절차는 [개발 그래프](./development-graph_ko.md)에 있다.
+
+`evidence:smoke`의 기대한 nonzero는 인용 삭제, 없는 anchor, 새 active 제목, 같은 cache에서 markdown 변경 후 review 만료, 인용한 함수 본문 변경 후 review 만료, 금지된 `@evidenceExclude`, 등록하지 않은 named test, 거짓 assertion, 빈 glob, 빈 Program, 승인 없는 coverage 축소, `format.severity` `"error"`다. 거짓 assertion은 `ttsc` exit 0이고 `bun test`는 nonzero다. Evidence는 assertion의 참을 판단하지 않는다. Inventory가 named test의 실제 실행을 확인한다. `singular`는 끄고, `evidence/documented`와 `evidence/todo`는 `fixtures/evidence/base`에만 켠다. 이 lint loader는 config 객체 하나만 받고, `files`로 `evidence/graph` 옵션을 따로 좁힐 수 없다.

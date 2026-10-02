@@ -1,6 +1,7 @@
 node_modules
 .DS_Store
 dist
+packages/cli/.test-bundle
 coverage
 tmp
 *.tgz

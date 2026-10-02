@@ -6,13 +6,15 @@ on:
     branches:
       - main
 
+# A new push to the same pull request or branch replaces the run already in progress.
+# The pull request number keeps two forks that share a branch name from cancelling each other.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   docs-verify:
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        mode: [quick, full]
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -25,10 +27,5 @@ jobs:
       - name: Install
         run: bun install --frozen-lockfile
 
-      - name: Verify Docs (quick)
-        if: matrix.mode == 'quick'
-        run: bun run docs:verify:quick
-
-      - name: Verify Docs (full)
-        if: matrix.mode == 'full'
+      - name: Verify Docs
         run: bun run docs:verify

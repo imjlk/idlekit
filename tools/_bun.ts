@@ -1,7 +1,37 @@
 import { $ } from "bun";
+import { existsSync } from "fs";
 import { dirname, resolve } from "path";
 
 export const ROOT = process.cwd();
+let bundledCli: string | undefined;
+
+function ensureCliBundle(): string {
+  if (bundledCli) return bundledCli;
+  const dist = resolve(ROOT, "packages/cli/dist/main.js");
+  if (process.env.IDLEKIT_CLI_DIST === "1" && existsSync(dist)) {
+    bundledCli = dist;
+    return dist;
+  }
+  const out = resolve(ROOT, "packages/cli/.test-bundle/main.js");
+  const proc = Bun.spawnSync(["bun", "scripts/cli-bundle.ts", "--outdir", ".test-bundle"], {
+    cwd: resolve(ROOT, "packages/cli"),
+    stdout: "pipe",
+    stderr: "pipe",
+    env: process.env,
+  });
+  if (proc.exitCode !== 0 || !existsSync(out)) {
+    const detail = `${proc.stderr.toString()}\n${proc.stdout.toString()}`.trim();
+    throw new Error(detail || `cli bundle failed with exit code ${proc.exitCode ?? "unknown"}`);
+  }
+  bundledCli = out;
+  return out;
+}
+
+export function cliCommand(args: readonly string[]): string[] {
+  const config = resolve(ROOT, "tools/bundled-cli-bunfig.toml");
+  return ["bun", `--config=${config}`, ensureCliBundle(), ...args];
+}
+
 const MAX_CAPTURE_BYTES = 8 * 1024 * 1024;
 
 export function runText(args: string[], opts?: { cwd?: string; env?: Record<string, string | undefined> }): string {

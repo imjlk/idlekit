@@ -6,9 +6,23 @@ on:
     branches:
       - main
 
+# A new push to the same pull request or branch replaces the run already in progress.
+# The pull request number keeps two forks that share a branch name from cancelling each other.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   quality:
     runs-on: ubuntu-latest
+    env:
+      GITHUB_BEFORE: ${{ github.event.before }}
+      GITHUB_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      # Smoke still uses a fresh plugin directory, so the cold/warm assertion stays.
+      # The Go object cache is the part that otherwise recompiles for several minutes.
+      TTSC_GO_CACHE_DIR: ${{ github.workspace }}/node_modules/.cache/ttsc/go-build
+      # After Build, replay and KPI run dist/main.js instead of rebuilding ttsc per command.
+      IDLEKIT_CLI_DIST: "1"
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -26,11 +40,35 @@ jobs:
       - name: Install
         run: bun install --frozen-lockfile
 
+      - name: Cache ttsc plugins
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            node_modules/.cache/ttsc/plugins
+            node_modules/.cache/ttsc/go-build
+          key: ${{ runner.os }}-${{ runner.arch }}-ttsc-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-ttsc-
+
+      - name: Fetch pull request base
+        if: github.event_name == 'pull_request'
+        run: git fetch --no-tags --depth=1 origin ${{ github.event.pull_request.base.sha }}
+
+      - name: Fetch the revision before this push
+        if: github.event_name == 'push' && github.event.before != '0000000000000000000000000000000000000000'
+        run: git fetch --no-tags --depth=1 origin ${{ github.event.before }}
+
       - name: Toolchain smoke
         run: bun run toolchain:smoke
 
+      - name: Graph check
+        run: bun run graph:check
+
       - name: Typecheck
         run: bun run typecheck
+
+      - name: Evidence smoke
+        run: bun run evidence:smoke
 
       - name: Bunli Generate Check
         run: bun run --cwd packages/cli generate:check
@@ -55,9 +93,6 @@ jobs:
 
       - name: Perf Check (simulate benchmark suite)
         run: bun run bench:sim:suite:check
-
-      - name: Docs Verify (quick)
-        run: bun run docs:verify:quick
 
       - name: Template Governance Check
         run: bun run templates:check

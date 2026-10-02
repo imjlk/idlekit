@@ -84,6 +84,6 @@ At `265c6ed` the repository compiler was `tsc`, tests ran with `bun test`, and t
 
 `bun tools/analysis-baseline-check.ts` checks the paths cited by the [source audit](./implementation/source-audit.md) and the current host pins.
 
-These names are not repository commands yet: `evidence:check`, `evidence:smoke`, `graph:check`, `contracts:generate`, `contracts:check`, `test:conformance`. `toolchain:doctor` and `toolchain:prepare` are the `TC-01` host commands.
+`evidence:check`, `evidence:smoke`, and `format:check` are repository commands after `TC-03`. `graph:check` is the `TC-04` command. `contracts:generate`, `contracts:check`, and `test:conformance` are not. `toolchain:doctor` and `toolchain:prepare` are the `TC-01` host commands.
 
 Shared meanings for later analysis work are in [Analysis contracts](./adr/analysis-contracts.md).

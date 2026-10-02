@@ -115,7 +115,7 @@ PR/커밋 전에:
 6. `bun run templates:check`
 7. `bun run install:smoke`
 
-CI(`.github/workflows/ci.yml`)는 typecheck/runtime import check/test/build + docs quick + replay verify gate + 성능 체크 + KPI A/B 리포트 + KPI 리그레션 게이트를 실행합니다.
+CI(`.github/workflows/ci.yml`)는 typecheck/runtime import check/test/build + replay verify gate + 성능 체크 + KPI A/B 리포트 + KPI 리그레션 게이트를 실행합니다. 문서 검증은 `.github/workflows/docs-verify.yml`의 `docs:verify` 한 번으로 돌고, quick 모드는 그 안에 포함됩니다.
 패키지 배포 스모크는 `bun run install:smoke`로 tarball 설치 + Bun import + `idk validate`까지 함께 확인합니다.
 
 성능 리그레션은 `bench:sim:check`에서 평균/`p95` 실행시간 임계값으로 추가 검증합니다.
@@ -138,6 +138,6 @@ suite는 `30m/2h/24h/7d/30d/90d` 장기 구간 시나리오를 포함합니다.
 
 `bun tools/analysis-baseline-check.ts`는 [소스 감사](./implementation/source-audit_ko.md)가 인용한 경로와 현재 host pin을 확인한다.
 
-이 이름들은 아직 저장소 명령이 아니다. `evidence:check`, `evidence:smoke`, `graph:check`, `contracts:generate`, `contracts:check`, `test:conformance`. `toolchain:doctor`와 `toolchain:prepare`는 `TC-01` host 명령이다.
+`evidence:check`, `evidence:smoke`, `format:check`는 `TC-03` 이후의 저장소 명령이다. `graph:check`는 `TC-04` 명령이다. `contracts:generate`, `contracts:check`, `test:conformance`는 아직 아니다. `toolchain:doctor`와 `toolchain:prepare`는 `TC-01` host 명령이다.
 
 이후 분석 작업의 공유 의미는 [분석 계약](./adr/analysis-contracts_ko.md)에 있다.

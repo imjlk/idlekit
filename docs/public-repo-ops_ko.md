@@ -18,8 +18,7 @@ English version: [public-repo-ops.md](./public-repo-ops.md)
 `main` required checks:
 
 - `quality`
-- `docs-verify (quick)`
-- `docs-verify (full)`
+- `docs-verify`
 - `Analyze (javascript-typescript)`
 
 `Release` workflow는 merge gate로 강제하지 않습니다.

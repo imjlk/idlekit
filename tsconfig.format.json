@@ -1,0 +1,37 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "types": ["node", "bun"],
+    "plugins": [
+      {
+        "transform": "@ttsc/lint",
+        "configFile": "./lint.format.config.ts"
+      }
+    ]
+  },
+  "include": [
+    "evidence.config.ts",
+    "lint.config.ts",
+    "lint.format.config.ts",
+    "tools/evidence-host.ts",
+    "tools/evidence-inventory.ts",
+    "tools/evidence/citations.ts",
+    "tools/evidence/claims.ts",
+    "tools/evidence/commands.ts",
+    "tools/evidence/coverage.ts",
+    "tools/evidence/format-gate.ts",
+    "tools/evidence/junit.ts",
+    "tools/evidence/lex.ts",
+    "tools/evidence/markdown.ts",
+    "tools/evidence/model.ts",
+    "tools/evidence/program.ts",
+    "tools/evidence/runner-bind.ts",
+    "tools/evidence/runner-registry.ts",
+    "tools/evidence/source-graph.ts",
+    "tools/evidence/source-lock.ts",
+    "tools/evidence-check.ts",
+    "tools/evidence-smoke.ts",
+    "tools/format-check.ts"
+  ]
+}

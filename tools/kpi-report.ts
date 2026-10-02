@@ -1,5 +1,14 @@
 import { dirname, resolve } from "path";
-import { ROOT, createTempDir, ensureDir, removePath, runJson, sha256Hex, writeText } from "./_bun";
+import {
+  ROOT,
+  cliCommand,
+  createTempDir,
+  ensureDir,
+  removePath,
+  runJson,
+  sha256Hex,
+  writeText,
+} from "./_bun";
 
 type Args = Readonly<{
   scenarioA: string;
@@ -29,7 +38,7 @@ function parseArgs(argv: string[]): Args {
 }
 
 function runCliJson(args: string[]): any {
-  return runJson(["bun", "run", "--cwd", "packages/cli", "dev", "--", ...args], { cwd: ROOT });
+  return runJson(cliCommand(args), { cwd: ROOT });
 }
 
 function relativizeRepoPaths(value: unknown): unknown {
