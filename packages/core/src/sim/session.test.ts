@@ -3,6 +3,7 @@ import { createNumberEngine } from "../engine/breakInfinity";
 import { mergeObservations } from "./observation";
 import { simulateMonteCarlo } from "./monteCarlo";
 import { applyOfflineSeconds } from "./offline";
+import { runScenario } from "./simulator";
 import { sessionClockContract, simulateSessionPattern, type SessionPatternSpec, type SessionRunResult } from "./session";
 import { createScriptedStrategy } from "./strategy/scripted";
 import type { Action, CompiledScenario, Model, SimState } from "./types";
@@ -687,5 +688,38 @@ describe("session segments", () => {
     expect(unreached.summary.stop.reason).toBe("horizon");
     expect(unreached.end.t).toBe(86400);
     expect(unreached.run.observation?.goals.map((goal) => goal.status)).toEqual(["reached", "unreached"]);
+  });
+
+  it("counts invalid quotes in run, offline, and session observations", () => {
+    const broken: Action<number, UnitCode, ClockVars> = {
+      ...buyAction("broken", "bought", "player"),
+      cost: () => coin(Number.POSITIVE_INFINITY),
+    };
+    const scenario = clockScenario({
+      money: 10,
+      actions: [broken],
+      strategy: {
+        id: "broken",
+        decide(ctx, model, state) {
+          return model.actions(ctx, state).map((action) => ({ action }));
+        },
+      },
+    });
+    const run = runScenario({ ...scenario, run: { ...scenario.run, durationSec: 3 } });
+    expect(run.observation?.actions.skippedInvalidQuote).toBe(3);
+    expect(run.end.vars.bought).toBe(0);
+
+    const offline = applyOfflineSeconds({ scenario, seconds: 4 });
+    expect(offline.observation?.actions.skippedInvalidQuote).toBe(4);
+
+    const session = runPattern(scenario, {
+      id: "offline-heavy",
+      days: 1,
+      schedule: [{ day: 0, startOffsetSec: 5, durationSec: 2 }],
+    });
+    const perSegment = session.segments.map((segment) => segment.run.observation?.actions.skippedInvalidQuote);
+    expect(perSegment).toEqual([5, 2, 86393]);
+    expect(session.run.observation?.actions.skippedInvalidQuote).toBe(86400);
+    expect(session.run.observation?.actions.applied).toBe(0);
   });
 });
