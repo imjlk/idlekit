@@ -125,6 +125,15 @@ export type { ShrinkResult } from "./evidence/model";
 export type { JUnitCase } from "./evidence/junit";
 export type { ImplementationHostGap } from "./evidence/citations";
 
+/** The section under `{#anchor}` names its ID once as Requirement `REQ-...`. */
+export function declaredRequirementId(docText: string, anchor: string): string | undefined {
+  const start = docText.indexOf(`{#${anchor}}`);
+  if (start < 0) return undefined;
+  const next = docText.indexOf("\n## ", start);
+  const section = docText.slice(start, next < 0 ? undefined : next);
+  return /Requirement `([^`]+)`/.exec(section)?.[1];
+}
+
 export async function checkInventory(projectRoot = root): Promise<string[]> {
   const failures: string[] = [];
   const inventory = readJson<InventoryFile>(join(projectRoot, "docs/requirements/inventory.json"));
@@ -216,6 +225,14 @@ export async function checkInventory(projectRoot = root): Promise<string[]> {
     const docText = readFileSync(join(projectRoot, requirement.doc), "utf8");
     if (!docText.includes(`{#${requirement.anchor}}`)) {
       fail(failures, `${requirement.id} doc does not contain its anchor`);
+    } else {
+      const declared = declaredRequirementId(docText, requirement.anchor);
+      if (declared !== requirement.id) {
+        fail(
+          failures,
+          `${requirement.id} section ${requirement.anchor} declares ${declared ?? "no requirement id"}`,
+        );
+      }
     }
     if (requirement.production.length === 0) fail(failures, `${requirement.id} has no production files`);
     for (const rel of requirement.production) {

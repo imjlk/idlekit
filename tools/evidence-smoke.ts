@@ -37,6 +37,7 @@ import {
   formatGateFailures,
   formatIncludeRoots,
   graphRuleFailures,
+  declaredRequirementId,
   headingAnchors,
   missingProtectedDocs,
   registeredSuites,
@@ -626,6 +627,32 @@ try {
   const realCitation = "/** @evidence docs/requirements/active/x.md#anchor */\nexport function real() {}\n";
   const ordinaryBlock =
     "/* note /** @evidence docs/requirements/active/x.md#anchor */ export function uncited() {}\n";
+  const declaredDoc = [
+    "## A {#a}",
+    "",
+    "Requirement `REQ-A`.",
+    "",
+    "## B {#b}",
+    "",
+    "Requirement `REQ-B`.",
+    "",
+    "## C {#c}",
+    "",
+    "No identifier.",
+    "",
+  ].join("\n");
+  const declaredOk =
+    declaredRequirementId(declaredDoc, "a") === "REQ-A" &&
+    declaredRequirementId(declaredDoc, "b") === "REQ-B" &&
+    declaredRequirementId(declaredDoc, "c") === undefined &&
+    declaredRequirementId(declaredDoc, "missing") === undefined;
+  record(
+    "declared-requirement-id",
+    "zero",
+    declaredOk ? 0 : 1,
+    declaredOk,
+    "a section binds only the Requirement id written under its own anchor",
+  );
   const citationOk =
     !productionFileCites(spoofedCitation, "docs/requirements/active/x.md", "anchor") &&
     productionFileCites(realCitation, "docs/requirements/active/x.md", "anchor") &&
