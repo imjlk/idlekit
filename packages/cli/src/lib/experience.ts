@@ -45,6 +45,8 @@ export type ExperienceSnapshot = Readonly<{
     offlineCreditedSec: number;
     lostRewardSec: number;
     rewardSec: number;
+    /** Active blocks cut short by `run.maxSteps`. */
+    budgetStops: number;
     stopReason: SessionRunResult<unknown, string, unknown>["summary"]["stop"]["reason"];
   }>;
 }>;
@@ -235,6 +237,7 @@ export function snapshotFromSession<N, U extends string, Vars>(args: {
       offlineCreditedSec: args.session.summary.offlineCreditedSec,
       lostRewardSec: args.session.summary.lostRewardSec,
       rewardSec: args.session.summary.rewardSec,
+      budgetStops: args.session.summary.budgetStops,
       stopReason: args.session.summary.stop.reason,
     },
   };
@@ -403,7 +406,7 @@ export function renderExperienceMarkdown(args: {
     `- Intent: ${args.intent ?? "unspecified"}`,
     `- Mode: ${args.mode}`,
     `- Session pattern: \`${snapshot.session.pattern.id}\` for ${snapshot.session.pattern.days} day(s)`,
-    `- Active blocks: ${snapshot.session.activeBlocks}`,
+    `- Active blocks: ${snapshot.session.activeBlocks}${snapshot.session.budgetStops > 0 ? ` (${snapshot.session.budgetStops} cut short by maxSteps)` : ""}`,
     `- Active / offline: ${formatMetric(snapshot.session.totalActiveSec, 0)}s / ${formatMetric(snapshot.session.totalOfflineSec, 0)}s`,
     `- Wall elapsed / horizon: ${formatMetric(snapshot.session.elapsedSec, 0)}s / ${formatMetric(snapshot.session.horizonSec, 0)}s (${snapshot.session.stopReason})`,
     `- Reward time: ${formatMetric(snapshot.session.rewardSec, 0)}s`,
