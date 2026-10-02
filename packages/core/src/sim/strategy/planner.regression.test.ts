@@ -369,3 +369,38 @@ export function keepsPlannerRolloutFaithful(): void {
 describe("PR-04 planner rollout", () => {
   it("keeps planner rollout faithful", keepsPlannerRolloutFaithful);
 });
+
+function resetAction(): Action<number, UnitCode, Vars> {
+  return {
+    id: "reset",
+    kind: "prestige",
+    canApply: () => true,
+    cost: () => null,
+    apply: (_ctx, current) => ({
+      ...current,
+      prestige: { count: current.prestige.count + 1, points: current.prestige.points + 10, multiplier: 2 },
+      wallet: { ...current.wallet, money: { ...current.wallet.money, amount: 0 } },
+      vars: { owned: 0 },
+    }),
+  };
+}
+
+describe("prestige cooldown", () => {
+  it("opens on the tick that reaches the interval with fractional steps", () => {
+    // 100 ticks of 0.1 from 0.5 land on 10.499999999999979, just short of 10.5.
+    const reset = resetAction();
+    const run = runScenario<number, UnitCode, Vars>({
+      ctx: context({ stepSec: 0.1 }),
+      model: model([reset]),
+      initial: state(0, 0.5),
+      constraints: { minPrestigeIntervalSec: 10 },
+      run: { stepSec: 0.1, durationSec: 10.05, trace: { keepActionsLog: true } },
+      strategy: { id: "always-reset", decide: () => [{ action: reset }] },
+    });
+    const resets = (run.actionsLog ?? []).filter((row) => row.actionId === "reset");
+    expect(resets.length).toBe(2);
+    expect(resets[0]?.t).toBe(0.5);
+    expect(resets[1]?.t).toBeCloseTo(10.5, 9);
+    expect(run.end.prestige.count).toBe(2);
+  });
+});

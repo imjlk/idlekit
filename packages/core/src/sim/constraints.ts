@@ -1,3 +1,4 @@
+import { reachedLimit } from "./timeBoundary";
 import type { ScenarioConstraints } from "./types";
 
 /**
@@ -34,7 +35,8 @@ export function decidePrestigeCooldown(args: {
     return { status: "unanchored", allowed: true, warning: unanchoredWarning };
   }
   const readyAtT = args.lastResetT + interval;
-  if (args.nowT >= readyAtT) return { status: "ready", allowed: true, readyAtT };
+  // Same dust as a stop check: an accumulated clock can land just short of readyAtT.
+  if (reachedLimit(args.nowT, readyAtT)) return { status: "ready", allowed: true, readyAtT };
   return { status: "cooling", allowed: false, readyAtT };
 }
 
