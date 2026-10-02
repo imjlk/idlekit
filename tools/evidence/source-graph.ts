@@ -883,7 +883,7 @@ function typeOnlyImport(body: string, fromIndex: number): boolean {
   return sawSpecifier;
 }
 
-type SourceWalk = { bodies: string[]; faults: string[] };
+type SourceWalk = { bodies: string[]; faults: string[]; files: string[] };
 
 function packageRootOf(file: string): string | undefined {
   let dir = dirname(file);
@@ -978,6 +978,7 @@ function walkSources(files: readonly string[]): SourceWalk {
   const seen = new Set<string>();
   const bodies: string[] = [];
   const faults: string[] = [];
+  const locals: string[] = [];
   const queue = [...files];
   while (queue.length > 0) {
     const file = queue.pop();
@@ -993,11 +994,11 @@ function walkSources(files: readonly string[]): SourceWalk {
     }
     const body = readFileSync(real, "utf8");
     const packaged = real.split(/[/\\]/).includes("node_modules");
+    if (!packaged) locals.push(real);
     if (!packaged || publishPackageBody(body)) bodies.push(body);
     const hidden = stringSpans(body);
     for (const imported of staticImportSpecifiers(body, hidden)) {
-      const relative = imported.spec.startsWith(".");
-      if (!relative && typeOnlyImport(body, imported.at)) continue;
+      if (typeOnlyImport(body, imported.at)) continue;
       queueSpecifier(real, imported.spec, "import", queue, faults, packageRoots, false);
     }
     for (const required of localRequireCalls(body, hidden)) {
@@ -1015,7 +1016,7 @@ function walkSources(files: readonly string[]): SourceWalk {
       queueSpecifier(real, imported.spec, "import", queue, faults, packageRoots, true);
     }
   }
-  return { bodies, faults };
+  return { bodies, faults, files: locals };
 }
 
 /** The file plus local import and `require("./...")` modules, so a helper stays visible. */
@@ -1026,6 +1027,11 @@ export function sourceGraph(files: readonly string[]): string[] {
 /** Relative requires that do not resolve, and requires whose specifier is not a literal. */
 export function unresolvedLocalRequires(files: readonly string[]): string[] {
   return walkSources(files).faults;
+}
+
+/** Local files whose bytes the test command can execute. Package bodies stay unlocked. */
+export function sourceFiles(files: readonly string[]): string[] {
+  return walkSources(files).files;
 }
 
 const BINDING_KEYWORDS = new Set([

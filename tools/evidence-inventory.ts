@@ -72,9 +72,18 @@ import {
 import {
   loaderPluginRegistration,
   mockModuleRegistration,
+  sourceFiles,
   sourceGraph,
   unresolvedLocalRequires,
 } from "./evidence/source-graph";
+import {
+  changedSources,
+  installSourceLock,
+  preloadTestArgs,
+  sealSources,
+  sourceDigests,
+  unsealSources,
+} from "./evidence/source-lock";
 
 export { hasProductionExport, isInventoryPackageHost, isNonProductionPath };
 export { assertExecutedTests, junitCases, junitReporterArgs };
@@ -496,24 +505,48 @@ export async function checkInventory(projectRoot = root): Promise<string[]> {
     }
     const reportDir = mkdtempSync(join(tmpdir(), "idlekit-evidence-"));
     const reportPath = join(reportDir, "junit.xml");
-    const command = [process.execPath, ...junitReporterArgs(first.args, reportPath)];
-    const proc = Bun.spawnSync(command, {
-      cwd: resolve(projectRoot, first.cwd),
-      stdout: "pipe",
-      stderr: "pipe",
-      env: plainTestEnv(),
-    });
+    const commandCwd = resolve(projectRoot, first.cwd);
+    const inventoriedFiles = [...new Set(tests.map((test) => test.file))];
+    const commandFiles = [
+      ...inventoriedFiles.map((file) => join(projectRoot, file)),
+      ...localPreloadFiles(commandCwd, first.args),
+    ];
+    const locked = sourceFiles(commandFiles);
+    const digests = sourceDigests(locked);
+    const lock = installSourceLock(reportDir, locked);
+    const modes = sealSources(locked);
+    const command = [
+      process.execPath,
+      ...preloadTestArgs(junitReporterArgs(first.args, reportPath), lock.preload),
+    ];
+    let exitCode = 1;
     let output = "";
     try {
-      output = readFileSync(reportPath, "utf8");
-    } catch {
-      output = "";
+      const proc = Bun.spawnSync(command, {
+        cwd: commandCwd,
+        stdout: "pipe",
+        stderr: "pipe",
+        env: { ...plainTestEnv(), IDLEKIT_EVIDENCE_LOCK: lock.env },
+      });
+      exitCode = proc.exitCode ?? 1;
+      try {
+        output = readFileSync(reportPath, "utf8");
+      } catch {
+        output = "";
+      }
+    } finally {
+      unsealSources(modes);
+      rmSync(reportDir, { recursive: true, force: true });
     }
-    rmSync(reportDir, { recursive: true, force: true });
+    for (const file of changedSources(digests)) {
+      const prefix = `${projectRoot}/`;
+      const relative = file.startsWith(prefix) ? file.slice(prefix.length) : file;
+      fail(failures, `scanned source changed while tests ran: ${relative}`);
+    }
     failures.push(
       ...assertExecutedTests(
         output,
-        proc.exitCode ?? 1,
+        exitCode,
         tests.map((test) => test.registeredAs),
       ),
     );

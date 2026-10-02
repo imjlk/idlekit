@@ -519,7 +519,13 @@ function collectRegistrations(
     if (body[open] !== "(") {
       const optional =
         optionalRunnerCall(body, open) || optionalCallAfterGrouping(body, open);
-      if (isIndirectInvoke(body, index) || closesThenCalls(body, open) || optional) {
+      const forwarded = passedAsArgument(body, index, open);
+      if (
+        isIndirectInvoke(body, index) ||
+        closesThenCalls(body, open) ||
+        optional ||
+        forwarded
+      ) {
         unresolved.push(word.value);
       }
       index = word.end;
@@ -1034,9 +1040,24 @@ function closesThenCalls(body: string, index: number): boolean {
   return closes > 0 && body[cursor] === "(";
 }
 
+/** `register(it)` forwards the runner into a helper parameter the scanner cannot see. */
+function passedAsArgument(body: string, wordStart: number, afterExpr: number): boolean {
+  const word = readIdentifier(body, wordStart);
+  if (!word) return false;
+  const prevAt = previousCodeIndex(body, wordStart);
+  if (prevAt < 0) return false;
+  const prev = body[prevAt] ?? "";
+  let open = -1;
+  if (prev === "(") open = prevAt;
+  else if (prev === ",") open = callOpenBefore(body, prevAt);
+  if (open < 0 || isGroupedBinding(body, open)) return false;
+  const next = body[skipSpaceAndComments(body, afterExpr)] ?? "";
+  return next === "," || next === ")";
+}
+
 /**
  * `Reflect.apply(it, ...)` and `obj.apply(it, ...)` run a runner without calling it.
- * `wrap(it)` only passes the binding onward, which the alias scan already rejects.
+ * `register(it)` is rejected by `passedAsArgument` instead.
  */
 function isIndirectInvoke(body: string, wordStart: number): boolean {
   const word = readIdentifier(body, wordStart);

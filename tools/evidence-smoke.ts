@@ -1,6 +1,8 @@
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join, resolve } from "path";
+import { plainTestEnv } from "./evidence/junit";
+import { installSourceLock, sealSources, unsealSources } from "./evidence/source-lock";
 import lintConfig from "../lint.config";
 import {
   approvalApplies,
@@ -876,6 +878,7 @@ try {
   let packageRequire = false;
   let commentRequire = false;
   let commentImport = false;
+  let relativeTypeSkipped = false;
   let dynamicImport = false;
   let unresolvedImport = false;
   let packageImport = false;
@@ -977,6 +980,25 @@ try {
     const sideImport =
       sideBodies.length === 2 && duplicateFullNamesAcross(sideBodies).includes("credited");
     commentImport = blockImport && lineImport && sideImport;
+    writeFileSync(
+      join(specifierDir, "types.ts"),
+      'it("credited", unrelated);\n// from-type-only\n',
+    );
+    writeFileSync(
+      requireHost,
+      ['import type { Box } from "./types";', 'if (false) it("credited", citedExport);'].join("\n"),
+    );
+    const erasedBodies = sourceGraph([requireHost]);
+    const erasedType =
+      erasedBodies.length === 1 && !erasedBodies.some((body) => body.includes("from-type-only"));
+    writeFileSync(
+      requireHost,
+      ['import { type Box } from "./types";', 'if (false) it("credited", citedExport);'].join("\n"),
+    );
+    const inlineBodies = sourceGraph([requireHost]);
+    const inlineType =
+      inlineBodies.length === 1 && !inlineBodies.some((body) => body.includes("from-type-only"));
+    relativeTypeSkipped = erasedType && inlineType;
     writeFileSync(
       requireHost,
       ['module.require("./required-helper");', 'if (false) it("credited", citedExport);'].join(
@@ -1765,6 +1787,15 @@ try {
       'if (false) it("credited", citedExport);',
     ].join("\n"),
   );
+  const forwardedRunner = unresolvedRunnerCalls(
+    [
+      "function register(run) {",
+      '  run("credited", unrelated);',
+      "}",
+      "register(it);",
+      'if (false) it("credited", citedExport);',
+    ].join("\n"),
+  ).includes("it");
   const laterBody = [
     'describe("suite", liveSuite);',
     "function liveSuite() {",
@@ -2248,6 +2279,45 @@ try {
     (source) => unresolvedRunnerCalls(source).length > 0,
   );
   const inventoryFaults = unresolvedLocalRequires([inventoryFile, ...inventoryPreloads]).length;
+  const lockDir = mkdtempSync(join(tmpdir(), "idlekit-evidence-lock-"));
+  const lockedHelper = join(lockDir, "helper.ts");
+  const attackFile = join(lockDir, "attack.test.ts");
+  let sourceLock = false;
+  try {
+    writeFileSync(lockedHelper, "export const marker = 1;\n");
+    writeFileSync(
+      attackFile,
+      [
+        'import { afterAll, test } from "bun:test";',
+        `const helper = ${JSON.stringify(lockedHelper)};`,
+        "const original = await Bun.file(helper).text();",
+        "afterAll(async () => { await Bun.write(helper, original); });",
+        'await Bun.write(helper, "export const marker = 2;\\n");',
+        'await import("./helper.ts");',
+        'test("credited", () => {});',
+      ].join("\n"),
+    );
+    const lock = installSourceLock(lockDir, [lockedHelper]);
+    const modes = sealSources([lockedHelper]);
+    try {
+      const proc = Bun.spawnSync(
+        [process.execPath, "test", "--preload", lock.preload, "attack.test.ts"],
+        {
+          cwd: lockDir,
+          stdout: "pipe",
+          stderr: "pipe",
+          env: { ...plainTestEnv(), IDLEKIT_EVIDENCE_LOCK: lock.env },
+        },
+      );
+      const output = `${proc.stdout.toString()}\n${proc.stderr.toString()}`;
+      const intact = readFileSync(lockedHelper, "utf8").includes("marker = 1");
+      sourceLock = (proc.exitCode ?? 1) !== 0 && intact && output.includes("read-only");
+    } finally {
+      unsealSources(modes);
+    }
+  } finally {
+    rmSync(lockDir, { recursive: true, force: true });
+  }
   const duplicateOk =
     duplicateNames.length === 1 &&
     duplicateNames[0] === "kept > quota is documented" &&
@@ -2301,7 +2371,8 @@ try {
     reboundLive.length === 0 &&
     reboundUnresolved.length === 1 &&
     wrappedLive.length === 0 &&
-    wrappedUnresolved.length === 1 &&
+    wrappedUnresolved.length === 2 &&
+    wrappedUnresolved.includes("it") &&
     forLive.length === 1 &&
     namespaceLive.length === 1 &&
     namespaceExpect.length === 0 &&
@@ -2401,7 +2472,10 @@ try {
     plainObject.length === 0 &&
     arrayRunner &&
     plainArray.length === 0 &&
+    forwardedRunner &&
     commentImport &&
+    relativeTypeSkipped &&
+    sourceLock &&
     laterLive &&
     pendingHeld &&
     missingSuite.length === 1 &&
@@ -2500,7 +2574,10 @@ try {
       plainObject,
       arrayRunner,
       plainArray,
+      forwardedRunner,
       commentImport,
+      relativeTypeSkipped,
+      sourceLock,
       mockModule,
       mockSpaced,
       mockOptional,
