@@ -16,6 +16,7 @@ import {
   skipWhitespace,
   spanEndAt,
   stringSpans,
+  wordBefore,
 } from "./lex";
 import {
   aliasAt,
@@ -148,6 +149,15 @@ function collectRegistrations(
       continue;
     }
     const previous = body[word.end - word.value.length - 1];
+    if (
+      (word.value === "eval" || word.value === "Function") &&
+      wordBefore(body, index) !== "function" &&
+      dynamicCodeCall(body, word.end)
+    ) {
+      unresolved.push(word.value);
+      index = word.end;
+      continue;
+    }
     if (previous === "." || (previous !== undefined && /[A-Za-z0-9_$]/.test(previous))) {
       index = word.end;
       continue;
@@ -816,6 +826,16 @@ function optionalNamespaceRunner(body: string, index: number): boolean {
 }
 
 /** `(it)("title", callback)` and `((it.failing))("title", callback)` still invoke the runner. */
+/** `eval(...)`, `Function(...)`, `new Function(...)`, and `(eval)(...)`. */
+function dynamicCodeCall(body: string, index: number): boolean {
+  let cursor = skipSpaceAndComments(body, index);
+  if (body[cursor] === "?" && body[cursor + 1] === ".") {
+    cursor = skipSpaceAndComments(body, cursor + 2);
+  }
+  if (body[cursor] === "(") return true;
+  return closesThenCalls(body, cursor);
+}
+
 function closesThenCalls(body: string, index: number): boolean {
   let cursor = index;
   let closes = 0;

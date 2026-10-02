@@ -1752,6 +1752,14 @@ try {
     "citedExport",
     "credited",
   );
+  const dynamicEval = unresolvedRunnerCalls(
+    ['if (false) it("credited", citedExport)', 'eval("it(\\"credited\\", unrelated)")'].join("\n"),
+  );
+  const dynamicFunction = unresolvedRunnerCalls('Function("return it(\\"credited\\", unrelated)")');
+  const dynamicNew = unresolvedRunnerCalls('new Function("it", "it(\\"credited\\", unrelated)")');
+  const dynamicMember = unresolvedRunnerCalls('globalThis.eval("it(\\"credited\\", unrelated)")');
+  const dynamicGrouped = unresolvedRunnerCalls('(eval)("it(\\"credited\\", unrelated)")');
+  const dynamicPlain = unresolvedRunnerCalls('const label = "eval";\nfunction eval() {}\n');
   const creditGuards =
     aliasedDuplicate &&
     aliasedResolved &&
@@ -1780,7 +1788,13 @@ try {
     bracketOptional.includes("runner") &&
     reassigned.length === 0 &&
     assignedAfter.length === 1 &&
-    shadowedAssign.length === 1;
+    shadowedAssign.length === 1 &&
+    dynamicEval.includes("eval") &&
+    dynamicFunction.includes("Function") &&
+    dynamicNew.includes("Function") &&
+    dynamicMember.includes("eval") &&
+    dynamicGrouped.includes("eval") &&
+    dynamicPlain.length === 0;
   const duplicateOk =
     duplicateNames.length === 1 &&
     duplicateNames[0] === "kept > quota is documented" &&
@@ -2009,6 +2023,12 @@ try {
       reassigned,
       assignedAfter,
       shadowedAssign,
+      dynamicEval,
+      dynamicFunction,
+      dynamicNew,
+      dynamicMember,
+      dynamicGrouped,
+      dynamicPlain,
     }),
   );
 
