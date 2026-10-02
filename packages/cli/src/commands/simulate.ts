@@ -35,6 +35,20 @@ function assertValidScenario(valid: ReturnType<typeof validateScenarioV1>) {
   return valid.scenario;
 }
 
+// Writers before the engine field only ran the number engine.
+function assertResumeEngine(args: {
+  engineId: string;
+  resumedJson: ReturnType<typeof parseSimStateJSON> | undefined;
+}) {
+  if (!args.resumedJson) return;
+  const saved = args.resumedJson.engine?.name ?? "number";
+  if (saved !== args.engineId) {
+    throw cliError("SIM_STATE_ENGINE_MISMATCH", `Resume engine mismatch: expected ${args.engineId}, got ${saved}`, {
+      hint: `Pass --engine ${saved} to resume this state.`,
+    });
+  }
+}
+
 function restoreStrategyState(args: {
   strategy: ReturnType<typeof prepareResolvedRun>["definition"]["strategy"];
   resumedJson: ReturnType<typeof parseSimStateJSON> | undefined;
@@ -167,6 +181,7 @@ export default defineCommand({
       fast: flags.fast,
       seed: deterministicSeed,
     });
+    assertResumeEngine({ engineId: prepared.engine.effectiveId, resumedJson });
     const opened = prepared.open("simulate", `simulate:${runId}`);
     const E = prepared.engine.engine as typeof prepared.definition.ctx.E;
     const strategy = opened.scenario.strategy;

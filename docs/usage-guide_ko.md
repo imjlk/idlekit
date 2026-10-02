@@ -230,6 +230,7 @@ bun run --cwd packages/cli dev -- simulate ../../examples/simple-linear.json \
 
 - state json은 실행 전에 구조 검증됩니다. 깨진 파일은 `[SIM_STATE_INVALID_JSON]`으로 실패합니다.
 - 저장된 `unit`과 현재 시나리오 단위가 다르면 `[SIM_STATE_UNIT_MISMATCH]`로 실패합니다.
+- 저장된 `engine.name`이 현재 실행 엔진(`--engine`, 기본 `number`)과 다르면 `[SIM_STATE_ENGINE_MISMATCH]`로 실패합니다. engine 필드가 없는 이전 state는 `number`로 읽습니다.
 - state에 `strategy`가 있으면 현재 실행 전략과 `id`가 같아야 하며, 다르면 `[RESUME_STRATEGY_MISMATCH]`로 실패합니다.
 - state에 전략 상태가 있는데 해당 전략이 restore를 지원하지 않으면 실패합니다.
 

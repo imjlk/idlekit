@@ -214,6 +214,7 @@ bun run --cwd packages/cli dev -- init scenario --track personal --preset longru
 
 - 구조 검증 실패 시 `[SIM_STATE_INVALID_JSON]`
 - 단위 불일치 시 `[SIM_STATE_UNIT_MISMATCH]`
+- 저장된 `engine.name`과 실행 엔진이 다르면 `[SIM_STATE_ENGINE_MISMATCH]` (engine 필드가 없으면 `number`)
 - 지원하지 않는 버전이면 `[SIM_STATE_UNSUPPORTED_VERSION]`
 - 전략 id 불일치 시 `[RESUME_STRATEGY_MISMATCH]`
 - 전략 state version 불일치 시 `[RESUME_STRATEGY_MISMATCH]`
