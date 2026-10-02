@@ -58,7 +58,7 @@ function parseHorizonToken(raw: string): HorizonPoint {
   throw cliError("CLI_USAGE", `invalid horizon token: ${raw} (expected e.g. 30m,2h,24h,7d)`);
 }
 
-function parseHorizons(raw: string): HorizonPoint[] {
+export function parseHorizons(raw: string): HorizonPoint[] {
   const tokens = raw
     .split(",")
     .map((x) => x.trim())
@@ -490,7 +490,11 @@ export default defineCommand({
       fast: flags.fast,
       seed,
     });
-    const opened = prepared.open("ltv", `ltv:${seed}`);
+    const opened = prepared.open("ltv", `ltv:${seed}`, {
+      horizons: parseHorizons(flags.horizons),
+      draws: flags.draws ?? null,
+      valuePerWorth: flags["value-per-worth"] ?? null,
+    });
     const analysis = runLtvAnalysis({
       scenario: valid.scenario,
       scenarioPath,
@@ -511,7 +515,7 @@ export default defineCommand({
       scenario: valid.scenario,
       seed,
       pluginDigest: loaded.pluginDigest,
-      effectiveRunHash: prepared.hash,
+      effectiveRunHash: opened.hash,
       effectiveEngine: prepared.engine.effectiveId,
       stageScope: { ltv: opened.plan.stage.applies },
     });

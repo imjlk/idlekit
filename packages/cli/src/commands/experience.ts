@@ -82,7 +82,10 @@ export default defineCommand({
       sessionId: flags["session-pattern"],
       days: flags.days,
     });
-    const seededScenario = prepared.open("experience", `experience:${seed}`).scenario;
+    const opened = prepared.open("experience", `experience:${seed}`, {
+      draws: resolveExperienceDraws(prepared.definition, flags.draws),
+    });
+    const seededScenario = opened.scenario;
 
     const sessionPattern = resolveSessionPatternSpec({
       scenario: seededScenario,
@@ -154,7 +157,7 @@ export default defineCommand({
 
     const outputMeta = buildOutputMeta({
       command: "experience",
-      effectiveRunHash: prepared.hash,
+      effectiveRunHash: opened.hash,
       effectiveEngine: prepared.engine.effectiveId,
       stageScope: { experience: { strategy: true, step: false, fast: false, session: true } },
       runId,

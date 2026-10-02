@@ -182,7 +182,13 @@ export default defineCommand({
       seed: deterministicSeed,
     });
     assertResumeEngine({ engineId: prepared.engine.effectiveId, resumedJson });
-    const opened = prepared.open("simulate", `simulate:${runId}`);
+    const opened = prepared.open("simulate", `simulate:${runId}`, {
+      durationSec: flags.duration ?? prepared.definition.run.durationSec,
+      offlineSeconds: flags["offline-seconds"] ?? 0,
+      resumeHash: resumedJson ? hashContent(resumedJson) : null,
+      eventLogEnabled: flags["event-log-enabled"] ?? null,
+      eventLogMax: flags["event-log-max"] ?? null,
+    });
     const E = prepared.engine.engine as typeof prepared.definition.ctx.E;
     const strategy = opened.scenario.strategy;
     restoreStrategyState({
@@ -207,7 +213,7 @@ export default defineCommand({
       runId,
       seed: deterministicSeed,
       pluginDigest: loaded.pluginDigest,
-      effectiveRunHash: prepared.hash,
+      effectiveRunHash: opened.hash,
       effectiveEngine: prepared.engine.effectiveId,
       stageScope: { simulate: opened.plan.stage.applies },
     });

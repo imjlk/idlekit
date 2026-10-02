@@ -21,6 +21,7 @@ import {
   resolveEffectiveEngine,
   resolvedRunContract,
   sessionCaseSeed,
+  workflowRunHash,
 } from "./runConfiguration";
 
 const modelFactory: ModelFactory = {
@@ -112,7 +113,7 @@ export function keepsResolvedRunConfiguration(): void {
     seed: 1,
     pluginDigest: { "/var/other/plugin.ts": "def", "/var/other/copy.ts": "abc" },
   });
-  expect(prepared.hash).toBe(standalone.hash);
+  expect(prepared.open("simulate", "x").hash).toBe(standalone.open("simulate", "y").hash);
   expect(prepared.definition).not.toBe(prepared.open("simulate", "evaluate:simulate").scenario);
 
   const simulate = prepared.open("simulate", "evaluate:simulate");
@@ -278,4 +279,39 @@ export function keepsResolvedRunConfiguration(): void {
 
 describe("PR-07 resolved run", () => {
   it("keeps resolved run configuration", keepsResolvedRunConfiguration);
+
+  it("digests each stage from its applied plan and command inputs", () => {
+    const loaded = registries();
+    const input = scenario();
+    const base = { scenario: input, ...loaded, seed: 1 };
+    const plain = prepareResolvedRun(base);
+    const again = prepareResolvedRun({ ...base, pluginDigest: {} });
+    const stepped = prepareResolvedRun({ ...base, stepSec: 5, fast: true });
+    const consistent = prepareResolvedRun({ ...base, stepSec: 5, fast: true, consistentOverrides: true });
+
+    const sim = (p: typeof plain, inputs?: Record<string, unknown>) => p.open("simulate", "a", inputs).hash;
+    const exp = (p: typeof plain, inputs?: Record<string, unknown>) => p.open("experience", "b", inputs).hash;
+
+    expect(sim(plain, { durationSec: 10 })).toBe(sim(again, { durationSec: 10 }));
+    expect(sim(plain, { durationSec: 10 })).not.toBe(sim(plain, { durationSec: 20 }));
+    expect(sim(plain, { offlineSeconds: 0 })).not.toBe(sim(plain, { offlineSeconds: 60 }));
+    expect(sim(plain)).not.toBe(exp(plain));
+
+    expect(sim(stepped)).not.toBe(sim(plain));
+    // Experience leaves --step and --fast off unless overrides are consistent.
+    expect(exp(stepped)).toBe(exp(plain));
+    expect(exp(consistent)).not.toBe(exp(stepped));
+    expect(sim(consistent)).toBe(sim(stepped));
+
+    const ltv = (inputs: Record<string, unknown>) => plain.open("ltv", "c", inputs).hash;
+    const ltvBase = { horizons: [{ label: "30m", seconds: 1800 }], draws: null, valuePerWorth: null };
+    expect(ltv(ltvBase)).toBe(ltv({ ...ltvBase }));
+    expect(ltv({ ...ltvBase, horizons: [{ label: "2h", seconds: 7200 }] })).not.toBe(ltv(ltvBase));
+    expect(ltv({ ...ltvBase, draws: 8 })).not.toBe(ltv(ltvBase));
+    expect(ltv({ ...ltvBase, valuePerWorth: 2 })).not.toBe(ltv(ltvBase));
+
+    const stages = { simulate: sim(plain), experience: exp(plain) };
+    expect(workflowRunHash(stages)).toBe(workflowRunHash({ experience: exp(again), simulate: sim(again) }));
+    expect(workflowRunHash({ ...stages, experience: exp(consistent) })).not.toBe(workflowRunHash(stages));
+  });
 });

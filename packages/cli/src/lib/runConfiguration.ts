@@ -84,16 +84,21 @@ export type ResolvedRunPlan = Readonly<{
   stage: Readonly<{ name: StageName; applies: StageApply }>;
 }>;
 
+/** Command inputs outside the plan that change a stage result, such as duration or horizons. */
+export type StageInputs = Readonly<Record<string, unknown>>;
+
 export type PreparedRun = Readonly<{
   engine: ResolvedEngine;
   definition: CompiledScenario<number, string, Record<string, unknown>>;
-  hash: string;
   open: (
     stage: StageName,
     trialId: string,
+    inputs?: StageInputs,
   ) => Readonly<{
     scenario: CompiledScenario<number, string, Record<string, unknown>>;
     plan: ResolvedRunPlan;
+    /** Digest of this stage: the plan it applied and its command inputs. */
+    hash: string;
   }>;
 }>;
 
@@ -214,10 +219,12 @@ export function effectiveRunHash(args: {
   strategyParams?: unknown;
   paramsMode: StrategyParamsMode;
   stepSec: number;
-  session?: ResolvedRunPlan["session"];
+  session?: Readonly<{ id?: string; days?: number }>;
   seed?: number;
   pluginDigests: readonly string[];
   fast: boolean;
+  stage?: ResolvedRunPlan["stage"];
+  inputs?: StageInputs;
   cwd?: string;
   scenarioPath?: string;
   generatedAt?: string;
@@ -234,11 +241,35 @@ export function effectiveRunHash(args: {
     strategyParams: args.strategyParams ?? null,
     paramsMode: args.paramsMode,
     stepSec: args.stepSec,
-    session: args.session ?? null,
+    session: args.session ? { id: args.session.id ?? null, days: args.session.days ?? null } : null,
     seed: args.seed ?? null,
     pluginDigests: [...args.pluginDigests].sort(),
     fast: args.fast,
+    stage: args.stage ?? null,
+    inputs: args.inputs ?? null,
   });
+}
+
+function stageRunHash(scenario: ScenarioV1, plan: ResolvedRunPlan, inputs: StageInputs | undefined): string {
+  return effectiveRunHash({
+    scenario,
+    engineId: plan.engine.effectiveId,
+    strategyId: plan.strategy.id,
+    strategyParams: plan.strategy.params,
+    paramsMode: plan.strategy.paramsMode,
+    stepSec: plan.stepSec.value,
+    session: plan.session,
+    seed: plan.seed,
+    pluginDigests: plan.pluginDigests,
+    fast: plan.fast !== undefined,
+    stage: plan.stage,
+    inputs,
+  });
+}
+
+/** Digest of a multi-stage run, from each stage digest. */
+export function workflowRunHash(stages: Readonly<Record<string, string>>): string {
+  return hashContent({ contract: resolvedRunContract, version: 1, stages });
 }
 
 function stagePlan(args: PrepareArgs & { engine: ResolvedEngine; stage: StageName }): ResolvedRunPlan {
@@ -341,42 +372,21 @@ export function prepareResolvedRun(args: PrepareArgs): PreparedRun {
     strategyRegistry: args.strategyRegistry,
     opts: { allowSuffixNotation: true },
   });
-  const commandStep = args.stepSec ?? args.scenario.clock.stepSec;
-  const commandStrategy = resolveStrategySelection({
+  // Reject an unknown strategy before any stage opens.
+  resolveStrategySelection({
     scenario: args.scenario,
     strategyRegistry: args.strategyRegistry,
     overrideId: args.strategyOverride,
     paramsMode: args.paramsMode,
   });
-  const sessionOverride = args.sessionId !== undefined || args.days !== undefined;
-  const hash = effectiveRunHash({
-    scenario: args.scenario,
-    engineId: engine.effectiveId,
-    strategyId: commandStrategy.id,
-    strategyParams: commandStrategy.params,
-    paramsMode: commandStrategy.paramsMode,
-    stepSec: commandStep,
-    session: {
-      ...(args.sessionId ?? args.scenario.design?.sessionPattern?.id
-        ? { id: args.sessionId ?? args.scenario.design?.sessionPattern?.id }
-        : {}),
-      ...(args.days ?? args.scenario.design?.sessionPattern?.days
-        ? { days: args.days ?? args.scenario.design?.sessionPattern?.days }
-        : {}),
-      source: sessionOverride ? "command" : "scenario",
-    },
-    seed: args.seed,
-    pluginDigests: pluginDigestValues(args.pluginDigest),
-    fast: args.fast === true,
-  });
   return {
     engine,
     definition,
-    hash,
-    open(stage, trialId) {
+    open(stage, trialId, inputs) {
       const plan = stagePlan({ ...args, engine, stage });
       return {
         plan,
+        hash: stageRunHash(args.scenario, plan, inputs),
         scenario: openResolvedStage({
           definition,
           plan,

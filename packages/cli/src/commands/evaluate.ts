@@ -4,7 +4,7 @@ import { resolve } from "path";
 import { z } from "zod";
 import { pluginOptions, type PluginOptionFlags } from "./_shared/plugin";
 import { loadRegistriesFromFlags } from "./_shared/plugin";
-import { runLtvAnalysis } from "./ltv";
+import { parseHorizons, runLtvAnalysis } from "./ltv";
 import { scenarioInvalidError, usageError } from "../errors";
 import { buildOutputMeta, deriveDeterministicRunId, deriveDeterministicSeed } from "../io/outputMeta";
 import { writeOutput } from "../io/writeOutput";
@@ -18,7 +18,7 @@ import {
   resolveSessionPatternSpec,
   summarizeExperienceMonteCarlo,
 } from "../lib/experience";
-import { prepareResolvedRun } from "../lib/runConfiguration";
+import { prepareResolvedRun, workflowRunHash } from "../lib/runConfiguration";
 import { readScenarioFile } from "../io/readScenario";
 import { ensureDir, writeTextFile } from "../runtime/bun";
 
@@ -166,7 +166,13 @@ export default defineCommand({
       consistentOverrides: flags["consistent-overrides"],
     });
     const E = prepared.engine.engine as typeof prepared.definition.ctx.E;
-    const simulateOpened = prepared.open("simulate", `evaluate:simulate:${seed}`);
+    const simulateOpened = prepared.open("simulate", `evaluate:simulate:${seed}`, {
+      durationSec: prepared.definition.run.durationSec,
+      offlineSeconds: 0,
+      resumeHash: null,
+      eventLogEnabled: null,
+      eventLogMax: null,
+    });
     const simulateScenario = simulateOpened.scenario;
     const simulateRun = runScenario(simulateScenario);
     const simulateNetWorth =
@@ -195,7 +201,9 @@ export default defineCommand({
       eventLog: simulateRun.eventLog,
     };
 
-    const experienceOpened = prepared.open("experience", `evaluate:experience:${seed}`);
+    const experienceOpened = prepared.open("experience", `evaluate:experience:${seed}`, {
+      draws: resolveExperienceDraws(prepared.definition, flags.draws),
+    });
     const experienceScenario = experienceOpened.scenario;
     const sessionPattern = resolveSessionPatternSpec({
       scenario: experienceScenario,
@@ -258,7 +266,11 @@ export default defineCommand({
       },
     });
 
-    const ltvOpened = prepared.open("ltv", `evaluate:ltv:${seed}`);
+    const ltvOpened = prepared.open("ltv", `evaluate:ltv:${seed}`, {
+      horizons: parseHorizons(flags.horizons),
+      draws: null,
+      valuePerWorth: null,
+    });
     const ltv = {
       scenario: scenarioAbs,
       ...runLtvAnalysis({
@@ -286,7 +298,7 @@ export default defineCommand({
       scenario: valid.scenario,
       seed,
       pluginDigest: loaded.pluginDigest,
-      effectiveRunHash: prepared.hash,
+      effectiveRunHash: simulateOpened.hash,
       effectiveEngine: prepared.engine.effectiveId,
       stageScope: { simulate: stageScope.simulate },
     });
@@ -297,7 +309,7 @@ export default defineCommand({
       scenario: valid.scenario,
       seed,
       pluginDigest: loaded.pluginDigest,
-      effectiveRunHash: prepared.hash,
+      effectiveRunHash: experienceOpened.hash,
       effectiveEngine: prepared.engine.effectiveId,
       stageScope: { experience: stageScope.experience },
     });
@@ -308,7 +320,7 @@ export default defineCommand({
       scenario: valid.scenario,
       seed,
       pluginDigest: loaded.pluginDigest,
-      effectiveRunHash: prepared.hash,
+      effectiveRunHash: ltvOpened.hash,
       effectiveEngine: prepared.engine.effectiveId,
       stageScope: { ltv: stageScope.ltv },
     });
@@ -319,7 +331,11 @@ export default defineCommand({
       seed,
       runId,
       pluginDigest: loaded.pluginDigest,
-      effectiveRunHash: prepared.hash,
+      effectiveRunHash: workflowRunHash({
+        simulate: simulateOpened.hash,
+        experience: experienceOpened.hash,
+        ltv: ltvOpened.hash,
+      }),
       effectiveEngine: prepared.engine.effectiveId,
       stageScope,
     });
