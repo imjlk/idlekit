@@ -778,8 +778,6 @@ function importCalls(
   return found;
 }
 
-const PACKAGE_SIGNAL = /\b(?:it|test|describe|eval|Function)\s*\(|\bplugin\b/;
-
 const DATA_LOADERS = new Set(["bytes", "file", "text"]);
 
 /** `type` inside `with { ... }` or `assert { ... }`. Other keys stay ignored. */
@@ -1684,7 +1682,6 @@ function acceptLocalFile(
 }
 
 function publishPackageBody(body: string): boolean {
-  if (!PACKAGE_SIGNAL.test(body)) return false;
   if (loaderPluginRegistration(body)) return true;
   return runnerSignal(body) !== "none";
 }

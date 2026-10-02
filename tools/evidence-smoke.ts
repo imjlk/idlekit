@@ -1,7 +1,13 @@
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join, resolve } from "path";
-import { plainTestEnv } from "./evidence/junit";
+import {
+  closeReportCapture,
+  openReportCapture,
+  plainTestEnv,
+  readReportCapture,
+  runReportCommand,
+} from "./evidence/junit";
 import {
   installSourceLock,
   sealedCommand,
@@ -911,6 +917,7 @@ try {
   let nestedPackage = false;
   let quietPackage = false;
   let libraryPackage = false;
+  let aliasPackage = false;
   let missingInstalled = false;
   let dynamicPackage = false;
   let dataImport = false;
@@ -1423,6 +1430,31 @@ try {
       unresolvedLocalRequires([requireHashHost]).length === 0 &&
       unresolvedLocalRequires([blockedHashHost]).includes("#blocked") &&
       unresolvedLocalRequires([missingHashHost]).includes("#missing");
+    const aliasPkg = join(installedRoot, "alias-runner");
+    mkdirSync(aliasPkg, { recursive: true });
+    writeFileSync(
+      join(aliasPkg, "package.json"),
+      '{ "name": "alias-runner", "main": "./index.ts" }\n',
+    );
+    writeFileSync(
+      join(aliasPkg, "index.ts"),
+      [
+        'import { it as run } from "bun:test";',
+        "export function register() {",
+        '  run("credited", unrelated);',
+        "}",
+        "// from-alias-runner",
+      ].join("\n"),
+    );
+    const aliasHost = join(specifierDir, "alias-host.test.ts");
+    writeFileSync(
+      aliasHost,
+      ['import "alias-runner";', 'if (false) it("credited", citedExport);'].join("\n"),
+    );
+    const aliasBodies = sourceGraph([aliasHost]);
+    aliasPackage =
+      aliasBodies.some((body) => body.includes("from-alias-runner")) &&
+      duplicateFullNamesAcross(aliasBodies).includes("credited");
   } finally {
     rmSync(specifierDir, { recursive: true, force: true });
   }
@@ -2644,6 +2676,21 @@ try {
   const dynamicMember = unresolvedRunnerCalls('globalThis.eval("it(\\"credited\\", unrelated)")');
   const dynamicGrouped = unresolvedRunnerCalls('(eval)("it(\\"credited\\", unrelated)")');
   const dynamicPlain = unresolvedRunnerCalls('const label = "eval";\nfunction eval() {}\n');
+  const vmModule = "node:" + "vm";
+  const dynamicVm = unresolvedRunnerCalls(
+    [
+      `import { runInNewContext } from ${JSON.stringify(vmModule)};`,
+      'const runner = runInNewContext("0");',
+      'runner.it("credited", unrelated);',
+    ].join("\n"),
+  );
+  const dynamicVmMember = unresolvedRunnerCalls(
+    `import vm from ${JSON.stringify(vmModule)};\nvm.runInThisContext("0");\n`,
+  );
+  const dynamicCompile = unresolvedRunnerCalls('compileFunction("return 1")();\n');
+  const dynamicVmPlain = unresolvedRunnerCalls(
+    "function runInNewContext() {}\nconst label = runInNewContext;\n",
+  );
   const creditGuards =
     aliasedDuplicate &&
     aliasedResolved &&
@@ -2679,6 +2726,10 @@ try {
     dynamicMember.includes("eval") &&
     dynamicGrouped.includes("eval") &&
     dynamicPlain.length === 0 &&
+    dynamicVm.includes("runInNewContext") &&
+    dynamicVmMember.includes("runInThisContext") &&
+    dynamicCompile.includes("compileFunction") &&
+    dynamicVmPlain.length === 0 &&
     orderedImport &&
     orderedBun &&
     orderedRequire &&
@@ -2775,6 +2826,75 @@ try {
       const intact = readFileSync(lockedHelper, "utf8").includes("marker = 1");
       const blocked =
         output.includes("EPERM") || output.includes("EROFS") || output.includes("read-only");
+      const reportPath = join(lockDir, "junit.xml");
+      const reportHelper = join(lockDir, "replace-report.ts");
+      const fakeReport = '<testsuites><testcase name="FAKEPASS"></testcase></testsuites>';
+      writeFileSync(
+        reportHelper,
+        [
+          'import { writeFileSync } from "fs";',
+          `const report = ${JSON.stringify(reportPath)};`,
+          "const passed = process.argv[2];",
+          'if (passed !== report) throw new Error("bad report");',
+          "const start = Date.now();",
+          "while (Date.now() - start < 400) {}",
+          "writeFileSync(report, " + JSON.stringify(fakeReport) + ");",
+          "try {",
+          '  writeFileSync("/dev/fd/3", ' + JSON.stringify(fakeReport) + ");",
+          "} catch {}",
+          "",
+        ].join("\n"),
+      );
+      writeFileSync(
+        join(lockDir, "report-attack.test.ts"),
+        [
+          'import { test } from "bun:test";',
+          'import { writeFileSync } from "fs";',
+          `const report = ${JSON.stringify(reportPath)};`,
+          `const helper = ${JSON.stringify(reportHelper)};`,
+          `const bun = ${JSON.stringify(process.execPath)};`,
+          'test("credited", () => {',
+          '  writeFileSync("/dev/fd/3", ' + JSON.stringify(fakeReport) + ");",
+          '  Bun.spawn({ cmd: [bun, helper, report], stdout: "ignore", stderr: "ignore" });',
+          "});",
+          "",
+        ].join("\n"),
+      );
+      const capture = openReportCapture(lockDir);
+      let reportText = "";
+      let reportFile = "";
+      try {
+        runReportCommand(
+          sealedCommand(
+            lockDir,
+            [
+              process.execPath,
+              "test",
+              "--reporter=junit",
+              "--reporter-outfile",
+              capture.outfile,
+              "report-attack.test.ts",
+            ],
+            [lockedHelper],
+          ),
+          lockDir,
+          { ...plainTestEnv(), IDLEKIT_EVIDENCE_LOCK: lock.env },
+          capture.fd,
+        );
+        Bun.sleepSync(700);
+        reportText = readReportCapture(capture);
+        try {
+          reportFile = readFileSync(reportPath, "utf8");
+        } catch {
+          reportFile = "";
+        }
+      } finally {
+        closeReportCapture(capture);
+      }
+      const reportHeld =
+        reportFile.includes("FAKEPASS") &&
+        !reportText.includes("FAKEPASS") &&
+        reportText.includes('name="credited"');
       const windowsLock =
         sourceLockCommand("win32", lockDir, ["bun", "test"], [lockedHelper]) === undefined &&
         sourceLockCommand("win32", lockDir, ["bun", "test"], [])?.join("\0") === "bun\0test";
@@ -2783,7 +2903,12 @@ try {
         linuxLock?.[0] === "/bin/bash" &&
         linuxLock[1]?.endsWith("source-lock-mount.sh") === true;
       sourceLock =
-        (proc.exitCode ?? 1) !== 0 && intact && blocked && windowsLock && linuxPlanned;
+        (proc.exitCode ?? 1) !== 0 &&
+        intact &&
+        blocked &&
+        windowsLock &&
+        linuxPlanned &&
+        reportHeld;
     } finally {
       unsealSources(modes);
     }
@@ -2932,6 +3057,7 @@ try {
     nestedPackage &&
     quietPackage &&
     libraryPackage &&
+    aliasPackage &&
     missingInstalled &&
     dynamicPackage &&
     dataImport &&
@@ -3051,6 +3177,7 @@ try {
       nestedPackage,
       quietPackage,
       libraryPackage,
+      aliasPackage,
       missingInstalled,
       dynamicPackage,
       dataImport,

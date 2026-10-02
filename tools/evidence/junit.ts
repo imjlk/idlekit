@@ -1,4 +1,86 @@
+import { closeSync, fstatSync, openSync, readFileSync, readSync, unlinkSync } from "fs";
+import { join } from "path";
 import { fail } from "./program";
+
+/** Bun's reporter writes this element. Anything before the last one is not the ledger. */
+const BUN_JUNIT_MARKER = '<testsuites name="bun test"';
+const REPORT_FD = "/dev/fd/3";
+
+export type ReportCapture = {
+  outfile: string;
+  fd: number | undefined;
+  filePath: string | undefined;
+};
+
+/**
+ * Darwin and Linux hand Bun an unlinked file on fd 3. A descendant that finds
+ * `idlekit-evidence-*` or opens `/dev/fd/3` does not have that descriptor.
+ * Windows has no such path and no source-lock sandbox, so the report stays a file.
+ */
+export function openReportCapture(reportDir: string): ReportCapture {
+  if (process.platform !== "darwin" && process.platform !== "linux") {
+    const filePath = join(reportDir, "junit.xml");
+    return { outfile: filePath, fd: undefined, filePath };
+  }
+  const path = join(reportDir, "junit.xml");
+  const fd = openSync(path, "w+");
+  unlinkSync(path);
+  return { outfile: REPORT_FD, fd, filePath: undefined };
+}
+
+export function closeReportCapture(capture: ReportCapture): void {
+  const fd = capture.fd;
+  if (fd === undefined) return;
+  capture.fd = undefined;
+  try {
+    closeSync(fd);
+  } catch {
+    return;
+  }
+}
+
+function bunJunitDocument(text: string): string {
+  const at = text.lastIndexOf(BUN_JUNIT_MARKER);
+  if (at < 0) return "";
+  return text.slice(at);
+}
+
+/** Read the reporter document. Bun appends to fd 3, so an earlier write stays in front. */
+export function readReportCapture(capture: ReportCapture): string {
+  try {
+    if (capture.fd !== undefined) {
+      const size = fstatSync(capture.fd).size;
+      const buffer = Buffer.alloc(size);
+      if (size > 0) readSync(capture.fd, buffer, 0, size, 0);
+      return bunJunitDocument(buffer.toString("utf8"));
+    }
+    if (capture.filePath === undefined) return "";
+    return bunJunitDocument(readFileSync(capture.filePath, "utf8"));
+  } catch {
+    return "";
+  } finally {
+    closeReportCapture(capture);
+  }
+}
+
+export function runReportCommand(
+  command: readonly string[],
+  cwd: string,
+  env: Record<string, string | undefined>,
+  reportFd: number | undefined,
+): number {
+  const cmd = [...command];
+  if (reportFd === undefined) {
+    const proc = Bun.spawnSync(cmd, { cwd, env, stdout: "pipe", stderr: "pipe" });
+    return proc.exitCode ?? 1;
+  }
+  const proc = Bun.spawnSync(cmd, {
+    cwd,
+    env,
+    stdio: ["ignore", "pipe", "pipe", reportFd],
+  });
+  return proc.exitCode ?? 1;
+}
 
 export function plainTestEnv(): Record<string, string | undefined> {
   const env: Record<string, string | undefined> = { ...process.env };

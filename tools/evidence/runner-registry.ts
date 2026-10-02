@@ -350,7 +350,7 @@ function collectRegistrations(
     }
     const previous = body[word.end - word.value.length - 1];
     if (
-      (word.value === "eval" || word.value === "Function") &&
+      dynamicCodeName(word.value) &&
       wordBefore(body, index) !== "function" &&
       dynamicCodeCall(body, word.end)
     ) {
@@ -911,11 +911,11 @@ function declaratorInitializer(body: string, nameAt: number): boolean {
   return word.value === "const" || word.value === "let" || word.value === "var";
 }
 
-/** A package file hides tests when it registers one, or runs `eval` / `Function`. */
+/** A package file hides tests when it registers one, or runs dynamic code. */
 export function runnerSignal(body: string): "dynamic" | "registration" | "none" {
   const unresolved: string[] = [];
   const found = collectRegistrations(body, unresolved);
-  if (unresolved.includes("eval") || unresolved.includes("Function")) return "dynamic";
+  if (unresolved.some((name) => dynamicCodeName(name))) return "dynamic";
   if (found.length > 0) return "registration";
   return "none";
 }
@@ -1096,8 +1096,21 @@ function optionalNamespaceRunner(body: string, index: number): boolean {
   return callChainHasParen(body, member.end);
 }
 
+const DYNAMIC_CODE = new Set([
+  "Function",
+  "compileFunction",
+  "eval",
+  "runInContext",
+  "runInNewContext",
+  "runInThisContext",
+]);
+
+function dynamicCodeName(name: string): boolean {
+  return DYNAMIC_CODE.has(name);
+}
+
 /** `(it)("title", callback)` and `((it.failing))("title", callback)` still invoke the runner. */
-/** `eval(...)`, `Function(...)`, `new Function(...)`, and `(eval)(...)`. */
+/** `eval(...)`, `new Function(...)`, `runInNewContext(...)`, and `(eval)(...)`. */
 function dynamicCodeCall(body: string, index: number): boolean {
   let cursor = skipSpaceAndComments(body, index);
   if (body[cursor] === "?" && body[cursor + 1] === ".") {
