@@ -100,11 +100,11 @@ function commandedTestFiles(args: readonly string[]): string[] {
       patterns = true;
       continue;
     }
-    if (!patterns && (arg === "--preload" || arg === "--require")) {
+    if (!patterns && (arg === "--preload" || arg === "--require" || arg === "--config")) {
       index += 1;
       continue;
     }
-    if (!patterns && preloadValue(arg) !== undefined) continue;
+    if (!patterns && (preloadValue(arg) !== undefined || arg.startsWith("--config="))) continue;
     if (!patterns && arg.startsWith("-")) {
       const equals = arg.indexOf("=");
       const flag = equals === -1 ? arg : arg.slice(0, equals);
@@ -136,11 +136,43 @@ export function uninventoriedCommandTargets(
   );
 }
 
-function preloadNames(cwd: string, args: readonly string[]): string[] {
-  const names = preloadArguments(args);
-  const bunfig = join(cwd, "bunfig.toml");
-  if (!existsSync(bunfig)) return names;
-  const text = readFileSync(bunfig, "utf8");
+function configArgument(args: readonly string[]): string | undefined {
+  let patterns = false;
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index] ?? "";
+    if (!patterns && arg === "--") {
+      patterns = true;
+      continue;
+    }
+    if (patterns) continue;
+    if (arg === "--config") {
+      const next = args[index + 1];
+      if (!next || next.startsWith("-")) return "";
+      return next;
+    }
+    if (arg.startsWith("--config=")) return arg.slice("--config=".length);
+  }
+  return undefined;
+}
+
+function bunfigSelection(
+  cwd: string,
+  args: readonly string[],
+): { path: string } | { missing: string } | undefined {
+  const selected = configArgument(args);
+  if (selected === undefined) {
+    const path = join(cwd, "bunfig.toml");
+    if (!existsSync(path)) return undefined;
+    return { path };
+  }
+  if (selected.length === 0) return { missing: "--config" };
+  const path = isAbsolute(selected) ? selected : resolve(cwd, selected);
+  if (!existsSync(path)) return { missing: selected };
+  return { path };
+}
+
+function preloadNamesIn(text: string): string[] {
+  const names: string[] = [];
   for (const match of text.matchAll(/preload\s*=\s*\[([^\]]*)\]/g)) {
     for (const item of match[1]?.matchAll(/"([^"]+)"|'([^']+)'/g) ?? []) {
       const value = item[1] ?? item[2];
@@ -151,6 +183,14 @@ function preloadNames(cwd: string, args: readonly string[]): string[] {
     const value = match[1] ?? match[2];
     if (value) names.push(value);
   }
+  return names;
+}
+
+function preloadNames(cwd: string, args: readonly string[]): string[] {
+  const names = preloadArguments(args);
+  const selected = bunfigSelection(cwd, args);
+  if (!selected || "missing" in selected) return names;
+  names.push(...preloadNamesIn(readFileSync(selected.path, "utf8")));
   return names;
 }
 
@@ -177,5 +217,8 @@ export function localPreloadFiles(cwd: string, args: readonly string[]): string[
 
 /** Preloads that do not resolve to a file, so their registrations cannot be scanned. */
 export function unresolvedPreloadSpecifiers(cwd: string, args: readonly string[]): string[] {
-  return preloadNames(cwd, args).filter((name) => resolvePreload(cwd, name) === undefined);
+  const missing = preloadNames(cwd, args).filter((name) => resolvePreload(cwd, name) === undefined);
+  const selected = bunfigSelection(cwd, args);
+  if (selected && "missing" in selected) missing.unshift(selected.missing);
+  return missing;
 }

@@ -3,6 +3,8 @@ import {
   locallyBound,
   readDirectCallback,
   readIdentifier,
+  readQuoted,
+  readStaticTemplate,
   readTestTitle,
   regexCanStart,
   skipEachTable,
@@ -259,7 +261,9 @@ function collectRegistrations(
     if (alias?.namespace) {
       const member = namespaceRunnerMember(body, word.end);
       if (!member) {
-        if (optionalNamespaceRunner(body, word.end)) unresolved.push(word.value);
+        if (optionalNamespaceRunner(body, word.end) || bracketNamespaceRunner(body, word.end)) {
+          unresolved.push(word.value);
+        }
         index = word.end;
         continue;
       }
@@ -705,6 +709,61 @@ function optionalCallAfterGrouping(body: string, index: number): boolean {
   if (body[cursor] !== ")") return false;
   while (body[cursor] === ")") cursor = skipWhitespace(body, cursor + 1);
   return optionalRunnerCall(body, cursor);
+}
+
+/** Index after the `[]` group at `index`. `skipPair` does not treat brackets as a group. */
+function skipBracketGroup(body: string, index: number): number {
+  if (body[index] !== "[") return -1;
+  let cursor = index + 1;
+  let depth = 1;
+  while (cursor < body.length && depth > 0) {
+    const char = body[cursor] ?? "";
+    if (char === "'" || char === '"') {
+      cursor = skipQuoted(body, cursor);
+      continue;
+    }
+    if (char === "`") {
+      const end = skipTemplateLiteral(body, cursor);
+      if (end < 0) return -1;
+      cursor = end;
+      continue;
+    }
+    if (char === "/" && body[cursor + 1] === "/") {
+      const line = body.indexOf("\n", cursor);
+      cursor = line < 0 ? body.length : line + 1;
+      continue;
+    }
+    if (char === "/" && body[cursor + 1] === "*") {
+      const closeComment = body.indexOf("*/", cursor + 2);
+      cursor = closeComment < 0 ? body.length : closeComment + 2;
+      continue;
+    }
+    if (char === "/" && regexCanStart(body, cursor)) {
+      cursor = skipRegex(body, cursor);
+      continue;
+    }
+    if (char === "[") depth += 1;
+    else if (char === "]") depth -= 1;
+    cursor += 1;
+  }
+  return depth === 0 ? cursor : -1;
+}
+
+/** `runner["it"](...)` and `runner[name](...)`. A static non-runner member stays ignored. */
+function bracketNamespaceRunner(body: string, index: number): boolean {
+  let cursor = skipWhitespace(body, index);
+  if (body[cursor] === "?" && body[cursor + 1] === ".") {
+    cursor = skipWhitespace(body, cursor + 2);
+  }
+  if (body[cursor] !== "[") return false;
+  const keyAt = skipWhitespace(body, cursor + 1);
+  const quoted = readQuoted(body, keyAt) ?? readStaticTemplate(body, keyAt);
+  if (quoted && body[skipWhitespace(body, quoted.end)] === "]" && !isRunnerKind(quoted.value)) {
+    return false;
+  }
+  const close = skipBracketGroup(body, cursor);
+  if (close < 0) return false;
+  return callChainHasParen(body, close);
 }
 
 /** `runner?.it("title", callback)` on a namespace import. Other members stay ignored. */

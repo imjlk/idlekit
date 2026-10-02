@@ -1014,6 +1014,9 @@ try {
   let packagePreload = false;
   let missingPackagePreload = false;
   let missingRelativePreload = false;
+  let configPreload = false;
+  let configSplitPreload = false;
+  let missingConfigPreload = false;
   try {
     writeFileSync(join(preloadDir, "bunfig.toml"), '[test]\npreload = "./setup.ts"\n');
     const scalar = localPreloadFiles(preloadDir, ["test"]);
@@ -1054,6 +1057,20 @@ try {
     missingRelativePreload = unresolvedPreloadSpecifiers(preloadDir, ["test"]).includes(
       "./missing-setup.ts",
     );
+    writeFileSync(join(preloadDir, "bunfig.toml"), '[test]\npreload = ["./setup.ts"]\n');
+    writeFileSync(join(preloadDir, "alt.toml"), '[test]\npreload = ["test-setup"]\n');
+    const configured = localPreloadFiles(preloadDir, ["test", "--config=alt.toml"]);
+    const configuredBodies = sourceGraph([preloadHost, ...configured]);
+    configPreload =
+      configured.length === 1 &&
+      configured[0]?.endsWith("index.ts") === true &&
+      duplicateFullNamesAcross(configuredBodies).includes("credited");
+    const splitConfigured = localPreloadFiles(preloadDir, ["test", "--config", "alt.toml"]);
+    configSplitPreload = splitConfigured.length === 1 && splitConfigured[0] === configured[0];
+    missingConfigPreload = unresolvedPreloadSpecifiers(preloadDir, [
+      "test",
+      "--config=missing.toml",
+    ]).includes("missing.toml");
   } finally {
     rmSync(preloadDir, { recursive: true, force: true });
   }
@@ -1517,6 +1534,31 @@ try {
   const optionalExpect = unresolvedRunnerCalls(
     'import * as runner from "bun:test"\nrunner?.expect("saved", "msg")',
   );
+  const bracketBody = [
+    'import * as runner from "bun:test"',
+    'if (false) it("credited", citedExport)',
+    'runner["it"]("credited", unrelated)',
+  ].join("\n");
+  const bracketDuplicate = duplicateFullNames(bracketBody).includes("credited");
+  const bracketSingle = registeredSuites(
+    'import * as runner from "bun:test"\nrunner[\'it\']("credited", unrelated)',
+    "unrelated",
+    "credited",
+  );
+  const bracketTemplate = registeredSuites(
+    'import * as runner from "bun:test"\nrunner[`it`]("credited", unrelated)',
+    "unrelated",
+    "credited",
+  );
+  const bracketExpect = unresolvedRunnerCalls(
+    'import * as runner from "bun:test"\nrunner["expect"]("saved", "msg")',
+  );
+  const bracketDynamic = unresolvedRunnerCalls(
+    'import * as runner from "bun:test"\nrunner[name]("credited", unrelated)',
+  );
+  const bracketOptional = unresolvedRunnerCalls(
+    'import * as runner from "bun:test"\nrunner?.["it"]("credited", unrelated)',
+  );
   const reassigned = registeredSuites(
     ["citedExport = unrelated;", 'it("credited", citedExport);'].join("\n"),
     "citedExport",
@@ -1556,6 +1598,12 @@ try {
     optionalCredit.length === 0 &&
     optionalNamespace.includes("runner") &&
     optionalExpect.length === 0 &&
+    bracketDuplicate &&
+    bracketSingle.length === 1 &&
+    bracketTemplate.length === 1 &&
+    bracketExpect.length === 0 &&
+    bracketDynamic.includes("runner") &&
+    bracketOptional.includes("runner") &&
     reassigned.length === 0 &&
     assignedAfter.length === 1 &&
     shadowedAssign.length === 1;
@@ -1689,7 +1737,10 @@ try {
     arrayPreload &&
     packagePreload &&
     missingPackagePreload &&
-    missingRelativePreload;
+    missingRelativePreload &&
+    configPreload &&
+    configSplitPreload &&
+    missingConfigPreload;
   record(
     "duplicate-title",
     "zero",
@@ -1715,6 +1766,9 @@ try {
       packagePreload,
       missingPackagePreload,
       missingRelativePreload,
+      configPreload,
+      configSplitPreload,
+      missingConfigPreload,
     }),
   );
   record(
@@ -1740,6 +1794,12 @@ try {
       optionalCredit,
       optionalNamespace,
       optionalExpect,
+      bracketDuplicate,
+      bracketSingle,
+      bracketTemplate,
+      bracketExpect,
+      bracketDynamic,
+      bracketOptional,
       reassigned,
       assignedAfter,
       shadowedAssign,
@@ -1856,6 +1916,16 @@ try {
     ".",
     ["src/example.test.ts"],
   );
+  const configuredTarget = uninventoriedCommandTargets(
+    ["test", "--config", "alt.toml", "src/example.test.ts"],
+    ".",
+    ["src/example.test.ts"],
+  );
+  const configuredEquals = uninventoriedCommandTargets(
+    ["test", "--config=alt.toml", "src/example.test.ts"],
+    ".",
+    ["src/example.test.ts"],
+  );
   const preloadedEq = uninventoriedCommandTargets(
     ["test", "--preload=./setup.ts", "src/example.test.ts"],
     ".",
@@ -1914,6 +1984,8 @@ try {
     onlyTarget.length === 0 &&
     preloaded.length === 0 &&
     preloadedEq.length === 0 &&
+    configuredTarget.length === 0 &&
+    configuredEquals.length === 0 &&
     directoryPattern.length === 1 &&
     directoryPattern[0] === "src" &&
     namedPattern.length === 0 &&

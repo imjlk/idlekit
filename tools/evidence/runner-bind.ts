@@ -187,11 +187,30 @@ export function titleCallAt(body: string, index: number): boolean {
   return body[skipWhitespace(body, quoted.end)] === ",";
 }
 
-/** `.it` / `.test` / `.describe` on a namespace import. Other members are not runners. */
+function staticBracketKey(
+  body: string,
+  index: number,
+): { value: string; end: number } | undefined {
+  const open = skipSpaceAndComments(body, index);
+  if (body[open] !== "[") return undefined;
+  const keyAt = skipSpaceAndComments(body, open + 1);
+  const quoted = readQuoted(body, keyAt) ?? readStaticTemplate(body, keyAt);
+  if (!quoted) return undefined;
+  const close = skipSpaceAndComments(body, quoted.end);
+  if (body[close] !== "]") return undefined;
+  return { value: quoted.value, end: close + 1 };
+}
+
+/** `.it` / `["it"]` on a namespace import. Other members are not runners. */
 export function namespaceRunnerMember(
   body: string,
   index: number,
 ): { kind: RunnerKind; end: number } | undefined {
+  const bracket = staticBracketKey(body, index);
+  if (bracket) {
+    if (!isRunnerKind(bracket.value)) return undefined;
+    return { kind: bracket.value, end: bracket.end };
+  }
   const dot = skipSpaceAndComments(body, index);
   if (body[dot] !== ".") return undefined;
   const member = readIdentifier(body, skipSpaceAndComments(body, dot + 1));
