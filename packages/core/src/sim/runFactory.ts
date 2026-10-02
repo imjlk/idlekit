@@ -215,10 +215,28 @@ export function createStreamRng(stream: RngStreamName, seed: number): StreamRng 
   };
 }
 
-/** Identity of the resolved plan. Wall time and local paths are not inputs. */
+/** Copy for JSON with object keys sorted at every depth. Arrays keep their order. */
+function canonicalJsonValue(value: unknown): unknown {
+  if (value === null || typeof value !== "object") return value;
+  const plain = typeof (value as { toJSON?: unknown }).toJSON === "function"
+    ? (value as { toJSON: () => unknown }).toJSON()
+    : value;
+  if (plain === null || typeof plain !== "object") return plain;
+  if (Array.isArray(plain)) return plain.map(canonicalJsonValue);
+  const out: Record<string, unknown> = {};
+  for (const key of Object.keys(plain).sort()) {
+    out[key] = canonicalJsonValue((plain as Record<string, unknown>)[key]);
+  }
+  return out;
+}
+
+/**
+ * Identity of the resolved plan: canonical JSON of the plan fields, with object keys sorted.
+ * It is a string key, not a hash. Equal plans give equal identities. Wall time and local paths are not inputs.
+ */
 export function executionPlanIdentity(plan: ExecutionPlan): string {
   assertExecutionPlan(plan);
-  return JSON.stringify({
+  return JSON.stringify(canonicalJsonValue({
     contract: plan.contract,
     version: plan.version,
     stepSec: plan.stepSec,
@@ -237,7 +255,7 @@ export function executionPlanIdentity(plan: ExecutionPlan): string {
           minPrestigeIntervalSec: plan.constraints.minPrestigeIntervalSec ?? null,
         }
       : null,
-  });
+  }));
 }
 
 function resolvedConstraints(

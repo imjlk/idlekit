@@ -624,4 +624,21 @@ describe("run factory review fixes", () => {
     expect(ok.scenario.strategy?.id).toBe("checked");
     expect(created).toEqual([{ n: 1 }, { n: 2 }]);
   });
+  it("gives equal plans the same identity regardless of key order", () => {
+    const base = { contract: "idlekit.execution-plan", version: 1, stepSec: 1 } as const;
+    const left: ExecutionPlan = {
+      ...base,
+      strategyParams: { schemaVersion: 1, program: [{ actionId: "a", every: 2 }], loop: false },
+      trace: { everySteps: 1, keepActionsLog: true },
+    };
+    const right: ExecutionPlan = {
+      ...base,
+      trace: { keepActionsLog: true, everySteps: 1 },
+      strategyParams: { loop: false, program: [{ every: 2, actionId: "a" }], schemaVersion: 1 },
+    };
+    expect(executionPlanIdentity(left)).toBe(executionPlanIdentity(right));
+    expect(executionPlanIdentity(left)).not.toBe(
+      executionPlanIdentity({ ...left, strategyParams: { schemaVersion: 1, program: [{ actionId: "b", every: 2 }], loop: false } }),
+    );
+  });
 });
