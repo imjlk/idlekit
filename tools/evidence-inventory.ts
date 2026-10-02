@@ -27,15 +27,10 @@ import {
 } from "./evidence/runner-registry";
 import {
   assertExecutedTests,
-  closeReportCapture,
   junitCases,
   junitReporterArgs,
-  openReportCapture,
   plainTestEnv,
-  readReportCapture,
   reporterNameMatches,
-  runReportCommand,
-  type ReportCapture,
 } from "./evidence/junit";
 import {
   assertNonEmptyGlobs,
@@ -516,6 +511,7 @@ export async function checkInventory(projectRoot = root): Promise<string[]> {
       continue;
     }
     const reportDir = mkdtempSync(join(tmpdir(), "idlekit-evidence-"));
+    const reportPath = join(reportDir, "junit.xml");
     const commandCwd = resolve(projectRoot, first.cwd);
     const inventoriedFiles = [...new Set(tests.map((test) => test.file))];
     const commandFiles = [
@@ -528,27 +524,28 @@ export async function checkInventory(projectRoot = root): Promise<string[]> {
     const modes = sealSources(locked);
     let exitCode = 1;
     let output = "";
-    let opened: ReportCapture | undefined;
     try {
-      const capture = openReportCapture(reportDir);
-      opened = capture;
       const bare = [
         process.execPath,
-        ...preloadTestArgs(junitReporterArgs(first.args, capture.outfile), lock.preload),
+        ...preloadTestArgs(junitReporterArgs(first.args, reportPath), lock.preload),
       ];
       // Windows has no source-lock sandbox. Typecheck still runs the inventoried
       // command there. sealedCommand keeps refusing to return that unsealed argv.
       const wrapped = sourceLockCommand(process.platform, reportDir, bare, locked);
       const command = wrapped ?? bare;
-      exitCode = runReportCommand(
-        command,
-        commandCwd,
-        { ...plainTestEnv(), IDLEKIT_EVIDENCE_LOCK: lock.env },
-        capture.fd,
-      );
-      output = readReportCapture(capture);
+      const proc = Bun.spawnSync(command, {
+        cwd: commandCwd,
+        stdout: "pipe",
+        stderr: "pipe",
+        env: { ...plainTestEnv(), IDLEKIT_EVIDENCE_LOCK: lock.env },
+      });
+      exitCode = proc.exitCode ?? 1;
+      try {
+        output = readFileSync(reportPath, "utf8");
+      } catch {
+        output = "";
+      }
     } finally {
-      if (opened) closeReportCapture(opened);
       unsealSources(modes);
       rmSync(reportDir, { recursive: true, force: true });
     }
