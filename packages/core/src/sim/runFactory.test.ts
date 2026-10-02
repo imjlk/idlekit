@@ -543,4 +543,39 @@ describe("run factory review fixes", () => {
       ).toThrow(RunIsolationError);
     }
   });
+  it("keeps the draw failure when releasing the strategy also fails", () => {
+    let broken = false;
+    const fragile: Strategy<number, UnitCode, { buys: number }> = {
+      id: "fragile",
+      snapshotState: () => ({ cursor: 0 }),
+      restoreState: () => {
+        if (broken) throw new Error("restore failed");
+      },
+      decide: () => [],
+    };
+    const scenario = compiled({ stepSec: 1, durationSec: 1, vars: { buys: 0 }, model: buyModel(), strategy: fragile });
+    expect(() =>
+      simulateMonteCarlo({
+        scenario,
+        draws: 1,
+        seed: 1,
+        metrics: () => {
+          broken = true;
+          throw new Error("draw failed");
+        },
+      }),
+    ).toThrow("draw failed");
+    broken = false;
+    expect(() =>
+      simulateMonteCarlo({
+        scenario,
+        draws: 1,
+        seed: 1,
+        metrics: () => {
+          broken = true;
+          return 0;
+        },
+      }),
+    ).toThrow("restore failed");
+  });
 });

@@ -45,6 +45,7 @@ export function simulateMonteCarlo<N, U extends string, Vars, T>(
   const results: Array<{ drawIndex: number; seed: number; metrics: T }> = [];
   const binding = createRunFactory(args.registries).bind(args.scenario, args.isolation);
 
+  let failed = false;
   try {
     for (let drawIndex = 0; drawIndex < draws; drawIndex += 1) {
       const seed = deriveDrawSeed(args.seed, drawIndex);
@@ -82,8 +83,16 @@ export function simulateMonteCarlo<N, U extends string, Vars, T>(
         }),
       });
     }
+  } catch (error) {
+    failed = true;
+    throw error;
   } finally {
-    binding.release();
+    // A release failure must not replace the draw failure that is already unwinding.
+    try {
+      binding.release();
+    } catch (cleanup) {
+      if (!failed) throw cleanup;
+    }
   }
 
   return {
