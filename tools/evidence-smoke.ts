@@ -1375,6 +1375,25 @@ try {
   ].join("\n");
   const parenCalls = unresolvedRunnerCalls(parenBody);
   const parenCredit = registeredSuites('(it)("credited", citedExport);', "citedExport", "credited");
+  const optionalBody = [
+    'it?.("credited", unrelated);',
+    'it?.failing("credited", unrelated);',
+    'it.failing?.("credited", unrelated);',
+    '(it)?.("credited", unrelated);',
+    'it?.skipIf(ready)("credited", unrelated);',
+  ].join("\n");
+  const optionalCalls = unresolvedRunnerCalls(optionalBody);
+  const optionalCredit = registeredSuites(
+    'it?.("credited", citedExport);',
+    "citedExport",
+    "credited",
+  );
+  const optionalNamespace = unresolvedRunnerCalls(
+    'import * as runner from "bun:test"\nrunner?.it("credited", unrelated)',
+  );
+  const optionalExpect = unresolvedRunnerCalls(
+    'import * as runner from "bun:test"\nrunner?.expect("saved", "msg")',
+  );
   const reassigned = registeredSuites(
     ["citedExport = unrelated;", 'it("credited", citedExport);'].join("\n"),
     "citedExport",
@@ -1410,6 +1429,10 @@ try {
     shadowedCredit.length === 0 &&
     parenCalls.includes("it") &&
     parenCredit.length === 0 &&
+    optionalCalls.includes("it") &&
+    optionalCredit.length === 0 &&
+    optionalNamespace.includes("runner") &&
+    optionalExpect.length === 0 &&
     reassigned.length === 0 &&
     assignedAfter.length === 1 &&
     shadowedAssign.length === 1;
@@ -1554,6 +1577,10 @@ try {
       shadowedCredit,
       parenCalls,
       parenCredit,
+      optionalCalls,
+      optionalCredit,
+      optionalNamespace,
+      optionalExpect,
       reassigned,
       assignedAfter,
       shadowedAssign,

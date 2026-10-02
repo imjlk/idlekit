@@ -259,6 +259,7 @@ function collectRegistrations(
     if (alias?.namespace) {
       const member = namespaceRunnerMember(body, word.end);
       if (!member) {
+        if (optionalNamespaceRunner(body, word.end)) unresolved.push(word.value);
         index = word.end;
         continue;
       }
@@ -294,7 +295,11 @@ function collectRegistrations(
       open = skipWhitespace(body, tableEnd);
     }
     if (body[open] !== "(") {
-      if (isIndirectInvoke(body, index) || closesThenCalls(body, open)) unresolved.push(word.value);
+      const optional =
+        optionalRunnerCall(body, open) || optionalCallAfterGrouping(body, open);
+      if (isIndirectInvoke(body, index) || closesThenCalls(body, open) || optional) {
+        unresolved.push(word.value);
+      }
       index = word.end;
       continue;
     }
@@ -647,6 +652,62 @@ function callOpenBefore(body: string, index: number): number {
     }
   }
   return -1;
+}
+
+/** A `.` / `?.` chain that reaches a call parenthesis. */
+function callChainHasParen(body: string, index: number): boolean {
+  let cursor = skipWhitespace(body, index);
+  let sawCall = false;
+  while (cursor < body.length) {
+    const char = body[cursor] ?? "";
+    if (char === "(" || char === "[") {
+      const close = skipPair(body, cursor);
+      if (close < 0) return false;
+      if (char === "(") sawCall = true;
+      cursor = skipWhitespace(body, close);
+      continue;
+    }
+    if (char === "?" && body[cursor + 1] === ".") {
+      cursor = skipWhitespace(body, cursor + 2);
+      continue;
+    }
+    if (char === ".") {
+      cursor = skipWhitespace(body, cursor + 1);
+      continue;
+    }
+    if (/[A-Za-z_$]/.test(char)) {
+      const ident = readIdentifier(body, cursor);
+      if (!ident) return false;
+      cursor = skipWhitespace(body, ident.end);
+      continue;
+    }
+    break;
+  }
+  return sawCall;
+}
+
+/** `it?.("title", callback)` and `it?.failing("title", callback)` still run the test. */
+function optionalRunnerCall(body: string, index: number): boolean {
+  const cursor = skipWhitespace(body, index);
+  if (body[cursor] !== "?" || body[cursor + 1] !== ".") return false;
+  return callChainHasParen(body, cursor);
+}
+
+/** `(it)?.("title", callback)` after the grouped runner reference. */
+function optionalCallAfterGrouping(body: string, index: number): boolean {
+  let cursor = index;
+  if (body[cursor] !== ")") return false;
+  while (body[cursor] === ")") cursor = skipWhitespace(body, cursor + 1);
+  return optionalRunnerCall(body, cursor);
+}
+
+/** `runner?.it("title", callback)` on a namespace import. Other members stay ignored. */
+function optionalNamespaceRunner(body: string, index: number): boolean {
+  const cursor = skipWhitespace(body, index);
+  if (body[cursor] !== "?" || body[cursor + 1] !== ".") return false;
+  const member = readIdentifier(body, skipWhitespace(body, cursor + 2));
+  if (!member || !isRunnerKind(member.value)) return false;
+  return callChainHasParen(body, member.end);
 }
 
 /** `(it)("title", callback)` and `((it.failing))("title", callback)` still invoke the runner. */
