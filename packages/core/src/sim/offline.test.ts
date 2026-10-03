@@ -411,4 +411,27 @@ describe("applyOfflineSeconds", () => {
     expect(out.end.vars.bought).toBe(0);
     expect(cursor).toBe(0);
   });
+
+  it("consumes the decision when only maxActionsPerStep 0 empties the batch", () => {
+    let cursor = 0;
+    const strategy: Strategy<number, U, Vars> = {
+      id: "cursor",
+      decide(ctx, model, state) {
+        cursor += 1;
+        return [{ action: model.actions(ctx, state).find((action) => action.id === "buy")! }];
+      },
+      snapshotState: () => ({ cursor }),
+      restoreState: (saved) => {
+        cursor = (saved as { cursor: number }).cursor;
+      },
+    };
+    const base = makeScenario({ initialMoney: 5, strategy });
+    const out = applyOfflineSeconds({
+      scenario: { ...base, constraints: { maxActionsPerStep: 0 } },
+      seconds: 3,
+      options: { actions: { mode: "allow", categories: ["buy"] } },
+    });
+    expect(out.end.vars.bought).toBe(0);
+    expect(cursor).toBe(3);
+  });
 });
