@@ -87,4 +87,18 @@ describe("snapshotFromSession", () => {
     expect(snapshot.perceived.activeSeconds).toBe(3600);
     expect(snapshot.perceived.visibleChangeCount).toBeGreaterThan(0);
   });
+
+  it("does not report growth from a merged trace the session budget cut", () => {
+    // Each 1800-second block traces 1801 points and fits. The merged session trace does not.
+    const capped = scenario({ maxPoints: 1801 });
+    const pattern = { id: "twice-daily" as const, days: 1 };
+    const session = simulateSessionPattern({ scenario: capped, pattern, seed: 1 });
+    const blocks = session.segments.filter((segment) => segment.kind === "active");
+    expect(blocks.map((segment) => segment.run.traceLog?.dropped)).toEqual([0, 0]);
+    expect(session.run.traceLog?.dropped).toBe(1801);
+    expect(analyzePerceivedProgression({ scenario: capped, session, series: "money" }).activeSeconds).toBe(3600);
+    expect(() => collectExperienceSnapshot({ scenario: capped, sessionPattern: pattern, seed: 1 })).toThrow(
+      "session growth needs the whole session trace",
+    );
+  });
 });

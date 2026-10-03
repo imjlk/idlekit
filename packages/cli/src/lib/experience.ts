@@ -250,6 +250,14 @@ export function snapshotFromSession<N, U extends string, Vars>(args: {
   series?: ExperienceSeries;
 }): ExperienceSnapshot {
   const series = resolveExperienceSeries(args.scenario, args.series);
+  // Growth reads the merged session trace. A budget can keep every block whole and still evict
+  // the merged trace's early points; slopes over the retained tail would read as the whole session.
+  const droppedPoints = args.session.run.traceLog?.dropped ?? 0;
+  if (droppedPoints > 0) {
+    throw new Error(
+      `session growth needs the whole session trace; the session dropped ${droppedPoints} trace points under trace.maxPoints`,
+    );
+  }
   const growth = analyzeGrowth({
     run: args.session.run,
     scenario: growthScenario(args.scenario, args.session),
