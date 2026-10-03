@@ -7,7 +7,7 @@ import type { SimEvent, SimState } from "./types";
  * Resolved observation contract. TC-05 has not registered this DTO.
  *
  * @evidence docs/requirements/active/observation-retention.md#req-pr05-observation-retention Counters come from the committed step, not from the retained event log.
- * @evidenceReview docs/requirements/active/observation-retention.md#req-pr05-observation-retention #15fc049 Re-read the section: retention does not change these counters, and a disabled mode is missing rather than zero.
+ * @evidenceReview docs/requirements/active/observation-retention.md#req-pr05-observation-retention #fbd26db Re-read the section: retention does not change these counters, a disabled mode is missing rather than zero, and a sample cap does not hide a fact from the observer.
  */
 export const observationContract = "idlekit.run-observation" as const;
 
@@ -271,11 +271,9 @@ export function createObservationRecorder<N, U extends string, Vars>(args: {
     if (seenMilestone.has(sample.key)) return;
     // A dropped key is seen too, so a recurring key counts once.
     seenMilestone.add(sample.key);
-    if (milestones.length >= args.maxMilestones) {
-      droppedMilestones += 1;
-      return;
-    }
-    milestones.push(sample);
+    // The cap limits retained samples, not what the observer is told.
+    if (milestones.length >= args.maxMilestones) droppedMilestones += 1;
+    else milestones.push(sample);
     if (notifyMilestone && args.observer?.onMilestone) {
       notify(() => args.observer?.onMilestone?.({ t: sample.firstSeenT, key: sample.key }));
     }
@@ -345,11 +343,8 @@ export function createObservationRecorder<N, U extends string, Vars>(args: {
           met = goal.met(deepClonePreservingPrototype(step.state));
         });
         if (!met) continue;
-        if (reachedGoals.size >= args.maxGoals) {
-          droppedGoals.add(goal.id);
-          continue;
-        }
-        reachedGoals.set(goal.id, step.t1);
+        if (reachedGoals.size >= args.maxGoals) droppedGoals.add(goal.id);
+        else reachedGoals.set(goal.id, step.t1);
         if (args.observer?.onGoal) notify(() => args.observer?.onGoal?.({ t: step.t1, goalId: goal.id }));
       }
     },
