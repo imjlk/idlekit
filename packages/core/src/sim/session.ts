@@ -266,6 +266,8 @@ export function simulateSessionPattern<N, U extends string, Vars>(args: {
   // A goal stays reached once met. Goals stop the session only when every goal is reached.
   const reachedGoals = new Set<number>();
   const allGoalsReached = () => goals.length > 0 && reachedGoals.size === goals.length;
+  // The runner's last call reads the segment's end state. Classify from it: until may hold only once.
+  let untilMet = false;
   const stopFn =
     originalUntil !== undefined || goals.length > 0
       ? (next: SimState<N, U, Vars>) => {
@@ -273,7 +275,8 @@ export function simulateSessionPattern<N, U extends string, Vars>(args: {
           goals.forEach((goal, i) => {
             if (!reachedGoals.has(i) && goal.met(deepClonePreservingPrototype(next))) reachedGoals.add(i);
           });
-          return (originalUntil?.(next) ?? false) || allGoalsReached();
+          untilMet = originalUntil?.(next) ?? false;
+          return untilMet || allGoalsReached();
         }
       : undefined;
 
@@ -303,8 +306,8 @@ export function simulateSessionPattern<N, U extends string, Vars>(args: {
     eventBuffer.pushRun(run);
   };
 
-  const classify = (run: RunResult<N, U, Vars>): SessionStopReason | undefined => {
-    if (originalUntil?.(run.end)) return "until";
+  const classify = (): SessionStopReason | undefined => {
+    if (untilMet) return "until";
     if (allGoalsReached()) return "goal";
     return undefined;
   };
@@ -332,7 +335,7 @@ export function simulateSessionPattern<N, U extends string, Vars>(args: {
     // A stop inside the gap ends it at the smallest absence that earns the stepped reward.
     // Read the stop from the end state: a run that met it with no effective seconds left,
     // or none at all, reports duration first. A gap that does not stop keeps its wall end.
-    const reason = classify(offlineRun);
+    const reason = classify();
     const absence = reason ? offlineAbsenceForCredit(credited, requested, sc.run.offline) : requested;
     const gapEnd = wallStart + absence;
     const effective =
@@ -425,7 +428,7 @@ export function simulateSessionPattern<N, U extends string, Vars>(args: {
     });
     state = activeRun.end;
     wallT = wallEnd;
-    const reason = classify(activeRun);
+    const reason = classify();
     if (reason) stopReason = reason;
   }
 

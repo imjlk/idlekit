@@ -187,7 +187,7 @@ function runPattern(
  * @evidence ./session.ts#assertSessionSchedule An empty schedule, a negative offset, a negative duration, and overlapping blocks throw, and a 12-hour offset block starts on wall time 43200.
  * @evidenceReview ./session.ts#assertSessionSchedule #86f2edc Re-read assertSessionSchedule: days must be a positive integer, the list must be non-empty, each day an integer >= 0, each offset finite and >= 0, each duration finite and > 0, no block may end past the horizon, and sorted blocks may not overlap. Ran this function: the empty, negative offset, negative duration, and overlap cases threw those messages, and the 12-hour block ran after a 43200s offline segment.
  * @evidence ./session.ts#simulateSessionPattern A 12-hour gap with a 1-hour cap stays elapsed 43200 and credited 3600, presets keep the 86400 horizon, until and goals stop before the next block, and maxSteps cuts each active block without ending the session.
- * @evidenceReview ./session.ts#simulateSessionPattern #ce0d319 Re-read simulateSessionPattern: it rejects a non-integer trace budget for the whole session, counts a trace point shared by adjacent blocks once in traceLog, runs offline gaps through applyOfflineSeconds up to each scheduled wall start, ends a gap cut by until or a goal at the smallest absence whose cap- and decay-adjusted reward reaches the stepped reward, reading that stop from the gap's end state so a gap with no effective seconds, or one that used them all, is cut too, runs each block through runScenario with that block's duration, keeps state.t as reward time, evaluates each open goal on its own clone of the state, stops on until or once every goal is reached, counts budget stops per block and ends a cut block's wall time and elapsed seconds at its planned end while crediting only the simulated seconds, and merges segment observations. Ran this function: offline-heavy elapsed 86400 with 3600 credited and 82500 lost, early until and goal stopped at t 10 after one block, and maxSteps 2 gave two budget stops, the first ending at wall 110 with 10 elapsed and 2 credited, with the session ending on the 86400 horizon.
+ * @evidenceReview ./session.ts#simulateSessionPattern #02b5829 Re-read simulateSessionPattern: it rejects a non-integer trace budget for the whole session, counts a trace point shared by adjacent blocks once in traceLog, runs offline gaps through applyOfflineSeconds up to each scheduled wall start, ends a gap cut by until or a goal at the smallest absence whose cap- and decay-adjusted reward reaches the stepped reward, reading that stop from the runner's own stop call on the gap's end state so a gap with no effective seconds, or one that used them all, is cut too, runs each block through runScenario with that block's duration, keeps state.t as reward time, evaluates each open goal on its own clone of the state, stops on until or once every goal is reached, classifying each segment's stop from the runner's last stop call instead of calling until again, counts budget stops per block and ends a cut block's wall time and elapsed seconds at its planned end while crediting only the simulated seconds, and merges segment observations. Ran this function: offline-heavy elapsed 86400 with 3600 credited and 82500 lost, early until and goal stopped at t 10 after one block, and maxSteps 2 gave two budget stops, the first ending at wall 110 with 10 elapsed and 2 credited, with the session ending on the 86400 horizon. An until that holds only once stopped an active block at t 10 and a 12-hour gap at wall 1000.
  * @evidence ./offline.ts#resolveOfflineActionPolicy Policy none keeps the scripted cursor at 1, legacy-all moves it to 3, and allow applies only the automation buy.
  * @evidenceReview ./offline.ts#resolveOfflineActionPolicy #ca047be Re-read resolveOfflineActionPolicy: useStrategy false and policy none never call the strategy, allow keeps the policy, and allow and legacy-all call the strategy only when the scenario has one. Ran this function: none left the scripted cursor at 1 and bought once, legacy-all reached cursor 3 with one prestige, and allow applied the automation buy only.
  */
@@ -934,5 +934,48 @@ describe("offline gaps cut by a session stop", () => {
     expect(gap.wallEndT).toBe(3600);
     expect(gap.clock).toEqual({ elapsedSec: 3600, creditedSec: 3600, activeSec: 0, lostRewardSec: 0 });
     expect(out.summary.elapsedSec).toBe(3600);
+  });
+
+  // A stateful until answers true once. The session classifies from the runner's call.
+  const once = (met: (state: SimState<number, UnitCode, ClockVars>) => boolean) => {
+    let fired = false;
+    return (state: SimState<number, UnitCode, ClockVars>) => {
+      if (fired || !met(state)) return false;
+      fired = true;
+      return true;
+    };
+  };
+
+  it("stops on an until that holds only once", () => {
+    const active = runPattern(clockScenario({ income: 1, until: once((state) => state.t >= 10) }), {
+      id: "offline-heavy",
+      days: 1,
+      schedule: [
+        { day: 0, startOffsetSec: 0, durationSec: 60 },
+        { day: 0, startOffsetSec: 3600, durationSec: 60 },
+      ],
+    });
+    expect(active.summary.stop.reason).toBe("until");
+    expect(active.summary.activeBlocks).toBe(1);
+    expect(active.end.t).toBe(10);
+    expect(active.summary.elapsedSec).toBe(10);
+
+    const gap = runPattern(clockScenario({ income: 1, until: once((state) => state.t >= 1000) }), twelveHourGap);
+    expect(gap.summary.stop.reason).toBe("until");
+    expect(gap.summary.activeBlocks).toBe(0);
+    expect(gap.end.t).toBe(1000);
+    expect(gap.segments[0]!.wallEndT).toBe(1000);
+
+    const lastSecond = runPattern(
+      clockScenario({
+        income: 1,
+        offline: { maxSec: 3600, overflowPolicy: "clamp" },
+        until: once((state) => state.t >= 3600),
+      }),
+      twelveHourGap,
+    );
+    expect(lastSecond.summary.stop.reason).toBe("until");
+    expect(lastSecond.summary.activeBlocks).toBe(0);
+    expect(lastSecond.segments[0]!.wallEndT).toBe(3600);
   });
 });
