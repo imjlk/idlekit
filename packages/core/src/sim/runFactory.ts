@@ -11,7 +11,7 @@ import type { CompiledScenario, Model, ScenarioConstraints, SimContext, SimRunOp
  * `previewStream` is the other stream. Restoring one over the other throws.
  *
  * @evidence docs/requirements/active/run-lifecycle-isolation.md#req-pr03-run-lifecycle-isolation A fresh trial derives this stream from the logical trial id. Preview is not this stream.
- * @evidenceReview docs/requirements/active/run-lifecycle-isolation.md#req-pr03-run-lifecycle-isolation #0f668dd Re-read the section: this is the committed stream, derived from the logical trial id.
+ * @evidenceReview docs/requirements/active/run-lifecycle-isolation.md#req-pr03-run-lifecycle-isolation #77c8f51 Re-read the section: this is the committed stream, derived from the logical trial id.
  */
 export const executionStream = "execution" as const;
 
@@ -20,7 +20,7 @@ export const executionStream = "execution" as const;
  * It is not restored onto `executionStream`.
  *
  * @evidence docs/requirements/active/run-lifecycle-isolation.md#req-pr03-run-lifecycle-isolation Preview uses this stream. A committed step does not advance it.
- * @evidenceReview docs/requirements/active/run-lifecycle-isolation.md#req-pr03-run-lifecycle-isolation #0f668dd Re-read the section: preview is a separate stream and is not restored onto execution.
+ * @evidenceReview docs/requirements/active/run-lifecycle-isolation.md#req-pr03-run-lifecycle-isolation #77c8f51 Re-read the section: preview is a separate stream and is not restored onto execution.
  */
 export const previewStream = "preview" as const;
 
@@ -172,6 +172,9 @@ export class RunIsolationError extends Error {
 
 const isolationMessage =
   "Run isolation is unavailable. Deep-cloning a function closure is not isolation. Pass a ModelFactory or StrategyFactory, or implement snapshotState and restoreState.";
+
+const supersededMessage =
+  "This run shares a snapshot-backed strategy with a later run from the same binding, or the binding was released. Finish one run before opening the next, or pass a StrategyFactory for overlapping runs.";
 
 /** Copy state, including `vars`, without sharing the caller's objects. Prototypes stay intact. */
 export function cloneRunState<N, U extends string, Vars>(state: SimState<N, U, Vars>): SimState<N, U, Vars> {
@@ -431,6 +434,26 @@ function restoreStrategy<N, U extends string, Vars>(strategy: Strategy<N, U, Var
   strategy.restoreState(deepClonePreservingPrototype(state));
 }
 
+/** A run's view of a shared snapshot strategy. Its hooks throw once that run no longer owns the cursor. */
+function guardStrategy<N, U extends string, Vars>(
+  shared: Strategy<N, U, Vars>,
+  owns: () => boolean,
+): Strategy<N, U, Vars> {
+  const guard = Object.create(shared) as Strategy<N, U, Vars>;
+  for (const key of ["decide", "snapshotState", "restoreState"] as const) {
+    const hook = shared[key] as ((...args: unknown[]) => unknown) | undefined;
+    if (typeof hook !== "function") continue;
+    Object.defineProperty(guard, key, {
+      enumerable: true,
+      value: (...args: unknown[]) => {
+        if (!owns()) throw new RunIsolationError(supersededMessage);
+        return hook.apply(shared, args);
+      },
+    });
+  }
+  return guard;
+}
+
 /** Restore checkpoint bytes only into the strategy id and state version that wrote them. */
 function restoreCheckpointStrategy<N, U extends string, Vars>(
   strategy: Strategy<N, U, Vars>,
@@ -450,7 +473,7 @@ function restoreCheckpointStrategy<N, U extends string, Vars>(
  * This function does not read CLI flags or plugin files.
  *
  * @evidence docs/requirements/active/run-lifecycle-isolation.md#req-pr03-run-lifecycle-isolation Fresh trials do not share strategy cursors, model closures, or initial vars. Continue keeps the cursor. Resume uses snapshotState.
- * @evidenceReview docs/requirements/active/run-lifecycle-isolation.md#req-pr03-run-lifecycle-isolation #0f668dd Re-read the section: fresh trials restore or rebuild strategy state, continue keeps the cursor of the same factory and params (a factory strategy without a snapshot pair keeps its instance; another factory or params, or a bound snapshot strategy after another strategy, starts fresh), plan strategy params are checked like bound params, params marked validated reach create without a second check, and a marked closure without a factory throws.
+ * @evidenceReview docs/requirements/active/run-lifecycle-isolation.md#req-pr03-run-lifecycle-isolation #77c8f51 Re-read the section: fresh trials restore or rebuild strategy state, continue keeps the cursor of the same factory and params (a factory strategy without a snapshot pair keeps its instance; another factory or params, or a bound snapshot strategy after another strategy, starts fresh), a later run or release supersedes the run that held a shared snapshot strategy so its hooks, checkpoint, and continue throw, plan strategy params are checked like bound params, params marked validated reach create without a second check, and a marked closure without a factory throws.
  */
 export function createRunFactory(deps?: RunFactoryDeps): RunFactory {
   const registries = deps ?? {};
@@ -462,8 +485,20 @@ export function createRunFactory(deps?: RunFactoryDeps): RunFactory {
       const strategies = strategyHold(scenario, options, registries);
       const definitionInitial = cloneRunState(scenario.initial);
 
+      // Runs on the shared snapshot strategy hold a guard. Only the latest one owns the cursor.
+      const guards = new WeakMap<object, symbol>();
+      let owner: symbol | undefined;
+      const guardShared = (shared: Strategy<N, U, Vars>): Strategy<N, U, Vars> => {
+        const token = Symbol("run");
+        owner = token;
+        const guard = guardStrategy(shared, () => owner === token);
+        guards.set(guard, token);
+        return guard;
+      };
+
       const release = () => {
         if (strategies.kind === "snapshot" && strategies.shared) {
+          owner = undefined;
           restoreStrategy(strategies.shared, strategies.initialState);
         }
       };
@@ -601,15 +636,19 @@ export function createRunFactory(deps?: RunFactoryDeps): RunFactory {
           return created;
         }
         if (strategies.kind === "snapshot" && strategies.shared) {
-          // A continue from another strategy is a changed source and starts from the bind snapshot.
-          if (mode === "fresh" || (mode === "continue" && previous !== strategies.shared)) {
+          // Only the run that owns the cursor hands it on. A continue from another strategy is a
+          // changed source and starts from the bind snapshot. Any new run supersedes the owner.
+          const carried = mode === "continue" && previous !== undefined ? guards.get(previous) : undefined;
+          if (carried !== undefined && carried !== owner) throw new RunIsolationError(supersededMessage);
+          owner = undefined;
+          if (mode === "fresh" || (mode === "continue" && carried === undefined)) {
             restoreStrategy(strategies.shared, strategies.initialState);
           }
           if (mode === "resume") {
             if (!checkpoint?.strategy) throw new Error("resume checkpoint is missing strategy state");
             restoreCheckpointStrategy(strategies.shared, checkpoint.strategy);
           }
-          return strategies.shared;
+          return guardShared(strategies.shared);
         }
         if (mode === "resume" && checkpoint?.strategy) throw isolationError();
         return strategies.shared;
@@ -637,6 +676,8 @@ export function createRunFactory(deps?: RunFactoryDeps): RunFactory {
           );
         },
         continue(previous, args) {
+          // Read the anchor while the previous run still owns a shared strategy.
+          const anchorResetT = prestigeAnchorFromCheckpoint(previous.checkpoint()).lastResetT;
           return open(
             "continue",
             previous.trialId,
@@ -647,7 +688,7 @@ export function createRunFactory(deps?: RunFactoryDeps): RunFactory {
             modelFor("continue", previous),
             previous.rng,
             previous.preview,
-            prestigeAnchorFromCheckpoint(previous.checkpoint()).lastResetT,
+            anchorResetT,
             previous.scenario.constraints,
           );
         },
