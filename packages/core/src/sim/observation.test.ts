@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { createNumberEngine } from "../engine/breakInfinity";
+import { createBreakInfinityEngine, createNumberEngine, Decimal } from "../engine/breakInfinity";
 import { analyzeMilestones } from "./analysis/milestones";
 import { createSimStatsAccumulator } from "./analysis/ux";
 import { maxNoRewardGapSec, mergeObservations, mergeRewardGaps, observationContract, observationFromLegacyEvents, ObservationError } from "./observation";
@@ -271,6 +271,40 @@ describe("prestige cooldown counters", () => {
     const accumulator = createSimStatsAccumulator();
     accumulator.push(run.events);
     expect(accumulator.snapshot().actions.skippedCooldown).toBe(4);
+  });
+});
+
+describe("reward gap", () => {
+  it("counts an applied amount inside the cmp epsilon as a reward", () => {
+    const tiny = runScenario(scenario({ income: 1e-13, durationSec: 5 }));
+    expect(tiny.end.wallet.money.amount).toBeGreaterThan(0);
+    expect(tiny.observation?.rewardGap).toMatchObject({ firstRewardT: 1, lastRewardT: 5 });
+    expect(maxNoRewardGapSec(tiny.observation!.rewardGap)).toBe(1);
+
+    const E = createBreakInfinityEngine();
+    const model: Model<Decimal, UnitCode, { owned: number }> = {
+      id: "tiny",
+      version: 1,
+      income: (ctx) => ({ unit: ctx.unit, amount: new Decimal("1e-13") }),
+      actions: () => [],
+    };
+    const decimal = runScenario<Decimal, UnitCode, { owned: number }>({
+      ctx: { E, unit: { code: "COIN" }, tickPolicy: { mode: "drop" }, seed: observationCaseSeed },
+      model,
+      initial: {
+        t: 0,
+        wallet: { money: { unit: { code: "COIN" }, amount: E.zero() }, bucket: E.zero() },
+        maxMoneyEver: { unit: { code: "COIN" }, amount: E.zero() },
+        prestige: { count: 0, points: E.zero(), multiplier: E.from(1) },
+        vars: { owned: 0 },
+      },
+      strategy: { id: "idle", decide: () => [] },
+      run: { stepSec: 1, durationSec: 5 },
+    });
+    expect(maxNoRewardGapSec(decimal.observation!.rewardGap)).toBe(1);
+
+    const quiet = runScenario(scenario({ income: -1e-13, durationSec: 5 }));
+    expect(maxNoRewardGapSec(quiet.observation!.rewardGap)).toBe(5);
   });
 });
 
