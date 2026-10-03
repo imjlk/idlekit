@@ -156,7 +156,7 @@ function statefulIncomeFactory() {
  * @evidence ./runFactory.ts#executionPlanIdentity A copied plan has the same identity, and a different stepSec changes it.
  * @evidenceReview ./runFactory.ts#executionPlanIdentity #14dada6 Re-read executionPlanIdentity: it checks the plan contract and returns canonical JSON of the plan fields with object keys sorted at every depth. Ran this function: a spread copy has the same identity and stepSec 3 changes it.
  * @evidence ./runFactory.ts#createRunFactory Fresh scripted and stateful-model draws do not share state, continue keeps the cursor, resume restores the checkpoint cursor, a plan selects the strategy and clock, and an unisolated closure throws RunIsolationError.
- * @evidenceReview ./runFactory.ts#createRunFactory #8da908e Re-read createRunFactory: bind holds the strategy as factory, snapshot, stateless, or none, fresh restores the bound snapshot or builds a new factory instance, continue keeps the model and cursor, resume restores checkpoint streams and strategy bytes, and a stateful closure without a factory or snapshot pair throws RunIsolationError. Ran this function: scripted draws buy once each, stateful income stays 3 in both orders, twice-daily applies a0 through a3, continue and resume keep cursor 2, a plan sets seed 9 and step 2, and both isolation flags throw.
+ * @evidenceReview ./runFactory.ts#createRunFactory #3148748 Re-read createRunFactory: bind holds the strategy as factory, snapshot, stateless, or none, fresh restores the bound snapshot or builds a new factory instance, continue keeps the model and cursor, resume restores checkpoint streams and strategy bytes only into the strategy id and state version that wrote them, and a stateful closure without a factory or snapshot pair throws RunIsolationError. Ran this function: scripted draws buy once each, stateful income stays 3 in both orders, twice-daily applies a0 through a3, continue and resume keep cursor 2, a plan sets seed 9 and step 2, and both isolation flags throw.
  */
 export function isolatesIndependentRuns(): void {
   expect(executionStream).toBe("execution");
@@ -633,6 +633,64 @@ describe("run factory review fixes", () => {
       .fresh({ trialId: "ok", seed: 1 });
     expect(ok.scenario.strategy?.id).toBe("checked");
     expect(created).toEqual([{ n: 1 }, { n: 2 }]);
+  });
+  it("resumes a checkpoint only into the strategy id and state version that wrote it", () => {
+    type Vars = { applied: string[] };
+    const program = { schemaVersion: 1 as const, loop: false, program: [{ actionId: "a0" }, { actionId: "a1" }] };
+    const counter = (stateVersion?: number): Strategy<number, UnitCode, Vars> => {
+      let cursor = 0;
+      return {
+        id: "counter",
+        ...(stateVersion !== undefined ? { stateVersion } : {}),
+        snapshotState: () => ({ cursor }),
+        restoreState: (saved) => {
+          cursor = (saved as { cursor: number }).cursor;
+        },
+        decide: () => [],
+      };
+    };
+    const strategies = createStrategyRegistry([
+      scriptedFactory(),
+      { id: "counter", create: () => counter() },
+    ]);
+    const scenario = compiled({ stepSec: 1, durationSec: 1, vars: { applied: [] }, model: recordingModel() });
+    const factory = createRunFactory({ strategies });
+    const scripted = factory.bind(scenario, { strategy: { id: "scripted", params: program } });
+    const opened = scripted.fresh({ trialId: "a", seed: 1 });
+    const head = runScenario(opened.scenario);
+    const checkpoint = opened.checkpoint();
+    expect(checkpoint.strategy).toEqual({ id: "scripted", stateVersion: 1, state: { cursor: 1 } });
+
+    expect(scripted.resume({ checkpoint, state: head.end }).scenario.strategy?.snapshotState?.()).toEqual({ cursor: 1 });
+    const plan: ExecutionPlan = { contract: "idlekit.execution-plan", version: 1, stepSec: 1, durationSec: 1 };
+    expect(
+      factory.bind(scenario).resume({ checkpoint, state: head.end, plan: { ...plan, strategyId: "scripted", strategyParams: program } })
+        .scenario.strategy?.snapshotState?.(),
+    ).toEqual({ cursor: 1 });
+
+    const other = factory.bind(scenario, { strategy: { id: "counter" } });
+    expect(() => other.resume({ checkpoint, state: head.end })).toThrow(RunIsolationError);
+    expect(() =>
+      factory.bind(scenario).resume({ checkpoint, state: head.end, plan: { ...plan, strategyId: "counter" } }),
+    ).toThrow(RunIsolationError);
+    const shared = counter();
+    const sharedBinding = createRunFactory().bind({ ...scenario, strategy: shared });
+    expect(() => sharedBinding.resume({ checkpoint, state: head.end })).toThrow(
+      "Resume checkpoint strategy scripted@1 does not match the run strategy counter",
+    );
+    expect(shared.snapshotState?.()).toEqual({ cursor: 0 });
+    sharedBinding.release();
+
+    const bumped = { ...checkpoint, strategy: { ...checkpoint.strategy!, stateVersion: 2 } };
+    expect(() => scripted.resume({ checkpoint: bumped, state: head.end })).toThrow(RunIsolationError);
+    const versioned = createRunFactory().bind({ ...scenario, strategy: counter(2) });
+    const own = versioned.fresh({ trialId: "v", seed: 1 }).checkpoint();
+    expect(own.strategy).toEqual({ id: "counter", stateVersion: 2, state: { cursor: 0 } });
+    expect(versioned.resume({ checkpoint: own, state: head.end }).scenario.strategy?.id).toBe("counter");
+    expect(() =>
+      versioned.resume({ checkpoint: { ...own, strategy: { id: "counter", state: { cursor: 0 } } }, state: head.end }),
+    ).toThrow(RunIsolationError);
+    versioned.release();
   });
   it("gives equal plans the same identity regardless of key order", () => {
     const base = { contract: "idlekit.execution-plan", version: 1, stepSec: 1 } as const;

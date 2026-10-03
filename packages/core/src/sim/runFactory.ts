@@ -384,6 +384,20 @@ function restoreStrategy<N, U extends string, Vars>(strategy: Strategy<N, U, Var
   strategy.restoreState(deepClonePreservingPrototype(state));
 }
 
+/** Restore checkpoint bytes only into the strategy id and state version that wrote them. */
+function restoreCheckpointStrategy<N, U extends string, Vars>(
+  strategy: Strategy<N, U, Vars>,
+  saved: NonNullable<RunCheckpoint["strategy"]>,
+): void {
+  if (saved.id !== strategy.id || saved.stateVersion !== strategy.stateVersion) {
+    const label = (id: string, version: number | undefined) => (version === undefined ? id : `${id}@${version}`);
+    throw new RunIsolationError(
+      `Resume checkpoint strategy ${label(saved.id, saved.stateVersion)} does not match the run strategy ${label(strategy.id, strategy.stateVersion)}. Restoring another strategy's state is not isolation.`,
+    );
+  }
+  restoreStrategy(strategy, saved.state);
+}
+
 /**
  * Build fresh, continued, and resumed runs from registries the caller already has.
  * This function does not read CLI flags or plugin files.
@@ -525,7 +539,7 @@ export function createRunFactory(deps?: RunFactoryDeps): RunFactory {
         const fromPlan = planStrategy(plan, registries);
         if (fromPlan) {
           const created = createStrategy<N, U, Vars>(fromPlan.factory, fromPlan.params);
-          if (mode === "resume" && checkpoint?.strategy) restoreStrategy(created, checkpoint.strategy.state);
+          if (mode === "resume" && checkpoint?.strategy) restoreCheckpointStrategy(created, checkpoint.strategy);
           if (mode === "continue" && previous?.snapshotState) {
             restoreStrategy(created, previous.snapshotState());
           }
@@ -535,7 +549,7 @@ export function createRunFactory(deps?: RunFactoryDeps): RunFactory {
           const created = createStrategy<N, U, Vars>(strategies.factory.factory, strategies.factory.params);
           if (mode === "fresh") return created;
           if (mode === "resume") {
-            if (checkpoint?.strategy) restoreStrategy(created, checkpoint.strategy.state);
+            if (checkpoint?.strategy) restoreCheckpointStrategy(created, checkpoint.strategy);
             return created;
           }
           if (previous?.snapshotState) restoreStrategy(created, previous.snapshotState());
@@ -545,7 +559,7 @@ export function createRunFactory(deps?: RunFactoryDeps): RunFactory {
           if (mode === "fresh") restoreStrategy(strategies.shared, strategies.initialState);
           if (mode === "resume") {
             if (!checkpoint?.strategy) throw new Error("resume checkpoint is missing strategy state");
-            restoreStrategy(strategies.shared, checkpoint.strategy.state);
+            restoreCheckpointStrategy(strategies.shared, checkpoint.strategy);
           }
           return strategies.shared;
         }
