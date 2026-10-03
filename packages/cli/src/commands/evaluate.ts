@@ -18,7 +18,7 @@ import {
   resolveSessionPatternSpec,
   summarizeExperienceMonteCarlo,
 } from "../lib/experience";
-import { prepareResolvedRun, workflowRunHash } from "../lib/runConfiguration";
+import { engineSeedOption, prepareResolvedRun, workflowRunHash } from "../lib/runConfiguration";
 import { readScenarioFile } from "../io/readScenario";
 import { ensureDir, writeTextFile } from "../runtime/bun";
 
@@ -141,7 +141,7 @@ export default defineCommand({
         scenario: valid.scenario,
         options: {
           strategy: flags.strategy,
-          ...(flags.engine ? { engine: flags.engine } : {}),
+          ...engineSeedOption(flags.engine),
         },
       });
 

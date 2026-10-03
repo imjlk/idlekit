@@ -12,7 +12,7 @@ import { loadRegistriesFromFlags, pluginOptions } from "./_shared/plugin";
 import { cliError, scenarioInvalidError, usageError } from "../errors";
 import { buildOutputMeta, deriveDeterministicRunId, deriveDeterministicSeed } from "../io/outputMeta";
 import { writeCommandReplayArtifact } from "../io/replayPolicy";
-import { prepareResolvedRun } from "../lib/runConfiguration";
+import { engineSeedOption, prepareResolvedRun } from "../lib/runConfiguration";
 import { readScenarioFile } from "../io/readScenario";
 import { writeOutput } from "../io/writeOutput";
 import {
@@ -484,7 +484,7 @@ export default defineCommand({
           step: flags.step ?? valid.scenario.clock.stepSec,
           strategy: flags.strategy,
           fast: flags.fast,
-          ...(flags.engine ? { engine: flags.engine } : {}),
+          ...engineSeedOption(flags.engine),
           draws: flags.draws,
           valuePerWorth: flags["value-per-worth"],
         },

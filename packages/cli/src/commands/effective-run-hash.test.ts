@@ -113,6 +113,21 @@ describe("effectiveRunHash", () => {
     }
   });
 
+  it("derives the same default seed for the default engine and --engine number", () => {
+    const meta = (command: string[], extra: string[]) => runCliJson([...command, ...extra, "--format", "json"])._meta;
+    const commands = [
+      ["simulate", BASELINE, "--duration", "10"],
+      ["experience", BASELINE, "--days", "1"],
+      ["ltv", BASELINE, "--horizons", "30m"],
+    ];
+    for (const command of commands) {
+      const plain = meta(command, []);
+      const named = meta(command, ["--engine", "number"]);
+      expect(named.seed).toBe(plain.seed);
+      expect(named.effectiveRunHash).toBe(plain.effectiveRunHash);
+    }
+  }, 180000);
+
   it("keeps the default evaluate seed off stage-only flags", async () => {
     const dir = await createTempDir("idlekit-evaluate-seed");
     try {
@@ -143,6 +158,10 @@ describe("effectiveRunHash", () => {
       const consistent = await evaluate(["--step", "2", "--fast", "true", "--consistent-overrides", "true"]);
       expect(consistent.simulate.effectiveRunHash).toBe(stepped.simulate.effectiveRunHash);
       expect(consistent.experience._meta.effectiveRunHash).not.toBe(stepped.experience._meta.effectiveRunHash);
+
+      const named = await evaluate(["--engine", "number"]);
+      expect(named.simulate.seed).toBe(base.simulate.seed);
+      expect(named.experience._meta.effectiveRunHash).toBe(base.experience._meta.effectiveRunHash);
 
       const seeded = await evaluate(["--step", "2", "--seed", "7"]);
       expect([seeded.simulate.seed, seeded.experience._meta.seed, seeded.ltv.seed]).toEqual([7, 7, 7]);

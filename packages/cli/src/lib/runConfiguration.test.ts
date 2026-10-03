@@ -16,6 +16,7 @@ import {
 import { describe, expect, it } from "bun:test";
 import {
   effectiveRunHash,
+  engineSeedOption,
   pluginDigestValues,
   prepareResolvedRun,
   resolveEffectiveEngine,
@@ -366,11 +367,27 @@ export function overrideReplacesBrokenScenarioStrategy(): void {
   expect(() => prepareResolvedRun({ scenario: broken[1]!, ...loaded, seed: 1 })).toThrow(/^Invalid strategy params: /);
 }
 
+/**
+ * @evidence docs/requirements/active/cli-resolved-run.md#req-pr07-resolved-run The default seed reads the engine that runs, so the default and an explicit number engine give the same seed input.
+ * @evidenceReview docs/requirements/active/cli-resolved-run.md#req-pr07-resolved-run #ad30c8a Re-read the section: number is the default engine and the default evaluate seed reads the scenario, strategy, and engine. Ran this function: no flag and number give the same seed input, and breakInfinity adds its id.
+ * @evidence ./runConfiguration.ts#engineSeedOption No flag, an empty flag, and `number` leave the engine out of the seed input, and another engine id stays in it.
+ * @evidenceReview ./runConfiguration.ts#engineSeedOption #4e78301 Re-read engineSeedOption: it trims the flag and returns no engine field for a missing, empty, or number flag, and the trimmed id otherwise. Ran this function: undefined, blank, number, and padded number give {}, and breakInfinity gives { engine: "breakInfinity" }.
+ */
+export function seedsTheDefaultEngineOnce(): void {
+  expect(engineSeedOption(undefined)).toEqual({});
+  expect(engineSeedOption("  ")).toEqual({});
+  expect(engineSeedOption("number")).toEqual({});
+  expect(engineSeedOption(" number ")).toEqual({});
+  expect(engineSeedOption("breakInfinity")).toEqual({ engine: "breakInfinity" });
+}
+
 describe("PR-07 resolved run", () => {
   it("keeps resolved run configuration", keepsResolvedRunConfiguration);
 
   it("builds an override without the scenario strategy it replaces", overrideReplacesBrokenScenarioStrategy);
 
   it("digests each stage from its applied plan and command inputs", digestsEachStageFromItsAppliedPlan);
+
+  it("seeds the default engine once", seedsTheDefaultEngineOnce);
 });
 

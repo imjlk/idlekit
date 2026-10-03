@@ -277,6 +277,13 @@
           "registeredAs": "PR-07 resolved run > builds an override without the scenario strategy it replaces",
           "cwd": "packages/cli",
           "args": ["test", "src/lib/runConfiguration.test.ts"]
+        },
+        {
+          "file": "packages/cli/src/lib/runConfiguration.test.ts",
+          "exportName": "seedsTheDefaultEngineOnce",
+          "registeredAs": "PR-07 resolved run > seeds the default engine once",
+          "cwd": "packages/cli",
+          "args": ["test", "src/lib/runConfiguration.test.ts"]
         }
       ]
     }

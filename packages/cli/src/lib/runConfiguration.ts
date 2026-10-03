@@ -144,6 +144,15 @@ export function pluginDigestValues(pluginDigest: Readonly<Record<string, string>
 }
 
 /**
+ * The engine part of a default seed. No flag and `--engine number` both run the number
+ * engine, so both leave the seed input without an engine field.
+ */
+export function engineSeedOption(requested: string | undefined): { engine?: string } {
+  const id = requested?.trim();
+  return id && id !== "number" ? { engine: id } : {};
+}
+
+/**
  * Number stays the default. `scenario.engine` is recorded and not applied.
  * `breakInfinity` is created from its factory. The string `1e400` is not passed through `Number`.
  * `breakEternity` throws. A custom id runs only from a trusted factory the caller already holds.
