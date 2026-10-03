@@ -13,7 +13,7 @@ import {
 import { applyOfflineSeconds, type OfflineRunResult } from "./offline";
 import { offlineAbsenceForCredit, resolveOfflineSeconds } from "./offlineCredit";
 import { runScenario } from "./simulator";
-import type { CompiledScenario, RunResult, SimContext, SimState } from "./types";
+import { runElapsedSec, type CompiledScenario, type RunResult, type SimContext, type SimState } from "./types";
 
 /**
  * Session schedule contract. TC-05 has not registered this DTO.
@@ -420,7 +420,8 @@ export function simulateSessionPattern<N, U extends string, Vars>(args: {
         ...(stopFn ? { until: stopFn } : {}),
       },
     });
-    const simulated = activeRun.end.t - activeRun.start.t;
+    // Tick seconds, not the t difference, which rounds at a large state.t.
+    const simulated = runElapsedSec(activeRun);
     activeSec += simulated;
     activeBlocks += 1;
     if (activeRun.stop?.reason === "budget") budgetStops += 1;
