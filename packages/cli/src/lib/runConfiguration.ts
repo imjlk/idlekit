@@ -24,7 +24,7 @@ import { hashContent } from "../io/outputMeta";
  * `scenario.engine` is metadata. It does not select the runtime.
  *
  * @evidence docs/requirements/active/cli-resolved-run.md#req-pr07-resolved-run One plan feeds evaluate stages, and each stage opens a fresh run.
- * @evidenceReview docs/requirements/active/cli-resolved-run.md#req-pr07-resolved-run #9f0ee82 Re-read the section: strategy override reaches simulate and experience and replaces the scenario strategy without building it, step stays on the simulate stage unless consistent overrides are set, and the stage digest adds the stage scope, command inputs, and plugin digests in load order while ignoring the directory.
+ * @evidenceReview docs/requirements/active/cli-resolved-run.md#req-pr07-resolved-run #5fcad38 Re-read the section: strategy override reaches simulate and experience and replaces the scenario strategy without building it, step stays on the simulate stage unless consistent overrides are set, and the stage digest adds the step and fast mode the stage runs, the stage scope, command inputs, and plugin digests in load order while ignoring the directory.
  */
 export const resolvedRunContract = "idlekit.resolved-run-configuration" as const;
 
@@ -32,7 +32,7 @@ export const resolvedRunContract = "idlekit.resolved-run-configuration" as const
  * Repro label for this case. The runs pass seed 1 and do not draw from this label.
  *
  * @evidence docs/requirements/active/cli-resolved-run.md#req-pr07-resolved-run The label is 0x7107. Runs use seed 1.
- * @evidenceReview docs/requirements/active/cli-resolved-run.md#req-pr07-resolved-run #9f0ee82 Re-read the section, including the evaluate default seed sentence: the label is not the RNG seed, and the three executed tests use seed 1.
+ * @evidenceReview docs/requirements/active/cli-resolved-run.md#req-pr07-resolved-run #5fcad38 Re-read the section, including the evaluate default seed sentence: the label is not the RNG seed, and the three executed tests use seed 1.
  */
 export const sessionCaseSeed = 0x7107;
 
@@ -268,7 +268,8 @@ export function effectiveRunHash(args: {
   session?: Readonly<{ id?: string; days?: number }>;
   seed?: number;
   pluginDigests: readonly string[];
-  fast: boolean;
+  /** The fast mode the stage runs, from the scenario or an override. */
+  fast?: ResolvedRunPlan["fast"];
   stage?: ResolvedRunPlan["stage"];
   inputs?: StageInputs;
   cwd?: string;
@@ -290,13 +291,18 @@ export function effectiveRunHash(args: {
     session: args.session ? { id: args.session.id ?? null, days: args.session.days ?? null } : null,
     seed: args.seed ?? null,
     pluginDigests: [...args.pluginDigests],
-    fast: args.fast,
+    fast: args.fast ?? null,
     stage: args.stage ?? null,
     inputs: args.inputs ?? null,
   });
 }
 
-function stageRunHash(scenario: ScenarioV1, plan: ResolvedRunPlan, inputs: StageInputs | undefined): string {
+function stageRunHash(
+  scenario: ScenarioV1,
+  scenarioFast: ResolvedRunPlan["fast"],
+  plan: ResolvedRunPlan,
+  inputs: StageInputs | undefined,
+): string {
   return effectiveRunHash({
     scenario,
     engineId: plan.engine.effectiveId,
@@ -307,7 +313,8 @@ function stageRunHash(scenario: ScenarioV1, plan: ResolvedRunPlan, inputs: Stage
     session: plan.session,
     seed: plan.seed,
     pluginDigests: plan.pluginDigests,
-    fast: plan.fast !== undefined,
+    // A redundant --fast runs the scenario's fast mode, so it keeps the hash.
+    fast: plan.fast ?? scenarioFast,
     stage: plan.stage,
     inputs,
   });
@@ -441,7 +448,7 @@ export function prepareResolvedRun(args: PrepareArgs): PreparedRun {
       const plan = stagePlan({ ...args, engine, stage });
       return {
         plan,
-        hash: stageRunHash(args.scenario, plan, inputs),
+        hash: stageRunHash(args.scenario, definition.run.fast, plan, inputs),
         isolation: {
           registries: { models: args.modelRegistry, strategies: args.strategyRegistry },
           options: stageBindOptions(args.scenario, plan),
