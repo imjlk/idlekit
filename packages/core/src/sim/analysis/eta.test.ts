@@ -141,3 +141,37 @@ describe("etaAnalytic", () => {
     expect(out.run).toBeUndefined();
   });
 });
+
+describe("etaAnalytic edges", () => {
+  function withIncome(income: number, money = 0) {
+    const base = makeScenario();
+    const unit = base.ctx.unit;
+    return {
+      ...base,
+      model: { ...base.model, income: () => ({ unit, amount: income }) },
+      initial: { ...base.initial, wallet: { ...base.initial.wallet, money: { unit, amount: money } } },
+    };
+  }
+
+  it("reads suffix notation the way etaSimulate does", () => {
+    const out = etaAnalytic({ scenario: withIncome(1), target: { kind: "money", value: "1aa" } });
+    const simulated = etaSimulate({ scenario: withIncome(1), target: { kind: "money", value: "1aa" }, maxDurationSec: 5000 });
+    expect(out.reached).toBeTrue();
+    expect(out.seconds).toBe(simulated.seconds);
+  });
+
+  // Each row is a non-finite input that must not read as a reached target.
+  it.each([
+    ["NaN money", withIncome(1, Number.NaN), "10"],
+    ["infinite money", withIncome(1, Number.POSITIVE_INFINITY), "10"],
+    ["infinite income", withIncome(Number.POSITIVE_INFINITY), "10"],
+    ["NaN income", withIncome(Number.NaN), "10"],
+    ["infinite target", withIncome(1), "1e400"],
+    ["remaining past the number range", withIncome(1e-300, -1.7e308), "1.7e308"],
+  ])("fails closed on %s", (_label, scenario, value) => {
+    const out = etaAnalytic({ scenario, target: { kind: "money", value } });
+    expect(out.reached).toBeFalse();
+    expect(out.seconds).toBe(Number.POSITIVE_INFINITY);
+    expect(out.confidence).toBe("low");
+  });
+});
