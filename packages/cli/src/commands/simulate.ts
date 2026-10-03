@@ -1,6 +1,7 @@
 import { defineCommand, option } from "@bunli/core";
 import {
   applyOfflineSeconds,
+  constraintsWithAnchor,
   deserializeSimState,
   parseSimStateJSON,
   runScenario,
@@ -219,6 +220,7 @@ export default defineCommand({
     });
     const generatedAt = outputMeta.generatedAt;
 
+    let lastResetT: number | undefined;
     const runScenarioInput = {
       ...opened.scenario,
       initial: resumedState ?? opened.scenario.initial,
@@ -227,6 +229,10 @@ export default defineCommand({
         ...opened.scenario.run,
         durationSec: flags.duration ?? opened.scenario.run.durationSec,
         eventLog,
+        onPrestigeReset(t: number) {
+          lastResetT = t;
+          opened.scenario.run.onPrestigeReset?.(t);
+        },
       },
     };
 
@@ -249,10 +255,14 @@ export default defineCommand({
           })
         : undefined;
 
+    // The online run starts from a reset committed during offline catch-up.
     const effectiveScenario = offlineRun
       ? {
           ...runScenarioInput,
           initial: offlineRun.end,
+          ...(lastResetT !== undefined
+            ? { constraints: constraintsWithAnchor(runScenarioInput.constraints, lastResetT) }
+            : {}),
         }
       : runScenarioInput;
 

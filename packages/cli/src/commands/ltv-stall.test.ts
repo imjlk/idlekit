@@ -1,5 +1,7 @@
 import { describe, expect, it } from "bun:test";
-import { buildGuardrailKpi, emptyCounts, mergeCounts } from "./ltv";
+import { resolve } from "path";
+import { createNumberEngine, type Action, type CompiledScenario } from "@idlekit/core";
+import { buildGuardrailKpi, emptyCounts, mergeCounts, runLtvAnalysis } from "./ltv";
 
 describe("ltv guardrail counts", () => {
   it("counts cooldown skips without diluting the funds stall ratio", () => {
@@ -20,5 +22,52 @@ describe("ltv guardrail counts", () => {
       growthLog10PerDay: 0,
     });
     expect(kpi.stallRatio).toBe(0.5);
+  });
+});
+
+describe("ltv prestige cooldown", () => {
+  it("carries a reset from one horizon segment into the next", async () => {
+    const scenario = await Bun.file(resolve(process.cwd(), "../../examples/tutorials/01-cafe-baseline.json")).json();
+    const reset: Action<number, string, Record<string, unknown>> = {
+      id: "prestige.reset",
+      kind: "prestige",
+      canApply: () => true,
+      cost: () => null,
+      apply: (_ctx, current) => ({
+        ...current,
+        prestige: { ...current.prestige, count: current.prestige.count + 1 },
+      }),
+    };
+    const resets: number[] = [];
+    const compiled: CompiledScenario<number, string, Record<string, unknown>> = {
+      ctx: { E: createNumberEngine(), unit: { code: "COIN" }, tickPolicy: { mode: "drop" }, stepSec: 1 },
+      model: {
+        id: "ltv-anchor",
+        version: 1,
+        income: () => ({ unit: { code: "COIN" }, amount: 1 }),
+        actions: () => [reset],
+      },
+      initial: {
+        t: 0,
+        wallet: { money: { unit: { code: "COIN" }, amount: 0 }, bucket: 0 },
+        maxMoneyEver: { unit: { code: "COIN" }, amount: 0 },
+        prestige: { count: 0, points: 0, multiplier: 1 },
+        vars: {},
+      },
+      constraints: { minPrestigeIntervalSec: 100 },
+      run: { stepSec: 1, onPrestigeReset: (t) => resets.push(t) },
+      strategy: { id: "always-reset", decide: () => [{ action: reset }] },
+    };
+    // The reset at 0 cools until 100, so the 60s segment start stays blocked.
+    runLtvAnalysis({
+      scenario,
+      scenarioPath: "ltv-anchor.json",
+      compiled,
+      strategy: compiled.strategy,
+      horizonsRaw: "60s,90s",
+      fast: false,
+      seed: 1,
+    });
+    expect(resets).toEqual([0]);
   });
 });

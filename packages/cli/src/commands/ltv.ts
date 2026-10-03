@@ -1,5 +1,6 @@
 import { defineCommand, option } from "@bunli/core";
 import {
+  constraintsWithAnchor,
   runScenario,
   validateScenarioV1,
   type CompiledScenario,
@@ -255,6 +256,11 @@ export function runLtvAnalysis(args: {
   let counts = emptyCounts();
 
   const rows: LtvRow[] = [];
+  let lastResetT: number | undefined;
+  const onPrestigeReset = (t: number) => {
+    lastResetT = t;
+    args.compiled.run.onPrestigeReset?.(t);
+  };
 
   for (const h of horizons) {
     const segmentSec = h.seconds - previousTargetSec;
@@ -262,6 +268,8 @@ export function runLtvAnalysis(args: {
 
     const run = runScenario({
       ...args.compiled,
+      // Each segment starts from the last committed reset of an earlier segment.
+      ...(lastResetT !== undefined ? { constraints: constraintsWithAnchor(args.compiled.constraints, lastResetT) } : {}),
       initial: state,
       strategy: args.strategy,
       ctx: {
@@ -283,6 +291,7 @@ export function runLtvAnalysis(args: {
           maxEvents: 0,
         },
         fast: runFast,
+        onPrestigeReset,
       },
     });
 
