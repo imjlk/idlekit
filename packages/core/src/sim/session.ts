@@ -1,4 +1,5 @@
 import type { OfflineActionPolicy } from "../scenario/offlinePolicy";
+import { deepClonePreservingPrototype } from "../utils/deepClone";
 import { analyzeUX } from "./analysis/ux";
 import { constraintsWithAnchor } from "./constraints";
 import { createBoundedLog, createEventBuffer } from "./eventBuffer";
@@ -19,7 +20,7 @@ import type { CompiledScenario, RunResult, SimContext, SimState } from "./types"
  * `state.t` stays the reward clock. Wall time is only on the session report.
  *
  * @evidence docs/requirements/active/session-clock.md#req-pr06-session-clock Wall elapsed, reward time, and active time are separate fields. Cap and decay do not move the next block earlier.
- * @evidenceReview docs/requirements/active/session-clock.md#req-pr06-session-clock #3c24d94 Re-read the section: a completed 12-hour absence with a 1-hour cap stays elapsed 43200 and credited 3600, a gap cut by a stop reports only the absence that earned its stepped reward, and state.t is not rewritten to wall time.
+ * @evidenceReview docs/requirements/active/session-clock.md#req-pr06-session-clock #6fee79f Re-read the section: a completed 12-hour absence with a 1-hour cap stays elapsed 43200 and credited 3600, a gap cut by a stop reports only the absence that earned its stepped reward, and state.t is not rewritten to wall time. The until-copy sentence is about simulateSessionPattern, not this name.
  */
 export const sessionClockContract = "idlekit.session-clock" as const;
 
@@ -233,7 +234,7 @@ function withClocks<N, U extends string, Vars>(
  * whose cap- and decay-adjusted reward reaches the stepped reward, not at the scheduled gap end.
  *
  * @evidence docs/requirements/active/session-clock.md#req-pr06-session-clock Schedules the next block on wall time and reports elapsed, credited, and active time separately.
- * @evidenceReview docs/requirements/active/session-clock.md#req-pr06-session-clock #3c24d94 Re-read the section: cap and decay do not pull the next active block forward, policy none does not call decide, goals stop only once every goal is reached, a stop inside an offline gap ends that gap at the smallest absence whose cap- and decay-adjusted reward reaches the stepped reward, and maxSteps is a per-block budget counted in budgetStops, after which wall time still reaches the planned block end without crediting the rest as offline time.
+ * @evidenceReview docs/requirements/active/session-clock.md#req-pr06-session-clock #6fee79f Re-read the section: cap and decay do not pull the next active block forward, policy none does not call decide, until is read once per committed state on a copy of it, goals stop only once every goal is reached, a stop inside an offline gap ends that gap at the smallest absence whose cap- and decay-adjusted reward reaches the stepped reward, and maxSteps is a per-block budget counted in budgetStops, after which wall time still reaches the planned block end without crediting the rest as offline time.
  */
 export function simulateSessionPattern<N, U extends string, Vars>(args: {
   scenario: CompiledScenario<N, U, Vars>;
@@ -277,13 +278,14 @@ export function simulateSessionPattern<N, U extends string, Vars>(args: {
   const allGoalsReached = () => goals.length > 0 && reachedGoals.size === goals.length;
   // The runner's last call reads the segment's end state. Classify from it: until may hold only once.
   let untilMet = false;
-  // The next segment starts from that same state. Read until once per committed state.
+  // The next segment starts from that same state. Read until once per committed state, on a copy
+  // like a goal, so its write cannot reach the economy or a goal reading the same state.
   const untilAnswers = new WeakMap<object, boolean>();
   const readUntil = (next: SimState<N, U, Vars>): boolean => {
     if (originalUntil === undefined) return false;
     const known = untilAnswers.get(next);
     if (known !== undefined) return known;
-    const met = Boolean(originalUntil(next));
+    const met = Boolean(originalUntil(deepClonePreservingPrototype(next)));
     untilAnswers.set(next, met);
     return met;
   };
