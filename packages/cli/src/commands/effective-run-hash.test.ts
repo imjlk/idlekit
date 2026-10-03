@@ -112,4 +112,42 @@ describe("effectiveRunHash", () => {
       await removePath(dir);
     }
   });
+
+  it("keeps the default evaluate seed off stage-only flags", async () => {
+    const dir = await createTempDir("idlekit-evaluate-seed");
+    try {
+      let n = 0;
+      const evaluate = async (extra: string[]) => {
+        const outDir = resolve(dir, `out${n++}`);
+        runCli(["evaluate", BASELINE, "--horizons", "30m", "--days", "1", "--out-dir", outDir, ...extra]);
+        const read = (name: string) => readJson<any>(resolve(outDir, name));
+        return {
+          simulate: (await read("simulate.json"))._meta,
+          experience: await read("experience.json"),
+          ltv: (await read("ltv.json"))._meta,
+        };
+      };
+      const body = ({ _meta, ...rest }: any) => rest;
+      const base = await evaluate([]);
+      const stepped = await evaluate(["--step", "2", "--fast", "true"]);
+      expect(stepped.experience._meta.seed).toBe(base.experience._meta.seed);
+      expect(stepped.experience._meta.effectiveRunHash).toBe(base.experience._meta.effectiveRunHash);
+      expect(body(stepped.experience)).toEqual(body(base.experience));
+      expect(stepped.simulate.effectiveRunHash).not.toBe(base.simulate.effectiveRunHash);
+
+      const days = await evaluate(["--days", "2"]);
+      expect(days.simulate.seed).toBe(base.simulate.seed);
+      expect(days.simulate.effectiveRunHash).toBe(base.simulate.effectiveRunHash);
+      expect(days.ltv.effectiveRunHash).toBe(base.ltv.effectiveRunHash);
+
+      const consistent = await evaluate(["--step", "2", "--fast", "true", "--consistent-overrides", "true"]);
+      expect(consistent.simulate.effectiveRunHash).toBe(stepped.simulate.effectiveRunHash);
+      expect(consistent.experience._meta.effectiveRunHash).not.toBe(stepped.experience._meta.effectiveRunHash);
+
+      const seeded = await evaluate(["--step", "2", "--seed", "7"]);
+      expect([seeded.simulate.seed, seeded.experience._meta.seed, seeded.ltv.seed]).toEqual([7, 7, 7]);
+    } finally {
+      await removePath(dir);
+    }
+  }, 180000);
 });

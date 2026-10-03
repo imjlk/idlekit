@@ -132,21 +132,16 @@ export default defineCommand({
     }
 
     const scenarioAbs = resolve(process.cwd(), scenarioPath);
+    // Every stage runs on this seed, so the default reads only what every stage applies. Step, fast,
+    // session, draws, and horizons stay in the stage digests and do not move another stage's seed.
     const seed =
       flags.seed ??
       deriveDeterministicSeed({
         command: "evaluate",
         scenario: valid.scenario,
         options: {
-          sessionPattern: flags["session-pattern"],
-          days: flags.days,
-          draws: flags.draws,
           strategy: flags.strategy,
-          fast: flags.fast,
-          step: flags.step,
-          horizons: flags.horizons,
           ...(flags.engine ? { engine: flags.engine } : {}),
-          ...(flags["consistent-overrides"] ? { consistentOverrides: true } : {}),
         },
       });
 
