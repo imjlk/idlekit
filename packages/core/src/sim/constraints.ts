@@ -1,4 +1,4 @@
-import { reachedLimit } from "./timeBoundary";
+import { timeEpsilon } from "./timeBoundary";
 import type { ScenarioConstraints } from "./types";
 
 /**
@@ -35,8 +35,13 @@ export function decidePrestigeCooldown(args: {
     return { status: "unanchored", allowed: true, warning: unanchoredWarning };
   }
   const readyAtT = args.lastResetT + interval;
-  // Same dust as a stop check: an accumulated clock can land just short of readyAtT.
-  if (reachedLimit(args.nowT, readyAtT)) return { status: "ready", allowed: true, readyAtT };
+  // An accumulated clock can land just short of readyAtT. The dust scales with the interval,
+  // not the timestamp, plus the rounding of the two operands of the subtraction.
+  const elapsed = args.nowT - args.lastResetT;
+  const subtractionDust = Number.EPSILON * Math.max(Math.abs(args.nowT), Math.abs(args.lastResetT));
+  if (elapsed >= interval - timeEpsilon(interval) - subtractionDust) {
+    return { status: "ready", allowed: true, readyAtT };
+  }
   return { status: "cooling", allowed: false, readyAtT };
 }
 
