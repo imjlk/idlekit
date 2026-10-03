@@ -307,13 +307,23 @@ export function simulateSessionPattern<N, U extends string, Vars>(args: {
   const allGoalsReached = () => goals.length > 0 && reachedGoals.size === goals.length;
   // The runner's last call reads the segment's end state. Classify from it: until may hold only once.
   let untilMet = false;
+  // The next segment starts from that same state. Read until once per committed state.
+  const untilAnswers = new WeakMap<object, boolean>();
+  const readUntil = (next: SimState<N, U, Vars>): boolean => {
+    if (originalUntil === undefined) return false;
+    const known = untilAnswers.get(next);
+    if (known !== undefined) return known;
+    const met = Boolean(originalUntil(next));
+    untilAnswers.set(next, met);
+    return met;
+  };
   const stopFn =
     originalUntil !== undefined || goals.length > 0
       ? (next: SimState<N, U, Vars>) => {
           goals.forEach((goal, i) => {
             if (!reachedGoals.has(i) && readGoal(goal, next)) reachedGoals.add(i);
           });
-          untilMet = originalUntil?.(next) ?? false;
+          untilMet = readUntil(next);
           return untilMet || allGoalsReached();
         }
       : undefined;
