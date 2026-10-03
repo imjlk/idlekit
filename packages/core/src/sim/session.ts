@@ -269,13 +269,10 @@ export function simulateSessionPattern<N, U extends string, Vars>(args: {
   const stopFn =
     originalUntil !== undefined || goals.length > 0
       ? (next: SimState<N, U, Vars>) => {
-          // Goals read a copy, as the observation recorder does. Clone only while one is open.
-          if (reachedGoals.size < goals.length) {
-            const seen = deepClonePreservingPrototype(next);
-            goals.forEach((goal, i) => {
-              if (!reachedGoals.has(i) && goal.met(seen)) reachedGoals.add(i);
-            });
-          }
+          // Each open goal reads its own copy, as the observation recorder does.
+          goals.forEach((goal, i) => {
+            if (!reachedGoals.has(i) && goal.met(deepClonePreservingPrototype(next))) reachedGoals.add(i);
+          });
           return (originalUntil?.(next) ?? false) || allGoalsReached();
         }
       : undefined;

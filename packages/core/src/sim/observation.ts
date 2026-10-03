@@ -337,13 +337,12 @@ export function createObservationRecorder<N, U extends string, Vars>(args: {
         rememberMilestone({ key: "prestige.first", firstSeenT: step.t1, source: "prestige" }, true);
       }
       const open = (goal: RunGoal<N, U, Vars>) => !reachedGoals.has(goal.id) && !droppedGoals.has(goal.id);
-      if (!args.goals.some(open)) return;
-      const seen = deepClonePreservingPrototype(step.state);
+      // Each open goal reads its own copy, so one predicate's write cannot reach the next.
       for (const goal of args.goals) {
         if (!open(goal)) continue;
         let met = false;
         notify(() => {
-          met = goal.met(seen);
+          met = goal.met(deepClonePreservingPrototype(step.state));
         });
         if (!met) continue;
         if (reachedGoals.size >= args.maxGoals) {

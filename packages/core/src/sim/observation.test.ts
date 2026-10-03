@@ -84,7 +84,7 @@ function scenario(args: {
  * @evidence ./observation.ts#statsFromObservation Four retention policies report the same applied money and action counts, and a disabled observation reports missing with a null dropped rate.
  * @evidenceReview ./observation.ts#statsFromObservation #d271a75 Re-read statsFromObservation: it passes coverage, money, and action counters from the observation to simStatsFromCounters and does not read events. Ran this function: four retention policies report applied money 6 and actions 6, and the disabled run reports status missing, a null dropped rate, and coverage disabled.
  * @evidence ./observation.ts#createObservationRecorder Counts come from committed steps under every retention policy, a milestone cap marks partial coverage, a goal records its step end, goal.met sees a clone, and an observer throw becomes ObservationError.
- * @evidenceReview ./observation.ts#createObservationRecorder #8e492ff Re-read createObservationRecorder: it rejects a maxMilestones or maxGoals that is not an integer >= 0, recordStep counts observedMoney and action events from each committed step, caps milestones and goals separately, counts a milestone key past maxMilestones once, counts a met goal past maxGoals once and leaves it out of goals instead of reporting it unreached, hands goal.met a clone, wraps observer throws in ObservationError, and finish returns a disabled observation when recording is off. Ran this function: counters match across retention, maxMilestones 1 is partial, goal two is reached at t 2, the goal that writes its argument leaves the wallet at 0, and a throwing onStep throws ObservationError.
+ * @evidenceReview ./observation.ts#createObservationRecorder #ce6742f Re-read createObservationRecorder: it rejects a maxMilestones or maxGoals that is not an integer >= 0, recordStep counts observedMoney and action events from each committed step, caps milestones and goals separately, counts a milestone key past maxMilestones once, counts a met goal past maxGoals once and leaves it out of goals instead of reporting it unreached, hands each open goal.met its own clone, wraps observer throws in ObservationError, and finish returns a disabled observation when recording is off. Ran this function: counters match across retention, maxMilestones 1 is partial, goal two is reached at t 2, the goal that writes its argument leaves the wallet at 0, a goal that writes vars does not make the next goal reached, and a throwing onStep throws ObservationError.
  * @evidence ./observation.ts#observationFromLegacyEvents An event-only result is incomplete, marked as a legacy fallback, and has a missing reward gap.
  * @evidenceReview ./observation.ts#observationFromLegacyEvents #7b6a96d Re-read observationFromLegacyEvents: it counts money and action events from a retained log and marks the result incomplete, legacyEventFallback true, with a missing reward gap. Ran this function: one applied action gives coverage incomplete, the fallback flag, and a missing reward gap.
  */
@@ -193,6 +193,26 @@ export function keepsStatsIndependentOfRetention(): void {
     }),
   );
   expect(poisoned.end.wallet.money.amount).toBe(0);
+
+  // Each open goal reads its own copy. The first counts its calls in vars; the second must not see that count.
+  const counted = runScenario(
+    scenario({
+      income: 1,
+      durationSec: 3,
+      goals: [
+        {
+          id: "counting",
+          met: (current) => {
+            current.vars.owned += 1;
+            return false;
+          },
+        },
+        { id: "owned", met: (current) => current.vars.owned >= 1 },
+      ],
+    }),
+  );
+  expect(counted.end.vars.owned).toBe(0);
+  expect(counted.observation?.goals.map((goal) => goal.status)).toEqual(["unreached", "unreached"]);
 
   expect(() =>
     runScenario(
