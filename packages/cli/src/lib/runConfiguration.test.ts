@@ -83,7 +83,7 @@ function registries() {
 
 /**
  * @evidence docs/requirements/active/cli-resolved-run.md#req-pr07-resolved-run Runs the shared plan, fresh stages, engine selection, suffix goal, and directory-independent digest.
- * @evidenceReview docs/requirements/active/cli-resolved-run.md#req-pr07-resolved-run #416c429 Re-read the section, including the stage digest paragraph, then ran this function: both stages buy once, breakInfinity keeps 1e400 finite, the digest ignores the directory, and a swapped plugin order changes it.
+ * @evidenceReview docs/requirements/active/cli-resolved-run.md#req-pr07-resolved-run #ad30c8a Re-read the section, including the stage digest paragraph, the evaluate default seed sentence, and the override that replaces the scenario strategy, then ran this function: both stages buy once, breakInfinity keeps 1e400 finite, the digest ignores the directory, and a swapped plugin order changes it.
  * @evidence ./runConfiguration.ts#resolvedRunContract Reads the resolved-run contract and checks a fresh stage against a standalone open.
  * @evidenceReview ./runConfiguration.ts#resolvedRunContract #2719478 The declaration is idlekit.resolved-run-configuration. This test reads that property.
  * @evidence ./runConfiguration.ts#sessionCaseSeed Reads the repro label. The runs use seed 1.
@@ -101,7 +101,7 @@ function registries() {
  * @evidence ./runConfiguration.ts#openResolvedStage Each stage opens a fresh compiled scenario with its own strategy, simulate on step 5 and experience on step 1.
  * @evidenceReview ./runConfiguration.ts#openResolvedStage #79dfd66 Re-read openResolvedStage: it binds a new createRunFactory with stageBindOptions, the scenario model and the plan strategy, and opens a fresh trial with the plan seed and an execution plan built from the stage plan. Ran this function: the opened simulate scenario is not the prepared definition, the two stages hold different strategies, and simulate runs on step 5 while experience runs on step 1.
  * @evidence ./runConfiguration.ts#prepareResolvedRun One prepared run opens simulate and experience stages that each buy once and match a standalone simulate open.
- * @evidenceReview ./runConfiguration.ts#prepareResolvedRun #d436c22 Re-read prepareResolvedRun: it resolves the engine, compiles once, rejects an unknown strategy before any stage opens, and open builds a stage plan, its stage hash, a fresh stage scenario, and the registries and bind options that rebuild that stage's model and strategy. Ran this function: simulate and experience each end with bought 1, the standalone simulate matches, and an unknown override throws at prepare.
+ * @evidenceReview ./runConfiguration.ts#prepareResolvedRun #46d2579 Re-read prepareResolvedRun: it resolves the engine, rejects an unknown strategy before any stage opens, compiles once without the scenario strategy when an override replaces it, and open builds a stage plan, its stage hash, a fresh stage scenario, and the registries and bind options that rebuild that stage's model and strategy. Ran this function: simulate and experience each end with bought 1, the standalone simulate matches, and an unknown override throws at prepare.
  */
 export function keepsResolvedRunConfiguration(): void {
   expect(resolvedRunContract).toBe("idlekit.resolved-run-configuration");
@@ -303,7 +303,7 @@ export function keepsResolvedRunConfiguration(): void {
 
 /**
  * @evidence docs/requirements/active/cli-resolved-run.md#req-pr07-resolved-run Opens simulate, experience, and ltv stages with different command inputs and hashes their stage digests into one workflow digest.
- * @evidenceReview docs/requirements/active/cli-resolved-run.md#req-pr07-resolved-run #416c429 Re-read the section, including the stage digest paragraph and the two executed tests, then ran this function: duration, offline seconds, stage, step, fast, and ltv inputs change stage digests, an empty plugin map does not, experience ignores step and fast without consistent overrides, and the workflow digest follows the experience stage.
+ * @evidenceReview docs/requirements/active/cli-resolved-run.md#req-pr07-resolved-run #ad30c8a Re-read the section, including the stage digest paragraph and the three executed tests, then ran this function: duration, offline seconds, stage, step, fast, and ltv inputs change stage digests, an empty plugin map does not, experience ignores step and fast without consistent overrides, and the workflow digest follows the experience stage.
  * @evidence ./runConfiguration.ts#effectiveRunHash Stage digests ignore an empty plugin digest map, change with simulate duration, offline seconds, the stage name, step and fast on simulate, and ltv horizons, draws, and value per worth.
  * @evidenceReview ./runConfiguration.ts#effectiveRunHash #874af5c Re-read effectiveRunHash and stageRunHash: the stage name, applied scope, and command inputs are part of the hash, and plugin digests keep their load order. Ran this function: an empty plugin map matches the default, durationSec 10 and 20 differ, offlineSeconds 0 and 60 differ, simulate and experience differ, step 5 with fast changes simulate only, and each ltv input change gives a new hash.
  * @evidence ./runConfiguration.ts#workflowRunHash The workflow digest ignores stage key order and changes when consistent overrides change the experience stage digest.
@@ -344,8 +344,32 @@ export function digestsEachStageFromItsAppliedPlan(): void {
   expect(workflowRunHash({ ...stages, experience: exp(consistent) })).not.toBe(workflowRunHash(stages));
 }
 
+/**
+ * @evidence docs/requirements/active/cli-resolved-run.md#req-pr07-resolved-run An override runs over an unregistered scenario strategy and over invalid scenario strategy params, and without the override both still fail.
+ * @evidenceReview docs/requirements/active/cli-resolved-run.md#req-pr07-resolved-run #ad30c8a Re-read the strategy paragraph: the flag replaces the scenario strategy, which is not built, and without the flag a broken one still fails. Ran this function: custom.once buys once over plugin.missing and over scripted params without a program, and without the override they throw Unknown strategy and Invalid strategy params.
+ * @evidence ./runConfiguration.ts#prepareResolvedRun An override compiles without the scenario strategy it replaces, and no override keeps the scenario strategy errors.
+ * @evidenceReview ./runConfiguration.ts#prepareResolvedRun #46d2579 Re-read prepareResolvedRun: resolveStrategySelection runs first, and a command-selected strategy compiles the scenario without its strategy field. Ran this function: both broken scenarios open a simulate stage that buys once under the override, and prepare throws the scenario strategy error without it.
+ */
+export function overrideReplacesBrokenScenarioStrategy(): void {
+  const loaded = registries();
+  const broken: ScenarioV1[] = [
+    { ...scenario(), strategy: { id: "plugin.missing" } },
+    { ...scenario(), strategy: { id: "scripted", params: { schemaVersion: 1 } } },
+  ];
+  for (const input of broken) {
+    const prepared = prepareResolvedRun({ scenario: input, ...loaded, strategyOverride: "custom.once", seed: 1 });
+    expect(runScenario(prepared.open("simulate", "override").scenario).end.vars).toEqual({ bought: 1 });
+  }
+  expect(() => prepareResolvedRun({ scenario: broken[0]!, ...loaded, seed: 1 })).toThrow(
+    /^Unknown strategy: plugin.missing$/,
+  );
+  expect(() => prepareResolvedRun({ scenario: broken[1]!, ...loaded, seed: 1 })).toThrow(/^Invalid strategy params: /);
+}
+
 describe("PR-07 resolved run", () => {
   it("keeps resolved run configuration", keepsResolvedRunConfiguration);
+
+  it("builds an override without the scenario strategy it replaces", overrideReplacesBrokenScenarioStrategy);
 
   it("digests each stage from its applied plan and command inputs", digestsEachStageFromItsAppliedPlan);
 });

@@ -10,7 +10,7 @@ Requirement `REQ-PR07-RESOLVED-RUN`. `PR-07` owns it.
 
 `scenario.engine` is metadata. It is recorded and not applied. An omitted `--engine` uses `number`. `--engine number` selects the same engine. `--engine breakInfinity` constructs `createBreakInfinityEngine`. `from("1e400")` stays on that engine. It is not passed through `Number` first. `--engine breakEternity` throws `BREAK_ETERNITY_EXPERIMENTAL_MESSAGE`. A custom id runs only when the caller already holds a trusted factory with that id. An unknown id does not load a plugin.
 
-`--strategy` accepts a registered strategy id on `evaluate`, `simulate`, `experience`, `ltv`, and `review evaluate`. Builtins stay `greedy`, `planner`, and `scripted`. An unknown id is rejected. Plugins are not auto-approved. `compare` and `review compare` stay on the builtin enum.
+`--strategy` accepts a registered strategy id on `evaluate`, `simulate`, `experience`, `ltv`, and `review evaluate`. Builtins stay `greedy`, `planner`, and `scripted`. An unknown id is rejected. Plugins are not auto-approved. `compare` and `review compare` stay on the builtin enum. The flag replaces the scenario strategy, which is then not built, so an unregistered scenario strategy id or invalid scenario strategy params do not stop that run. Without the flag they still fail.
 
 Strategy applies to simulate, experience, and ltv. `--step` and `--fast` apply to simulate and ltv. They apply to experience only when `--consistent-overrides` is true. Session pattern and days stay on experience. Each stage records that scope. `ctx.stepSec` and `run.stepSec` are the stage step. A planner preview reads `ctx.stepSec`.
 

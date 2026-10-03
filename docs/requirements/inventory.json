@@ -270,6 +270,13 @@
           "registeredAs": "PR-07 resolved run > digests each stage from its applied plan and command inputs",
           "cwd": "packages/cli",
           "args": ["test", "src/lib/runConfiguration.test.ts"]
+        },
+        {
+          "file": "packages/cli/src/lib/runConfiguration.test.ts",
+          "exportName": "overrideReplacesBrokenScenarioStrategy",
+          "registeredAs": "PR-07 resolved run > builds an override without the scenario strategy it replaces",
+          "cwd": "packages/cli",
+          "args": ["test", "src/lib/runConfiguration.test.ts"]
         }
       ]
     }

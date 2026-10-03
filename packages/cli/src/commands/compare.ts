@@ -64,9 +64,11 @@ function compileComparableScenario(args: {
     seed?: number;
   };
 }) {
+  // An override replaces the scenario strategy, so the scenario one is not built.
+  const { strategy: _replaced, ...withoutStrategy } = args.scenario;
   const compiled = compileScenario<number, string, Record<string, unknown>>({
     E: args.E,
-    scenario: args.scenario,
+    scenario: args.flags.strategy ? withoutStrategy : args.scenario,
     registry: args.loaded.modelRegistry,
     strategyRegistry: args.loaded.strategyRegistry,
     opts: { allowSuffixNotation: true },
