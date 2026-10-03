@@ -81,6 +81,14 @@ export function analyzeGrowth<N, U extends string, Vars>(args: {
     throw new Error("analyzeGrowth requires compiled scenario when series='netWorth'");
   }
 
+  // A bounded trace keeps its tail. Slopes over that tail would read as the whole run.
+  const droppedPoints = args.run.traceLog?.dropped ?? 0;
+  if (droppedPoints > 0) {
+    throw new Error(
+      `analyzeGrowth needs the whole trace; the run dropped ${droppedPoints} trace points under trace.maxPoints`,
+    );
+  }
+
   const valueSource =
     args.series === "money"
       ? "money"
@@ -88,12 +96,20 @@ export function analyzeGrowth<N, U extends string, Vars>(args: {
         ? "netWorth"
         : "netWorthFallback";
   const rawStates = args.run.trace && args.run.trace.length > 1 ? args.run.trace : [args.run.start, args.run.end];
+  const seriesOf = valueSource === "netWorthFallback" ? "money" : args.series;
+  const finiteStates = rawStates.filter((s) => Number.isFinite(valueOfState(s, seriesOf, args.scenario)));
+  // An overflowed or NaN value has no slope. Say so instead of ending the segments quietly.
+  const firstNonFinite = rawStates.find((s) => !Number.isFinite(valueOfState(s, seriesOf, args.scenario)));
+  const bottlenecks: Array<{ t: number; reason: string }> = firstNonFinite
+    ? [
+        {
+          t: firstNonFinite.t,
+          reason: `Value is not finite; ${rawStates.length - finiteStates.length} trace points excluded`,
+        },
+      ]
+    : [];
   const states = sampleStatesByWindow(
-    rawStates
-    .filter((s) =>
-      Number.isFinite(valueOfState(s, valueSource === "netWorthFallback" ? "money" : args.series, args.scenario)),
-    )
-    .sort((a, b) => a.t - b.t),
+    finiteStates.sort((a, b) => a.t - b.t),
     Math.max(1, Math.floor(args.windowSec)),
   );
 
@@ -103,12 +119,11 @@ export function analyzeGrowth<N, U extends string, Vars>(args: {
       seriesRequested: args.series,
       valueSource,
       segments: [],
-      bottlenecks: [{ t: args.run.end.t, reason: "Insufficient trace points" }],
+      bottlenecks: [...bottlenecks, { t: args.run.end.t, reason: "Insufficient trace points" }],
     };
   }
 
   const segments: GrowthSegment[] = [];
-  const bottlenecks: Array<{ t: number; reason: string }> = [];
 
   for (let i = 1; i < states.length; i += 1) {
     const a = states[i - 1];

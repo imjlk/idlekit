@@ -61,4 +61,29 @@ describe("analyzeGrowth", () => {
       "analyzeGrowth requires compiled scenario when series='netWorth'",
     );
   });
+
+  it("does not read a bounded trace's tail as the whole run", () => {
+    const run: RunResult<number, UnitCode, Vars> = {
+      start: makeState(0, 1, 0),
+      end: makeState(3, 8, 0),
+      events: [],
+      trace: [makeState(2, 4, 0), makeState(3, 8, 0)],
+      traceLog: { maxPoints: 2, totalSeen: 4, dropped: 2, retained: 2 },
+    };
+    expect(() => analyzeGrowth({ run, series: "money", windowSec: 60 })).toThrow(
+      "analyzeGrowth needs the whole trace; the run dropped 2 trace points under trace.maxPoints",
+    );
+  });
+
+  it.each([Number.POSITIVE_INFINITY, Number.NaN])("reports trace points whose value is %p", (bad) => {
+    const run: RunResult<number, UnitCode, Vars> = {
+      start: makeState(0, 1, 0),
+      end: makeState(3, bad, 0),
+      events: [],
+      trace: [makeState(0, 1, 0), makeState(1, 10, 0), makeState(2, bad, 0), makeState(3, bad, 0)],
+    };
+    const report = analyzeGrowth({ run, series: "money", windowSec: 60 });
+    expect(report.segments.map((segment) => [segment.tFrom, segment.tTo])).toEqual([[0, 1]]);
+    expect(report.bottlenecks).toContainEqual({ t: 2, reason: "Value is not finite; 2 trace points excluded" });
+  });
 });
