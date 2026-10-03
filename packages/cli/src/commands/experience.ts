@@ -102,19 +102,22 @@ export default defineCommand({
       series,
     });
 
-    const monteCarlo =
-      draws > 1
-        ? summarizeExperienceMonteCarlo({
-            // The deterministic session advanced seededScenario's strategy cursor, and
-            // Monte Carlo restores every draw to the cursor it sees at bind. Open a fresh trial.
-            scenario: prepared.open("experience", `experience:${seed}:monte-carlo`, experienceInputs).scenario,
-            sessionPattern,
-            draws,
-            seed,
-            quantiles,
-            series,
-          })
-        : undefined;
+    // The deterministic session advanced seededScenario's model and strategy. Monte Carlo opens
+    // its own stage and builds a new model and strategy for every draw from the registries.
+    const monteCarloStage =
+      draws > 1 ? prepared.open("experience", `experience:${seed}:monte-carlo`, experienceInputs) : undefined;
+    const monteCarlo = monteCarloStage
+      ? summarizeExperienceMonteCarlo({
+          scenario: monteCarloStage.scenario,
+          registries: monteCarloStage.isolation.registries,
+          isolation: monteCarloStage.isolation.options,
+          sessionPattern,
+          draws,
+          seed,
+          quantiles,
+          series,
+        })
+      : undefined;
 
     const runId =
       flags["run-id"] ??

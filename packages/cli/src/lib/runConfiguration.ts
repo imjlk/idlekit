@@ -9,6 +9,8 @@ import {
   type Engine,
   type ExecutionPlan,
   type ModelRegistry,
+  type RunBindOptions,
+  type RunFactoryDeps,
   type ScenarioV1,
   type StrategyParamsMode,
   type StrategyRegistry,
@@ -99,6 +101,8 @@ export type PreparedRun = Readonly<{
     plan: ResolvedRunPlan;
     /** Digest of this stage: the plan it applied and its command inputs. */
     hash: string;
+    /** Registries and bind options that build this stage's model and strategy. Monte Carlo draws rebind with them. */
+    isolation: Readonly<{ registries: RunFactoryDeps; options: RunBindOptions }>;
   }>;
 }>;
 
@@ -331,6 +335,20 @@ function executionPlanFrom(plan: ResolvedRunPlan): ExecutionPlan {
   };
 }
 
+/** The scenario model and the plan strategy, each built from its factory. */
+function stageBindOptions(scenario: ScenarioV1, plan: ResolvedRunPlan): RunBindOptions {
+  return {
+    model: {
+      id: scenario.model.id,
+      version: scenario.model.version,
+      params: scenario.model.params,
+    },
+    ...(plan.strategy.id !== undefined
+      ? { strategy: { id: plan.strategy.id, params: plan.strategy.params } }
+      : {}),
+  };
+}
+
 export function openResolvedStage(args: {
   definition: CompiledScenario<number, string, Record<string, unknown>>;
   plan: ResolvedRunPlan;
@@ -342,16 +360,7 @@ export function openResolvedStage(args: {
   const binding = createRunFactory({
     models: args.modelRegistry,
     strategies: args.strategyRegistry,
-  }).bind(args.definition, {
-    model: {
-      id: args.scenario.model.id,
-      version: args.scenario.model.version,
-      params: args.scenario.model.params,
-    },
-    ...(args.plan.strategy.id !== undefined
-      ? { strategy: { id: args.plan.strategy.id, params: args.plan.strategy.params } }
-      : {}),
-  });
+  }).bind(args.definition, stageBindOptions(args.scenario, args.plan));
   return binding.fresh({
     trialId: args.trialId,
     ...(args.plan.seed !== undefined ? { seed: args.plan.seed } : {}),
@@ -387,6 +396,10 @@ export function prepareResolvedRun(args: PrepareArgs): PreparedRun {
       return {
         plan,
         hash: stageRunHash(args.scenario, plan, inputs),
+        isolation: {
+          registries: { models: args.modelRegistry, strategies: args.strategyRegistry },
+          options: stageBindOptions(args.scenario, plan),
+        },
         scenario: openResolvedStage({
           definition,
           plan,

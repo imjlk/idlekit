@@ -7,6 +7,8 @@ import {
   type CompiledScenario,
   type GrowthReport,
   type MilestoneReport,
+  type RunBindOptions,
+  type RunFactoryDeps,
   type SessionPatternId,
   type SessionPatternSpec,
   type SessionRunResult,
@@ -276,12 +278,17 @@ export function summarizeExperienceMonteCarlo<N, U extends string, Vars>(args: {
   seed: number;
   quantiles: readonly number[];
   series?: ExperienceSeries;
+  /** Factories for a new model and strategy per draw. Without them a closure is shared across draws. */
+  registries?: RunFactoryDeps;
+  isolation?: RunBindOptions;
 }): ExperienceMonteCarloSummary {
   const summary = simulateMonteCarlo({
     scenario: args.scenario,
     sessionPattern: args.sessionPattern,
     draws: args.draws,
     seed: args.seed,
+    registries: args.registries,
+    isolation: args.isolation,
     metrics: ({ scenario, session }) => {
       const snapshot = snapshotFromSession({
         scenario,
