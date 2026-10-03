@@ -150,6 +150,15 @@ export function analyzePerceivedProgression<N, U extends string, Vars>(args: {
 
   // Active segments only. `durationSec` and `state.t` are reward time, not wall elapsed.
   for (const segment of activeSegments(session)) {
+    // Reads every active step. A session trace budget cuts each block's trace and action rows,
+    // and what is left would read as quiet play.
+    const droppedPoints = segment.run.traceLog?.dropped ?? 0;
+    const droppedActions = segment.run.actionsLogMeta?.dropped ?? 0;
+    if (droppedPoints > 0 || droppedActions > 0) {
+      throw new Error(
+        `perceived progression needs every active step; a session block dropped ${droppedPoints} trace points and ${droppedActions} action rows under trace.maxPoints or trace.maxActions`,
+      );
+    }
     const trace = segment.run.trace ?? [segment.run.start, segment.run.end];
     if (trace.length === 0) continue;
 
