@@ -7,7 +7,7 @@ import type { SimEvent, SimState } from "./types";
  * Resolved observation contract. TC-05 has not registered this DTO.
  *
  * @evidence docs/requirements/active/observation-retention.md#req-pr05-observation-retention Counters come from the committed step, not from the retained event log.
- * @evidenceReview docs/requirements/active/observation-retention.md#req-pr05-observation-retention #cc638cf Re-read the section: retention does not change these counters, a disabled mode is missing rather than zero, a sample cap does not hide a fact from the observer, the start-goal sentence is about the recorder's start hook, not this name, and the tuning sentence is about runCandidateAndScore and pacingBalancedLog10, which read these missing counters.
+ * @evidenceReview docs/requirements/active/observation-retention.md#req-pr05-observation-retention #9d4cc4c Re-read the section: retention does not change these counters, a disabled mode is missing rather than zero, a sample cap does not hide a fact from the observer, including an action-derived milestone key, the start-goal sentence is about the recorder's start hook, not this name, and the tuning sentence is about runCandidateAndScore and pacingBalancedLog10, which read these missing counters.
  */
 export const observationContract = "idlekit.run-observation" as const;
 
@@ -266,15 +266,15 @@ export function createObservationRecorder<N, U extends string, Vars>(args: {
   let interiorMaxGapSec = 0;
   const enabled = args.enabled;
 
-  const rememberMilestone = (sample: MilestoneSample, notifyMilestone: boolean) => {
+  const rememberMilestone = (sample: MilestoneSample) => {
     if (!enabled) return;
     if (seenMilestone.has(sample.key)) return;
     // A dropped key is seen too, so a recurring key counts once.
     seenMilestone.add(sample.key);
-    // The cap limits retained samples, not what the observer is told.
+    // The cap limits retained samples, not what the observer is told. Action-derived keys included.
     if (milestones.length >= args.maxMilestones) droppedMilestones += 1;
     else milestones.push(sample);
-    if (notifyMilestone && args.observer?.onMilestone) {
+    if (args.observer?.onMilestone) {
       notify(() => args.observer?.onMilestone?.({ t: sample.firstSeenT, key: sample.key }));
     }
   };
@@ -331,8 +331,8 @@ export function createObservationRecorder<N, U extends string, Vars>(args: {
           if (args.observer?.onAction) {
             notify(() => args.observer?.onAction?.({ t: step.t0, actionId: event.actionId, outcome: "applied" }));
           }
-          rememberMilestone({ key: `action.${event.actionId}.firstApplied`, firstSeenT: step.t0, source: "action" }, false);
-          rememberMilestone({ key: "progress.first-upgrade", firstSeenT: step.t0, source: "action" }, false);
+          rememberMilestone({ key: `action.${event.actionId}.firstApplied`, firstSeenT: step.t0, source: "action" });
+          rememberMilestone({ key: "progress.first-upgrade", firstSeenT: step.t0, source: "action" });
         } else if (event.type === "action.skipped") {
           if (event.reason === "cannotApply") actions.skippedCannotApply += 1;
           if (event.reason === "insufficientFunds") actions.skippedInsufficientFunds += 1;
@@ -349,11 +349,11 @@ export function createObservationRecorder<N, U extends string, Vars>(args: {
             );
           }
         } else if (event.type === "milestone") {
-          rememberMilestone({ key: event.key, firstSeenT: step.t1, source: "milestone" }, true);
+          rememberMilestone({ key: event.key, firstSeenT: step.t1, source: "milestone" });
         }
       }
       if (step.prestigeChanged) {
-        rememberMilestone({ key: "prestige.first", firstSeenT: step.t1, source: "prestige" }, true);
+        rememberMilestone({ key: "prestige.first", firstSeenT: step.t1, source: "prestige" });
       }
       recordGoals(step.state, step.t1);
     },
