@@ -59,7 +59,8 @@ export function analyzeMilestones<N, U extends string, Vars>(args: {
       firstMilestoneSec: milestones[0]?.firstSeenSec,
       firstActionSec: firstAction?.firstSeenSec,
       firstPrestigeSec: firstPrestige?.firstSeenSec,
-      coverage: compact?.coverage === "partial" ? "partial" : "complete",
+      // Milestones and goals have separate caps. Only a dropped milestone makes this report partial.
+      coverage: (compact?.droppedMilestones ?? 0) > 0 ? "partial" : "complete",
     };
   }
 
