@@ -383,6 +383,9 @@ export function simulateSessionPattern<N, U extends string, Vars>(args: {
     offlineCreditedSec += credited;
     lostRewardSec += lost;
     retainRun(offlineRun);
+    // A policy that calls the strategy applies actions while away. They are session rows too.
+    for (const row of offlineRun.actionsLog ?? []) actionsLog.push(row);
+    segmentActionsDropped += offlineRun.actionsLogMeta?.dropped ?? 0;
     segments.push({
       kind: "offline",
       day,

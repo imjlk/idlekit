@@ -187,7 +187,7 @@ function runPattern(
  * @evidence ./session.ts#assertSessionSchedule An empty schedule, a negative offset, a negative duration, and overlapping blocks throw, and a 12-hour offset block starts on wall time 43200.
  * @evidenceReview ./session.ts#assertSessionSchedule #86f2edc Re-read assertSessionSchedule: days must be a positive integer, the list must be non-empty, each day an integer >= 0, each offset finite and >= 0, each duration finite and > 0, no block may end past the horizon, and sorted blocks may not overlap. Ran this function: the empty, negative offset, negative duration, and overlap cases threw those messages, and the 12-hour block ran after a 43200s offline segment.
  * @evidence ./session.ts#simulateSessionPattern A 12-hour gap with a 1-hour cap stays elapsed 43200 and credited 3600, presets keep the 86400 horizon, until and goals stop before the next block, and maxSteps cuts each active block without ending the session.
- * @evidenceReview ./session.ts#simulateSessionPattern #1cb81a2 Re-read simulateSessionPattern: it rejects a non-integer trace budget for the whole session, counts a trace point shared by adjacent blocks once in traceLog, runs offline gaps through applyOfflineSeconds up to each scheduled wall start, ends a gap cut by until or a goal at the smallest absence whose cap- and decay-adjusted reward reaches the stepped reward, reading that stop from the runner's own stop call on the gap's end state so a gap with no effective seconds, or one that used them all, is cut too, runs each block through runScenario with that block's duration, keeps state.t as reward time, passes each segment only the goals not yet reached, as copies that answer once per committed state, so the segment recorder and the session stop read one answer, each on its own clone of the state, and a reached goal is not read again in a later segment, passes every segment one observer that hears each milestone key and goal once per session and every other fact unchanged, stops on until or once every goal is reached, classifying each segment's stop from the runner's last stop call instead of calling until again, counts budget stops per block and ends a cut block's wall time and elapsed seconds at its planned end while crediting only the simulated seconds, and merges segment observations. Ran this function: offline-heavy elapsed 86400 with 3600 credited and 82500 lost, early until and goal stopped at t 10 after one block, and maxSteps 2 gave two budget stops, the first ending at wall 110 with 10 elapsed and 2 credited, with the session ending on the 86400 horizon. An until that holds only once stopped an active block at t 10 and a 12-hour gap at wall 1000. A goal that holds only on its second call stopped the session at t 1 and was recorded reached at t 1 after two calls. A goal reached at t 10 was not read past t 10 while a second goal stayed open to t 500, and the merged observation kept it reached at t 10. A level-1 milestone and a goal met at t 10 reached the observer once each across five segments.
+ * @evidenceReview ./session.ts#simulateSessionPattern #656a408 Re-read simulateSessionPattern: it rejects a non-integer trace budget for the whole session, counts a trace point shared by adjacent blocks once in traceLog, runs offline gaps through applyOfflineSeconds up to each scheduled wall start, ends a gap cut by until or a goal at the smallest absence whose cap- and decay-adjusted reward reaches the stepped reward, reading that stop from the runner's own stop call on the gap's end state so a gap with no effective seconds, or one that used them all, is cut too, runs each block through runScenario with that block's duration, keeps state.t as reward time, passes each segment only the goals not yet reached, as copies that answer once per committed state, so the segment recorder and the session stop read one answer, each on its own clone of the state, and a reached goal is not read again in a later segment, passes every segment one observer that hears each milestone key and goal once per session and every other fact unchanged, stops on until or once every goal is reached, classifying each segment's stop from the runner's last stop call instead of calling until again, counts budget stops per block and ends a cut block's wall time and elapsed seconds at its planned end while crediting only the simulated seconds, merges segment observations, and feeds offline and active action rows, with each child's dropped count, into one session action log. Ran this function: offline-heavy elapsed 86400 with 3600 credited and 82500 lost, early until and goal stopped at t 10 after one block, and maxSteps 2 gave two budget stops, the first ending at wall 110 with 10 elapsed and 2 credited, with the session ending on the 86400 horizon. An until that holds only once stopped an active block at t 10 and a 12-hour gap at wall 1000. A goal that holds only on its second call stopped the session at t 1 and was recorded reached at t 1 after two calls. A goal reached at t 10 was not read past t 10 while a second goal stayed open to t 500, and the merged observation kept it reached at t 10. A level-1 milestone and a goal met at t 10 reached the observer once each across five segments. An allow policy's offline automation buy at t 0 led the session action log ahead of the three active rows at t 1, with totalSeen 4 under maxActions 10.
  * @evidence ./offline.ts#resolveOfflineActionPolicy Policy none keeps the scripted cursor at 1, legacy-all moves it to 3, and allow applies only the automation buy.
  * @evidenceReview ./offline.ts#resolveOfflineActionPolicy #ca047be Re-read resolveOfflineActionPolicy: useStrategy false and policy none never call the strategy, allow keeps the policy, and allow and legacy-all call the strategy only when the scenario has one. Ran this function: none left the scripted cursor at 1 and bought once, legacy-all reached cursor 3 with one prestige, and allow applied the automation buy only.
  */
@@ -321,24 +321,30 @@ export function keepsSessionClocksDistinct(): void {
 
   const auto = buyAction("auto", "auto", "automation");
   const manual = buyAction("manual", "manual", "player");
-  const allowRun = runPattern(
-    clockScenario({
-      money: 10,
-      actions: [auto, manual, prestige],
-      strategy: {
-        id: "all",
-        decide(_ctx, model, current) {
-          return model.actions(_ctx, current).map((action) => ({ action }));
-        },
+  const allowScenario = clockScenario({
+    money: 10,
+    actions: [auto, manual, prestige],
+    strategy: {
+      id: "all",
+      decide(_ctx, model, current) {
+        return model.actions(_ctx, current).map((action) => ({ action }));
       },
-      offline: { actions: { mode: "allow", categories: ["buy"], actors: ["automation"] } },
-      until: (state) => state.t >= 2,
-    }),
+    },
+    offline: { actions: { mode: "allow", categories: ["buy"], actors: ["automation"] } },
+    until: (state) => state.t >= 2,
+  });
+  const allowRun = runPattern(
+    { ...allowScenario, run: { ...allowScenario.run, trace: { maxActions: 10 } } },
     { id: "offline-heavy", days: 1, schedule: [{ day: 0, startOffsetSec: 1, durationSec: 1 }] },
   );
   expect(allowRun.segments[0]?.run.end.vars.auto).toBe(1);
   expect(allowRun.segments[0]?.run.end.vars.manual).toBe(0);
   expect(allowRun.segments[0]?.run.end.prestige.count).toBe(0);
+  // The session action log is the whole session's, offline buys included, in time order.
+  expect(allowRun.segments.map((segment) => segment.kind)).toEqual(["offline", "active"]);
+  expect(allowRun.run.actionsLog?.[0]).toMatchObject({ t: 0, actionId: "auto" });
+  expect(allowRun.run.actionsLog?.slice(1).every((row) => row.t === 1)).toBe(true);
+  expect(allowRun.run.actionsLogMeta).toEqual({ maxActions: 10, totalSeen: 4, dropped: 0, retained: 4 });
 
   const actionA = buyAction("a", "a", "player");
   const actionB = buyAction("b", "b", "player");
@@ -672,17 +678,22 @@ describe("session segments", () => {
     expect(bounded.run.trace?.at(-1)?.t).toBe(bounded.segments.at(-2)?.endT);
     expect(bounded.run.traceLog).toEqual({ maxPoints: 5, totalSeen: 610, dropped: 605, retained: 5 });
     expect(bounded.run.actionsLog).toHaveLength(2);
-    const activeBuys = bounded.segments
-      .filter((segment) => segment.kind === "active")
+    // legacy-all also buys in the offline gaps. The session budget counts those rows too.
+    const offlineBuys = bounded.segments
+      .filter((segment) => segment.kind === "offline")
       .reduce((sum, segment) => sum + (segment.run.stats?.actions.applied ?? 0), 0);
-    expect(bounded.run.actionsLogMeta).toEqual({ maxActions: 2, totalSeen: activeBuys, dropped: activeBuys - 2, retained: 2 });
+    const allBuys = bounded.segments.reduce((sum, segment) => sum + (segment.run.stats?.actions.applied ?? 0), 0);
+    expect(offlineBuys).toBeGreaterThan(0);
+    expect(bounded.run.actionsLogMeta).toEqual({ maxActions: 2, totalSeen: allBuys, dropped: allBuys - 2, retained: 2 });
     for (const segment of bounded.segments) {
       if (segment.kind === "active") expect(segment.run.trace?.length ?? 0).toBeLessThanOrEqual(5);
     }
 
     const unbounded = runPattern(base, { id: "short-bursts", days: 1 });
     expect(unbounded.run.trace).toHaveLength(610);
-    expect(unbounded.run.actionsLog).toHaveLength(activeBuys);
+    expect(unbounded.run.actionsLog).toHaveLength(allBuys);
+    const times = unbounded.run.actionsLog?.map((row) => row.t) ?? [];
+    expect(times).toEqual([...times].sort((a, b) => a - b));
     expect(unbounded.run.traceLog).toBeUndefined();
     expect(unbounded.run.actionsLogMeta).toBeUndefined();
     expect(unbounded.end.vars.bought).toBe(bounded.end.vars.bought);
