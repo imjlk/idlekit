@@ -41,7 +41,10 @@ export type SessionPatternSpec = Readonly<{
 export type SessionStopReason = "horizon" | "until" | "goal";
 
 export type SessionClock = Readonly<{
-  /** Wall length of this segment. A gap cut by a stop ends where its stepped reward was earned. */
+  /**
+   * Wall length of this segment. A gap cut by a stop ends where its stepped reward was earned.
+   * An active block cut by maxSteps keeps its planned length; credited and active stay short.
+   */
   elapsedSec: number;
   /** Reward seconds actually stepped. */
   creditedSec: number;
@@ -402,6 +405,9 @@ export function simulateSessionPattern<N, U extends string, Vars>(args: {
     segmentTraceDropped += activeRun.traceLog?.dropped ?? 0;
     for (const row of activeRun.actionsLog ?? []) actionsLog.push(row);
     segmentActionsDropped += activeRun.actionsLogMeta?.dropped ?? 0;
+    // A block cut by maxSteps still ends at its planned wall time. The player was
+    // present for the rest, so it is neither offline absence nor credited reward.
+    const wallEnd = activeRun.stop?.reason === "budget" ? plannedEnd : wallStart + simulated;
     segments.push({
       kind: "active",
       day: block.day,
@@ -409,9 +415,9 @@ export function simulateSessionPattern<N, U extends string, Vars>(args: {
       endT: activeRun.end.t,
       durationSec: simulated,
       wallStartT: wallStart,
-      wallEndT: wallStart + simulated,
+      wallEndT: wallEnd,
       clock: {
-        elapsedSec: simulated,
+        elapsedSec: wallEnd - wallStart,
         creditedSec: simulated,
         activeSec: simulated,
         lostRewardSec: 0,
@@ -419,9 +425,7 @@ export function simulateSessionPattern<N, U extends string, Vars>(args: {
       run: activeRun,
     });
     state = activeRun.end;
-    // A block cut by maxSteps still ends at its planned wall time. The player was
-    // present for the rest, so it is neither offline absence nor credited reward.
-    wallT = activeRun.stop?.reason === "budget" ? plannedEnd : wallStart + simulated;
+    wallT = wallEnd;
     const reason = classify(activeRun);
     if (reason) stopReason = reason;
   }
