@@ -1,8 +1,8 @@
 import type { OfflineActionPolicy } from "../scenario/offlinePolicy";
-import { deepClonePreservingPrototype } from "../utils/deepClone";
 import { analyzeUX } from "./analysis/ux";
 import { constraintsWithAnchor } from "./constraints";
 import { createBoundedLog, createEventBuffer } from "./eventBuffer";
+import { readGoal, shareGoalReads } from "./goalRead";
 import { mergeObservations, observationFromLegacyEvents, statsFromObservation, type RunObservation } from "./observation";
 import { applyOfflineSeconds, type OfflineRunResult } from "./offline";
 import { offlineAbsenceForCredit, resolveOfflineSeconds } from "./offlineCredit";
@@ -262,7 +262,8 @@ export function simulateSessionPattern<N, U extends string, Vars>(args: {
   let stopReason: SessionStopReason = "horizon";
   const actionPolicy = sc.run.offline?.actions ?? { mode: "legacy-all" as const };
   const originalUntil = sc.run.until;
-  const goals = sc.run.goals ?? [];
+  // Segment recorders and the session stop read one answer per goal and committed state.
+  const goals = shareGoalReads(sc.run.goals ?? []);
   // A goal stays reached once met. Goals stop the session only when every goal is reached.
   const reachedGoals = new Set<number>();
   const allGoalsReached = () => goals.length > 0 && reachedGoals.size === goals.length;
@@ -271,9 +272,8 @@ export function simulateSessionPattern<N, U extends string, Vars>(args: {
   const stopFn =
     originalUntil !== undefined || goals.length > 0
       ? (next: SimState<N, U, Vars>) => {
-          // Each open goal reads its own copy, as the observation recorder does.
           goals.forEach((goal, i) => {
-            if (!reachedGoals.has(i) && goal.met(deepClonePreservingPrototype(next))) reachedGoals.add(i);
+            if (!reachedGoals.has(i) && readGoal(goal, next)) reachedGoals.add(i);
           });
           untilMet = originalUntil?.(next) ?? false;
           return untilMet || allGoalsReached();
@@ -290,7 +290,7 @@ export function simulateSessionPattern<N, U extends string, Vars>(args: {
     return {
       ...base,
       ...(lastResetT !== undefined ? { constraints: constraintsWithAnchor(base.constraints, lastResetT) } : {}),
-      run: { ...base.run, onPrestigeReset },
+      run: { ...base.run, onPrestigeReset, ...(sc.run.goals ? { goals } : {}) },
     };
   };
 

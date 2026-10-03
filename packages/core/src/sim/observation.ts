@@ -1,5 +1,5 @@
 import { assertLogBudget } from "./eventBuffer";
-import { deepClonePreservingPrototype } from "../utils/deepClone";
+import { readGoal } from "./goalRead";
 import { simStatsFromCounters, type MetricStatus, type SimStats } from "./analysis/ux";
 import type { SimEvent, SimState } from "./types";
 
@@ -286,7 +286,7 @@ export function createObservationRecorder<N, U extends string, Vars>(args: {
       if (!open(goal)) continue;
       let met = false;
       notify(() => {
-        met = goal.met(deepClonePreservingPrototype(state));
+        met = readGoal(goal, state);
       });
       if (!met) continue;
       if (reachedGoals.size >= args.maxGoals) droppedGoals.add(goal.id);
