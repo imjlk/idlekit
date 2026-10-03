@@ -521,10 +521,11 @@ export function createRunFactory(deps?: RunFactoryDeps): RunFactory {
           preview,
           observer: { trialId, buffer: "per-run" },
           checkpoint() {
-            const saved = strategy?.snapshotState?.();
-            // A snapshot pair may save undefined. Resume still needs the entry to restore it.
+            // Only a snapshot pair writes an entry, even one that saves undefined. A one-hook
+            // strategy is shared as stateless, and resume could not restore its entry.
             const restorable =
               typeof strategy?.snapshotState === "function" && typeof strategy.restoreState === "function";
+            const saved = restorable ? strategy.snapshotState!() : undefined;
             const interval = liveConstraints?.minPrestigeIntervalSec;
             const ready =
               typeof lastResetT === "number" &&
@@ -543,7 +544,7 @@ export function createRunFactory(deps?: RunFactoryDeps): RunFactory {
                 execution: rng.snapshot(),
                 preview: preview.snapshot(),
               },
-              ...((saved !== undefined || restorable) && strategy
+              ...(restorable && strategy
                 ? {
                     strategy: {
                       id: strategy.id,

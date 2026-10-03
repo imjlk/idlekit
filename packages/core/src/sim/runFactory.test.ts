@@ -156,7 +156,7 @@ function statefulIncomeFactory() {
  * @evidence ./runFactory.ts#executionPlanIdentity A copied plan has the same identity, and a different stepSec changes it.
  * @evidenceReview ./runFactory.ts#executionPlanIdentity #14dada6 Re-read executionPlanIdentity: it checks the plan contract and returns canonical JSON of the plan fields with object keys sorted at every depth. Ran this function: a spread copy has the same identity and stepSec 3 changes it.
  * @evidence ./runFactory.ts#createRunFactory Fresh scripted and stateful-model draws do not share state, continue keeps the cursor, resume restores the checkpoint cursor, a plan selects the strategy and clock, and an unisolated closure throws RunIsolationError.
- * @evidenceReview ./runFactory.ts#createRunFactory #866f454 Re-read createRunFactory: bind holds the strategy as factory, snapshot, stateless, or none, fresh restores the bound snapshot or builds a new factory instance, continue keeps the model and cursor (a factory strategy without a snapshot pair keeps its instance when factory and params match; another factory or params, or a bound snapshot strategy after another strategy, starts fresh), a checkpoint keeps the strategy entry for a snapshot pair even when it saves undefined, resume restores checkpoint streams and strategy bytes only into the strategy id and state version that wrote them, and a stateful closure without a factory or snapshot pair throws RunIsolationError. Ran this function: scripted draws buy once each, stateful income stays 3 in both orders, twice-daily applies a0 through a3, continue and resume keep cursor 2, a plan sets seed 9 and step 2, and both isolation flags throw.
+ * @evidenceReview ./runFactory.ts#createRunFactory #5db40de Re-read createRunFactory: bind holds the strategy as factory, snapshot, stateless, or none, fresh restores the bound snapshot or builds a new factory instance, continue keeps the model and cursor (a factory strategy without a snapshot pair keeps its instance when factory and params match; another factory or params, or a bound snapshot strategy after another strategy, starts fresh), a checkpoint writes a strategy entry only for a snapshot pair, even one that saves undefined, and leaves a one-hook strategy out, resume restores checkpoint streams and strategy bytes only into the strategy id and state version that wrote them, and a stateful closure without a factory or snapshot pair throws RunIsolationError. Ran this function: scripted draws buy once each, stateful income stays 3 in both orders, twice-daily applies a0 through a3, continue and resume keep cursor 2, a plan sets seed 9 and step 2, and both isolation flags throw.
  */
 export function isolatesIndependentRuns(): void {
   expect(executionStream).toBe("execution");
@@ -745,6 +745,31 @@ describe("run factory review fixes", () => {
     applied = [];
     built.resume({ checkpoint: own, state: scenario.initial });
     expect(applied).toEqual([{ picked: undefined }]);
+  });
+  it("leaves a one-hook strategy out of the checkpoint so resume keeps it", () => {
+    const snapshotOnly = (): Strategy<number, UnitCode, { buys: number }> => ({
+      id: "snapshot-only",
+      snapshotState: () => ({ cursor: 0 }),
+      decide: () => [],
+    });
+    const scenario = compiled({
+      stepSec: 1,
+      durationSec: 1,
+      vars: { buys: 0 },
+      model: buyModel(),
+      strategy: snapshotOnly(),
+    });
+    const shared = createRunFactory().bind(scenario);
+    const opened = shared.fresh({ trialId: "half", seed: 1 });
+    const checkpoint = opened.checkpoint();
+    expect(checkpoint.strategy).toBeUndefined();
+    expect(shared.resume({ checkpoint, state: opened.scenario.initial }).scenario.strategy?.id).toBe("snapshot-only");
+
+    const strategies = createStrategyRegistry([{ id: "snapshot-only", create: () => snapshotOnly() }]);
+    const built = createRunFactory({ strategies }).bind(scenario, { strategy: { id: "snapshot-only" } });
+    const own = built.fresh({ trialId: "half", seed: 1 }).checkpoint();
+    expect(own.strategy).toBeUndefined();
+    expect(built.resume({ checkpoint: own, state: scenario.initial }).scenario.strategy?.id).toBe("snapshot-only");
   });
   it("continues a factory strategy without snapshot hooks on the same instance", () => {
     type Vars = { applied: string[] };
