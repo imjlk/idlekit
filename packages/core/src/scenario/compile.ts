@@ -229,12 +229,14 @@ function matchesUntilTerm<N, U extends string>(args: {
     } catch {
       return false;
     }
-    if (!args.E.isFinite(rightAmount)) return false;
-    const cmp = args.E.cmp(args.E.from(left as never), rightAmount);
+    const leftAmount = args.E.from(left as never);
+    if (!args.E.isFinite(leftAmount) || !args.E.isFinite(rightAmount)) return false;
+    const cmp = args.E.cmp(leftAmount, rightAmount);
     return compareByOp(cmp, term.op);
   }
 
   if (typeof left === "number") {
+    if (!Number.isFinite(left)) return false;
     const rightNum = Number(term.rawRight);
     if (!Number.isFinite(rightNum)) return false;
     const cmp: -1 | 0 | 1 = left === rightNum ? 0 : left < rightNum ? -1 : 1;
@@ -264,7 +266,9 @@ function matchesUntilTerm<N, U extends string>(args: {
   } catch {
     return false;
   }
-  const cmp = args.E.cmp(args.E.from(left as never), rightAmount);
+  const leftAmount = args.E.from(left as never);
+  if (!args.E.isFinite(leftAmount) || !args.E.isFinite(rightAmount)) return false;
+  const cmp = args.E.cmp(leftAmount, rightAmount);
   return compareByOp(cmp, term.op);
 }
 

@@ -625,6 +625,65 @@ describe("compileScenario", () => {
     expect(bigRun.run.until?.(bigRun.initial)).toBeFalse();
   });
 
+  it("fails closed when an until left value is not finite", () => {
+    const modelFactory: ModelFactory = {
+      id: "m",
+      version: 1,
+      create: () => ({
+        id: "m",
+        version: 1,
+        income: (ctx: any) => ({ unit: ctx.unit, amount: ctx.E.zero() }),
+        actions: () => [],
+      }),
+    };
+    const strategyFactory: StrategyFactory = {
+      id: "s",
+      create: () => ({ id: "s", decide: () => [] }),
+    };
+    const compile = <N>(E: Engine<N>, untilExpr: string) =>
+      compileScenario({
+        E,
+        scenario: { ...makeScenario(), clock: { stepSec: 1, durationSec: 10, untilExpr } },
+        registry: createModelRegistry([modelFactory]),
+        strategyRegistry: createStrategyRegistry([strategyFactory]),
+        unitFactory: (code) => ({ code: code as "COIN" }),
+      });
+    const ops = ["<", "<=", "==", "!=", ">=", ">"];
+    const E = createNumberEngine();
+    for (const left of [Infinity, -Infinity, NaN]) {
+      for (const op of ops) {
+        const money = compile(E, `money ${op} 1`);
+        expect(
+          money.run.until?.({
+            ...money.initial,
+            wallet: { ...money.initial.wallet, money: { ...money.initial.wallet.money, amount: left } },
+          }),
+        ).toBeFalse();
+        const prestige = compile(E, `prestige.points ${op} 1`);
+        expect(
+          prestige.run.until?.({ ...prestige.initial, prestige: { count: 0, points: left, multiplier: 1 } }),
+        ).toBeFalse();
+        const vars = compile(E, `vars.x ${op} 1`);
+        expect(vars.run.until?.({ ...vars.initial, vars: { x: left } })).toBeFalse();
+      }
+    }
+
+    const bigEngine = createBreakInfinityEngine();
+    const left = bigEngine.from(NaN);
+    expect(bigEngine.isFinite(left)).toBeFalse();
+    for (const op of ops) {
+      const money = compile(bigEngine, `money ${op} 1`);
+      expect(
+        money.run.until?.({
+          ...money.initial,
+          wallet: { ...money.initial.wallet, money: { ...money.initial.wallet.money, amount: left } },
+        }),
+      ).toBeFalse();
+      const vars = compile(bigEngine, `vars.x ${op} 1`);
+      expect(vars.run.until?.({ ...vars.initial, vars: { x: left } })).toBeFalse();
+    }
+  });
+
   it("keeps legacy raw strategy params unless validated mode is requested", () => {
     const raw = { schemaVersion: 1, objective: "minPayback" };
     const schema = {
