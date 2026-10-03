@@ -16,7 +16,7 @@ import {
   type StrategyRegistry,
 } from "@idlekit/core";
 import { unknownStrategyError } from "../errors";
-import { hashContent } from "../io/outputMeta";
+import { deriveDeterministicSeed, hashContent } from "../io/outputMeta";
 import { resolveSessionPatternId, resolveSessionPatternSpec } from "./experience";
 
 /**
@@ -25,7 +25,7 @@ import { resolveSessionPatternId, resolveSessionPatternSpec } from "./experience
  * `scenario.engine` is metadata. It does not select the runtime.
  *
  * @evidence docs/requirements/active/cli-resolved-run.md#req-pr07-resolved-run One plan feeds evaluate stages, and each stage opens a fresh run.
- * @evidenceReview docs/requirements/active/cli-resolved-run.md#req-pr07-resolved-run #9ca27d1 Re-read the section: strategy override reaches simulate and experience and replaces the scenario strategy without building it, step stays on the simulate stage unless consistent overrides are set, and the stage digest adds the step and fast mode the stage runs, the session pattern and days experience runs with the always-on and 7-day defaults from resolveSessionPatternSpec, the stage scope, command inputs, and plugin digests in load order while ignoring the directory. The plugin digest values, including the local-import closure, come from loadRegistries in packages/cli/src/plugin/load.ts; this plan only keeps them in load order.
+ * @evidenceReview docs/requirements/active/cli-resolved-run.md#req-pr07-resolved-run #7f2a3be Re-read the section: strategy override reaches simulate and experience and replaces the scenario strategy without building it, step stays on the simulate stage unless consistent overrides are set, and the stage digest adds the step and fast mode the stage runs, the session pattern and days experience runs with the always-on and 7-day defaults from resolveSessionPatternSpec, the stage name (not its scope), command inputs, and plugin digests in load order while ignoring the directory. The default seed reads the same identity without the seed, through defaultSeed and defaultRunSeed. The plugin digest values, including the local-import closure, come from loadRegistries in packages/cli/src/plugin/load.ts; this plan only keeps them in load order.
  */
 export const resolvedRunContract = "idlekit.resolved-run-configuration" as const;
 
@@ -33,7 +33,7 @@ export const resolvedRunContract = "idlekit.resolved-run-configuration" as const
  * Repro label for this case. The runs pass seed 1 and do not draw from this label.
  *
  * @evidence docs/requirements/active/cli-resolved-run.md#req-pr07-resolved-run The label is 0x7107. Runs use seed 1.
- * @evidenceReview docs/requirements/active/cli-resolved-run.md#req-pr07-resolved-run #9ca27d1 Re-read the section, including the evaluate default seed sentence: the label is not the RNG seed, and the executed tests in runConfiguration.test.ts use seed 1.
+ * @evidenceReview docs/requirements/active/cli-resolved-run.md#req-pr07-resolved-run #7f2a3be Re-read the section, including the default seed and evaluate seed sentences: the label is not the RNG seed, and the executed tests in runConfiguration.test.ts use seed 1.
  */
 export const sessionCaseSeed = 0x7107;
 
@@ -90,13 +90,26 @@ export type ResolvedRunPlan = Readonly<{
 /** Command inputs outside the plan that change a stage result, such as duration or horizons. */
 export type StageInputs = Readonly<Record<string, unknown>>;
 
+/** A stage the default seed reads: the inputs it runs with, and the inputs of the run without flags. */
+export type SeedStage = Readonly<{ stage: StageName; inputs?: StageInputs; defaults?: StageInputs }>;
+
 export type PreparedRun = Readonly<{
   engine: ResolvedEngine;
   definition: CompiledScenario<number, string, Record<string, unknown>>;
+  /**
+   * Default seed from the identity of these stages, compared with the run without flags. `base` is
+   * the no-flag seed input. One stage reads its whole identity. Several stages share the seed, so
+   * they read only what every stage applies.
+   */
+  defaultSeed: (base: Readonly<Record<string, unknown>>, stages: readonly SeedStage[]) => number;
+  /** The same prepared run with this seed in every stage plan. */
+  withSeed: (seed: number) => PreparedRun;
+  /** `outputs` change only what the stage keeps or reports, so the digest reads them and the default seed does not. */
   open: (
     stage: StageName,
     trialId: string,
     inputs?: StageInputs,
+    outputs?: StageInputs,
   ) => Readonly<{
     scenario: CompiledScenario<number, string, Record<string, unknown>>;
     plan: ResolvedRunPlan;
@@ -142,15 +155,6 @@ export function stageApply(stage: StageName, consistentOverrides = false): Stage
  */
 export function pluginDigestValues(pluginDigest: Readonly<Record<string, string>> | undefined): readonly string[] {
   return Object.values(pluginDigest ?? {});
-}
-
-/**
- * The engine part of a default seed. No flag and `--engine number` both run the number
- * engine, so both leave the seed input without an engine field.
- */
-export function engineSeedOption(requested: string | undefined): { engine?: string } {
-  const id = requested?.trim();
-  return id && id !== "number" ? { engine: id } : {};
 }
 
 /**
@@ -230,36 +234,7 @@ export function resolveStrategySelection(args: {
   return { id: selected.id, params: resolved.params, paramsMode: resolved.mode, source: "scenario" };
 }
 
-/**
- * The strategy part of a default seed, read from the selection that runs. An override that
- * resolves to the scenario's own id and params adds nothing, so `--strategy <scenario id>` keeps
- * the no-flag seed. Another id adds that id. The scenario's id with other params adds the params.
- */
-export function strategySeedOption(args: {
-  scenario: ScenarioV1;
-  strategyRegistry: StrategyRegistry;
-  overrideId?: string;
-  paramsMode?: StrategyParamsMode;
-}): { strategy?: string; strategyParams?: unknown } {
-  if (!args.overrideId?.trim()) return {};
-  const selected = resolveStrategySelection(args);
-  if (args.scenario.strategy?.id !== selected.id) return { strategy: selected.id };
-  // A scenario strategy that does not resolve cannot be the one the override runs.
-  const own = (() => {
-    try {
-      return resolveStrategySelection({ ...args, overrideId: undefined });
-    } catch {
-      return undefined;
-    }
-  })();
-  const same =
-    own !== undefined &&
-    hashContent([own.params, own.paramsMode]) === hashContent([selected.params, selected.paramsMode]);
-  return same ? {} : { strategy: selected.id, strategyParams: selected.params ?? null };
-}
-
-/** Stage digest. Plugin digests keep load order. cwd, scenario path, and generatedAt are left out. */
-export function effectiveRunHash(args: {
+type IdentityArgs = Readonly<{
   scenario: unknown;
   engineId: string;
   strategyId?: string;
@@ -267,20 +242,19 @@ export function effectiveRunHash(args: {
   paramsMode: StrategyParamsMode;
   stepSec: number;
   session?: Readonly<{ id?: string; days?: number }>;
-  seed?: number;
   pluginDigests: readonly string[];
   /** The fast mode the stage runs, from the scenario or an override. */
   fast?: ResolvedRunPlan["fast"];
   stage?: ResolvedRunPlan["stage"];
   inputs?: StageInputs;
-  cwd?: string;
-  scenarioPath?: string;
-  generatedAt?: string;
-}): string {
-  void args.cwd;
-  void args.scenarioPath;
-  void args.generatedAt;
-  return hashContent({
+}>;
+
+/**
+ * What a stage runs, without its seed. Value sources and the stage scope are left out, so a flag
+ * that repeats the value that runs gives the same identity.
+ */
+function runIdentity(args: IdentityArgs): Record<string, unknown> {
+  return {
     contract: resolvedRunContract,
     version: 1,
     scenario: args.scenario,
@@ -290,21 +264,59 @@ export function effectiveRunHash(args: {
     paramsMode: args.paramsMode,
     stepSec: args.stepSec,
     session: args.session ? { id: args.session.id ?? null, days: args.session.days ?? null } : null,
-    seed: args.seed ?? null,
     pluginDigests: [...args.pluginDigests],
     fast: args.fast ?? null,
-    stage: args.stage ?? null,
+    stage: args.stage?.name ?? null,
     inputs: args.inputs ?? null,
-  });
+  };
 }
 
-function stageRunHash(
+/** Stage digest: the run identity and the seed. Plugin digests keep load order. cwd, scenario path, and generatedAt are left out. */
+export function effectiveRunHash(
+  args: IdentityArgs & {
+    seed?: number;
+    cwd?: string;
+    scenarioPath?: string;
+    generatedAt?: string;
+  },
+): string {
+  void args.cwd;
+  void args.scenarioPath;
+  void args.generatedAt;
+  return hashContent({ ...runIdentity(args), seed: args.seed ?? null });
+}
+
+/** The fields every stage of one prepared run applies. A seed that several stages share reads only these. */
+const sharedIdentityKeys = ["scenario", "engineId", "strategyId", "strategyParams", "paramsMode", "pluginDigests"] as const;
+
+/**
+ * Default seed. `base` is the seed input of the run without flags. Each identity field that differs
+ * from that run's is added under `effective`, so flags that repeat what runs keep the no-flag seed,
+ * and a flag that changes what runs changes it. Without `defaults` (the run without flags does not
+ * resolve) every field is added.
+ */
+export function defaultRunSeed(args: {
+  base: Readonly<Record<string, unknown>>;
+  runs: readonly Readonly<{ identity: Readonly<Record<string, unknown>>; defaults?: Readonly<Record<string, unknown>> }>[];
+  keys?: readonly string[];
+}): number {
+  const changed: Record<string, unknown> = {};
+  for (const run of args.runs) {
+    for (const key of args.keys ?? Object.keys(run.identity)) {
+      const value = run.identity[key];
+      if (run.defaults === undefined || hashContent(value) !== hashContent(run.defaults[key])) changed[key] = value;
+    }
+  }
+  return deriveDeterministicSeed(Object.keys(changed).length > 0 ? { ...args.base, effective: changed } : args.base);
+}
+
+function stageIdentity(
   scenario: ScenarioV1,
   scenarioFast: ResolvedRunPlan["fast"],
   plan: ResolvedRunPlan,
   inputs: StageInputs | undefined,
-): string {
-  return effectiveRunHash({
+): IdentityArgs {
+  return {
     scenario,
     engineId: plan.engine.effectiveId,
     strategyId: plan.strategy.id,
@@ -312,13 +324,12 @@ function stageRunHash(
     paramsMode: plan.strategy.paramsMode,
     stepSec: plan.stepSec.value,
     session: plan.session,
-    seed: plan.seed,
     pluginDigests: plan.pluginDigests,
-    // A redundant --fast runs the scenario's fast mode, so it keeps the hash.
+    // A redundant --fast runs the scenario's fast mode, so it keeps the identity.
     fast: plan.fast ?? scenarioFast,
     stage: plan.stage,
     inputs,
-  });
+  };
 }
 
 /** Digest of a multi-stage run, from each stage digest. */
@@ -442,27 +453,66 @@ export function prepareResolvedRun(args: PrepareArgs): PreparedRun {
     strategyRegistry: args.strategyRegistry,
     opts: { allowSuffixNotation: true },
   });
-  return {
-    engine,
-    definition,
-    open(stage, trialId, inputs) {
-      const plan = stagePlan({ ...args, engine, stage });
-      return {
-        plan,
-        hash: stageRunHash(args.scenario, definition.run.fast, plan, inputs),
-        isolation: {
-          registries: { models: args.modelRegistry, strategies: args.strategyRegistry },
-          options: stageBindOptions(args.scenario, plan),
-        },
-        scenario: openResolvedStage({
-          definition,
+  // One prepared run per seed shares the engine and the compiled definition.
+  const build = (run: PrepareArgs): PreparedRun => {
+    const identity = (plan: ResolvedRunPlan, inputs: StageInputs | undefined) =>
+      runIdentity(stageIdentity(run.scenario, definition.run.fast, plan, inputs));
+    return {
+      engine,
+      definition,
+      defaultSeed(base, stages) {
+        const { seed: _seed, ...unseeded } = run;
+        // The run without flags: no override, the default engine, and the scenario strategy.
+        const plain = {
+          scenario: run.scenario,
+          modelRegistry: run.modelRegistry,
+          strategyRegistry: run.strategyRegistry,
+          pluginDigest: run.pluginDigest,
+          paramsMode: run.paramsMode,
+          engine: resolveEffectiveEngine({ scenarioEngine: run.scenario.engine }),
+        };
+        return defaultRunSeed({
+          base,
+          runs: stages.map((entry) => ({
+            identity: identity(stagePlan({ ...unseeded, engine, stage: entry.stage }), entry.inputs),
+            defaults: (() => {
+              try {
+                return identity(stagePlan({ ...plain, stage: entry.stage }), entry.defaults);
+              } catch {
+                // The scenario strategy does not resolve, so no run without flags exists.
+                return undefined;
+              }
+            })(),
+          })),
+          ...(stages.length > 1 ? { keys: sharedIdentityKeys } : {}),
+        });
+      },
+      withSeed(seed) {
+        return build({ ...run, seed });
+      },
+      open(stage, trialId, inputs, outputs) {
+        const plan = stagePlan({ ...run, engine, stage });
+        return {
           plan,
-          modelRegistry: args.modelRegistry,
-          strategyRegistry: args.strategyRegistry,
-          scenario: args.scenario,
-          trialId,
-        }),
-      };
-    },
+          hash: effectiveRunHash({
+            ...stageIdentity(run.scenario, definition.run.fast, plan, outputs ? { ...inputs, ...outputs } : inputs),
+            seed: plan.seed,
+          }),
+          isolation: {
+            registries: { models: run.modelRegistry, strategies: run.strategyRegistry },
+            options: stageBindOptions(run.scenario, plan),
+          },
+          scenario: openResolvedStage({
+            definition,
+            plan,
+            modelRegistry: run.modelRegistry,
+            strategyRegistry: run.strategyRegistry,
+            scenario: run.scenario,
+            trialId,
+          }),
+        };
+      },
+    };
   };
+  return build(args);
 }

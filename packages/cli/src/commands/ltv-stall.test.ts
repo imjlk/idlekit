@@ -61,7 +61,7 @@ describe("ltv prestige cooldown", () => {
     // The reset at 0 cools until 100, so the 60s segment start stays blocked.
     runLtvAnalysis({
       scenario,
-      scenarioPath: "ltv-anchor.json",
+      effectiveRunHash: "ltv-anchor.json",
       compiled,
       strategy: compiled.strategy,
       horizonsRaw: "60s,90s",
@@ -93,7 +93,7 @@ describe("ltv step budget", () => {
       run: { stepSec: 1, maxSteps: 5 },
     };
     const analyze = (horizonsRaw: string) =>
-      runLtvAnalysis({ scenario, scenarioPath: "ltv-budget.json", compiled, strategy: undefined, horizonsRaw, fast: false, seed: 1 });
+      runLtvAnalysis({ scenario, effectiveRunHash: "ltv-budget.json", compiled, strategy: undefined, horizonsRaw, fast: false, seed: 1 });
     expect(() => analyze("60s")).toThrow(/ltv 60s exceeded maxSteps \(5\)/);
     expect(() => analyze("5s")).not.toThrow();
   });

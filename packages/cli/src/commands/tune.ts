@@ -15,7 +15,7 @@ import { resolve } from "path";
 import { z } from "zod";
 import { loadRegistriesFromFlags, pluginOptions } from "./_shared/plugin";
 import { cliError, scenarioInvalidError, tuneSpecInvalidError, usageError } from "../errors";
-import { buildOutputMeta, deriveDeterministicRunId, deriveDeterministicSeed } from "../io/outputMeta";
+import { buildOutputMeta, deriveDeterministicRunId, deriveDeterministicSeed, hashContent } from "../io/outputMeta";
 import { writeCommandReplayArtifact } from "../io/replayPolicy";
 import { readScenarioFile } from "../io/readScenario";
 import { writeOutput } from "../io/writeOutput";
@@ -231,6 +231,8 @@ export default defineCommand({
       throw usageError("Usage: idk tune <scenario> --tune <tunespec>");
     }
     const tuneSpecInput = wizardResult?.tuneSpec ?? (await readScenarioFile(tunePath));
+    const baselinePath = flags["baseline-artifact"] ? resolve(flags["baseline-artifact"]) : undefined;
+    const baselineRaw = baselinePath ? await readJsonFile<unknown>(baselinePath) : undefined;
     const seed =
       flags.seed ??
       deriveDeterministicSeed({
@@ -238,7 +240,8 @@ export default defineCommand({
         scenario: scenarioInput,
         tuneSpec: tuneSpecInput,
         options: {
-          baselineArtifact: flags["baseline-artifact"] ? resolve(flags["baseline-artifact"]) : undefined,
+          // The baseline it reads, not where it lies.
+          baselineArtifact: baselineRaw === undefined ? undefined : hashContent(baselineRaw),
           regressionTolerance: flags["regression-tolerance"],
         },
       });
@@ -247,10 +250,7 @@ export default defineCommand({
       deriveDeterministicRunId({
         command: "tune",
         seed,
-        scope: {
-          scenarioPath: resolve(process.cwd(), scenarioPath),
-          tunePath: resolve(process.cwd(), tunePath),
-        },
+        scope: { scenario: scenarioInput, tuneSpec: tuneSpecInput, pluginDigests: Object.values(loaded.pluginDigest) },
       });
     const outputMeta = buildOutputMeta({
       command: "tune",
@@ -272,9 +272,7 @@ export default defineCommand({
     });
 
     let regression: TuneRegression | undefined;
-    if (flags["baseline-artifact"]) {
-      const baselinePath = resolve(flags["baseline-artifact"]);
-      const baselineRaw = await readJsonFile<unknown>(baselinePath);
+    if (baselinePath) {
       const baselineBest = readBestScoreFromArtifact(baselineRaw);
       const currentBest = readBestScoreFromTuneResult(result);
       const delta = currentBest - baselineBest;
