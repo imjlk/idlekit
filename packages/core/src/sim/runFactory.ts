@@ -483,6 +483,9 @@ export function createRunFactory(deps?: RunFactoryDeps): RunFactory {
           observer: { trialId, buffer: "per-run" },
           checkpoint() {
             const saved = strategy?.snapshotState?.();
+            // A snapshot pair may save undefined. Resume still needs the entry to restore it.
+            const restorable =
+              typeof strategy?.snapshotState === "function" && typeof strategy.restoreState === "function";
             const interval = liveConstraints?.minPrestigeIntervalSec;
             const ready =
               typeof lastResetT === "number" &&
@@ -501,7 +504,7 @@ export function createRunFactory(deps?: RunFactoryDeps): RunFactory {
                 execution: rng.snapshot(),
                 preview: preview.snapshot(),
               },
-              ...(saved !== undefined && strategy
+              ...((saved !== undefined || restorable) && strategy
                 ? {
                     strategy: {
                       id: strategy.id,
