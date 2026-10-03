@@ -142,7 +142,7 @@ function statefulIncomeFactory() {
 
 /**
  * @evidence docs/requirements/active/run-lifecycle-isolation.md#req-pr03-run-lifecycle-isolation Runs a fresh scripted draw twice, a stateful model in both orders, one continued session, a frozen vars input, and an unisolated closure.
- * @evidenceReview docs/requirements/active/run-lifecycle-isolation.md#req-pr03-run-lifecycle-isolation #77c8f51 Re-read the section, including bind-time and plan params checks, validated params passed to create without a second check, one-hook strategies shared as stateless, a factory strategy without a snapshot pair continued on its own instance, a continue from another factory or params starting without the previous snapshot, a later run superseding the run that held a shared snapshot strategy, and the canonical plan identity, then ran this function: a second scripted draw still buys once, stateful income stays at 3 in both orders, twice-daily applies a0 through a3, and a frozen vars input stays at 0, and the started run's checkpoint throws after continue takes the cursor.
+ * @evidenceReview docs/requirements/active/run-lifecycle-isolation.md#req-pr03-run-lifecycle-isolation #6dc58b9 Re-read the section, including bind-time and plan params checks, validated params passed to create without a second check, one-hook strategies shared as stateless, a factory strategy without a snapshot pair continued on its own instance, a continue from another factory or params starting without the previous snapshot, a later run of any binding superseding the run that held a shared snapshot strategy (the cross-binding cases are in the review-fix test that keeps one cursor owner across bindings), and the canonical plan identity, then ran this function: a second scripted draw still buys once, stateful income stays at 3 in both orders, twice-daily applies a0 through a3, and a frozen vars input stays at 0, and the started run's checkpoint throws after continue takes the cursor.
  * @evidence ./runFactory.ts#executionStream Reads the committed stream name and derives it from trial id 0x7103.
  * @evidenceReview ./runFactory.ts#executionStream #0a4e437 The declaration is the string execution. This test derives that stream from trial id rng and seed 0x7103.
  * @evidence ./runFactory.ts#previewStream Reads the preview stream name and refuses to restore it onto the committed stream.
@@ -156,7 +156,7 @@ function statefulIncomeFactory() {
  * @evidence ./runFactory.ts#executionPlanIdentity A copied plan has the same identity, and a different stepSec changes it.
  * @evidenceReview ./runFactory.ts#executionPlanIdentity #a897374 Re-read executionPlanIdentity: it checks the plan contract and returns canonical JSON of the plan fields with object keys sorted at every depth, with an omitted strategyParamsMode as legacy-raw. Ran this function: a spread copy has the same identity and stepSec 3 changes it.
  * @evidence ./runFactory.ts#createRunFactory Fresh scripted and stateful-model draws do not share state, continue keeps the cursor, resume restores the checkpoint cursor, a plan selects the strategy and clock, and an unisolated closure throws RunIsolationError.
- * @evidenceReview ./runFactory.ts#createRunFactory #3396647 Re-read createRunFactory: bind holds the strategy as factory, snapshot, stateless, or none, fresh restores the bound snapshot or builds a new factory instance, continue keeps the model and cursor (a factory strategy without a snapshot pair keeps its instance when factory and params match; another factory or params, or a bound snapshot strategy after another strategy, starts fresh), a checkpoint writes a strategy entry only for a snapshot pair, even one that saves undefined, and leaves a one-hook strategy out, resume restores checkpoint streams and strategy bytes only into the strategy id and state version that wrote them, a later run or release supersedes the run that held a shared snapshot strategy so its hooks, checkpoint, and continue throw RunIsolationError, and a stateful closure without a factory or snapshot pair throws RunIsolationError. Ran this function: scripted draws buy once each, stateful income stays 3 in both orders, twice-daily applies a0 through a3, continue and resume keep cursor 2 and the started run's checkpoint throws after continue, a plan sets seed 9 and step 2, and both isolation flags throw.
+ * @evidenceReview ./runFactory.ts#createRunFactory #71657ac Re-read createRunFactory: bind holds the strategy as factory, snapshot, stateless, or none, and a snapshot binding opened while another binding's run holds the cursor takes that binding's snapshot, fresh restores the bound snapshot or builds a new factory instance, continue keeps the model and cursor (a factory strategy without a snapshot pair keeps its instance when factory and params match; another factory or params, or a bound snapshot strategy after another strategy, starts fresh), a checkpoint writes a strategy entry only for a snapshot pair, even one that saves undefined, and leaves a one-hook strategy out, resume restores checkpoint streams and strategy bytes only into the strategy id and state version that wrote them, a later run of any binding or release supersedes the run that held a shared snapshot strategy so its hooks, checkpoint, and continue throw RunIsolationError, release leaves a cursor another binding's run holds, and a stateful closure without a factory or snapshot pair throws RunIsolationError. Ran this function: scripted draws buy once each, stateful income stays 3 in both orders, twice-daily applies a0 through a3, continue and resume keep cursor 2 and the started run's checkpoint throws after continue, a plan sets seed 9 and step 2, and both isolation flags throw.
  */
 export function isolatesIndependentRuns(): void {
   expect(executionStream).toBe("execution");
@@ -936,6 +936,37 @@ describe("run factory review fixes", () => {
     runScenario(back.scenario);
     expect(shared.snapshotState?.()).toEqual({ cursor: 1 });
     sharedBinding.release();
+  });
+  it("keeps one cursor owner across bindings of a shared snapshot strategy", () => {
+    const shared = createScriptedStrategy<number, UnitCode, { buys: number }>({
+      schemaVersion: 1,
+      loop: false,
+      program: [{ actionId: "buy" }],
+    });
+    const scenario = compiled({ stepSec: 1, durationSec: 3, vars: { buys: 0 }, model: buyModel(), strategy: shared });
+    const outer = createRunFactory().bind(scenario);
+    const held = outer.fresh({ trialId: "held", seed: 1 });
+    expect(runScenario(held.scenario).end.vars.buys).toBe(1);
+    // The held run moved the cursor. Draws of a later binding start from the snapshot the first binding took.
+    const summary = simulateMonteCarlo({ scenario, draws: 2, seed: 1, metrics: ({ run }) => run.end.vars.buys });
+    expect(summary.results.map((result) => result.metrics)).toEqual([1, 1]);
+    expect(() => held.checkpoint()).toThrow(RunIsolationError);
+    expect(shared.snapshotState?.()).toEqual({ cursor: 0 });
+
+    const left = createRunFactory().bind(scenario);
+    const right = createRunFactory().bind(scenario);
+    const head = left.fresh({ trialId: "c", seed: 1 });
+    const end = runScenario(head.scenario).end;
+    const next = right.continue(head, { state: end });
+    expect(next.scenario.strategy?.snapshotState?.()).toEqual({ cursor: 1 });
+    expect(() => head.checkpoint()).toThrow(RunIsolationError);
+    // A binding whose runs lost the cursor does not take it back on release.
+    left.release();
+    expect(next.checkpoint().strategy?.state).toEqual({ cursor: 1 });
+    right.release();
+    expect(() => next.checkpoint()).toThrow(RunIsolationError);
+    expect(shared.snapshotState?.()).toEqual({ cursor: 0 });
+    outer.release();
   });
   it("gives equal plans the same identity regardless of key order", () => {
     const base = { contract: "idlekit.execution-plan", version: 1, stepSec: 1 } as const;
