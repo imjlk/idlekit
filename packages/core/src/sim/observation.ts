@@ -255,8 +255,9 @@ export function createObservationRecorder<N, U extends string, Vars>(args: {
   const milestones: MilestoneSample[] = [];
   const seenMilestone = new Set<string>();
   const reachedGoals = new Map<string, number>();
+  // A met goal past maxGoals. Counted once and left out of the output.
+  const droppedGoals = new Set<string>();
   let droppedMilestones = 0;
-  let droppedGoals = 0;
   let endT = args.startT;
   let firstRewardT: number | undefined;
   let lastRewardT: number | undefined;
@@ -332,17 +333,18 @@ export function createObservationRecorder<N, U extends string, Vars>(args: {
       if (step.prestigeChanged) {
         rememberMilestone({ key: "prestige.first", firstSeenT: step.t1, source: "prestige" }, true);
       }
-      if (!args.goals.some((goal) => !reachedGoals.has(goal.id))) return;
+      const open = (goal: RunGoal<N, U, Vars>) => !reachedGoals.has(goal.id) && !droppedGoals.has(goal.id);
+      if (!args.goals.some(open)) return;
       const seen = deepClonePreservingPrototype(step.state);
       for (const goal of args.goals) {
-        if (reachedGoals.has(goal.id)) continue;
+        if (!open(goal)) continue;
         let met = false;
         notify(() => {
           met = goal.met(seen);
         });
         if (!met) continue;
         if (reachedGoals.size >= args.maxGoals) {
-          droppedGoals += 1;
+          droppedGoals.add(goal.id);
           continue;
         }
         reachedGoals.set(goal.id, step.t1);
@@ -351,11 +353,13 @@ export function createObservationRecorder<N, U extends string, Vars>(args: {
     },
     finish(): RunObservation {
       if (!enabled) return disabledObservation(args.startT, endT);
-      const goals: GoalSample[] = args.goals.map((goal) => {
+      const goals: GoalSample[] = [];
+      for (const goal of args.goals) {
+        if (droppedGoals.has(goal.id)) continue;
         const t = reachedGoals.get(goal.id);
-        return t === undefined ? { id: goal.id, status: "unreached" } : { id: goal.id, status: "reached", t };
-      });
-      const capped = droppedMilestones > 0 || droppedGoals > 0;
+        goals.push(t === undefined ? { id: goal.id, status: "unreached" } : { id: goal.id, status: "reached", t });
+      }
+      const capped = droppedMilestones > 0 || droppedGoals.size > 0;
       return {
         contract: observationContract,
         version: 1,
@@ -373,7 +377,7 @@ export function createObservationRecorder<N, U extends string, Vars>(args: {
         milestones,
         goals,
         droppedMilestones,
-        droppedGoals,
+        droppedGoals: droppedGoals.size,
       };
     },
   };
