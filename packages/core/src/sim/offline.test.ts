@@ -217,6 +217,19 @@ describe("applyOfflineSeconds", () => {
     expect(out.offline.actionPolicy).toBe("none");
   });
 
+  it("reports no strategy use when the scenario has no strategy", () => {
+    const scenario = makeScenario({ initialMoney: 5 });
+    const allow = applyOfflineSeconds({
+      scenario,
+      seconds: 3,
+      options: { actions: { mode: "allow", categories: ["buy"] } },
+    });
+    expect(allow.offline.usedStrategy).toBe(false);
+    expect(allow.offline.actionPolicy).toBe("allow");
+    const legacy = applyOfflineSeconds({ scenario, seconds: 3, options: { useStrategy: true } });
+    expect(legacy.offline.usedStrategy).toBe(false);
+  });
+
   it("does not roll back a strategy that returned nothing under allow", () => {
     const strategy = createScriptedStrategy<number, U, Vars>({
       schemaVersion: 1,

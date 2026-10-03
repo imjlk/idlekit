@@ -55,11 +55,9 @@ export function resolveOfflineActionPolicy(args: {
   if (args.useStrategy === false) return { callStrategy: false, policy: { mode: "none" } };
   const policy = args.policy ?? { mode: "legacy-all" };
   if (policy.mode === "none") return { callStrategy: false, policy: { mode: "none" } };
-  if (policy.mode === "allow") return { callStrategy: true, policy };
-  return {
-    callStrategy: args.useStrategy ?? args.hasStrategy,
-    policy: { mode: "legacy-all" },
-  };
+  // Without a strategy there is nothing to call, so usedStrategy stays false.
+  if (policy.mode === "allow") return { callStrategy: args.hasStrategy, policy };
+  return { callStrategy: args.hasStrategy, policy: { mode: "legacy-all" } };
 }
 
 function allowsOfflineAction(
