@@ -741,6 +741,19 @@ describe("session segments", () => {
     expect(unreached.run.observation?.goals.map((goal) => goal.status)).toEqual(["reached", "unreached"]);
   });
 
+  it("records goals that already hold when the session starts", () => {
+    const out = runPattern(
+      clockScenario({ income: 1, goals: [{ id: "now", met: () => true }, { id: "start", met: (state) => state.t === 0 }] }),
+      { id: "offline-heavy", days: 1 },
+    );
+    expect(out.summary.stop.reason).toBe("goal");
+    expect(out.end.t).toBe(0);
+    expect(out.run.observation?.goals).toEqual([
+      { id: "now", status: "reached", t: 0 },
+      { id: "start", status: "reached", t: 0 },
+    ]);
+  });
+
   it("evaluates session goals on a copy of the committed state", () => {
     // Vars are author-typed and writable. A predicate that counts its calls there must not
     // change the economy.

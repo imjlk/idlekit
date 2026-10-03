@@ -7,7 +7,7 @@ import type { SimEvent, SimState } from "./types";
  * Resolved observation contract. TC-05 has not registered this DTO.
  *
  * @evidence docs/requirements/active/observation-retention.md#req-pr05-observation-retention Counters come from the committed step, not from the retained event log.
- * @evidenceReview docs/requirements/active/observation-retention.md#req-pr05-observation-retention #fbd26db Re-read the section: retention does not change these counters, a disabled mode is missing rather than zero, and a sample cap does not hide a fact from the observer.
+ * @evidenceReview docs/requirements/active/observation-retention.md#req-pr05-observation-retention #0524af0 Re-read the section: retention does not change these counters, a disabled mode is missing rather than zero, a sample cap does not hide a fact from the observer, and the start-goal sentence is about the recorder's start hook, not this name.
  */
 export const observationContract = "idlekit.run-observation" as const;
 
@@ -279,7 +279,28 @@ export function createObservationRecorder<N, U extends string, Vars>(args: {
     }
   };
 
+  const open = (goal: RunGoal<N, U, Vars>) => !reachedGoals.has(goal.id) && !droppedGoals.has(goal.id);
+  const recordGoals = (state: SimState<N, U, Vars>, t: number) => {
+    // Each open goal reads its own copy, so one predicate's write cannot reach the next.
+    for (const goal of args.goals) {
+      if (!open(goal)) continue;
+      let met = false;
+      notify(() => {
+        met = goal.met(deepClonePreservingPrototype(state));
+      });
+      if (!met) continue;
+      if (reachedGoals.size >= args.maxGoals) droppedGoals.add(goal.id);
+      else reachedGoals.set(goal.id, t);
+      if (args.observer?.onGoal) notify(() => args.observer?.onGoal?.({ t, goalId: goal.id }));
+    }
+  };
+
   return {
+    /** The start state is committed too. A run that stops before any step still reports its goals. */
+    recordStart(state: SimState<N, U, Vars>): void {
+      if (!enabled) return;
+      recordGoals(state, state.t);
+    },
     recordStep(step: {
       t0: number;
       t1: number;
@@ -334,19 +355,7 @@ export function createObservationRecorder<N, U extends string, Vars>(args: {
       if (step.prestigeChanged) {
         rememberMilestone({ key: "prestige.first", firstSeenT: step.t1, source: "prestige" }, true);
       }
-      const open = (goal: RunGoal<N, U, Vars>) => !reachedGoals.has(goal.id) && !droppedGoals.has(goal.id);
-      // Each open goal reads its own copy, so one predicate's write cannot reach the next.
-      for (const goal of args.goals) {
-        if (!open(goal)) continue;
-        let met = false;
-        notify(() => {
-          met = goal.met(deepClonePreservingPrototype(step.state));
-        });
-        if (!met) continue;
-        if (reachedGoals.size >= args.maxGoals) droppedGoals.add(goal.id);
-        else reachedGoals.set(goal.id, step.t1);
-        if (args.observer?.onGoal) notify(() => args.observer?.onGoal?.({ t: step.t1, goalId: goal.id }));
-      }
+      recordGoals(step.state, step.t1);
     },
     finish(): RunObservation {
       if (!enabled) return disabledObservation(args.startT, endT);

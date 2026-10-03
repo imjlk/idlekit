@@ -72,7 +72,7 @@ function scenario(args: {
 
 /**
  * @evidence docs/requirements/active/observation-retention.md#req-pr05-observation-retention Compares four retention policies, a fast run, a milestone cap, a trace budget, and a throwing observer.
- * @evidenceReview docs/requirements/active/observation-retention.md#req-pr05-observation-retention #fbd26db Re-read the section, including the session trace budget sentence that the session tests cover and the capped-observer sentence that the goal and milestone retention tests cover, then ran this function: retention changes the log, not the counters. A disabled observation is missing. A boundary gap is not the max of the pieces.
+ * @evidenceReview docs/requirements/active/observation-retention.md#req-pr05-observation-retention #0524af0 Re-read the section, including the session trace budget sentence that the session tests cover, the capped-observer sentence that the goal and milestone retention tests cover, and the start-goal sentence that the goal retention test covers, then ran this function: retention changes the log, not the counters. A disabled observation is missing. A boundary gap is not the max of the pieces.
  * @evidence ./observation.ts#observationContract Reads the observation contract and rejects a measured zero for a disabled run.
  * @evidenceReview ./observation.ts#observationContract #7c97372 The declaration is idlekit.run-observation. This test reads that property and expects missing rates to stay null.
  * @evidence ./observation.ts#maxNoRewardGapSec A run with no reward reports the whole 5s span, and each boundary run reports its 8s edge gap.
@@ -84,7 +84,7 @@ function scenario(args: {
  * @evidence ./observation.ts#statsFromObservation Four retention policies report the same applied money and action counts, and a disabled observation reports missing with a null dropped rate.
  * @evidenceReview ./observation.ts#statsFromObservation #d271a75 Re-read statsFromObservation: it passes coverage, money, and action counters from the observation to simStatsFromCounters and does not read events. Ran this function: four retention policies report applied money 6 and actions 6, and the disabled run reports status missing, a null dropped rate, and coverage disabled.
  * @evidence ./observation.ts#createObservationRecorder Counts come from committed steps under every retention policy, a milestone cap marks partial coverage, a goal records its step end, goal.met sees a clone, and an observer throw becomes ObservationError.
- * @evidenceReview ./observation.ts#createObservationRecorder #a03f039 Re-read createObservationRecorder: it rejects a maxMilestones or maxGoals that is not an integer >= 0, recordStep counts observedMoney and action events from each committed step, caps milestones and goals separately, counts a milestone key past maxMilestones once, counts a met goal past maxGoals once and leaves it out of goals instead of reporting it unreached, still tells the observer about a capped milestone key or goal once, hands each open goal.met its own clone, wraps observer throws in ObservationError, and finish returns a disabled observation when recording is off. Ran this function: counters match across retention, maxMilestones 1 is partial, goal two is reached at t 2, the goal that writes its argument leaves the wallet at 0, a goal that writes vars does not make the next goal reached, and a throwing onStep throws ObservationError. The goal and milestone retention tests show maxGoals 0 still reports one at 1 and two at 2 to onGoal, and maxMilestones 0 reports level-1 to onMilestone once.
+ * @evidenceReview ./observation.ts#createObservationRecorder #c49ba54 Re-read createObservationRecorder: it rejects a maxMilestones or maxGoals that is not an integer >= 0, recordStep counts observedMoney and action events from each committed step, caps milestones and goals separately, counts a milestone key past maxMilestones once, counts a met goal past maxGoals once and leaves it out of goals instead of reporting it unreached, still tells the observer about a capped milestone key or goal once, recordStart checks the open goals on the start state at its own t, hands each open goal.met its own clone, wraps observer throws in ObservationError, and finish returns a disabled observation when recording is off. Ran this function: counters match across retention, maxMilestones 1 is partial, goal two is reached at t 2, the goal that writes its argument leaves the wallet at 0, a goal that writes vars does not make the next goal reached, and a throwing onStep throws ObservationError. The goal and milestone retention tests show maxGoals 0 still reports one at 1 and two at 2 to onGoal, and maxMilestones 0 reports level-1 to onMilestone once. A goal that holds at t 0 is reached at 0, also when until stops the run before any step.
  * @evidence ./observation.ts#observationFromLegacyEvents An event-only result is incomplete, marked as a legacy fallback, and has a missing reward gap.
  * @evidenceReview ./observation.ts#observationFromLegacyEvents #7b6a96d Re-read observationFromLegacyEvents: it counts money and action events from a retained log and marks the result incomplete, legacyEventFallback true, with a missing reward gap. Ran this function: one applied action gives coverage incomplete, the fallback flag, and a missing reward gap.
  */
@@ -355,6 +355,29 @@ describe("goal retention", () => {
     const observer = { onGoal: (fact: { t: number; goalId: string }) => void seen.push(`${fact.goalId}@${fact.t}`) };
     runScenario(scenario({ income: 1, durationSec: 4, goals, observer, observation: { maxGoals: 0 } }));
     expect(seen).toEqual(["one@1", "two@2"]);
+  });
+
+  it("records a goal that already holds at the start", () => {
+    const goals = [
+      { id: "start", met: (current: SimState<number, UnitCode, { owned: number }>) => current.t === 0 },
+      { id: "one", met: (current: SimState<number, UnitCode, { owned: number }>) => current.wallet.money.amount >= 1 },
+    ];
+    const seen: string[] = [];
+    const observer = { onGoal: (fact: { t: number; goalId: string }) => void seen.push(`${fact.goalId}@${fact.t}`) };
+    const run = runScenario(scenario({ income: 1, durationSec: 2, goals, observer }));
+    expect(run.observation?.goals).toEqual([
+      { id: "start", status: "reached", t: 0 },
+      { id: "one", status: "reached", t: 1 },
+    ]);
+    expect(seen).toEqual(["start@0", "one@1"]);
+    // An until that holds at the start runs no step. The start state is still observed.
+    const base = scenario({ income: 1, durationSec: 2, goals });
+    const stopped = runScenario({ ...base, run: { ...base.run, until: () => true } });
+    expect(stopped.end.t).toBe(0);
+    expect(stopped.observation?.goals).toEqual([
+      { id: "start", status: "reached", t: 0 },
+      { id: "one", status: "unreached" },
+    ]);
   });
 });
 

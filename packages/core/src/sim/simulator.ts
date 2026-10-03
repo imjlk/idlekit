@@ -73,6 +73,7 @@ export function runScenario<N, U extends string, Vars>(
     throw new Error("runScenario eventLog.maxEvents must be an integer >= 0");
   }
 
+  recorder.recordStart(state);
   let stop: RunStop | undefined;
   while (stop === undefined) {
     const decision = nextBoundary({
