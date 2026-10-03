@@ -53,4 +53,64 @@ macOS arm64, Bun `1.3.10`, `@ttsc/graph` `0.30.4`, protocol `2025-11-25`, commit
 
 `stepOnce`의 reverse execution trace(`focus` execution, `maxDepth` 3, `maxNodes` 32)의 직접 hop은 `packages/core/src/sim/simulator.ts#runScenario`(span `simulator.ts:49`), `packages/core/src/sim/offline.ts#applyOfflineSeconds`(span `offline.ts:139`), `packages/core/src/testkit/conformance.ts#flatBulkSnapshot`, 그리고 `packages/core/src/sim/step.bulk.test.ts`의 `settlesQuotedBulkAndRejectsBadQuotes`, `runFlat`, `runBonus`다. `runScenario`를 통해 `session.ts`, `monteCarlo.ts`, `eta.ts`, `prestigeCycle.ts`, `strategy/opt/runner.ts`, CLI `compare.ts`, `ltv.ts`, `tune.ts`, `lib/designObjectives.ts`, `lib/experience.ts`에 닿았다. 32노드 상한이 모든 호출자는 아니다.
 
-`createPlannerStrategy`는 hop이 아니었다. 여전히 `PlannerDeps`의 `d.stepOnce`를 호출한다. 그 edge는 미관측이다. 소스를 보면 `applyOfflineSeconds`는 나머지 step으로 `packages/core/src/sim/offline.ts:162`에서 `stepOnce`를 한 번 더 호출한다. trace는 함수를 가리킬 뿐 그 두 번째 호출 지점을 나누지 않는다.
+`createPlannerStrategy`는 hop이 아니었다. 여전히 `PlannerDeps`의 `d.stepOnce`를 호출한다. 그 edge는 미관측이다. 그 PR-01 트리의 소스는 `applyOfflineSeconds`가 나머지 step으로 `stepOnce`를 한 번 더 호출함을 보여 줬다. 수정 후 lookup은 `stepOnce`를 `packages/core/src/sim/step.ts:175`에 둔다. `singleBuySize`는 `packages/core/src/sim/step.ts:51`이다.
+
+## PR-02 호출자
+
+macOS arm64, Bun `1.3.10`, `@ttsc/graph` `0.30.4`, protocol `2025-11-25`에서 조회했다. 생성 식별자는 없다. lookup은 `runScenario`를 `packages/core/src/sim/simulator.ts:25`, `applyOfflineSeconds`를 `packages/core/src/sim/offline.ts:94`, `nextBoundary`를 `packages/core/src/sim/timeBoundary.ts:54`, `stepOnce`를 `packages/core/src/sim/step.ts:175`에 둔다. `timeBoundaryEpsilonScale`은 `packages/core/src/sim/timeBoundary.ts:11`의 property다. 그 줄은 소스 선언이며 별도 lookup hit는 아니다.
+
+`runScenario`의 forward execution trace(`maxDepth` 2, `maxNodes` 32)는 `nextBoundary`와 `packages/core/src/sim/step.ts:175`의 `stepOnce`에 닿는다. `stepOnce`의 reverse execution trace(`maxDepth` 3, `maxNodes` 32)는 직접 호출로 `packages/core/src/sim/simulator.ts:80`과 `packages/core/src/sim/offline.ts:162`를 가리킨다. 오프라인 나머지는 두 번째 호출이 아니라 같은 루프다. 그 호스트를 통해 `session.ts`, `monteCarlo.ts`, `eta.ts`, `prestigeCycle.ts`, `strategy/opt/runner.ts`, `conformanceRun.ts`, `simulator.time.test.ts`, CLI `compare.ts`, `ltv.ts`, `tune.ts`, `lib/designObjectives.ts`, `lib/experience.ts`에 닿았다. 32노드 상한이 모든 호출자는 아니다.
+
+`nextBoundary`의 reverse trace는 `packages/core/src/sim/simulator.ts:60`과 `packages/core/src/sim/offline.ts:140`을 가리킨다. `createPlannerStrategy`는 여전히 `stepOnce`까지의 hop이 아니다. 호출은 `PlannerDeps`의 `d.stepOnce`다. 그 edge는 미관측이다.
+
+## PR-03 호출자
+
+macOS arm64, Bun `1.3.10`, `@ttsc/graph` `0.30.4`, protocol `2025-11-25`에서 조회했다. 생성 식별자는 없다. lookup은 `createRunFactory`를 `packages/core/src/sim/runFactory.ts:338`, `cloneRunState`를 `packages/core/src/sim/runFactory.ts:161`, `simulateMonteCarlo`를 `packages/core/src/sim/monteCarlo.ts:41`에 둔다.
+
+`createRunFactory`의 reverse execution trace(`maxDepth` 3, `maxNodes` 32)는 `packages/core/src/sim/monteCarlo.ts:46`의 호출과 `packages/core/src/sim/runFactory.test.ts`를 가리킨다. `simulateMonteCarlo`를 통해 `isolatesIndependentRuns`, CLI `lib/designObjectives.ts`, `lib/experience.ts`, `commands/compare.ts`에 닿았다. 32노드 상한이 모든 호출자는 아니다.
+
+`simulateMonteCarlo`의 forward execution trace(`maxDepth` 2, `maxNodes` 32)는 `packages/core/src/sim/runFactory.ts:338`의 `createRunFactory`에 닿고, 이어서 `session.ts`와 `simulator.ts`에 닿는다. `cloneRunState`의 reverse execution trace(`maxDepth` 2, `maxNodes` 16)는 `buildInitialState` 안의 `packages/core/src/scenario/compile.ts:388`, `packages/core/src/scenario/compile.ts:491`의 `compileScenario`, 그리고 factory의 `bind`를 가리킨다. `createPlannerStrategy`는 여전히 `stepOnce`까지의 hop이 아니다. 그 edge는 미관측이다.
+
+## PR-05 호출자
+
+macOS arm64, Bun `1.3.10`, `@ttsc/graph` `0.30.4`, protocol `2025-11-25`에서 조회했다. 생성 식별자는 없다. lookup은 `createObservationRecorder`를 `packages/core/src/sim/observation.ts:238`, `mergeObservations`를 `packages/core/src/sim/observation.ts:160`, `observationContract`를 `packages/core/src/sim/observation.ts:11`, `simulateSessionPattern`을 `packages/core/src/sim/session.ts:97`, `runScenario`를 `packages/core/src/sim/simulator.ts:26`에 둔다.
+
+`createObservationRecorder`의 reverse execution trace(`maxDepth` 3, `maxNodes` 32)는 `packages/core/src/sim/simulator.ts:40`과 `packages/core/src/sim/offline.ts:127`을 가리킨다. 그 호스트를 통해 `session.ts:162`, `prestigeCycle.ts:29`, `strategy/opt/runner.ts:61`, `eta.ts:70`, `monteCarlo.ts:73`, `conformanceRun.ts`, `observation.test.ts:82`, `simulator.time.test.ts:110`, CLI `compare.ts:114`, `ltv.ts:254`, `tune.ts:157`, `lib/designObjectives.ts`, `lib/experience.ts`에 닿았다. 32노드 상한이 모든 호출자는 아니다.
+
+`mergeObservations`의 reverse execution trace(`maxDepth` 3, `maxNodes` 32)는 `packages/core/src/sim/session.ts:228`을 가리킨다. `simulateSessionPattern`을 통해 `packages/core/src/sim/monteCarlo.ts:41`의 `simulateMonteCarlo`, `packages/cli/src/lib/experience.ts:226`의 `collectExperienceSnapshot`, `isolatesIndependentRuns`, `lib/designObjectives.ts`, `commands/compare.ts:174`에 닿았다.
+
+`simulateSessionPattern`의 forward execution trace(`maxDepth` 2, `maxNodes` 32)는 `packages/core/src/sim/session.ts:228`, `packages/core/src/sim/observation.ts:162`, `packages/core/src/sim/observation.ts:189`, `packages/core/src/sim/observation.ts:378`, `packages/core/src/sim/eventBuffer.ts:83`, `packages/core/src/sim/offline.ts:127`, `packages/core/src/sim/simulator.ts:40`을 포함한다. 그 span은 `stepOnce`를 가리키지 않는다. `createPlannerStrategy`의 forward execution trace(`maxDepth` 3, `maxNodes` 32)는 `packages/core/src/sim/strategy/planner.ts` 안에 머물고 `stepOnce`를 가리키지 않는다. 그 edge는 미관측이다.
+
+## PR-04 호출자
+
+macOS arm64, Bun `1.3.10`, `@ttsc/graph` `0.30.4`, protocol `2025-11-25`에서 조회했다. 생성 식별자는 없다. lookup은 `createPlannerStrategy`를 `packages/core/src/sim/strategy/planner.ts:253`, `stepOnce`를 `packages/core/src/sim/step.ts:193`, `decidePrestigeCooldown`을 `packages/core/src/sim/constraints.ts:24`, `prestigeCooldownContract`를 `packages/core/src/sim/constraints.ts:10`, `plannerSearchContract`를 `packages/core/src/sim/strategy/planner.ts:48`, `etaSimulate`를 `packages/core/src/sim/analysis/eta.ts:41`, `cmdTune`을 `packages/cli/src/commands/tune.ts:120`에 둔다.
+
+`decidePrestigeCooldown`의 reverse execution trace(`maxDepth` 3, `maxNodes` 32)는 `packages/core/src/sim/strategy/planner.ts:183`과 `packages/core/src/sim/step.ts:220`을 가리킨다. `stepOnce`를 통해 `packages/core/src/sim/simulator.ts:99`, `packages/core/src/sim/offline.ts:180`, `packages/core/src/sim/analysis/eta.ts:70`, `packages/core/src/sim/strategy/opt/runner.ts:61`에 닿았다.
+
+`etaSimulate`의 forward execution trace(`maxDepth` 2, `maxNodes` 32)는 `packages/core/src/sim/simulator.ts:27`의 `runScenario`와 `packages/core/src/sim/step.ts:193`의 `stepOnce`를 가리킨다. `cmdTune`의 forward execution trace(`maxDepth` 2, `maxNodes` 32)는 `packages/cli/src/commands/tune.ts:157`, `packages/core/src/sim/strategy/opt/runner.ts:8`의 `runCandidateAndScore`, `packages/core/src/sim/strategy/opt/runner.ts:61`을 포함하고 `runScenario`를 가리킨다.
+
+`createPlannerStrategy`의 forward execution trace(`maxDepth` 3, `maxNodes` 32)는 `decidePrestigeCooldown`을 가리키고 `packages/core/src/sim/runFactory.ts:171`의 이름 없는 span을 포함한다. `stepOnce`는 가리키지 않는다. rollout 호출은 `packages/core/src/sim/strategy/planner.ts:322`의 `PlannerDeps.d.stepOnce`다. 그 edge는 미관측이다. reverse execution trace는 `packages/core/src/sim/strategy/builtins.ts:51`과 `packages/core/src/sim/strategy/planner.regression.test.ts:85`의 `keepsPlannerRolloutFaithful`을 가리킨다.
+
+## PR-06 호출자
+
+macOS arm64, Bun `1.3.10`, `@ttsc/graph` `0.30.4`, protocol `2025-11-25`에서 조회했다. 생성 식별자는 없다. lookup은 `simulateSessionPattern`을 `packages/core/src/sim/session.ts:215`, `applyOfflineSeconds`를 `packages/core/src/sim/offline.ts:135`, `sessionClockContract`를 `packages/core/src/sim/session.ts:16`, `resolveOfflineActionPolicy`를 `packages/core/src/sim/offline.ts:110`, `assertSessionSchedule`을 `packages/core/src/sim/session.ts:145`, `keepsSessionClocksDistinct`를 `packages/core/src/sim/session.test.ts:186`에 둔다.
+
+`simulateSessionPattern`의 reverse execution trace(`maxDepth` 3, `maxNodes` 32)는 `packages/core/src/sim/monteCarlo.ts:54`, `packages/cli/src/lib/experience.ts:253`의 `collectExperienceSnapshot`, `packages/core/src/sim/session.test.ts:177`의 `runPattern`, `packages/core/src/sim/runFactory.test.ts:151`의 `isolatesIndependentRuns`, `packages/cli/src/lib/designObjectives.ts:48`의 `evaluateVisibleProgress`, `packages/cli/src/commands/compare.ts:174`를 가리킨다. 32노드 상한이 모든 호출자는 아니다.
+
+`simulateSessionPattern`의 forward execution trace(`maxDepth` 2, `maxNodes` 32)는 `packages/core/src/sim/session.ts:273`의 `applyOfflineSeconds`, `packages/core/src/sim/session.ts:326`의 `runScenario`, `packages/core/src/sim/session.ts:378`의 `mergeObservations`, `packages/core/src/sim/session.ts:227`의 `createEventBuffer`를 포함하고, 이어서 `packages/core/src/sim/offline.ts:149`, `packages/core/src/sim/simulator.ts:34`, `packages/core/src/sim/eventBuffer.ts:83`, `packages/core/src/sim/observation.ts:378`에 닿는다.
+
+`applyOfflineSeconds`의 reverse execution trace(`maxDepth` 3, `maxNodes` 32)는 `packages/core/src/sim/session.ts:273`의 `simulateSessionPattern.appendOffline`, `packages/core/src/sim/session.test.ts:186`의 `keepsSessionClocksDistinct`, `packages/core/src/sim/simulator.time.test.ts:105`의 `stopsOnTheRequestedHorizon`, `packages/core/src/sim/strategy/planner.regression.test.ts:85`의 `keepsPlannerRolloutFaithful`을 가리킨다. forward execution trace(`maxDepth` 2, `maxNodes` 32)는 `packages/core/src/sim/offline.ts:110`의 `resolveOfflineActionPolicy`와 `packages/core/src/sim/timeBoundary.ts:70`의 `assertSimulationClock`을 가리키고 `packages/core/src/sim/step.ts:220`을 포함한다.
+
+`createPlannerStrategy`의 forward execution trace(`maxDepth` 3, `maxNodes` 32)는 여전히 `stepOnce`를 가리키지 않는다. rollout 호출은 `packages/core/src/sim/strategy/planner.ts:322`의 `PlannerDeps.d.stepOnce`다. 그 edge는 미관측이다.
+
+## PR-07 호출자
+
+macOS arm64, Bun `1.3.10`, `@ttsc/graph` `0.30.4`, protocol `2025-11-25`에서 조회했다. 생성 식별자는 없다. lookup은 `prepareResolvedRun`을 `packages/cli/src/lib/runConfiguration.ts:331`, `resolvedRunContract`를 `packages/cli/src/lib/runConfiguration.ts:27`, `strategyCreateParams`를 `packages/core/src/scenario/compile.ts:354`, `compileScenario`를 `packages/core/src/scenario/compile.ts:545`, `keepsResolvedRunConfiguration`을 `packages/cli/src/lib/runConfiguration.test.ts:91`, `createRunFactory`를 `packages/core/src/sim/runFactory.ts:369`에 둔다.
+
+`prepareResolvedRun`의 reverse execution trace(`maxDepth` 3, `maxNodes` 32)는 `packages/cli/src/lib/runConfiguration.test.ts:91`의 `keepsResolvedRunConfiguration`을 가리킨다. 명령 핸들러는 가리키지 않는다. 소스 확인상 호출은 `packages/cli/src/commands/evaluate.ts:154`, `packages/cli/src/commands/simulate.ts:159`, `packages/cli/src/commands/experience.ts:74`, `packages/cli/src/commands/ltv.ts:475`다. 그 줄은 리뷰다. 추가 graph hop이 아니다.
+
+`prepareResolvedRun`의 forward execution trace(`maxDepth` 2, `maxNodes` 32)는 `resolveEffectiveEngine`, `compileScenario`, `resolveStrategySelection`, `effectiveRunHash`, `pluginDigestValues`, `stagePlan`, `openResolvedStage`, `createNumberEngine`을 가리킨다. `packages/cli/src/lib/runConfiguration.ts:311`의 이름 없는 span이 포함되며, 그 줄은 `openResolvedStage` 안의 `createRunFactory` 호출이다. trace는 `createRunFactory`라는 이름을 주지 않는다.
+
+`createPlannerStrategy`의 forward execution trace(`maxDepth` 3, `maxNodes` 32)는 여전히 `stepOnce`를 가리키지 않는다. rollout 호출은 `packages/core/src/sim/strategy/planner.ts:322`의 `PlannerDeps.d.stepOnce`다. 그 edge는 미관측이다.
+
+`bun run graph:check`는 종료 코드 0이다. `bench:sim:check`, `bench:sim:suite:check`, `tune:regress`, `kpi:report`, `kpi:regress`, `bunx ttsc -p tsconfig.tools.json`, `bunx ttsc -p tsconfig.examples.json`, `test:conformance:extended`는 실행하지 않았다.

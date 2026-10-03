@@ -237,6 +237,53 @@ function validateSimOffline(issues: StandardIssue[], offline: Record<string, unk
     }
     validateSimOfflineDecay(issues, decay);
   }
+
+  if (offline.actions !== undefined) validateOfflineActions(issues, offline.actions);
+}
+
+const OFFLINE_ACTION_CATEGORIES = new Set(["buy", "prestige", "grant", "custom"]);
+const OFFLINE_ACTORS = new Set(["player", "automation"]);
+
+function validateOfflineActions(issues: StandardIssue[], actions: unknown): void {
+  if (!isRecord(actions)) {
+    pushIssue(issues, "sim.offline.actions must be an object when provided", "sim.offline.actions", actions);
+    return;
+  }
+  const mode = actions.mode;
+  if (mode !== "legacy-all" && mode !== "none" && mode !== "allow") {
+    pushIssue(
+      issues,
+      "sim.offline.actions.mode must be 'legacy-all', 'none', or 'allow'",
+      "sim.offline.actions.mode",
+      mode,
+    );
+    return;
+  }
+  if (mode !== "allow") return;
+  const categories = actions.categories;
+  if (
+    !Array.isArray(categories) ||
+    categories.length === 0 ||
+    categories.some((item) => typeof item !== "string" || !OFFLINE_ACTION_CATEGORIES.has(item))
+  ) {
+    pushIssue(
+      issues,
+      "sim.offline.actions.categories must list buy, prestige, grant, or custom when mode is allow",
+      "sim.offline.actions.categories",
+      categories,
+    );
+  }
+  if (actions.actors !== undefined) {
+    const actors = actions.actors;
+    if (!Array.isArray(actors) || actors.some((item) => typeof item !== "string" || !OFFLINE_ACTORS.has(item))) {
+      pushIssue(
+        issues,
+        "sim.offline.actions.actors must list player or automation when provided",
+        "sim.offline.actions.actors",
+        actors,
+      );
+    }
+  }
 }
 
 function validateSimBlock(issues: StandardIssue[], input: Record<string, unknown>): void {

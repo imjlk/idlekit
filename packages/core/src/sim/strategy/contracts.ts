@@ -21,7 +21,12 @@
  *    - ctx, model, state (treat as immutable)
  *    - internal hidden state should be avoided; if needed, must be reset/recreated per run.
  *
- * 5) Tie-break MUST be stable:
+ * 5) Independent trials use RunFactory. A fresh draw restores snapshotState or
+ *    creates a new factory instance. Continue keeps the cursor. Deep-cloning a
+ *    function closure is not isolation. A stateful closure with no factory and
+ *    no snapshotState/restoreState throws RunIsolationError when marked.
+ *
+ * 6) Tie-break MUST be stable:
  *    When two candidates have identical score, choose by:
  *    (a) lower equivalentCost (if available)
  *    (b) lower cost
@@ -30,8 +35,8 @@
  *
  * Notes:
  * - Randomness must be explicit and seeded.
- *   Do not call Math.random(). Carry seeded RNG through ctx.seed and/or Vars/SimState
- *   so rollouts (planner/session/monte-carlo) can clone it safely.
+ *   Do not call Math.random(). Carry seeded RNG through ctx.seed, Vars, or a
+ *   stream snapshot. Execution and preview streams do not restore over each other.
  */
 
 export const DeterminismContract = {

@@ -32,6 +32,48 @@ function retainList<T>(
   target.push(...batch);
 }
 
+/** The same rule as `eventLog.maxEvents`: an integer >= 0, or absent for no bound. */
+export function assertLogBudget(value: number | undefined, label: string): void {
+  if (value !== undefined && (!Number.isInteger(value) || value < 0)) {
+    throw new Error(`${label} must be an integer >= 0`);
+  }
+}
+
+/** Ring buffer for trace points or action rows. This is not a second event log. */
+export function createBoundedLog<T>(maxItems: number | undefined, label = "bounded log size") {
+  assertLogBudget(maxItems, label);
+  const items: T[] = [];
+  let totalSeen = 0;
+  let dropped = 0;
+
+  return {
+    push(item: T): void {
+      totalSeen += 1;
+      if (maxItems === 0) {
+        dropped += 1;
+        return;
+      }
+      if (maxItems === undefined) {
+        items.push(item);
+        return;
+      }
+      if (items.length >= maxItems) {
+        items.shift();
+        dropped += 1;
+      }
+      items.push(item);
+    },
+    snapshot() {
+      return {
+        items,
+        totalSeen,
+        dropped,
+        retained: items.length,
+      };
+    },
+  };
+}
+
 export function createEventBuffer<N>(args: {
   enabled: boolean;
   maxEvents?: number;
@@ -57,6 +99,21 @@ export function createEventBuffer<N>(args: {
           args.maxEvents,
         );
       }
+    },
+
+    pushTimed(frames: readonly TimedSimEvent<N>[]): void {
+      totalSeen += frames.length;
+      if (!args.enabled || frames.length === 0) return;
+
+      retainList(
+        events,
+        frames.map((frame) => frame.event),
+        args.maxEvents,
+        (count) => {
+          dropped += count;
+        },
+      );
+      retainList(eventTimeline, frames, args.maxEvents);
     },
 
     pushRun<U extends string, Vars>(run: Pick<RunResult<N, U, Vars>, "events" | "eventTimeline" | "eventLog">): void {

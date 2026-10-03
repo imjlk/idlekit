@@ -104,7 +104,16 @@ export function runCli(args: string[], opts?: CliRunOptions): CliRunResult {
 }
 
 export function runCliJson<T = any>(args: string[], opts?: CliRunOptions): T {
-  return JSON.parse(runCli(args, opts).stdout) as T;
+  const result = runCli(args, opts);
+  try {
+    return JSON.parse(result.stdout) as T;
+  } catch (error) {
+    // Name what was captured so a truncated or interleaved stdout is visible in CI.
+    const tail = result.stdout.slice(-300);
+    throw new Error(
+      `CLI stdout is not JSON (${result.stdout.length} chars, exit ${result.exitCode}) for ${args.join(" ")}: ${String(error)}\n--- stdout tail ---\n${tail}\n--- stderr ---\n${result.stderr.slice(-2000)}`,
+    );
+  }
 }
 
 export function runCliFailure(args: string[], opts?: Omit<CliRunOptions, "check">): CliRunResult {

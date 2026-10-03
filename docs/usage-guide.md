@@ -71,6 +71,17 @@ idk replay verify <artifact> --format json
 - `tune`: strategy search against economy or experience-oriented objectives
 - `ltv`: long-horizon monetization and value proxy estimation
 
+## Run configuration flags
+
+`evaluate` compiles the scenario once. Simulate, experience, and ltv each open a fresh model and strategy from that plan.
+
+- `--strategy` on `evaluate`, `simulate`, `experience`, `ltv`, and `review evaluate` is a registered strategy id. `greedy`, `planner`, and `scripted` remain built in. An unknown id is rejected. A plugin is not loaded just because the flag names it. `compare` and `review compare` still accept only those three builtins. The flag replaces the scenario strategy, which is then not built, so a scenario strategy that is not registered or has invalid params does not stop the run. Without the flag it still fails.
+- `--engine` defaults to `number`. `scenario.engine` is recorded metadata and does not select the runtime. `breakInfinity` is an explicit engine. `breakEternity` is an unsupported error. A custom engine runs only from a trusted factory the caller already holds.
+- `--step` and `--fast` apply to simulate and ltv. On `evaluate` they reach experience only with `--consistent-overrides true`. The standalone `experience` command does not take `--step` or `--fast`. Session pattern and `--days` stay on experience.
+- `scenarioHash` is still the original scenario object. `effectiveRunHash`, `effectiveEngine`, and `stageScope` are optional `_meta` fields. The hash ignores `generatedAt`, the working directory, and absolute paths. It keeps `--plugin` order, because a later plugin replaces an earlier one with the same model or strategy id. Each `pluginDigest` value covers the plugin file and the files it reaches through local imports (`./`, `../`, absolute paths, `file:` URLs), keyed by their path from the plugin directory. A plugin without local imports keeps its file sha256. Installed packages and other bare specifiers are not hashed. `--plugin-sha256` and the trust file pin the plugin file alone. `idlekit.resolved-run-configuration` is not registered with a contract generator until TC-05.
+- Amount goals such as `money >= 1aa` use `parseMoney` on the amount path for both the number engine and `breakInfinity`. `1e400` stays on `breakInfinity` and is not converted with `Number` first.
+- Strategy parameter checks default to legacy raw. The internal schema adapter is not the external Standard Schema package.
+
 Recommended interactive order:
 
 1. `idk init scenario --wizard`

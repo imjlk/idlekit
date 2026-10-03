@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { analyzeMilestones } from "./milestones";
+import type { RunObservation } from "../observation";
 import type { RunResult, SimEvent, TimedSimEvent, SimState } from "../types";
 
 type UnitCode = "COIN";
@@ -37,5 +38,48 @@ describe("analyzeMilestones", () => {
     expect(report.milestones.some((x) => x.key === "system.unlock")).toBeTrue();
     expect(report.milestones.some((x) => x.key === "action.buy.generator.firstApplied")).toBeTrue();
     expect(report.milestones.some((x) => x.key === "prestige.first")).toBeTrue();
+  });
+
+  it("keeps milestone coverage complete when only goals were capped", () => {
+    const observation = (droppedMilestones: number, droppedGoals: number): RunObservation => ({
+      contract: "idlekit.run-observation",
+      version: 1,
+      coverage: droppedMilestones > 0 || droppedGoals > 0 ? "partial" : "complete",
+      legacyEventFallback: false,
+      money: { status: "observed", applied: 0, dropped: 0, queued: 0, flushed: 0, blocked: 0 },
+      actions: { status: "observed", applied: 0, skippedCannotApply: 0, skippedInsufficientFunds: 0, skippedInvalidQuote: 0, skippedCooldown: 0 },
+      rewardGap: { status: "missing", startT: 0, endT: 20, interiorMaxGapSec: 0 },
+      milestones: [{ key: "level-1", firstSeenT: 3, source: "milestone" }],
+      goals: [],
+      droppedMilestones,
+      droppedGoals,
+    });
+    const run = (droppedMilestones: number, droppedGoals: number): RunResult<number, UnitCode, Vars> => ({
+      start: makeState(0),
+      end: makeState(20),
+      events: [],
+      observation: observation(droppedMilestones, droppedGoals),
+    });
+    expect(analyzeMilestones({ run: run(0, 2) }).coverage).toBe("complete");
+    expect(analyzeMilestones({ run: run(1, 0) }).coverage).toBe("partial");
+  });
+
+  it("marks fallback coverage incomplete when the action log or a prestige trace dropped rows", () => {
+    const base = (prestige: number): RunResult<number, UnitCode, Vars> => ({
+      start: makeState(0, 0),
+      end: makeState(20, prestige),
+      events: [],
+      eventTimeline: [],
+      actionsLog: [],
+      trace: [makeState(20, prestige)],
+      eventLog: { enabled: true, totalSeen: 0, dropped: 0, retained: 0 },
+    });
+    const meta = { totalSeen: 3, dropped: 3, retained: 0 };
+    expect(analyzeMilestones({ run: base(0) }).coverage).toBe("complete");
+    expect(analyzeMilestones({ run: { ...base(0), actionsLogMeta: { maxActions: 0, ...meta } } }).coverage).toBe(
+      "incomplete",
+    );
+    expect(analyzeMilestones({ run: { ...base(1), traceLog: { maxPoints: 1, ...meta } } }).coverage).toBe("incomplete");
+    expect(analyzeMilestones({ run: { ...base(0), traceLog: { maxPoints: 1, ...meta } } }).coverage).toBe("complete");
   });
 });

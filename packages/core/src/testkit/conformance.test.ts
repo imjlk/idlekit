@@ -397,8 +397,8 @@ describe("PR-01 bulk equivalence", () => {
 /**
  * @evidence docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness The same scenario replays from an on-grid checkpoint, and an off-grid checkpoint does not apply.
  * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #a195f0e Re-read the section: the 0.1 grid resume at 0.2 applies, and the resume at 1.5 does not.
- * @evidence ./conformanceRun.ts#checkDurationBoundary A 4s run at step 1 and a 0.3s run at step 0.1 both apply; an until at t greater than or equal to 3 does not. A maxSteps that is not an integer, or that cannot cover the simulator's repeated step additions, does not apply. A timestamp that stepSec cannot advance does not apply.
- * @evidenceReview ./conformanceRun.ts#checkDurationBoundary #7e3db38 Re-read the function: it snapshots and restores the strategy around the run, and it compares the end time with the timestamp advanced from the run's own start. A maxSteps that is not an integer, or that cannot cover the simulator's repeated step additions, skips before the run. A null addition count skips before the run.
+ * @evidence ./conformanceRun.ts#checkDurationBoundary A 4s run at step 1, a 0.3s run at step 0.1, and a 0.8s run at step 0.1 apply; an until at t greater than or equal to 3 does not. A maxSteps below the runner's tick count does not apply, and one equal to it does. A timestamp that stepSec cannot advance does not apply.
+ * @evidenceReview ./conformanceRun.ts#checkDurationBoundary #5525a5e Re-read the function and runnerTicks: it replays the runner's clock through nextBoundary from the run's own start, skips before the run when maxSteps is not an integer or is below that replayed tick count, since nextBoundary stops on duration before it checks the budget, and skips when t cannot advance by the chosen dt. It snapshots and restores the strategy around the run, then fails unless the run ends at the replayed end time after the whole-step tick count. Ran this function: maxSteps 3 and 6 skip while 4 and 7 apply, the 0.8s run at step 0.1 applies without maxSteps and with maxSteps 8 and skips with 7, and the run at t 1e20 skips as unable to advance.
  * @evidence ./conformanceRun.ts#rejectNonPositiveStep Step 0 is a failing applicable check.
  * @evidenceReview ./conformanceRun.ts#rejectNonPositiveStep #31155b2 Step 0 is a failing applicable check.
  * @evidence ./conformanceRun.ts#checkResume An off-grid resume at 1.5 does not apply; a 0.2 resume on the 0.1 grid does.
@@ -407,6 +407,7 @@ describe("PR-01 bulk equivalence", () => {
 export function stopsOnAPositiveTickGridAndRefusesANonPositiveStep(): void {
   const scenario = constantScenario({ rate: 2, durationSec: 4, stepSec: 1 });
   expectApplicable(checkDurationBoundary(scenario));
+  expectApplicable(checkResume(scenario, 2));
   const refused = rejectNonPositiveStep(0);
   expect(refused.ok).toBe(false);
   expect(refused.applicable).toBe(true);
@@ -428,34 +429,37 @@ export function stopsOnAPositiveTickGridAndRefusesANonPositiveStep(): void {
   });
   expect(earlyStop.applicable).toBe(false);
   expect(earlyStop.ok).toBe(true);
+  // A budget equal to the tick count still stops on duration. Only a smaller one is refused.
   const capped = checkDurationBoundary({
     ...scenario,
-    run: { ...scenario.run, maxSteps: 4 },
+    run: { ...scenario.run, maxSteps: 3 },
   });
   expect(capped.applicable).toBe(false);
   expect(capped.ok).toBe(true);
-  const roomy = checkDurationBoundary({
+  const exact = checkDurationBoundary({
     ...scenario,
-    run: { ...scenario.run, maxSteps: 5 },
+    run: { ...scenario.run, maxSteps: 4 },
   });
-  expectApplicable(roomy);
-  const cappedResume = checkResume({ ...scenario, run: { ...scenario.run, maxSteps: 4 } }, 2);
+  expectApplicable(exact);
+  const cappedResume = checkResume({ ...scenario, run: { ...scenario.run, maxSteps: 3 } }, 2);
   expect(cappedResume.applicable).toBe(false);
   expect(cappedResume.ok).toBe(true);
-  const cappedJson = checkResumeFromJson({ ...scenario, run: { ...scenario.run, maxSteps: 4 } }, 2);
+  const cappedJson = checkResumeFromJson({ ...scenario, run: { ...scenario.run, maxSteps: 3 } }, 2);
   expect(cappedJson.applicable).toBe(false);
   expect(cappedJson.ok).toBe(true);
-  expectApplicable(checkResume({ ...scenario, run: { ...scenario.run, maxSteps: 5 } }, 2));
+  expectApplicable(checkResume({ ...scenario, run: { ...scenario.run, maxSteps: 4 } }, 2));
+  expectApplicable(checkResumeFromJson({ ...scenario, run: { ...scenario.run, maxSteps: 4 } }, 2));
   const driftedBase = constantScenario({ rate: 1, durationSec: 0.021, stepSec: 0.003 });
   const drifted = checkDurationBoundary({
     ...driftedBase,
-    run: { ...driftedBase.run, maxSteps: 8 },
+    run: { ...driftedBase.run, maxSteps: 6 },
   });
   expect(drifted.ok).toBe(true);
   expect(drifted.applicable).toBe(false);
   expect(drifted.summary).toContain("maxSteps");
+  expectApplicable(checkDurationBoundary({ ...driftedBase, run: { ...driftedBase.run, maxSteps: 7 } }));
   const driftedResume = checkResume(
-    { ...driftedBase, run: { ...driftedBase.run, maxSteps: 8 } },
+    { ...driftedBase, run: { ...driftedBase.run, maxSteps: 6 } },
     0.006,
   );
   expect(driftedResume.ok).toBe(true);
@@ -467,6 +471,19 @@ export function stopsOnAPositiveTickGridAndRefusesANonPositiveStep(): void {
   const driftedOpenJson = checkResumeFromJson(driftedBase, 0.006);
   expect(driftedOpenJson.ok).toBe(true);
   expect(driftedOpenJson.applicable).toBe(true);
+  // Eight ticks reach 0.7999999999999999, inside the horizon's epsilon. A ninth addition is not the runner.
+  const eighths = constantScenario({ rate: 2, durationSec: 0.8, stepSec: 0.1 });
+  expectApplicable(checkDurationBoundary(eighths));
+  expectApplicable(checkDurationBoundary({ ...eighths, run: { ...eighths.run, maxSteps: 8 } }));
+  expect(checkDurationBoundary({ ...eighths, run: { ...eighths.run, maxSteps: 7 } }).applicable).toBe(false);
+  for (const splitSec of [0.1, 0.5, 0.7]) expectApplicable(checkResume(eighths, splitSec));
+  expectApplicable(checkResume({ ...eighths, run: { ...eighths.run, maxSteps: 8 } }, 0.5));
+  expect(checkResume({ ...eighths, run: { ...eighths.run, maxSteps: 7 } }, 0.5).applicable).toBe(false);
+  expectApplicable(checkResumeFromJson(eighths, 0.5));
+  // After three ticks, neither 0.8 - 0.30000000000000004 nor five summed ticks ends on a full last tick.
+  const unreplayable = checkResume(eighths, 0.3);
+  expect(unreplayable.ok).toBe(true);
+  expect(unreplayable.applicable).toBe(false);
   const stuckBase = constantScenario({ rate: 1, durationSec: 1, stepSec: 1 });
   const stuckBoundary = checkDurationBoundary({
     ...stuckBase,
@@ -525,7 +542,7 @@ describe("PR-02 time boundaries", () => {
  * @evidence ./conformanceRun.ts#checkResumeFromJson Resumes a 4s scripted grant from JSON at t=2.
  * @evidenceReview ./conformanceRun.ts#checkResumeFromJson #91c215a Resumes a 4s scripted grant from JSON at t=2.
  * @evidence ./conformanceRun.ts#checkRetention Retention applies to the scripted grant. A scenario that already has an emitter does not apply.
- * @evidenceReview ./conformanceRun.ts#checkRetention #5a8a4e8 Retention applies to the scripted grant. A negative eventLog.maxEvents fails before the check substitutes another capacity. A run that retains no events is inapplicable. A scenario that already has an emitter does not apply, so that emitter is left untouched.
+ * @evidenceReview ./conformanceRun.ts#checkRetention #264a5d1 Re-read the function: the retained and dropped runs must end with the same economy and the same stats, or the check fails. Retention applies to the scripted grant. A negative eventLog.maxEvents fails before the check substitutes another capacity. A run that retains no events is inapplicable. A scenario that already has an emitter does not apply, so that emitter is left untouched.
  * @evidence ./conformanceRun.ts#checkObserver The observer check applies to the scripted grant. A scenario that already has an emitter does not apply.
  * @evidenceReview ./conformanceRun.ts#checkObserver #cbc894e The observer check applies to the scripted grant. A run that emits no events is inapplicable. A scenario that already has an emitter does not apply, so that emitter is left untouched.
  */

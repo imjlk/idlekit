@@ -1,8 +1,9 @@
 import { defineCommand, option } from "@bunli/core";
-import { compileScenario, createNumberEngine, validateScenarioV1 } from "@idlekit/core";
+import { validateScenarioV1 } from "@idlekit/core";
 import { z } from "zod";
 import { loadRegistriesFromFlags, pluginOptions } from "./_shared/plugin";
 import { scenarioInvalidError, usageError } from "../errors";
+import { engineSeedOption, prepareResolvedRun, strategySeedOption } from "../lib/runConfiguration";
 import {
   collectExperienceSnapshot,
   renderExperienceMarkdown,
@@ -29,6 +30,12 @@ export default defineCommand({
     ),
     days: option(z.coerce.number().int().positive().optional(), { description: "Days to simulate for the session pattern" }),
     draws: option(z.coerce.number().int().positive().optional(), { description: "Monte Carlo draw count (1 = deterministic)" }),
+    strategy: option(z.string().min(1).optional(), {
+      description: "Registered strategy id. Builtins remain greedy, planner, and scripted.",
+    }),
+    engine: option(z.string().min(1).optional(), {
+      description: "Execution engine. Default number. scenario.engine is metadata. breakInfinity is explicit. breakEternity is unsupported.",
+    }),
     seed: option(z.coerce.number().optional(), { description: "Deterministic seed" }),
     out: option(z.string().optional(), { description: "Output path" }),
     format: option(z.enum(["json", "md"]).default("json"), { description: "Output format" }),
@@ -50,33 +57,49 @@ export default defineCommand({
       throw scenarioInvalidError(valid.issues);
     }
 
+    // A flag equal to what the scenario resolves to runs the same session and draws, so it keeps
+    // the no-flag seed input.
+    const scenarioSession = resolveSessionPatternSpec({ scenario: valid.scenario });
+    const flagSession = resolveSessionPatternSpec({
+      scenario: valid.scenario,
+      sessionPatternId: resolveSessionPatternId(flags["session-pattern"]),
+      days: flags.days,
+    });
     const seed =
       flags.seed ??
       deriveDeterministicSeed({
         command: "experience",
         scenario: valid.scenario,
         options: {
-          sessionPattern: flags["session-pattern"],
-          days: flags.days,
-          draws: flags.draws,
+          sessionPattern: flagSession.id !== scenarioSession.id ? flags["session-pattern"] : undefined,
+          days: flagSession.days !== scenarioSession.days ? flags.days : undefined,
+          draws:
+            resolveExperienceDraws(valid.scenario, flags.draws) !== resolveExperienceDraws(valid.scenario)
+              ? flags.draws
+              : undefined,
+          ...strategySeedOption({
+            scenario: valid.scenario,
+            strategyRegistry: loaded.strategyRegistry,
+            overrideId: flags.strategy,
+          }),
+          ...engineSeedOption(flags.engine),
         },
       });
 
-    const E = createNumberEngine();
-    const compiled = compileScenario<number, string, Record<string, unknown>>({
-      E,
+    const prepared = prepareResolvedRun({
       scenario: valid.scenario,
-      registry: loaded.modelRegistry,
+      modelRegistry: loaded.modelRegistry,
       strategyRegistry: loaded.strategyRegistry,
-      opts: { allowSuffixNotation: true },
+      pluginDigest: loaded.pluginDigest,
+      engineRequest: flags.engine,
+      strategyOverride: flags.strategy,
+      seed,
+      sessionId: flags["session-pattern"],
+      days: flags.days,
     });
-    const seededScenario = {
-      ...compiled,
-      ctx: {
-        ...compiled.ctx,
-        seed,
-      },
-    };
+    const experienceInputs = { draws: resolveExperienceDraws(prepared.definition, flags.draws) };
+    const opened = prepared.open("experience", `experience:${seed}`, experienceInputs);
+    const seededScenario = opened.scenario;
 
     const sessionPattern = resolveSessionPatternSpec({
       scenario: seededScenario,
@@ -94,17 +117,22 @@ export default defineCommand({
       series,
     });
 
-    const monteCarlo =
-      draws > 1
-        ? summarizeExperienceMonteCarlo({
-            scenario: seededScenario,
-            sessionPattern,
-            draws,
-            seed,
-            quantiles,
-            series,
-          })
-        : undefined;
+    // The deterministic session advanced seededScenario's model and strategy. Monte Carlo opens
+    // its own stage and builds a new model and strategy for every draw from the registries.
+    const monteCarloStage =
+      draws > 1 ? prepared.open("experience", `experience:${seed}:monte-carlo`, experienceInputs) : undefined;
+    const monteCarlo = monteCarloStage
+      ? summarizeExperienceMonteCarlo({
+          scenario: monteCarloStage.scenario,
+          registries: monteCarloStage.isolation.registries,
+          isolation: monteCarloStage.isolation.options,
+          sessionPattern,
+          draws,
+          seed,
+          quantiles,
+          series,
+        })
+      : undefined;
 
     const runId =
       flags["run-id"] ??
@@ -148,6 +176,9 @@ export default defineCommand({
 
     const outputMeta = buildOutputMeta({
       command: "experience",
+      effectiveRunHash: opened.hash,
+      effectiveEngine: prepared.engine.effectiveId,
+      stageScope: { experience: opened.plan.stage.applies },
       runId,
       seed,
       scenarioPath,

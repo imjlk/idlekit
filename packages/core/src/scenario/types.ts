@@ -1,3 +1,7 @@
+import type { OfflinePolicy } from "./offlinePolicy";
+
+export type { OfflineActionCategory, OfflineActionPolicy, OfflineActor, OfflinePolicy } from "./offlinePolicy";
+
 export type NumStr = string;
 
 export type ScenarioV1 = Readonly<{
@@ -137,14 +141,7 @@ export type ScenarioV1 = Readonly<{
       enabled?: boolean;
       maxEvents?: number;
     }>;
-    offline?: Readonly<{
-      maxSec?: number;
-      overflowPolicy?: "clamp" | "reject";
-      decay?: Readonly<{
-        kind: "none" | "linear";
-        floorRatio?: number;
-      }>;
-    }>;
+    offline?: OfflinePolicy;
   }>;
 
   outputs?: Readonly<{

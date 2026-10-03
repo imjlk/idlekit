@@ -162,6 +162,137 @@
           "args": ["test", "src/sim/step.bulk.test.ts"]
         }
       ]
+    },
+    {
+      "id": "REQ-PR02-SIMULATION-TIME-BOUNDARIES",
+      "pr": "PR-02",
+      "anchor": "req-pr02-simulation-time-boundaries",
+      "doc": "docs/requirements/active/simulation-time-boundaries.md",
+      "production": [
+        "packages/core/src/sim/timeBoundary.ts",
+        "packages/core/src/sim/simulator.ts",
+        "packages/core/src/sim/offline.ts"
+      ],
+      "tests": [
+        {
+          "file": "packages/core/src/sim/simulator.time.test.ts",
+          "exportName": "stopsOnTheRequestedHorizon",
+          "registeredAs": "PR-02 simulation time boundaries > stops on the requested horizon",
+          "cwd": "packages/core",
+          "args": ["test", "src/sim/simulator.time.test.ts"]
+        }
+      ]
+    },
+    {
+      "id": "REQ-PR03-RUN-LIFECYCLE-ISOLATION",
+      "pr": "PR-03",
+      "anchor": "req-pr03-run-lifecycle-isolation",
+      "doc": "docs/requirements/active/run-lifecycle-isolation.md",
+      "production": ["packages/core/src/sim/runFactory.ts"],
+      "tests": [
+        {
+          "file": "packages/core/src/sim/runFactory.test.ts",
+          "exportName": "isolatesIndependentRuns",
+          "registeredAs": "PR-03 run lifecycle isolation > isolates independent runs",
+          "cwd": "packages/core",
+          "args": ["test", "src/sim/runFactory.test.ts"]
+        }
+      ]
+    },
+    {
+      "id": "REQ-PR05-OBSERVATION-RETENTION",
+      "pr": "PR-05",
+      "anchor": "req-pr05-observation-retention",
+      "doc": "docs/requirements/active/observation-retention.md",
+      "production": ["packages/core/src/sim/observation.ts"],
+      "tests": [
+        {
+          "file": "packages/core/src/sim/observation.test.ts",
+          "exportName": "keepsStatsIndependentOfRetention",
+          "registeredAs": "PR-05 observation retention > keeps stats independent of retention",
+          "cwd": "packages/core",
+          "args": ["test", "src/sim/observation.test.ts"]
+        }
+      ]
+    },
+    {
+      "id": "REQ-PR04-PLANNER-ROLLOUT",
+      "pr": "PR-04",
+      "anchor": "req-pr04-planner-rollout",
+      "doc": "docs/requirements/active/planner-rollout.md",
+      "production": [
+        "packages/core/src/sim/constraints.ts",
+        "packages/core/src/sim/strategy/planner.ts"
+      ],
+      "tests": [
+        {
+          "file": "packages/core/src/sim/strategy/planner.regression.test.ts",
+          "exportName": "keepsPlannerRolloutFaithful",
+          "registeredAs": "PR-04 planner rollout > keeps planner rollout faithful",
+          "cwd": "packages/core",
+          "args": ["test", "src/sim/strategy/planner.regression.test.ts"]
+        }
+      ]
+    },
+    {
+      "id": "REQ-PR06-SESSION-CLOCK",
+      "pr": "PR-06",
+      "anchor": "req-pr06-session-clock",
+      "doc": "docs/requirements/active/session-clock.md",
+      "production": ["packages/core/src/sim/session.ts", "packages/core/src/sim/offline.ts"],
+      "tests": [
+        {
+          "file": "packages/core/src/sim/session.test.ts",
+          "exportName": "keepsSessionClocksDistinct",
+          "registeredAs": "PR-06 session clocks > keeps session clocks distinct",
+          "cwd": "packages/core",
+          "args": ["test", "src/sim/session.test.ts"]
+        }
+      ]
+    },
+    {
+      "id": "REQ-PR07-RESOLVED-RUN",
+      "pr": "PR-07",
+      "anchor": "req-pr07-resolved-run",
+      "doc": "docs/requirements/active/cli-resolved-run.md",
+      "production": ["packages/cli/src/lib/runConfiguration.ts"],
+      "tests": [
+        {
+          "file": "packages/cli/src/lib/runConfiguration.test.ts",
+          "exportName": "keepsResolvedRunConfiguration",
+          "registeredAs": "PR-07 resolved run > keeps resolved run configuration",
+          "cwd": "packages/cli",
+          "args": ["test", "src/lib/runConfiguration.test.ts"]
+        },
+        {
+          "file": "packages/cli/src/lib/runConfiguration.test.ts",
+          "exportName": "digestsEachStageFromItsAppliedPlan",
+          "registeredAs": "PR-07 resolved run > digests each stage from its applied plan and command inputs",
+          "cwd": "packages/cli",
+          "args": ["test", "src/lib/runConfiguration.test.ts"]
+        },
+        {
+          "file": "packages/cli/src/lib/runConfiguration.test.ts",
+          "exportName": "overrideReplacesBrokenScenarioStrategy",
+          "registeredAs": "PR-07 resolved run > builds an override without the scenario strategy it replaces",
+          "cwd": "packages/cli",
+          "args": ["test", "src/lib/runConfiguration.test.ts"]
+        },
+        {
+          "file": "packages/cli/src/lib/runConfiguration.test.ts",
+          "exportName": "seedsTheDefaultEngineOnce",
+          "registeredAs": "PR-07 resolved run > seeds the default engine once",
+          "cwd": "packages/cli",
+          "args": ["test", "src/lib/runConfiguration.test.ts"]
+        },
+        {
+          "file": "packages/cli/src/lib/runConfiguration.test.ts",
+          "exportName": "seedsTheScenarioStrategyOnce",
+          "registeredAs": "PR-07 resolved run > seeds the scenario strategy once",
+          "cwd": "packages/cli",
+          "args": ["test", "src/lib/runConfiguration.test.ts"]
+        }
+      ]
     }
   ]
 }

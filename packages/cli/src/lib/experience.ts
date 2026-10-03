@@ -7,9 +7,13 @@ import {
   type CompiledScenario,
   type GrowthReport,
   type MilestoneReport,
+  type RunBindOptions,
+  type RunFactoryDeps,
   type SessionPatternId,
   type SessionPatternSpec,
   type SessionRunResult,
+  type SessionSegment,
+  type SimContext,
   type SimState,
 } from "@idlekit/core";
 
@@ -38,6 +42,16 @@ export type ExperienceSnapshot = Readonly<{
     activeBlocks: number;
     totalActiveSec: number;
     totalOfflineSec: number;
+    elapsedSec: number;
+    horizonSec: number;
+    activeSec: number;
+    offlineElapsedSec: number;
+    offlineCreditedSec: number;
+    lostRewardSec: number;
+    rewardSec: number;
+    /** Active blocks cut short by `run.maxSteps`. */
+    budgetStops: number;
+    stopReason: SessionRunResult<unknown, string, unknown>["summary"]["stop"]["reason"];
   }>;
 }>;
 
@@ -78,7 +92,7 @@ function summarizeNumeric(values: number[], quantiles: readonly number[]): Exper
 }
 
 export function resolveSessionPatternSpec(args: {
-  scenario: CompiledScenario<any, any, any>;
+  scenario: Pick<CompiledScenario<any, any, any>, "design">;
   sessionPatternId?: SessionPatternId;
   days?: number;
 }): SessionPatternSpec {
@@ -96,7 +110,7 @@ export function resolveExperienceSeries(
   return requested ?? scenario.analysis?.experience?.series ?? (scenario.model.netWorth ? "netWorth" : "money");
 }
 
-export function resolveExperienceDraws(scenario: CompiledScenario<any, any, any>, draws?: number): number {
+export function resolveExperienceDraws(scenario: Pick<CompiledScenario<any, any, any>, "analysis">, draws?: number): number {
   return Math.max(1, Math.floor(draws ?? scenario.analysis?.experience?.draws ?? 1));
 }
 
@@ -119,6 +133,38 @@ function activeSegments<N, U extends string, Vars>(session: SessionRunResult<N, 
   return session.segments.filter((segment): segment is Extract<typeof segment, { kind: "active" }> => segment.kind === "active");
 }
 
+// A model that reads clocks saw them only on its segment's context. Read its net worth there too.
+function segmentScenario<N, U extends string, Vars>(
+  scenario: CompiledScenario<N, U, Vars>,
+  segment: SessionSegment<N, U, Vars> | undefined,
+): CompiledScenario<N, U, Vars> {
+  return segment?.clocks ? { ...scenario, ctx: { ...scenario.ctx, clocks: segment.clocks } } : scenario;
+}
+
+// The session trace joins every active block. Each point keeps the context of the block that traced it.
+function growthScenario<N, U extends string, Vars>(
+  scenario: CompiledScenario<N, U, Vars>,
+  session: SessionRunResult<N, U, Vars>,
+): CompiledScenario<N, U, Vars> {
+  const model = scenario.model;
+  const netWorth = model.netWorth;
+  if (!netWorth || !session.segments.some((segment) => segment.clocks)) return scenario;
+  const ctxOf = new Map<SimState<N, U, Vars>, SimContext<N, U, Vars>>();
+  for (const segment of activeSegments(session)) {
+    const ctx = segmentScenario(scenario, segment).ctx;
+    for (const state of segment.run.trace ?? []) if (!ctxOf.has(state)) ctxOf.set(state, ctx);
+  }
+  ctxOf.set(session.start, segmentScenario(scenario, session.segments[0]).ctx);
+  ctxOf.set(session.end, segmentScenario(scenario, session.segments.at(-1)).ctx);
+  return {
+    ...scenario,
+    model: Object.assign(Object.create(model) as typeof model, {
+      netWorth: (ctx: SimContext<N, U, Vars>, state: SimState<N, U, Vars>) =>
+        netWorth.call(model, ctxOf.get(state) ?? ctx, state),
+    }),
+  };
+}
+
 export function analyzePerceivedProgression<N, U extends string, Vars>(args: {
   scenario: CompiledScenario<N, U, Vars>;
   session: SessionRunResult<N, U, Vars>;
@@ -136,16 +182,27 @@ export function analyzePerceivedProgression<N, U extends string, Vars>(args: {
   let totalActiveSec = 0;
   let maxNoRewardGapSec = 0;
 
+  // Active segments only. `durationSec` and `state.t` are reward time, not wall elapsed.
   for (const segment of activeSegments(session)) {
+    // Reads every active step. A session trace budget cuts each block's trace and action rows,
+    // and what is left would read as quiet play.
+    const droppedPoints = segment.run.traceLog?.dropped ?? 0;
+    const droppedActions = segment.run.actionsLogMeta?.dropped ?? 0;
+    if (droppedPoints > 0 || droppedActions > 0) {
+      throw new Error(
+        `perceived progression needs every active step; a session block dropped ${droppedPoints} trace points and ${droppedActions} action rows under trace.maxPoints or trace.maxActions`,
+      );
+    }
     const trace = segment.run.trace ?? [segment.run.start, segment.run.end];
     if (trace.length === 0) continue;
+    const view = segmentScenario(scenario, segment);
 
     totalActiveSec += segment.durationSec;
     tracker.reset();
 
     const visibleTimestamps: number[] = [];
     for (const state of trace) {
-      const change = tracker.observe(moneyAtState(scenario, state, series));
+      const change = tracker.observe(moneyAtState(view, state, series));
       if (change.changed) {
         visibleTimestamps.push(state.t);
         changeTimes.push(state.t);
@@ -193,9 +250,17 @@ export function snapshotFromSession<N, U extends string, Vars>(args: {
   series?: ExperienceSeries;
 }): ExperienceSnapshot {
   const series = resolveExperienceSeries(args.scenario, args.series);
+  // Growth reads the merged session trace. A budget can keep every block whole and still evict
+  // the merged trace's early points; slopes over the retained tail would read as the whole session.
+  const droppedPoints = args.session.run.traceLog?.dropped ?? 0;
+  if (droppedPoints > 0) {
+    throw new Error(
+      `session growth needs the whole session trace; the session dropped ${droppedPoints} trace points under trace.maxPoints`,
+    );
+  }
   const growth = analyzeGrowth({
     run: args.session.run,
-    scenario: args.scenario,
+    scenario: growthScenario(args.scenario, args.session),
     series,
     windowSec: args.scenario.analysis?.growth?.windowSec ?? 60,
   });
@@ -205,7 +270,7 @@ export function snapshotFromSession<N, U extends string, Vars>(args: {
     session: args.session,
     series,
   });
-  const endWorth = moneyAtState(args.scenario, args.session.end, "netWorth");
+  const endWorth = moneyAtState(segmentScenario(args.scenario, args.session.segments.at(-1)), args.session.end, "netWorth");
 
   return {
     endMoney: args.scenario.ctx.E.toString(args.session.end.wallet.money.amount),
@@ -219,6 +284,15 @@ export function snapshotFromSession<N, U extends string, Vars>(args: {
       activeBlocks: args.session.summary.activeBlocks,
       totalActiveSec: args.session.summary.totalActiveSec,
       totalOfflineSec: args.session.summary.totalOfflineSec,
+      elapsedSec: args.session.summary.elapsedSec,
+      horizonSec: args.session.summary.horizonSec,
+      activeSec: args.session.summary.activeSec,
+      offlineElapsedSec: args.session.summary.offlineElapsedSec,
+      offlineCreditedSec: args.session.summary.offlineCreditedSec,
+      lostRewardSec: args.session.summary.lostRewardSec,
+      rewardSec: args.session.summary.rewardSec,
+      budgetStops: args.session.summary.budgetStops,
+      stopReason: args.session.summary.stop.reason,
     },
   };
 }
@@ -256,12 +330,17 @@ export function summarizeExperienceMonteCarlo<N, U extends string, Vars>(args: {
   seed: number;
   quantiles: readonly number[];
   series?: ExperienceSeries;
+  /** Factories for a new model and strategy per draw. Without them a closure is shared across draws. */
+  registries?: RunFactoryDeps;
+  isolation?: RunBindOptions;
 }): ExperienceMonteCarloSummary {
   const summary = simulateMonteCarlo({
     scenario: args.scenario,
     sessionPattern: args.sessionPattern,
     draws: args.draws,
     seed: args.seed,
+    registries: args.registries,
+    isolation: args.isolation,
     metrics: ({ scenario, session }) => {
       const snapshot = snapshotFromSession({
         scenario,
@@ -386,8 +465,12 @@ export function renderExperienceMarkdown(args: {
     `- Intent: ${args.intent ?? "unspecified"}`,
     `- Mode: ${args.mode}`,
     `- Session pattern: \`${snapshot.session.pattern.id}\` for ${snapshot.session.pattern.days} day(s)`,
-    `- Active blocks: ${snapshot.session.activeBlocks}`,
+    `- Active blocks: ${snapshot.session.activeBlocks}${snapshot.session.budgetStops > 0 ? ` (${snapshot.session.budgetStops} cut short by maxSteps)` : ""}`,
     `- Active / offline: ${formatMetric(snapshot.session.totalActiveSec, 0)}s / ${formatMetric(snapshot.session.totalOfflineSec, 0)}s`,
+    `- Wall elapsed / horizon: ${formatMetric(snapshot.session.elapsedSec, 0)}s / ${formatMetric(snapshot.session.horizonSec, 0)}s (${snapshot.session.stopReason})`,
+    `- Reward time: ${formatMetric(snapshot.session.rewardSec, 0)}s`,
+    `- Active time: ${formatMetric(snapshot.session.activeSec, 0)}s`,
+    `- Offline wall / credited / lost: ${formatMetric(snapshot.session.offlineElapsedSec, 0)}s / ${formatMetric(snapshot.session.offlineCreditedSec, 0)}s / ${formatMetric(snapshot.session.lostRewardSec, 0)}s`,
     "",
     "## End State",
     "",

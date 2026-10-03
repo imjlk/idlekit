@@ -5,7 +5,7 @@ import { usageError } from "../errors";
 import { createLazyReviewElement } from "../lib/reviewLazy";
 import type { ReviewEvaluateFlags } from "../lib/reviewEvaluate";
 
-const strategySchema = z.enum(["greedy", "planner", "scripted"]).optional();
+const strategySchema = z.string().min(1).optional();
 const sessionPatternSchema = z
   .enum(["always-on", "short-bursts", "twice-daily", "offline-heavy", "weekend-marathon"])
   .optional();
@@ -77,7 +77,15 @@ export default defineCommand({
       description: "Monte Carlo draw count override",
     }),
     seed: option(z.coerce.number().optional(), { description: "Deterministic seed override" }),
-    strategy: option(strategySchema, { description: "Override strategy id (greedy|planner|scripted)" }),
+    strategy: option(strategySchema, {
+      description: "Registered strategy id. Builtins remain greedy, planner, and scripted.",
+    }),
+    engine: option(z.string().min(1).optional(), {
+      description: "Execution engine. Default number. scenario.engine is metadata.",
+    }),
+    "consistent-overrides": option(z.coerce.boolean().default(false), {
+      description: "Also apply step and fast to the experience stage.",
+    }),
     fast: option(z.coerce.boolean().default(false), { description: "Enable fast mode for evaluate child runs" }),
     step: option(z.coerce.number().positive().optional(), { description: "Override stepSec for evaluate child runs" }),
     horizons: option(z.string().default("30m,2h,24h,7d,30d,90d"), {

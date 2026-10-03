@@ -1,4 +1,6 @@
-import { dirname, extname, isAbsolute, relative, resolve } from "path";
+import { realpathSync } from "fs";
+import { dirname, extname, isAbsolute, relative, resolve, sep } from "path";
+import { fileURLToPath } from "url";
 import {
   builtinObjectiveFactories,
   builtinStrategyFactories,
@@ -21,6 +23,17 @@ import { fileExists, readTextFile, sha256Hex } from "../runtime/bun";
 import { designObjectiveFactories } from "../lib/designObjectives";
 
 const ALLOWED_PLUGIN_EXTENSIONS = new Set([".js", ".mjs", ".cjs", ".ts", ".mts", ".cts"]);
+// Files whose imports the digest follows. Bun lets a .js file hold JSX, so JS scans as jsx.
+const SCAN_LOADERS: Readonly<Record<string, "jsx" | "ts" | "tsx">> = {
+  ".js": "jsx",
+  ".mjs": "jsx",
+  ".cjs": "jsx",
+  ".jsx": "jsx",
+  ".ts": "ts",
+  ".mts": "ts",
+  ".cts": "ts",
+  ".tsx": "tsx",
+};
 
 type LinearParams = {
   incomePerSec?: string;
@@ -378,7 +391,6 @@ export async function loadRegistries(
   for (const p of pluginPaths) {
     const abs = await resolveAndValidatePluginPath(p, allowedRoots);
     const actualDigest = await sha256File(abs);
-    pluginDigest[abs] = actualDigest;
     if (hasShaPolicy) {
       const expected = requiredSha256[abs];
       if (!expected) {
@@ -390,6 +402,9 @@ export async function loadRegistries(
         throw new Error(`Plugin sha256 mismatch for '${p}'. expected=${expected} actual=${actualDigest}`);
       }
     }
+    // A repeated path loads last again, so its digest moves to the end.
+    delete pluginDigest[abs];
+    pluginDigest[abs] = await pluginClosureDigest(abs, actualDigest);
     const mod = (await import(abs)) as PluginModule;
     const parsed = parsePluginModule(mod);
 
@@ -414,6 +429,58 @@ function isPathInsideRoot(pathAbs: string, rootAbs: string): boolean {
 async function sha256File(pathAbs: string): Promise<string> {
   const buffer = await Bun.file(pathAbs).bytes();
   return sha256Hex(buffer);
+}
+
+/** A local file Bun would load: relative, absolute, or a file: URL. Package imports are not followed. */
+function isLocalSpecifier(specifier: string): boolean {
+  return (
+    specifier === "." ||
+    specifier === ".." ||
+    specifier.startsWith("./") ||
+    specifier.startsWith("../") ||
+    specifier.startsWith("file:") ||
+    isAbsolute(specifier)
+  );
+}
+
+/**
+ * Digest of the plugin and every module it reaches through relative specifiers: static and
+ * re-export imports, dynamic import and require with a string literal, resolved the way Bun
+ * resolves them. Each file adds its path from the entry directory and its sha256, sorted by
+ * path, so a changed helper changes the digest and a copied tree in another directory keeps it.
+ * A plugin without relative imports keeps the entry file sha256. Package specifiers are not
+ * followed, so installed packages are not hashed. The trust policy still pins the entry file.
+ */
+async function pluginClosureDigest(entryAbs: string, entryDigest: string): Promise<string> {
+  const entryReal = realpathSync(entryAbs);
+  const baseDir = dirname(entryReal);
+  const files = new Map<string, string>([[entryReal, entryDigest]]);
+  const queue = [entryReal];
+  while (queue.length > 0) {
+    const file = queue.pop()!;
+    const loader = SCAN_LOADERS[extname(file).toLowerCase()];
+    if (!loader) continue;
+    const imports = new Bun.Transpiler({ loader }).scanImports(await readTextFile(file));
+    for (const { path: specifier } of imports) {
+      if (!isLocalSpecifier(specifier)) continue;
+      let target: string;
+      try {
+        const local = specifier.startsWith("file:") ? fileURLToPath(specifier) : specifier;
+        target = realpathSync(Bun.resolveSync(local, dirname(file)));
+      } catch {
+        // An unresolved import fails when the plugin loads, or is guarded by the plugin.
+        continue;
+      }
+      if (files.has(target)) continue;
+      files.set(target, await sha256File(target));
+      queue.push(target);
+    }
+  }
+  if (files.size === 1) return entryDigest;
+  const listing = [...files]
+    .map(([file, digest]) => `${relative(baseDir, file).split(sep).join("/")}\0${digest}`)
+    .sort();
+  return sha256Hex(listing.join("\n"));
 }
 
 async function resolveAndValidatePluginPath(input: string, allowedRoots: readonly string[]): Promise<string> {

@@ -1,5 +1,5 @@
 import { runScenario } from "../simulator";
-import type { CompiledScenario } from "../types";
+import { assertHorizonReached, type CompiledScenario } from "../types";
 
 export type PrestigeCycleObjective = "netWorthPerHour" | "pointsPerHour";
 
@@ -34,6 +34,8 @@ export function analyzePrestigeCycle<N, U extends string, Vars>(args: {
         trace: undefined,
       },
     });
+    // Rates divide by the interval, so a budget stop cannot stand for it.
+    assertHorizonReached(run, "analyzePrestigeCycle");
 
     const worth = args.scenario.model.netWorth?.(args.scenario.ctx, run.end) ?? run.end.wallet.money;
     const netWorthPerHour =

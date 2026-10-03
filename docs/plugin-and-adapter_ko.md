@@ -103,6 +103,9 @@ planner/optimizer 롤아웃은 `runScenario` 로직 복제가 아니라 `stepOnc
 - 단일 틱 전이 SSOT: `packages/core/src/sim/step.ts`
 - planner deps: `packages/core/src/sim/strategy/planner.ts`
 - `bulkSize`가 없거나 `1`이면 `Action.cost`를 한 번 내고 `apply`를 한 번 호출한다. 더 큰 정수는 실행 직전 `Action.bulk`에서 size가 같은 견적 하나만 골라 그 `cost`를 한 번 낸다. `apply`는 두 번째 결제를 하지 않는다. planner가 고른 size는 힌트이고, 저장된 이전 비용은 결제 금액이 아니다.
+- runner는 `durationSec`를 넘어 step하지 않는다. 마지막 틱은 `stepSec`보다 짧을 수 있다. 각 틱은 `ctx`를 복사하고 그 `stepSec`를 이번 `dt`로 둔다. 원래 context 객체는 쓰지 않는다. `ctx.stepSec`를 읽는 preview는 저장된 step이 아니라 runner의 시계를 본다. 서로 다른 step 크기를 정확히 같다고 두는 경우는 상수 수입뿐이다.
+
+독립 trial은 strategy cursor나 stateful model closure를 공유하지 않는다. `createRunFactory`는 fresh draw에서 `snapshotState`를 복원하고, `continue`에서는 그 cursor를 유지하며, `ModelFactory`나 `StrategyFactory`로 새 인스턴스를 만든다. factory도 snapshot hook도 없는 숨은 상태는 함수를 복제한다고 격리되지 않는다. stateful로 표시하면 실행 전에 `RunIsolationError`가 난다. `initial.vars`는 입력 scenario에서 복사된다. `ctx.E`는 공유된다. Engine 값은 불변으로 다룬다.
 
 ## 5. 어댑터 예제 프로젝트
 

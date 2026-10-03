@@ -1,8 +1,7 @@
 import { defineCommand, option } from "@bunli/core";
 import {
   applyOfflineSeconds,
-  compileScenario,
-  createNumberEngine,
+  constraintsWithAnchor,
   deserializeSimState,
   parseSimStateJSON,
   runScenario,
@@ -12,13 +11,12 @@ import {
 import { resolve } from "path";
 import { z } from "zod";
 import { loadRegistriesFromFlags, pluginOptions } from "./_shared/plugin";
-import { buildOfflineSummary, resolveEventLog } from "./_shared/simulateView";
+import { buildOfflineSummary, eventLogStageInputs, resolveEventLog } from "./_shared/simulateView";
 import {
   cliError,
   errorDetail,
   resumeStrategyMismatchError,
   scenarioInvalidError,
-  unknownStrategyError,
   usageError,
 } from "../errors";
 import { buildOutputMeta, deriveDeterministicRunId, deriveDeterministicSeed, hashContent } from "../io/outputMeta";
@@ -26,9 +24,10 @@ import { printNextSteps } from "../io/nextSteps";
 import { writeCommandReplayArtifact } from "../io/replayPolicy";
 import { readScenarioFile } from "../io/readScenario";
 import { writeOutput } from "../io/writeOutput";
+import { engineSeedOption, prepareResolvedRun, strategySeedOption } from "../lib/runConfiguration";
 import { readJsonFile, writeTextFile } from "../runtime/bun";
 
-const strategySchema = z.enum(["greedy", "planner", "scripted"]).optional();
+const strategySchema = z.string().min(1).optional();
 
 function assertValidScenario(valid: ReturnType<typeof validateScenarioV1>) {
   if (!valid.ok || !valid.scenario) {
@@ -37,20 +36,46 @@ function assertValidScenario(valid: ReturnType<typeof validateScenarioV1>) {
   return valid.scenario;
 }
 
-function resolveStrategy(args: {
-  compiled: ReturnType<typeof compileScenario<number, string, Record<string, unknown>>>;
-  overrideId?: z.infer<typeof strategySchema>;
-  loaded: Awaited<ReturnType<typeof loadRegistriesFromFlags>>;
+// Writers before the engine field only ran the number engine.
+function assertResumeEngine(args: {
+  engineId: string;
+  resumedJson: ReturnType<typeof parseSimStateJSON> | undefined;
 }) {
-  if (!args.overrideId) return args.compiled.strategy;
-  const factory = args.loaded.strategyRegistry.get(args.overrideId);
-  if (!factory) throw unknownStrategyError(args.overrideId);
-  const params = factory.defaultParams ?? {};
-  return factory.create(params) as typeof args.compiled.strategy;
+  if (!args.resumedJson) return;
+  const saved = args.resumedJson.engine?.name ?? "number";
+  if (saved !== args.engineId) {
+    throw cliError("SIM_STATE_ENGINE_MISMATCH", `Resume engine mismatch: expected ${args.engineId}, got ${saved}`, {
+      hint: `Pass --engine ${saved} to resume this state.`,
+    });
+  }
+}
+
+// Only what the run reads: deserializeSimState, the engine check, and restoreStrategyState.
+// meta and passthrough fields (path, savedAt, run id, versions) do not change the run.
+function resumeHash(json: ReturnType<typeof parseSimStateJSON> | undefined): string | null {
+  if (!json) return null;
+  const { v, unit, t, wallet, maxMoneyEver, prestige, vars, strategy } = json;
+  return hashContent({
+    v,
+    unit,
+    t,
+    wallet,
+    maxMoneyEver,
+    prestige,
+    vars,
+    engine: json.engine?.name ?? "number",
+    strategy: strategy
+      ? {
+          id: strategy.id,
+          ...(strategy.version !== undefined ? { version: strategy.version } : {}),
+          ...(strategy.state !== undefined ? { state: strategy.state } : {}),
+        }
+      : null,
+  });
 }
 
 function restoreStrategyState(args: {
-  strategy: ReturnType<typeof resolveStrategy>;
+  strategy: ReturnType<typeof prepareResolvedRun>["definition"]["strategy"];
   resumedJson: ReturnType<typeof parseSimStateJSON> | undefined;
 }) {
   if (!args.resumedJson?.strategy) return;
@@ -85,7 +110,12 @@ export default defineCommand({
     ...pluginOptions(),
     duration: option(z.coerce.number().optional(), { description: "Override durationSec" }),
     step: option(z.coerce.number().optional(), { description: "Override stepSec" }),
-    strategy: option(strategySchema, { description: "greedy|planner|scripted" }),
+    strategy: option(strategySchema, {
+      description: "Registered strategy id. Builtins remain greedy, planner, and scripted.",
+    }),
+    engine: option(z.string().min(1).optional(), {
+      description: "Execution engine. Default number. scenario.engine is metadata. breakInfinity is explicit. breakEternity is unsupported.",
+    }),
     fast: option(z.coerce.boolean().default(false), { description: "Enable fast(log-domain) mode" }),
     "event-log-enabled": option(z.coerce.boolean().optional(), {
       description: "Override event log retention enabled flag",
@@ -116,15 +146,6 @@ export default defineCommand({
     const loaded = await loadRegistriesFromFlags(flags);
     const scenario = assertValidScenario(validateScenarioV1(input, loaded.modelRegistry));
 
-    const E = createNumberEngine();
-    const compiled = compileScenario<number, string, Record<string, unknown>>({
-      E,
-      scenario,
-      registry: loaded.modelRegistry,
-      strategyRegistry: loaded.strategyRegistry,
-      opts: { allowSuffixNotation: true },
-    });
-
     const resumedJson = flags.resume
       ? await readJsonFile<unknown>(resolve(process.cwd(), flags.resume))
           .then((raw) => {
@@ -146,42 +167,23 @@ export default defineCommand({
           })
       : undefined;
 
-    const strategy = resolveStrategy({
-      compiled,
-      overrideId: flags.strategy,
-      loaded,
-    });
-    restoreStrategyState({
-      strategy,
-      resumedJson,
-    });
-
-    const eventLog = resolveEventLog({
-      defaultEventLog: compiled.run.eventLog,
-      eventLogEnabled: flags["event-log-enabled"],
-      eventLogMax: flags["event-log-max"],
-    });
-
-    const resumedState = resumedJson
-      ? deserializeSimState<number, string, Record<string, unknown>>(E, resumedJson, {
-          expectedUnit: compiled.ctx.unit.code,
-          unitFactory: (code) => ({ code }),
-        })
-      : undefined;
-
+    const resumeDigest = resumeHash(resumedJson);
+    const strategyId = flags.strategy ?? scenario.strategy?.id;
     const deterministicSeed =
       flags.seed ??
       deriveDeterministicSeed({
         command: "simulate",
         scenario,
-        scenarioPath: resolve(process.cwd(), scenarioPath),
-        resumeHash: resumedJson ? hashContent(resumedJson) : null,
+        resumeHash: resumeDigest,
         options: {
-          duration: flags.duration ?? compiled.run.durationSec,
-          step: flags.step ?? compiled.run.stepSec,
-          strategy: flags.strategy ?? strategy?.id,
-          fast: flags.fast,
+          duration: flags.duration ?? scenario.clock.durationSec,
+          step: flags.step ?? scenario.clock.stepSec,
+          strategy: strategyId,
+          ...strategySeedOption({ scenario, strategyRegistry: loaded.strategyRegistry, overrideId: flags.strategy }),
+          // A --fast over a sim.fast scenario runs the scenario's fast mode, so it keeps the no-flag seed.
+          fast: flags.fast && !scenario.sim?.fast,
           offlineSeconds: flags["offline-seconds"] ?? 0,
+          ...engineSeedOption(flags.engine),
         },
       });
     const runId =
@@ -191,10 +193,46 @@ export default defineCommand({
         seed: deterministicSeed,
         scope: {
           scenarioPath: resolve(process.cwd(), scenarioPath),
-          resumeHash: resumedJson ? hashContent(resumedJson) : null,
-          strategyId: strategy?.id,
+          resumeHash: resumeDigest,
+          strategyId,
         },
       });
+    const prepared = prepareResolvedRun({
+      scenario,
+      modelRegistry: loaded.modelRegistry,
+      strategyRegistry: loaded.strategyRegistry,
+      pluginDigest: loaded.pluginDigest,
+      engineRequest: flags.engine,
+      strategyOverride: flags.strategy,
+      stepSec: flags.step,
+      fast: flags.fast,
+      seed: deterministicSeed,
+    });
+    assertResumeEngine({ engineId: prepared.engine.effectiveId, resumedJson });
+    const eventLog = resolveEventLog({
+      defaultEventLog: prepared.definition.run.eventLog,
+      eventLogEnabled: flags["event-log-enabled"],
+      eventLogMax: flags["event-log-max"],
+    });
+    const opened = prepared.open("simulate", `simulate:${runId}`, {
+      durationSec: flags.duration ?? prepared.definition.run.durationSec,
+      offlineSeconds: flags["offline-seconds"] ?? 0,
+      resumeHash: resumeDigest,
+      // Hash the event log the run keeps, so a flag that repeats it keeps the hash.
+      ...eventLogStageInputs(prepared.definition.run.eventLog, eventLog),
+    });
+    const E = prepared.engine.engine as typeof prepared.definition.ctx.E;
+    const strategy = opened.scenario.strategy;
+    restoreStrategyState({
+      strategy,
+      resumedJson,
+    });
+    const resumedState = resumedJson
+      ? deserializeSimState<number, string, Record<string, unknown>>(E, resumedJson, {
+          expectedUnit: opened.scenario.ctx.unit.code,
+          unitFactory: (code) => ({ code }),
+        })
+      : undefined;
     const outputMeta = buildOutputMeta({
       command: "simulate",
       scenarioPath,
@@ -202,29 +240,25 @@ export default defineCommand({
       runId,
       seed: deterministicSeed,
       pluginDigest: loaded.pluginDigest,
+      effectiveRunHash: opened.hash,
+      effectiveEngine: prepared.engine.effectiveId,
+      stageScope: { simulate: opened.plan.stage.applies },
     });
     const generatedAt = outputMeta.generatedAt;
 
+    let lastResetT: number | undefined;
     const runScenarioInput = {
-      ...compiled,
-      initial: resumedState ?? compiled.initial,
-      ctx: {
-        ...compiled.ctx,
-        seed: deterministicSeed,
-      },
+      ...opened.scenario,
+      initial: resumedState ?? opened.scenario.initial,
       strategy,
       run: {
-        ...compiled.run,
-        stepSec: flags.step ?? compiled.run.stepSec,
-        durationSec: flags.duration ?? compiled.run.durationSec,
-        fast: flags.fast
-          ? {
-              enabled: true,
-              kind: "log-domain" as const,
-              disableMoneyEvents: true,
-            }
-          : compiled.run.fast,
+        ...opened.scenario.run,
+        durationSec: flags.duration ?? opened.scenario.run.durationSec,
         eventLog,
+        onPrestigeReset(t: number) {
+          lastResetT = t;
+          opened.scenario.run.onPrestigeReset?.(t);
+        },
       },
     };
 
@@ -247,16 +281,20 @@ export default defineCommand({
           })
         : undefined;
 
+    // The online run starts from a reset committed during offline catch-up.
     const effectiveScenario = offlineRun
       ? {
           ...runScenarioInput,
           initial: offlineRun.end,
+          ...(lastResetT !== undefined
+            ? { constraints: constraintsWithAnchor(runScenarioInput.constraints, lastResetT) }
+            : {}),
         }
       : runScenarioInput;
 
     const run = runScenario(effectiveScenario);
     const netWorth = effectiveScenario.model.netWorth?.(effectiveScenario.ctx, run.end) ?? run.end.wallet.money;
-    const totalElapsedSec = run.end.t - compiled.initial.t;
+    const totalElapsedSec = run.end.t - prepared.definition.initial.t;
     const stateOutPath = flags["state-out"] ? resolve(process.cwd(), flags["state-out"]) : undefined;
     const seed = deterministicSeed;
     const offlineEndWorth =
@@ -265,7 +303,7 @@ export default defineCommand({
     if (stateOutPath) {
       const strategyState = strategy?.snapshotState ? strategy.snapshotState() : undefined;
       const serialized = serializeSimState(E, run.end, {
-        engineName: "number",
+        engineName: prepared.engine.effectiveId,
         engineVersion: "1",
         scenarioPath,
         savedAt: generatedAt,

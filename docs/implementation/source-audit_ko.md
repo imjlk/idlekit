@@ -30,38 +30,35 @@ export나 명령이 있다는 것은 분석이 끝났다는 뜻이 아니다.
 
 재사용할 것도 있다. `stepOnce`, `Engine`의 `divN` / `cmp` / `absLog10`, strategy snapshot/restore, `deepClonePreservingPrototype`, `eventBuffer`, `OUTPUT_CONTRACT_VERSION`, Sampo, compat, replay, KPI gate.
 
-`packages/core/src/sim/simulator.ts`는 `fast`가 켜져 있어도 루프마다 `stepSec` 전체를 적용한다. 그 함수의 fast flag는 해석적 시간 건너뛰기가 아니다.
+`packages/core/src/sim/simulator.ts`는 마지막 짧은 틱을 포함해 매 틱 `stepOnce`를 호출한다. `fast`는 그 루프를 건너뛰지 않는다. 해석적 시간 건너뛰기가 아니다.
 
 ## 이번 세션에서 읽은 소스 사실
 
-아래는 제어 흐름 사실이다. 이 변경에서 그 사실을 실행한 fixture는 없다.
+아래는 제어 흐름 사실이다. 2번과 3번은 그 경로를 지금 실행하는 fixture를 가리킨다. 나머지 항목은 그 fixture가 실행하지 않았다.
 
 1. **Prestige cycle은 interval scan이다.** `analyzePrestigeCycle`은 interval마다 `durationSec`를 그 간격으로 두고 원래 scenario를 한 번 실행한다. reset을 반복하지 않는다. `breakEvenSec`는 `Math.min(interval, horizonSec)`다. `netWorthPerHour`와 `pointsPerHour`는 `Engine.toNumber`를 시간으로 나눈 값이다. 후속: `PR-10`, `PR-11`.
 2. **벌크 결제는 현재 견적을 한 번 낸다.** `PR-01`이 `stepOnce`를 바꿨다. `bulkSize`가 없거나 `1`이면 여전히 `Action.cost`를 한 번 뺀다. 그보다 큰 정수는 현재 상태에서 `Action.bulk`를 다시 읽고 그 `BulkQuote.cost`를 한 번 뺀 다음 `apply`를 한 번 호출한다. size가 없거나 중복이거나, 정수가 아니거나, 유한하지 않거나, 음수이거나, 단위가 다른 견적은 `apply` 전에 거부한다. 단건 비용만 빼고 `bulkSize`를 적용하던 이전 경로는 지금 제어 흐름이 아니다. Fixture: `packages/core/src/sim/step.bulk.test.ts`.
-3. **`runScenario`는 `stepSec` 전체를 진행하고, `maxSteps`를 종료 조건보다 먼저 본다.** duration 검사는 step 전의 `state.t`를 본다. horizon이 `stepSec`의 배수가 아니면 경계를 넘는 step까지 진행한다. `maxSteps`는 duration이나 `until` 검사 전에 `steps >= maxSteps`이면 throw한다. `applyOfflineSeconds`는 나머지를 나눈다. 후속: `PR-02`.
-4. **Planner rollout은 `node.firstDecision ?? decision`으로 첫 결정을 유지한다.** 첫 결정이 없는 상태와 명시적 no-op이 같은 빈 값이라, 이후 행동이 첫 대기를 바꿀 수 있다. rollout은 살아있는 `ctx`로 `stepOnce`를 호출한다. 후속: `PR-04`.
-5. **Monte Carlo는 model과 strategy 객체를 공유한다.** `deepClonePreservingPrototype`에 들어가는 것은 `initial`뿐이다. closure에 cursor를 두는 strategy는 draw 사이에 공유된다. 후속: `PR-03`.
-6. **Session 통계는 보관된 이벤트에서 다시 합산된다.** `runScenario`는 step 이벤트로 stats를 쌓은 뒤 `eventBuffer`가 보관한 `events`를 반환한다. `simulateSessionPattern`은 그 보관 목록에 `statsAcc.push(run.events)`를 한다. session이 합치는 값은 child `run.stats`가 아니다. session 안의 오프라인 catch-up은 `useStrategy: true`다. 후속: `PR-05`, `PR-06`.
-7. **오프라인 catch-up은 경제 시간만큼 `state.t`를 진행한다.** `resolveOfflineSeconds`는 `seconds`를 clamp와 decay로 `effectiveSec`로 줄일 수 있다. 이후 루프는 나머지를 포함해 `effectiveSec`를 step한다. 반환값 `offline.requestedSec`는 호출자가 준 seconds를 유지한다. session 일정은 그 다음 `state.t`를 읽는다. 후속: `PR-06`.
+3. **`runScenario`와 `applyOfflineSeconds`는 경제 horizon에서 멈춘다.** `PR-02`가 둘을 바꿨다. 마지막 틱은 `min(stepSec, horizon 안에 남은 시간)`이다. 이미 참인 duration이나 `until`은 `maxSteps`보다 먼저 끝난다. horizon을 요청했는데 `maxSteps`가 먼저이면 `stop.reason: "budget"`을 반환한다. duration과 `until`이 없고 `maxSteps`만 있으면 여전히 throw한다. 그 throw는 끝이 없는 루프에 대한 가드다. Fixture: `packages/core/src/sim/simulator.time.test.ts`. 이 변경이 정확한 동치로 다루는 dt 분할은 상수 수입뿐이다.
+4. **Planner rollout은 태그가 있는 첫 선택을 유지한다.** `PR-04`가 `node.firstDecision ?? decision`을 바꿨다. 첫 선택은 미설정, 대기, 또는 행동 하나다. 이후 구매가 첫 대기를 바꾸지 않으며, 그 대기에 대해 `decide()`는 `[]`를 반환한다. rollout은 복제한 state, 그 틱의 `dt`, `emit`을 뺀 `ctx`로 `stepOnce`를 호출한다. `minPrestigeIntervalSec`은 커밋된 step과 후보 필터가 같은 `decidePrestigeCooldown`을 쓴다. 마지막 reset 시각이 없으면 unanchored이며 과거 시각으로 다시 쓰지 않는다. 탐색은 상한이 있고 `globallyOptimal`은 false다. Fixture: `packages/core/src/sim/strategy/planner.regression.test.ts`. 재현 라벨은 `0x7104`다.
+5. **독립 trial은 새 model과 복원된 strategy에서 시작한다.** `PR-03`이 `createRunFactory`를 추가했다. `simulateMonteCarlo`는 모든 draw를 그 factory에 묶고, snapshot strategy를 그 호출에서 캡처한 cursor로 되돌린다. `ModelFactory`나 `StrategyFactory`는 fresh draw마다 새 인스턴스를 만든다. factory도 `snapshotState`/`restoreState`도 없는 compiled 인스턴스는 공유되며 stateless로 다룬다. 그 closure를 stateful로 표시하면 `RunIsolationError`가 난다. 함수를 deep clone하는 것은 격리가 아니다. `compileScenario`는 `initial.vars`를 `deepClonePreservingPrototype`으로 복사한다. Fixture: `packages/core/src/sim/runFactory.test.ts`. 재현 라벨은 `0x7103`이다. 여기서의 기준은 상수 수입이 아니라 draw 순서다.
+6. **Session 통계는 compact observation을 따른다.** `PR-05`는 fast 모드가 보관 로그에서 money 이벤트를 빼도 커밋된 step의 `observedMoney`를 센다. `simulateSessionPattern`은 child `run.observation`을 합치고 그 로그를 합산하지 않는다. `observation.enabled: false`는 null rate의 `missing`이다. observation이 없는 결과는 보관 이벤트로 돌아가며 `incomplete`로 남는다. 보상 간격 합성은 경계 간격을 유지한다. Fixture: `packages/core/src/sim/observation.test.ts`. 재현 라벨은 `0x7105`다. `PR-06`은 잘린 로그에서도 session clock 합계를 비교한다. 그 합계는 보관 이벤트를 읽지 않는다.
+7. **Session 벽시계는 `state.t`가 아니다.** `PR-06`은 다음 블록을 wall elapsed로 잡는다. `applyOfflineSeconds`는 여전히 시뮬레이션된 보상 초만큼 `state.t`를 진행한다. `offline.requestedSec`는 호출자가 준 부재 시간이다. cap과 decay는 `lostRewardSec`를 더하고 다음 active 블록을 앞당기지 않는다. 기본 오프라인 행동 정책은 `legacy-all`이다. `none`은 `decide`를 호출하지 않는다. Fixture: `packages/core/src/sim/session.test.ts`. 재현 라벨은 `0x7106`이다.
 8. **Analytic ETA는 양쪽을 `number`로 줄인다.** `etaAnalytic`은 목표를 `E.from`으로 읽고, 수입과 차액을 `E.toNumber`로 바꾼 뒤 나눈다. `constant` 수입이 high-confidence hint다. 후속: `PR-09`.
 9. **Growth regime은 slope 임계값이다.** `classify`는 slope `< 1e-6`을 `stall`, `< 0.01`을 `softcap`, `< 0.1`을 `exp`, 나머지를 `super-exp`로 둔다. `valueOfState`는 양을 `Number(...)`에 통과시킨다. 후속: `PR-12`.
-10. **`evaluate`는 모든 단계에 하나의 실행 구성을 넘기지 않는다.** 명령은 `createNumberEngine()`을 만든다. simulate 단계는 `overrideStrategy`, `flags.step`, `flags.fast`를 받는다. `collectExperienceSnapshot`은 그 strategy와 run override가 없는 `seededScenario`를 받는다. 후속: `PR-07`.
+10. **`evaluate`는 하나의 resolved plan에서 각 단계를 연다.** `PR-07`은 `prepareResolvedRun`에서 한 번 컴파일한다. simulate, experience, ltv는 각각 `createRunFactory`의 `fresh`를 호출한다. `--strategy`는 등록된 id이며 세 단계에 닿는다. `--step`과 `--fast`는 `--consistent-overrides`가 없으면 simulate와 ltv에 남는다. `scenario.engine`은 metadata다. 기본 엔진은 `number`다. `breakInfinity`는 명시 선택이다. `breakEternity`는 throw한다. 금액 `until` 경로는 `parseMoney`를 쓰고 숫자의 `Number(rawRight)` 분기로 가지 않는다. `scenarioHash`는 원래 시나리오 객체다. `effectiveRunHash`는 `generatedAt`과 절대 경로를 빼 둔다. `idlekit.resolved-run-configuration`은 TC-05 전에 등록하지 않는다. Fixture: `packages/cli/src/lib/runConfiguration.test.ts`. 재현 라벨은 `0x7107`이다. 실행 seed는 `1`이다.
 11. **첫 가시 변화가 없으면 Monte Carlo 요약에서 구간 길이 또는 0이 된다.** `summarizeExperienceMonteCarlo`는 분위수 요약 전에 `firstVisibleChangeSec ?? session.summary.totalActiveSec ?? 0`을 쓴다. 후속: `PR-13`.
 12. **KPI 회귀는 빠진 일부 guardrail 숫자를 0으로 채운다.** horizon은 `at7d`, `at30d`, `at90d`로 고정된다. `stallRatio`, `droppedRate`, `visibleChangesPerMinute`, `maxNoRewardGapSec`는 `Number(value ?? 0)`을 쓴다. 후속: `PR-17`.
 13. **Tuner spec은 strategy 파라미터다.** `TuneSpec`은 `strategy.baseParams`와 `strategy.space`를 가진다. 후속: `PR-14`. 기존 tuner를 교체하는 대신 별도 실험 spec으로 확장한다.
 
-이 커밋의 `packages/core/src/scenario/compile.ts`에는 `Number(rawRight)`가 없다. suffix와 런타임 비교 버그는 여기서 확정된 결함이 아니다. `PR-07`은 금액 비교를 다시 읽고 결함인지 판단한다.
+이 커밋의 `packages/core/src/scenario/compile.ts`는 `t`, `prestige.count`, 그리고 모르는 숫자 경로에 `Number(rawRight)`를 남긴다. 금액 경로는 그렇게 하지 않는다. 왼쪽이 숫자여도 `money`와 다른 금액 경로는 그 `Number` 분기로 옮기지 않는다.
 
 ## 아직 런타임 fixture가 필요한 위험
 
 - `bulk()` 견적이 `cost()`와 다른 action에서 size가 1보다 큰 경우.
-- horizon `10`, `stepSec` `6`, 그리고 같은 step에서 목표 도달과 `maxSteps`가 만나는 경우.
-- scripted strategy cursor 하나를 두 Monte Carlo draw가 쓰는 경우.
-- `eventLog.maxEvents`가 이벤트를 버릴 만큼 작을 때의 session stats.
-- 다음 session block이 벽시계를 따라야 하는 오프라인 상한 또는 감쇠.
+- horizon `10`, `stepSec` `6`은 `PR-02` fixture다. `until`과 budget이 같은 틱에서 만나는 목표는 아직 별도 fixture가 필요하다.
 - 양과 속도는 `number`에 들어가지 않고 비율은 유한한 경우.
 - `classify`가 현재 다른 이름을 붙이는 느린 지수와 빠른 지수.
-- `idk evaluate --strategy`와 같은 명령의 experience 단계 비교.
+- `idk evaluate --strategy`와 같은 명령의 experience 단계 비교. `PR-07`이 `keepsResolvedRunConfiguration`으로 그 경우를 다룬다.
 
 현재 숫자를 새 golden 파일의 정답으로 고정하지 않는다.
 

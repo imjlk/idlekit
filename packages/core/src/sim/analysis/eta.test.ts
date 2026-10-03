@@ -82,6 +82,29 @@ describe("etaSimulate", () => {
     expect(out.mode).toBe("simulate");
     expect(out.run).toBeDefined();
   });
+
+  it("still reports a target reached inside maxSteps", () => {
+    const scenario = makeScenario();
+    const out = etaSimulate({
+      scenario: { ...scenario, run: { ...scenario.run, maxSteps: 5 } },
+      target: { kind: "money", value: "3" },
+      maxDurationSec: 10,
+    });
+
+    expect(out.reached).toBeTrue();
+    expect(out.seconds).toBe(3);
+  });
+
+  it("rejects a run that maxSteps cut before the target or maxDuration", () => {
+    const scenario = makeScenario();
+    expect(() =>
+      etaSimulate({
+        scenario: { ...scenario, run: { ...scenario.run, maxSteps: 5 } },
+        target: { kind: "money", value: "999" },
+        maxDurationSec: 10,
+      }),
+    ).toThrow("etaSimulate exceeded maxSteps (5)");
+  });
 });
 
 describe("etaAnalytic", () => {

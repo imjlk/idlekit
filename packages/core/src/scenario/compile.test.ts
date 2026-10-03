@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
-import { createNumberEngine } from "../engine/breakInfinity";
-import { compileScenario } from "./compile";
+import { createBreakInfinityEngine, createNumberEngine } from "../engine/breakInfinity";
+import type { Engine } from "../engine/types";
+import { compileScenario, strategyCreateParams } from "./compile";
 import { createModelRegistry, type ModelFactory } from "./registry";
 import { createStrategyRegistry, type StrategyFactory } from "../sim/strategy/registry";
 import type { ScenarioV1 } from "./types";
@@ -538,5 +539,162 @@ describe("compileScenario", () => {
         unitFactory: (code) => ({ code: code as "COIN" }),
       }),
     ).toThrow("Invalid strategy params");
+  });
+
+  it("keeps suffix amounts on the amount path for number and breakInfinity", () => {
+    const modelFactory: ModelFactory = {
+      id: "m",
+      version: 1,
+      create: () => ({
+        id: "m",
+        version: 1,
+        income: (ctx: any) => ({ unit: ctx.unit, amount: ctx.E.zero() }),
+        actions: () => [],
+      }),
+    };
+    const strategyFactory: StrategyFactory = {
+      id: "s",
+      create: () => ({ id: "s", decide: () => [] }),
+    };
+    const scenario: ScenarioV1 = {
+      ...makeScenario(),
+      initial: { wallet: { unit: "COIN", amount: "0" } },
+      clock: { stepSec: 1, durationSec: 10, untilExpr: "money >= 1aa" },
+    };
+    const compile = <N>(E: Engine<N>) =>
+      compileScenario({
+        E,
+        scenario,
+        registry: createModelRegistry([modelFactory]),
+        strategyRegistry: createStrategyRegistry([strategyFactory]),
+        unitFactory: (code) => ({ code: code as "COIN" }),
+        opts: { allowSuffixNotation: true },
+      });
+    const numberRun = compile(createNumberEngine());
+    expect(numberRun.run.until?.(numberRun.initial)).toBeFalse();
+    expect(
+      numberRun.run.until?.({
+        ...numberRun.initial,
+        wallet: {
+          ...numberRun.initial.wallet,
+          money: { ...numberRun.initial.wallet.money, amount: 1000 },
+        },
+      }),
+    ).toBeTrue();
+    expect(
+      numberRun.run.until?.({
+        ...numberRun.initial,
+        wallet: {
+          ...numberRun.initial.wallet,
+          money: { ...numberRun.initial.wallet.money, amount: 999 },
+        },
+      }),
+    ).toBeFalse();
+
+    const bigEngine = createBreakInfinityEngine();
+    const bigRun = compile(bigEngine);
+    const below = bigEngine.from("1e399");
+    const exact = bigEngine.from("1e400");
+    const wide: ScenarioV1 = {
+      ...scenario,
+      clock: { stepSec: 1, durationSec: 10, untilExpr: "money >= 1e400" },
+    };
+    const wideRun = compileScenario({
+      E: bigEngine,
+      scenario: wide,
+      registry: createModelRegistry([modelFactory]),
+      strategyRegistry: createStrategyRegistry([strategyFactory]),
+      unitFactory: (code) => ({ code: code as "COIN" }),
+      opts: { allowSuffixNotation: true },
+    });
+    expect(typeof exact).not.toBe("number");
+    expect(bigEngine.isFinite(exact)).toBeTrue();
+    expect(Number.isFinite(Number("1e400"))).toBeFalse();
+    expect(
+      wideRun.run.until?.({
+        ...wideRun.initial,
+        wallet: { ...wideRun.initial.wallet, money: { ...wideRun.initial.wallet.money, amount: below } },
+      }),
+    ).toBeFalse();
+    expect(
+      wideRun.run.until?.({
+        ...wideRun.initial,
+        wallet: { ...wideRun.initial.wallet, money: { ...wideRun.initial.wallet.money, amount: exact } },
+      }),
+    ).toBeTrue();
+    expect(bigRun.run.until?.(bigRun.initial)).toBeFalse();
+  });
+
+  it("fails closed when an until left value is not finite", () => {
+    const modelFactory: ModelFactory = {
+      id: "m",
+      version: 1,
+      create: () => ({
+        id: "m",
+        version: 1,
+        income: (ctx: any) => ({ unit: ctx.unit, amount: ctx.E.zero() }),
+        actions: () => [],
+      }),
+    };
+    const strategyFactory: StrategyFactory = {
+      id: "s",
+      create: () => ({ id: "s", decide: () => [] }),
+    };
+    const compile = <N>(E: Engine<N>, untilExpr: string) =>
+      compileScenario({
+        E,
+        scenario: { ...makeScenario(), clock: { stepSec: 1, durationSec: 10, untilExpr } },
+        registry: createModelRegistry([modelFactory]),
+        strategyRegistry: createStrategyRegistry([strategyFactory]),
+        unitFactory: (code) => ({ code: code as "COIN" }),
+      });
+    const ops = ["<", "<=", "==", "!=", ">=", ">"];
+    const E = createNumberEngine();
+    for (const left of [Infinity, -Infinity, NaN]) {
+      for (const op of ops) {
+        const money = compile(E, `money ${op} 1`);
+        expect(
+          money.run.until?.({
+            ...money.initial,
+            wallet: { ...money.initial.wallet, money: { ...money.initial.wallet.money, amount: left } },
+          }),
+        ).toBeFalse();
+        const prestige = compile(E, `prestige.points ${op} 1`);
+        expect(
+          prestige.run.until?.({ ...prestige.initial, prestige: { count: 0, points: left, multiplier: 1 } }),
+        ).toBeFalse();
+        const vars = compile(E, `vars.x ${op} 1`);
+        expect(vars.run.until?.({ ...vars.initial, vars: { x: left } })).toBeFalse();
+      }
+    }
+
+    const bigEngine = createBreakInfinityEngine();
+    const left = bigEngine.from(NaN);
+    expect(bigEngine.isFinite(left)).toBeFalse();
+    for (const op of ops) {
+      const money = compile(bigEngine, `money ${op} 1`);
+      expect(
+        money.run.until?.({
+          ...money.initial,
+          wallet: { ...money.initial.wallet, money: { ...money.initial.wallet.money, amount: left } },
+        }),
+      ).toBeFalse();
+      const vars = compile(bigEngine, `vars.x ${op} 1`);
+      expect(vars.run.until?.({ ...vars.initial, vars: { x: left } })).toBeFalse();
+    }
+  });
+
+  it("keeps legacy raw strategy params unless validated mode is requested", () => {
+    const raw = { schemaVersion: 1, objective: "minPayback" };
+    const schema = {
+      "~standard": {
+        validate: (input: unknown) => ({ success: true as const, value: { ...(input as object), transformed: true } }),
+      },
+    };
+    expect(strategyCreateParams({ raw, schema, mode: "legacy-raw" }).params).toEqual(raw);
+    expect(strategyCreateParams({ raw, schema, mode: "validated" }).params).toEqual({
+      ...raw,
+      transformed: true,
+    });
   });
 });

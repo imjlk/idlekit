@@ -1,11 +1,11 @@
 import { defineCommand, option } from "@bunli/core";
-import { compileScenario, createNumberEngine, runScenario, validateScenarioV1 } from "@idlekit/core";
+import { runScenario, validateScenarioV1 } from "@idlekit/core";
 import { resolve } from "path";
 import { z } from "zod";
 import { pluginOptions, type PluginOptionFlags } from "./_shared/plugin";
 import { loadRegistriesFromFlags } from "./_shared/plugin";
-import { runLtvAnalysis } from "./ltv";
-import { scenarioInvalidError, unknownStrategyError, usageError } from "../errors";
+import { parseHorizons, runLtvAnalysis } from "./ltv";
+import { scenarioInvalidError, usageError } from "../errors";
 import { buildOutputMeta, deriveDeterministicRunId, deriveDeterministicSeed } from "../io/outputMeta";
 import { writeOutput } from "../io/writeOutput";
 import {
@@ -18,10 +18,11 @@ import {
   resolveSessionPatternSpec,
   summarizeExperienceMonteCarlo,
 } from "../lib/experience";
+import { engineSeedOption, prepareResolvedRun, strategySeedOption, workflowRunHash } from "../lib/runConfiguration";
 import { readScenarioFile } from "../io/readScenario";
 import { ensureDir, writeTextFile } from "../runtime/bun";
 
-const strategySchema = z.enum(["greedy", "planner", "scripted"]).optional();
+const strategySchema = z.string().min(1).optional();
 const sessionPatternSchema = z
   .enum(["always-on", "short-bursts", "twice-daily", "offline-heavy", "weekend-marathon"])
   .optional();
@@ -33,6 +34,8 @@ type EvaluateFlags = PluginOptionFlags &
     draws?: number;
     seed?: number;
     strategy?: z.infer<typeof strategySchema>;
+    engine?: string;
+    "consistent-overrides": boolean;
     fast: boolean;
     step?: number;
     horizons: string;
@@ -94,7 +97,15 @@ export default defineCommand({
       description: "Monte Carlo draw count for experience",
     }),
     seed: option(z.coerce.number().optional(), { description: "Deterministic seed override" }),
-    strategy: option(strategySchema, { description: "Override strategy id (greedy|planner|scripted)" }),
+    strategy: option(strategySchema, {
+      description: "Registered strategy id. Builtins remain greedy, planner, and scripted. Unknown ids are rejected.",
+    }),
+    engine: option(z.string().min(1).optional(), {
+      description: "Execution engine. Default number. scenario.engine is metadata. breakInfinity is explicit. breakEternity is unsupported.",
+    }),
+    "consistent-overrides": option(z.coerce.boolean().default(false), {
+      description: "Also apply step and fast to the experience stage. Default keeps those flags on simulate and ltv.",
+    }),
     fast: option(z.coerce.boolean().default(false), { description: "Enable fast mode for simulate/ltv" }),
     step: option(z.coerce.number().positive().optional(), { description: "Override stepSec for simulate/ltv" }),
     horizons: option(z.string().default("30m,2h,24h,7d,30d,90d"), {
@@ -121,62 +132,48 @@ export default defineCommand({
     }
 
     const scenarioAbs = resolve(process.cwd(), scenarioPath);
+    // Every stage runs on this seed, so the default reads only what every stage applies. Step, fast,
+    // session, draws, and horizons stay in the stage digests and do not move another stage's seed.
     const seed =
       flags.seed ??
       deriveDeterministicSeed({
         command: "evaluate",
         scenario: valid.scenario,
-        scenarioPath: scenarioAbs,
         options: {
-          sessionPattern: flags["session-pattern"],
-          days: flags.days,
-          draws: flags.draws,
-          strategy: flags.strategy,
-          fast: flags.fast,
-          step: flags.step,
-          horizons: flags.horizons,
+          // The no-flag input keeps this undefined key.
+          strategy: undefined,
+          ...strategySeedOption({
+            scenario: valid.scenario,
+            strategyRegistry: loaded.strategyRegistry,
+            overrideId: flags.strategy,
+          }),
+          ...engineSeedOption(flags.engine),
         },
       });
 
-    const E = createNumberEngine();
-    const compiled = compileScenario<number, string, Record<string, unknown>>({
-      E,
+    const prepared = prepareResolvedRun({
       scenario: valid.scenario,
-      registry: loaded.modelRegistry,
+      modelRegistry: loaded.modelRegistry,
       strategyRegistry: loaded.strategyRegistry,
-      opts: { allowSuffixNotation: true },
+      pluginDigest: loaded.pluginDigest,
+      engineRequest: flags.engine,
+      strategyOverride: flags.strategy,
+      stepSec: flags.step,
+      fast: flags.fast,
+      seed,
+      sessionId: flags["session-pattern"],
+      days: flags.days,
+      consistentOverrides: flags["consistent-overrides"],
     });
-
-    const overrideStrategy = (() => {
-      if (!flags.strategy) return compiled.strategy;
-      const factory = loaded.strategyRegistry.get(flags.strategy);
-      if (!factory) throw unknownStrategyError(flags.strategy);
-      return factory.create(factory.defaultParams ?? {}) as typeof compiled.strategy;
-    })();
-
-    const seededScenario = {
-      ...compiled,
-      ctx: {
-        ...compiled.ctx,
-        seed,
-      },
-    };
-
-    const simulateScenario = {
-      ...seededScenario,
-      strategy: overrideStrategy,
-      run: {
-        ...seededScenario.run,
-        stepSec: flags.step ?? seededScenario.run.stepSec,
-        fast: flags.fast
-          ? {
-              enabled: true,
-              kind: "log-domain" as const,
-              disableMoneyEvents: true,
-            }
-          : seededScenario.run.fast,
-      },
-    };
+    const E = prepared.engine.engine as typeof prepared.definition.ctx.E;
+    const simulateOpened = prepared.open("simulate", `evaluate:simulate:${seed}`, {
+      durationSec: prepared.definition.run.durationSec,
+      offlineSeconds: 0,
+      resumeHash: null,
+      eventLogEnabled: null,
+      eventLogMax: null,
+    });
+    const simulateScenario = simulateOpened.scenario;
     const simulateRun = runScenario(simulateScenario);
     const simulateNetWorth =
       simulateScenario.model.netWorth?.(simulateScenario.ctx, simulateRun.end) ?? simulateRun.end.wallet.money;
@@ -185,7 +182,7 @@ export default defineCommand({
       seed,
       scope: {
         scenarioPath: scenarioAbs,
-        strategyId: overrideStrategy?.id,
+        strategyId: simulateScenario.strategy?.id,
       },
     });
     const simulate = {
@@ -204,31 +201,39 @@ export default defineCommand({
       eventLog: simulateRun.eventLog,
     };
 
+    const experienceInputs = { draws: resolveExperienceDraws(prepared.definition, flags.draws) };
+    const experienceOpened = prepared.open("experience", `evaluate:experience:${seed}`, experienceInputs);
+    const experienceScenario = experienceOpened.scenario;
     const sessionPattern = resolveSessionPatternSpec({
-      scenario: seededScenario,
+      scenario: experienceScenario,
       sessionPatternId: resolveSessionPatternId(flags["session-pattern"]),
       days: flags.days,
     });
-    const draws = resolveExperienceDraws(seededScenario, flags.draws);
-    const series = resolveExperienceSeries(seededScenario);
-    const quantiles = resolveExperienceQuantiles(seededScenario);
+    const draws = resolveExperienceDraws(experienceScenario, flags.draws);
+    const series = resolveExperienceSeries(experienceScenario);
+    const quantiles = resolveExperienceQuantiles(experienceScenario);
     const { session, snapshot } = collectExperienceSnapshot({
-      scenario: seededScenario,
+      scenario: experienceScenario,
       sessionPattern,
       seed,
       series,
     });
-    const monteCarlo =
-      draws > 1
-        ? summarizeExperienceMonteCarlo({
-            scenario: seededScenario,
-            sessionPattern,
-            draws,
-            seed,
-            quantiles,
-            series,
-          })
-        : undefined;
+    // The deterministic session advanced experienceScenario's model and strategy. Monte Carlo opens
+    // its own stage and builds a new model and strategy for every draw from the registries.
+    const monteCarloStage =
+      draws > 1 ? prepared.open("experience", `evaluate:experience:${seed}:monte-carlo`, experienceInputs) : undefined;
+    const monteCarlo = monteCarloStage
+      ? summarizeExperienceMonteCarlo({
+          scenario: monteCarloStage.scenario,
+          registries: monteCarloStage.isolation.registries,
+          isolation: monteCarloStage.isolation.options,
+          sessionPattern,
+          draws,
+          seed,
+          quantiles,
+          series,
+        })
+      : undefined;
     const mode = draws > 1 ? ("monte-carlo" as const) : ("deterministic" as const);
     const experience = {
       mode,
@@ -245,8 +250,8 @@ export default defineCommand({
         netWorth: snapshot.endNetWorth,
         prestige: {
           count: session.end.prestige.count,
-          points: seededScenario.ctx.E.toString(session.end.prestige.points),
-          multiplier: seededScenario.ctx.E.toString(session.end.prestige.multiplier),
+          points: experienceScenario.ctx.E.toString(session.end.prestige.points),
+          multiplier: experienceScenario.ctx.E.toString(session.end.prestige.multiplier),
         },
       },
       session: snapshot.session,
@@ -265,21 +270,31 @@ export default defineCommand({
       },
     });
 
+    const ltvOpened = prepared.open("ltv", `evaluate:ltv:${seed}`, {
+      horizons: parseHorizons(flags.horizons),
+      draws: null,
+      valuePerWorth: null,
+    });
     const ltv = {
       scenario: scenarioAbs,
       ...runLtvAnalysis({
         scenario: valid.scenario,
         scenarioPath: scenarioAbs,
-        compiled: seededScenario,
-        strategy: overrideStrategy,
+        compiled: ltvOpened.scenario,
+        strategy: ltvOpened.scenario.strategy,
         horizonsRaw: flags.horizons,
-        step: flags.step,
-        fast: flags.fast,
+        step: ltvOpened.plan.stage.applies.step ? flags.step : undefined,
+        fast: ltvOpened.plan.stage.applies.fast ? flags.fast : false,
         seed,
       }),
     };
 
     const runId = simulate.run.id;
+    const stageScope = {
+      simulate: simulateOpened.plan.stage.applies,
+      experience: experienceOpened.plan.stage.applies,
+      ltv: ltvOpened.plan.stage.applies,
+    };
     const simulateMeta = buildOutputMeta({
       command: "simulate",
       runId: simulate.run.id,
@@ -287,6 +302,9 @@ export default defineCommand({
       scenario: valid.scenario,
       seed,
       pluginDigest: loaded.pluginDigest,
+      effectiveRunHash: simulateOpened.hash,
+      effectiveEngine: prepared.engine.effectiveId,
+      stageScope: { simulate: stageScope.simulate },
     });
     const experienceMeta = buildOutputMeta({
       command: "experience",
@@ -295,6 +313,9 @@ export default defineCommand({
       scenario: valid.scenario,
       seed,
       pluginDigest: loaded.pluginDigest,
+      effectiveRunHash: experienceOpened.hash,
+      effectiveEngine: prepared.engine.effectiveId,
+      stageScope: { experience: stageScope.experience },
     });
     const ltvMeta = buildOutputMeta({
       command: "ltv",
@@ -303,13 +324,24 @@ export default defineCommand({
       scenario: valid.scenario,
       seed,
       pluginDigest: loaded.pluginDigest,
+      effectiveRunHash: ltvOpened.hash,
+      effectiveEngine: prepared.engine.effectiveId,
+      stageScope: { ltv: stageScope.ltv },
     });
     const evaluateMeta = buildOutputMeta({
       command: "evaluate",
       scenarioPath: scenarioAbs,
+      scenario: valid.scenario,
       seed,
       runId,
       pluginDigest: loaded.pluginDigest,
+      effectiveRunHash: workflowRunHash({
+        simulate: simulateOpened.hash,
+        experience: experienceOpened.hash,
+        ltv: ltvOpened.hash,
+      }),
+      effectiveEngine: prepared.engine.effectiveId,
+      stageScope,
     });
 
     const files: Record<string, string> = {

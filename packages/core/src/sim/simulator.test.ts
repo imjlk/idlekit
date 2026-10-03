@@ -158,6 +158,27 @@ describe("runScenario", () => {
 
     // 2/sec * 10 sec total
     expect(run.end.wallet.money.amount).toBe(20);
+    expect(run.stop?.reason).toBe("duration");
+  });
+
+  it("does not run past a duration that is not a multiple of stepSec", () => {
+    const ctx = makeContext();
+    const model: Model<number, UnitCode, Vars> = {
+      id: "m",
+      version: 1,
+      income: () => ({ unit: { code: "COIN" }, amount: 1 }),
+      actions: () => [],
+    };
+    const run = runScenario({
+      ctx,
+      model,
+      initial: makeState(0),
+      run: { stepSec: 6, durationSec: 10 },
+    });
+    expect(run.end.t).toBe(10);
+    expect(run.end.wallet.money.amount).toBe(10);
+    expect(run.stop?.reason).toBe("duration");
+    expect(run.stop?.steps).toBe(2);
   });
 
   it("throws when no stop condition is provided", () => {
