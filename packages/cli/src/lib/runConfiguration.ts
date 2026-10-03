@@ -378,13 +378,13 @@ function executionPlanFrom(plan: ResolvedRunPlan): ExecutionPlan {
     stepSec: plan.stepSec.value,
     ...(plan.seed !== undefined ? { seed: plan.seed } : {}),
     ...(plan.strategy.id !== undefined
-      ? { strategyId: plan.strategy.id, strategyParams: plan.strategy.params }
+      ? { strategyId: plan.strategy.id, strategyParams: plan.strategy.params, strategyParamsMode: plan.strategy.paramsMode }
       : {}),
     ...(plan.fast !== undefined ? { fast: plan.fast } : {}),
   };
 }
 
-/** The scenario model and the plan strategy, each built from its factory. */
+/** The scenario model and the plan strategy, each built from its factory. Validated params are not checked again. */
 function stageBindOptions(scenario: ScenarioV1, plan: ResolvedRunPlan): RunBindOptions {
   return {
     model: {
@@ -393,7 +393,7 @@ function stageBindOptions(scenario: ScenarioV1, plan: ResolvedRunPlan): RunBindO
       params: scenario.model.params,
     },
     ...(plan.strategy.id !== undefined
-      ? { strategy: { id: plan.strategy.id, params: plan.strategy.params } }
+      ? { strategy: { id: plan.strategy.id, params: plan.strategy.params, paramsMode: plan.strategy.paramsMode } }
       : {}),
   };
 }

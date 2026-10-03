@@ -5,6 +5,7 @@ import {
   createBreakInfinityEngine,
   createModelRegistry,
   createNumberEngine,
+  createRunFactory,
   createScriptedStrategy,
   createStrategyRegistry,
   runScenario,
@@ -361,9 +362,9 @@ export function digestsEachStageFromItsAppliedPlan(): void {
 
 /**
  * @evidence docs/requirements/active/cli-resolved-run.md#req-pr07-resolved-run An override runs over an unregistered scenario strategy and over invalid scenario strategy params, and without the override both still fail. Validated params build the scenario strategy only from the schema value.
- * @evidenceReview docs/requirements/active/cli-resolved-run.md#req-pr07-resolved-run #13c991d Re-read the strategy paragraph: the flag replaces the scenario strategy, which is not built, and without the flag a broken one still fails. Re-read the params mode paragraph: validated mode compiles without the scenario strategy and each stage builds it from result.value. Ran this function: custom.once buys once over plugin.missing and over scripted params without a program, and without the override they throw Unknown strategy and Invalid strategy params. A schema that coerces n "1" to 1 runs in validated mode, its create sees only 1, and legacy-raw still throws the create error at prepare.
+ * @evidenceReview docs/requirements/active/cli-resolved-run.md#req-pr07-resolved-run #13c991d Re-read the strategy paragraph: the flag replaces the scenario strategy, which is not built, and without the flag a broken one still fails. Re-read the params mode paragraph: validated mode compiles without the scenario strategy and each stage builds it from result.value. Ran this function: custom.once buys once over plugin.missing and over scripted params without a program, and without the override they throw Unknown strategy and Invalid strategy params. A schema that coerces n "1" to 1 runs in validated mode, its create sees only 1, and legacy-raw still throws the create error at prepare. A schema that turns "1" into 1 and rejects 1 opens and buys once in validated mode, the stage and a rebind from its isolation options both create with 1, and legacy-raw with n 1 throws Invalid strategy params.
  * @evidence ./runConfiguration.ts#prepareResolvedRun An override or validated params compile without the scenario strategy, and a legacy-raw run without an override keeps the scenario strategy errors.
- * @evidenceReview ./runConfiguration.ts#prepareResolvedRun #1ca60bb Re-read prepareResolvedRun: resolveStrategySelection runs first, and a command-selected strategy or a validated selection compiles the scenario without its strategy field. Ran this function: both broken scenarios open a simulate stage that buys once under the override, and prepare throws the scenario strategy error without it. The validated custom.coerce scenario plans params { n: 1 }, buys once, and its create is called only with 1, while legacy-raw throws the create error at prepare.
+ * @evidenceReview ./runConfiguration.ts#prepareResolvedRun #1ca60bb Re-read prepareResolvedRun: resolveStrategySelection runs first, and a command-selected strategy or a validated selection compiles the scenario without its strategy field. Ran this function: both broken scenarios open a simulate stage that buys once under the override, and prepare throws the scenario strategy error without it. The validated custom.coerce scenario plans params { n: 1 }, buys once, and its create is called only with 1, while legacy-raw throws the create error at prepare. The validated custom.transform scenario, whose schema rejects its own value, opens and buys once, and its isolation options rebind with 1.
  */
 export function overrideReplacesBrokenScenarioStrategy(): void {
   const loaded = registries();
@@ -407,6 +408,40 @@ export function overrideReplacesBrokenScenarioStrategy(): void {
   expect(runScenario(stage.scenario).end.vars).toEqual({ bought: 1 });
   expect(created).toEqual([1]);
   expect(() => prepareResolvedRun({ scenario: raw, ...coerced, seed: 1 })).toThrow(/^custom.coerce needs a number n$/);
+
+  // A transforming schema that rejects its own value: the stage and its Monte Carlo bind options
+  // build from { n: 1 } without a second check, and legacy-raw still checks the raw params.
+  created.length = 0;
+  const transforming: StrategyFactory = {
+    ...coercing,
+    id: "custom.transform",
+    paramsSchema: {
+      "~standard": {
+        validate: (input: unknown) => {
+          const { n } = input as { n: unknown };
+          return typeof n === "string"
+            ? { success: true as const, value: { n: Number(n) } }
+            : { success: false as const, issues: [{ message: "n must be a string" }] };
+        },
+      },
+    } as StrategyFactory["paramsSchema"],
+  };
+  const transformed = {
+    ...loaded,
+    strategyRegistry: createStrategyRegistry([...builtinStrategyFactories, transforming]),
+  };
+  const strict: ScenarioV1 = { ...scenario(), strategy: { id: "custom.transform", params: { n: "1" } } };
+  const opened = prepareResolvedRun({ scenario: strict, ...transformed, paramsMode: "validated", seed: 1 }).open(
+    "simulate",
+    "transform",
+  );
+  expect(runScenario(opened.scenario).end.vars).toEqual({ bought: 1 });
+  const draws = createRunFactory(opened.isolation.registries).bind(opened.scenario, opened.isolation.options);
+  draws.fresh({ trialId: "draw", seed: 1 });
+  expect(created).toEqual([1, 1]);
+  expect(() =>
+    prepareResolvedRun({ scenario: { ...strict, strategy: { id: "custom.transform", params: { n: 1 } } }, ...transformed, seed: 1 }),
+  ).toThrow(/^Invalid strategy params: n must be a string$/);
 }
 
 /**

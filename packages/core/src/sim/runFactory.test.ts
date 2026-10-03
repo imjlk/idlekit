@@ -142,7 +142,7 @@ function statefulIncomeFactory() {
 
 /**
  * @evidence docs/requirements/active/run-lifecycle-isolation.md#req-pr03-run-lifecycle-isolation Runs a fresh scripted draw twice, a stateful model in both orders, one continued session, a frozen vars input, and an unisolated closure.
- * @evidenceReview docs/requirements/active/run-lifecycle-isolation.md#req-pr03-run-lifecycle-isolation #945269a Re-read the section, including bind-time and plan params checks, one-hook strategies shared as stateless, a factory strategy without a snapshot pair continued on its own instance, a continue from another factory or params starting without the previous snapshot, and the canonical plan identity, then ran this function: a second scripted draw still buys once, stateful income stays at 3 in both orders, twice-daily applies a0 through a3, and a frozen vars input stays at 0.
+ * @evidenceReview docs/requirements/active/run-lifecycle-isolation.md#req-pr03-run-lifecycle-isolation #0f668dd Re-read the section, including bind-time and plan params checks, validated params passed to create without a second check, one-hook strategies shared as stateless, a factory strategy without a snapshot pair continued on its own instance, a continue from another factory or params starting without the previous snapshot, and the canonical plan identity, then ran this function: a second scripted draw still buys once, stateful income stays at 3 in both orders, twice-daily applies a0 through a3, and a frozen vars input stays at 0.
  * @evidence ./runFactory.ts#executionStream Reads the committed stream name and derives it from trial id 0x7103.
  * @evidenceReview ./runFactory.ts#executionStream #0a4e437 The declaration is the string execution. This test derives that stream from trial id rng and seed 0x7103.
  * @evidence ./runFactory.ts#previewStream Reads the preview stream name and refuses to restore it onto the committed stream.
@@ -154,7 +154,7 @@ function statefulIncomeFactory() {
  * @evidence ./runFactory.ts#createStreamRng A direct execution RNG replays the same draw after restoring its first snapshot.
  * @evidenceReview ./runFactory.ts#createStreamRng #33f7c52 Re-read createStreamRng: it rejects a non-finite seed, snapshots stream, seed, and state, and restore throws on a stream mismatch. Ran this function: the direct execution RNG repeats its first draw after restore, and restoring a preview snapshot onto the execution RNG throws.
  * @evidence ./runFactory.ts#executionPlanIdentity A copied plan has the same identity, and a different stepSec changes it.
- * @evidenceReview ./runFactory.ts#executionPlanIdentity #14dada6 Re-read executionPlanIdentity: it checks the plan contract and returns canonical JSON of the plan fields with object keys sorted at every depth. Ran this function: a spread copy has the same identity and stepSec 3 changes it.
+ * @evidenceReview ./runFactory.ts#executionPlanIdentity #a897374 Re-read executionPlanIdentity: it checks the plan contract and returns canonical JSON of the plan fields with object keys sorted at every depth, with an omitted strategyParamsMode as legacy-raw. Ran this function: a spread copy has the same identity and stepSec 3 changes it.
  * @evidence ./runFactory.ts#createRunFactory Fresh scripted and stateful-model draws do not share state, continue keeps the cursor, resume restores the checkpoint cursor, a plan selects the strategy and clock, and an unisolated closure throws RunIsolationError.
  * @evidenceReview ./runFactory.ts#createRunFactory #5db40de Re-read createRunFactory: bind holds the strategy as factory, snapshot, stateless, or none, fresh restores the bound snapshot or builds a new factory instance, continue keeps the model and cursor (a factory strategy without a snapshot pair keeps its instance when factory and params match; another factory or params, or a bound snapshot strategy after another strategy, starts fresh), a checkpoint writes a strategy entry only for a snapshot pair, even one that saves undefined, and leaves a one-hook strategy out, resume restores checkpoint streams and strategy bytes only into the strategy id and state version that wrote them, and a stateful closure without a factory or snapshot pair throws RunIsolationError. Ran this function: scripted draws buy once each, stateful income stays 3 in both orders, twice-daily applies a0 through a3, continue and resume keep cursor 2, a plan sets seed 9 and step 2, and both isolation flags throw.
  */
@@ -654,6 +654,49 @@ describe("run factory review fixes", () => {
     planned.fresh({ trialId: "p", seed: 1, plan: { ...plan, strategyParams: { n: 4 } } });
     planned.fresh({ trialId: "p", seed: 1, plan: { ...plan, strategyId: "defaulted" } });
     expect(created).toEqual([{ n: 4 }, { n: 3 }]);
+  });
+  it("does not check validated strategy params against the schema again", () => {
+    // Accepts the string "1" and transforms it to 1. The number 1 is not a valid input.
+    const transforming = {
+      "~standard": {
+        validate: (input: unknown) =>
+          typeof (input as { n?: unknown })?.n === "string"
+            ? { success: true as const, value: { n: Number((input as { n: string }).n) } }
+            : { success: false as const, issues: [{ message: "n must be a string" }] },
+      },
+    };
+    const created: unknown[] = [];
+    const strategies = createStrategyRegistry([
+      {
+        id: "transformed",
+        paramsSchema: transforming,
+        defaultParams: { n: "2" },
+        create: (params) => {
+          created.push(params);
+          return { id: "transformed", decide: () => [] };
+        },
+      },
+    ]);
+    const scenario = compiled({ stepSec: 1, durationSec: 1, vars: { buys: 0 }, model: buyModel() });
+    const factory = createRunFactory({ strategies });
+    factory.bind(scenario, { strategy: { id: "transformed", params: { n: 1 }, paramsMode: "validated" } }).fresh({ trialId: "b", seed: 1 });
+    factory.bind(scenario, { strategy: { id: "transformed", paramsMode: "validated" } }).fresh({ trialId: "d", seed: 1 });
+    const plan: ExecutionPlan = { contract: "idlekit.execution-plan", version: 1, stepSec: 1, strategyId: "transformed" };
+    factory.bind(scenario).fresh({ trialId: "p", seed: 1, plan: { ...plan, strategyParams: { n: 1 }, strategyParamsMode: "validated" } });
+    expect(created).toEqual([{ n: 1 }, { n: 2 }, { n: 1 }]);
+
+    // legacy-raw still checks, and passes the caller object.
+    expect(() => factory.bind(scenario, { strategy: { id: "transformed", params: { n: 1 } } })).toThrow(
+      "Invalid strategy params: n must be a string",
+    );
+    expect(() => factory.bind(scenario).fresh({ trialId: "p", seed: 1, plan: { ...plan, strategyParams: { n: 1 } } })).toThrow(
+      "Invalid strategy params: n must be a string",
+    );
+    created.length = 0;
+    factory.bind(scenario, { strategy: { id: "transformed", params: { n: "1" } } }).fresh({ trialId: "r", seed: 1 });
+    expect(created).toEqual([{ n: "1" }]);
+    expect(executionPlanIdentity({ ...plan, strategyParamsMode: "legacy-raw" })).toBe(executionPlanIdentity(plan));
+    expect(executionPlanIdentity({ ...plan, strategyParamsMode: "validated" })).not.toBe(executionPlanIdentity(plan));
   });
   it("resumes a checkpoint only into the strategy id and state version that wrote it", () => {
     type Vars = { applied: string[] };
