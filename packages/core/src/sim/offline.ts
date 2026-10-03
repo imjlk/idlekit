@@ -146,6 +146,7 @@ export function applyOfflineSeconds<N, U extends string, Vars>(args: {
   let simulatedSec = 0;
   const maxActionsPerStep = scenario.constraints?.maxActionsPerStep ?? Infinity;
   let constraints = scenario.constraints;
+  recorder.recordStart(start);
   let stop: RunStop | undefined;
 
   while (stop === undefined) {

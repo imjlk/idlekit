@@ -915,6 +915,7 @@ describe("offline gaps cut by a session stop", () => {
       expect(out.summary.elapsedSec).toBe(0);
       expect(out.summary.offlineElapsedSec).toBe(0);
       expect(out.summary.lostRewardSec).toBe(0);
+      if ("goals" in stop) expect(out.run.observation?.goals).toEqual([{ id: "now", status: "reached", t: 0 }]);
     }
   });
 
