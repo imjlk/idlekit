@@ -11,7 +11,7 @@ import type { CompiledScenario, Model, ScenarioConstraints, SimContext, SimRunOp
  * `previewStream` is the other stream. Restoring one over the other throws.
  *
  * @evidence docs/requirements/active/run-lifecycle-isolation.md#req-pr03-run-lifecycle-isolation A fresh trial derives this stream from the logical trial id. Preview is not this stream.
- * @evidenceReview docs/requirements/active/run-lifecycle-isolation.md#req-pr03-run-lifecycle-isolation #ad06072 Re-read the section: this is the committed stream, derived from the logical trial id.
+ * @evidenceReview docs/requirements/active/run-lifecycle-isolation.md#req-pr03-run-lifecycle-isolation #945269a Re-read the section: this is the committed stream, derived from the logical trial id.
  */
 export const executionStream = "execution" as const;
 
@@ -20,7 +20,7 @@ export const executionStream = "execution" as const;
  * It is not restored onto `executionStream`.
  *
  * @evidence docs/requirements/active/run-lifecycle-isolation.md#req-pr03-run-lifecycle-isolation Preview uses this stream. A committed step does not advance it.
- * @evidenceReview docs/requirements/active/run-lifecycle-isolation.md#req-pr03-run-lifecycle-isolation #ad06072 Re-read the section: preview is a separate stream and is not restored onto execution.
+ * @evidenceReview docs/requirements/active/run-lifecycle-isolation.md#req-pr03-run-lifecycle-isolation #945269a Re-read the section: preview is a separate stream and is not restored onto execution.
  */
 export const previewStream = "preview" as const;
 
@@ -400,19 +400,21 @@ function sameStrategySource(strategy: object, source: StrategySource): boolean {
 }
 
 /**
- * Continue keeps the cursor. A snapshot pair is restored onto a new instance.
- * Without a pair, the previous instance from the same factory and params is reused.
- * Another factory or params is another strategy and starts new.
+ * Continue keeps the cursor of the same factory and params.
+ * A snapshot pair is restored onto a new instance. Without a pair, the previous instance is reused.
+ * Another factory or params is another strategy and starts new, without the previous snapshot.
  */
 function continueStrategy<N, U extends string, Vars>(
   source: StrategySource,
   previous: Strategy<N, U, Vars> | undefined,
 ): Strategy<N, U, Vars> {
-  const restorable =
-    typeof previous?.snapshotState === "function" && typeof previous.restoreState === "function";
-  if (previous && !restorable && sameStrategySource(previous, source)) return previous;
+  if (!previous || !sameStrategySource(previous, source)) {
+    return createStrategy<N, U, Vars>(source.factory, source.params);
+  }
+  const restorable = typeof previous.snapshotState === "function" && typeof previous.restoreState === "function";
+  if (!restorable) return previous;
   const created = createStrategy<N, U, Vars>(source.factory, source.params);
-  if (previous?.snapshotState) restoreStrategy(created, previous.snapshotState());
+  restoreStrategy(created, previous.snapshotState?.());
   return created;
 }
 
@@ -440,7 +442,7 @@ function restoreCheckpointStrategy<N, U extends string, Vars>(
  * This function does not read CLI flags or plugin files.
  *
  * @evidence docs/requirements/active/run-lifecycle-isolation.md#req-pr03-run-lifecycle-isolation Fresh trials do not share strategy cursors, model closures, or initial vars. Continue keeps the cursor. Resume uses snapshotState.
- * @evidenceReview docs/requirements/active/run-lifecycle-isolation.md#req-pr03-run-lifecycle-isolation #ad06072 Re-read the section: fresh trials restore or rebuild strategy state, continue keeps the cursor (a factory strategy without a snapshot pair keeps its instance when factory and params match), plan strategy params are checked like bound params, and a marked closure without a factory throws.
+ * @evidenceReview docs/requirements/active/run-lifecycle-isolation.md#req-pr03-run-lifecycle-isolation #945269a Re-read the section: fresh trials restore or rebuild strategy state, continue keeps the cursor of the same factory and params (a factory strategy without a snapshot pair keeps its instance; another factory or params, or a bound snapshot strategy after another strategy, starts fresh), plan strategy params are checked like bound params, and a marked closure without a factory throws.
  */
 export function createRunFactory(deps?: RunFactoryDeps): RunFactory {
   const registries = deps ?? {};
@@ -590,7 +592,10 @@ export function createRunFactory(deps?: RunFactoryDeps): RunFactory {
           return created;
         }
         if (strategies.kind === "snapshot" && strategies.shared) {
-          if (mode === "fresh") restoreStrategy(strategies.shared, strategies.initialState);
+          // A continue from another strategy is a changed source and starts from the bind snapshot.
+          if (mode === "fresh" || (mode === "continue" && previous !== strategies.shared)) {
+            restoreStrategy(strategies.shared, strategies.initialState);
+          }
           if (mode === "resume") {
             if (!checkpoint?.strategy) throw new Error("resume checkpoint is missing strategy state");
             restoreCheckpointStrategy(strategies.shared, checkpoint.strategy);
