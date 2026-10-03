@@ -307,7 +307,8 @@ export function createObservationRecorder<N, U extends string, Vars>(args: {
       dt: number;
       events: readonly SimEvent<N>[];
       observedMoney?: MoneyFacts & { rewarded?: boolean };
-      prestigeChanged: boolean;
+      /** A prestige action committed on this step. Count or points edits by other actions do not count. */
+      prestigeApplied: boolean;
       state: SimState<N, U, Vars>;
     }): void {
       endT = step.t1;
@@ -352,7 +353,7 @@ export function createObservationRecorder<N, U extends string, Vars>(args: {
           rememberMilestone({ key: event.key, firstSeenT: step.t1, source: "milestone" });
         }
       }
-      if (step.prestigeChanged) {
+      if (step.prestigeApplied) {
         rememberMilestone({ key: "prestige.first", firstSeenT: step.t1, source: "prestige" });
       }
       recordGoals(step.state, step.t1);

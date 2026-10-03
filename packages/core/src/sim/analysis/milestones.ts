@@ -100,6 +100,7 @@ export function analyzeMilestones<N, U extends string, Vars>(args: {
     }
   }
 
+  // The compact recorder marks a committed prestige action. This fallback has no action kinds, so it reads count and points.
   const prestiged =
     run.end.prestige.count > run.start.prestige.count ||
     String(run.end.prestige.points as any) !== String(run.start.prestige.points as any);

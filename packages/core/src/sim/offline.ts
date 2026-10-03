@@ -223,9 +223,7 @@ export function applyOfflineSeconds<N, U extends string, Vars>(args: {
       dt: decision.dt,
       events: out.events,
       observedMoney: out.observedMoney,
-      prestigeChanged:
-        out.next.prestige.count !== out.prev.prestige.count ||
-        String(out.next.prestige.points) !== String(out.prev.prestige.points),
+      prestigeApplied: out.prestigeResetT !== undefined,
       state,
     });
     eventBuffer.pushTimed(timeStepEvents(out.events, actionStartT, state.t));

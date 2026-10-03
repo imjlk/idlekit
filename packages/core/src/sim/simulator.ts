@@ -118,9 +118,7 @@ export function runScenario<N, U extends string, Vars>(
       dt: decision.dt,
       events: step.events,
       observedMoney: step.observedMoney,
-      prestigeChanged:
-        step.next.prestige.count !== step.prev.prestige.count ||
-        String(step.next.prestige.points) !== String(step.prev.prestige.points),
+      prestigeApplied: step.prestigeResetT !== undefined,
       state,
     });
     eventBuffer.pushTimed(timeStepEvents(step.events, actionStartT, state.t));

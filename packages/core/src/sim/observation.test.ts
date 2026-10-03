@@ -3,6 +3,7 @@ import { createBreakInfinityEngine, createNumberEngine, Decimal } from "../engin
 import { analyzeMilestones } from "./analysis/milestones";
 import { createSimStatsAccumulator } from "./analysis/ux";
 import { maxNoRewardGapSec, mergeObservations, mergeRewardGaps, observationContract, observationFromLegacyEvents, ObservationError } from "./observation";
+import { applyOfflineSeconds } from "./offline";
 import { createGreedyStrategy } from "./strategy/greedy";
 import { runScenario } from "./simulator";
 import type { CompiledScenario, Model, SimState } from "./types";
@@ -84,7 +85,7 @@ function scenario(args: {
  * @evidence ./observation.ts#statsFromObservation Four retention policies report the same applied money and action counts, and a disabled observation reports missing with a null dropped rate.
  * @evidenceReview ./observation.ts#statsFromObservation #d271a75 Re-read statsFromObservation: it passes coverage, money, and action counters from the observation to simStatsFromCounters and does not read events. Ran this function: four retention policies report applied money 6 and actions 6, and the disabled run reports status missing, a null dropped rate, and coverage disabled.
  * @evidence ./observation.ts#createObservationRecorder Counts come from committed steps under every retention policy, a milestone cap marks partial coverage, a goal records its step end, goal.met sees a clone, and an observer throw becomes ObservationError.
- * @evidenceReview ./observation.ts#createObservationRecorder #d864968 Re-read createObservationRecorder: it rejects a maxMilestones or maxGoals that is not an integer >= 0, recordStep counts observedMoney and action events from each committed step, caps milestones and goals separately, counts a milestone key past maxMilestones once, counts a met goal past maxGoals once and leaves it out of goals instead of reporting it unreached, still tells the observer about a capped milestone key or goal once, action-derived firstApplied and first-upgrade keys included, recordStart checks the open goals on the start state at its own t, reads each open goal through readGoal, which hands goal.met its own clone and reuses a session goal's answer for the same committed state, wraps observer throws in ObservationError, and finish returns a disabled observation when recording is off. Ran this function: counters match across retention, maxMilestones 1 is partial, goal two is reached at t 2, the goal that writes its argument leaves the wallet at 0, a goal that writes vars does not make the next goal reached, and a throwing onStep throws ObservationError. The goal and milestone retention tests show maxGoals 0 still reports one at 1 and two at 2 to onGoal, and maxMilestones 0 reports action.buy.firstApplied and progress.first-upgrade at 0 and level-1 at 1 to onMilestone once each. A goal that holds at t 0 is reached at 0, also when until stops the run before any step.
+ * @evidenceReview ./observation.ts#createObservationRecorder #4ade832 Re-read createObservationRecorder: it rejects a maxMilestones or maxGoals that is not an integer >= 0, recordStep counts observedMoney and action events from each committed step, records prestige.first only when the runner says a prestige action applied, caps milestones and goals separately, counts a milestone key past maxMilestones once, counts a met goal past maxGoals once and leaves it out of goals instead of reporting it unreached, still tells the observer about a capped milestone key or goal once, action-derived firstApplied and first-upgrade keys included, recordStart checks the open goals on the start state at its own t, reads each open goal through readGoal, which hands goal.met its own clone and reuses a session goal's answer for the same committed state, wraps observer throws in ObservationError, and finish returns a disabled observation when recording is off. Ran this function: counters match across retention, maxMilestones 1 is partial, goal two is reached at t 2, the goal that writes its argument leaves the wallet at 0, a goal that writes vars does not make the next goal reached, and a throwing onStep throws ObservationError. The prestige milestone test shows a prestige action that only doubles the multiplier gives prestige.first at 1 online and offline, and a custom action that raises prestige.count gives none. The goal and milestone retention tests show maxGoals 0 still reports one at 1 and two at 2 to onGoal, and maxMilestones 0 reports action.buy.firstApplied and progress.first-upgrade at 0 and level-1 at 1 to onMilestone once each. A goal that holds at t 0 is reached at 0, also when until stops the run before any step.
  * @evidence ./observation.ts#observationFromLegacyEvents An event-only result is incomplete, marked as a legacy fallback, and has a missing reward gap.
  * @evidenceReview ./observation.ts#observationFromLegacyEvents #7b6a96d Re-read observationFromLegacyEvents: it counts money and action events from a retained log and marks the result incomplete, legacyEventFallback true, with a missing reward gap. Ran this function: one applied action gives coverage incomplete, the fallback flag, and a missing reward gap.
  */
@@ -400,6 +401,47 @@ describe("milestone retention", () => {
     expect(none.observation?.milestones).toEqual([]);
     // The scripted buy applies every step. Its action-derived keys are heard once, at the first apply.
     expect(seen).toEqual(["action.buy.firstApplied@0", "progress.first-upgrade@0", "level-1@1"]);
+  });
+});
+
+describe("prestige milestone", () => {
+  // One scripted action per step. A prestige that only raises the multiplier, or a custom action that edits count.
+  function prestigeScenario(kind: "prestige" | "custom"): CompiledScenario<number, UnitCode, { owned: number }> {
+    const base = scenario({ income: 1, durationSec: 3 });
+    const action = {
+      id: "reset",
+      kind,
+      canApply: () => true,
+      cost: () => null,
+      apply: (_ctx: unknown, current: SimState<number, UnitCode, { owned: number }>) =>
+        kind === "prestige"
+          ? { ...current, prestige: { ...current.prestige, multiplier: current.prestige.multiplier * 2 } }
+          : { ...current, prestige: { ...current.prestige, count: current.prestige.count + 1 } },
+    } as const;
+    const model = { ...base.model, actions: () => [action] };
+    return { ...base, model, strategy: { id: "reset-once", decide: () => [{ action }] } };
+  }
+
+  it("records prestige.first from a committed prestige action, not from a count edit", () => {
+    for (const run of [
+      (sc: CompiledScenario<number, UnitCode, { owned: number }>) => runScenario(sc),
+      (sc: CompiledScenario<number, UnitCode, { owned: number }>) => applyOfflineSeconds({ scenario: sc, seconds: 3 }),
+    ]) {
+      const seen: string[] = [];
+      const observer = { onMilestone: (fact: { t: number; key: string }) => void seen.push(fact.key) };
+      const multiplier = prestigeScenario("prestige");
+      const reset = run({ ...multiplier, run: { ...multiplier.run, observer } });
+      expect(reset.end.prestige.count).toBe(0);
+      expect(reset.observation?.milestones.find((sample) => sample.key === "prestige.first")).toEqual({
+        key: "prestige.first",
+        firstSeenT: 1,
+        source: "prestige",
+      });
+      expect(seen.filter((key) => key === "prestige.first")).toHaveLength(1);
+      const edit = run(prestigeScenario("custom"));
+      expect(edit.end.prestige.count).toBe(3);
+      expect(edit.observation?.milestones.some((sample) => sample.key === "prestige.first")).toBe(false);
+    }
   });
 });
 
