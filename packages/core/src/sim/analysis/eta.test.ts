@@ -105,6 +105,29 @@ describe("etaSimulate", () => {
       }),
     ).toThrow("etaSimulate exceeded maxSteps (5)");
   });
+
+  // At a large t a tick moves t by a rounded amount: 0.1 moves 1e15 by 0.125, and 100 moves 1e18 by 128.
+  it.each([
+    [0, 0.1],
+    [1e9, 0.5],
+    [1e15, 0.1],
+    [1e18, 100],
+  ])("reports simulated seconds, not the t difference, from t=%p with stepSec %p", (t0, stepSec) => {
+    const base = makeScenario();
+    const out = etaSimulate({
+      scenario: {
+        ...base,
+        ctx: { ...base.ctx, stepSec },
+        initial: { ...base.initial, t: t0 },
+        run: { ...base.run, stepSec },
+      },
+      target: { kind: "money", value: String(stepSec * 9.5) },
+      maxDurationSec: stepSec * 1000,
+    });
+
+    expect(out.reached).toBeTrue();
+    expect(out.seconds).toBeCloseTo(stepSec * 10, 9);
+  });
 });
 
 describe("etaAnalytic", () => {

@@ -263,3 +263,38 @@ describe("runCandidateAndScore", () => {
     ).toThrow("runCandidateAndScore exceeded maxSteps (3)");
   });
 });
+
+describe("builtin objectives over a large start t", () => {
+  // 100 moves t=1e18 by 128, so `end.t - start.t` reads 1280 for a 1000 second run.
+  it.each(builtinObjectiveFactories.map((factory) => factory.id))("%p scores simulated seconds", (objectiveId) => {
+    const base = makeScenario();
+    const unit = base.ctx.unit;
+    const scenarioAt = (t: number): CompiledScenario<number, "COIN", Bag> => ({
+      ...base,
+      ctx: { ...base.ctx, stepSec: 100 },
+      model: { ...base.model, income: () => ({ unit, amount: 1 }), actions: () => [] },
+      initial: { ...base.initial, t },
+      run: { stepSec: 100, durationSec: 1000 },
+    });
+    const strategyRegistry = createStrategyRegistry([
+      { id: "idle", create: () => ({ id: "idle", decide: () => [] }) } satisfies StrategyFactory,
+    ]);
+    const objectiveRegistry = createObjectiveRegistry(builtinObjectiveFactories);
+    const score = (t: number) =>
+      runCandidateAndScore({
+        baseScenario: scenarioAt(t),
+        params: {},
+        strategyId: "idle",
+        objectiveId,
+        objectiveParams: objectiveId === "etaToTargetWorthNegSec" ? { targetWorth: "500" } : undefined,
+        seeds: [1],
+        strategyRegistry,
+        objectiveRegistry,
+      });
+
+    const near = score(0);
+    const far = score(1e18);
+    expect(far.seedResults[0]?.durationSec).toBe(1000);
+    expect(far.score).toBeCloseTo(near.score, 9);
+  });
+});

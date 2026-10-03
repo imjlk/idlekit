@@ -1,5 +1,5 @@
 import { runScenario } from "../simulator";
-import { assertHorizonReached, type CompiledScenario, type RunResult } from "../types";
+import { assertHorizonReached, runElapsedSec, type CompiledScenario, type RunResult } from "../types";
 import { parseMoney } from "../../notation/parseMoney";
 
 export type ETATarget = Readonly<
@@ -74,7 +74,7 @@ export function etaSimulate<N, U extends string, Vars>(args: {
 
   return {
     reached,
-    seconds: reached ? run.end.t - run.start.t : args.maxDurationSec,
+    seconds: reached ? runElapsedSec(run) : args.maxDurationSec,
     mode: "simulate",
     confidence: "high",
     assumptions: ["Direct simulation over maxDurationSec"],

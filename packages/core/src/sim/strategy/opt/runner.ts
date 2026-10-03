@@ -1,5 +1,5 @@
 import { runScenario } from "../../simulator";
-import { assertHorizonReached, type CompiledScenario } from "../../types";
+import { assertHorizonReached, runElapsedSec, type CompiledScenario } from "../../types";
 import { deepClonePreservingPrototype } from "../../../utils/deepClone";
 import type { StrategyRegistry } from "../registry";
 import type { ObjectiveRegistry } from "./registry";
@@ -67,7 +67,7 @@ export function runCandidateAndScore(args: {
     seedResults.push({
       seed,
       score: s,
-      durationSec: Math.max(0, run.end.t - run.start.t),
+      durationSec: Math.max(0, runElapsedSec(run)),
       endMoneyLog10: sc.ctx.E.absLog10(run.end.wallet.money.amount),
       endNetWorthLog10: sc.ctx.E.absLog10(worth.amount),
       droppedRate: run.stats?.money.droppedRate ?? null,

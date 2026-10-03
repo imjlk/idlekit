@@ -5,6 +5,7 @@ import {
   createNumberEngine,
   deepClonePreservingPrototype,
   parseMoney,
+  runElapsedSec,
   runScenario,
   validateScenarioV1,
 } from "@idlekit/core";
@@ -140,7 +141,7 @@ function measureScenario(args: {
     });
 
     etaReached = reachedFn(etaRun.end);
-    etaSeconds = etaReached ? etaRun.end.t - etaRun.start.t : Number.POSITIVE_INFINITY;
+    etaSeconds = etaReached ? runElapsedSec(etaRun) : Number.POSITIVE_INFINITY;
   }
 
   return {
