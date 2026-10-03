@@ -98,3 +98,45 @@ describe("ltv step budget", () => {
     expect(() => analyze("5s")).not.toThrow();
   });
 });
+
+describe("ltv first upgrade time", () => {
+  it.each([0, 1_700_000_000])("counts seconds from the analysis start at t=%p", async (t0) => {
+    const scenario = await Bun.file(resolve(process.cwd(), "../../examples/tutorials/01-cafe-baseline.json")).json();
+    const upgrade: Action<number, string, Record<string, unknown>> = {
+      id: "upgrade.cup",
+      kind: "custom",
+      canApply: () => true,
+      cost: () => null,
+      apply: (_ctx, current) => current,
+    };
+    const compiled: CompiledScenario<number, string, Record<string, unknown>> = {
+      ctx: { E: createNumberEngine(), unit: { code: "COIN" }, tickPolicy: { mode: "drop" }, stepSec: 1 },
+      model: {
+        id: "ltv-first-upgrade",
+        version: 1,
+        income: () => ({ unit: { code: "COIN" }, amount: 1 }),
+        actions: () => [upgrade],
+      },
+      initial: {
+        t: t0,
+        wallet: { money: { unit: { code: "COIN" }, amount: 0 }, bucket: 0 },
+        maxMoneyEver: { unit: { code: "COIN" }, amount: 0 },
+        prestige: { count: 0, points: 0, multiplier: 1 },
+        vars: {},
+      },
+      run: { stepSec: 1 },
+      // Buys once, on the fourth tick.
+      strategy: { id: "late-buy", decide: (_ctx, _model, state) => (state.t === t0 + 3 ? [{ action: upgrade }] : []) },
+    };
+    const out = runLtvAnalysis({
+      scenario,
+      scenarioPath: "ltv-first-upgrade.json",
+      compiled,
+      strategy: compiled.strategy,
+      horizonsRaw: "10s",
+      fast: false,
+      seed: 1,
+    });
+    expect(out.horizons[0]?.guardrails.timeToFirstUpgradeSec).toBe(3);
+  });
+});
