@@ -6,7 +6,7 @@ import { createBoundedLog, createEventBuffer } from "./eventBuffer";
 import { createObservationRecorder, statsFromObservation } from "./observation";
 import { resolveOfflineSeconds } from "./offlineCredit";
 import { stepOnce } from "./step";
-import { assertSimulationClock, nextBoundary, stepContext, timeEpsilon, timeStepEvents } from "./timeBoundary";
+import { assertSimulationClock, assertTickAdvanced, nextBoundary, stepContext, timeEpsilon, timeStepEvents } from "./timeBoundary";
 import type { Action, CompiledScenario, RunResult, RunStop, SimState } from "./types";
 
 export type OfflineRunOptions<N, U extends string, Vars> = Readonly<{
@@ -79,7 +79,7 @@ function allowsOfflineAction(
  * Omitting `options.until` does not read `scenario.run.until`.
  *
  * @evidence docs/requirements/active/simulation-time-boundaries.md#req-pr02-simulation-time-boundaries Applies the same horizon, partial tick, and step budget as the online runner.
- * @evidenceReview docs/requirements/active/simulation-time-boundaries.md#req-pr02-simulation-time-boundaries #89f7aa9 Re-read the section: offline uses that partial tick, and a short maxSteps returns budget instead of discarding the run.
+ * @evidenceReview docs/requirements/active/simulation-time-boundaries.md#req-pr02-simulation-time-boundaries #de6ae2f Re-read the section: offline uses that partial tick, a short maxSteps returns budget instead of discarding the run, and a committed tick that does not move state.t throws through assertTickAdvanced.
  * @evidence docs/requirements/active/session-clock.md#req-pr06-session-clock Steps reward time only. `requestedSec` stays the caller absence, and `useStrategy: false` or policy `none` does not call `decide`.
  * @evidenceReview docs/requirements/active/session-clock.md#req-pr06-session-clock #3c24d94 Re-read the section: state.t moves by simulated reward seconds, and a direct call does not turn the requested absence into state.t. The gap-end rule for a stop inside an offline gap belongs to the session, not to this direct call.
  */
@@ -203,6 +203,7 @@ export function applyOfflineSeconds<N, U extends string, Vars>(args: {
       constraints,
       fast: opts?.fast ?? scenario.run.fast,
     });
+    assertTickAdvanced("offline", actionStartT, out.next.t, decision.dt, stepSec);
     // Restore only a batch the policy rejected whole, before or at re-resolution. An empty decide keeps its own state.
     // A mixed batch applies its listed part and does not restore, or that part would replay.
     if (restorable && raw.length > 0 && lateRejected === filtered.length) {

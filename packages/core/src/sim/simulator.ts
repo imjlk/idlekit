@@ -3,7 +3,7 @@ import { recordPrestigeReset } from "./constraints";
 import { createBoundedLog, createEventBuffer } from "./eventBuffer";
 import { createObservationRecorder, statsFromObservation } from "./observation";
 import { stepOnce } from "./step";
-import { assertSimulationClock, nextBoundary, stepContext, timeStepEvents } from "./timeBoundary";
+import { assertSimulationClock, assertTickAdvanced, nextBoundary, stepContext, timeStepEvents } from "./timeBoundary";
 import type { CompiledScenario, RunResult, RunStop, SimState } from "./types";
 
 function finishTrace<N, U extends string, Vars>(
@@ -22,7 +22,7 @@ function finishTrace<N, U extends string, Vars>(
  * The caller's `ctx` is not written. Strategy preview sees that tick's dt.
  *
  * @evidence docs/requirements/active/simulation-time-boundaries.md#req-pr02-simulation-time-boundaries Stops on the economic horizon, including a shorter last tick, and checks that horizon before maxSteps.
- * @evidenceReview docs/requirements/active/simulation-time-boundaries.md#req-pr02-simulation-time-boundaries #89f7aa9 Re-read the section: a duration or until that is already met stops before maxSteps, and the last tick stays inside the horizon.
+ * @evidenceReview docs/requirements/active/simulation-time-boundaries.md#req-pr02-simulation-time-boundaries #de6ae2f Re-read the section: a duration or until that is already met stops before maxSteps, the last tick stays inside the horizon, and a committed tick that does not move state.t throws through assertTickAdvanced.
  */
 export function runScenario<N, U extends string, Vars>(
   sc: CompiledScenario<N, U, Vars>,
@@ -108,6 +108,7 @@ export function runScenario<N, U extends string, Vars>(
       constraints,
       fast: sc.run.fast,
     });
+    assertTickAdvanced("runScenario", actionStartT, step.next.t, decision.dt, stepSec);
     constraints = recordPrestigeReset(constraints, step.prestigeResetT, sc.run.onPrestigeReset);
 
     state = step.next;
