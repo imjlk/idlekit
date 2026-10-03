@@ -61,7 +61,9 @@ export type RunObservation = Readonly<{
   rewardGap: RewardGapSummary;
   milestones: readonly MilestoneSample[];
   goals: readonly GoalSample[];
+  /** Distinct keys left out by maxMilestones. A merge sums its parts, and each session segment has its own cap. */
   droppedMilestones: number;
+  /** Distinct met goals left out by maxGoals. Summed the same way on a merge. */
   droppedGoals: number;
 }>;
 
@@ -267,11 +269,12 @@ export function createObservationRecorder<N, U extends string, Vars>(args: {
   const rememberMilestone = (sample: MilestoneSample, notifyMilestone: boolean) => {
     if (!enabled) return;
     if (seenMilestone.has(sample.key)) return;
+    // A dropped key is seen too, so a recurring key counts once.
+    seenMilestone.add(sample.key);
     if (milestones.length >= args.maxMilestones) {
       droppedMilestones += 1;
       return;
     }
-    seenMilestone.add(sample.key);
     milestones.push(sample);
     if (notifyMilestone && args.observer?.onMilestone) {
       notify(() => args.observer?.onMilestone?.({ t: sample.firstSeenT, key: sample.key }));
