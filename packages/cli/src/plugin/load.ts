@@ -1,5 +1,6 @@
 import { realpathSync } from "fs";
 import { dirname, extname, isAbsolute, relative, resolve, sep } from "path";
+import { fileURLToPath } from "url";
 import {
   builtinObjectiveFactories,
   builtinStrategyFactories,
@@ -430,8 +431,16 @@ async function sha256File(pathAbs: string): Promise<string> {
   return sha256Hex(buffer);
 }
 
-function isRelativeSpecifier(specifier: string): boolean {
-  return specifier === "." || specifier === ".." || specifier.startsWith("./") || specifier.startsWith("../");
+/** A local file Bun would load: relative, absolute, or a file: URL. Package imports are not followed. */
+function isLocalSpecifier(specifier: string): boolean {
+  return (
+    specifier === "." ||
+    specifier === ".." ||
+    specifier.startsWith("./") ||
+    specifier.startsWith("../") ||
+    specifier.startsWith("file:") ||
+    isAbsolute(specifier)
+  );
 }
 
 /**
@@ -453,10 +462,11 @@ async function pluginClosureDigest(entryAbs: string, entryDigest: string): Promi
     if (!loader) continue;
     const imports = new Bun.Transpiler({ loader }).scanImports(await readTextFile(file));
     for (const { path: specifier } of imports) {
-      if (!isRelativeSpecifier(specifier)) continue;
+      if (!isLocalSpecifier(specifier)) continue;
       let target: string;
       try {
-        target = realpathSync(Bun.resolveSync(specifier, dirname(file)));
+        const local = specifier.startsWith("file:") ? fileURLToPath(specifier) : specifier;
+        target = realpathSync(Bun.resolveSync(local, dirname(file)));
       } catch {
         // An unresolved import fails when the plugin loads, or is guarded by the plugin.
         continue;

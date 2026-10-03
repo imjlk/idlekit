@@ -172,7 +172,7 @@ describe("plugin load", () => {
     }
   });
 
-  it("digests the helpers a plugin reaches through relative imports", async () => {
+  it("digests the helpers a plugin reaches through local imports", async () => {
     const dir = await createTempDir("idlekit-plugin-closure");
     try {
       const entry = `import { tag } from "./impl";\nexport const strategies = [{ id: "plugin.helper", tag, create: () => ({ id: "plugin.helper", decide: () => [] }) }];\n`;
@@ -215,6 +215,20 @@ describe("plugin load", () => {
       expect(copy.digest).toBe(before.digest);
       expect(copy.hash).toBe(before.hash);
       expect((await run(c)).digest).not.toBe(copy.digest);
+
+      // An absolute local import is followed the same way.
+      const shared = resolve(dir, "shared", "helper.mjs");
+      await writeText(shared, `export const tag = "one";\n`);
+      const absolute = resolve(dir, "abs", "plugin.mjs");
+      await writeText(
+        absolute,
+        `import { tag } from ${JSON.stringify(shared)};\nexport const strategies = [{ id: "plugin.helper", tag, create: () => ({ id: "plugin.helper", decide: () => [] }) }];\n`,
+      );
+      const absBefore = await run(absolute);
+      await writeText(shared, `export const tag = "two";\n`);
+      const absAfter = await run(absolute);
+      expect(absAfter.digest).not.toBe(absBefore.digest);
+      expect(absAfter.hash).not.toBe(absBefore.hash);
 
       // Without relative imports the digest stays the entry file sha256.
       const single = resolve(dir, "single.mjs");
