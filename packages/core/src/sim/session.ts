@@ -330,11 +330,10 @@ export function simulateSessionPattern<N, U extends string, Vars>(args: {
     });
     const credited = offlineRun.offline.simulatedSec;
     // A stop inside the gap ends it at the smallest absence that earns the stepped reward.
-    // A gap that steps all of its effective seconds keeps the scheduled wall end.
-    const absence =
-      offlineRun.stop?.reason === "until"
-        ? offlineAbsenceForCredit(credited, requested, sc.run.offline)
-        : requested;
+    // Read the stop from the end state: a run that met it with no effective seconds left,
+    // or none at all, reports duration first. A gap that does not stop keeps its wall end.
+    const reason = classify(offlineRun);
+    const absence = reason ? offlineAbsenceForCredit(credited, requested, sc.run.offline) : requested;
     const gapEnd = wallStart + absence;
     const effective =
       absence === requested ? offlineRun.offline.effectiveSec : resolveOfflineSeconds(absence, sc.run.offline).effectiveSec;
@@ -361,7 +360,6 @@ export function simulateSessionPattern<N, U extends string, Vars>(args: {
     });
     state = offlineRun.end;
     wallT = gapEnd;
-    const reason = classify(offlineRun);
     if (reason) stopReason = reason;
   };
 
