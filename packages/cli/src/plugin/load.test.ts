@@ -172,6 +172,60 @@ describe("plugin load", () => {
     }
   });
 
+  it("digests the helpers a plugin reaches through relative imports", async () => {
+    const dir = await createTempDir("idlekit-plugin-closure");
+    try {
+      const entry = `import { tag } from "./impl";\nexport const strategies = [{ id: "plugin.helper", tag, create: () => ({ id: "plugin.helper", decide: () => [] }) }];\n`;
+      const plugin = async (name: string, implTag: string) => {
+        const path = resolve(dir, name, "plugin.mjs");
+        await writeText(path, entry);
+        await writeText(resolve(dir, name, "impl.mjs"), `export { tag } from "./lib";\n`);
+        await writeText(resolve(dir, name, "lib/index.mjs"), `export const tag = "${implTag}";\n`);
+        return path;
+      };
+      const scenario: ScenarioV1 = {
+        schemaVersion: 1,
+        unit: { code: "COIN" },
+        policy: { mode: "drop" },
+        model: { id: "linear", version: 1, params: {} },
+        initial: { wallet: { unit: "COIN", amount: "0" } },
+        clock: { stepSec: 1, durationSec: 1 },
+        strategy: { id: "plugin.helper" },
+      };
+      const run = async (path: string) => {
+        const loaded = await loadRegistries([path]);
+        const digest = loaded.pluginDigest[path]!;
+        const hash = prepareResolvedRun({ scenario, ...loaded, seed: 1 }).open("simulate", "x").hash;
+        return { digest, hash };
+      };
+
+      const a = await plugin("a", "one");
+      const before = await run(a);
+      expect(before.digest).not.toBe(sha256Hex(entry));
+      await writeText(resolve(dir, "a", "lib/index.mjs"), `export const tag = "two";\n`);
+      const after = await run(a);
+      // Only the helper changed, so the entry file sha256 is the same.
+      expect(after.digest).not.toBe(before.digest);
+      expect(after.hash).not.toBe(before.hash);
+
+      // Identical entries in two directories with different helpers.
+      const b = await plugin("b", "one");
+      const c = await plugin("c", "three");
+      const copy = await run(b);
+      expect(copy.digest).toBe(before.digest);
+      expect(copy.hash).toBe(before.hash);
+      expect((await run(c)).digest).not.toBe(copy.digest);
+
+      // Without relative imports the digest stays the entry file sha256.
+      const single = resolve(dir, "single.mjs");
+      const body = `export const strategies = [];\n`;
+      await writeText(single, body);
+      expect((await loadRegistries([single])).pluginDigest[single]).toBe(sha256Hex(body));
+    } finally {
+      await removePath(dir);
+    }
+  });
+
   it("keeps plugin order in the run hash when two plugins register one strategy id", async () => {
     const dir = await createTempDir("idlekit-plugin-order");
     try {

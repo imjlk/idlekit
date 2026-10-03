@@ -24,7 +24,7 @@ import { hashContent } from "../io/outputMeta";
  * `scenario.engine` is metadata. It does not select the runtime.
  *
  * @evidence docs/requirements/active/cli-resolved-run.md#req-pr07-resolved-run One plan feeds evaluate stages, and each stage opens a fresh run.
- * @evidenceReview docs/requirements/active/cli-resolved-run.md#req-pr07-resolved-run #5fcad38 Re-read the section: strategy override reaches simulate and experience and replaces the scenario strategy without building it, step stays on the simulate stage unless consistent overrides are set, and the stage digest adds the step and fast mode the stage runs, the stage scope, command inputs, and plugin digests in load order while ignoring the directory.
+ * @evidenceReview docs/requirements/active/cli-resolved-run.md#req-pr07-resolved-run #13c991d Re-read the section: strategy override reaches simulate and experience and replaces the scenario strategy without building it, step stays on the simulate stage unless consistent overrides are set, and the stage digest adds the step and fast mode the stage runs, the stage scope, command inputs, and plugin digests in load order while ignoring the directory. The plugin digest values, including the relative-import closure, come from loadRegistries in packages/cli/src/plugin/load.ts; this plan only keeps them in load order.
  */
 export const resolvedRunContract = "idlekit.resolved-run-configuration" as const;
 
@@ -32,7 +32,7 @@ export const resolvedRunContract = "idlekit.resolved-run-configuration" as const
  * Repro label for this case. The runs pass seed 1 and do not draw from this label.
  *
  * @evidence docs/requirements/active/cli-resolved-run.md#req-pr07-resolved-run The label is 0x7107. Runs use seed 1.
- * @evidenceReview docs/requirements/active/cli-resolved-run.md#req-pr07-resolved-run #5fcad38 Re-read the section, including the evaluate default seed sentence: the label is not the RNG seed, and the three executed tests use seed 1.
+ * @evidenceReview docs/requirements/active/cli-resolved-run.md#req-pr07-resolved-run #13c991d Re-read the section, including the evaluate default seed sentence: the label is not the RNG seed, and the executed tests in runConfiguration.test.ts use seed 1.
  */
 export const sessionCaseSeed = 0x7107;
 
