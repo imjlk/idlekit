@@ -1,5 +1,5 @@
 import { runScenario } from "../simulator";
-import type { CompiledScenario, RunResult } from "../types";
+import { assertHorizonReached, type CompiledScenario, type RunResult } from "../types";
 import { parseMoney } from "../../notation/parseMoney";
 
 export type ETATarget = Readonly<
@@ -68,6 +68,8 @@ export function etaSimulate<N, U extends string, Vars>(args: {
   };
 
   const run = runScenario(scenario);
+  // A budget stop is neither the target nor maxDurationSec.
+  assertHorizonReached(run, "etaSimulate");
   const reached = targetReached(scenario, args.target.kind, threshold, run);
 
   return {

@@ -74,6 +74,15 @@ export type RunStop = Readonly<{
   budgetSteps?: number;
 }>;
 
+/**
+ * Throw when `maxSteps` stopped the run before duration or until.
+ * For callers that read `end` as the requested horizon and have no field for a cut run.
+ */
+export function assertHorizonReached(run: Readonly<{ stop?: RunStop }>, label: string): void {
+  if (run.stop?.reason !== "budget") return;
+  throw new Error(`${label} exceeded maxSteps (${run.stop.budgetSteps}) without meeting stop condition`);
+}
+
 export type SimContext<N, U extends string, Vars> = Readonly<{
   E: Engine<N>;
   unit: Unit<U>;
