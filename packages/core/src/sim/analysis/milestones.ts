@@ -22,6 +22,13 @@ function compareOccurrence(a: MilestoneOccurrence, b: MilestoneOccurrence): numb
   return a.source < b.source ? -1 : a.source > b.source ? 1 : 0;
 }
 
+/** The fallback reads events, the action log, and (for the first prestige) the trace. A drop in any of them can hide or shift a milestone. */
+function fallbackDropped<N, U extends string, Vars>(run: RunResult<N, U, Vars>, prestiged: boolean): boolean {
+  if ((run.eventLog?.dropped ?? 0) > 0) return true;
+  if ((run.actionsLogMeta?.dropped ?? 0) > 0) return true;
+  return prestiged && (run.traceLog?.dropped ?? 0) > 0;
+}
+
 export function analyzeMilestones<N, U extends string, Vars>(args: {
   run: RunResult<N, U, Vars>;
 }): MilestoneReport {
@@ -93,10 +100,10 @@ export function analyzeMilestones<N, U extends string, Vars>(args: {
     }
   }
 
-  if (
+  const prestiged =
     run.end.prestige.count > run.start.prestige.count ||
-    String(run.end.prestige.points as any) !== String(run.start.prestige.points as any)
-  ) {
+    String(run.end.prestige.points as any) !== String(run.start.prestige.points as any);
+  if (prestiged) {
     let prestigeT = run.end.t;
     for (const state of run.trace ?? []) {
       if (
@@ -125,6 +132,6 @@ export function analyzeMilestones<N, U extends string, Vars>(args: {
     firstMilestoneSec: milestones[0]?.firstSeenSec,
     firstActionSec: firstAction?.firstSeenSec,
     firstPrestigeSec: firstPrestige?.firstSeenSec,
-    coverage: run.eventLog !== undefined && run.eventLog.dropped > 0 ? "incomplete" : "complete",
+    coverage: fallbackDropped(run, prestiged) ? "incomplete" : "complete",
   };
 }

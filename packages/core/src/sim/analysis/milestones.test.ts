@@ -63,4 +63,23 @@ describe("analyzeMilestones", () => {
     expect(analyzeMilestones({ run: run(0, 2) }).coverage).toBe("complete");
     expect(analyzeMilestones({ run: run(1, 0) }).coverage).toBe("partial");
   });
+
+  it("marks fallback coverage incomplete when the action log or a prestige trace dropped rows", () => {
+    const base = (prestige: number): RunResult<number, UnitCode, Vars> => ({
+      start: makeState(0, 0),
+      end: makeState(20, prestige),
+      events: [],
+      eventTimeline: [],
+      actionsLog: [],
+      trace: [makeState(20, prestige)],
+      eventLog: { enabled: true, totalSeen: 0, dropped: 0, retained: 0 },
+    });
+    const meta = { totalSeen: 3, dropped: 3, retained: 0 };
+    expect(analyzeMilestones({ run: base(0) }).coverage).toBe("complete");
+    expect(analyzeMilestones({ run: { ...base(0), actionsLogMeta: { maxActions: 0, ...meta } } }).coverage).toBe(
+      "incomplete",
+    );
+    expect(analyzeMilestones({ run: { ...base(1), traceLog: { maxPoints: 1, ...meta } } }).coverage).toBe("incomplete");
+    expect(analyzeMilestones({ run: { ...base(0), traceLog: { maxPoints: 1, ...meta } } }).coverage).toBe("complete");
+  });
 });
