@@ -179,13 +179,19 @@ export function applyOfflineSeconds<N, U extends string, Vars>(args: {
     // Clone before decide. A snapshot that aliases the cursor would advance with it.
     const saved = restorable ? deepClonePreservingPrototype(scenario.strategy?.snapshotState?.()) : undefined;
     const raw = useStrategy ? (scenario.strategy?.decide(stepCtx, scenario.model, state) ?? []) : [];
-    const filtered = raw.filter((decision) => allowsOfflineAction(decision.action, resolvedPolicy.policy));
-    // Restore only a batch the policy rejected whole. An empty decide keeps its own state.
-    // A mixed batch applies its listed part and does not restore, or that part would replay.
-    if (restorable && raw.length > 0 && filtered.length === 0) {
-      scenario.strategy?.restoreState?.(saved);
-    }
+    const policy = resolvedPolicy.policy;
+    const filtered = raw.filter((decision) => allowsOfflineAction(decision.action, policy));
     const decisions = filtered.slice(0, maxActionsPerStep);
+    // A later decision re-resolves after earlier applies, so check the action it commits too.
+    let lateRejected = 0;
+    const admits =
+      policy.mode === "allow"
+        ? (action: Action<N, U, Vars>) => {
+            if (allowsOfflineAction(action, policy)) return true;
+            lateRejected += 1;
+            return false;
+          }
+        : undefined;
     const actionStartT = state.t;
     const out = stepOnce({
       ctx: stepCtx,
@@ -193,9 +199,15 @@ export function applyOfflineSeconds<N, U extends string, Vars>(args: {
       state,
       dt: decision.dt,
       decisions,
+      admits,
       constraints,
       fast: opts?.fast ?? scenario.run.fast,
     });
+    // Restore only a batch the policy rejected whole, before or at re-resolution. An empty decide keeps its own state.
+    // A mixed batch applies its listed part and does not restore, or that part would replay.
+    if (restorable && raw.length > 0 && lateRejected === filtered.length) {
+      scenario.strategy?.restoreState?.(saved);
+    }
     constraints = recordPrestigeReset(constraints, out.prestigeResetT, scenario.run.onPrestigeReset);
 
     state = out.next;

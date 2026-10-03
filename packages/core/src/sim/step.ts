@@ -19,6 +19,9 @@ export type StepInput<N, U extends string, Vars> = Readonly<{
 
   decisions?: readonly StepDecision<N, U, Vars>[];
 
+  /** Checks the action a decision re-resolves to. A rejected one is dropped without an event. */
+  admits?: (action: Action<N, U, Vars>) => boolean;
+
   constraints?: ScenarioConstraints;
 
   fast?: Readonly<{
@@ -377,6 +380,7 @@ export function stepOnce<N, U extends string, Vars>(
       });
       continue;
     }
+    if (input.admits && !input.admits(action)) continue;
     if (!action.canApply(ctx, next)) {
       events.push({
         type: "action.skipped",

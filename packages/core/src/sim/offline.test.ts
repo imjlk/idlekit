@@ -316,4 +316,65 @@ describe("applyOfflineSeconds", () => {
     expect(out.end.prestige.count).toBe(0);
     expect(calls).toBe(3);
   });
+
+  it("checks the actor filter against the action a later buy re-resolves to", () => {
+    // The first hire hands later hires to the player.
+    const base = makeScenario({ initialMoney: 5 });
+    const model: Model<number, U, Vars> = {
+      ...base.model,
+      actions: (ctx, state) =>
+        base.model.actions(ctx, state).map((action) => ({
+          ...action,
+          id: "hire",
+          actor: state.vars.bought === 0 ? ("automation" as const) : ("player" as const),
+        })),
+    };
+    const strategy: Strategy<number, U, Vars> = {
+      id: "hire-twice",
+      decide(ctx, model, state) {
+        const hire = model.actions(ctx, state).find((action) => action.id === "hire")!;
+        return [{ action: hire }, { action: hire }];
+      },
+    };
+    const out = applyOfflineSeconds({
+      scenario: { ...base, model, strategy },
+      seconds: 3,
+      options: { actions: { mode: "allow", categories: ["buy"], actors: ["automation"] } },
+    });
+    expect(out.end.vars.bought).toBe(1);
+    expect(out.actionsLog?.map((row) => row.actionId)).toEqual(["hire"]);
+  });
+
+  it("restores a batch the actor filter rejects only at re-resolution", () => {
+    // Each enumeration flips the actor, so the strategy sees automation and the step sees player.
+    const base = makeScenario({ initialMoney: 5 });
+    let enumerations = 0;
+    const model: Model<number, U, Vars> = {
+      ...base.model,
+      actions: (ctx, state) => {
+        enumerations += 1;
+        const actor = enumerations % 2 === 1 ? ("automation" as const) : ("player" as const);
+        return base.model.actions(ctx, state).map((action) => ({ ...action, actor }));
+      },
+    };
+    let cursor = 0;
+    const strategy: Strategy<number, U, Vars> = {
+      id: "cursor",
+      decide(ctx, model, state) {
+        cursor += 1;
+        return [{ action: model.actions(ctx, state).find((action) => action.id === "buy")! }];
+      },
+      snapshotState: () => ({ cursor }),
+      restoreState: (saved) => {
+        cursor = (saved as { cursor: number }).cursor;
+      },
+    };
+    const out = applyOfflineSeconds({
+      scenario: { ...base, model, strategy },
+      seconds: 3,
+      options: { actions: { mode: "allow", categories: ["buy"], actors: ["automation"] } },
+    });
+    expect(out.end.vars.bought).toBe(0);
+    expect(cursor).toBe(0);
+  });
 });
