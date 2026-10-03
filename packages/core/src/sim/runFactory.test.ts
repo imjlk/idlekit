@@ -142,7 +142,7 @@ function statefulIncomeFactory() {
 
 /**
  * @evidence docs/requirements/active/run-lifecycle-isolation.md#req-pr03-run-lifecycle-isolation Runs a fresh scripted draw twice, a stateful model in both orders, one continued session, a frozen vars input, and an unisolated closure.
- * @evidenceReview docs/requirements/active/run-lifecycle-isolation.md#req-pr03-run-lifecycle-isolation #4d80f9f Re-read the section, including bind-time params checks, one-hook strategies shared as stateless, and the canonical plan identity, then ran this function: a second scripted draw still buys once, stateful income stays at 3 in both orders, twice-daily applies a0 through a3, and a frozen vars input stays at 0.
+ * @evidenceReview docs/requirements/active/run-lifecycle-isolation.md#req-pr03-run-lifecycle-isolation #7051b73 Re-read the section, including bind-time params checks, one-hook strategies shared as stateless, a factory strategy without a snapshot pair continued on its own instance, and the canonical plan identity, then ran this function: a second scripted draw still buys once, stateful income stays at 3 in both orders, twice-daily applies a0 through a3, and a frozen vars input stays at 0.
  * @evidence ./runFactory.ts#executionStream Reads the committed stream name and derives it from trial id 0x7103.
  * @evidenceReview ./runFactory.ts#executionStream #0a4e437 The declaration is the string execution. This test derives that stream from trial id rng and seed 0x7103.
  * @evidence ./runFactory.ts#previewStream Reads the preview stream name and refuses to restore it onto the committed stream.
@@ -156,7 +156,7 @@ function statefulIncomeFactory() {
  * @evidence ./runFactory.ts#executionPlanIdentity A copied plan has the same identity, and a different stepSec changes it.
  * @evidenceReview ./runFactory.ts#executionPlanIdentity #14dada6 Re-read executionPlanIdentity: it checks the plan contract and returns canonical JSON of the plan fields with object keys sorted at every depth. Ran this function: a spread copy has the same identity and stepSec 3 changes it.
  * @evidence ./runFactory.ts#createRunFactory Fresh scripted and stateful-model draws do not share state, continue keeps the cursor, resume restores the checkpoint cursor, a plan selects the strategy and clock, and an unisolated closure throws RunIsolationError.
- * @evidenceReview ./runFactory.ts#createRunFactory #6b2cc48 Re-read createRunFactory: bind holds the strategy as factory, snapshot, stateless, or none, fresh restores the bound snapshot or builds a new factory instance, continue keeps the model and cursor, a checkpoint keeps the strategy entry for a snapshot pair even when it saves undefined, resume restores checkpoint streams and strategy bytes only into the strategy id and state version that wrote them, and a stateful closure without a factory or snapshot pair throws RunIsolationError. Ran this function: scripted draws buy once each, stateful income stays 3 in both orders, twice-daily applies a0 through a3, continue and resume keep cursor 2, a plan sets seed 9 and step 2, and both isolation flags throw.
+ * @evidenceReview ./runFactory.ts#createRunFactory #b52e6e4 Re-read createRunFactory: bind holds the strategy as factory, snapshot, stateless, or none, fresh restores the bound snapshot or builds a new factory instance, continue keeps the model and cursor (a factory strategy without a snapshot pair keeps its instance when factory and params match), a checkpoint keeps the strategy entry for a snapshot pair even when it saves undefined, resume restores checkpoint streams and strategy bytes only into the strategy id and state version that wrote them, and a stateful closure without a factory or snapshot pair throws RunIsolationError. Ran this function: scripted draws buy once each, stateful income stays 3 in both orders, twice-daily applies a0 through a3, continue and resume keep cursor 2, a plan sets seed 9 and step 2, and both isolation flags throw.
  */
 export function isolatesIndependentRuns(): void {
   expect(executionStream).toBe("execution");
@@ -724,6 +724,47 @@ describe("run factory review fixes", () => {
     applied = [];
     built.resume({ checkpoint: own, state: scenario.initial });
     expect(applied).toEqual([{ picked: undefined }]);
+  });
+  it("continues a factory strategy without snapshot hooks on the same instance", () => {
+    type Vars = { applied: string[] };
+    const closure = (): Strategy<number, UnitCode, Vars> => {
+      let cursor = 0;
+      return {
+        id: "closure",
+        decide: (_ctx, model, current) => {
+          const next = model.actions(_ctx, current)[cursor];
+          if (!next) return [];
+          cursor += 1;
+          return [{ action: next }];
+        },
+      };
+    };
+    const strategies = createStrategyRegistry([
+      { id: "closure", create: () => closure() },
+      { id: "other", create: () => closure() },
+    ]);
+    const scenario = compiled({ stepSec: 1, durationSec: 1, vars: { applied: [] }, model: recordingModel() });
+    const factory = createRunFactory({ strategies });
+    const segments = (binding: ReturnType<typeof factory.bind<number, UnitCode, Vars>>, plan?: ExecutionPlan) => {
+      const head = binding.fresh({ trialId: "c", seed: 1, plan });
+      const first = runScenario(head.scenario);
+      const next = binding.continue(head, { state: first.end, plan });
+      expect(next.scenario.strategy).toBe(head.scenario.strategy);
+      return runScenario(next.scenario).end.vars.applied.join(",");
+    };
+    expect(segments(factory.bind(scenario, { strategy: { id: "closure" } }))).toBe("a0,a1");
+    const plan: ExecutionPlan = { contract: "idlekit.execution-plan", version: 1, stepSec: 1, durationSec: 1, strategyId: "closure" };
+    expect(segments(factory.bind(scenario), plan)).toBe("a0,a1");
+    expect(segments(factory.bind(scenario), { ...plan, strategyParams: { k: 1 } })).toBe("a0,a1");
+
+    const binding = factory.bind(scenario);
+    const head = binding.fresh({ trialId: "s", seed: 1, plan });
+    const first = runScenario(head.scenario);
+    const switched = binding.continue(head, { state: first.end, plan: { ...plan, strategyId: "other" } });
+    expect(switched.scenario.strategy).not.toBe(head.scenario.strategy);
+    expect(runScenario(switched.scenario).end.vars.applied.join(",")).toBe("a0,a0");
+    const reparam = binding.continue(head, { state: first.end, plan: { ...plan, strategyParams: { k: 2 } } });
+    expect(reparam.scenario.strategy).not.toBe(head.scenario.strategy);
   });
   it("gives equal plans the same identity regardless of key order", () => {
     const base = { contract: "idlekit.execution-plan", version: 1, stepSec: 1 } as const;
