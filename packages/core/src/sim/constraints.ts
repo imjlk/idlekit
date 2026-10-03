@@ -36,10 +36,12 @@ export function decidePrestigeCooldown(args: {
   }
   const readyAtT = args.lastResetT + interval;
   // An accumulated clock can land just short of readyAtT. The dust scales with the interval,
-  // not the timestamp, plus the rounding of the two operands of the subtraction.
+  // not the timestamp, plus the rounding of the two operands of the subtraction. It stays
+  // below half the interval, so a timestamp too large to resolve the interval keeps cooling.
   const elapsed = args.nowT - args.lastResetT;
   const subtractionDust = Number.EPSILON * Math.max(Math.abs(args.nowT), Math.abs(args.lastResetT));
-  if (elapsed >= interval - timeEpsilon(interval) - subtractionDust) {
+  const tolerance = Math.min(timeEpsilon(interval) + subtractionDust, interval / 2);
+  if (elapsed >= interval - tolerance) {
     return { status: "ready", allowed: true, readyAtT };
   }
   return { status: "cooling", allowed: false, readyAtT };

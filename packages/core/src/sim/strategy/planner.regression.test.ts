@@ -84,7 +84,7 @@ const plannerParams = {
  * @evidence ./planner.ts#createPlannerStrategy The first saving decision stays empty without emitting or touching state, previews use the tick dt and constraints without emit, ties resolve by action id, a size-10 quote matches the committed step, and an oversized search clamps to a 256-rollout budget.
  * @evidenceReview ./planner.ts#createPlannerStrategy #8413f2b Re-read createPlannerStrategy: decide clamps horizon, beam, and branching to their caps, previews on cloned states with emit removed and the tick's stepSec, gates prestige candidates with decidePrestigeCooldown, carries a rollout reset to the next depth through constraintsWithAnchor, stops at the rollout budget, and reports globallyOptimal false. Ran this function: the first saving decision is empty with no emit, previews use dt 4 and interval 60, ties pick a, the size-10 quote reaches wallet 1070, and the capped search stops as budget after 256 rollouts.
  * @evidence ../constraints.ts#decidePrestigeCooldown A known anchor blocks a reset at 59 seconds and allows it at 60, in the planner and in a committed step, and a missing anchor allows the reset with an unanchored warning.
- * @evidenceReview ../constraints.ts#decidePrestigeCooldown #37d7c9b Re-read decidePrestigeCooldown: no positive interval is ready, a missing anchor is allowed with the unanchored warning, and otherwise it is ready once now minus the last reset reaches the interval within timeEpsilon(interval) plus the rounding of the two timestamps, so the tolerance does not grow with the timestamp. Ran this function: the planner and stepOnce block at 59 and allow at 60 with anchor 0, and the unanchored step applies with PRESTIGE_COOLDOWN_UNANCHORED.
+ * @evidenceReview ../constraints.ts#decidePrestigeCooldown #b518aa9 Re-read decidePrestigeCooldown: no positive interval is ready, a missing anchor is allowed with the unanchored warning, and otherwise it is ready once now minus the last reset reaches the interval within timeEpsilon(interval) plus the rounding of the two timestamps, capped at half the interval, so the tolerance does not grow with the timestamp and a reset at 1e18 still cools. Ran this function: the planner and stepOnce block at 59 and allow at 60 with anchor 0, and the unanchored step applies with PRESTIGE_COOLDOWN_UNANCHORED.
  * @evidence ../constraints.ts#constraintsWithAnchor A resume from a recorded reset carries lastPrestigeResetT 0, and a legacy or ready-only checkpoint leaves it undefined.
  * @evidenceReview ../constraints.ts#constraintsWithAnchor #79acf2d Re-read constraintsWithAnchor: an undefined reset removes lastPrestigeResetT from the constraints, and a defined one sets it. Ran this function: the fresh and legacy resume leave lastPrestigeResetT undefined, and the resume after a recorded reset has lastPrestigeResetT 0.
  * @evidence ../constraints.ts#recordPrestigeReset A committed reset in runScenario and in applyOfflineSeconds records lastPrestigeResetT 0 on the run checkpoint.
@@ -432,6 +432,22 @@ describe("prestige cooldown", () => {
     });
     expect(out.next.prestige.count).toBe(1);
     expect(out.prestigeResetT).toBe(lastResetT);
+  });
+
+  it("keeps a reset cooling when the timestamp dust exceeds the interval", () => {
+    const lastResetT = 1e18;
+    expect(decidePrestigeCooldown({ nowT: lastResetT, minIntervalSec: 60, lastResetT }).allowed).toBe(false);
+    const reset = resetAction();
+    const constraints: ScenarioConstraints = { minPrestigeIntervalSec: 60 };
+    const out = stepOnce({
+      ctx: context({ constraints }),
+      model: model([reset]),
+      state: state(0, lastResetT),
+      dt: 512,
+      decisions: [{ action: reset }, { action: reset }],
+      constraints,
+    });
+    expect(out.next.prestige.count).toBe(1);
   });
 
   it("blocks a second prestige committed earlier in the same step", () => {
