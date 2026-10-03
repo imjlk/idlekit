@@ -3,6 +3,7 @@ import { deepClonePreservingPrototype } from "../utils/deepClone";
 import { analyzeUX } from "./analysis/ux";
 import { recordPrestigeReset } from "./constraints";
 import { createBoundedLog, createEventBuffer } from "./eventBuffer";
+import { observationLedger } from "./goalRead";
 import { createObservationRecorder, statsFromObservation } from "./observation";
 import { resolveOfflineSeconds } from "./offlineCredit";
 import { stepOnce } from "./step";
@@ -129,6 +130,7 @@ export function applyOfflineSeconds<N, U extends string, Vars>(args: {
     maxGoals: scenario.run.observation?.maxGoals ?? 32,
     goals: scenario.run.goals ?? [],
     observer: scenario.run.observer,
+    ledger: observationLedger(scenario.run.observation),
   });
   const eventBuffer = createEventBuffer<N>({
     enabled: eventLogEnabled,

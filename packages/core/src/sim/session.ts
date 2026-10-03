@@ -2,13 +2,12 @@ import type { OfflineActionPolicy } from "../scenario/offlinePolicy";
 import { analyzeUX } from "./analysis/ux";
 import { constraintsWithAnchor } from "./constraints";
 import { createBoundedLog, createEventBuffer } from "./eventBuffer";
-import { readGoal, shareGoalReads } from "./goalRead";
+import { readGoal, shareGoalReads, shareObservation } from "./goalRead";
 import {
   mergeObservations,
   observationFromLegacyEvents,
   statsFromObservation,
   type RunObservation,
-  type RunObserver,
 } from "./observation";
 import { applyOfflineSeconds, type OfflineRunResult } from "./offline";
 import { offlineAbsenceForCredit, resolveOfflineSeconds } from "./offlineCredit";
@@ -206,35 +205,6 @@ function blocksFor(pattern: SessionPatternSpec): ActiveBlock[] {
   return buildBlocks(pattern);
 }
 
-// Each segment has its own recorder. The session observer hears a milestone key or a goal once.
-function oncePerSession(observer: RunObserver): RunObserver {
-  const milestones = new Set<string>();
-  const goals = new Set<string>();
-  const { onStep, onAction, onMilestone, onGoal } = observer;
-  return {
-    ...(onStep ? { onStep: (fact) => onStep.call(observer, fact) } : {}),
-    ...(onAction ? { onAction: (fact) => onAction.call(observer, fact) } : {}),
-    ...(onMilestone
-      ? {
-          onMilestone: (fact) => {
-            if (milestones.has(fact.key)) return;
-            milestones.add(fact.key);
-            onMilestone.call(observer, fact);
-          },
-        }
-      : {}),
-    ...(onGoal
-      ? {
-          onGoal: (fact) => {
-            if (goals.has(fact.goalId)) return;
-            goals.add(fact.goalId);
-            onGoal.call(observer, fact);
-          },
-        }
-      : {}),
-  };
-}
-
 function modelReadsClocks<N, U extends string, Vars>(scenario: CompiledScenario<N, U, Vars>): boolean {
   return (scenario.model.clocks?.respondsTo?.length ?? 0) > 0;
 }
@@ -328,7 +298,9 @@ export function simulateSessionPattern<N, U extends string, Vars>(args: {
         }
       : undefined;
 
-  const observer = sc.run.observer ? oncePerSession(sc.run.observer) : undefined;
+  // Segment recorders share one ledger: the caller's caps cover the session, and the observer
+  // hears a milestone key once. A reached goal is not passed to a later segment.
+  const shared = shareObservation(sc.run.observation);
   const onPrestigeReset = (t: number) => {
     lastResetT = t;
     sc.run.onPrestigeReset?.(t);
@@ -341,7 +313,7 @@ export function simulateSessionPattern<N, U extends string, Vars>(args: {
     return {
       ...base,
       ...(lastResetT !== undefined ? { constraints: constraintsWithAnchor(base.constraints, lastResetT) } : {}),
-      run: { ...base.run, onPrestigeReset, ...(sc.run.goals ? { goals: openGoals } : {}), ...(observer ? { observer } : {}) },
+      run: { ...base.run, onPrestigeReset, observation: shared.observation, ...(sc.run.goals ? { goals: openGoals } : {}) },
     };
   };
 
@@ -493,7 +465,12 @@ export function simulateSessionPattern<N, U extends string, Vars>(args: {
     appendOffline(startT + horizonSec, Math.floor((wallT - startT) / 86400));
   }
 
-  const observation = mergeObservations(segmentObservations);
+  const merged = mergeObservations(segmentObservations);
+  // An earlier segment lists a goal it did not reach. Drop it when a later segment dropped it under the cap.
+  const observation =
+    shared.ledger.droppedGoals.size > 0
+      ? { ...merged, goals: merged.goals.filter((goal) => !shared.ledger.droppedGoals.has(goal.id)) }
+      : merged;
   const stats = statsFromObservation(observation);
   const retained = eventBuffer.snapshot();
   const traced = trace.snapshot();

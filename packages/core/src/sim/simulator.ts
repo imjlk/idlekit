@@ -1,6 +1,7 @@
 import { analyzeUX } from "./analysis/ux";
 import { recordPrestigeReset } from "./constraints";
 import { createBoundedLog, createEventBuffer } from "./eventBuffer";
+import { observationLedger } from "./goalRead";
 import { createObservationRecorder, statsFromObservation } from "./observation";
 import { stepOnce } from "./step";
 import { assertSimulationClock, assertTickAdvanced, nextBoundary, stepContext, timeStepEvents } from "./timeBoundary";
@@ -47,6 +48,7 @@ export function runScenario<N, U extends string, Vars>(
     maxGoals: sc.run.observation?.maxGoals ?? 32,
     goals: sc.run.goals ?? [],
     observer: sc.run.observer,
+    ledger: observationLedger(sc.run.observation),
   });
 
   const stepSec = sc.run.stepSec;
