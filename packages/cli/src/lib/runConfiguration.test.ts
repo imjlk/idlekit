@@ -85,7 +85,7 @@ function registries() {
 
 /**
  * @evidence docs/requirements/active/cli-resolved-run.md#req-pr07-resolved-run Runs the shared plan, fresh stages, engine selection, suffix goal, and directory-independent digest.
- * @evidenceReview docs/requirements/active/cli-resolved-run.md#req-pr07-resolved-run #ad30c8a Re-read the section, including the stage digest paragraph, the evaluate default seed sentence, and the override that replaces the scenario strategy, then ran this function: both stages buy once, breakInfinity keeps 1e400 finite, the digest ignores the directory, and a swapped plugin order changes it.
+ * @evidenceReview docs/requirements/active/cli-resolved-run.md#req-pr07-resolved-run #9f0ee82 Re-read the section, including the stage digest paragraph, the evaluate default seed sentence, and the override that replaces the scenario strategy, then ran this function: both stages buy once, breakInfinity keeps 1e400 finite, the digest ignores the directory, and a swapped plugin order changes it.
  * @evidence ./runConfiguration.ts#resolvedRunContract Reads the resolved-run contract and checks a fresh stage against a standalone open.
  * @evidenceReview ./runConfiguration.ts#resolvedRunContract #2719478 The declaration is idlekit.resolved-run-configuration. This test reads that property.
  * @evidence ./runConfiguration.ts#sessionCaseSeed Reads the repro label. The runs use seed 1.
@@ -103,7 +103,7 @@ function registries() {
  * @evidence ./runConfiguration.ts#openResolvedStage Each stage opens a fresh compiled scenario with its own strategy, simulate on step 5 and experience on step 1.
  * @evidenceReview ./runConfiguration.ts#openResolvedStage #79dfd66 Re-read openResolvedStage: it binds a new createRunFactory with stageBindOptions, the scenario model and the plan strategy, and opens a fresh trial with the plan seed and an execution plan built from the stage plan. Ran this function: the opened simulate scenario is not the prepared definition, the two stages hold different strategies, and simulate runs on step 5 while experience runs on step 1.
  * @evidence ./runConfiguration.ts#prepareResolvedRun One prepared run opens simulate and experience stages that each buy once and match a standalone simulate open.
- * @evidenceReview ./runConfiguration.ts#prepareResolvedRun #46d2579 Re-read prepareResolvedRun: it resolves the engine, rejects an unknown strategy before any stage opens, compiles once without the scenario strategy when an override replaces it, and open builds a stage plan, its stage hash, a fresh stage scenario, and the registries and bind options that rebuild that stage's model and strategy. Ran this function: simulate and experience each end with bought 1, the standalone simulate matches, and an unknown override throws at prepare.
+ * @evidenceReview ./runConfiguration.ts#prepareResolvedRun #c8443d6 Re-read prepareResolvedRun: it resolves the engine, rejects an unknown strategy before any stage opens, compiles once without the scenario strategy when an override or validated params replace it, and open builds a stage plan, its stage hash, a fresh stage scenario, and the registries and bind options that rebuild that stage's model and strategy. Ran this function: simulate and experience each end with bought 1, the standalone simulate matches, and an unknown override throws at prepare.
  */
 export function keepsResolvedRunConfiguration(): void {
   expect(resolvedRunContract).toBe("idlekit.resolved-run-configuration");
@@ -305,7 +305,7 @@ export function keepsResolvedRunConfiguration(): void {
 
 /**
  * @evidence docs/requirements/active/cli-resolved-run.md#req-pr07-resolved-run Opens simulate, experience, and ltv stages with different command inputs and hashes their stage digests into one workflow digest.
- * @evidenceReview docs/requirements/active/cli-resolved-run.md#req-pr07-resolved-run #ad30c8a Re-read the section, including the stage digest paragraph and the three executed tests, then ran this function: duration, offline seconds, stage, step, fast, and ltv inputs change stage digests, an empty plugin map does not, experience ignores step and fast without consistent overrides, and the workflow digest follows the experience stage.
+ * @evidenceReview docs/requirements/active/cli-resolved-run.md#req-pr07-resolved-run #9f0ee82 Re-read the section, including the stage digest paragraph and the three executed tests, then ran this function: duration, offline seconds, stage, step, fast, and ltv inputs change stage digests, an empty plugin map does not, experience ignores step and fast without consistent overrides, and the workflow digest follows the experience stage.
  * @evidence ./runConfiguration.ts#effectiveRunHash Stage digests ignore an empty plugin digest map, change with simulate duration, offline seconds, the stage name, step and fast on simulate, and ltv horizons, draws, and value per worth.
  * @evidenceReview ./runConfiguration.ts#effectiveRunHash #874af5c Re-read effectiveRunHash and stageRunHash: the stage name, applied scope, and command inputs are part of the hash, and plugin digests keep their load order. Ran this function: an empty plugin map matches the default, durationSec 10 and 20 differ, offlineSeconds 0 and 60 differ, simulate and experience differ, step 5 with fast changes simulate only, and each ltv input change gives a new hash.
  * @evidence ./runConfiguration.ts#workflowRunHash The workflow digest ignores stage key order and changes when consistent overrides change the experience stage digest.
@@ -347,10 +347,10 @@ export function digestsEachStageFromItsAppliedPlan(): void {
 }
 
 /**
- * @evidence docs/requirements/active/cli-resolved-run.md#req-pr07-resolved-run An override runs over an unregistered scenario strategy and over invalid scenario strategy params, and without the override both still fail.
- * @evidenceReview docs/requirements/active/cli-resolved-run.md#req-pr07-resolved-run #ad30c8a Re-read the strategy paragraph: the flag replaces the scenario strategy, which is not built, and without the flag a broken one still fails. Ran this function: custom.once buys once over plugin.missing and over scripted params without a program, and without the override they throw Unknown strategy and Invalid strategy params.
- * @evidence ./runConfiguration.ts#prepareResolvedRun An override compiles without the scenario strategy it replaces, and no override keeps the scenario strategy errors.
- * @evidenceReview ./runConfiguration.ts#prepareResolvedRun #46d2579 Re-read prepareResolvedRun: resolveStrategySelection runs first, and a command-selected strategy compiles the scenario without its strategy field. Ran this function: both broken scenarios open a simulate stage that buys once under the override, and prepare throws the scenario strategy error without it.
+ * @evidence docs/requirements/active/cli-resolved-run.md#req-pr07-resolved-run An override runs over an unregistered scenario strategy and over invalid scenario strategy params, and without the override both still fail. Validated params build the scenario strategy only from the schema value.
+ * @evidenceReview docs/requirements/active/cli-resolved-run.md#req-pr07-resolved-run #9f0ee82 Re-read the strategy paragraph: the flag replaces the scenario strategy, which is not built, and without the flag a broken one still fails. Re-read the params mode paragraph: validated mode compiles without the scenario strategy and each stage builds it from result.value. Ran this function: custom.once buys once over plugin.missing and over scripted params without a program, and without the override they throw Unknown strategy and Invalid strategy params. A schema that coerces n "1" to 1 runs in validated mode, its create sees only 1, and legacy-raw still throws the create error at prepare.
+ * @evidence ./runConfiguration.ts#prepareResolvedRun An override or validated params compile without the scenario strategy, and a legacy-raw run without an override keeps the scenario strategy errors.
+ * @evidenceReview ./runConfiguration.ts#prepareResolvedRun #c8443d6 Re-read prepareResolvedRun: resolveStrategySelection runs first, and a command-selected strategy or a validated selection compiles the scenario without its strategy field. Ran this function: both broken scenarios open a simulate stage that buys once under the override, and prepare throws the scenario strategy error without it. The validated custom.coerce scenario plans params { n: 1 }, buys once, and its create is called only with 1, while legacy-raw throws the create error at prepare.
  */
 export function overrideReplacesBrokenScenarioStrategy(): void {
   const loaded = registries();
@@ -366,11 +366,39 @@ export function overrideReplacesBrokenScenarioStrategy(): void {
     /^Unknown strategy: plugin.missing$/,
   );
   expect(() => prepareResolvedRun({ scenario: broken[1]!, ...loaded, seed: 1 })).toThrow(/^Invalid strategy params: /);
+
+  // A coercing schema: validated mode builds only from { n: 1 }, legacy-raw still builds from { n: "1" }.
+  const created: unknown[] = [];
+  const coercing: StrategyFactory = {
+    id: "custom.coerce",
+    paramsSchema: {
+      "~standard": {
+        validate: (input: unknown) => ({ success: true as const, value: { n: Number((input as { n: unknown }).n) } }),
+      },
+    } as StrategyFactory["paramsSchema"],
+    create: (params) => {
+      const { n } = params as { n: unknown };
+      if (typeof n !== "number") throw new Error("custom.coerce needs a number n");
+      created.push(n);
+      return createScriptedStrategy({ schemaVersion: 1, program: [{ actionId: "buy" }], loop: false, onCannotApply: "stop" });
+    },
+  };
+  const coerced = {
+    ...loaded,
+    strategyRegistry: createStrategyRegistry([...builtinStrategyFactories, coercing]),
+  };
+  const raw: ScenarioV1 = { ...scenario(), strategy: { id: "custom.coerce", params: { n: "1" } } };
+  const validated = prepareResolvedRun({ scenario: raw, ...coerced, paramsMode: "validated", seed: 1 });
+  const stage = validated.open("simulate", "validated");
+  expect(stage.plan.strategy).toEqual({ id: "custom.coerce", params: { n: 1 }, paramsMode: "validated", source: "scenario" });
+  expect(runScenario(stage.scenario).end.vars).toEqual({ bought: 1 });
+  expect(created).toEqual([1]);
+  expect(() => prepareResolvedRun({ scenario: raw, ...coerced, seed: 1 })).toThrow(/^custom.coerce needs a number n$/);
 }
 
 /**
  * @evidence docs/requirements/active/cli-resolved-run.md#req-pr07-resolved-run The default seed reads the engine that runs, so the default and an explicit number engine give the same seed input.
- * @evidenceReview docs/requirements/active/cli-resolved-run.md#req-pr07-resolved-run #ad30c8a Re-read the section: number is the default engine and the default evaluate seed reads the scenario, strategy, and engine. Ran this function: no flag and number give the same seed input, and breakInfinity adds its id.
+ * @evidenceReview docs/requirements/active/cli-resolved-run.md#req-pr07-resolved-run #9f0ee82 Re-read the section: number is the default engine and the default evaluate seed reads the scenario, strategy, and engine. Ran this function: no flag and number give the same seed input, and breakInfinity adds its id.
  * @evidence ./runConfiguration.ts#engineSeedOption No flag, an empty flag, and `number` leave the engine out of the seed input, and another engine id stays in it.
  * @evidenceReview ./runConfiguration.ts#engineSeedOption #4e78301 Re-read engineSeedOption: it trims the flag and returns no engine field for a missing, empty, or number flag, and the trimmed id otherwise. Ran this function: undefined, blank, number, and padded number give {}, and breakInfinity gives { engine: "breakInfinity" }.
  */
@@ -384,7 +412,7 @@ export function seedsTheDefaultEngineOnce(): void {
 
 /**
  * @evidence docs/requirements/active/cli-resolved-run.md#req-pr07-resolved-run The default seed reads the strategy that runs, so an override that resolves to the scenario strategy gives the no-flag seed input.
- * @evidenceReview docs/requirements/active/cli-resolved-run.md#req-pr07-resolved-run #ad30c8a Re-read the section: the default evaluate seed reads the scenario, strategy, and engine, and an override replaces the scenario strategy with the factory defaults. Ran this function: no flag, a blank flag, and greedy over the greedy scenario give no strategy field, and custom.once adds its id.
+ * @evidenceReview docs/requirements/active/cli-resolved-run.md#req-pr07-resolved-run #9f0ee82 Re-read the section: the default evaluate seed reads the scenario, strategy, and engine, and an override replaces the scenario strategy with the factory defaults. Ran this function: no flag, a blank flag, and greedy over the greedy scenario give no strategy field, and custom.once adds its id.
  * @evidence ./runConfiguration.ts#strategySeedOption No flag and an override that resolves to the scenario id and params add nothing, another id adds its id, and the scenario id with other params adds those params.
  * @evidenceReview ./runConfiguration.ts#strategySeedOption #9d764c0 Re-read strategySeedOption: no trimmed override gives {}, an override with another id than the scenario adds that id, and the scenario id adds its resolved params unless the scenario strategy resolves to the same params and mode. Ran this function: greedy, padded greedy, and custom.once with default params give {}, custom.once with loop true adds the defaults, a missing scenario strategy and plugin.missing add the id, an invalid scripted scenario adds the scripted defaults, and plugin.not-loaded throws Unknown strategy.
  */

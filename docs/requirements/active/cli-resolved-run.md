@@ -14,7 +14,7 @@ Requirement `REQ-PR07-RESOLVED-RUN`. `PR-07` owns it.
 
 Strategy applies to simulate, experience, and ltv. `--step` and `--fast` apply to simulate and ltv. They apply to experience only when `--consistent-overrides` is true. Session pattern and days stay on experience. Each stage records that scope. `ctx.stepSec` and `run.stepSec` are the stage step. A planner preview reads `ctx.stepSec`.
 
-Strategy params default to `legacy-raw`. The internal `StandardSchema` adapter checks the schema and still passes the caller object. `validated` passes `result.value`. That adapter is not the external Standard Schema package. `compileScenario` keeps `legacy-raw`.
+Strategy params default to `legacy-raw`. The internal `StandardSchema` adapter checks the schema and still passes the caller object. `validated` passes `result.value`. That adapter is not the external Standard Schema package. `compileScenario` keeps `legacy-raw`. In `validated` mode `prepareResolvedRun` compiles without the scenario strategy, and each stage builds it only from `result.value`.
 
 Amount `until` paths are `money`, `wallet.money`, `wallet.money.amount`, `bucket`, `wallet.bucket`, `maxMoneyEver`, `maxMoneyEver.amount`, `prestige.points`, and `prestige.multiplier`. Those paths call `parseMoney` when suffix notation is allowed and the right-hand side has a suffix. A numeric left value does not switch them to `Number(rawRight)`. `t` and `prestige.count` stay finite number comparisons. A non-finite amount fails closed.
 
