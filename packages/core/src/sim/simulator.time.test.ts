@@ -113,8 +113,8 @@ function jsonClock(durationSec: number | undefined): ScenarioV1 {
  * @evidenceReview ./timeBoundary.ts#stepContext #bc08196 Re-read stepContext: it spreads the caller context into a new object and sets stepSec to this tick's dt. Ran this function: preview saw 6 then 4, and the frozen caller context still has stepSec 6.
  * @evidence ./timeBoundary.ts#timeStepEvents An applied action is stamped action-start at t 0 and the money event income-end at t 1.
  * @evidenceReview ./timeBoundary.ts#timeStepEvents #0b31432 Re-read timeStepEvents: money and milestone events are income-end at the tick end, and every other event is action-start at the tick start. Ran this function: action.applied is action-start at t 0, the action row is at t 0, and money is income-end at t 1.
- * @evidence ./timeBoundary.ts#assertTickAdvanced At t 1e20 a 1s tick, or a lone 60s partial tick under a 32768s step, throws online and offline, and a 1e-8 last tick at t 1e9 still ends the catch-up.
- * @evidenceReview ./timeBoundary.ts#assertTickAdvanced #60bc731 Re-read assertTickAdvanced: a tick passes when t moves, or when it is a partial tick below half an ulp of t, a whole step still moves t, and an earlier tick already moved t past the run start; otherwise it throws with the start t and step. Ran this function: t 1e20 with stepSec 1 and 3s, and t 1e20 with stepSec 32768 and a single 60s tick, throw in runScenario and applyOfflineSeconds, t 1e9 runs 3s to t + 3, and a 10 + 1e-8 catch-up at t 1e9 stops as duration after 11 steps.
+ * @evidence ./timeBoundary.ts#assertTickAdvanced At t 1e20 a 1s tick, or a lone 60s partial tick under a 32768s step, throws online and offline, a string or non-finite t throws, and a 1e-8 last tick at t 1e9 still ends the catch-up.
+ * @evidenceReview ./timeBoundary.ts#assertTickAdvanced #525b586 Re-read assertTickAdvanced: a start or committed t that is not a finite number throws first; otherwise a tick passes when t moves, or when it is a partial tick below half an ulp of t, a whole step still moves t, and an earlier tick already moved t past the run start; otherwise it throws with the start t and step. Ran this function: t 1e20 with stepSec 1 and 3s, and t 1e20 with stepSec 32768 and a single 60s tick, throw in runScenario and applyOfflineSeconds, a start t of "0", NaN, Infinity, or -Infinity throws the finite-number error online and offline, t 1e9 runs 3s to t + 3, and a 10 + 1e-8 catch-up at t 1e9 stops as duration after 11 steps.
  * @evidence ./simulator.ts#runScenario Runs the partial tick, the step budget, the rejected clocks, trace points, event stamps, and a breakInfinity horizon.
  * @evidenceReview ./simulator.ts#runScenario #bc55317 Re-read runScenario: it validates the clock and integer trace.maxPoints and trace.maxActions budgets, builds its recorder with the ledger a session's shared observation options carry, records the start state's goals before the first boundary, asks nextBoundary before each step, throws on the guard, passes a stepContext copy to decide and stepOnce, checks with assertTickAdvanced that the committed tick moved state.t (a sub-ulp last tick only after an earlier tick moved it), records the prestige reset, tells the recorder a prestige applied only when stepOnce reports prestigeResetT, and appends the final state to the trace once, comparing a bounded trace against the last state it offered rather than the last one retained. Ran this function: wallet and t end at 10 for the partial tick, budget and until stops match, trace times are 0, 2, 4, 5, and the breakInfinity run ends at 10.
  * @evidence ./offline.ts#applyOfflineSeconds A 2.5s catch-up ends at t 2.5 like the online run, a short maxSteps stops as budget with 5 simulated seconds, and a NaN stepSec throws before decide.
@@ -390,6 +390,19 @@ export function stopsOnTheRequestedHorizon(): void {
       options: { useStrategy: false, fromState: state(0, frozen) },
     }),
   ).toThrow("offline tick did not advance state.t (start t: 100000000000000000000, step: 60");
+  // A string t concatenates ("0" + 1 is "01") and compares as larger. It and a non-finite t throw.
+  for (const badT of ["0", Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY] as unknown as number[]) {
+    expect(() =>
+      runScenario(scenario({ rate: 1, stepSec: 1, durationSec: 3, initial: state(0, badT) })),
+    ).toThrow("runScenario state.t must be a finite number");
+    expect(() =>
+      applyOfflineSeconds({
+        scenario: scenario({ rate: 1, stepSec: 1, durationSec: 0 }),
+        seconds: 3,
+        options: { useStrategy: false, fromState: state(0, badT) },
+      }),
+    ).toThrow("offline state.t must be a finite number");
+  }
 
   const lateT = 1e9;
   const late = runScenario(scenario({ rate: 1, stepSec: 1, durationSec: 3, initial: state(0, lateT) }));
