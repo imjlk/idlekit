@@ -164,6 +164,47 @@ describe("effectiveRunHash", () => {
     }
   }, 180000);
 
+  it("derives the default seed from the session and draws that run", async () => {
+    const meta = (command: string[], extra: string[]) => runCliJson([...command, ...extra, "--format", "json"])._meta;
+    const dir = await createTempDir("idlekit-session-seed");
+    try {
+      const body = JSON.parse(await readText(resolve(CLI_CWD, BASELINE)));
+      const declared = resolve(dir, "declared.json");
+      await writeText(
+        declared,
+        JSON.stringify({
+          ...body,
+          design: { sessionPattern: { id: "short-bursts", days: 1 } },
+          analysis: { ...body.analysis, experience: { draws: 2 } },
+          monetization: { uncertainty: { enabled: true, draws: 3 } },
+        }),
+      );
+      const experience = ["experience", declared];
+      const plain = meta(experience, []);
+      for (const extra of [["--session-pattern", "short-bursts"], ["--days", "1"], ["--draws", "2"]]) {
+        const same = meta(experience, extra);
+        expect(same.seed).toBe(plain.seed);
+        expect(same.effectiveRunHash).toBe(plain.effectiveRunHash);
+      }
+      for (const extra of [["--session-pattern", "twice-daily"], ["--days", "2"], ["--draws", "3"]]) {
+        const other = meta(experience, extra);
+        expect(other.seed).not.toBe(plain.seed);
+        expect(other.effectiveRunHash).not.toBe(plain.effectiveRunHash);
+      }
+
+      const ltv = ["ltv", declared, "--horizons", "30m"];
+      const ltvPlain = meta(ltv, []);
+      const ltvSame = meta(ltv, ["--draws", "3"]);
+      expect(ltvSame.seed).toBe(ltvPlain.seed);
+      expect(ltvSame.effectiveRunHash).toBe(ltvPlain.effectiveRunHash);
+      const ltvOther = meta(ltv, ["--draws", "4"]);
+      expect(ltvOther.seed).not.toBe(ltvPlain.seed);
+      expect(ltvOther.effectiveRunHash).not.toBe(ltvPlain.effectiveRunHash);
+    } finally {
+      await removePath(dir);
+    }
+  }, 180000);
+
   it("keeps the default evaluate seed off stage-only flags", async () => {
     const dir = await createTempDir("idlekit-evaluate-seed");
     try {

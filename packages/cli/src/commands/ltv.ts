@@ -477,6 +477,10 @@ export default defineCommand({
       throw scenarioInvalidError(valid.issues);
     }
 
+    // A --draws equal to the scenario's enabled uncertainty draws runs the same bands, so it keeps
+    // the no-flag seed and stage inputs.
+    const uncertainty = deriveMonetizationConfig(valid.scenario).uncertainty;
+    const draws = uncertainty.enabled && flags.draws === uncertainty.draws ? undefined : flags.draws;
     const baseSeed =
       flags.seed ??
       deriveDeterministicSeed({
@@ -494,7 +498,7 @@ export default defineCommand({
           }),
           fast: flags.fast,
           ...engineSeedOption(flags.engine),
-          draws: flags.draws,
+          draws,
           valuePerWorth: flags["value-per-worth"],
         },
       });
@@ -513,7 +517,7 @@ export default defineCommand({
     });
     const opened = prepared.open("ltv", `ltv:${seed}`, {
       horizons: parseHorizons(flags.horizons),
-      draws: flags.draws ?? null,
+      draws: draws ?? null,
       valuePerWorth: flags["value-per-worth"] ?? null,
     });
     const analysis = runLtvAnalysis({
@@ -525,7 +529,7 @@ export default defineCommand({
       step: flags.step,
       fast: flags.fast,
       seed,
-      draws: flags.draws,
+      draws,
       valuePerWorth: flags["value-per-worth"],
       runId: flags["run-id"],
     });

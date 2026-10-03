@@ -57,15 +57,26 @@ export default defineCommand({
       throw scenarioInvalidError(valid.issues);
     }
 
+    // A flag equal to what the scenario resolves to runs the same session and draws, so it keeps
+    // the no-flag seed input.
+    const scenarioSession = resolveSessionPatternSpec({ scenario: valid.scenario });
+    const flagSession = resolveSessionPatternSpec({
+      scenario: valid.scenario,
+      sessionPatternId: resolveSessionPatternId(flags["session-pattern"]),
+      days: flags.days,
+    });
     const seed =
       flags.seed ??
       deriveDeterministicSeed({
         command: "experience",
         scenario: valid.scenario,
         options: {
-          sessionPattern: flags["session-pattern"],
-          days: flags.days,
-          draws: flags.draws,
+          sessionPattern: flagSession.id !== scenarioSession.id ? flags["session-pattern"] : undefined,
+          days: flagSession.days !== scenarioSession.days ? flags.days : undefined,
+          draws:
+            resolveExperienceDraws(valid.scenario, flags.draws) !== resolveExperienceDraws(valid.scenario)
+              ? flags.draws
+              : undefined,
           ...strategySeedOption({
             scenario: valid.scenario,
             strategyRegistry: loaded.strategyRegistry,

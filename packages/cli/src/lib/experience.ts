@@ -92,7 +92,7 @@ function summarizeNumeric(values: number[], quantiles: readonly number[]): Exper
 }
 
 export function resolveSessionPatternSpec(args: {
-  scenario: CompiledScenario<any, any, any>;
+  scenario: Pick<CompiledScenario<any, any, any>, "design">;
   sessionPatternId?: SessionPatternId;
   days?: number;
 }): SessionPatternSpec {
@@ -110,7 +110,7 @@ export function resolveExperienceSeries(
   return requested ?? scenario.analysis?.experience?.series ?? (scenario.model.netWorth ? "netWorth" : "money");
 }
 
-export function resolveExperienceDraws(scenario: CompiledScenario<any, any, any>, draws?: number): number {
+export function resolveExperienceDraws(scenario: Pick<CompiledScenario<any, any, any>, "analysis">, draws?: number): number {
   return Math.max(1, Math.floor(draws ?? scenario.analysis?.experience?.draws ?? 1));
 }
 
