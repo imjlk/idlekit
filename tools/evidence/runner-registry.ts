@@ -697,16 +697,28 @@ function collectRegistrations(
   return found;
 }
 
+// Keyed by source text. The inventory asks the same questions of the same core
+// modules for every command; a body always scans the same way.
+const scannedByBody = new Map<string, { found: Registration[]; unresolved: string[] }>();
+
+function scanRegistrations(body: string): { found: Registration[]; unresolved: string[] } {
+  const cached = scannedByBody.get(body);
+  if (cached) return cached;
+  const unresolved: string[] = [];
+  const found = collectRegistrations(body, unresolved);
+  const scanned = { found, unresolved };
+  scannedByBody.set(body, scanned);
+  return scanned;
+}
+
 /** Title calls through a binding that is not `it`, `test`, or `describe`. */
 export function unresolvedRunnerCalls(body: string): string[] {
-  const unresolved: string[] = [];
-  collectRegistrations(body, unresolved);
-  return unresolved;
+  return [...scanRegistrations(body).unresolved];
 }
 
 /** 1-based lines where this full reporter name is registered. */
 export function registrationLines(body: string, registeredAs: string): number[] {
-  return collectRegistrations(body)
+  return scanRegistrations(body).found
     .filter((registration) => {
       const full = [...registration.suites, registration.title].join(" > ");
       return full === registeredAs;
@@ -716,7 +728,7 @@ export function registrationLines(body: string, registeredAs: string): number[] 
 
 /** Suite names wrapping this `it`/`test` callback, from the outermost `describe`. */
 export function registeredSuites(body: string, exportName: string, title: string): string[][] {
-  return collectRegistrations(body)
+  return scanRegistrations(body).found
     .filter((registration) => registration.callback === exportName && registration.title === title)
     .map((registration) => registration.suites);
 }
@@ -725,7 +737,7 @@ export function registeredSuites(body: string, exportName: string, title: string
 export function duplicateFullNamesAcross(bodies: readonly string[]): string[] {
   const counts = new Map<string, number>();
   for (const body of bodies) {
-    for (const registration of collectRegistrations(body)) {
+    for (const registration of scanRegistrations(body).found) {
       const full = [...registration.suites, registration.title].join(" > ");
       counts.set(full, (counts.get(full) ?? 0) + 1);
     }
@@ -745,7 +757,7 @@ export function duplicateFullNames(body: string): string[] {
 export function ambiguousSuiteSeparators(bodies: readonly string[]): string[] {
   const found: string[] = [];
   for (const body of bodies) {
-    for (const registration of collectRegistrations(body)) {
+    for (const registration of scanRegistrations(body).found) {
       for (const suite of registration.suites) {
         if (suite.includes(" > ") && !found.includes(suite)) found.push(suite);
       }
@@ -944,8 +956,7 @@ function declaratorInitializer(body: string, nameAt: number): boolean {
 
 /** A package file hides tests when it registers one, or runs dynamic code. */
 export function runnerSignal(body: string): "dynamic" | "registration" | "none" {
-  const unresolved: string[] = [];
-  const found = collectRegistrations(body, unresolved);
+  const { found, unresolved } = scanRegistrations(body);
   if (unresolved.some((name) => dynamicCodeName(name))) return "dynamic";
   if (found.length > 0) return "registration";
   return "none";

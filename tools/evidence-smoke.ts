@@ -38,6 +38,7 @@ import {
   formatIncludeRoots,
   graphRuleFailures,
   declaredRequirementId,
+  runnerSources,
   headingAnchors,
   missingProtectedDocs,
   registeredSuites,
@@ -627,6 +628,37 @@ try {
   const realCitation = "/** @evidence docs/requirements/active/x.md#anchor */\nexport function real() {}\n";
   const ordinaryBlock =
     "/* note /** @evidence docs/requirements/active/x.md#anchor */ export function uncited() {}\n";
+  const productionHelper = [
+    'import { assertSimulationClock } from "./timeBoundary";',
+    'assertSimulationClock("offline", clock);',
+    'const read = new Function("s", "return s.t");',
+    'const ok = /x/.test("x");',
+  ].join("\n");
+  const importedRunnerHelper = [
+    'import { it } from "bun:test";',
+    'import { register } from "./helpers";',
+    'register("credited", unrelated);',
+  ].join("\n");
+  const globalRunnerHelper = [
+    "export function eachCase(rows) {",
+    "  for (const row of rows) it(row.name, row.run);",
+    "}",
+  ].join("\n");
+  const scopedSources = runnerSources([productionHelper, importedRunnerHelper, globalRunnerHelper]);
+  const runnerScopeOk =
+    unresolvedRunnerCalls(productionHelper).length > 0 &&
+    unresolvedRunnerCalls(importedRunnerHelper).length > 0 &&
+    scopedSources.length === 2 &&
+    !scopedSources.includes(productionHelper) &&
+    scopedSources.includes(importedRunnerHelper) &&
+    scopedSources.includes(globalRunnerHelper);
+  record(
+    "runner-scope",
+    "zero",
+    runnerScopeOk ? 0 : 1,
+    runnerScopeOk,
+    "production code is not scanned for hidden registrations; runner-importing and global-runner helpers are",
+  );
   const declaredDoc = [
     "## A {#a}",
     "",

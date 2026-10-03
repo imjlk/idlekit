@@ -3,6 +3,7 @@ import { createNumberEngine } from "../engine/breakInfinity";
 import type { Action, CompiledScenario, Model, SimContext, SimState } from "./types";
 import type { Strategy } from "./strategy/types";
 import { applyOfflineSeconds } from "./offline";
+import { createScriptedStrategy } from "./strategy/scripted";
 
 type U = "COIN";
 type Vars = { bought: number };
@@ -106,16 +107,21 @@ describe("applyOfflineSeconds", () => {
     expect(noStrategy.end.vars.bought).toBe(0);
   });
 
-  it("throws when maxSteps is insufficient", () => {
+  it("stops at the step budget instead of throwing the partial run away", () => {
     const scenario = makeScenario({ incomePerSec: 1 });
 
-    expect(() =>
-      applyOfflineSeconds({
-        scenario,
-        seconds: 10,
-        options: { maxSteps: 5 },
-      }),
-    ).toThrow("offline run exceeded maxSteps");
+    const out = applyOfflineSeconds({
+      scenario,
+      seconds: 10,
+      options: { maxSteps: 5 },
+    });
+
+    expect(out.stop?.reason).toBe("budget");
+    expect(out.stop?.steps).toBe(5);
+    expect(out.end.t).toBe(5);
+    expect(out.offline.effectiveSec).toBe(10);
+    expect(out.offline.simulatedSec).toBe(5);
+    expect(out.offline.fullSteps).toBe(10);
   });
 
   it("applies clamp policy from scenario.run.offline", () => {
@@ -186,5 +192,246 @@ describe("applyOfflineSeconds", () => {
     expect(out.offline.decay.ratio).toBeCloseTo(0.2, 8);
     expect(out.offline.effectiveSec).toBeCloseTo(2, 8);
     expect(out.end.t).toBeCloseTo(2, 8);
+  });
+
+  it("keeps a direct cap on reward time and can refuse offline actions", () => {
+    const scenario = {
+      ...makeScenario({ incomePerSec: 1, initialMoney: 4 }),
+      run: {
+        ...makeScenario({ incomePerSec: 1, initialMoney: 4 }).run,
+        offline: { maxSec: 5, overflowPolicy: "clamp" as const, actions: { mode: "none" as const } },
+      },
+      strategy: {
+        id: "buy-first",
+        decide(_ctx: SimContext<number, U, Vars>, model: Model<number, U, Vars>, state: SimState<number, U, Vars>) {
+          const buy = model.actions(_ctx, state).find((action) => action.id === "buy");
+          return buy ? [{ action: buy }] : [];
+        },
+      } satisfies Strategy<number, U, Vars>,
+    };
+    const out = applyOfflineSeconds({ scenario, seconds: 12 * 3600 });
+    expect(out.offline.requestedSec).toBe(12 * 3600);
+    expect(out.offline.effectiveSec).toBe(5);
+    expect(out.end.t).toBe(5);
+    expect(out.end.vars.bought).toBe(0);
+    expect(out.offline.actionPolicy).toBe("none");
+  });
+
+  it("reports no strategy use when the scenario has no strategy", () => {
+    const scenario = makeScenario({ initialMoney: 5 });
+    const allow = applyOfflineSeconds({
+      scenario,
+      seconds: 3,
+      options: { actions: { mode: "allow", categories: ["buy"] } },
+    });
+    expect(allow.offline.usedStrategy).toBe(false);
+    expect(allow.offline.actionPolicy).toBe("allow");
+    const legacy = applyOfflineSeconds({ scenario, seconds: 3, options: { useStrategy: true } });
+    expect(legacy.offline.usedStrategy).toBe(false);
+  });
+
+  it("does not roll back a strategy that returned nothing under allow", () => {
+    const strategy = createScriptedStrategy<number, U, Vars>({
+      schemaVersion: 1,
+      loop: false,
+      program: [{ actionId: "unlock-later" }, { actionId: "buy" }],
+    });
+    const scenario = makeScenario({ initialMoney: 5, strategy });
+    const out = applyOfflineSeconds({
+      scenario,
+      seconds: 3,
+      options: { actions: { mode: "allow", categories: ["buy"] } },
+    });
+    expect(out.end.vars.bought).toBe(1);
+    expect(strategy.snapshotState?.()).toEqual({ cursor: 2 });
+  });
+
+  it("restores a rejected batch when snapshotState returns the live state object", () => {
+    let internal = { cursor: 0 };
+    const strategy: Strategy<number, U, Vars> = {
+      id: "aliased",
+      decide(ctx, model, state) {
+        internal.cursor += 1;
+        const buy = model.actions(ctx, state).find((action) => action.id === "buy")!;
+        return [{ action: { ...buy, id: "reset", kind: "prestige" } }];
+      },
+      snapshotState: () => internal,
+      restoreState: (saved) => {
+        internal = saved as { cursor: number };
+      },
+    };
+    const out = applyOfflineSeconds({
+      scenario: makeScenario({ initialMoney: 5, strategy }),
+      seconds: 3,
+      options: { actions: { mode: "allow", categories: ["buy"] } },
+    });
+    expect(out.end.prestige.count).toBe(0);
+    expect(internal.cursor).toBe(0);
+  });
+
+  it("restores a rejected batch when the snapshot pair saves undefined", () => {
+    let cursor: number | undefined;
+    const strategy: Strategy<number, U, Vars> = {
+      id: "lazy",
+      decide(ctx, model, state) {
+        cursor = (cursor ?? 0) + 1;
+        const buy = model.actions(ctx, state).find((action) => action.id === "buy")!;
+        return [{ action: { ...buy, id: "reset", kind: "prestige" } }];
+      },
+      snapshotState: () => cursor,
+      restoreState: (saved) => {
+        cursor = saved as number | undefined;
+      },
+    };
+    const out = applyOfflineSeconds({
+      scenario: makeScenario({ initialMoney: 5, strategy }),
+      seconds: 3,
+      options: { actions: { mode: "allow", categories: ["buy"] } },
+    });
+    expect(out.end.prestige.count).toBe(0);
+    expect(cursor).toBeUndefined();
+  });
+
+  it("applies the listed part of a mixed allow batch without restoring", () => {
+    let calls = 0;
+    const strategy: Strategy<number, U, Vars> = {
+      id: "mixed",
+      decide(ctx, model, state) {
+        calls += 1;
+        if (calls > 1) return [];
+        const buy = model.actions(ctx, state).find((action) => action.id === "buy")!;
+        return [{ action: { ...buy, id: "reset", kind: "prestige" } }, { action: buy }];
+      },
+      snapshotState: () => ({ calls }),
+      restoreState: (saved) => {
+        calls = (saved as { calls: number }).calls;
+      },
+    };
+    const out = applyOfflineSeconds({
+      scenario: makeScenario({ initialMoney: 5, strategy }),
+      seconds: 3,
+      options: { actions: { mode: "allow", categories: ["buy"] } },
+    });
+    expect(out.end.vars.bought).toBe(1);
+    expect(out.end.prestige.count).toBe(0);
+    expect(calls).toBe(3);
+  });
+
+  it("checks the actor filter against the action a later buy re-resolves to", () => {
+    // The first hire hands later hires to the player.
+    const base = makeScenario({ initialMoney: 5 });
+    const model: Model<number, U, Vars> = {
+      ...base.model,
+      actions: (ctx, state) =>
+        base.model.actions(ctx, state).map((action) => ({
+          ...action,
+          id: "hire",
+          actor: state.vars.bought === 0 ? ("automation" as const) : ("player" as const),
+        })),
+    };
+    const strategy: Strategy<number, U, Vars> = {
+      id: "hire-twice",
+      decide(ctx, model, state) {
+        const hire = model.actions(ctx, state).find((action) => action.id === "hire")!;
+        return [{ action: hire }, { action: hire }];
+      },
+    };
+    const out = applyOfflineSeconds({
+      scenario: { ...base, model, strategy },
+      seconds: 3,
+      options: { actions: { mode: "allow", categories: ["buy"], actors: ["automation"] } },
+    });
+    expect(out.end.vars.bought).toBe(1);
+    expect(out.actionsLog?.map((row) => row.actionId)).toEqual(["hire"]);
+  });
+
+  it("restores a batch the actor filter rejects only at re-resolution", () => {
+    // Each enumeration flips the actor, so the strategy sees automation and the step sees player.
+    const base = makeScenario({ initialMoney: 5 });
+    let enumerations = 0;
+    const model: Model<number, U, Vars> = {
+      ...base.model,
+      actions: (ctx, state) => {
+        enumerations += 1;
+        const actor = enumerations % 2 === 1 ? ("automation" as const) : ("player" as const);
+        return base.model.actions(ctx, state).map((action) => ({ ...action, actor }));
+      },
+    };
+    let cursor = 0;
+    const strategy: Strategy<number, U, Vars> = {
+      id: "cursor",
+      decide(ctx, model, state) {
+        cursor += 1;
+        return [{ action: model.actions(ctx, state).find((action) => action.id === "buy")! }];
+      },
+      snapshotState: () => ({ cursor }),
+      restoreState: (saved) => {
+        cursor = (saved as { cursor: number }).cursor;
+      },
+    };
+    const out = applyOfflineSeconds({
+      scenario: { ...base, model, strategy },
+      seconds: 3,
+      options: { actions: { mode: "allow", categories: ["buy"], actors: ["automation"] } },
+    });
+    expect(out.end.vars.bought).toBe(0);
+    expect(cursor).toBe(0);
+  });
+
+  it("restores a capped batch whose handed decisions are all rejected at re-resolution", () => {
+    const base = makeScenario({ initialMoney: 5 });
+    let enumerations = 0;
+    const model: Model<number, U, Vars> = {
+      ...base.model,
+      actions: (ctx, state) => {
+        enumerations += 1;
+        const actor = enumerations % 2 === 1 ? ("automation" as const) : ("player" as const);
+        return base.model.actions(ctx, state).map((action) => ({ ...action, actor }));
+      },
+    };
+    let cursor = 0;
+    const strategy: Strategy<number, U, Vars> = {
+      id: "cursor",
+      decide(ctx, model, state) {
+        cursor += 1;
+        const buy = model.actions(ctx, state).find((action) => action.id === "buy")!;
+        return [{ action: buy }, { action: buy }];
+      },
+      snapshotState: () => ({ cursor }),
+      restoreState: (saved) => {
+        cursor = (saved as { cursor: number }).cursor;
+      },
+    };
+    // maxActionsPerStep hands one of the two admitted decisions to the step, and that one is rejected.
+    const out = applyOfflineSeconds({
+      scenario: { ...base, model, strategy, constraints: { maxActionsPerStep: 1 } },
+      seconds: 3,
+      options: { actions: { mode: "allow", categories: ["buy"], actors: ["automation"] } },
+    });
+    expect(out.end.vars.bought).toBe(0);
+    expect(cursor).toBe(0);
+  });
+
+  it("consumes the decision when only maxActionsPerStep 0 empties the batch", () => {
+    let cursor = 0;
+    const strategy: Strategy<number, U, Vars> = {
+      id: "cursor",
+      decide(ctx, model, state) {
+        cursor += 1;
+        return [{ action: model.actions(ctx, state).find((action) => action.id === "buy")! }];
+      },
+      snapshotState: () => ({ cursor }),
+      restoreState: (saved) => {
+        cursor = (saved as { cursor: number }).cursor;
+      },
+    };
+    const base = makeScenario({ initialMoney: 5, strategy });
+    const out = applyOfflineSeconds({
+      scenario: { ...base, constraints: { maxActionsPerStep: 0 } },
+      seconds: 3,
+      options: { actions: { mode: "allow", categories: ["buy"] } },
+    });
+    expect(out.end.vars.bought).toBe(0);
+    expect(cursor).toBe(3);
   });
 });

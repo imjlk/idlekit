@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { resolve } from "path";
-import { createTempDir, removePath, runCliFailure, writeText } from "../testkit/bun";
+import { createTempDir, removePath, runCliFailure, runCliJson, writeText } from "../testkit/bun";
 
 describe("cli error contract", () => {
   it("prints CLI_USAGE for missing positional validate input", () => {
@@ -95,6 +95,12 @@ describe("cli error contract", () => {
       );
       const result = runCliFailure(["simulate", scenarioPath]);
       expect(result.stderr).toContain("[UNKNOWN_STRATEGY]");
+      expect(result.stderr).toContain("Unknown strategy: missing-strategy");
+      // An override replaces the missing scenario strategy instead of building it.
+      const simulated = runCliJson(["simulate", scenarioPath, "--strategy", "greedy", "--format", "json"]);
+      expect(simulated.endT).toBe(60);
+      const compared = runCliJson(["compare", scenarioPath, scenarioPath, "--strategy", "greedy", "--format", "json"]);
+      expect(compared.detail.aScore).toBe(compared.detail.bScore);
     } finally {
       await removePath(dir);
     }

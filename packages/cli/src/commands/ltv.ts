@@ -1,7 +1,7 @@
 import { defineCommand, option } from "@bunli/core";
 import {
-  compileScenario,
-  createNumberEngine,
+  assertHorizonReached,
+  constraintsWithAnchor,
   runScenario,
   validateScenarioV1,
   type CompiledScenario,
@@ -10,9 +10,10 @@ import {
 import { resolve } from "path";
 import { z } from "zod";
 import { loadRegistriesFromFlags, pluginOptions } from "./_shared/plugin";
-import { cliError, scenarioInvalidError, unknownStrategyError, usageError } from "../errors";
+import { cliError, scenarioInvalidError, usageError } from "../errors";
 import { buildOutputMeta, deriveDeterministicRunId, deriveDeterministicSeed } from "../io/outputMeta";
 import { writeCommandReplayArtifact } from "../io/replayPolicy";
+import { engineSeedOption, prepareResolvedRun, strategySeedOption } from "../lib/runConfiguration";
 import { readScenarioFile } from "../io/readScenario";
 import { writeOutput } from "../io/writeOutput";
 import {
@@ -22,7 +23,7 @@ import {
   progressionFactor,
 } from "../lib/ltvModel";
 
-const strategySchema = z.enum(["greedy", "planner", "scripted"]).optional();
+const strategySchema = z.string().min(1).optional();
 
 type HorizonPoint = Readonly<{
   label: string;
@@ -59,7 +60,7 @@ function parseHorizonToken(raw: string): HorizonPoint {
   throw cliError("CLI_USAGE", `invalid horizon token: ${raw} (expected e.g. 30m,2h,24h,7d)`);
 }
 
-function parseHorizons(raw: string): HorizonPoint[] {
+export function parseHorizons(raw: string): HorizonPoint[] {
   const tokens = raw
     .split(",")
     .map((x) => x.trim())
@@ -80,7 +81,7 @@ function getSummaryBySeconds<T extends { seconds: number }>(rows: T[], seconds: 
   return rows.find((r) => r.seconds === seconds);
 }
 
-type StatsCounts = {
+export type StatsCounts = {
   moneyApplied: number;
   moneyDropped: number;
   moneyQueued: number;
@@ -90,9 +91,10 @@ type StatsCounts = {
   actionsSkippedCannot: number;
   actionsSkippedFunds: number;
   actionsSkippedInvalid: number;
+  actionsSkippedCooldown: number;
 };
 
-function emptyCounts(): StatsCounts {
+export function emptyCounts(): StatsCounts {
   return {
     moneyApplied: 0,
     moneyDropped: 0,
@@ -103,10 +105,11 @@ function emptyCounts(): StatsCounts {
     actionsSkippedCannot: 0,
     actionsSkippedFunds: 0,
     actionsSkippedInvalid: 0,
+    actionsSkippedCooldown: 0,
   };
 }
 
-function mergeCounts(base: StatsCounts, runStats: any): StatsCounts {
+export function mergeCounts(base: StatsCounts, runStats: any): StatsCounts {
   if (!runStats) return base;
   return {
     moneyApplied: base.moneyApplied + Number(runStats.money?.applied ?? 0),
@@ -118,10 +121,11 @@ function mergeCounts(base: StatsCounts, runStats: any): StatsCounts {
     actionsSkippedCannot: base.actionsSkippedCannot + Number(runStats.actions?.skippedCannotApply ?? 0),
     actionsSkippedFunds: base.actionsSkippedFunds + Number(runStats.actions?.skippedInsufficientFunds ?? 0),
     actionsSkippedInvalid: base.actionsSkippedInvalid + Number(runStats.actions?.skippedInvalidQuote ?? 0),
+    actionsSkippedCooldown: base.actionsSkippedCooldown + Number(runStats.actions?.skippedCooldown ?? 0),
   };
 }
 
-function buildGuardrailKpi(args: {
+export function buildGuardrailKpi(args: {
   counts: StatsCounts;
   actionCounts: Record<string, number>;
   firstUpgradeSec: number | null;
@@ -134,6 +138,9 @@ function buildGuardrailKpi(args: {
   growthLog10PerDay: number;
 }> {
   const c = args.counts;
+  // Cooldown skips are counted but stay out of the denominator: a strategy that
+  // retries a prestige every tick would otherwise dilute a real funds stall, and
+  // stallRatio baselines from before the counter existed would shift.
   const totalActionAttempts =
     c.actionsApplied + c.actionsSkippedCannot + c.actionsSkippedFunds + c.actionsSkippedInvalid;
   const stallRatio = totalActionAttempts > 0 ? c.actionsSkippedFunds / totalActionAttempts : 0;
@@ -250,6 +257,11 @@ export function runLtvAnalysis(args: {
   let counts = emptyCounts();
 
   const rows: LtvRow[] = [];
+  let lastResetT: number | undefined;
+  const onPrestigeReset = (t: number) => {
+    lastResetT = t;
+    args.compiled.run.onPrestigeReset?.(t);
+  };
 
   for (const h of horizons) {
     const segmentSec = h.seconds - previousTargetSec;
@@ -257,11 +269,14 @@ export function runLtvAnalysis(args: {
 
     const run = runScenario({
       ...args.compiled,
+      // Each segment starts from the last committed reset of an earlier segment.
+      ...(lastResetT !== undefined ? { constraints: constraintsWithAnchor(args.compiled.constraints, lastResetT) } : {}),
       initial: state,
       strategy: args.strategy,
       ctx: {
         ...args.compiled.ctx,
         seed: args.seed,
+        stepSec,
       },
       run: {
         ...args.compiled.run,
@@ -277,9 +292,12 @@ export function runLtvAnalysis(args: {
           maxEvents: 0,
         },
         fast: runFast,
+        onPrestigeReset,
       },
     });
 
+    // A segment cut by maxSteps did not reach its horizon, so its row would be mislabeled.
+    assertHorizonReached(run, `ltv ${h.label}`);
     state = run.end;
     counts = mergeCounts(counts, run.stats);
 
@@ -423,7 +441,12 @@ export default defineCommand({
     step: option(z.coerce.number().positive().optional(), {
       description: "Override stepSec for long-horizon runs",
     }),
-    strategy: option(strategySchema, { description: "Override strategy id (greedy|planner|scripted)" }),
+    strategy: option(strategySchema, {
+      description: "Registered strategy id. Builtins remain greedy, planner, and scripted.",
+    }),
+    engine: option(z.string().min(1).optional(), {
+      description: "Execution engine. Default number. scenario.engine is metadata. breakInfinity is explicit. breakEternity is unsupported.",
+    }),
     fast: option(z.coerce.boolean().default(false), {
       description: "Enable fast(log-domain) mode for long horizons",
     }),
@@ -454,22 +477,10 @@ export default defineCommand({
       throw scenarioInvalidError(valid.issues);
     }
 
-    const E = createNumberEngine();
-    const compiled = compileScenario<number, string, Record<string, unknown>>({
-      E,
-      scenario: valid.scenario,
-      registry: loaded.modelRegistry,
-      strategyRegistry: loaded.strategyRegistry,
-      opts: { allowSuffixNotation: true },
-    });
-
-    const strategy = (() => {
-      if (!flags.strategy) return compiled.strategy;
-      const f = loaded.strategyRegistry.get(flags.strategy);
-      if (!f) throw unknownStrategyError(flags.strategy);
-      return f.create(f.defaultParams ?? {}) as typeof compiled.strategy;
-    })();
-
+    // A --draws equal to the scenario's enabled uncertainty draws runs the same bands, so it keeps
+    // the no-flag seed and stage inputs.
+    const uncertainty = deriveMonetizationConfig(valid.scenario).uncertainty;
+    const draws = uncertainty.enabled && flags.draws === uncertainty.draws ? undefined : flags.draws;
     const baseSeed =
       flags.seed ??
       deriveDeterministicSeed({
@@ -477,25 +488,49 @@ export default defineCommand({
         scenario: valid.scenario,
         options: {
           horizons: flags.horizons,
-          step: flags.step ?? compiled.run.stepSec,
-          strategy: flags.strategy,
-          fast: flags.fast,
-          draws: flags.draws,
+          step: flags.step ?? valid.scenario.clock.stepSec,
+          // The no-flag input keeps this undefined key.
+          strategy: undefined,
+          ...strategySeedOption({
+            scenario: valid.scenario,
+            strategyRegistry: loaded.strategyRegistry,
+            overrideId: flags.strategy,
+          }),
+          // A --fast over a sim.fast scenario runs the scenario's fast mode, so it keeps the no-flag seed.
+          fast: flags.fast && !valid.scenario.sim?.fast,
+          ...engineSeedOption(flags.engine),
+          draws,
           valuePerWorth: flags["value-per-worth"],
         },
       });
 
     const seed = baseSeed;
+    const prepared = prepareResolvedRun({
+      scenario: valid.scenario,
+      modelRegistry: loaded.modelRegistry,
+      strategyRegistry: loaded.strategyRegistry,
+      pluginDigest: loaded.pluginDigest,
+      engineRequest: flags.engine,
+      strategyOverride: flags.strategy,
+      stepSec: flags.step,
+      fast: flags.fast,
+      seed,
+    });
+    const opened = prepared.open("ltv", `ltv:${seed}`, {
+      horizons: parseHorizons(flags.horizons),
+      draws: draws ?? null,
+      valuePerWorth: flags["value-per-worth"] ?? null,
+    });
     const analysis = runLtvAnalysis({
       scenario: valid.scenario,
       scenarioPath,
-      compiled,
-      strategy,
+      compiled: opened.scenario,
+      strategy: opened.scenario.strategy,
       horizonsRaw: flags.horizons,
       step: flags.step,
       fast: flags.fast,
       seed,
-      draws: flags.draws,
+      draws,
       valuePerWorth: flags["value-per-worth"],
       runId: flags["run-id"],
     });
@@ -506,6 +541,9 @@ export default defineCommand({
       scenario: valid.scenario,
       seed,
       pluginDigest: loaded.pluginDigest,
+      effectiveRunHash: opened.hash,
+      effectiveEngine: prepared.engine.effectiveId,
+      stageScope: { ltv: opened.plan.stage.applies },
     });
     const jsonOutput = {
       scenario: scenarioPath,

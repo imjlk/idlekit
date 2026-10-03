@@ -25,4 +25,5 @@ These are the canonical JSON output contracts for the CLI.
 - Schemas apply to `--format json` outputs
 - Every JSON output includes reproducibility metadata in `_meta`
 - `_meta` typically includes `command`, `contractVersion`, `schemaRef`, `cliVersion`, `gitSha`, `pluginDigest`, and scenario or telemetry hashes
+- `simulate`, `experience`, `ltv`, and `evaluate` may add optional `effectiveRunHash`, `effectiveEngine`, and `stageScope`. Those fields are not required. `scenarioHash` stays the original scenario object.
 - Replay artifacts require `runId`, `seed`, `scenarioHash`, `gitSha`, `pluginDigest`, and `resultHash` inside their replay verification block

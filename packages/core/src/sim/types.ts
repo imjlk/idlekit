@@ -1,5 +1,6 @@
 import type { Engine } from "../engine/types";
 import type { Money, MoneyState, Unit } from "../money/types";
+import type { OfflineActor, OfflinePolicy } from "../scenario/offlinePolicy";
 import type { Emitter } from "../policy/emitter";
 import type { MoneyEvent, TickPolicy } from "../policy/types";
 
@@ -31,7 +32,7 @@ export type SimEvent<N> =
   | {
       type: "action.skipped";
       actionId: string;
-      reason: "cannotApply" | "insufficientFunds" | "invalidQuote";
+      reason: "cannotApply" | "insufficientFunds" | "invalidQuote" | "cooldown";
     }
   | {
       type: "milestone";
@@ -44,10 +45,43 @@ export type SimEvent<N> =
       detail?: unknown;
     };
 
+export type EventTimePhase = "action-start" | "income-end";
+
 export type TimedSimEvent<N> = Readonly<{
   t: number;
   event: SimEvent<N>;
+  /**
+   * `action-start` is the state time before this tick's actions.
+   * `income-end` is the state time after income and `dt` are applied.
+   * Absent on timelines built before this field existed.
+   */
+  phase?: EventTimePhase;
 }>;
+
+export type RunStopReason = "duration" | "until" | "budget";
+
+/**
+ * In-memory stop record for `runScenario` and `applyOfflineSeconds`.
+ * The CLI simulate wire schema does not include this object.
+ * `budget` means `maxSteps` was reached before duration or until.
+ * It is not a claim that another step size would match this state.
+ */
+export type RunStop = Readonly<{
+  reason: RunStopReason;
+  steps: number;
+  elapsedSec: number;
+  requestedDurationSec?: number;
+  budgetSteps?: number;
+}>;
+
+/**
+ * Throw when `maxSteps` stopped the run before duration or until.
+ * For callers that read `end` as the requested horizon and have no field for a cut run.
+ */
+export function assertHorizonReached(run: Readonly<{ stop?: RunStop }>, label: string): void {
+  if (run.stop?.reason !== "budget") return;
+  throw new Error(`${label} exceeded maxSteps (${run.stop.budgetSteps}) without meeting stop condition`);
+}
 
 export type SimContext<N, U extends string, Vars> = Readonly<{
   E: Engine<N>;
@@ -58,6 +92,18 @@ export type SimContext<N, U extends string, Vars> = Readonly<{
   // Optional deterministic seed for stochastic strategy/model extensions.
   seed?: number;
 
+  /**
+   * Set only when the model declares `clocks.respondsTo`.
+   * Wall time is the session schedule. Reward time is `state.t`.
+   * Writing this view does not change `state.t`.
+   */
+  clocks?: Readonly<{
+    wallT: number;
+    wallEndT: number;
+    rewardT: number;
+    activeT: number;
+  }>;
+
   tickPolicy: TickPolicy;
   collectMoneyEvents?: boolean;
 
@@ -66,6 +112,9 @@ export type SimContext<N, U extends string, Vars> = Readonly<{
   }>;
 
   emit?: Emitter<SimEvent<N>>;
+
+  /** Limits shared by a committed step and a planner preview. */
+  constraints?: ScenarioConstraints;
 }>;
 
 export type BulkQuote<N, U extends string> = Readonly<{
@@ -78,6 +127,11 @@ export type BulkQuote<N, U extends string> = Readonly<{
 export type Action<N, U extends string, Vars> = Readonly<{
   id: string;
   kind: "buy" | "prestige" | "grant" | "custom";
+  /**
+   * Optional offline actor. A missing actor does not match an actor filter.
+   * It is not treated as automation.
+   */
+  actor?: OfflineActor;
   label?: string;
 
   canApply: (ctx: SimContext<N, U, Vars>, state: SimState<N, U, Vars>) => boolean;
@@ -158,29 +212,39 @@ export interface Model<N, U extends string, Vars> {
     prev: SimState<N, U, Vars>,
     next: SimState<N, U, Vars>,
   ) => string[];
+
+  /**
+   * Clocks this model reads. Omitting one means the session must not
+   * pretend that `state.t` is that clock.
+   */
+  clocks?: Readonly<{
+    respondsTo?: readonly ("wall" | "reward" | "active")[];
+  }>;
 }
 
 export type ScenarioConstraints = Readonly<{
   maxActionsPerStep?: number;
   minPrestigeIntervalSec?: number;
+  /**
+   * Absolute `t` of the last committed prestige reset.
+   * Omitted means the anchor is unknown. Callers must not invent one.
+   */
+  lastPrestigeResetT?: number;
 }>;
 
 export type SimRunOptions = Readonly<{
   stepSec: number;
   durationSec?: number;
   until?: (s: any) => boolean;
-  // Hard guard against accidental unbounded runs.
+  /**
+   * Safety budget, not a successful horizon.
+   * A duration or until that is already satisfied stops first.
+   * If this budget is hit while one of those was requested, the run stops
+   * with reason `budget` and keeps the state. With neither, the runner throws.
+   */
   maxSteps?: number;
 
-  offline?: Readonly<{
-    maxSec?: number;
-    overflowPolicy?: "clamp" | "reject";
-    decay?: Readonly<{
-      kind: "none" | "linear";
-      // Only used when kind=linear. 0..1
-      floorRatio?: number;
-    }>;
-  }>;
+  offline?: OfflinePolicy;
 
   // Event retention policy for long-running simulations.
   eventLog?: Readonly<{
@@ -193,13 +257,35 @@ export type SimRunOptions = Readonly<{
   trace?: Readonly<{
     everySteps?: number;
     keepActionsLog?: boolean;
+    /** Undefined keeps every traced point. A number keeps the latest points only. */
+    maxPoints?: number;
+    /** Undefined keeps every applied action. A number keeps the latest rows only. */
+    maxActions?: number;
   }>;
+
+  /**
+   * Compact counters and samples. Default is on.
+   * `enabled: false` reports missing counters. It does not report measured zeros.
+   * Reset transitions are not observed here.
+   */
+  observation?: Readonly<{
+    enabled?: boolean;
+    maxMilestones?: number;
+    maxGoals?: number;
+  }>;
+
+  observer?: import("./observation").RunObserver;
+
+  goals?: readonly import("./observation").RunGoal<any, any, any>[];
 
   fast?: Readonly<{
     enabled: boolean;
     kind?: "log-domain";
     disableMoneyEvents?: boolean;
   }>;
+
+  /** Records a committed prestige reset. Preview does not receive this callback. */
+  onPrestigeReset?: (t: number) => void;
 }>;
 
 export type CompiledScenario<N, U extends string, Vars> = Readonly<{
@@ -230,6 +316,19 @@ export type RunResult<N, U extends string, Vars> = Readonly<{
 
   stats?: import("./analysis/ux").SimStats;
   uxFlags?: import("./analysis/ux").UXFlag[];
+  observation?: import("./observation").RunObservation;
+  traceLog?: Readonly<{
+    maxPoints?: number;
+    totalSeen: number;
+    dropped: number;
+    retained: number;
+  }>;
+  actionsLogMeta?: Readonly<{
+    maxActions?: number;
+    totalSeen: number;
+    dropped: number;
+    retained: number;
+  }>;
   eventLog?: Readonly<{
     enabled: boolean;
     maxEvents?: number;
@@ -237,4 +336,6 @@ export type RunResult<N, U extends string, Vars> = Readonly<{
     dropped: number;
     retained: number;
   }>;
+
+  stop?: RunStop;
 }>;

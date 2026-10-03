@@ -53,4 +53,64 @@ Queried on macOS arm64 with Bun `1.3.10`, `@ttsc/graph` `0.30.4`, protocol `2025
 
 A reverse execution trace of `stepOnce` (`focus` execution, `maxDepth` 3, `maxNodes` 32) has direct hops from `packages/core/src/sim/simulator.ts#runScenario` (span `simulator.ts:49`), `packages/core/src/sim/offline.ts#applyOfflineSeconds` (span `offline.ts:139`), `packages/core/src/testkit/conformance.ts#flatBulkSnapshot`, and `packages/core/src/sim/step.bulk.test.ts` functions `settlesQuotedBulkAndRejectsBadQuotes`, `runFlat`, and `runBonus`. Through `runScenario` it reaches `session.ts`, `monteCarlo.ts`, `eta.ts`, `prestigeCycle.ts`, `strategy/opt/runner.ts`, and CLI `compare.ts`, `ltv.ts`, `tune.ts`, `lib/designObjectives.ts`, and `lib/experience.ts`. The 32-node cap is not every caller.
 
-`createPlannerStrategy` was not a hop. It still calls `d.stepOnce` on `PlannerDeps`. That edge stays unobserved. Source review also shows a second `stepOnce` call in `applyOfflineSeconds` at `packages/core/src/sim/offline.ts:162` for the remainder step. The trace names the function, not that second call site.
+`createPlannerStrategy` was not a hop. It still calls `d.stepOnce` on `PlannerDeps`. That edge stays unobserved. At that PR-01 tree, source review showed a second `stepOnce` call in `applyOfflineSeconds` for the remainder step. After the edit, lookup places `stepOnce` at `packages/core/src/sim/step.ts:175`. `singleBuySize` is `packages/core/src/sim/step.ts:51`.
+
+## PR-02 callers
+
+Queried on macOS arm64 with Bun `1.3.10`, `@ttsc/graph` `0.30.4`, protocol `2025-11-25`. No generation identifier. Lookup places `runScenario` at `packages/core/src/sim/simulator.ts:25`, `applyOfflineSeconds` at `packages/core/src/sim/offline.ts:94`, `nextBoundary` at `packages/core/src/sim/timeBoundary.ts:54`, and `stepOnce` at `packages/core/src/sim/step.ts:175`. `timeBoundaryEpsilonScale` is the property at `packages/core/src/sim/timeBoundary.ts:11`. That line is the source declaration. It was not a separate lookup hit.
+
+A forward execution trace from `runScenario` (`maxDepth` 2, `maxNodes` 32) reaches `nextBoundary` and `stepOnce` at `packages/core/src/sim/step.ts:175`. A reverse execution trace of `stepOnce` (`maxDepth` 3, `maxNodes` 32) names direct calls at `packages/core/src/sim/simulator.ts:80` and `packages/core/src/sim/offline.ts:162`. The offline remainder is the same loop, not a second call. Through those hosts the trace reached `session.ts`, `monteCarlo.ts`, `eta.ts`, `prestigeCycle.ts`, `strategy/opt/runner.ts`, `conformanceRun.ts`, `simulator.time.test.ts`, and CLI `compare.ts`, `ltv.ts`, `tune.ts`, `lib/designObjectives.ts`, and `lib/experience.ts`. The 32-node cap is not every caller.
+
+A reverse trace of `nextBoundary` names `packages/core/src/sim/simulator.ts:60` and `packages/core/src/sim/offline.ts:140`. `createPlannerStrategy` is still not a hop to `stepOnce`. The call remains `d.stepOnce` on `PlannerDeps`. That edge stays unobserved.
+
+## PR-03 callers
+
+Queried on macOS arm64 with Bun `1.3.10`, `@ttsc/graph` `0.30.4`, protocol `2025-11-25`. No generation identifier. Lookup places `createRunFactory` at `packages/core/src/sim/runFactory.ts:338`, `cloneRunState` at `packages/core/src/sim/runFactory.ts:161`, and `simulateMonteCarlo` at `packages/core/src/sim/monteCarlo.ts:41`.
+
+A reverse execution trace of `createRunFactory` (`maxDepth` 3, `maxNodes` 32) names the call in `packages/core/src/sim/monteCarlo.ts:46` and `packages/core/src/sim/runFactory.test.ts`. Through `simulateMonteCarlo` it reached `isolatesIndependentRuns`, CLI `lib/designObjectives.ts`, `lib/experience.ts`, and `commands/compare.ts`. The 32-node cap is not every caller.
+
+A forward execution trace of `simulateMonteCarlo` (`maxDepth` 2, `maxNodes` 32) reaches `createRunFactory` at `packages/core/src/sim/runFactory.ts:338`, then `session.ts` and `simulator.ts`. A reverse execution trace of `cloneRunState` (`maxDepth` 2, `maxNodes` 16) names `packages/core/src/scenario/compile.ts:388` inside `buildInitialState`, `compileScenario` at `packages/core/src/scenario/compile.ts:491`, and the factory's own `bind`. `createPlannerStrategy` is still not a hop to `stepOnce`. That edge stays unobserved.
+
+## PR-05 callers
+
+Queried on macOS arm64 with Bun `1.3.10`, `@ttsc/graph` `0.30.4`, protocol `2025-11-25`. No generation identifier. Lookup places `createObservationRecorder` at `packages/core/src/sim/observation.ts:238`, `mergeObservations` at `packages/core/src/sim/observation.ts:160`, `observationContract` at `packages/core/src/sim/observation.ts:11`, `simulateSessionPattern` at `packages/core/src/sim/session.ts:97`, and `runScenario` at `packages/core/src/sim/simulator.ts:26`.
+
+A reverse execution trace of `createObservationRecorder` (`maxDepth` 3, `maxNodes` 32) names `packages/core/src/sim/simulator.ts:40` and `packages/core/src/sim/offline.ts:127`. Through those hosts it reached `session.ts:162`, `prestigeCycle.ts:29`, `strategy/opt/runner.ts:61`, `eta.ts:70`, `monteCarlo.ts:73`, `conformanceRun.ts`, `observation.test.ts:82`, `simulator.time.test.ts:110`, and CLI `compare.ts:114`, `ltv.ts:254`, `tune.ts:157`, `lib/designObjectives.ts`, and `lib/experience.ts`. The 32-node cap is not every caller.
+
+A reverse execution trace of `mergeObservations` (`maxDepth` 3, `maxNodes` 32) names `packages/core/src/sim/session.ts:228`. Through `simulateSessionPattern` it reached `simulateMonteCarlo` at `packages/core/src/sim/monteCarlo.ts:41`, `collectExperienceSnapshot` at `packages/cli/src/lib/experience.ts:226`, `isolatesIndependentRuns`, `lib/designObjectives.ts`, and `commands/compare.ts:174`.
+
+A forward execution trace of `simulateSessionPattern` (`maxDepth` 2, `maxNodes` 32) includes `packages/core/src/sim/session.ts:228`, `packages/core/src/sim/observation.ts:162`, `packages/core/src/sim/observation.ts:189`, `packages/core/src/sim/observation.ts:378`, `packages/core/src/sim/eventBuffer.ts:83`, `packages/core/src/sim/offline.ts:127`, and `packages/core/src/sim/simulator.ts:40`. Those spans do not name `stepOnce`. A forward execution trace of `createPlannerStrategy` (`maxDepth` 3, `maxNodes` 32) stays inside `packages/core/src/sim/strategy/planner.ts` and does not name `stepOnce`. That edge stays unobserved.
+
+## PR-04 callers
+
+Queried on macOS arm64 with Bun `1.3.10`, `@ttsc/graph` `0.30.4`, protocol `2025-11-25`. No generation identifier. Lookup places `createPlannerStrategy` at `packages/core/src/sim/strategy/planner.ts:253`, `stepOnce` at `packages/core/src/sim/step.ts:193`, `decidePrestigeCooldown` at `packages/core/src/sim/constraints.ts:24`, `prestigeCooldownContract` at `packages/core/src/sim/constraints.ts:10`, `plannerSearchContract` at `packages/core/src/sim/strategy/planner.ts:48`, `etaSimulate` at `packages/core/src/sim/analysis/eta.ts:41`, and `cmdTune` at `packages/cli/src/commands/tune.ts:120`.
+
+A reverse execution trace of `decidePrestigeCooldown` (`maxDepth` 3, `maxNodes` 32) names `packages/core/src/sim/strategy/planner.ts:183` and `packages/core/src/sim/step.ts:220`. Through `stepOnce` it reached `packages/core/src/sim/simulator.ts:99`, `packages/core/src/sim/offline.ts:180`, `packages/core/src/sim/analysis/eta.ts:70`, and `packages/core/src/sim/strategy/opt/runner.ts:61`.
+
+A forward execution trace of `etaSimulate` (`maxDepth` 2, `maxNodes` 32) names `runScenario` at `packages/core/src/sim/simulator.ts:27` and `stepOnce` at `packages/core/src/sim/step.ts:193`. A forward execution trace of `cmdTune` (`maxDepth` 2, `maxNodes` 32) includes `packages/cli/src/commands/tune.ts:157`, `runCandidateAndScore` at `packages/core/src/sim/strategy/opt/runner.ts:8`, `packages/core/src/sim/strategy/opt/runner.ts:61`, and names `runScenario`.
+
+A forward execution trace of `createPlannerStrategy` (`maxDepth` 3, `maxNodes` 32) names `decidePrestigeCooldown` and includes an unnamed span at `packages/core/src/sim/runFactory.ts:171`. It does not name `stepOnce`. The rollout call is `d.stepOnce` on `PlannerDeps` at `packages/core/src/sim/strategy/planner.ts:322`. That edge stays unobserved. A reverse execution trace names `packages/core/src/sim/strategy/builtins.ts:51` and `keepsPlannerRolloutFaithful` at `packages/core/src/sim/strategy/planner.regression.test.ts:85`.
+
+## PR-06 callers
+
+Queried on macOS arm64 with Bun `1.3.10`, `@ttsc/graph` `0.30.4`, protocol `2025-11-25`. No generation identifier. Lookup places `simulateSessionPattern` at `packages/core/src/sim/session.ts:215`, `applyOfflineSeconds` at `packages/core/src/sim/offline.ts:135`, `sessionClockContract` at `packages/core/src/sim/session.ts:16`, `resolveOfflineActionPolicy` at `packages/core/src/sim/offline.ts:110`, `assertSessionSchedule` at `packages/core/src/sim/session.ts:145`, and `keepsSessionClocksDistinct` at `packages/core/src/sim/session.test.ts:186`.
+
+A reverse execution trace of `simulateSessionPattern` (`maxDepth` 3, `maxNodes` 32) names `packages/core/src/sim/monteCarlo.ts:54`, `collectExperienceSnapshot` at `packages/cli/src/lib/experience.ts:253`, `runPattern` at `packages/core/src/sim/session.test.ts:177`, `isolatesIndependentRuns` at `packages/core/src/sim/runFactory.test.ts:151`, `evaluateVisibleProgress` at `packages/cli/src/lib/designObjectives.ts:48`, and `packages/cli/src/commands/compare.ts:174`. The 32-node cap is not every caller.
+
+A forward execution trace of `simulateSessionPattern` (`maxDepth` 2, `maxNodes` 32) includes `applyOfflineSeconds` at `packages/core/src/sim/session.ts:273`, `runScenario` at `packages/core/src/sim/session.ts:326`, `mergeObservations` at `packages/core/src/sim/session.ts:378`, `createEventBuffer` at `packages/core/src/sim/session.ts:227`, then `packages/core/src/sim/offline.ts:149`, `packages/core/src/sim/simulator.ts:34`, `packages/core/src/sim/eventBuffer.ts:83`, and `packages/core/src/sim/observation.ts:378`.
+
+A reverse execution trace of `applyOfflineSeconds` (`maxDepth` 3, `maxNodes` 32) names `simulateSessionPattern.appendOffline` at `packages/core/src/sim/session.ts:273`, `keepsSessionClocksDistinct` at `packages/core/src/sim/session.test.ts:186`, `stopsOnTheRequestedHorizon` at `packages/core/src/sim/simulator.time.test.ts:105`, and `keepsPlannerRolloutFaithful` at `packages/core/src/sim/strategy/planner.regression.test.ts:85`. A forward execution trace (`maxDepth` 2, `maxNodes` 32) names `resolveOfflineActionPolicy` at `packages/core/src/sim/offline.ts:110` and `assertSimulationClock` at `packages/core/src/sim/timeBoundary.ts:70`, and includes `packages/core/src/sim/step.ts:220`.
+
+A forward execution trace of `createPlannerStrategy` (`maxDepth` 3, `maxNodes` 32) still does not name `stepOnce`. The rollout call remains `d.stepOnce` on `PlannerDeps` at `packages/core/src/sim/strategy/planner.ts:322`. That edge stays unobserved.
+
+## PR-07 callers
+
+Queried on macOS arm64 with Bun `1.3.10`, `@ttsc/graph` `0.30.4`, protocol `2025-11-25`. No generation identifier. Lookup places `prepareResolvedRun` at `packages/cli/src/lib/runConfiguration.ts:331`, `resolvedRunContract` at `packages/cli/src/lib/runConfiguration.ts:27`, `strategyCreateParams` at `packages/core/src/scenario/compile.ts:354`, `compileScenario` at `packages/core/src/scenario/compile.ts:545`, `keepsResolvedRunConfiguration` at `packages/cli/src/lib/runConfiguration.test.ts:91`, and `createRunFactory` at `packages/core/src/sim/runFactory.ts:369`.
+
+A reverse execution trace of `prepareResolvedRun` (`maxDepth` 3, `maxNodes` 32) names `keepsResolvedRunConfiguration` at `packages/cli/src/lib/runConfiguration.test.ts:91`. It does not name the command handlers. Source review shows the calls at `packages/cli/src/commands/evaluate.ts:154`, `packages/cli/src/commands/simulate.ts:159`, `packages/cli/src/commands/experience.ts:74`, and `packages/cli/src/commands/ltv.ts:475`. Those lines are the review. They are not extra graph hops.
+
+A forward execution trace of `prepareResolvedRun` (`maxDepth` 2, `maxNodes` 32) names `resolveEffectiveEngine`, `compileScenario`, `resolveStrategySelection`, `effectiveRunHash`, `pluginDigestValues`, `stagePlan`, `openResolvedStage`, and `createNumberEngine`. It includes an unnamed span at `packages/cli/src/lib/runConfiguration.ts:311`, which is the `createRunFactory` call inside `openResolvedStage`. The trace does not name `createRunFactory`.
+
+A forward execution trace of `createPlannerStrategy` (`maxDepth` 3, `maxNodes` 32) still does not name `stepOnce`. The rollout call remains `d.stepOnce` on `PlannerDeps` at `packages/core/src/sim/strategy/planner.ts:322`. That edge stays unobserved.
+
+`bun run graph:check` exited 0. `bench:sim:check`, `bench:sim:suite:check`, `tune:regress`, `kpi:report`, `kpi:regress`, `bunx ttsc -p tsconfig.tools.json`, `bunx ttsc -p tsconfig.examples.json`, and `test:conformance:extended` were not run.

@@ -93,6 +93,8 @@ export type ReviewEvaluateFlags = Readonly<{
   draws?: number;
   seed?: number;
   strategy?: string;
+  engine?: string;
+  "consistent-overrides"?: boolean;
   fast: boolean;
   step?: number;
   horizons: string;
@@ -132,6 +134,8 @@ export function buildReviewEvaluateArgs(scenarioPath: string, flags: ReviewEvalu
   if (flags.draws !== undefined) args.push("--draws", String(flags.draws));
   if (flags.seed !== undefined) args.push("--seed", String(flags.seed));
   if (flags.strategy) args.push("--strategy", flags.strategy);
+  if (flags.engine) args.push("--engine", flags.engine);
+  if (flags["consistent-overrides"]) args.push("--consistent-overrides", "true");
   if (flags.fast) args.push("--fast", "true");
   if (flags.step !== undefined) args.push("--step", String(flags.step));
   if (flags.horizons) args.push("--horizons", flags.horizons);

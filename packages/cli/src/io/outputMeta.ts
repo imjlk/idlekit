@@ -82,6 +82,10 @@ export type OutputMeta = Readonly<{
   tuneSpecHash?: string;
   telemetryHash?: string;
   pluginDigest: Readonly<Record<string, string>>;
+  /** Semantic run digest. It is not `scenarioHash` and it excludes time and paths. */
+  effectiveRunHash?: string;
+  effectiveEngine?: string;
+  stageScope?: Readonly<Record<string, { strategy: boolean; step: boolean; fast: boolean; session: boolean }>>;
 }>;
 
 export function hashContent(value: unknown): string {
@@ -120,6 +124,9 @@ export function buildOutputMeta(args: {
   tuneSpec?: unknown;
   telemetry?: unknown;
   pluginDigest?: Readonly<Record<string, string>>;
+  effectiveRunHash?: string;
+  effectiveEngine?: string;
+  stageScope?: OutputMeta["stageScope"];
 }): OutputMeta {
   const scenarioHash = (() => {
     if (args.scenario !== undefined) return hashContent(args.scenario);
@@ -147,6 +154,9 @@ export function buildOutputMeta(args: {
     tuneSpecHash: args.tuneSpec !== undefined ? hashContent(args.tuneSpec) : undefined,
     telemetryHash: args.telemetry !== undefined ? hashContent(args.telemetry) : undefined,
     pluginDigest: args.pluginDigest ?? {},
+    ...(args.effectiveRunHash !== undefined ? { effectiveRunHash: args.effectiveRunHash } : {}),
+    ...(args.effectiveEngine !== undefined ? { effectiveEngine: args.effectiveEngine } : {}),
+    ...(args.stageScope !== undefined ? { stageScope: args.stageScope } : {}),
   };
 }
 
@@ -191,5 +201,10 @@ export function coerceOutputMetaCompat(input: unknown): OutputMeta {
       x.pluginDigest && typeof x.pluginDigest === "object" && !Array.isArray(x.pluginDigest)
         ? (x.pluginDigest as Record<string, string>)
         : {},
+    ...(typeof x.effectiveRunHash === "string" ? { effectiveRunHash: x.effectiveRunHash } : {}),
+    ...(typeof x.effectiveEngine === "string" ? { effectiveEngine: x.effectiveEngine } : {}),
+    ...(x.stageScope && typeof x.stageScope === "object" && !Array.isArray(x.stageScope)
+      ? { stageScope: x.stageScope as NonNullable<OutputMeta["stageScope"]> }
+      : {}),
   };
 }

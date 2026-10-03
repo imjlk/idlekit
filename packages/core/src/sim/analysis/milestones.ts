@@ -12,6 +12,8 @@ export type MilestoneReport = Readonly<{
   firstMilestoneSec?: number;
   firstActionSec?: number;
   firstPrestigeSec?: number;
+  /** `incomplete` means the times came from a truncated log with no compact samples. */
+  coverage?: "complete" | "partial" | "incomplete";
 }>;
 
 function compareOccurrence(a: MilestoneOccurrence, b: MilestoneOccurrence): number {
@@ -20,12 +22,21 @@ function compareOccurrence(a: MilestoneOccurrence, b: MilestoneOccurrence): numb
   return a.source < b.source ? -1 : a.source > b.source ? 1 : 0;
 }
 
+/** The fallback reads events, the action log, and (for the first prestige) the trace. A drop in any of them can hide or shift a milestone. */
+function fallbackDropped<N, U extends string, Vars>(run: RunResult<N, U, Vars>, prestiged: boolean): boolean {
+  if ((run.eventLog?.dropped ?? 0) > 0) return true;
+  if ((run.actionsLogMeta?.dropped ?? 0) > 0) return true;
+  return prestiged && (run.traceLog?.dropped ?? 0) > 0;
+}
+
 export function analyzeMilestones<N, U extends string, Vars>(args: {
   run: RunResult<N, U, Vars>;
 }): MilestoneReport {
   const { run } = args;
   const byKey = new Map<string, MilestoneOccurrence>();
   const startT = run.start.t;
+  const compact = run.observation;
+  const useCompact = compact !== undefined && compact.coverage !== "disabled" && !compact.legacyEventFallback;
 
   const upsert = (entry: MilestoneOccurrence) => {
     const prev = byKey.get(entry.key);
@@ -33,6 +44,32 @@ export function analyzeMilestones<N, U extends string, Vars>(args: {
       byKey.set(entry.key, entry);
     }
   };
+
+  if (useCompact && compact) {
+    for (const sample of compact.milestones) {
+      if (sample.source === "goal") continue;
+      upsert({
+        key: sample.key,
+        firstSeenT: sample.firstSeenT,
+        firstSeenSec: Math.max(0, sample.firstSeenT - startT),
+        source: sample.source === "milestone" ? "event" : sample.source,
+      });
+    }
+  }
+
+  if (useCompact) {
+    const milestones = [...byKey.values()].sort(compareOccurrence);
+    const firstAction = milestones.find((x) => x.source === "action");
+    const firstPrestige = milestones.find((x) => x.key === "prestige.first");
+    return {
+      milestones,
+      firstMilestoneSec: milestones[0]?.firstSeenSec,
+      firstActionSec: firstAction?.firstSeenSec,
+      firstPrestigeSec: firstPrestige?.firstSeenSec,
+      // Milestones and goals have separate caps. Only a dropped milestone makes this report partial.
+      coverage: (compact?.droppedMilestones ?? 0) > 0 ? "partial" : "complete",
+    };
+  }
 
   for (const frame of run.eventTimeline ?? []) {
     if (frame.event.type !== "milestone") continue;
@@ -63,10 +100,10 @@ export function analyzeMilestones<N, U extends string, Vars>(args: {
     }
   }
 
-  if (
+  const prestiged =
     run.end.prestige.count > run.start.prestige.count ||
-    String(run.end.prestige.points as any) !== String(run.start.prestige.points as any)
-  ) {
+    String(run.end.prestige.points as any) !== String(run.start.prestige.points as any);
+  if (prestiged) {
     let prestigeT = run.end.t;
     for (const state of run.trace ?? []) {
       if (
@@ -95,5 +132,6 @@ export function analyzeMilestones<N, U extends string, Vars>(args: {
     firstMilestoneSec: milestones[0]?.firstSeenSec,
     firstActionSec: firstAction?.firstSeenSec,
     firstPrestigeSec: firstPrestige?.firstSeenSec,
+    coverage: fallbackDropped(run, prestiged) ? "incomplete" : "complete",
   };
 }

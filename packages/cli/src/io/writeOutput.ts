@@ -1,6 +1,6 @@
 import { resolve } from "path";
 import type { OutputMeta } from "./outputMeta";
-import { writeTextFile } from "../runtime/bun";
+import { writeStdout, writeTextFile } from "../runtime/bun";
 
 export type OutputFormat = "json" | "md" | "csv";
 
@@ -87,7 +87,7 @@ export async function writeOutput(args: {
   const body = renderOutput(args.format, dataWithMeta);
 
   if (!args.outPath) {
-    console.log(body);
+    await writeStdout(`${body}\n`);
     return;
   }
 

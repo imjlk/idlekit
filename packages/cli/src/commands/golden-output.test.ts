@@ -107,6 +107,7 @@ describe("CLI golden outputs", () => {
 
     expect(out.design?.sessionPattern?.id).toBe("short-bursts");
     expect(out.session?.activeBlocks).toBeDefined();
+    expect(out.session?.budgetStops).toBe(0);
     expect(out.growth?.segments).toBeDefined();
     expect(out.milestones?.milestones).toBeDefined();
     expect(out.perceived?.visibleChangesPerMinute).toBeDefined();

@@ -1,5 +1,6 @@
 import type { Money } from "../money/types";
 import { tickMoney } from "../policy/tickMoney";
+import { decidePrestigeCooldown } from "./constraints";
 import type { Action, BulkQuote, Model, ScenarioConstraints, SimContext, SimEvent, SimState } from "./types";
 
 export type StepDecision<N, U extends string, Vars> = Readonly<{
@@ -17,6 +18,9 @@ export type StepInput<N, U extends string, Vars> = Readonly<{
   dt: number;
 
   decisions?: readonly StepDecision<N, U, Vars>[];
+
+  /** Checks the action a decision re-resolves to. A rejected one is dropped without an event. */
+  admits?: (action: Action<N, U, Vars>) => boolean;
 
   constraints?: ScenarioConstraints;
 
@@ -39,6 +43,23 @@ export type StepOutput<N, U extends string, Vars> = Readonly<{
     label?: string;
     bulkSize?: number;
   }>[];
+
+  /**
+   * Money counters for this committed tick.
+   * Present even when `disableMoneyEvents` omits the money event from `events`.
+   */
+  observedMoney?: Readonly<{
+    applied: number;
+    dropped: number;
+    queued: number;
+    flushed: number;
+    blocked: number;
+    /** True when this tick applied or flushed a positive amount. */
+    rewarded: boolean;
+  }>;
+
+  /** Decision-time `t` of a prestige action that committed on this tick. */
+  prestigeResetT?: number;
 
   walletDelta?: Money<N, U>;
 }>;
@@ -347,6 +368,7 @@ export function stepOnce<N, U extends string, Vars>(
   const decisions = (input.decisions ?? []).slice(0, Math.max(0, maxActionsPerStep));
   let baseline: readonly Action<N, U, Vars>[] | undefined;
   const baselineActions = () => (baseline ??= model.actions(ctx, prev));
+  let prestigeResetT: number | undefined;
 
   for (const d of decisions) {
     const action = currentAction(model, ctx, next, d.action, d.occurrence, baselineActions);
@@ -358,6 +380,7 @@ export function stepOnce<N, U extends string, Vars>(
       });
       continue;
     }
+    if (input.admits && !input.admits(action)) continue;
     if (!action.canApply(ctx, next)) {
       events.push({
         type: "action.skipped",
@@ -365,6 +388,35 @@ export function stepOnce<N, U extends string, Vars>(
         reason: "cannotApply",
       });
       continue;
+    }
+
+    if (action.kind === "prestige") {
+      const cooldown = decidePrestigeCooldown({
+        nowT: next.t,
+        minIntervalSec: constraints?.minPrestigeIntervalSec,
+        // A reset committed earlier in this tick is the newest anchor.
+        lastResetT: prestigeResetT ?? constraints?.lastPrestigeResetT,
+      });
+      if (cooldown.warning) {
+        events.push({
+          type: "warning",
+          code: "PRESTIGE_COOLDOWN_UNANCHORED",
+          detail: { actionId: action.id },
+        });
+      }
+      if (!cooldown.allowed) {
+        events.push({
+          type: "warning",
+          code: "PRESTIGE_COOLDOWN",
+          detail: { actionId: action.id, readyAtT: cooldown.readyAtT, nowT: next.t },
+        });
+        events.push({
+          type: "action.skipped",
+          actionId: action.id,
+          reason: "cooldown",
+        });
+        continue;
+      }
     }
 
     let settledSize = d.bulkSize;
@@ -440,7 +492,9 @@ export function stepOnce<N, U extends string, Vars>(
       }
     }
 
+    const decisionT = next.t;
     next = action.apply(ctx, next, settledSize);
+    if (action.kind === "prestige") prestigeResetT = decisionT;
     events.push({
       type: "action.applied",
       actionId: action.id,
@@ -460,22 +514,36 @@ export function stepOnce<N, U extends string, Vars>(
     ...income,
     amount: E.mul(income.amount, dt),
   };
+  const retainMoneyEvents = ctx.collectMoneyEvents ?? !fast?.disableMoneyEvents;
   const moneyTick = tickMoney({
     E,
     state: next.wallet,
     delta: scaledIncome,
     policy: ctx.tickPolicy,
-    options: {
-      collectEvents: ctx.collectMoneyEvents ?? !fast?.disableMoneyEvents,
-    },
+    options: { collectEvents: true },
   });
+  // A reward is any positive amount. `cmp` would call an epsilon-sized income zero.
+  const observedMoney = { applied: 0, dropped: 0, queued: 0, flushed: 0, blocked: 0, rewarded: false };
+  for (const moneyEvent of moneyTick.events) {
+    if (moneyEvent.type === "applied") {
+      observedMoney.applied += 1;
+      if (exactAmountOrder(E, moneyEvent.delta, E.zero()) === 1) observedMoney.rewarded = true;
+    }
+    if (moneyEvent.type === "dropped") observedMoney.dropped += 1;
+    if (moneyEvent.type === "queued") observedMoney.queued += 1;
+    if (moneyEvent.type === "flushed") {
+      observedMoney.flushed += 1;
+      if (exactAmountOrder(E, moneyEvent.bucketFlushed, E.zero()) === 1) observedMoney.rewarded = true;
+    }
+    if (moneyEvent.type === "blocked") observedMoney.blocked += 1;
+  }
 
   next = {
     ...next,
     wallet: moneyTick.state,
   };
 
-  if (moneyTick.events.length > 0) {
+  if (retainMoneyEvents && moneyTick.events.length > 0) {
     events.push({ type: "money", events: moneyTick.events });
   }
 
@@ -514,6 +582,8 @@ export function stepOnce<N, U extends string, Vars>(
     next,
     events,
     actionsApplied: actionsApplied.length > 0 ? actionsApplied : undefined,
+    observedMoney,
+    ...(prestigeResetT !== undefined ? { prestigeResetT } : {}),
     walletDelta,
   };
 }

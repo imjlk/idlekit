@@ -1,8 +1,28 @@
-import { analyzeUX, createSimStatsAccumulator } from "./analysis/ux";
-import { createEventBuffer } from "./eventBuffer";
+import type { OfflineActionPolicy } from "../scenario/offlinePolicy";
+import { analyzeUX } from "./analysis/ux";
+import { constraintsWithAnchor } from "./constraints";
+import { createBoundedLog, createEventBuffer } from "./eventBuffer";
+import { readGoal, shareGoalReads } from "./goalRead";
+import {
+  mergeObservations,
+  observationFromLegacyEvents,
+  statsFromObservation,
+  type RunObservation,
+  type RunObserver,
+} from "./observation";
 import { applyOfflineSeconds, type OfflineRunResult } from "./offline";
+import { offlineAbsenceForCredit, resolveOfflineSeconds } from "./offlineCredit";
 import { runScenario } from "./simulator";
-import type { CompiledScenario, RunResult, SimState } from "./types";
+import type { CompiledScenario, RunResult, SimContext, SimState } from "./types";
+
+/**
+ * Session schedule contract. TC-05 has not registered this DTO.
+ * `state.t` stays the reward clock. Wall time is only on the session report.
+ *
+ * @evidence docs/requirements/active/session-clock.md#req-pr06-session-clock Wall elapsed, reward time, and active time are separate fields. Cap and decay do not move the next block earlier.
+ * @evidenceReview docs/requirements/active/session-clock.md#req-pr06-session-clock #3c24d94 Re-read the section: a completed 12-hour absence with a 1-hour cap stays elapsed 43200 and credited 3600, a gap cut by a stop reports only the absence that earned its stepped reward, and state.t is not rewritten to wall time.
+ */
+export const sessionClockContract = "idlekit.session-clock" as const;
 
 export type SessionPatternId =
   | "always-on"
@@ -11,9 +31,32 @@ export type SessionPatternId =
   | "offline-heavy"
   | "weekend-marathon";
 
+export type SessionOffsetBlock = Readonly<{
+  day: number;
+  startOffsetSec: number;
+  durationSec: number;
+}>;
+
 export type SessionPatternSpec = Readonly<{
   id: SessionPatternId;
   days: number;
+  /** Opt-in offsets in seconds. Absent means the preset named by `id`. */
+  schedule?: readonly SessionOffsetBlock[];
+}>;
+
+export type SessionStopReason = "horizon" | "until" | "goal";
+
+export type SessionClock = Readonly<{
+  /**
+   * Wall length of this segment. A gap cut by a stop ends where its stepped reward was earned.
+   * An active block cut by maxSteps keeps its planned length; credited and active stay short.
+   */
+  elapsedSec: number;
+  /** Reward seconds actually stepped. */
+  creditedSec: number;
+  activeSec: number;
+  /** Reward seconds removed by offline cap or decay. Not a step-budget shortfall. */
+  lostRewardSec: number;
 }>;
 
 export type SessionSegment<N, U extends string, Vars> =
@@ -23,6 +66,11 @@ export type SessionSegment<N, U extends string, Vars> =
       startT: number;
       endT: number;
       durationSec: number;
+      wallStartT: number;
+      wallEndT: number;
+      clock: SessionClock;
+      /** The clock view this segment's model calls read. Set only when the model declares `clocks.respondsTo`. */
+      clocks?: SimContext<N, U, Vars>["clocks"];
       run: RunResult<N, U, Vars>;
     }>
   | Readonly<{
@@ -31,6 +79,10 @@ export type SessionSegment<N, U extends string, Vars> =
       startT: number;
       endT: number;
       durationSec: number;
+      wallStartT: number;
+      wallEndT: number;
+      clock: SessionClock;
+      clocks?: SimContext<N, U, Vars>["clocks"];
       run: OfflineRunResult<N, U, Vars>;
     }>;
 
@@ -43,16 +95,34 @@ export type SessionRunResult<N, U extends string, Vars> = Readonly<{
   summary: Readonly<{
     days: number;
     activeBlocks: number;
+    /** Active reward seconds. Equal to `activeSec`. */
     totalActiveSec: number;
+    /**
+     * Stepped offline reward seconds.
+     * This is not the wall absence when cap or decay applies.
+     */
     totalOfflineSec: number;
+    elapsedSec: number;
+    horizonSec: number;
+    activeSec: number;
+    offlineElapsedSec: number;
+    offlineCreditedSec: number;
+    lostRewardSec: number;
+    /** `end.t - start.t`. Reward time, not wall time. */
+    rewardSec: number;
+    offlineActions: OfflineActionPolicy["mode"];
+    /**
+     * Active blocks cut short by `run.maxSteps`. That budget is per block.
+     * The session continues with the next scheduled block. Offline gaps do not take it.
+     * Wall time still reaches the block's planned end; the unsimulated rest is not
+     * offline time and does not advance the reward clock.
+     */
+    budgetStops: number;
+    stop: Readonly<{ reason: SessionStopReason }>;
   }>;
 }>;
 
-type ActiveBlock = Readonly<{
-  day: number;
-  startOffsetSec: number;
-  durationSec: number;
-}>;
+type ActiveBlock = SessionOffsetBlock;
 
 function buildBlocks(pattern: SessionPatternSpec): ActiveBlock[] {
   const blocks: ActiveBlock[] = [];
@@ -93,6 +163,108 @@ function buildBlocks(pattern: SessionPatternSpec): ActiveBlock[] {
   return blocks.sort((a, b) => a.day * 86400 + a.startOffsetSec - (b.day * 86400 + b.startOffsetSec));
 }
 
+/** Throws when an opt-in offset list is empty, negative, overlapping, or outside the horizon. */
+export function assertSessionSchedule(pattern: SessionPatternSpec): SessionOffsetBlock[] {
+  if (!Number.isInteger(pattern.days) || pattern.days <= 0) {
+    throw new Error("session days must be a positive integer");
+  }
+  const schedule = pattern.schedule;
+  if (!schedule || schedule.length === 0) {
+    throw new Error("session schedule is empty");
+  }
+  const horizon = pattern.days * 86400;
+  const blocks = schedule.map((block) => {
+    if (!Number.isInteger(block.day) || block.day < 0) {
+      throw new Error("session schedule day must be an integer >= 0");
+    }
+    if (!Number.isFinite(block.startOffsetSec) || block.startOffsetSec < 0) {
+      throw new Error("session schedule offset must be finite and >= 0");
+    }
+    if (!Number.isFinite(block.durationSec) || !(block.durationSec > 0)) {
+      throw new Error("session schedule duration must be finite and > 0");
+    }
+    const start = block.day * 86400 + block.startOffsetSec;
+    const end = start + block.durationSec;
+    if (end > horizon) throw new Error("session schedule block ends after the horizon");
+    return { day: block.day, startOffsetSec: block.startOffsetSec, durationSec: block.durationSec };
+  });
+  const ordered = [...blocks].sort(
+    (a, b) => a.day * 86400 + a.startOffsetSec - (b.day * 86400 + b.startOffsetSec),
+  );
+  for (let i = 1; i < ordered.length; i += 1) {
+    const prev = ordered[i - 1]!;
+    const next = ordered[i]!;
+    const prevEnd = prev.day * 86400 + prev.startOffsetSec + prev.durationSec;
+    const nextStart = next.day * 86400 + next.startOffsetSec;
+    if (nextStart < prevEnd) throw new Error("session schedule blocks overlap");
+  }
+  return ordered;
+}
+
+function blocksFor(pattern: SessionPatternSpec): ActiveBlock[] {
+  if (pattern.schedule) return assertSessionSchedule(pattern);
+  return buildBlocks(pattern);
+}
+
+// Each segment has its own recorder. The session observer hears a milestone key or a goal once.
+function oncePerSession(observer: RunObserver): RunObserver {
+  const milestones = new Set<string>();
+  const goals = new Set<string>();
+  const { onStep, onAction, onMilestone, onGoal } = observer;
+  return {
+    ...(onStep ? { onStep: (fact) => onStep.call(observer, fact) } : {}),
+    ...(onAction ? { onAction: (fact) => onAction.call(observer, fact) } : {}),
+    ...(onMilestone
+      ? {
+          onMilestone: (fact) => {
+            if (milestones.has(fact.key)) return;
+            milestones.add(fact.key);
+            onMilestone.call(observer, fact);
+          },
+        }
+      : {}),
+    ...(onGoal
+      ? {
+          onGoal: (fact) => {
+            if (goals.has(fact.goalId)) return;
+            goals.add(fact.goalId);
+            onGoal.call(observer, fact);
+          },
+        }
+      : {}),
+  };
+}
+
+function modelReadsClocks<N, U extends string, Vars>(scenario: CompiledScenario<N, U, Vars>): boolean {
+  return (scenario.model.clocks?.respondsTo?.length ?? 0) > 0;
+}
+
+function withClocks<N, U extends string, Vars>(
+  scenario: CompiledScenario<N, U, Vars>,
+  wallT: number,
+  wallEndT: number,
+  rewardT: number,
+  activeT: number,
+): CompiledScenario<N, U, Vars> {
+  if (!modelReadsClocks(scenario)) return scenario;
+  return {
+    ...scenario,
+    ctx: {
+      ...scenario.ctx,
+      clocks: { wallT, wallEndT, rewardT, activeT },
+    },
+  };
+}
+
+/**
+ * One continued play. Wall time follows the schedule. `state.t` stays reward time.
+ * A later call is fresh only when the caller supplies a new strategy instance.
+ * An `until` or goal stop inside an offline gap ends that gap at the smallest wall absence
+ * whose cap- and decay-adjusted reward reaches the stepped reward, not at the scheduled gap end.
+ *
+ * @evidence docs/requirements/active/session-clock.md#req-pr06-session-clock Schedules the next block on wall time and reports elapsed, credited, and active time separately.
+ * @evidenceReview docs/requirements/active/session-clock.md#req-pr06-session-clock #3c24d94 Re-read the section: cap and decay do not pull the next active block forward, policy none does not call decide, goals stop only once every goal is reached, a stop inside an offline gap ends that gap at the smallest absence whose cap- and decay-adjusted reward reaches the stepped reward, and maxSteps is a per-block budget counted in budgetStops, after which wall time still reaches the planned block end without crediting the rest as offline time.
+ */
 export function simulateSessionPattern<N, U extends string, Vars>(args: {
   scenario: CompiledScenario<N, U, Vars>;
   pattern: SessionPatternSpec;
@@ -103,131 +275,259 @@ export function simulateSessionPattern<N, U extends string, Vars>(args: {
   const horizonSec = args.pattern.days * 86400;
   const startT = start.t;
   const segments: SessionSegment<N, U, Vars>[] = [];
-  const trace: SimState<N, U, Vars>[] = [];
-  const actionsLog: Array<{ t: number; actionId: string; label?: string; bulkSize?: number }> = [];
-  const statsAcc = createSimStatsAccumulator();
+  // The caller's trace budgets bound the whole session, not each block.
+  const traceBudget = sc.run.trace?.maxPoints;
+  const actionBudget = sc.run.trace?.maxActions;
+  const trace = createBoundedLog<SimState<N, U, Vars>>(traceBudget, "session trace.maxPoints");
+  const actionsLog = createBoundedLog<{ t: number; actionId: string; label?: string; bulkSize?: number }>(actionBudget, "session trace.maxActions");
+  let lastTraceT: number | undefined;
+  let segmentTraceDropped = 0;
+  let segmentActionsDropped = 0;
   const eventBuffer = createEventBuffer<N>({
     enabled: sc.run.eventLog?.enabled ?? true,
     maxEvents: sc.run.eventLog?.maxEvents,
   });
+  const segmentObservations: RunObservation[] = [];
   let state = start;
-  let totalActiveSec = 0;
-  let totalOfflineSec = 0;
+  let lastResetT: number | undefined;
+  let wallT = startT;
+  let activeSec = 0;
+  let offlineElapsedSec = 0;
+  let offlineCreditedSec = 0;
+  let lostRewardSec = 0;
   let activeBlocks = 0;
+  let budgetStops = 0;
+  let stopReason: SessionStopReason = "horizon";
+  const actionPolicy = sc.run.offline?.actions ?? { mode: "legacy-all" as const };
+  const originalUntil = sc.run.until;
+  // Segment recorders and the session stop read one answer per goal and committed state.
+  const goals = shareGoalReads(sc.run.goals ?? []);
+  // A goal stays reached once met. Goals stop the session only when every goal is reached.
+  const reachedGoals = new Set<number>();
+  const allGoalsReached = () => goals.length > 0 && reachedGoals.size === goals.length;
+  // The runner's last call reads the segment's end state. Classify from it: until may hold only once.
+  let untilMet = false;
+  // The next segment starts from that same state. Read until once per committed state.
+  const untilAnswers = new WeakMap<object, boolean>();
+  const readUntil = (next: SimState<N, U, Vars>): boolean => {
+    if (originalUntil === undefined) return false;
+    const known = untilAnswers.get(next);
+    if (known !== undefined) return known;
+    const met = Boolean(originalUntil(next));
+    untilAnswers.set(next, met);
+    return met;
+  };
+  const stopFn =
+    originalUntil !== undefined || goals.length > 0
+      ? (next: SimState<N, U, Vars>) => {
+          goals.forEach((goal, i) => {
+            if (!reachedGoals.has(i) && readGoal(goal, next)) reachedGoals.add(i);
+          });
+          untilMet = readUntil(next);
+          return untilMet || allGoalsReached();
+        }
+      : undefined;
+
+  const observer = sc.run.observer ? oncePerSession(sc.run.observer) : undefined;
+  const onPrestigeReset = (t: number) => {
+    lastResetT = t;
+    sc.run.onPrestigeReset?.(t);
+  };
+  // Each segment starts from the last committed reset of an earlier segment.
+  // Its recorder reads only goals still open. The merge keeps an earlier segment's reached sample.
+  const segmentScenario = (wallStart: number, wallEnd: number): CompiledScenario<N, U, Vars> => {
+    const base = withClocks(sc, wallStart, wallEnd, state.t, activeSec);
+    const openGoals = goals.filter((_, i) => !reachedGoals.has(i));
+    return {
+      ...base,
+      ...(lastResetT !== undefined ? { constraints: constraintsWithAnchor(base.constraints, lastResetT) } : {}),
+      run: { ...base.run, onPrestigeReset, ...(sc.run.goals ? { goals: openGoals } : {}), ...(observer ? { observer } : {}) },
+    };
+  };
 
   const retainRun = (run: RunResult<N, U, Vars>) => {
-    statsAcc.push(run.events);
+    segmentObservations.push(
+      run.observation ??
+        observationFromLegacyEvents({
+          startT: run.start.t,
+          endT: run.end.t,
+          events: run.events,
+        }),
+    );
     eventBuffer.pushRun(run);
   };
 
-  const blocks = buildBlocks(args.pattern);
-  for (const block of blocks) {
-    const absoluteStart = startT + block.day * 86400 + block.startOffsetSec;
-    if (state.t < absoluteStart) {
-      const offlineRun = applyOfflineSeconds({
-        scenario: sc,
-        seconds: absoluteStart - state.t,
-        options: {
-          fromState: state,
-          useStrategy: true,
-          fast: sc.run.fast,
-          eventLog: {
-            enabled: sc.run.eventLog?.enabled ?? true,
-            maxEvents: sc.run.eventLog?.maxEvents,
-          },
-          policy: sc.run.offline,
-        },
-      });
-      totalOfflineSec += offlineRun.offline.simulatedSec;
-      retainRun(offlineRun);
-      segments.push({
-        kind: "offline",
-        day: block.day,
-        startT: state.t,
-        endT: offlineRun.end.t,
-        durationSec: offlineRun.offline.simulatedSec,
-        run: offlineRun,
-      });
-      state = offlineRun.end;
-    }
+  const classify = (): SessionStopReason | undefined => {
+    if (untilMet) return "until";
+    if (allGoalsReached()) return "goal";
+    return undefined;
+  };
 
-    const activeRun = runScenario({
-      ...sc,
-      initial: state,
-      run: {
-        ...sc.run,
-        durationSec: block.durationSec,
-        trace: { everySteps: 1, keepActionsLog: true },
-        eventLog: {
-          enabled: sc.run.eventLog?.enabled ?? true,
-          maxEvents: sc.run.eventLog?.maxEvents,
-        },
-      },
-    });
-
-    totalActiveSec += activeRun.end.t - activeRun.start.t;
-    activeBlocks += 1;
-    retainRun(activeRun);
-    if (activeRun.trace?.length) {
-      if (trace.length > 0 && activeRun.trace[0]?.t === trace[trace.length - 1]?.t) {
-        trace.push(...activeRun.trace.slice(1));
-      } else {
-        trace.push(...activeRun.trace);
-      }
-    }
-    if (activeRun.actionsLog?.length) actionsLog.push(...activeRun.actionsLog);
-
-    segments.push({
-      kind: "active",
-      day: block.day,
-      startT: activeRun.start.t,
-      endT: activeRun.end.t,
-      durationSec: activeRun.end.t - activeRun.start.t,
-      run: activeRun,
-    });
-    state = activeRun.end;
-  }
-
-  const horizonEnd = startT + horizonSec;
-  if (state.t < horizonEnd) {
+  const appendOffline = (wallEnd: number, day: number) => {
+    if (stopReason !== "horizon" || !(wallT < wallEnd)) return;
+    const requested = wallEnd - wallT;
+    const wallStart = wallT;
+    const segment = segmentScenario(wallStart, wallEnd);
     const offlineRun = applyOfflineSeconds({
-      scenario: sc,
-      seconds: horizonEnd - state.t,
+      scenario: segment,
+      seconds: requested,
       options: {
         fromState: state,
-        useStrategy: true,
+        actions: actionPolicy,
         fast: sc.run.fast,
         eventLog: {
           enabled: sc.run.eventLog?.enabled ?? true,
           maxEvents: sc.run.eventLog?.maxEvents,
         },
         policy: sc.run.offline,
+        ...(stopFn ? { until: stopFn } : {}),
       },
     });
-    totalOfflineSec += offlineRun.offline.simulatedSec;
+    const credited = offlineRun.offline.simulatedSec;
+    // A stop inside the gap ends it at the smallest absence that earns the stepped reward.
+    // Read the stop from the end state: a run that met it with no effective seconds left,
+    // or none at all, reports duration first. A gap that does not stop keeps its wall end.
+    const reason = classify();
+    const absence = reason ? offlineAbsenceForCredit(credited, requested, sc.run.offline) : requested;
+    const gapEnd = wallStart + absence;
+    const effective =
+      absence === requested ? offlineRun.offline.effectiveSec : resolveOfflineSeconds(absence, sc.run.offline).effectiveSec;
+    const lost = Math.max(0, absence - effective);
+    offlineElapsedSec += absence;
+    offlineCreditedSec += credited;
+    lostRewardSec += lost;
     retainRun(offlineRun);
+    // A policy that calls the strategy applies actions while away. They are session rows too.
+    for (const row of offlineRun.actionsLog ?? []) actionsLog.push(row);
+    segmentActionsDropped += offlineRun.actionsLogMeta?.dropped ?? 0;
     segments.push({
       kind: "offline",
-      day: Math.floor((state.t - startT) / 86400),
+      day,
       startT: state.t,
       endT: offlineRun.end.t,
-      durationSec: offlineRun.offline.simulatedSec,
+      durationSec: credited,
+      wallStartT: wallStart,
+      wallEndT: gapEnd,
+      clock: {
+        elapsedSec: absence,
+        creditedSec: credited,
+        activeSec: 0,
+        lostRewardSec: lost,
+      },
+      ...(segment.ctx.clocks ? { clocks: segment.ctx.clocks } : {}),
       run: offlineRun,
     });
     state = offlineRun.end;
+    wallT = gapEnd;
+    if (reason) stopReason = reason;
+  };
+
+  const blocks = blocksFor(args.pattern);
+  for (const block of blocks) {
+    if (stopReason !== "horizon") break;
+    const scheduledStart = startT + block.day * 86400 + block.startOffsetSec;
+    appendOffline(scheduledStart, block.day);
+    if (stopReason !== "horizon") break;
+
+    const wallStart = wallT;
+    const plannedEnd = wallStart + block.durationSec;
+    const segment = segmentScenario(wallStart, plannedEnd);
+    const activeRun = runScenario({
+      ...segment,
+      initial: state,
+      run: {
+        ...segment.run,
+        durationSec: block.durationSec,
+        trace: { ...sc.run.trace, everySteps: 1, keepActionsLog: true },
+        eventLog: {
+          enabled: sc.run.eventLog?.enabled ?? true,
+          maxEvents: sc.run.eventLog?.maxEvents,
+        },
+        ...(stopFn ? { until: stopFn } : {}),
+      },
+    });
+    const simulated = activeRun.end.t - activeRun.start.t;
+    activeSec += simulated;
+    activeBlocks += 1;
+    if (activeRun.stop?.reason === "budget") budgetStops += 1;
+    retainRun(activeRun);
+    const points = activeRun.trace ?? [];
+    const skip = points.length > 0 && points[0]!.t === lastTraceT ? 1 : 0;
+    for (let i = skip; i < points.length; i += 1) {
+      trace.push(points[i]!);
+    }
+    // A block that starts where the last one ended offers that point again. Count it once,
+    // also when the block's own budget dropped it.
+    const offered = (activeRun.traceLog?.totalSeen ?? points.length) - (activeRun.start.t === lastTraceT ? 1 : 0);
+    segmentTraceDropped += offered - (points.length - skip);
+    lastTraceT = activeRun.end.t;
+    for (const row of activeRun.actionsLog ?? []) actionsLog.push(row);
+    segmentActionsDropped += activeRun.actionsLogMeta?.dropped ?? 0;
+    // A block cut by maxSteps still ends at its planned wall time. The player was
+    // present for the rest, so it is neither offline absence nor credited reward.
+    const wallEnd = activeRun.stop?.reason === "budget" ? plannedEnd : wallStart + simulated;
+    segments.push({
+      kind: "active",
+      day: block.day,
+      startT: activeRun.start.t,
+      endT: activeRun.end.t,
+      durationSec: simulated,
+      wallStartT: wallStart,
+      wallEndT: wallEnd,
+      clock: {
+        elapsedSec: wallEnd - wallStart,
+        creditedSec: simulated,
+        activeSec: simulated,
+        lostRewardSec: 0,
+      },
+      ...(segment.ctx.clocks ? { clocks: segment.ctx.clocks } : {}),
+      run: activeRun,
+    });
+    state = activeRun.end;
+    wallT = wallEnd;
+    const reason = classify();
+    if (reason) stopReason = reason;
   }
 
-  const stats = statsAcc.snapshot();
+  if (stopReason === "horizon") {
+    appendOffline(startT + horizonSec, Math.floor((wallT - startT) / 86400));
+  }
+
+  const observation = mergeObservations(segmentObservations);
+  const stats = statsFromObservation(observation);
   const retained = eventBuffer.snapshot();
+  const traced = trace.snapshot();
+  const logged = actionsLog.snapshot();
   const run: RunResult<N, U, Vars> = {
     start,
     end: state,
     events: retained.events,
     eventTimeline: retained.eventTimeline,
-    trace,
-    actionsLog,
+    trace: traced.items,
+    actionsLog: logged.items,
     stats,
     uxFlags: analyzeUX(stats),
+    observation,
+    ...(traceBudget !== undefined
+      ? {
+          traceLog: {
+            maxPoints: traceBudget,
+            totalSeen: traced.totalSeen + segmentTraceDropped,
+            dropped: traced.dropped + segmentTraceDropped,
+            retained: traced.retained,
+          },
+        }
+      : {}),
+    ...(actionBudget !== undefined
+      ? {
+          actionsLogMeta: {
+            maxActions: actionBudget,
+            totalSeen: logged.totalSeen + segmentActionsDropped,
+            dropped: logged.dropped + segmentActionsDropped,
+            retained: logged.retained,
+          },
+        }
+      : {}),
     eventLog: retained.eventLog,
   };
 
@@ -240,8 +540,18 @@ export function simulateSessionPattern<N, U extends string, Vars>(args: {
     summary: {
       days: args.pattern.days,
       activeBlocks,
-      totalActiveSec,
-      totalOfflineSec,
+      totalActiveSec: activeSec,
+      totalOfflineSec: offlineCreditedSec,
+      elapsedSec: wallT - startT,
+      horizonSec,
+      activeSec,
+      offlineElapsedSec,
+      offlineCreditedSec,
+      lostRewardSec,
+      rewardSec: state.t - startT,
+      offlineActions: actionPolicy.mode,
+      budgetStops,
+      stop: { reason: stopReason },
     },
   };
 }

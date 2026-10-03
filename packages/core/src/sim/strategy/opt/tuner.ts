@@ -9,8 +9,10 @@ export type TuneSeedResult = Readonly<{
   durationSec: number;
   endMoneyLog10: number;
   endNetWorthLog10: number;
-  droppedRate: number;
-  actionsApplied: number;
+  /** Null when the run did not observe money. */
+  droppedRate: number | null;
+  /** Null when the run did not observe actions. */
+  actionsApplied: number | null;
 }>;
 
 export type TuneCandidate = Readonly<{

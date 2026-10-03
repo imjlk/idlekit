@@ -1,7 +1,13 @@
-import { analyzeUX, createSimStatsAccumulator } from "./analysis/ux";
-import { createEventBuffer } from "./eventBuffer";
+import type { OfflineActionPolicy, OfflinePolicy } from "../scenario/offlinePolicy";
+import { deepClonePreservingPrototype } from "../utils/deepClone";
+import { analyzeUX } from "./analysis/ux";
+import { recordPrestigeReset } from "./constraints";
+import { createBoundedLog, createEventBuffer } from "./eventBuffer";
+import { createObservationRecorder, statsFromObservation } from "./observation";
+import { resolveOfflineSeconds } from "./offlineCredit";
 import { stepOnce } from "./step";
-import type { CompiledScenario, RunResult, SimState } from "./types";
+import { assertSimulationClock, assertTickAdvanced, nextBoundary, stepContext, timeEpsilon, timeStepEvents } from "./timeBoundary";
+import type { Action, CompiledScenario, RunResult, RunStop, SimState } from "./types";
 
 export type OfflineRunOptions<N, U extends string, Vars> = Readonly<{
   fromState?: SimState<N, U, Vars>;
@@ -10,7 +16,14 @@ export type OfflineRunOptions<N, U extends string, Vars> = Readonly<{
   maxSteps?: number;
   fast?: CompiledScenario<N, U, Vars>["run"]["fast"];
   eventLog?: CompiledScenario<N, U, Vars>["run"]["eventLog"];
-  policy?: CompiledScenario<N, U, Vars>["run"]["offline"];
+  policy?: OfflinePolicy;
+  /** Overrides `policy.actions` and `scenario.run.offline.actions` for this call. */
+  actions?: OfflineActionPolicy;
+  /**
+   * Session stop. Omitted means this call ignores `scenario.run.until`.
+   * That is the legacy direct contract.
+   */
+  until?: (state: SimState<N, U, Vars>) => boolean;
 }>;
 
 export type OfflineRunResult<N, U extends string, Vars> = Readonly<
@@ -24,6 +37,7 @@ export type OfflineRunResult<N, U extends string, Vars> = Readonly<
       fullSteps: number;
       remainderSec: number;
       usedStrategy: boolean;
+      actionPolicy: "legacy-all" | "none" | "allow";
       overflow: "none" | "clamped";
       decay: Readonly<{
         kind: "none" | "linear";
@@ -33,55 +47,42 @@ export type OfflineRunResult<N, U extends string, Vars> = Readonly<
   }
 >;
 
-function clamp01(v: number): number {
-  if (v < 0) return 0;
-  if (v > 1) return 1;
-  return v;
+export function resolveOfflineActionPolicy(args: {
+  policy?: OfflineActionPolicy;
+  useStrategy?: boolean;
+  hasStrategy: boolean;
+}): Readonly<{ callStrategy: boolean; policy: OfflineActionPolicy }> {
+  if (args.useStrategy === false) return { callStrategy: false, policy: { mode: "none" } };
+  const policy = args.policy ?? { mode: "legacy-all" };
+  if (policy.mode === "none") return { callStrategy: false, policy: { mode: "none" } };
+  // Without a strategy there is nothing to call, so usedStrategy stays false.
+  if (policy.mode === "allow") return { callStrategy: args.hasStrategy, policy };
+  return { callStrategy: args.hasStrategy, policy: { mode: "legacy-all" } };
 }
 
-function resolveOfflineSeconds(
-  requestedSec: number,
-  policy: CompiledScenario<any, any, any>["run"]["offline"] | undefined,
-): Readonly<{
-  preDecaySec: number;
-  effectiveSec: number;
-  overflow: "none" | "clamped";
-  decayKind: "none" | "linear";
-  decayRatio: number;
-}> {
-  const maxSec = policy?.maxSec;
-  const overflowPolicy = policy?.overflowPolicy ?? "clamp";
-
-  let preDecaySec = requestedSec;
-  let overflow: "none" | "clamped" = "none";
-
-  if (maxSec !== undefined && requestedSec > maxSec) {
-    if (overflowPolicy === "reject") {
-      throw new Error(`offline seconds exceed policy maxSec (${maxSec})`);
-    }
-    preDecaySec = maxSec;
-    overflow = "clamped";
-  }
-
-  const decayKind = policy?.decay?.kind ?? "none";
-  const floorRatio = clamp01(policy?.decay?.floorRatio ?? 0.25);
-
-  let decayRatio = 1;
-  if (decayKind === "linear" && maxSec !== undefined && maxSec > 0) {
-    const progress = clamp01(preDecaySec / maxSec);
-    // 0 sec => ratio 1, maxSec => floorRatio
-    decayRatio = floorRatio + (1 - floorRatio) * (1 - progress);
-  }
-
-  return {
-    preDecaySec,
-    effectiveSec: preDecaySec * decayRatio,
-    overflow,
-    decayKind,
-    decayRatio,
-  };
+function allowsOfflineAction(
+  action: Pick<Action<unknown, string, unknown>, "kind" | "actor">,
+  policy: OfflineActionPolicy,
+): boolean {
+  if (policy.mode !== "allow") return true;
+  if (!policy.categories.includes(action.kind)) return false;
+  if (policy.actors === undefined) return true;
+  if (action.actor === undefined) return false;
+  return policy.actors.includes(action.actor);
 }
 
+/**
+ * Catch up reward time with the same partial-tick and budget rules as `runScenario`.
+ * `state.t` advances by simulated reward seconds, not by the requested absence.
+ * A short `maxSteps` stops with reason `budget` instead of throwing the completed time away.
+ * `stepOnce` is still the only economy transition.
+ * Omitting `options.until` does not read `scenario.run.until`.
+ *
+ * @evidence docs/requirements/active/simulation-time-boundaries.md#req-pr02-simulation-time-boundaries Applies the same horizon, partial tick, and step budget as the online runner.
+ * @evidenceReview docs/requirements/active/simulation-time-boundaries.md#req-pr02-simulation-time-boundaries #de6ae2f Re-read the section: offline uses that partial tick, a short maxSteps returns budget instead of discarding the run, and a committed tick that does not move state.t throws through assertTickAdvanced.
+ * @evidence docs/requirements/active/session-clock.md#req-pr06-session-clock Steps reward time only. `requestedSec` stays the caller absence, and `useStrategy: false` or policy `none` does not call `decide`.
+ * @evidenceReview docs/requirements/active/session-clock.md#req-pr06-session-clock #3c24d94 Re-read the section: state.t moves by simulated reward seconds, and a direct call does not turn the requested absence into state.t. The gap-end rule for a stop inside an offline gap belongs to the session, not to this direct call.
+ */
 export function applyOfflineSeconds<N, U extends string, Vars>(args: {
   scenario: CompiledScenario<N, U, Vars>;
   seconds: number;
@@ -95,11 +96,17 @@ export function applyOfflineSeconds<N, U extends string, Vars>(args: {
   }
 
   const stepSec = opts?.stepSec ?? scenario.run.stepSec;
-  if (!Number.isFinite(stepSec) || stepSec <= 0) {
-    throw new Error(`offline stepSec must be > 0 (received: ${stepSec})`);
-  }
+  const maxSteps = opts?.maxSteps;
+  assertSimulationClock("offline", { stepSec, maxSteps });
 
-  const useStrategy = opts?.useStrategy ?? !!scenario.strategy;
+  const capPolicy = opts?.policy ?? scenario.run.offline;
+  const resolvedPolicy = resolveOfflineActionPolicy({
+    policy: opts?.actions ?? capPolicy?.actions,
+    useStrategy: opts?.useStrategy,
+    hasStrategy: !!scenario.strategy,
+  });
+  const useStrategy = resolvedPolicy.callStrategy;
+  const untilFn = opts?.until;
   const start = opts?.fromState ?? scenario.initial;
 
   const eventLogEnabled = opts?.eventLog?.enabled ?? scenario.run.eventLog?.enabled ?? true;
@@ -109,96 +116,165 @@ export function applyOfflineSeconds<N, U extends string, Vars>(args: {
     throw new Error("offline eventLog.maxEvents must be an integer >= 0");
   }
 
-  const resolved = resolveOfflineSeconds(seconds, opts?.policy ?? scenario.run.offline);
+  const resolved = resolveOfflineSeconds(seconds, capPolicy);
+  assertSimulationClock("offline", { stepSec, durationSec: resolved.effectiveSec, maxSteps });
   const fullSteps = Math.floor(resolved.effectiveSec / stepSec);
   const remainderRaw = resolved.effectiveSec - fullSteps * stepSec;
-  const remainderEpsilon = Math.max(1e-12, seconds * 1e-12);
-  const remainderSec = remainderRaw > remainderEpsilon ? remainderRaw : 0;
+  const remainderSec = remainderRaw > timeEpsilon(resolved.effectiveSec) ? remainderRaw : 0;
 
-  const plannedSteps = fullSteps + (remainderSec > 0 ? 1 : 0);
-  const maxSteps = opts?.maxSteps;
-  if (maxSteps !== undefined && plannedSteps > maxSteps) {
-    throw new Error(`offline run exceeded maxSteps (${maxSteps}); required=${plannedSteps}`);
-  }
-
-  const statsAcc = createSimStatsAccumulator();
+  const recorder = createObservationRecorder({
+    enabled: scenario.run.observation?.enabled !== false,
+    startT: start.t,
+    maxMilestones: scenario.run.observation?.maxMilestones ?? 64,
+    maxGoals: scenario.run.observation?.maxGoals ?? 32,
+    goals: scenario.run.goals ?? [],
+    observer: scenario.run.observer,
+  });
   const eventBuffer = createEventBuffer<N>({
     enabled: eventLogEnabled,
     maxEvents,
   });
   const actionsLog: Array<{ t: number; actionId: string; label?: string; bulkSize?: number }> = [];
+  const actionBudget = scenario.run.trace?.maxActions;
+  const actionLog =
+    actionBudget !== undefined
+      ? createBoundedLog<{ t: number; actionId: string; label?: string; bulkSize?: number }>(actionBudget, "applyOfflineSeconds trace.maxActions")
+      : undefined;
 
   let state = start;
+  let steps = 0;
+  let simulatedSec = 0;
   const maxActionsPerStep = scenario.constraints?.maxActionsPerStep ?? Infinity;
+  let constraints = scenario.constraints;
+  recorder.recordStart(start);
+  let stop: RunStop | undefined;
 
-  for (let i = 0; i < fullSteps; i++) {
-    const decisions = useStrategy
-      ? (scenario.strategy?.decide(scenario.ctx, scenario.model, state) ?? []).slice(0, maxActionsPerStep)
-      : [];
+  while (stop === undefined) {
+    const decision = nextBoundary({
+      elapsedSec: simulatedSec,
+      steps,
+      stepSec,
+      durationSec: resolved.effectiveSec,
+      untilMet: untilFn?.(state) ?? false,
+      hasUntil: untilFn !== undefined,
+      maxSteps,
+    });
+    if (decision.kind === "guard") {
+      throw new Error(`offline run exceeded maxSteps (${maxSteps}) without meeting stop condition`);
+    }
+    if (decision.kind === "stop") {
+      stop = decision.stop;
+      break;
+    }
 
+    const stepCtx = stepContext(
+      { ...scenario.ctx, ...(constraints ? { constraints } : {}) },
+      decision.dt,
+    );
+    // A snapshot pair may save undefined. It is still the state to restore.
+    const restorable =
+      resolvedPolicy.policy.mode === "allow" &&
+      typeof scenario.strategy?.snapshotState === "function" &&
+      typeof scenario.strategy.restoreState === "function";
+    // Clone before decide. A snapshot that aliases the cursor would advance with it.
+    const saved = restorable ? deepClonePreservingPrototype(scenario.strategy?.snapshotState?.()) : undefined;
+    const raw = useStrategy ? (scenario.strategy?.decide(stepCtx, scenario.model, state) ?? []) : [];
+    const policy = resolvedPolicy.policy;
+    const filtered = raw.filter((decision) => allowsOfflineAction(decision.action, policy));
+    const decisions = filtered.slice(0, maxActionsPerStep);
+    // A later decision re-resolves after earlier applies, so check the action it commits too.
+    let lateRejected = 0;
+    const admits =
+      policy.mode === "allow"
+        ? (action: Action<N, U, Vars>) => {
+            if (allowsOfflineAction(action, policy)) return true;
+            lateRejected += 1;
+            return false;
+          }
+        : undefined;
+    const actionStartT = state.t;
     const out = stepOnce({
-      ctx: scenario.ctx,
+      ctx: stepCtx,
       model: scenario.model,
       state,
-      dt: stepSec,
+      dt: decision.dt,
       decisions,
-      constraints: scenario.constraints,
+      admits,
+      constraints,
       fast: opts?.fast ?? scenario.run.fast,
     });
+    assertTickAdvanced("offline", actionStartT, out.next.t, decision.dt, stepSec);
+    // Restore only a batch the policy rejected whole, before or at re-resolution. An empty decide keeps its own state.
+    // A mixed batch applies its listed part and does not restore, or that part would replay. Compare with the
+    // decisions handed to the step, after maxActionsPerStep. A batch the cap alone emptied was not rejected.
+    const rejectedWhole =
+      filtered.length === 0 || (decisions.length > 0 && lateRejected === decisions.length);
+    if (restorable && raw.length > 0 && rejectedWhole) {
+      scenario.strategy?.restoreState?.(saved);
+    }
+    constraints = recordPrestigeReset(constraints, out.prestigeResetT, scenario.run.onPrestigeReset);
 
     state = out.next;
-    statsAcc.push(out.events);
-    eventBuffer.pushBatch(out.events, state.t);
+    simulatedSec += decision.dt;
+    steps += 1;
+    recorder.recordStep({
+      t0: actionStartT,
+      t1: state.t,
+      dt: decision.dt,
+      events: out.events,
+      observedMoney: out.observedMoney,
+      prestigeChanged:
+        out.next.prestige.count !== out.prev.prestige.count ||
+        String(out.next.prestige.points) !== String(out.prev.prestige.points),
+      state,
+    });
+    eventBuffer.pushTimed(timeStepEvents(out.events, actionStartT, state.t));
     if (out.actionsApplied?.length) {
-      actionsLog.push(...out.actionsApplied);
+      if (actionLog) {
+        for (const row of out.actionsApplied) actionLog.push(row);
+      } else {
+        actionsLog.push(...out.actionsApplied);
+      }
     }
   }
 
-  if (remainderSec > 0) {
-    const decisions = useStrategy
-      ? (scenario.strategy?.decide(scenario.ctx, scenario.model, state) ?? []).slice(0, maxActionsPerStep)
-      : [];
-
-    const out = stepOnce({
-      ctx: scenario.ctx,
-      model: scenario.model,
-      state,
-      dt: remainderSec,
-      decisions,
-      constraints: scenario.constraints,
-      fast: opts?.fast ?? scenario.run.fast,
-    });
-
-    state = out.next;
-    statsAcc.push(out.events);
-    eventBuffer.pushBatch(out.events, state.t);
-    if (out.actionsApplied?.length) {
-      actionsLog.push(...out.actionsApplied);
-    }
-  }
-
-  const stats = statsAcc.snapshot();
+  const observation = recorder.finish();
+  const stats = statsFromObservation(observation);
   const uxFlags = analyzeUX(stats);
   const retained = eventBuffer.snapshot();
+  const loggedActions = actionLog?.snapshot();
 
   return {
     start,
     end: state,
     events: retained.events,
     eventTimeline: retained.eventTimeline,
-    actionsLog: actionsLog.length > 0 ? actionsLog : undefined,
+    actionsLog: loggedActions ? loggedActions.items : actionsLog.length > 0 ? actionsLog : undefined,
+    observation,
+    ...(loggedActions
+      ? {
+          actionsLogMeta: {
+            maxActions: actionBudget,
+            totalSeen: loggedActions.totalSeen,
+            dropped: loggedActions.dropped,
+            retained: loggedActions.retained,
+          },
+        }
+      : {}),
     stats,
     uxFlags,
     eventLog: retained.eventLog,
+    stop,
     offline: {
       requestedSec: seconds,
       preDecaySec: resolved.preDecaySec,
       effectiveSec: resolved.effectiveSec,
-      simulatedSec: fullSteps * stepSec + remainderSec,
+      simulatedSec,
       stepSec,
       fullSteps,
       remainderSec,
       usedStrategy: useStrategy,
+      actionPolicy: resolvedPolicy.policy.mode,
       overflow: resolved.overflow,
       decay: {
         kind: resolved.decayKind,

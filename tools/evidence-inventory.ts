@@ -134,6 +134,21 @@ export function declaredRequirementId(docText: string, anchor: string): string |
   return /Requirement `([^`]+)`/.exec(section)?.[1];
 }
 
+/** `it(`, `test.only(`, `describe.each(` as a bare name. `regex.test(` is a method call. */
+const BARE_RUNNER_CALL = /(?:^|[^.\w$])(?:it|test|describe)(?:\s*\.\s*\w+)*\s*\(/m;
+
+/**
+ * Sources that can register a test: they name the runner module, or call the global
+ * `it` / `test` / `describe` that tsconfig's `bun` types expose without an import.
+ * Production code reached through the source graph does neither, so a call such as
+ * `assertSimulationClock("offline", clock)` or `new Function(...)` there is not a
+ * hidden registration. A runner smuggled in some other way is adversarial test code,
+ * which this gate does not defend against.
+ */
+export function runnerSources(bodies: readonly string[]): string[] {
+  return bodies.filter((body) => body.includes("bun:test") || BARE_RUNNER_CALL.test(body));
+}
+
 type CommandScan = {
   extras: string[];
   missingPreloads: string[];
@@ -170,7 +185,9 @@ function commandScan(
     missingPreloads: unresolvedPreloadSpecifiers(commandCwd, test.args),
     requireFaults: unresolvedLocalRequires(commandFiles),
     ambiguous: ambiguousSuiteSeparators(commandSources),
-    unresolvedRunner: commandSources.some((source) => unresolvedRunnerCalls(source).length > 0),
+    unresolvedRunner: runnerSources(commandSources).some(
+      (source) => unresolvedRunnerCalls(source).length > 0,
+    ),
     loaderOrMock: commandSources.some(
       (source) => loaderPluginRegistration(source) || mockModuleRegistration(source),
     ),

@@ -21,9 +21,9 @@
 - `policy`: `drop | accumulate`, `maxLogGap`
 - `model`: 모델 식별자와 버전
 - `initial.wallet`: 시작 재화
-- `initial.vars`: 모델 상태(모델별 스키마)
+- `initial.vars`: 모델 상태(모델별 스키마). `compileScenario`가 `vars`를 복사하고 numeric prototype은 유지한다. 입력 객체가 실행 중 vars 객체는 아니다.
 - `clock.stepSec`: 틱 간격(초)
-- `clock.durationSec`: 총 시뮬레이션 시간
+- `clock.durationSec`: 총 시뮬레이션 시간. `stepSec`의 배수가 아니면 마지막 틱은 남은 시간만 진행한다. `maxSteps`는 두 번째 horizon이 아니라 안전 budget이다. 프로그램 API의 `durationSec: 0`은 즉시 끝난다. ScenarioV1 JSON은 `durationSec`가 있으면 여전히 양수여야 한다.
 - `clock.untilExpr`: 조기 종료 조건식(안전 파서 문법: `<path> <op> <value>` + `&&`, `||`)
 - `clock` 종료 조건: `durationSec` 또는 `untilExpr` 중 최소 1개는 필수
 - `strategy`: 전략 id + params
@@ -36,6 +36,8 @@
 - `sim.offline.overflowPolicy`: `clamp | reject`
 - `sim.offline.decay.kind`: `none | linear`
 - `sim.offline.decay.floorRatio`: linear decay 하한 비율(0..1)
+- `sim.offline.actions`: `legacy-all`(기본), `none`, 또는 `allow`. `allow`는 action kind와 선택적 `player` / `automation` actor를 받는다. `none`은 부재 중에 `decide`를 호출하지 않는다. cap/decay는 보상 시간만 줄이며 다음 접속 블록을 앞당기지 않는다. `state.t`는 보상 시간이다.
+- `design.sessionPattern`: 다섯 preset id는 유지한다. offset 목록은 JSON calendar가 아니라 `SessionPatternSpec.schedule` 프로그램 API다.
 - `outputs.report`: trace/checkpoint/UX 포함 여부
 
 ## 3. 전략 파라미터 기본 주입 규칙
@@ -212,6 +214,7 @@ bun run --cwd packages/cli dev -- init scenario --track personal --preset longru
 
 - 구조 검증 실패 시 `[SIM_STATE_INVALID_JSON]`
 - 단위 불일치 시 `[SIM_STATE_UNIT_MISMATCH]`
+- 저장된 `engine.name`과 실행 엔진이 다르면 `[SIM_STATE_ENGINE_MISMATCH]` (engine 필드가 없으면 `number`)
 - 지원하지 않는 버전이면 `[SIM_STATE_UNSUPPORTED_VERSION]`
 - 전략 id 불일치 시 `[RESUME_STRATEGY_MISMATCH]`
 - 전략 state version 불일치 시 `[RESUME_STRATEGY_MISMATCH]`
