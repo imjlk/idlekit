@@ -1,5 +1,6 @@
 import { defineCommand, option } from "@bunli/core";
 import {
+  assertHorizonReached,
   constraintsWithAnchor,
   runScenario,
   validateScenarioV1,
@@ -295,6 +296,8 @@ export function runLtvAnalysis(args: {
       },
     });
 
+    // A segment cut by maxSteps did not reach its horizon, so its row would be mislabeled.
+    assertHorizonReached(run, `ltv ${h.label}`);
     state = run.end;
     counts = mergeCounts(counts, run.stats);
 

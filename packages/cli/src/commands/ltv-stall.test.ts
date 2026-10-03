@@ -71,3 +71,30 @@ describe("ltv prestige cooldown", () => {
     expect(resets).toEqual([0]);
   });
 });
+
+describe("ltv step budget", () => {
+  it("rejects a horizon segment cut by maxSteps", async () => {
+    const scenario = await Bun.file(resolve(process.cwd(), "../../examples/tutorials/01-cafe-baseline.json")).json();
+    const compiled: CompiledScenario<number, string, Record<string, unknown>> = {
+      ctx: { E: createNumberEngine(), unit: { code: "COIN" }, tickPolicy: { mode: "drop" }, stepSec: 1 },
+      model: {
+        id: "ltv-budget",
+        version: 1,
+        income: () => ({ unit: { code: "COIN" }, amount: 1 }),
+        actions: () => [],
+      },
+      initial: {
+        t: 0,
+        wallet: { money: { unit: { code: "COIN" }, amount: 0 }, bucket: 0 },
+        maxMoneyEver: { unit: { code: "COIN" }, amount: 0 },
+        prestige: { count: 0, points: 0, multiplier: 1 },
+        vars: {},
+      },
+      run: { stepSec: 1, maxSteps: 5 },
+    };
+    const analyze = (horizonsRaw: string) =>
+      runLtvAnalysis({ scenario, scenarioPath: "ltv-budget.json", compiled, strategy: undefined, horizonsRaw, fast: false, seed: 1 });
+    expect(() => analyze("60s")).toThrow(/ltv 60s exceeded maxSteps \(5\)/);
+    expect(() => analyze("5s")).not.toThrow();
+  });
+});
