@@ -12,6 +12,8 @@ import {
   type SessionPatternId,
   type SessionPatternSpec,
   type SessionRunResult,
+  type SessionSegment,
+  type SimContext,
   type SimState,
 } from "@idlekit/core";
 
@@ -131,6 +133,38 @@ function activeSegments<N, U extends string, Vars>(session: SessionRunResult<N, 
   return session.segments.filter((segment): segment is Extract<typeof segment, { kind: "active" }> => segment.kind === "active");
 }
 
+// A model that reads clocks saw them only on its segment's context. Read its net worth there too.
+function segmentScenario<N, U extends string, Vars>(
+  scenario: CompiledScenario<N, U, Vars>,
+  segment: SessionSegment<N, U, Vars> | undefined,
+): CompiledScenario<N, U, Vars> {
+  return segment?.clocks ? { ...scenario, ctx: { ...scenario.ctx, clocks: segment.clocks } } : scenario;
+}
+
+// The session trace joins every active block. Each point keeps the context of the block that traced it.
+function growthScenario<N, U extends string, Vars>(
+  scenario: CompiledScenario<N, U, Vars>,
+  session: SessionRunResult<N, U, Vars>,
+): CompiledScenario<N, U, Vars> {
+  const model = scenario.model;
+  const netWorth = model.netWorth;
+  if (!netWorth || !session.segments.some((segment) => segment.clocks)) return scenario;
+  const ctxOf = new Map<SimState<N, U, Vars>, SimContext<N, U, Vars>>();
+  for (const segment of activeSegments(session)) {
+    const ctx = segmentScenario(scenario, segment).ctx;
+    for (const state of segment.run.trace ?? []) if (!ctxOf.has(state)) ctxOf.set(state, ctx);
+  }
+  ctxOf.set(session.start, segmentScenario(scenario, session.segments[0]).ctx);
+  ctxOf.set(session.end, segmentScenario(scenario, session.segments.at(-1)).ctx);
+  return {
+    ...scenario,
+    model: Object.assign(Object.create(model) as typeof model, {
+      netWorth: (ctx: SimContext<N, U, Vars>, state: SimState<N, U, Vars>) =>
+        netWorth.call(model, ctxOf.get(state) ?? ctx, state),
+    }),
+  };
+}
+
 export function analyzePerceivedProgression<N, U extends string, Vars>(args: {
   scenario: CompiledScenario<N, U, Vars>;
   session: SessionRunResult<N, U, Vars>;
@@ -161,13 +195,14 @@ export function analyzePerceivedProgression<N, U extends string, Vars>(args: {
     }
     const trace = segment.run.trace ?? [segment.run.start, segment.run.end];
     if (trace.length === 0) continue;
+    const view = segmentScenario(scenario, segment);
 
     totalActiveSec += segment.durationSec;
     tracker.reset();
 
     const visibleTimestamps: number[] = [];
     for (const state of trace) {
-      const change = tracker.observe(moneyAtState(scenario, state, series));
+      const change = tracker.observe(moneyAtState(view, state, series));
       if (change.changed) {
         visibleTimestamps.push(state.t);
         changeTimes.push(state.t);
@@ -217,7 +252,7 @@ export function snapshotFromSession<N, U extends string, Vars>(args: {
   const series = resolveExperienceSeries(args.scenario, args.series);
   const growth = analyzeGrowth({
     run: args.session.run,
-    scenario: args.scenario,
+    scenario: growthScenario(args.scenario, args.session),
     series,
     windowSec: args.scenario.analysis?.growth?.windowSec ?? 60,
   });
@@ -227,7 +262,7 @@ export function snapshotFromSession<N, U extends string, Vars>(args: {
     session: args.session,
     series,
   });
-  const endWorth = moneyAtState(args.scenario, args.session.end, "netWorth");
+  const endWorth = moneyAtState(segmentScenario(args.scenario, args.session.segments.at(-1)), args.session.end, "netWorth");
 
   return {
     endMoney: args.scenario.ctx.E.toString(args.session.end.wallet.money.amount),

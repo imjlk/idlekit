@@ -13,7 +13,7 @@ import {
 import { applyOfflineSeconds, type OfflineRunResult } from "./offline";
 import { offlineAbsenceForCredit, resolveOfflineSeconds } from "./offlineCredit";
 import { runScenario } from "./simulator";
-import type { CompiledScenario, RunResult, SimState } from "./types";
+import type { CompiledScenario, RunResult, SimContext, SimState } from "./types";
 
 /**
  * Session schedule contract. TC-05 has not registered this DTO.
@@ -69,6 +69,8 @@ export type SessionSegment<N, U extends string, Vars> =
       wallStartT: number;
       wallEndT: number;
       clock: SessionClock;
+      /** The clock view this segment's model calls read. Set only when the model declares `clocks.respondsTo`. */
+      clocks?: SimContext<N, U, Vars>["clocks"];
       run: RunResult<N, U, Vars>;
     }>
   | Readonly<{
@@ -80,6 +82,7 @@ export type SessionSegment<N, U extends string, Vars> =
       wallStartT: number;
       wallEndT: number;
       clock: SessionClock;
+      clocks?: SimContext<N, U, Vars>["clocks"];
       run: OfflineRunResult<N, U, Vars>;
     }>;
 
@@ -354,8 +357,9 @@ export function simulateSessionPattern<N, U extends string, Vars>(args: {
     if (stopReason !== "horizon" || !(wallT < wallEnd)) return;
     const requested = wallEnd - wallT;
     const wallStart = wallT;
+    const segment = segmentScenario(wallStart, wallEnd);
     const offlineRun = applyOfflineSeconds({
-      scenario: segmentScenario(wallStart, wallEnd),
+      scenario: segment,
       seconds: requested,
       options: {
         fromState: state,
@@ -400,6 +404,7 @@ export function simulateSessionPattern<N, U extends string, Vars>(args: {
         activeSec: 0,
         lostRewardSec: lost,
       },
+      ...(segment.ctx.clocks ? { clocks: segment.ctx.clocks } : {}),
       run: offlineRun,
     });
     state = offlineRun.end;
@@ -465,6 +470,7 @@ export function simulateSessionPattern<N, U extends string, Vars>(args: {
         activeSec: simulated,
         lostRewardSec: 0,
       },
+      ...(segment.ctx.clocks ? { clocks: segment.ctx.clocks } : {}),
       run: activeRun,
     });
     state = activeRun.end;

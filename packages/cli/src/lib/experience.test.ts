@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { createNumberEngine, simulateSessionPattern, type CompiledScenario, type SimState } from "@idlekit/core";
-import { analyzePerceivedProgression } from "./experience";
+import { analyzePerceivedProgression, collectExperienceSnapshot } from "./experience";
 
 type Vars = { bought: number };
 
@@ -54,5 +54,37 @@ describe("analyzePerceivedProgression", () => {
         "perceived progression needs every active step",
       );
     }
+  });
+});
+
+// Net worth that reads the session clock view. It throws when the view is absent.
+function clockedScenario(): CompiledScenario<number, "COIN", Vars> {
+  const base = scenario();
+  return {
+    ...base,
+    model: {
+      ...base.model,
+      clocks: { respondsTo: ["active"] },
+      netWorth: (ctx, state) => {
+        if (!ctx.clocks) throw new Error("netWorth reads ctx.clocks");
+        return { unit: state.wallet.money.unit, amount: state.wallet.money.amount + ctx.clocks.activeT };
+      },
+    },
+  };
+}
+
+describe("snapshotFromSession", () => {
+  it("reads net worth with the clock view each segment used", () => {
+    const clocked = clockedScenario();
+    const pattern = { id: "twice-daily" as const, days: 1 };
+    const { session, snapshot } = collectExperienceSnapshot({ scenario: clocked, sessionPattern: pattern, seed: 1, series: "netWorth" });
+    const last = session.segments.at(-1)!;
+    expect(last.kind).toBe("offline");
+    expect(last.clocks?.activeT).toBe(3600);
+    expect(Number(snapshot.endNetWorth)).toBe(session.end.wallet.money.amount + 3600);
+    expect(snapshot.growth.valueSource).toBe("netWorth");
+    expect(snapshot.growth.segments.length).toBeGreaterThan(0);
+    expect(snapshot.perceived.activeSeconds).toBe(3600);
+    expect(snapshot.perceived.visibleChangeCount).toBeGreaterThan(0);
   });
 });
