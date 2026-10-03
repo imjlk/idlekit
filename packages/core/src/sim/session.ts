@@ -3,7 +3,13 @@ import { analyzeUX } from "./analysis/ux";
 import { constraintsWithAnchor } from "./constraints";
 import { createBoundedLog, createEventBuffer } from "./eventBuffer";
 import { readGoal, shareGoalReads } from "./goalRead";
-import { mergeObservations, observationFromLegacyEvents, statsFromObservation, type RunObservation } from "./observation";
+import {
+  mergeObservations,
+  observationFromLegacyEvents,
+  statsFromObservation,
+  type RunObservation,
+  type RunObserver,
+} from "./observation";
 import { applyOfflineSeconds, type OfflineRunResult } from "./offline";
 import { offlineAbsenceForCredit, resolveOfflineSeconds } from "./offlineCredit";
 import { runScenario } from "./simulator";
@@ -197,6 +203,35 @@ function blocksFor(pattern: SessionPatternSpec): ActiveBlock[] {
   return buildBlocks(pattern);
 }
 
+// Each segment has its own recorder. The session observer hears a milestone key or a goal once.
+function oncePerSession(observer: RunObserver): RunObserver {
+  const milestones = new Set<string>();
+  const goals = new Set<string>();
+  const { onStep, onAction, onMilestone, onGoal } = observer;
+  return {
+    ...(onStep ? { onStep: (fact) => onStep.call(observer, fact) } : {}),
+    ...(onAction ? { onAction: (fact) => onAction.call(observer, fact) } : {}),
+    ...(onMilestone
+      ? {
+          onMilestone: (fact) => {
+            if (milestones.has(fact.key)) return;
+            milestones.add(fact.key);
+            onMilestone.call(observer, fact);
+          },
+        }
+      : {}),
+    ...(onGoal
+      ? {
+          onGoal: (fact) => {
+            if (goals.has(fact.goalId)) return;
+            goals.add(fact.goalId);
+            onGoal.call(observer, fact);
+          },
+        }
+      : {}),
+  };
+}
+
 function modelReadsClocks<N, U extends string, Vars>(scenario: CompiledScenario<N, U, Vars>): boolean {
   return (scenario.model.clocks?.respondsTo?.length ?? 0) > 0;
 }
@@ -280,6 +315,7 @@ export function simulateSessionPattern<N, U extends string, Vars>(args: {
         }
       : undefined;
 
+  const observer = sc.run.observer ? oncePerSession(sc.run.observer) : undefined;
   const onPrestigeReset = (t: number) => {
     lastResetT = t;
     sc.run.onPrestigeReset?.(t);
@@ -290,7 +326,7 @@ export function simulateSessionPattern<N, U extends string, Vars>(args: {
     return {
       ...base,
       ...(lastResetT !== undefined ? { constraints: constraintsWithAnchor(base.constraints, lastResetT) } : {}),
-      run: { ...base.run, onPrestigeReset, ...(sc.run.goals ? { goals } : {}) },
+      run: { ...base.run, onPrestigeReset, ...(sc.run.goals ? { goals } : {}), ...(observer ? { observer } : {}) },
     };
   };
 
