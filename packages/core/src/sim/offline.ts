@@ -1,4 +1,5 @@
 import type { OfflineActionPolicy, OfflinePolicy } from "../scenario/offlinePolicy";
+import { deepClonePreservingPrototype } from "../utils/deepClone";
 import { analyzeUX } from "./analysis/ux";
 import { recordPrestigeReset } from "./constraints";
 import { createBoundedLog, createEventBuffer } from "./eventBuffer";
@@ -171,9 +172,10 @@ export function applyOfflineSeconds<N, U extends string, Vars>(args: {
       { ...scenario.ctx, ...(constraints ? { constraints } : {}) },
       decision.dt,
     );
+    // Clone before decide. A snapshot that aliases the cursor would advance with it.
     const saved =
       resolvedPolicy.policy.mode === "allow" && scenario.strategy?.snapshotState
-        ? scenario.strategy.snapshotState()
+        ? deepClonePreservingPrototype(scenario.strategy.snapshotState())
         : undefined;
     const raw = useStrategy ? (scenario.strategy?.decide(stepCtx, scenario.model, state) ?? []) : [];
     const filtered = raw.filter((decision) => allowsOfflineAction(decision.action, resolvedPolicy.policy));

@@ -233,6 +233,29 @@ describe("applyOfflineSeconds", () => {
     expect(strategy.snapshotState?.()).toEqual({ cursor: 2 });
   });
 
+  it("restores a rejected batch when snapshotState returns the live state object", () => {
+    let internal = { cursor: 0 };
+    const strategy: Strategy<number, U, Vars> = {
+      id: "aliased",
+      decide(ctx, model, state) {
+        internal.cursor += 1;
+        const buy = model.actions(ctx, state).find((action) => action.id === "buy")!;
+        return [{ action: { ...buy, id: "reset", kind: "prestige" } }];
+      },
+      snapshotState: () => internal,
+      restoreState: (saved) => {
+        internal = saved as { cursor: number };
+      },
+    };
+    const out = applyOfflineSeconds({
+      scenario: makeScenario({ initialMoney: 5, strategy }),
+      seconds: 3,
+      options: { actions: { mode: "allow", categories: ["buy"] } },
+    });
+    expect(out.end.prestige.count).toBe(0);
+    expect(internal.cursor).toBe(0);
+  });
+
   it("applies the listed part of a mixed allow batch without restoring", () => {
     let calls = 0;
     const strategy: Strategy<number, U, Vars> = {
