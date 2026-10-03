@@ -309,4 +309,13 @@ describe("log and observation budgets", () => {
     const kept = runScenario(scenario({ income: 1, durationSec: 3, trace: { maxPoints: 2 } }));
     expect(kept.trace).toHaveLength(2);
   });
+
+  it("counts the final trace point once when a zero budget retains nothing", () => {
+    const one = runScenario(scenario({ income: 1, durationSec: 1, trace: { everySteps: 1, maxPoints: 0 } }));
+    expect(one.traceLog).toEqual({ maxPoints: 0, totalSeen: 2, dropped: 2, retained: 0 });
+    const sparse = runScenario(scenario({ income: 1, durationSec: 4, trace: { everySteps: 2, maxPoints: 0 } }));
+    const full = runScenario(scenario({ income: 1, durationSec: 4, trace: { everySteps: 2 } }));
+    expect(full.trace).toHaveLength(3);
+    expect(sparse.traceLog).toEqual({ maxPoints: 0, totalSeen: 3, dropped: 3, retained: 0 });
+  });
 });

@@ -33,6 +33,8 @@ export function runScenario<N, U extends string, Vars>(
   const trace: SimState<N, U, Vars>[] = sc.run.trace && sc.run.trace.maxPoints === undefined ? [state] : [];
   const traceLog = sc.run.trace && sc.run.trace.maxPoints !== undefined ? createBoundedLog<SimState<N, U, Vars>>(sc.run.trace.maxPoints, "runScenario trace.maxPoints") : undefined;
   if (traceLog) traceLog.push(state);
+  // The last state offered to traceLog. A budget of 0 retains none, so the buffer cannot say.
+  let lastTraced = state;
   const actionsLog: { t: number; actionId: string; label?: string; bulkSize?: number }[] = [];
   const actionLog =
     sc.run.trace?.keepActionsLog && sc.run.trace.maxActions !== undefined
@@ -131,14 +133,14 @@ export function runScenario<N, U extends string, Vars>(
 
     steps += 1;
     elapsedSec += decision.dt;
-    if (traceLog && steps % everySteps === 0) traceLog.push(state);
-    else if (sc.run.trace && traceLog === undefined && steps % everySteps === 0) trace.push(state);
+    if (traceLog && steps % everySteps === 0) {
+      traceLog.push(state);
+      lastTraced = state;
+    } else if (sc.run.trace && traceLog === undefined && steps % everySteps === 0) trace.push(state);
   }
 
   if (traceLog) {
-    const retainedTrace = traceLog.snapshot().items;
-    const last = retainedTrace[retainedTrace.length - 1];
-    if (last !== state) traceLog.push(state);
+    if (lastTraced !== state) traceLog.push(state);
   } else {
     finishTrace(sc.run.trace !== undefined, trace, state);
   }

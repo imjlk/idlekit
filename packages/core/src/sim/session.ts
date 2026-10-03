@@ -398,11 +398,15 @@ export function simulateSessionPattern<N, U extends string, Vars>(args: {
     if (activeRun.stop?.reason === "budget") budgetStops += 1;
     retainRun(activeRun);
     const points = activeRun.trace ?? [];
-    for (let i = points.length > 0 && points[0]!.t === lastTraceT ? 1 : 0; i < points.length; i += 1) {
+    const skip = points.length > 0 && points[0]!.t === lastTraceT ? 1 : 0;
+    for (let i = skip; i < points.length; i += 1) {
       trace.push(points[i]!);
     }
-    if (points.length > 0) lastTraceT = points[points.length - 1]!.t;
-    segmentTraceDropped += activeRun.traceLog?.dropped ?? 0;
+    // A block that starts where the last one ended offers that point again. Count it once,
+    // also when the block's own budget dropped it.
+    const offered = (activeRun.traceLog?.totalSeen ?? points.length) - (activeRun.start.t === lastTraceT ? 1 : 0);
+    segmentTraceDropped += offered - (points.length - skip);
+    lastTraceT = activeRun.end.t;
     for (const row of activeRun.actionsLog ?? []) actionsLog.push(row);
     segmentActionsDropped += activeRun.actionsLogMeta?.dropped ?? 0;
     // A block cut by maxSteps still ends at its planned wall time. The player was

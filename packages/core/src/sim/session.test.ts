@@ -187,7 +187,7 @@ function runPattern(
  * @evidence ./session.ts#assertSessionSchedule An empty schedule, a negative offset, a negative duration, and overlapping blocks throw, and a 12-hour offset block starts on wall time 43200.
  * @evidenceReview ./session.ts#assertSessionSchedule #86f2edc Re-read assertSessionSchedule: days must be a positive integer, the list must be non-empty, each day an integer >= 0, each offset finite and >= 0, each duration finite and > 0, no block may end past the horizon, and sorted blocks may not overlap. Ran this function: the empty, negative offset, negative duration, and overlap cases threw those messages, and the 12-hour block ran after a 43200s offline segment.
  * @evidence ./session.ts#simulateSessionPattern A 12-hour gap with a 1-hour cap stays elapsed 43200 and credited 3600, presets keep the 86400 horizon, until and goals stop before the next block, and maxSteps cuts each active block without ending the session.
- * @evidenceReview ./session.ts#simulateSessionPattern #f12e1c1 Re-read simulateSessionPattern: it rejects a non-integer trace budget for the whole session, runs offline gaps through applyOfflineSeconds up to each scheduled wall start, ends a gap cut by until or a goal at the smallest absence whose cap- and decay-adjusted reward reaches the stepped reward, runs each block through runScenario with that block's duration, keeps state.t as reward time, evaluates open goals on a cloned state, stops on until or once every goal is reached, counts budget stops per block and ends a cut block's wall time and elapsed seconds at its planned end while crediting only the simulated seconds, and merges segment observations. Ran this function: offline-heavy elapsed 86400 with 3600 credited and 82500 lost, early until and goal stopped at t 10 after one block, and maxSteps 2 gave two budget stops, the first ending at wall 110 with 10 elapsed and 2 credited, with the session ending on the 86400 horizon.
+ * @evidenceReview ./session.ts#simulateSessionPattern #fff61a1 Re-read simulateSessionPattern: it rejects a non-integer trace budget for the whole session, counts a trace point shared by adjacent blocks once in traceLog, runs offline gaps through applyOfflineSeconds up to each scheduled wall start, ends a gap cut by until or a goal at the smallest absence whose cap- and decay-adjusted reward reaches the stepped reward, runs each block through runScenario with that block's duration, keeps state.t as reward time, evaluates open goals on a cloned state, stops on until or once every goal is reached, counts budget stops per block and ends a cut block's wall time and elapsed seconds at its planned end while crediting only the simulated seconds, and merges segment observations. Ran this function: offline-heavy elapsed 86400 with 3600 credited and 82500 lost, early until and goal stopped at t 10 after one block, and maxSteps 2 gave two budget stops, the first ending at wall 110 with 10 elapsed and 2 credited, with the session ending on the 86400 horizon.
  * @evidence ./offline.ts#resolveOfflineActionPolicy Policy none keeps the scripted cursor at 1, legacy-all moves it to 3, and allow applies only the automation buy.
  * @evidenceReview ./offline.ts#resolveOfflineActionPolicy #b424f6a Re-read resolveOfflineActionPolicy: useStrategy false and policy none never call the strategy, allow calls it and keeps the policy, and legacy-all calls it when useStrategy or a strategy is present. Ran this function: none left the scripted cursor at 1 and bought once, legacy-all reached cursor 3 with one prestige, and allow applied the automation buy only.
  */
@@ -686,6 +686,25 @@ describe("session segments", () => {
     expect(unbounded.run.traceLog).toBeUndefined();
     expect(unbounded.run.actionsLogMeta).toBeUndefined();
     expect(unbounded.end.vars.bought).toBe(bounded.end.vars.bought);
+  });
+
+  it("counts a trace point shared by adjacent blocks once", () => {
+    const adjacent: SessionPatternSpec = {
+      id: "offline-heavy",
+      days: 1,
+      schedule: [
+        { day: 0, startOffsetSec: 0, durationSec: 3 },
+        { day: 0, startOffsetSec: 3, durationSec: 3 },
+      ],
+    };
+    const base = clockScenario({ income: 1 });
+    const open = runPattern({ ...base, run: { ...base.run, trace: {} } }, adjacent);
+    expect(open.run.trace?.map((point) => point.t)).toEqual([0, 1, 2, 3, 4, 5, 6]);
+    for (const maxPoints of [0, 2, 100]) {
+      const bounded = runPattern({ ...base, run: { ...base.run, trace: { maxPoints } } }, adjacent);
+      const retained = Math.min(maxPoints, 7);
+      expect(bounded.run.traceLog).toEqual({ maxPoints, totalSeen: 7, dropped: 7 - retained, retained });
+    }
   });
 
   it("stops on goals only after every goal is reached", () => {
