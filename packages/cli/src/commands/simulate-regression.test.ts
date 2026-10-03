@@ -94,6 +94,22 @@ describe("simulate regression matrix", () => {
     }
   });
 
+  it("reports durationSec in tick seconds at a large start time", async () => {
+    const dir = await createTempDir("idlekit-sim-large-t");
+    try {
+      const baselineRaw = await readJson<any>(resolve(process.cwd(), BASELINE));
+      // At t 1e15 an ulp is 0.125, so ten 0.1 s ticks move t by 1.25.
+      const scenario = { ...baselineRaw, initial: { ...baselineRaw.initial, t: 1e15 } };
+      const scenarioPath = resolve(dir, "large-t.json");
+      await writeText(scenarioPath, `${JSON.stringify(scenario, null, 2)}\n`);
+      const out = runCliJson(["simulate", scenarioPath, "--duration", "1", "--step", "0.1", "--format", "json"]);
+      expect(out.durationSec).toBeCloseTo(1, 9);
+      expect(out.endT - out.startT).not.toBeCloseTo(1, 9);
+    } finally {
+      await removePath(dir);
+    }
+  }, 120000);
+
   it("keeps an offline reset as the cooldown anchor for the online run", async () => {
     const dir = await createTempDir("idlekit-sim-offline-anchor");
     try {

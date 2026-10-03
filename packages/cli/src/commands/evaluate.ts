@@ -1,5 +1,5 @@
 import { defineCommand, option } from "@bunli/core";
-import { runScenario, validateScenarioV1 } from "@idlekit/core";
+import { runElapsedSec, runScenario, validateScenarioV1 } from "@idlekit/core";
 import { resolve } from "path";
 import { z } from "zod";
 import { pluginOptions, type PluginOptionFlags } from "./_shared/plugin";
@@ -180,7 +180,7 @@ export default defineCommand({
       scenario: scenarioAbs,
       startT: simulateRun.start.t,
       endT: simulateRun.end.t,
-      durationSec: simulateRun.end.t - simulateRun.start.t,
+      durationSec: runElapsedSec(simulateRun),
       endMoney: E.toString(simulateRun.end.wallet.money.amount),
       endNetWorth: E.toString(simulateNetWorth.amount),
       stats: simulateRun.stats,
