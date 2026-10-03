@@ -1,5 +1,5 @@
 import { runScenario } from "../../simulator";
-import type { CompiledScenario } from "../../types";
+import { assertHorizonReached, type CompiledScenario } from "../../types";
 import { deepClonePreservingPrototype } from "../../../utils/deepClone";
 import type { StrategyRegistry } from "../registry";
 import type { ObjectiveRegistry } from "./registry";
@@ -59,6 +59,8 @@ export function runCandidateAndScore(args: {
     };
 
     const run = runScenario(sc);
+    // Candidates are ranked on the horizon. A budget stop would score a shorter run.
+    assertHorizonReached(run, "runCandidateAndScore");
     const s = objective.score({ scenario: sc, run });
     seedScores.push(s);
     const worth = sc.model.netWorth?.(sc.ctx as any, run.end as any) ?? run.end.wallet.money;

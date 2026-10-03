@@ -177,4 +177,42 @@ describe("runCandidateAndScore", () => {
 
     expect(out.seedScores).toEqual([0]);
   });
+
+  it("rejects a seed run that maxSteps cut before durationSec", () => {
+    const scenario = makeScenario();
+    const strategyRegistry = createStrategyRegistry([
+      {
+        id: "s",
+        create: () => ({
+          id: "s",
+          decide: (ctx: any, model: any, state: any) => {
+            const a = model.actions(ctx, state)[0];
+            return a ? [{ action: a }] : [];
+          },
+        }),
+      } satisfies StrategyFactory,
+    ]);
+    const objectiveRegistry = createObjectiveRegistry([
+      {
+        id: "obj.count",
+        create: () => ({
+          id: "obj.count",
+          score: ({ run }) => Number((run.end.vars as Bag).counter),
+        }),
+      },
+    ]);
+
+    expect(() =>
+      runCandidateAndScore({
+        baseScenario: { ...scenario, run: { ...scenario.run, maxSteps: 3 } },
+        params: {},
+        strategyId: "s",
+        objectiveId: "obj.count",
+        seeds: [1],
+        overrides: { durationSec: 10 },
+        strategyRegistry,
+        objectiveRegistry,
+      }),
+    ).toThrow("runCandidateAndScore exceeded maxSteps (3)");
+  });
 });
