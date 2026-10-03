@@ -11,7 +11,7 @@ import {
 import { resolve } from "path";
 import { z } from "zod";
 import { loadRegistriesFromFlags, pluginOptions } from "./_shared/plugin";
-import { buildOfflineSummary, resolveEventLog } from "./_shared/simulateView";
+import { buildOfflineSummary, eventLogStageInputs, resolveEventLog } from "./_shared/simulateView";
 import {
   cliError,
   errorDetail,
@@ -209,23 +209,23 @@ export default defineCommand({
       seed: deterministicSeed,
     });
     assertResumeEngine({ engineId: prepared.engine.effectiveId, resumedJson });
+    const eventLog = resolveEventLog({
+      defaultEventLog: prepared.definition.run.eventLog,
+      eventLogEnabled: flags["event-log-enabled"],
+      eventLogMax: flags["event-log-max"],
+    });
     const opened = prepared.open("simulate", `simulate:${runId}`, {
       durationSec: flags.duration ?? prepared.definition.run.durationSec,
       offlineSeconds: flags["offline-seconds"] ?? 0,
       resumeHash: resumeDigest,
-      eventLogEnabled: flags["event-log-enabled"] ?? null,
-      eventLogMax: flags["event-log-max"] ?? null,
+      // Hash the event log the run keeps, so a flag that repeats it keeps the hash.
+      ...eventLogStageInputs(prepared.definition.run.eventLog, eventLog),
     });
     const E = prepared.engine.engine as typeof prepared.definition.ctx.E;
     const strategy = opened.scenario.strategy;
     restoreStrategyState({
       strategy,
       resumedJson,
-    });
-    const eventLog = resolveEventLog({
-      defaultEventLog: opened.scenario.run.eventLog,
-      eventLogEnabled: flags["event-log-enabled"],
-      eventLogMax: flags["event-log-max"],
     });
     const resumedState = resumedJson
       ? deserializeSimState<number, string, Record<string, unknown>>(E, resumedJson, {

@@ -17,6 +17,21 @@ export function resolveEventLog(args: {
   };
 }
 
+type EventLogConfig = Readonly<{ enabled?: boolean; maxEvents?: number }> | undefined;
+
+/**
+ * Stage inputs for the event log a run keeps. The scenario hash covers its own event log, so a run
+ * that keeps the same retention (enabled by default, no cap) adds nulls, like a run without flags.
+ */
+export function eventLogStageInputs(defaultEventLog: EventLogConfig, eventLog: EventLogConfig) {
+  const keep = (log: EventLogConfig) => ({ enabled: log?.enabled ?? true, maxEvents: log?.maxEvents ?? null });
+  const scenario = keep(defaultEventLog);
+  const run = keep(eventLog);
+  return scenario.enabled === run.enabled && scenario.maxEvents === run.maxEvents
+    ? { eventLogEnabled: null, eventLogMax: null }
+    : { eventLogEnabled: run.enabled, eventLogMax: run.maxEvents };
+}
+
 export function buildOfflineSummary(
   offlineRun:
     | Readonly<{

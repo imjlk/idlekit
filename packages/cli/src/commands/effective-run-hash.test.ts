@@ -246,6 +246,27 @@ describe("effectiveRunHash", () => {
     }
   }, 180000);
 
+  it("hashes the event log the simulate run keeps, not the flags", async () => {
+    const dir = await createTempDir("idlekit-event-log-hash");
+    try {
+      const sim = (path: string, extra: string[]) => hashOf(["simulate", path, "--duration", "10", ...extra]);
+      const plain = sim(BASELINE, []);
+      expect(sim(BASELINE, ["--event-log-enabled", "true"])).toBe(plain);
+      expect(sim(BASELINE, ["--event-log-max", "5"])).not.toBe(plain);
+
+      const body = JSON.parse(await readText(resolve(CLI_CWD, BASELINE)));
+      const capped = resolve(dir, "capped.json");
+      await writeText(capped, JSON.stringify({ ...body, sim: { ...body.sim, eventLog: { maxEvents: 5 } } }));
+      const scenario = sim(capped, []);
+      expect(sim(capped, ["--event-log-max", "5"])).toBe(scenario);
+      expect(sim(capped, ["--event-log-enabled", "true", "--event-log-max", "5"])).toBe(scenario);
+      expect(sim(capped, ["--event-log-max", "6"])).not.toBe(scenario);
+      expect(sim(capped, ["--event-log-enabled", "false"])).not.toBe(scenario);
+    } finally {
+      await removePath(dir);
+    }
+  }, 180000);
+
   it("keeps the default evaluate seed off stage-only flags", async () => {
     const dir = await createTempDir("idlekit-evaluate-seed");
     try {
