@@ -932,7 +932,7 @@ function onGrid<N, U extends string, Vars>(
   const maxSteps = scenario.run.maxSteps;
   const full = runnerTicks(scenario.initial.t, step, duration);
   if (full === null) return skip("timestamp cannot advance by stepSec");
-  if (maxSteps !== undefined && (!Number.isInteger(maxSteps) || maxSteps <= full.dts.length)) {
+  if (maxSteps !== undefined && (!Number.isInteger(maxSteps) || maxSteps < full.dts.length)) {
     return skip("maxSteps can stop the run before durationSec");
   }
   return null;
@@ -1417,7 +1417,7 @@ export function checkDurationBoundary<N, U extends string, Vars>(
   const maxSteps = scenario.run.maxSteps;
   const expected = runnerTicks(scenario.initial.t, step, duration);
   if (expected === null) return skip("timestamp cannot advance by stepSec");
-  if (maxSteps !== undefined && (!Number.isInteger(maxSteps) || maxSteps <= expected.dts.length)) {
+  if (maxSteps !== undefined && (!Number.isInteger(maxSteps) || maxSteps < expected.dts.length)) {
     return skip("maxSteps can stop the run before durationSec");
   }
   const bracket = strategyBracket(scenario);
