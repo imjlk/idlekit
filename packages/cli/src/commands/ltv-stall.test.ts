@@ -130,7 +130,7 @@ describe("ltv first upgrade time", () => {
     };
     const out = runLtvAnalysis({
       scenario,
-      scenarioPath: "ltv-first-upgrade.json",
+      effectiveRunHash: "ltv-first-upgrade.json",
       compiled,
       strategy: compiled.strategy,
       horizonsRaw: "10s",
