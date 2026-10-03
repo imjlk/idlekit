@@ -6,7 +6,7 @@ import type { RunStop, RunStopReason, SimEvent, TimedSimEvent } from "./types";
  * Online and offline both use that limit, not a previously stored step.
  *
  * @evidence docs/requirements/active/simulation-time-boundaries.md#req-pr02-simulation-time-boundaries The stop check uses this scale on the economic limit. A last tick is min(stepSec, time still inside that limit).
- * @evidenceReview docs/requirements/active/simulation-time-boundaries.md#req-pr02-simulation-time-boundaries #de6ae2f Re-read the section: epsilon is max(1e-12, abs(limit) times this scale), and the limit is the economic horizon.
+ * @evidenceReview docs/requirements/active/simulation-time-boundaries.md#req-pr02-simulation-time-boundaries #c6da01b Re-read the section: epsilon is max(1e-12, abs(limit) times this scale), and the limit is the economic horizon.
  */
 export const timeBoundaryEpsilonScale = 1e-12;
 
@@ -95,11 +95,19 @@ export function assertSimulationClock(
 
 /**
  * A committed tick must move state.t, or `end.t - start.t` and event times freeze while income is paid.
- * A last partial tick below half an ulp of t may leave t alone when a whole step still moves it.
+ * A last partial tick below half an ulp of t may leave t alone when a whole step still moves it and an
+ * earlier tick of the run already moved t past `runStartT`.
  */
-export function assertTickAdvanced(label: string, t0: number, t1: number, dt: number, stepSec: number): void {
+export function assertTickAdvanced(
+  label: string,
+  t0: number,
+  t1: number,
+  dt: number,
+  stepSec: number,
+  runStartT: number,
+): void {
   if (t1 > t0) return;
-  if (dt < stepSec && t0 + dt === t0 && t0 + stepSec > t0) return;
+  if (dt < stepSec && t0 > runStartT && t0 + dt === t0 && t0 + stepSec > t0) return;
   throw new Error(
     `${label} tick did not advance state.t (start t: ${t0}, step: ${dt}, committed t: ${t1}); state.t is too large for stepSec ${stepSec}`,
   );

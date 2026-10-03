@@ -22,7 +22,7 @@ function finishTrace<N, U extends string, Vars>(
  * The caller's `ctx` is not written. Strategy preview sees that tick's dt.
  *
  * @evidence docs/requirements/active/simulation-time-boundaries.md#req-pr02-simulation-time-boundaries Stops on the economic horizon, including a shorter last tick, and checks that horizon before maxSteps.
- * @evidenceReview docs/requirements/active/simulation-time-boundaries.md#req-pr02-simulation-time-boundaries #de6ae2f Re-read the section: a duration or until that is already met stops before maxSteps, the last tick stays inside the horizon, and a committed tick that does not move state.t throws through assertTickAdvanced.
+ * @evidenceReview docs/requirements/active/simulation-time-boundaries.md#req-pr02-simulation-time-boundaries #c6da01b Re-read the section: a duration or until that is already met stops before maxSteps, the last tick stays inside the horizon, and a committed tick that does not move state.t throws through assertTickAdvanced, including a sub-ulp partial tick before any tick moved t.
  */
 export function runScenario<N, U extends string, Vars>(
   sc: CompiledScenario<N, U, Vars>,
@@ -108,7 +108,7 @@ export function runScenario<N, U extends string, Vars>(
       constraints,
       fast: sc.run.fast,
     });
-    assertTickAdvanced("runScenario", actionStartT, step.next.t, decision.dt, stepSec);
+    assertTickAdvanced("runScenario", actionStartT, step.next.t, decision.dt, stepSec, start.t);
     constraints = recordPrestigeReset(constraints, step.prestigeResetT, sc.run.onPrestigeReset);
 
     state = step.next;
