@@ -205,6 +205,16 @@ describe("effectiveRunHash", () => {
     }
   }, 180000);
 
+  it("hashes the session pattern defaults experience runs", () => {
+    const meta = (extra: string[]) => runCliJson(["experience", BASELINE, ...extra, "--format", "json"])._meta;
+    // Without a declared pattern, experience runs always-on for 7 days.
+    const plain = meta([]);
+    const resolved = meta(["--session-pattern", "always-on", "--days", "7"]);
+    expect(resolved.seed).toBe(plain.seed);
+    expect(resolved.effectiveRunHash).toBe(plain.effectiveRunHash);
+    expect(meta(["--seed", String(plain.seed), "--days", "6"]).effectiveRunHash).not.toBe(plain.effectiveRunHash);
+  }, 180000);
+
   it("derives the default seed from the fast mode that runs", async () => {
     const meta = (command: string[], extra: string[]) => runCliJson([...command, ...extra, "--format", "json"])._meta;
     const dir = await createTempDir("idlekit-fast-seed");
