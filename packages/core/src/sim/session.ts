@@ -321,12 +321,14 @@ export function simulateSessionPattern<N, U extends string, Vars>(args: {
     sc.run.onPrestigeReset?.(t);
   };
   // Each segment starts from the last committed reset of an earlier segment.
+  // Its recorder reads only goals still open. The merge keeps an earlier segment's reached sample.
   const segmentScenario = (wallStart: number, wallEnd: number): CompiledScenario<N, U, Vars> => {
     const base = withClocks(sc, wallStart, wallEnd, state.t, activeSec);
+    const openGoals = goals.filter((_, i) => !reachedGoals.has(i));
     return {
       ...base,
       ...(lastResetT !== undefined ? { constraints: constraintsWithAnchor(base.constraints, lastResetT) } : {}),
-      run: { ...base.run, onPrestigeReset, ...(sc.run.goals ? { goals } : {}), ...(observer ? { observer } : {}) },
+      run: { ...base.run, onPrestigeReset, ...(sc.run.goals ? { goals: openGoals } : {}), ...(observer ? { observer } : {}) },
     };
   };
 
