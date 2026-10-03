@@ -16,6 +16,18 @@ export async function writeTextFile(path: string, body: string): Promise<void> {
   await Bun.write(path, body);
 }
 
+/**
+ * Write to stdout and resolve once the stream has taken all of it. console.log hands a
+ * large body to an async pipe writer; on the Linux runner a 260 KB JSON result reached
+ * the parent cut off at about 219 KB with exit code 0. Bun.write(Bun.stdout) spun at
+ * full CPU on a full pipe in Bun 1.3.10, so this uses the stream write callback.
+ */
+export function writeStdout(body: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    process.stdout.write(body, (error) => (error ? reject(error) : resolve()));
+  });
+}
+
 export async function ensureDir(path: string): Promise<void> {
   await $`mkdir -p ${path}`.quiet();
 }
