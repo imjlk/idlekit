@@ -49,6 +49,38 @@ describe("effectiveRunHash", () => {
     }
   });
 
+  it("hashes the resume state the run reads, not its save metadata", async () => {
+    const dir = await createTempDir("idlekit-resume-hash");
+    try {
+      const saved = resolve(dir, "saved.json");
+      runCliJson(["simulate", BASELINE, "--duration", "10", "--state-out", saved, "--format", "json"]);
+      const state = await readJson<any>(saved);
+      expect(state.meta?.savedAt).toBeString();
+      const write = async (name: string, body: any) => {
+        const path = resolve(dir, name);
+        await writeText(path, `${JSON.stringify(body, null, 2)}\n`);
+        return path;
+      };
+      const moved = await write("moved.json", {
+        ...state,
+        meta: { ...state.meta, scenarioPath: "/elsewhere/s.json", savedAt: "2000-01-01T00:00:00.000Z", runId: "other", gitSha: "abc" },
+      });
+      const richer = await write("richer.json", { ...state, wallet: { ...state.wallet, amount: "1000000" } });
+      const resume = (path: string, extra: string[]) =>
+        runCliJson(["simulate", BASELINE, "--resume", path, "--duration", "20", "--format", "json", ...extra])._meta;
+
+      for (const extra of [["--seed", "1"], []]) {
+        const base = resume(saved, extra);
+        const same = resume(moved, extra);
+        expect(same.seed).toBe(base.seed);
+        expect(same.effectiveRunHash).toBe(base.effectiveRunHash);
+        expect(resume(richer, extra).effectiveRunHash).not.toBe(base.effectiveRunHash);
+      }
+    } finally {
+      await removePath(dir);
+    }
+  });
+
   it("records the experience scope from its opened plan", () => {
     const out = runCliJson(["experience", BASELINE, "--days", "1", "--seed", "1", "--format", "json"]);
     expect(out._meta.stageScope).toEqual({ experience: { strategy: true, step: false, fast: false, session: true } });

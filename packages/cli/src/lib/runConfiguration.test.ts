@@ -83,7 +83,7 @@ function registries() {
 
 /**
  * @evidence docs/requirements/active/cli-resolved-run.md#req-pr07-resolved-run Runs the shared plan, fresh stages, engine selection, suffix goal, and directory-independent digest.
- * @evidenceReview docs/requirements/active/cli-resolved-run.md#req-pr07-resolved-run #b30dfc6 Re-read the section, including the stage digest paragraph, then ran this function: both stages buy once, breakInfinity keeps 1e400 finite, the digest ignores the directory, and a swapped plugin order changes it.
+ * @evidenceReview docs/requirements/active/cli-resolved-run.md#req-pr07-resolved-run #6be7ec8 Re-read the section, including the stage digest paragraph, then ran this function: both stages buy once, breakInfinity keeps 1e400 finite, the digest ignores the directory, and a swapped plugin order changes it.
  * @evidence ./runConfiguration.ts#resolvedRunContract Reads the resolved-run contract and checks a fresh stage against a standalone open.
  * @evidenceReview ./runConfiguration.ts#resolvedRunContract #2719478 The declaration is idlekit.resolved-run-configuration. This test reads that property.
  * @evidence ./runConfiguration.ts#sessionCaseSeed Reads the repro label. The runs use seed 1.
@@ -303,7 +303,7 @@ export function keepsResolvedRunConfiguration(): void {
 
 /**
  * @evidence docs/requirements/active/cli-resolved-run.md#req-pr07-resolved-run Opens simulate, experience, and ltv stages with different command inputs and hashes their stage digests into one workflow digest.
- * @evidenceReview docs/requirements/active/cli-resolved-run.md#req-pr07-resolved-run #b30dfc6 Re-read the section, including the stage digest paragraph and the two executed tests, then ran this function: duration, offline seconds, stage, step, fast, and ltv inputs change stage digests, an empty plugin map does not, experience ignores step and fast without consistent overrides, and the workflow digest follows the experience stage.
+ * @evidenceReview docs/requirements/active/cli-resolved-run.md#req-pr07-resolved-run #6be7ec8 Re-read the section, including the stage digest paragraph and the two executed tests, then ran this function: duration, offline seconds, stage, step, fast, and ltv inputs change stage digests, an empty plugin map does not, experience ignores step and fast without consistent overrides, and the workflow digest follows the experience stage.
  * @evidence ./runConfiguration.ts#effectiveRunHash Stage digests ignore an empty plugin digest map, change with simulate duration, offline seconds, the stage name, step and fast on simulate, and ltv horizons, draws, and value per worth.
  * @evidenceReview ./runConfiguration.ts#effectiveRunHash #874af5c Re-read effectiveRunHash and stageRunHash: the stage name, applied scope, and command inputs are part of the hash, and plugin digests keep their load order. Ran this function: an empty plugin map matches the default, durationSec 10 and 20 differ, offlineSeconds 0 and 60 differ, simulate and experience differ, step 5 with fast changes simulate only, and each ltv input change gives a new hash.
  * @evidence ./runConfiguration.ts#workflowRunHash The workflow digest ignores stage key order and changes when consistent overrides change the experience stage digest.

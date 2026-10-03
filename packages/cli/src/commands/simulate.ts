@@ -50,6 +50,30 @@ function assertResumeEngine(args: {
   }
 }
 
+// Only what the run reads: deserializeSimState, the engine check, and restoreStrategyState.
+// meta and passthrough fields (path, savedAt, run id, versions) do not change the run.
+function resumeHash(json: ReturnType<typeof parseSimStateJSON> | undefined): string | null {
+  if (!json) return null;
+  const { v, unit, t, wallet, maxMoneyEver, prestige, vars, strategy } = json;
+  return hashContent({
+    v,
+    unit,
+    t,
+    wallet,
+    maxMoneyEver,
+    prestige,
+    vars,
+    engine: json.engine?.name ?? "number",
+    strategy: strategy
+      ? {
+          id: strategy.id,
+          ...(strategy.version !== undefined ? { version: strategy.version } : {}),
+          ...(strategy.state !== undefined ? { state: strategy.state } : {}),
+        }
+      : null,
+  });
+}
+
 function restoreStrategyState(args: {
   strategy: ReturnType<typeof prepareResolvedRun>["definition"]["strategy"];
   resumedJson: ReturnType<typeof parseSimStateJSON> | undefined;
@@ -143,13 +167,14 @@ export default defineCommand({
           })
       : undefined;
 
+    const resumeDigest = resumeHash(resumedJson);
     const strategyId = flags.strategy ?? scenario.strategy?.id;
     const deterministicSeed =
       flags.seed ??
       deriveDeterministicSeed({
         command: "simulate",
         scenario,
-        resumeHash: resumedJson ? hashContent(resumedJson) : null,
+        resumeHash: resumeDigest,
         options: {
           duration: flags.duration ?? scenario.clock.durationSec,
           step: flags.step ?? scenario.clock.stepSec,
@@ -166,7 +191,7 @@ export default defineCommand({
         seed: deterministicSeed,
         scope: {
           scenarioPath: resolve(process.cwd(), scenarioPath),
-          resumeHash: resumedJson ? hashContent(resumedJson) : null,
+          resumeHash: resumeDigest,
           strategyId,
         },
       });
@@ -185,7 +210,7 @@ export default defineCommand({
     const opened = prepared.open("simulate", `simulate:${runId}`, {
       durationSec: flags.duration ?? prepared.definition.run.durationSec,
       offlineSeconds: flags["offline-seconds"] ?? 0,
-      resumeHash: resumedJson ? hashContent(resumedJson) : null,
+      resumeHash: resumeDigest,
       eventLogEnabled: flags["event-log-enabled"] ?? null,
       eventLogMax: flags["event-log-max"] ?? null,
     });
