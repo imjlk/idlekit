@@ -83,21 +83,21 @@ function registries() {
 
 /**
  * @evidence docs/requirements/active/cli-resolved-run.md#req-pr07-resolved-run Runs the shared plan, fresh stages, engine selection, suffix goal, and directory-independent digest.
- * @evidenceReview docs/requirements/active/cli-resolved-run.md#req-pr07-resolved-run #835ab3a Re-read the section, including the stage digest paragraph, then ran this function: both stages buy once, breakInfinity keeps 1e400 finite, and the digest ignores the directory.
+ * @evidenceReview docs/requirements/active/cli-resolved-run.md#req-pr07-resolved-run #b30dfc6 Re-read the section, including the stage digest paragraph, then ran this function: both stages buy once, breakInfinity keeps 1e400 finite, the digest ignores the directory, and a swapped plugin order changes it.
  * @evidence ./runConfiguration.ts#resolvedRunContract Reads the resolved-run contract and checks a fresh stage against a standalone open.
  * @evidenceReview ./runConfiguration.ts#resolvedRunContract #2719478 The declaration is idlekit.resolved-run-configuration. This test reads that property.
  * @evidence ./runConfiguration.ts#sessionCaseSeed Reads the repro label. The runs use seed 1.
  * @evidenceReview ./runConfiguration.ts#sessionCaseSeed #47c0b85 The declaration is 0x7107. The runs do not draw from that label.
  * @evidence ./runConfiguration.ts#stageApply Simulate applies strategy, step, and fast, experience applies strategy and session only, and consistent overrides carry step 5 into experience.
  * @evidenceReview ./runConfiguration.ts#stageApply #b89c928 Re-read stageApply: experience applies strategy and session, and step and fast only with consistent overrides, while simulate and ltv apply strategy, step, and fast. Ran this function: the two applies objects match, experience runs on step 1, and the consistent experience runs on step 5.
- * @evidence ./runConfiguration.ts#pluginDigestValues Digest values from different plugin paths give the same simulate stage hash.
- * @evidenceReview ./runConfiguration.ts#pluginDigestValues #6ca2437 Re-read pluginDigestValues: it keeps only the digest values and sorts them. Ran this function: plugin maps with different paths and the same values give equal simulate stage hashes.
+ * @evidence ./runConfiguration.ts#pluginDigestValues Digest values in one order from different plugin paths give the same simulate stage hash, and a swapped order changes it.
+ * @evidenceReview ./runConfiguration.ts#pluginDigestValues #1e76250 Re-read pluginDigestValues: it keeps only the digest values, in load order. Ran this function: plugin maps with different paths and the same values in the same order give equal simulate stage hashes, and the swapped map gives a different one.
  * @evidence ./runConfiguration.ts#resolveEffectiveEngine A metadata-only scenario engine stays number, breakInfinity keeps 1e400 finite, breakEternity throws, a trusted custom factory is created once, and an untrusted id throws.
  * @evidenceReview ./runConfiguration.ts#resolveEffectiveEngine #e88a2e5 Re-read resolveEffectiveEngine: an empty request is the number default with the scenario engine kept as metadata, number and breakInfinity are built in, breakEternity throws the experimental message, and any other id needs a trusted factory. Ran this function: the metadata engine is number, 1e400 stays a finite breakInfinity value, breakEternity and plugin.hidden throw, and the custom factory is created once.
  * @evidence ./runConfiguration.ts#resolveStrategySelection A custom.once override reaches both stages and buys once, a planner override opens a planner that previews on step 5, and an unknown override throws Unknown strategy.
  * @evidenceReview ./runConfiguration.ts#resolveStrategySelection #9c2f62f Re-read resolveStrategySelection: an override must be in the registry and takes its default params, otherwise the scenario strategy is resolved, and an unknown id throws unknownStrategyError. Ran this function: custom.once buys once in both stages, the planner override previews on step 5, and plugin.not-loaded throws Unknown strategy.
  * @evidence ./runConfiguration.ts#effectiveRunHash The digest ignores cwd, scenario path, and generatedAt, and changes with stepSec and strategy id.
- * @evidenceReview ./runConfiguration.ts#effectiveRunHash #f0438ba Re-read effectiveRunHash: it ignores cwd, scenarioPath, and generatedAt and hashes the contract, scenario, engine, strategy, params mode, step, session, seed, sorted plugin digests, fast, stage, and inputs. Ran this function: two directories give one hash, and stepSec 2 or strategy greedy changes it.
+ * @evidenceReview ./runConfiguration.ts#effectiveRunHash #874af5c Re-read effectiveRunHash: it ignores cwd, scenarioPath, and generatedAt and hashes the contract, scenario, engine, strategy, params mode, step, session, seed, plugin digests in load order, fast, stage, and inputs. Ran this function: two directories give one hash, and stepSec 2 or strategy greedy changes it.
  * @evidence ./runConfiguration.ts#openResolvedStage Each stage opens a fresh compiled scenario with its own strategy, simulate on step 5 and experience on step 1.
  * @evidenceReview ./runConfiguration.ts#openResolvedStage #79dfd66 Re-read openResolvedStage: it binds a new createRunFactory with stageBindOptions, the scenario model and the plan strategy, and opens a fresh trial with the plan seed and an execution plan built from the stage plan. Ran this function: the opened simulate scenario is not the prepared definition, the two stages hold different strategies, and simulate runs on step 5 while experience runs on step 1.
  * @evidence ./runConfiguration.ts#prepareResolvedRun One prepared run opens simulate and experience stages that each buy once and match a standalone simulate open.
@@ -125,9 +125,19 @@ export function keepsResolvedRunConfiguration(): void {
     stepSec: 5,
     fast: true,
     seed: 1,
-    pluginDigest: { "/var/other/plugin.ts": "def", "/var/other/copy.ts": "abc" },
+    pluginDigest: { "/var/other/copy.ts": "abc", "/var/other/plugin.ts": "def" },
   });
   expect(prepared.open("simulate", "x").hash).toBe(standalone.open("simulate", "y").hash);
+  const swapped = prepareResolvedRun({
+    scenario: input,
+    ...loaded,
+    strategyOverride: "custom.once",
+    stepSec: 5,
+    fast: true,
+    seed: 1,
+    pluginDigest: { "/tmp/b/plugin.ts": "def", "/tmp/a/plugin.ts": "abc" },
+  });
+  expect(swapped.open("simulate", "x").hash).not.toBe(prepared.open("simulate", "x").hash);
   expect(prepared.definition).not.toBe(prepared.open("simulate", "evaluate:simulate").scenario);
 
   const simulate = prepared.open("simulate", "evaluate:simulate");
@@ -293,9 +303,9 @@ export function keepsResolvedRunConfiguration(): void {
 
 /**
  * @evidence docs/requirements/active/cli-resolved-run.md#req-pr07-resolved-run Opens simulate, experience, and ltv stages with different command inputs and hashes their stage digests into one workflow digest.
- * @evidenceReview docs/requirements/active/cli-resolved-run.md#req-pr07-resolved-run #835ab3a Re-read the section, including the stage digest paragraph and the two executed tests, then ran this function: duration, offline seconds, stage, step, fast, and ltv inputs change stage digests, an empty plugin map does not, experience ignores step and fast without consistent overrides, and the workflow digest follows the experience stage.
+ * @evidenceReview docs/requirements/active/cli-resolved-run.md#req-pr07-resolved-run #b30dfc6 Re-read the section, including the stage digest paragraph and the two executed tests, then ran this function: duration, offline seconds, stage, step, fast, and ltv inputs change stage digests, an empty plugin map does not, experience ignores step and fast without consistent overrides, and the workflow digest follows the experience stage.
  * @evidence ./runConfiguration.ts#effectiveRunHash Stage digests ignore an empty plugin digest map, change with simulate duration, offline seconds, the stage name, step and fast on simulate, and ltv horizons, draws, and value per worth.
- * @evidenceReview ./runConfiguration.ts#effectiveRunHash #f0438ba Re-read effectiveRunHash and stageRunHash: the stage name, applied scope, and command inputs are part of the hash, and plugin digests are sorted values. Ran this function: an empty plugin map matches the default, durationSec 10 and 20 differ, offlineSeconds 0 and 60 differ, simulate and experience differ, step 5 with fast changes simulate only, and each ltv input change gives a new hash.
+ * @evidenceReview ./runConfiguration.ts#effectiveRunHash #874af5c Re-read effectiveRunHash and stageRunHash: the stage name, applied scope, and command inputs are part of the hash, and plugin digests keep their load order. Ran this function: an empty plugin map matches the default, durationSec 10 and 20 differ, offlineSeconds 0 and 60 differ, simulate and experience differ, step 5 with fast changes simulate only, and each ltv input change gives a new hash.
  * @evidence ./runConfiguration.ts#workflowRunHash The workflow digest ignores stage key order and changes when consistent overrides change the experience stage digest.
  * @evidenceReview ./runConfiguration.ts#workflowRunHash #d62f84a Re-read workflowRunHash: it hashes the contract, version, and the stage digest record. Ran this function: reordering the stage keys gives the same digest, and swapping in the consistent experience digest changes it.
  */

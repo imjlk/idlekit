@@ -378,6 +378,8 @@ export async function loadRegistries(
   for (const p of pluginPaths) {
     const abs = await resolveAndValidatePluginPath(p, allowedRoots);
     const actualDigest = await sha256File(abs);
+    // A repeated path loads last again, so its digest moves to the end.
+    delete pluginDigest[abs];
     pluginDigest[abs] = actualDigest;
     if (hasShaPolicy) {
       const expected = requiredSha256[abs];

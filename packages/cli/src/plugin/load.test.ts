@@ -1,6 +1,8 @@
 import { describe, expect, it } from "bun:test";
 import { relative, resolve } from "path";
+import type { ScenarioV1 } from "@idlekit/core";
 import { loadRegistries, parsePluginPaths, parsePluginRoots, parsePluginSecurityOptions, parsePluginSha256 } from "./load";
+import { prepareResolvedRun } from "../lib/runConfiguration";
 import { createTempDir, readText, removePath, sha256Hex, writeText } from "../testkit/bun";
 
 describe("plugin load", () => {
@@ -165,6 +167,49 @@ describe("plugin load", () => {
           },
         }),
       ).rejects.toThrow("Conflicting sha256 policy");
+    } finally {
+      await removePath(dir);
+    }
+  });
+
+  it("keeps plugin order in the run hash when two plugins register one strategy id", async () => {
+    const dir = await createTempDir("idlekit-plugin-order");
+    try {
+      const plugin = async (tag: string) => {
+        const path = resolve(dir, `${tag}.mjs`);
+        await writeText(
+          path,
+          `export const strategies = [{ id: "plugin.same", tag: "${tag}", create: () => ({ id: "plugin.same", decide: () => [] }) }];\n`,
+        );
+        return path;
+      };
+      const a = await plugin("a");
+      const b = await plugin("b");
+      const scenario: ScenarioV1 = {
+        schemaVersion: 1,
+        unit: { code: "COIN" },
+        policy: { mode: "drop" },
+        model: { id: "linear", version: 1, params: {} },
+        initial: { wallet: { unit: "COIN", amount: "0" } },
+        clock: { stepSec: 1, durationSec: 1 },
+        strategy: { id: "plugin.same" },
+      };
+      const run = async (paths: string[]) => {
+        const loaded = await loadRegistries(paths);
+        const tag = (loaded.strategyRegistry.get("plugin.same") as { tag?: string } | undefined)?.tag;
+        const hash = prepareResolvedRun({ scenario, ...loaded, seed: 1 }).open("simulate", "x").hash;
+        return { tag, hash };
+      };
+
+      const ab = await run([a, b]);
+      const ba = await run([b, a]);
+      const aba = await run([a, b, a]);
+      // The last registration wins, so the two orders run different strategies.
+      expect(ab.tag).toBe("b");
+      expect(ba.tag).toBe("a");
+      expect(ab.hash).not.toBe(ba.hash);
+      expect(aba.tag).toBe("a");
+      expect(aba.hash).toBe(ba.hash);
     } finally {
       await removePath(dir);
     }

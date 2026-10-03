@@ -24,7 +24,7 @@ import { hashContent } from "../io/outputMeta";
  * `scenario.engine` is metadata. It does not select the runtime.
  *
  * @evidence docs/requirements/active/cli-resolved-run.md#req-pr07-resolved-run One plan feeds evaluate stages, and each stage opens a fresh run.
- * @evidenceReview docs/requirements/active/cli-resolved-run.md#req-pr07-resolved-run #835ab3a Re-read the section: strategy override reaches simulate and experience, step stays on the simulate stage unless consistent overrides are set, and the stage digest adds the stage scope and command inputs while ignoring the directory.
+ * @evidenceReview docs/requirements/active/cli-resolved-run.md#req-pr07-resolved-run #b30dfc6 Re-read the section: strategy override reaches simulate and experience, step stays on the simulate stage unless consistent overrides are set, and the stage digest adds the stage scope, command inputs, and plugin digests in load order while ignoring the directory.
  */
 export const resolvedRunContract = "idlekit.resolved-run-configuration" as const;
 
@@ -32,7 +32,7 @@ export const resolvedRunContract = "idlekit.resolved-run-configuration" as const
  * Repro label for this case. The runs pass seed 1 and do not draw from this label.
  *
  * @evidence docs/requirements/active/cli-resolved-run.md#req-pr07-resolved-run The label is 0x7107. Runs use seed 1.
- * @evidenceReview docs/requirements/active/cli-resolved-run.md#req-pr07-resolved-run #835ab3a Re-read the section: the label is not the RNG seed, and both executed tests use seed 1.
+ * @evidenceReview docs/requirements/active/cli-resolved-run.md#req-pr07-resolved-run #b30dfc6 Re-read the section: the label is not the RNG seed, and both executed tests use seed 1.
  */
 export const sessionCaseSeed = 0x7107;
 
@@ -135,8 +135,12 @@ export function stageApply(stage: StageName, consistentOverrides = false): Stage
   return { strategy: true, step: true, fast: true, session: false };
 }
 
+/**
+ * Digest values in load order, without the absolute paths.
+ * A later plugin replaces an earlier one with the same model or strategy id, so the order stays.
+ */
 export function pluginDigestValues(pluginDigest: Readonly<Record<string, string>> | undefined): readonly string[] {
-  return Object.values(pluginDigest ?? {}).sort();
+  return Object.values(pluginDigest ?? {});
 }
 
 /**
@@ -216,6 +220,7 @@ export function resolveStrategySelection(args: {
   return { id: selected.id, params: resolved.params, paramsMode: resolved.mode, source: "scenario" };
 }
 
+/** Stage digest. Plugin digests keep load order. cwd, scenario path, and generatedAt are left out. */
 export function effectiveRunHash(args: {
   scenario: unknown;
   engineId: string;
@@ -247,7 +252,7 @@ export function effectiveRunHash(args: {
     stepSec: args.stepSec,
     session: args.session ? { id: args.session.id ?? null, days: args.session.days ?? null } : null,
     seed: args.seed ?? null,
-    pluginDigests: [...args.pluginDigests].sort(),
+    pluginDigests: [...args.pluginDigests],
     fast: args.fast,
     stage: args.stage ?? null,
     inputs: args.inputs ?? null,
