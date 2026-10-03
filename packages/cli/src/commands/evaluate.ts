@@ -18,7 +18,7 @@ import {
   resolveSessionPatternSpec,
   summarizeExperienceMonteCarlo,
 } from "../lib/experience";
-import { engineSeedOption, prepareResolvedRun, workflowRunHash } from "../lib/runConfiguration";
+import { engineSeedOption, prepareResolvedRun, strategySeedOption, workflowRunHash } from "../lib/runConfiguration";
 import { readScenarioFile } from "../io/readScenario";
 import { ensureDir, writeTextFile } from "../runtime/bun";
 
@@ -140,7 +140,13 @@ export default defineCommand({
         command: "evaluate",
         scenario: valid.scenario,
         options: {
-          strategy: flags.strategy,
+          // The no-flag input keeps this undefined key.
+          strategy: undefined,
+          ...strategySeedOption({
+            scenario: valid.scenario,
+            strategyRegistry: loaded.strategyRegistry,
+            overrideId: flags.strategy,
+          }),
           ...engineSeedOption(flags.engine),
         },
       });

@@ -12,7 +12,7 @@ import { loadRegistriesFromFlags, pluginOptions } from "./_shared/plugin";
 import { cliError, scenarioInvalidError, usageError } from "../errors";
 import { buildOutputMeta, deriveDeterministicRunId, deriveDeterministicSeed } from "../io/outputMeta";
 import { writeCommandReplayArtifact } from "../io/replayPolicy";
-import { engineSeedOption, prepareResolvedRun } from "../lib/runConfiguration";
+import { engineSeedOption, prepareResolvedRun, strategySeedOption } from "../lib/runConfiguration";
 import { readScenarioFile } from "../io/readScenario";
 import { writeOutput } from "../io/writeOutput";
 import {
@@ -482,7 +482,13 @@ export default defineCommand({
         options: {
           horizons: flags.horizons,
           step: flags.step ?? valid.scenario.clock.stepSec,
-          strategy: flags.strategy,
+          // The no-flag input keeps this undefined key.
+          strategy: undefined,
+          ...strategySeedOption({
+            scenario: valid.scenario,
+            strategyRegistry: loaded.strategyRegistry,
+            overrideId: flags.strategy,
+          }),
           fast: flags.fast,
           ...engineSeedOption(flags.engine),
           draws: flags.draws,

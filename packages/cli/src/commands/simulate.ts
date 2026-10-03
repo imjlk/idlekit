@@ -24,7 +24,7 @@ import { printNextSteps } from "../io/nextSteps";
 import { writeCommandReplayArtifact } from "../io/replayPolicy";
 import { readScenarioFile } from "../io/readScenario";
 import { writeOutput } from "../io/writeOutput";
-import { engineSeedOption, prepareResolvedRun } from "../lib/runConfiguration";
+import { engineSeedOption, prepareResolvedRun, strategySeedOption } from "../lib/runConfiguration";
 import { readJsonFile, writeTextFile } from "../runtime/bun";
 
 const strategySchema = z.string().min(1).optional();
@@ -179,6 +179,7 @@ export default defineCommand({
           duration: flags.duration ?? scenario.clock.durationSec,
           step: flags.step ?? scenario.clock.stepSec,
           strategy: strategyId,
+          ...strategySeedOption({ scenario, strategyRegistry: loaded.strategyRegistry, overrideId: flags.strategy }),
           fast: flags.fast,
           offlineSeconds: flags["offline-seconds"] ?? 0,
           ...engineSeedOption(flags.engine),

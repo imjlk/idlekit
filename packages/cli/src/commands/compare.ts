@@ -21,6 +21,7 @@ import {
   resolveSessionPatternSpec,
   summarizeComparableExperienceMetric,
 } from "../lib/experience";
+import { strategySeedOption } from "../lib/runConfiguration";
 import { scenarioInvalidError, unknownStrategyError, usageError } from "../errors";
 import { buildOutputMeta, deriveDeterministicRunId, deriveDeterministicSeed } from "../io/outputMeta";
 import { writeCommandReplayArtifact } from "../io/replayPolicy";
@@ -603,7 +604,14 @@ export default defineCommand({
           bundle: flags.bundle,
           duration: flags.duration,
           step: flags.step,
-          strategy: flags.strategy,
+          // An override that runs each scenario's own strategy leaves the no-flag seed.
+          strategy: [aScenario, bScenario].some(
+            (scenario) =>
+              strategySeedOption({ scenario, strategyRegistry: loaded.strategyRegistry, overrideId: flags.strategy })
+                .strategy !== undefined,
+          )
+            ? flags.strategy
+            : undefined,
           fast: flags.fast,
           targetWorth: flags["target-worth"],
           maxDuration: flags["max-duration"],

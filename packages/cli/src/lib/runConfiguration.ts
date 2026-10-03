@@ -229,6 +229,34 @@ export function resolveStrategySelection(args: {
   return { id: selected.id, params: resolved.params, paramsMode: resolved.mode, source: "scenario" };
 }
 
+/**
+ * The strategy part of a default seed, read from the selection that runs. An override that
+ * resolves to the scenario's own id and params adds nothing, so `--strategy <scenario id>` keeps
+ * the no-flag seed. Another id adds that id. The scenario's id with other params adds the params.
+ */
+export function strategySeedOption(args: {
+  scenario: ScenarioV1;
+  strategyRegistry: StrategyRegistry;
+  overrideId?: string;
+  paramsMode?: StrategyParamsMode;
+}): { strategy?: string; strategyParams?: unknown } {
+  if (!args.overrideId?.trim()) return {};
+  const selected = resolveStrategySelection(args);
+  if (args.scenario.strategy?.id !== selected.id) return { strategy: selected.id };
+  // A scenario strategy that does not resolve cannot be the one the override runs.
+  const own = (() => {
+    try {
+      return resolveStrategySelection({ ...args, overrideId: undefined });
+    } catch {
+      return undefined;
+    }
+  })();
+  const same =
+    own !== undefined &&
+    hashContent([own.params, own.paramsMode]) === hashContent([selected.params, selected.paramsMode]);
+  return same ? {} : { strategy: selected.id, strategyParams: selected.params ?? null };
+}
+
 /** Stage digest. Plugin digests keep load order. cwd, scenario path, and generatedAt are left out. */
 export function effectiveRunHash(args: {
   scenario: unknown;

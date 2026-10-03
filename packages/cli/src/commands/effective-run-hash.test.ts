@@ -128,6 +128,42 @@ describe("effectiveRunHash", () => {
     }
   }, 180000);
 
+  it("derives the default seed from the strategy that runs", async () => {
+    const meta = (command: string[], extra: string[]) => runCliJson([...command, ...extra, "--format", "json"])._meta;
+    const commands = [
+      ["simulate", BASELINE, "--duration", "10"],
+      ["experience", BASELINE, "--days", "1"],
+      ["ltv", BASELINE, "--horizons", "30m"],
+    ];
+    for (const command of commands) {
+      const plain = meta(command, []);
+      const same = meta(command, ["--strategy", "greedy"]);
+      expect(same.seed).toBe(plain.seed);
+      expect(same.runId).toBe(plain.runId);
+      expect(same.effectiveRunHash).toBe(plain.effectiveRunHash);
+      expect(meta(command, ["--strategy", "scripted"]).seed).not.toBe(plain.seed);
+    }
+    const compare = ["compare", BASELINE, BASELINE, "--duration", "10"];
+    expect(meta(compare, ["--strategy", "greedy"]).seed).toBe(meta(compare, []).seed);
+
+    // The scenario's greedy with its own params is not the greedy the flag runs on factory defaults.
+    const dir = await createTempDir("idlekit-strategy-seed");
+    try {
+      const body = JSON.parse(await readText(resolve(CLI_CWD, BASELINE)));
+      const tuned = resolve(dir, "tuned.json");
+      const params = { schemaVersion: 1, objective: "minPayback", maxPicksPerStep: 2 };
+      await writeText(tuned, JSON.stringify({ ...body, strategy: { id: "greedy", params } }));
+      const simulate = ["simulate", tuned, "--duration", "10"];
+      const own = meta(simulate, []);
+      const reset = meta(simulate, ["--strategy", "greedy"]);
+      expect(reset.effectiveRunHash).not.toBe(own.effectiveRunHash);
+      expect(reset.seed).not.toBe(own.seed);
+      expect(reset.runId).not.toBe(own.runId);
+    } finally {
+      await removePath(dir);
+    }
+  }, 180000);
+
   it("keeps the default evaluate seed off stage-only flags", async () => {
     const dir = await createTempDir("idlekit-evaluate-seed");
     try {
@@ -162,6 +198,12 @@ describe("effectiveRunHash", () => {
       const named = await evaluate(["--engine", "number"]);
       expect(named.simulate.seed).toBe(base.simulate.seed);
       expect(named.experience._meta.effectiveRunHash).toBe(base.experience._meta.effectiveRunHash);
+
+      const greedy = await evaluate(["--strategy", "greedy"]);
+      expect(greedy.simulate.seed).toBe(base.simulate.seed);
+      expect(greedy.simulate.effectiveRunHash).toBe(base.simulate.effectiveRunHash);
+      expect(greedy.experience._meta.effectiveRunHash).toBe(base.experience._meta.effectiveRunHash);
+      expect((await evaluate(["--strategy", "scripted"])).simulate.seed).not.toBe(base.simulate.seed);
 
       const seeded = await evaluate(["--step", "2", "--seed", "7"]);
       expect([seeded.simulate.seed, seeded.experience._meta.seed, seeded.ltv.seed]).toEqual([7, 7, 7]);

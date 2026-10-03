@@ -22,6 +22,7 @@ import {
   resolveEffectiveEngine,
   resolvedRunContract,
   sessionCaseSeed,
+  strategySeedOption,
   workflowRunHash,
 } from "./runConfiguration";
 
@@ -381,6 +382,37 @@ export function seedsTheDefaultEngineOnce(): void {
   expect(engineSeedOption("breakInfinity")).toEqual({ engine: "breakInfinity" });
 }
 
+/**
+ * @evidence docs/requirements/active/cli-resolved-run.md#req-pr07-resolved-run The default seed reads the strategy that runs, so an override that resolves to the scenario strategy gives the no-flag seed input.
+ * @evidenceReview docs/requirements/active/cli-resolved-run.md#req-pr07-resolved-run #ad30c8a Re-read the section: the default evaluate seed reads the scenario, strategy, and engine, and an override replaces the scenario strategy with the factory defaults. Ran this function: no flag, a blank flag, and greedy over the greedy scenario give no strategy field, and custom.once adds its id.
+ * @evidence ./runConfiguration.ts#strategySeedOption No flag and an override that resolves to the scenario id and params add nothing, another id adds its id, and the scenario id with other params adds those params.
+ * @evidenceReview ./runConfiguration.ts#strategySeedOption #9d764c0 Re-read strategySeedOption: no trimmed override gives {}, an override with another id than the scenario adds that id, and the scenario id adds its resolved params unless the scenario strategy resolves to the same params and mode. Ran this function: greedy, padded greedy, and custom.once with default params give {}, custom.once with loop true adds the defaults, a missing scenario strategy and plugin.missing add the id, an invalid scripted scenario adds the scripted defaults, and plugin.not-loaded throws Unknown strategy.
+ */
+export function seedsTheScenarioStrategyOnce(): void {
+  const { strategyRegistry } = registries();
+  const seed = (input: ScenarioV1, overrideId?: string) => strategySeedOption({ scenario: input, strategyRegistry, overrideId });
+  const greedy = scenario();
+  expect(seed(greedy)).toEqual({});
+  expect(seed(greedy, " ")).toEqual({});
+  expect(seed(greedy, "greedy")).toEqual({});
+  expect(seed(greedy, " greedy ")).toEqual({});
+  expect(seed(greedy, "custom.once")).toEqual({ strategy: "custom.once" });
+  expect(seed({ ...greedy, strategy: undefined }, "greedy")).toEqual({ strategy: "greedy" });
+
+  const defaults = customStrategy.defaultParams as Record<string, unknown>;
+  expect(seed({ ...greedy, strategy: { id: "custom.once", params: { ...defaults } } }, "custom.once")).toEqual({});
+  const looping = { ...greedy, strategy: { id: "custom.once", params: { ...defaults, loop: true } } };
+  expect(seed(looping, "custom.once")).toEqual({ strategy: "custom.once", strategyParams: defaults });
+
+  expect(seed({ ...greedy, strategy: { id: "plugin.missing" } }, "custom.once")).toEqual({ strategy: "custom.once" });
+  const invalid = { ...greedy, strategy: { id: "scripted", params: { schemaVersion: 1 } } };
+  expect(seed(invalid, "scripted")).toEqual({
+    strategy: "scripted",
+    strategyParams: strategyRegistry.get("scripted")!.defaultParams,
+  });
+  expect(() => seed(greedy, "plugin.not-loaded")).toThrow(/^Unknown strategy: plugin.not-loaded$/);
+}
+
 describe("PR-07 resolved run", () => {
   it("keeps resolved run configuration", keepsResolvedRunConfiguration);
 
@@ -389,5 +421,7 @@ describe("PR-07 resolved run", () => {
   it("digests each stage from its applied plan and command inputs", digestsEachStageFromItsAppliedPlan);
 
   it("seeds the default engine once", seedsTheDefaultEngineOnce);
+
+  it("seeds the scenario strategy once", seedsTheScenarioStrategyOnce);
 });
 

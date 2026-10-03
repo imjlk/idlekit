@@ -3,7 +3,7 @@ import { validateScenarioV1 } from "@idlekit/core";
 import { z } from "zod";
 import { loadRegistriesFromFlags, pluginOptions } from "./_shared/plugin";
 import { scenarioInvalidError, usageError } from "../errors";
-import { engineSeedOption, prepareResolvedRun } from "../lib/runConfiguration";
+import { engineSeedOption, prepareResolvedRun, strategySeedOption } from "../lib/runConfiguration";
 import {
   collectExperienceSnapshot,
   renderExperienceMarkdown,
@@ -66,7 +66,11 @@ export default defineCommand({
           sessionPattern: flags["session-pattern"],
           days: flags.days,
           draws: flags.draws,
-          ...(flags.strategy ? { strategy: flags.strategy } : {}),
+          ...strategySeedOption({
+            scenario: valid.scenario,
+            strategyRegistry: loaded.strategyRegistry,
+            overrideId: flags.strategy,
+          }),
           ...engineSeedOption(flags.engine),
         },
       });
