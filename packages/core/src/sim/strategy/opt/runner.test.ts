@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { createNumberEngine } from "../../../engine/breakInfinity";
+import { builtinObjectiveFactories } from "./objectives/builtins";
 import { createObjectiveRegistry } from "./registry";
 import { runCandidateAndScore } from "./runner";
 import { createStrategyRegistry, type StrategyFactory } from "../registry";
@@ -176,6 +177,52 @@ describe("runCandidateAndScore", () => {
     });
 
     expect(out.seedScores).toEqual([0]);
+  });
+
+  it("keeps missing counters missing when observation is off", () => {
+    const scenario = makeScenario();
+    const strategyRegistry = createStrategyRegistry([
+      {
+        id: "s",
+        create: () => ({
+          id: "s",
+          decide: (ctx: any, model: any, state: any) => {
+            const a = model.actions(ctx, state)[0];
+            return a ? [{ action: a }] : [];
+          },
+        }),
+      } satisfies StrategyFactory,
+    ]);
+    const objectiveRegistry = createObjectiveRegistry([
+      ...builtinObjectiveFactories,
+      {
+        id: "obj.count",
+        create: () => ({
+          id: "obj.count",
+          score: ({ run }) => Number((run.end.vars as Bag).counter),
+        }),
+      },
+    ]);
+    const tune = (objectiveId: string, enabled: boolean) =>
+      runCandidateAndScore({
+        baseScenario: { ...scenario, run: { ...scenario.run, observation: { enabled } } },
+        params: {},
+        strategyId: "s",
+        objectiveId,
+        seeds: [1],
+        strategyRegistry,
+        objectiveRegistry,
+      });
+
+    const observed = tune("obj.count", true);
+    expect(observed.seedResults[0]).toMatchObject({ droppedRate: 0, actionsApplied: 1 });
+    expect(Number.isFinite(tune("pacingBalancedLog10", true).score)).toBeTrue();
+
+    const off = tune("obj.count", false);
+    expect(off.seedResults[0]).toMatchObject({ droppedRate: null, actionsApplied: null });
+    expect(() => tune("pacingBalancedLog10", false)).toThrow(
+      "pacingBalancedLog10 needs observed money and action counters, but this run has none (run.observation.enabled is false)",
+    );
   });
 
   it("rejects a seed run that maxSteps cut before durationSec", () => {

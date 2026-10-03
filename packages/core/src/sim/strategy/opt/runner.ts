@@ -70,8 +70,8 @@ export function runCandidateAndScore(args: {
       durationSec: Math.max(0, run.end.t - run.start.t),
       endMoneyLog10: sc.ctx.E.absLog10(run.end.wallet.money.amount),
       endNetWorthLog10: sc.ctx.E.absLog10(worth.amount),
-      droppedRate: run.stats?.money.droppedRate ?? 0,
-      actionsApplied: run.stats?.actions.applied ?? 0,
+      droppedRate: run.stats?.money.droppedRate ?? null,
+      actionsApplied: run.stats && run.stats.actions.status === "observed" ? run.stats.actions.applied : null,
     });
   }
 

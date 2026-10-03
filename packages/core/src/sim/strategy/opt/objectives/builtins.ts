@@ -135,14 +135,21 @@ export const builtinObjectiveFactories: readonly ObjectiveFactory[] = [
           const worth = scenario.model.netWorth?.(scenario.ctx as any, run.end as any) ?? run.end.wallet.money;
           const worthLog = safeAbsLog10(E, worth.amount);
 
+          // Missing counters are not zero drops or zero actions, so they cannot score.
+          const stats = run.stats;
+          if (!stats || stats.money.droppedRate === null || stats.actions.status === "missing") {
+            throw new Error(
+              "pacingBalancedLog10 needs observed money and action counters, but this run has none (run.observation.enabled is false)",
+            );
+          }
           const targetActionsPerHour = params.targetActionsPerHour ?? 120;
-          const actionsApplied = run.stats?.actions.applied ?? 0;
+          const actionsApplied = stats.actions.applied;
           const actualActionsPerHour = actionsApplied / Math.max(1e-9, hours);
           const actionPenalty = Math.abs(
             Math.log10((actualActionsPerHour + 1) / Math.max(1, targetActionsPerHour + 1)),
           );
 
-          const droppedRate = run.stats?.money.droppedRate ?? 0;
+          const droppedRate = stats.money.droppedRate;
           const actionRateWeight = params.actionRateWeight ?? 1;
           const droppedRateWeight = params.droppedRateWeight ?? 2;
 

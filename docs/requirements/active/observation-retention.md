@@ -10,7 +10,7 @@ Requirement `REQ-PR05-OBSERVATION-RETENTION`. `PR-05` owns it.
 
 `stepOnce` always asks `tickMoney` for events. Those counts are `observedMoney`. The retained event list includes a money event only when collection is on and fast mode is not omitting money events. Fast and non-fast runs with observation on have the same money counters. Collecting the events does not change the wallet: `collectEvents` only fills the event array.
 
-`observation.enabled: false` sets money and action status to `missing`, rates to null, and coverage to `disabled`. Those zeros are not measured counts. `analyzeUX` does not treat a null rate as a drop or a rare flush.
+`observation.enabled: false` sets money and action status to `missing`, rates to null, and coverage to `disabled`. Those zeros are not measured counts. `analyzeUX` does not treat a null rate as a drop or a rare flush. `runCandidateAndScore` reports a missing `droppedRate` or action count as null in its seed results, and `pacingBalancedLog10` throws instead of scoring missing counters as zero.
 
 `simulateSessionPattern` merges child `run.observation`. It does not sum the retained event list. A child with no observation uses the retained events and is marked `legacyEventFallback` with coverage `incomplete`. A merge that includes a legacy or missing child reports money and action status `missing`.
 
