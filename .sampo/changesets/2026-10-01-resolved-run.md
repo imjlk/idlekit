@@ -13,4 +13,5 @@ Keep evaluate stages on one resolved run plan.
 - amount goals use `parseMoney` on the amount path
 - strategy params stay legacy-raw unless validated mode is requested
 - `scenarioHash` stays the original scenario; `effectiveRunHash` omits time and absolute paths
+- `simulate` and `evaluate` no longer use the scenario path for the default seed, so a run without `--seed` gets a new seed and matches a copy in another directory
 - `idlekit.resolved-run-configuration` is not registered with a contract generator; that waits until TC-05

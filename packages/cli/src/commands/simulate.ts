@@ -149,7 +149,6 @@ export default defineCommand({
       deriveDeterministicSeed({
         command: "simulate",
         scenario,
-        scenarioPath: resolve(process.cwd(), scenarioPath),
         resumeHash: resumedJson ? hashContent(resumedJson) : null,
         options: {
           duration: flags.duration ?? scenario.clock.durationSec,

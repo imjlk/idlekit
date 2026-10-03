@@ -137,7 +137,6 @@ export default defineCommand({
       deriveDeterministicSeed({
         command: "evaluate",
         scenario: valid.scenario,
-        scenarioPath: scenarioAbs,
         options: {
           sessionPattern: flags["session-pattern"],
           days: flags.days,

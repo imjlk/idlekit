@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { resolve } from "path";
-import { createTempDir, readJson, removePath, runCli, runCliJson } from "../testkit/bun";
+import { CLI_CWD, createTempDir, readJson, readText, removePath, runCli, runCliJson, writeText } from "../testkit/bun";
 
 const BASELINE = "../../examples/tutorials/01-cafe-baseline.json";
 
@@ -22,6 +22,31 @@ describe("effectiveRunHash", () => {
     expect(hashOf(["ltv", BASELINE, "--horizons", "2h"])).not.toBe(ltv);
     expect(hashOf(["ltv", BASELINE, "--horizons", "30m", "--draws", "3"])).not.toBe(ltv);
     expect(hashOf(["ltv", BASELINE, "--horizons", "30m", "--value-per-worth", "2"])).not.toBe(ltv);
+  });
+
+  it("matches a copied scenario in another directory without --seed", async () => {
+    const dir = await createTempDir("idlekit-default-seed");
+    try {
+      const body = await readText(resolve(CLI_CWD, BASELINE));
+      const copies = [resolve(dir, "one", "s.json"), resolve(dir, "two", "s.json")];
+      for (const path of copies) await writeText(path, body);
+      const simulate = copies.map((path) =>
+        runCliJson(["simulate", path, "--duration", "10", "--format", "json"])._meta,
+      );
+      expect(simulate[1].seed).toBe(simulate[0].seed);
+      expect(simulate[1].effectiveRunHash).toBe(simulate[0].effectiveRunHash);
+
+      const evaluate = [];
+      for (const [i, path] of copies.entries()) {
+        const outDir = resolve(dir, `out${i}`);
+        runCli(["evaluate", path, "--horizons", "30m", "--out-dir", outDir]);
+        evaluate.push(await readJson<any>(resolve(outDir, "summary.json")).then((x) => x._meta));
+      }
+      expect(evaluate[1].seed).toBe(evaluate[0].seed);
+      expect(evaluate[1].effectiveRunHash).toBe(evaluate[0].effectiveRunHash);
+    } finally {
+      await removePath(dir);
+    }
   });
 
   it("records the experience scope from its opened plan", () => {
