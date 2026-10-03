@@ -11,7 +11,7 @@ import type { CompiledScenario, Model, ScenarioConstraints, SimContext, SimRunOp
  * `previewStream` is the other stream. Restoring one over the other throws.
  *
  * @evidence docs/requirements/active/run-lifecycle-isolation.md#req-pr03-run-lifecycle-isolation A fresh trial derives this stream from the logical trial id. Preview is not this stream.
- * @evidenceReview docs/requirements/active/run-lifecycle-isolation.md#req-pr03-run-lifecycle-isolation #7051b73 Re-read the section: this is the committed stream, derived from the logical trial id.
+ * @evidenceReview docs/requirements/active/run-lifecycle-isolation.md#req-pr03-run-lifecycle-isolation #ad06072 Re-read the section: this is the committed stream, derived from the logical trial id.
  */
 export const executionStream = "execution" as const;
 
@@ -20,7 +20,7 @@ export const executionStream = "execution" as const;
  * It is not restored onto `executionStream`.
  *
  * @evidence docs/requirements/active/run-lifecycle-isolation.md#req-pr03-run-lifecycle-isolation Preview uses this stream. A committed step does not advance it.
- * @evidenceReview docs/requirements/active/run-lifecycle-isolation.md#req-pr03-run-lifecycle-isolation #7051b73 Re-read the section: preview is a separate stream and is not restored onto execution.
+ * @evidenceReview docs/requirements/active/run-lifecycle-isolation.md#req-pr03-run-lifecycle-isolation #ad06072 Re-read the section: preview is a separate stream and is not restored onto execution.
  */
 export const previewStream = "preview" as const;
 
@@ -369,7 +369,13 @@ function planStrategy<N, U extends string, Vars>(
   assertExecutionPlan(plan);
   const factory = registries.strategies?.get(plan.strategyId);
   if (!factory) throw new Error(`ExecutionPlan strategy is not in the registry: ${plan.strategyId}`);
-  return { factory, params: plan.strategyParams ?? factory.defaultParams ?? {} };
+  // Same check and error as a bound strategy.
+  const { params } = strategyCreateParams({
+    raw: plan.strategyParams ?? factory.defaultParams ?? {},
+    schema: factory.paramsSchema,
+    mode: "legacy-raw",
+  });
+  return { factory, params };
 }
 
 type StrategySource = Readonly<{ factory: StrategyFactory; params: unknown }>;
@@ -434,7 +440,7 @@ function restoreCheckpointStrategy<N, U extends string, Vars>(
  * This function does not read CLI flags or plugin files.
  *
  * @evidence docs/requirements/active/run-lifecycle-isolation.md#req-pr03-run-lifecycle-isolation Fresh trials do not share strategy cursors, model closures, or initial vars. Continue keeps the cursor. Resume uses snapshotState.
- * @evidenceReview docs/requirements/active/run-lifecycle-isolation.md#req-pr03-run-lifecycle-isolation #7051b73 Re-read the section: fresh trials restore or rebuild strategy state, continue keeps the cursor (a factory strategy without a snapshot pair keeps its instance when factory and params match), and a marked closure without a factory throws.
+ * @evidenceReview docs/requirements/active/run-lifecycle-isolation.md#req-pr03-run-lifecycle-isolation #ad06072 Re-read the section: fresh trials restore or rebuild strategy state, continue keeps the cursor (a factory strategy without a snapshot pair keeps its instance when factory and params match), plan strategy params are checked like bound params, and a marked closure without a factory throws.
  */
 export function createRunFactory(deps?: RunFactoryDeps): RunFactory {
   const registries = deps ?? {};

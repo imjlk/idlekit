@@ -142,7 +142,7 @@ function statefulIncomeFactory() {
 
 /**
  * @evidence docs/requirements/active/run-lifecycle-isolation.md#req-pr03-run-lifecycle-isolation Runs a fresh scripted draw twice, a stateful model in both orders, one continued session, a frozen vars input, and an unisolated closure.
- * @evidenceReview docs/requirements/active/run-lifecycle-isolation.md#req-pr03-run-lifecycle-isolation #7051b73 Re-read the section, including bind-time params checks, one-hook strategies shared as stateless, a factory strategy without a snapshot pair continued on its own instance, and the canonical plan identity, then ran this function: a second scripted draw still buys once, stateful income stays at 3 in both orders, twice-daily applies a0 through a3, and a frozen vars input stays at 0.
+ * @evidenceReview docs/requirements/active/run-lifecycle-isolation.md#req-pr03-run-lifecycle-isolation #ad06072 Re-read the section, including bind-time and plan params checks, one-hook strategies shared as stateless, a factory strategy without a snapshot pair continued on its own instance, and the canonical plan identity, then ran this function: a second scripted draw still buys once, stateful income stays at 3 in both orders, twice-daily applies a0 through a3, and a frozen vars input stays at 0.
  * @evidence ./runFactory.ts#executionStream Reads the committed stream name and derives it from trial id 0x7103.
  * @evidenceReview ./runFactory.ts#executionStream #0a4e437 The declaration is the string execution. This test derives that stream from trial id rng and seed 0x7103.
  * @evidence ./runFactory.ts#previewStream Reads the preview stream name and refuses to restore it onto the committed stream.
@@ -607,6 +607,15 @@ describe("run factory review fixes", () => {
           return { id: "checked", decide: () => [] };
         },
       },
+      {
+        id: "defaulted",
+        paramsSchema: positive,
+        defaultParams: { n: 3 },
+        create: (params) => {
+          created.push(params);
+          return { id: "defaulted", decide: () => [] };
+        },
+      },
     ]);
     const models = createModelRegistry([
       defineModelFactory<number, UnitCode, { buys: number }>({
@@ -633,6 +642,18 @@ describe("run factory review fixes", () => {
       .fresh({ trialId: "ok", seed: 1 });
     expect(ok.scenario.strategy?.id).toBe("checked");
     expect(created).toEqual([{ n: 1 }, { n: 2 }]);
+
+    created.length = 0;
+    const plan: ExecutionPlan = { contract: "idlekit.execution-plan", version: 1, stepSec: 1, strategyId: "checked" };
+    const planned = factory.bind(scenario);
+    expect(() => planned.fresh({ trialId: "p", seed: 1, plan: { ...plan, strategyParams: { n: 0 } } })).toThrow(
+      "Invalid strategy params: n must be positive",
+    );
+    expect(() => planned.fresh({ trialId: "p", seed: 1, plan })).toThrow("Invalid strategy params: n must be positive");
+    expect(created).toEqual([]);
+    planned.fresh({ trialId: "p", seed: 1, plan: { ...plan, strategyParams: { n: 4 } } });
+    planned.fresh({ trialId: "p", seed: 1, plan: { ...plan, strategyId: "defaulted" } });
+    expect(created).toEqual([{ n: 4 }, { n: 3 }]);
   });
   it("resumes a checkpoint only into the strategy id and state version that wrote it", () => {
     type Vars = { applied: string[] };
