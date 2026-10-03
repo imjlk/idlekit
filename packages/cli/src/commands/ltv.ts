@@ -496,7 +496,8 @@ export default defineCommand({
             strategyRegistry: loaded.strategyRegistry,
             overrideId: flags.strategy,
           }),
-          fast: flags.fast,
+          // A --fast over a sim.fast scenario runs the scenario's fast mode, so it keeps the no-flag seed.
+          fast: flags.fast && !valid.scenario.sim?.fast,
           ...engineSeedOption(flags.engine),
           draws,
           valuePerWorth: flags["value-per-worth"],

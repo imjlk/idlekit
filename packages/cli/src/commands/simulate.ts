@@ -180,7 +180,8 @@ export default defineCommand({
           step: flags.step ?? scenario.clock.stepSec,
           strategy: strategyId,
           ...strategySeedOption({ scenario, strategyRegistry: loaded.strategyRegistry, overrideId: flags.strategy }),
-          fast: flags.fast,
+          // A --fast over a sim.fast scenario runs the scenario's fast mode, so it keeps the no-flag seed.
+          fast: flags.fast && !scenario.sim?.fast,
           offlineSeconds: flags["offline-seconds"] ?? 0,
           ...engineSeedOption(flags.engine),
         },

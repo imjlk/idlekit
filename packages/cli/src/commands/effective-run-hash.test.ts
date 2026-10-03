@@ -205,6 +205,37 @@ describe("effectiveRunHash", () => {
     }
   }, 180000);
 
+  it("derives the default seed from the fast mode that runs", async () => {
+    const meta = (command: string[], extra: string[]) => runCliJson([...command, ...extra, "--format", "json"])._meta;
+    const dir = await createTempDir("idlekit-fast-seed");
+    try {
+      const body = JSON.parse(await readText(resolve(CLI_CWD, BASELINE)));
+      const fast = resolve(dir, "fast.json");
+      await writeText(fast, JSON.stringify({ ...body, sim: { fast: true } }));
+      for (const command of [
+        ["simulate", fast, "--duration", "10"],
+        ["ltv", fast, "--horizons", "30m"],
+      ]) {
+        const plain = meta(command, []);
+        for (const extra of [["--fast", "true"], ["--fast", "false"]]) {
+          const same = meta(command, extra);
+          expect(same.seed).toBe(plain.seed);
+          expect(same.effectiveRunHash).toBe(plain.effectiveRunHash);
+        }
+      }
+      for (const command of [
+        ["simulate", BASELINE, "--duration", "10"],
+        ["ltv", BASELINE, "--horizons", "30m"],
+      ]) {
+        const plain = meta(command, []);
+        expect(meta(command, ["--fast", "false"]).seed).toBe(plain.seed);
+        expect(meta(command, ["--fast", "true"]).seed).not.toBe(plain.seed);
+      }
+    } finally {
+      await removePath(dir);
+    }
+  }, 180000);
+
   it("keeps the default evaluate seed off stage-only flags", async () => {
     const dir = await createTempDir("idlekit-evaluate-seed");
     try {
