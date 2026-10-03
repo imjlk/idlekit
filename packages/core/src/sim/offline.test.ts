@@ -377,4 +377,38 @@ describe("applyOfflineSeconds", () => {
     expect(out.end.vars.bought).toBe(0);
     expect(cursor).toBe(0);
   });
+
+  it("restores a capped batch whose handed decisions are all rejected at re-resolution", () => {
+    const base = makeScenario({ initialMoney: 5 });
+    let enumerations = 0;
+    const model: Model<number, U, Vars> = {
+      ...base.model,
+      actions: (ctx, state) => {
+        enumerations += 1;
+        const actor = enumerations % 2 === 1 ? ("automation" as const) : ("player" as const);
+        return base.model.actions(ctx, state).map((action) => ({ ...action, actor }));
+      },
+    };
+    let cursor = 0;
+    const strategy: Strategy<number, U, Vars> = {
+      id: "cursor",
+      decide(ctx, model, state) {
+        cursor += 1;
+        const buy = model.actions(ctx, state).find((action) => action.id === "buy")!;
+        return [{ action: buy }, { action: buy }];
+      },
+      snapshotState: () => ({ cursor }),
+      restoreState: (saved) => {
+        cursor = (saved as { cursor: number }).cursor;
+      },
+    };
+    // maxActionsPerStep hands one of the two admitted decisions to the step, and that one is rejected.
+    const out = applyOfflineSeconds({
+      scenario: { ...base, model, strategy, constraints: { maxActionsPerStep: 1 } },
+      seconds: 3,
+      options: { actions: { mode: "allow", categories: ["buy"], actors: ["automation"] } },
+    });
+    expect(out.end.vars.bought).toBe(0);
+    expect(cursor).toBe(0);
+  });
 });

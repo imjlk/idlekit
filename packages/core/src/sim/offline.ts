@@ -205,8 +205,9 @@ export function applyOfflineSeconds<N, U extends string, Vars>(args: {
     });
     assertTickAdvanced("offline", actionStartT, out.next.t, decision.dt, stepSec);
     // Restore only a batch the policy rejected whole, before or at re-resolution. An empty decide keeps its own state.
-    // A mixed batch applies its listed part and does not restore, or that part would replay.
-    if (restorable && raw.length > 0 && lateRejected === filtered.length) {
+    // A mixed batch applies its listed part and does not restore, or that part would replay. Compare with the
+    // decisions handed to the step, after maxActionsPerStep.
+    if (restorable && raw.length > 0 && lateRejected === decisions.length) {
       scenario.strategy?.restoreState?.(saved);
     }
     constraints = recordPrestigeReset(constraints, out.prestigeResetT, scenario.run.onPrestigeReset);
