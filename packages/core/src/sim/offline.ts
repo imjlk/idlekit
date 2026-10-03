@@ -172,23 +172,19 @@ export function applyOfflineSeconds<N, U extends string, Vars>(args: {
       { ...scenario.ctx, ...(constraints ? { constraints } : {}) },
       decision.dt,
     );
+    // A snapshot pair may save undefined. It is still the state to restore.
+    const restorable =
+      resolvedPolicy.policy.mode === "allow" &&
+      typeof scenario.strategy?.snapshotState === "function" &&
+      typeof scenario.strategy.restoreState === "function";
     // Clone before decide. A snapshot that aliases the cursor would advance with it.
-    const saved =
-      resolvedPolicy.policy.mode === "allow" && scenario.strategy?.snapshotState
-        ? deepClonePreservingPrototype(scenario.strategy.snapshotState())
-        : undefined;
+    const saved = restorable ? deepClonePreservingPrototype(scenario.strategy?.snapshotState?.()) : undefined;
     const raw = useStrategy ? (scenario.strategy?.decide(stepCtx, scenario.model, state) ?? []) : [];
     const filtered = raw.filter((decision) => allowsOfflineAction(decision.action, resolvedPolicy.policy));
     // Restore only a batch the policy rejected whole. An empty decide keeps its own state.
     // A mixed batch applies its listed part and does not restore, or that part would replay.
-    if (
-      resolvedPolicy.policy.mode === "allow" &&
-      raw.length > 0 &&
-      filtered.length === 0 &&
-      saved !== undefined &&
-      scenario.strategy?.restoreState
-    ) {
-      scenario.strategy.restoreState(saved);
+    if (restorable && raw.length > 0 && filtered.length === 0) {
+      scenario.strategy?.restoreState?.(saved);
     }
     const decisions = filtered.slice(0, maxActionsPerStep);
     const actionStartT = state.t;
