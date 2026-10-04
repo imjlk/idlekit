@@ -250,7 +250,7 @@ export function simulateSessionPattern<N, U extends string, Vars>(args: {
   const traceBudget = sc.run.trace?.maxPoints;
   const actionBudget = sc.run.trace?.maxActions;
   const trace = createBoundedLog<SimState<N, U, Vars>>(traceBudget, "session trace.maxPoints");
-  const actionsLog = createBoundedLog<{ t: number; actionId: string; label?: string; bulkSize?: number }>(actionBudget, "session trace.maxActions");
+  const actionsLog = createBoundedLog<{ t: number; elapsedSec: number; actionId: string; label?: string; bulkSize?: number }>(actionBudget, "session trace.maxActions");
   let lastTraceT: number | undefined;
   let segmentTraceDropped = 0;
   let segmentActionsDropped = 0;
@@ -372,7 +372,12 @@ export function simulateSessionPattern<N, U extends string, Vars>(args: {
     lostRewardSec += lost;
     retainRun(offlineRun);
     // A policy that calls the strategy applies actions while away. They are session rows too.
-    for (const row of offlineRun.actionsLog ?? []) actionsLog.push(row);
+    for (const row of offlineRun.actionsLog ?? []) {
+      actionsLog.push({
+        ...row,
+        elapsedSec: activeSec + offlineCreditedSec - credited + (row.elapsedSec ?? row.t - offlineRun.start.t),
+      });
+    }
     segmentActionsDropped += offlineRun.actionsLogMeta?.dropped ?? 0;
     segments.push({
       kind: "offline",
@@ -436,7 +441,12 @@ export function simulateSessionPattern<N, U extends string, Vars>(args: {
     const offered = (activeRun.traceLog?.totalSeen ?? points.length) - (activeRun.start.t === lastTraceT ? 1 : 0);
     segmentTraceDropped += offered - (points.length - skip);
     lastTraceT = activeRun.end.t;
-    for (const row of activeRun.actionsLog ?? []) actionsLog.push(row);
+    for (const row of activeRun.actionsLog ?? []) {
+      actionsLog.push({
+        ...row,
+        elapsedSec: activeSec + offlineCreditedSec - simulated + (row.elapsedSec ?? row.t - activeRun.start.t),
+      });
+    }
     segmentActionsDropped += activeRun.actionsLogMeta?.dropped ?? 0;
     // A block cut by maxSteps still ends at its planned wall time. The player was
     // present for the rest, so it is neither offline absence nor credited reward.

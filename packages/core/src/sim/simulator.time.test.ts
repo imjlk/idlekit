@@ -116,9 +116,9 @@ function jsonClock(durationSec: number | undefined): ScenarioV1 {
  * @evidence ./timeBoundary.ts#assertTickAdvanced At t 1e20 a 1s tick, or a lone 60s partial tick under a 32768s step, throws online and offline, a string or non-finite t throws, and a 1e-8 last tick at t 1e9 still ends the catch-up.
  * @evidenceReview ./timeBoundary.ts#assertTickAdvanced #525b586 Re-read assertTickAdvanced: a start or committed t that is not a finite number throws first; otherwise a tick passes when t moves, or when it is a partial tick below half an ulp of t, a whole step still moves t, and an earlier tick already moved t past the run start; otherwise it throws with the start t and step. Ran this function: t 1e20 with stepSec 1 and 3s, and t 1e20 with stepSec 32768 and a single 60s tick, throw in runScenario and applyOfflineSeconds, a start t of "0", NaN, Infinity, or -Infinity throws the finite-number error online and offline, t 1e9 runs 3s to t + 3, and a 10 + 1e-8 catch-up at t 1e9 stops as duration after 11 steps.
  * @evidence ./simulator.ts#runScenario Runs the partial tick, the step budget, the rejected clocks, trace points, event stamps, and a breakInfinity horizon.
- * @evidenceReview ./simulator.ts#runScenario #2744c97 Re-read runScenario: it validates the clock and a finite start state.t before the first stop decision and integer trace.maxPoints and trace.maxActions budgets, builds its recorder with the ledger a session's shared observation options carry, records the start state's goals before the first boundary, asks nextBoundary before each step, throws on the guard, passes a stepContext copy to decide and stepOnce, checks with assertTickAdvanced that the committed tick moved state.t (a sub-ulp last tick only after an earlier tick moved it), records the prestige reset, tells the recorder a prestige applied only when stepOnce reports prestigeResetT, and appends the final state to the trace once, comparing a bounded trace against the last state it offered rather than the last one retained. Ran this function: wallet and t end at 10 for the partial tick, budget and until stops match, trace times are 0, 2, 4, 5, and the breakInfinity run ends at 10.
+ * @evidenceReview ./simulator.ts#runScenario #489e414 Re-read runScenario: action rows now retain tick elapsed seconds before accumulation; it validates the clock and a finite start state.t before the first stop decision and integer trace.maxPoints and trace.maxActions budgets, builds its recorder with the ledger a session's shared observation options carry, records the start state's goals before the first boundary, asks nextBoundary before each step, throws on the guard, passes a stepContext copy to decide and stepOnce, checks with assertTickAdvanced that the committed tick moved state.t (a sub-ulp last tick only after an earlier tick moved it), records the prestige reset, tells the recorder a prestige applied only when stepOnce reports prestigeResetT, and appends the final state to the trace once, comparing a bounded trace against the last state it offered rather than the last one retained. Ran this function: wallet and t end at 10 for the partial tick, budget and until stops match, trace times are 0, 2, 4, 5, and the breakInfinity run ends at 10.
  * @evidence ./offline.ts#applyOfflineSeconds A 2.5s catch-up ends at t 2.5 like the online run, a short maxSteps stops as budget with 5 simulated seconds, and a NaN stepSec throws before decide.
- * @evidenceReview ./offline.ts#applyOfflineSeconds #3be3c28 Re-read applyOfflineSeconds: it validates seconds, the clock, a finite start state.t, and an integer trace.maxActions budget, resolves the action policy and the cap or decay, builds its recorder with the ledger a session's shared observation options carry, records goals that hold at the start state, then steps through nextBoundary like the online runner, checks with assertTickAdvanced that each committed tick moved state.t (a sub-ulp last tick only after an earlier tick moved it), tells the recorder a prestige applied only when stepOnce reports prestigeResetT, under allow passes stepOnce an admits check so the action a decision re-resolves to also meets the policy, restores a cloned strategy snapshot, undefined included, for a strategy with both snapshot hooks only when the policy rejects the whole batch before the step or every decision handed to the step after maxActionsPerStep at re-resolution (a batch the cap alone empties is consumed, not restored), and reports requested, effective, and simulated seconds. Ran this function: the 2.5s catch-up ends at t 2.5 with wallet 5 and remainder 0.5, maxSteps 5 stops as budget with effective 10 and simulated 5, and the NaN stepSec throws before decide.
+ * @evidenceReview ./offline.ts#applyOfflineSeconds #5103e51 Re-read applyOfflineSeconds: action rows now retain simulated seconds captured before the tick; it validates seconds, the clock, a finite start state.t, and an integer trace.maxActions budget, resolves the action policy and the cap or decay, builds its recorder with the ledger a session's shared observation options carry, records goals that hold at the start state, then steps through nextBoundary like the online runner, checks with assertTickAdvanced that each committed tick moved state.t (a sub-ulp last tick only after an earlier tick moved it), tells the recorder a prestige applied only when stepOnce reports prestigeResetT, under allow passes stepOnce an admits check so the action a decision re-resolves to also meets the policy, restores a cloned strategy snapshot, undefined included, for a strategy with both snapshot hooks only when the policy rejects the whole batch before the step or every decision handed to the step after maxActionsPerStep at re-resolution (a batch the cap alone empties is consumed, not restored), and reports requested, effective, and simulated seconds. Ran this function: the 2.5s catch-up ends at t 2.5 with wallet 5 and remainder 0.5, maxSteps 5 stops as budget with effective 10 and simulated 5, and the NaN stepSec throws before decide.
  */
 export function stopsOnTheRequestedHorizon(): void {
   expect(timeBoundaryEpsilonScale).toBe(1e-12);
@@ -460,4 +460,31 @@ export function stopsOnTheHorizonAtALargeStartTime(): void {
 describe("PR-02 simulation time boundaries", () => {
   it("stops on the requested horizon", stopsOnTheRequestedHorizon);
   it("stops on the horizon at a large start time", stopsOnTheHorizonAtALargeStartTime);
+});
+
+
+describe("action elapsed time", () => {
+  it("keeps tick elapsed seconds with bounded and unbounded actions", () => {
+    for (const maxActions of [undefined, 2]) {
+      const action: Action<number, UnitCode, Vars> = {
+        id: "upgrade.free",
+        kind: "custom",
+        canApply: () => true,
+        cost: () => null,
+        apply: (_ctx, current) => current,
+      };
+      const run = runScenario(scenario({
+        initial: state(0, 1e15),
+        stepSec: 0.1,
+        durationSec: 0.4,
+        model: { ...incomeModel(0), actions: () => [action] },
+        strategy: { id: "always", decide: () => [{ action }] },
+        trace: { everySteps: 1, keepActionsLog: true, maxActions },
+      }));
+      expect(run.actionsLog?.length).toBe(maxActions ?? 4);
+      for (const [index, row] of (run.actionsLog ?? []).entries()) {
+        expect(row.elapsedSec).toBeCloseTo((index + 4 - (maxActions ?? 4)) * 0.1, 9);
+      }
+    }
+  });
 });

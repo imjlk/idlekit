@@ -52,7 +52,7 @@ function assertResumeEngine(args: {
 }
 
 // Only what the run reads: deserializeSimState, the engine check, and restoreStrategyState.
-// meta and passthrough fields (path, savedAt, run id, versions) do not change the run.
+// Save metadata does not change the economy. The saved elapsed clock enters the report digest separately.
 function resumeHash(json: ReturnType<typeof parseSimStateJSON> | undefined): string | null {
   if (!json) return null;
   const { v, unit, t, wallet, maxMoneyEver, prestige, vars, strategy } = json;
@@ -216,12 +216,18 @@ export default defineCommand({
       eventLogEnabled: flags["event-log-enabled"],
       eventLogMax: flags["event-log-max"],
     });
-    // The event log changes what the run keeps, not what it runs, so only the digest reads it.
+    const priorElapsedSec = resumedJson
+      ? resumedJson.meta?.totalElapsedSec ?? resumedJson.t - prepared.definition.initial.t
+      : 0;
+    // Retention and the saved elapsed clock affect the report, not the simulation seed.
     const opened = prepared.open(
       "simulate",
       `simulate:${deterministicSeed}`,
       stageInputs,
-      eventLogStageInputs(prepared.definition.run.eventLog, eventLog),
+      {
+        ...eventLogStageInputs(prepared.definition.run.eventLog, eventLog),
+        ...(resumedJson ? { priorElapsedSec } : {}),
+      },
     );
     const runId =
       flags["run-id"] ??
@@ -303,7 +309,7 @@ export default defineCommand({
 
     const run = runScenario(effectiveScenario);
     const netWorth = effectiveScenario.model.netWorth?.(effectiveScenario.ctx, run.end) ?? run.end.wallet.money;
-    const totalElapsedSec = run.end.t - prepared.definition.initial.t;
+    const totalElapsedSec = priorElapsedSec + (offlineRun ? runElapsedSec(offlineRun) : 0) + runElapsedSec(run);
     const stateOutPath = flags["state-out"] ? resolve(process.cwd(), flags["state-out"]) : undefined;
     const seed = deterministicSeed;
     const offlineEndWorth =
@@ -321,6 +327,7 @@ export default defineCommand({
         cliVersion: outputMeta.cliVersion,
         gitSha: outputMeta.gitSha,
         scenarioHash: typeof outputMeta.scenarioHash === "string" ? outputMeta.scenarioHash : undefined,
+        totalElapsedSec,
         strategy: strategy
           ? {
               id: strategy.id,

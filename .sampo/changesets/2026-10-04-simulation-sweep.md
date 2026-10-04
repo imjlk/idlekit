@@ -12,4 +12,5 @@ Close the recurring correctness gaps from the #156 review.
 - durations are tick seconds instead of `end.t - start.t`, which rounds at a large start time
 - a non-finite or non-numeric `state.t`, a non-finite analytic ETA input, and an oversized or non-advancing prestige-cycle scan are rejected
 - growth refuses a cut trace and does not draw a segment across a non-finite point; a partial milestone report no longer reads a dropped key or a missing first milestone as unreached
-- ltv `timeToFirstUpgradeSec` is measured from the analysis start
+- simulate `totalElapsedSec` sums tick durations across online, offline, and newly saved resume segments; legacy saves retain their timestamp-offset fallback
+- action logs carry tick elapsed time across bounded logs and session segments, and ltv `timeToFirstUpgradeSec` uses it from the analysis start

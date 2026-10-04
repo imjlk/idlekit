@@ -343,6 +343,7 @@ describe("applyOfflineSeconds", () => {
     });
     expect(out.end.vars.bought).toBe(1);
     expect(out.actionsLog?.map((row) => row.actionId)).toEqual(["hire"]);
+    expect(out.actionsLog?.[0]?.elapsedSec).toBe(0);
   });
 
   it("restores a batch the actor filter rejects only at re-resolution", () => {

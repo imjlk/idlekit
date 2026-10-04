@@ -319,8 +319,8 @@ export function runLtvAnalysis(args: {
     for (const log of run.actionsLog ?? []) {
       actionCounts[log.actionId] = (actionCounts[log.actionId] ?? 0) + 1;
       if (firstUpgradeSec === null && /upgrade/i.test(log.actionId)) {
-        // Action rows carry state.t. The KPI is seconds into the analysis, not a timestamp.
-        firstUpgradeSec = log.t - args.compiled.initial.t;
+        // The action clock counts tick seconds, including earlier horizon segments.
+        firstUpgradeSec = previousTargetSec + (log.elapsedSec ?? log.t - run.start.t);
       }
     }
 

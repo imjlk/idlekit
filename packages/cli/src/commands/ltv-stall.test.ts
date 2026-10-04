@@ -100,7 +100,7 @@ describe("ltv step budget", () => {
 });
 
 describe("ltv first upgrade time", () => {
-  it.each([0, 1_700_000_000])("counts seconds from the analysis start at t=%p", async (t0) => {
+  it.each([0, 1_700_000_000, 1e15])("counts tick seconds from the analysis start at t=%p", async (t0) => {
     const scenario = await Bun.file(resolve(process.cwd(), "../../examples/tutorials/01-cafe-baseline.json")).json();
     const upgrade: Action<number, string, Record<string, unknown>> = {
       id: "upgrade.cup",
@@ -109,8 +109,9 @@ describe("ltv first upgrade time", () => {
       cost: () => null,
       apply: (_ctx, current) => current,
     };
+    let decisions = 0;
     const compiled: CompiledScenario<number, string, Record<string, unknown>> = {
-      ctx: { E: createNumberEngine(), unit: { code: "COIN" }, tickPolicy: { mode: "drop" }, stepSec: 1 },
+      ctx: { E: createNumberEngine(), unit: { code: "COIN" }, tickPolicy: { mode: "drop" }, stepSec: 0.1 },
       model: {
         id: "ltv-first-upgrade",
         version: 1,
@@ -124,19 +125,20 @@ describe("ltv first upgrade time", () => {
         prestige: { count: 0, points: 0, multiplier: 1 },
         vars: {},
       },
-      run: { stepSec: 1 },
-      // Buys once, on the fourth tick.
-      strategy: { id: "late-buy", decide: (_ctx, _model, state) => (state.t === t0 + 3 ? [{ action: upgrade }] : []) },
+      run: { stepSec: 0.1 },
+      // Buys once, on the fourth tick, in the second horizon segment.
+      strategy: { id: "late-buy", decide: () => (decisions++ === 3 ? [{ action: upgrade }] : []) },
     };
     const out = runLtvAnalysis({
       scenario,
       effectiveRunHash: "ltv-first-upgrade.json",
       compiled,
       strategy: compiled.strategy,
-      horizonsRaw: "10s",
+      horizonsRaw: "0.2s,1s",
       fast: false,
       seed: 1,
     });
-    expect(out.horizons[0]?.guardrails.timeToFirstUpgradeSec).toBe(3);
+    expect(out.horizons[0]?.guardrails.timeToFirstUpgradeSec).toBeNull();
+    expect(out.horizons[1]?.guardrails.timeToFirstUpgradeSec).toBeCloseTo(0.3, 9);
   });
 });

@@ -320,6 +320,8 @@ export type RunResult<N, U extends string, Vars> = Readonly<{
   trace?: readonly SimState<N, U, Vars>[];
   actionsLog?: readonly {
     t: number;
+    /** Tick seconds before the action, relative to this run's start. */
+    elapsedSec?: number;
     actionId: string;
     label?: string;
     bulkSize?: number;

@@ -136,11 +136,11 @@ export function applyOfflineSeconds<N, U extends string, Vars>(args: {
     enabled: eventLogEnabled,
     maxEvents,
   });
-  const actionsLog: Array<{ t: number; actionId: string; label?: string; bulkSize?: number }> = [];
+  const actionsLog: Array<{ t: number; elapsedSec: number; actionId: string; label?: string; bulkSize?: number }> = [];
   const actionBudget = scenario.run.trace?.maxActions;
   const actionLog =
     actionBudget !== undefined
-      ? createBoundedLog<{ t: number; actionId: string; label?: string; bulkSize?: number }>(actionBudget, "applyOfflineSeconds trace.maxActions")
+      ? createBoundedLog<{ t: number; elapsedSec: number; actionId: string; label?: string; bulkSize?: number }>(actionBudget, "applyOfflineSeconds trace.maxActions")
       : undefined;
 
   let state = start;
@@ -195,6 +195,7 @@ export function applyOfflineSeconds<N, U extends string, Vars>(args: {
           }
         : undefined;
     const actionStartT = state.t;
+    const actionElapsedSec = simulatedSec;
     const out = stepOnce({
       ctx: stepCtx,
       model: scenario.model,
@@ -230,10 +231,10 @@ export function applyOfflineSeconds<N, U extends string, Vars>(args: {
     });
     eventBuffer.pushTimed(timeStepEvents(out.events, actionStartT, state.t));
     if (out.actionsApplied?.length) {
-      if (actionLog) {
-        for (const row of out.actionsApplied) actionLog.push(row);
-      } else {
-        actionsLog.push(...out.actionsApplied);
+      for (const row of out.actionsApplied) {
+        const timedRow = { ...row, elapsedSec: actionElapsedSec };
+        if (actionLog) actionLog.push(timedRow);
+        else actionsLog.push(timedRow);
       }
     }
   }
