@@ -96,24 +96,33 @@ export function analyzeGrowth<N, U extends string, Vars>(args: {
         ? "netWorth"
         : "netWorthFallback";
   const rawStates = args.run.trace && args.run.trace.length > 1 ? args.run.trace : [args.run.start, args.run.end];
-  const seriesOf = valueSource === "netWorthFallback" ? "money" : args.series;
-  const finiteStates = rawStates.filter((s) => Number.isFinite(valueOfState(s, seriesOf, args.scenario)));
-  // An overflowed or NaN value has no slope. Say so instead of ending the segments quietly.
-  const firstNonFinite = rawStates.find((s) => !Number.isFinite(valueOfState(s, seriesOf, args.scenario)));
+  const effectiveSeries = valueSource === "netWorthFallback" ? "money" : args.series;
+  const valueOf = (state: SimState<N, U, Vars>) => valueOfState(state, effectiveSeries, args.scenario);
+  // An overflowed or NaN value has no slope. Split the trace there, so no segment spans an excluded point,
+  // and say so instead of ending the segments quietly.
+  const spans: SimState<N, U, Vars>[][] = [];
+  let span: SimState<N, U, Vars>[] = [];
+  let excluded = 0;
+  let firstNonFinite: SimState<N, U, Vars> | undefined;
+  for (const state of [...rawStates].sort((a, b) => a.t - b.t)) {
+    if (Number.isFinite(valueOf(state))) {
+      span.push(state);
+      continue;
+    }
+    excluded += 1;
+    firstNonFinite ??= state;
+    if (span.length > 0) spans.push(span);
+    span = [];
+  }
+  if (span.length > 0) spans.push(span);
   const bottlenecks: Array<{ t: number; reason: string }> = firstNonFinite
-    ? [
-        {
-          t: firstNonFinite.t,
-          reason: `Value is not finite; ${rawStates.length - finiteStates.length} trace points excluded`,
-        },
-      ]
+    ? [{ t: firstNonFinite.t, reason: `Value is not finite; ${excluded} trace points excluded` }]
     : [];
-  const states = sampleStatesByWindow(
-    finiteStates.sort((a, b) => a.t - b.t),
-    Math.max(1, Math.floor(args.windowSec)),
-  );
+  const sampledSpans = spans
+    .map((points) => sampleStatesByWindow(points, Math.max(1, Math.floor(args.windowSec))))
+    .filter((points) => points.length >= 2);
 
-  if (states.length < 2) {
+  if (sampledSpans.length === 0) {
     return {
       windowSec: args.windowSec,
       seriesRequested: args.series,
@@ -125,31 +134,32 @@ export function analyzeGrowth<N, U extends string, Vars>(args: {
 
   const segments: GrowthSegment[] = [];
 
-  for (let i = 1; i < states.length; i += 1) {
-    const a = states[i - 1];
-    const b = states[i];
-    if (!a || !b) continue;
+  for (const states of sampledSpans) {
+    for (let i = 1; i < states.length; i += 1) {
+      const a = states[i - 1];
+      const b = states[i];
+      if (!a || !b) continue;
 
-    const dt = Math.max(1e-9, b.t - a.t);
-    const effectiveSeries = valueSource === "netWorthFallback" ? "money" : args.series;
-    const av = Math.max(1e-12, Math.abs(valueOfState(a, effectiveSeries, args.scenario)));
-    const bv = Math.max(1e-12, Math.abs(valueOfState(b, effectiveSeries, args.scenario)));
+      const dt = Math.max(1e-9, b.t - a.t);
+      const av = Math.max(1e-12, Math.abs(valueOf(a)));
+      const bv = Math.max(1e-12, Math.abs(valueOf(b)));
 
-    const slope = (Math.log10(bv) - Math.log10(av)) / dt;
-    const regime = classify(slope);
+      const slope = (Math.log10(bv) - Math.log10(av)) / dt;
+      const regime = classify(slope);
 
-    const doublingTimeSec = slope > 0 ? Math.log10(2) / slope : undefined;
+      const doublingTimeSec = slope > 0 ? Math.log10(2) / slope : undefined;
 
-    segments.push({
-      tFrom: a.t,
-      tTo: b.t,
-      regime,
-      slope,
-      doublingTimeSec,
-    });
+      segments.push({
+        tFrom: a.t,
+        tTo: b.t,
+        regime,
+        slope,
+        doublingTimeSec,
+      });
 
-    if (regime === "stall") {
-      bottlenecks.push({ t: b.t, reason: "Near-zero growth slope" });
+      if (regime === "stall") {
+        bottlenecks.push({ t: b.t, reason: "Near-zero growth slope" });
+      }
     }
   }
 
