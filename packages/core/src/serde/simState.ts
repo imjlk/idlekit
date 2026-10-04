@@ -82,7 +82,7 @@ const SimStateJSONSchema = z
         cliVersion: z.string().optional(),
         gitSha: z.string().optional(),
         scenarioHash: z.string().optional(),
-        totalElapsedSec: z.number().finite().optional(),
+        totalElapsedSec: z.number().finite().nonnegative().optional(),
       })
       .passthrough()
       .optional(),
