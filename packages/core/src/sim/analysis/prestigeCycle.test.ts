@@ -76,6 +76,10 @@ describe("analyzePrestigeCycle scan edges", () => {
     );
   });
 
+  it("refuses a grid too large to run before allocating it", () => {
+    expect(() => analyze({ fromSec: 1, toSec: 3600, stepSec: 1e-9 })).toThrow("intervals; the limit is 100000");
+  });
+
   it("keeps toSec when the step does not add up exactly", () => {
     const out = analyze({ fromSec: 0.1, toSec: 0.3, stepSec: 0.1 });
     expect(out.rows.map((row) => row.intervalSec)).toEqual([0.1, 0.2, 0.3]);

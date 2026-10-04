@@ -16,6 +16,8 @@ function metric(row: PrestigeCycleRow, objective: PrestigeCycleObjective): numbe
   return Number(objective === "netWorthPerHour" ? row.netWorthPerHour : row.pointsPerHour);
 }
 
+const maxPrestigeScanIntervals = 100_000;
+
 export function analyzePrestigeCycle<N, U extends string, Vars>(args: {
   scenario: CompiledScenario<N, U, Vars>;
   scan: Readonly<{ fromSec: number; toSec: number; stepSec: number }>;
@@ -40,6 +42,12 @@ export function analyzePrestigeCycle<N, U extends string, Vars>(args: {
   }
   // Index the grid so 0.1 + 0.1 + 0.1 rounding cannot skip toSec.
   const count = Math.floor((toSec - fromSec) / stepSec + 1e-9) + 1;
+  // Each interval is a full run. Refuse a grid that would allocate or run more than that before starting.
+  if (!Number.isFinite(count) || count > maxPrestigeScanIntervals) {
+    throw new Error(
+      `analyzePrestigeCycle scan ${fromSec}..${toSec} step ${stepSec} has ${count} intervals; the limit is ${maxPrestigeScanIntervals}`,
+    );
+  }
 
   const intervals: number[] = [];
   for (let i = 0; i < count; i += 1) {
