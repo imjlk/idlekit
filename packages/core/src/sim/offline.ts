@@ -118,7 +118,7 @@ export function applyOfflineSeconds<N, U extends string, Vars>(args: {
   }
 
   const resolved = resolveOfflineSeconds(seconds, capPolicy);
-  assertSimulationClock("offline", { stepSec, durationSec: resolved.effectiveSec, maxSteps });
+  assertSimulationClock("offline", { stepSec, durationSec: resolved.effectiveSec, maxSteps, startT: start.t });
   const fullSteps = Math.floor(resolved.effectiveSec / stepSec);
   const remainderRaw = resolved.effectiveSec - fullSteps * stepSec;
   const remainderSec = remainderRaw > timeEpsilon(resolved.effectiveSec) ? remainderRaw : 0;

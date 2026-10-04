@@ -70,7 +70,7 @@ export function runScenario<N, U extends string, Vars>(
     throw new Error("runScenario requires at least one stop condition: durationSec, until, or maxSteps");
   }
 
-  assertSimulationClock("runScenario", { stepSec, durationSec, maxSteps });
+  assertSimulationClock("runScenario", { stepSec, durationSec, maxSteps, startT: start.t });
   if (maxEvents !== undefined && (!Number.isInteger(maxEvents) || maxEvents < 0)) {
     throw new Error("runScenario eventLog.maxEvents must be an integer >= 0");
   }

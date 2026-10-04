@@ -70,8 +70,12 @@ export function nextBoundary(clock: BoundaryClock): BoundaryDecision {
 
 export function assertSimulationClock(
   label: string,
-  clock: Readonly<{ stepSec: number; durationSec?: number; maxSteps?: number }>,
+  clock: Readonly<{ stepSec: number; durationSec?: number; maxSteps?: number; startT?: unknown }>,
 ): void {
+  // Checked before the first stop decision, so a run that never ticks cannot return a bad start time.
+  if ("startT" in clock && (typeof clock.startT !== "number" || !Number.isFinite(clock.startT))) {
+    throw new Error(`${label} state.t must be a finite number (start t: ${String(clock.startT)})`);
+  }
   if (!Number.isFinite(clock.stepSec) || !(clock.stepSec > 0)) {
     throw new Error(`${label} stepSec must be a finite number > 0 (received: ${clock.stepSec})`);
   }
