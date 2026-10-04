@@ -11,9 +11,9 @@ import { resolve } from "path";
 import { z } from "zod";
 import { loadRegistriesFromFlags, pluginOptions } from "./_shared/plugin";
 import { cliError, scenarioInvalidError, usageError } from "../errors";
-import { buildOutputMeta, deriveDeterministicRunId, deriveDeterministicSeed } from "../io/outputMeta";
+import { buildOutputMeta, deriveDeterministicRunId } from "../io/outputMeta";
 import { writeCommandReplayArtifact } from "../io/replayPolicy";
-import { engineSeedOption, prepareResolvedRun, strategySeedOption } from "../lib/runConfiguration";
+import { prepareResolvedRun } from "../lib/runConfiguration";
 import { readScenarioFile } from "../io/readScenario";
 import { writeOutput } from "../io/writeOutput";
 import {
@@ -75,6 +75,20 @@ export function parseHorizons(raw: string): HorizonPoint[] {
     if (!map.has(p.seconds)) map.set(p.seconds, p);
   }
   return Array.from(map.values()).sort((a, b) => a.seconds - b.seconds);
+}
+
+/** The `--horizons` default of ltv and evaluate. The option keeps the literal for the generated CLI metadata. */
+export const DEFAULT_LTV_HORIZONS = "30m,2h,24h,7d,30d,90d";
+
+/** The uncertainty draws an ltv run uses: a --draws flag turns bands on, otherwise the scenario decides. */
+export function ltvUncertaintyDraws(scenario: ScenarioV1, draws?: number): number | null {
+  const uncertainty = deriveMonetizationConfig(scenario).uncertainty;
+  return uncertainty.enabled || draws !== undefined ? (draws ?? uncertainty.draws) : null;
+}
+
+/** Inputs of an ltv stage: the parsed horizons and the draws that run. */
+export function ltvStageInputs(scenario: ScenarioV1, horizons: string, draws?: number) {
+  return { horizons: parseHorizons(horizons), draws: ltvUncertaintyDraws(scenario, draws) };
 }
 
 function getSummaryBySeconds<T extends { seconds: number }>(rows: T[], seconds: number): T | undefined {
@@ -223,7 +237,8 @@ export type LtvAnalysisResult = Readonly<{
 
 export function runLtvAnalysis(args: {
   scenario: ScenarioV1;
-  scenarioPath: string;
+  /** Digest of the ltv stage. The default run id reads it, not the scenario path. */
+  effectiveRunHash: string;
   compiled: CompiledScenario<number, string, Record<string, unknown>>;
   strategy: CompiledScenario<number, string, Record<string, unknown>>["strategy"];
   horizonsRaw: string;
@@ -304,7 +319,8 @@ export function runLtvAnalysis(args: {
     for (const log of run.actionsLog ?? []) {
       actionCounts[log.actionId] = (actionCounts[log.actionId] ?? 0) + 1;
       if (firstUpgradeSec === null && /upgrade/i.test(log.actionId)) {
-        firstUpgradeSec = log.t;
+        // The action clock counts tick seconds, including earlier horizon segments.
+        firstUpgradeSec = previousTargetSec + (log.elapsedSec ?? log.t - run.start.t);
       }
     }
 
@@ -386,11 +402,7 @@ export function runLtvAnalysis(args: {
     deriveDeterministicRunId({
       command: "ltv",
       seed: args.seed,
-      scope: {
-        scenarioPath: resolve(process.cwd(), args.scenarioPath),
-        horizons: horizons.map((x) => x.label),
-        stepSec,
-      },
+      scope: { effectiveRunHash: args.effectiveRunHash },
     });
 
   const trend7to90 = (() => {
@@ -477,35 +489,7 @@ export default defineCommand({
       throw scenarioInvalidError(valid.issues);
     }
 
-    // A --draws equal to the scenario's enabled uncertainty draws runs the same bands, so it keeps
-    // the no-flag seed and stage inputs.
-    const uncertainty = deriveMonetizationConfig(valid.scenario).uncertainty;
-    const draws = uncertainty.enabled && flags.draws === uncertainty.draws ? undefined : flags.draws;
-    const baseSeed =
-      flags.seed ??
-      deriveDeterministicSeed({
-        command: "ltv",
-        scenario: valid.scenario,
-        options: {
-          horizons: flags.horizons,
-          step: flags.step ?? valid.scenario.clock.stepSec,
-          // The no-flag input keeps this undefined key.
-          strategy: undefined,
-          ...strategySeedOption({
-            scenario: valid.scenario,
-            strategyRegistry: loaded.strategyRegistry,
-            overrideId: flags.strategy,
-          }),
-          // A --fast over a sim.fast scenario runs the scenario's fast mode, so it keeps the no-flag seed.
-          fast: flags.fast && !valid.scenario.sim?.fast,
-          ...engineSeedOption(flags.engine),
-          draws,
-          valuePerWorth: flags["value-per-worth"],
-        },
-      });
-
-    const seed = baseSeed;
-    const prepared = prepareResolvedRun({
+    const unseeded = prepareResolvedRun({
       scenario: valid.scenario,
       modelRegistry: loaded.modelRegistry,
       strategyRegistry: loaded.strategyRegistry,
@@ -514,23 +498,41 @@ export default defineCommand({
       strategyOverride: flags.strategy,
       stepSec: flags.step,
       fast: flags.fast,
-      seed,
     });
-    const opened = prepared.open("ltv", `ltv:${seed}`, {
-      horizons: parseHorizons(flags.horizons),
-      draws: draws ?? null,
+    const stageInputs = ltvStageInputs(valid.scenario, flags.horizons, flags.draws);
+    const seed =
+      flags.seed ??
+      unseeded.defaultSeed(
+        // The seed input of a run without flags.
+        {
+          command: "ltv",
+          scenario: valid.scenario,
+          options: {
+            horizons: DEFAULT_LTV_HORIZONS,
+            step: valid.scenario.clock.stepSec,
+            strategy: undefined,
+            fast: false,
+            draws: undefined,
+            valuePerWorth: undefined,
+          },
+        },
+        [{ stage: "ltv", inputs: stageInputs, defaults: ltvStageInputs(valid.scenario, DEFAULT_LTV_HORIZONS) }],
+      );
+    const prepared = unseeded.withSeed(seed);
+    // Value per worth scales the reported value, not the run, so only the digest reads it.
+    const opened = prepared.open("ltv", `ltv:${seed}`, stageInputs, {
       valuePerWorth: flags["value-per-worth"] ?? null,
     });
     const analysis = runLtvAnalysis({
       scenario: valid.scenario,
-      scenarioPath,
+      effectiveRunHash: opened.hash,
       compiled: opened.scenario,
       strategy: opened.scenario.strategy,
       horizonsRaw: flags.horizons,
       step: flags.step,
       fast: flags.fast,
       seed,
-      draws,
+      draws: flags.draws,
       valuePerWorth: flags["value-per-worth"],
       runId: flags["run-id"],
     });

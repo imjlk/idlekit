@@ -1,5 +1,6 @@
 import type { ObjectiveFactory } from "../registry";
 import { parseMoney } from "../../../../notation/parseMoney";
+import { runElapsedSec } from "../../../types";
 import {
   ObjectiveEmptyObjectSchema,
   ObjectiveEtaToWorthParamsSchema,
@@ -47,7 +48,7 @@ export const builtinObjectiveFactories: readonly ObjectiveFactory[] = [
       id: "netWorthPerHourLog10",
       score: ({ scenario, run }) => {
         const { E } = scenario.ctx;
-        const sec = Math.max(1, run.end.t - run.start.t);
+        const sec = Math.max(1, runElapsedSec(run));
         const hours = sec / 3600;
         const worth = scenario.model.netWorth?.(scenario.ctx as any, run.end as any) ?? run.end.wallet.money;
         return safeAbsLog10(E, worth.amount) - Math.log10(Math.max(1e-12, hours));
@@ -62,7 +63,7 @@ export const builtinObjectiveFactories: readonly ObjectiveFactory[] = [
       id: "prestigePointsPerHourLog10",
       score: ({ scenario, run }) => {
         const { E } = scenario.ctx;
-        const sec = Math.max(1, run.end.t - run.start.t);
+        const sec = Math.max(1, runElapsedSec(run));
         const hours = sec / 3600;
         return safeAbsLog10(E, run.end.prestige.points) - Math.log10(Math.max(1e-12, hours));
       },
@@ -76,7 +77,7 @@ export const builtinObjectiveFactories: readonly ObjectiveFactory[] = [
       id: "growthLog10PerHour",
       score: ({ scenario, run }) => {
         const { E } = scenario.ctx;
-        const sec = Math.max(1, run.end.t - run.start.t);
+        const sec = Math.max(1, runElapsedSec(run));
         const startWorth = scenario.model.netWorth?.(scenario.ctx as any, run.start as any) ?? run.start.wallet.money;
         const endWorth = scenario.model.netWorth?.(scenario.ctx as any, run.end as any) ?? run.end.wallet.money;
         const deltaLog = safeAbsLog10(E, endWorth.amount) - safeAbsLog10(E, startWorth.amount);
@@ -107,7 +108,7 @@ export const builtinObjectiveFactories: readonly ObjectiveFactory[] = [
           const endWorth = scenario.model.netWorth?.(scenario.ctx as any, run.end as any) ?? run.end.wallet.money;
           const reached = E.cmp(endWorth.amount, threshold) >= 0;
           if (!reached) return -(params.unreachedPenaltySec ?? 1_000_000_000);
-          return -(run.end.t - run.start.t);
+          return -runElapsedSec(run);
         },
       };
     },
@@ -130,7 +131,7 @@ export const builtinObjectiveFactories: readonly ObjectiveFactory[] = [
         id: "pacingBalancedLog10",
         score: ({ scenario, run }) => {
           const { E } = scenario.ctx;
-          const sec = Math.max(1, run.end.t - run.start.t);
+          const sec = Math.max(1, runElapsedSec(run));
           const hours = sec / 3600;
           const worth = scenario.model.netWorth?.(scenario.ctx as any, run.end as any) ?? run.end.wallet.money;
           const worthLog = safeAbsLog10(E, worth.amount);

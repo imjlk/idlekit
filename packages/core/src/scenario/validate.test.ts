@@ -294,3 +294,18 @@ describe("validateScenarioV1 clock stop conditions", () => {
     expect(out.issues.some((i) => i.path === "engine.version")).toBeTrue();
   });
 });
+
+describe("validateScenarioV1 initial.t", () => {
+  it.each([["0"], [Number.NaN], [Number.POSITIVE_INFINITY]])("rejects initial.t %p", (t) => {
+    const sc = { ...baseScenario(), initial: { ...baseScenario().initial, t } } as unknown as ScenarioV1;
+    const out = validateScenarioV1(sc);
+    expect(out.ok).toBeFalse();
+    expect(out.issues.some((i) => i.path === "initial.t")).toBeTrue();
+  });
+
+  // An empty YAML value is null, which compile reads as an absent t.
+  it.each([[0], [-5], [1e18], [null]])("accepts initial.t %p", (t) => {
+    const out = validateScenarioV1({ ...baseScenario(), initial: { ...baseScenario().initial, t } } as unknown as ScenarioV1);
+    expect(out.ok).toBeTrue();
+  });
+});

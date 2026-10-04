@@ -30,11 +30,22 @@ describe("effectiveRunHash", () => {
       const body = await readText(resolve(CLI_CWD, BASELINE));
       const copies = [resolve(dir, "one", "s.json"), resolve(dir, "two", "s.json")];
       for (const path of copies) await writeText(path, body);
-      const simulate = copies.map((path) =>
-        runCliJson(["simulate", path, "--duration", "10", "--format", "json"])._meta,
-      );
-      expect(simulate[1].seed).toBe(simulate[0].seed);
-      expect(simulate[1].effectiveRunHash).toBe(simulate[0].effectiveRunHash);
+      // The run id reads the stage digest, not the path, with or without --seed.
+      for (const command of [
+        (path: string) => ["simulate", path, "--duration", "10"],
+        (path: string) => ["simulate", path, "--duration", "10", "--seed", "1"],
+        (path: string) => ["experience", path, "--days", "1"],
+        (path: string) => ["ltv", path, "--horizons", "30m"],
+        (path: string) => ["compare", path, BASELINE, "--duration", "10"],
+      ]) {
+        const metas = copies.map((path) => runCliJson([...command(path), "--format", "json"])._meta);
+        expect(metas[1].seed).toBe(metas[0].seed);
+        expect(metas[1].runId).toBe(metas[0].runId);
+        expect(metas[1].effectiveRunHash).toBe(metas[0].effectiveRunHash);
+      }
+      const relative = runCliJson(["experience", BASELINE, "--days", "1", "--format", "json"])._meta;
+      const absolute = runCliJson(["experience", resolve(CLI_CWD, BASELINE), "--days", "1", "--format", "json"])._meta;
+      expect(absolute.runId).toBe(relative.runId);
 
       const evaluate = [];
       for (const [i, path] of copies.entries()) {
@@ -43,11 +54,26 @@ describe("effectiveRunHash", () => {
         evaluate.push(await readJson<any>(resolve(outDir, "summary.json")).then((x) => x._meta));
       }
       expect(evaluate[1].seed).toBe(evaluate[0].seed);
+      expect(evaluate[1].runId).toBe(evaluate[0].runId);
       expect(evaluate[1].effectiveRunHash).toBe(evaluate[0].effectiveRunHash);
+
+      // tune reads the baseline artifact it compares with, not where it lies.
+      const tune = await readText(resolve(CLI_CWD, "../../examples/tutorials/04-cafe-tune.json"));
+      const tuned = [];
+      for (const [i, path] of copies.entries()) {
+        const spec = resolve(dir, `tune${i}`, "tune.json");
+        await writeText(spec, tune);
+        const baseline = resolve(dir, `tune${i}`, "baseline.json");
+        if (i === 0) runCli(["tune", path, "--tune", spec, "--artifact-out", baseline, "--format", "json"]);
+        else await writeText(baseline, await readText(resolve(dir, "tune0", "baseline.json")));
+        tuned.push(runCliJson(["tune", path, "--tune", spec, "--baseline-artifact", baseline, "--format", "json"])._meta);
+      }
+      expect(tuned[1].seed).toBe(tuned[0].seed);
+      expect(tuned[1].runId).toBe(tuned[0].runId);
     } finally {
       await removePath(dir);
     }
-  });
+  }, 180000);
 
   it("hashes the resume state the run reads, not its save metadata", async () => {
     const dir = await createTempDir("idlekit-resume-hash");
@@ -314,4 +340,144 @@ describe("effectiveRunHash", () => {
       await removePath(dir);
     }
   }, 180000);
+
+  it("keeps the default seed and hash for every flag that repeats what runs", async () => {
+    const dir = await createTempDir("idlekit-identity-matrix");
+    try {
+      const body = JSON.parse(await readText(resolve(CLI_CWD, BASELINE)));
+      const write = async (name: string, value: unknown) => {
+        const path = resolve(dir, name);
+        await writeText(path, JSON.stringify(value));
+        return path;
+      };
+      const declared = await write("declared.json", {
+        ...body,
+        design: { sessionPattern: { id: "short-bursts", days: 1 } },
+        analysis: { ...body.analysis, experience: { draws: 2 } },
+        monetization: { uncertainty: { enabled: true, draws: 3 } },
+      });
+      const fast = await write("fast.json", { ...body, sim: { fast: true } });
+      // An hour step keeps the default 90d ltv horizons short.
+      const coarse = await write("coarse.json", { ...body, clock: { ...body.clock, stepSec: 3600 } });
+
+      let n = 0;
+      const meta = async (args: string[]) => {
+        if (args[0] !== "evaluate") return runCliJson([...args, "--format", "json"])._meta;
+        const outDir = resolve(dir, `evaluate${n++}`);
+        runCli([...args, "--out-dir", outDir]);
+        return readJson<any>(resolve(outDir, "summary.json")).then((x) => x._meta);
+      };
+      // Each `same` run spells out flags that repeat what `plain` runs. Each `other` run changes what
+      // runs. `seed: false` marks a change to what the run keeps or reports, or to one evaluate stage,
+      // which leaves the seed.
+      type Case = Readonly<{
+        plain: string[];
+        same: string[][];
+        other: Readonly<{ args: string[]; seed?: false }>[];
+      }>;
+      const cases: Case[] = [
+        {
+          plain: ["simulate", BASELINE],
+          same: [
+            [
+              "simulate", BASELINE, "--duration", "1200", "--step", "1", "--strategy", "greedy", "--engine", "number",
+              "--fast", "false", "--offline-seconds", "0", "--event-log-enabled", "true", "--run-id", "named",
+            ],
+          ],
+          other: [
+            { args: ["simulate", BASELINE, "--step", "2"] },
+            { args: ["simulate", BASELINE, "--event-log-max", "5"], seed: false },
+          ],
+        },
+        {
+          plain: ["experience", declared],
+          same: [
+            [
+              "experience", declared, "--session-pattern", "short-bursts", "--days", "1", "--draws", "2",
+              "--strategy", "greedy", "--engine", "number", "--run-id", "named",
+            ],
+          ],
+          other: [{ args: ["experience", declared, "--days", "2"] }],
+        },
+        {
+          plain: ["ltv", declared, "--horizons", "30m"],
+          same: [
+            [
+              "ltv", declared, "--horizons", " 30M,30m ", "--draws", "3", "--step", "1", "--strategy", "greedy",
+              "--engine", "number", "--fast", "false",
+            ],
+          ],
+          other: [{ args: ["ltv", declared, "--horizons", "30m", "--value-per-worth", "2"], seed: false }],
+        },
+        {
+          plain: ["ltv", coarse],
+          same: [["ltv", coarse, "--horizons", "90d,30d,7d,24h,2h,30m"]],
+          other: [],
+        },
+        {
+          plain: ["evaluate", declared, "--horizons", "30m"],
+          same: [
+            [
+              "evaluate", declared, "--horizons", "30m,30m", "--strategy", "greedy", "--engine", "number", "--step", "1",
+              "--fast", "false", "--consistent-overrides", "true", "--session-pattern", "short-bursts", "--days", "1",
+              "--draws", "2",
+            ],
+          ],
+          // Days change only the experience stage, so the shared seed stays.
+          other: [{ args: ["evaluate", declared, "--horizons", "30m", "--days", "2"], seed: false }],
+        },
+        {
+          plain: ["compare", BASELINE, fast, "--duration", "10"],
+          same: [
+            [
+              "compare", BASELINE, fast, "--duration", "10", "--metric", "endNetWorth", "--step", "1", "--strategy", "greedy",
+              "--max-duration", "86400",
+              // endNetWorth does not read session flags or the milestone key.
+              "--session-pattern", "twice-daily", "--days", "2", "--draws", "2", "--milestone-key", "x",
+            ],
+          ],
+          other: [{ args: ["compare", BASELINE, fast, "--duration", "10", "--metric", "endMoney"] }],
+        },
+        {
+          plain: ["compare", BASELINE, fast, "--duration", "10", "--metric", "visibleChangesPerMinute", "--days", "1"],
+          same: [
+            [
+              "compare", BASELINE, fast, "--duration", "10", "--metric", "visibleChangesPerMinute", "--days", "1",
+              "--session-pattern", "always-on", "--draws", "1",
+            ],
+          ],
+          other: [
+            {
+              args: [
+                "compare", BASELINE, fast, "--duration", "10", "--metric", "visibleChangesPerMinute", "--days", "1",
+                "--session-pattern", "twice-daily",
+              ],
+            },
+          ],
+        },
+      ];
+      for (const { plain, same, other } of cases) {
+        const base = await meta(plain);
+        for (const args of same) {
+          const flagged = await meta(args);
+          expect([args, flagged.seed, flagged.effectiveRunHash]).toEqual([args, base.seed, base.effectiveRunHash]);
+          // A named run keeps its name. Otherwise the run id reads the seed and the digest.
+          if (!args.includes("--run-id")) expect([args, flagged.runId]).toEqual([args, base.runId]);
+        }
+        for (const { args, seed } of other) {
+          const flagged = await meta(args);
+          if (seed === false) expect([args, flagged.seed]).toEqual([args, base.seed]);
+          else expect([args, flagged.seed]).not.toEqual([args, base.seed]);
+          // compare has no stage digest. Its run id reads the run it resolves.
+          if (base.effectiveRunHash !== undefined) {
+            expect([args, flagged.effectiveRunHash]).not.toEqual([args, base.effectiveRunHash]);
+          }
+          // The evaluate run id is the simulate stage's, which days do not change.
+          if (args[0] !== "evaluate") expect([args, flagged.runId]).not.toEqual([args, base.runId]);
+        }
+      }
+    } finally {
+      await removePath(dir);
+    }
+  }, 600000);
 });

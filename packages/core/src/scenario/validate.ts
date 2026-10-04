@@ -127,6 +127,11 @@ function validateInitialBlock(issues: StandardIssue[], input: Record<string, unk
       wallet,
     );
   }
+
+  // A string t concatenates on each tick, and a non-finite t cannot advance.
+  if (initial.t !== undefined && initial.t !== null && !isFiniteNumber(initial.t)) {
+    pushIssue(issues, "initial.t must be a finite number when provided", "initial.t", initial.t);
+  }
 }
 
 function validateClockBlock(issues: StandardIssue[], input: Record<string, unknown>): void {

@@ -41,6 +41,8 @@ export type SimStateJSON = Readonly<{
     cliVersion?: string;
     gitSha?: string;
     scenarioHash?: string;
+    /** Tick seconds accumulated by simulate, including earlier resumed runs. */
+    totalElapsedSec?: number;
   }>;
   strategy?: Readonly<{
     id: string;
@@ -80,6 +82,7 @@ const SimStateJSONSchema = z
         cliVersion: z.string().optional(),
         gitSha: z.string().optional(),
         scenarioHash: z.string().optional(),
+        totalElapsedSec: z.number().finite().nonnegative().optional(),
       })
       .passthrough()
       .optional(),
@@ -121,6 +124,8 @@ export function serializeSimState<N, U extends string, Vars>(
     cliVersion?: string;
     gitSha?: string;
     scenarioHash?: string;
+    /** Tick seconds accumulated by simulate, including earlier resumed runs. */
+    totalElapsedSec?: number;
     strategy?: {
       id: string;
       version?: number;
@@ -156,7 +161,8 @@ export function serializeSimState<N, U extends string, Vars>(
       meta?.seed !== undefined ||
       meta?.cliVersion ||
       meta?.gitSha ||
-      meta?.scenarioHash
+      meta?.scenarioHash ||
+      meta?.totalElapsedSec !== undefined
       ? {
           scenarioPath: meta.scenarioPath,
           savedAt: meta.savedAt,
@@ -165,6 +171,7 @@ export function serializeSimState<N, U extends string, Vars>(
           cliVersion: meta.cliVersion,
           gitSha: meta.gitSha,
           scenarioHash: meta.scenarioHash,
+          totalElapsedSec: meta.totalElapsedSec,
         }
       : undefined,
     strategy: meta?.strategy

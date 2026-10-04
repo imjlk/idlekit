@@ -5,8 +5,10 @@ import {
   createNumberEngine,
   deepClonePreservingPrototype,
   parseMoney,
+  runElapsedSec,
   runScenario,
   validateScenarioV1,
+  type ScenarioV1,
 } from "@idlekit/core";
 import { resolve } from "path";
 import { z } from "zod";
@@ -15,15 +17,16 @@ import { loadRegistriesFromFlags, pluginOptions } from "./_shared/plugin";
 import {
   collectExperienceSnapshot,
   comparableExperienceMetric,
+  resolveExperienceDraws,
   resolveExperienceQuantiles,
   resolveExperienceSeries,
   resolveSessionPatternId,
   resolveSessionPatternSpec,
   summarizeComparableExperienceMetric,
 } from "../lib/experience";
-import { strategySeedOption } from "../lib/runConfiguration";
+import { defaultRunSeed, pluginDigestValues, resolveStrategySelection } from "../lib/runConfiguration";
 import { scenarioInvalidError, unknownStrategyError, usageError } from "../errors";
-import { buildOutputMeta, deriveDeterministicRunId, deriveDeterministicSeed } from "../io/outputMeta";
+import { buildOutputMeta, deriveDeterministicRunId } from "../io/outputMeta";
 import { writeCommandReplayArtifact } from "../io/replayPolicy";
 import { readScenarioFile } from "../io/readScenario";
 import { writeOutput } from "../io/writeOutput";
@@ -104,6 +107,94 @@ function compileComparableScenario(args: {
   };
 }
 
+// The `--max-duration` default. The option keeps the literal for the generated CLI metadata.
+const DEFAULT_MAX_DURATION = 86400;
+
+type CompareFlags = Readonly<{
+  strategy?: string;
+  step?: number;
+  duration?: number;
+  fast: boolean;
+  metric?: CompareMetric;
+  bundle?: CompareBundle;
+  "target-worth"?: string;
+  "max-duration": number;
+  "milestone-key"?: string;
+  "session-pattern"?: string;
+  days?: number;
+  draws?: number;
+}>;
+
+function isDesignMetric(metric: CompareMetric): metric is "timeToMilestone" | "visibleChangesPerMinute" | "maxNoRewardGapSec" {
+  return metric === "timeToMilestone" || metric === "visibleChangesPerMinute" || metric === "maxNoRewardGapSec";
+}
+
+function compareMetrics(flags: CompareFlags): readonly CompareMetric[] {
+  return flags.bundle ? bundleMetrics(flags.bundle) : [flags.metric ?? "endNetWorth"];
+}
+
+function compareMilestoneKey(flags: CompareFlags): string | undefined {
+  return flags.bundle
+    ? (flags["milestone-key"] ?? (compareMetrics(flags).includes("timeToMilestone") ? "progress.first-upgrade" : undefined))
+    : flags["milestone-key"];
+}
+
+/**
+ * What a compare runs for each scenario and what it measures. A flag counts only where it changes
+ * the run: session flags only for a design metric, the milestone key only for timeToMilestone, and
+ * max duration only with a target worth.
+ */
+function compareIdentity(args: {
+  scenarios: Readonly<{ a: ScenarioV1; b: ScenarioV1 }>;
+  flags: CompareFlags;
+  loaded: Awaited<ReturnType<typeof loadRegistriesFromFlags>>;
+}): Record<string, unknown> {
+  const { flags } = args;
+  const metrics = compareMetrics(flags);
+  const design = metrics.some(isDesignMetric);
+  const side = (scenario: ScenarioV1) => {
+    const strategy = (() => {
+      try {
+        const selected = resolveStrategySelection({
+          scenario,
+          strategyRegistry: args.loaded.strategyRegistry,
+          overrideId: flags.strategy,
+        });
+        return { id: selected.id ?? null, params: selected.params ?? null };
+      } catch {
+        // A scenario strategy that does not resolve fails the run without an override.
+        return { unresolved: scenario.strategy?.id ?? null };
+      }
+    })();
+    return {
+      scenario,
+      strategy,
+      stepSec: flags.step ?? scenario.clock.stepSec,
+      durationSec: flags.duration ?? scenario.clock.durationSec ?? null,
+      fast: flags.fast || scenario.sim?.fast === true,
+      session: design
+        ? {
+            ...resolveSessionPatternSpec({
+              scenario,
+              sessionPatternId: resolveSessionPatternId(flags["session-pattern"]),
+              days: flags.days,
+            }),
+            draws: resolveExperienceDraws(scenario, flags.draws),
+          }
+        : null,
+    };
+  };
+  return {
+    a: side(args.scenarios.a),
+    b: side(args.scenarios.b),
+    pluginDigests: pluginDigestValues(args.loaded.pluginDigest),
+    metrics,
+    bundle: flags.bundle ?? null,
+    eta: flags["target-worth"] ? { targetWorth: flags["target-worth"], maxDuration: flags["max-duration"] } : null,
+    milestoneKey: metrics.includes("timeToMilestone") ? (compareMilestoneKey(flags) ?? null) : null,
+  };
+}
+
 function measureScenario(args: {
   compiled: ReturnType<typeof compileComparableScenario>;
   E: ReturnType<typeof createNumberEngine>;
@@ -140,7 +231,7 @@ function measureScenario(args: {
     });
 
     etaReached = reachedFn(etaRun.end);
-    etaSeconds = etaReached ? etaRun.end.t - etaRun.start.t : Number.POSITIVE_INFINITY;
+    etaSeconds = etaReached ? runElapsedSec(etaRun) : Number.POSITIVE_INFINITY;
   }
 
   return {
@@ -578,11 +669,8 @@ export default defineCommand({
     }
 
     const selectedMetric: CompareMetric | undefined = flags.bundle ? undefined : (flags.metric ?? "endNetWorth");
-    const selectedMetrics = flags.bundle ? bundleMetrics(flags.bundle) : [selectedMetric!];
-    const needsMilestone = selectedMetrics.includes("timeToMilestone");
-    const effectiveMilestoneKey = flags.bundle
-      ? (flags["milestone-key"] ?? (needsMilestone ? "progress.first-upgrade" : undefined))
-      : flags["milestone-key"];
+    const selectedMetrics = compareMetrics(flags);
+    const effectiveMilestoneKey = compareMilestoneKey(flags);
 
     if (selectedMetrics.includes("etaToTargetWorth") && !flags["target-worth"]) {
       throw usageError("metric=etaToTargetWorth requires --target-worth <NumStr>");
@@ -591,35 +679,31 @@ export default defineCommand({
       throw usageError("metric=timeToMilestone requires --milestone-key <key>");
     }
 
+    const scenarios = { a: aScenario, b: bScenario };
+    const identity = compareIdentity({ scenarios, flags, loaded });
     const effectiveSeed =
       flags.seed ??
-      deriveDeterministicSeed({
-        command: "compare",
-        scenarios: {
-          a: aScenario,
-          b: bScenario,
+      defaultRunSeed({
+        // The seed input of a run without flags.
+        base: {
+          command: "compare",
+          scenarios,
+          options: {
+            metric: "endNetWorth",
+            bundle: undefined,
+            duration: undefined,
+            step: undefined,
+            strategy: undefined,
+            fast: false,
+            targetWorth: undefined,
+            maxDuration: DEFAULT_MAX_DURATION,
+            sessionPattern: undefined,
+            days: undefined,
+            draws: undefined,
+            milestoneKey: undefined,
+          },
         },
-        options: {
-          metric: selectedMetric,
-          bundle: flags.bundle,
-          duration: flags.duration,
-          step: flags.step,
-          // An override that runs each scenario's own strategy leaves the no-flag seed.
-          strategy: [aScenario, bScenario].some(
-            (scenario) =>
-              strategySeedOption({ scenario, strategyRegistry: loaded.strategyRegistry, overrideId: flags.strategy })
-                .strategy !== undefined,
-          )
-            ? flags.strategy
-            : undefined,
-          fast: flags.fast,
-          targetWorth: flags["target-worth"],
-          maxDuration: flags["max-duration"],
-          sessionPattern: flags["session-pattern"],
-          days: flags.days,
-          draws: flags.draws,
-          milestoneKey: effectiveMilestoneKey,
-        },
+        runs: [{ identity, defaults: compareIdentity({ scenarios, flags: { fast: false, "max-duration": DEFAULT_MAX_DURATION }, loaded }) }],
       });
 
     const E = createNumberEngine();
@@ -700,12 +784,7 @@ export default defineCommand({
       deriveDeterministicRunId({
         command: "compare",
         seed,
-        scope: {
-          aPath: resolve(process.cwd(), aPath),
-          bPath: resolve(process.cwd(), bPath),
-          metric: selectedMetric,
-          bundle: flags.bundle,
-        },
+        scope: identity,
       });
     const outputMeta = buildOutputMeta({
       command: "compare",

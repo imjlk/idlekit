@@ -104,3 +104,4 @@ Built-in and documentation-facing milestone keys should use these conventions:
 - `system.*` for model-specific milestones
 
 If your plugin model emits milestones, keep those names stable so `compare --metric timeToMilestone --milestone-key ...` stays usable across scenario variants.
+A session keeps one set of 64 distinct milestone keys, `action.<id>.firstApplied` included, shared by its active and offline segments, so an earlier segment can use the set up before a later block starts. Past that the milestone report is `partial`, and a `--milestone-key` lookup fails instead of reading a dropped key as unreached. The first-milestone time stays valid when the report kept a sample, and fails when it kept none.

@@ -83,6 +83,17 @@ export function assertHorizonReached(run: Readonly<{ stop?: RunStop }>, label: s
   throw new Error(`${label} exceeded maxSteps (${run.stop.budgetSteps}) without meeting stop condition`);
 }
 
+/**
+ * Seconds the run simulated: the sum of tick dt from its stop record.
+ * At a large state.t a tick moves t by a rounded amount, so `end.t - start.t` is not a duration.
+ * A result without a stop record falls back to that difference.
+ */
+export function runElapsedSec(
+  run: Readonly<{ start: Readonly<{ t: number }>; end: Readonly<{ t: number }>; stop?: RunStop }>,
+): number {
+  return run.stop?.elapsedSec ?? run.end.t - run.start.t;
+}
+
 export type SimContext<N, U extends string, Vars> = Readonly<{
   E: Engine<N>;
   unit: Unit<U>;
@@ -309,6 +320,8 @@ export type RunResult<N, U extends string, Vars> = Readonly<{
   trace?: readonly SimState<N, U, Vars>[];
   actionsLog?: readonly {
     t: number;
+    /** Tick seconds before the action, relative to this run's start. */
+    elapsedSec?: number;
     actionId: string;
     label?: string;
     bulkSize?: number;

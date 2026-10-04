@@ -94,6 +94,36 @@ describe("simulate regression matrix", () => {
     }
   });
 
+  it("reports total and resumed elapsed time in tick seconds at a large start time", async () => {
+    const dir = await createTempDir("idlekit-sim-large-t");
+    try {
+      const baselineRaw = await readJson<any>(resolve(process.cwd(), BASELINE));
+      // At t 1e15 an ulp is 0.125, so ten 0.1 s ticks move t by 1.25.
+      const scenario = { ...baselineRaw, initial: { ...baselineRaw.initial, t: 1e15 } };
+      const scenarioPath = resolve(dir, "large-t.json");
+      await writeText(scenarioPath, `${JSON.stringify(scenario, null, 2)}\n`);
+      const statePath = resolve(dir, "state.json");
+      const out = runCliJson(["simulate", scenarioPath, "--duration", "1", "--step", "0.1", "--state-out", statePath, "--format", "json"]);
+      expect(out.durationSec).toBeCloseTo(1, 9);
+      expect(out.totalElapsedSec).toBeCloseTo(1, 9);
+      const resumed = runCliJson(["simulate", scenarioPath, "--resume", statePath, "--offline-seconds", "0.5", "--duration", "1", "--step", "0.1", "--format", "json"]);
+      expect(resumed.totalElapsedSec).toBeCloseTo(2.5, 9);
+      const savedResume = runCliJson(["simulate", scenarioPath, "--resume", statePath, "--duration", "1", "--step", "0.1", "--format", "json"]);
+      expect(savedResume.totalElapsedSec).toBeCloseTo(2, 9);
+      const legacy = await readJson<any>(statePath);
+      delete legacy.meta.totalElapsedSec;
+      await writeText(statePath, `${JSON.stringify(legacy)}\n`);
+      const legacyResume = runCliJson(["simulate", scenarioPath, "--resume", statePath, "--duration", "1", "--step", "0.1", "--format", "json"]);
+      expect(legacyResume.totalElapsedSec).toBeCloseTo(2.25, 9);
+      expect(legacyResume.run.seed).toBe(savedResume.run.seed);
+      expect(legacyResume._meta.effectiveRunHash).not.toBe(savedResume._meta.effectiveRunHash);
+      expect(legacyResume.run.id).not.toBe(savedResume.run.id);
+      expect(out.endT - out.startT).not.toBeCloseTo(1, 9);
+    } finally {
+      await removePath(dir);
+    }
+  }, 120000);
+
   it("keeps an offline reset as the cooldown anchor for the online run", async () => {
     const dir = await createTempDir("idlekit-sim-offline-anchor");
     try {

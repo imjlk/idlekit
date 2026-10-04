@@ -4,6 +4,7 @@ import {
   constraintsWithAnchor,
   deserializeSimState,
   parseSimStateJSON,
+  runElapsedSec,
   runScenario,
   serializeSimState,
   validateScenarioV1,
@@ -19,12 +20,12 @@ import {
   scenarioInvalidError,
   usageError,
 } from "../errors";
-import { buildOutputMeta, deriveDeterministicRunId, deriveDeterministicSeed, hashContent } from "../io/outputMeta";
+import { buildOutputMeta, deriveDeterministicRunId, hashContent } from "../io/outputMeta";
 import { printNextSteps } from "../io/nextSteps";
 import { writeCommandReplayArtifact } from "../io/replayPolicy";
 import { readScenarioFile } from "../io/readScenario";
 import { writeOutput } from "../io/writeOutput";
-import { engineSeedOption, prepareResolvedRun, strategySeedOption } from "../lib/runConfiguration";
+import { prepareResolvedRun } from "../lib/runConfiguration";
 import { readJsonFile, writeTextFile } from "../runtime/bun";
 
 const strategySchema = z.string().min(1).optional();
@@ -51,7 +52,7 @@ function assertResumeEngine(args: {
 }
 
 // Only what the run reads: deserializeSimState, the engine check, and restoreStrategyState.
-// meta and passthrough fields (path, savedAt, run id, versions) do not change the run.
+// Save metadata does not change the economy. The saved elapsed clock enters the report digest separately.
 function resumeHash(json: ReturnType<typeof parseSimStateJSON> | undefined): string | null {
   if (!json) return null;
   const { v, unit, t, wallet, maxMoneyEver, prestige, vars, strategy } = json;
@@ -168,36 +169,7 @@ export default defineCommand({
       : undefined;
 
     const resumeDigest = resumeHash(resumedJson);
-    const strategyId = flags.strategy ?? scenario.strategy?.id;
-    const deterministicSeed =
-      flags.seed ??
-      deriveDeterministicSeed({
-        command: "simulate",
-        scenario,
-        resumeHash: resumeDigest,
-        options: {
-          duration: flags.duration ?? scenario.clock.durationSec,
-          step: flags.step ?? scenario.clock.stepSec,
-          strategy: strategyId,
-          ...strategySeedOption({ scenario, strategyRegistry: loaded.strategyRegistry, overrideId: flags.strategy }),
-          // A --fast over a sim.fast scenario runs the scenario's fast mode, so it keeps the no-flag seed.
-          fast: flags.fast && !scenario.sim?.fast,
-          offlineSeconds: flags["offline-seconds"] ?? 0,
-          ...engineSeedOption(flags.engine),
-        },
-      });
-    const runId =
-      flags["run-id"] ??
-      deriveDeterministicRunId({
-        command: "simulate",
-        seed: deterministicSeed,
-        scope: {
-          scenarioPath: resolve(process.cwd(), scenarioPath),
-          resumeHash: resumeDigest,
-          strategyId,
-        },
-      });
-    const prepared = prepareResolvedRun({
+    const unseeded = prepareResolvedRun({
       scenario,
       modelRegistry: loaded.modelRegistry,
       strategyRegistry: loaded.strategyRegistry,
@@ -206,21 +178,64 @@ export default defineCommand({
       strategyOverride: flags.strategy,
       stepSec: flags.step,
       fast: flags.fast,
-      seed: deterministicSeed,
     });
-    assertResumeEngine({ engineId: prepared.engine.effectiveId, resumedJson });
+    assertResumeEngine({ engineId: unseeded.engine.effectiveId, resumedJson });
+    const durationSec = unseeded.definition.run.durationSec;
+    const stageInputs = {
+      durationSec: flags.duration ?? durationSec,
+      offlineSeconds: flags["offline-seconds"] ?? 0,
+      resumeHash: resumeDigest,
+    };
+    const deterministicSeed =
+      flags.seed ??
+      unseeded.defaultSeed(
+        // The seed input of a run without flags.
+        {
+          command: "simulate",
+          scenario,
+          resumeHash: null,
+          options: {
+            duration: scenario.clock.durationSec,
+            step: scenario.clock.stepSec,
+            strategy: scenario.strategy?.id,
+            fast: false,
+            offlineSeconds: 0,
+          },
+        },
+        [
+          {
+            stage: "simulate",
+            inputs: stageInputs,
+            defaults: { durationSec, offlineSeconds: 0, resumeHash: null },
+          },
+        ],
+      );
+    const prepared = unseeded.withSeed(deterministicSeed);
     const eventLog = resolveEventLog({
       defaultEventLog: prepared.definition.run.eventLog,
       eventLogEnabled: flags["event-log-enabled"],
       eventLogMax: flags["event-log-max"],
     });
-    const opened = prepared.open("simulate", `simulate:${runId}`, {
-      durationSec: flags.duration ?? prepared.definition.run.durationSec,
-      offlineSeconds: flags["offline-seconds"] ?? 0,
-      resumeHash: resumeDigest,
-      // Hash the event log the run keeps, so a flag that repeats it keeps the hash.
-      ...eventLogStageInputs(prepared.definition.run.eventLog, eventLog),
-    });
+    const priorElapsedSec = resumedJson
+      ? resumedJson.meta?.totalElapsedSec ?? resumedJson.t - prepared.definition.initial.t
+      : 0;
+    // Retention and the saved elapsed clock affect the report, not the simulation seed.
+    const opened = prepared.open(
+      "simulate",
+      `simulate:${deterministicSeed}`,
+      stageInputs,
+      {
+        ...eventLogStageInputs(prepared.definition.run.eventLog, eventLog),
+        ...(resumedJson ? { priorElapsedSec } : {}),
+      },
+    );
+    const runId =
+      flags["run-id"] ??
+      deriveDeterministicRunId({
+        command: "simulate",
+        seed: deterministicSeed,
+        scope: { effectiveRunHash: opened.hash },
+      });
     const E = prepared.engine.engine as typeof prepared.definition.ctx.E;
     const strategy = opened.scenario.strategy;
     restoreStrategyState({
@@ -294,7 +309,7 @@ export default defineCommand({
 
     const run = runScenario(effectiveScenario);
     const netWorth = effectiveScenario.model.netWorth?.(effectiveScenario.ctx, run.end) ?? run.end.wallet.money;
-    const totalElapsedSec = run.end.t - prepared.definition.initial.t;
+    const totalElapsedSec = priorElapsedSec + (offlineRun ? runElapsedSec(offlineRun) : 0) + runElapsedSec(run);
     const stateOutPath = flags["state-out"] ? resolve(process.cwd(), flags["state-out"]) : undefined;
     const seed = deterministicSeed;
     const offlineEndWorth =
@@ -312,6 +327,7 @@ export default defineCommand({
         cliVersion: outputMeta.cliVersion,
         gitSha: outputMeta.gitSha,
         scenarioHash: typeof outputMeta.scenarioHash === "string" ? outputMeta.scenarioHash : undefined,
+        totalElapsedSec,
         strategy: strategy
           ? {
               id: strategy.id,
@@ -334,7 +350,7 @@ export default defineCommand({
       scenario: scenarioPath,
       startT: run.start.t,
       endT: run.end.t,
-      durationSec: run.end.t - run.start.t,
+      durationSec: runElapsedSec(run),
       totalElapsedSec,
       resumedFrom: flags.resume,
       stateOut: stateOutPath,

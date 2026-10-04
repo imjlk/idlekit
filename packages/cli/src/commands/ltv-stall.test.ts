@@ -61,7 +61,7 @@ describe("ltv prestige cooldown", () => {
     // The reset at 0 cools until 100, so the 60s segment start stays blocked.
     runLtvAnalysis({
       scenario,
-      scenarioPath: "ltv-anchor.json",
+      effectiveRunHash: "ltv-anchor.json",
       compiled,
       strategy: compiled.strategy,
       horizonsRaw: "60s,90s",
@@ -93,8 +93,52 @@ describe("ltv step budget", () => {
       run: { stepSec: 1, maxSteps: 5 },
     };
     const analyze = (horizonsRaw: string) =>
-      runLtvAnalysis({ scenario, scenarioPath: "ltv-budget.json", compiled, strategy: undefined, horizonsRaw, fast: false, seed: 1 });
+      runLtvAnalysis({ scenario, effectiveRunHash: "ltv-budget.json", compiled, strategy: undefined, horizonsRaw, fast: false, seed: 1 });
     expect(() => analyze("60s")).toThrow(/ltv 60s exceeded maxSteps \(5\)/);
     expect(() => analyze("5s")).not.toThrow();
+  });
+});
+
+describe("ltv first upgrade time", () => {
+  it.each([0, 1_700_000_000, 1e15])("counts tick seconds from the analysis start at t=%p", async (t0) => {
+    const scenario = await Bun.file(resolve(process.cwd(), "../../examples/tutorials/01-cafe-baseline.json")).json();
+    const upgrade: Action<number, string, Record<string, unknown>> = {
+      id: "upgrade.cup",
+      kind: "custom",
+      canApply: () => true,
+      cost: () => null,
+      apply: (_ctx, current) => current,
+    };
+    let decisions = 0;
+    const compiled: CompiledScenario<number, string, Record<string, unknown>> = {
+      ctx: { E: createNumberEngine(), unit: { code: "COIN" }, tickPolicy: { mode: "drop" }, stepSec: 0.1 },
+      model: {
+        id: "ltv-first-upgrade",
+        version: 1,
+        income: () => ({ unit: { code: "COIN" }, amount: 1 }),
+        actions: () => [upgrade],
+      },
+      initial: {
+        t: t0,
+        wallet: { money: { unit: { code: "COIN" }, amount: 0 }, bucket: 0 },
+        maxMoneyEver: { unit: { code: "COIN" }, amount: 0 },
+        prestige: { count: 0, points: 0, multiplier: 1 },
+        vars: {},
+      },
+      run: { stepSec: 0.1 },
+      // Buys once, on the fourth tick, in the second horizon segment.
+      strategy: { id: "late-buy", decide: () => (decisions++ === 3 ? [{ action: upgrade }] : []) },
+    };
+    const out = runLtvAnalysis({
+      scenario,
+      effectiveRunHash: "ltv-first-upgrade.json",
+      compiled,
+      strategy: compiled.strategy,
+      horizonsRaw: "0.2s,1s",
+      fast: false,
+      seed: 1,
+    });
+    expect(out.horizons[0]?.guardrails.timeToFirstUpgradeSec).toBeNull();
+    expect(out.horizons[1]?.guardrails.timeToFirstUpgradeSec).toBeCloseTo(0.3, 9);
   });
 });

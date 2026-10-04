@@ -11,7 +11,7 @@ import type { CompiledScenario, Model, ScenarioConstraints, SimContext, SimRunOp
  * `previewStream` is the other stream. Restoring one over the other throws.
  *
  * @evidence docs/requirements/active/run-lifecycle-isolation.md#req-pr03-run-lifecycle-isolation A fresh trial derives this stream from the logical trial id. Preview is not this stream.
- * @evidenceReview docs/requirements/active/run-lifecycle-isolation.md#req-pr03-run-lifecycle-isolation #77c8f51 Re-read the section: this is the committed stream, derived from the logical trial id.
+ * @evidenceReview docs/requirements/active/run-lifecycle-isolation.md#req-pr03-run-lifecycle-isolation #9117b0d Re-read the section: this is the committed stream, derived from the logical trial id.
  */
 export const executionStream = "execution" as const;
 
@@ -20,7 +20,7 @@ export const executionStream = "execution" as const;
  * It is not restored onto `executionStream`.
  *
  * @evidence docs/requirements/active/run-lifecycle-isolation.md#req-pr03-run-lifecycle-isolation Preview uses this stream. A committed step does not advance it.
- * @evidenceReview docs/requirements/active/run-lifecycle-isolation.md#req-pr03-run-lifecycle-isolation #77c8f51 Re-read the section: preview is a separate stream and is not restored onto execution.
+ * @evidenceReview docs/requirements/active/run-lifecycle-isolation.md#req-pr03-run-lifecycle-isolation #9117b0d Re-read the section: preview is a separate stream and is not restored onto execution.
  */
 export const previewStream = "preview" as const;
 
@@ -173,8 +173,11 @@ export class RunIsolationError extends Error {
 const isolationMessage =
   "Run isolation is unavailable. Deep-cloning a function closure is not isolation. Pass a ModelFactory or StrategyFactory, or implement snapshotState and restoreState.";
 
+const modelResumeMessage =
+  "Resume cannot restore a stateful model closure. A checkpoint holds no model state. Keep that state in SimState vars, or continue the run.";
+
 const supersededMessage =
-  "This run shares a snapshot-backed strategy with a later run from the same binding, or the binding was released. Finish one run before opening the next, or pass a StrategyFactory for overlapping runs.";
+  "This run shares a snapshot-backed strategy with a later run, or its binding was released. Finish one run before opening the next, or pass a StrategyFactory for overlapping runs.";
 
 /** Copy state, including `vars`, without sharing the caller's objects. Prototypes stay intact. */
 export function cloneRunState<N, U extends string, Vars>(state: SimState<N, U, Vars>): SimState<N, U, Vars> {
@@ -306,10 +309,22 @@ function assertTrialId(trialId: string): void {
   if (typeof trialId !== "string" || trialId.length === 0) throw new Error("trial id must be non-empty");
 }
 
+/**
+ * Cursor ownership of one shared snapshot strategy, across every binding of that object.
+ * `initial` is the bind snapshot of the binding whose run holds the cursor.
+ */
+type SharedCursor = { owner?: symbol; holder?: object; initial?: unknown };
+
+const sharedCursors = new WeakMap<object, SharedCursor>();
+
+/** Run token and shared strategy behind each guard, so continue works from any binding. */
+const guardTokens = new WeakMap<object, Readonly<{ shared: object; token: symbol }>>();
+
 type StrategyHold<N, U extends string, Vars> = Readonly<{
   kind: "none" | "stateless" | "snapshot" | "factory";
   shared?: Strategy<N, U, Vars>;
   initialState?: unknown;
+  cursor?: SharedCursor;
   factory?: Readonly<{ factory: StrategyFactory; params: unknown }>;
 }>;
 
@@ -354,10 +369,14 @@ function strategyHold<N, U extends string, Vars>(
   const hasSnapshot = typeof strategy.snapshotState === "function";
   const hasRestore = typeof strategy.restoreState === "function";
   if (hasSnapshot && hasRestore) {
+    let cursor = sharedCursors.get(strategy);
+    if (!cursor) sharedCursors.set(strategy, (cursor = {}));
+    // A run of another binding may hold the cursor. Start from that binding's snapshot, not the live cursor.
     return {
       kind: "snapshot",
       shared: strategy,
-      initialState: deepClonePreservingPrototype(strategy.snapshotState?.()),
+      cursor,
+      initialState: cursor.owner !== undefined ? cursor.initial : deepClonePreservingPrototype(strategy.snapshotState?.()),
     };
   }
   if (options?.statefulStrategy) throw isolationError();
@@ -454,18 +473,48 @@ function guardStrategy<N, U extends string, Vars>(
   return guard;
 }
 
-/** Restore checkpoint bytes only into the strategy id and state version that wrote them. */
-function restoreCheckpointStrategy<N, U extends string, Vars>(
+const strategyLabel = (id: string, version: number | undefined) => (version === undefined ? id : `${id}@${version}`);
+
+/**
+ * The checkpoint entry resume restores into `strategy`, checked before anything moves.
+ * Only the strategy id and state version that wrote an entry take it. A snapshot pair needs an entry,
+ * and a closure marked stateful without a pair cannot be resumed.
+ */
+function checkpointStrategyFor<N, U extends string, Vars>(
   strategy: Strategy<N, U, Vars>,
-  saved: NonNullable<RunCheckpoint["strategy"]>,
-): void {
+  saved: RunCheckpoint["strategy"],
+  stateful: boolean,
+): RunCheckpoint["strategy"] {
+  if (!saved) {
+    if (typeof strategy.snapshotState === "function" && typeof strategy.restoreState === "function") {
+      throw new RunIsolationError(
+        `Resume checkpoint has no strategy state for the run strategy ${strategyLabel(strategy.id, strategy.stateVersion)}, which has snapshotState and restoreState. Another strategy or none wrote that checkpoint.`,
+      );
+    }
+    if (stateful) throw isolationError();
+    return undefined;
+  }
   if (saved.id !== strategy.id || saved.stateVersion !== strategy.stateVersion) {
-    const label = (id: string, version: number | undefined) => (version === undefined ? id : `${id}@${version}`);
     throw new RunIsolationError(
-      `Resume checkpoint strategy ${label(saved.id, saved.stateVersion)} does not match the run strategy ${label(strategy.id, strategy.stateVersion)}. Restoring another strategy's state is not isolation.`,
+      `Resume checkpoint strategy ${strategyLabel(saved.id, saved.stateVersion)} does not match the run strategy ${strategyLabel(strategy.id, strategy.stateVersion)}. Restoring another strategy's state is not isolation.`,
     );
   }
-  restoreStrategy(strategy, saved.state);
+  if (!strategy.restoreState) throw isolationError();
+  return saved;
+}
+
+/** A new factory instance for fresh and resume. Resume restores the checkpoint entry into it. */
+function openFactoryStrategy<N, U extends string, Vars>(
+  source: StrategySource,
+  checkpoint: RunCheckpoint | undefined,
+  stateful: boolean,
+): Strategy<N, U, Vars> {
+  const created = createStrategy<N, U, Vars>(source.factory, source.params);
+  if (checkpoint) {
+    const saved = checkpointStrategyFor(created, checkpoint.strategy, stateful);
+    if (saved) restoreStrategy(created, saved.state);
+  }
+  return created;
 }
 
 /**
@@ -473,7 +522,7 @@ function restoreCheckpointStrategy<N, U extends string, Vars>(
  * This function does not read CLI flags or plugin files.
  *
  * @evidence docs/requirements/active/run-lifecycle-isolation.md#req-pr03-run-lifecycle-isolation Fresh trials do not share strategy cursors, model closures, or initial vars. Continue keeps the cursor. Resume uses snapshotState.
- * @evidenceReview docs/requirements/active/run-lifecycle-isolation.md#req-pr03-run-lifecycle-isolation #77c8f51 Re-read the section: fresh trials restore or rebuild strategy state, continue keeps the cursor of the same factory and params (a factory strategy without a snapshot pair keeps its instance; another factory or params, or a bound snapshot strategy after another strategy, starts fresh), a later run or release supersedes the run that held a shared snapshot strategy so its hooks, checkpoint, and continue throw, plan strategy params are checked like bound params, params marked validated reach create without a second check, and a marked closure without a factory throws.
+ * @evidenceReview docs/requirements/active/run-lifecycle-isolation.md#req-pr03-run-lifecycle-isolation #9117b0d Re-read the section: fresh trials restore or rebuild strategy state, continue keeps the cursor of the same factory and params (a factory strategy without a snapshot pair keeps its instance; another factory or params, or a bound snapshot strategy after another strategy, starts fresh), a later run of any binding of a shared snapshot strategy, or release, supersedes the run that held it so its hooks, checkpoint, and continue throw, a binding opened while another binding's run holds that cursor takes that binding's snapshot, continue carries the cursor from a run of another binding, release leaves a cursor another binding's run holds, resume checks the checkpoint before any run gives up the cursor and throws when a snapshot pair has no entry or a closure marked stateful (a factory strategy without a pair, or a factory model) cannot be rebuilt, plan strategy params are checked like bound params, params marked validated reach create without a second check, and a marked closure without a factory throws.
  */
 export function createRunFactory(deps?: RunFactoryDeps): RunFactory {
   const registries = deps ?? {};
@@ -485,22 +534,25 @@ export function createRunFactory(deps?: RunFactoryDeps): RunFactory {
       const strategies = strategyHold(scenario, options, registries);
       const definitionInitial = cloneRunState(scenario.initial);
 
-      // Runs on the shared snapshot strategy hold a guard. Only the latest one owns the cursor.
-      const guards = new WeakMap<object, symbol>();
-      let owner: symbol | undefined;
+      // Runs on the shared snapshot strategy hold a guard. Only the latest run of any binding owns the cursor.
+      const self = {};
+      const cursor: SharedCursor = strategies.cursor ?? {};
       const guardShared = (shared: Strategy<N, U, Vars>): Strategy<N, U, Vars> => {
         const token = Symbol("run");
-        owner = token;
-        const guard = guardStrategy(shared, () => owner === token);
-        guards.set(guard, token);
+        cursor.owner = token;
+        cursor.holder = self;
+        cursor.initial = strategies.initialState;
+        const guard = guardStrategy(shared, () => cursor.owner === token);
+        guardTokens.set(guard, { shared, token });
         return guard;
       };
 
+      // A binding whose runs lost the cursor to another binding leaves it with that holder.
       const release = () => {
-        if (strategies.kind === "snapshot" && strategies.shared) {
-          owner = undefined;
-          restoreStrategy(strategies.shared, strategies.initialState);
-        }
+        if (strategies.kind !== "snapshot" || !strategies.shared) return;
+        if (cursor.owner !== undefined && cursor.holder !== self) return;
+        cursor.owner = undefined;
+        restoreStrategy(strategies.shared, strategies.initialState);
       };
 
       const open = (
@@ -622,32 +674,30 @@ export function createRunFactory(deps?: RunFactoryDeps): RunFactory {
         previous: Strategy<N, U, Vars> | undefined,
         checkpoint: RunCheckpoint | undefined,
       ): Strategy<N, U, Vars> | undefined => {
+        const stateful = options?.statefulStrategy === true;
+        const resumeFrom = mode === "resume" ? checkpoint : undefined;
         const fromPlan = planStrategy(plan, registries);
         if (fromPlan) {
           if (mode === "continue") return continueStrategy(fromPlan, previous);
-          const created = createStrategy<N, U, Vars>(fromPlan.factory, fromPlan.params);
-          if (mode === "resume" && checkpoint?.strategy) restoreCheckpointStrategy(created, checkpoint.strategy);
-          return created;
+          return openFactoryStrategy(fromPlan, resumeFrom, stateful);
         }
         if (strategies.kind === "factory" && strategies.factory) {
           if (mode === "continue") return continueStrategy(strategies.factory, previous);
-          const created = createStrategy<N, U, Vars>(strategies.factory.factory, strategies.factory.params);
-          if (mode === "resume" && checkpoint?.strategy) restoreCheckpointStrategy(created, checkpoint.strategy);
-          return created;
+          return openFactoryStrategy(strategies.factory, resumeFrom, stateful);
         }
         if (strategies.kind === "snapshot" && strategies.shared) {
           // Only the run that owns the cursor hands it on. A continue from another strategy is a
-          // changed source and starts from the bind snapshot. Any new run supersedes the owner.
-          const carried = mode === "continue" && previous !== undefined ? guards.get(previous) : undefined;
-          if (carried !== undefined && carried !== owner) throw new RunIsolationError(supersededMessage);
-          owner = undefined;
+          // changed source and starts from the bind snapshot. Any new run supersedes the owner,
+          // after the checks, so a refused open leaves the live run its cursor.
+          const guarded = mode === "continue" && previous !== undefined ? guardTokens.get(previous) : undefined;
+          const carried = guarded?.shared === strategies.shared ? guarded.token : undefined;
+          if (carried !== undefined && carried !== cursor.owner) throw new RunIsolationError(supersededMessage);
+          const saved = resumeFrom ? checkpointStrategyFor(strategies.shared, resumeFrom.strategy, stateful) : undefined;
+          cursor.owner = undefined;
           if (mode === "fresh" || (mode === "continue" && carried === undefined)) {
             restoreStrategy(strategies.shared, strategies.initialState);
           }
-          if (mode === "resume") {
-            if (!checkpoint?.strategy) throw new Error("resume checkpoint is missing strategy state");
-            restoreCheckpointStrategy(strategies.shared, checkpoint.strategy);
-          }
+          if (saved) restoreStrategy(strategies.shared, saved.state);
           return guardShared(strategies.shared);
         }
         if (mode === "resume" && checkpoint?.strategy) throw isolationError();
@@ -696,6 +746,8 @@ export function createRunFactory(deps?: RunFactoryDeps): RunFactory {
           if (args.checkpoint.contract !== "idlekit.run-checkpoint" || args.checkpoint.version !== 1) {
             throw new Error("RunCheckpoint contract must be idlekit.run-checkpoint version 1");
           }
+          // A factory model starts new, so a closure marked stateful would lose its state.
+          if (options?.statefulModel) throw new RunIsolationError(modelResumeMessage);
           const execution = createStreamRng(executionStream, args.checkpoint.streams.execution.seed);
           execution.restore(args.checkpoint.streams.execution);
           const preview = createStreamRng(previewStream, args.checkpoint.streams.preview.seed);

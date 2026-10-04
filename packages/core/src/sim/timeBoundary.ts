@@ -70,8 +70,12 @@ export function nextBoundary(clock: BoundaryClock): BoundaryDecision {
 
 export function assertSimulationClock(
   label: string,
-  clock: Readonly<{ stepSec: number; durationSec?: number; maxSteps?: number }>,
+  clock: Readonly<{ stepSec: number; durationSec?: number; maxSteps?: number; startT?: unknown }>,
 ): void {
+  // Checked before the first stop decision, so a run that never ticks cannot return a bad start time.
+  if ("startT" in clock && (typeof clock.startT !== "number" || !Number.isFinite(clock.startT))) {
+    throw new Error(`${label} state.t must be a finite number (start t: ${String(clock.startT)})`);
+  }
   if (!Number.isFinite(clock.stepSec) || !(clock.stepSec > 0)) {
     throw new Error(`${label} stepSec must be a finite number > 0 (received: ${clock.stepSec})`);
   }
@@ -94,7 +98,7 @@ export function assertSimulationClock(
 }
 
 /**
- * A committed tick must move state.t, or `end.t - start.t` and event times freeze while income is paid.
+ * A committed tick must move a finite state.t, or `end.t - start.t` and event times freeze while income is paid.
  * A last partial tick below half an ulp of t may leave t alone when a whole step still moves it and an
  * earlier tick of the run already moved t past `runStartT`.
  */
@@ -106,6 +110,10 @@ export function assertTickAdvanced(
   stepSec: number,
   runStartT: number,
 ): void {
+  // A string t would concatenate and still compare as larger.
+  if (typeof t0 !== "number" || !Number.isFinite(t0) || typeof t1 !== "number" || !Number.isFinite(t1)) {
+    throw new Error(`${label} state.t must be a finite number (start t: ${String(t0)}, committed t: ${String(t1)})`);
+  }
   if (t1 > t0) return;
   if (dt < stepSec && t0 > runStartT && t0 + dt === t0 && t0 + stepSec > t0) return;
   throw new Error(

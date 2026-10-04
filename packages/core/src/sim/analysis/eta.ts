@@ -1,5 +1,5 @@
 import { runScenario } from "../simulator";
-import { assertHorizonReached, type CompiledScenario, type RunResult } from "../types";
+import { assertHorizonReached, runElapsedSec, type CompiledScenario, type RunResult } from "../types";
 import { parseMoney } from "../../notation/parseMoney";
 
 export type ETATarget = Readonly<
@@ -74,11 +74,21 @@ export function etaSimulate<N, U extends string, Vars>(args: {
 
   return {
     reached,
-    seconds: reached ? run.end.t - run.start.t : args.maxDurationSec,
+    seconds: reached ? runElapsedSec(run) : args.maxDurationSec,
     mode: "simulate",
     confidence: "high",
     assumptions: ["Direct simulation over maxDurationSec"],
     run: args.includeRun ? run : undefined,
+  };
+}
+
+function analyticUnavailable(reason: string): ETAResult {
+  return {
+    reached: false,
+    seconds: Number.POSITIVE_INFINITY,
+    mode: "analytic",
+    confidence: "low",
+    assumptions: [reason],
   };
 }
 
@@ -94,8 +104,15 @@ export function etaAnalytic<N, U extends string, Vars>(args: {
     .amount;
   const rate = scenario.model.income(scenario.ctx, scenario.initial).amount;
 
-  const threshold = E.from(args.target.value);
+  // Same notation as etaSimulate. `E.from("1aa")` is NaN, and cmp reads NaN as already reached.
+  const threshold = parseMoney(E, args.target.value, {
+    unit: scenario.ctx.unit,
+    suffix: { kind: "alphaInfinite", minLen: 2 },
+  }).amount;
   const current = args.target.kind === "money" ? currMoney : currWorth;
+  if (!E.isFinite(current) || !E.isFinite(threshold)) {
+    return analyticUnavailable("Current or target amount is not finite; analytic estimate unavailable");
+  }
 
   if (E.cmp(current, threshold) >= 0) {
     return {
@@ -108,24 +125,24 @@ export function etaAnalytic<N, U extends string, Vars>(args: {
   }
 
   const r = E.toNumber(rate);
+  if (!Number.isFinite(r)) {
+    return analyticUnavailable("Initial income is not finite; analytic estimate unavailable");
+  }
   if (!(r > 0)) {
-    return {
-      reached: false,
-      seconds: Number.POSITIVE_INFINITY,
-      mode: "analytic",
-      confidence: "low",
-      assumptions: ["Non-positive initial income; analytic estimate unavailable"],
-    };
+    return analyticUnavailable("Non-positive initial income; analytic estimate unavailable");
   }
 
   const diff = E.toNumber(E.sub(threshold, current));
   const seconds = Math.max(0, diff / r);
+  if (!Number.isFinite(seconds)) {
+    return analyticUnavailable("Remaining amount does not fit a finite number; analytic estimate unavailable");
+  }
 
   const hint = scenario.model.analytic?.(scenario.ctx, scenario.initial);
   const confidence = hint?.incomeKind === "constant" ? "high" : "medium";
 
   return {
-    reached: Number.isFinite(seconds),
+    reached: true,
     seconds,
     mode: "analytic",
     confidence,

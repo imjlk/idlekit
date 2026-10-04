@@ -7,6 +7,7 @@ import {
 import { z } from "zod";
 import {
   collectExperienceSnapshot,
+  firstMilestoneTime,
   milestoneTime,
   resolveExperienceDraws,
   resolveExperienceQuantiles,
@@ -102,7 +103,7 @@ function evaluateMilestoneTime<N, U extends string, Vars>(args: {
     if (milestoneKey) {
       return milestoneTime(snapshot.milestones, milestoneKey) ?? Number.POSITIVE_INFINITY;
     }
-    return snapshot.milestones.firstMilestoneSec ?? Number.POSITIVE_INFINITY;
+    return firstMilestoneTime(snapshot.milestones) ?? Number.POSITIVE_INFINITY;
   };
 
   if (draws <= 1) {

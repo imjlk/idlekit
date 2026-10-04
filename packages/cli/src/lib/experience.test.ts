@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { createNumberEngine, simulateSessionPattern, type CompiledScenario, type SimState } from "@idlekit/core";
-import { analyzePerceivedProgression, collectExperienceSnapshot } from "./experience";
+import { analyzePerceivedProgression, collectExperienceSnapshot, comparableExperienceMetric, firstMilestoneTime } from "./experience";
+import { designObjectiveFactories } from "./designObjectives";
 
 type Vars = { bought: number };
 
@@ -99,6 +100,61 @@ describe("snapshotFromSession", () => {
     expect(analyzePerceivedProgression({ scenario: capped, session, series: "money" }).activeSeconds).toBe(3600);
     expect(() => collectExperienceSnapshot({ scenario: capped, sessionPattern: pattern, seed: 1 })).toThrow(
       "session growth needs the whole session trace",
+    );
+  });
+});
+
+describe("milestone times under the sample cap", () => {
+  // 70 distinct actions, one bought per tick, pass the default cap of 64 milestone keys in one block.
+  function manyActions(): CompiledScenario<number, "COIN", Vars> {
+    const base = scenario();
+    const actions = Array.from({ length: 70 }, (_, i) => ({
+      id: `a${i}`,
+      kind: "buy" as const,
+      canApply: () => true,
+      cost: () => null,
+      apply: (_ctx: unknown, state: SimState<number, "COIN", Vars>) => state,
+    }));
+    return {
+      ...base,
+      model: { ...base.model, actions: () => actions },
+      strategy: {
+        id: "one-per-tick",
+        decide: (_ctx, _model, state) => {
+          const action = actions[Math.round(state.t / 60)];
+          return action ? [{ action }] : [];
+        },
+      },
+      run: { stepSec: 60, durationSec: 60 },
+    };
+  }
+  const pattern = { id: "always-on" as const, days: 1 };
+
+  it("does not read a dropped key as unreached", () => {
+    const { snapshot } = collectExperienceSnapshot({ scenario: manyActions(), sessionPattern: pattern, seed: 1 });
+    expect(snapshot.milestones.coverage).toBe("partial");
+    for (const milestoneKey of ["action.a69.firstApplied", "action.a0.firstApplied", "never.seen"]) {
+      expect(() =>
+        comparableExperienceMetric({ snapshot, metric: "timeToMilestone", milestoneKey, fallbackValue: 86401 }),
+      ).toThrow(`time to milestone ${milestoneKey} needs a complete milestone report; this one is partial`);
+    }
+    // The cap keeps the earliest keys, so the first milestone is still known.
+    expect(comparableExperienceMetric({ snapshot, metric: "timeToMilestone", fallbackValue: 86401 })).toBe(0);
+  });
+
+  it("does not read a partial report with no sample as unreached", () => {
+    expect(() => firstMilestoneTime({ milestones: [], coverage: "partial" })).toThrow(
+      "time to the first milestone is unknown; this partial report kept no milestone sample",
+    );
+    expect(firstMilestoneTime({ milestones: [], firstMilestoneSec: 3, coverage: "partial" })).toBe(3);
+    expect(firstMilestoneTime({ milestones: [], coverage: "complete" })).toBeUndefined();
+  });
+
+  it("does not score a dropped key as the unreached penalty", () => {
+    const factory = designObjectiveFactories.find((entry) => entry.id === "timeToMilestoneNegSec")!;
+    const objective = factory.create({ sessionPattern: "always-on", days: 1, milestoneKey: "action.a69.firstApplied" });
+    expect(() => objective.score({ scenario: manyActions(), run: undefined as never })).toThrow(
+      "time to milestone action.a69.firstApplied needs a complete milestone report",
     );
   });
 });

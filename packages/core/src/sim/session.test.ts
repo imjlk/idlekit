@@ -181,13 +181,13 @@ function runPattern(
 
 /**
  * @evidence docs/requirements/active/session-clock.md#req-pr06-session-clock Runs the 12-hour cap, the 24-hour horizon, offline policies, schedule rejection, and an early stop.
- * @evidenceReview docs/requirements/active/session-clock.md#req-pr06-session-clock #3c24d94 Re-read the section, then ran this function: 12 hours away credits 1 hour, the one-day horizon stays 86400, policy none does not move the scripted cursor, maxSteps 2 ends each active block as budget while the session reaches the horizon, the next offline gap starts at the planned block end, and an always-on session cut by maxSteps has no offline time for a reject policy to refuse.
+ * @evidenceReview docs/requirements/active/session-clock.md#req-pr06-session-clock #6fee79f Re-read the section, including the until-copy sentence that the session until copy test covers, then ran this function: 12 hours away credits 1 hour, the one-day horizon stays 86400, policy none does not move the scripted cursor, maxSteps 2 ends each active block as budget while the session reaches the horizon, the next offline gap starts at the planned block end, and an always-on session cut by maxSteps has no offline time for a reject policy to refuse.
  * @evidence ./session.ts#sessionClockContract Reads the session clock contract and checks wall elapsed against reward time.
  * @evidenceReview ./session.ts#sessionClockContract #bd7e206 The declaration is idlekit.session-clock. This test reads that property and expects a capped gap to keep those clocks apart.
  * @evidence ./session.ts#assertSessionSchedule An empty schedule, a negative offset, a negative duration, and overlapping blocks throw, and a 12-hour offset block starts on wall time 43200.
  * @evidenceReview ./session.ts#assertSessionSchedule #86f2edc Re-read assertSessionSchedule: days must be a positive integer, the list must be non-empty, each day an integer >= 0, each offset finite and >= 0, each duration finite and > 0, no block may end past the horizon, and sorted blocks may not overlap. Ran this function: the empty, negative offset, negative duration, and overlap cases threw those messages, and the 12-hour block ran after a 43200s offline segment.
  * @evidence ./session.ts#simulateSessionPattern A 12-hour gap with a 1-hour cap stays elapsed 43200 and credited 3600, presets keep the 86400 horizon, until and goals stop before the next block, and maxSteps cuts each active block without ending the session.
- * @evidenceReview ./session.ts#simulateSessionPattern #487f9f5 Re-read simulateSessionPattern: it rejects a non-integer trace budget for the whole session, counts a trace point shared by adjacent blocks once in traceLog, runs offline gaps through applyOfflineSeconds up to each scheduled wall start, ends a gap cut by until or a goal at the smallest absence whose cap- and decay-adjusted reward reaches the stepped reward, reading that stop from the runner's own stop call on the gap's end state so a gap with no effective seconds, or one that used them all, is cut too, runs each block through runScenario with that block's duration, keeps state.t as reward time, passes each segment only the goals not yet reached, as copies that answer once per committed state, so the segment recorder and the session stop read one answer, each on its own clone of the state, and a reached goal is not read again in a later segment, passes every segment one observer that hears each milestone key and goal once per session and every other fact unchanged, stops on until or once every goal is reached, classifying each segment's stop from the runner's last stop call instead of calling until again, reads until once per committed state so the next segment does not read the state it starts from again, counts budget stops per block and ends a cut block's wall time and elapsed seconds at its planned end while crediting only the simulated seconds, merges segment observations, feeds offline and active action rows, with each child's dropped count, into one session action log, and records on each segment the clock view its model read when the model declares clocks.respondsTo, and none otherwise. Ran this function: offline-heavy elapsed 86400 with 3600 credited and 82500 lost, early until and goal stopped at t 10 after one block, and maxSteps 2 gave two budget stops, the first ending at wall 110 with 10 elapsed and 2 credited, with the session ending on the 86400 horizon. An until that holds only once stopped an active block at t 10 and a 12-hour gap at wall 1000. An until that holds only on its second read of a state ran both 60-second blocks to the 86400 horizon, and until t >= 60 stopped at the end of the first block. A goal that holds only on its second call stopped the session at t 1 and was recorded reached at t 1 after two calls. A goal reached at t 10 was not read past t 10 while a second goal stayed open to t 500, and the merged observation kept it reached at t 10. A level-1 milestone and a goal met at t 10 reached the observer once each across five segments. An allow policy's offline automation buy at t 0 led the session action log ahead of the three active rows at t 1, with totalSeen 4 under maxActions 10. A model declaring all three clocks kept on its 12-hour gap segment the wall 0 to 43200 view it read and on the next block wall 43200, reward 3600, active 0; an undeclared model's segments carried none.
+ * @evidenceReview ./session.ts#simulateSessionPattern #48e85df Re-read simulateSessionPattern: action rows add prior active and credited offline tick seconds to each segment-local elapsed time; it rejects a non-integer trace budget for the whole session, counts a trace point shared by adjacent blocks once in traceLog, runs offline gaps through applyOfflineSeconds up to each scheduled wall start, ends a gap cut by until or a goal at the smallest absence whose cap- and decay-adjusted reward reaches the stepped reward, reading that stop from the runner's own stop call on the gap's end state so a gap with no effective seconds, or one that used them all, is cut too, runs each block through runScenario with that block's duration and counts its active seconds as tick seconds from the run's stop record, keeps state.t as reward time, passes each segment only the goals not yet reached, as copies that answer once per committed state, so the segment recorder and the session stop read one answer, each on its own clone of the state, and a reached goal is not read again in a later segment, passes every segment the caller's observer and one shared observation options object whose ledger makes the caller's milestone and goal caps, drop counts, and observer notifications cover the session, so a key or goal is retained, dropped, and told once per session, leaves a goal dropped under the goal cap out of the merged goals instead of listing it unreached from an earlier segment, stops on until or once every goal is reached, classifying each segment's stop from the runner's last stop call instead of calling until again, reads until once per committed state, on a clone of that state like a goal, so the next segment does not read the state it starts from again and a write inside until does not reach the economy, counts budget stops per block and ends a cut block's wall time and elapsed seconds at its planned end while crediting only the simulated seconds, merges segment observations, feeds offline and active action rows, with each child's dropped count, into one session action log, and records on each segment the clock view its model read when the model declares clocks.respondsTo, and none otherwise. Ran this function: offline-heavy elapsed 86400 with 3600 credited and 82500 lost, early until and goal stopped at t 10 after one block, and maxSteps 2 gave two budget stops, the first ending at wall 110 with 10 elapsed and 2 credited, with the session ending on the 86400 horizon. An until that holds only once stopped an active block at t 10 and a 12-hour gap at wall 1000. An until that holds only on its second read of a state ran both 60-second blocks to the 86400 horizon, and until t >= 60 stopped at the end of the first block. A goal that holds only on its second call stopped the session at t 1 and was recorded reached at t 1 after two calls. A goal reached at t 10 was not read past t 10 while a second goal stayed open to t 500, and the merged observation kept it reached at t 10. A level-1 milestone and a goal met at t 10 reached the observer once each across five segments. An allow policy's offline automation buy at t 0 led the session action log ahead of the three active rows at t 1, with totalSeen 4 under maxActions 10. A model declaring all three clocks kept on its 12-hour gap segment the wall 0 to 43200 view it read and on the next block wall 43200, reward 3600, active 0; an undeclared model's segments carried none.
  * @evidence ./offline.ts#resolveOfflineActionPolicy Policy none keeps the scripted cursor at 1, legacy-all moves it to 3, and allow applies only the automation buy.
  * @evidenceReview ./offline.ts#resolveOfflineActionPolicy #ca047be Re-read resolveOfflineActionPolicy: useStrategy false and policy none never call the strategy, allow keeps the policy, and allow and legacy-all call the strategy only when the scenario has one. Ran this function: none left the scripted cursor at 1 and bought once, legacy-all reached cursor 3 with one prestige, and allow applied the automation buy only.
  */
@@ -342,7 +342,8 @@ export function keepsSessionClocksDistinct(): void {
   expect(allowRun.segments[0]?.run.end.prestige.count).toBe(0);
   // The session action log is the whole session's, offline buys included, in time order.
   expect(allowRun.segments.map((segment) => segment.kind)).toEqual(["offline", "active"]);
-  expect(allowRun.run.actionsLog?.[0]).toMatchObject({ t: 0, actionId: "auto" });
+  expect(allowRun.run.actionsLog?.[0]).toMatchObject({ t: 0, elapsedSec: 0, actionId: "auto" });
+  expect(allowRun.run.actionsLog?.slice(1).every((row) => row.elapsedSec === 1)).toBe(true);
   expect(allowRun.run.actionsLog?.slice(1).every((row) => row.t === 1)).toBe(true);
   expect(allowRun.run.actionsLogMeta).toEqual({ maxActions: 10, totalSeen: 4, dropped: 0, retained: 4 });
 
@@ -866,6 +867,28 @@ describe("session segments", () => {
     expect(shared.run.observation?.goals.map((goal) => goal.status)).toEqual(["reached", "unreached"]);
   });
 
+  it("evaluates the session until on a copy of the committed state", () => {
+    // The until shares the session stop with the goals. Its write must not reach the economy
+    // or the goals that read the same state.
+    const counting = (state: SimState<number, UnitCode, ClockVars>) => {
+      state.vars.bought += 1;
+      return state.t >= 100;
+    };
+    for (const pattern of [
+      { id: "offline-heavy" as const, days: 1 },
+      { id: "offline-heavy" as const, days: 1, schedule: [{ day: 0, startOffsetSec: 50, durationSec: 100 }] },
+    ]) {
+      const out = runPattern(
+        clockScenario({ income: 1, until: counting, goals: [{ id: "bought", met: (state) => state.vars.bought >= 1 }] }),
+        pattern,
+      );
+      expect(out.summary.stop.reason).toBe("until");
+      expect(out.end.t).toBe(100);
+      expect(out.end.vars.bought).toBe(0);
+      expect(out.run.observation?.goals).toEqual([{ id: "bought", status: "unreached" }]);
+    }
+  });
+
   it("counts invalid quotes in run, offline, and session observations", () => {
     const broken: Action<number, UnitCode, ClockVars> = {
       ...buyAction("broken", "bought", "player"),
@@ -897,6 +920,28 @@ describe("session segments", () => {
     expect(perSegment).toEqual([5, 2, 86393]);
     expect(session.run.observation?.actions.skippedInvalidQuote).toBe(86400);
     expect(session.run.observation?.actions.applied).toBe(0);
+  });
+});
+
+describe("session active time at a large reward clock", () => {
+  it("counts an active block in tick seconds, not the rounded t difference", () => {
+    // At t 1e15 an ulp is 0.125, so ten 0.1 s ticks move t by 1.25.
+    const base = clockScenario({ income: 1 });
+    const scenario = {
+      ...base,
+      ctx: { ...base.ctx, stepSec: 0.1 },
+      initial: { ...base.initial, t: 1e15 },
+      run: { ...base.run, stepSec: 0.1 },
+    };
+    const out = runPattern(scenario, {
+      id: "offline-heavy",
+      days: 1,
+      schedule: [{ day: 0, startOffsetSec: 0, durationSec: 1 }],
+    });
+    const active = out.segments.find((segment) => segment.kind === "active")!;
+    expect(active.durationSec).toBeCloseTo(1, 9);
+    expect(active.clock.activeSec).toBeCloseTo(1, 9);
+    expect(out.summary.activeSec).toBeCloseTo(1, 9);
   });
 });
 
@@ -1084,5 +1129,145 @@ describe("offline gaps cut by a session stop", () => {
     expect(atEnd.summary.stop.reason).toBe("until");
     expect(atEnd.summary.activeBlocks).toBe(1);
     expect(atEnd.end.t).toBe(60);
+  });
+});
+
+// One session reads like one run: every callback answers once per committed state or fact,
+// and the caller's observation caps cover the session, not each segment.
+describe("session callbacks and caps across segment shapes", () => {
+  const thresholds = [10, 22, 30, 47, 60];
+  const shapes: ReadonlyArray<readonly [string, SessionPatternSpec]> = [
+    ["active-only", { id: "offline-heavy", days: 1, schedule: [{ day: 0, startOffsetSec: 0, durationSec: 30 }, { day: 0, startOffsetSec: 30, durationSec: 40 }] }],
+    ["offline-first", { id: "offline-heavy", days: 1, schedule: [{ day: 0, startOffsetSec: 100, durationSec: 5 }, { day: 0, startOffsetSec: 300, durationSec: 5 }] }],
+    ["mixed", { id: "offline-heavy", days: 1, schedule: [{ day: 0, startOffsetSec: 0, durationSec: 10 }, { day: 0, startOffsetSec: 1000, durationSec: 10 }, { day: 0, startOffsetSec: 2000, durationSec: 10 }] }],
+  ];
+
+  type Counts = {
+    goalReads: Map<string, number[]>;
+    untilReads: number[];
+    decides: number;
+    steps: number;
+    actions: number;
+    milestones: string[];
+    goals: string[];
+    resets: number[];
+  };
+
+  const scenarioFor = (
+    counts: Counts,
+    observation?: CompiledScenario<number, UnitCode, ClockVars>["run"]["observation"],
+  ): CompiledScenario<number, UnitCode, ClockVars> => {
+    const buy = buyAction("buy", "bought", "player");
+    const prestige = prestigeAction();
+    const goal = (id: string, at: number) => ({
+      id,
+      met: (state: SimState<number, UnitCode, ClockVars>) => {
+        const reads = counts.goalReads.get(id) ?? [];
+        reads.push(state.t);
+        counts.goalReads.set(id, reads);
+        return state.t >= at;
+      },
+    });
+    const base = clockScenario({
+      income: 1,
+      money: 10,
+      actions: [buy, prestige],
+      offline: { maxSec: 20, overflowPolicy: "clamp" },
+      until: (state) => (counts.untilReads.push(state.t), state.t >= 65),
+      goals: [...thresholds.map((at) => goal(`g${at}`, at)), goal("never", Infinity)],
+      strategy: {
+        id: "buy-and-prestige-once",
+        decide(ctx, model, state) {
+          counts.decides += 1;
+          return model.actions(ctx, state).flatMap((action) =>
+            action.kind !== "prestige" || state.t === 5 ? [{ action }] : [],
+          );
+        },
+      },
+    });
+    return {
+      ...base,
+      model: {
+        ...base.model,
+        // Called before the step moves t. The key lands on the step end.
+        milestones: (ctx, prev) => thresholds.filter((at) => prev.t < at && at <= prev.t + (ctx.stepSec ?? 1)).map((at) => `m${at}`),
+      },
+      run: {
+        ...base.run,
+        ...(observation ? { observation } : {}),
+        onPrestigeReset: (t) => void counts.resets.push(t),
+        observer: {
+          onStep: () => void (counts.steps += 1),
+          onAction: () => void (counts.actions += 1),
+          onMilestone: (fact) => void counts.milestones.push(fact.key),
+          onGoal: (fact) => void counts.goals.push(fact.goalId),
+        },
+      },
+    };
+  };
+  const fresh = (): Counts => ({ goalReads: new Map(), untilReads: [], decides: 0, steps: 0, actions: 0, milestones: [], goals: [], resets: [] });
+  const distinct = (values: readonly number[]) => new Set(values).size === values.length;
+
+  it("answers each callback once per committed state or fact in active-only, offline-first, and mixed sessions", () => {
+    for (const [name, pattern] of shapes) {
+      const counts = fresh();
+      const out = runPattern(scenarioFor(counts), pattern);
+      expect({ name, stop: out.summary.stop.reason }).toEqual({ name, stop: "until" });
+      expect(out.end.t).toBe(65);
+      const steps = out.segments.reduce((sum, segment) => sum + (segment.run.stop?.steps ?? 0), 0);
+      const observed = out.run.observation!;
+      expect(counts.steps).toBe(steps);
+      expect(counts.decides).toBe(steps);
+      expect(counts.actions).toBe(
+        observed.actions.applied + observed.actions.skippedCannotApply + observed.actions.skippedInsufficientFunds + observed.actions.skippedCooldown + observed.actions.skippedInvalidQuote,
+      );
+      expect(counts.resets).toHaveLength(1);
+      // t moves on every committed step, so a repeated t is a second read of one state.
+      expect(distinct(counts.untilReads)).toBe(true);
+      for (const [id, reads] of counts.goalReads) {
+        expect({ id, distinct: distinct(reads) }).toEqual({ id, distinct: true });
+        const at = Number(id.slice(1));
+        if (Number.isFinite(at)) expect(Math.max(...reads)).toBe(at);
+      }
+      const keys = observed.milestones.map((sample) => sample.key);
+      expect(keys).toEqual(["action.buy.firstApplied", "progress.first-upgrade", "action.prestige.firstApplied", "prestige.first", "m10", "m22", "m30", "m47", "m60"]);
+      expect(counts.milestones.sort()).toEqual([...keys].sort());
+      expect(counts.goals).toEqual(thresholds.map((at) => `g${at}`));
+      expect(observed.droppedMilestones).toBe(0);
+      expect(observed.goals).toEqual([...thresholds.map((at) => ({ id: `g${at}`, status: "reached" as const, t: at })), { id: "never", status: "unreached" as const }]);
+    }
+  });
+
+  it("applies the observation caps to the whole active-only, offline-first, and mixed session", () => {
+    for (const [name, pattern] of shapes) {
+      const open = runPattern(scenarioFor(fresh()), pattern).run.observation!;
+      const reached = open.goals.filter((goal) => goal.status === "reached");
+      for (const cap of [0, 1, 2, 3, 5, 8, 64]) {
+        const counts = fresh();
+        const out = runPattern(scenarioFor(counts, { maxMilestones: cap, maxGoals: cap }), pattern);
+        const observed = out.run.observation!;
+        // Retention follows a single recorder: the first `cap` keys and goals in time, the rest dropped once.
+        const kept = open.milestones.slice(0, cap);
+        const keptGoals = new Set(reached.slice(0, cap).map((goal) => goal.id));
+        expect({ name, cap, milestones: observed.milestones, dropped: observed.droppedMilestones }).toEqual({
+          name,
+          cap,
+          milestones: kept,
+          dropped: open.milestones.length - kept.length,
+        });
+        expect({ name, cap, goals: observed.goals, dropped: observed.droppedGoals }).toEqual({
+          name,
+          cap,
+          goals: open.goals.filter((goal) => goal.status === "unreached" || keptGoals.has(goal.id)),
+          dropped: reached.length - keptGoals.size,
+        });
+        expect(observed.coverage).toBe(kept.length < open.milestones.length || keptGoals.size < reached.length ? "partial" : "complete");
+        // Caps change retention only. Stops, state, and notifications are the same.
+        expect(out.summary.stop.reason).toBe("until");
+        expect(out.end.t).toBe(65);
+        expect(counts.milestones.sort()).toEqual(open.milestones.map((sample) => sample.key).sort());
+        expect(counts.goals).toEqual(reached.map((goal) => goal.id));
+      }
+    }
   });
 });

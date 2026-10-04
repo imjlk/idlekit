@@ -1,12 +1,12 @@
 import { defineCommand, option } from "@bunli/core";
-import { runScenario, validateScenarioV1 } from "@idlekit/core";
+import { runElapsedSec, runScenario, validateScenarioV1 } from "@idlekit/core";
 import { resolve } from "path";
 import { z } from "zod";
 import { pluginOptions, type PluginOptionFlags } from "./_shared/plugin";
 import { loadRegistriesFromFlags } from "./_shared/plugin";
-import { parseHorizons, runLtvAnalysis } from "./ltv";
+import { ltvStageInputs, runLtvAnalysis } from "./ltv";
 import { scenarioInvalidError, usageError } from "../errors";
-import { buildOutputMeta, deriveDeterministicRunId, deriveDeterministicSeed } from "../io/outputMeta";
+import { buildOutputMeta, deriveDeterministicRunId } from "../io/outputMeta";
 import { writeOutput } from "../io/writeOutput";
 import {
   collectExperienceSnapshot,
@@ -18,7 +18,7 @@ import {
   resolveSessionPatternSpec,
   summarizeExperienceMonteCarlo,
 } from "../lib/experience";
-import { engineSeedOption, prepareResolvedRun, strategySeedOption, workflowRunHash } from "../lib/runConfiguration";
+import { prepareResolvedRun, workflowRunHash } from "../lib/runConfiguration";
 import { readScenarioFile } from "../io/readScenario";
 import { ensureDir, writeTextFile } from "../runtime/bun";
 
@@ -132,26 +132,7 @@ export default defineCommand({
     }
 
     const scenarioAbs = resolve(process.cwd(), scenarioPath);
-    // Every stage runs on this seed, so the default reads only what every stage applies. Step, fast,
-    // session, draws, and horizons stay in the stage digests and do not move another stage's seed.
-    const seed =
-      flags.seed ??
-      deriveDeterministicSeed({
-        command: "evaluate",
-        scenario: valid.scenario,
-        options: {
-          // The no-flag input keeps this undefined key.
-          strategy: undefined,
-          ...strategySeedOption({
-            scenario: valid.scenario,
-            strategyRegistry: loaded.strategyRegistry,
-            overrideId: flags.strategy,
-          }),
-          ...engineSeedOption(flags.engine),
-        },
-      });
-
-    const prepared = prepareResolvedRun({
+    const unseeded = prepareResolvedRun({
       scenario: valid.scenario,
       modelRegistry: loaded.modelRegistry,
       strategyRegistry: loaded.strategyRegistry,
@@ -160,11 +141,20 @@ export default defineCommand({
       strategyOverride: flags.strategy,
       stepSec: flags.step,
       fast: flags.fast,
-      seed,
       sessionId: flags["session-pattern"],
       days: flags.days,
       consistentOverrides: flags["consistent-overrides"],
     });
+    // Every stage runs on this seed, so the default reads only what every stage applies. Step, fast,
+    // session, draws, and horizons stay in the stage digests and do not move another stage's seed.
+    const seed =
+      flags.seed ??
+      unseeded.defaultSeed(
+        // The seed input of a run without flags.
+        { command: "evaluate", scenario: valid.scenario, options: { strategy: undefined } },
+        [{ stage: "simulate" }, { stage: "experience" }, { stage: "ltv" }],
+      );
+    const prepared = unseeded.withSeed(seed);
     const E = prepared.engine.engine as typeof prepared.definition.ctx.E;
     const simulateOpened = prepared.open("simulate", `evaluate:simulate:${seed}`, {
       durationSec: prepared.definition.run.durationSec,
@@ -180,10 +170,7 @@ export default defineCommand({
     const simulateRunId = deriveDeterministicRunId({
       command: "simulate",
       seed,
-      scope: {
-        scenarioPath: scenarioAbs,
-        strategyId: simulateScenario.strategy?.id,
-      },
+      scope: { effectiveRunHash: simulateOpened.hash },
     });
     const simulate = {
       run: {
@@ -193,7 +180,7 @@ export default defineCommand({
       scenario: scenarioAbs,
       startT: simulateRun.start.t,
       endT: simulateRun.end.t,
-      durationSec: simulateRun.end.t - simulateRun.start.t,
+      durationSec: runElapsedSec(simulateRun),
       endMoney: E.toString(simulateRun.end.wallet.money.amount),
       endNetWorth: E.toString(simulateNetWorth.amount),
       stats: simulateRun.stats,
@@ -263,23 +250,17 @@ export default defineCommand({
     const experienceRunId = deriveDeterministicRunId({
       command: "experience",
       seed,
-      scope: {
-        scenarioPath: scenarioAbs,
-        sessionPattern,
-        draws,
-      },
+      scope: { effectiveRunHash: experienceOpened.hash },
     });
 
-    const ltvOpened = prepared.open("ltv", `evaluate:ltv:${seed}`, {
-      horizons: parseHorizons(flags.horizons),
-      draws: null,
+    const ltvOpened = prepared.open("ltv", `evaluate:ltv:${seed}`, ltvStageInputs(valid.scenario, flags.horizons), {
       valuePerWorth: null,
     });
     const ltv = {
       scenario: scenarioAbs,
       ...runLtvAnalysis({
         scenario: valid.scenario,
-        scenarioPath: scenarioAbs,
+        effectiveRunHash: ltvOpened.hash,
         compiled: ltvOpened.scenario,
         strategy: ltvOpened.scenario.strategy,
         horizonsRaw: flags.horizons,

@@ -1,5 +1,10 @@
 import type { RunResult, SimEvent, TimedSimEvent } from "./types";
 
+/** Append without spreading: a whole offline gap's events can exceed the engine's argument limit. */
+function appendAll<T>(target: T[], items: readonly T[], from = 0): void {
+  for (let i = from; i < items.length; i += 1) target.push(items[i]!);
+}
+
 function retainList<T>(
   target: T[],
   batch: readonly T[],
@@ -14,13 +19,14 @@ function retainList<T>(
   }
 
   if (maxItems === undefined) {
-    target.push(...batch);
+    appendAll(target, batch);
     return;
   }
 
   if (batch.length >= maxItems) {
     onDrop?.(target.length + (batch.length - maxItems));
-    target.splice(0, target.length, ...batch.slice(batch.length - maxItems));
+    target.length = 0;
+    appendAll(target, batch, batch.length - maxItems);
     return;
   }
 
@@ -29,7 +35,7 @@ function retainList<T>(
     target.splice(0, overflow);
     onDrop?.(overflow);
   }
-  target.push(...batch);
+  appendAll(target, batch);
 }
 
 /** The same rule as `eventLog.maxEvents`: an integer >= 0, or absent for no bound. */

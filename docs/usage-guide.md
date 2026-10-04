@@ -82,6 +82,8 @@ idk replay verify <artifact> --format json
 - Amount goals such as `money >= 1aa` use `parseMoney` on the amount path for both the number engine and `breakInfinity`. `1e400` stays on `breakInfinity` and is not converted with `Number` first.
 - Strategy parameter checks default to legacy raw. The internal schema adapter is not the external Standard Schema package.
 
+`simulate.durationSec` counts online tick seconds. `totalElapsedSec` also includes credited offline tick seconds and elapsed time retained in a resumed save. New saves preserve this total in `meta.totalElapsedSec`; older saves fall back to their timestamp offset for the saved portion. Action-log `elapsedSec` counts tick seconds before the action (including prior credited session segments), while `t` remains the absolute timestamp. LTV uses that elapsed clock for `timeToFirstUpgradeSec`, so large initial timestamps do not round this KPI.
+
 Recommended interactive order:
 
 1. `idk init scenario --wizard`

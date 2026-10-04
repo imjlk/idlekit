@@ -1,5 +1,5 @@
 import { assertLogBudget } from "./eventBuffer";
-import { readGoal } from "./goalRead";
+import { createObservationLedger, readGoal, type ObservationLedger } from "./goalRead";
 import { simStatsFromCounters, type MetricStatus, type SimStats } from "./analysis/ux";
 import type { SimEvent, SimState } from "./types";
 
@@ -7,7 +7,7 @@ import type { SimEvent, SimState } from "./types";
  * Resolved observation contract. TC-05 has not registered this DTO.
  *
  * @evidence docs/requirements/active/observation-retention.md#req-pr05-observation-retention Counters come from the committed step, not from the retained event log.
- * @evidenceReview docs/requirements/active/observation-retention.md#req-pr05-observation-retention #9d4cc4c Re-read the section: retention does not change these counters, a disabled mode is missing rather than zero, a sample cap does not hide a fact from the observer, including an action-derived milestone key, the start-goal sentence is about the recorder's start hook, not this name, and the tuning sentence is about runCandidateAndScore and pacingBalancedLog10, which read these missing counters.
+ * @evidenceReview docs/requirements/active/observation-retention.md#req-pr05-observation-retention #0fabf10 Re-read the section: retention does not change these counters, a disabled mode is missing rather than zero, a sample cap does not hide a fact from the observer, including an action-derived milestone key, the shared session cap sentence is about the recorder's ledger and simulateSessionPattern, not this name, the start-goal sentence is about the recorder's start hook, not this name, and the tuning sentence is about runCandidateAndScore and pacingBalancedLog10, which read these missing counters.
  */
 export const observationContract = "idlekit.run-observation" as const;
 
@@ -61,7 +61,7 @@ export type RunObservation = Readonly<{
   rewardGap: RewardGapSummary;
   milestones: readonly MilestoneSample[];
   goals: readonly GoalSample[];
-  /** Distinct keys left out by maxMilestones. A merge sums its parts, and each session segment has its own cap. */
+  /** Distinct keys left out by maxMilestones. A merge sums its parts. The segments of one session share one cap. */
   droppedMilestones: number;
   /** Distinct met goals left out by maxGoals. Summed the same way on a merge. */
   droppedGoals: number;
@@ -249,13 +249,15 @@ export function createObservationRecorder<N, U extends string, Vars>(args: {
   maxGoals: number;
   goals: readonly RunGoal<N, U, Vars>[];
   observer?: RunObserver;
+  /** Shared by the segment recorders of one session, so the caps and notifications cover the session. */
+  ledger?: ObservationLedger;
 }) {
   assertLogBudget(args.maxMilestones, "observation.maxMilestones");
   assertLogBudget(args.maxGoals, "observation.maxGoals");
   const money = mutableMoney();
   const actions = { applied: 0, skippedCannotApply: 0, skippedInsufficientFunds: 0, skippedInvalidQuote: 0, skippedCooldown: 0 };
+  const ledger = args.ledger ?? createObservationLedger();
   const milestones: MilestoneSample[] = [];
-  const seenMilestone = new Set<string>();
   const reachedGoals = new Map<string, number>();
   // A met goal past maxGoals. Counted once and left out of the output.
   const droppedGoals = new Set<string>();
@@ -268,12 +270,15 @@ export function createObservationRecorder<N, U extends string, Vars>(args: {
 
   const rememberMilestone = (sample: MilestoneSample) => {
     if (!enabled) return;
-    if (seenMilestone.has(sample.key)) return;
+    if (ledger.seenMilestones.has(sample.key)) return;
     // A dropped key is seen too, so a recurring key counts once.
-    seenMilestone.add(sample.key);
+    ledger.seenMilestones.add(sample.key);
     // The cap limits retained samples, not what the observer is told. Action-derived keys included.
-    if (milestones.length >= args.maxMilestones) droppedMilestones += 1;
-    else milestones.push(sample);
+    if (ledger.retainedMilestones >= args.maxMilestones) droppedMilestones += 1;
+    else {
+      ledger.retainedMilestones += 1;
+      milestones.push(sample);
+    }
     if (args.observer?.onMilestone) {
       notify(() => args.observer?.onMilestone?.({ t: sample.firstSeenT, key: sample.key }));
     }
@@ -289,8 +294,13 @@ export function createObservationRecorder<N, U extends string, Vars>(args: {
         met = readGoal(goal, state);
       });
       if (!met) continue;
-      if (reachedGoals.size >= args.maxGoals) droppedGoals.add(goal.id);
-      else reachedGoals.set(goal.id, t);
+      if (ledger.retainedGoals >= args.maxGoals) {
+        droppedGoals.add(goal.id);
+        ledger.droppedGoals.add(goal.id);
+      } else {
+        ledger.retainedGoals += 1;
+        reachedGoals.set(goal.id, t);
+      }
       if (args.observer?.onGoal) notify(() => args.observer?.onGoal?.({ t, goalId: goal.id }));
     }
   };

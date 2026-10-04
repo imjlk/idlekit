@@ -31,6 +31,7 @@ describe("simState serde", () => {
       cliVersion: "0.1.0",
       gitSha: "abc123",
       scenarioHash: "deadbeef",
+      totalElapsedSec: 12.3,
       strategy: {
         id: "scripted",
         version: 1,
@@ -45,6 +46,11 @@ describe("simState serde", () => {
     expect(json.meta?.cliVersion).toBe("0.1.0");
     expect(json.meta?.gitSha).toBe("abc123");
     expect(json.meta?.scenarioHash).toBe("deadbeef");
+    expect(parseSimStateJSON(json).meta?.totalElapsedSec).toBe(12.3);
+    expect(parseSimStateJSON({ ...json, meta: { totalElapsedSec: 0 } }).meta?.totalElapsedSec).toBe(0);
+    for (const invalid of [-1, NaN, Infinity, "12.3"]) {
+      expect(() => parseSimStateJSON({ ...json, meta: { ...json.meta, totalElapsedSec: invalid } })).toThrow("totalElapsedSec");
+    }
     expect(json.strategy?.id).toBe("scripted");
     expect(json.strategy?.version).toBe(1);
     expect((json.strategy?.state as Record<string, unknown>)?.cursor).toBe(3);

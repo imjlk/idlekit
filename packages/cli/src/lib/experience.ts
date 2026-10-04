@@ -368,8 +368,34 @@ export function summarizeExperienceMonteCarlo<N, U extends string, Vars>(args: {
   };
 }
 
+/**
+ * Seconds to `key`, or undefined when the run did not reach it.
+ * A partial report dropped keys under the sample cap. In a session each block has its own cap, so
+ * a key one block dropped can surface later in another. Neither absence nor the time is known then.
+ */
 export function milestoneTime(report: MilestoneReport, key: string): number | undefined {
+  const coverage = report.coverage ?? "complete";
+  if (coverage !== "complete") {
+    throw new Error(
+      `time to milestone ${key} needs a complete milestone report; this one is ${coverage}, so the key may be missing or late`,
+    );
+  }
   return report.milestones.find((entry) => entry.key === key)?.firstSeenSec;
+}
+
+/**
+ * Seconds to the first milestone. The sample cap keeps the earliest keys, so a partial report with a
+ * sample still holds the first one. An incomplete report came from a cut log and does not.
+ */
+export function firstMilestoneTime(report: MilestoneReport): number | undefined {
+  if (report.coverage === "incomplete") {
+    throw new Error("time to the first milestone needs milestone samples; this report came from a truncated log");
+  }
+  // A partial report with no sample may have dropped the first one, so it is not "unreached".
+  if (report.coverage === "partial" && report.firstMilestoneSec === undefined) {
+    throw new Error("time to the first milestone is unknown; this partial report kept no milestone sample");
+  }
+  return report.firstMilestoneSec;
 }
 
 export function comparableExperienceMetric(args: {
@@ -381,7 +407,7 @@ export function comparableExperienceMetric(args: {
   const fallback = args.fallbackValue;
   switch (args.metric) {
     case "timeToMilestone":
-      if (!args.milestoneKey) return args.snapshot.milestones.firstMilestoneSec ?? fallback;
+      if (!args.milestoneKey) return firstMilestoneTime(args.snapshot.milestones) ?? fallback;
       return milestoneTime(args.snapshot.milestones, args.milestoneKey) ?? fallback;
     case "visibleChangesPerMinute":
       return args.snapshot.perceived.visibleChangesPerMinute;

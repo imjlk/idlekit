@@ -3,6 +3,7 @@ import { deepClonePreservingPrototype } from "../utils/deepClone";
 import { analyzeUX } from "./analysis/ux";
 import { recordPrestigeReset } from "./constraints";
 import { createBoundedLog, createEventBuffer } from "./eventBuffer";
+import { observationLedger } from "./goalRead";
 import { createObservationRecorder, statsFromObservation } from "./observation";
 import { resolveOfflineSeconds } from "./offlineCredit";
 import { stepOnce } from "./step";
@@ -81,7 +82,7 @@ function allowsOfflineAction(
  * @evidence docs/requirements/active/simulation-time-boundaries.md#req-pr02-simulation-time-boundaries Applies the same horizon, partial tick, and step budget as the online runner.
  * @evidenceReview docs/requirements/active/simulation-time-boundaries.md#req-pr02-simulation-time-boundaries #c6da01b Re-read the section: offline uses that partial tick, a short maxSteps returns budget instead of discarding the run, and a committed tick that does not move state.t throws through assertTickAdvanced, including a sub-ulp partial tick before any tick moved t.
  * @evidence docs/requirements/active/session-clock.md#req-pr06-session-clock Steps reward time only. `requestedSec` stays the caller absence, and `useStrategy: false` or policy `none` does not call `decide`.
- * @evidenceReview docs/requirements/active/session-clock.md#req-pr06-session-clock #3c24d94 Re-read the section: state.t moves by simulated reward seconds, and a direct call does not turn the requested absence into state.t. The gap-end rule for a stop inside an offline gap belongs to the session, not to this direct call.
+ * @evidenceReview docs/requirements/active/session-clock.md#req-pr06-session-clock #6fee79f Re-read the section: state.t moves by simulated reward seconds, and a direct call does not turn the requested absence into state.t. The gap-end rule for a stop inside an offline gap belongs to the session, not to this direct call, and so does reading until on a copy: this call hands options.until the state.
  */
 export function applyOfflineSeconds<N, U extends string, Vars>(args: {
   scenario: CompiledScenario<N, U, Vars>;
@@ -117,7 +118,7 @@ export function applyOfflineSeconds<N, U extends string, Vars>(args: {
   }
 
   const resolved = resolveOfflineSeconds(seconds, capPolicy);
-  assertSimulationClock("offline", { stepSec, durationSec: resolved.effectiveSec, maxSteps });
+  assertSimulationClock("offline", { stepSec, durationSec: resolved.effectiveSec, maxSteps, startT: start.t });
   const fullSteps = Math.floor(resolved.effectiveSec / stepSec);
   const remainderRaw = resolved.effectiveSec - fullSteps * stepSec;
   const remainderSec = remainderRaw > timeEpsilon(resolved.effectiveSec) ? remainderRaw : 0;
@@ -129,16 +130,17 @@ export function applyOfflineSeconds<N, U extends string, Vars>(args: {
     maxGoals: scenario.run.observation?.maxGoals ?? 32,
     goals: scenario.run.goals ?? [],
     observer: scenario.run.observer,
+    ledger: observationLedger(scenario.run.observation),
   });
   const eventBuffer = createEventBuffer<N>({
     enabled: eventLogEnabled,
     maxEvents,
   });
-  const actionsLog: Array<{ t: number; actionId: string; label?: string; bulkSize?: number }> = [];
+  const actionsLog: Array<{ t: number; elapsedSec: number; actionId: string; label?: string; bulkSize?: number }> = [];
   const actionBudget = scenario.run.trace?.maxActions;
   const actionLog =
     actionBudget !== undefined
-      ? createBoundedLog<{ t: number; actionId: string; label?: string; bulkSize?: number }>(actionBudget, "applyOfflineSeconds trace.maxActions")
+      ? createBoundedLog<{ t: number; elapsedSec: number; actionId: string; label?: string; bulkSize?: number }>(actionBudget, "applyOfflineSeconds trace.maxActions")
       : undefined;
 
   let state = start;
@@ -193,6 +195,7 @@ export function applyOfflineSeconds<N, U extends string, Vars>(args: {
           }
         : undefined;
     const actionStartT = state.t;
+    const actionElapsedSec = simulatedSec;
     const out = stepOnce({
       ctx: stepCtx,
       model: scenario.model,
@@ -228,10 +231,10 @@ export function applyOfflineSeconds<N, U extends string, Vars>(args: {
     });
     eventBuffer.pushTimed(timeStepEvents(out.events, actionStartT, state.t));
     if (out.actionsApplied?.length) {
-      if (actionLog) {
-        for (const row of out.actionsApplied) actionLog.push(row);
-      } else {
-        actionsLog.push(...out.actionsApplied);
+      for (const row of out.actionsApplied) {
+        const timedRow = { ...row, elapsedSec: actionElapsedSec };
+        if (actionLog) actionLog.push(timedRow);
+        else actionsLog.push(timedRow);
       }
     }
   }

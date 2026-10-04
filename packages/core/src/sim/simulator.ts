@@ -1,6 +1,7 @@
 import { analyzeUX } from "./analysis/ux";
 import { recordPrestigeReset } from "./constraints";
 import { createBoundedLog, createEventBuffer } from "./eventBuffer";
+import { observationLedger } from "./goalRead";
 import { createObservationRecorder, statsFromObservation } from "./observation";
 import { stepOnce } from "./step";
 import { assertSimulationClock, assertTickAdvanced, nextBoundary, stepContext, timeStepEvents } from "./timeBoundary";
@@ -35,10 +36,10 @@ export function runScenario<N, U extends string, Vars>(
   if (traceLog) traceLog.push(state);
   // The last state offered to traceLog. A budget of 0 retains none, so the buffer cannot say.
   let lastTraced = state;
-  const actionsLog: { t: number; actionId: string; label?: string; bulkSize?: number }[] = [];
+  const actionsLog: { t: number; elapsedSec: number; actionId: string; label?: string; bulkSize?: number }[] = [];
   const actionLog =
     sc.run.trace?.keepActionsLog && sc.run.trace.maxActions !== undefined
-      ? createBoundedLog<{ t: number; actionId: string; label?: string; bulkSize?: number }>(sc.run.trace.maxActions, "runScenario trace.maxActions")
+      ? createBoundedLog<{ t: number; elapsedSec: number; actionId: string; label?: string; bulkSize?: number }>(sc.run.trace.maxActions, "runScenario trace.maxActions")
       : undefined;
   const recorder = createObservationRecorder({
     enabled: sc.run.observation?.enabled !== false,
@@ -47,6 +48,7 @@ export function runScenario<N, U extends string, Vars>(
     maxGoals: sc.run.observation?.maxGoals ?? 32,
     goals: sc.run.goals ?? [],
     observer: sc.run.observer,
+    ledger: observationLedger(sc.run.observation),
   });
 
   const stepSec = sc.run.stepSec;
@@ -68,7 +70,7 @@ export function runScenario<N, U extends string, Vars>(
     throw new Error("runScenario requires at least one stop condition: durationSec, until, or maxSteps");
   }
 
-  assertSimulationClock("runScenario", { stepSec, durationSec, maxSteps });
+  assertSimulationClock("runScenario", { stepSec, durationSec, maxSteps, startT: start.t });
   if (maxEvents !== undefined && (!Number.isInteger(maxEvents) || maxEvents < 0)) {
     throw new Error("runScenario eventLog.maxEvents must be an integer >= 0");
   }
@@ -124,10 +126,10 @@ export function runScenario<N, U extends string, Vars>(
     eventBuffer.pushTimed(timeStepEvents(step.events, actionStartT, state.t));
 
     if (sc.run.trace?.keepActionsLog && step.actionsApplied?.length) {
-      if (actionLog) {
-        for (const row of step.actionsApplied) actionLog.push(row);
-      } else {
-        actionsLog.push(...step.actionsApplied);
+      for (const row of step.actionsApplied) {
+        const timedRow = { ...row, elapsedSec };
+        if (actionLog) actionLog.push(timedRow);
+        else actionsLog.push(timedRow);
       }
     }
 

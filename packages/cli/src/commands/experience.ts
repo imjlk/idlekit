@@ -3,7 +3,7 @@ import { validateScenarioV1 } from "@idlekit/core";
 import { z } from "zod";
 import { loadRegistriesFromFlags, pluginOptions } from "./_shared/plugin";
 import { scenarioInvalidError, usageError } from "../errors";
-import { engineSeedOption, prepareResolvedRun, strategySeedOption } from "../lib/runConfiguration";
+import { prepareResolvedRun } from "../lib/runConfiguration";
 import {
   collectExperienceSnapshot,
   renderExperienceMarkdown,
@@ -14,7 +14,7 @@ import {
   resolveSessionPatternSpec,
   summarizeExperienceMonteCarlo,
 } from "../lib/experience";
-import { buildOutputMeta, deriveDeterministicRunId, deriveDeterministicSeed } from "../io/outputMeta";
+import { buildOutputMeta, deriveDeterministicRunId } from "../io/outputMeta";
 import { writeCommandReplayArtifact } from "../io/replayPolicy";
 import { readScenarioFile } from "../io/readScenario";
 import { writeOutput } from "../io/writeOutput";
@@ -57,47 +57,35 @@ export default defineCommand({
       throw scenarioInvalidError(valid.issues);
     }
 
-    // A flag equal to what the scenario resolves to runs the same session and draws, so it keeps
-    // the no-flag seed input.
-    const scenarioSession = resolveSessionPatternSpec({ scenario: valid.scenario });
-    const flagSession = resolveSessionPatternSpec({
-      scenario: valid.scenario,
-      sessionPatternId: resolveSessionPatternId(flags["session-pattern"]),
-      days: flags.days,
-    });
-    const seed =
-      flags.seed ??
-      deriveDeterministicSeed({
-        command: "experience",
-        scenario: valid.scenario,
-        options: {
-          sessionPattern: flagSession.id !== scenarioSession.id ? flags["session-pattern"] : undefined,
-          days: flagSession.days !== scenarioSession.days ? flags.days : undefined,
-          draws:
-            resolveExperienceDraws(valid.scenario, flags.draws) !== resolveExperienceDraws(valid.scenario)
-              ? flags.draws
-              : undefined,
-          ...strategySeedOption({
-            scenario: valid.scenario,
-            strategyRegistry: loaded.strategyRegistry,
-            overrideId: flags.strategy,
-          }),
-          ...engineSeedOption(flags.engine),
-        },
-      });
-
-    const prepared = prepareResolvedRun({
+    const unseeded = prepareResolvedRun({
       scenario: valid.scenario,
       modelRegistry: loaded.modelRegistry,
       strategyRegistry: loaded.strategyRegistry,
       pluginDigest: loaded.pluginDigest,
       engineRequest: flags.engine,
       strategyOverride: flags.strategy,
-      seed,
       sessionId: flags["session-pattern"],
       days: flags.days,
     });
-    const experienceInputs = { draws: resolveExperienceDraws(prepared.definition, flags.draws) };
+    const experienceInputs = { draws: resolveExperienceDraws(unseeded.definition, flags.draws) };
+    const seed =
+      flags.seed ??
+      unseeded.defaultSeed(
+        // The seed input of a run without flags.
+        {
+          command: "experience",
+          scenario: valid.scenario,
+          options: { sessionPattern: undefined, days: undefined, draws: undefined },
+        },
+        [
+          {
+            stage: "experience",
+            inputs: experienceInputs,
+            defaults: { draws: resolveExperienceDraws(unseeded.definition) },
+          },
+        ],
+      );
+    const prepared = unseeded.withSeed(seed);
     const opened = prepared.open("experience", `experience:${seed}`, experienceInputs);
     const seededScenario = opened.scenario;
 
@@ -139,11 +127,7 @@ export default defineCommand({
       deriveDeterministicRunId({
         command: "experience",
         seed,
-        scope: {
-          scenarioPath,
-          sessionPattern,
-          draws,
-        },
+        scope: { effectiveRunHash: opened.hash },
       });
 
     const mode = draws > 1 ? ("monte-carlo" as const) : ("deterministic" as const);
