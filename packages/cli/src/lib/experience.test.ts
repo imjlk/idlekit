@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { createNumberEngine, simulateSessionPattern, type CompiledScenario, type SimState } from "@idlekit/core";
-import { analyzePerceivedProgression, collectExperienceSnapshot, comparableExperienceMetric } from "./experience";
+import { analyzePerceivedProgression, collectExperienceSnapshot, comparableExperienceMetric, firstMilestoneTime } from "./experience";
 import { designObjectiveFactories } from "./designObjectives";
 
 type Vars = { bought: number };
@@ -140,6 +140,14 @@ describe("milestone times under the sample cap", () => {
     }
     // The cap keeps the earliest keys, so the first milestone is still known.
     expect(comparableExperienceMetric({ snapshot, metric: "timeToMilestone", fallbackValue: 86401 })).toBe(0);
+  });
+
+  it("does not read a partial report with no sample as unreached", () => {
+    expect(() => firstMilestoneTime({ milestones: [], coverage: "partial" })).toThrow(
+      "time to the first milestone is unknown; this partial report kept no milestone sample",
+    );
+    expect(firstMilestoneTime({ milestones: [], firstMilestoneSec: 3, coverage: "partial" })).toBe(3);
+    expect(firstMilestoneTime({ milestones: [], coverage: "complete" })).toBeUndefined();
   });
 
   it("does not score a dropped key as the unreached penalty", () => {

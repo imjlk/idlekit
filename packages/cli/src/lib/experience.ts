@@ -384,12 +384,16 @@ export function milestoneTime(report: MilestoneReport, key: string): number | un
 }
 
 /**
- * Seconds to the first milestone. The sample cap keeps the earliest keys, so a partial report still
- * holds the first one. An incomplete report came from a cut log and does not.
+ * Seconds to the first milestone. The sample cap keeps the earliest keys, so a partial report with a
+ * sample still holds the first one. An incomplete report came from a cut log and does not.
  */
 export function firstMilestoneTime(report: MilestoneReport): number | undefined {
   if (report.coverage === "incomplete") {
     throw new Error("time to the first milestone needs milestone samples; this report came from a truncated log");
+  }
+  // A partial report with no sample may have dropped the first one, so it is not "unreached".
+  if (report.coverage === "partial" && report.firstMilestoneSec === undefined) {
+    throw new Error("time to the first milestone is unknown; this partial report kept no milestone sample");
   }
   return report.firstMilestoneSec;
 }
