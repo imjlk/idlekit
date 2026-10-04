@@ -47,7 +47,8 @@ describe("simState serde", () => {
     expect(json.meta?.gitSha).toBe("abc123");
     expect(json.meta?.scenarioHash).toBe("deadbeef");
     expect(parseSimStateJSON(json).meta?.totalElapsedSec).toBe(12.3);
-    for (const invalid of [NaN, Infinity, "12.3"]) {
+    expect(parseSimStateJSON({ ...json, meta: { totalElapsedSec: 0 } }).meta?.totalElapsedSec).toBe(0);
+    for (const invalid of [-1, NaN, Infinity, "12.3"]) {
       expect(() => parseSimStateJSON({ ...json, meta: { ...json.meta, totalElapsedSec: invalid } })).toThrow("totalElapsedSec");
     }
     expect(json.strategy?.id).toBe("scripted");
