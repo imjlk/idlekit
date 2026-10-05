@@ -120,3 +120,9 @@ Recommended interactive order:
 - [scenario-and-tuning.md](./scenario-and-tuning.md)
 - [plugin-and-adapter.md](./plugin-and-adapter.md)
 - [testing.md](./testing.md)
+
+## Interpreting evaluate value estimates
+
+`evaluate --format md` labels end net worth in the scenario's game unit and displays the requested horizons alongside modeled LTV per user. Game wealth can be an input to a revenue estimate. Connecting it to actual sales requires an explicit exchange rate or conversion model, a revenue model, a currency, retention assumptions, and a horizon. State those assumptions and calibrate them against telemetry; the configured or default monetization parameters are estimates, rather than measured sales. The JSON output keeps the economy values and monetization fields available for your own conversion workflow.
+
+Use `idk <command> --help` or `idk init scenario --help` to discover the installed options. An unwritable output file reports `OUTPUT_WRITE_FAILED` with the destination path and a writable-path hint.

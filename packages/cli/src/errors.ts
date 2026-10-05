@@ -17,6 +17,7 @@ export type CliErrorCode =
   | "RESUME_STRATEGY_MISMATCH"
   | "REPLAY_ARTIFACT_INVALID"
   | "OUTPUT_META_INVALID"
+  | "OUTPUT_WRITE_FAILED"
   | "INTERNAL_ERROR";
 
 export class CliError extends Error {

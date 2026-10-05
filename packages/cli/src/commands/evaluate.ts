@@ -43,7 +43,7 @@ type EvaluateFlags = PluginOptionFlags &
     format: "json" | "md";
   }>;
 
-function renderEvaluateMarkdown(output: Record<string, any>): string {
+function renderEvaluateMarkdown(output: Record<string, any>, unitCode: string): string {
   const sections = [
     "# Evaluate Report",
     "",
@@ -66,10 +66,13 @@ function renderEvaluateMarkdown(output: Record<string, any>): string {
     "",
     "## LTV",
     "",
-    `- at30m: ${output.ltv.summary?.at30m?.endNetWorth ?? "n/a"}`,
-    `- at7d: ${output.ltv.summary?.at7d?.endNetWorth ?? "n/a"}`,
-    `- at30d: ${output.ltv.summary?.at30d?.endNetWorth ?? "n/a"}`,
-    `- at90d: ${output.ltv.summary?.at90d?.endNetWorth ?? "n/a"}`,
+    `End net worth is an in-game asset value in ${unitCode} and can be an input to a revenue estimate.`,
+    "Revenue and LTV/user use configured or default monetization and retention assumptions. To connect game assets to actual sales, state the exchange rate, revenue model, currency, retention and horizon, and calibrate them against telemetry.",
+    "",
+    `| Horizon | End net worth (${unitCode}) | Modeled LTV/user (model currency) |`,
+    "| --- | --- | --- |",
+    ...(output.ltv.horizons ?? []).map((point: any) =>
+      `| ${point.horizon} | ${point.endNetWorth} | ${point.monetization?.cumulativeLtvPerUser ?? "n/a"} |`),
   ];
 
   if (output.files) {
@@ -130,6 +133,7 @@ export default defineCommand({
     if (!valid.ok || !valid.scenario) {
       throw scenarioInvalidError(valid.issues);
     }
+    const scenario = valid.scenario;
 
     const scenarioAbs = resolve(process.cwd(), scenarioPath);
     const unseeded = prepareResolvedRun({
@@ -373,14 +377,14 @@ export default defineCommand({
       await writeTextFile(
         summaryPath,
         flags.format === "md"
-          ? `${renderEvaluateMarkdown(output)}\n`
+          ? `${renderEvaluateMarkdown(output, scenario.unit.code)}\n`
           : `${JSON.stringify({ ...output, _meta: evaluateMeta }, null, 2)}\n`,
       );
     }
 
     await writeOutput({
       format: flags.format,
-      data: flags.format === "md" ? renderEvaluateMarkdown(output) : output,
+      data: flags.format === "md" ? renderEvaluateMarkdown(output, scenario.unit.code) : output,
       meta: evaluateMeta,
     });
   },

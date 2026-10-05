@@ -86,7 +86,7 @@ if (import.meta.main) {
   try {
     const argv = process.argv.slice(2);
     const invocation = resolveInvocation(argv);
-    if (!invocation.commandName) {
+    if (!invocation.commandName || invocation.args.includes("--help") || invocation.args.includes("-h")) {
       await cli.run(argv);
     } else {
       await cli.execute(invocation.commandName, invocation.args);

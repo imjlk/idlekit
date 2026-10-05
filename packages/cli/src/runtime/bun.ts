@@ -1,5 +1,6 @@
 import { $ } from "bun";
 import { dirname } from "path";
+import { cliError, errorDetail } from "../errors";
 
 const MAX_CAPTURE_BYTES = 8 * 1024 * 1024;
 
@@ -12,8 +13,16 @@ export async function readJsonFile<T>(path: string): Promise<T> {
 }
 
 export async function writeTextFile(path: string, body: string): Promise<void> {
-  await ensureDir(dirname(path));
-  await Bun.write(path, body);
+  try {
+    await ensureDir(dirname(path));
+    await Bun.write(path, body);
+  } catch (error) {
+    throw cliError("OUTPUT_WRITE_FAILED", `Unable to write output file: ${path}`, {
+      detail: errorDetail(error),
+      hint: "Choose a writable output path and check that its parent is a directory.",
+      cause: error,
+    });
+  }
 }
 
 /**

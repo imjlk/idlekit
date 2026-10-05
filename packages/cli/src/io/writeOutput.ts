@@ -39,6 +39,7 @@ function toCsv(data: unknown): string {
 }
 
 function toMarkdown(data: unknown): string {
+  if (typeof data === "string") return data;
   if (!Array.isArray(data)) {
     return `\`\`\`json\n${JSON.stringify(data, null, 2)}\n\`\`\``;
   }

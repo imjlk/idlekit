@@ -10,6 +10,8 @@ Official support in v1: Bun `>=1.3` only. Node.js and browser runtimes are not p
 - `@idlekit/core`: scenario compilation, simulation, analysis, and reporting
 - `@idlekit/cli`: the `idk` CLI for validation, simulation, tuning, and reporting
 
+Registry installation requires a published release. If the `@idlekit/*` packages return `404`, use a repository checkout or the local-pack workflow below; a successful local pack does not establish registry availability.
+
 ```bash
 bun add @idlekit/money
 bun add @idlekit/core
@@ -111,6 +113,37 @@ bun run --cwd packages/cli dev -- experience ../../examples/tutorials/14-orbital
   --days 7 \
   --format json
 ```
+
+## Try a local package build
+
+From a checkout with Bun `>=1.3` and npm available for packing:
+
+```bash
+bun install --frozen-lockfile
+mkdir -p tmp/local-packs
+(cd packages/money && npm pack --pack-destination ../../tmp/local-packs)
+(cd packages/core && npm pack --pack-destination ../../tmp/local-packs)
+(cd packages/cli && npm pack --pack-destination ../../tmp/local-packs)
+```
+
+In a separate empty consumer directory, point internal dependencies at the local packs too. Bun 1.3.10 otherwise looks up the versioned `@idlekit/core` and `@idlekit/money` dependencies on the registry, even when all three tarballs are passed to `bun add`. Replace the paths below with your pack directory and use the versions in its filenames:
+
+```bash
+cat > package.json <<'JSON'
+{
+  "private": true,
+  "type": "module",
+  "overrides": {
+    "@idlekit/money": "file:/absolute/path/to/local-packs/idlekit-money-0.1.0.tgz",
+    "@idlekit/core": "file:/absolute/path/to/local-packs/idlekit-core-0.1.0.tgz"
+  }
+}
+JSON
+bun add /absolute/path/to/local-packs/*.tgz
+bunx --no-install idk --help
+```
+
+Continue with the installed CLI flow above. Packing runs the build and rewrites workspace/source exports for consumers; it does not publish packages. Keep the repository and the consumer directories separate so workspace imports cannot hide packaging errors.
 
 ## Documentation
 
