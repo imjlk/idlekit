@@ -73,6 +73,8 @@ idk replay verify <artifact> --format json
 
 ## Run configuration flags
 
+`report --include-milestones` and `--include-perceived` open a fresh model and strategy for experience, so the timeline cannot consume a one-shot script first. `tune` also starts each design objective and Monte Carlo draw from fresh candidate factories and parameters. Plugins that keep state in closures are rebuilt per seed and draw.
+
 `evaluate` compiles the scenario once. Simulate, experience, and ltv each open a fresh model and strategy from that plan.
 
 - `--strategy` on `evaluate`, `simulate`, `experience`, `ltv`, and `review evaluate` is a registered strategy id. `greedy`, `planner`, and `scripted` remain built in. An unknown id is rejected. A plugin is not loaded just because the flag names it. `compare` and `review compare` still accept only those three builtins. The flag replaces the scenario strategy, which is then not built, so a scenario strategy that is not registered or has invalid params does not stop the run. Without the flag it still fails.

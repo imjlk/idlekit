@@ -3,6 +3,7 @@ import {
   type ObjectiveFactory,
   zodStandardSchema,
   type SessionPatternId,
+  type OptimizationObjective,
 } from "@idlekit/core";
 import { z } from "zod";
 import {
@@ -42,6 +43,8 @@ type DesignObjectiveParams = Readonly<{
   milestoneKey?: string;
 }>;
 
+type EvaluationContext = Parameters<OptimizationObjective<any, any, any>["score"]>[0]["evaluation"];
+
 function q50(summary: Readonly<Record<string, number>>, fallback: number): number {
   return summary.q50 ?? fallback;
 }
@@ -49,6 +52,7 @@ function q50(summary: Readonly<Record<string, number>>, fallback: number): numbe
 function evaluateVisibleProgress<N, U extends string, Vars>(args: {
   scenario: Parameters<NonNullable<ObjectiveFactory["create"]>>[0] extends never ? never : any;
   params: DesignObjectiveParams;
+  evaluation?: EvaluationContext;
 }): number {
   const pattern = resolveSessionPatternSpec({
     scenario: args.scenario,
@@ -78,6 +82,8 @@ function evaluateVisibleProgress<N, U extends string, Vars>(args: {
 
   const summary = simulateMonteCarlo({
     scenario: args.scenario,
+    registries: args.evaluation?.registries,
+    isolation: args.evaluation?.isolation,
     sessionPattern: pattern,
     draws,
     seed: args.scenario.ctx.seed ?? 1,
@@ -89,6 +95,7 @@ function evaluateVisibleProgress<N, U extends string, Vars>(args: {
 function evaluateMilestoneTime<N, U extends string, Vars>(args: {
   scenario: any;
   params: DesignObjectiveParams;
+  evaluation?: EvaluationContext;
 }): number {
   const pattern = resolveSessionPatternSpec({
     scenario: args.scenario,
@@ -119,6 +126,8 @@ function evaluateMilestoneTime<N, U extends string, Vars>(args: {
 
   const summary = simulateMonteCarlo({
     scenario: args.scenario,
+    registries: args.evaluation?.registries,
+    isolation: args.evaluation?.isolation,
     sessionPattern: pattern,
     draws,
     seed: args.scenario.ctx.seed ?? 1,
@@ -135,6 +144,7 @@ function evaluateMilestoneTime<N, U extends string, Vars>(args: {
 function evaluateExperienceBalanced<N, U extends string, Vars>(args: {
   scenario: any;
   params: DesignObjectiveParams;
+  evaluation?: EvaluationContext;
 }): number {
   const pattern = resolveSessionPatternSpec({
     scenario: args.scenario,
@@ -165,6 +175,8 @@ function evaluateExperienceBalanced<N, U extends string, Vars>(args: {
 
   const summary = simulateMonteCarlo({
     scenario: args.scenario,
+    registries: args.evaluation?.registries,
+    isolation: args.evaluation?.isolation,
     sessionPattern: pattern,
     draws,
     seed: args.scenario.ctx.seed ?? 1,
@@ -183,8 +195,8 @@ export const designObjectiveFactories: readonly ObjectiveFactory[] = [
     paramsSchema: DesignObjectiveParamsSchema,
     create: (params?: DesignObjectiveParams) => ({
       id: "timeToMilestoneNegSec",
-      score: ({ scenario }) => {
-        const sec = evaluateMilestoneTime({ scenario, params: params ?? {} });
+      score: ({ scenario, evaluation }) => {
+        const sec = evaluateMilestoneTime({ scenario: evaluation?.open() ?? scenario, params: params ?? {}, evaluation });
         return Number.isFinite(sec) ? -sec : -1_000_000_000;
       },
     }),
@@ -195,7 +207,7 @@ export const designObjectiveFactories: readonly ObjectiveFactory[] = [
     paramsSchema: DesignObjectiveParamsSchema,
     create: (params?: DesignObjectiveParams) => ({
       id: "visibleProgressScore",
-      score: ({ scenario }) => evaluateVisibleProgress({ scenario, params: params ?? {} }),
+      score: ({ scenario, evaluation }) => evaluateVisibleProgress({ scenario: evaluation?.open() ?? scenario, params: params ?? {}, evaluation }),
     }),
   },
   {
@@ -204,7 +216,7 @@ export const designObjectiveFactories: readonly ObjectiveFactory[] = [
     paramsSchema: DesignObjectiveParamsSchema,
     create: (params?: DesignObjectiveParams) => ({
       id: "experienceBalancedLog10",
-      score: ({ scenario }) => evaluateExperienceBalanced({ scenario, params: params ?? {} }),
+      score: ({ scenario, evaluation }) => evaluateExperienceBalanced({ scenario: evaluation?.open() ?? scenario, params: params ?? {}, evaluation }),
     }),
   },
 ];

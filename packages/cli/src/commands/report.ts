@@ -60,13 +60,15 @@ export default defineCommand({
     }
 
     const E = createNumberEngine();
-    const compiled = compileScenario<number, string, Record<string, unknown>>({
+    const scenario = valid.scenario;
+    const openScenario = () => compileScenario<number, string, Record<string, unknown>>({
       E,
-      scenario: valid.scenario,
+      scenario,
       registry: loaded.modelRegistry,
       strategyRegistry: loaded.strategyRegistry,
       opts: { allowSuffixNotation: true },
     });
+    const compiled = openScenario();
 
     const runInput = {
       ...compiled,
@@ -107,14 +109,15 @@ export default defineCommand({
     }
 
     if (flags["include-milestones"] || flags["include-perceived"]) {
+      const experienceInput = openScenario();
       const experience = collectExperienceSnapshot({
-        scenario: runInput,
+        scenario: experienceInput,
         sessionPattern: resolveSessionPatternSpec({
-          scenario: runInput,
+          scenario: experienceInput,
           sessionPatternId: resolveSessionPatternId(flags["session-pattern"]),
           days: flags.days,
         }),
-        seed: runInput.ctx.seed,
+        seed: experienceInput.ctx.seed,
       });
       data.session = experience.snapshot.session;
       if (flags["include-milestones"]) {

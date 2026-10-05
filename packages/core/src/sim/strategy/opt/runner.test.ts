@@ -3,6 +3,8 @@ import { createNumberEngine } from "../../../engine/breakInfinity";
 import { builtinObjectiveFactories } from "./objectives/builtins";
 import { createObjectiveRegistry } from "./registry";
 import { runCandidateAndScore } from "./runner";
+import { runScenario } from "../../simulator";
+import { createModelRegistry } from "../../../scenario/registry";
 import { createStrategyRegistry, type StrategyFactory } from "../registry";
 import type { CompiledScenario } from "../../types";
 
@@ -296,5 +298,59 @@ describe("builtin objectives over a large start t", () => {
     const far = score(1e18);
     expect(far.seedResults[0]?.durationSec).toBe(1000);
     expect(far.score).toBeCloseTo(near.score, 9);
+  });
+});
+
+describe("independent objective evaluation runs", () => {
+  it("offers fresh candidate strategies while preserving seed and run overrides", () => {
+    const scenario = makeScenario();
+    const strategyRegistry = createStrategyRegistry([{ id: "once", create: () => {
+      let used = false;
+      return { id: "once", decide: (ctx: any, model: any, state: any) => {
+        if (used) return []; used = true;
+        return [{ action: model.actions(ctx, state)[0] }];
+      } };
+    } }]);
+    const objectiveRegistry = createObjectiveRegistry([{ id: "fresh", create: () => ({ id: "fresh",
+      score: ({ scenario: completed, run, evaluation }) => {
+        expect(run.end.vars.counter).toBe(1);
+        for (let i = 0; i < 2; i++) {
+          const fresh = evaluation!.open();
+          expect(fresh.strategy).not.toBe(completed.strategy);
+          expect(fresh.ctx.seed).toBe(completed.ctx.seed);
+          expect(fresh.run.durationSec).toBe(2);
+          expect(fresh.run.eventLog?.enabled).toBeFalse();
+          expect(runScenario(fresh).end.vars.counter).toBe(1);
+        }
+        return run.end.vars.counter;
+      },
+    }) }]);
+    const result = runCandidateAndScore({ baseScenario: scenario, params: {}, strategyId: "once", objectiveId: "fresh",
+      seeds: [1, 2], overrides: { durationSec: 2 }, strategyRegistry, objectiveRegistry });
+    expect(result.seedScores).toEqual([1, 1]);
+  });
+
+  it("rebuilds the model from its source params for every seed and analysis run", () => {
+    const scenario = makeScenario();
+    const modelRegistry = createModelRegistry([{ id: "closure", version: 1, create: (params: any) => {
+      let used = false;
+      return { id: "closure", version: 1, income: (ctx: any) => ({ unit: ctx.unit, amount: 0 }),
+        actions: () => used ? [] : [{ id: "once", kind: "custom", canApply: () => true, cost: () => null,
+          apply: (_ctx: any, state: any) => { used = true; state.vars.counter += params.delta; return state; } }],
+      };
+    } }]);
+    const strategyRegistry = createStrategyRegistry([{ id: "buy", create: () => ({ id: "buy",
+      decide: (ctx: any, model: any, state: any) => model.actions(ctx, state).map((action: any) => ({ action })),
+    }) }]);
+    const objectiveRegistry = createObjectiveRegistry([{ id: "fresh", create: () => ({ id: "fresh", score: ({ run, evaluation }) => {
+      expect(run.end.vars.counter).toBe(3);
+      expect(runScenario(evaluation!.open()).end.vars.counter).toBe(3);
+      return run.end.vars.counter;
+    } }) }]);
+    const result = runCandidateAndScore({ baseScenario: scenario, params: {}, strategyId: "buy", objectiveId: "fresh",
+      seeds: [1, 2], strategyRegistry, objectiveRegistry, modelRegistry,
+      model: { id: "closure", version: 1, params: { delta: 3 } } });
+    expect(result.seedScores).toEqual([3, 3]);
+    expect(scenario.initial.vars.counter).toBe(0);
   });
 });
