@@ -73,6 +73,8 @@ idk replay verify <artifact> --format json
 
 ## Run configuration flags
 
+`validate` checks the selected model and strategy against the loaded registries, including strategy parameters and factory defaults. It validates schemas without constructing the strategy. Load a custom strategy plugin explicitly with `--plugin` and `--allow-plugin true`. The core `validateScenarioV1(input, modelRegistry?, strategyRegistry?)` API keeps registry checks optional.
+
 `evaluate` compiles the scenario once. Simulate, experience, and ltv each open a fresh model and strategy from that plan.
 
 - `--strategy` on `evaluate`, `simulate`, `experience`, `ltv`, and `review evaluate` is a registered strategy id. `greedy`, `planner`, and `scripted` remain built in. An unknown id is rejected. A plugin is not loaded just because the flag names it. `compare` and `review compare` still accept only those three builtins. The flag replaces the scenario strategy, which is then not built, so a scenario strategy that is not registered or has invalid params does not stop the run. Without the flag it still fails.

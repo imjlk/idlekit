@@ -768,6 +768,7 @@ function validateBaseScenario(input: unknown): StandardResult<ScenarioV1> {
 export function validateScenarioV1(
   input: unknown,
   registry?: import("./registry").ModelRegistry,
+  strategyRegistry?: import("../sim/strategy/registry").StrategyRegistry,
 ): Readonly<{ ok: boolean; scenario?: ScenarioV1; issues: StandardIssue[] }> {
   const stage1 = validateBaseScenario(input);
   if (!stage1.success) {
@@ -797,6 +798,19 @@ export function validateScenarioV1(
         for (const issue of normalizeSchemaIssues(result)) {
           issues.push({ ...issue, path: issue.path ? `initial.vars.${issue.path}` : "initial.vars" });
         }
+      }
+    }
+  }
+
+  if (strategyRegistry && scenario.strategy) {
+    const factory = strategyRegistry.get(scenario.strategy.id);
+    if (!factory) {
+      issues.push({ path: "strategy", message: `Unknown strategy: ${scenario.strategy.id}` });
+    } else if (factory.paramsSchema) {
+      const params = scenario.strategy.params ?? factory.defaultParams ?? {};
+      const result = factory.paramsSchema["~standard"].validate(params);
+      for (const issue of normalizeSchemaIssues(result)) {
+        issues.push({ ...issue, path: issue.path ? `strategy.params.${issue.path}` : "strategy.params" });
       }
     }
   }

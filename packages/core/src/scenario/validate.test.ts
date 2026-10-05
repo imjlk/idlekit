@@ -309,3 +309,32 @@ describe("validateScenarioV1 initial.t", () => {
     expect(out.ok).toBeTrue();
   });
 });
+
+describe("validateScenarioV1 strategy registry", () => {
+  const strategy = { id: "checked", params: { marker: "bad" } };
+  it("keeps structural validation available without a registry", () => {
+    expect(validateScenarioV1({ ...baseScenario(), strategy }).ok).toBeTrue();
+  });
+  it("reports unknown strategies only when a registry is supplied", () => {
+    const out = validateScenarioV1({ ...baseScenario(), strategy }, undefined, {
+      get: () => undefined, list: () => [],
+    });
+    expect(out.ok).toBeFalse();
+    expect(out.issues).toEqual([{ path: "strategy", message: "Unknown strategy: checked" }]);
+  });
+  it("validates defaults and params without invoking a factory or mutating the input", () => {
+    const defaults = { marker: "good" };
+    const registry = {
+      get: () => ({ id: "checked", defaultParams: defaults, create: () => { throw new Error("factory called"); },
+        paramsSchema: { "~standard": { validate: (params: any) => params.marker === "good"
+          ? { success: true as const, value: { marker: "coerced" } }
+          : { success: false as const, issues: [{ path: "marker", message: "bad marker" }] } } },
+      }), list: () => [{ id: "checked" }],
+    };
+    expect(validateScenarioV1({ ...baseScenario(), strategy: { id: "checked" } }, undefined, registry).ok).toBeTrue();
+    const out = validateScenarioV1({ ...baseScenario(), strategy }, undefined, registry);
+    expect(out.issues).toEqual([{ path: "strategy.params.marker", message: "bad marker" }]);
+    expect(defaults.marker).toBe("good");
+    expect(strategy.params.marker).toBe("bad");
+  });
+});

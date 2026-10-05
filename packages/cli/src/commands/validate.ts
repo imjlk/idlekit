@@ -18,9 +18,9 @@ export default defineCommand({
     }
 
     const { value: input, notices } = await readScenarioFileWithMeta(scenarioPath);
-    const { modelRegistry } = await loadRegistriesFromFlags(flags);
+    const { modelRegistry, strategyRegistry } = await loadRegistriesFromFlags(flags);
 
-    const r = validateScenarioV1(input, modelRegistry);
+    const r = validateScenarioV1(input, modelRegistry, strategyRegistry);
     if (!r.ok) {
       throw scenarioInvalidError(r.issues);
     }
