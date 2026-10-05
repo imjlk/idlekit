@@ -81,6 +81,7 @@ export default defineCommand({
     const timeline = buildTimeline({
       run,
       checkpointsSec: checkpoints,
+      getNetWorth: (state) => runInput.model.netWorth?.(runInput.ctx, state).amount ?? state.wallet.money.amount,
       formatMoney: (amount) =>
         formatMoney(E, { unit: runInput.ctx.unit, amount }, { showUnit: true, trimTrailingZeros: true }),
       formatNetWorth: (amount) =>
