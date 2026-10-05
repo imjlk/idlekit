@@ -106,6 +106,14 @@ function validateModelBlock(issues: StandardIssue[], input: Record<string, unkno
   }
 }
 
+function validateStrategyBlock(issues: StandardIssue[], input: Record<string, unknown>): void {
+  const strategy = input.strategy;
+  if (strategy == null) return;
+  if (!isRecord(strategy) || typeof strategy.id !== "string") {
+    pushIssue(issues, "strategy.id(string) is required", "strategy", strategy);
+  }
+}
+
 function validateInitialBlock(issues: StandardIssue[], input: Record<string, unknown>): void {
   const initial = input.initial;
   if (!isRecord(initial)) {
@@ -754,6 +762,7 @@ function validateBaseScenario(input: unknown): StandardResult<ScenarioV1> {
   validateUnitBlock(issues, input);
   validatePolicyBlock(issues, input);
   validateModelBlock(issues, input);
+  validateStrategyBlock(issues, input);
   validateInitialBlock(issues, input);
   validateClockBlock(issues, input);
   validateSimBlock(issues, input);
@@ -768,6 +777,7 @@ function validateBaseScenario(input: unknown): StandardResult<ScenarioV1> {
 export function validateScenarioV1(
   input: unknown,
   registry?: import("./registry").ModelRegistry,
+  strategyRegistry?: import("../sim/strategy/registry").StrategyRegistry,
 ): Readonly<{ ok: boolean; scenario?: ScenarioV1; issues: StandardIssue[] }> {
   const stage1 = validateBaseScenario(input);
   if (!stage1.success) {
@@ -797,6 +807,19 @@ export function validateScenarioV1(
         for (const issue of normalizeSchemaIssues(result)) {
           issues.push({ ...issue, path: issue.path ? `initial.vars.${issue.path}` : "initial.vars" });
         }
+      }
+    }
+  }
+
+  if (strategyRegistry && scenario.strategy) {
+    const factory = strategyRegistry.get(scenario.strategy.id);
+    if (!factory) {
+      issues.push({ path: "strategy", message: `Unknown strategy: ${scenario.strategy.id}` });
+    } else if (factory.paramsSchema) {
+      const params = scenario.strategy.params ?? factory.defaultParams ?? {};
+      const result = factory.paramsSchema["~standard"].validate(params);
+      for (const issue of normalizeSchemaIssues(result)) {
+        issues.push({ ...issue, path: issue.path ? `strategy.params.${issue.path}` : "strategy.params" });
       }
     }
   }
