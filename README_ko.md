@@ -25,6 +25,8 @@ bun run --cwd packages/cli dev -- ltv ../../examples/tutorials/11-my-game-v1.jso
 
 설치형 실행(선택):
 
+레지스트리 설치는 패키지가 배포되어 있어야 합니다. `@idlekit/*` 조회가 `404`이면 저장소 실행 또는 [로컬 패키지 설치](./README.md#try-a-local-package-build)를 사용하세요. Bun 1.3.10에서 세 tarball만 함께 설치하면 내부 의존성은 레지스트리에서 찾을 수 있으므로, 안내의 `overrides`도 설정해야 합니다. 로컬 pack 성공은 npm 배포를 의미하지 않습니다.
+
 ```bash
 bun link --cwd packages/cli
 idk validate examples/tutorials/11-my-game-v1.json

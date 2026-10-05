@@ -4,7 +4,7 @@
 Use it to validate scenarios, run simulations, inspect pacing, compare variants, and tune strategies.
 Official support in v1: Bun `>=1.3` only. Node.js and browser runtimes are not part of the v1 compatibility contract.
 
-This registry install requires a published package. If it returns `404`, use the repository [local-pack workflow](https://github.com/imjlk/idlekit#try-a-local-package-build) and install its three tarballs together in a separate consumer project.
+This registry install requires a published package. If it returns `404`, use the repository [local-pack workflow](https://github.com/imjlk/idlekit#try-a-local-package-build), including its overrides for unpublished internal dependencies, in a separate consumer project.
 
 ```bash
 bun add -g @idlekit/cli
