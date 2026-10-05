@@ -164,6 +164,8 @@ export async function cmdTune(args: {
         overrides,
         strategyRegistry: args.strategyRegistry,
         objectiveRegistry: args.objectiveRegistry,
+        modelRegistry: args.modelRegistry,
+        model: sv.scenario!.model,
       }),
   });
 

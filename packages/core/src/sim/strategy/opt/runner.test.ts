@@ -3,6 +3,8 @@ import { createNumberEngine } from "../../../engine/breakInfinity";
 import { builtinObjectiveFactories } from "./objectives/builtins";
 import { createObjectiveRegistry } from "./registry";
 import { runCandidateAndScore } from "./runner";
+import { runScenario } from "../../simulator";
+import { createModelRegistry } from "../../../scenario/registry";
 import { createStrategyRegistry, type StrategyFactory } from "../registry";
 import type { CompiledScenario } from "../../types";
 
@@ -296,5 +298,121 @@ describe("builtin objectives over a large start t", () => {
     const far = score(1e18);
     expect(far.seedResults[0]?.durationSec).toBe(1000);
     expect(far.score).toBeCloseTo(near.score, 9);
+  });
+});
+
+describe("independent objective evaluation runs", () => {
+  const idleFactory: StrategyFactory = { id: "idle", create: () => ({ id: "idle", decide: () => [] }) };
+  const objectiveRegistry = createObjectiveRegistry([{ id: "money", create: () => ({ id: "money", score: ({ run }) => Number(run.end.wallet.money.amount) }) }]);
+
+  it("refuses a declared stateful model without its factory before any run", () => {
+    let ticks = 0;
+    const base = makeScenario();
+    const scenario: typeof base = { ...base, model: { ...base.model,
+      income: (ctx) => { ticks++; return { unit: ctx.unit, amount: ticks }; },
+    } };
+    expect(() => runCandidateAndScore({ baseScenario: scenario, params: {}, strategyId: "idle", objectiveId: "money",
+      seeds: [1, 2], strategyRegistry: createStrategyRegistry([idleFactory]), objectiveRegistry, statefulModel: true,
+    } as Parameters<typeof runCandidateAndScore>[0])).toThrow("Run isolation is unavailable");
+    expect(ticks).toBe(0);
+  });
+
+  it("rejects schema-invalid candidate params before constructing a strategy", () => {
+    let creates = 0;
+    const strategyRegistry = createStrategyRegistry([{ ...idleFactory,
+      paramsSchema: { "~standard": { validate: () => ({ success: false, issues: [{ path: "threshold", message: "threshold must be positive" }] }) } },
+      create: () => { creates++; return { id: "idle", decide: () => [] }; },
+    }]);
+    expect(() => runCandidateAndScore({ baseScenario: makeScenario(), params: { threshold: -1 }, strategyId: "idle", objectiveId: "money",
+      seeds: [1, 2], strategyRegistry, objectiveRegistry,
+    })).toThrow("Invalid strategy params: threshold must be positive");
+    expect(creates).toBe(0);
+  });
+
+  it("rejects schema-invalid model params before constructing either factory", () => {
+    let creates = 0;
+    const modelRegistry = createModelRegistry([{ id: "checked", version: 1,
+      paramsSchema: { "~standard": { validate: () => ({ success: false, issues: [{ path: "rate", message: "rate must be finite" }] }) } },
+      create: () => { creates++; return makeScenario().model; },
+    }]);
+    expect(() => runCandidateAndScore({ baseScenario: makeScenario(), params: {}, strategyId: "idle", objectiveId: "money",
+      seeds: [1, 2], strategyRegistry: createStrategyRegistry([idleFactory]), objectiveRegistry, modelRegistry,
+      model: { id: "checked", version: 1, params: { rate: Infinity } },
+    })).toThrow("Invalid model params: rate must be finite");
+    expect(creates).toBe(0);
+  });
+
+  it("preserves legacy raw params after schema validation for every new instance", () => {
+    const params = { threshold: "2" };
+    const schema = { "~standard": { validate: () => ({ success: true as const, value: { threshold: 2 } }) } };
+    const scenario = makeScenario();
+    let modelCreates = 0;
+    let strategyCreates = 0;
+    const modelRegistry = createModelRegistry([{ id: "raw", version: 1, paramsSchema: schema, create: (raw) => {
+      expect(raw).toBe(params); modelCreates++; return scenario.model;
+    } }]);
+    const strategyRegistry = createStrategyRegistry([{ ...idleFactory, paramsSchema: schema, create: (raw) => {
+      expect(raw).toBe(params); strategyCreates++; return { id: "idle", decide: () => [] };
+    } }]);
+    const objectiveRegistry = createObjectiveRegistry([{ id: "fresh", create: () => ({ id: "fresh", score: ({ evaluation }) => {
+      runScenario(evaluation!.open()); return 1;
+    } }) }]);
+    const out = runCandidateAndScore({ baseScenario: scenario, params, strategyId: "idle", objectiveId: "fresh", seeds: [1, 2],
+      strategyRegistry, objectiveRegistry, modelRegistry, model: { id: "raw", version: 1, params }, statefulModel: true });
+    expect(out.seedScores).toEqual([1, 1]);
+    expect(modelCreates).toBe(4);
+    expect(strategyCreates).toBe(4);
+  });
+
+  it("offers fresh candidate strategies while preserving seed and run overrides", () => {
+    const scenario = makeScenario();
+    const strategyRegistry = createStrategyRegistry([{ id: "once", create: () => {
+      let used = false;
+      return { id: "once", decide: (ctx: any, model: any, state: any) => {
+        if (used) return []; used = true;
+        return [{ action: model.actions(ctx, state)[0] }];
+      } };
+    } }]);
+    const objectiveRegistry = createObjectiveRegistry([{ id: "fresh", create: () => ({ id: "fresh",
+      score: ({ scenario: completed, run, evaluation }) => {
+        expect(run.end.vars.counter).toBe(1);
+        for (let i = 0; i < 2; i++) {
+          const fresh = evaluation!.open();
+          expect(fresh.strategy).not.toBe(completed.strategy);
+          expect(fresh.ctx.seed).toBe(completed.ctx.seed);
+          expect(fresh.run.durationSec).toBe(2);
+          expect(fresh.run.eventLog?.enabled).toBeFalse();
+          expect(runScenario(fresh).end.vars.counter).toBe(1);
+        }
+        return run.end.vars.counter;
+      },
+    }) }]);
+    const result = runCandidateAndScore({ baseScenario: scenario, params: {}, strategyId: "once", objectiveId: "fresh",
+      seeds: [1, 2], overrides: { durationSec: 2 }, strategyRegistry, objectiveRegistry });
+    expect(result.seedScores).toEqual([1, 1]);
+  });
+
+  it("rebuilds the model from its source params for every seed and analysis run", () => {
+    const scenario = makeScenario();
+    const modelRegistry = createModelRegistry([{ id: "closure", version: 1, create: (params: any) => {
+      let used = false;
+      return { id: "closure", version: 1, income: (ctx: any) => ({ unit: ctx.unit, amount: 0 }),
+        actions: () => used ? [] : [{ id: "once", kind: "custom", canApply: () => true, cost: () => null,
+          apply: (_ctx: any, state: any) => { used = true; state.vars.counter += params.delta; return state; } }],
+      };
+    } }]);
+    const strategyRegistry = createStrategyRegistry([{ id: "buy", create: () => ({ id: "buy",
+      decide: (ctx: any, model: any, state: any) => model.actions(ctx, state).map((action: any) => ({ action })),
+    }) }]);
+    const objectiveRegistry = createObjectiveRegistry([{ id: "fresh", create: () => ({ id: "fresh", score: ({ run, evaluation }) => {
+      expect(run.end.vars.counter).toBe(3);
+      expect(runScenario(evaluation!.open()).end.vars.counter).toBe(3);
+      return run.end.vars.counter;
+    } }) }]);
+    const result = runCandidateAndScore({ baseScenario: scenario, params: {}, strategyId: "buy", objectiveId: "fresh",
+      seeds: [1, 2], strategyRegistry, objectiveRegistry, modelRegistry,
+      model: { id: "closure", version: 1, params: { delta: 3 } } });
+    expect(result.seedScores).toEqual([3, 3]);
+    expect(scenario.initial.vars.counter).toBe(0);
   });
 });
