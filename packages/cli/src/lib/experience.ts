@@ -427,6 +427,9 @@ export function summarizeComparableExperienceMetric<N, U extends string, Vars>(a
   seed: number;
   quantiles: readonly number[];
   series?: ExperienceSeries;
+  /** Factories and original params that rebuild the model and strategy for every draw. */
+  registries?: RunFactoryDeps;
+  isolation?: RunBindOptions;
 }): ExperienceNumericSummary {
   const fallbackValue = args.sessionPattern.days * 86400 + 1;
   const summary = simulateMonteCarlo({
@@ -434,6 +437,8 @@ export function summarizeComparableExperienceMetric<N, U extends string, Vars>(a
     sessionPattern: args.sessionPattern,
     draws: args.draws,
     seed: args.seed,
+    registries: args.registries,
+    isolation: args.isolation,
     metrics: ({ scenario, session }) =>
       comparableExperienceMetric({
         snapshot: snapshotFromSession({
