@@ -50,10 +50,16 @@ export function buildTimeline(args: {
       notes.push(`nearestTrace=${s.t}`);
     }
 
+    let netWorth: string | undefined;
+    if (args.formatNetWorth) {
+      const amount = args.getNetWorth ? args.getNetWorth(s) : s.wallet.money.amount;
+      netWorth = args.formatNetWorth(amount);
+    }
+
     return {
       t,
       money: args.formatMoney(s.wallet.money.amount),
-      netWorth: args.formatNetWorth ? args.formatNetWorth(args.getNetWorth ? args.getNetWorth(s) : s.wallet.money.amount) : undefined,
+      netWorth,
       prestigePoints: String(s.prestige.points as any),
       notes: notes.length > 0 ? notes : undefined,
     };
