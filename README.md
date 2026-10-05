@@ -10,6 +10,8 @@ Official support in v1: Bun `>=1.3` only. Node.js and browser runtimes are not p
 - `@idlekit/core`: scenario compilation, simulation, analysis, and reporting
 - `@idlekit/cli`: the `idk` CLI for validation, simulation, tuning, and reporting
 
+Registry installation requires a published release. If the `@idlekit/*` packages return `404`, use a repository checkout or the local-pack workflow below; a successful local pack does not establish registry availability.
+
 ```bash
 bun add @idlekit/money
 bun add @idlekit/core
@@ -111,6 +113,20 @@ bun run --cwd packages/cli dev -- experience ../../examples/tutorials/14-orbital
   --days 7 \
   --format json
 ```
+
+## Try a local package build
+
+From a checkout with Bun `>=1.3` and npm available for packing:
+
+```bash
+bun install --frozen-lockfile
+mkdir -p tmp/local-packs
+(cd packages/money && npm pack --pack-destination ../../tmp/local-packs)
+(cd packages/core && npm pack --pack-destination ../../tmp/local-packs)
+(cd packages/cli && npm pack --pack-destination ../../tmp/local-packs)
+```
+
+In a separate empty consumer directory, install all three resulting tarballs together with `bun add /absolute/path/to/local-packs/*.tgz`, then run `bunx --no-install idk --help` and the installed CLI flow above. Packing runs the build and rewrites workspace/source exports for consumers; it does not publish packages. Keep the repository and the consumer directories separate so workspace imports cannot hide packaging errors.
 
 ## Documentation
 
