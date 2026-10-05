@@ -73,6 +73,8 @@ idk replay verify <artifact> --format json
 
 ## Run configuration flags
 
+`validate` checks the selected model and strategy against the loaded registries, including strategy parameters and factory defaults. It validates schemas without constructing the strategy. Load a custom strategy plugin explicitly with `--plugin` and `--allow-plugin true`. The core `validateScenarioV1(input, modelRegistry?, strategyRegistry?)` API keeps registry checks optional.
+
 `report --include-milestones` and `--include-perceived` open a fresh model and strategy for experience, so the timeline cannot consume a one-shot script first. `tune` also starts each design objective and Monte Carlo draw from fresh candidate factories and parameters. Plugins that keep state in closures are rebuilt per seed and draw.
 
 Programmatic candidate scoring may share stateless base models. Pass `model` and `modelRegistry` to rebuild a stateful model, and set `statefulModel: true` to reject a missing model source. Candidate model and strategy schemas are checked before any run; factory `create` still receives the original raw parameters.

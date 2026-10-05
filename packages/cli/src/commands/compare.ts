@@ -3,11 +3,12 @@ import {
   compareScenarios,
   compileScenario,
   createNumberEngine,
-  deepClonePreservingPrototype,
+  createRunFactory,
   parseMoney,
   runElapsedSec,
   runScenario,
   validateScenarioV1,
+  type RunBindOptions,
   type ScenarioV1,
 } from "@idlekit/core";
 import { resolve } from "path";
@@ -25,7 +26,7 @@ import {
   summarizeComparableExperienceMetric,
 } from "../lib/experience";
 import { defaultRunSeed, pluginDigestValues, resolveStrategySelection } from "../lib/runConfiguration";
-import { scenarioInvalidError, unknownStrategyError, usageError } from "../errors";
+import { scenarioInvalidError, usageError } from "../errors";
 import { buildOutputMeta, deriveDeterministicRunId } from "../io/outputMeta";
 import { writeCommandReplayArtifact } from "../io/replayPolicy";
 import { readScenarioFile } from "../io/readScenario";
@@ -57,7 +58,7 @@ function assertValidScenario(
 }
 
 function compileComparableScenario(args: {
-  scenario: any;
+  scenario: ScenarioV1;
   E: ReturnType<typeof createNumberEngine>;
   loaded: Awaited<ReturnType<typeof loadRegistriesFromFlags>>;
   flags: {
@@ -68,30 +69,27 @@ function compileComparableScenario(args: {
     seed?: number;
   };
 }) {
-  // An override replaces the scenario strategy, so the scenario one is not built.
+  const selected = resolveStrategySelection({
+    scenario: args.scenario,
+    strategyRegistry: args.loaded.strategyRegistry,
+    overrideId: args.flags.strategy,
+  });
+  // The binding builds the selected strategy for every run. An override never builds the replaced one.
   const { strategy: _replaced, ...withoutStrategy } = args.scenario;
   const compiled = compileScenario<number, string, Record<string, unknown>>({
     E: args.E,
-    scenario: args.flags.strategy ? withoutStrategy : args.scenario,
+    scenario: withoutStrategy,
     registry: args.loaded.modelRegistry,
     strategyRegistry: args.loaded.strategyRegistry,
     opts: { allowSuffixNotation: true },
   });
 
-  const overrideStrategy = (() => {
-    if (!args.flags.strategy) return compiled.strategy;
-    const factory = args.loaded.strategyRegistry.get(args.flags.strategy);
-    if (!factory) throw unknownStrategyError(args.flags.strategy);
-    return factory.create(factory.defaultParams ?? {}) as typeof compiled.strategy;
-  })();
-
-  return {
+  const definition = {
     ...compiled,
     ctx: {
       ...compiled.ctx,
       seed: args.flags.seed ?? compiled.ctx.seed,
     },
-    strategy: overrideStrategy,
     run: {
       ...compiled.run,
       eventLog: {
@@ -104,6 +102,19 @@ function compileComparableScenario(args: {
         ? { enabled: true as const, kind: "log-domain" as const, disableMoneyEvents: true }
         : compiled.run.fast,
     },
+  };
+  const registries = { models: args.loaded.modelRegistry, strategies: args.loaded.strategyRegistry };
+  const isolation: RunBindOptions = {
+    model: args.scenario.model,
+    ...(selected.id !== undefined
+      ? { strategy: { id: selected.id, params: selected.params, paramsMode: selected.paramsMode } }
+      : {}),
+  };
+  const binding = createRunFactory(registries).bind(definition, isolation);
+  return {
+    registries,
+    isolation,
+    fresh: (trialId: string) => binding.fresh({ trialId, seed: definition.ctx.seed }).scenario,
   };
 }
 
@@ -201,29 +212,26 @@ function measureScenario(args: {
   targetWorth?: string;
   maxDuration: number;
 }) {
-  const runInput = {
-    ...args.compiled,
-    initial: deepClonePreservingPrototype(args.compiled.initial),
-  };
+  const runInput = args.compiled.fresh("economy");
   const run = runScenario(runInput);
   const endWorth = runInput.model.netWorth?.(runInput.ctx, run.end) ?? run.end.wallet.money;
 
   let etaSeconds: number | undefined;
   let etaReached: boolean | undefined;
   if (args.targetWorth) {
+    const etaInput = args.compiled.fresh("eta");
     const target = parseMoney(args.E, args.targetWorth, {
-      unit: runInput.ctx.unit,
+      unit: etaInput.ctx.unit,
       suffix: { kind: "alphaInfinite", minLen: 2 },
     }).amount;
 
     const reachedFn = (s: typeof run.end) =>
-      args.E.cmp((runInput.model.netWorth?.(runInput.ctx, s) ?? s.wallet.money).amount, target) >= 0;
+      args.E.cmp((etaInput.model.netWorth?.(etaInput.ctx, s) ?? s.wallet.money).amount, target) >= 0;
 
     const etaRun = runScenario({
-      ...runInput,
-      initial: deepClonePreservingPrototype(args.compiled.initial),
+      ...etaInput,
       run: {
-        ...runInput.run,
+        ...etaInput.run,
         durationSec: args.maxDuration,
         trace: undefined,
         until: reachedFn,
@@ -255,20 +263,21 @@ function measureDesignMetric(args: {
   value: number;
   snapshot: ReturnType<typeof collectExperienceSnapshot<any, any, any>>["snapshot"];
 }> {
+  const scenario = args.compiled.fresh(`design:${args.metric}`);
   const sessionPattern = resolveSessionPatternSpec({
-    scenario: args.compiled,
+    scenario,
     sessionPatternId: resolveSessionPatternId(args.sessionPatternId),
     days: args.days,
   });
-  const series = resolveExperienceSeries(args.compiled);
-  const draws = Math.max(1, Math.floor(args.draws ?? args.compiled.analysis?.experience?.draws ?? 1));
-  const quantiles = resolveExperienceQuantiles(args.compiled);
+  const series = resolveExperienceSeries(scenario);
+  const draws = Math.max(1, Math.floor(args.draws ?? scenario.analysis?.experience?.draws ?? 1));
+  const quantiles = resolveExperienceQuantiles(scenario);
   const fallback = sessionPattern.days * 86400 + 1;
 
   const deterministic = collectExperienceSnapshot({
-    scenario: args.compiled,
+    scenario,
     sessionPattern,
-    seed: args.compiled.ctx.seed,
+    seed: scenario.ctx.seed,
     series,
   });
 
@@ -286,14 +295,16 @@ function measureDesignMetric(args: {
   }
 
   const summary = summarizeComparableExperienceMetric({
-    scenario: args.compiled,
+    scenario: args.compiled.fresh(`design:${args.metric}:monte-carlo`),
     sessionPattern,
     metric: args.metric,
     milestoneKey: args.milestoneKey,
     draws,
-    seed: args.compiled.ctx.seed ?? 1,
+    seed: scenario.ctx.seed ?? 1,
     quantiles,
     series,
+    registries: args.compiled.registries,
+    isolation: args.compiled.isolation,
   });
 
   return {
