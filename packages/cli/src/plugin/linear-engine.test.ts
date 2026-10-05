@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { compileScenario, createBreakInfinityEngine, createNumberEngine, runCandidateAndScore, runScenario, type ScenarioV1 } from "@idlekit/core";
 import { loadRegistries } from "./load";
+import { toCliError } from "../errors";
 
 const registries = await loadRegistries();
 function input(bulkSize: number, scale = ""): any {
@@ -80,6 +81,14 @@ describe("linear engine arithmetic", () => {
   it("rejects Number overflow with guidance to select breakInfinity", () => {
     expect(() => { const sc = compile(createNumberEngine(), input(1, "e400")); runScenario(sc); })
       .toThrow("breakInfinity");
+  });
+  it("classifies an engine-range failure as invalid input and names commands supporting the engine flag", () => {
+    let error: unknown;
+    try { runScenario(compile(createNumberEngine(), input(1, "e400"))); } catch (cause) { error = cause; }
+    const cli = toCliError(error);
+    expect(cli.code).toBe("SCENARIO_INVALID");
+    expect(cli.message).toContain("simulate/evaluate/experience/ltv");
+    expect(cli.hint).toContain("number engine");
   });
   it("rejects overflow from bounded Number inputs rather than returning a successful Infinity result", () => {
     const raw = input(1); raw.initial.wallet.amount = "1e308";

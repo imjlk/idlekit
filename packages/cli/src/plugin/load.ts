@@ -22,6 +22,7 @@ import { z } from "zod";
 import type { EconPluginModule } from "./types";
 import { fileExists, readTextFile, sha256Hex } from "../runtime/bun";
 import { designObjectiveFactories } from "../lib/designObjectives";
+import { cliError } from "../errors";
 
 const ALLOWED_PLUGIN_EXTENSIONS = new Set([".js", ".mjs", ".cjs", ".ts", ".mts", ".cts"]);
 // Files whose imports the digest follows. Bun lets a .js file hold JSX, so JS scans as jsx.
@@ -53,7 +54,9 @@ function ownedCount(state: { vars?: LinearVars } | undefined): number {
 
 function finiteLinearAmount<N>(E: Engine<N>, value: N, label: string): N {
   if (!E.isFinite(value)) {
-    throw new Error(`linear ${label} exceeds the selected engine's finite range. Use --engine breakInfinity for a large economy, or reduce the inputs.`);
+    throw cliError("SCENARIO_INVALID", `linear ${label} exceeds the selected engine's finite range. Use --engine breakInfinity with simulate/evaluate/experience/ltv for a large economy, or reduce the inputs.`, {
+      hint: "Other commands, including report/compare/tune, use the number engine; reduce their inputs.",
+    });
   }
   return value;
 }
