@@ -72,3 +72,9 @@ Use the adapter example to see a custom `Engine<bigint>` wired into the simulato
 
 - [../examples/adapter-pattern/README.md](../examples/adapter-pattern/README.md)
 - [../examples/plugins/README.md](../examples/plugins/README.md)
+
+## Built-in linear model and large amounts
+
+The built-in `linear` model accepts decimal or scientific amount strings for `incomePerSec`, `buyCostBase`, and `buyIncomeDelta`. Its costs, bulk quotes, and inventory value use the selected money engine, including exponential costs that exceed the Number range.
+
+Use `idk simulate scenario.json --engine breakInfinity --format json` (or the same engine flag on `experience`, `evaluate`, and `ltv`) for large economies such as `1e400`. `scenario.engine` is metadata and does not select the runtime engine. The default Number engine rejects non-finite linear income, costs, or net worth with guidance to choose `breakInfinity`. Engine arithmetic still has the precision and range of its adapter; a finite logarithm does not promise exact integer accounting.

@@ -9,6 +9,7 @@ import {
   createStrategyRegistry,
   defineModelFactory,
   type ModelFactory,
+  type Engine,
   type ModelRegistry,
   type ObjectiveFactory,
   type ObjectiveRegistry,
@@ -21,6 +22,7 @@ import { z } from "zod";
 import type { EconPluginModule } from "./types";
 import { fileExists, readTextFile, sha256Hex } from "../runtime/bun";
 import { designObjectiveFactories } from "../lib/designObjectives";
+import { cliError } from "../errors";
 
 const ALLOWED_PLUGIN_EXTENSIONS = new Set([".js", ".mjs", ".cjs", ".ts", ".mts", ".cts"]);
 // Files whose imports the digest follows. Bun lets a .js file hold JSX, so JS scans as jsx.
@@ -50,11 +52,50 @@ function ownedCount(state: { vars?: LinearVars } | undefined): number {
   return Number(state?.vars?.owned ?? 0);
 }
 
-function geometricCost(base: number, growth: number, start: number, count: number): number {
-  if (count <= 0) return 0;
-  if (growth === 1) return base * count;
-  const startFactor = Math.pow(growth, start);
-  return (base * startFactor * (Math.pow(growth, count) - 1)) / (growth - 1);
+function finiteLinearAmount<N>(E: Engine<N>, value: N, label: string): N {
+  if (!E.isFinite(value)) {
+    throw cliError("SCENARIO_INVALID", `linear ${label} exceeds the selected engine's finite range. Use --engine breakInfinity with simulate/evaluate/experience/ltv for a large economy, or reduce the inputs.`, {
+      hint: "Other commands, including report/compare/tune, use the number engine; reduce their inputs.",
+    });
+  }
+  return value;
+}
+
+function linearAmount<N>(E: Engine<N>, raw: string, label: string): N {
+  if (!/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(raw.trim())) {
+    throw new Error(`linear ${label} must be a decimal or scientific amount, received '${raw}'.`);
+  }
+  return finiteLinearAmount(E, E.from(raw), label);
+}
+
+/** Compute g^n and 1+g+...+g^(n-1) in O(log n), without overflowing a Number first. */
+function geometricFactors<N>(E: Engine<N>, growth: number, count: number): { power: N; sum: N } {
+  let power = E.from(1);
+  let sum = E.zero();
+  let blockPower = E.from(growth);
+  let blockSum = E.from(1);
+  for (let remaining = count; remaining > 0; remaining = Math.floor(remaining / 2)) {
+    if (remaining % 2 === 1) {
+      sum = E.add(sum, E.mulN(power, blockSum));
+      power = E.mulN(power, blockPower);
+    }
+    if (remaining > 1) {
+      blockSum = E.add(blockSum, E.mulN(blockPower, blockSum));
+      blockPower = E.mulN(blockPower, blockPower);
+    }
+  }
+  return { power, sum };
+}
+
+function geometricCost<N>(E: Engine<N>, base: N, growth: number, start: number, count: number): N {
+  if (count <= 0) return E.zero();
+  if (growth === 1) return finiteLinearAmount(E, E.mul(base, count), "cost");
+  // Keep the inexpensive finite factors for ordinary economies. Never pass Infinity to E.from.
+  const startNumber = Math.pow(growth, start);
+  const sumNumber = (Math.pow(growth, count) - 1) / (growth - 1);
+  const startFactor = Number.isFinite(startNumber) ? E.from(startNumber) : geometricFactors(E, growth, start).power;
+  const sumFactor = Number.isFinite(sumNumber) ? E.from(sumNumber) : geometricFactors(E, growth, count).sum;
+  return finiteLinearAmount(E, E.mulN(E.mulN(base, startFactor), sumFactor), "cost");
 }
 
 function asStandard<T>(schema: z.ZodType<T>): StandardSchema<T> {
@@ -96,15 +137,15 @@ function createLinearFactory(): ModelFactory {
         version: 1,
         income(ctx: any, state: any) {
           const owned = Number((state.vars as LinearVars).owned ?? 0);
-          const base = ctx.E.from(p.incomePerSec ?? "1");
-          const perOwned = ctx.E.from(p.buyIncomeDelta ?? "1");
-          const amount = ctx.E.mulN(ctx.E.add(base, ctx.E.mul(perOwned, owned)), state.prestige.multiplier);
+          const base = linearAmount(ctx.E, p.incomePerSec ?? "1", "incomePerSec");
+          const perOwned = linearAmount(ctx.E, p.buyIncomeDelta ?? "1", "buyIncomeDelta");
+          const amount = finiteLinearAmount(ctx.E, ctx.E.mulN(ctx.E.add(base, ctx.E.mul(perOwned, owned)), state.prestige.multiplier), "income");
           return { unit: ctx.unit, amount };
         },
         actions(ctx: any, state: any) {
-          const base = Number(p.buyCostBase ?? "10");
+          const base = linearAmount(ctx.E, p.buyCostBase ?? "10", "buyCostBase");
           const growth = Number(p.buyCostGrowth ?? 1.15);
-          const perOwned = Number(p.buyIncomeDelta ?? "1");
+          const perOwned = linearAmount(ctx.E, p.buyIncomeDelta ?? "1", "buyIncomeDelta");
 
           const action = {
             id: "buy.generator",
@@ -114,31 +155,31 @@ function createLinearFactory(): ModelFactory {
               return true;
             },
             cost(_ctx: any, priced: any) {
-              const c = base * Math.pow(growth, ownedCount(priced ?? state));
+              const c = geometricCost(ctx.E, base, growth, ownedCount(priced ?? state), 1);
               return {
                 unit: ctx.unit,
-                amount: ctx.E.from(String(c)),
+                amount: c,
               };
             },
             equivalentCost(_ctx: any, priced: any) {
-              const c = base * Math.pow(growth, ownedCount(priced ?? state));
+              const c = geometricCost(ctx.E, base, growth, ownedCount(priced ?? state), 1);
               return {
                 unit: ctx.unit,
-                amount: ctx.E.from(String(c)),
+                amount: c,
               };
             },
             bulk(_ctx: any, priced: any) {
               const owned = ownedCount(priced ?? state);
               const sizes = [1, 10, 25, 100];
               return sizes.map((size) => {
-                const total = geometricCost(base, growth, owned, size);
+                const total = geometricCost(ctx.E, base, growth, owned, size);
                 return {
                   size,
-                  cost: { unit: ctx.unit, amount: ctx.E.from(String(total)) },
-                  equivalentCost: { unit: ctx.unit, amount: ctx.E.from(String(total)) },
+                  cost: { unit: ctx.unit, amount: total },
+                  equivalentCost: { unit: ctx.unit, amount: total },
                   deltaIncomePerSec: {
                     unit: ctx.unit,
-                    amount: ctx.E.from(String(perOwned * size)),
+                    amount: finiteLinearAmount(ctx.E, ctx.E.mul(perOwned, size), "bulk income"),
                   },
                 };
               });
@@ -160,12 +201,12 @@ function createLinearFactory(): ModelFactory {
         netWorth(ctx: any, state: any) {
           const owned = Number((state.vars as LinearVars).owned ?? 0);
           const wallet = state.wallet.money.amount;
-          const base = Number(p.buyCostBase ?? "10");
+          const base = linearAmount(ctx.E, p.buyCostBase ?? "10", "buyCostBase");
           const growth = Number(p.buyCostGrowth ?? 1.15);
-          const implied = geometricCost(base, growth, 0, owned);
+          const implied = geometricCost(ctx.E, base, growth, 0, owned);
           return {
             unit: ctx.unit,
-            amount: ctx.E.add(wallet, ctx.E.from(String(implied))),
+            amount: finiteLinearAmount(ctx.E, ctx.E.add(wallet, implied), "net worth"),
           };
         },
         analytic(ctx: any) {
