@@ -106,6 +106,14 @@ function validateModelBlock(issues: StandardIssue[], input: Record<string, unkno
   }
 }
 
+function validateStrategyBlock(issues: StandardIssue[], input: Record<string, unknown>): void {
+  const strategy = input.strategy;
+  if (strategy == null) return;
+  if (!isRecord(strategy) || typeof strategy.id !== "string") {
+    pushIssue(issues, "strategy.id(string) is required", "strategy", strategy);
+  }
+}
+
 function validateInitialBlock(issues: StandardIssue[], input: Record<string, unknown>): void {
   const initial = input.initial;
   if (!isRecord(initial)) {
@@ -754,6 +762,7 @@ function validateBaseScenario(input: unknown): StandardResult<ScenarioV1> {
   validateUnitBlock(issues, input);
   validatePolicyBlock(issues, input);
   validateModelBlock(issues, input);
+  validateStrategyBlock(issues, input);
   validateInitialBlock(issues, input);
   validateClockBlock(issues, input);
   validateSimBlock(issues, input);

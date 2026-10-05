@@ -312,6 +312,13 @@ describe("validateScenarioV1 initial.t", () => {
 
 describe("validateScenarioV1 strategy registry", () => {
   const strategy = { id: "checked", params: { marker: "bad" } };
+  it.each(["greedy", false, 0, [], {}, { params: {} }, { id: 3 }].map((strategy) => ({ strategy })))("rejects malformed strategy %p before registry lookup", ({ strategy }) => {
+    for (const registry of [undefined, { get: () => { throw new Error("registry queried"); }, list: () => [] }]) {
+      const out = validateScenarioV1({ ...baseScenario(), strategy }, undefined, registry);
+      expect(out.ok).toBeFalse();
+      expect(out.issues).toEqual([{ path: "strategy", message: "strategy.id(string) is required", value: strategy }]);
+    }
+  });
   it("keeps structural validation available without a registry", () => {
     expect(validateScenarioV1({ ...baseScenario(), strategy }).ok).toBeTrue();
   });
