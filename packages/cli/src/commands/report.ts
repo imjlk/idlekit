@@ -80,9 +80,11 @@ export default defineCommand({
     const run = runScenario(runInput);
 
     const checkpoints = parseCheckpoints(flags.checkpoints);
+    const modelNetWorth = runInput.model.netWorth;
     const timeline = buildTimeline({
       run,
       checkpointsSec: checkpoints,
+      getNetWorth: modelNetWorth ? (state) => modelNetWorth.call(runInput.model, runInput.ctx, state).amount : undefined,
       formatMoney: (amount) =>
         formatMoney(E, { unit: runInput.ctx.unit, amount }, { showUnit: true, trimTrailingZeros: true }),
       formatNetWorth: (amount) =>

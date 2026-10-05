@@ -37,6 +37,8 @@ export function buildTimeline(args: {
   checkpointsSec: number[];
   formatMoney: (amount: any) => string;
   formatNetWorth?: (amount: any) => string;
+  /** Value the selected snapshot's holdings; without a valuation, use its wallet. */
+  getNetWorth?: (state: RunResult<any, any, any>["end"]) => any;
 }): TimelinePoint[] {
   const trace = args.run.trace && args.run.trace.length > 0 ? args.run.trace : [args.run.start, args.run.end];
 
@@ -48,10 +50,16 @@ export function buildTimeline(args: {
       notes.push(`nearestTrace=${s.t}`);
     }
 
+    let netWorth: string | undefined;
+    if (args.formatNetWorth) {
+      const amount = args.getNetWorth ? args.getNetWorth(s) : s.wallet.money.amount;
+      netWorth = args.formatNetWorth(amount);
+    }
+
     return {
       t,
       money: args.formatMoney(s.wallet.money.amount),
-      netWorth: args.formatNetWorth ? args.formatNetWorth(s.maxMoneyEver.amount) : undefined,
+      netWorth,
       prestigePoints: String(s.prestige.points as any),
       notes: notes.length > 0 ? notes : undefined,
     };

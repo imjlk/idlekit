@@ -62,6 +62,8 @@ idk replay verify <artifact> --format json
 
 ## Design evaluation commands
 
+`report` timeline net worth values each selected snapshot with the model's `netWorth` function, or uses current wallet money when the model has no valuation. It is not historical peak money. The core `buildTimeline` API accepts an optional `getNetWorth(state)` snapshot valuation alongside `formatNetWorth`.
+
 - `experience`: session-pattern simulation, growth, milestones, and perceived progression
 - `compare`: deterministic or design-facing A/B comparison
 - `evaluate`: one-shot workflow for validate + simulate + experience + ltv
