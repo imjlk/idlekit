@@ -1,0 +1,7 @@
+{
+  "name": "idlekit-transform-preload-fixture",
+  "private": true,
+  "dependencies": {
+    "typia": "14.0.6"
+  }
+}

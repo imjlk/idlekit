@@ -1,4 +1,4 @@
-import { cpSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "fs";
 import { join, resolve } from "path";
 import { demonstrateShrinkGap, replayShrinkReport } from "../packages/core/src/testkit/conformance";
 import { commandText, root, runTtsc, ttsxUnderNodeName } from "./evidence-host";
@@ -100,47 +100,29 @@ export function runNegativeConformanceChecks(): void {
   negative();
 }
 
+export function createNegativeWorkspace(base: string): string {
+  mkdirSync(join(base, "tmp"), { recursive: true });
+  // A previous interrupted process (or a different PID namespace) can reuse a
+  // PID. Never remove another invocation's project while its compiler reads it.
+  return mkdtempSync(join(base, "tmp", "conformance-negative-"));
+}
+
 function negative(): void {
   // macOS /tmp is a symlink of /private/tmp. ttsc rejects a project seen through both.
   const base = realpathSync(root);
-  const work = join(base, "tmp", `conformance-negative-${process.pid}`);
-  rmSync(work, { recursive: true, force: true });
-  mkdirSync(work, { recursive: true });
+  const work = createNegativeWorkspace(base);
   try {
     const preload = join(work, "bun-preload");
-    mkdirSync(join(preload, "src"), { recursive: true });
-    cpSync(join(root, "fixtures/toolchain/bun-preload/bunfig.toml"), join(preload, "bunfig.toml"));
-    cpSync(join(root, "fixtures/toolchain/bun-preload/src/entry.ts"), join(preload, "src/entry.ts"));
-    // A copied tsconfig inode makes ttsc's generation capture fail. Write a new
-    // file with the same options so the temp project does not walk to a home config.
-    writeFileSync(
-      join(preload, "tsconfig.json"),
-      `${JSON.stringify(
-        {
-          compilerOptions: {
-            target: "ES2022",
-            module: "ESNext",
-            moduleResolution: "Bundler",
-            lib: ["ES2022"],
-            strict: true,
-            skipLibCheck: true,
-            noEmit: true,
-            types: ["node"],
-          },
-          include: ["src"],
-        },
-        null,
-        2,
-      )}\n`,
-    );
+    // Copy the package boundary too: this probe needs typia, not the parent
+    // repository's lint/evidence plugins and their unrelated host-input proofs.
+    copyFixture("fixtures/toolchain/bun-preload", preload);
     const preloadEnv = fixtureEnv();
-    // bun test sets NODE_ENV=test, and ttsc then refuses this preload project's generation.
+    // Keep the standalone runtime probe independent of bun test's NODE_ENV.
     delete preloadEnv.NODE_ENV;
     preloadEnv.TTSC_TTSX_BINARY = join(base, "tools", ttsxUnderNodeName());
-    // On a freshly written project, Bun can report "directory mismatch" while ttsc
-    // captures the transform generation, and ttsc then gives up after its own two
-    // attempts. That is an unstable host, not a missing transform, so run again.
-    // A missing transform fails with a different error and is not retried.
+    // Preserve the bounded retry for an unstable upstream host generation.
+    // A missing transform fails with a different error and is never retried.
+    // Bun's directory-mismatch warning alone is not a failed transform verdict.
     let preloaded = spawn([process.execPath, "src/entry.ts"], preload, preloadEnv);
     let attempts = 1;
     while (
