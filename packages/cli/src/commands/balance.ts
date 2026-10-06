@@ -3,6 +3,7 @@ import { z } from "zod";
 import { refreshBalanceWorkflow } from "../balance/workflow";
 import { usageError } from "../errors";
 import { pluginOptions } from "./_shared/plugin";
+import { writeStdout } from "../runtime/bun";
 
 export default defineCommand({
   name: "balance",
@@ -14,7 +15,7 @@ export default defineCommand({
   async handler({ flags, positional }) {
     if (positional.length !== 1) throw usageError("Usage: idk balance <workflow.json> [--check] [plugin options]");
     const result = await refreshBalanceWorkflow(positional[0]!, flags, flags.check);
-    console.log(JSON.stringify(result, null, 2));
+    await writeStdout(JSON.stringify(result, null, 2) + "\n");
     if (flags.check && "state" in result && result.state !== "current") process.exitCode = 1;
     if ("outcome" in result && !result.outcome.ok) process.exitCode = 1;
   },

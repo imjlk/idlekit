@@ -1,7 +1,9 @@
-import { createHash, randomUUID } from "node:crypto";
-import { constants } from "node:fs";
-import { lstat, mkdir, open, realpath, rename, rm } from "node:fs/promises";
-import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+// Bun's filesystem compatibility API supplies exclusive open, no-follow flags,
+// fsync, and atomic rename; Bun.write alone cannot provide this transaction.
+import { constants } from "fs";
+import { lstat, mkdir, open, realpath, rename, rm } from "fs/promises";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "path";
+import { sha256Hex as sha256 } from "../runtime/bun";
 
 export interface FieldSchema {
   id: string;
@@ -341,8 +343,6 @@ export interface SheetBundleStatus {
   staleReasons: string[];
 }
 
-function sha256(bytes: Uint8Array | string): string { return createHash("sha256").update(bytes).digest("hex"); }
-
 function inputDigest(inputs: Readonly<Record<string, InputFingerprint>>, context: Readonly<Record<string, string>>): string {
   return sha256(JSON.stringify({
     inputs: Object.keys(inputs).sort().map((name) => [name, inputs[name]!.path, inputs[name]!.realPath, inputs[name]!.sha256, inputs[name]!.bytes]),
@@ -472,7 +472,7 @@ export async function refreshSheetBundle(options: RefreshSheetBundleOptions): Pr
     throw error;
   });
   const lockStat = await lock.stat();
-  const generation = randomUUID();
+  const generation = crypto.randomUUID();
   const stage = join(output, `.staging-${generation}`);
   const pointerStage = join(output, `.current-${generation}.json`);
   const generations = join(output, "generations");

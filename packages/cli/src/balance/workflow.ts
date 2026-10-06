@@ -1,10 +1,11 @@
 import { runScenario, validateScenarioV1 } from "@idlekit/core";
-import { resolve, dirname } from "node:path";
-import { readFile, stat } from "node:fs/promises";
+import { resolve, dirname } from "path";
+import { stat } from "fs/promises";
 import { z } from "zod";
 import { CLI_VERSION } from "../cliMeta";
 import { loadRegistriesFromFlags, type PluginOptionFlags } from "../commands/_shared/plugin";
 import { prepareResolvedRun } from "../lib/runConfiguration";
+import { readTextFile } from "../runtime/bun";
 import { planPacingRuns, runPacingChecks } from "./pacing";
 import { applySheetCsv, exportSheetCsv, parseCsv, stringifyCsv, validateSheetSchema, refreshSheetBundle, readCurrentBundle, SHEET_LIMITS, type SheetSchema, type SheetBundleManifest, type SheetBundleStatus } from "./sheet";
 
@@ -92,7 +93,7 @@ export async function refreshBalanceWorkflow(configPath: string, flags: PluginOp
   const absoluteConfig = resolve(configPath);
   const configInfo = await stat(absoluteConfig);
   if (!configInfo.isFile() || configInfo.size > SHEET_LIMITS.maxInputBytes) throw new Error("Workflow config is not a bounded regular file");
-  const rawConfig = await readFile(absoluteConfig, "utf8");
+  const rawConfig = await readTextFile(absoluteConfig);
   const config = workflowSchema.parse(JSON.parse(rawConfig));
   const base = dirname(absoluteConfig);
   const inputFiles: Record<string, string> = {

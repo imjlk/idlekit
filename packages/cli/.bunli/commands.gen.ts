@@ -61,7 +61,7 @@ const metadata: Record<GeneratedNames, GeneratedCommandMeta> = {
       name: 'balance',
       description: 'Refresh a typed CSV balance sheet into scenario, pacing checks, and result sheets',
       options: {
-        'check': { type: 'z.coerce.boolean.default', required: true, hasDefault: true, default: false, description: 'Check result freshness without rerunning simulations', schema: {"type":"zod","method":"default","args":[{"type":"unknown","raw":{"type":"BooleanLiteral","start":463,"end":468,"loc":{"start":{"line":12,"column":45,"index":463},"end":{"line":12,"column":50,"index":468}},"value":false}}]}, validator: '(val) => true' }
+        'check': { type: 'z.coerce.boolean.default', required: true, hasDefault: true, default: false, description: 'Check result freshness without rerunning simulations', schema: {"type":"zod","method":"default","args":[{"type":"unknown","raw":{"type":"BooleanLiteral","start":509,"end":514,"loc":{"start":{"line":13,"column":45,"index":509},"end":{"line":13,"column":50,"index":514}},"value":false}}]}, validator: '(val) => true' }
       },
       path: './src/commands/balance'
     },
