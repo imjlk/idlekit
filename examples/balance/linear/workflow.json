@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "sheet": "parameters.csv",
+  "schema": "schema.json",
+  "scenario": "scenario.json",
+  "outputDir": "results",
+  "exportVariants": true,
+  "pacing": {
+    "horizonSec": 60,
+    "seeds": [
+      7,
+      11
+    ],
+    "strategy": "greedy",
+    "targets": [
+      {
+        "metric": "worth",
+        "unit": "COIN",
+        "min": 1
+      }
+    ],
+    "sensitivity": [
+      {
+        "path": "buyCostGrowth",
+        "values": [
+          1.05,
+          1.25
+        ]
+      }
+    ],
+    "limits": {
+      "maxRuns": 10,
+      "maxResults": 10,
+      "maxHorizonSec": 600
+    }
+  },
+  "metrics": [
+    {
+      "id": "worth",
+      "kind": "endNetWorth"
+    }
+  ]
+}

@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { exportSheetCsv, type SheetSchema } from "../balance/sheet";
 
 /** Tiny synthetic contract fixture. No production game design or balance data. */
-export async function createBalanceFixture(destination: string) {
+export async function createBalanceFixture(destination: string, options: { seededRewards?: boolean } = {}) {
   const template = {
     schemaVersion: 1,
     unit: { code: "TOKEN" },
@@ -39,14 +39,26 @@ export async function createBalanceFixture(destination: string) {
   };
   const pluginSource = `export const models = [{
     id: "sheet-fixture", version: 1,
-    create(p) { return {
+    create(p) {
+      let randomState;
+      function reward(seed) {
+        randomState ??= seed ?? 1;
+        randomState ^= randomState << 13;
+        randomState ^= randomState >>> 17;
+        randomState ^= randomState << 5;
+        return (randomState >>> 0) % 7;
+      }
+      return {
       id: "sheet-fixture", version: 1,
       income(ctx, state) { return { unit: ctx.unit, amount: p.rate * (1 + state.vars.count) }; },
       netWorth(ctx, state) { return { unit: ctx.unit, amount: state.wallet.money.amount + p.machines[0].cost * state.vars.count }; },
       actions(ctx) { return [{
         id: "buy.machine", kind: "buy", actor: "automation", canApply: () => true,
         cost: () => ({ unit: ctx.unit, amount: p.machines[0].cost }),
-        apply(_ctx, state) { return { ...state, vars: { ...state.vars, count: state.vars.count + 1 } }; }
+        apply(ctx, state) { return {
+          ...state, vars: { ...state.vars, count: state.vars.count + 1 },
+          wallet: { ...state.wallet, money: { ...state.wallet.money, amount: state.wallet.money.amount + ${options.seededRewards ? "reward(ctx.seed)" : "0"} } }
+        }; }
       }]; }
     }; }
   }];

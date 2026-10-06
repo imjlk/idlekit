@@ -1,0 +1,72 @@
+{
+  "schemaVersion": 1,
+  "meta": {
+    "id": "synthetic-sheet-linear",
+    "title": "Synthetic numeric-sheet handoff"
+  },
+  "unit": {
+    "code": "COIN",
+    "symbol": "C"
+  },
+  "policy": {
+    "mode": "accumulate",
+    "maxLogGap": 14
+  },
+  "model": {
+    "id": "linear",
+    "version": 1,
+    "params": {
+      "incomePerSec": "1",
+      "buyCostBase": "15",
+      "buyCostGrowth": 1.12,
+      "buyIncomeDelta": "1.5"
+    }
+  },
+  "initial": {
+    "t": 0,
+    "wallet": {
+      "unit": "COIN",
+      "amount": "0",
+      "bucket": "0"
+    },
+    "vars": {
+      "owned": 0
+    },
+    "prestige": {
+      "count": 0,
+      "points": "0",
+      "multiplier": "1"
+    }
+  },
+  "clock": {
+    "stepSec": 1,
+    "durationSec": 60
+  },
+  "strategy": {
+    "id": "greedy"
+  },
+  "analysis": {
+    "eta": {
+      "mode": "simulate"
+    },
+    "growth": {
+      "windowSec": 60
+    }
+  },
+  "outputs": {
+    "format": "json",
+    "report": {
+      "includeTrace": true,
+      "traceEverySteps": 1
+    }
+  },
+  "sim": {
+    "offline": {
+      "maxSec": 3600,
+      "overflowPolicy": "clamp",
+      "actions": {
+        "mode": "none"
+      }
+    }
+  }
+}

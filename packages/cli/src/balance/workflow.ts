@@ -21,6 +21,7 @@ const workflowSchema = z.object({
   schema: z.string().min(1),
   scenario: z.string().min(1),
   outputDir: z.string().min(1),
+  exportVariants: z.boolean().default(false),
   pacing: z.record(z.string(), z.unknown()),
   metrics: z.array(metricSchema).min(1).max(100),
   bindings: z.array(z.object({
@@ -132,6 +133,10 @@ export async function refreshBalanceWorkflow(configPath: string, flags: PluginOp
       if ("parameters" in config.pacing) throw new Error("pacing.parameters is forbidden: the CSV is authoritative");
       const pacing = { ...config.pacing, parameters };
       const plan = planPacingRuns(pacing);
+      // Five existing outputs, one index, and one file per non-baseline variant.
+      if (config.exportVariants && plan.variants.length + 5 > SHEET_LIMITS.maxOutputFiles) {
+        throw new Error(`Variant export exceeds the ${SHEET_LIMITS.maxOutputFiles}-file bundle limit; reduce sensitivity values or disable exportVariants`);
+      }
       const metricIds = new Set(config.metrics.map((metric) => metric.id));
       if (metricIds.size !== config.metrics.length) throw new Error("Metric IDs must be unique");
       const targets = (config.pacing.targets as Array<{ metric: string }> | undefined) ?? [];
@@ -154,14 +159,18 @@ export async function refreshBalanceWorkflow(configPath: string, flags: PluginOp
           ? "seconds" : metric.kind === "endWallet" || metric.kind === "endNetWorth" ? baselineDocument.unit.code : "count";
         if ((target as { unit?: string }).unit !== unit) throw new Error(`Target ${target.metric} must use unit '${unit}'`);
       }
-      const report = await runPacingChecks(pacing, (descriptor, patches) => {
+      const materialize = (patches: Readonly<Record<string, number>>) => {
         const candidate = applySheetCsv(template, schema, overlayCsv(canonicalCsv, patches));
         bindInputs(candidate, schema, config, patches);
-        normalizeRunDocument(candidate, descriptor.strategy, descriptor.horizonSec);
+        normalizeRunDocument(candidate, plan.strategy, horizon);
         const valid = validateScenarioV1(candidate, loaded.modelRegistry);
         if (!valid.ok || !valid.scenario) throw new Error(`Scenario validation failed: ${JSON.stringify(valid.issues)}`);
+        return { document: candidate, scenario: valid.scenario };
+      };
+      const report = await runPacingChecks(pacing, (descriptor, patches) => {
+        const candidate = materialize(patches);
         const prepared = prepareResolvedRun({
-          scenario: valid.scenario,
+          scenario: candidate.scenario,
           modelRegistry: loaded.modelRegistry,
           strategyRegistry: loaded.strategyRegistry,
           pluginDigest: loaded.pluginDigest,
@@ -209,13 +218,41 @@ export async function refreshBalanceWorkflow(configPath: string, flags: PluginOp
         result.min === undefined ? "" : String(result.min), result.max === undefined ? "" : String(result.max),
         result.value === null ? "" : String(result.value), result.status, result.message ?? "",
       ]);
-      return {
+      const artifacts: Record<string, string> = {
         "scenario.json": JSON.stringify(baseline, null, 2) + "\n",
         "inputs.csv": canonicalCsv,
         "results.csv": stringifyCsv(resultRows),
         "results.json": JSON.stringify(report, null, 2) + "\n",
         "provenance.json": JSON.stringify({ version: 1, inputFingerprint: snapshot.inputFingerprint, inputs: snapshot.inputs, context, trialIdTemplate: "simulate:<seed>", stepSec: step, runCount, maxStepsPerRun: MAX_STEPS_PER_RUN, maxTotalSteps: MAX_TOTAL_STEPS, maxRetainedActions: MAX_STEPS_PER_RUN, maxTracePoints: 2 }, null, 2) + "\n",
       };
+      if (config.exportVariants) {
+        let outputBytes = 0;
+        const addArtifact = (name: string, value: string) => {
+          const bytes = Buffer.byteLength(value);
+          if (bytes > SHEET_LIMITS.maxOutputBytes || outputBytes + bytes > SHEET_LIMITS.maxTotalOutputBytes) {
+            throw new Error("Variant export outputs exceed byte limit");
+          }
+          outputBytes += bytes;
+          artifacts[name] = value;
+        };
+        for (const [name, value] of Object.entries(artifacts)) addArtifact(name, value);
+        const variants = plan.variants.map((variant, index) => {
+          let candidate: ReturnType<typeof materialize>;
+          try {
+            candidate = materialize(variant.patches);
+          } catch (error) {
+            // Schema-invalid sensitivity values remain errors in results, not runnable scenarios.
+            return { id: variant.id, scenario: null, error: String(error).slice(0, 500) };
+          }
+          if (index === 0) return { id: variant.id, scenario: "scenario.json" };
+          const name = `scenario-${String(index).padStart(3, "0")}.json`;
+          // Budget failures abort publication; they must not be mislabeled as invalid variants.
+          addArtifact(name, JSON.stringify(candidate.document, null, 2) + "\n");
+          return { id: variant.id, scenario: name };
+        });
+        addArtifact("variants.json", JSON.stringify({ version: 1, engine: "number", seeds: plan.seeds, horizonSec: horizon, strategy: plan.strategy, variants }, null, 2) + "\n");
+      }
+      return artifacts;
     },
   });
   return { ...manifest, outcome: outcome! };

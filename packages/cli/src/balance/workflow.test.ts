@@ -24,6 +24,77 @@ async function fixture() {
 }
 
 describe("typed sheet -> scenario -> pacing -> result sheet", () => {
+  it("exports opt-in sensitivity scenarios with stable IDs and verifies their freshness", async () => {
+    const f = await fixture();
+    f.config.pacing.sensitivity = [{ path: "machine.alpha.cost", values: [12, 6, 3] }];
+    await writeFile(f.configPath, JSON.stringify({ ...f.config, exportVariants: true }));
+    const output = await refreshBalanceWorkflow(f.configPath, f.flags);
+    const index = JSON.parse(await readFile(resolve(output.generationPath, "variants.json"), "utf8"));
+    expect(index).toMatchObject({ version: 1, engine: "number", seeds: [7], horizonSec: 60, strategy: "fixture.buy" });
+    expect(index.variants).toEqual([
+      { id: "baseline", scenario: "scenario.json" },
+      { id: "machine.alpha.cost=3", scenario: "scenario-001.json" },
+      { id: "machine.alpha.cost=12", scenario: "scenario-002.json" },
+    ]);
+    const changed = JSON.parse(await readFile(resolve(output.generationPath, index.variants[1].scenario), "utf8"));
+    expect(changed.model.params.machines[0].cost).toBe(3);
+    expect(changed.initial.wallet.amount).toBe("0");
+    expect(changed.clock.durationSec).toBe(60);
+    expect(changed.sim.offline.maxSec).toBe(120);
+    expect((await refreshBalanceWorkflow(f.configPath, f.flags, true)).state).toBe("current");
+    await rm(resolve(output.generationPath, index.variants[1].scenario));
+    await writeFile(resolve(output.generationPath, index.variants[1].scenario), "{}");
+    expect((await refreshBalanceWorkflow(f.configPath, f.flags, true)).state).toBe("stale");
+  });
+
+  it("keeps invalid variants as explicit errors without publishing a misleading executable", async () => {
+    const f = await fixture();
+    f.config.pacing.sensitivity = [{ path: "machine.alpha.cost", values: [0] }];
+    await writeFile(f.configPath, JSON.stringify({ ...f.config, exportVariants: true }));
+    const output = await refreshBalanceWorkflow(f.configPath, f.flags);
+    expect(output.outcome.status).toBe("error");
+    const index = JSON.parse(await readFile(resolve(output.generationPath, "variants.json"), "utf8"));
+    expect(index.variants[1]).toMatchObject({ id: "machine.alpha.cost=0", scenario: null });
+    expect(index.variants[1].error).toContain("min");
+  });
+
+  it("preflights the opt-in artifact count and preserves the prior generation", async () => {
+    const f = await fixture();
+    const first = await refreshBalanceWorkflow(f.configPath, f.flags);
+    expect(Object.keys(first.artifacts).sort()).toEqual(["inputs.csv", "provenance.json", "results.csv", "results.json", "scenario.json"]);
+    const pointer = await readFile(resolve(f.directory, "results/current.json"), "utf8");
+    const pacing = { ...f.config.pacing, limits: { maxRuns: 100, maxResults: 100 }, sensitivity: [{ path: "rate", values: Array.from({ length: 59 }, (_, index) => index + 3) }] };
+    await writeFile(f.configPath, JSON.stringify({ ...f.config, pacing, exportVariants: true }));
+    await expect(refreshBalanceWorkflow(f.configPath, f.flags)).rejects.toThrow("Variant export");
+    expect(await readFile(resolve(f.directory, "results/current.json"), "utf8")).toBe(pointer);
+  });
+
+  it("does not advertise sheet-valid but scenario-invalid variants as executable", async () => {
+    const f = await fixture();
+    delete f.schema.fields.find((field) => field.id === "awayCap")!.min;
+    await writeFile(resolve(f.directory, "schema.json"), JSON.stringify(f.schema));
+    f.config.pacing.sensitivity = [{ path: "awayCap", values: [-1] }];
+    await writeFile(f.configPath, JSON.stringify({ ...f.config, exportVariants: true }));
+    const output = await refreshBalanceWorkflow(f.configPath, f.flags);
+    expect(output.outcome.status).toBe("error");
+    const index = JSON.parse(await readFile(resolve(output.generationPath, "variants.json"), "utf8"));
+    expect(index.variants[1]).toMatchObject({ id: "awayCap=-1", scenario: null });
+    expect(index.variants[1].error).toContain("Scenario validation failed");
+    expect(output.artifacts["scenario-001.json"]).toBeUndefined();
+  });
+
+  it("aborts an oversized variant bundle rather than downgrading a byte-budget failure to a variant error", async () => {
+    const f = await fixture();
+    const template = { ...f.template, model: { ...f.template.model, params: { ...f.template.model.params, padding: "x".repeat(2 * 1024 * 1024) } } };
+    await writeFile(resolve(f.directory, "scenario-template.json"), JSON.stringify(template));
+    await refreshBalanceWorkflow(f.configPath, f.flags);
+    const pointer = await readFile(resolve(f.directory, "results/current.json"), "utf8");
+    const pacing = { ...f.config.pacing, horizonSec: 1, limits: { maxRuns: 100, maxResults: 100 }, sensitivity: [{ path: "rate", values: Array.from({ length: 32 }, (_, index) => index + 3) }] };
+    await writeFile(f.configPath, JSON.stringify({ ...f.config, pacing, exportVariants: true }));
+    await expect(refreshBalanceWorkflow(f.configPath, f.flags)).rejects.toThrow("Variant export outputs exceed byte limit");
+    expect(await readFile(resolve(f.directory, "results/current.json"), "utf8")).toBe(pointer);
+  }, 90_000);
+
   it("roundtrips numeric parameters, detects edits as stale, and reports a perturbed target breach", async () => {
     const f = await fixture();
     const first = await refreshBalanceWorkflow(f.configPath, f.flags);

@@ -4,6 +4,11 @@
 checks, and result sheets. It works with registered models and explicitly trusted
 local plugins. It does not run Excel, evaluate formulas, or install a watcher.
 
+For a small public example using only the built-in `linear` model, see
+[`examples/balance/linear`](../examples/balance/linear/README.md). It also shows how
+to pass exported scenarios to the existing simulate, compare, tune, and experience
+commands.
+
 ## Refresh loop
 
 Prepare four files beside one another:
@@ -37,8 +42,9 @@ arbitrary XLSX layouts are not parsed. If a spreadsheet uses formulas, calculate
 them there and export values only. Formula text, blank numeric cells, NaN, and
 Infinity are rejected. Zero is valid when the field's bounds permit it.
 
-The command prints a `generationPath` containing `scenario.json`, `inputs.csv`,
-`results.csv`, `results.json`, and `provenance.json`. For later reads, follow the
+By default, the command prints a `generationPath` containing exactly
+`scenario.json`, `inputs.csv`, `results.csv`, `results.json`, and `provenance.json`.
+Opt-in variant exports are described below. For later reads, follow the
 `generation` in `results/current.json` to `results/generations/<generation>/`.
 
 ## Field schema and authoritative inputs
@@ -73,7 +79,14 @@ bindings derive commonly repeated initial values from a field:
 
 These bindings are assignments with unit checks, not expression strings or an
 arbitrary evaluation language. The command uses the Number engine; string-valued
-large-number model parameters are outside this CSV version's numeric schema.
+money and large-number model parameters are outside this CSV version's numeric
+schema. Keep those strings in the scenario template; unlisted values are retained
+unchanged. For example, the public linear sheet edits numeric `buyCostGrowth`,
+while `incomePerSec`, `buyCostBase`, and `buyIncomeDelta` remain strings.
+
+An offline-cap binding preserves the declared cap in the materialized scenario.
+Pacing uses ordinary `runScenario`, so that offline cap is inactive during pacing
+runs. Use a session analysis with `experience` to exercise it.
 
 ## Workflow configuration
 
@@ -81,6 +94,7 @@ large-number model parameters are outside this CSV version's numeric schema.
 
 - `sheet`, `schema`, `scenario`, and `outputDir` paths, relative to the workflow file
 - optional `bindings`
+- optional root-level `exportVariants`: boolean, default `false`
 - `pacing`: explicit `horizonSec`, unique uint32 `seeds`, a registered `strategy`, and `targets`
 - `metrics`: definitions for the target metric IDs
 
@@ -102,14 +116,60 @@ probe, not a Cartesian optimization search. Seeds, targets, and variants use
 deterministic ordering. The callback API `runPacingChecks` supports custom metrics
 without adding game-specific extraction rules to the CLI.
 
+## Opt-in scenario exports
+
+Set `"exportVariants": true` at the workflow root to hand the sensitivity cases
+to other commands. The default five artifacts are unchanged when this option is
+omitted or `false`, even when pacing sensitivity is configured.
+
+With the option enabled, the generation additionally contains `variants.json`
+and one scenario JSON file per valid nonbaseline variant. The baseline remains
+`scenario.json`; nonbaseline filenames are `scenario-001.json`,
+`scenario-002.json`, and so on in deterministic one-field-at-a-time order.
+Read the manifest to associate each variant ID with its file rather than deriving
+a filename from an ID.
+
+The public linear example produces this manifest:
+
+```json
+{
+  "version": 1,
+  "engine": "number",
+  "seeds": [7, 11],
+  "horizonSec": 60,
+  "strategy": "greedy",
+  "variants": [
+    { "id": "baseline", "scenario": "scenario.json" },
+    { "id": "buyCostGrowth=1.05", "scenario": "scenario-001.json" },
+    { "id": "buyCostGrowth=1.25", "scenario": "scenario-002.json" }
+  ]
+}
+```
+
+Scenario filenames are relative to the printed `generationPath`. Exported variants
+use the same resolved horizon, strategy, bindings, and numeric engine boundary as
+the pacing runs. A sheet- or scenario/model-invalid variant has `"scenario": null`
+and an `error` string in the manifest, with the corresponding pacing error in the
+results. Consumers must check for `null` before opening a scenario. A failing
+refresh can still publish the legacy baseline `scenario.json`; a null manifest
+entry means that file is not a valid executable handoff. Invalid nonbaseline
+variants have no scenario file.
+
+Artifact-count preflight permits at most 64 files per generation. With exports
+enabled, this allows at most 59 total variants, including the baseline: five
+ordinary files, one manifest, and up to 58 additional scenarios. This limit is
+checked before running pacing; ordinary run, result, and byte limits still apply.
+All exported files participate in atomic publication, artifact hashes, and
+freshness checks.
+
 ## Results, reproduction, and limits
 
 Each target and run reports `pass`, `breach`, `unreached`, or `error`. A missing
 action is unreached, not zero. Missing/nonfinite metrics and simulation errors are
 errors. Results retain the seed, strategy, horizon, variant, parameter overlay,
 bounds, value, and explanation. A failed target makes the command exit nonzero,
-but publishes the complete result bundle for inspection. Input/schema/transaction
-failures preserve the previous bundle.
+but publishes the complete result bundle for inspection. Validation failures
+before evaluation and transaction failures preserve the previous bundle.
 
 The exported baseline scenario uses the declared horizon and strategy, clears
 the template's `untilExpr`, and disables fast approximation. Parameters of the
@@ -133,7 +193,7 @@ simulation, and exits nonzero for missing/stale results. It still requires expli
 plugin trust when loading local code. Freshness and target success are independent:
 a current bundle can contain a breached target.
 
-The manifest fingerprints exact input bytes and resolved paths with SHA-256,
+The provenance manifest fingerprints exact input bytes and resolved paths with SHA-256,
 records plugin source-closure digests and toolkit/runtime context, and hashes every
 output artifact. Status checks verify artifacts and metadata as well as inputs.
 Moving the input directory changes its fingerprint even if values are unchanged.
@@ -150,3 +210,30 @@ recovering its lock. This is a cooperative publication protocol, not a global lo
 on spreadsheet programs or arbitrary external writers. Avoid editing during
 publication and rerun `--check true` after external changes. Run a fresh process
 after editing trusted plugin code.
+
+## Handoff to existing analysis commands
+
+Use the printed generation path as the handoff boundary. From the repository root:
+
+```sh
+idk balance examples/balance/linear/workflow.json
+# Replace the placeholder with generationPath printed above.
+GEN='<printed generationPath>'
+cat "$GEN/variants.json"
+idk simulate "$GEN/scenario.json" --engine number --seed 7 --format json
+```
+
+The [linear example walkthrough](../examples/balance/linear/README.md) gives full
+commands for comparing variants or earlier generations, tuning strategy
+parameters, and running one-day offline-heavy and Monte Carlo session analyses.
+`compare` uses each scenario's strategy unless `--strategy` overrides both sides;
+`tune` searches strategy parameters and does not mutate the CSV. Both commands
+use the Number engine and have no `--engine` flag. `experience` exercises offline
+caps with its session horizon rather than the pacing horizon. Deterministic seed
+repeats do not establish uncertainty, and its missing-first-visible-change Monte
+Carlo fallback is not a pacing gate; see the walkthrough's reporting boundaries.
+
+These are existing analysis commands, not another balance wrapper. Their reports
+are separate from the balance atomic bundle and freshness checks. Write saved
+reports and editable candidate copies outside the immutable generation. Carry
+explicit plugin trust options into each command when using your own plugin.
