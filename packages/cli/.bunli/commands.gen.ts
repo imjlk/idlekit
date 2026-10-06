@@ -4,6 +4,7 @@
 import type { Command, CLI, GeneratedOptionMeta, RegisteredCommands, CommandOptions, GeneratedCommandMeta } from '@bunli/core'
 import { createGeneratedHelpers, registerGeneratedStore } from '@bunli/core'
 
+import Balance from '../src/commands/balance.js'
 import Calibrate from '../src/commands/calibrate.js'
 import Compare from '../src/commands/compare.js'
 import Doctor from '../src/commands/doctor.js'
@@ -27,10 +28,11 @@ import Tune from '../src/commands/tune.js'
 import Validate from '../src/commands/validate.js'
 
 // Narrow list of command names to avoid typeof-cycles in types
-const names = ['calibrate', 'compare', 'doctor', 'eta', 'evaluate', 'experience', 'growth', 'init', 'kpi', 'ltv', 'models', 'objectives', 'prestige-cycle', 'replay', 'report', 'review', 'setup', 'simulate', 'strategies', 'tune', 'validate'] as const
+const names = ['balance', 'calibrate', 'compare', 'doctor', 'eta', 'evaluate', 'experience', 'growth', 'init', 'kpi', 'ltv', 'models', 'objectives', 'prestige-cycle', 'replay', 'report', 'review', 'setup', 'simulate', 'strategies', 'tune', 'validate'] as const
 type GeneratedNames = typeof names[number]
 
 const modules: Record<GeneratedNames, Command<any>> = {
+  'balance': Balance,
   'calibrate': Calibrate,
   'compare': Compare,
   'doctor': Doctor,
@@ -55,6 +57,14 @@ const modules: Record<GeneratedNames, Command<any>> = {
 } as const
 
 const metadata: Record<GeneratedNames, GeneratedCommandMeta> = {
+  'balance': {
+      name: 'balance',
+      description: 'Refresh a typed CSV balance sheet into scenario, pacing checks, and result sheets',
+      options: {
+        'check': { type: 'z.coerce.boolean.default', required: true, hasDefault: true, default: false, description: 'Check result freshness without rerunning simulations', schema: {"type":"zod","method":"default","args":[{"type":"unknown","raw":{"type":"BooleanLiteral","start":463,"end":468,"loc":{"start":{"line":12,"column":45,"index":463},"end":{"line":12,"column":50,"index":468}},"value":false}}]}, validator: '(val) => true' }
+      },
+      path: './src/commands/balance'
+    },
   'calibrate': {
       name: 'calibrate',
       description: 'Calibrate monetization parameters from telemetry rows (CSV/JSON)',
