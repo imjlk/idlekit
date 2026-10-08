@@ -2,7 +2,7 @@
 
 English version: [bun-14-migration.md](./bun-14-migration.md)
 
-다음 breaking 릴리즈부터 `@idlekit/money`, `@idlekit/core`, `@idlekit/cli`는 Bun `>=1.4.2`를 요구합니다. Bun 1.3 지원은 종료됩니다. 새 패키지를 설치하기 전에 런타임을 올리세요. 아직 런타임을 올릴 수 없는 환경은 이미 설치한 이전 패키지 버전과 lockfile을 유지하고, 업그레이드할 수 있을 때 마이그레이션하세요.
+다음 릴리즈부터 `@idlekit/money`, `@idlekit/core`, `@idlekit/cli`는 Bun `>=1.4.2`를 요구합니다. Bun 1.3 지원은 종료됩니다. 새 패키지를 설치하기 전에 런타임을 올리세요. 아직 런타임을 올릴 수 없는 환경은 이미 설치한 이전 패키지 버전과 lockfile을 유지하고, 업그레이드할 수 있을 때 마이그레이션하세요.
 
 ## 런타임 업그레이드
 
@@ -29,4 +29,4 @@ Gunshi는 알 수 없는 옵션을 검증하고 오타를 제안합니다. `idk 
 
 ## 릴리즈 검토
 
-지원 하한 변경은 breaking compatibility 변경입니다. [릴리즈 절차](./release-process_ko.md)에 따라 changeset은 세 패키지의 `major` bump를 요청합니다. 릴리즈 PR을 승인하기 전에 이 마이그레이션 안내와 생성된 릴리즈 계획을 검토하세요.
+지원 하한 변경은 호환성 범위를 좁힙니다. 관리자는 이번 마이그레이션의 `minor` bump를 승인했으며, changeset은 [릴리즈 절차](./release-process_ko.md)에 이 결정을 세 패키지에 대해 기록합니다. 릴리즈 PR을 승인하기 전에 이 마이그레이션 안내와 생성된 릴리즈 계획을 검토하세요.

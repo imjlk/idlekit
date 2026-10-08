@@ -62,7 +62,7 @@ Short user-facing summary.
 - 본문은 changelog에 그대로 들어가므로 “사용자 영향” 위주로 작성
 - `.sampo/changesets`에는 frontmatter가 있는 `*.md`만 두고, 보조 문서는 두지 않음
 
-Bun 지원 하한 변경에는 [Bun 1.4.2 및 Gunshi 마이그레이션 안내](./bun-14-migration_ko.md)를 준비했습니다. 이 변경의 `major` changeset과 릴리즈 계획은 릴리즈 PR 승인 전에 검토해야 합니다.
+Bun 지원 하한 변경에는 [Bun 1.4.2 및 Gunshi 마이그레이션 안내](./bun-14-migration_ko.md)를 준비했습니다. 관리자는 이번 마이그레이션의 `minor` bump를 승인했습니다. 이 변경의 changeset, 마이그레이션 안내와 릴리즈 계획은 릴리즈 PR 승인 전에 검토해야 합니다.
 
 검토 루틴:
 

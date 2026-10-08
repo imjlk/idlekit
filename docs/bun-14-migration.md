@@ -2,7 +2,7 @@
 
 Korean version: [bun-14-migration_ko.md](./bun-14-migration_ko.md)
 
-The next breaking release requires Bun `>=1.4.2` for `@idlekit/money`, `@idlekit/core`, and `@idlekit/cli`. Previous support for Bun 1.3 is removed. Upgrade the runtime before installing the new packages. If an environment cannot upgrade yet, retain its already installed previous package versions and lockfile until migration is possible.
+The next release requires Bun `>=1.4.2` for `@idlekit/money`, `@idlekit/core`, and `@idlekit/cli`. Previous support for Bun 1.3 is removed. Upgrade the runtime before installing the new packages. If an environment cannot upgrade yet, retain its already installed previous package versions and lockfile until migration is possible.
 
 ## Upgrade the runtime
 
@@ -29,4 +29,4 @@ Refresh shell integration with `idk setup completions --shell <shell>`, choosing
 
 ## Release review
 
-The runtime minimum is a breaking compatibility change. Its changeset requests a `major` bump for all three packages under the [release process](./release-process.md). Review the migration guide and generated release plan before approving the release PR.
+The runtime minimum narrows the compatibility contract. The maintainer approved a `minor` bump for this migration; its changeset records that decision for all three packages under the [release process](./release-process.md). Review the migration guide and generated release plan before approving the release PR.
