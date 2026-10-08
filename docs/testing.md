@@ -64,13 +64,12 @@ CLI:
 - interactive review smoke for `review doctor`, `review evaluate`, and `review compare`
 - perceived progression and KPI regression guardrails
 
-## Interactive review smoke
+## Review report smoke
 
 `bun run review:smoke` is a maintainer-only check for the human review path.
 
-- it mounts the lazy-loaded `review doctor`, `review evaluate`, and `review compare` flows with a test renderer
-- it verifies the shared loading shell appears first
-- it verifies each dashboard reaches stable content without crashing after lazy follow-up work
+- it uses the Gunshi generator to verify the live help for `review doctor`, `review evaluate`, and `review compare`
+- CLI tests verify Markdown defaults and JSON output contracts without a TTY
 
 ## Compatibility fixtures
 

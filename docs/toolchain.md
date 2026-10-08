@@ -41,19 +41,19 @@ The `bun-preload` transform fixture owns a private package manifest with only th
 | money emit | `packages/money/tsconfig.build.json` | `src` except tests. `target`, `module`, `declaration`, and `sourceMap` stay on `tsconfig.base.json`. |
 | core check | `packages/core/tsconfig.json` | `src`, including tests and `concreteValidator.probe.ts`. |
 | core emit | `packages/core/tsconfig.build.json` | `src` except tests and `*.probe.ts`. |
-| CLI check | `packages/cli/tsconfig.json` | `src` and `scripts`. `jsx` is `react-jsx`, `jsxImportSource` is `@opentui/react`, and `DOM` stays on this program only. |
-| CLI bundle | `packages/cli/scripts/cli-bundle.ts` | `Bun.build` with `@ttsc/unplugin/bun`. This is not a `ttsc` emit. `@opentui/react` and `@opentui/core` stay external. Inlining `@opentui/core` leaves its asset loader without a file path, and Bun `1.3.10` fails when an uninstalled optional platform package is pulled in. `@idlekit/cli` depends on both packages at `0.4.5` so `dist/main.js` can resolve them. |
+| CLI check | `packages/cli/tsconfig.json` | Plain TypeScript in `src` and `scripts`; no React or JSX runtime dependency. |
+| CLI bundle | `packages/cli/scripts/cli-bundle.ts` | `Bun.build` with `@ttsc/unplugin/bun`; supports JS bundles and the `build:bin` standalone executable. |
 | tools | `tsconfig.tools.json` | `tools/**/*.ts`, `noEmit`. Inventory only. |
 | examples | `tsconfig.examples.json` | `examples/**/*.ts` and `snippets/**/*.ts`, `noEmit`. Inventory only. | 
 | example plugin | `examples/plugins/tsconfig.json` | `custom-econ-plugin.ts`. Nearest project for the plugin file so package preload does not walk to a home `tsconfig.json`. Its private `package.json` keeps `@ttsc/lint` off this program. |
 | evidence | `tsconfig.evidence.json` | `TC-03` gate. `@ttsc/lint` loads `lint.config.ts`. `@ttsc/evidence` is a lint contributor, not a compiler plugin. |
 | format | `tsconfig.format.json` | New evidence tools only. `format.severity` is `"error"`. |
-| graph | `tsconfig.graph.json` | `TC-04` aggregate program. `noEmit`. CLI keeps `jsx: react-jsx` and `jsxImportSource: @opentui/react`. `@ttsc/lint` is `enabled: false`. |
+| graph | `tsconfig.graph.json` | `noEmit` program for money, core, CLI, and tools. `@ttsc/lint` is `enabled: false`. |
 | solution | `tsconfig.solution.json` | `files: []` plus references. Root `typecheck` must not pass this file to `ttsc`. |
 
 There is no root `tsconfig.json`. A root project would auto-attach `@ttsc/lint`, and that config is `TC-03`. Package directories carry `bunfig.toml` with `@ttsc/unplugin/bun-register` for both runtime and `bun test`. Preload follows the process cwd and does not walk upward, so a fixture `bunfig.toml` stays isolated. Root execution of a package source file passes `--preload @ttsc/unplugin/bun-register`. The CLI testkit and doctor’s source re-entry still pass that preload when the entry is TypeScript and the cwd is the repo root. `@idlekit/cli`'s `test` script bundles the CLI once with `ttsc` into `packages/cli/.test-bundle/` and sets `IDLEKIT_CLI_ENTRY`, so the suite runs that JavaScript instead of building a new program on every command. Direct `bun test` of a TypeScript entry still pays for the transform. The package timeout stays `90000`, and the multi-command cases still allow 180s. `replay:verify`, `kpi:report`, and `docs:verify` run `packages/cli/dist/main.js` when `IDLEKIT_CLI_DIST=1` and that file exists. Otherwise they reuse `.test-bundle/main.js`, building it on first use. The bundled process points `--config` at `tools/bundled-cli-bunfig.toml` so the package preload does not rebuild the program. `tools/ttsx-under-node` remains the Node launcher for `lint.config.ts` evaluation. Product runtime stays Bun.
 
-Root `overrides` keep the OpenTUI core and React packages on one pinned version for source, tests, and externalized bundles. Gunshi handles CLI dispatch; prompts use Clack, and review dashboards use OpenTUI directly. Command and completion metadata comes from the live Zod schemas instead of a generated source file.
+Gunshi handles CLI dispatch, nested commands, help, completion, and typo suggestions. Wizards use Clack; review commands are report aliases defaulting to Markdown. Bunli, OpenTUI, React, image previews, and their overrides have been removed.
 
 `typia.validate<T>()` with an unresolved `T` is a `ttsc` error (`non-specified generic argument`). `typiaStandardSchema<T>()` is deprecated and throws `TypiaTransformMissingError`. Call `typia.createValidate<Concrete>()` and pass that function to `standardSchemaFromValidate()`. `ConcreteQuota`, `validateConcreteQuota`, and `concreteQuotaSchema` are the concrete probe. Emitted JS still imports `typia`, so `@idlekit/core` keeps `typia` `14.0.6` as a runtime dependency. Published packages do not depend on `ttsc` or `@ttsc/*`. Workspace `bun` exports point at `src/index.ts`; `prepack` rewrites money and core `types` and `bun` to `dist` and `postpack` restores them. `npm pack` runs the manifest tool from the repo root so the package preload does not transform `tools/`.
 
@@ -71,7 +71,7 @@ Dependabot opens one grouped pull request for `ttsc`, `@ttsc/*`, `typia`, and `@
 | Graph | MCP `initialize`, `tools/list`, lookup, and reverse trace on `quoteBudget` | protocol `1999-01-01` and the empty project do not count as success |
 | Bun source | `bun-preload` bunfig runs the validator | `bun-nopreload` fails |
 | emit | plain `bun` runs emitted JS; `typia.createValidate` is replaced | a leftover `typia.createValidate` or `@ttsc/*` import fails the smoke |
-| TSX | emit imports `@opentui/react` | emit that imports `react/jsx-runtime` fails the smoke |
+| TSX | emit uses the local `h` factory | retained React/OpenTUI runtime imports fail the smoke |
 
 The toolchain fixture still exercises Evidence and Graph in isolation. `TC-03` adds repository `evidence:check` and `evidence:smoke`. `TC-04` adds `graph:check` for the repository program. `DX-01` adds `test:conformance`. `contracts:generate` and `contracts:check` stay absent.
 

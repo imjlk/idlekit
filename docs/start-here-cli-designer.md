@@ -77,15 +77,15 @@ Human review path:
 
 ```bash
 bun run --cwd packages/cli dev -- review doctor
-bun run --cwd packages/cli dev -- review evaluate ../../tmp/space-miner-v1.json --image-mode auto
-bun run --cwd packages/cli dev -- review compare ../../tmp/space-miner-v1.json ../../tmp/space-miner-v1-compare-b.json --image-mode auto
+bun run --cwd packages/cli dev -- review evaluate ../../tmp/space-miner-v1.json
+bun run --cwd packages/cli dev -- review compare ../../tmp/space-miner-v1.json ../../tmp/space-miner-v1-compare-b.json
 ```
 
 Success condition:
 
-- the dashboard opens in an interactive terminal
-- `q` or `Esc` exits cleanly
-- image preview falls back gracefully when Kitty-compatible preview is unavailable
+- the Markdown report prints in a terminal, pipe, or CI job
+- `--format json` selects machine-readable output
+- image-preview flags have been removed
 - `review doctor` is the human setup path; `doctor --format md|json` remains the automation report path
 
 ## 5. Add long-horizon checks
@@ -107,7 +107,7 @@ Success condition:
 ```bash
 bun run --cwd packages/cli dev -- compare ../../tmp/space-miner-v1.json ../../tmp/space-miner-v1-compare-b.json --metric endNetWorth --format json
 bun run --cwd packages/cli dev -- compare ../../tmp/space-miner-v1.json ../../tmp/space-miner-v1-compare-b.json --metric visibleChangesPerMinute --session-pattern short-bursts --days 7 --format json
-bun run --cwd packages/cli dev -- review compare ../../tmp/space-miner-v1.json ../../tmp/space-miner-v1-compare-b.json --image-mode auto
+bun run --cwd packages/cli dev -- review compare ../../tmp/space-miner-v1.json ../../tmp/space-miner-v1-compare-b.json
 bun run --cwd packages/cli dev -- tune ../../tmp/space-miner-v1.json --tune ../../tmp/space-miner-v1-tune.json --format json
 bun run --cwd packages/cli dev -- tune ../../tmp/space-miner-v1.json --wizard true
 ```
@@ -136,7 +136,7 @@ Success condition:
 
 - completion script prints successfully
 - `doctor --fix` writes the managed completion block when it was missing
-- `review doctor` opens a human-readable setup dashboard in an interactive terminal
+- `review doctor` prints a human-readable Markdown setup report
 - rerunning `idk doctor --format md` reports `Overall: pass`
 
 Failure response:

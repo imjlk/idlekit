@@ -28,8 +28,8 @@ Interactive scaffold and review:
 ```bash
 idk init scenario --wizard true --track personal --preset builder --out ./my-game-v1.json
 idk review doctor
-idk review evaluate ./space-miner-v1.json --image-mode auto
-idk review compare ./space-miner-v1.json ./space-miner-v1-compare-b.json --image-mode auto
+idk review evaluate ./space-miner-v1.json
+idk review compare ./space-miner-v1.json ./space-miner-v1-compare-b.json
 idk tune ./space-miner-v1.json --wizard true
 ```
 

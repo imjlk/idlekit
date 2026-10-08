@@ -162,18 +162,18 @@ idk ltv examples/tutorials/11-my-game-v1.json \
 
 - 장기 구간 수치가 너무 들쭉날쭉하면 `--step 300`으로 다시 돌려 봅니다.
 
-## 5. 사람용 review 대시보드 보기
+## 5. 사람용 review 보고서 보기
 
 ```bash
 idk review doctor
-bun run --cwd packages/cli dev -- review evaluate ../../examples/tutorials/11-my-game-v1.json --image-mode auto
+bun run --cwd packages/cli dev -- review evaluate ../../examples/tutorials/11-my-game-v1.json
 ```
 
 성공 조건:
 
-- interactive terminal에서 대시보드가 뜹니다.
+- 터미널, 파이프, CI에서 Markdown 보고서를 출력합니다.
 - `q` 또는 `Esc`로 정상 종료됩니다.
-- Kitty 호환 이미지 프리뷰가 없으면 텍스트 fallback으로 계속 진행됩니다.
+- 이미지 미리보기 옵션은 제거했습니다.
 
 ## 6. 비교용 대조군 만들기
 
@@ -212,11 +212,11 @@ idk compare \
 
 - 차이가 거의 없으면 `12-my-game-compare-b.json`에서 `buyCostGrowth` 또는 `buyIncomeDelta` 차이를 더 크게 벌립니다.
 
-review 대시보드:
+review 보고서:
 
 ```bash
 idk review doctor
-bun run --cwd packages/cli dev -- review compare ../../examples/tutorials/11-my-game-v1.json ../../examples/tutorials/12-my-game-compare-b.json --image-mode auto
+bun run --cwd packages/cli dev -- review compare ../../examples/tutorials/11-my-game-v1.json ../../examples/tutorials/12-my-game-compare-b.json
 ```
 
 completion / trust 설정:

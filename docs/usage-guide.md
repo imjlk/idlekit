@@ -43,8 +43,8 @@ idk validate <scenario>
 idk simulate <scenario> --format json
 idk experience <scenario> --format json
 idk evaluate <scenario> --format md
-idk review evaluate <scenario> --image-mode auto
-idk review compare <a> <b> --image-mode auto
+idk review evaluate <scenario>
+idk review compare <a> <b>
 idk review doctor
 idk compare <a> <b> --metric endNetWorth --format json
 idk compare <a> <b> --bundle design --format json
@@ -67,9 +67,9 @@ idk replay verify <artifact> --format json
 - `experience`: session-pattern simulation, growth, milestones, and perceived progression
 - `compare`: deterministic or design-facing A/B comparison
 - `evaluate`: one-shot workflow for validate + simulate + experience + ltv
-- `review evaluate`: interactive design dashboard built on top of `evaluate`
-- `review compare`: interactive design comparison dashboard built on top of `compare`
-- `review doctor`: interactive setup-health dashboard built on top of `doctor`
+- `review evaluate`: Markdown design report built on top of `evaluate`
+- `review compare`: Markdown comparison report built on top of `compare`
+- `review doctor`: Markdown setup-health report built on top of `doctor`
 - `tune`: strategy search against economy or experience-oriented objectives
 - `ltv`: long-horizon monetization and value proxy estimation
 

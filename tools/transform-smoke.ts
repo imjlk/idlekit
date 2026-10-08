@@ -252,19 +252,13 @@ run("dts-consumer", [ttscBin, "--noEmit", "-p", join(consumerDir, "tsconfig.json
 run("cli-build", [process.execPath, "run", "build"], resolve(root, "packages/cli"));
 const cliBundle = await Bun.file(resolve(root, "packages/cli/dist/main.js")).text();
 if (!cliBundle.startsWith("#!/usr/bin/env bun\n")) throw new Error("CLI bundle is missing the bun shebang");
-if (!importsSpecifier(cliBundle, "@opentui/react")) {
-  throw new Error("CLI bundle does not keep the OpenTUI import");
-}
-if (importsSpecifier(cliBundle, "react/jsx-runtime")) {
-  throw new Error("CLI bundle imported react/jsx-runtime");
-}
-if (cliBundle.includes("@opentui/core-${") || /@opentui\/core-[a-z0-9-]+\/index\.ts/.test(cliBundle)) {
-  throw new Error("CLI bundle kept an unresolved OpenTUI platform specifier");
+if (/(@opentui|@bunli|react\/jsx-runtime)/.test(cliBundle)) {
+  throw new Error("CLI bundle retained a removed UI or Bunli dependency");
 }
 if (!cliBundle.includes("reviewEvaluate") || !cliBundle.includes("reviewDoctor") || !cliBundle.includes("reviewCompare")) {
-  throw new Error("CLI bundle dropped a lazy review module");
+  throw new Error("CLI bundle dropped a review report alias");
 }
-record("shebang-opentui-lazy", "packages/cli/dist/main.js", 0);
+record("shebang-gunshi-reports", "packages/cli/dist/main.js", 0);
 run(
   "cli-dist-help",
   [process.execPath, "dist/main.js", "--help"],

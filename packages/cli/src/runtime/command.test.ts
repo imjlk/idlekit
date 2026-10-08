@@ -1,7 +1,6 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, spyOn } from "bun:test";
 import { z } from "zod";
 import { createCLI, defineCommand, defineGroup, option } from "./command";
-import { completionCandidates, completionScript } from "./completion";
 
 describe("Gunshi command boundary", () => {
   it("preserves explicit false, bare switches, negative numbers, and positional terminators", async () => {
@@ -12,9 +11,11 @@ describe("Gunshi command boundary", () => {
     }, handler({ flags, positional }) { calls.push({ flags, positional }); } }));
     await cli.run(["run", "sample.json", "--fast", "false", "--seed", "-3"]);
     await cli.run(["run", "--fast", "--", "--literal.json"]);
+    await cli.run(["run", "--", "-v"]);
     expect(calls).toEqual([
       { flags: { fast: false, seed: -3 }, positional: ["sample.json"] },
       { flags: { fast: true, seed: undefined }, positional: ["--literal.json"] },
+      { flags: { fast: false, seed: undefined }, positional: ["-v"] },
     ]);
   });
 
@@ -26,6 +27,8 @@ describe("Gunshi command boundary", () => {
     }, handler() { calls++; } }));
     await expect(cli.run(["run", "--missing", "value"])).rejects.toThrow();
     await expect(cli.run(["run", "--format", "xml"])).rejects.toThrow();
+    await expect(cli.run(["run", "--formt", "json"])).rejects.toThrow("Did you mean --format?");
+    await expect(cli.run(["rn"])).rejects.toThrow("Did you mean run?");
     expect(calls).toBe(0);
   });
 
@@ -39,8 +42,20 @@ describe("Gunshi command boundary", () => {
     cli.command(group);
     await cli.run(["models", "list", "--format", "json"]);
     expect(called).toBeTrue();
-    expect(completionCandidates([group], ["models", ""])).toEqual(["list"]);
-    expect(completionCandidates([group], ["models", "list", "--format", ""])).toEqual(["json", "md"]);
-    for (const shell of ["bash", "zsh", "fish", "powershell"]) expect(completionScript(shell)).toContain("idk complete");
+  });
+
+  it("uses Gunshi completion scripts for four shells and preserves Bash filename fallback", async () => {
+    const cli = await createCLI({ name: "test", version: "1" });
+    cli.command(defineCommand({ name: "run", description: "test", handler() {} }));
+    const output: string[] = [];
+    const log = spyOn(console, "log").mockImplementation((value) => { output.push(String(value)); });
+    try {
+      for (const shell of ["bash", "zsh", "fish", "powershell"]) {
+        const before = output.length;
+        await cli.run(["complete", shell]);
+        expect(output.length).toBeGreaterThan(before);
+      }
+      expect(output.join("\n")).toContain("complete -o default -o bashdefault");
+    } finally { log.mockRestore(); }
   });
 });

@@ -57,8 +57,8 @@ bun run --cwd packages/cli dev -- tune ../../tmp/space-miner-v1.json --wizard tr
 사람이 직접 검토하는 review 흐름:
 
 ```bash
-bun run --cwd packages/cli dev -- review evaluate ../../tmp/my-game-v1.json --image-mode auto
-bun run --cwd packages/cli dev -- review compare ../../tmp/my-game-v1.json ../../tmp/my-game-v1-compare-b.json --image-mode auto
+bun run --cwd packages/cli dev -- review evaluate ../../tmp/my-game-v1.json
+bun run --cwd packages/cli dev -- review compare ../../tmp/my-game-v1.json ../../tmp/my-game-v1-compare-b.json
 ```
 
 completion / trust 설정:

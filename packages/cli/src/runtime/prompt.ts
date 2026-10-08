@@ -28,7 +28,7 @@ export const prompt: PromptApi = {
   async text(message, options = {}) {
     return result<string>(await clack.text({ message, placeholder: options.placeholder, defaultValue: options.default,
       validate(value) {
-        const valid = options.validate?.(value ?? "");
+        const valid = options.validate?.(value || options.default || "");
         return valid === false ? "Invalid value" : typeof valid === "string" ? valid : undefined;
       },
     }));

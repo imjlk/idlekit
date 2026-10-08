@@ -1,5 +1,5 @@
 import ttsc from "@ttsc/unplugin/bun";
-import { resolve } from "path";
+import { isAbsolute, relative, resolve } from "path";
 
 const cliRoot = resolve(import.meta.dir, "..");
 process.chdir(cliRoot);
@@ -25,19 +25,14 @@ if (targets !== undefined && targets !== "native") {
 
 const minify = false;
 const sourcemap = process.argv.includes("--sourcemap") ? "external" : "none";
-// Inlining @opentui/core breaks its bundled asset loader (loadedPath is
-// undefined). Keep the packages external. The CLI depends on both so
-// dist/main.js can resolve them. Bun 1.3.10 then does not have to bundle
-// @opentui/core's optional platform imports.
-const external = ["react", "@opentui/react", "@opentui/core"];
+const external: string[] = [];
 const outdirAbs = resolve(cliRoot, outdir);
+const outputRelative = relative(cliRoot, outdirAbs);
+if (!outputRelative || outputRelative === ".." || outputRelative.startsWith("../") || outputRelative.startsWith("..\\") || isAbsolute(outputRelative)) {
+  throw new Error("Bundle output must be a directory inside packages/cli.");
+}
 const plugins = [ttsc()];
 
-if (targets === "native") {
-  throw new Error(
-    "build:bin does not emit a standalone executable. @opentui/core loads optional platform packages and its asset loader cannot be inlined. The JS bundle keeps react, @opentui/react, and @opentui/core external.",
-  );
-}
 
 await Bun.$`rm -rf ${outdirAbs}`.quiet();
 await Bun.$`mkdir -p ${outdirAbs}`.quiet();
@@ -49,9 +44,10 @@ await Bun.$`mkdir -p ${outdirAbs}`.quiet();
     target: "bun",
     format: "esm",
     minify,
-    sourcemap,
+    sourcemap: targets === "native" ? "inline" : sourcemap,
     external,
     plugins,
+    ...(targets === "native" ? { compile: { outfile: resolve(outdirAbs, process.platform === "win32" ? "idk.exe" : "idk") } } : {}),
   });
   if (!result.success) {
     throw new Error(result.logs.join("\n"));

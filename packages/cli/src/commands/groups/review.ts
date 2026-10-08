@@ -5,6 +5,6 @@ import reviewEvaluateCommand from "../reviewEvaluate";
 
 export default defineGroup({
   name: "review",
-  description: "Interactive human-review dashboards",
+  description: "Readable Markdown review reports",
   commands: [reviewEvaluateCommand, reviewCompareCommand, reviewDoctorCommand],
 });

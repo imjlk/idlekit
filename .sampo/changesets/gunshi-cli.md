@@ -1,5 +1,5 @@
 ---
-npm/@idlekit/cli: patch
+npm/@idlekit/cli: minor
 ---
 
-Run the CLI on Gunshi while preserving command names, Zod validation, output contracts, four-shell completion setup, interactive wizards, and OpenTUI review dashboards. Remove the Bunli runtime and generated command metadata from shipped artifacts.
+Use Gunshi for native command trees, strict options, help/version, four-shell completion, and typo suggestions. Keep Zod validation, report formats, trust controls, and Clack wizards. Replace OpenTUI dashboards with Markdown review aliases and remove Bunli, OpenTUI, React, and image-preview dependencies. Image-mode/protocol flags no longer apply.

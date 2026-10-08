@@ -43,7 +43,7 @@
     "doctor:completions": "bun scripts/command-check.ts",
     "review:smoke": "bun scripts/review-smoke.ts",
     "build": "bun scripts/cli-bundle.ts --outdir dist --sourcemap",
-    "build:bin": "bun scripts/cli-bundle.ts --entry src/main.ts --outdir dist --targets native",
+    "build:bin": "bun scripts/cli-bundle.ts --entry src/bin.ts --outdir dist/bin --targets native",
     "typecheck": "ttsc -p tsconfig.json --noEmit",
     "test": "bun scripts/cli-bundle.ts --outdir .test-bundle && IDLEKIT_CLI_ENTRY=.test-bundle/main.js bun test --timeout 90000 src",
     "prepack": "bun run build && cd ../.. && bun tools/package-manifest.ts prepare packages/cli",
@@ -51,18 +51,13 @@
   },
   "dependencies": {
     "@clack/prompts": "1.8.1",
+    "@gunshi/plugin-completion": "0.37.3",
+    "@gunshi/plugin-suggestion": "0.37.3",
     "@idlekit/core": "workspace:*",
-    "@opentui/core": "0.4.5",
-    "@opentui/react": "0.4.5",
     "ajv": "^8.17.1",
     "gunshi": "0.37.3",
-    "pngjs": "^7.0.0",
-    "react": "19.2.8",
     "yaml": "^2.8.1",
     "zod": "^4.1.12"
   },
-  "devDependencies": {
-    "@types/pngjs": "^6.0.5",
-    "@types/react": "19.2.17"
-  }
+  "devDependencies": {}
 }

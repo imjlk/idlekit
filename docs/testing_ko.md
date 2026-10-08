@@ -72,13 +72,12 @@ CLI:
 - `calibrate` CSV 파서 엣지 케이스 + correlation 추정 + confidence/shrinkage 진단
 - `review doctor`, `review evaluate`, `review compare` interactive smoke
 
-## 2-1. Interactive review smoke
+## 2-1. Review 보고서 smoke
 
 `bun run review:smoke`는 사람용 review 경로를 확인하는 maintainer 전용 체크입니다.
 
-- lazy-loaded `review doctor`, `review evaluate`, `review compare`를 테스트 renderer에 실제로 mount합니다.
-- 공통 loading shell이 먼저 뜨는지 확인합니다.
-- lazy follow-up work 이후에도 각 dashboard가 안정적으로 내용을 표시하는지 확인합니다.
+- Gunshi generator로 `review doctor`, `review evaluate`, `review compare`의 실제 명령 도움말을 확인합니다.
+- CLI 테스트는 TTY 없이 Markdown 기본값과 JSON 출력 계약을 확인합니다.
 
 ## 2-2. Compatibility fixture 정책
 

@@ -29,6 +29,7 @@ function bundledCliConfig(entry: string): string | undefined {
 
 export function selfCliCommand(args: readonly string[]) {
   const entry = currentEntry();
+  if (entry.includes("$bunfs") || entry.includes("~BUN")) return [process.execPath, ...args];
   const bun = process.argv[0] ?? "bun";
   if (isJavaScriptEntry(entry)) {
     const config = bundledCliConfig(entry);

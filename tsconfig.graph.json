@@ -2,11 +2,8 @@
   "extends": "./tsconfig.base.json",
   "compilerOptions": {
     "noEmit": true,
-    "jsx": "react-jsx",
-    "jsxImportSource": "@opentui/react",
     "lib": [
-      "ES2022",
-      "DOM"
+      "ES2022"
     ],
     "plugins": [
       {
@@ -19,7 +16,6 @@
     "packages/money/src/**/*.ts",
     "packages/core/src/**/*.ts",
     "packages/cli/src/**/*.ts",
-    "packages/cli/src/**/*.tsx",
     "packages/cli/scripts/**/*.ts",
     "tools/*.ts"
   ]

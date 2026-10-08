@@ -78,8 +78,8 @@ Human review path:
 
 ```bash
 bun run --cwd packages/cli dev -- review doctor
-bun run --cwd packages/cli dev -- review evaluate ../../tmp/space-miner-v1.json --image-mode auto
-bun run --cwd packages/cli dev -- review compare ../../tmp/space-miner-v1.json ../../tmp/space-miner-v1-compare-b.json --image-mode auto
+bun run --cwd packages/cli dev -- review evaluate ../../tmp/space-miner-v1.json
+bun run --cwd packages/cli dev -- review compare ../../tmp/space-miner-v1.json ../../tmp/space-miner-v1-compare-b.json
 ```
 
 Completion and setup check:

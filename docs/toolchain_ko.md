@@ -39,19 +39,19 @@ Bun `1.3.10`은 Node 호환 `process.version`을 보고하지만 `node:module.re
 | money emit | `packages/money/tsconfig.build.json` | 테스트를 제외한 `src`. `target`, `module`, `declaration`, `sourceMap`은 `tsconfig.base.json`에 둔다. |
 | core check | `packages/core/tsconfig.json` | 테스트와 `concreteValidator.probe.ts`를 포함한 `src`. |
 | core emit | `packages/core/tsconfig.build.json` | 테스트와 `*.probe.ts`를 제외한 `src`. |
-| CLI check | `packages/cli/tsconfig.json` | `src`, `scripts`. `jsx`는 `react-jsx`, `jsxImportSource`는 `@opentui/react`, `DOM`은 이 프로그램만 가진다. |
-| CLI bundle | `packages/cli/scripts/cli-bundle.ts` | `@ttsc/unplugin/bun`을 붙인 `Bun.build`. `ttsc` emit이 아니다. `@opentui/react`와 `@opentui/core`는 external이다. `@opentui/core`를 묶으면 asset loader가 파일 경로를 받지 못하고, Bun `1.3.10`은 설치되지 않은 optional platform 패키지를 끌어오면 실패한다. `@idlekit/cli`가 둘 다 `0.4.5`에 의존해서 `dist/main.js`가 그 이름을 resolve한다. |
+| CLI check | `packages/cli/tsconfig.json` | `src`, `scripts`의 일반 TypeScript. React/JSX 런타임 의존성이 없다. |
+| CLI bundle | `packages/cli/scripts/cli-bundle.ts` | `@ttsc/unplugin/bun`을 붙인 `Bun.build`. JS bundle과 `build:bin` 실행 파일을 지원한다. |
 | tools | `tsconfig.tools.json` | `tools/**/*.ts`, `noEmit`. 목록만 유지한다. |
 | examples | `tsconfig.examples.json` | `examples/**/*.ts`와 `snippets/**/*.ts`, `noEmit`. 목록만 유지한다. |
 | example plugin | `examples/plugins/tsconfig.json` | `custom-econ-plugin.ts`. 패키지 preload가 home `tsconfig.json`까지 올라가지 않도록 이 파일의 nearest project다. private `package.json`이 이 프로그램에 `@ttsc/lint`를 붙이지 않게 한다. |
 | evidence | `tsconfig.evidence.json` | `TC-03` gate. `@ttsc/lint`가 `lint.config.ts`를 읽는다. `@ttsc/evidence`는 compiler plugin이 아니라 lint contributor다. |
 | format | `tsconfig.format.json` | 새 evidence tool만 포함한다. `format.severity`는 `"error"`다. |
-| graph | `tsconfig.graph.json` | `TC-04` 합본 프로그램. `noEmit`. CLI의 `jsx: react-jsx`와 `jsxImportSource: @opentui/react`를 유지한다. `@ttsc/lint`는 `enabled: false`다. |
+| graph | `tsconfig.graph.json` | money, core, CLI, tools의 `noEmit` 프로그램. `@ttsc/lint`는 `enabled: false`다. |
 | solution | `tsconfig.solution.json` | `files: []`와 references. root `typecheck`는 이 파일을 `ttsc`에 넘기지 않는다. |
 
 root `tsconfig.json`은 없다. root project는 `@ttsc/lint`를 자동으로 붙이고, 그 설정은 `TC-03`이다. 패키지 디렉터리의 `bunfig.toml`이 runtime과 `bun test` 모두에 `@ttsc/unplugin/bun-register`를 preload한다. preload는 프로세스 cwd만 보고 상위로 올라가지 않으므로 fixture의 `bunfig.toml`은 격리된다. 패키지 소스를 root에서 실행할 때는 `--preload @ttsc/unplugin/bun-register`를 붙인다. CLI testkit과 doctor의 source 재진입은 entry가 TypeScript이고 cwd가 repo root일 때 그 preload를 그대로 붙인다. `@idlekit/cli`의 `test` 스크립트는 CLI를 `ttsc`로 한 번만 `packages/cli/.test-bundle/`에 묶고 `IDLEKIT_CLI_ENTRY`를 설정해서, 스위트는 명령마다 프로그램을 다시 만들지 않고 그 JS를 실행한다. TypeScript entry를 `bun test`로 직접 실행하면 변환 비용이 그대로 든다. 패키지 timeout은 `90000`이고, 명령을 여러 번 띄우는 경우는 180초를 허용한다. `replay:verify`, `kpi:report`, `docs:verify`는 `IDLEKIT_CLI_DIST=1`이고 `packages/cli/dist/main.js`가 있으면 그 파일을 실행한다. 아니면 `.test-bundle/main.js`를 재사용하고, 없으면 처음 한 번만 만든다. 번들 프로세스는 `--config`로 `tools/bundled-cli-bunfig.toml`을 가리켜 패키지 preload가 프로그램을 다시 만들지 않게 한다. `tools/ttsx-under-node`는 `lint.config.ts` 평가용 Node launcher로 남는다. 제품 런타임은 Bun이다.
 
-root `overrides`는 소스, 테스트, external bundle의 OpenTUI core와 React 버전을 통일한다. CLI 실행은 Gunshi, 위저드는 Clack, 리뷰 화면은 OpenTUI를 직접 사용한다. 명령과 자동완성 메타데이터는 생성 파일 대신 실제 Zod schema에서 읽는다.
+CLI 실행, 하위 명령, 도움말, 자동완성, 오타 제안은 Gunshi를 사용한다. 위저드는 Clack을 사용하고 review 명령은 기본값이 Markdown인 보고서 alias다. Bunli, OpenTUI, React, 이미지 미리보기와 관련 override를 제거했다.
 
 해결되지 않은 `T`의 `typia.validate<T>()`는 `ttsc` 오류다 (`non-specified generic argument`). `typiaStandardSchema<T>()`는 deprecated이며 `TypiaTransformMissingError`를 던진다. `typia.createValidate<Concrete>()`로 만든 함수를 `standardSchemaFromValidate()`에 넘긴다. `ConcreteQuota`, `validateConcreteQuota`, `concreteQuotaSchema`가 concrete probe다. emit된 JS가 `typia`를 import하므로 `@idlekit/core`의 runtime dependency `typia` `14.0.6`은 유지한다. 배포 패키지는 `ttsc`나 `@ttsc/*`에 의존하지 않는다. workspace의 `bun` export는 `src/index.ts`를 가리킨다. `prepack`이 money와 core의 `types`와 `bun`을 `dist`로 바꾸고 `postpack`이 되돌린다. `npm pack`은 패키지 preload가 `tools/`를 변환하지 않도록 manifest tool을 repo root에서 실행한다.
 
@@ -69,7 +69,7 @@ Dependabot은 `ttsc`, `@ttsc/*`, `typia`, `@typia/*`를 한 그룹 PR로 연다.
 | Graph | `quoteBudget`에 대한 MCP `initialize`, `tools/list`, lookup, reverse trace | protocol `1999-01-01`과 빈 프로젝트는 성공이 아님 |
 | Bun source | `bun-preload` bunfig가 validator를 실행 | `bun-nopreload`는 실패 |
 | emit | plain `bun`이 생성된 JS를 실행하고 `typia.createValidate`는 대체됨 | 남은 `typia.createValidate`나 `@ttsc/*` import는 smoke 실패 |
-| TSX | emit이 `@opentui/react`를 import | `react/jsx-runtime` import는 smoke 실패 |
+| TSX | 로컬 `h` factory로 JSX를 변환한다 | React/OpenTUI import가 남으면 smoke가 실패한다 |
 
 툴체인 fixture는 Evidence와 Graph를 따로 확인한다. `TC-03`이 저장소 `evidence:check`와 `evidence:smoke`를 추가한다. `TC-04`가 저장소 프로그램용 `graph:check`를 추가한다. `DX-01`이 `test:conformance`를 추가한다. `contracts:generate`와 `contracts:check`는 아직 없다.
 
