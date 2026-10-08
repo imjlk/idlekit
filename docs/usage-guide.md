@@ -10,7 +10,7 @@ Choose your entrypoint first:
 
 ## Environment
 
-- Bun 1.3+
+- Bun 1.4.2+
 - repository workflow: `bun install`, `bun run typecheck`, `bun run test`, `bun run build`
 
 ## CLI modes

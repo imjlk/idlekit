@@ -4,7 +4,7 @@ Korean version: [README_ko.md](./README_ko.md)
 
 `idlekit` is a Bun-first toolkit for idle game economy design.
 It helps you model scenarios, simulate pacing, evaluate progression, and compare balance decisions.
-Official support in v1: Bun `>=1.3` only. Node.js and browser runtimes are not part of the v1 compatibility contract.
+Official support in v1: Bun `>=1.4.2` only. Node.js and browser runtimes are not part of the v1 compatibility contract.
 
 - `@idlekit/money`: money primitives, notation, policies, and serialization
 - `@idlekit/core`: scenario compilation, simulation, analysis, and reporting
@@ -116,7 +116,7 @@ bun run --cwd packages/cli dev -- experience ../../examples/tutorials/14-orbital
 
 ## Try a local package build
 
-From a checkout with Bun `>=1.3` and npm available for packing:
+From a checkout with Bun `>=1.4.2` and npm available for packing:
 
 ```bash
 bun install --frozen-lockfile

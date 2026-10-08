@@ -2,7 +2,7 @@
 
 Korean version: [testing_ko.md](./testing_ko.md)
 
-Official support in v1: Bun `>=1.3` only. Node.js and browser runtimes are not part of the v1 compatibility contract.
+Official support in v1: Bun `>=1.4.2` only. Node.js and browser runtimes are not part of the v1 compatibility contract.
 
 ## Repository commands
 

@@ -3,7 +3,7 @@
 영문 기준 로드맵: [roadmap.md](./roadmap.md)
 공개 저장소 운영 가이드: [public-repo-ops.md](./public-repo-ops.md)
 
-v1 공식 지원 범위는 Bun `>=1.3`입니다. Node.js와 브라우저 런타임은 v1 호환성 계약에 포함하지 않습니다.
+v1 공식 지원 범위는 Bun `>=1.4.2`입니다. Node.js와 브라우저 런타임은 v1 호환성 계약에 포함하지 않습니다.
 
 ## 1) 기본 원칙
 

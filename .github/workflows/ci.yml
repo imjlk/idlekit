@@ -122,3 +122,63 @@ jobs:
 
       - name: KPI Regression Gate
         run: bun run kpi:regress
+
+  windows-cli:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: "1.4.2"
+
+      - name: Setup Node (ttsc launcher)
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "26.11.1"
+
+      - name: Install
+        run: bun install --frozen-lockfile
+
+      - name: Windows toolchain
+        run: |
+          bun run toolchain:doctor
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          bun test tools/compiler-bin.test.ts tools/evidence/program.test.ts
+
+      - name: Build CLI
+        run: bun run --cwd packages/cli build
+
+      - name: Gunshi command tree
+        run: bun run --cwd packages/cli generate:check
+
+      - name: Bundled CLI and PowerShell completion
+        run: |
+          bun packages/cli/dist/main.js --version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          bun packages/cli/dist/main.js validate examples/tutorials/01-cafe-baseline.json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $completion = bun packages/cli/dist/main.js complete powershell
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (($completion -join "`n") -notmatch "Register-ArgumentCompleter") { throw "Missing PowerShell completion registration" }
+
+      - name: Build native CLI
+        run: bun run --cwd packages/cli build:bin
+
+      - name: Native simulation and replay
+        shell: pwsh
+        run: |
+          $cliPath = (Resolve-Path packages/cli/dist/bin/idk.exe).Path
+          & $cliPath --version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          New-Item -ItemType Directory -Force -Path tmp | Out-Null
+          & $cliPath simulate examples/tutorials/01-cafe-baseline.json --duration 30 --step 1 --seed 101 --run-id windows-ci --artifact-out tmp/windows-native-replay.json --format json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $replayOutput = & $cliPath replay verify tmp/windows-native-replay.json --format json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $replay = ($replayOutput -join "`n") | ConvertFrom-Json
+          if ($replay.ok -ne $true) { throw "Native replay verification failed" }
+          $replayOutput
