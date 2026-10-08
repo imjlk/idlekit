@@ -11,7 +11,7 @@ describe("installed compiler launchers", () => {
     try {
       mkdirSync(bin, { recursive: true });
       writeFileSync(join(bin, "ttsc.cmd"), "npm shim");
-      expect(installedCompilerBin(root, "ttsc", "win32")).toBe(join(bin, "ttsc.cmd"));
+      expect(() => installedCompilerBin(root, "ttsc", "win32")).toThrow("bun install");
       writeFileSync(join(bin, "ttsc.exe"), "Bun shim");
       expect(installedCompilerBin(root, "ttsc", "win32")).toBe(join(bin, "ttsc.exe"));
       expect(installedCompilerBin(root, "ttsc", "linux")).toBe(join(bin, "ttsc"));

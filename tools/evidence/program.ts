@@ -13,7 +13,7 @@ export function fail(failures: string[], message: string): void {
 export async function expandGlob(pattern: string, cwd: string): Promise<string[]> {
   const glob = new Bun.Glob(pattern);
   const matches: string[] = [];
-  for await (const file of glob.scan({ cwd, onlyFiles: true })) matches.push(file);
+  for await (const file of glob.scan({ cwd, onlyFiles: true })) matches.push(file.replaceAll("\\", "/"));
   matches.sort();
   return matches;
 }

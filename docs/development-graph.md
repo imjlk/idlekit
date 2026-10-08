@@ -22,7 +22,7 @@ bun tools/graph-query.ts --question "Where is runScenario declared?" --request '
 
 ## Agent config
 
-`.mcp.json.example` matches Claude Code's project MCP file, pointed at the local bin. Its POSIX `command` is `node_modules/.bin/ttsc-graph`. On Windows, copy `windowsCommand` (`node_modules/.bin/ttsc-graph.cmd`) into that `command` before use. `.codex/config.toml.example` matches the Codex project config keys documented at <https://learn.chatgpt.com/codex/extend/mcp> (`command`, `args`, `cwd`, `startup_timeout_sec`, `tool_timeout_sec`) and names the same Windows `.cmd` path. Copy them into the project-local file. Do not edit `~/.codex/config.toml` from this change. The Codex tool timeout is raised because the first `inspect_typescript_graph` call builds the index after the handshake.
+`.mcp.json.example` matches Claude Code's project MCP file, pointed at the local bin. Its POSIX `command` is `node_modules/.bin/ttsc-graph`. On Windows, copy `windowsCommand` (`node_modules/.bin/ttsc-graph.exe`) into that `command` before use. `.codex/config.toml.example` matches the Codex project config keys documented at <https://learn.chatgpt.com/codex/extend/mcp> (`command`, `args`, `cwd`, `startup_timeout_sec`, `tool_timeout_sec`) and names the same Windows `.exe` path. Copy them into the project-local file. Do not edit `~/.codex/config.toml` from this change. The Codex tool timeout is raised because the first `inspect_typescript_graph` call builds the index after the handshake.
 
 ## Unobserved
 

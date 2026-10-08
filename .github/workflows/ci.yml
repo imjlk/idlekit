@@ -60,7 +60,7 @@ jobs:
 
       - name: Toolchain smoke
         run: |
-          bun test tools/compiler-bin.test.ts
+          bun test tools/compiler-bin.test.ts tools/evidence/program.test.ts
           bun run toolchain:smoke
 
       - name: Graph check

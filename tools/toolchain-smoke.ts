@@ -1,5 +1,5 @@
 import { cpSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync } from "fs";
-import { join, relative } from "path";
+import { join, relative, resolve } from "path";
 import { createTempDir, sha256Hex, writeText } from "./_bun";
 import { ttsxLauncherPath } from "./compiler-bin";
 import {
@@ -176,8 +176,9 @@ async function main(): Promise<void> {
     text.includes("building source plugin") ? "warm prepare rebuilt a source plugin" : undefined,
   );
   const paths = ttsc(["cache", "paths", "--json", "--cwd", join(root, "fixtures/toolchain/typia"), "--cache-dir", cacheDir], cacheDir, cacheDir);
-  expectZero("cache-paths", paths, (text) => {
-    if (!text.includes(cacheDir)) return "cache paths did not name the requested cache dir";
+  expectZero("cache-paths", paths, () => {
+    const report = JSON.parse(paths.stdout) as { cacheRoot?: unknown };
+    if (typeof report.cacheRoot !== "string" || resolve(report.cacheRoot) !== resolve(cacheDir)) return "cache paths did not name the requested cache dir";
     return undefined;
   });
 
