@@ -272,17 +272,24 @@ function collectRegistrations(
 ): Registration[] {
   const source = lookupSource ?? body;
   const ranges = localRanges(body);
-  const parameters = new Map<number, Array<[string, number, "binding" | "class" | "function"]>>();
+  const parameters = new Map<number, Array<[string, number, "binding" | "class" | "function" | "import"]>>();
   const typeAnnotations = new Map<number, number>();
   const typedBindingEquals = new Set<number>();
   const enumValues = localRanges(body, "enumValues");
   const fieldKeys = localRanges(body, "fieldKeys");
-  type PendingAssignment = DestructuringAssignment & { owner?: RunnerAlias; value?: RunnerAlias; holdsRunner?: boolean };
+  const callArguments = new Set(localRanges(body, "callArguments").map(([, start]) => start));
+  type PendingAssignment = DestructuringAssignment & { owner?: RunnerAlias; value?: RunnerAlias; holdsRunner?: boolean; captured?: boolean; applied?: boolean };
+  const destructuringStarts = new Map<number, PendingAssignment[]>();
   const destructuringSources = new Map<number, Array<{ entry: PendingAssignment; restValue?: number }>>();
   const destructuringUpdates = new Map<number, PendingAssignment[]>();
   for (const assignment of syntaxAssignments(body)) {
     const entry: PendingAssignment = assignment;
     const { at, end } = entry;
+    if (entry.start !== undefined) {
+      const starts = destructuringStarts.get(entry.start) ?? [];
+      starts.push(entry);
+      destructuringStarts.set(entry.start, starts);
+    }
     const entries = destructuringSources.get(at) ?? [];
     entries.push({ entry });
     destructuringSources.set(at, entries);
@@ -296,10 +303,20 @@ function collectRegistrations(
     destructuringUpdates.set(end, updates);
   }
   for (const [, start, end] of localRanges(body, "annotations")) typeAnnotations.set(start, end);
-  for (const mode of ["bindings", "parameters", "classes", "functions", "destructuring"] as const) {
+  for (const mode of [
+    "bindings",
+    "parameters",
+    "classes",
+    "functions",
+    "destructuring",
+    "imports",
+  ] as const) {
     for (const [name, start, end] of localRanges(body, mode)) {
       const entries = parameters.get(start) ?? [];
-      const binding = mode === "classes" ? "class" : mode === "functions" ? "function" : "binding";
+      let binding: "binding" | "class" | "function" | "import" = "binding";
+      if (mode === "classes") binding = "class";
+      if (mode === "functions") binding = "function";
+      if (mode === "imports") binding = "import";
       entries.push([name, end, binding]);
       parameters.set(start, entries);
     }
@@ -347,6 +364,13 @@ function collectRegistrations(
     stack.push({ title: pending.title, depth });
     pending = undefined;
   };
+  const applyDestructuring = (update: RunnerAlias): void => {
+    aliases.push(update);
+    if (!locallyBound(ranges, update.name, index)) {
+      rewritten.add(update.name);
+      reboundSuites.add(update.name);
+    }
+  };
 
   while (index < body.length) {
     for (let cursor = aliases.length - 1; cursor >= 0; cursor -= 1) {
@@ -354,10 +378,33 @@ function collectRegistrations(
       if (end !== undefined && index >= end) aliases.splice(cursor, 1);
     }
     for (const [name, end, binding] of parameters.get(index) ?? []) {
-      const nonRunner = binding === "class" || binding === "function" && ordinaryFunction(name);
+      const nonRunner = binding === "class" || binding === "function" && ordinaryFunction(name) ||
+        binding === "import" && !isRunnerKind(name);
       aliases.push({ name, kind: undefined, modifiers: [], depth: -1, scopeEnd: end, nonRunner });
     }
+    for (const entry of destructuringStarts.get(index) ?? []) {
+      entry.owner = aliasAt(aliases, entry.name);
+      if (entry.evaluation === "default") continue;
+      if (entry.evaluation === "rest") {
+        entry.holdsRunner = entry.restValues?.some((at) => valueHoldsRunner(body, at, aliases));
+      }
+      entry.value = captureDestructuring(entry);
+      entry.captured = true;
+    }
     for (const { entry, restValue } of destructuringSources.get(index) ?? []) {
+      if (entry.captured) continue;
+      if (entry.start !== undefined && entry.evaluation === "default") {
+        for (const earlier of destructuringUpdates.get(entry.end) ?? []) {
+          if (earlier === entry) break;
+          if (earlier.applied || !earlier.value) continue;
+          applyDestructuring(earlier.value);
+          earlier.applied = true;
+        }
+        entry.owner = aliasAt(aliases, entry.name);
+        entry.value = captureDestructuring(entry);
+        entry.captured = true;
+        continue;
+      }
       if (restValue !== undefined) {
         entry.holdsRunner ||= valueHoldsRunner(body, restValue, aliases);
         continue;
@@ -367,13 +414,12 @@ function collectRegistrations(
     }
     for (const entry of destructuringUpdates.get(index) ?? []) {
       const deferred = entry.evaluation === "default" || entry.evaluation === "rest";
-      const update = deferred ? captureDestructuring(entry) : entry.value;
+      const update = entry.captured || !deferred ? entry.value : captureDestructuring(entry);
       if (!update) continue;
-      aliases.push(update);
-      if (!locallyBound(ranges, update.name, index)) {
-        rewritten.add(update.name);
-        reboundSuites.add(update.name);
-      }
+      applyDestructuring(update);
+    }
+    if (callArguments.has(index) && !isFunctionValue(body, index) && !readRunnerRef(body, index, aliases) && valueHoldsRunner(body, index, aliases)) {
+      unresolved.push(readIdentifier(body, index)?.value ?? "argument");
     }
     const annotationEnd = typeAnnotations.get(index);
     if (annotationEnd !== undefined) {
@@ -631,6 +677,19 @@ function collectRegistrations(
       rewritten.add(word.value);
       reboundSuites.add(word.value);
     }
+    if (bindingAssigned && assigned.logical) {
+      const retained = assigned.logical !== "&&" && (alias?.objectRunner === true || alias?.kind !== undefined || alias?.namespace === true);
+      aliases.push({
+        name: word.value,
+        kind: undefined,
+        modifiers: [],
+        depth: assignmentDepth,
+        scopeEnd: alias?.scopeEnd,
+        objectRunner: retained || valueHoldsRunner(body, assigned.at + 3, aliases),
+      });
+      index = word.end;
+      continue;
+    }
     const storedRunner =
       assigned?.plain === true &&
       !readRunnerRef(body, assigned.at + 1, aliases) &&
@@ -685,7 +744,7 @@ function collectRegistrations(
       const next = skipSpaceAndComments(body, word.end);
       const member =
         body.startsWith("?.", next) || body[next] === "." || body[next] === "[";
-      if (member) unresolved.push(word.value);
+      if (member || passedAsArgument(body, index, next)) unresolved.push(word.value);
     } else if (alias?.namespace) {
       const member = namespaceRunnerMember(body, word.end, alias.spec);
       if (!member) {

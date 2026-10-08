@@ -173,7 +173,7 @@ export function findBindingEquals(body: string, index: number): number {
   return -1;
 }
 
-export function assignmentAt(body: string, index: number): { at: number; plain: boolean } | undefined {
+export function assignmentAt(body: string, index: number): { at: number; plain: boolean; logical?: "&&" | "||" | "??" } | undefined {
   const cursor = skipSpaceAndComments(body, index);
   const operators = [
     ">>>=",
@@ -196,7 +196,11 @@ export function assignmentAt(body: string, index: number): { at: number; plain: 
   for (const op of operators) {
     if (!body.startsWith(op, cursor)) continue;
     if (op === "=" && (body[cursor + 1] === "=" || body[cursor + 1] === ">")) return undefined;
-    return { at: cursor, plain: op === "=" };
+    return {
+      at: cursor,
+      plain: op === "=",
+      logical: op === "&&=" ? "&&" : op === "||=" ? "||" : op === "??=" ? "??" : undefined,
+    };
   }
   return undefined;
 }

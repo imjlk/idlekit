@@ -579,3 +579,58 @@ test("object rest excludes prototype setters while retaining own proto propertie
   const computed = inherited.replace("__proto__:", '["__proto__"]:');
   expect(unresolvedRunnerCalls(computed)).toContain("copied");
 });
+
+test("angle-bracket assertions preserve runner containers", () => {
+  const body = `import { it } from "bun:test"; const hidden = { run: it };
+    const copied: Data = <Data>hidden; copied.run("fake", callback);`;
+  expect(unresolvedRunnerCalls(body)).toContain("copied");
+  expect(registrationLines(body, "fake")).toEqual([]);
+});
+
+test("destructuring updates are visible while evaluating later defaults", () => {
+  const body = `import { it as runner } from "bun:test"; function run() {}; let ignored;
+    ([run, ignored = run("real", callback)] = [runner]);`;
+  expect(registrationLines(body, "real")).toEqual([2]);
+});
+
+test("runner containers passed to calls remain unresolved escapes", () => {
+  const alias = `import { it } from "bun:test"; const hidden = { run: it }; consume(hidden);`;
+  expect(unresolvedRunnerCalls(alias)).toContain("hidden");
+  const literal = `import { it } from "bun:test"; consume({ run: it });`;
+  expect(unresolvedRunnerCalls(literal).length).toBeGreaterThan(0);
+});
+
+test("parameter defaults retain possible runner containers", () => {
+  const body = `import { it } from "bun:test";
+    function register(copied = { run: it }) { copied.run("fake", callback); }`;
+  expect(unresolvedRunnerCalls(body)).toContain("copied");
+  expect(registrationLines(body, "fake")).toEqual([]);
+});
+
+test("logical assignments preserve possible runner containers", () => {
+  for (const [initial, operator] of [["null", "??="], ["false", "||="], ["{}", "&&="]]) {
+    const body = `import { it } from "bun:test"; let copied = ${initial};
+      copied ${operator} { run: it }; copied.run("fake", callback);`;
+    expect(unresolvedRunnerCalls(body)).toContain("copied");
+    expect(registrationLines(body, "fake")).toEqual([]);
+  }
+  const retained = `import { it } from "bun:test"; let copied = { run: it };
+    copied ||= { run: ordinary }; consume(copied.run);`;
+  expect(unresolvedRunnerCalls(retained)).toContain("copied");
+  expect(unresolvedRunnerCalls(retained.replace("||=", "&&="))).toEqual([]);
+});
+
+test("ordinary runtime imports shadow canonical runner names", () => {
+  for (const declaration of [
+    'import { test } from "ordinary-runner";',
+    'import test = require("./ordinary");',
+  ]) {
+    const body = `${declaration} test("credited", citedExport);`;
+    expect(registrationLines(body, "credited")).toEqual([]);
+    expect(unresolvedRunnerCalls(body)).toContain("test");
+  }
+  const erased = `import type { test } from "ordinary-runner"; test("real", callback);`;
+  expect(registrationLines(erased, "real")).toEqual([1]);
+  const ordinary = `import { goal } from "ordinary-library"; goal("tag", data);`;
+  expect(unresolvedRunnerCalls(ordinary)).toEqual([]);
+});

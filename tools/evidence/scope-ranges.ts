@@ -2,7 +2,7 @@ import { parse } from "@babel/parser";
 
 export type ScopeMode =
   | "bindings" | "parameters" | "classes" | "functions"
-  | "annotations" | "enumValues" | "destructuring" | "objectMethods" | "containerReferences" | "fieldKeys";
+  | "annotations" | "enumValues" | "destructuring" | "objectMethods" | "containerReferences" | "fieldKeys" | "imports" | "callArguments";
 type Range = [string, number, number];
 export type DestructuringAssignment = {
   name: string;
@@ -10,6 +10,7 @@ export type DestructuringAssignment = {
   end: number;
   evaluation: "value" | "default" | "opaque" | "rest";
   restValues?: number[];
+  start?: number;
 };
 type Ranges = Record<ScopeMode, Range[]> & {
   assignments: DestructuringAssignment[];
@@ -92,6 +93,8 @@ function collect(source: string): Ranges {
     objectMethods: [],
     containerReferences: [],
     fieldKeys: [],
+    imports: [],
+    callArguments: [],
     assignments: [],
     alternatives: new Map(),
   };
@@ -101,7 +104,7 @@ function collect(source: string): Ranges {
   const bind = (mode: ScopeMode, values: string[], scope: Scope): void => {
     for (const name of values) {
       result[mode].push([name, scope.start, scope.end]);
-      if (name === "undefined" && ["bindings", "parameters", "classes", "functions", "destructuring"].includes(mode)) {
+      if (name === "undefined" && ["bindings", "parameters", "classes", "functions", "destructuring", "imports"].includes(mode)) {
         undefinedBindings.push([name, scope.start, scope.end]);
       }
     }
@@ -111,7 +114,7 @@ function collect(source: string): Ranges {
   };
   const logicalAlternatives = (value: SyntaxNode): unknown[] => {
     let left = value.left;
-    while (node(left) && ["TSAsExpression", "TSSatisfiesExpression", "TSNonNullExpression", "ParenthesizedExpression"].includes(left.type)) {
+    while (node(left) && ["TSAsExpression", "TSSatisfiesExpression", "TSNonNullExpression", "TSTypeAssertion", "ParenthesizedExpression"].includes(left.type)) {
       left = left.expression;
     }
     let truthy: boolean | undefined;
@@ -145,7 +148,7 @@ function collect(source: string): Ranges {
   const containerReference = (value: unknown): void => {
     if (!node(value)) return;
     let bare = value;
-    while (["TSAsExpression", "TSSatisfiesExpression", "TSNonNullExpression", "ParenthesizedExpression"].includes(bare.type) && node(bare.expression)) {
+    while (["TSAsExpression", "TSSatisfiesExpression", "TSNonNullExpression", "TSTypeAssertion", "ParenthesizedExpression"].includes(bare.type) && node(bare.expression)) {
       bare = bare.expression;
     }
     if (bare.type === "Identifier") bind("containerReferences", names(bare), { start: value.start, end: value.end, root: false });
@@ -159,7 +162,7 @@ function collect(source: string): Ranges {
       const branches: SyntaxNode[] = [];
       const leaves = (branch: unknown): void => {
         if (!node(branch)) return;
-        if (["TSAsExpression", "TSSatisfiesExpression", "TSNonNullExpression", "ParenthesizedExpression"].includes(branch.type) && node(branch.expression)) {
+        if (["TSAsExpression", "TSSatisfiesExpression", "TSNonNullExpression", "TSTypeAssertion", "ParenthesizedExpression"].includes(branch.type) && node(branch.expression)) {
           leaves(branch.expression);
         } else if (branch.type === "ConditionalExpression") {
           leaves(branch.consequent);
@@ -301,11 +304,23 @@ function collect(source: string): Ranges {
     if (value.type === "ReturnStatement") containerReference(value.argument);
     if (value.type === "SpreadElement") containerReference(value.argument);
     if (value.type === "ArrayExpression" && Array.isArray(value.elements)) value.elements.forEach(containerReference);
+    if (["CallExpression", "OptionalCallExpression", "NewExpression"].includes(value.type) && Array.isArray(value.arguments)) {
+      for (const argument of value.arguments) {
+        if (!node(argument)) continue;
+        containerReference(argument);
+        result.callArguments.push(["", argument.start, argument.end]);
+      }
+    }
     if (["ClassProperty", "ClassPrivateProperty", "ClassAccessorProperty"].includes(value.type)) {
       containerReference(value.value);
       if (!value.computed && node(value.key)) result.fieldKeys.push(["", value.key.start, value.key.end]);
     }
     if (value.type === "TSTypeAnnotation" || value.type === "TSTypeParameterDeclaration") {
+      annotation(value);
+      return;
+    }
+    if ((value.type === "ImportDeclaration" || value.type === "TSImportEqualsDeclaration" || value.type === "ImportSpecifier") &&
+        (value.importKind === "type" || value.isTypeOnly === true)) {
       annotation(value);
       return;
     }
@@ -341,9 +356,12 @@ function collect(source: string): Ranges {
         }
       }
     }
-    if (["ImportSpecifier", "ImportDefaultSpecifier", "ImportNamespaceSpecifier"].includes(value.type) && names(value.local).includes("undefined")) {
-      undefinedBindings.push(["undefined", lexical.start, lexical.end]);
+    if ([
+      "ImportSpecifier", "ImportDefaultSpecifier", "ImportNamespaceSpecifier",
+    ].includes(value.type)) {
+      bind("imports", names(value.local), lexical);
     }
+    if (value.type === "TSImportEqualsDeclaration") bind("imports", names(value.id), lexical);
     if (value.type === "ClassDeclaration" || value.type === "ClassExpression" || value.type === "TSEnumDeclaration" || value.type === "TSModuleDeclaration") {
       const scope = value.type === "ClassExpression" ? own : lexical;
       bind("classes", names(value.id), scope);
@@ -424,9 +442,24 @@ function collect(source: string): Ranges {
     result.annotations.push(["", 0, source.length]);
   } else {
     walk(program, root, root);
+    const pureValue = (value: unknown): boolean => {
+      if (!node(value)) return value === null;
+      if (["Identifier", "StringLiteral", "NumericLiteral", "BooleanLiteral", "NullLiteral", "BigIntLiteral", "RegExpLiteral", "FunctionExpression", "ArrowFunctionExpression"].includes(value.type)) return true;
+      if (["TSAsExpression", "TSSatisfiesExpression", "TSNonNullExpression", "TSTypeAssertion", "ParenthesizedExpression"].includes(value.type)) return pureValue(value.expression);
+      if (value.type === "ArrayExpression" && Array.isArray(value.elements)) return value.elements.every(pureValue);
+      if (value.type === "ObjectExpression" && Array.isArray(value.properties)) {
+        return value.properties.every((entry) => node(entry) && entry.type === "ObjectProperty" &&
+          propertyKey(entry.key, entry.computed === true) !== undefined && pureValue(entry.value));
+      }
+      return false;
+    };
     for (const value of assignments) {
       const at = node(value.right) ? value.right.start : value.start;
+      const before = result.assignments.length;
       assignmentValues(value.left, value.right, value.end, at);
+      if (pureValue(value.right)) {
+        for (const entry of result.assignments.slice(before)) entry.start = value.start;
+      }
     }
   }
   return result;
