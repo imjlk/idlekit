@@ -306,3 +306,34 @@ test("scoped declaration aliases do not prevent loop binding cleanup", () => {
     expect(unresolvedRunnerCalls(body)).toEqual([]);
   }
 });
+
+test("parameter rebindings expire with expression-bodied arrows", () => {
+  for (const value of ["ordinary", "{ held: it }", 'require("bun:test")']) {
+    const body = `import { it } from "bun:test"; const f = (it) => (it = ${value}); it("real", callback);`;
+    expect(registrationLines(body, "real")).toEqual([1]);
+    expect(unresolvedRunnerCalls(body)).toEqual([]);
+  }
+});
+
+test("nested runtime namespace bindings shadow runner imports", () => {
+  const body = `import { test as Runner } from "bun:test";
+    namespace Tools { namespace Runner {}; const hidden: Data = { value: Runner }; const copied = { ...hidden }; consume(copied.value); }
+    Runner("real", callback);`;
+  expect(unresolvedRunnerCalls(body)).toEqual([]);
+  expect(registrationLines(body, "real")).toEqual([3]);
+});
+
+test("hoisted ordinary bindings shadow imports before container inference", () => {
+  const body = `import { test as Runner } from "bun:test";
+    function f() { if (false) { const hidden: Data = { value: Runner }; const copied = { ...hidden }; consume(copied.value); } var Runner = ordinary; }
+    Runner("real", callback);`;
+  expect(unresolvedRunnerCalls(body)).toEqual([]);
+  expect(registrationLines(body, "real")).toEqual([3]);
+});
+
+test("object methods and accessors do not store body runner references", () => {
+  for (const method of ["method() { void it; }", "get method() { void it; return ordinary; }", "set method(next) { void it; }"]) {
+    const body = `import { it } from "bun:test"; const hidden: Data = { ${method} }; const copied = { ...hidden }; consume(copied.method);`;
+    expect(unresolvedRunnerCalls(body)).toEqual([]);
+  }
+});

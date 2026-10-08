@@ -165,10 +165,16 @@ function objectHoldsRunner(
   if (body[brace] !== "{") return false;
   const close = skipPair(body, brace);
   if (close < 0) return false;
+  const methods = new Map(localRanges(body, "objectMethods").map(([, start, end]) => [start, end]));
   let index = brace + 1;
   while (index < close - 1) {
     index = skipSpaceAndComments(body, index);
     if (index >= close - 1) return false;
+    const methodEnd = methods.get(index);
+    if (methodEnd !== undefined) {
+      index = methodEnd;
+      continue;
+    }
     if (body[index] === ",") {
       index += 1;
       continue;
@@ -264,7 +270,7 @@ function collectRegistrations(
   const typedBindingEquals = new Set<number>();
   const enumValues = localRanges(body, "enumValues");
   for (const [, start, end] of localRanges(body, "annotations")) typeAnnotations.set(start, end);
-  for (const mode of ["parameters", "classes", "functions", "destructuring"] as const) {
+  for (const mode of ["bindings", "parameters", "classes", "functions", "destructuring"] as const) {
     for (const [name, start, end] of localRanges(body, mode)) {
       const entries = parameters.get(start) ?? [];
       entries.push([name, end, mode === "classes" || mode === "functions"]);
@@ -559,6 +565,7 @@ function collectRegistrations(
         kind: undefined,
         modifiers: [],
         depth: forParens.length > 0 ? depth + 1 : depth,
+        scopeEnd: alias?.scopeEnd,
         objectRunner: true,
       });
       index = word.end;
@@ -573,6 +580,7 @@ function collectRegistrations(
         kind: ref?.kind,
         modifiers: ref?.modifiers ?? [],
         depth: forParens.length > 0 ? depth + 1 : depth,
+        scopeEnd: alias.scopeEnd,
       };
       if (namespace) {
         next.namespace = true;

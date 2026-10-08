@@ -2,7 +2,7 @@ import { parse } from "@babel/parser";
 
 export type ScopeMode =
   | "bindings" | "parameters" | "classes" | "functions"
-  | "annotations" | "enumValues" | "destructuring";
+  | "annotations" | "enumValues" | "destructuring" | "objectMethods";
 type Range = [string, number, number];
 type Ranges = Record<ScopeMode, Range[]>;
 type SyntaxNode = { type: string; start: number; end: number; [key: string]: unknown };
@@ -75,6 +75,7 @@ function collect(source: string): Ranges {
     annotations: [],
     enumValues: [],
     destructuring: [],
+    objectMethods: [],
   };
   const root: Scope = { start: 0, end: source.length, root: true };
   const bind = (mode: ScopeMode, values: string[], scope: Scope): void => {
@@ -103,6 +104,7 @@ function collect(source: string): Ranges {
   const walk = (value: unknown, lexical: Scope, fn: Scope): void => {
     if (!node(value)) return;
     const own: Scope = { start: value.start, end: value.end, root: false };
+    if (value.type === "ObjectMethod") result.objectMethods.push(["", value.start, value.end]);
     if (value.type === "TSTypeAnnotation" || value.type === "TSTypeParameterDeclaration") {
       annotation(value);
       return;
@@ -138,7 +140,7 @@ function collect(source: string): Ranges {
         }
       }
     }
-    if (value.type === "ClassDeclaration" || value.type === "ClassExpression" || value.type === "TSEnumDeclaration") {
+    if (value.type === "ClassDeclaration" || value.type === "ClassExpression" || value.type === "TSEnumDeclaration" || value.type === "TSModuleDeclaration") {
       const scope = value.type === "ClassExpression" ? own : lexical;
       bind("classes", names(value.id), scope);
       if (!scope.root) bind("bindings", names(value.id), scope);
