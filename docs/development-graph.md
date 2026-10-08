@@ -6,7 +6,7 @@ Korean version: [development-graph_ko.md](./development-graph_ko.md)
 
 ## Reproduce a query
 
-From the repository root, with Bun `1.3.10`:
+From the repository root, with Bun `1.4.2`:
 
 ```bash
 bun tools/graph-query.ts --question "Where is runScenario declared?" --request '{"type":"lookup","query":"runScenario"}'

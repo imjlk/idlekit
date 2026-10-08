@@ -6,7 +6,7 @@
 
 ## 조회 재현
 
-저장소 루트에서 Bun `1.3.10`으로 실행한다.
+저장소 루트에서 Bun `1.4.2`으로 실행한다.
 
 ```bash
 bun tools/graph-query.ts --question "Where is runScenario declared?" --request '{"type":"lookup","query":"runScenario"}'

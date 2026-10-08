@@ -1,5 +1,5 @@
 {
-  "windowsCommand": "node_modules/.bin/ttsc-graph.cmd",
+  "windowsCommand": "node_modules/.bin/ttsc-graph.exe",
   "mcpServers": {
     "ttsc-graph": {
       "command": "node_modules/.bin/ttsc-graph",

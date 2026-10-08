@@ -17,9 +17,9 @@ Use the compiler graph before opening a wide set of files. Graph ranks a search.
 bun tools/graph-query.ts --question "Where is runScenario declared?" --request '{"type":"lookup","query":"runScenario"}'
 ```
 
-The server is `node_modules/.bin/ttsc-graph --cwd . --tsconfig tsconfig.graph.json`. On Windows the command is `node_modules/.bin/ttsc-graph.cmd` with the same arguments. It speaks stdio to that local process. Do not point it at a remote URL, and do not replace a failed `ttsc-graph` launch with `tsc` or `tsx`.
+The server is `node_modules/.bin/ttsc-graph --cwd . --tsconfig tsconfig.graph.json`. On Windows the command is `node_modules/.bin/ttsc-graph.exe` with the same arguments. It speaks stdio to that local process. Do not point it at a remote URL, and do not replace a failed `ttsc-graph` launch with `tsc` or `tsx`.
 
-Copy `.mcp.json.example` or `.codex/config.toml.example` into the project-local config if you want an agent client. On Windows, set that copied `command` to `windowsCommand` from the JSON example, or to the `.cmd` path in the Codex example. Do not edit a home-directory config from this repo.
+Copy `.mcp.json.example` or `.codex/config.toml.example` into the project-local config if you want an agent client. On Windows, set that copied `command` to `windowsCommand` from the JSON example, or to the `.exe` path in the Codex example. Do not edit a home-directory config from this repo.
 
 ## What the graph does not see
 

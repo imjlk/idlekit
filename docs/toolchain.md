@@ -6,22 +6,22 @@ Korean version: [toolchain_ko.md](./toolchain_ko.md)
 
 ## Pins
 
-Registry metadata checked on 2026-09-30. Versions are exact. `ttsc` `@0.30.4` is the current release, and `@ttsc/graph` / `@ttsc/unplugin` peer on `ttsc@^0.30.4`. `@ttsc/evidence` peers on `@ttsc/lint@>0.28.6`.
+Registry metadata checked on 2026-10-08. Versions are exact. `ttsc` `@0.30.4` is the current release, and `@ttsc/graph` / `@ttsc/unplugin` peer on `ttsc@^0.30.4`. `@ttsc/evidence` peers on `@ttsc/lint@>0.28.6`.
 
 | Package | Pin | Why this one |
 |---|---|---|
 | `ttsc`, `@ttsc/lint`, `@ttsc/evidence`, `@ttsc/graph`, `@ttsc/unplugin` | `0.30.4` | One release line. Graph and unplugin peers reject a different minor. |
 | `typescript` | `7.0.2` | npm `typescript` package used by tooling and reported by `ttsc version`. Installing it does not turn `ttsc` back into TypeScript 5 `tsc`. |
-| `typia` | `14.0.6` | Newest release inside `@ttsc/graph@0.30.4`'s `typia@^14.0.6` range. `15.0.1` is outside that range. The staged `^13.2.0` candidate was not kept. |
-| Bun | `1.3.10` | Root `packageManager`. CI workflows use the same pin. |
-| Node launcher | `>=22.15.0` | `ttsc@0.30.4` `engines.node`. CI smoke uses `22.23.3`. |
-| Publish Node | `22.23.3` | Release workflow. Same Node as CI, because `publish:gate` and package prepack run ttsc. |
+| `typia` | `14.0.6` | Newest release inside `@ttsc/graph@0.30.4`'s `typia@^14.0.6` range. `15.1.0` is outside that range. The staged `^13.2.0` candidate was not kept. |
+| Bun | `1.4.2` | Root `packageManager`. CI workflows use the same pin. |
+| Node launcher | `>=22.15.0` | `ttsc@0.30.4` `engines.node`. CI smoke uses `26.11.1`. |
+| Publish Node | `26.11.1` | Release workflow. Same Node as CI, because `publish:gate` and package prepack run ttsc. |
 
 `fixtures/toolchain/baseline.json` is the read-only `265c6ed` snapshot (`typescript` `^5.8.3`, typia `^9.7.2`, CI Bun `1.3.9`, no ttsc). `fixtures/toolchain/pins.json` is the pin this change checks. A failed `ttsc` install is not retried with `tsc` or `tsx`.
 
 `ttsc version` reports both the ttsc package and the resolved TypeScript-Go version. The native binary and bundled Go live in `@ttsc/<platform>-<arch>`. `TTSC_GRAPH_BINARY` and `TTSC_GO_BINARY` must be unset or point at that package. `toolchain:doctor` rejects any other path. Smoke also clears `TTSC_TTSX_BINARY`.
 
-Bun `1.3.10` reports a Node-compatible `process.version` but `node:module.registerHooks` is missing. `@ttsc/lint` evaluates `lint.config.ts` by spawning `ttsx.js` with `process.execPath` when that path ends in `.js`. Under `bun-register` that executable is Bun, and the evaluation exits 1. `tools/ttsx-under-node` has no `.js` extension, so the lint package spawns it directly and the script `exec`s real `node` on `ttsc/lib/launcher/ttsx.js`. Windows uses `tools/ttsx-under-node.cmd` for the same Node launch. The `bun-preload` fixture sets `TTSC_TTSX_BINARY` to the launcher for the current platform. Product code still runs on Bun. This is not a `tsc` or `tsx` fallback.
+Bun `1.4.2` reports a Node-compatible `process.version` but `node:module.registerHooks` is missing. `@ttsc/lint` evaluates `lint.config.ts` by spawning `ttsx.js` with `process.execPath` when that path ends in `.js`. Under `bun-register` that executable is Bun, and the evaluation exits 1. `tools/ttsx-under-node` has no `.js` extension, so the lint package spawns it directly and the script `exec`s real `node` on `ttsc/lib/launcher/ttsx.js`. On Windows, `TTSC_TTSX_BINARY` uses Bun’s installed `node_modules/.bin/ttsx.exe` shim. Node can spawn that executable directly; `.cmd` launchers require a shell and fail when spawned directly. The `bun-preload` fixture sets `TTSC_TTSX_BINARY` to the launcher for the current platform. Product code still runs on Bun. This is not a `tsc` or `tsx` fallback.
 
 ## Commands
 
@@ -29,7 +29,7 @@ The `bun-preload` transform fixture owns a private package manifest with only th
 
 | Script | What it runs |
 |---|---|
-| `toolchain:doctor` | Pins, Bun `1.3.10`, Node floor, native binary, bundled Go, and binary overrides |
+| `toolchain:doctor` | Pins, Bun `1.4.2`, Node floor, native binary, bundled Go, and binary overrides |
 | `toolchain:prepare` | `ttsc prepare` for the typia and evidence fixtures, then `ttsc cache paths --json` |
 | `toolchain:smoke` | Doctor plus the fixture table below |
 
@@ -80,6 +80,9 @@ The toolchain fixture still exercises Evidence and Graph in isolation. `TC-03` a
 Evidence and the inventory catch drift by an author who is not trying to fool them: a deleted citation, a renamed export, a test that is no longer registered or no longer runs, a mislabeled requirement ID, a shrunken baseline, a disabled rule. Honest code that the gate rejects is a bug in the gate.
 
 They are not a sandbox for test code written to deceive the gate. A test runs with the developer's rights. It can evaluate code through `node:vm` or `Reflect`, start a detached process, or rewrite its own reporter output. Code review of the test source covers that case. The source lock stays as a best-effort guard, not a security boundary. A finding that needs adversarial test code is out of scope for `evidence:check`.
+
+
+2026-10-08 update: use Bun `1.4.2`, CI and publish Node `26.11.1`, and npm `12.2.0`. Refresh Zod, AJV, YAML, and the Bun/Node types. Gunshi, its official plugins, Clack, the ttsc family, and TypeScript are already current. Keep typia `14.0.6` inside Graph’s `typia@^14.0.6` range. Windows tools prefer Bun’s `.exe` shims. The TC verification records below retain their historical versions.
 
 ## TC-01 verification
 
