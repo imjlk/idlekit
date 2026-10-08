@@ -494,3 +494,25 @@ test("class fields initialized from runner containers remain escapes", () => {
     expect(unresolvedRunnerCalls(body.replace("run: it", "run: ordinary"))).toEqual([]);
   }
 });
+
+test("forwarding wrappers shadowing renamed runner imports remain opaque", () => {
+  for (const wrapper of [
+    "function run(title, cb, runner) { runner(title, cb); }",
+    "const run = (title, cb, runner) => runner(title, cb);",
+  ]) {
+    const body = `import { it as run, it as realIt } from "bun:test";
+      { ${wrapper} run("credited", citedExport, realIt); }
+      run("real", () => {});`;
+    expect(registrationLines(body, "credited")).toEqual([]);
+    expect(unresolvedRunnerCalls(body)).toContain("run");
+    expect(registrationLines(body, "real")).toEqual([3]);
+  }
+});
+
+test("qualified namespace segments do not shadow runners outside their parent", () => {
+  for (const declaration of ["namespace A.test {}", "namespace A.B.test {}"]) {
+    const body = `namespace Outer { ${declaration} test("real", callback); }`;
+    expect(registrationLines(body, "real")).toEqual([1]);
+    expect(unresolvedRunnerCalls(body)).toEqual([]);
+  }
+});

@@ -272,7 +272,7 @@ function collectRegistrations(
 ): Registration[] {
   const source = lookupSource ?? body;
   const ranges = localRanges(body);
-  const parameters = new Map<number, Array<[string, number, boolean]>>();
+  const parameters = new Map<number, Array<[string, number, "binding" | "class" | "function"]>>();
   const typeAnnotations = new Map<number, number>();
   const typedBindingEquals = new Set<number>();
   const enumValues = localRanges(body, "enumValues");
@@ -299,13 +299,16 @@ function collectRegistrations(
   for (const mode of ["bindings", "parameters", "classes", "functions", "destructuring"] as const) {
     for (const [name, start, end] of localRanges(body, mode)) {
       const entries = parameters.get(start) ?? [];
-      entries.push([name, end, mode === "classes" || mode === "functions" && !isRunnerKind(name)]);
+      const binding = mode === "classes" ? "class" : mode === "functions" ? "function" : "binding";
+      entries.push([name, end, binding]);
       parameters.set(start, entries);
     }
   }
   const found: Registration[] = [];
   const stack: { title: string; depth: number }[] = [];
   const aliases: RunnerAlias[] = [];
+  const ordinaryFunction = (name: string): boolean =>
+    !isRunnerKind(name) && !aliases.some((entry) => entry.name === name && entry.kind !== undefined);
   const rewritten = new Set<string>();
   const reboundSuites = new Set<string>();
   const forParens: number[] = [];
@@ -330,7 +333,7 @@ function collectRegistrations(
       objectRunner: evaluation === "rest"
         ? entry.holdsRunner === true
         : known && !ref && valueHoldsRunner(body, at, aliases),
-      nonRunner: known && !isRunnerKind(name) && !ref && !namespace && isFunctionValue(body, at),
+      nonRunner: known && ordinaryFunction(name) && !ref && !namespace && isFunctionValue(body, at),
     };
     if (namespace) {
       next.namespace = true;
@@ -350,7 +353,8 @@ function collectRegistrations(
       const end = aliases[cursor]?.scopeEnd;
       if (end !== undefined && index >= end) aliases.splice(cursor, 1);
     }
-    for (const [name, end, nonRunner] of parameters.get(index) ?? []) {
+    for (const [name, end, binding] of parameters.get(index) ?? []) {
+      const nonRunner = binding === "class" || binding === "function" && ordinaryFunction(name);
       aliases.push({ name, kind: undefined, modifiers: [], depth: -1, scopeEnd: end, nonRunner });
     }
     for (const { entry, restValue } of destructuringSources.get(index) ?? []) {
@@ -597,7 +601,7 @@ function collectRegistrations(
             modifiers: [],
             depth: bindingDepth,
             scopeEnd: aliasAt(aliases, ident.value)?.scopeEnd,
-            nonRunner: !isRunnerKind(ident.value),
+            nonRunner: ordinaryFunction(ident.value),
           });
           break;
         }
@@ -653,7 +657,7 @@ function collectRegistrations(
         modifiers: ref?.modifiers ?? [],
         depth: assignmentDepth,
         scopeEnd: alias.scopeEnd,
-        nonRunner: !isRunnerKind(word.value) && !ref && !namespace && assigned.plain && isFunctionValue(body, assigned.at + 1),
+        nonRunner: ordinaryFunction(word.value) && !ref && !namespace && assigned.plain && isFunctionValue(body, assigned.at + 1),
       };
       if (namespace) {
         next.namespace = true;
