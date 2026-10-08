@@ -76,7 +76,7 @@ const plannerParams = {
 
 /**
  * @evidence docs/requirements/active/planner-rollout.md#req-pr04-planner-rollout Runs the wait-then-buy case, emit isolation, search order, the 60-second cooldown, a size-10 quote, and a capped search.
- * @evidenceReview docs/requirements/active/planner-rollout.md#req-pr04-planner-rollout #a52946e Re-read the section, then ran this function: the first wait stays empty, 59 seconds is blocked when the anchor is known, and the search report is not a global optimum.
+ * @evidenceReview docs/requirements/active/planner-rollout.md#req-pr04-planner-rollout #35741cf Re-read the section, then ran this function: the first wait stays empty, 59 seconds is blocked when the anchor is known, and the search report is not a global optimum.
  * @evidence ../constraints.ts#prestigeCooldownContract Reads the cooldown contract and applies it at 59 and 60 seconds.
  * @evidenceReview ../constraints.ts#prestigeCooldownContract #f89be18 The declaration is idlekit.prestige-cooldown. This test blocks a known anchor at 59 seconds and allows it at 60.
  * @evidence ./planner.ts#plannerSearchContract Reads the search contract and expects globallyOptimal to stay false.

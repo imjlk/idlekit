@@ -6,7 +6,7 @@ import type { ScenarioConstraints } from "./types";
  * A missing last reset time is unknown. This host does not invent one.
  *
  * @evidence docs/requirements/active/planner-rollout.md#req-pr04-planner-rollout The same cooldown rule gates a committed step and a planner preview.
- * @evidenceReview docs/requirements/active/planner-rollout.md#req-pr04-planner-rollout #a52946e Re-read the section: 59 seconds is blocked when the last reset is known, 60 is allowed, and a missing anchor is not rewritten as a past time.
+ * @evidenceReview docs/requirements/active/planner-rollout.md#req-pr04-planner-rollout #35741cf Re-read the section: 59 seconds is blocked when the last reset is known, 60 is allowed, and a missing anchor is not rewritten as a past time.
  */
 export const prestigeCooldownContract = "idlekit.prestige-cooldown" as const;
 

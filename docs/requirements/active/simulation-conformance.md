@@ -11,6 +11,7 @@ The harness lives in `packages/core/src/testkit/` and `packages/money/src/testki
 These relations are checked only when their condition holds:
 
 - the same scenario and an on-grid checkpoint replay to the same engine money strings
+- a declared prestige cooldown fixture resumes from JSON on the same tick grid with the last committed reset anchor, preserving reset timing and the economy snapshot; undeclared fixtures and a missing or non-positive cooldown interval do not apply
 - independent trials are compared by game seed, not by call order
 - event retention and a recording observer do not change the economy snapshot
 - a JSON state round-trip preserves that snapshot
