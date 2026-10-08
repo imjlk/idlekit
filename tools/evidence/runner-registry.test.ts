@@ -398,3 +398,43 @@ test("deferred imports preserve later runner registrations", () => {
   expect(registrationLines(body, "real")).toEqual([3]);
   expect(unresolvedRunnerCalls(body)).toEqual([]);
 });
+
+test("destructuring rebindings preserve statically selected defaults", () => {
+  for (const assignment of ["({ it = runner } = {})", "({ it = runner } = { it: undefined })", "([it = runner] = [])", "([it = runner] = [void 0])"]) {
+    const body = `import { it as runner } from "bun:test"; function f(it) { ${assignment}; it("real", callback); }`;
+    expect(registrationLines(body, "real")).toEqual([1]);
+    expect(unresolvedRunnerCalls(body)).toEqual([]);
+  }
+});
+
+test("auto-accessor syntax preserves later runner registrations", () => {
+  const body = `import { test } from "bun:test"; class State { accessor value = 0 } test("real", callback);`;
+  expect(registrationLines(body, "real")).toEqual([1]);
+  expect(unresolvedRunnerCalls(body)).toEqual([]);
+});
+
+test("canonical function wrappers remain opaque", () => {
+  const body = `function it(title, cb, runner) { runner(title, cb); } it("credited", citedExport, realIt);`;
+  expect(unresolvedRunnerCalls(body)).toContain("it");
+  expect(registrationLines(body, "credited")).toEqual([]);
+});
+
+test("destructuring defaults follow the target assignment order", () => {
+  const inherited = `import { it as runner } from "bun:test"; function f(a, b) { ([a, b = a] = [runner]); b("real", callback); }`;
+  expect(registrationLines(inherited, "real")).toEqual([1]);
+  expect(unresolvedRunnerCalls(inherited)).toEqual([]);
+  const earlier = `import { it as runner } from "bun:test"; function f(a, b) { ([a = b, b] = [void 0, runner]); a("fake", callback); }`;
+  expect(registrationLines(earlier, "fake")).toEqual([]);
+  expect(unresolvedRunnerCalls(earlier)).toContain("a");
+});
+
+test("shadowed undefined and unknown properties do not select defaults", () => {
+  for (const body of [
+    `import { it as runner } from "bun:test"; function f(it, undefined) { ({ it = runner } = { it: undefined }); it("fake", callback); }`,
+    `import { it as runner } from "bun:test"; const undefined = ordinary; function f(it) { ({ it = runner } = { it: undefined }); it("fake", callback); }`,
+    `import { it as runner } from "bun:test"; function f(it) { ({ it = runner } = { ...data }); it("fake", callback); }`,
+  ]) {
+    expect(registrationLines(body, "fake")).toEqual([]);
+    expect(unresolvedRunnerCalls(body)).toContain("it");
+  }
+});

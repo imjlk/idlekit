@@ -19,6 +19,7 @@ import {
   stringSpans,
   wordBefore,
 } from "./lex";
+import { syntaxAssignments, type DestructuringAssignment } from "./scope-ranges";
 import {
   aliasAt,
   assignmentAt,
@@ -272,19 +273,24 @@ function collectRegistrations(
   const typeAnnotations = new Map<number, number>();
   const typedBindingEquals = new Set<number>();
   const enumValues = localRanges(body, "enumValues");
-  const destructuringSources = new Map<number, Array<[string, number, boolean]>>();
-  const destructuringUpdates = new Map<number, RunnerAlias[]>();
-  for (const [name, from, end] of localRanges(body, "destructuringAssignments")) {
-    const at = from < 0 ? -from - 1 : from;
+  type PendingAssignment = DestructuringAssignment & { owner?: RunnerAlias; value?: RunnerAlias };
+  const destructuringSources = new Map<number, PendingAssignment[]>();
+  const destructuringUpdates = new Map<number, PendingAssignment[]>();
+  for (const assignment of syntaxAssignments(body)) {
+    const entry: PendingAssignment = assignment;
+    const { at, end } = entry;
     const entries = destructuringSources.get(at) ?? [];
-    entries.push([name, end, from >= 0]);
+    entries.push(entry);
     destructuringSources.set(at, entries);
+    const updates = destructuringUpdates.get(end) ?? [];
+    updates.push(entry);
+    destructuringUpdates.set(end, updates);
   }
   for (const [, start, end] of localRanges(body, "annotations")) typeAnnotations.set(start, end);
   for (const mode of ["bindings", "parameters", "classes", "functions", "destructuring"] as const) {
     for (const [name, start, end] of localRanges(body, mode)) {
       const entries = parameters.get(start) ?? [];
-      entries.push([name, end, mode === "classes" || mode === "functions"]);
+      entries.push([name, end, mode === "classes" || mode === "functions" && !isRunnerKind(name)]);
       parameters.set(start, entries);
     }
   }
@@ -301,26 +307,25 @@ function collectRegistrations(
   let index = 0;
   let inTemplate = false;
   const templateCloseDepths: number[] = [];
-  const captureDestructuring = (name: string, end: number, known: boolean): void => {
-    const owner = aliasAt(aliases, name);
-    const ref = known ? readRunnerRef(body, index, aliases) : undefined;
-    const namespace = known && !ref ? readRunnerNamespaceValue(body, index) : undefined;
+  const captureDestructuring = (entry: PendingAssignment): RunnerAlias => {
+    const { name, at, evaluation, owner } = entry;
+    const known = evaluation !== "opaque";
+    const ref = known ? readRunnerRef(body, at, aliases) : undefined;
+    const namespace = known && !ref ? readRunnerNamespaceValue(body, at) : undefined;
     const next: RunnerAlias = {
       name,
       kind: ref?.kind,
       modifiers: ref?.modifiers ?? [],
       depth: owner?.scopeEnd !== undefined ? owner.depth : depth,
       scopeEnd: owner?.scopeEnd,
-      objectRunner: known && !ref && valueHoldsRunner(body, index, aliases),
-      nonRunner: known && !isRunnerKind(name) && !ref && !namespace && isFunctionValue(body, index),
+      objectRunner: known && !ref && valueHoldsRunner(body, at, aliases),
+      nonRunner: known && !isRunnerKind(name) && !ref && !namespace && isFunctionValue(body, at),
     };
     if (namespace) {
       next.namespace = true;
       next.spec = namespace.spec;
     }
-    const updates = destructuringUpdates.get(end) ?? [];
-    updates.push(next);
-    destructuringUpdates.set(end, updates);
+    return next;
   };
 
   const pushPending = (): void => {
@@ -337,8 +342,13 @@ function collectRegistrations(
     for (const [name, end, nonRunner] of parameters.get(index) ?? []) {
       aliases.push({ name, kind: undefined, modifiers: [], depth: -1, scopeEnd: end, nonRunner });
     }
-    for (const [name, end, known] of destructuringSources.get(index) ?? []) captureDestructuring(name, end, known);
-    for (const update of destructuringUpdates.get(index) ?? []) {
+    for (const entry of destructuringSources.get(index) ?? []) {
+      entry.owner = aliasAt(aliases, entry.name);
+      if (entry.evaluation !== "default") entry.value = captureDestructuring(entry);
+    }
+    for (const entry of destructuringUpdates.get(index) ?? []) {
+      const update = entry.evaluation === "default" ? captureDestructuring(entry) : entry.value;
+      if (!update) continue;
       aliases.push(update);
       if (!locallyBound(ranges, update.name, index)) {
         rewritten.add(update.name);
