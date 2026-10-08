@@ -59,6 +59,7 @@
     "toolchain:smoke": "bun tools/toolchain-smoke.ts"
   },
   "devDependencies": {
+    "@babel/parser": "8.0.7",
     "@ttsc/evidence": "0.30.4",
     "@ttsc/graph": "0.30.4",
     "@ttsc/lint": "0.30.4",

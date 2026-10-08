@@ -78,7 +78,7 @@ const base = join(root, "fixtures", "evidence", "base");
 function record(name: string, expected: "zero" | "nonzero", exitCode: number, ok: boolean, detail?: string): void {
   steps.push({ name, expected, exitCode, ok, detail });
   console.error(`${ok ? "ok" : "FAIL"} ${name} exit=${exitCode}`);
-  if (!ok && detail) console.error(detail.slice(0, 2000));
+  if (!ok && detail) console.error(detail.slice(0, 16000));
 }
 
 function expectNonZero(name: string, result: CommandResult, marker: RegExp): void {

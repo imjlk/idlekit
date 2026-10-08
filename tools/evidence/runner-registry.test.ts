@@ -199,3 +199,50 @@ test("captured imported runners register across helpers while passed parameters 
   expect(unresolvedRunnerCalls(forwarded)).toContain("it");
   expect(duplicateFullNamesAcross([captured, 'it("real", callback);'])).toEqual(["real"]);
 });
+
+test("function return types do not introduce runtime parameter shadows", () => {
+  const body = `import { test as run } from "bun:test";
+    const f = (value): (run: string) => void => (run("real", () => {}), (_arg: string) => {});`;
+  expect(registrationLines(body, "real")).toEqual([2]);
+  expect(unresolvedRunnerCalls(body)).toEqual([]);
+});
+
+test("comments before conditional operands do not change parameter scopes", () => {
+  for (const comment of ["/* note */", "// note\n"]) {
+    const body = `import { test } from "bun:test";
+      const f = condition ? ${comment} (test) : () => test("real", () => {});`;
+    expect(registrationLines(body, "real")).toEqual([body.split("\n").length]);
+  }
+});
+
+test("consequent arrow scopes end at the owning conditional separator", () => {
+  const body = `import { test } from "bun:test";
+    const f = condition ? test => test.name : test("real", () => {});
+    const g = test => condition ? test.name : test.title;
+    test("later", () => {});`;
+  expect(registrationLines(body, "real")).toEqual([2]);
+  expect(registrationLines(body, "later")).toEqual([4]);
+  expect(unresolvedRunnerCalls(body)).toEqual([]);
+});
+
+test("annotation comment delimiters do not truncate runtime scopes", () => {
+  for (const comment of ["/* , */", "/* ; */", "/* = */", "// , ; =\n"]) {
+    const body = `import { test } from "bun:test";
+      function helper(value: Type ${comment}) { test("real", () => {}); }`;
+    expect(registrationLines(body, "real")).toEqual([body.split("\n").length]);
+    expect(unresolvedRunnerCalls(body)).toEqual([]);
+  }
+});
+
+test("namespace blocks contain their local class shadows", () => {
+  const body = `import { test as Runner } from "bun:test";
+    namespace Tools {
+      class Runner {}
+      const hidden: Data = { value: Runner };
+      const copied = { ...hidden };
+      consume(copied.value);
+    }
+    Runner("real", () => {});`;
+  expect(unresolvedRunnerCalls(body)).toEqual([]);
+  expect(registrationLines(body, "real")).toEqual([8]);
+});
