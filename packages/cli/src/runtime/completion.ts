@@ -29,8 +29,8 @@ export function completionCandidates(commands: readonly CommandDefinition[], wor
 
 export function completionScript(shell: string): string {
   switch (shell) {
-    case "bash": return `_idk_complete() {\n  mapfile -t COMPREPLY < <(idk complete -- "\${COMP_WORDS[@]:1}")\n}\ncomplete -F _idk_complete idk\n`;
-    case "zsh": return `#compdef idk\n_idk_complete() {\n  local -a candidates\n  candidates=("\${(@f)$(idk complete -- "\${words[@]:1}")}")\n  compadd -- "$candidates[@]"\n}\nautoload -Uz compinit\n(( $+functions[compdef] )) || compinit\ncompdef _idk_complete idk\n`;
+    case "bash": return `_idk_complete() {\n  COMPREPLY=()\n  local candidate\n  while IFS= read -r candidate; do\n    COMPREPLY+=("$candidate")\n  done < <(idk complete -- "\${COMP_WORDS[@]:1}")\n}\ncomplete -F _idk_complete idk\n`;
+    case "zsh": return `#compdef idk\n_idk_complete() {\n  local -a candidates\n  candidates=("\${(@f)$(idk complete -- "\${words[@]:1}")}")\n  compadd -- "\${candidates[@]}"\n}\nautoload -Uz compinit\n(( $+functions[compdef] )) || compinit\ncompdef _idk_complete idk\n`;
     case "fish": return `function __idk_complete\n  idk complete -- (commandline -opc)[2..-1] (commandline -ct)\nend\ncomplete -c idk -f -a '(__idk_complete)'\n`;
     case "powershell": return `Register-ArgumentCompleter -Native -CommandName idk -ScriptBlock {\n  param($wordToComplete, $commandAst, $cursorPosition)\n  $words = @($commandAst.CommandElements | Select-Object -Skip 1 | ForEach-Object { $_.Extent.Text })\n  if ($words.Count -eq 0 -or $words[-1] -ne $wordToComplete) { $words += $wordToComplete }\n  idk complete -- @words | ForEach-Object {\n    [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)\n  }\n}\n`;
     default: throw usageError("Supported completion shells: bash, zsh, fish, powershell.");
