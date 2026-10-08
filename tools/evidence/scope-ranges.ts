@@ -119,6 +119,9 @@ function collect(source: string): Ranges {
     let alternatives: unknown[] = [];
     if (bare.type === "ConditionalExpression") alternatives = [bare.consequent, bare.alternate];
     else if (bare.type === "LogicalExpression") alternatives = [bare.left, bare.right];
+    else if (bare.type === "SequenceExpression" && Array.isArray(bare.expressions)) {
+      alternatives = bare.expressions.slice(-1);
+    }
     if (alternatives.length > 0) {
       const branches: SyntaxNode[] = [];
       const leaves = (branch: unknown): void => {
@@ -131,6 +134,8 @@ function collect(source: string): Ranges {
         } else if (branch.type === "LogicalExpression") {
           leaves(branch.left);
           leaves(branch.right);
+        } else if (branch.type === "SequenceExpression" && Array.isArray(branch.expressions)) {
+          leaves(branch.expressions.at(-1));
         } else branches.push(branch);
       };
       alternatives.forEach(leaves);

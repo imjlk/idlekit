@@ -516,3 +516,15 @@ test("qualified namespace segments do not shadow runners outside their parent", 
     expect(unresolvedRunnerCalls(body)).toEqual([]);
   }
 });
+
+test("sequence expressions retain only the resulting runner container", () => {
+  for (const value of ["{ run: it }", "hidden", "condition ? hidden : {}"]) {
+    const body = `import { it } from "bun:test"; const hidden = { run: it };
+      const copied: Data = (sideEffect(), ${value}); copied.run("fake", callback);`;
+    expect(unresolvedRunnerCalls(body)).toContain("copied");
+    expect(registrationLines(body, "fake")).toEqual([]);
+  }
+  const discarded = `import { it } from "bun:test";
+    const copied: Data = ({ run: it }, {}); copied.run("ordinary", callback);`;
+  expect(unresolvedRunnerCalls(discarded)).toEqual([]);
+});
