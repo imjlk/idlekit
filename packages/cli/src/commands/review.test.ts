@@ -106,7 +106,9 @@ describe("review report aliases", () => {
   });
   it("keeps the compare JSON report contract available", () => {
     const report = runCliJson(["review", "compare", a, b, "--duration", "2", "--bundle", "economy", "--format", "json"]);
-    expect(report.ok).toBeTrue();
+    expect(report.bundle).toBe("economy");
+    expect(report.results.map((result: { metric: string }) => result.metric)).toEqual(["endMoney", "endNetWorth", "droppedRate"]);
+    expect(report._meta.command).toBe("compare");
   });
   it("prints a doctor Markdown report without requiring a TTY", () => {
     const result = runCli(["review", "doctor"]);
