@@ -1,5 +1,5 @@
 import { $ } from "bun";
-import { existsSync } from "node:fs";
+import { existsSync } from "fs";
 import { dirname, resolve } from "path";
 import { ROOT, ensureDir, withFileLock } from "./_bun";
 

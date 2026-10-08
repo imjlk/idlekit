@@ -16,6 +16,8 @@ Official support in v1: Bun `>=1.4.2` only. Node.js and browser runtimes are not
 - Keep `major` bumps disabled during v1 unless a migration path is prepared
 - Do not publish until design-decision gates pass: worth-aware growth, `experience`, session patterns, milestones, perceived progression, and Monte Carlo
 
+The Bun minimum change has a prepared [Bun 1.4.2 and Gunshi migration guide](./bun-14-migration.md). Its `major` changeset and release plan require review before the release PR is approved.
+
 ## Sampo workflow
 
 Key files:

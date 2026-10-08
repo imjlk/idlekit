@@ -2,6 +2,7 @@
 
 Bun workspace 기반의 범용 경제 시뮬레이터입니다.
 v1 공식 지원 범위는 Bun `>=1.4.2`입니다. Node.js와 브라우저 런타임은 v1 호환성 계약에 포함하지 않습니다.
+업그레이드 안내: [Bun 1.4.2 및 Gunshi 마이그레이션](./docs/bun-14-migration_ko.md).
 
 - `@idlekit/core`: 엔진 어댑터, 시나리오 컴파일, 시뮬레이션, 분석, 리포트
 - `@idlekit/money`: 화폐/표기/정책/직렬화 전용 라이브러리
