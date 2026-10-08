@@ -1,11 +1,12 @@
 import { readFileSync, realpathSync } from "fs";
 import { isAbsolute, join, resolve } from "path";
 import { sha256Hex } from "./_bun";
+import { installedCompilerBin } from "./compiler-bin";
 
 export const root = resolve(import.meta.dir, "..");
 export const pinsPath = join(root, "fixtures/toolchain/pins.json");
-export const ttscBin = join(root, "node_modules/.bin/ttsc");
-export const graphBin = join(root, "node_modules/.bin/ttsc-graph");
+export const ttscBin = installedCompilerBin(root, "ttsc");
+export const graphBin = installedCompilerBin(root, "ttsc-graph");
 
 function fromFileUrl(url: string): string {
   if (!url.startsWith("file://")) return url;
@@ -91,7 +92,7 @@ export function fixtureEnv(cacheDir?: string): Record<string, string | undefined
 
 export function assertTtscArgv(args: string[]): void {
   const bin = args[0] ?? "";
-  if (!bin.endsWith(`${join("node_modules", ".bin", "ttsc")}`) && !bin.endsWith(`${join("node_modules", ".bin", "ttsc-graph")}`)) {
+  if (bin !== ttscBin && bin !== graphBin) {
     throw new Error(`refusing non-ttsc command: ${bin}`);
   }
 }
@@ -187,8 +188,7 @@ export function inspectToolchain(): DoctorReport {
   }
   for (const workflow of ["ci.yml", "codeql.yml", "docs-verify.yml", "release.yml", "conformance-extended.yml"]) {
     const body = readFileSync(join(root, ".github/workflows", workflow), "utf8");
-    if (!body.includes('bun-version: "1.3.10"')) failures.push(`${workflow} does not pin Bun 1.3.10`);
-    if (body.includes('bun-version: "1.3.9"')) failures.push(`${workflow} still pins Bun 1.3.9`);
+    if (!body.includes(`bun-version: "${pins.bun}"`)) failures.push(`${workflow} does not pin Bun ${pins.bun}`);
   }
   const ci = readFileSync(join(root, ".github/workflows/ci.yml"), "utf8");
   if (!ci.includes(`node-version: "${pins.ciNode}"`)) failures.push(`ci.yml does not pin Node ${pins.ciNode}`);

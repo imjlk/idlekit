@@ -1,7 +1,8 @@
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "fs";
 import { join, resolve } from "path";
 import { demonstrateShrinkGap, replayShrinkReport } from "../packages/core/src/testkit/conformance";
-import { commandText, root, runTtsc, ttsxUnderNodeName } from "./evidence-host";
+import { commandText, root, runTtsc } from "./evidence-host";
+import { ttsxLauncherPath } from "./compiler-bin";
 import { fixtureEnv } from "./toolchain-host";
 
 type Step = {
@@ -119,7 +120,7 @@ function negative(): void {
     const preloadEnv = fixtureEnv();
     // Keep the standalone runtime probe independent of bun test's NODE_ENV.
     delete preloadEnv.NODE_ENV;
-    preloadEnv.TTSC_TTSX_BINARY = join(base, "tools", ttsxUnderNodeName());
+    preloadEnv.TTSC_TTSX_BINARY = ttsxLauncherPath(base);
     // Preserve the bounded retry for an unstable upstream host generation.
     // A missing transform fails with a different error and is never retried.
     // Bun's directory-mismatch warning alone is not a failed transform verdict.

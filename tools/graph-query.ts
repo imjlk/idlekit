@@ -1,8 +1,8 @@
 import { join, resolve } from "path";
+import { installedCompilerBin, ttsxLauncherPath } from "./compiler-bin";
 
 export const root = resolve(import.meta.dir, "..");
-const graphBinName = process.platform === "win32" ? "ttsc-graph.cmd" : "ttsc-graph";
-export const graphBin = join(root, "node_modules", ".bin", graphBinName);
+export const graphBin = installedCompilerBin(root, "ttsc-graph");
 
 const ACTIONS = ["overview", "tour", "entrypoints", "lookup", "details", "trace"] as const;
 
@@ -40,8 +40,7 @@ function graphEnv(): Record<string, string | undefined> {
   const env: Record<string, string | undefined> = { ...process.env };
   delete env.TTSC_GRAPH_BINARY;
   delete env.TTSC_GO_BINARY;
-  const ttsxName = process.platform === "win32" ? "ttsx-under-node.cmd" : "ttsx-under-node";
-  env.TTSC_TTSX_BINARY = join(root, "tools", ttsxName);
+  env.TTSC_TTSX_BINARY = ttsxLauncherPath(root);
   return env;
 }
 
@@ -396,8 +395,7 @@ export class GraphSession {
   }
 
   async open(): Promise<{ protocolVersion?: string; server?: string }> {
-    const graphShim = join("node_modules", ".bin", process.platform === "win32" ? "ttsc-graph.cmd" : "ttsc-graph");
-    if (!graphBin.endsWith(graphShim)) {
+    if (graphBin !== installedCompilerBin(root, "ttsc-graph")) {
       throw new Error(`refusing non-ttsc-graph command: ${graphBin}`);
     }
     this.proc = Bun.spawn([graphBin, "--cwd", this.cwd, "--tsconfig", this.tsconfig], {

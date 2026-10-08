@@ -6,7 +6,7 @@
 
 ## 조회 재현
 
-저장소 루트에서 Bun `1.3.10`으로 실행한다.
+저장소 루트에서 Bun `1.4.2`으로 실행한다.
 
 ```bash
 bun tools/graph-query.ts --question "Where is runScenario declared?" --request '{"type":"lookup","query":"runScenario"}'
@@ -22,7 +22,7 @@ bun tools/graph-query.ts --question "Where is runScenario declared?" --request '
 
 ## 에이전트 설정
 
-`.mcp.json.example`은 Claude Code 프로젝트 MCP 형식이고 로컬 bin을 가리킨다. POSIX `command`는 `node_modules/.bin/ttsc-graph`다. Windows에서는 `windowsCommand`인 `node_modules/.bin/ttsc-graph.cmd`를 그 `command`에 넣고 복사한다. `.codex/config.toml.example`은 Codex 프로젝트 설정의 `command`, `args`, `cwd`, `startup_timeout_sec`, `tool_timeout_sec`이고 같은 Windows `.cmd` 경로를 적는다. 근거는 <https://learn.chatgpt.com/codex/extend/mcp> (2026-09-30). 프로젝트 로컬 파일로 복사한다. `~/.codex/config.toml`은 이 변경에서 고치지 않는다. handshake 다음에 인덱스가 만들어지므로 Codex tool timeout을 기본 60초보다 늘린다.
+`.mcp.json.example`은 Claude Code 프로젝트 MCP 형식이고 로컬 bin을 가리킨다. POSIX `command`는 `node_modules/.bin/ttsc-graph`다. Windows에서는 `windowsCommand`인 `node_modules/.bin/ttsc-graph.exe`를 그 `command`에 넣고 복사한다. `.codex/config.toml.example`은 Codex 프로젝트 설정의 `command`, `args`, `cwd`, `startup_timeout_sec`, `tool_timeout_sec`이고 같은 Windows `.exe` 경로를 적는다. 근거는 <https://learn.chatgpt.com/codex/extend/mcp> (2026-09-30). 프로젝트 로컬 파일로 복사한다. `~/.codex/config.toml`은 이 변경에서 고치지 않는다. handshake 다음에 인덱스가 만들어지므로 Codex tool timeout을 기본 60초보다 늘린다.
 
 ## 미관측
 

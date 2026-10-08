@@ -4,7 +4,7 @@
   "description": "Bun-first idle game economy simulator, money library, and idk CLI.",
   "license": "MIT",
   "type": "module",
-  "packageManager": "bun@1.3.10",
+  "packageManager": "bun@1.4.2",
   "workspaces": [
     "packages/*"
   ],
@@ -63,8 +63,8 @@
     "@ttsc/graph": "0.30.4",
     "@ttsc/lint": "0.30.4",
     "@ttsc/unplugin": "0.30.4",
-    "@types/bun": "^1.3.9",
-    "@types/node": "^26.1.2",
+    "@types/bun": "^1.4.2",
+    "@types/node": "^26.6.4",
     "ttsc": "0.30.4",
     "typescript": "7.0.2",
     "typia": "14.0.6"

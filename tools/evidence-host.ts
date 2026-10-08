@@ -1,13 +1,14 @@
-import { join, resolve } from "path";
+import { basename, join, resolve } from "path";
+import { installedCompilerBin, ttsxLauncherPath } from "./compiler-bin";
 
 export const root = resolve(import.meta.dir, "..");
 
-/** Windows `.cmd` shims. The extensionless file is the POSIX launcher. */
+/** Use the launcher installed by Bun or npm for this platform. */
 export function compilerBinName(
   name: "ttsc" | "tsc",
   platform: NodeJS.Platform = process.platform,
 ): string {
-  return platform === "win32" ? `${name}.cmd` : name;
+  return basename(installedCompilerBin(root, name, platform));
 }
 
 export const ttscBin = join(root, "node_modules", ".bin", compilerBinName("ttsc"));
@@ -28,7 +29,7 @@ export function evidenceEnv(cacheDir?: string): Record<string, string | undefine
   const env: Record<string, string | undefined> = { ...process.env };
   delete env.TTSC_GRAPH_BINARY;
   delete env.TTSC_GO_BINARY;
-  env.TTSC_TTSX_BINARY = join(root, "tools", ttsxUnderNodeName());
+  env.TTSC_TTSX_BINARY = ttsxLauncherPath(root);
   if (cacheDir) env.TTSC_CACHE_DIR = cacheDir;
   else delete env.TTSC_CACHE_DIR;
   return env;

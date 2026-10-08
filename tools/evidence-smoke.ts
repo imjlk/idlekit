@@ -3818,8 +3818,9 @@ try {
   const launcherOk =
     ttsxUnderNodeName("win32") === "ttsx-under-node.cmd" &&
     ttsxUnderNodeName("darwin") === "ttsx-under-node" &&
-    compilerBinName("ttsc", "win32") === "ttsc.cmd" &&
-    compilerBinName("tsc", "win32") === "tsc.cmd" &&
+    (process.platform !== "win32" ||
+      (compilerBinName("ttsc", "win32") === "ttsc.exe" &&
+       compilerBinName("tsc", "win32") === "tsc.exe")) &&
     compilerBinName("ttsc", "darwin") === "ttsc" &&
     compilerBinName("tsc", "linux") === "tsc";
   const programOk = omitted.length === 1 && omitted[0] === "src/b.ts" && hostPresent && launcherOk;

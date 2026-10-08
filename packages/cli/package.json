@@ -54,10 +54,10 @@
     "@gunshi/plugin-completion": "0.37.3",
     "@gunshi/plugin-suggestion": "0.37.3",
     "@idlekit/core": "workspace:*",
-    "ajv": "^8.17.1",
+    "ajv": "^8.20.0",
     "gunshi": "0.37.3",
-    "yaml": "^2.8.1",
-    "zod": "^4.1.12"
+    "yaml": "^2.9.1",
+    "zod": "^4.6.5"
   },
   "devDependencies": {}
 }

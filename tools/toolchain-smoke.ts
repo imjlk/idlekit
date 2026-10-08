@@ -1,6 +1,7 @@
 import { cpSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync } from "fs";
-import { join, relative } from "path";
+import { join, relative, resolve } from "path";
 import { createTempDir, sha256Hex, writeText } from "./_bun";
+import { ttsxLauncherPath } from "./compiler-bin";
 import {
   assertTtscArgv,
   fixtureEnv,
@@ -175,8 +176,9 @@ async function main(): Promise<void> {
     text.includes("building source plugin") ? "warm prepare rebuilt a source plugin" : undefined,
   );
   const paths = ttsc(["cache", "paths", "--json", "--cwd", join(root, "fixtures/toolchain/typia"), "--cache-dir", cacheDir], cacheDir, cacheDir);
-  expectZero("cache-paths", paths, (text) => {
-    if (!text.includes(cacheDir)) return "cache paths did not name the requested cache dir";
+  expectZero("cache-paths", paths, () => {
+    const report = JSON.parse(paths.stdout) as { cacheRoot?: unknown };
+    if (typeof report.cacheRoot !== "string" || resolve(report.cacheRoot) !== resolve(cacheDir)) return "cache paths did not name the requested cache dir";
     return undefined;
   });
 
@@ -366,8 +368,7 @@ async function main(): Promise<void> {
   const preloadEnv = fixtureEnv(cacheDir);
   // Bun 1.3.10 has no node:module.registerHooks. A non-.js launcher makes
   // @ttsc/lint spawn ttsx under Node instead of process.execPath.
-  const ttsxLauncher = process.platform === "win32" ? "ttsx-under-node.cmd" : "ttsx-under-node";
-  preloadEnv.TTSC_TTSX_BINARY = join(root, "tools", ttsxLauncher);
+  preloadEnv.TTSC_TTSX_BINARY = ttsxLauncherPath(root);
   const preload = runCommand([process.execPath, join(root, "fixtures/toolchain/bun-preload/src/entry.ts")], {
     cwd: join(root, "fixtures/toolchain/bun-preload"),
     env: preloadEnv,
