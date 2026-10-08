@@ -31,6 +31,8 @@ export type RunnerAlias = {
   objectRunner?: boolean;
   /** End of a function parameter's lexical scope. */
   scopeEnd?: number;
+  /** A declared class or function shadows a runner but is not an opaque test runner. */
+  nonRunner?: boolean;
 };
 
 export function isRunnerKind(value: string): value is RunnerKind {
@@ -103,6 +105,8 @@ export function findBindingEquals(body: string, index: number): number {
   let depth = 0;
   const endsBefore = (from: number, to: number): boolean => {
     if (depth !== 0 || !/[\r\n]/.test(body.slice(from, to))) return false;
+    const before = body.slice(index, from).trimEnd();
+    if (!before || /[|&?:]$/.test(before) || /\b(typeof|keyof|readonly|infer)$/.test(before)) return false;
     const next = readIdentifier(body, to)?.value;
     return next !== undefined && [
       "const", "let", "var", "function", "class", "export", "import", "declare",

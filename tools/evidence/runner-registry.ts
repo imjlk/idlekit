@@ -259,16 +259,16 @@ function collectRegistrations(
 ): Registration[] {
   const source = lookupSource ?? body;
   const ranges = localRanges(body);
-  const parameters = new Map<number, Array<[string, number]>>();
+  const parameters = new Map<number, Array<[string, number, boolean]>>();
   const typeAnnotations = new Map<number, number>();
+  const typedBindingEquals = new Set<number>();
   for (const [, start, end] of localRanges(body, "annotations")) typeAnnotations.set(start, end);
-  for (const [name, start, end] of [
-    ...localRanges(body, "parameters"),
-    ...localRanges(body, "classes"),
-  ]) {
-    const entries = parameters.get(start) ?? [];
-    entries.push([name, end]);
-    parameters.set(start, entries);
+  for (const mode of ["parameters", "classes", "functions"] as const) {
+    for (const [name, start, end] of localRanges(body, mode)) {
+      const entries = parameters.get(start) ?? [];
+      entries.push([name, end, mode !== "parameters"]);
+      parameters.set(start, entries);
+    }
   }
   const found: Registration[] = [];
   const stack: { title: string; depth: number }[] = [];
@@ -300,8 +300,8 @@ function collectRegistrations(
       const end = aliases[cursor]?.scopeEnd;
       if (end !== undefined && index >= end) aliases.splice(cursor, 1);
     }
-    for (const [name, end] of parameters.get(index) ?? []) {
-      aliases.push({ name, kind: undefined, modifiers: [], depth: -1, scopeEnd: end });
+    for (const [name, end, nonRunner] of parameters.get(index) ?? []) {
+      aliases.push({ name, kind: undefined, modifiers: [], depth: -1, scopeEnd: end, nonRunner });
     }
     const char = body[index] ?? "";
     if (inTemplate) {
@@ -493,6 +493,7 @@ function collectRegistrations(
           }
           equalsAt = found;
           typeAnnotations.set(after, found);
+          typedBindingEquals.add(found);
         }
         if (body[equalsAt] !== "=") {
           aliases.push({ name: ident.value, kind: undefined, modifiers: [], depth: bindingDepth });
@@ -626,7 +627,7 @@ function collectRegistrations(
       kind = word.value;
     }
     if (!kind) {
-      if (alias && titleCallAt(body, word.end)) unresolved.push(word.value);
+      if (alias && !alias.nonRunner && titleCallAt(body, word.end)) unresolved.push(word.value);
       index = word.end;
       continue;
     }
@@ -650,7 +651,8 @@ function collectRegistrations(
       const optional =
         optionalRunnerCall(body, open) || optionalCallAfterGrouping(body, open);
       const forwarded = passedAsArgument(body, index, open);
-      const storedOnProperty = assignedToProperty(body, index);
+      const storedOnProperty =
+        !typedBindingEquals.has(previousCodeIndex(body, index)) && assignedToProperty(body, index);
       const storedOnField = assignedToClassField(body, index, classDepths.at(-1) === depth);
       const returned = returnedFromFunction(body, index);
       if (

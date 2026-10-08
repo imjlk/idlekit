@@ -1,5 +1,9 @@
 import { expect, test } from "bun:test";
-import { registrationLines, unresolvedRunnerCalls } from "./runner-registry";
+import {
+  duplicateFullNamesAcross,
+  registrationLines,
+  unresolvedRunnerCalls,
+} from "./runner-registry";
 
 test("arrow parameters shadow runner imports without hiding later registrations", () => {
   for (const callback of [
@@ -147,4 +151,51 @@ test("local classes in typed containers do not inherit imported runner identity"
     const copied = { ...hidden };
     copied.value("fake", () => {});`;
   expect(unresolvedRunnerCalls(expression)).toContain("copied");
+});
+
+test("multiline import types preserve registrations", () => {
+  for (const annotation of ["typeof\nimport(\"bun:test\").test", "\nimport(\"bun:test\").test"]) {
+    const body = `import { test } from "bun:test";
+      const run: ${annotation} = test;
+      run("real", () => {});`;
+    expect(registrationLines(body, "real")).toEqual([body.split("\n").length]);
+    expect(unresolvedRunnerCalls(body)).toEqual([]);
+  }
+});
+
+test("template literal parameter types preserve registrations", () => {
+  for (const type of ["`foo,bar`", "`foo;bar`", "`foo=bar`", "`foo)bar`"]) {
+    const body = `import { test } from "bun:test";
+      function helper(value: ${type}) { test("real", () => {}); }`;
+    expect(registrationLines(body, "real")).toEqual([2]);
+    expect(unresolvedRunnerCalls(body)).toEqual([]);
+  }
+});
+
+test("local function shadows and ordinary class constructors remain data", () => {
+  for (const declaration of ["function Runner() {}", "async function Runner() {}", "function* Runner() {}"]) {
+    const body = `import { test as Runner } from "bun:test";
+    {
+      ${declaration};
+      const hidden: Data = { value: Runner };
+      const copied = { ...hidden };
+      consume(copied.value);
+    }
+    Runner("real", () => {});
+    class Fault extends Error {}
+    throw new Fault("message");`;
+    expect(unresolvedRunnerCalls(body)).toEqual([]);
+    expect(registrationLines(body, "real")).toEqual([8]);
+  }
+});
+
+test("captured imported runners register across helpers while passed parameters stay opaque", () => {
+  const captured = `import { it } from "bun:test";
+    export function register() { it("real", callback); }`;
+  const forwarded = `export function register(it) { it("fake", callback); }`;
+  expect(registrationLines(captured, "real")).toEqual([2]);
+  expect(unresolvedRunnerCalls(captured)).toEqual([]);
+  expect(registrationLines(forwarded, "fake")).toEqual([]);
+  expect(unresolvedRunnerCalls(forwarded)).toContain("it");
+  expect(duplicateFullNamesAcross([captured, 'it("real", callback);'])).toEqual(["real"]);
 });

@@ -915,7 +915,7 @@ try {
   writeFileSync(
     specifierHelper,
     [
-      "export function register(it) {",
+      "export function register() {",
       '  it("credited", unrelated);',
       "}",
       "// from-typescript-helper",
@@ -932,7 +932,7 @@ try {
   writeFileSync(decoy, "// from-decoy-helper\n");
   writeFileSync(
     mjsHelper,
-    ["export function register(it) {", '  it("mjs-credited", unrelated);', "}"].join("\n"),
+    ["export function register() {", '  it("mjs-credited", unrelated);', "}"].join("\n"),
   );
   writeFileSync(mjsHost, 'import { register } from "./helper.mjs";\nregister(it);\n');
   let specifierDuplicate = false;
@@ -986,7 +986,7 @@ try {
     writeFileSync(
       join(specifierDir, "helper.js"),
       [
-        "export function register(it) {",
+        "export function register() {",
         '  it("other", unrelated);',
         "}",
         "// from-javascript-helper",
@@ -1009,7 +1009,7 @@ try {
     writeFileSync(
       requireHelper,
       [
-        "function register(it) {",
+        "function register() {",
         '  it("credited", unrelated);',
         "}",
         "register(it);",
@@ -2478,7 +2478,7 @@ try {
   writeFileSync(
     aliasHelper,
     [
-      "export function register(it) {",
+      "export function register() {",
       '  it("credited", unrelated);',
       "}",
       "// from-aliased-helper",
@@ -2507,7 +2507,7 @@ try {
   writeFileSync(
     join(workspacePkg, "register.ts"),
     [
-      "export function register(it) {",
+      "export function register() {",
       '  it("credited", unrelated);',
       "}",
       "// from-workspace-helper",
