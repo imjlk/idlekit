@@ -25,6 +25,8 @@ Bun `1.3.10` reports a Node-compatible `process.version` but `node:module.regist
 
 ## Commands
 
+The `bun-preload` transform fixture owns a private package manifest with only the pinned `typia` dependency. The negative conformance runner copies that boundary with the source and tsconfig. Without it, ttsc discovers the repository's lint/evidence plugins too; in `0.30.4` their unrelated missing-path host proofs can reject an otherwise valid transform generation. The positive control still executes Bun's real typia validator against valid and invalid values, and the missing-transform, evidence, and graph controls remain separate required checks. A Bun `directory mismatch` warning can occur on a successful transform and is not itself the failure verdict. Each invocation uses a fresh temporary directory, so an interrupted run or a reused PID cannot cause another run's project to be deleted.
+
 | Script | What it runs |
 |---|---|
 | `toolchain:doctor` | Pins, Bun `1.3.10`, Node floor, native binary, bundled Go, and binary overrides |
