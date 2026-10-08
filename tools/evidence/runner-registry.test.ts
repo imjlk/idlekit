@@ -246,3 +246,36 @@ test("namespace blocks contain their local class shadows", () => {
   expect(unresolvedRunnerCalls(body)).toEqual([]);
   expect(registrationLines(body, "real")).toEqual([8]);
 });
+
+test("method names and getter modifiers are not runner calls", () => {
+  const body = `import { test } from "bun:test";
+    import * as get from "bun:test";
+    const data = { test(value) { return value.name; } };
+    class Carrier { test(value) { return value.name; } get value() { return 42; } }
+    test("real", () => {});
+    get.test("namespace", () => {});`;
+  expect(unresolvedRunnerCalls(body)).toEqual([]);
+  expect(registrationLines(body, "real")).toEqual([5]);
+  expect(registrationLines(body, "namespace")).toEqual([6]);
+});
+
+test("switch case shadows do not hide discriminant registrations", () => {
+  const body = `import { test } from "bun:test";
+    switch (test("real", callback)) { case 1: class test {} }`;
+  expect(registrationLines(body, "real")).toEqual([2]);
+});
+
+test("type declarations at offset zero do not bypass runtime shadows", () => {
+  const body = 'type Row = string; class test {}; if (false) test("fake", callback);';
+  expect(registrationLines(body, "fake")).toEqual([]);
+});
+
+test("enum declarations shadow imports without turning data into runner containers", () => {
+  const body = `import { test as Runner } from "bun:test";
+    { enum Runner { Value }; const hidden: Data = { value: Runner }; const copied = { ...hidden }; consume(copied.value); }
+    Runner("real", callback);`;
+  expect(unresolvedRunnerCalls(body)).toEqual([]);
+  expect(registrationLines(body, "real")).toEqual([3]);
+  const held = `import { test as real } from "bun:test"; enum Holder { Value = real as any }`;
+  expect(unresolvedRunnerCalls(held)).toContain("real");
+});

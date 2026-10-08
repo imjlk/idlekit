@@ -262,6 +262,7 @@ function collectRegistrations(
   const parameters = new Map<number, Array<[string, number, boolean]>>();
   const typeAnnotations = new Map<number, number>();
   const typedBindingEquals = new Set<number>();
+  const enumValues = localRanges(body, "enumValues");
   for (const [, start, end] of localRanges(body, "annotations")) typeAnnotations.set(start, end);
   for (const mode of ["parameters", "classes", "functions"] as const) {
     for (const [name, start, end] of localRanges(body, mode)) {
@@ -291,17 +292,17 @@ function collectRegistrations(
   };
 
   while (index < body.length) {
-    const annotationEnd = typeAnnotations.get(index);
-    if (annotationEnd !== undefined) {
-      index = annotationEnd;
-      continue;
-    }
     for (let cursor = aliases.length - 1; cursor >= 0; cursor -= 1) {
       const end = aliases[cursor]?.scopeEnd;
       if (end !== undefined && index >= end) aliases.splice(cursor, 1);
     }
     for (const [name, end, nonRunner] of parameters.get(index) ?? []) {
       aliases.push({ name, kind: undefined, modifiers: [], depth: -1, scopeEnd: end, nonRunner });
+    }
+    const annotationEnd = typeAnnotations.get(index);
+    if (annotationEnd !== undefined) {
+      index = annotationEnd;
+      continue;
     }
     const char = body[index] ?? "";
     if (inTemplate) {
@@ -655,6 +656,7 @@ function collectRegistrations(
         !typedBindingEquals.has(previousCodeIndex(body, index)) && assignedToProperty(body, index);
       const storedOnField = assignedToClassField(body, index, classDepths.at(-1) === depth);
       const returned = returnedFromFunction(body, index);
+      const storedInEnum = enumValues.some(([, start, end]) => index >= start && index < end);
       if (
         isIndirectInvoke(body, index) ||
         closesThenCalls(body, open) ||
@@ -662,6 +664,7 @@ function collectRegistrations(
         forwarded ||
         storedOnProperty ||
         storedOnField ||
+        storedInEnum ||
         returned
       ) {
         unresolved.push(word.value);

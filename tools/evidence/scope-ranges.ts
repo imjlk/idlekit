@@ -1,6 +1,6 @@
 import { parse } from "@babel/parser";
 
-export type ScopeMode = "bindings" | "parameters" | "classes" | "functions" | "annotations";
+export type ScopeMode = "bindings" | "parameters" | "classes" | "functions" | "annotations" | "enumValues";
 type Range = [string, number, number];
 type Ranges = Record<ScopeMode, Range[]>;
 type SyntaxNode = { type: string; start: number; end: number; [key: string]: unknown };
@@ -71,6 +71,7 @@ function collect(source: string): Ranges {
     classes: [],
     functions: [],
     annotations: [],
+    enumValues: [],
   };
   const root: Scope = { start: 0, end: source.length, root: true };
   const bind = (mode: ScopeMode, values: string[], scope: Scope): void => {
@@ -78,6 +79,23 @@ function collect(source: string): Ranges {
   };
   const annotation = (value: unknown): void => {
     if (node(value)) result.annotations.push(["", value.start, value.end]);
+  };
+  const enumValue = (value: unknown): void => {
+    if (!node(value)) return;
+    if (value.type === "Identifier" || value.type === "MemberExpression" || value.type === "OptionalMemberExpression") {
+      result.enumValues.push(["", value.start, value.end]);
+    } else if (value.type.startsWith("TS") || value.type === "ParenthesizedExpression") enumValue(value.expression);
+    else if (value.type === "ConditionalExpression") {
+      enumValue(value.consequent);
+      enumValue(value.alternate);
+    } else if (value.type === "LogicalExpression") {
+      enumValue(value.left);
+      enumValue(value.right);
+    } else if (value.type === "ArrayExpression" && Array.isArray(value.elements)) value.elements.forEach(enumValue);
+    else if (value.type === "ObjectExpression" && Array.isArray(value.properties)) {
+      for (const property of value.properties) if (node(property)) enumValue(property.value ?? property.argument);
+    } else if (value.type === "SequenceExpression" && Array.isArray(value.expressions)) enumValue(value.expressions.at(-1));
+    else if (value.type === "AssignmentExpression") enumValue(value.right);
   };
   const walk = (value: unknown, lexical: Scope, fn: Scope): void => {
     if (!node(value)) return;
@@ -93,6 +111,16 @@ function collect(source: string): Ranges {
     if (value.type === "TSAsExpression" || value.type === "TSSatisfiesExpression" || value.type === "TSTypeAssertion") {
       annotation(value.typeAnnotation);
     }
+    if (
+      (value.type === "ObjectMethod" || value.type === "ClassMethod" || value.type === "ClassPrivateMethod") &&
+      node(value.key)
+    ) {
+      const decorators = Array.isArray(value.decorators) ? value.decorators.filter(node) : [];
+      const start = decorators.at(-1)?.end ?? value.start;
+      const end = value.computed ? value.key.start : value.key.end;
+      // Method names/modifiers are syntax; decorators and computed keys still execute.
+      if (start < end) result.annotations.push(["", start, end]);
+    }
     if (value.type === "VariableDeclaration" && Array.isArray(value.declarations)) {
       const scope = value.kind === "var" ? fn : lexical;
       if (!scope.root) {
@@ -101,11 +129,12 @@ function collect(source: string): Ranges {
         }
       }
     }
-    if (value.type === "ClassDeclaration" || value.type === "ClassExpression") {
-      const scope = value.type === "ClassDeclaration" ? lexical : own;
+    if (value.type === "ClassDeclaration" || value.type === "ClassExpression" || value.type === "TSEnumDeclaration") {
+      const scope = value.type === "ClassExpression" ? own : lexical;
       bind("classes", names(value.id), scope);
       if (!scope.root) bind("bindings", names(value.id), scope);
     }
+    if (value.type === "TSEnumMember") enumValue(value.initializer);
     if (value.type === "FunctionDeclaration" || value.type === "FunctionExpression") {
       const scope = value.type === "FunctionDeclaration" ? lexical : own;
       bind("functions", names(value.id), scope);
@@ -131,11 +160,12 @@ function collect(source: string): Ranges {
       bind("bindings", names(value.param), scope);
     } else if (
       value.type === "BlockStatement" || value.type === "StaticBlock" || value.type === "TSModuleBlock" ||
-      value.type === "ForStatement" || value.type === "ForInStatement" || value.type === "ForOfStatement" ||
-      value.type === "SwitchStatement"
+      value.type === "ForStatement" || value.type === "ForInStatement" || value.type === "ForOfStatement"
     ) {
       lexical = own;
       if (value.type === "StaticBlock" || value.type === "TSModuleBlock") fn = own;
+    } else if (value.type === "SwitchStatement" && node(value.discriminant)) {
+      lexical = { ...own, start: value.discriminant.end };
     }
     for (const child of Object.values(value)) {
       if (Array.isArray(child)) for (const entry of child) walk(entry, lexical, fn);

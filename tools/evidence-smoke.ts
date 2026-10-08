@@ -1514,7 +1514,7 @@ try {
   const preloadDir = mkdtempSync(join(tmpdir(), "idlekit-evidence-preload-"));
   const setupPath = resolve(preloadDir, "setup.ts");
   const preloadHost = join(preloadDir, "host.test.ts");
-  writeFileSync(setupPath, 'export function wrap(it) {\n  it("credited", unrelated);\n}\n');
+  writeFileSync(setupPath, 'export function wrap() {\n  it("credited", unrelated);\n}\n');
   writeFileSync(preloadHost, 'if (false) it("credited", citedExport);\n');
   let scalarPreload = false;
   let quotedPreload = false;
@@ -3301,6 +3301,7 @@ try {
       commentImport,
       relativeTypeSkipped,
       sourceLock,
+      scalarPreload,
       mockModule,
       mockSpaced,
       mockOptional,
