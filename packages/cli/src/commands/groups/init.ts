@@ -1,4 +1,4 @@
-import { defineGroup } from "@bunli/core";
+import { defineGroup } from "../../runtime/command";
 import initScenarioCommand from "../initScenario";
 
 export default defineGroup({

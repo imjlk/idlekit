@@ -1,4 +1,4 @@
-import type { PromptApi, TerminalInfo } from "@bunli/core";
+import type { PromptApi, TerminalInfo } from "../runtime/command";
 import { usageError } from "../errors";
 import {
   buildInitTemplatePlan,

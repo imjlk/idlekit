@@ -1,4 +1,4 @@
-import { defineCommand, option, type RenderArgs } from "@bunli/core";
+import { defineCommand, option, type RenderArgs } from "../runtime/command";
 import { z } from "zod";
 import { pluginOptions, type PluginOptionFlags } from "./_shared/plugin";
 import { usageError } from "../errors";

@@ -1,8 +1,8 @@
 /** @jsxImportSource @opentui/react */
-import { RuntimeProvider } from "@bunli/runtime/app";
+import { RuntimeProvider } from "../src/runtime/tui";
 import { testRender } from "@opentui/react/test-utils";
 import { act, createElement } from "react";
-import type { ResolvedTuiImageOptions } from "@bunli/core";
+import type { ResolvedTuiImageOptions } from "../src/runtime/command";
 import { resolve } from "path";
 import { REPO_ROOT, runCliJsonFromRepoRoot } from "../src/testkit/bun";
 import { createLazyReviewElement } from "../src/lib/reviewLazy";

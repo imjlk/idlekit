@@ -1,4 +1,4 @@
-import { defineCommand, option } from "@bunli/core";
+import { defineCommand, option } from "../runtime/command";
 import { runElapsedSec, runScenario, validateScenarioV1 } from "@idlekit/core";
 import { resolve } from "path";
 import { z } from "zod";

@@ -18,7 +18,7 @@ bun tools/graph-query.ts --question "Where is runScenario declared?" --request '
 
 ## 프로그램
 
-`tsconfig.graph.json`은 noEmit이다. money, core, CLI 소스(CLI는 `jsx: react-jsx`, `jsxImportSource: @opentui/react`)와 CLI scripts, 생성된 `.bunli`, 최상위 `tools/*.ts`를 포함한다. 이 프로그램의 `@ttsc/lint`는 `enabled: false`라서 evidence graph를 적용하지 않는다. 합본이 `.d.ts` 경계만 보여 주면 패키지 `tsconfig.json`이 authoritative다. root `tsconfig.json`은 없다.
+`tsconfig.graph.json`은 noEmit이다. money, core, CLI 소스(CLI는 `jsx: react-jsx`, `jsxImportSource: @opentui/react`)와 CLI scripts, 최상위 `tools/*.ts`를 포함한다. 이 프로그램의 `@ttsc/lint`는 `enabled: false`라서 evidence graph를 적용하지 않는다. 합본이 `.d.ts` 경계만 보여 주면 패키지 `tsconfig.json`이 authoritative다. root `tsconfig.json`은 없다.
 
 ## 에이전트 설정
 

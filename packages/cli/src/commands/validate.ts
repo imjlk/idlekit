@@ -1,4 +1,4 @@
-import { defineCommand } from "@bunli/core";
+import { defineCommand } from "../runtime/command";
 import { validateScenarioV1 } from "@idlekit/core";
 import { loadRegistriesFromFlags, pluginOptions } from "./_shared/plugin";
 import { scenarioInvalidError, usageError } from "../errors";

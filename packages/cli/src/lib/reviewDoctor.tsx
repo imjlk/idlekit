@@ -1,7 +1,7 @@
 /** @jsxImportSource @opentui/react */
 import { createElement } from "react";
 import { useKeyboard } from "@opentui/react";
-import { useRuntime } from "@bunli/runtime/app";
+import { useRuntime } from "../runtime/tui";
 import { runSelfCliJson } from "../runtime/selfCli";
 import { createReviewSummaryGrid, reviewExitHint, reviewSection } from "./reviewUi";
 

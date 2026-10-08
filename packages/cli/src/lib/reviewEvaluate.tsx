@@ -1,7 +1,7 @@
 /** @jsxImportSource @opentui/react */
-import { detectImageCapability, renderImage } from "@bunli/runtime/image";
-import { useRuntime } from "@bunli/runtime/app";
-import type { ResolvedTuiImageOptions } from "@bunli/core";
+import { detectImageCapability, renderImage } from "../runtime/tui";
+import { useRuntime } from "../runtime/tui";
+import type { ResolvedTuiImageOptions } from "../runtime/command";
 import { createElement, useEffect, useMemo, useState } from "react";
 import { useKeyboard } from "@opentui/react";
 import { cliError } from "../errors";

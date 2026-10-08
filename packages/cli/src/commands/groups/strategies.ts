@@ -1,4 +1,4 @@
-import { defineGroup } from "@bunli/core";
+import { defineGroup } from "../../runtime/command";
 import strategiesListCommand from "../strategies";
 
 export default defineGroup({

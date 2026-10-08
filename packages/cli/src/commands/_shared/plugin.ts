@@ -1,4 +1,4 @@
-import { option } from "@bunli/core";
+import { option } from "../../runtime/command";
 import { z } from "zod";
 import { loadRegistries, parsePluginPaths, parsePluginSecurityOptions } from "../../plugin/load";
 

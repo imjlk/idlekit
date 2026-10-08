@@ -1,4 +1,4 @@
-import type { PromptApi, TerminalInfo } from "@bunli/core";
+import type { PromptApi, TerminalInfo } from "../runtime/command";
 import { validateScenarioV1, type ModelRegistry } from "@idlekit/core";
 import { basename, resolve } from "path";
 import { scenarioInvalidError, usageError } from "../errors";

@@ -1,4 +1,4 @@
-import { defineCommand, option } from "@bunli/core";
+import { defineCommand, option } from "../runtime/command";
 import type { StrategyRegistry } from "@idlekit/core";
 import { z } from "zod";
 import type { StrategiesListOutput } from "./list/types";

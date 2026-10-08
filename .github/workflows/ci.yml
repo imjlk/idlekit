@@ -70,10 +70,10 @@ jobs:
       - name: Evidence smoke
         run: bun run evidence:smoke
 
-      - name: Bunli Generate Check
+      - name: Gunshi Command Check
         run: bun run --cwd packages/cli generate:check
 
-      - name: Bunli Completion Doctor
+      - name: Shell Completion Check
         run: bun run --cwd packages/cli doctor:completions
 
       - name: Runtime Import Check

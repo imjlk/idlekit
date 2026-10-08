@@ -1,5 +1,5 @@
 /** @jsxImportSource @opentui/react */
-import { useRuntime } from "@bunli/runtime/app";
+import { useRuntime } from "../runtime/tui";
 import { createElement, useEffect, useState, type ComponentType } from "react";
 import { useKeyboard } from "@opentui/react";
 import { reviewExitHint, reviewSection } from "./reviewUi";

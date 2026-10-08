@@ -1,4 +1,4 @@
-import { defineGroup } from "@bunli/core";
+import { defineGroup } from "../../runtime/command";
 import reviewCompareCommand from "../reviewCompare";
 import reviewDoctorCommand from "../reviewDoctor";
 import reviewEvaluateCommand from "../reviewEvaluate";

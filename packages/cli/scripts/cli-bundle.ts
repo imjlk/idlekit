@@ -1,4 +1,3 @@
-import { loadConfig } from "@bunli/core";
 import ttsc from "@ttsc/unplugin/bun";
 import { resolve } from "path";
 
@@ -15,46 +14,23 @@ function flagValue(name: string): string | undefined {
   return value;
 }
 
-const config = await loadConfig(cliRoot);
-const entryFromConfig = config.build.entry;
-const defaultEntry = Array.isArray(entryFromConfig) ? entryFromConfig[0] : entryFromConfig;
-const entry = flagValue("--entry") ?? defaultEntry ?? "src/main.ts";
-const outdir = flagValue("--outdir") ?? config.build.outdir ?? "./dist";
+const entry = flagValue("--entry") ?? "src/main.ts";
+const outdir = flagValue("--outdir") ?? "./dist";
 const targets = flagValue("--targets");
 if (targets !== undefined && targets !== "native") {
   throw new Error(
-    "cli-bundle.ts preserves the repository JS bundle and --targets native. Other bunli target lists are not guessed.",
+    "cli-bundle.ts supports the repository JS bundle and --targets native only.",
   );
 }
 
-const minify = config.build.minify;
-const sourcemap = process.argv.includes("--sourcemap") ? true : config.build.sourcemap;
+const minify = false;
+const sourcemap = process.argv.includes("--sourcemap") ? "external" : "none";
 // Inlining @opentui/core breaks its bundled asset loader (loadedPath is
 // undefined). Keep the packages external. The CLI depends on both so
 // dist/main.js can resolve them. Bun 1.3.10 then does not have to bundle
 // @opentui/core's optional platform imports.
-const external = [
-  ...new Set([...(config.build.external ?? []), "react", "@opentui/react", "@opentui/core"]),
-];
+const external = ["react", "@opentui/react", "@opentui/core"];
 const outdirAbs = resolve(cliRoot, outdir);
-const generateEntry = config.commands?.entry ?? entry;
-const generateDirectory = config.commands?.directory ?? "src/commands";
-const generated = Bun.spawnSync(
-  [
-    resolve(cliRoot, "node_modules/.bin/bunli"),
-    "generate",
-    "--entry",
-    generateEntry,
-    "--directory",
-    generateDirectory,
-    "--output",
-    "./.bunli/commands.gen.ts",
-  ],
-  { cwd: cliRoot, stdout: "inherit", stderr: "inherit" },
-);
-if (generated.exitCode !== 0) {
-  throw new Error("bunli generate failed");
-}
 const plugins = [ttsc()];
 
 if (targets === "native") {
@@ -85,7 +61,7 @@ await Bun.$`mkdir -p ${outdirAbs}`.quiet();
     const body = await output.text();
     const withoutShebang = body.replace(/^#![^\n]*\n/, "");
     await Bun.write(output.path, `#!/usr/bin/env bun\n${withoutShebang}`);
-    await Bun.$`chmod +x ${output.path}`.quiet();
+    if (process.platform !== "win32") await Bun.$`chmod +x ${output.path}`.quiet();
   }
   console.log(`bundled ${outdir}`);
 }

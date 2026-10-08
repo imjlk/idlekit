@@ -1,6 +1,6 @@
-import { createCLI, defineCommand, defineGroup } from "@bunli/core";
+import { createCLI, defineCommand, defineGroup } from "../runtime/command";
 import { describe, expect, it } from "bun:test";
-import { RuntimeProvider } from "@bunli/runtime/app";
+import { RuntimeProvider } from "../runtime/tui";
 import { testRender } from "@opentui/react/test-utils";
 import { act, createElement } from "react";
 import { createTempDir, removePath, runCliFailure } from "../testkit/bun";

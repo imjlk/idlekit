@@ -1,4 +1,4 @@
-import { defineCommand, option, type RenderArgs } from "@bunli/core";
+import { defineCommand, option, type RenderArgs } from "../runtime/command";
 import { z } from "zod";
 import { usageError } from "../errors";
 import { createLazyReviewElement } from "../lib/reviewLazy";

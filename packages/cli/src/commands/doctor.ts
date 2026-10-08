@@ -1,6 +1,5 @@
-import { defineCommand, option } from "@bunli/core";
+import { defineCommand, option } from "../runtime/command";
 import { resolve } from "path";
-import { fileURLToPath } from "url";
 import { z } from "zod";
 import { CLI_NAME, CLI_VERSION } from "../cliMeta";
 import { buildOutputMeta } from "../io/outputMeta";
@@ -14,22 +13,10 @@ import {
   writePluginTrust,
 } from "../lib/setup";
 import { fileExists } from "../runtime/bun";
-import { cliPackageRoot, isBundledCliProcess, runSelfCli } from "../runtime/selfCli";
+import { runSelfCli } from "../runtime/selfCli";
 import { usageError } from "../errors";
 
-/** Command names from Bunli's generated list. The module itself imports unpublished sources. */
-function generatedCommandNames(source: string): string[] | undefined {
-  const match = /const names = \[([^\]]*)\]/.exec(source);
-  const body = match?.[1];
-  if (!body) return undefined;
-  const names: string[] = [];
-  for (const item of body.matchAll(/["']([^"']+)["']/g)) {
-    const name = item[1];
-    if (name) names.push(name);
-  }
-  if (names.length === 0) return undefined;
-  return names;
-}
+import { commandNames } from "../runtime/command";
 
 function parseMinimumVersion(range: string): string {
   const match = range.match(/(\d+\.\d+\.\d+)/);
@@ -104,7 +91,7 @@ function buildChecks(args: {
     {
       id: "generated.exists",
       ok: args.generatedExists,
-      detail: args.generatedExists ? undefined : "missing .bunli/commands.gen.ts",
+      detail: args.generatedExists ? undefined : "missing command registry",
     },
     {
       id: "generated.inventory",
@@ -183,25 +170,11 @@ export default defineCommand({
   },
   async handler({ flags, prompt, terminal, cwd }) {
     const packageJson = await import("../../package.json", { with: { type: "json" } });
-    const generatedPath = isBundledCliProcess()
-      ? resolve(cliPackageRoot(), ".bunli/commands.gen.ts")
-      : fileURLToPath(new URL("../../.bunli/commands.gen.ts", import.meta.url));
-    const generatedExists = await fileExists(generatedPath);
-
+    const generatedExists = commandNames().length > 0;
+    const generatedCommands = [...commandNames()];
+    const generatedError = generatedExists ? undefined : "Command registry is empty";
     const requiredBun = parseMinimumVersion((packageJson.default?.engines as { bun?: string } | undefined)?.bun ?? ">=1.3.0");
     const bunOk = compareVersion(Bun.version, requiredBun) >= 0;
-
-    let generatedCommands: string[] = [];
-    let generatedError: string | undefined;
-    if (generatedExists) {
-      try {
-        const names = generatedCommandNames(await Bun.file(generatedPath).text());
-        if (names) generatedCommands = names;
-        else generatedError = "generated command names are missing";
-      } catch (error) {
-        generatedError = error instanceof Error ? error.message : String(error);
-      }
-    }
 
     const completionShell = flags.shell;
     const completions = runSelfCli(["completions", completionShell === "detect" ? "zsh" : completionShell]);

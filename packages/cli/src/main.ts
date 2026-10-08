@@ -1,6 +1,5 @@
 #!/usr/bin/env bun
-import { createCLI } from "@bunli/core";
-import bunliConfig from "../bunli.config";
+import { createCLI } from "./runtime/command";
 import calibrateCommand from "./commands/calibrate";
 import balanceCommand from "./commands/balance";
 import compareCommand from "./commands/compare";
@@ -26,40 +25,14 @@ import reviewGroup from "./commands/groups/review";
 import setupGroup from "./commands/groups/setup";
 import strategiesGroup from "./commands/groups/strategies";
 import { CLI_DESCRIPTION, CLI_NAME, CLI_VERSION } from "./cliMeta";
-import { bunliPlugins } from "./bunliPlugins";
+import { completionCommands } from "./runtime/completion";
 import { formatCliError, toCliError } from "./errors";
 
 const cli = await createCLI({
-  ...bunliConfig,
   name: CLI_NAME,
   version: CLI_VERSION,
   description: CLI_DESCRIPTION,
-  plugins: bunliPlugins as any,
 });
-
-const GROUPS_WITH_SUBCOMMANDS = new Set(["models", "strategies", "objectives", "init", "replay", "kpi", "review", "setup"]);
-
-function resolveInvocation(argv: string[]): { commandName?: string; args: string[] } {
-  const first = argv[0];
-  if (!first || first.startsWith("-")) return { args: argv };
-  if (first === "help" || first === "--help" || first === "-h" || first === "--version" || first === "-v") {
-    return { args: argv };
-  }
-
-  if (GROUPS_WITH_SUBCOMMANDS.has(first)) {
-    const second = argv[1];
-    if (!second || second.startsWith("-")) return { args: argv };
-    return {
-      commandName: `${first} ${second}`,
-      args: argv.slice(2),
-    };
-  }
-
-  return {
-    commandName: first,
-    args: argv.slice(1),
-  };
-}
 
 cli.command(validateCommand);
 cli.command(modelsGroup);
@@ -84,15 +57,11 @@ cli.command(tuneCommand);
 cli.command(calibrateCommand);
 cli.command(balanceCommand);
 
+for (const command of completionCommands(cli.commands)) cli.command(command);
+
 if (import.meta.main) {
   try {
-    const argv = process.argv.slice(2);
-    const invocation = resolveInvocation(argv);
-    if (!invocation.commandName || invocation.args.includes("--help") || invocation.args.includes("-h")) {
-      await cli.run(argv);
-    } else {
-      await cli.execute(invocation.commandName, invocation.args);
-    }
+    await cli.run(process.argv.slice(2));
   } catch (error) {
     console.error(formatCliError(toCliError(error)));
     process.exitCode = 1;

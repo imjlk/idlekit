@@ -3,7 +3,13 @@
   "compilerOptions": {
     "jsx": "react-jsx",
     "jsxImportSource": "@opentui/react",
-    "lib": ["ES2022", "DOM"]
+    "lib": [
+      "ES2022",
+      "DOM"
+    ]
   },
-  "include": ["src", "scripts", ".bunli"]
+  "include": [
+    "src",
+    "scripts"
+  ]
 }
