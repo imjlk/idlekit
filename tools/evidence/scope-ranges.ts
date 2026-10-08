@@ -2,7 +2,7 @@ import { parse } from "@babel/parser";
 
 export type ScopeMode =
   | "bindings" | "parameters" | "classes" | "functions"
-  | "annotations" | "enumValues" | "destructuring" | "objectMethods" | "containerReferences";
+  | "annotations" | "enumValues" | "destructuring" | "objectMethods" | "containerReferences" | "fieldKeys";
 type Range = [string, number, number];
 export type DestructuringAssignment = {
   name: string;
@@ -10,7 +10,10 @@ export type DestructuringAssignment = {
   end: number;
   evaluation: "value" | "default" | "opaque";
 };
-type Ranges = Record<ScopeMode, Range[]> & { assignments: DestructuringAssignment[] };
+type Ranges = Record<ScopeMode, Range[]> & {
+  assignments: DestructuringAssignment[];
+  alternatives: Map<number, number[]>;
+};
 type SyntaxNode = { type: string; start: number; end: number; [key: string]: unknown };
 type Scope = { start: number; end: number; root: boolean };
 const cache = new Map<string, Ranges>();
@@ -87,7 +90,9 @@ function collect(source: string): Ranges {
     destructuring: [],
     objectMethods: [],
     containerReferences: [],
+    fieldKeys: [],
     assignments: [],
+    alternatives: new Map(),
   };
   const undefinedBindings: Range[] = [];
   const assignments: SyntaxNode[] = [];
@@ -110,6 +115,28 @@ function collect(source: string): Ranges {
       bare = bare.expression;
     }
     if (bare.type === "Identifier") bind("containerReferences", names(bare), { start: value.start, end: value.end, root: false });
+    let alternatives: unknown[] = [];
+    if (bare.type === "ConditionalExpression") alternatives = [bare.consequent, bare.alternate];
+    else if (bare.type === "LogicalExpression") alternatives = [bare.left, bare.right];
+    if (alternatives.length > 0) {
+      const branches: SyntaxNode[] = [];
+      const leaves = (branch: unknown): void => {
+        if (!node(branch)) return;
+        if (["TSAsExpression", "TSSatisfiesExpression", "TSNonNullExpression", "ParenthesizedExpression"].includes(branch.type) && node(branch.expression)) {
+          leaves(branch.expression);
+        } else if (branch.type === "ConditionalExpression") {
+          leaves(branch.consequent);
+          leaves(branch.alternate);
+        } else if (branch.type === "LogicalExpression") {
+          leaves(branch.left);
+          leaves(branch.right);
+        } else branches.push(branch);
+      };
+      alternatives.forEach(leaves);
+      branches.forEach(containerReference);
+      const starts = branches.map((branch) => branch.start);
+      result.alternatives.set(value.start, starts);
+    }
   };
   const propertyKey = (value: unknown): string | undefined => {
     if (!node(value)) return undefined;
@@ -192,8 +219,12 @@ function collect(source: string): Ranges {
       assignments.push(value);
     }
     if (value.type === "ObjectProperty") containerReference(value.value);
+    if (value.type === "ReturnStatement") containerReference(value.argument);
     if (value.type === "SpreadElement") containerReference(value.argument);
     if (value.type === "ArrayExpression" && Array.isArray(value.elements)) value.elements.forEach(containerReference);
+    if (["ClassProperty", "ClassPrivateProperty", "ClassAccessorProperty"].includes(value.type) && !value.computed && node(value.key)) {
+      result.fieldKeys.push(["", value.key.start, value.key.end]);
+    }
     if (value.type === "TSTypeAnnotation" || value.type === "TSTypeParameterDeclaration") {
       annotation(value);
       return;
@@ -341,4 +372,8 @@ export function syntaxRanges(source: string, mode: ScopeMode): Range[] {
 
 export function syntaxAssignments(source: string): DestructuringAssignment[] {
   return sourceRanges(source).assignments.map((entry) => ({ ...entry }));
+}
+
+export function syntaxAlternatives(source: string, at: number): number[] {
+  return [...(sourceRanges(source).alternatives.get(at) ?? [])];
 }

@@ -438,3 +438,30 @@ test("shadowed undefined and unknown properties do not select defaults", () => {
     expect(unresolvedRunnerCalls(body)).toContain("it");
   }
 });
+
+test("conditional and logical values preserve runner containers", () => {
+  for (const value of [
+    "condition ? { run: it } : { run: ordinary }",
+    "condition && { run: it }",
+    "ordinary || { run: it }",
+    "(condition && { run: ordinary }) || { run: it }",
+    "((condition && { run: ordinary }) as Data) || { run: it }",
+  ]) {
+    const body = `import { it } from "bun:test"; const copied = ${value}; copied.run("fake", callback);`;
+    expect(unresolvedRunnerCalls(body)).toContain("copied");
+    expect(registrationLines(body, "fake")).toEqual([]);
+  }
+});
+
+test("returning a bare runner container remains an unresolved escape", () => {
+  for (const value of ["{ run: it }", "[it]"]) {
+    const body = `import { it } from "bun:test"; const hidden = ${value}; function expose() { return hidden; }`;
+    expect(unresolvedRunnerCalls(body)).toContain("return");
+  }
+});
+
+test("class field names do not rewrite imported callbacks", () => {
+  const body = `import { citedExport } from "./case"; class Carrier { citedExport = ordinary; } it("credited", citedExport);`;
+  expect(registeredSuites(body, "citedExport", "credited")).toEqual([[]]);
+  expect(unresolvedRunnerCalls(body)).toEqual([]);
+});

@@ -19,7 +19,11 @@ import {
   stringSpans,
   wordBefore,
 } from "./lex";
-import { syntaxAssignments, type DestructuringAssignment } from "./scope-ranges";
+import {
+  syntaxAlternatives,
+  syntaxAssignments,
+  type DestructuringAssignment,
+} from "./scope-ranges";
 import {
   aliasAt,
   assignmentAt,
@@ -120,13 +124,27 @@ function valueHoldsRunner(
   body: string,
   at: number,
   aliases: readonly RunnerAlias[],
+  leaf = false,
 ): boolean {
   let cursor = skipSpaceAndComments(body, at);
+  const valueAt = cursor;
   while (body[cursor] === "(") cursor = skipSpaceAndComments(body, cursor + 1);
+  let alternatives = leaf ? [] : syntaxAlternatives(body, valueAt);
+  if (!leaf && alternatives.length === 0 && cursor !== valueAt) alternatives = syntaxAlternatives(body, cursor);
+  if (alternatives.length > 0) {
+    return alternatives.some((branch) => {
+      const sameStart = branch === cursor || branch === valueAt;
+      return valueHoldsRunner(body, branch, aliases, sameStart);
+    });
+  }
   if (body[cursor] === "[") return arrayHoldsRunner(body, cursor, aliases);
   if (body[cursor] === "{") return objectHoldsRunner(body, cursor, aliases);
-  const reference = localRanges(body, "containerReferences").find(([, start]) => start === cursor);
-  if (reference && bareRunnerBinding(reference[0], aliases)) return true;
+  const references = localRanges(body, "containerReferences");
+  if (references.some(([name, start]) => {
+    if (start !== cursor) return false;
+    const alias = aliasAt(aliases, name);
+    return alias ? alias.kind !== undefined || bareRunnerBinding(name, aliases) : isRunnerKind(name);
+  })) return true;
   return readRunnerRef(body, at, aliases) !== undefined;
 }
 
@@ -273,6 +291,7 @@ function collectRegistrations(
   const typeAnnotations = new Map<number, number>();
   const typedBindingEquals = new Set<number>();
   const enumValues = localRanges(body, "enumValues");
+  const fieldKeys = localRanges(body, "fieldKeys");
   type PendingAssignment = DestructuringAssignment & { owner?: RunnerAlias; value?: RunnerAlias };
   const destructuringSources = new Map<number, PendingAssignment[]>();
   const destructuringUpdates = new Map<number, PendingAssignment[]>();
@@ -606,7 +625,8 @@ function collectRegistrations(
     let assignmentDepth = forParens.length > 0 ? depth + 1 : depth;
     if (alias?.scopeEnd !== undefined) assignmentDepth = alias.depth;
     const assigned = assignmentAt(body, word.end);
-    if (assigned && !locallyBound(ranges, word.value, index) && !declaratorInitializer(body, index)) {
+    const bindingAssigned = assigned && !fieldKeys.some(([, start, end]) => index >= start && index < end);
+    if (bindingAssigned && !locallyBound(ranges, word.value, index) && !declaratorInitializer(body, index)) {
       rewritten.add(word.value);
       reboundSuites.add(word.value);
     }
@@ -626,7 +646,7 @@ function collectRegistrations(
       index = word.end;
       continue;
     }
-    if (assigned && alias) {
+    if (bindingAssigned && alias) {
       const ref = assigned.plain ? readRunnerRef(body, assigned.at + 1, aliases) : undefined;
       const namespace =
         !ref && assigned.plain ? readRunnerNamespaceValue(body, assigned.at + 1) : undefined;
@@ -646,7 +666,7 @@ function collectRegistrations(
       index = word.end;
       continue;
     }
-    if (assigned && !locallyBound(ranges, word.value, index)) {
+    if (bindingAssigned && !locallyBound(ranges, word.value, index)) {
       rewritten.add(word.value);
       if (!declaratorInitializer(body, index)) reboundSuites.add(word.value);
     }
