@@ -71,6 +71,10 @@ COMP_WORDS=(test run ./sample)
 COMP_CWORD=2
 "$function_name"
 [[ "$fallback_options" == "-o default -o bashdefault" ]] || exit 5
+unset -f compopt
+enable -n compopt
+"$function_name"
+[[ -z "$(type -t compopt)" ]] || exit 6
 `], { stdout: "pipe", stderr: "pipe" });
       expect(sourced.stderr.toString()).toBe("");
       expect(sourced.exitCode).toBe(0);
