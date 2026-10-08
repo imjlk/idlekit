@@ -2,7 +2,8 @@ import { parse } from "@babel/parser";
 
 export type ScopeMode =
   | "bindings" | "parameters" | "classes" | "functions"
-  | "annotations" | "enumValues" | "destructuring" | "objectMethods" | "containerReferences";
+  | "annotations" | "enumValues" | "destructuring" | "objectMethods" | "containerReferences"
+  | "destructuringAssignments";
 type Range = [string, number, number];
 type Ranges = Record<ScopeMode, Range[]>;
 type SyntaxNode = { type: string; start: number; end: number; [key: string]: unknown };
@@ -51,8 +52,8 @@ function parsedProgram(source: string): unknown {
       return parse(source, {
         sourceType: "unambiguous",
         plugins: jsx
-          ? ["typescript", "jsx", "decorators-legacy"]
-          : ["typescript", "decorators-legacy"],
+          ? ["typescript", "jsx", "decorators-legacy", "deferredImportEvaluation"]
+          : ["typescript", "decorators-legacy", "deferredImportEvaluation"],
         attachComment: false,
         errorRecovery: true,
         allowReturnOutsideFunction: true,
@@ -77,6 +78,7 @@ function collect(source: string): Ranges {
     destructuring: [],
     objectMethods: [],
     containerReferences: [],
+    destructuringAssignments: [],
   };
   const root: Scope = { start: 0, end: source.length, root: true };
   const bind = (mode: ScopeMode, values: string[], scope: Scope): void => {
@@ -92,6 +94,47 @@ function collect(source: string): Ranges {
       bare = bare.expression;
     }
     if (bare.type === "Identifier") bind("containerReferences", names(bare), { start: value.start, end: value.end, root: false });
+  };
+  const propertyKey = (value: unknown): string | undefined => {
+    if (!node(value)) return undefined;
+    if (value.type === "Identifier") return names(value)[0];
+    if (value.type === "StringLiteral" && typeof value.value === "string") return value.value;
+    return undefined;
+  };
+  const assignmentValues = (pattern: unknown, value: unknown, end: number, opaqueAt: number): void => {
+    if (!node(pattern)) return;
+    if (pattern.type === "Identifier") {
+      // Negative offsets encode an opaque RHS; updates take effect at assignment end.
+      for (const name of names(pattern)) result.destructuringAssignments.push([name, node(value) ? value.start : -(opaqueAt + 1), end]);
+    } else if (pattern.type === "AssignmentPattern") assignmentValues(pattern.left, value, end, opaqueAt);
+    else if (pattern.type === "ObjectPattern" && Array.isArray(pattern.properties)) {
+      const properties =
+        node(value) && value.type === "ObjectExpression" && Array.isArray(value.properties)
+          ? value.properties
+          : [];
+      for (const target of pattern.properties) {
+        if (!node(target)) continue;
+        let source: unknown;
+        const key = !target.computed ? propertyKey(target.key) : undefined;
+        if (key !== undefined && key !== "__proto__") {
+          for (const candidate of [...properties].reverse()) {
+            if (!node(candidate)) continue;
+            if (candidate.type === "SpreadElement" || candidate.computed) break;
+            if (propertyKey(candidate.key) !== key) continue;
+            source = candidate.type === "ObjectProperty" ? candidate.value : undefined;
+            break;
+          }
+        }
+        const binding = target.type === "RestElement" ? target.argument : target.value;
+        assignmentValues(binding, source, end, opaqueAt);
+      }
+    } else if (pattern.type === "ArrayPattern" && Array.isArray(pattern.elements)) {
+      const elements = node(value) && value.type === "ArrayExpression" && Array.isArray(value.elements) &&
+        !value.elements.some((entry) => node(entry) && entry.type === "SpreadElement") ? value.elements : [];
+      pattern.elements.forEach((target, index) => {
+        assignmentValues(target, elements[index], end, opaqueAt);
+      });
+    } else for (const name of names(pattern)) result.destructuringAssignments.push([name, -(opaqueAt + 1), end]);
   };
   const enumValue = (value: unknown): void => {
     if (!node(value)) return;
@@ -116,6 +159,11 @@ function collect(source: string): Ranges {
     if (value.type === "ObjectMethod") result.objectMethods.push(["", value.start, value.end]);
     if (value.type === "VariableDeclarator") containerReference(value.init);
     if (value.type === "AssignmentExpression") containerReference(value.right);
+    if (value.type === "AssignmentExpression" && value.operator === "=" && node(value.left) &&
+        (value.left.type === "ObjectPattern" || value.left.type === "ArrayPattern")) {
+      const at = node(value.right) ? value.right.start : value.start;
+      assignmentValues(value.left, value.right, value.end, at);
+    }
     if (value.type === "ObjectProperty") containerReference(value.value);
     if (value.type === "SpreadElement") containerReference(value.argument);
     if (value.type === "ArrayExpression" && Array.isArray(value.elements)) value.elements.forEach(containerReference);
@@ -158,6 +206,18 @@ function collect(source: string): Ranges {
       const scope = value.type === "ClassExpression" ? own : lexical;
       bind("classes", names(value.id), scope);
       if (!scope.root) bind("bindings", names(value.id), scope);
+    }
+    if (value.type === "TSEnumDeclaration") {
+      const memberList = value.members ?? (node(value.body) ? value.body.members : undefined);
+      const members = Array.isArray(memberList) ? memberList : [];
+      for (const member of members) {
+        if (!node(member)) continue;
+        const name = propertyKey(member.id);
+        if (name !== undefined) {
+          bind("classes", [name], own);
+          bind("bindings", [name], own);
+        }
+      }
     }
     if (value.type === "TSEnumMember") enumValue(value.initializer);
     if (value.type === "FunctionDeclaration" || value.type === "FunctionExpression") {

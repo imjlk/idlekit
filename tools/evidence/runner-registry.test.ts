@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import {
   duplicateFullNamesAcross,
+  registeredSuites,
   registrationLines,
   unresolvedRunnerCalls,
 } from "./runner-registry";
@@ -361,5 +362,39 @@ test("direct aliases preserve runner container identity", () => {
 test("parameter rebindings survive nested blocks", () => {
   const body = `import { it as runner } from "bun:test"; function f(it) { { it = runner; } it("real", callback); }`;
   expect(registrationLines(body, "real")).toEqual([1]);
+  expect(unresolvedRunnerCalls(body)).toEqual([]);
+});
+
+test("runner-like arrow wrappers remain opaque", () => {
+  const body = `const it = (title, _callback, runner) => runner(title, unrelated); it("credited", citedExport, realIt);`;
+  expect(unresolvedRunnerCalls(body)).toContain("it");
+  expect(registrationLines(body, "credited")).toEqual([]);
+});
+
+test("rebound suite helpers cannot credit their original callback", () => {
+  const body = `let suiteBody = () => { it("credited", citedExport); }; suiteBody = () => { it("credited", unrelated); }; describe("s", suiteBody);`;
+  expect(unresolvedRunnerCalls(body)).toContain("suiteBody");
+  expect(registeredSuites(body, "citedExport", "credited").every((path) => path[0] !== "s")).toBe(true);
+});
+
+test("destructuring assignments update shadowing parameters", () => {
+  for (const assignment of ["({ it } = { it: runner })", "({ run: it } = { run: runner })", "([it] = [runner])"]) {
+    const body = `import { it as runner } from "bun:test"; function f(it) { ${assignment}; it("real", callback); }`;
+    expect(registrationLines(body, "real")).toEqual([1]);
+    expect(unresolvedRunnerCalls(body)).toEqual([]);
+  }
+});
+
+test("enum member references do not inherit runner imports", () => {
+  const body = `import { test } from "bun:test"; enum E { test, Copy = test } test("real", callback);`;
+  expect(unresolvedRunnerCalls(body)).toEqual([]);
+  expect(registrationLines(body, "real")).toEqual([1]);
+});
+
+test("deferred imports preserve later runner registrations", () => {
+  const body = `import defer * as feature from "./feature.js";
+    import { test } from "bun:test";
+    test("real", callback);`;
+  expect(registrationLines(body, "real")).toEqual([3]);
   expect(unresolvedRunnerCalls(body)).toEqual([]);
 });
