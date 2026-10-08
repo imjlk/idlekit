@@ -205,11 +205,21 @@ function matchingGroup(body: string, open: number, left: string, right: string):
   return depth === 0 ? cursor - 1 : -1;
 }
 
-export function localRanges(body: string, parametersOnly = false): Array<[string, number, number]> {
+export function localRanges(
+  body: string,
+  mode: "bindings" | "parameters" | "classes" | "annotations" = "bindings",
+): Array<[string, number, number]> {
+  const parametersOnly = mode !== "bindings";
   const ranges: Array<[string, number, number]> = [];
-  const scopes: { start: number; names: string[]; parameters: Array<[string, number]> }[] = [{ start: 0, names: [], parameters: [] }];
+  const scopes: {
+    start: number;
+    names: string[];
+    parameters: Array<[string, number]>;
+    classes: Array<[string, number]>;
+  }[] = [{ start: 0, names: [], parameters: [], classes: [] }];
   let pending: string[] = [];
   let pendingParameters: Array<[string, number]> = [];
+  let pendingClasses: Array<[string, number]> = [];
   const functionHeaders = new Set<number>();
   let index = 0;
 
@@ -218,16 +228,19 @@ export function localRanges(body: string, parametersOnly = false): Array<[string
     scopes[scopes.length - 1]?.names.push(name);
   };
   const openScope = (start: number): void => {
-    scopes.push({ start, names: pending, parameters: pendingParameters });
+    scopes.push({ start, names: pending, parameters: pendingParameters, classes: pendingClasses });
     pending = [];
     pendingParameters = [];
+    pendingClasses = [];
   };
   const closeScope = (end: number): void => {
     const scope = scopes.pop();
     if (!scope || scopes.length === 0) return;
-    if (parametersOnly) {
+    if (mode === "classes") {
+      for (const [name, start] of scope.classes) ranges.push([name, start, end]);
+    } else if (mode === "parameters") {
       for (const [name, start] of scope.parameters) ranges.push([name, start, end]);
-    } else {
+    } else if (mode === "bindings") {
       for (const name of scope.names) ranges.push([name, scope.start, end]);
     }
   };
@@ -307,6 +320,10 @@ export function localRanges(body: string, parametersOnly = false): Array<[string
         cursor += 1;
         continue;
       }
+      if (depth === 0 && char === "=") {
+        cursor = skipNested(cursor + 1, close);
+        continue;
+      }
       if (depth !== 0 || !/[A-Za-z_$]/.test(char)) {
         cursor += 1;
         continue;
@@ -327,6 +344,11 @@ export function localRanges(body: string, parametersOnly = false): Array<[string
   };
   const parameterNames = (open: number, close: number): string[] => {
     const names: string[] = [];
+    const annotationEnd = (start: number): number => {
+      const end = skipNested(start + 1, close, true);
+      if (mode === "annotations") ranges.push(["", start, end]);
+      return end;
+    };
     let cursor = open + 1;
     while (cursor < close) {
       cursor = skipSpaceAndComments(cursor);
@@ -337,7 +359,7 @@ export function localRanges(body: string, parametersOnly = false): Array<[string
         if (end < 0 || end > close) break;
         names.push(...bindingNames(cursor, end));
         cursor = skipSpaceAndComments(end + 1);
-        if (body[cursor] === ":") cursor = skipNested(cursor + 1, close);
+        if (body[cursor] === ":") cursor = annotationEnd(cursor);
         if (body[cursor] === "=") cursor = skipNested(cursor + 1, close);
         if (body[cursor] === ",") cursor += 1;
         continue;
@@ -353,7 +375,8 @@ export function localRanges(body: string, parametersOnly = false): Array<[string
       }
       names.push(id.value);
       cursor = skipSpaceAndComments(id.end);
-      if (body[cursor] === ":") cursor = skipNested(cursor + 1, close);
+      if (body[cursor] === "?") cursor = skipSpaceAndComments(cursor + 1);
+      if (body[cursor] === ":") cursor = annotationEnd(cursor);
       if (body[cursor] === "=") cursor = skipNested(cursor + 1, close);
       if (body[cursor] === ",") cursor += 1;
     }
@@ -382,8 +405,8 @@ export function localRanges(body: string, parametersOnly = false): Array<[string
       const nextWord = readIdentifier(body, cursor)?.value;
       if (
         beforeSpace > from && /[\r\n]/.test(body.slice(beforeSpace, cursor)) &&
-        /[\w$)\]}"'`]/.test(body[beforeSpace - 1] ?? "") && nextWord &&
-        !["in", "instanceof", "as", "satisfies"].includes(nextWord) &&
+        /[\w$)\]}"'`]/.test(body[beforeSpace - 1] ?? "") &&
+        (char === "{" || (nextWord && !["in", "instanceof", "as", "satisfies"].includes(nextWord))) &&
         !["await", "yield", "new", "typeof", "void", "delete"].includes(previousWord(beforeSpace))
       ) return beforeSpace;
       if (",;)]}".includes(char) && char !== "") return cursor;
@@ -415,6 +438,23 @@ export function localRanges(body: string, parametersOnly = false): Array<[string
     }
     return cursor;
   };
+  const functionBodyAt = (from: number): number => {
+    let cursor = skipSpaceAndComments(from);
+    if (body[cursor] !== ":") return cursor;
+    cursor = skipSpaceAndComments(cursor + 1);
+    // An object return type precedes the body, e.g. `(): { value: number } { ... }`.
+    if (body[cursor] === "{") cursor = skipSpaceAndComments(afterGroup(cursor));
+    while (cursor < body.length) {
+      const char = body[cursor] ?? "";
+      if (char === "{" || char === ";" || char === "=" || char === "}") return cursor;
+      if (char === "(" || char === "[" || char === "<") {
+        const end = afterGroup(cursor);
+        if (end < 0) return cursor;
+        cursor = end;
+      } else cursor += 1;
+    }
+    return cursor;
+  };
   const arrowParameters = (names: string[], start: number, arrow: number): void => {
     const value = skipSpaceAndComments(arrow + 2);
     if (body[value] === "{") {
@@ -422,7 +462,9 @@ export function localRanges(body: string, parametersOnly = false): Array<[string
       pendingParameters.push(...names.map((name): [string, number] => [name, start]));
     } else {
       const end = expressionEnd(value);
-      for (const name of names) ranges.push([name, parametersOnly ? start : value, end]);
+      if (mode === "bindings" || mode === "parameters") {
+        for (const name of names) ranges.push([name, parametersOnly ? start : value, end]);
+      }
     }
   };
 
@@ -469,15 +511,20 @@ export function localRanges(body: string, parametersOnly = false): Array<[string
       const word = previousWord(index);
       const close = matchingParen(index);
       const functionHeader = word === "function" || word === "catch" || functionHeaders.has(index);
-      const after = close < 0 ? index : functionHeader ? skipSpaceAndComments(close + 1) : afterReturnType(close + 1);
+      let previous = index - 1;
+      while (previous >= 0 && /\s/.test(body[previous] ?? "")) previous -= 1;
+      const rawAfter = close < 0 ? index : skipSpaceAndComments(close + 1);
+      const after = functionHeader || body[previous] === "?" ? rawAfter : afterReturnType(rawAfter);
       const params =
         close >= 0 && (functionHeader || body.startsWith("=>", after));
       if (params && close >= 0) {
         const names = parameterNames(index, close);
         if (body.startsWith("=>", after)) arrowParameters(names, index, after);
-        else {
+        else if (body[functionBodyAt(close + 1)] === "{") {
           bindNames(names, true);
           pendingParameters.push(...names.map((name): [string, number] => [name, index]));
+        } else if (mode === "parameters") {
+          for (const name of names) ranges.push([name, index, close + 1]);
         }
         index = close + 1;
         continue;
@@ -553,8 +600,16 @@ export function localRanges(body: string, parametersOnly = false): Array<[string
         const mark = cursor < 0 ? "" : (body[cursor] ?? "");
         const declared =
           intro === "export" || mark === "" || mark === "{" || mark === "}" || mark === ";";
-        if (declared) declareHere(name.value);
-        else pending.push(name.value);
+        if (declared) {
+          declareHere(name.value);
+          if (word.value === "class") {
+            const scope = scopes.at(-1);
+            scope?.classes.push([name.value, scope.start]);
+          }
+        } else {
+          pending.push(name.value);
+          if (word.value === "class") pendingClasses.push([name.value, index]);
+        }
         index = name.end;
       } else index = word.end;
       continue;
@@ -564,6 +619,9 @@ export function localRanges(body: string, parametersOnly = false): Array<[string
     index = word.end;
   }
   while (scopes.length > 1) closeScope(body.length);
+  if (mode === "classes") {
+    for (const [name, start] of scopes[0]?.classes ?? []) ranges.push([name, start, body.length]);
+  }
   return ranges;
 }
 

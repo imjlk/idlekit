@@ -101,7 +101,17 @@ export function readDottedModifiers(body: string, index: number, modifiers: stri
 export function findBindingEquals(body: string, index: number): number {
   let cursor = index;
   let depth = 0;
+  const endsBefore = (from: number, to: number): boolean => {
+    if (depth !== 0 || !/[\r\n]/.test(body.slice(from, to))) return false;
+    const next = readIdentifier(body, to)?.value;
+    return next !== undefined && [
+      "const", "let", "var", "function", "class", "export", "import", "declare",
+    ].includes(next);
+  };
   while (cursor < body.length) {
+    const next = skipSpaceAndComments(body, cursor);
+    if (endsBefore(cursor, next)) return -1;
+    cursor = next;
     const char = body[cursor] ?? "";
     if (char === "'" || char === '"') {
       cursor = skipQuoted(body, cursor);
@@ -331,10 +341,8 @@ export function readRunnerRef(
   let kind: RunnerKind | undefined;
   let modifiers: string[] = [];
   let afterIdent = ident.end;
-  if (isRunnerKind(ident.value)) {
-    kind = ident.value;
-  } else {
-    const alias = aliasAt(aliases, ident.value);
+  const alias = aliasAt(aliases, ident.value);
+  if (alias) {
     if (alias?.namespace) {
       const member = namespaceRunnerMember(body, ident.end, alias.spec);
       if (!member) return undefined;
@@ -346,7 +354,8 @@ export function readRunnerRef(
     } else {
       return undefined;
     }
-  }
+  } else if (isRunnerKind(ident.value)) kind = ident.value;
+  else return undefined;
   const dotted = readDottedModifiers(body, afterIdent, modifiers);
   if (dotted < 0) return undefined;
   const end = skipTypeOnlySuffix(body, dotted);

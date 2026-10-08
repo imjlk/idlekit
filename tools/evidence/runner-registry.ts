@@ -261,7 +261,11 @@ function collectRegistrations(
   const ranges = localRanges(body);
   const parameters = new Map<number, Array<[string, number]>>();
   const typeAnnotations = new Map<number, number>();
-  for (const [name, start, end] of localRanges(body, true)) {
+  for (const [, start, end] of localRanges(body, "annotations")) typeAnnotations.set(start, end);
+  for (const [name, start, end] of [
+    ...localRanges(body, "parameters"),
+    ...localRanges(body, "classes"),
+  ]) {
     const entries = parameters.get(start) ?? [];
     entries.push([name, end]);
     parameters.set(start, entries);
@@ -526,7 +530,10 @@ function collectRegistrations(
           kind: ref?.kind,
           modifiers: ref?.modifiers ?? [],
           depth: bindingDepth,
-          objectRunner: !ref && (objectHoldsRunner(body, equalsAt + 1, aliases) || arrayHoldsRunner(body, equalsAt + 1, aliases)),
+          objectRunner:
+            !ref &&
+            (objectHoldsRunner(body, equalsAt + 1, aliases) ||
+              arrayHoldsRunner(body, equalsAt + 1, aliases)),
         });
         if (!ref) break;
         bindingAt = skipSpaceAndComments(body, ref.end);
