@@ -465,3 +465,32 @@ test("class field names do not rewrite imported callbacks", () => {
   expect(registeredSuites(body, "citedExport", "credited")).toEqual([[]]);
   expect(unresolvedRunnerCalls(body)).toEqual([]);
 });
+
+test("conditional spread operands preserve runner containers", () => {
+  for (const value of ["{ ...(condition ? { run: it } : {}) }", "[...(condition ? [it] : [])]", "{ ...(condition && { run: it }) }"]) {
+    const body = `import { it } from "bun:test"; const copied = ${value}; consume(copied.run);`;
+    expect(unresolvedRunnerCalls(body)).toContain("copied");
+  }
+});
+
+test("erased ambient namespaces do not shadow global runners", () => {
+  const body = `declare function test(title: string, callback: () => void): void; declare namespace test { type Metadata = string } test("real", callback);`;
+  expect(registrationLines(body, "real")).toEqual([1]);
+  expect(unresolvedRunnerCalls(body)).toEqual([]);
+});
+
+test("literal rest assignments retain unselected runner properties", () => {
+  const body = `import { it } from "bun:test"; let copied: any; ({ value: ignored, ...copied } = { value: 0, run: it }); copied.run("fake", callback);`;
+  expect(unresolvedRunnerCalls(body)).toContain("copied");
+  expect(registrationLines(body, "fake")).toEqual([]);
+  const excluded = `import { it } from "bun:test"; let copied: any; ({ run: ignored, ...copied } = { value: 0, run: it }); consume(copied.value);`;
+  expect(unresolvedRunnerCalls(excluded)).toEqual([]);
+});
+
+test("class fields initialized from runner containers remain escapes", () => {
+  for (const field of ["static handlers", "static handlers: Data", "handlers!: Data"]) {
+    const body = `import { it } from "bun:test"; const hidden = { run: it }; class Carrier { ${field} = hidden; }`;
+    expect(unresolvedRunnerCalls(body)).toContain("handlers");
+    expect(unresolvedRunnerCalls(body.replace("run: it", "run: ordinary"))).toEqual([]);
+  }
+});

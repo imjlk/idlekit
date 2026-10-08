@@ -8,7 +8,8 @@ export type DestructuringAssignment = {
   name: string;
   at: number;
   end: number;
-  evaluation: "value" | "default" | "opaque";
+  evaluation: "value" | "default" | "opaque" | "rest";
+  restValues?: number[];
 };
 type Ranges = Record<ScopeMode, Range[]> & {
   assignments: DestructuringAssignment[];
@@ -164,6 +165,25 @@ function collect(source: string): Ranges {
       const properties = literal && Array.isArray(value.properties) ? value.properties : [];
       for (const target of pattern.properties) {
         if (!node(target)) continue;
+        if (target.type === "RestElement" && literal && properties.every((entry) => node(entry) && !entry.computed && entry.type !== "SpreadElement")) {
+          const excluded = pattern.properties.filter(node).filter((entry) =>
+            entry.type !== "RestElement",
+          );
+          if (excluded.every((entry) => !entry.computed && propertyKey(entry.key) !== undefined)) {
+            const keys = new Set(excluded.map((entry) => propertyKey(entry.key)));
+            const retained = new Map<string, unknown>();
+            for (const entry of properties) {
+              if (!node(entry)) continue;
+              const key = propertyKey(entry.key);
+              if (key !== undefined && !keys.has(key)) retained.set(key, entry.value);
+            }
+            const restValues = [...retained.values()].filter(node).map((entry) => entry.start);
+            for (const name of names(target.argument)) result.assignments.push({
+              name, at: value.start, end, evaluation: "rest", restValues,
+            });
+            continue;
+          }
+        }
         let source: unknown = literal ? null : undefined;
         const key = !target.computed ? propertyKey(target.key) : undefined;
         if (key !== undefined && key !== "__proto__") {
@@ -222,14 +242,15 @@ function collect(source: string): Ranges {
     if (value.type === "ReturnStatement") containerReference(value.argument);
     if (value.type === "SpreadElement") containerReference(value.argument);
     if (value.type === "ArrayExpression" && Array.isArray(value.elements)) value.elements.forEach(containerReference);
-    if (["ClassProperty", "ClassPrivateProperty", "ClassAccessorProperty"].includes(value.type) && !value.computed && node(value.key)) {
-      result.fieldKeys.push(["", value.key.start, value.key.end]);
+    if (["ClassProperty", "ClassPrivateProperty", "ClassAccessorProperty"].includes(value.type)) {
+      containerReference(value.value);
+      if (!value.computed && node(value.key)) result.fieldKeys.push(["", value.key.start, value.key.end]);
     }
     if (value.type === "TSTypeAnnotation" || value.type === "TSTypeParameterDeclaration") {
       annotation(value);
       return;
     }
-    if (typeDeclarations.has(value.type)) {
+    if (typeDeclarations.has(value.type) || value.type === "TSModuleDeclaration" && value.declare === true) {
       annotation(value);
       return;
     }

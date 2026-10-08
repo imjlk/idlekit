@@ -95,23 +95,7 @@ function spreadStoresRunner(
   dots: number,
   aliases: readonly RunnerAlias[],
 ): boolean {
-  let operand = skipSpaceAndComments(body, dots + 3);
-  while (body[operand] === "(") operand = skipSpaceAndComments(body, operand + 1);
-  const grouped = body[operand] === "{" || body[operand] === "[";
-  if (grouped) return valueHoldsRunner(body, operand, aliases);
-  const ident = readIdentifier(body, operand);
-  if (!ident) return false;
-  // Spreading a function copies no callable, so `...it` or a local `test` stores no
-  // runner. A bare binding that holds runners as properties, or a runner namespace,
-  // does. `...runners.seeds`, `...runners?.seeds`, and `...make()` spread other data.
-  let after = skipSpaceAndComments(body, ident.end);
-  // `hidden!`, `hidden as Runners`, and `hidden satisfies Runners` still spread `hidden`.
-  if (body[after] === "!") after = skipSpaceAndComments(body, after + 1);
-  const keyword = readIdentifier(body, after);
-  if (keyword?.value === "as" || keyword?.value === "satisfies") return bareRunnerBinding(ident.value, aliases);
-  const bare = after >= body.length || ",}])".includes(body[after] ?? "");
-  if (!bare) return false;
-  return bareRunnerBinding(ident.value, aliases);
+  return valueHoldsRunner(body, dots + 3, aliases, false, true);
 }
 
 function bareRunnerBinding(name: string, aliases: readonly RunnerAlias[]): boolean {
@@ -125,6 +109,7 @@ function valueHoldsRunner(
   at: number,
   aliases: readonly RunnerAlias[],
   leaf = false,
+  spread = false,
 ): boolean {
   let cursor = skipSpaceAndComments(body, at);
   const valueAt = cursor;
@@ -134,7 +119,7 @@ function valueHoldsRunner(
   if (alternatives.length > 0) {
     return alternatives.some((branch) => {
       const sameStart = branch === cursor || branch === valueAt;
-      return valueHoldsRunner(body, branch, aliases, sameStart);
+      return valueHoldsRunner(body, branch, aliases, sameStart, spread);
     });
   }
   if (body[cursor] === "[") return arrayHoldsRunner(body, cursor, aliases);
@@ -143,9 +128,9 @@ function valueHoldsRunner(
   if (references.some(([name, start]) => {
     if (start !== cursor) return false;
     const alias = aliasAt(aliases, name);
-    return alias ? alias.kind !== undefined || bareRunnerBinding(name, aliases) : isRunnerKind(name);
+    return alias ? !spread && alias.kind !== undefined || bareRunnerBinding(name, aliases) : !spread && isRunnerKind(name);
   })) return true;
-  return readRunnerRef(body, at, aliases) !== undefined;
+  return !spread && readRunnerRef(body, at, aliases) !== undefined;
 }
 
 /** `[it]` or `[register]` keeps a runner behind an index call. */
@@ -292,15 +277,20 @@ function collectRegistrations(
   const typedBindingEquals = new Set<number>();
   const enumValues = localRanges(body, "enumValues");
   const fieldKeys = localRanges(body, "fieldKeys");
-  type PendingAssignment = DestructuringAssignment & { owner?: RunnerAlias; value?: RunnerAlias };
-  const destructuringSources = new Map<number, PendingAssignment[]>();
+  type PendingAssignment = DestructuringAssignment & { owner?: RunnerAlias; value?: RunnerAlias; holdsRunner?: boolean };
+  const destructuringSources = new Map<number, Array<{ entry: PendingAssignment; restValue?: number }>>();
   const destructuringUpdates = new Map<number, PendingAssignment[]>();
   for (const assignment of syntaxAssignments(body)) {
     const entry: PendingAssignment = assignment;
     const { at, end } = entry;
     const entries = destructuringSources.get(at) ?? [];
-    entries.push(entry);
+    entries.push({ entry });
     destructuringSources.set(at, entries);
+    for (const restValue of entry.restValues ?? []) {
+      const values = destructuringSources.get(restValue) ?? [];
+      values.push({ entry, restValue });
+      destructuringSources.set(restValue, values);
+    }
     const updates = destructuringUpdates.get(end) ?? [];
     updates.push(entry);
     destructuringUpdates.set(end, updates);
@@ -328,7 +318,7 @@ function collectRegistrations(
   const templateCloseDepths: number[] = [];
   const captureDestructuring = (entry: PendingAssignment): RunnerAlias => {
     const { name, at, evaluation, owner } = entry;
-    const known = evaluation !== "opaque";
+    const known = evaluation === "value" || evaluation === "default";
     const ref = known ? readRunnerRef(body, at, aliases) : undefined;
     const namespace = known && !ref ? readRunnerNamespaceValue(body, at) : undefined;
     const next: RunnerAlias = {
@@ -337,7 +327,9 @@ function collectRegistrations(
       modifiers: ref?.modifiers ?? [],
       depth: owner?.scopeEnd !== undefined ? owner.depth : depth,
       scopeEnd: owner?.scopeEnd,
-      objectRunner: known && !ref && valueHoldsRunner(body, at, aliases),
+      objectRunner: evaluation === "rest"
+        ? entry.holdsRunner === true
+        : known && !ref && valueHoldsRunner(body, at, aliases),
       nonRunner: known && !isRunnerKind(name) && !ref && !namespace && isFunctionValue(body, at),
     };
     if (namespace) {
@@ -361,12 +353,17 @@ function collectRegistrations(
     for (const [name, end, nonRunner] of parameters.get(index) ?? []) {
       aliases.push({ name, kind: undefined, modifiers: [], depth: -1, scopeEnd: end, nonRunner });
     }
-    for (const entry of destructuringSources.get(index) ?? []) {
+    for (const { entry, restValue } of destructuringSources.get(index) ?? []) {
+      if (restValue !== undefined) {
+        entry.holdsRunner ||= valueHoldsRunner(body, restValue, aliases);
+        continue;
+      }
       entry.owner = aliasAt(aliases, entry.name);
-      if (entry.evaluation !== "default") entry.value = captureDestructuring(entry);
+      if (entry.evaluation !== "default" && entry.evaluation !== "rest") entry.value = captureDestructuring(entry);
     }
     for (const entry of destructuringUpdates.get(index) ?? []) {
-      const update = entry.evaluation === "default" ? captureDestructuring(entry) : entry.value;
+      const deferred = entry.evaluation === "default" || entry.evaluation === "rest";
+      const update = deferred ? captureDestructuring(entry) : entry.value;
       if (!update) continue;
       aliases.push(update);
       if (!locallyBound(ranges, update.name, index)) {
@@ -1572,9 +1569,13 @@ function classFieldHoldsRunner(
   inClass: boolean,
   aliases: readonly RunnerAlias[],
 ): boolean {
-  const assigned = assignmentAt(body, nameEnd);
-  if (assigned?.plain !== true) return false;
   if (!isClassField(body, nameStart, inClass)) return false;
+  let cursor = skipSpaceAndComments(body, nameEnd);
+  if (body[cursor] === "?" || body[cursor] === "!") cursor = skipSpaceAndComments(body, cursor + 1);
+  if (body[cursor] === ":") cursor = findBindingEquals(body, cursor + 1);
+  if (cursor < 0) return false;
+  const assigned = assignmentAt(body, cursor);
+  if (assigned?.plain !== true) return false;
   return valueHoldsRunner(body, assigned.at + 1, aliases);
 }
 
