@@ -205,10 +205,12 @@ function matchingGroup(body: string, open: number, left: string, right: string):
   return depth === 0 ? cursor - 1 : -1;
 }
 
-export function localRanges(body: string): Array<[string, number, number]> {
+export function localRanges(body: string, parametersOnly = false): Array<[string, number, number]> {
   const ranges: Array<[string, number, number]> = [];
-  const scopes: { start: number; names: string[] }[] = [{ start: 0, names: [] }];
+  const scopes: { start: number; names: string[]; parameters: Array<[string, number]> }[] = [{ start: 0, names: [], parameters: [] }];
   let pending: string[] = [];
+  let pendingParameters: Array<[string, number]> = [];
+  const functionHeaders = new Set<number>();
   let index = 0;
 
   const declareHere = (name: string): void => {
@@ -216,13 +218,18 @@ export function localRanges(body: string): Array<[string, number, number]> {
     scopes[scopes.length - 1]?.names.push(name);
   };
   const openScope = (start: number): void => {
-    scopes.push({ start, names: pending });
+    scopes.push({ start, names: pending, parameters: pendingParameters });
     pending = [];
+    pendingParameters = [];
   };
   const closeScope = (end: number): void => {
     const scope = scopes.pop();
     if (!scope || scopes.length === 0) return;
-    for (const name of scope.names) ranges.push([name, scope.start, end]);
+    if (parametersOnly) {
+      for (const [name, start] of scope.parameters) ranges.push([name, start, end]);
+    } else {
+      for (const name of scope.names) ranges.push([name, scope.start, end]);
+    }
   };
   const previousWord = (at: number): string => {
     let cursor = at - 1;
@@ -259,12 +266,16 @@ export function localRanges(body: string): Array<[string, number, number]> {
       else declareHere(name);
     }
   };
-  const skipNested = (cursor: number, limit: number): number => {
+  const skipNested = (cursor: number, limit: number, typeAnnotation = false): number => {
     let depth = 0;
     while (cursor < limit) {
       const mark = body[cursor] ?? "";
       if (mark === "'" || mark === '"') {
         cursor = skipQuoted(body, cursor);
+        continue;
+      }
+      if (typeAnnotation && body.startsWith("=>", cursor)) {
+        cursor += 2;
         continue;
       }
       if (mark === "<" || mark === "(" || mark === "{" || mark === "[") depth += 1;
@@ -357,6 +368,63 @@ export function localRanges(body: string): Array<[string, number, number]> {
     return word === "await" && previousWord(cursor - "await".length) === "for";
   };
   const matchingParen = (open: number): number => matchingGroup(body, open, "(", ")");
+  const afterGroup = (open: number): number => {
+    if (body[open] !== "[") return skipPair(body, open);
+    const close = matchingGroup(body, open, "[", "]");
+    return close < 0 ? -1 : close + 1;
+  };
+  const expressionEnd = (from: number): number => {
+    let cursor = from;
+    while (cursor < body.length) {
+      const beforeSpace = cursor;
+      cursor = skipSpaceAndComments(cursor);
+      const char = body[cursor] ?? "";
+      const nextWord = readIdentifier(body, cursor)?.value;
+      if (
+        beforeSpace > from && /[\r\n]/.test(body.slice(beforeSpace, cursor)) &&
+        /[\w$)\]}"'`]/.test(body[beforeSpace - 1] ?? "") && nextWord &&
+        !["in", "instanceof", "as", "satisfies"].includes(nextWord) &&
+        !["await", "yield", "new", "typeof", "void", "delete"].includes(previousWord(beforeSpace))
+      ) return beforeSpace;
+      if (",;)]}".includes(char) && char !== "") return cursor;
+      if (char === "'" || char === '"') cursor = skipQuoted(body, cursor);
+      else if (char === "`") {
+        const end = skipTemplateLiteral(body, cursor);
+        cursor = end < 0 ? body.length : end;
+      } else if (char === "/" && regexCanStart(body, cursor)) cursor = skipRegex(body, cursor);
+      else if (char === "(" || char === "[" || char === "{") {
+        const end = afterGroup(cursor);
+        cursor = end < 0 ? body.length : end;
+      } else cursor += 1;
+    }
+    return cursor;
+  };
+  const afterReturnType = (from: number): number => {
+    let cursor = skipSpaceAndComments(from);
+    if (body[cursor] !== ":") return cursor;
+    cursor += 1;
+    while (cursor < body.length && !body.startsWith("=>", cursor)) {
+      cursor = skipSpaceAndComments(cursor);
+      const char = body[cursor] ?? "";
+      if (char === "(" || char === "[" || char === "<" || char === "{") {
+        const end = afterGroup(cursor);
+        if (end < 0) return cursor;
+        cursor = end;
+      } else if (char === ";" || char === "=" || char === "}") return cursor;
+      else cursor += 1;
+    }
+    return cursor;
+  };
+  const arrowParameters = (names: string[], start: number, arrow: number): void => {
+    const value = skipSpaceAndComments(arrow + 2);
+    if (body[value] === "{") {
+      bindNames(names, true);
+      pendingParameters.push(...names.map((name): [string, number] => [name, start]));
+    } else {
+      const end = expressionEnd(value);
+      for (const name of names) ranges.push([name, parametersOnly ? start : value, end]);
+    }
+  };
 
   while (index < body.length) {
     const char = body[index] ?? "";
@@ -400,11 +468,17 @@ export function localRanges(body: string): Array<[string, number, number]> {
     if (char === "(") {
       const word = previousWord(index);
       const close = matchingParen(index);
-      const after = close < 0 ? index : skipSpaceAndComments(close + 1);
+      const functionHeader = word === "function" || word === "catch" || functionHeaders.has(index);
+      const after = close < 0 ? index : functionHeader ? skipSpaceAndComments(close + 1) : afterReturnType(close + 1);
       const params =
-        close >= 0 && (word === "function" || word === "catch" || body.startsWith("=>", after));
+        close >= 0 && (functionHeader || body.startsWith("=>", after));
       if (params && close >= 0) {
-        bindNames(parameterNames(index, close), true);
+        const names = parameterNames(index, close);
+        if (body.startsWith("=>", after)) arrowParameters(names, index, after);
+        else {
+          bindNames(names, true);
+          pendingParameters.push(...names.map((name): [string, number] => [name, index]));
+        }
         index = close + 1;
         continue;
       }
@@ -426,6 +500,14 @@ export function localRanges(body: string): Array<[string, number, number]> {
       continue;
     }
     if (word.value === "const" || word.value === "let" || word.value === "var") {
+      if (parametersOnly) {
+        let cursor = skipSpaceAndComments(word.end);
+        const ident = readIdentifier(body, cursor);
+        if (ident) cursor = skipSpaceAndComments(ident.end);
+        else if (body[cursor] === "{" || body[cursor] === "[") cursor = skipSpaceAndComments(afterGroup(cursor));
+        index = body[cursor] === ":" ? skipNested(cursor + 1, body.length, true) : word.end;
+        continue;
+      }
       const intoPending = loopBound(index);
       let cursor = skipSpaceAndComments(word.end);
       while (cursor < body.length) {
@@ -458,6 +540,11 @@ export function localRanges(body: string): Array<[string, number, number]> {
     if (word.value === "function" || word.value === "class") {
       const name = readIdentifier(body, skipSpaceAndComments(word.end));
       if (name) {
+        if (word.value === "function") {
+          let open = skipSpaceAndComments(name.end);
+          if (body[open] === "<") open = skipSpaceAndComments(skipPair(body, open));
+          if (body[open] === "(") functionHeaders.add(open);
+        }
         const intro = previousWord(index);
         let markAt = index;
         if (intro === "async") markAt = index - intro.length;
@@ -473,7 +560,7 @@ export function localRanges(body: string): Array<[string, number, number]> {
       continue;
     }
     const ahead = skipSpaceAndComments(word.end);
-    if (body.startsWith("=>", ahead)) pending.push(word.value);
+    if (body.startsWith("=>", ahead)) arrowParameters([word.value], index, ahead);
     index = word.end;
   }
   while (scopes.length > 1) closeScope(body.length);

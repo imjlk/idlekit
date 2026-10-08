@@ -29,6 +29,8 @@ export type RunnerAlias = {
   spec?: string;
   /** `{ it }` or `[it]` stores a runner where member calls bypass the scanner. */
   objectRunner?: boolean;
+  /** End of a function parameter's lexical scope. */
+  scopeEnd?: number;
 };
 
 export function isRunnerKind(value: string): value is RunnerKind {
@@ -119,6 +121,10 @@ export function findBindingEquals(body: string, index: number): number {
     if (char === "/" && body[cursor + 1] === "*") {
       const close = body.indexOf("*/", cursor + 2);
       cursor = close < 0 ? body.length : close + 2;
+      continue;
+    }
+    if (body.startsWith("=>", cursor)) {
+      cursor += 2;
       continue;
     }
     if (char === "(" || char === "{" || char === "[" || char === "<") {

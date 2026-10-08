@@ -259,6 +259,13 @@ function collectRegistrations(
 ): Registration[] {
   const source = lookupSource ?? body;
   const ranges = localRanges(body);
+  const parameters = new Map<number, Array<[string, number]>>();
+  const typeAnnotations = new Map<number, number>();
+  for (const [name, start, end] of localRanges(body, true)) {
+    const entries = parameters.get(start) ?? [];
+    entries.push([name, end]);
+    parameters.set(start, entries);
+  }
   const found: Registration[] = [];
   const stack: { title: string; depth: number }[] = [];
   const aliases: RunnerAlias[] = [];
@@ -280,6 +287,18 @@ function collectRegistrations(
   };
 
   while (index < body.length) {
+    const annotationEnd = typeAnnotations.get(index);
+    if (annotationEnd !== undefined) {
+      index = annotationEnd;
+      continue;
+    }
+    for (let cursor = aliases.length - 1; cursor >= 0; cursor -= 1) {
+      const end = aliases[cursor]?.scopeEnd;
+      if (end !== undefined && index >= end) aliases.splice(cursor, 1);
+    }
+    for (const [name, end] of parameters.get(index) ?? []) {
+      aliases.push({ name, kind: undefined, modifiers: [], depth: -1, scopeEnd: end });
+    }
     const char = body[index] ?? "";
     if (inTemplate) {
       if (char === "\\") {
@@ -469,6 +488,7 @@ function collectRegistrations(
             break;
           }
           equalsAt = found;
+          typeAnnotations.set(after, found);
         }
         if (body[equalsAt] !== "=") {
           aliases.push({ name: ident.value, kind: undefined, modifiers: [], depth: bindingDepth });
@@ -506,6 +526,7 @@ function collectRegistrations(
           kind: ref?.kind,
           modifiers: ref?.modifiers ?? [],
           depth: bindingDepth,
+          objectRunner: !ref && (objectHoldsRunner(body, equalsAt + 1, aliases) || arrayHoldsRunner(body, equalsAt + 1, aliases)),
         });
         if (!ref) break;
         bindingAt = skipSpaceAndComments(body, ref.end);
