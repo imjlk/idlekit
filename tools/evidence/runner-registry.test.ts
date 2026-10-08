@@ -279,3 +279,30 @@ test("enum declarations shadow imports without turning data into runner containe
   const held = `import { test as real } from "bun:test"; enum Holder { Value = real as any }`;
   expect(unresolvedRunnerCalls(held)).toContain("real");
 });
+
+test("ordinary destructuring bindings shadow runner imports", () => {
+  for (const pattern of ["{ Runner }", "{ value: Runner }", "[Runner]"]) {
+    const body = `import { test as Runner } from "bun:test";
+      { const ${pattern} = data; const hidden: Data = { value: Runner }; const copied = { ...hidden }; consume(copied.value); }
+      Runner("real", callback);`;
+    expect(unresolvedRunnerCalls(body)).toEqual([]);
+    expect(registrationLines(body, "real")).toEqual([3]);
+  }
+});
+
+test("parameter decorators use the surrounding runner binding", () => {
+  const body = `import { test } from "bun:test";
+    class Carrier { method(first: string, @decorate(test("real", callback)) test: string) {} }`;
+  expect(registrationLines(body, "real")).toEqual([2]);
+  expect(unresolvedRunnerCalls(body)).toEqual([]);
+});
+
+test("scoped declaration aliases do not prevent loop binding cleanup", () => {
+  for (const declaration of ["class Local {}", "function Local() {}", "enum Local { Value }"]) {
+    const body = `import { test as run } from "bun:test";
+      for (const run = ordinary; false;) { ${declaration} }
+      run("real", callback);`;
+    expect(registrationLines(body, "real")).toEqual([3]);
+    expect(unresolvedRunnerCalls(body)).toEqual([]);
+  }
+});

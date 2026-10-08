@@ -264,10 +264,10 @@ function collectRegistrations(
   const typedBindingEquals = new Set<number>();
   const enumValues = localRanges(body, "enumValues");
   for (const [, start, end] of localRanges(body, "annotations")) typeAnnotations.set(start, end);
-  for (const mode of ["parameters", "classes", "functions"] as const) {
+  for (const mode of ["parameters", "classes", "functions", "destructuring"] as const) {
     for (const [name, start, end] of localRanges(body, mode)) {
       const entries = parameters.get(start) ?? [];
-      entries.push([name, end, mode !== "parameters"]);
+      entries.push([name, end, mode === "classes" || mode === "functions"]);
       parameters.set(start, entries);
     }
   }
@@ -357,7 +357,9 @@ function collectRegistrations(
     }
     if (char === "}") {
       while (stack.length > 0 && stack[stack.length - 1]?.depth === depth) stack.pop();
-      while (aliases.length > 0 && aliases[aliases.length - 1]?.depth === depth) aliases.pop();
+      for (let cursor = aliases.length - 1; cursor >= 0; cursor -= 1) {
+        if (aliases[cursor]?.depth === depth) aliases.splice(cursor, 1);
+      }
       const closedDepth = depth;
       if (classDepths.at(-1) === closedDepth) classDepths.pop();
       depth = Math.max(0, depth - 1);

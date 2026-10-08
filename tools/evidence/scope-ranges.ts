@@ -1,6 +1,8 @@
 import { parse } from "@babel/parser";
 
-export type ScopeMode = "bindings" | "parameters" | "classes" | "functions" | "annotations" | "enumValues";
+export type ScopeMode =
+  | "bindings" | "parameters" | "classes" | "functions"
+  | "annotations" | "enumValues" | "destructuring";
 type Range = [string, number, number];
 type Ranges = Record<ScopeMode, Range[]>;
 type SyntaxNode = { type: string; start: number; end: number; [key: string]: unknown };
@@ -72,6 +74,7 @@ function collect(source: string): Ranges {
     functions: [],
     annotations: [],
     enumValues: [],
+    destructuring: [],
   };
   const root: Scope = { start: 0, end: source.length, root: true };
   const bind = (mode: ScopeMode, values: string[], scope: Scope): void => {
@@ -123,6 +126,12 @@ function collect(source: string): Ranges {
     }
     if (value.type === "VariableDeclaration" && Array.isArray(value.declarations)) {
       const scope = value.kind === "var" ? fn : lexical;
+      for (const declaration of value.declarations) {
+        if (node(declaration) && node(declaration.id) &&
+            (declaration.id.type === "ObjectPattern" || declaration.id.type === "ArrayPattern")) {
+          bind("destructuring", names(declaration.id), { ...scope, start: value.start });
+        }
+      }
       if (!scope.root) {
         for (const declaration of value.declarations) {
           if (node(declaration)) bind("bindings", names(declaration.id), scope);
@@ -145,8 +154,27 @@ function collect(source: string): Ranges {
       const first = params.find(node);
       const scope = { start: first?.start ?? value.start, end: value.end, root: false };
       const bound = params.flatMap(names);
-      bind("parameters", bound, scope);
-      bind("bindings", bound, scope);
+      const decorators: SyntaxNode[] = [];
+      const paramDecorators = (param: unknown): void => {
+        if (!node(param)) return;
+        if (Array.isArray(param.decorators)) decorators.push(...param.decorators.filter(node));
+        if (param.type === "TSParameterProperty") paramDecorators(param.parameter);
+        if (param.type === "AssignmentPattern") paramDecorators(param.left);
+      };
+      params.forEach(paramDecorators);
+      decorators.sort((left, right) => left.start - right.start);
+      let start = scope.start;
+      for (const decorator of decorators) {
+        if (start < decorator.start) {
+          bind("parameters", bound, { ...scope, start, end: decorator.start });
+          bind("bindings", bound, { ...scope, start, end: decorator.start });
+        }
+        start = Math.max(start, decorator.end);
+      }
+      if (start < scope.end) {
+        bind("parameters", bound, { ...scope, start });
+        bind("bindings", bound, { ...scope, start });
+      }
       // Body vars are not visible in non-simple parameter initializers.
       fn = node(value.body) ? { start: value.body.start, end: value.body.end, root: false } : own;
       lexical = fn;
