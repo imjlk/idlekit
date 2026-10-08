@@ -1,5 +1,5 @@
 import { $ } from "bun";
-import { existsSync } from "fs";
+import { existsSync, mkdirSync, rmdirSync } from "fs";
 import { dirname, resolve } from "path";
 
 export const ROOT = process.cwd();
@@ -114,8 +114,12 @@ export async function withFileLock<T>(
   await ensureDir(dirname(lockDir));
 
   while (true) {
-    const proc = Bun.spawnSync(["mkdir", lockDir], { cwd: ROOT, stdout: "ignore", stderr: "ignore" });
-    if (proc.exitCode === 0) break;
+    try {
+      mkdirSync(lockDir);
+      break;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    }
     if (Date.now() - startedAt > timeoutMs) {
       throw new Error(`timed out waiting for lock: ${key}`);
     }
@@ -125,6 +129,6 @@ export async function withFileLock<T>(
   try {
     return await run();
   } finally {
-    await removePath(lockDir);
+    rmdirSync(lockDir);
   }
 }

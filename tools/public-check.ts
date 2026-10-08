@@ -1,4 +1,5 @@
 import { $ } from "bun";
+import { existsSync } from "node:fs";
 import { dirname, resolve } from "path";
 import { ROOT, ensureDir, withFileLock } from "./_bun";
 
@@ -69,8 +70,7 @@ async function checkMarkdownLinks(path: string): Promise<void> {
     const target = href.split("#")[0]!;
     if (!target || target.startsWith("http")) continue;
     const resolved = resolve(dirname(abs), target);
-    const proc = Bun.spawnSync(["test", "-e", resolved], { cwd: ROOT, stdout: "ignore", stderr: "ignore" });
-    assert(proc.exitCode === 0, `${path} links to missing local target: ${href}`);
+    assert(existsSync(resolved), `${path} links to missing local target: ${href}`);
   }
 }
 
@@ -110,7 +110,7 @@ async function packPackage(pkgDir: string, outDir: string): Promise<string> {
 
 async function checkTarballContents(tarballPath: string, label: string): Promise<void> {
   const listing = await $`tar -tzf ${tarballPath}`.text();
-  const files = listing.trim().split("\n").filter(Boolean);
+  const files = listing.trim().split(/\r?\n/).map((file) => file.replaceAll("\\", "/")).filter(Boolean);
   assert(files.some((file) => /package\/README\.md$/i.test(file)), `${label} tarball missing README.md`);
   assert(files.some((file) => /package\/LICENSE$/i.test(file)), `${label} tarball missing LICENSE`);
   assert(!files.some((file) => /\.test\.(d\.ts|js|js\.map|ts|tsx)$/.test(file)), `${label} tarball contains test artifacts`);

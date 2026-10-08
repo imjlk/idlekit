@@ -60,7 +60,7 @@ jobs:
 
       - name: Toolchain smoke
         run: |
-          bun test tools/compiler-bin.test.ts tools/evidence/program.test.ts
+          bun test tools/_bun.test.ts tools/compiler-bin.test.ts tools/evidence/program.test.ts
           bun run toolchain:smoke
 
       - name: Graph check
@@ -147,10 +147,13 @@ jobs:
         run: |
           bun run toolchain:doctor
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          bun test tools/compiler-bin.test.ts tools/evidence/program.test.ts
+          bun test tools/_bun.test.ts tools/compiler-bin.test.ts tools/evidence/program.test.ts
 
       - name: Build CLI
         run: bun run --cwd packages/cli build
+
+      - name: Public package readiness
+        run: bun run public:check
 
       - name: Gunshi command tree
         run: bun run --cwd packages/cli generate:check
