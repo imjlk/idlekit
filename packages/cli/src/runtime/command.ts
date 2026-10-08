@@ -46,7 +46,27 @@ function normalizeOptions(argv: string[], options: Options): string[] {
     }
     let value = match![3];
     if (value === undefined && /^(true|false)$/.test(argv[index + 1] ?? "")) value = argv[++index];
-    result.push(`--${key}`, match![1] ? "false" : value ?? "true");
+    if (value !== undefined && value !== "true" && value !== "false") throw usageError(`Invalid --${key}: expected true or false`);
+    result.push(`--${match![1] || value === "false" ? "no-" : ""}${key}`);
+  }
+  return result;
+}
+
+/** Completion 0.37.3 gives Tab a value handler even for native boolean args. */
+function normalizeCompletionBooleans(argv: string[], options: Options): string[] {
+  const result: string[] = [];
+  for (let index = 0; index < argv.length; index++) {
+    const token = argv[index]!;
+    if (token === "--") { result.push(...argv.slice(index)); break; }
+    const match = /^--(no-)?([^=]+)(?:=(true|false))?$/.exec(token);
+    const key = match?.[2];
+    // The last word is the cursor prefix, rather than a completed switch.
+    if (index === argv.length - 1 || !key || !options[key] || optionShape(options[key]!).type !== "boolean") {
+      result.push(token); continue;
+    }
+    let value = match![3];
+    if (value === undefined && index + 1 < argv.length - 1 && /^(true|false)$/.test(argv[index + 1]!)) value = argv[++index];
+    result.push(`--${key}=${match![1] || value === "false" ? "false" : "true"}`);
   }
   return result;
 }
@@ -74,17 +94,18 @@ export async function createCLI(config: { name: string; version: string; descrip
     for (const [key, opt] of Object.entries(options)) {
       const shape = optionShape(opt);
       const defaultValue = opt.schema.safeParse(undefined);
-      args[key] = { type: "custom", description: opt.description,
+      const metadata = { description: opt.description,
         required: !defaultValue.success,
         ...(defaultValue.success && defaultValue.data !== undefined ? { default: defaultValue.data } : {}),
+      };
+      args[key] = shape.type === "boolean" ? { ...metadata, type: "boolean", negatable: true } : { ...metadata, type: "custom",
         parse(value) {
-          const input = shape.type === "boolean" ? value === "true" ? true : value === "false" ? false : value : value;
-          const parsed = opt.schema.safeParse(input);
+          const parsed = opt.schema.safeParse(value);
           if (!parsed.success) throw usageError(`Invalid --${key}: ${parsed.error.message}`);
           return parsed.data;
         },
       };
-      const values = shape.enum ?? (shape.type === "boolean" ? ["true", "false"] : []);
+      const values = shape.type === "boolean" ? [] : shape.enum ?? [];
       if (values.length) handlers[key] = { handler: () => values.map(value => ({ value: String(value) })) };
     }
     completionConfig[path.join(" ")] = { args: handlers };
@@ -121,11 +142,23 @@ export async function createCLI(config: { name: string; version: string; descrip
       argv = ["complete", argv[1]!];
     }
     const entry = getEntry();
-    await gunshiCli(normalizeOptions(argv, nativeOptions), entry, options(entry));
-    // Tab's Bash registration disables Readline filename completion by default.
-    if (argv[0] === "complete" && argv[1] === "bash") {
+    const normalized = argv[0] === "complete" && argv[1] === "--"
+      ? ["complete", "--", ...normalizeCompletionBooleans(argv.slice(2), nativeOptions)]
+      : normalizeOptions(argv, nativeOptions);
+    await gunshiCli(normalized, entry, options(entry));
+    // Preserve Tab's generated function and options while enabling filename fallback.
+    if (argv.length === 2 && argv[0] === "complete" && argv[1] === "bash") {
       const identifier = config.name.replace(/[^a-zA-Z0-9_]/g, "_");
-      console.log(`complete -o default -o bashdefault -F __${identifier}_complete ${config.name}`);
+      console.log(`__${identifier}_completion_registration=$(complete -p ${config.name})
+__${identifier}_gunshi_completion_function=\${__${identifier}_completion_registration#* -F }
+__${identifier}_gunshi_completion_function=\${__${identifier}_gunshi_completion_function%% *}
+__${identifier}_complete_with_files() {
+  "$__${identifier}_gunshi_completion_function" "$@"
+  if [[ \${#COMPREPLY[@]} -eq 0 ]]; then compopt -o default -o bashdefault; fi
+}
+__${identifier}_completion_registration=\${__${identifier}_completion_registration/-F $__${identifier}_gunshi_completion_function/-F __${identifier}_complete_with_files}
+eval "\${__${identifier}_completion_registration/#complete /complete -o default -o bashdefault }"
+unset __${identifier}_completion_registration`);
     }
   };
   return {

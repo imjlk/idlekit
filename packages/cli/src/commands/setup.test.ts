@@ -18,15 +18,23 @@ function createPromptStub(responses: {
 }) {
   let selectIndex = 0;
   let textIndex = 0;
+  let pending = false;
+  async function answer<T>(value: T): Promise<T> {
+    expect(pending).toBeFalse();
+    pending = true;
+    await Promise.resolve();
+    pending = false;
+    return value;
+  }
   return {
     prompt: {
       intro() {},
       outro() {},
       async select() {
-        return responses.select[selectIndex++] as never;
+        return answer(responses.select[selectIndex++] as never);
       },
       async text() {
-        return responses.text[textIndex++] ?? "";
+        return answer(responses.text[textIndex++] ?? "");
       },
       async confirm() {
         return true;
