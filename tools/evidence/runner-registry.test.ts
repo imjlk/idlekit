@@ -559,3 +559,23 @@ test("inherited object properties do not select destructuring defaults", () => {
     expect(registrationLines(explicit, "real")).toEqual([2]);
   }
 });
+
+test("statically coercible property keys retain destructured runner containers", () => {
+  for (const [target, source] of [["0", '"0"'], ["0x10", "16"], ["1n", '"1"'], ['["0"]', "0"]]) {
+    const body = `import { it } from "bun:test"; let copied;
+      ({ ${target}: copied } = { ${source}: { run: it } }); copied.run("fake", callback);`;
+    expect(unresolvedRunnerCalls(body)).toContain("copied");
+    expect(registrationLines(body, "fake")).toEqual([]);
+  }
+});
+
+test("object rest excludes prototype setters while retaining own proto properties", () => {
+  const inherited = `import { it } from "bun:test"; let copied;
+    ({ ...copied } = { __proto__: { run: it } }); consume(copied.run);`;
+  expect(unresolvedRunnerCalls(inherited)).toEqual([]);
+  const shorthand = `import { it as __proto__ } from "bun:test"; let copied;
+    ({ ...copied } = { __proto__ }); copied.__proto__("fake", callback);`;
+  expect(unresolvedRunnerCalls(shorthand)).toContain("copied");
+  const computed = inherited.replace("__proto__:", '["__proto__"]:');
+  expect(unresolvedRunnerCalls(computed)).toContain("copied");
+});

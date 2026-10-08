@@ -176,12 +176,18 @@ function collect(source: string): Ranges {
       result.alternatives.set(value.start, starts);
     }
   };
-  const propertyKey = (value: unknown): string | undefined => {
+  const propertyKey = (value: unknown, computed = false): string | undefined => {
     if (!node(value)) return undefined;
-    if (value.type === "Identifier") return names(value)[0];
+    if (value.type === "Identifier" && !computed) return names(value)[0];
     if (value.type === "StringLiteral" && typeof value.value === "string") return value.value;
+    if (value.type === "NumericLiteral" && typeof value.value === "number") return String(value.value);
+    if (value.type === "BigIntLiteral" && (typeof value.value === "string" || typeof value.value === "bigint")) return String(BigInt(value.value));
+    if (value.type === "BooleanLiteral" && typeof value.value === "boolean") return String(value.value);
+    if (value.type === "NullLiteral") return "null";
     return undefined;
   };
+  const prototypeSetter = (value: SyntaxNode): boolean =>
+    value.type === "ObjectProperty" && !value.computed && !value.shorthand && propertyKey(value.key) === "__proto__";
   const assignmentValues = (pattern: unknown, value: unknown, end: number, opaqueAt: number, deferred = false): void => {
     if (!node(pattern)) return;
     if (pattern.type === "Identifier") {
@@ -202,16 +208,19 @@ function collect(source: string): Ranges {
       const properties = literal && Array.isArray(value.properties) ? value.properties : [];
       for (const target of pattern.properties) {
         if (!node(target)) continue;
-        if (target.type === "RestElement" && literal && properties.every((entry) => node(entry) && !entry.computed && entry.type !== "SpreadElement")) {
+        if (target.type === "RestElement" && literal && properties.every((entry) => node(entry) && entry.type !== "SpreadElement" && propertyKey(entry.key, entry.computed === true) !== undefined)) {
           const excluded = pattern.properties.filter(node).filter((entry) =>
             entry.type !== "RestElement",
           );
-          if (excluded.every((entry) => !entry.computed && propertyKey(entry.key) !== undefined)) {
-            const keys = new Set(excluded.map((entry) => propertyKey(entry.key)));
+          const excludedKeys = excluded.map((entry) => {
+            return propertyKey(entry.key, entry.computed === true);
+          });
+          if (excludedKeys.every((key) => key !== undefined)) {
+            const keys = new Set(excludedKeys);
             const retained = new Map<string, unknown>();
             for (const entry of properties) {
-              if (!node(entry)) continue;
-              const key = propertyKey(entry.key);
+              if (!node(entry) || prototypeSetter(entry)) continue;
+              const key = propertyKey(entry.key, entry.computed === true);
               if (key !== undefined && !keys.has(key)) retained.set(key, entry.value);
             }
             const restValues = [...retained.values()].filter(node).map((entry) => entry.start);
@@ -222,16 +231,21 @@ function collect(source: string): Ranges {
           }
         }
         let source: unknown = literal ? null : undefined;
-        const key = !target.computed ? propertyKey(target.key) : undefined;
+        const key = propertyKey(target.key, target.computed === true);
         if (key !== undefined && Object.hasOwn(Object.prototype, key)) source = undefined;
-        if (key !== undefined && key !== "__proto__") {
+        if (key !== undefined) {
           for (const candidate of [...properties].reverse()) {
             if (!node(candidate)) continue;
-            if (candidate.type === "SpreadElement" || candidate.computed || propertyKey(candidate.key) === "__proto__") {
+            const candidateKey = propertyKey(candidate.key, candidate.computed === true);
+            if (candidate.type === "SpreadElement" || candidateKey === undefined) {
               source = undefined;
               break;
             }
-            if (propertyKey(candidate.key) !== key) continue;
+            if (prototypeSetter(candidate)) {
+              source = undefined;
+              continue;
+            }
+            if (candidateKey !== key) continue;
             source = candidate.type === "ObjectProperty" ? candidate.value : undefined;
             break;
           }
