@@ -114,9 +114,9 @@ function valueHoldsRunner(
   let cursor = skipSpaceAndComments(body, at);
   const valueAt = cursor;
   while (body[cursor] === "(") cursor = skipSpaceAndComments(body, cursor + 1);
-  let alternatives = leaf ? [] : syntaxAlternatives(body, valueAt);
-  if (!leaf && alternatives.length === 0 && cursor !== valueAt) alternatives = syntaxAlternatives(body, cursor);
-  if (alternatives.length > 0) {
+  let alternatives = leaf ? undefined : syntaxAlternatives(body, valueAt);
+  if (!leaf && alternatives === undefined && cursor !== valueAt) alternatives = syntaxAlternatives(body, cursor);
+  if (alternatives !== undefined) {
     return alternatives.some((branch) => {
       const sameStart = branch === cursor || branch === valueAt;
       return valueHoldsRunner(body, branch, aliases, sameStart, spread);

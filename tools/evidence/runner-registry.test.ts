@@ -528,3 +528,34 @@ test("sequence expressions retain only the resulting runner container", () => {
     const copied: Data = ({ run: it }, {}); copied.run("ordinary", callback);`;
   expect(unresolvedRunnerCalls(discarded)).toEqual([]);
 });
+
+test("logical expressions exclude values that cannot be their result", () => {
+  for (const value of [
+    "it && { run: ordinary }", "false && { run: it }", "0 && { run: it }",
+    "{} || { run: it }", "false ?? { run: it }", "{} ?? { run: it }",
+  ]) {
+    const body = `import { it } from "bun:test"; const copied = ${value}; consume(copied.run);`;
+    expect(unresolvedRunnerCalls(body)).toEqual([]);
+  }
+});
+
+test("literal array-rest assignments retain remaining runner elements", () => {
+  for (const assignment of ["[...copied] = [runner]", "[ignored, ...copied] = [0, runner]"]) {
+    const body = `import { it as runner } from "bun:test"; function f(copied) { (${assignment}); copied[0]("fake", callback); }`;
+    expect(unresolvedRunnerCalls(body)).toContain("copied");
+    expect(registrationLines(body, "fake")).toEqual([]);
+  }
+  const excluded = `import { it as runner } from "bun:test";
+    function f(copied) { ([ignored, ...copied] = [runner, 0]); consume(copied[0]); }`;
+  expect(unresolvedRunnerCalls(excluded)).toEqual([]);
+});
+
+test("inherited object properties do not select destructuring defaults", () => {
+  for (const name of ["toString", "constructor", "valueOf", "hasOwnProperty"]) {
+    const body = `import { it as runner } from "bun:test";
+      function f(${name}) { ({ ${name} = runner } = {}); ${name}("fake", callback); }`;
+    expect(registrationLines(body, "fake")).toEqual([]);
+    const explicit = body.replace("= {}", `= { ${name}: void 0 }`).replaceAll('"fake"', '"real"');
+    expect(registrationLines(explicit, "real")).toEqual([2]);
+  }
+});

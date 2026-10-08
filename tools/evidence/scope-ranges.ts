@@ -109,6 +109,39 @@ function collect(source: string): Ranges {
   const annotation = (value: unknown): void => {
     if (node(value)) result.annotations.push(["", value.start, value.end]);
   };
+  const logicalAlternatives = (value: SyntaxNode): unknown[] => {
+    let left = value.left;
+    while (node(left) && ["TSAsExpression", "TSSatisfiesExpression", "TSNonNullExpression", "ParenthesizedExpression"].includes(left.type)) {
+      left = left.expression;
+    }
+    let truthy: boolean | undefined;
+    let nullish: boolean | undefined;
+    if (node(left)) {
+      if (["BooleanLiteral", "NumericLiteral", "StringLiteral"].includes(left.type)) {
+        truthy = Boolean(left.value);
+        nullish = false;
+      } else if (left.type === "NullLiteral" || left.type === "UnaryExpression" && left.operator === "void") {
+        truthy = false;
+        nullish = true;
+      } else if ([
+        "ObjectExpression", "ArrayExpression", "FunctionExpression", "ArrowFunctionExpression",
+        "ClassExpression", "NewExpression", "RegExpLiteral",
+      ].includes(left.type)) {
+        truthy = true;
+        nullish = false;
+      }
+    }
+    // A falsy && result cannot itself hold a callable runner or a runner object.
+    if (value.operator === "&&") return truthy === false ? [] : [value.right];
+    if (value.operator === "||") {
+      if (truthy === true) return [value.left];
+      if (truthy === false) return [value.right];
+    } else {
+      if (nullish === false) return [value.left];
+      if (nullish === true) return [value.right];
+    }
+    return [value.left, value.right];
+  };
   const containerReference = (value: unknown): void => {
     if (!node(value)) return;
     let bare = value;
@@ -118,11 +151,11 @@ function collect(source: string): Ranges {
     if (bare.type === "Identifier") bind("containerReferences", names(bare), { start: value.start, end: value.end, root: false });
     let alternatives: unknown[] = [];
     if (bare.type === "ConditionalExpression") alternatives = [bare.consequent, bare.alternate];
-    else if (bare.type === "LogicalExpression") alternatives = [bare.left, bare.right];
+    else if (bare.type === "LogicalExpression") alternatives = logicalAlternatives(bare);
     else if (bare.type === "SequenceExpression" && Array.isArray(bare.expressions)) {
       alternatives = bare.expressions.slice(-1);
     }
-    if (alternatives.length > 0) {
+    if (alternatives.length > 0 || bare.type === "LogicalExpression") {
       const branches: SyntaxNode[] = [];
       const leaves = (branch: unknown): void => {
         if (!node(branch)) return;
@@ -132,8 +165,7 @@ function collect(source: string): Ranges {
           leaves(branch.consequent);
           leaves(branch.alternate);
         } else if (branch.type === "LogicalExpression") {
-          leaves(branch.left);
-          leaves(branch.right);
+          logicalAlternatives(branch).forEach(leaves);
         } else if (branch.type === "SequenceExpression" && Array.isArray(branch.expressions)) {
           leaves(branch.expressions.at(-1));
         } else branches.push(branch);
@@ -191,6 +223,7 @@ function collect(source: string): Ranges {
         }
         let source: unknown = literal ? null : undefined;
         const key = !target.computed ? propertyKey(target.key) : undefined;
+        if (key !== undefined && Object.hasOwn(Object.prototype, key)) source = undefined;
         if (key !== undefined && key !== "__proto__") {
           for (const candidate of [...properties].reverse()) {
             if (!node(candidate)) continue;
@@ -211,6 +244,13 @@ function collect(source: string): Ranges {
         !value.elements.some((entry) => node(entry) && entry.type === "SpreadElement");
       const elements = literal ? value.elements as unknown[] : [];
       pattern.elements.forEach((target, index) => {
+        if (literal && node(target) && target.type === "RestElement") {
+          const restValues = elements.slice(index).filter(node).map((entry) => entry.start);
+          for (const name of names(target.argument)) result.assignments.push({
+            name, at: value.start, end, evaluation: "rest", restValues,
+          });
+          return;
+        }
         const element = literal ? (elements[index] ?? null) : undefined;
         assignmentValues(target, element, end, opaqueAt, deferred);
       });
@@ -400,6 +440,7 @@ export function syntaxAssignments(source: string): DestructuringAssignment[] {
   return sourceRanges(source).assignments.map((entry) => ({ ...entry }));
 }
 
-export function syntaxAlternatives(source: string, at: number): number[] {
-  return [...(sourceRanges(source).alternatives.get(at) ?? [])];
+export function syntaxAlternatives(source: string, at: number): number[] | undefined {
+  const alternatives = sourceRanges(source).alternatives.get(at);
+  return alternatives === undefined ? undefined : [...alternatives];
 }
