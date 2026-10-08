@@ -1470,6 +1470,8 @@ describe("PR-03 resume isolation", () => {
 });
 
 /**
+ * @evidence docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness The declared positive-cooldown fixture preserves reset timing across on-grid JSON resumes.
+ * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #f518b31 Re-read the declared cooldown clause and ran the short and 200-case corpus. Anchored and unanchored starts preserve the economy snapshot; undeclared and disabled cases do not apply.
  * @evidence ./conformance.ts#checkCooldownResumeFromJson Runs seeded declared cooldown fixtures from JSON, including unanchored starts, saved prior resets, negative timestamps, and different on-grid splits.
  * @evidenceReview ./conformance.ts#checkCooldownResumeFromJson #cb32a56 Read the declaration guard and checkpoint call, then ran the short and 200-case corpus. Declared positive cooldown fixtures preserve reset timing from JSON and memory; undeclared and disabled fixtures do not apply.
  */
