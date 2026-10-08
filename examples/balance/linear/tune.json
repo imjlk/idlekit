@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "strategy": {
+    "id": "greedy",
+    "baseParams": {
+      "schemaVersion": 1,
+      "objective": "maximizeIncome"
+    },
+    "space": [
+      {
+        "path": "objective",
+        "space": {
+          "kind": "choice",
+          "values": [
+            "maximizeIncome",
+            "minPayback",
+            "maximizeNetWorth"
+          ]
+        }
+      }
+    ]
+  },
+  "objective": {
+    "id": "endNetWorthLog10"
+  },
+  "runner": {
+    "seeds": [
+      7,
+      11
+    ],
+    "budget": 3,
+    "overrideDurationSec": 60,
+    "topK": 3
+  }
+}

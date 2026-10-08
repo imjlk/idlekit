@@ -69,3 +69,4 @@ bun run --cwd packages/cli dev -- experience ../../examples/tutorials/14-orbital
 - Product roadmap: [docs/roadmap.md](https://github.com/imjlk/idlekit/blob/main/docs/roadmap.md)
 - Start here: [docs/start-here-cli-designer.md](https://github.com/imjlk/idlekit/blob/main/docs/start-here-cli-designer.md)
 - Command reference: [docs/usage-guide.md](https://github.com/imjlk/idlekit/blob/main/docs/usage-guide.md)
+- Typed CSV balance workflow: [docs/balance-sheets.md](https://github.com/imjlk/idlekit/blob/main/docs/balance-sheets.md)

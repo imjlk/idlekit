@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "fields": [
+    {
+      "id": "buyCostGrowth",
+      "path": "/model/params/buyCostGrowth",
+      "type": "number",
+      "unit": "ratio",
+      "min": 1,
+      "max": 2
+    }
+  ]
+}

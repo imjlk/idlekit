@@ -2,6 +2,7 @@
 import { createCLI } from "@bunli/core";
 import bunliConfig from "../bunli.config";
 import calibrateCommand from "./commands/calibrate";
+import balanceCommand from "./commands/balance";
 import compareCommand from "./commands/compare";
 import doctorCommand from "./commands/doctor";
 import etaCommand from "./commands/eta";
@@ -81,6 +82,7 @@ cli.command(reportCommand);
 cli.command(compareCommand);
 cli.command(tuneCommand);
 cli.command(calibrateCommand);
+cli.command(balanceCommand);
 
 if (import.meta.main) {
   try {

@@ -150,6 +150,7 @@ Continue with the installed CLI flow above. Packing runs the build and rewrites 
 - Start here: [docs/start-here-cli-designer.md](./docs/start-here-cli-designer.md)
 - Step-by-step tutorial: [docs/tutorial-step-by-step.md](./docs/tutorial-step-by-step.md)
 - Scenario design workshop: [docs/virtual-scenario-design.md](./docs/virtual-scenario-design.md)
+- Editable balance sheets, pacing targets, and sensitivity: [docs/balance-sheets.md](./docs/balance-sheets.md)
 - Product roadmap: [docs/roadmap.md](./docs/roadmap.md)
 - Command reference: [docs/usage-guide.md](./docs/usage-guide.md)
 - Money package guide: [docs/money-library.md](./docs/money-library.md)
