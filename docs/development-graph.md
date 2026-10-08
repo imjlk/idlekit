@@ -18,7 +18,7 @@ bun tools/graph-query.ts --question "Where is runScenario declared?" --request '
 
 ## Program
 
-`tsconfig.graph.json` is noEmit. It includes money, core, and CLI sources (CLI keeps `jsx: react-jsx` and `jsxImportSource: @opentui/react`), CLI scripts, generated `.bunli` output, and top-level `tools/*.ts`. `@ttsc/lint` is `enabled: false` on this program so the evidence graph is not applied here. Package `tsconfig.json` files stay authoritative when the aggregate program would only expose a `.d.ts` boundary. There is no root `tsconfig.json`.
+`tsconfig.graph.json` is noEmit. It includes money, core, and CLI sources, CLI scripts, and top-level `tools/*.ts`. `@ttsc/lint` is `enabled: false` on this program so the evidence graph is not applied here. Package `tsconfig.json` files stay authoritative when the aggregate program would only expose a `.d.ts` boundary. There is no root `tsconfig.json`.
 
 ## Agent config
 

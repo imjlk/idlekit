@@ -1,4 +1,4 @@
-import type { PromptApi, TerminalInfo } from "@bunli/core";
+import type { PromptApi, TerminalInfo } from "../runtime/command";
 import { validateScenarioV1, type ModelRegistry } from "@idlekit/core";
 import { basename, resolve } from "path";
 import { scenarioInvalidError, usageError } from "../errors";
@@ -93,25 +93,21 @@ export async function runTuneWizard(args: {
   const suggestedOut = resolve(args.outPath?.trim() || inferredTuneWizardPath(args.scenarioPath));
 
   args.prompt.intro(`Tune wizard for ${basename(args.scenarioPath)}`);
-  const answers = await Promise.all([
-    args.prompt.select("Objective", {
+  const objectiveId = await args.prompt.select("Objective", {
       options: OBJECTIVE_OPTIONS.map((entry) => ({ ...entry })),
       default: defaultObjective(scenario.design?.intent, strategyId),
-    }),
-    args.prompt.text("Search budget", {
+    });
+  const budgetRaw = await args.prompt.text("Search budget", {
       default: "10",
       validate: validatePositiveInt("Search budget"),
-    }),
-    args.prompt.text("Override duration (sec)", {
+    });
+  const durationRaw = await args.prompt.text("Override duration (sec)", {
       default: String(scenario.clock?.durationSec ?? 1800),
       validate: validatePositiveInt("Override duration"),
-    }),
-    args.prompt.text("Tune spec output path", {
+    });
+  const tunePathRaw = await args.prompt.text("Tune spec output path", {
       default: suggestedOut,
-    }),
-  ]);
-
-  const [objectiveId, budgetRaw, durationRaw, tunePathRaw] = answers;
+    });
   const tunePath = resolve(String(tunePathRaw));
   if ((await fileExists(tunePath)) && !args.force) {
     throw usageError(`Output file already exists: ${tunePath}`, "Pass --force true to overwrite the generated tune spec.");

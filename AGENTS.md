@@ -31,7 +31,7 @@ Treat these as unobserved until you open the file:
 - `package.json` `exports`, `bin`, and `files`
 - environment variables and bunfig preload
 
-A `.d.ts` hit is a boundary, not proof that the implementation was indexed. `tsconfig.graph.json` is the aggregate program (money, core, CLI including the OpenTUI JSX settings, and top-level tools). When that program only shows a declaration boundary, query the package `tsconfig.json` and treat that package program as authoritative.
+A `.d.ts` hit is a boundary, not proof that the implementation was indexed. `tsconfig.graph.json` is the aggregate program (money, core, CLI, and top-level tools). When that program only shows a declaration boundary, query the package `tsconfig.json` and treat that package program as authoritative.
 
 Do not store opaque graph node ids in docs or commits. Record the commit, the project, and the source span.
 

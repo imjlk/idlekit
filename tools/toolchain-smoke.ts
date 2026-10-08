@@ -419,18 +419,17 @@ async function main(): Promise<void> {
       tsxJs = error instanceof Error ? error.message : String(error);
     }
   }
-  const importsOpentui = tsxJs.includes("@opentui/react");
   const importsReactRuntime = /from\s+["']react\/jsx-(?:dev-)?runtime["']/.test(tsxJs);
-  const tsxOk = tsxBuild.exitCode === 0 && importsOpentui && !importsReactRuntime;
+  const tsxOk = tsxBuild.exitCode === 0 && /h\("text"/.test(tsxJs) && !importsReactRuntime && !tsxJs.includes("@opentui");
   steps.push({
-    name: "tsx-opentui",
+    name: "tsx-local-factory",
     expected: "zero",
     command: tsxBuild.command,
     exitCode: tsxOk ? 0 : tsxBuild.exitCode || 1,
     ok: tsxOk,
     detail: tsxOk ? undefined : `${textOf(tsxBuild).slice(0, 1500)}\n${tsxJs.slice(0, 500)}`,
   });
-  console.error(`${tsxOk ? "ok" : "FAIL"} tsx-opentui`);
+  console.error(`${tsxOk ? "ok" : "FAIL"} tsx-local-factory`);
 
   const inputHash = hashTree(join(root, "fixtures/toolchain"));
   const failed = steps.filter((step) => !step.ok);

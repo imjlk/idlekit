@@ -5,7 +5,6 @@
   "license": "MIT",
   "type": "module",
   "files": [
-    ".bunli",
     "dist",
     "README.md",
     "LICENSE"
@@ -39,34 +38,26 @@
   },
   "scripts": {
     "dev": "bun src/main.ts",
-    "dev:watch": "bunli dev --entry src/main.ts",
-    "generate": "bunli generate --entry src/main.ts --directory src/commands --output ./.bunli/commands.gen.ts",
-    "generate:check": "bun scripts/generate-check.ts",
-    "doctor:completions": "bunli doctor completions",
+    "dev:watch": "bun --watch src/main.ts",
+    "generate:check": "bun scripts/command-check.ts",
+    "doctor:completions": "bun scripts/command-check.ts",
     "review:smoke": "bun scripts/review-smoke.ts",
-    "build": "rm -rf dist && bun run generate && bun scripts/cli-bundle.ts --outdir dist --sourcemap",
-    "build:bin": "bun scripts/cli-bundle.ts --entry src/main.ts --outdir dist --targets native",
+    "build": "bun scripts/cli-bundle.ts --outdir dist --sourcemap",
+    "build:bin": "bun scripts/cli-bundle.ts --entry src/bin.ts --outdir dist/bin --targets native",
     "typecheck": "ttsc -p tsconfig.json --noEmit",
     "test": "bun scripts/cli-bundle.ts --outdir .test-bundle && IDLEKIT_CLI_ENTRY=.test-bundle/main.js bun test --timeout 90000 src",
     "prepack": "bun run build && cd ../.. && bun tools/package-manifest.ts prepare packages/cli",
     "postpack": "cd ../.. && bun tools/package-manifest.ts restore packages/cli"
   },
   "dependencies": {
-    "@bunli/core": "0.9.1",
-    "@bunli/plugin-completions": "0.3.5",
-    "@bunli/runtime": "0.3.2",
+    "@clack/prompts": "1.8.1",
+    "@gunshi/plugin-completion": "0.37.3",
+    "@gunshi/plugin-suggestion": "0.37.3",
     "@idlekit/core": "workspace:*",
-    "@opentui/core": "0.4.5",
-    "@opentui/react": "0.4.5",
     "ajv": "^8.17.1",
-    "bunli": "0.9.1",
-    "pngjs": "^7.0.0",
-    "react": "19.2.8",
+    "gunshi": "0.37.3",
     "yaml": "^2.8.1",
     "zod": "^4.1.12"
   },
-  "devDependencies": {
-    "@types/pngjs": "^6.0.5",
-    "@types/react": "19.2.17"
-  }
+  "devDependencies": {}
 }

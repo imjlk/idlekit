@@ -1,6 +1,5 @@
-import { loadConfig } from "@bunli/core";
 import ttsc from "@ttsc/unplugin/bun";
-import { resolve } from "path";
+import { isAbsolute, relative, resolve } from "path";
 
 const cliRoot = resolve(import.meta.dir, "..");
 process.chdir(cliRoot);
@@ -15,53 +14,25 @@ function flagValue(name: string): string | undefined {
   return value;
 }
 
-const config = await loadConfig(cliRoot);
-const entryFromConfig = config.build.entry;
-const defaultEntry = Array.isArray(entryFromConfig) ? entryFromConfig[0] : entryFromConfig;
-const entry = flagValue("--entry") ?? defaultEntry ?? "src/main.ts";
-const outdir = flagValue("--outdir") ?? config.build.outdir ?? "./dist";
+const entry = flagValue("--entry") ?? "src/main.ts";
+const outdir = flagValue("--outdir") ?? "./dist";
 const targets = flagValue("--targets");
 if (targets !== undefined && targets !== "native") {
   throw new Error(
-    "cli-bundle.ts preserves the repository JS bundle and --targets native. Other bunli target lists are not guessed.",
+    "cli-bundle.ts supports the repository JS bundle and --targets native only.",
   );
 }
 
-const minify = config.build.minify;
-const sourcemap = process.argv.includes("--sourcemap") ? true : config.build.sourcemap;
-// Inlining @opentui/core breaks its bundled asset loader (loadedPath is
-// undefined). Keep the packages external. The CLI depends on both so
-// dist/main.js can resolve them. Bun 1.3.10 then does not have to bundle
-// @opentui/core's optional platform imports.
-const external = [
-  ...new Set([...(config.build.external ?? []), "react", "@opentui/react", "@opentui/core"]),
-];
+const minify = false;
+const sourcemap = process.argv.includes("--sourcemap") ? "external" : "none";
+const external: string[] = [];
 const outdirAbs = resolve(cliRoot, outdir);
-const generateEntry = config.commands?.entry ?? entry;
-const generateDirectory = config.commands?.directory ?? "src/commands";
-const generated = Bun.spawnSync(
-  [
-    resolve(cliRoot, "node_modules/.bin/bunli"),
-    "generate",
-    "--entry",
-    generateEntry,
-    "--directory",
-    generateDirectory,
-    "--output",
-    "./.bunli/commands.gen.ts",
-  ],
-  { cwd: cliRoot, stdout: "inherit", stderr: "inherit" },
-);
-if (generated.exitCode !== 0) {
-  throw new Error("bunli generate failed");
+const outputRelative = relative(cliRoot, outdirAbs);
+if (!outputRelative || outputRelative === ".." || outputRelative.startsWith("../") || outputRelative.startsWith("..\\") || isAbsolute(outputRelative)) {
+  throw new Error("Bundle output must be a directory inside packages/cli.");
 }
 const plugins = [ttsc()];
 
-if (targets === "native") {
-  throw new Error(
-    "build:bin does not emit a standalone executable. @opentui/core loads optional platform packages and its asset loader cannot be inlined. The JS bundle keeps react, @opentui/react, and @opentui/core external.",
-  );
-}
 
 await Bun.$`rm -rf ${outdirAbs}`.quiet();
 await Bun.$`mkdir -p ${outdirAbs}`.quiet();
@@ -73,9 +44,10 @@ await Bun.$`mkdir -p ${outdirAbs}`.quiet();
     target: "bun",
     format: "esm",
     minify,
-    sourcemap,
+    sourcemap: targets === "native" ? "inline" : sourcemap,
     external,
     plugins,
+    ...(targets === "native" ? { compile: { outfile: resolve(outdirAbs, process.platform === "win32" ? "idk.exe" : "idk") } } : {}),
   });
   if (!result.success) {
     throw new Error(result.logs.join("\n"));
@@ -85,7 +57,7 @@ await Bun.$`mkdir -p ${outdirAbs}`.quiet();
     const body = await output.text();
     const withoutShebang = body.replace(/^#![^\n]*\n/, "");
     await Bun.write(output.path, `#!/usr/bin/env bun\n${withoutShebang}`);
-    await Bun.$`chmod +x ${output.path}`.quiet();
+    if (process.platform !== "win32") await Bun.$`chmod +x ${output.path}`.quiet();
   }
   console.log(`bundled ${outdir}`);
 }

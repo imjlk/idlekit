@@ -5,7 +5,7 @@ v1 공식 지원 범위는 Bun `>=1.3`입니다. Node.js와 브라우저 런타�
 
 - `@idlekit/core`: 엔진 어댑터, 시나리오 컴파일, 시뮬레이션, 분석, 리포트
 - `@idlekit/money`: 화폐/표기/정책/직렬화 전용 라이브러리
-- `@idlekit/cli`: `idk` CLI (`bunli` 기반)
+- `@idlekit/cli`: `idk` CLI (`Gunshi` 기반)
 
 ## 3분 시작
 
@@ -57,8 +57,8 @@ bun run --cwd packages/cli dev -- tune ../../tmp/space-miner-v1.json --wizard tr
 사람이 직접 검토하는 review 흐름:
 
 ```bash
-bun run --cwd packages/cli dev -- review evaluate ../../tmp/my-game-v1.json --image-mode auto
-bun run --cwd packages/cli dev -- review compare ../../tmp/my-game-v1.json ../../tmp/my-game-v1-compare-b.json --image-mode auto
+bun run --cwd packages/cli dev -- review evaluate ../../tmp/my-game-v1.json
+bun run --cwd packages/cli dev -- review compare ../../tmp/my-game-v1.json ../../tmp/my-game-v1-compare-b.json
 ```
 
 completion / trust 설정:

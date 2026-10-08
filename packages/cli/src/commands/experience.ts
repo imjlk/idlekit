@@ -1,4 +1,4 @@
-import { defineCommand, option } from "@bunli/core";
+import { defineCommand, option } from "../runtime/command";
 import { validateScenarioV1 } from "@idlekit/core";
 import { z } from "zod";
 import { loadRegistriesFromFlags, pluginOptions } from "./_shared/plugin";

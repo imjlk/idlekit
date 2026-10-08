@@ -1,4 +1,4 @@
-import { defineCommand, option } from "@bunli/core";
+import { defineCommand, option } from "../runtime/command";
 import { resolve } from "path";
 import { z } from "zod";
 import { cliError, errorDetail, replayArtifactInvalidError, usageError } from "../errors";

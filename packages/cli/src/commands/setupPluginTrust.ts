@@ -1,4 +1,4 @@
-import { defineCommand, option } from "@bunli/core";
+import { defineCommand, option } from "../runtime/command";
 import { z } from "zod";
 import { buildOutputMeta } from "../io/outputMeta";
 import { writeOutput } from "../io/writeOutput";

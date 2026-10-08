@@ -83,8 +83,8 @@ preset 기본값:
 
 ```bash
 idk review doctor
-bun run --cwd packages/cli dev -- review evaluate ../../examples/tutorials/11-my-game-v1.json --image-mode auto
-bun run --cwd packages/cli dev -- review compare ../../examples/tutorials/11-my-game-v1.json ../../examples/tutorials/12-my-game-compare-b.json --image-mode auto
+bun run --cwd packages/cli dev -- review evaluate ../../examples/tutorials/11-my-game-v1.json
+bun run --cwd packages/cli dev -- review compare ../../examples/tutorials/11-my-game-v1.json ../../examples/tutorials/12-my-game-compare-b.json
 idk setup completions --shell zsh
 idk doctor --fix true --shell zsh
 idk setup plugin-trust --plugin ../../examples/plugins/custom-econ-plugin.ts --out ../../tmp/plugin-trust.json

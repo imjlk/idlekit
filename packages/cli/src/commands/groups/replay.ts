@@ -1,4 +1,4 @@
-import { defineGroup } from "@bunli/core";
+import { defineGroup } from "../../runtime/command";
 import replayVerifyCommand from "../replayVerify";
 
 export default defineGroup({
