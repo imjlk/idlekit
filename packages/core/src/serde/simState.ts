@@ -43,6 +43,8 @@ export type SimStateJSON = Readonly<{
     scenarioHash?: string;
     /** Tick seconds accumulated by simulate, including earlier resumed runs. */
     totalElapsedSec?: number;
+    /** Absolute simulation time of the most recent committed prestige reset. */
+    lastPrestigeResetT?: number;
   }>;
   strategy?: Readonly<{
     id: string;
@@ -83,6 +85,7 @@ const SimStateJSONSchema = z
         gitSha: z.string().optional(),
         scenarioHash: z.string().optional(),
         totalElapsedSec: z.number().finite().nonnegative().optional(),
+        lastPrestigeResetT: z.number().finite().optional(),
       })
       .passthrough()
       .optional(),
@@ -95,7 +98,11 @@ const SimStateJSONSchema = z
       .passthrough()
       .optional(),
   })
-  .passthrough();
+  .passthrough()
+  .refine((state) => state.meta?.lastPrestigeResetT === undefined || state.meta.lastPrestigeResetT <= state.t, {
+    path: ["meta", "lastPrestigeResetT"],
+    message: "must not be later than the saved simulation time",
+  });
 
 export function parseSimStateJSON(input: unknown): SimStateJSON {
   const r = SimStateJSONSchema.safeParse(input);
@@ -126,6 +133,8 @@ export function serializeSimState<N, U extends string, Vars>(
     scenarioHash?: string;
     /** Tick seconds accumulated by simulate, including earlier resumed runs. */
     totalElapsedSec?: number;
+    /** Absolute simulation time of the most recent committed prestige reset. */
+    lastPrestigeResetT?: number;
     strategy?: {
       id: string;
       version?: number;
@@ -162,7 +171,8 @@ export function serializeSimState<N, U extends string, Vars>(
       meta?.cliVersion ||
       meta?.gitSha ||
       meta?.scenarioHash ||
-      meta?.totalElapsedSec !== undefined
+      meta?.totalElapsedSec !== undefined ||
+      meta?.lastPrestigeResetT !== undefined
       ? {
           scenarioPath: meta.scenarioPath,
           savedAt: meta.savedAt,
@@ -172,6 +182,7 @@ export function serializeSimState<N, U extends string, Vars>(
           gitSha: meta.gitSha,
           scenarioHash: meta.scenarioHash,
           totalElapsedSec: meta.totalElapsedSec,
+          lastPrestigeResetT: meta.lastPrestigeResetT,
         }
       : undefined,
     strategy: meta?.strategy

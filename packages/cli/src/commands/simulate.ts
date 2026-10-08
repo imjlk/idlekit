@@ -51,8 +51,8 @@ function assertResumeEngine(args: {
   }
 }
 
-// Only what the run reads: deserializeSimState, the engine check, and restoreStrategyState.
-// Save metadata does not change the economy. The saved elapsed clock enters the report digest separately.
+// Hash the state, engine, strategy, and saved cooldown anchor that affect the run.
+// Descriptive save metadata is excluded; the elapsed clock enters the report digest separately.
 function resumeHash(json: ReturnType<typeof parseSimStateJSON> | undefined): string | null {
   if (!json) return null;
   const { v, unit, t, wallet, maxMoneyEver, prestige, vars, strategy } = json;
@@ -72,6 +72,7 @@ function resumeHash(json: ReturnType<typeof parseSimStateJSON> | undefined): str
           ...(strategy.state !== undefined ? { state: strategy.state } : {}),
         }
       : null,
+    ...(json.meta?.lastPrestigeResetT !== undefined ? { lastPrestigeResetT: json.meta.lastPrestigeResetT } : {}),
   });
 }
 
@@ -261,10 +262,13 @@ export default defineCommand({
     });
     const generatedAt = outputMeta.generatedAt;
 
-    let lastResetT: number | undefined;
+    let lastResetT = resumedJson?.meta?.lastPrestigeResetT ?? opened.scenario.constraints?.lastPrestigeResetT;
     const runScenarioInput = {
       ...opened.scenario,
       initial: resumedState ?? opened.scenario.initial,
+      constraints: lastResetT !== undefined
+        ? constraintsWithAnchor(opened.scenario.constraints, lastResetT)
+        : opened.scenario.constraints,
       strategy,
       run: {
         ...opened.scenario.run,
@@ -328,6 +332,7 @@ export default defineCommand({
         gitSha: outputMeta.gitSha,
         scenarioHash: typeof outputMeta.scenarioHash === "string" ? outputMeta.scenarioHash : undefined,
         totalElapsedSec,
+        lastPrestigeResetT: lastResetT,
         strategy: strategy
           ? {
               id: strategy.id,
