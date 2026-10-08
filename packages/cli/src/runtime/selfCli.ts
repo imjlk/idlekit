@@ -12,12 +12,18 @@ function isJavaScriptEntry(entry: string): boolean {
   return entry.endsWith(".js") || entry.endsWith(".mjs");
 }
 
-export function isBundledCliProcess(): boolean {
-  return isJavaScriptEntry(Bun.main);
+function isNativeEntry(entry: string): boolean {
+  return entry.includes("$bunfs") || entry.includes("~BUN");
 }
 
-export function cliPackageRoot(): string {
-  if (isBundledCliProcess()) return resolve(dirname(Bun.main), "..");
+export function isBundledCliProcess(entry = currentEntry()): boolean {
+  return isJavaScriptEntry(entry) || isNativeEntry(entry);
+}
+
+export function cliPackageRoot(entry = currentEntry()): string {
+  // Native executables have no source package directory on the filesystem.
+  if (isNativeEntry(entry)) return process.cwd();
+  if (isBundledCliProcess(entry)) return resolve(dirname(entry), "..");
   return resolve(import.meta.dir, "../..");
 }
 
@@ -27,9 +33,8 @@ function bundledCliConfig(entry: string): string | undefined {
   return config;
 }
 
-export function selfCliCommand(args: readonly string[]) {
-  const entry = currentEntry();
-  if (entry.includes("$bunfs") || entry.includes("~BUN")) return [process.execPath, ...args];
+export function selfCliCommand(args: readonly string[], entry = currentEntry()) {
+  if (isNativeEntry(entry)) return [process.execPath, ...args];
   const bun = process.argv[0] ?? "bun";
   if (isJavaScriptEntry(entry)) {
     const config = bundledCliConfig(entry);

@@ -154,7 +154,9 @@ __${identifier}_gunshi_completion_function=\${__${identifier}_completion_registr
 __${identifier}_gunshi_completion_function=\${__${identifier}_gunshi_completion_function%% *}
 __${identifier}_complete_with_files() {
   "$__${identifier}_gunshi_completion_function" "$@"
-  if [[ \${#COMPREPLY[@]} -eq 0 ]]; then compopt -o default -o bashdefault; fi
+  if [[ \${#COMPREPLY[@]} -eq 0 ]] && type -t compopt >/dev/null 2>&1; then
+    compopt -o default -o bashdefault
+  fi
 }
 __${identifier}_completion_registration=\${__${identifier}_completion_registration/-F $__${identifier}_gunshi_completion_function/-F __${identifier}_complete_with_files}
 eval "\${__${identifier}_completion_registration/#complete /complete -o default -o bashdefault }"
