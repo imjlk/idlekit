@@ -2,7 +2,7 @@ import { parse } from "@babel/parser";
 
 export type ScopeMode =
   | "bindings" | "parameters" | "classes" | "functions"
-  | "annotations" | "enumValues" | "destructuring" | "objectMethods";
+  | "annotations" | "enumValues" | "destructuring" | "objectMethods" | "containerReferences";
 type Range = [string, number, number];
 type Ranges = Record<ScopeMode, Range[]>;
 type SyntaxNode = { type: string; start: number; end: number; [key: string]: unknown };
@@ -76,6 +76,7 @@ function collect(source: string): Ranges {
     enumValues: [],
     destructuring: [],
     objectMethods: [],
+    containerReferences: [],
   };
   const root: Scope = { start: 0, end: source.length, root: true };
   const bind = (mode: ScopeMode, values: string[], scope: Scope): void => {
@@ -83,6 +84,14 @@ function collect(source: string): Ranges {
   };
   const annotation = (value: unknown): void => {
     if (node(value)) result.annotations.push(["", value.start, value.end]);
+  };
+  const containerReference = (value: unknown): void => {
+    if (!node(value)) return;
+    let bare = value;
+    while (["TSAsExpression", "TSSatisfiesExpression", "TSNonNullExpression", "ParenthesizedExpression"].includes(bare.type) && node(bare.expression)) {
+      bare = bare.expression;
+    }
+    if (bare.type === "Identifier") bind("containerReferences", names(bare), { start: value.start, end: value.end, root: false });
   };
   const enumValue = (value: unknown): void => {
     if (!node(value)) return;
@@ -105,6 +114,11 @@ function collect(source: string): Ranges {
     if (!node(value)) return;
     const own: Scope = { start: value.start, end: value.end, root: false };
     if (value.type === "ObjectMethod") result.objectMethods.push(["", value.start, value.end]);
+    if (value.type === "VariableDeclarator") containerReference(value.init);
+    if (value.type === "AssignmentExpression") containerReference(value.right);
+    if (value.type === "ObjectProperty") containerReference(value.value);
+    if (value.type === "SpreadElement") containerReference(value.argument);
+    if (value.type === "ArrayExpression" && Array.isArray(value.elements)) value.elements.forEach(containerReference);
     if (value.type === "TSTypeAnnotation" || value.type === "TSTypeParameterDeclaration") {
       annotation(value);
       return;

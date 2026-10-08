@@ -1,4 +1,5 @@
 import {
+  localRanges,
   readIdentifier,
   readQuoted,
   readStaticTemplate,
@@ -101,6 +102,11 @@ export function readDottedModifiers(body: string, index: number, modifiers: stri
 
 /** `=` that ends a binding type. `=>` and `==` stay inside the type. */
 export function findBindingEquals(body: string, index: number): number {
+  const annotation = localRanges(body, "annotations").find(([, start]) => start === index - 1);
+  if (annotation) {
+    const after = skipSpaceAndComments(body, annotation[2]);
+    return body[after] === "=" ? after : -1;
+  }
   let cursor = index;
   let depth = 0;
   const endsBefore = (from: number, to: number): boolean => {

@@ -120,9 +120,12 @@ function valueHoldsRunner(
   at: number,
   aliases: readonly RunnerAlias[],
 ): boolean {
-  const cursor = skipSpaceAndComments(body, at);
+  let cursor = skipSpaceAndComments(body, at);
+  while (body[cursor] === "(") cursor = skipSpaceAndComments(body, cursor + 1);
   if (body[cursor] === "[") return arrayHoldsRunner(body, cursor, aliases);
   if (body[cursor] === "{") return objectHoldsRunner(body, cursor, aliases);
+  const reference = localRanges(body, "containerReferences").find(([, start]) => start === cursor);
+  if (reference && bareRunnerBinding(reference[0], aliases)) return true;
   return readRunnerRef(body, at, aliases) !== undefined;
 }
 
@@ -525,14 +528,14 @@ function collectRegistrations(
         }
         const ref = readRunnerRef(body, equalsAt + 1, aliases);
         if (!ref && isFunctionValue(body, equalsAt + 1)) {
-          if (isRunnerKind(ident.value)) {
-            aliases.push({
-              name: ident.value,
-              kind: undefined,
-              modifiers: [],
-              depth: bindingDepth,
-            });
-          }
+          aliases.push({
+            name: ident.value,
+            kind: undefined,
+            modifiers: [],
+            depth: bindingDepth,
+            scopeEnd: aliasAt(aliases, ident.value)?.scopeEnd,
+            nonRunner: true,
+          });
           break;
         }
         aliases.push({
@@ -542,8 +545,7 @@ function collectRegistrations(
           depth: bindingDepth,
           objectRunner:
             !ref &&
-            (objectHoldsRunner(body, equalsAt + 1, aliases) ||
-              arrayHoldsRunner(body, equalsAt + 1, aliases)),
+            valueHoldsRunner(body, equalsAt + 1, aliases),
         });
         if (!ref) break;
         bindingAt = skipSpaceAndComments(body, ref.end);
@@ -554,17 +556,19 @@ function collectRegistrations(
       continue;
     }
     const alias = aliasAt(aliases, word.value);
+    let assignmentDepth = forParens.length > 0 ? depth + 1 : depth;
+    if (alias?.scopeEnd !== undefined) assignmentDepth = alias.depth;
     const assigned = assignmentAt(body, word.end);
     const storedRunner =
       assigned?.plain === true &&
-      (objectHoldsRunner(body, assigned.at + 1, aliases) ||
-        arrayHoldsRunner(body, assigned.at + 1, aliases));
+      !readRunnerRef(body, assigned.at + 1, aliases) &&
+      valueHoldsRunner(body, assigned.at + 1, aliases);
     if (storedRunner) {
       aliases.push({
         name: word.value,
         kind: undefined,
         modifiers: [],
-        depth: forParens.length > 0 ? depth + 1 : depth,
+        depth: assignmentDepth,
         scopeEnd: alias?.scopeEnd,
         objectRunner: true,
       });
@@ -579,8 +583,9 @@ function collectRegistrations(
         name: word.value,
         kind: ref?.kind,
         modifiers: ref?.modifiers ?? [],
-        depth: forParens.length > 0 ? depth + 1 : depth,
+        depth: assignmentDepth,
         scopeEnd: alias.scopeEnd,
+        nonRunner: !ref && !namespace && assigned.plain && isFunctionValue(body, assigned.at + 1),
       };
       if (namespace) {
         next.namespace = true;

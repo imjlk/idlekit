@@ -337,3 +337,29 @@ test("object methods and accessors do not store body runner references", () => {
     expect(unresolvedRunnerCalls(body)).toEqual([]);
   }
 });
+
+test("local arrow helpers with string arguments remain ordinary functions", () => {
+  const body = `function f() { const goal = (id, at) => ({ id, met: (state) => state.t >= at }); goal("never", Infinity); }`;
+  expect(unresolvedRunnerCalls(body)).toEqual([]);
+});
+
+test("typed declarations end before an ASI assignment statement", () => {
+  const body = `import { test } from "bun:test"; let run = ordinary; let placeholder: unknown
+    run = test; run("real", callback);`;
+  expect(registrationLines(body, "real")).toEqual([2]);
+  expect(unresolvedRunnerCalls(body)).toEqual([]);
+});
+
+test("direct aliases preserve runner container identity", () => {
+  for (const copy of ["hidden", "(hidden)", "hidden as Data"]) {
+    const body = `import { it } from "bun:test"; const hidden: Data = { run: it }; const copied = ${copy}; copied.run("fake", callback);`;
+    expect(unresolvedRunnerCalls(body)).toContain("copied");
+    expect(registrationLines(body, "fake")).toEqual([]);
+  }
+});
+
+test("parameter rebindings survive nested blocks", () => {
+  const body = `import { it as runner } from "bun:test"; function f(it) { { it = runner; } it("real", callback); }`;
+  expect(registrationLines(body, "real")).toEqual([1]);
+  expect(unresolvedRunnerCalls(body)).toEqual([]);
+});
