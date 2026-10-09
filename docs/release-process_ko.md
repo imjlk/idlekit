@@ -129,6 +129,13 @@ PR을 자동 머지하거나 패키지를 배포하지 않습니다.
 수동 실행에서 선택한 커밋을 checkout하고, preflight 전과 실제 배포 직전에 원격
 `main`과 같은지 확인합니다. `main`이 바뀌면 새로운 수동 실행 요청이 필요합니다.
 
+Sampo는 `bun.lock`이 있으면 `bun publish`를 선택합니다. 마지막 커밋 확인 뒤
+잠금파일을 checkout 밖으로 잠시 옮겨, Trusted Publishing을 지원하는 `npm publish`를
+선택하게 합니다. 성공하거나 실패한 뒤에는 `always()` 단계에서 원본 바이트를 복원합니다.
+로컬 `release:publish` 명령도 잠금파일 보존 헬퍼를 사용합니다. 준비와 빌드·설치 검증은
+커밋된 잠금파일을 그대로 사용합니다.
+배포가 성공하면 Sampo가 버전 태그와 GitHub 릴리즈를 생성합니다.
+
 저장소 Settings → Actions → General에서 GitHub Actions의 PR 생성을 허용해야 합니다.
 `GITHUB_TOKEN`으로 만든 PR의 CI 실행은 관리자의 승인이 필요할 수 있습니다.
 [GitHub 공식 안내](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow#triggering-a-workflow-from-a-workflow)를 참고하세요.

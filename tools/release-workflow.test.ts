@@ -37,6 +37,48 @@ function allows(guard: string, event: string, ref: string, publish: boolean): bo
 }
 
 describe("release preparation and publishing", () => {
+  for (const outcome of ["successful", "failed"] as const) {
+    it(`selects npm and restores the exact publish lockfile after a ${outcome} publisher`, async () => {
+      const steps = workflow.jobs.publish.steps;
+      const selection = steps.findIndex((step) => step.name === "Select npm for trusted publishing");
+      const publish = steps.findIndex((step) => step.with?.command === "publish");
+      const restoration = steps.findIndex((step) => step.name === "Restore publish lockfile");
+      expect(selection).toBeGreaterThan(steps.findIndex((step) => step.name === "Recheck selected commit before publishing"));
+      expect(selection).toBeLessThan(publish);
+      expect(restoration).toBeGreaterThan(publish);
+      expect((steps[restoration] as Step & { if?: string })?.if).toBe("always()");
+      const prefix = resolve(tmpdir(), "idlekit-publish-wiring-");
+      const fixture = await mkdtemp(prefix);
+      const runnerTemp = resolve(fixture, "runner-temp");
+      const original = new Uint8Array([0xef, 0xbb, 0xbf, ...new TextEncoder().encode('{"packages":{"pinned":"1.0.0"}}\n')]);
+      const lockPath = resolve(fixture, "bun.lock");
+      const bash = process.platform === "win32" ? resolve(process.env.ProgramFiles ?? "C:/Program Files", "Git/bin/bash.exe") : "bash";
+      const execute = (script: string) => Bun.spawnSync([bash, "--noprofile", "--norc", "-e", "-c", script], {
+        cwd: fixture, env: { ...process.env, RUNNER_TEMP: runnerTemp.replaceAll("\\", "/") }, stdout: "pipe", stderr: "pipe",
+      });
+      try {
+        await mkdir(runnerTemp);
+        await Bun.write(lockPath, original);
+        const selected = execute(steps[selection]!.run!);
+        expect(selected.exitCode).toBe(0);
+        expect(await Bun.file(lockPath).exists()).toBeFalse();
+        expect(new Uint8Array(await Bun.file(resolve(runnerTemp, "idlekit-publish.bun.lock")).arrayBuffer())).toEqual(original);
+        try {
+          const publisher = execute(outcome === "failed" ? "exit 17" : "true");
+          expect(publisher.exitCode).toBe(outcome === "failed" ? 17 : 0);
+          if (outcome === "failed") await Bun.write(lockPath, "partial publisher lockfile");
+        } finally {
+          expect(execute(steps[restoration]!.run!).exitCode).toBe(0);
+        }
+        expect(new Uint8Array(await Bun.file(lockPath).arrayBuffer())).toEqual(original);
+        expect(await Bun.file(resolve(runnerTemp, "idlekit-publish.bun.lock")).exists()).toBeFalse();
+      } finally {
+        if (!resolve(fixture).startsWith(prefix)) throw new Error("Unexpected publish fixture path");
+        await rm(fixture, { recursive: true, force: true });
+      }
+    });
+  }
+
   it("preserves dependencies while preparing workspace versions through the actual workflow steps", async () => {
     const steps = workflow.jobs.prepare.steps;
     const preservation = steps.findIndex((step) => step.name === "Preserve release dependency resolutions");

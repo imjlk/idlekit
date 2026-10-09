@@ -79,9 +79,14 @@ if (import.meta.main) {
     await preserveReleaseLockfile(projectRoot, () => {
       run(["sampo", "release", ...process.argv.slice(3)], projectRoot, { ...process.env, SAMPO_RELEASE_BRANCH: "main" });
     });
+  } else if (mode === "publish") {
+    // Without bun.lock, Sampo selects npm publish, which supports trusted publishing.
+    await preserveReleaseLockfile(projectRoot, () => {
+      run(["sampo", "publish", ...process.argv.slice(3)], projectRoot, { ...process.env, SAMPO_RELEASE_BRANCH: "main" });
+    });
   } else if (mode === "refresh" && process.argv.length === 4) {
     await refreshReleaseLockfile(new Uint8Array(await Bun.file(process.argv[3]!).arrayBuffer()), projectRoot);
   } else {
-    throw new Error("Usage: bun tools/release-lockfile.ts release [--dry-run] | refresh <snapshot>");
+    throw new Error("Usage: bun tools/release-lockfile.ts release|publish [--dry-run] | refresh <snapshot>");
   }
 }

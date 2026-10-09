@@ -177,12 +177,29 @@ jobs:
           [[ "$(git rev-parse HEAD)" == "$SELECTED_SHA" ]]
           [[ "$(git ls-remote origin refs/heads/main | cut -f1)" == "$SELECTED_SHA" ]]
 
+      # Sampo's npm adapter selects bun publish when it sees bun.lock. npm supports
+      # trusted publishing; hide only the selector after validation, then restore it.
+      - name: Select npm for trusted publishing
+        shell: bash
+        run: |
+          set -euo pipefail
+          mv -- bun.lock "$RUNNER_TEMP/idlekit-publish.bun.lock"
+
       - name: Publish merged versions
         uses: bruits/sampo/crates/sampo-github-action@e976f8a2089ffe94ee9bf508c0b6f1df5e0f108e # action 0.19.0, core 0.17.0
         with:
           command: publish
+          create-github-release: "true"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_CONFIG_PROVENANCE: "true"
           SAMPO_RELEASE_BRANCH: main
+
+      - name: Restore publish lockfile
+        if: always()
+        shell: bash
+        run: |
+          if [[ -f "$RUNNER_TEMP/idlekit-publish.bun.lock" ]]; then
+            mv -- "$RUNNER_TEMP/idlekit-publish.bun.lock" bun.lock
+          fi

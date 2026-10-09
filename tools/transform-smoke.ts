@@ -2,6 +2,7 @@ import ttscPlugin from "@ttsc/unplugin/bun";
 import { tmpdir } from "os";
 import { join, resolve } from "path";
 import { runCommand, ttscBin } from "./toolchain-host";
+import { parseNpmPackEntries } from "./npm-pack";
 
 const root = resolve(import.meta.dir, "..");
 const results: Array<{ name: string; command: string; exitCode: number; expected: number }> = [];
@@ -168,9 +169,7 @@ function packTarball(name: string, packageDir: string): string {
     console.error(pack.stderr);
   }
   expectExit(name, pack.command, pack.exitCode, 0);
-  const packJson = pack.stdout.match(/(\[\s*{[\s\S]*}\s*\])\s*$/)?.[1];
-  if (!packJson) throw new Error(`${name} did not return JSON\n${pack.stdout}`);
-  const packed = JSON.parse(packJson) as Array<{ filename: string }>;
+  const packed = parseNpmPackEntries(pack.stdout);
   const filename = packed[0]?.filename;
   if (!filename) throw new Error(`${name} did not return a filename`);
   return join(packDir, filename);
