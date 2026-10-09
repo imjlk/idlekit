@@ -3,6 +3,7 @@ import type { Money, MoneyState } from "../../money/types";
 import type { Emitter } from "../emitter";
 import type { MoneyEvent, TickPolicy, TickResult } from "../types";
 import { computeLogGap, isTooSmall } from "./shared";
+import { APPLIED_FACTS, FLUSHED_FACTS, QUEUED_FACTS } from "../facts";
 
 export function applyAccumulatePolicy<N, U extends string>(args: {
   E: Engine<N>;
@@ -11,14 +12,15 @@ export function applyAccumulatePolicy<N, U extends string>(args: {
   policy: TickPolicy;
   emit?: Emitter<MoneyEvent<N>>;
   collectEvents: boolean;
+  collectFacts?: boolean;
 }): TickResult<N, U> {
-  const { E, state, delta, policy, emit, collectEvents } = args;
+  const { E, state, delta, policy, emit, collectEvents, collectFacts } = args;
   const events: MoneyEvent<N>[] = [];
   const baseBefore = state.money.amount;
   const bucketed = E.add(state.bucket, delta.amount);
   const logGap = computeLogGap(E, baseBefore, bucketed);
 
-  if (isTooSmall(E, baseBefore, bucketed, policy.maxLogGap)) {
+  if (isTooSmall(E, baseBefore, bucketed, policy.maxLogGap, logGap)) {
     const nextState: MoneyState<N, U> = {
       money: state.money,
       bucket: bucketed,
@@ -35,7 +37,9 @@ export function applyAccumulatePolicy<N, U extends string>(args: {
       });
     }
 
-    const result: TickResult<N, U> = { status: "ok", state: nextState, events };
+    const result: TickResult<N, U> = collectFacts
+      ? { status: "ok", state: nextState, events, facts: QUEUED_FACTS }
+      : { status: "ok", state: nextState, events };
     if (collectEvents && emit) emit(events);
     return result;
   }
@@ -49,8 +53,9 @@ export function applyAccumulatePolicy<N, U extends string>(args: {
     bucket: E.zero(),
   };
 
+  const flushed = (collectEvents || collectFacts) && E.cmp(state.bucket, E.zero()) !== 0;
   if (collectEvents) {
-    if (E.cmp(state.bucket, E.zero()) !== 0) {
+    if (flushed) {
       events.push({
         type: "flushed",
         baseBefore,
@@ -69,7 +74,11 @@ export function applyAccumulatePolicy<N, U extends string>(args: {
     });
   }
 
-  const result: TickResult<N, U> = { status: "ok", state: nextState, events };
+  const result: TickResult<N, U> = collectFacts
+    ? (flushed
+      ? { status: "ok", state: nextState, events, facts: FLUSHED_FACTS, appliedDelta: bucketed, flushedBucket: state.bucket }
+      : { status: "ok", state: nextState, events, facts: APPLIED_FACTS, appliedDelta: bucketed })
+    : { status: "ok", state: nextState, events };
   if (collectEvents && emit) emit(events);
   return result;
 }

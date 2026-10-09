@@ -88,6 +88,8 @@ console.log(tracker.observe(restored.money));
 성능 옵션:
 
 - `options.collectEvents = false`면 이벤트 생성/발행을 생략합니다.
+- `options.collectFacts = true`를 함께 설정하면 이벤트를 보관하지 않아도 읽기 전용 `facts`의 `applied`, `dropped`, `queued`, `flushed`, `blocked` 카운트를 받습니다. 지갑과 bucket 결과는 동일합니다.
+- 해당 이벤트가 발생한 경우 `appliedDelta`는 실제 적용량, `flushedBucket`은 이전 bucket을 담습니다. 기본 결과 형태는 유지되며 facts 수집은 이벤트 수집과 독립적입니다. Core는 돈 이벤트 생략 시 이 정보로 카운터와 정확한 양수 보상 판정을 유지합니다.
 
 ## 4. 엔진 어댑터 패턴
 

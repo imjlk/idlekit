@@ -7,8 +7,8 @@ export function computeLogGap<N>(E: Engine<N>, base: N, delta: N): number {
   return E.absLog10(base) - E.absLog10(delta);
 }
 
-export function isTooSmall<N>(E: Engine<N>, base: N, delta: N, maxLogGap?: number): boolean {
+export function isTooSmall<N>(E: Engine<N>, base: N, delta: N, maxLogGap?: number, knownGap?: number): boolean {
   if (maxLogGap === undefined) return false;
-  const gap = computeLogGap(E, base, delta);
+  const gap = knownGap ?? computeLogGap(E, base, delta);
   return Number.isFinite(gap) && gap > maxLogGap;
 }

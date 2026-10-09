@@ -520,10 +520,20 @@ export function stepOnce<N, U extends string, Vars>(
     state: next.wallet,
     delta: scaledIncome,
     policy: ctx.tickPolicy,
-    options: { collectEvents: true },
+    options: { collectEvents: retainMoneyEvents, collectFacts: !retainMoneyEvents },
   });
   // A reward is any positive amount. `cmp` would call an epsilon-sized income zero.
   const observedMoney = { applied: 0, dropped: 0, queued: 0, flushed: 0, blocked: 0, rewarded: false };
+  if (moneyTick.facts) {
+    observedMoney.applied = moneyTick.facts.applied;
+    observedMoney.dropped = moneyTick.facts.dropped;
+    observedMoney.queued = moneyTick.facts.queued;
+    observedMoney.flushed = moneyTick.facts.flushed;
+    observedMoney.blocked = moneyTick.facts.blocked;
+    observedMoney.rewarded =
+      (moneyTick.appliedDelta !== undefined && exactAmountOrder(E, moneyTick.appliedDelta, E.zero()) === 1) ||
+      (moneyTick.flushedBucket !== undefined && exactAmountOrder(E, moneyTick.flushedBucket, E.zero()) === 1);
+  }
   for (const moneyEvent of moneyTick.events) {
     if (moneyEvent.type === "applied") {
       observedMoney.applied += 1;

@@ -3,6 +3,7 @@ import type { Money, MoneyState } from "../../money/types";
 import type { Emitter } from "../emitter";
 import type { MoneyEvent, TickPolicy, TickResult } from "../types";
 import { computeLogGap, isTooSmall } from "./shared";
+import { APPLIED_FACTS, DROPPED_FACTS } from "../facts";
 
 export function applyDropPolicy<N, U extends string>(args: {
   E: Engine<N>;
@@ -11,13 +12,14 @@ export function applyDropPolicy<N, U extends string>(args: {
   policy: TickPolicy;
   emit?: Emitter<MoneyEvent<N>>;
   collectEvents: boolean;
+  collectFacts?: boolean;
 }): TickResult<N, U> {
-  const { E, state, delta, policy, emit, collectEvents } = args;
+  const { E, state, delta, policy, emit, collectEvents, collectFacts } = args;
   const events: MoneyEvent<N>[] = [];
   const baseBefore = state.money.amount;
   const logGap = computeLogGap(E, baseBefore, delta.amount);
 
-  if (isTooSmall(E, baseBefore, delta.amount, policy.maxLogGap)) {
+  if (isTooSmall(E, baseBefore, delta.amount, policy.maxLogGap, logGap)) {
     if (collectEvents) {
       events.push({
         type: "dropped",
@@ -27,7 +29,9 @@ export function applyDropPolicy<N, U extends string>(args: {
         reason: "tooSmall",
       });
     }
-    const result: TickResult<N, U> = { status: "ok", state, events };
+    const result: TickResult<N, U> = collectFacts
+      ? { status: "ok", state, events, facts: DROPPED_FACTS }
+      : { status: "ok", state, events };
     if (collectEvents && emit) emit(events);
     return result;
   }
@@ -51,7 +55,9 @@ export function applyDropPolicy<N, U extends string>(args: {
     });
   }
 
-  const result: TickResult<N, U> = { status: "ok", state: nextState, events };
+  const result: TickResult<N, U> = collectFacts
+    ? { status: "ok", state: nextState, events, facts: APPLIED_FACTS, appliedDelta: delta.amount }
+    : { status: "ok", state: nextState, events };
   if (collectEvents && emit) emit(events);
   return result;
 }
