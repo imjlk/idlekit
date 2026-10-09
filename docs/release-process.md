@@ -5,7 +5,7 @@ Korean version: [release-process_ko.md](./release-process_ko.md)
 Roadmap: [roadmap.md](./roadmap.md)
 Public repo operations: [public-repo-ops.md](./public-repo-ops.md)
 
-Official support in v1: Bun `>=1.3` only. Node.js and browser runtimes are not part of the v1 compatibility contract.
+Official support in v1: Bun `>=1.4.2` only. Node.js and browser runtimes are not part of the v1 compatibility contract.
 
 ## Principles
 
@@ -15,6 +15,8 @@ Official support in v1: Bun `>=1.3` only. Node.js and browser runtimes are not p
 - `bunli release` is not part of this repository's release contract
 - Keep `major` bumps disabled during v1 unless a migration path is prepared
 - Do not publish until design-decision gates pass: worth-aware growth, `experience`, session patterns, milestones, perceived progression, and Monte Carlo
+
+The Bun minimum change has a prepared [Bun 1.4.2 and Gunshi migration guide](./bun-14-migration.md). The maintainer approved a `minor` bump for this migration. Review its changeset, migration guide, and release plan before the release PR is approved.
 
 ## Sampo workflow
 

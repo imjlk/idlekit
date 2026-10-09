@@ -18,7 +18,7 @@
 
 필수:
 
-- Bun 1.3+
+- Bun 1.4.2+
 - TypeScript(워크스페이스 dev dependency로 이미 포함)
 
 설치와 기본 검증:
