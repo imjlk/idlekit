@@ -1,5 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { readFileSync } from "fs";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { createRequire } from "module";
 import { resolve } from "path";
 
@@ -35,6 +37,53 @@ function allows(guard: string, event: string, ref: string, publish: boolean): bo
 }
 
 describe("release preparation and publishing", () => {
+  it("preserves dependencies while preparing workspace versions through the actual workflow steps", async () => {
+    const steps = workflow.jobs.prepare.steps;
+    const preservation = steps.findIndex((step) => step.name === "Preserve release dependency resolutions");
+    const release = steps.findIndex((step) => step.with?.command === "release");
+    const refresh = steps.findIndex((step) => step.name === "Refresh workspace lockfile");
+    expect(preservation).toBeGreaterThan(steps.findIndex((step) => step.name === "Install"));
+    expect(preservation).toBeLessThan(release);
+    expect(refresh).toBeGreaterThan(release);
+    const prefix = resolve(tmpdir(), "idlekit-release-wiring-");
+    const fixture = await mkdtemp(prefix);
+    try {
+      await mkdir(resolve(fixture, "tools"));
+      await Bun.write(resolve(fixture, "tools/release-lockfile.ts"), readFileSync(resolve(import.meta.dir, "release-lockfile.ts")));
+      await Bun.write(resolve(fixture, "package.json"), JSON.stringify({ name: "fixture", private: true, workspaces: ["packages/*"] }));
+      for (const pkg of ["money", "core", "cli"]) {
+        await mkdir(resolve(fixture, "packages", pkg), { recursive: true });
+        await Bun.write(resolve(fixture, "packages", pkg, "package.json"), JSON.stringify({ name: `@idlekit/${pkg}`, version: "0.1.1" }));
+      }
+      const bash = process.platform === "win32" ? resolve(process.env.ProgramFiles ?? "C:/Program Files", "Git/bin/bash.exe") : "bash";
+      const execute = (script: string) => {
+        const result = Bun.spawnSync([bash, "--noprofile", "--norc", "-e", "-c", 'bun() { "$BUN_TEST_EXE" "$@"; }\n' + script], {
+          cwd: fixture,
+          env: { ...process.env, RUNNER_TEMP: fixture.replaceAll("\\", "/"), BUN_TEST_EXE: process.execPath.replaceAll("\\", "/") },
+          stdout: "pipe", stderr: "pipe",
+        });
+        if (result.exitCode !== 0) throw new Error(result.stderr.toString() || `Release step exited ${result.exitCode}`);
+      };
+      await execute("bun install --lockfile-only --ignore-scripts");
+      const before = new Uint8Array(await Bun.file(resolve(fixture, "bun.lock")).arrayBuffer());
+      await execute(steps[preservation]!.run!);
+      expect(await Bun.file(resolve(fixture, "bun.lock")).exists()).toBeFalse();
+      expect(new Uint8Array(await Bun.file(resolve(fixture, "idlekit-release.bun.lock")).arrayBuffer())).toEqual(before);
+      // Sampo's version/changelog phase is exercised with the pinned binaries in the release fixture.
+      for (const pkg of ["money", "core", "cli"]) {
+        await Bun.write(resolve(fixture, "packages", pkg, "package.json"), JSON.stringify({ name: `@idlekit/${pkg}`, version: "0.2.0" }));
+      }
+      await execute(steps[refresh]!.run!);
+      type FixtureLock = { packages: unknown; workspaces: Record<string, { version: string }> };
+      const after = Bun.JSONC.parse(await Bun.file(resolve(fixture, "bun.lock")).text()) as FixtureLock;
+      expect(after.packages).toEqual((Bun.JSONC.parse(new TextDecoder().decode(before)) as FixtureLock).packages);
+      for (const pkg of ["money", "core", "cli"]) expect(after.workspaces[`packages/${pkg}`]?.version).toBe("0.2.0");
+    } finally {
+      if (!resolve(fixture).startsWith(prefix)) throw new Error("Unexpected release fixture path");
+      await rm(fixture, { recursive: true, force: true });
+    }
+  });
+
   it("publishes only on an explicit manual request on main", () => {
     const cases = [
       ["push", "refs/heads/main", false, true, false],
