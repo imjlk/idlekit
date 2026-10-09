@@ -16,12 +16,30 @@ describe("comparison Markdown", () => {
     expect(report).toContain("B is preferred on: maxNoRewardGapSec");
     expect(report).toContain("different horizons");
     expect(report).toContain("not an observed milestone time");
-    expect(report).toContain("a\\|scenario.json");
+    expect(report).toContain("a|scenario.json");
+    expect(report).not.toContain("a\\|scenario.json");
     expect(JSON.stringify(rows)).toBe(before);
   });
 
   it("renders missing measurements and decisions as unavailable", () => {
     const report = renderCompareMarkdown({ aPath: "a.json", bPath: "b.json", results: [{ metric: "endMoney" }] });
     expect(report).toContain("| endMoney | n/a | n/a | higher | undetermined |");
+  });
+
+  it("labels reached ETA strings with seconds while retaining unreachable labels", () => {
+    const report = renderCompareMarkdown({ aPath: "a.json", bPath: "b.json", results: [{
+      metric: "etaToTargetWorth", better: "a",
+      measured: { a: { etaToTargetWorth: "120" }, b: { etaToTargetWorth: "unreachable" } },
+    }] });
+    expect(report).toContain("| etaToTargetWorth | 120s | unreachable | lower | A |");
+  });
+
+  it("shows shared insights once without assigning them to unrelated metrics", () => {
+    const insights = { improved: ["A has lower droppedRate (0.0000)"], regressed: ["B has higher droppedRate (0.5000)"] };
+    const report = renderCompareMarkdown({ aPath: "a.json", bPath: "b.json", results: [
+      { metric: "endMoney", insights }, { metric: "endNetWorth", insights }, { metric: "droppedRate", insights },
+    ] });
+    expect(report.match(/A has lower droppedRate/g)).toHaveLength(1);
+    expect(report).not.toContain("endMoney / improved");
   });
 });

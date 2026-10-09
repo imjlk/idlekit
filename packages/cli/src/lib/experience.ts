@@ -377,15 +377,11 @@ export function summarizeExperienceMonteCarlo<N, U extends string, Vars>(args: {
 
 /**
  * Seconds to `key`, or undefined when the run did not reach it.
- * Independent builtin first-action/prestige facts survive sample caps. Other keys require
- * complete coverage, and a truncated legacy log cannot prove the earliest occurrence.
+ * Exact keys can collide with emitted event names, so they require complete coverage.
+ * Independent first-action/prestige summary facts do not identify an exact emitted key.
  */
 export function milestoneTime(report: MilestoneReport, key: string): number | undefined {
   const coverage = report.coverage ?? "complete";
-  const firstTime = key === "prestige.first" ? report.firstPrestigeSec
-    : key === "action.first" ? report.firstActionSec : undefined;
-  // A cap preserves these independent committed facts; a truncated legacy log does not.
-  if (coverage !== "incomplete" && firstTime !== undefined) return firstTime;
   if (coverage !== "complete") {
     throw new Error(
       `time to milestone ${key} needs a complete milestone report; this one is ${coverage}, so the key may be missing or late`,

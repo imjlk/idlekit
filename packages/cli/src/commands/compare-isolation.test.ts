@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { resolve } from "path";
-import { createTempDir, readText, removePath, runCliFailure, runCliJson, writeText } from "../testkit/bun";
+import { createTempDir, readText, removePath, runCli, runCliFailure, runCliJson, writeText } from "../testkit/bun";
 
 const MILESTONE = "action.buy.generator.firstApplied";
 
@@ -144,6 +144,16 @@ describe("compare run isolation", () => {
       expect(aggregate.measured.a[metric]).toBe(aggregate.detail.aScore);
       expect(aggregate.measured.b[metric]).toBe(aggregate.detail.bScore);
     }
+  });
+
+  it("warns about different economy durations in the real Markdown command", async () => {
+    const input = JSON.parse(await readText(scriptedPath));
+    input.clock.durationSec = 20;
+    const longerPath = resolve(dir, "longer.json");
+    await writeText(longerPath, JSON.stringify(input));
+    const report = runCli(["compare", scriptedPath, longerPath, "--bundle", "economy", "--format", "md"]).stdout;
+    expect(report).toContain("different elapsed durations");
+    expect(report).toContain("A: 10s, B: 20s");
   });
 
   it("validates override defaults before invoking the strategy factory", async () => {

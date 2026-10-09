@@ -809,8 +809,29 @@ export default defineCommand({
       },
       pluginDigest: loaded.pluginDigest,
     });
+    const markdownWarnings = new Set<string>();
+    if (selectedMetrics.some((metric) => ["endMoney", "endNetWorth", "droppedRate"].includes(metric))) {
+      const aElapsed = runElapsedSec(ma.run);
+      const bElapsed = runElapsedSec(mb.run);
+      if (aElapsed !== bElapsed) {
+        markdownWarnings.add(`Economy runs cover different elapsed durations (A: ${aElapsed}s, B: ${bElapsed}s); end values are not normalized to a common horizon.`);
+      }
+    }
     const singleResults = selectedMetrics.map((metric) => {
       const design = getDesignPair(metric);
+      if (design) {
+        const aSession = design.a.snapshot.session;
+        const bSession = design.b.snapshot.session;
+        if (aSession.horizonSec !== bSession.horizonSec) {
+          markdownWarnings.add(`Design sessions cover different horizons (A: ${aSession.horizonSec}s, B: ${bSession.horizonSec}s).`);
+        }
+        if (aSession.activeSec !== bSession.activeSec) {
+          markdownWarnings.add(`Design sessions include different active play time (A: ${aSession.activeSec}s, B: ${bSession.activeSec}s).`);
+        }
+        if (aSession.budgetStops > 0 || bSession.budgetStops > 0) {
+          markdownWarnings.add("Active play hit maxSteps in a design measurement; progression rates and waits describe the shortened play time.");
+        }
+      }
       return buildSingleCompareOutput({
         metric,
         E,
@@ -862,6 +883,7 @@ export default defineCommand({
       outPath: flags.out,
       data: flags.format === "md" ? renderCompareMarkdown({
         aPath, bPath, results: singleResults, milestoneKey: effectiveMilestoneKey,
+        warnings: [...markdownWarnings],
       }) : output,
       meta: outputMeta,
     });

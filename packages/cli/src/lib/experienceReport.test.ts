@@ -38,11 +38,24 @@ describe("experience report coverage and interpretation", () => {
     expect(report).toContain("counterfactual");
   });
 
-  it("uses known builtin first times under a cap while refusing unknown keys", () => {
+  it("requires complete coverage for exact keys that can collide with summary facts", () => {
     const milestones = snapshot().milestones;
-    expect(milestoneTime(milestones, "prestige.first")).toBe(8);
-    expect(milestoneTime(milestones, "action.first")).toBe(0);
+    expect(() => milestoneTime(milestones, "prestige.first")).toThrow("complete milestone report");
+    expect(() => milestoneTime(milestones, "action.first")).toThrow("complete milestone report");
     expect(() => milestoneTime(milestones, "custom.key")).toThrow("complete milestone report");
     expect(() => milestoneTime({ ...milestones, coverage: "incomplete" }, "prestige.first")).toThrow("complete milestone report");
+  });
+
+  it("keeps emitted keys distinct from first-action and prestige summary facts", () => {
+    const report = {
+      ...snapshot().milestones,
+      coverage: "complete" as const,
+      milestones: [
+        { key: "action.first", firstSeenT: 3, firstSeenSec: 3, source: "event" as const },
+        { key: "prestige.first", firstSeenT: 5, firstSeenSec: 5, source: "event" as const },
+      ],
+    };
+    expect(milestoneTime(report, "action.first")).toBe(3);
+    expect(milestoneTime(report, "prestige.first")).toBe(5);
   });
 });

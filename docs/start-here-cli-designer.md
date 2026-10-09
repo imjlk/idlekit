@@ -75,8 +75,11 @@ Success condition:
 
 Use `--format md` for the human report. It shows the longest sampled stall and
 softcap windows, milestone coverage, and recorded prestige count/points/multiplier.
-First milestone and builtin action/prestige times remain available when the sample
-cap omits their keys. A custom milestone key still requires complete coverage.
+First milestone and first-action/prestige summary times remain available when the
+sample cap omits their keys. Exact-key comparisons require complete coverage,
+including names that resemble builtin keys, because emitted names can collide with
+summary facts. The comparison report warns about different measured durations,
+session horizons and active-time budgets when they apply.
 The final prestige multiplier is model state; compare a run without prestige under
 the same conditions to estimate its net benefit.
 
