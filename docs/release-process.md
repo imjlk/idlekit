@@ -67,8 +67,10 @@ or OIDC permission.
 
 Publication requires a separate manual Release run on `main` with `publish=true`,
 after the release PR is merged and changesets are consumed. Only that job sets
-up Node/npm, installs the matching Sampo CLI, runs the full publish preflight,
+up Node/npm, installs the matching Sampo CLI, runs `publish:gate` and `readme:smoke`,
 and exposes npm authentication to the explicit `publish` step.
+The dispatch's selected commit is checked out and must still match remote `main`
+before preflight and immediately before publishing. A newer `main` needs a fresh request.
 
 Repository Settings → Actions → General must allow GitHub Actions to create pull
 requests. A `GITHUB_TOKEN`-created PR can require a maintainer to approve its CI

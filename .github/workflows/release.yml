@@ -112,11 +112,21 @@ jobs:
       id-token: write
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout main
+      - name: Checkout selected publish commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: main
+          ref: ${{ github.sha }}
           fetch-depth: 0
+
+      - name: Verify selected main commit
+        shell: bash
+        env:
+          SELECTED_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          [[ "$(git rev-parse HEAD)" == "$SELECTED_SHA" ]]
+          [[ "$(git ls-remote origin refs/heads/main | cut -f1)" == "$SELECTED_SHA" ]]
+          git checkout -B main "$SELECTED_SHA"
 
       - name: Require consumed changesets
         shell: bash
@@ -148,6 +158,15 @@ jobs:
         run: |
           bun run publish:gate
           bun run readme:smoke
+
+      - name: Recheck selected commit before publishing
+        shell: bash
+        env:
+          SELECTED_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          [[ "$(git rev-parse HEAD)" == "$SELECTED_SHA" ]]
+          [[ "$(git ls-remote origin refs/heads/main | cut -f1)" == "$SELECTED_SHA" ]]
 
       - name: Publish merged versions
         uses: bruits/sampo/crates/sampo-github-action@e976f8a2089ffe94ee9bf508c0b6f1df5e0f108e # action 0.19.0, core 0.17.0
