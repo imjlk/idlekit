@@ -19,7 +19,7 @@
     },
     "packages/cli": {
       "name": "@idlekit/cli",
-      "version": "0.1.1",
+      "version": "0.2.0",
       "bin": {
         "idk": "dist/main.js",
       },
@@ -36,7 +36,7 @@
     },
     "packages/core": {
       "name": "@idlekit/core",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "dependencies": {
         "@idlekit/money": "workspace:*",
         "typia": "14.0.6",
@@ -45,7 +45,7 @@
     },
     "packages/money": {
       "name": "@idlekit/money",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "dependencies": {
         "break_infinity.js": "^2.2.0",
       },
