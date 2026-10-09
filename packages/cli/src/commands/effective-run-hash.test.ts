@@ -275,6 +275,13 @@ describe("effectiveRunHash", () => {
         expect(meta(command, ["--fast", "false"]).seed).toBe(plain.seed);
         expect(meta(command, ["--fast", "true"]).seed).not.toBe(plain.seed);
       }
+      const compare = ["compare", fast, fast, "--duration", "10"];
+      const inherited = meta(compare, []);
+      expect(meta(compare, ["--fast", "true"]).seed).toBe(inherited.seed);
+      const disabled = meta(compare, ["--fast", "false"]);
+      expect(disabled.seed).not.toBe(inherited.seed);
+      expect(disabled.runId).not.toBe(inherited.runId);
+      expect(meta(compare, ["--no-fast"]).seed).toBe(disabled.seed);
     } finally {
       await removePath(dir);
     }
