@@ -125,7 +125,9 @@ PR을 자동 머지하거나 패키지를 배포하지 않습니다.
 
 배포는 릴리즈 PR을 머지하고 changeset을 소비한 뒤, `main`에서 Release를
 `publish=true`로 수동 실행해야 합니다. 이 job만 Node/npm과 대응하는 Sampo CLI를
-설치하고 전체 publish preflight를 거쳐 명시적인 `publish` 단계에 인증 정보를 제공합니다.
+설치하고 `publish:gate`와 `readme:smoke`를 거쳐 명시적인 `publish` 단계에 인증 정보를 제공합니다.
+수동 실행에서 선택한 커밋을 checkout하고, preflight 전과 실제 배포 직전에 원격
+`main`과 같은지 확인합니다. `main`이 바뀌면 새로운 수동 실행 요청이 필요합니다.
 
 저장소 Settings → Actions → General에서 GitHub Actions의 PR 생성을 허용해야 합니다.
 `GITHUB_TOKEN`으로 만든 PR의 CI 실행은 관리자의 승인이 필요할 수 있습니다.

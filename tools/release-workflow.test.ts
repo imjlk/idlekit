@@ -73,4 +73,19 @@ describe("release preparation and publishing", () => {
     expect(workflow.jobs.publish.steps.findIndex((step) => step.name === "Require consumed changesets"))
       .toBeLessThan(workflow.jobs.publish.steps.findIndex((step) => step.with?.command === "publish"));
   });
+
+  it("pins publication to the manual request and checks main on both sides of preflight", () => {
+    const steps = workflow.jobs.publish.steps;
+    expect(steps.find((step) => step.uses?.startsWith("actions/checkout@"))?.with?.ref).toBe("${{ github.sha }}");
+    const checks = steps.filter((step) => step.env?.SELECTED_SHA === "${{ github.sha }}");
+    expect(checks).toHaveLength(2);
+    const preflight = steps.findIndex((step) => step.name === "Release preflight");
+    expect(steps.indexOf(checks[0]!)).toBeLessThan(preflight);
+    expect(steps.indexOf(checks[1]!)).toBeGreaterThan(preflight);
+    for (const check of checks) {
+      expect(check.run).toContain('git rev-parse HEAD');
+      expect(check.run).toContain('git ls-remote origin refs/heads/main');
+    }
+    expect(checks[0]?.run).toContain('git checkout -B main "$SELECTED_SHA"');
+  });
 });
