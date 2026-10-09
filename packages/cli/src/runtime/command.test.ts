@@ -4,6 +4,18 @@ import { join } from "path";
 import { createCLI, defineCommand, defineGroup, option } from "./command";
 
 describe("Gunshi command boundary", () => {
+  it("keeps an omitted optional boolean distinct from explicit true and false", async () => {
+    const cli = await createCLI({ name: "test", version: "1" });
+    const values: unknown[] = [];
+    cli.command(defineCommand({ name: "run", description: "test", options: {
+      fast: option(z.coerce.boolean().optional()),
+    }, handler({ flags }) { values.push(flags.fast); } }));
+    for (const args of [[], ["--fast"], ["--fast", "true"], ["--fast=true"], ["--fast", "false"], ["--fast=false"], ["--no-fast"]]) {
+      await cli.run(["run", ...args]);
+    }
+    expect(values).toEqual([undefined, true, true, true, false, false, false]);
+  });
+
   it("preserves explicit false, bare switches, negative numbers, and positional terminators", async () => {
     const cli = await createCLI({ name: "test", version: "1" });
     const calls: unknown[] = [];

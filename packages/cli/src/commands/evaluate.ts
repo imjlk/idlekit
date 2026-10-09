@@ -36,7 +36,7 @@ type EvaluateFlags = PluginOptionFlags &
     strategy?: z.infer<typeof strategySchema>;
     engine?: string;
     "consistent-overrides": boolean;
-    fast: boolean;
+    fast?: boolean;
     step?: number;
     horizons: string;
     "out-dir"?: string;
@@ -109,7 +109,7 @@ export default defineCommand({
     "consistent-overrides": option(z.coerce.boolean().default(false), {
       description: "Also apply step and fast to the experience stage. Default keeps those flags on simulate and ltv.",
     }),
-    fast: option(z.coerce.boolean().default(false), { description: "Enable fast mode for simulate/ltv" }),
+    fast: option(z.coerce.boolean().optional(), { description: "Override fast mode for simulate/ltv (omitted: scenario setting)" }),
     step: option(z.coerce.number().positive().optional(), { description: "Override stepSec for simulate/ltv" }),
     horizons: option(z.string().default("30m,2h,24h,7d,30d,90d"), {
       description: "LTV horizons override",
@@ -269,7 +269,7 @@ export default defineCommand({
         strategy: ltvOpened.scenario.strategy,
         horizonsRaw: flags.horizons,
         step: ltvOpened.plan.stage.applies.step ? flags.step : undefined,
-        fast: ltvOpened.plan.stage.applies.fast ? flags.fast : false,
+        fast: ltvOpened.plan.stage.applies.fast ? flags.fast : undefined,
         seed,
       }),
     };

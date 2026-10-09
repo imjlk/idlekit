@@ -9,6 +9,7 @@ import {
 } from "@idlekit/core";
 import { resolve } from "path";
 import { z } from "zod";
+import { resolveFastMode } from "../lib/fastMode";
 import { loadRegistriesFromFlags, pluginOptions } from "./_shared/plugin";
 import { cliError, scenarioInvalidError, usageError } from "../errors";
 import { buildOutputMeta, deriveDeterministicRunId } from "../io/outputMeta";
@@ -243,7 +244,7 @@ export function runLtvAnalysis(args: {
   strategy: CompiledScenario<number, string, Record<string, unknown>>["strategy"];
   horizonsRaw: string;
   step?: number;
-  fast: boolean;
+  fast?: boolean;
   seed: number;
   draws?: number;
   valuePerWorth?: number;
@@ -251,13 +252,7 @@ export function runLtvAnalysis(args: {
 }): LtvAnalysisResult {
   const horizons = parseHorizons(args.horizonsRaw);
   const stepSec = args.step ?? args.compiled.run.stepSec;
-  const runFast = args.fast
-    ? {
-        enabled: true,
-        kind: "log-domain" as const,
-        disableMoneyEvents: true,
-      }
-    : args.compiled.run.fast;
+  const runFast = resolveFastMode(args.fast, args.compiled.run.fast);
   const monetizationConfig = deriveMonetizationConfig(args.scenario);
   const uncertainEnabled = monetizationConfig.uncertainty.enabled || args.draws !== undefined;
   const draws = args.draws ?? monetizationConfig.uncertainty.draws;
@@ -459,8 +454,8 @@ export default defineCommand({
     engine: option(z.string().min(1).optional(), {
       description: "Execution engine. Default number. scenario.engine is metadata. breakInfinity is explicit. breakEternity is unsupported.",
     }),
-    fast: option(z.coerce.boolean().default(false), {
-      description: "Enable fast(log-domain) mode for long horizons",
+    fast: option(z.coerce.boolean().optional(), {
+      description: "Override fast mode for long horizons (omitted: scenario setting)",
     }),
     seed: option(z.coerce.number().optional(), { description: "Deterministic seed passed to ctx.seed" }),
     "value-per-worth": option(z.coerce.number().nonnegative().optional(), {
