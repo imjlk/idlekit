@@ -14,6 +14,7 @@ These relations are checked only when their condition holds:
 - a declared prestige cooldown fixture resumes from JSON on the same tick grid with the last committed reset anchor, preserving reset timing and the economy snapshot; undeclared fixtures and a missing or non-positive cooldown interval do not apply
 - independent trials are compared by game seed, not by call order
 - event retention and a recording observer do not change the economy snapshot
+- a declared observation-enabled fixture preserves first milestone, action, and committed prestige times when milestone samples are capped, including at a zero cap; the capped and uncapped executions retain the same economy snapshot
 - a JSON state round-trip preserves that snapshot
 - step `1` and `0.5` match for constant income and may differ when a purchase threshold sits between them
 - `bulk(n)` matches repeated single buys only when the fixture declares that equivalence

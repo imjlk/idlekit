@@ -4,7 +4,7 @@ import { compareAmounts } from "./compareAmounts";
 
 /**
  * @evidence docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness Matches finite amounts and refuses a number Infinity collapse.
- * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #f518b31 Re-read the section, then ran this function: 1000 matches across engines and 1e400 is refused on the number engine.
+ * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #bbb39a2 Re-read the section, then ran this function: 1000 matches across engines and 1e400 is refused on the number engine.
  * @evidence ./compareAmounts.ts#compareAmounts The number engine and break-infinity engine agree on 1000, and 1e400 collapses only on the number engine. A negative or non-finite logTolerance is rejected before the status is calculated.
  * @evidenceReview ./compareAmounts.ts#compareAmounts #4cc4f29 Re-read compareAmounts: 1000 matches by absLog10, and 1e400 returns refused-number-collapse because the number engine is not finite. A negative or non-finite logTolerance throws before the status is calculated.
  * @evidence ./compareAmounts.ts#AmountComparison.status Expects equal for 1000, different for 10 versus 11, and refused-number-collapse for 1e400.

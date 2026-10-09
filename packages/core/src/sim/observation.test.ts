@@ -73,7 +73,7 @@ function scenario(args: {
 
 /**
  * @evidence docs/requirements/active/observation-retention.md#req-pr05-observation-retention Compares four retention policies, a fast run, a milestone cap, a trace budget, and a throwing observer.
- * @evidenceReview docs/requirements/active/observation-retention.md#req-pr05-observation-retention #0fabf10 Re-read the section, including the session trace budget sentence and its offline action rows that the session tests cover, the capped-observer sentence and its action-derived keys that the goal and milestone retention tests cover, the shared session cap sentence that the session cap tests in session.test.ts cover, the start-goal sentence that the goal retention test covers, and the tuning sentence that the runCandidateAndScore missing-counter test covers, then ran this function: retention changes the log, not the counters. A disabled observation is missing. A boundary gap is not the max of the pieces.
+ * @evidenceReview docs/requirements/active/observation-retention.md#req-pr05-observation-retention #8088abb Re-read the section, including the session trace budget sentence and its offline action rows that the session tests cover, the capped-observer sentence and its action-derived keys that the goal and milestone retention tests cover, the shared session cap sentence that the session cap tests in session.test.ts cover, the start-goal sentence that the goal retention test covers, and the tuning sentence that the runCandidateAndScore missing-counter test covers, then ran this function: retention changes the log, not the counters. A disabled observation is missing. A boundary gap is not the max of the pieces.
  * @evidence ./observation.ts#observationContract Reads the observation contract and rejects a measured zero for a disabled run.
  * @evidenceReview ./observation.ts#observationContract #7c97372 The declaration is idlekit.run-observation. This test reads that property and expects missing rates to stay null.
  * @evidence ./observation.ts#maxNoRewardGapSec A run with no reward reports the whole 5s span, and each boundary run reports its 8s edge gap.
@@ -81,11 +81,11 @@ function scenario(args: {
  * @evidence ./observation.ts#mergeRewardGaps Joining the two boundary runs gives a 16s interior gap, not the 8s maximum of either piece.
  * @evidenceReview ./observation.ts#mergeRewardGaps #2334887 Re-read mergeRewardGaps and its pair merge: an empty list is missing, a missing part makes the result missing, and two observed parts add the gap between the left last reward and the right first reward. Ran this function: rewards at 2 and 18 merge to interior 16.
  * @evidence ./observation.ts#mergeObservations Two complete runs sum their money counters, a disabled part makes the merge disabled with missing counters, and a legacy part makes it incomplete.
- * @evidenceReview ./observation.ts#mergeObservations #3a013eb Re-read mergeObservations: coverage takes incomplete, then disabled, then partial, money and action counters are summed only when every part is observed and none is a legacy fallback, and goals keep the earliest reached time. Ran this function: two plain runs sum to twice the applied count, plain with disabled is disabled with missing zero counters, and plain with legacy is incomplete and missing.
+ * @evidenceReview ./observation.ts#mergeObservations #1102cb4 Re-read mergeObservations: coverage takes incomplete, then disabled, then partial, money and action counters are summed only when every part is observed and none is a legacy fallback, and goals keep the earliest reached time. Ran this function: two plain runs sum to twice the applied count, plain with disabled is disabled with missing zero counters, and plain with legacy is incomplete and missing. Re-read the new optional first times: merging takes the earliest known anchor, using retained samples for older parts; the session cap tests preserve those times across segment shapes. The legacy merge regression excludes a goal sample named prestige.first at t 1 and preserves the genuine first milestone at 3 and prestige at 8.
  * @evidence ./observation.ts#statsFromObservation Four retention policies report the same applied money and action counts, and a disabled observation reports missing with a null dropped rate.
  * @evidenceReview ./observation.ts#statsFromObservation #d271a75 Re-read statsFromObservation: it passes coverage, money, and action counters from the observation to simStatsFromCounters and does not read events. Ran this function: four retention policies report applied money 6 and actions 6, and the disabled run reports status missing, a null dropped rate, and coverage disabled.
  * @evidence ./observation.ts#createObservationRecorder Counts come from committed steps under every retention policy, a milestone cap marks partial coverage, a goal records its step end, goal.met sees a clone, and an observer throw becomes ObservationError.
- * @evidenceReview ./observation.ts#createObservationRecorder #2d90531 Re-read createObservationRecorder: it rejects a maxMilestones or maxGoals that is not an integer >= 0, recordStep counts observedMoney and action events from each committed step, records prestige.first only when the runner says a prestige action applied, caps milestones and goals separately, counts a milestone key past maxMilestones once, counts a met goal past maxGoals once and leaves it out of goals instead of reporting it unreached, still tells the observer about a capped milestone key or goal once, action-derived firstApplied and first-upgrade keys included, keeps the seen keys, the retained milestone and goal counts, and the dropped goals in a ledger, its own unless the caller passes one, so recorders that share a ledger retain, drop, and notify as one recorder under one cap, recordStart checks the open goals on the start state at its own t, reads each open goal through readGoal, which hands goal.met its own clone and reuses a session goal's answer for the same committed state, wraps observer throws in ObservationError, and finish returns a disabled observation when recording is off. Ran this function: counters match across retention, maxMilestones 1 is partial, goal two is reached at t 2, the goal that writes its argument leaves the wallet at 0, a goal that writes vars does not make the next goal reached, and a throwing onStep throws ObservationError. The prestige milestone test shows a prestige action that only doubles the multiplier gives prestige.first at 1 online and offline, and a custom action that raises prestige.count gives none. The goal and milestone retention tests show maxGoals 0 still reports one at 1 and two at 2 to onGoal, and maxMilestones 0 reports action.buy.firstApplied and progress.first-upgrade at 0 and level-1 at 1 to onMilestone once each. A goal that holds at t 0 is reached at 0, also when until stops the run before any step.
+ * @evidenceReview ./observation.ts#createObservationRecorder #9999b33 Re-read createObservationRecorder: it rejects a maxMilestones or maxGoals that is not an integer >= 0, recordStep counts observedMoney and action events from each committed step, records prestige.first only when the runner says a prestige action applied, caps milestones and goals separately, counts a milestone key past maxMilestones once, counts a met goal past maxGoals once and leaves it out of goals instead of reporting it unreached, still tells the observer about a capped milestone key or goal once, action-derived firstApplied and first-upgrade keys included, keeps the seen keys, the retained milestone and goal counts, and the dropped goals in a ledger, its own unless the caller passes one, so recorders that share a ledger retain, drop, and notify as one recorder under one cap, recordStart checks the open goals on the start state at its own t, reads each open goal through readGoal, which hands goal.met its own clone and reuses a session goal's answer for the same committed state, wraps observer throws in ObservationError, and finish returns a disabled observation when recording is off. Ran this function: counters match across retention, maxMilestones 1 is partial, goal two is reached at t 2, the goal that writes its argument leaves the wallet at 0, a goal that writes vars does not make the next goal reached, and a throwing onStep throws ObservationError. The prestige milestone test shows a prestige action that only doubles the multiplier gives prestige.first at 1 online and offline, and a custom action that raises prestige.count gives none. The goal and milestone retention tests show maxGoals 0 still reports one at 1 and two at 2 to onGoal, and maxMilestones 0 reports action.buy.firstApplied and progress.first-upgrade at 0 and level-1 at 1 to onMilestone once each. A goal that holds at t 0 is reached at 0, also when until stops the run before any step. Re-read the optional first times before sample retention: the many-action regression preserves first prestige at 71 with caps 0, 1, 64 and 100 online and offline.
  * @evidence ./observation.ts#observationFromLegacyEvents An event-only result is incomplete, marked as a legacy fallback, and has a missing reward gap.
  * @evidenceReview ./observation.ts#observationFromLegacyEvents #7b6a96d Re-read observationFromLegacyEvents: it counts money and action events from a retained log and marks the result incomplete, legacyEventFallback true, with a missing reward gap. Ran this function: one applied action gives coverage incomplete, the fallback flag, and a missing reward gap.
  */
@@ -444,6 +444,48 @@ describe("prestige milestone", () => {
     }
   });
 });
+
+describe("first milestone times under retention caps", () => {
+  it("preserves first prestige after more action keys than the default milestone cap", keepsFirstMilestoneTimesIndependentOfRetention);
+});
+
+/**
+ * @evidence docs/requirements/active/observation-retention.md#req-pr05-observation-retention Executes online and offline runs with more action keys than the default cap and compares their first-time summaries.
+ * @evidenceReview docs/requirements/active/observation-retention.md#req-pr05-observation-retention #8088abb Read the independent first-time facts clause and ran caps 0, 1, 64, 100 and the default. First prestige stays at 71, first action and milestone at 0, while samples honor the cap and report partial coverage.
+ * @evidence ./observation.ts#createObservationRecorder Reads first committed facts from real online and offline results with event retention disabled.
+ * @evidenceReview ./observation.ts#createObservationRecorder #9999b33 Read the capture before sample retention and executed the capped runs. More than 64 action keys cannot hide the committed prestige time, including when no milestone sample is retained.
+ */
+export function keepsFirstMilestoneTimesIndependentOfRetention(): void {
+    const base = scenario({ income: 1, durationSec: 72, eventLog: { enabled: false } });
+    const model: Model<number, UnitCode, { owned: number }> = {
+      ...base.model,
+      actions: (_ctx, current) => [{
+        id: current.vars.owned < 70 ? `buy-${current.vars.owned}` : "reset",
+        kind: current.vars.owned < 70 ? "custom" : "prestige",
+        canApply: () => true,
+        cost: () => null,
+        apply: (_ctx, prev) => prev.vars.owned < 70
+          ? { ...prev, vars: { owned: prev.vars.owned + 1 } }
+          : { ...prev, prestige: { ...prev.prestige, multiplier: prev.prestige.multiplier * 2 } },
+      }],
+    };
+    const sc = {
+      ...base,
+      model,
+      strategy: { id: "many-buys-then-reset", decide: (ctx: typeof base.ctx, currentModel: typeof model, current: typeof base.initial) => [{ action: currentModel.actions(ctx, current)[0]! }] },
+    };
+    for (const cap of [undefined, 0, 1, 64, 100]) {
+      const capped = { ...sc, run: { ...sc.run, observation: cap === undefined ? {} : { maxMilestones: cap } } };
+      for (const run of [runScenario(capped), applyOfflineSeconds({ scenario: capped, seconds: 72 })]) {
+        const report = analyzeMilestones({ run });
+        expect(report.firstPrestigeSec).toBe(71);
+        expect(report.firstActionSec).toBe(0);
+        expect(report.firstMilestoneSec).toBe(0);
+        expect(run.observation!.milestones.length).toBeLessThanOrEqual(cap ?? 64);
+        expect(report.coverage).toBe((cap ?? 64) < 73 ? "partial" : "complete");
+      }
+    }
+}
 
 describe("log and observation budgets", () => {
   it("rejects a trace or observation budget that is not an integer >= 0", () => {
