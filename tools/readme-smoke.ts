@@ -1,6 +1,7 @@
 import { $ } from "bun";
 import { resolve } from "path";
 import { ROOT, readText, sha256Hex, withFileLock, writeText } from "./_bun";
+import { parseNpmPackEntries } from "./npm-pack";
 
 type SnippetSpec = Readonly<{
   readmePath: string;
@@ -61,7 +62,7 @@ async function packPackage(pkgDir: string, outDir: string): Promise<string> {
   const absDir = resolve(ROOT, pkgDir);
   return withFileLock(`npm-pack-${pkgDir}`, async () => {
     const raw = await $`npm pack --json --pack-destination ${outDir}`.cwd(absDir).text();
-    const parsed = JSON.parse(raw.match(/(\[\s*{[\s\S]*}\s*\])\s*$/)?.[1] ?? "[]") as Array<{ filename: string }>;
+    const parsed = parseNpmPackEntries(raw);
     const pack = parsed[0];
     if (!pack) throw new Error(`npm pack returned no entries for ${pkgDir}`);
     return resolve(outDir, pack.filename);

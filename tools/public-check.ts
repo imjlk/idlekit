@@ -2,6 +2,7 @@ import { $ } from "bun";
 import { existsSync } from "fs";
 import { dirname, resolve } from "path";
 import { ROOT, ensureDir, withFileLock } from "./_bun";
+import { parseNpmPackEntries } from "./npm-pack";
 
 type PackageManifest = Readonly<{
   name?: string;
@@ -101,7 +102,7 @@ async function packPackage(pkgDir: string, outDir: string): Promise<string> {
   const absDir = resolve(ROOT, pkgDir);
   return withFileLock(`npm-pack-${pkgDir}`, async () => {
     const raw = await $`npm pack --json --pack-destination ${outDir}`.cwd(absDir).text();
-    const parsed = JSON.parse(raw.match(/(\[\s*{[\s\S]*}\s*\])\s*$/)?.[1] ?? "[]") as Array<{ filename: string }>;
+    const parsed = parseNpmPackEntries(raw);
     const filename = parsed[0]?.filename;
     assert(!!filename, `npm pack returned no filename for ${pkgDir}`);
     return resolve(outDir, filename!);

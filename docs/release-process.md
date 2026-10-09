@@ -72,6 +72,13 @@ and exposes npm authentication to the explicit `publish` step.
 The dispatch's selected commit is checked out and must still match remote `main`
 before preflight and immediately before publishing. A newer `main` needs a fresh request.
 
+Sampo selects `bun publish` when `bun.lock` is present. After the final commit check,
+the publish job temporarily moves that lockfile outside the checkout so Sampo selects
+`npm publish` for Trusted Publishing. An `always()` step restores the original bytes
+after either success or failure. Local `release:publish` commands use the same lockfile
+preservation helper; preparation and build/install checks still use the committed lockfile.
+After successful publication, Sampo creates version tags and GitHub releases.
+
 Repository Settings → Actions → General must allow GitHub Actions to create pull
 requests. A `GITHUB_TOKEN`-created PR can require a maintainer to approve its CI
 runs; see [GitHub's workflow trigger documentation](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow#triggering-a-workflow-from-a-workflow).
