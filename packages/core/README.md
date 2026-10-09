@@ -91,6 +91,10 @@ console.log(
 
 ## Runtime
 
+For the duration of an in-memory `runScenario` or `applyOfflineSeconds` result, import `runElapsedSec` from `@idlekit/core` and read `runElapsedSec(run)`. It uses `run.stop.elapsedSec`, the sum of tick seconds. `state.t` is the absolute reward timestamp; at a large starting timestamp, `run.end.t - run.start.t` can round differently. For example, ten 0.1-second ticks starting at `1e15` simulate about one second while the timestamps differ by 1.25 seconds. Results without a stop record fall back to that timestamp difference. A step-budget stop can shorten an individual run before the requested duration; check `run.stop?.reason` or use `assertHorizonReached(run, label)` when the full horizon is required.
+
+For `simulateSessionPattern`, read `summary.elapsedSec` for wall time, `summary.activeSec` for active tick seconds, and `summary.offlineCreditedSec` for offline reward tick seconds. The aggregate `session.run` has no per-run stop record, so `runElapsedSec(session.run)` uses the timestamp fallback. `summary.rewardSec` is also a reward timestamp difference; use the active and offline credited totals when you need simulated tick seconds.
+
 `@idlekit/core` is maintained as a Bun-first ESM package.
 
 ## Documentation

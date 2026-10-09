@@ -208,6 +208,11 @@ bun run --cwd packages/cli dev -- replay verify ../../tmp/sim.artifact.json --fo
 오프라인 보상(catch-up)만 먼저 반영하고 이어서 시뮬레이션하려면 `--offline-seconds`를 사용합니다.
 출력에는 `offline` 요약과 `totalElapsedSec`가 함께 포함됩니다.
 `durationSec`는 온라인 틱 초를, `totalElapsedSec`는 지급된 오프라인 틱 초와 저장된 이전 실행 시간을 포함한 합계를 셉니다. 새 저장 파일은 `meta.totalElapsedSec`를 보존하며, 이 값이 없는 이전 저장 파일은 저장된 구간에 한해 타임스탬프 차이를 사용합니다. 액션 로그의 `elapsedSec`는 액션 직전까지의 틱 초(세션의 앞선 지급 구간 포함)이고 `t`는 절대 시각입니다. LTV의 `timeToFirstUpgradeSec`도 이 경과 시간을 사용하므로 큰 시작 타임스탬프의 반올림 영향을 받지 않습니다.
+
+코어 API의 메모리 내 `runScenario`와 `applyOfflineSeconds` 결과에서는 `@idlekit/core`의 `runElapsedSec`를 가져와 `runElapsedSec(run)`으로 시뮬레이션 시간을 읽습니다. 이 함수는 틱 초의 합인 `run.stop.elapsedSec`를 사용합니다. 시작 `state.t`가 크면 `run.end.t - run.start.t`는 다르게 반올림될 수 있습니다. 예를 들어 `1e15`에서 0.1초 틱을 열 번 실행하면 시뮬레이션 시간은 약 1초이지만 타임스탬프 차이는 1.25초입니다. stop 기록이 없는 결과는 타임스탬프 차이를 사용합니다. `budget` 중단은 실제 실행한 시간만 보고하므로, 계산에 요청한 전체 구간이 필요하면 `assertHorizonReached(run, label)`로 확인합니다.
+
+`simulateSessionPattern` 결과에서는 벽시계 경과 시간은 `summary.elapsedSec`, 활성 플레이의 틱 초는 `summary.activeSec`, 오프라인으로 지급한 틱 초는 `summary.offlineCreditedSec`를 읽습니다. 합쳐진 `session.run`에는 개별 실행의 stop 기록이 없으므로 `runElapsedSec(session.run)`은 타임스탬프 차이를 사용합니다. `summary.rewardSec`도 보상 타임스탬프 차이입니다. 시뮬레이션한 틱 초가 필요하면 활성 시간과 오프라인 지급 시간의 합계를 사용합니다.
+
 또한 `run.id`, `run.seed`, `run.generatedAt`, `summaries.eventLog/offline`가 표준 관측 필드로 포함됩니다.
 JSON 출력에는 `_meta`가 추가되어 `cliVersion/gitSha/scenarioHash`를 함께 기록합니다.
 
