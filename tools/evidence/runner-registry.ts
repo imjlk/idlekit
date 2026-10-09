@@ -20,6 +20,11 @@ import {
   wordBefore,
 } from "./lex";
 import {
+  syntaxAlternatives,
+  syntaxAssignments,
+  type DestructuringAssignment,
+} from "./scope-ranges";
+import {
   aliasAt,
   assignmentAt,
   findBindingEquals,
@@ -90,23 +95,7 @@ function spreadStoresRunner(
   dots: number,
   aliases: readonly RunnerAlias[],
 ): boolean {
-  let operand = skipSpaceAndComments(body, dots + 3);
-  while (body[operand] === "(") operand = skipSpaceAndComments(body, operand + 1);
-  const grouped = body[operand] === "{" || body[operand] === "[";
-  if (grouped) return valueHoldsRunner(body, operand, aliases);
-  const ident = readIdentifier(body, operand);
-  if (!ident) return false;
-  // Spreading a function copies no callable, so `...it` or a local `test` stores no
-  // runner. A bare binding that holds runners as properties, or a runner namespace,
-  // does. `...runners.seeds`, `...runners?.seeds`, and `...make()` spread other data.
-  let after = skipSpaceAndComments(body, ident.end);
-  // `hidden!`, `hidden as Runners`, and `hidden satisfies Runners` still spread `hidden`.
-  if (body[after] === "!") after = skipSpaceAndComments(body, after + 1);
-  const keyword = readIdentifier(body, after);
-  if (keyword?.value === "as" || keyword?.value === "satisfies") return bareRunnerBinding(ident.value, aliases);
-  const bare = after >= body.length || ",}])".includes(body[after] ?? "");
-  if (!bare) return false;
-  return bareRunnerBinding(ident.value, aliases);
+  return valueHoldsRunner(body, dots + 3, aliases, false, true);
 }
 
 function bareRunnerBinding(name: string, aliases: readonly RunnerAlias[]): boolean {
@@ -119,11 +108,29 @@ function valueHoldsRunner(
   body: string,
   at: number,
   aliases: readonly RunnerAlias[],
+  leaf = false,
+  spread = false,
 ): boolean {
-  const cursor = skipSpaceAndComments(body, at);
+  let cursor = skipSpaceAndComments(body, at);
+  const valueAt = cursor;
+  while (body[cursor] === "(") cursor = skipSpaceAndComments(body, cursor + 1);
+  let alternatives = leaf ? undefined : syntaxAlternatives(body, valueAt);
+  if (!leaf && alternatives === undefined && cursor !== valueAt) alternatives = syntaxAlternatives(body, cursor);
+  if (alternatives !== undefined) {
+    return alternatives.some((branch) => {
+      const sameStart = branch === cursor || branch === valueAt;
+      return valueHoldsRunner(body, branch, aliases, sameStart, spread);
+    });
+  }
   if (body[cursor] === "[") return arrayHoldsRunner(body, cursor, aliases);
   if (body[cursor] === "{") return objectHoldsRunner(body, cursor, aliases);
-  return readRunnerRef(body, at, aliases) !== undefined;
+  const references = localRanges(body, "containerReferences");
+  if (references.some(([name, start]) => {
+    if (start !== cursor) return false;
+    const alias = aliasAt(aliases, name);
+    return alias ? !spread && alias.kind !== undefined || bareRunnerBinding(name, aliases) : !spread && isRunnerKind(name);
+  })) return true;
+  return !spread && readRunnerRef(body, at, aliases) !== undefined;
 }
 
 /** `[it]` or `[register]` keeps a runner behind an index call. */
@@ -165,10 +172,16 @@ function objectHoldsRunner(
   if (body[brace] !== "{") return false;
   const close = skipPair(body, brace);
   if (close < 0) return false;
+  const methods = new Map(localRanges(body, "objectMethods").map(([, start, end]) => [start, end]));
   let index = brace + 1;
   while (index < close - 1) {
     index = skipSpaceAndComments(body, index);
     if (index >= close - 1) return false;
+    const methodEnd = methods.get(index);
+    if (methodEnd !== undefined) {
+      index = methodEnd;
+      continue;
+    }
     if (body[index] === ",") {
       index += 1;
       continue;
@@ -259,9 +272,60 @@ function collectRegistrations(
 ): Registration[] {
   const source = lookupSource ?? body;
   const ranges = localRanges(body);
+  const parameters = new Map<number, Array<[string, number, "binding" | "class" | "function" | "import"]>>();
+  const typeAnnotations = new Map<number, number>();
+  const typedBindingEquals = new Set<number>();
+  const enumValues = localRanges(body, "enumValues");
+  const fieldKeys = localRanges(body, "fieldKeys");
+  const callArguments = new Set(localRanges(body, "callArguments").map(([, start]) => start));
+  type PendingAssignment = DestructuringAssignment & { owner?: RunnerAlias; value?: RunnerAlias; holdsRunner?: boolean; captured?: boolean; applied?: boolean };
+  const destructuringStarts = new Map<number, PendingAssignment[]>();
+  const destructuringSources = new Map<number, Array<{ entry: PendingAssignment; restValue?: number }>>();
+  const destructuringUpdates = new Map<number, PendingAssignment[]>();
+  for (const assignment of syntaxAssignments(body)) {
+    const entry: PendingAssignment = assignment;
+    const { at, end } = entry;
+    if (entry.start !== undefined) {
+      const starts = destructuringStarts.get(entry.start) ?? [];
+      starts.push(entry);
+      destructuringStarts.set(entry.start, starts);
+    }
+    const entries = destructuringSources.get(at) ?? [];
+    entries.push({ entry });
+    destructuringSources.set(at, entries);
+    for (const restValue of entry.restValues ?? []) {
+      const values = destructuringSources.get(restValue) ?? [];
+      values.push({ entry, restValue });
+      destructuringSources.set(restValue, values);
+    }
+    const updates = destructuringUpdates.get(end) ?? [];
+    updates.push(entry);
+    destructuringUpdates.set(end, updates);
+  }
+  for (const [, start, end] of localRanges(body, "annotations")) typeAnnotations.set(start, end);
+  for (const mode of [
+    "bindings",
+    "parameters",
+    "classes",
+    "functions",
+    "destructuring",
+    "imports",
+  ] as const) {
+    for (const [name, start, end] of localRanges(body, mode)) {
+      const entries = parameters.get(start) ?? [];
+      let binding: "binding" | "class" | "function" | "import" = "binding";
+      if (mode === "classes") binding = "class";
+      if (mode === "functions") binding = "function";
+      if (mode === "imports") binding = "import";
+      entries.push([name, end, binding]);
+      parameters.set(start, entries);
+    }
+  }
   const found: Registration[] = [];
   const stack: { title: string; depth: number }[] = [];
   const aliases: RunnerAlias[] = [];
+  const ordinaryFunction = (name: string): boolean =>
+    !isRunnerKind(name) && !aliases.some((entry) => entry.name === name && entry.kind !== undefined);
   const rewritten = new Set<string>();
   const reboundSuites = new Set<string>();
   const forParens: number[] = [];
@@ -272,14 +336,96 @@ function collectRegistrations(
   let index = 0;
   let inTemplate = false;
   const templateCloseDepths: number[] = [];
+  const captureDestructuring = (entry: PendingAssignment): RunnerAlias => {
+    const { name, at, evaluation, owner } = entry;
+    const known = evaluation === "value" || evaluation === "default";
+    const ref = known ? readRunnerRef(body, at, aliases) : undefined;
+    const namespace = known && !ref ? readRunnerNamespaceValue(body, at) : undefined;
+    const next: RunnerAlias = {
+      name,
+      kind: ref?.kind,
+      modifiers: ref?.modifiers ?? [],
+      depth: owner?.scopeEnd !== undefined ? owner.depth : depth,
+      scopeEnd: owner?.scopeEnd,
+      objectRunner: evaluation === "rest"
+        ? entry.holdsRunner === true
+        : known && !ref && valueHoldsRunner(body, at, aliases),
+      nonRunner: known && ordinaryFunction(name) && !ref && !namespace && isFunctionValue(body, at),
+    };
+    if (namespace) {
+      next.namespace = true;
+      next.spec = namespace.spec;
+    }
+    return next;
+  };
 
   const pushPending = (): void => {
     if (!pending) return;
     stack.push({ title: pending.title, depth });
     pending = undefined;
   };
+  const applyDestructuring = (update: RunnerAlias): void => {
+    aliases.push(update);
+    if (!locallyBound(ranges, update.name, index)) {
+      rewritten.add(update.name);
+      reboundSuites.add(update.name);
+    }
+  };
 
   while (index < body.length) {
+    for (let cursor = aliases.length - 1; cursor >= 0; cursor -= 1) {
+      const end = aliases[cursor]?.scopeEnd;
+      if (end !== undefined && index >= end) aliases.splice(cursor, 1);
+    }
+    for (const [name, end, binding] of parameters.get(index) ?? []) {
+      const nonRunner = binding === "class" || binding === "function" && ordinaryFunction(name) ||
+        binding === "import" && !isRunnerKind(name);
+      aliases.push({ name, kind: undefined, modifiers: [], depth: -1, scopeEnd: end, nonRunner });
+    }
+    for (const entry of destructuringStarts.get(index) ?? []) {
+      entry.owner = aliasAt(aliases, entry.name);
+      if (entry.evaluation === "default") continue;
+      if (entry.evaluation === "rest") {
+        entry.holdsRunner = entry.restValues?.some((at) => valueHoldsRunner(body, at, aliases));
+      }
+      entry.value = captureDestructuring(entry);
+      entry.captured = true;
+    }
+    for (const { entry, restValue } of destructuringSources.get(index) ?? []) {
+      if (entry.captured) continue;
+      if (entry.start !== undefined && entry.evaluation === "default") {
+        for (const earlier of destructuringUpdates.get(entry.end) ?? []) {
+          if (earlier === entry) break;
+          if (earlier.applied || !earlier.value) continue;
+          applyDestructuring(earlier.value);
+          earlier.applied = true;
+        }
+        entry.owner = aliasAt(aliases, entry.name);
+        entry.value = captureDestructuring(entry);
+        entry.captured = true;
+        continue;
+      }
+      if (restValue !== undefined) {
+        entry.holdsRunner ||= valueHoldsRunner(body, restValue, aliases);
+        continue;
+      }
+      entry.owner = aliasAt(aliases, entry.name);
+      if (entry.evaluation !== "default" && entry.evaluation !== "rest") entry.value = captureDestructuring(entry);
+    }
+    for (const entry of destructuringUpdates.get(index) ?? []) {
+      const deferred = entry.evaluation === "default" || entry.evaluation === "rest";
+      const update = entry.captured || !deferred ? entry.value : captureDestructuring(entry);
+      if (!update) continue;
+      applyDestructuring(update);
+    }
+    if (callArguments.has(index) && !isFunctionValue(body, index) && !readRunnerRef(body, index, aliases) && valueHoldsRunner(body, index, aliases)) {
+      unresolved.push(readIdentifier(body, index)?.value ?? "argument");
+    }
+    const annotationEnd = typeAnnotations.get(index);
+    if (annotationEnd !== undefined) {
+      index = annotationEnd;
+      continue;
+    }
     const char = body[index] ?? "";
     if (inTemplate) {
       if (char === "\\") {
@@ -333,7 +479,9 @@ function collectRegistrations(
     }
     if (char === "}") {
       while (stack.length > 0 && stack[stack.length - 1]?.depth === depth) stack.pop();
-      while (aliases.length > 0 && aliases[aliases.length - 1]?.depth === depth) aliases.pop();
+      for (let cursor = aliases.length - 1; cursor >= 0; cursor -= 1) {
+        if (aliases[cursor]?.depth === depth) aliases.splice(cursor, 1);
+      }
       const closedDepth = depth;
       if (classDepths.at(-1) === closedDepth) classDepths.pop();
       depth = Math.max(0, depth - 1);
@@ -469,6 +617,8 @@ function collectRegistrations(
             break;
           }
           equalsAt = found;
+          typeAnnotations.set(after, found);
+          typedBindingEquals.add(found);
         }
         if (body[equalsAt] !== "=") {
           aliases.push({ name: ident.value, kind: undefined, modifiers: [], depth: bindingDepth });
@@ -491,14 +641,14 @@ function collectRegistrations(
         }
         const ref = readRunnerRef(body, equalsAt + 1, aliases);
         if (!ref && isFunctionValue(body, equalsAt + 1)) {
-          if (isRunnerKind(ident.value)) {
-            aliases.push({
-              name: ident.value,
-              kind: undefined,
-              modifiers: [],
-              depth: bindingDepth,
-            });
-          }
+          aliases.push({
+            name: ident.value,
+            kind: undefined,
+            modifiers: [],
+            depth: bindingDepth,
+            scopeEnd: aliasAt(aliases, ident.value)?.scopeEnd,
+            nonRunner: ordinaryFunction(ident.value),
+          });
           break;
         }
         aliases.push({
@@ -506,6 +656,9 @@ function collectRegistrations(
           kind: ref?.kind,
           modifiers: ref?.modifiers ?? [],
           depth: bindingDepth,
+          objectRunner:
+            !ref &&
+            valueHoldsRunner(body, equalsAt + 1, aliases),
         });
         if (!ref) break;
         bindingAt = skipSpaceAndComments(body, ref.end);
@@ -516,23 +669,44 @@ function collectRegistrations(
       continue;
     }
     const alias = aliasAt(aliases, word.value);
+    let assignmentDepth = forParens.length > 0 ? depth + 1 : depth;
+    if (alias?.scopeEnd !== undefined) assignmentDepth = alias.depth;
     const assigned = assignmentAt(body, word.end);
+    const bindingAssigned = assigned && !fieldKeys.some(([, start, end]) => index >= start && index < end);
+    if (bindingAssigned && !locallyBound(ranges, word.value, index) && !declaratorInitializer(body, index)) {
+      rewritten.add(word.value);
+      reboundSuites.add(word.value);
+    }
+    if (bindingAssigned && assigned.logical) {
+      const retained = assigned.logical !== "&&" && (alias?.objectRunner === true || alias?.kind !== undefined || alias?.namespace === true);
+      aliases.push({
+        name: word.value,
+        kind: undefined,
+        modifiers: [],
+        depth: assignmentDepth,
+        scopeEnd: alias?.scopeEnd,
+        objectRunner: retained || valueHoldsRunner(body, assigned.at + 3, aliases),
+      });
+      index = word.end;
+      continue;
+    }
     const storedRunner =
       assigned?.plain === true &&
-      (objectHoldsRunner(body, assigned.at + 1, aliases) ||
-        arrayHoldsRunner(body, assigned.at + 1, aliases));
+      !readRunnerRef(body, assigned.at + 1, aliases) &&
+      valueHoldsRunner(body, assigned.at + 1, aliases);
     if (storedRunner) {
       aliases.push({
         name: word.value,
         kind: undefined,
         modifiers: [],
-        depth: forParens.length > 0 ? depth + 1 : depth,
+        depth: assignmentDepth,
+        scopeEnd: alias?.scopeEnd,
         objectRunner: true,
       });
       index = word.end;
       continue;
     }
-    if (assigned && alias) {
+    if (bindingAssigned && alias) {
       const ref = assigned.plain ? readRunnerRef(body, assigned.at + 1, aliases) : undefined;
       const namespace =
         !ref && assigned.plain ? readRunnerNamespaceValue(body, assigned.at + 1) : undefined;
@@ -540,7 +714,9 @@ function collectRegistrations(
         name: word.value,
         kind: ref?.kind,
         modifiers: ref?.modifiers ?? [],
-        depth: forParens.length > 0 ? depth + 1 : depth,
+        depth: assignmentDepth,
+        scopeEnd: alias.scopeEnd,
+        nonRunner: ordinaryFunction(word.value) && !ref && !namespace && assigned.plain && isFunctionValue(body, assigned.at + 1),
       };
       if (namespace) {
         next.namespace = true;
@@ -550,7 +726,7 @@ function collectRegistrations(
       index = word.end;
       continue;
     }
-    if (assigned && !locallyBound(ranges, word.value, index)) {
+    if (bindingAssigned && !locallyBound(ranges, word.value, index)) {
       rewritten.add(word.value);
       if (!declaratorInitializer(body, index)) reboundSuites.add(word.value);
     }
@@ -568,7 +744,7 @@ function collectRegistrations(
       const next = skipSpaceAndComments(body, word.end);
       const member =
         body.startsWith("?.", next) || body[next] === "." || body[next] === "[";
-      if (member) unresolved.push(word.value);
+      if (member || passedAsArgument(body, index, next)) unresolved.push(word.value);
     } else if (alias?.namespace) {
       const member = namespaceRunnerMember(body, word.end, alias.spec);
       if (!member) {
@@ -598,7 +774,7 @@ function collectRegistrations(
       kind = word.value;
     }
     if (!kind) {
-      if (alias && titleCallAt(body, word.end)) unresolved.push(word.value);
+      if (alias && !alias.nonRunner && titleCallAt(body, word.end)) unresolved.push(word.value);
       index = word.end;
       continue;
     }
@@ -622,9 +798,11 @@ function collectRegistrations(
       const optional =
         optionalRunnerCall(body, open) || optionalCallAfterGrouping(body, open);
       const forwarded = passedAsArgument(body, index, open);
-      const storedOnProperty = assignedToProperty(body, index);
+      const storedOnProperty =
+        !typedBindingEquals.has(previousCodeIndex(body, index)) && assignedToProperty(body, index);
       const storedOnField = assignedToClassField(body, index, classDepths.at(-1) === depth);
       const returned = returnedFromFunction(body, index);
+      const storedInEnum = enumValues.some(([, start, end]) => index >= start && index < end);
       if (
         isIndirectInvoke(body, index) ||
         closesThenCalls(body, open) ||
@@ -632,6 +810,7 @@ function collectRegistrations(
         forwarded ||
         storedOnProperty ||
         storedOnField ||
+        storedInEnum ||
         returned
       ) {
         unresolved.push(word.value);
@@ -1453,9 +1632,13 @@ function classFieldHoldsRunner(
   inClass: boolean,
   aliases: readonly RunnerAlias[],
 ): boolean {
-  const assigned = assignmentAt(body, nameEnd);
-  if (assigned?.plain !== true) return false;
   if (!isClassField(body, nameStart, inClass)) return false;
+  let cursor = skipSpaceAndComments(body, nameEnd);
+  if (body[cursor] === "?" || body[cursor] === "!") cursor = skipSpaceAndComments(body, cursor + 1);
+  if (body[cursor] === ":") cursor = findBindingEquals(body, cursor + 1);
+  if (cursor < 0) return false;
+  const assigned = assignmentAt(body, cursor);
+  if (assigned?.plain !== true) return false;
   return valueHoldsRunner(body, assigned.at + 1, aliases);
 }
 

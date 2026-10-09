@@ -78,7 +78,7 @@ const base = join(root, "fixtures", "evidence", "base");
 function record(name: string, expected: "zero" | "nonzero", exitCode: number, ok: boolean, detail?: string): void {
   steps.push({ name, expected, exitCode, ok, detail });
   console.error(`${ok ? "ok" : "FAIL"} ${name} exit=${exitCode}`);
-  if (!ok && detail) console.error(detail.slice(0, 2000));
+  if (!ok && detail) console.error(detail.slice(0, 16000));
 }
 
 function expectNonZero(name: string, result: CommandResult, marker: RegExp): void {
@@ -915,7 +915,7 @@ try {
   writeFileSync(
     specifierHelper,
     [
-      "export function register(it) {",
+      "export function register() {",
       '  it("credited", unrelated);',
       "}",
       "// from-typescript-helper",
@@ -932,7 +932,7 @@ try {
   writeFileSync(decoy, "// from-decoy-helper\n");
   writeFileSync(
     mjsHelper,
-    ["export function register(it) {", '  it("mjs-credited", unrelated);', "}"].join("\n"),
+    ["export function register() {", '  it("mjs-credited", unrelated);', "}"].join("\n"),
   );
   writeFileSync(mjsHost, 'import { register } from "./helper.mjs";\nregister(it);\n');
   let specifierDuplicate = false;
@@ -986,7 +986,7 @@ try {
     writeFileSync(
       join(specifierDir, "helper.js"),
       [
-        "export function register(it) {",
+        "export function register() {",
         '  it("other", unrelated);',
         "}",
         "// from-javascript-helper",
@@ -1009,7 +1009,7 @@ try {
     writeFileSync(
       requireHelper,
       [
-        "function register(it) {",
+        "function register() {",
         '  it("credited", unrelated);',
         "}",
         "register(it);",
@@ -1514,7 +1514,7 @@ try {
   const preloadDir = mkdtempSync(join(tmpdir(), "idlekit-evidence-preload-"));
   const setupPath = resolve(preloadDir, "setup.ts");
   const preloadHost = join(preloadDir, "host.test.ts");
-  writeFileSync(setupPath, 'export function wrap(it) {\n  it("credited", unrelated);\n}\n');
+  writeFileSync(setupPath, 'export function wrap() {\n  it("credited", unrelated);\n}\n');
   writeFileSync(preloadHost, 'if (false) it("credited", citedExport);\n');
   let scalarPreload = false;
   let quotedPreload = false;
@@ -2478,7 +2478,7 @@ try {
   writeFileSync(
     aliasHelper,
     [
-      "export function register(it) {",
+      "export function register() {",
       '  it("credited", unrelated);',
       "}",
       "// from-aliased-helper",
@@ -2507,7 +2507,7 @@ try {
   writeFileSync(
     join(workspacePkg, "register.ts"),
     [
-      "export function register(it) {",
+      "export function register() {",
       '  it("credited", unrelated);',
       "}",
       "// from-workspace-helper",
@@ -3301,6 +3301,7 @@ try {
       commentImport,
       relativeTypeSkipped,
       sourceLock,
+      scalarPreload,
       mockModule,
       mockSpaced,
       mockOptional,

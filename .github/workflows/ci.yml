@@ -72,6 +72,9 @@ jobs:
       - name: Evidence smoke
         run: bun run evidence:smoke
 
+      - name: Evidence runner regression tests
+        run: bun test tools/evidence/runner-registry.test.ts
+
       - name: Gunshi Command Check
         run: bun run --cwd packages/cli generate:check
 

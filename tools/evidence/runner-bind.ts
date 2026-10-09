@@ -1,4 +1,5 @@
 import {
+  localRanges,
   readIdentifier,
   readQuoted,
   readStaticTemplate,
@@ -29,6 +30,10 @@ export type RunnerAlias = {
   spec?: string;
   /** `{ it }` or `[it]` stores a runner where member calls bypass the scanner. */
   objectRunner?: boolean;
+  /** End of a function parameter's lexical scope. */
+  scopeEnd?: number;
+  /** A declared class or function shadows a runner but is not an opaque test runner. */
+  nonRunner?: boolean;
 };
 
 export function isRunnerKind(value: string): value is RunnerKind {
@@ -97,9 +102,26 @@ export function readDottedModifiers(body: string, index: number, modifiers: stri
 
 /** `=` that ends a binding type. `=>` and `==` stay inside the type. */
 export function findBindingEquals(body: string, index: number): number {
+  const annotation = localRanges(body, "annotations").find(([, start]) => start === index - 1);
+  if (annotation) {
+    const after = skipSpaceAndComments(body, annotation[2]);
+    return body[after] === "=" ? after : -1;
+  }
   let cursor = index;
   let depth = 0;
+  const endsBefore = (from: number, to: number): boolean => {
+    if (depth !== 0 || !/[\r\n]/.test(body.slice(from, to))) return false;
+    const before = body.slice(index, from).trimEnd();
+    if (!before || /[|&?:]$/.test(before) || /\b(typeof|keyof|readonly|infer)$/.test(before)) return false;
+    const next = readIdentifier(body, to)?.value;
+    return next !== undefined && [
+      "const", "let", "var", "function", "class", "export", "import", "declare",
+    ].includes(next);
+  };
   while (cursor < body.length) {
+    const next = skipSpaceAndComments(body, cursor);
+    if (endsBefore(cursor, next)) return -1;
+    cursor = next;
     const char = body[cursor] ?? "";
     if (char === "'" || char === '"') {
       cursor = skipQuoted(body, cursor);
@@ -119,6 +141,10 @@ export function findBindingEquals(body: string, index: number): number {
     if (char === "/" && body[cursor + 1] === "*") {
       const close = body.indexOf("*/", cursor + 2);
       cursor = close < 0 ? body.length : close + 2;
+      continue;
+    }
+    if (body.startsWith("=>", cursor)) {
+      cursor += 2;
       continue;
     }
     if (char === "(" || char === "{" || char === "[" || char === "<") {
@@ -147,7 +173,7 @@ export function findBindingEquals(body: string, index: number): number {
   return -1;
 }
 
-export function assignmentAt(body: string, index: number): { at: number; plain: boolean } | undefined {
+export function assignmentAt(body: string, index: number): { at: number; plain: boolean; logical?: "&&" | "||" | "??" } | undefined {
   const cursor = skipSpaceAndComments(body, index);
   const operators = [
     ">>>=",
@@ -170,7 +196,11 @@ export function assignmentAt(body: string, index: number): { at: number; plain: 
   for (const op of operators) {
     if (!body.startsWith(op, cursor)) continue;
     if (op === "=" && (body[cursor + 1] === "=" || body[cursor + 1] === ">")) return undefined;
-    return { at: cursor, plain: op === "=" };
+    return {
+      at: cursor,
+      plain: op === "=",
+      logical: op === "&&=" ? "&&" : op === "||=" ? "||" : op === "??=" ? "??" : undefined,
+    };
   }
   return undefined;
 }
@@ -325,10 +355,8 @@ export function readRunnerRef(
   let kind: RunnerKind | undefined;
   let modifiers: string[] = [];
   let afterIdent = ident.end;
-  if (isRunnerKind(ident.value)) {
-    kind = ident.value;
-  } else {
-    const alias = aliasAt(aliases, ident.value);
+  const alias = aliasAt(aliases, ident.value);
+  if (alias) {
     if (alias?.namespace) {
       const member = namespaceRunnerMember(body, ident.end, alias.spec);
       if (!member) return undefined;
@@ -340,7 +368,8 @@ export function readRunnerRef(
     } else {
       return undefined;
     }
-  }
+  } else if (isRunnerKind(ident.value)) kind = ident.value;
+  else return undefined;
   const dotted = readDottedModifiers(body, afterIdent, modifiers);
   if (dotted < 0) return undefined;
   const end = skipTypeOnlySuffix(body, dotted);
