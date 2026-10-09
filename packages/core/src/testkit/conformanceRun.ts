@@ -854,7 +854,7 @@ function isRelationCheck(value: StrategyBracket | RelationCheck): value is Relat
 
 /**
  * @evidence docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness Replays one compiled scenario from the same initial strategy snapshot.
- * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #f518b31 Re-read the section and this function: both runs restore the same strategy snapshot, and the check fails when the economy strings differ. A scenario that already has an emitter does not apply.
+ * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #bbb39a2 Re-read the section and this function: both runs restore the same strategy snapshot, and the check fails when the economy strings differ. A scenario that already has an emitter does not apply.
  */
 export function checkReplay<N, U extends string, Vars>(scenario: CompiledScenario<N, U, Vars>): RelationCheck {
   if (scenario.ctx.emit !== undefined) return skip("scenario already has an emitter");

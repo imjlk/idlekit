@@ -139,6 +139,13 @@
           "args": ["test", "src/testkit/conformance.test.ts"]
         },
         {
+          "file": "packages/core/src/testkit/conformance.test.ts",
+          "exportName": "preservesFirstMilestoneTimesAcrossTheSeedCorpus",
+          "registeredAs": "preserves first milestone times across the seed corpus",
+          "cwd": "packages/core",
+          "args": ["test", "src/testkit/conformance.test.ts"]
+        },
+        {
           "file": "tools/conformance.negative.test.ts",
           "exportName": "runsTheNegativeConformanceRunner",
           "registeredAs": "DX-01 conformance harness > runs the negative conformance runner",
@@ -217,6 +224,13 @@
           "file": "packages/core/src/sim/observation.test.ts",
           "exportName": "keepsStatsIndependentOfRetention",
           "registeredAs": "PR-05 observation retention > keeps stats independent of retention",
+          "cwd": "packages/core",
+          "args": ["test", "src/sim/observation.test.ts"]
+        },
+        {
+          "file": "packages/core/src/sim/observation.test.ts",
+          "exportName": "keepsFirstMilestoneTimesIndependentOfRetention",
+          "registeredAs": "first milestone times under retention caps > preserves first prestige after more action keys than the default milestone cap",
           "cwd": "packages/core",
           "args": ["test", "src/sim/observation.test.ts"]
         }

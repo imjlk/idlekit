@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { analyzeMilestones } from "./milestones";
 import type { RunObservation } from "../observation";
+import { mergeObservations } from "../observation";
 import type { RunResult, SimEvent, TimedSimEvent, SimState } from "../types";
 
 type UnitCode = "COIN";
@@ -62,6 +63,22 @@ describe("analyzeMilestones", () => {
     });
     expect(analyzeMilestones({ run: run(0, 2) }).coverage).toBe("complete");
     expect(analyzeMilestones({ run: run(1, 0) }).coverage).toBe("partial");
+  });
+
+  it("merges older retained samples with newer first-time facts", () => {
+    const older: RunObservation = {
+      contract: "idlekit.run-observation", version: 1, coverage: "complete", legacyEventFallback: false,
+      money: { status: "observed", applied: 0, dropped: 0, queued: 0, flushed: 0, blocked: 0 },
+      actions: { status: "observed", applied: 1, skippedCannotApply: 0, skippedInsufficientFunds: 0, skippedInvalidQuote: 0, skippedCooldown: 0 },
+      rewardGap: { status: "observed", startT: 0, endT: 10, interiorMaxGapSec: 0 },
+      milestones: [{ key: "unlock", firstSeenT: 3, source: "milestone" }, { key: "action.buy.firstApplied", firstSeenT: 5, source: "action" }, { key: "prestige.first", firstSeenT: 8, source: "prestige" }],
+      goals: [], droppedMilestones: 0, droppedGoals: 0,
+    };
+    const newer = { ...older, coverage: "partial" as const, rewardGap: { ...older.rewardGap, startT: 10, endT: 20 }, milestones: [], firstMilestoneT: 12, firstActionT: 12, firstPrestigeT: 18, droppedMilestones: 3 };
+    const observation = mergeObservations([newer, older]);
+    const report = analyzeMilestones({ run: { start: makeState(0), end: makeState(20), events: [], observation } });
+    expect([report.firstMilestoneSec, report.firstActionSec, report.firstPrestigeSec]).toEqual([3, 5, 8]);
+    expect(report.coverage).toBe("partial");
   });
 
   it("marks fallback coverage incomplete when the action log or a prestige trace dropped rows", () => {

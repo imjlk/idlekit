@@ -1262,6 +1262,11 @@ describe("session callbacks and caps across segment shapes", () => {
           dropped: reached.length - keptGoals.size,
         });
         expect(observed.coverage).toBe(kept.length < open.milestones.length || keptGoals.size < reached.length ? "partial" : "complete");
+        expect([observed.firstMilestoneT, observed.firstActionT, observed.firstPrestigeT]).toEqual([
+          open.firstMilestoneT,
+          open.firstActionT,
+          open.firstPrestigeT,
+        ]);
         // Caps change retention only. Stops, state, and notifications are the same.
         expect(out.summary.stop.reason).toBe("until");
         expect(out.end.t).toBe(65);

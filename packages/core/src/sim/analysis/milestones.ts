@@ -63,9 +63,9 @@ export function analyzeMilestones<N, U extends string, Vars>(args: {
     const firstPrestige = milestones.find((x) => x.key === "prestige.first");
     return {
       milestones,
-      firstMilestoneSec: milestones[0]?.firstSeenSec,
-      firstActionSec: firstAction?.firstSeenSec,
-      firstPrestigeSec: firstPrestige?.firstSeenSec,
+      firstMilestoneSec: compact?.firstMilestoneT === undefined ? milestones[0]?.firstSeenSec : Math.max(0, compact.firstMilestoneT - startT),
+      firstActionSec: compact?.firstActionT === undefined ? firstAction?.firstSeenSec : Math.max(0, compact.firstActionT - startT),
+      firstPrestigeSec: compact?.firstPrestigeT === undefined ? firstPrestige?.firstSeenSec : Math.max(0, compact.firstPrestigeT - startT),
       // Milestones and goals have separate caps. Only a dropped milestone makes this report partial.
       coverage: (compact?.droppedMilestones ?? 0) > 0 ? "partial" : "complete",
     };

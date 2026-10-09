@@ -7,7 +7,7 @@ import type { SimEvent, SimState } from "./types";
  * Resolved observation contract. TC-05 has not registered this DTO.
  *
  * @evidence docs/requirements/active/observation-retention.md#req-pr05-observation-retention Counters come from the committed step, not from the retained event log.
- * @evidenceReview docs/requirements/active/observation-retention.md#req-pr05-observation-retention #0fabf10 Re-read the section: retention does not change these counters, a disabled mode is missing rather than zero, a sample cap does not hide a fact from the observer, including an action-derived milestone key, the shared session cap sentence is about the recorder's ledger and simulateSessionPattern, not this name, the start-goal sentence is about the recorder's start hook, not this name, and the tuning sentence is about runCandidateAndScore and pacingBalancedLog10, which read these missing counters.
+ * @evidenceReview docs/requirements/active/observation-retention.md#req-pr05-observation-retention #8088abb Re-read the section: retention does not change these counters, a disabled mode is missing rather than zero, a sample cap does not hide a fact from the observer, including an action-derived milestone key, the shared session cap sentence is about the recorder's ledger and simulateSessionPattern, not this name, the start-goal sentence is about the recorder's start hook, not this name, and the tuning sentence is about runCandidateAndScore and pacingBalancedLog10, which read these missing counters.
  */
 export const observationContract = "idlekit.run-observation" as const;
 
@@ -59,6 +59,10 @@ export type RunObservation = Readonly<{
     skippedCooldown: number;
   }>;
   rewardGap: RewardGapSummary;
+  /** First committed facts, independent of milestone sample retention. Absent on older observations. */
+  firstMilestoneT?: number;
+  firstActionT?: number;
+  firstPrestigeT?: number;
   milestones: readonly MilestoneSample[];
   goals: readonly GoalSample[];
   /** Distinct keys left out by maxMilestones. A merge sums its parts. The segments of one session share one cap. */
@@ -162,6 +166,14 @@ function earlier(samples: readonly MilestoneSample[]): MilestoneSample[] {
   return [...byKey.values()].sort((a, b) => a.firstSeenT - b.firstSeenT || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
 }
 
+function earliestTime(values: readonly (number | undefined)[]): number | undefined {
+  let earliest: number | undefined;
+  for (const value of values) {
+    if (value !== undefined && (earliest === undefined || value < earliest)) earliest = value;
+  }
+  return earliest;
+}
+
 export function mergeObservations(parts: readonly RunObservation[]): RunObservation {
   if (parts.length === 0) {
     return disabledObservation(0, 0);
@@ -176,6 +188,9 @@ export function mergeObservations(parts: readonly RunObservation[]): RunObservat
   const moneyObserved = parts.every((part) => part.money.status === "observed" && !part.legacyEventFallback);
   const actionsObserved = parts.every((part) => part.actions.status === "observed" && !part.legacyEventFallback);
   const goals = new Map<string, GoalSample>();
+  const firstMilestoneT = earliestTime(parts.map((part) => part.firstMilestoneT ?? earliestTime(part.milestones.map((sample) => sample.firstSeenT))));
+  const firstActionT = earliestTime(parts.map((part) => part.firstActionT ?? earliestTime(part.milestones.filter((sample) => sample.source === "action").map((sample) => sample.firstSeenT))));
+  const firstPrestigeT = earliestTime(parts.map((part) => part.firstPrestigeT ?? earliestTime(part.milestones.filter((sample) => sample.key === "prestige.first").map((sample) => sample.firstSeenT))));
   for (const part of parts) {
     for (const goal of part.goals) {
       const prev = goals.get(goal.id);
@@ -202,6 +217,9 @@ export function mergeObservations(parts: readonly RunObservation[]): RunObservat
       skippedCooldown: actionsObserved ? parts.reduce((sum, part) => sum + part.actions.skippedCooldown, 0) : 0,
     },
     rewardGap: mergeRewardGaps(parts.map((part) => part.rewardGap)),
+    ...(firstMilestoneT !== undefined ? { firstMilestoneT } : {}),
+    ...(firstActionT !== undefined ? { firstActionT } : {}),
+    ...(firstPrestigeT !== undefined ? { firstPrestigeT } : {}),
     milestones: earlier(parts.flatMap((part) => part.milestones)),
     goals: [...goals.values()],
     droppedMilestones: parts.reduce((sum, part) => sum + part.droppedMilestones, 0),
@@ -266,10 +284,14 @@ export function createObservationRecorder<N, U extends string, Vars>(args: {
   let firstRewardT: number | undefined;
   let lastRewardT: number | undefined;
   let interiorMaxGapSec = 0;
+  let firstMilestoneT: number | undefined;
+  let firstActionT: number | undefined;
+  let firstPrestigeT: number | undefined;
   const enabled = args.enabled;
 
   const rememberMilestone = (sample: MilestoneSample) => {
     if (!enabled) return;
+    firstMilestoneT = Math.min(firstMilestoneT ?? Infinity, sample.firstSeenT);
     if (ledger.seenMilestones.has(sample.key)) return;
     // A dropped key is seen too, so a recurring key counts once.
     ledger.seenMilestones.add(sample.key);
@@ -339,6 +361,7 @@ export function createObservationRecorder<N, U extends string, Vars>(args: {
       for (const event of step.events) {
         if (event.type === "action.applied") {
           actions.applied += 1;
+          firstActionT = Math.min(firstActionT ?? Infinity, step.t0);
           if (args.observer?.onAction) {
             notify(() => args.observer?.onAction?.({ t: step.t0, actionId: event.actionId, outcome: "applied" }));
           }
@@ -364,6 +387,7 @@ export function createObservationRecorder<N, U extends string, Vars>(args: {
         }
       }
       if (step.prestigeApplied) {
+        firstPrestigeT = Math.min(firstPrestigeT ?? Infinity, step.t1);
         rememberMilestone({ key: "prestige.first", firstSeenT: step.t1, source: "prestige" });
       }
       recordGoals(step.state, step.t1);
@@ -391,6 +415,9 @@ export function createObservationRecorder<N, U extends string, Vars>(args: {
           ...(firstRewardT !== undefined ? { firstRewardT, lastRewardT } : {}),
           interiorMaxGapSec,
         },
+        ...(firstMilestoneT !== undefined ? { firstMilestoneT } : {}),
+        ...(firstActionT !== undefined ? { firstActionT } : {}),
+        ...(firstPrestigeT !== undefined ? { firstPrestigeT } : {}),
         milestones,
         goals,
         droppedMilestones,

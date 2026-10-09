@@ -95,7 +95,7 @@ function graphLookup(dir: string, query: string): { exitCode: number; text: stri
 
 /**
  * @evidence docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness The negative runner checks a missing transform, a deleted citation, and an empty graph.
- * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #f518b31 Re-read the section: those three checks belong to the harness.
+ * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #bbb39a2 Re-read the section: those three checks belong to the harness.
  */
 export function runNegativeConformanceChecks(): void {
   negative();
