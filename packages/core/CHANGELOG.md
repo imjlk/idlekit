@@ -1,19 +1,14 @@
-# @idlekit/cli
+# @idlekit/core
 
 ## 0.2.0 — 2026-10-09
 
 ### Minor changes
 
-- [18f658a](https://github.com/imjlk/idlekit/commit/18f658a1306f03d438efb8e814ba8b539a88a233) Add a reusable typed CSV balance workflow with deterministic pacing and sensitivity checks.
+- [7bbaf97](https://github.com/imjlk/idlekit/commit/7bbaf977429d30a4e93589b6baa5320272b0327d) Route package check and money/core emit through ttsc, and stop treating an unresolved typia generic as a user-input error.
   
-  - `idk balance` validates numeric IDs and units, materializes a scenario, and publishes result CSV/JSON with provenance
-  - atomic generation publication and freshness checks protect against stale or concurrently edited inputs
-  - bounded pacing checks distinguish breaches, unreached milestones, and errors using explicit seeds, strategy, and horizon
-  - optional `exportVariants` publishes a deterministic scenario manifest and executable sensitivity scenarios inside the checked, atomic bundle while preserving the default five outputs
-  - add a tiny public linear example handing exported scenarios to existing simulate, compare, strategy tuning, and offline-session analysis commands
-  - document numeric-only sheet fields, strategy overrides, seed and Monte Carlo boundaries, and the separation between pacing and offline/session horizons
-  - add synthetic contract fixtures and regression coverage without shipping game-specific balance data — Thanks @imjlk!
-- [52cdc04](https://github.com/imjlk/idlekit/commit/52cdc04d1aea2f52747407bc3661b573532dbdb9) Use Gunshi for native command trees, strict options, help/version, four-shell completion, and typo suggestions. Keep Zod validation, report formats, trust controls, and Clack wizards. Replace OpenTUI dashboards with Markdown review aliases and remove Bunli, OpenTUI, React, and image-preview dependencies. Image-mode/protocol flags no longer apply. — Thanks @imjlk!
+  - `typiaStandardSchema()` now throws `TypiaTransformMissingError`. That breaks callers who caught a failed Standard Schema result, so core is a minor bump while the package is still `0.x`: `^0.1.0` does not take `0.2.0`. A v1 major stays off until the release-process migration gates are ready. Callers that still want a failed result use `standardSchemaFromValidate()`.
+  - add `standardSchemaFromValidate()`, `ConcreteQuota`, `validateConcreteQuota`, and `concreteQuotaSchema`
+  - CLI flags and the `#!/usr/bin/env bun` shebang are unchanged — Thanks @imjlk!
 - [9f28ee9](https://github.com/imjlk/idlekit/commit/9f28ee9537eb5d7b8bae0ae0c5e39cad16a16dda) Require Bun >=1.4.2 for all packages. Upgrade the Bun runtime and CI pins before installing this release, or retain an already installed previous package version and lockfile until the runtime can be upgraded. Follow the migration guide at https://github.com/imjlk/idlekit/blob/main/docs/bun-14-migration.md. — Thanks @imjlk!
 - [ba8ad1f](https://github.com/imjlk/idlekit/commit/ba8ad1ff2d644ac9f7b2d99abee13ddd47a5f465) Add a design-decision analysis layer on top of the deterministic economy simulator.
   
@@ -21,27 +16,46 @@
   - add the `idk experience` command for pacing, milestone, and perceived progression evaluation
   - extend compare/report/KPI flows with design-facing metrics such as milestone timing, visible progression rate, and no-reward gaps
   - document `design` and `analysis.experience` scenario fields and update tutorial/template flows around session patterns and experience checks — Thanks @imjlk!
-- [eadc50f](https://github.com/imjlk/idlekit/commit/eadc50fc53ecb25d76e336161c11469b9489eda2) Make experience and comparison Markdown reports easier to use for design decisions.
-  
-  - display capped milestone coverage and retained-independent first times, plus recorded final prestige state
-  - list the longest sampled stall and softcap windows and explain their sampling and active-time budgets
-  - present comparison metrics and opposing strategy preferences in a table, including warnings and unreached scoring penalties
-  - report Monte Carlo visible-progression and reward-gap aggregates consistently with the values used for comparison
-  - keep exact milestone-key comparisons separate from independent first-action/prestige summary facts and require complete key coverage — Thanks @imjlk!
+- [3f7e9b1](https://github.com/imjlk/idlekit/commit/3f7e9b1bae6f6c53a3c1e8f800d14c9c41aad20f) Allow money ticks to return compact counts and applied/flushed amounts without retaining events. Fast simulations and planner previews use these facts to preserve observation counters and reward gaps while avoiding discarded event objects. Reuse each policy's computed precision gap for its threshold check. — Thanks @imjlk!
 
 ### Patch changes
 
 - [cb9b1ef](https://github.com/imjlk/idlekit/commit/cb9b1ef41a4d645e1a01c7e9c8a391ff5d3db39e) Keep report experience sections and tuning design objectives independent of earlier economy runs. Rebuild candidate models and strategies per seed, analysis run, and Monte Carlo draw while preserving the candidate parameters and run overrides. Validate candidate parameters before running and refuse a declared stateful model without a factory source. — Thanks @imjlk!
-- [5ce2b54](https://github.com/imjlk/idlekit/commit/5ce2b54aa9b9495382c495d7ac74e3e5dbaefb6f) Value report timeline net worth from each selected snapshot's holdings, falling back to its current wallet rather than historical peak money. — Thanks @imjlk!
-- [30aa4e2](https://github.com/imjlk/idlekit/commit/30aa4e2609fe19bc0b502c28aafb16954bfe5783) Preserve existing dependency resolutions when preparing package releases. CI and `release:version` now refresh only workspace version metadata, reject other lockfile changes, and verify a frozen install. Dependency upgrades remain separate reviewed changes. — Thanks @imjlk!
-- [b741eb1](https://github.com/imjlk/idlekit/commit/b741eb12909ed15fae5026c82e06f71676a8a4ac) Document how consumers read simulated tick seconds separately from absolute reward timestamps and session wall time, including large-clock rounding and legacy stop-record fallback. Remove superseded OpenTUI/React dependency claims from the pending release notes after the Gunshi migration. — Thanks @imjlk!
-- [7bbaf97](https://github.com/imjlk/idlekit/commit/7bbaf977429d30a4e93589b6baa5320272b0327d) Route package check and money/core emit through ttsc, and stop treating an unresolved typia generic as a user-input error.
+- [10a4370](https://github.com/imjlk/idlekit/commit/10a4370a2ab9b1c624ca666158e3d7147346188d) Keep the planner's first wait, and keep rollout off the live state.
   
-  - `typiaStandardSchema()` now throws `TypiaTransformMissingError`. That breaks callers who caught a failed Standard Schema result, so core is a minor bump while the package is still `0.x`: `^0.1.0` does not take `0.2.0`. A v1 major stays off until the release-process migration gates are ready. Callers that still want a failed result use `standardSchemaFromValidate()`.
-  - add `standardSchemaFromValidate()`, `ConcreteQuota`, `validateConcreteQuota`, and `concreteQuotaSchema`
-  - CLI flags and the `#!/usr/bin/env bun` shebang are unchanged — Thanks @imjlk!
+  - a leading wait stays a wait, so `decide()` returns no action for that step
+  - rollout uses `stepOnce` on a cloned state and does not call the live emitter
+  - `minPrestigeIntervalSec` shares one cooldown decision with the committed step
+  - a missing last reset is unanchored and is not rewritten as a past time
+  - the checkpoint records a committed reset time and omits it for a legacy resume
+  - beam, horizon, branching, and rollout budget are capped
+  - the search report is not a global optimum
+  - `idlekit.prestige-cooldown` and `idlekit.planner-search` are not registered with a contract generator; that waits until TC-05 — Thanks @imjlk!
+- [5ce2b54](https://github.com/imjlk/idlekit/commit/5ce2b54aa9b9495382c495d7ac74e3e5dbaefb6f) Value report timeline net worth from each selected snapshot's holdings, falling back to its current wallet rather than historical peak money. — Thanks @imjlk!
+- [b741eb1](https://github.com/imjlk/idlekit/commit/b741eb12909ed15fae5026c82e06f71676a8a4ac) Document how consumers read simulated tick seconds separately from absolute reward timestamps and session wall time, including large-clock rounding and legacy stop-record fallback. Remove superseded OpenTUI/React dependency claims from the pending release notes after the Gunshi migration. — Thanks @imjlk!
 - [fa0fbd8](https://github.com/imjlk/idlekit/commit/fa0fbd898210cd4cfdc24ceda73947299493d82a) Validate strategy structure, registered ids, explicit parameters, and factory defaults before recommending simulation. Registry-aware scenario validation remains optional and does not construct plugin strategies. — Thanks @imjlk!
-- [b5310ad](https://github.com/imjlk/idlekit/commit/b5310ad42805211a52ccee371e342464ceed30ec) Make `--fast false` and `--no-fast` disable a scenario's fast mode. Omitting the flag preserves the scenario setting; explicit true enables it. Apply the same rule to simulate, ltv, compare, eta, and evaluate, and derive execution hashes and default seeds from the effective mode while preserving evaluate's stage scopes. — Thanks @imjlk!
+- [7a40e57](https://github.com/imjlk/idlekit/commit/7a40e5742db366d485fa771ff4ca22cd6f032361) Keep economy counters independent of event retention and fast money-event omission.
+  
+  - observation counts money facts even when the retained log omits them
+  - `observation.enabled: false` reports missing counters and null rates
+  - session stats merge child observations, including a cross-boundary reward gap
+  - a legacy event fallback stays incomplete and does not present a summed observation
+  - trace and action-row budgets are separate from the event log
+  - milestone and goal caps mark coverage partial
+  - a throwing observer becomes `ObservationError` and is not a successful run
+  - `idlekit.run-observation` is not registered with a contract generator; that waits until TC-05 — Thanks @imjlk!
+- [58b42e4](https://github.com/imjlk/idlekit/commit/58b42e45b28e77602cea6e376908c412ce6cdffa) Start each independent trial from its own model, strategy cursor, and vars.
+  
+  - `createRunFactory` distinguishes fresh, continue, and resume
+  - a fresh Monte Carlo draw restores `snapshotState` or builds a new factory instance
+  - continue keeps the strategy cursor and the same model instance
+  - resume restores the existing strategy snapshot and does not add fields to `SimStateJSON`
+  - `compileScenario` copies `initial.vars` with `deepClonePreservingPrototype`
+  - execution and preview RNG streams are derived from the logical trial id and are not mixed
+  - a stateful closure with no factory and no snapshot hooks throws `RunIsolationError`
+  - deep-cloning a function closure is not isolation
+  - `ExecutionPlan` and `RunCheckpoint` are not registered with a contract generator; that waits until TC-05 — Thanks @imjlk!
+- [548c633](https://github.com/imjlk/idlekit/commit/548c6335a1151071ad464f4e617a8772d58555a2) Preserve first milestone, action, and committed prestige times when observation samples reach their retention cap, including across active and offline session segments. Older observations continue to use their retained samples. — Thanks @imjlk!
 - [372d92a](https://github.com/imjlk/idlekit/commit/372d92a1609c718551da20ba9d7413ba7ad3f74b) Keep evaluate stages on one resolved run plan.
   
   - one compile feeds a fresh simulate, experience, and ltv instance
@@ -55,13 +69,20 @@
   - `simulate` and `evaluate` no longer use the scenario path for the default seed, so a run without `--seed` gets a new seed and matches a copy in another directory
   - the default `evaluate` seed reads only the scenario, strategy, and engine, so a stage-only flag such as `--step` no longer changes the experience seed or digest; `--seed` still reaches every stage
   - `idlekit.resolved-run-configuration` is not registered with a contract generator; that waits until TC-05 — Thanks @imjlk!
-- [60fae65](https://github.com/imjlk/idlekit/commit/60fae6502fc4d47b154453b31df7891d81715204) Keep compare measurements independent when a strategy or model holds mutable state.
+- [4e0acc0](https://github.com/imjlk/idlekit/commit/4e0acc00b10f52db82284ffcdd93f1143f0d12ba) Stop online and offline runs on the economic horizon instead of stepping past it.
   
-  - construct a fresh model and strategy for economy, ETA, and each design measurement
-  - reconstruct plugin models and strategies for every Monte Carlo draw
-  - validate strategy override defaults using the same legacy-raw schema path as scenario strategies — Thanks @imjlk!
-- [07b05fe](https://github.com/imjlk/idlekit/commit/07b05fe306bd163e319fcab8a6068c2750908e5f) Validate the complete CLI test suite and release/toolchain TypeScript on Windows CI. Path assertions now accept Windows absolute paths, directory alias security checks use junctions on Windows, and file symlink tests run when permissions allow them. The large-clock session regression isolates its active ticks so it finishes within the default test timeout; failed Evidence inventory runs now include their test output. — Thanks @imjlk!
-- [8f4fd54](https://github.com/imjlk/idlekit/commit/8f4fd54e8ee10657ac3e049d1cbfd6178ba21a25) Keep linear model costs, bulk income, and inventory value in the selected money engine instead of converting amounts to Number. Large exponential economies remain usable with breakInfinity; Number overflow now produces an error with engine guidance instead of a successful non-finite report. — Thanks @imjlk!
+  - the last tick is `min(stepSec, time still inside duration)`
+  - a duration or `until` that is already true completes before `maxSteps` is treated as a failure
+  - `maxSteps` with a requested horizon returns `stop.reason: "budget"` and keeps the state
+  - `maxSteps` alone still throws; that remains the guard for a loop with no horizon
+  - offline no longer throws away a run whose planned steps exceed `maxSteps`
+  - each tick copies `ctx` and sets `stepSec` to that tick's `dt`
+  - action events are stamped at the start of the tick; money and milestone events are stamped after income
+  - the trace keeps the first state and the final state without duplicating the final point
+  - constant income is the only case treated as exact across different step sizes
+  - runs whose duration was not a multiple of `stepSec` change, because the old overshoot was the bug
+  - `stop` is in-memory only and is not added to the CLI simulate wire schema
+  - `RunStop` is not registered with a contract generator; that waits until TC-05 — Thanks @imjlk!
 - [13d77c9](https://github.com/imjlk/idlekit/commit/13d77c9258b42b93ab68265b30c62019994620b9) Refresh Zod, AJV, YAML, and Bun/Node types. Align the development and CI toolchain with Bun 1.4.2 and Node 26.11.1, update setup-bun and publishing npm, and use Bun executable shims for Windows compiler tooling. Keep the ttsc-compatible typia 14.0.6 pin. — Thanks @imjlk!
 - [6873fba](https://github.com/imjlk/idlekit/commit/6873fba3d0e2fc3e9a5791eab7d65c99b70c6e36) Keep session wall time off the reward clock.
   
@@ -102,13 +123,5 @@
   - affordability uses exact decimal order, including a huge exponent gap, and does not treat `cmp` or a rounded `toNumber` as exact
   - an engine whose text is not a bare decimal settles only when it implements `exactOrder`
   - greedy `maxAffordable` uses that same exact check — Thanks @imjlk!
-- [58b975b](https://github.com/imjlk/idlekit/commit/58b975ba18946109e019a300b21259023a52a40f) Show command help without executing handlers, render Markdown reports as Markdown, identify unwritable output paths, and label evaluate's game asset values separately from modeled LTV per user with conversion and retention guidance. — Thanks @imjlk!
-- Updated dependencies: core@0.2.0
-
-## 0.1.1 — 2026-03-07
-
-### Patch changes
-
-- 4e08060 Standardize v1 CLI governance around canonical template scaffolds, typed error codes,
-  compare/tune insight payloads, and verified onboarding/replay workflows. — Thanks imjlk!
+- Updated dependencies: money@0.2.0
 
