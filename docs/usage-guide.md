@@ -92,6 +92,10 @@ Programmatic candidate scoring may share stateless base models. Pass `model` and
 
 `simulate.durationSec` counts online tick seconds. `totalElapsedSec` also includes credited offline tick seconds and elapsed time retained in a resumed save. New saves preserve this total in `meta.totalElapsedSec`; older saves fall back to their timestamp offset for the saved portion. Action-log `elapsedSec` counts tick seconds before the action (including prior credited session segments), while `t` remains the absolute timestamp. LTV uses that elapsed clock for `timeToFirstUpgradeSec`, so large initial timestamps do not round this KPI.
 
+For in-memory `runScenario` and `applyOfflineSeconds` results, import `runElapsedSec` from `@idlekit/core` and use `runElapsedSec(run)` for simulated duration. It reads `run.stop.elapsedSec`, the sum of tick seconds. At a large initial `state.t`, `run.end.t - run.start.t` can round differently: ten 0.1-second ticks starting at `1e15` simulate about one second but move the timestamp by 1.25 seconds. A result without a stop record falls back to the timestamp difference. A `budget` stop reports only the time actually simulated; use `assertHorizonReached(run, label)` when your calculation requires the requested horizon.
+
+For `simulateSessionPattern`, use `summary.elapsedSec` for wall time, `summary.activeSec` for active tick seconds, and `summary.offlineCreditedSec` for offline reward tick seconds. The aggregate `session.run` has no per-run stop record, so `runElapsedSec(session.run)` uses the timestamp fallback. `summary.rewardSec` is likewise a reward timestamp difference; the active and offline credited totals are the fields to use for simulated tick seconds.
+
 Recommended interactive order:
 
 1. `idk init scenario --wizard`
