@@ -34,6 +34,8 @@ export type ExperienceSnapshot = Readonly<{
   endMoney: string;
   endNetWorth: string;
   endNetWorthLog10: number;
+  /** Recorded model state, not a counterfactual estimate of prestige's benefit. */
+  endPrestige?: Readonly<{ count: number; points: string; multiplier: string }>;
   growth: GrowthReport;
   milestones: MilestoneReport;
   perceived: PerceivedProgressReport;
@@ -276,6 +278,11 @@ export function snapshotFromSession<N, U extends string, Vars>(args: {
     endMoney: args.scenario.ctx.E.toString(args.session.end.wallet.money.amount),
     endNetWorth: args.scenario.ctx.E.toString(endWorth.amount),
     endNetWorthLog10: args.scenario.ctx.E.absLog10(endWorth.amount),
+    endPrestige: {
+      count: args.session.end.prestige.count,
+      points: args.scenario.ctx.E.toString(args.session.end.prestige.points),
+      multiplier: args.scenario.ctx.E.toString(args.session.end.prestige.multiplier),
+    },
     growth,
     milestones,
     perceived,
@@ -370,11 +377,15 @@ export function summarizeExperienceMonteCarlo<N, U extends string, Vars>(args: {
 
 /**
  * Seconds to `key`, or undefined when the run did not reach it.
- * A partial report dropped keys under the sample cap. In a session each block has its own cap, so
- * a key one block dropped can surface later in another. Neither absence nor the time is known then.
+ * Independent builtin first-action/prestige facts survive sample caps. Other keys require
+ * complete coverage, and a truncated legacy log cannot prove the earliest occurrence.
  */
 export function milestoneTime(report: MilestoneReport, key: string): number | undefined {
   const coverage = report.coverage ?? "complete";
+  const firstTime = key === "prestige.first" ? report.firstPrestigeSec
+    : key === "action.first" ? report.firstActionSec : undefined;
+  // A cap preserves these independent committed facts; a truncated legacy log does not.
+  if (coverage !== "incomplete" && firstTime !== undefined) return firstTime;
   if (coverage !== "complete") {
     throw new Error(
       `time to milestone ${key} needs a complete milestone report; this one is ${coverage}, so the key may be missing or late`,
@@ -481,13 +492,28 @@ export function renderExperienceMarkdown(args: {
   monteCarlo?: ExperienceMonteCarloSummary;
 }): string {
   const { snapshot, monteCarlo } = args;
-  const firstMilestone = snapshot.milestones.milestones[0];
+  const seconds = (value: number | undefined, digits = 2) =>
+    value === undefined || !Number.isFinite(value) ? "n/a" : `${formatMetric(value, digits)}s`;
+  const coverage = snapshot.milestones.coverage ?? "complete";
+  const firstTime = coverage === "incomplete" ? undefined
+    : snapshot.milestones.firstMilestoneSec ?? snapshot.milestones.milestones[0]?.firstSeenSec;
+  const firstMilestone = snapshot.milestones.milestones.find((entry) => entry.firstSeenSec === firstTime);
+  const firstLabel = firstTime !== undefined
+    ? `${seconds(firstTime)}${firstMilestone ? ` (\`${firstMilestone.key}\`)` : " (key sample omitted)"}`
+    : coverage === "complete" ? "none observed" : `unknown (${coverage} coverage)`;
+  const firstPrestige = coverage === "incomplete" ? undefined : snapshot.milestones.firstPrestigeSec;
   const milestoneLines =
     snapshot.milestones.milestones.length > 0
       ? snapshot.milestones.milestones
           .slice(0, 8)
-          .map((entry) => `- \`${entry.key}\`: ${formatMetric(entry.firstSeenSec, 0)}s (${entry.source})`)
-      : ["- none observed"];
+          .map((entry) => `- \`${entry.key}\`: ${seconds(entry.firstSeenSec)} (${entry.source}${coverage === "incomplete" ? "; retained log occurrence" : ""})`)
+      : [coverage === "complete" ? "- none observed" : `- No milestone samples retained (${coverage} coverage).`];
+  const slowWindows = snapshot.growth.segments
+    .filter((segment) => segment.regime === "stall" || segment.regime === "softcap");
+  const growthRows = [...slowWindows]
+    .sort((a, b) => (b.tTo - b.tFrom) - (a.tTo - a.tFrom) || a.tFrom - b.tFrom)
+    .slice(0, 8)
+    .map((segment) => `| ${seconds(segment.tFrom)} | ${seconds(segment.tTo)} | ${segment.regime} | ${formatMetric(segment.slope, 6)} |`);
 
   const lines = [
     "# Experience Report",
@@ -511,16 +537,25 @@ export function renderExperienceMarkdown(args: {
     "",
     "## Perceived Progression",
     "",
-    `- First visible change: ${formatMetric(snapshot.perceived.firstVisibleChangeSec, 0)}s`,
+    `- First visible change: ${seconds(snapshot.perceived.firstVisibleChangeSec)}`,
     `- Visible changes / minute: ${formatMetric(snapshot.perceived.visibleChangesPerMinute, 3)}`,
-    `- Longest no-reward gap: ${formatMetric(snapshot.perceived.maxNoRewardGapSec, 0)}s`,
-    `- Avg post-purchase feedback: ${formatMetric(snapshot.perceived.avgPostPurchaseFeedbackSec, 2)}s`,
-    `- P95 post-purchase feedback: ${formatMetric(snapshot.perceived.p95PostPurchaseFeedbackSec, 2)}s`,
+    `- Longest no-reward gap: ${seconds(snapshot.perceived.maxNoRewardGapSec)}`,
+    `- Avg post-purchase feedback: ${seconds(snapshot.perceived.avgPostPurchaseFeedbackSec)}`,
+    `- P95 post-purchase feedback: ${seconds(snapshot.perceived.p95PostPurchaseFeedbackSec)}`,
     "",
     "## Milestones",
     "",
-    `- First milestone: ${firstMilestone ? `\`${firstMilestone.key}\` at ${formatMetric(firstMilestone.firstSeenSec, 0)}s` : "none"}`,
+    `- Milestone coverage: ${coverage}`,
+    `- First milestone: ${firstLabel}`,
     ...milestoneLines,
+    "",
+    "## Measured Prestige",
+    "",
+    `- First prestige: ${firstPrestige === undefined ? (coverage === "complete" ? "not observed" : `unknown (${coverage} coverage)`) : seconds(firstPrestige)}`,
+    `- Final prestige count: ${snapshot.endPrestige?.count ?? "n/a"}`,
+    `- Final prestige points: ${snapshot.endPrestige ? `\`${snapshot.endPrestige.points}\`` : "n/a"}`,
+    `- Final prestige multiplier: ${snapshot.endPrestige ? `\`${snapshot.endPrestige.multiplier}\`` : "n/a"}`,
+    "- These are recorded state and timing. Estimating prestige's net benefit requires a counterfactual run under the same conditions.",
     "",
     "## Growth",
     "",
@@ -529,6 +564,15 @@ export function renderExperienceMarkdown(args: {
     `- Window: ${snapshot.growth.windowSec}s`,
     `- Segments: ${snapshot.growth.segments.length}`,
     `- Bottlenecks: ${snapshot.growth.bottlenecks.length}`,
+    "",
+    "### Longest observed stall and softcap windows",
+    "",
+    ...(growthRows.length ? ["| From | To | Regime | Log10 slope / second |", "| --- | --- | --- | --- |", ...growthRows]
+      : ["- No stall or softcap window classified in the sampled trace."]),
+    ...(slowWindows.length > growthRows.length ? [`- Showing ${growthRows.length} of ${slowWindows.length} classified windows.`] : []),
+    "",
+    `- Classification uses ${snapshot.growth.windowSec}s samples and the \`${snapshot.growth.valueSource}\` series; windows are observations, not a cause diagnosis.`,
+    ...(snapshot.session.budgetStops > 0 ? ["- Active play was cut short by maxSteps; read these windows and progression rates with that time budget in mind."] : []),
   ];
 
   if (monteCarlo) {

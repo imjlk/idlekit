@@ -115,6 +115,37 @@ describe("compare run isolation", () => {
     expect(milestone.measured.b.timeToMilestone).toBe(0);
   });
 
+  it("reports the draw aggregation used for visible progression and reward gaps", async () => {
+    const pluginPath = resolve(dir, "seeded-income.mjs");
+    await writeText(pluginPath, `export const models = [{
+      id: "plugin.seeded-income", version: 1,
+      create: () => ({
+        id: "plugin.seeded-income", version: 1,
+        income: (ctx) => ({ unit: ctx.unit, amount: ctx.E.from(ctx.seed === 1 ? 0 : 1) }),
+        actions: () => [],
+      }),
+    }];`);
+    const input = JSON.parse(await readText(scriptedPath));
+    input.model = { id: "plugin.seeded-income", version: 1 };
+    input.strategy = { id: "greedy" };
+    const path = resolve(dir, "seeded-income.json");
+    await writeText(path, JSON.stringify(input));
+    const base = ["compare", path, path, "--plugin", pluginPath, "--allow-plugin", "true",
+      "--session-pattern", "offline-heavy", "--days", "1", "--seed", "1", "--format", "json"];
+    for (const metric of ["visibleChangesPerMinute", "maxNoRewardGapSec"]) {
+      const single = runCliJson([...base, "--metric", metric, "--draws", "1"]);
+      const aggregate = runCliJson([...base, "--metric", metric, "--draws", "3"]);
+      if (metric === "visibleChangesPerMinute") {
+        expect(single.measured.a[metric]).toBe(0);
+        expect(aggregate.measured.a[metric]).toBeGreaterThan(0);
+      } else {
+        expect(aggregate.measured.a[metric]).toBeLessThan(single.measured.a[metric]);
+      }
+      expect(aggregate.measured.a[metric]).toBe(aggregate.detail.aScore);
+      expect(aggregate.measured.b[metric]).toBe(aggregate.detail.bScore);
+    }
+  });
+
   it("validates override defaults before invoking the strategy factory", async () => {
     // Plugins may replace a builtin id, including one accepted by --strategy.
     const pluginPath = resolve(dir, "invalid-override.mjs");

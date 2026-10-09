@@ -31,6 +31,7 @@ import { buildOutputMeta, deriveDeterministicRunId } from "../io/outputMeta";
 import { writeCommandReplayArtifact } from "../io/replayPolicy";
 import { readScenarioFile } from "../io/readScenario";
 import { writeOutput } from "../io/writeOutput";
+import { renderCompareMarkdown } from "../io/renderCompare";
 
 const strategySchema = z.enum(["greedy", "planner", "scripted"]).optional();
 const compareMetricSchema = z.enum([
@@ -326,9 +327,9 @@ function measuredDesignFields(
     case "timeToMilestone":
       return { timeToMilestone: measured.value };
     case "visibleChangesPerMinute":
-      return { visibleChangesPerMinute: measured.snapshot.perceived.visibleChangesPerMinute };
+      return { visibleChangesPerMinute: measured.value };
     case "maxNoRewardGapSec":
-      return { maxNoRewardGapSec: measured.snapshot.perceived.maxNoRewardGapSec };
+      return { maxNoRewardGapSec: measured.value };
     default:
       return {};
   }
@@ -859,7 +860,9 @@ export default defineCommand({
     await writeOutput({
       format: flags.format,
       outPath: flags.out,
-      data: output,
+      data: flags.format === "md" ? renderCompareMarkdown({
+        aPath, bPath, results: singleResults, milestoneKey: effectiveMilestoneKey,
+      }) : output,
       meta: outputMeta,
     });
   },

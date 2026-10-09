@@ -73,6 +73,18 @@ idk simulate examples/tutorials/11-my-game-v1.json --format json
 
 ## 2. 가장 먼저 바꿀 3개
 
+사람이 읽는 분석에는 `experience ... --format md`를 사용합니다. 가장 긴 표본 기반
+정체/softcap 구간, 마일스톤 관측 범위, 기록된 최종 prestige 횟수·포인트·배율을 보여줍니다.
+샘플 cap으로 키 목록이 생략돼도 알려진 첫 마일스톤과 기본 action/prestige 시점은
+유지됩니다. 사용자 정의 마일스톤 키는 완전한 관측 범위가 필요합니다.
+prestige 배율은 모델의 최종 상태이며, 순효과는 같은 조건에서 prestige 없는 실행과
+비교해 판단해야 합니다.
+
+전략 비교에는 `compare A.json B.json --bundle full --format md`를 사용합니다.
+지표별로 높은 값/낮은 값 중 어느 쪽을 선호하는지와 두 시나리오의 장단점을 표로 보여줍니다.
+Monte Carlo 설계 지표는 비교 판정에 사용한 집계값을 표시합니다. 미도달 마일스톤의
+점수에는 세션 horizon 이후의 페널티가 포함될 수 있으므로 실제 관측 시점과 구분해 읽습니다.
+
 [11-my-game-v1.json](../examples/tutorials/11-my-game-v1.json)에서 아래만 먼저 바꾸면 됩니다.
 
 1. `unit`

@@ -73,6 +73,19 @@ Success condition:
 
 - JSON includes `design.sessionPattern`, `milestones.milestones`, and `perceived.visibleChangesPerMinute`
 
+Use `--format md` for the human report. It shows the longest sampled stall and
+softcap windows, milestone coverage, and recorded prestige count/points/multiplier.
+First milestone and builtin action/prestige times remain available when the sample
+cap omits their keys. A custom milestone key still requires complete coverage.
+The final prestige multiplier is model state; compare a run without prestige under
+the same conditions to estimate its net benefit.
+
+For a strategy comparison, use `compare A.json B.json --bundle full --format md`.
+The table states whether each metric prefers higher or lower values and shows both
+scenarios' tradeoffs. Monte Carlo design values use the aggregation that determines
+the comparison. An unreached milestone's score can be a penalty beyond the session
+horizon, so read it separately from an observed time.
+
 Human review path:
 
 ```bash
