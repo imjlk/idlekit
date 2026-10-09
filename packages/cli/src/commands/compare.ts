@@ -31,6 +31,7 @@ import { buildOutputMeta, deriveDeterministicRunId } from "../io/outputMeta";
 import { writeCommandReplayArtifact } from "../io/replayPolicy";
 import { readScenarioFile } from "../io/readScenario";
 import { writeOutput } from "../io/writeOutput";
+import { renderCompareMarkdown } from "../io/renderCompare";
 
 const strategySchema = z.enum(["greedy", "planner", "scripted"]).optional();
 const compareMetricSchema = z.enum([
@@ -261,7 +262,7 @@ function measureDesignMetric(args: {
   milestoneKey?: string;
 }): Readonly<{
   value: number;
-  snapshot: ReturnType<typeof collectExperienceSnapshot<any, any, any>>["snapshot"];
+  sessions: ReturnType<typeof summarizeComparableExperienceMetric>["sessions"];
 }> {
   const scenario = args.compiled.fresh(`design:${args.metric}`);
   const sessionPattern = resolveSessionPatternSpec({
@@ -274,14 +275,8 @@ function measureDesignMetric(args: {
   const quantiles = resolveExperienceQuantiles(scenario);
   const fallback = sessionPattern.days * 86400 + 1;
 
-  const deterministic = collectExperienceSnapshot({
-    scenario,
-    sessionPattern,
-    seed: scenario.ctx.seed,
-    series,
-  });
-
   if (draws <= 1) {
+    const deterministic = collectExperienceSnapshot({ scenario, sessionPattern, seed: scenario.ctx.seed, series });
     return {
       value:
         comparableExperienceMetric({
@@ -290,7 +285,7 @@ function measureDesignMetric(args: {
           milestoneKey: args.milestoneKey,
           fallbackValue: fallback,
         }) ?? fallback,
-      snapshot: deterministic.snapshot,
+      sessions: [deterministic.snapshot.session],
     };
   }
 
@@ -309,8 +304,29 @@ function measureDesignMetric(args: {
 
   return {
     value: summary.quantiles.q50 ?? summary.mean,
-    snapshot: deterministic.snapshot,
+    sessions: summary.sessions,
   };
+}
+
+function differentTimes(a: number, b: number): boolean {
+  // Match the simulator's stop-check dust scale (timeBoundary.timeEpsilon).
+  return Math.abs(a - b) > Math.max(1e-12, Math.abs(a) * 1e-12, Math.abs(b) * 1e-12);
+}
+
+function timeRange(values: readonly number[]): readonly [number, number] {
+  return values.reduce<readonly [number, number]>(([min, max], value) => [Math.min(min, value), Math.max(max, value)], [Infinity, -Infinity]);
+}
+
+function timeSamplesDiffer(a: readonly number[], b: readonly number[]): boolean {
+  if (a.length === b.length) return a.some((value, index) => differentTimes(value, b[index]!));
+  const aRange = timeRange(a);
+  const bRange = timeRange(b);
+  return differentTimes(aRange[0], bRange[0]) || differentTimes(aRange[1], bRange[1]);
+}
+
+function describeTimes(values: readonly number[]): string {
+  const [min, max] = timeRange(values);
+  return differentTimes(min, max) ? `${min}s–${max}s` : `${min}s`;
 }
 
 function measuredDesignFields(
@@ -326,9 +342,9 @@ function measuredDesignFields(
     case "timeToMilestone":
       return { timeToMilestone: measured.value };
     case "visibleChangesPerMinute":
-      return { visibleChangesPerMinute: measured.snapshot.perceived.visibleChangesPerMinute };
+      return { visibleChangesPerMinute: measured.value };
     case "maxNoRewardGapSec":
-      return { maxNoRewardGapSec: measured.snapshot.perceived.maxNoRewardGapSec };
+      return { maxNoRewardGapSec: measured.value };
     default:
       return {};
   }
@@ -808,8 +824,46 @@ export default defineCommand({
       },
       pluginDigest: loaded.pluginDigest,
     });
+    const markdownWarnings = new Set<string>();
+    if (selectedMetrics.some((metric) => ["endMoney", "endNetWorth", "droppedRate"].includes(metric))) {
+      const aElapsed = runElapsedSec(ma.run);
+      const bElapsed = runElapsedSec(mb.run);
+      if (differentTimes(aElapsed, bElapsed)) {
+        markdownWarnings.add(`Economy runs cover different elapsed durations (A: ${aElapsed}s, B: ${bElapsed}s); end values are not normalized to a common horizon.`);
+      }
+    }
     const singleResults = selectedMetrics.map((metric) => {
       const design = getDesignPair(metric);
+      if (design) {
+        const aSessions = design.a.sessions;
+        const bSessions = design.b.sessions;
+        if (aSessions.length !== bSessions.length) {
+          markdownWarnings.add(`Design measurements use different draw counts (A: ${aSessions.length}, B: ${bSessions.length}).`);
+        }
+        const aHorizons = aSessions.map((session) => session.horizonSec);
+        const bHorizons = bSessions.map((session) => session.horizonSec);
+        if (timeSamplesDiffer(aHorizons, bHorizons)) {
+          markdownWarnings.add(`Measured design sessions cover different horizons (A: ${describeTimes(aHorizons)}, B: ${describeTimes(bHorizons)}).`);
+        }
+        const aActive = aSessions.map((session) => session.activeSec);
+        const bActive = bSessions.map((session) => session.activeSec);
+        if (timeSamplesDiffer(aActive, bActive)) {
+          markdownWarnings.add(`Measured design sessions include different active play time (A: ${describeTimes(aActive)}, B: ${describeTimes(bActive)}).`);
+        }
+        const aReward = aSessions.map((session) => session.rewardSec);
+        const bReward = bSessions.map((session) => session.rewardSec);
+        if (timeSamplesDiffer(aReward, bReward)) {
+          markdownWarnings.add(`Measured design sessions include different rewarded durations (A: ${describeTimes(aReward)}, B: ${describeTimes(bReward)}); milestone times follow the reward clock.`);
+        }
+        const aElapsed = aSessions.map((session) => session.elapsedSec);
+        const bElapsed = bSessions.map((session) => session.elapsedSec);
+        if (timeSamplesDiffer(aElapsed, bElapsed)) {
+          markdownWarnings.add(`Measured design sessions cover different wall elapsed durations (A: ${describeTimes(aElapsed)}, B: ${describeTimes(bElapsed)}).`);
+        }
+        if ([...aSessions, ...bSessions].some((session) => session.budgetStops > 0)) {
+          markdownWarnings.add("Active play hit maxSteps in one or more measured design sessions; progression rates and waits describe the shortened play time.");
+        }
+      }
       return buildSingleCompareOutput({
         metric,
         E,
@@ -859,7 +913,10 @@ export default defineCommand({
     await writeOutput({
       format: flags.format,
       outPath: flags.out,
-      data: output,
+      data: flags.format === "md" ? renderCompareMarkdown({
+        aPath, bPath, results: singleResults, milestoneKey: effectiveMilestoneKey,
+        warnings: [...markdownWarnings],
+      }) : output,
       meta: outputMeta,
     });
   },

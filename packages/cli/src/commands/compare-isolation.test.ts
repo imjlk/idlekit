@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { resolve } from "path";
-import { createTempDir, readText, removePath, runCliFailure, runCliJson, writeText } from "../testkit/bun";
+import { createTempDir, readText, removePath, runCli, runCliFailure, runCliJson, writeText } from "../testkit/bun";
 
 const MILESTONE = "action.buy.generator.firstApplied";
 
@@ -113,6 +113,98 @@ describe("compare run isolation", () => {
     const milestone = output.results.find((result: any) => result.metric === "timeToMilestone");
     expect(milestone.measured.a.timeToMilestone).toBe(0);
     expect(milestone.measured.b.timeToMilestone).toBe(0);
+  });
+
+  it("reports the draw aggregation used for visible progression and reward gaps", async () => {
+    const pluginPath = resolve(dir, "seeded-income.mjs");
+    await writeText(pluginPath, `export const models = [{
+      id: "plugin.seeded-income", version: 1,
+      create: () => ({
+        id: "plugin.seeded-income", version: 1,
+        income: (ctx) => ({ unit: ctx.unit, amount: ctx.E.from(ctx.seed === 1 ? 0 : 1) }),
+        actions: () => [],
+      }),
+    }];`);
+    const input = JSON.parse(await readText(scriptedPath));
+    input.model = { id: "plugin.seeded-income", version: 1 };
+    input.strategy = { id: "greedy" };
+    const path = resolve(dir, "seeded-income.json");
+    await writeText(path, JSON.stringify(input));
+    const base = ["compare", path, path, "--plugin", pluginPath, "--allow-plugin", "true",
+      "--session-pattern", "offline-heavy", "--days", "1", "--seed", "1", "--format", "json"];
+    for (const metric of ["visibleChangesPerMinute", "maxNoRewardGapSec"]) {
+      const single = runCliJson([...base, "--metric", metric, "--draws", "1"]);
+      const aggregate = runCliJson([...base, "--metric", metric, "--draws", "3"]);
+      if (metric === "visibleChangesPerMinute") {
+        expect(single.measured.a[metric]).toBe(0);
+        expect(aggregate.measured.a[metric]).toBeGreaterThan(0);
+      } else {
+        expect(aggregate.measured.a[metric]).toBeLessThan(single.measured.a[metric]);
+      }
+      expect(aggregate.measured.a[metric]).toBe(aggregate.detail.aScore);
+      expect(aggregate.measured.b[metric]).toBe(aggregate.detail.bScore);
+    }
+  });
+
+  it("warns about different economy durations in the real Markdown command", async () => {
+    const input = JSON.parse(await readText(scriptedPath));
+    input.clock.durationSec = 20;
+    const longerPath = resolve(dir, "longer.json");
+    await writeText(longerPath, JSON.stringify(input));
+    const report = runCli(["compare", scriptedPath, longerPath, "--bundle", "economy", "--format", "md"]).stdout;
+    expect(report).toContain("different elapsed durations");
+    expect(report).toContain("A: 10s, B: 20s");
+  });
+
+  it("does not warn about floating-point duration dust", async () => {
+    const input = JSON.parse(await readText(scriptedPath));
+    const paths = [resolve(dir, "step-01.json"), resolve(dir, "step-02.json")];
+    for (const [index, path] of paths.entries()) {
+      await writeText(path, JSON.stringify({ ...input, clock: { stepSec: index === 0 ? 0.1 : 0.2, durationSec: 1 } }));
+    }
+    const report = runCli(["compare", ...paths, "--bundle", "economy", "--format", "md"]).stdout;
+    expect(report).not.toContain("different elapsed durations");
+  });
+
+  it("warns using the Monte Carlo draw sessions rather than the base-seed session", async () => {
+    const pluginPath = resolve(dir, "seeded-warning.mjs");
+    await writeText(pluginPath, `export const models = [true, false].map((seeded) => ({
+      id: seeded ? "plugin.seeded-warning" : "plugin.zero-warning", version: 1,
+      create: () => ({
+        id: seeded ? "plugin.seeded-warning" : "plugin.zero-warning", version: 1,
+        income: (ctx) => ({ unit: ctx.unit, amount: ctx.E.from(seeded && ctx.seed !== 1 ? 1 : 0) }),
+        actions: () => [],
+      }),
+    }));`);
+    const input = JSON.parse(await readText(scriptedPath));
+    input.initial.wallet.amount = "0";
+    input.clock.untilExpr = "money >= 1";
+    input.strategy = { id: "greedy" };
+    const paths = [resolve(dir, "seeded-warning.json"), resolve(dir, "zero-warning.json")];
+    for (const [index, path] of paths.entries()) {
+      await writeText(path, JSON.stringify({ ...input, model: { id: index === 0 ? "plugin.seeded-warning" : "plugin.zero-warning", version: 1 } }));
+    }
+    const report = runCli([
+      "compare", ...paths, "--plugin", pluginPath, "--allow-plugin", "true", "--metric", "maxNoRewardGapSec",
+      "--session-pattern", "offline-heavy", "--days", "1", "--draws", "3", "--seed", "1", "--format", "md",
+    ]).stdout;
+    expect(report).toContain("different active play time");
+    expect(report).toContain("A: 1s, B: 300s");
+  });
+
+  it("warns about different rewarded durations in Monte Carlo milestone comparisons", async () => {
+    const input = JSON.parse(await readText(scriptedPath));
+    const cappedPath = resolve(dir, "offline-capped.json");
+    await writeText(cappedPath, JSON.stringify({ ...input, sim: {
+      ...input.sim, offline: { maxSec: 60, overflowPolicy: "clamp" },
+    } }));
+    const report = runCli([
+      "compare", cappedPath, scriptedPath, "--metric", "timeToMilestone", "--milestone-key", MILESTONE, "--session-pattern", "offline-heavy",
+      "--days", "1", "--draws", "2", "--seed", "1", "--format", "md",
+    ]).stdout;
+    expect(report).toContain("different rewarded durations");
+    expect(report).toContain("A: 360s, B: 86400s");
+    expect(report).toContain("milestone times follow the reward clock");
   });
 
   it("validates override defaults before invoking the strategy factory", async () => {
