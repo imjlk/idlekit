@@ -46,7 +46,7 @@
     "publish:gate": "bun tools/publish-gate.ts",
     "changeset:add": "sampo add",
     "release:plan": "bun tools/sampo-release-plan.ts",
-    "release:version": "SAMPO_RELEASE_BRANCH=main sampo release",
+    "release:version": "bun tools/release-lockfile.ts release",
     "release:publish": "SAMPO_RELEASE_BRANCH=main sampo publish",
     "release:publish:dry-run": "SAMPO_RELEASE_BRANCH=main sampo publish --dry-run",
     "release:publish:preflight": "bun run publish:gate && bun run readme:smoke && bun tools/npm-publish-preflight.ts",

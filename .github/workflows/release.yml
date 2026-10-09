@@ -52,7 +52,16 @@ jobs:
         if: steps.changesets.outputs.pending == 'true'
         run: bun install --frozen-lockfile
 
-      # In the pinned action, release only changes versions/changelogs; auto can publish.
+      # The pinned Sampo core runs bun update when bun.lock exists. Opt out, then restore
+      # the existing resolutions while refreshing only workspace version metadata below.
+      - name: Preserve release dependency resolutions
+        if: steps.changesets.outputs.pending == 'true'
+        shell: bash
+        run: |
+          cp -- bun.lock "$RUNNER_TEMP/idlekit-release.bun.lock"
+          rm -- bun.lock
+
+      # release is nonpublishing; auto can publish.
       - name: Prepare versions and changelogs
         if: steps.changesets.outputs.pending == 'true'
         uses: bruits/sampo/crates/sampo-github-action@e976f8a2089ffe94ee9bf508c0b6f1df5e0f108e # action 0.19.0, core 0.17.0
@@ -63,7 +72,7 @@ jobs:
 
       - name: Refresh workspace lockfile
         if: steps.changesets.outputs.pending == 'true'
-        run: bun install --lockfile-only --ignore-scripts
+        run: bun tools/release-lockfile.ts refresh "$RUNNER_TEMP/idlekit-release.bun.lock"
 
       - name: Create or update release PR
         if: steps.changesets.outputs.pending == 'true'
