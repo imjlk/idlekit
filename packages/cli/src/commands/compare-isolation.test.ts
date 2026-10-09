@@ -156,6 +156,42 @@ describe("compare run isolation", () => {
     expect(report).toContain("A: 10s, B: 20s");
   });
 
+  it("does not warn about floating-point duration dust", async () => {
+    const input = JSON.parse(await readText(scriptedPath));
+    const paths = [resolve(dir, "step-01.json"), resolve(dir, "step-02.json")];
+    for (const [index, path] of paths.entries()) {
+      await writeText(path, JSON.stringify({ ...input, clock: { stepSec: index === 0 ? 0.1 : 0.2, durationSec: 1 } }));
+    }
+    const report = runCli(["compare", ...paths, "--bundle", "economy", "--format", "md"]).stdout;
+    expect(report).not.toContain("different elapsed durations");
+  });
+
+  it("warns using the Monte Carlo draw sessions rather than the base-seed session", async () => {
+    const pluginPath = resolve(dir, "seeded-warning.mjs");
+    await writeText(pluginPath, `export const models = [true, false].map((seeded) => ({
+      id: seeded ? "plugin.seeded-warning" : "plugin.zero-warning", version: 1,
+      create: () => ({
+        id: seeded ? "plugin.seeded-warning" : "plugin.zero-warning", version: 1,
+        income: (ctx) => ({ unit: ctx.unit, amount: ctx.E.from(seeded && ctx.seed !== 1 ? 1 : 0) }),
+        actions: () => [],
+      }),
+    }));`);
+    const input = JSON.parse(await readText(scriptedPath));
+    input.initial.wallet.amount = "0";
+    input.clock.untilExpr = "money >= 1";
+    input.strategy = { id: "greedy" };
+    const paths = [resolve(dir, "seeded-warning.json"), resolve(dir, "zero-warning.json")];
+    for (const [index, path] of paths.entries()) {
+      await writeText(path, JSON.stringify({ ...input, model: { id: index === 0 ? "plugin.seeded-warning" : "plugin.zero-warning", version: 1 } }));
+    }
+    const report = runCli([
+      "compare", ...paths, "--plugin", pluginPath, "--allow-plugin", "true", "--metric", "maxNoRewardGapSec",
+      "--session-pattern", "offline-heavy", "--days", "1", "--draws", "3", "--seed", "1", "--format", "md",
+    ]).stdout;
+    expect(report).toContain("different active play time");
+    expect(report).toContain("A: 1s, B: 300s");
+  });
+
   it("validates override defaults before invoking the strategy factory", async () => {
     // Plugins may replace a builtin id, including one accepted by --strategy.
     const pluginPath = resolve(dir, "invalid-override.mjs");

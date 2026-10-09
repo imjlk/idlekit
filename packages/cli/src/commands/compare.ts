@@ -262,7 +262,7 @@ function measureDesignMetric(args: {
   milestoneKey?: string;
 }): Readonly<{
   value: number;
-  snapshot: ReturnType<typeof collectExperienceSnapshot<any, any, any>>["snapshot"];
+  sessions: ReturnType<typeof summarizeComparableExperienceMetric>["sessions"];
 }> {
   const scenario = args.compiled.fresh(`design:${args.metric}`);
   const sessionPattern = resolveSessionPatternSpec({
@@ -275,14 +275,8 @@ function measureDesignMetric(args: {
   const quantiles = resolveExperienceQuantiles(scenario);
   const fallback = sessionPattern.days * 86400 + 1;
 
-  const deterministic = collectExperienceSnapshot({
-    scenario,
-    sessionPattern,
-    seed: scenario.ctx.seed,
-    series,
-  });
-
   if (draws <= 1) {
+    const deterministic = collectExperienceSnapshot({ scenario, sessionPattern, seed: scenario.ctx.seed, series });
     return {
       value:
         comparableExperienceMetric({
@@ -291,7 +285,7 @@ function measureDesignMetric(args: {
           milestoneKey: args.milestoneKey,
           fallbackValue: fallback,
         }) ?? fallback,
-      snapshot: deterministic.snapshot,
+      sessions: [deterministic.snapshot.session],
     };
   }
 
@@ -310,8 +304,29 @@ function measureDesignMetric(args: {
 
   return {
     value: summary.quantiles.q50 ?? summary.mean,
-    snapshot: deterministic.snapshot,
+    sessions: summary.sessions,
   };
+}
+
+function differentTimes(a: number, b: number): boolean {
+  // Match the simulator's stop-check dust scale (timeBoundary.timeEpsilon).
+  return Math.abs(a - b) > Math.max(1e-12, Math.abs(a) * 1e-12, Math.abs(b) * 1e-12);
+}
+
+function timeRange(values: readonly number[]): readonly [number, number] {
+  return values.reduce<readonly [number, number]>(([min, max], value) => [Math.min(min, value), Math.max(max, value)], [Infinity, -Infinity]);
+}
+
+function timeSamplesDiffer(a: readonly number[], b: readonly number[]): boolean {
+  if (a.length === b.length) return a.some((value, index) => differentTimes(value, b[index]!));
+  const aRange = timeRange(a);
+  const bRange = timeRange(b);
+  return differentTimes(aRange[0], bRange[0]) || differentTimes(aRange[1], bRange[1]);
+}
+
+function describeTimes(values: readonly number[]): string {
+  const [min, max] = timeRange(values);
+  return differentTimes(min, max) ? `${min}s–${max}s` : `${min}s`;
 }
 
 function measuredDesignFields(
@@ -813,23 +828,30 @@ export default defineCommand({
     if (selectedMetrics.some((metric) => ["endMoney", "endNetWorth", "droppedRate"].includes(metric))) {
       const aElapsed = runElapsedSec(ma.run);
       const bElapsed = runElapsedSec(mb.run);
-      if (aElapsed !== bElapsed) {
+      if (differentTimes(aElapsed, bElapsed)) {
         markdownWarnings.add(`Economy runs cover different elapsed durations (A: ${aElapsed}s, B: ${bElapsed}s); end values are not normalized to a common horizon.`);
       }
     }
     const singleResults = selectedMetrics.map((metric) => {
       const design = getDesignPair(metric);
       if (design) {
-        const aSession = design.a.snapshot.session;
-        const bSession = design.b.snapshot.session;
-        if (aSession.horizonSec !== bSession.horizonSec) {
-          markdownWarnings.add(`Design sessions cover different horizons (A: ${aSession.horizonSec}s, B: ${bSession.horizonSec}s).`);
+        const aSessions = design.a.sessions;
+        const bSessions = design.b.sessions;
+        if (aSessions.length !== bSessions.length) {
+          markdownWarnings.add(`Design measurements use different draw counts (A: ${aSessions.length}, B: ${bSessions.length}).`);
         }
-        if (aSession.activeSec !== bSession.activeSec) {
-          markdownWarnings.add(`Design sessions include different active play time (A: ${aSession.activeSec}s, B: ${bSession.activeSec}s).`);
+        const aHorizons = aSessions.map((session) => session.horizonSec);
+        const bHorizons = bSessions.map((session) => session.horizonSec);
+        if (timeSamplesDiffer(aHorizons, bHorizons)) {
+          markdownWarnings.add(`Measured design sessions cover different horizons (A: ${describeTimes(aHorizons)}, B: ${describeTimes(bHorizons)}).`);
         }
-        if (aSession.budgetStops > 0 || bSession.budgetStops > 0) {
-          markdownWarnings.add("Active play hit maxSteps in a design measurement; progression rates and waits describe the shortened play time.");
+        const aActive = aSessions.map((session) => session.activeSec);
+        const bActive = bSessions.map((session) => session.activeSec);
+        if (timeSamplesDiffer(aActive, bActive)) {
+          markdownWarnings.add(`Measured design sessions include different active play time (A: ${describeTimes(aActive)}, B: ${describeTimes(bActive)}).`);
+        }
+        if ([...aSessions, ...bSessions].some((session) => session.budgetStops > 0)) {
+          markdownWarnings.add("Active play hit maxSteps in one or more measured design sessions; progression rates and waits describe the shortened play time.");
         }
       }
       return buildSingleCompareOutput({

@@ -24,6 +24,20 @@ function snapshot(): ExperienceSnapshot {
 }
 
 describe("experience report coverage and interpretation", () => {
+  it("preserves short intervals and distinct adjacent endpoints", () => {
+    const data = snapshot();
+    const from = 1e12;
+    const to = from + 0.001;
+    const report = renderExperienceMarkdown({ scenarioPath: "short.json", mode: "deterministic", snapshot: {
+      ...data, growth: { ...data.growth, segments: [
+        { tFrom: 0.001, tTo: 0.002, regime: "stall", slope: 0 },
+        { tFrom: from, tTo: to, regime: "stall", slope: 0 },
+      ] },
+    } });
+    expect(report).toContain("| 0.001s | 0.002s | stall |");
+    expect(report).toContain(`| ${from}s | ${to}s | stall |`);
+  });
+
   it("shows retained-independent first times and sampled stall windows", () => {
     const data = { ...snapshot(), endPrestige: { count: 1, points: "10", multiplier: "2" } };
     const report = renderExperienceMarkdown({ scenarioPath: "capped.json", mode: "deterministic", snapshot: data });

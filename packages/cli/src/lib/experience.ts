@@ -437,7 +437,9 @@ export function summarizeComparableExperienceMetric<N, U extends string, Vars>(a
   /** Factories and original params that rebuild the model and strategy for every draw. */
   registries?: RunFactoryDeps;
   isolation?: RunBindOptions;
-}): ExperienceNumericSummary {
+}): ExperienceNumericSummary & Readonly<{
+  sessions: readonly Pick<ExperienceSnapshot["session"], "horizonSec" | "activeSec" | "budgetStops">[];
+}> {
   const fallbackValue = args.sessionPattern.days * 86400 + 1;
   const summary = simulateMonteCarlo({
     scenario: args.scenario,
@@ -446,20 +448,23 @@ export function summarizeComparableExperienceMetric<N, U extends string, Vars>(a
     seed: args.seed,
     registries: args.registries,
     isolation: args.isolation,
-    metrics: ({ scenario, session }) =>
-      comparableExperienceMetric({
-        snapshot: snapshotFromSession({
-          scenario,
-          session: session!,
-          series: args.series,
-        }),
-        metric: args.metric,
-        milestoneKey: args.milestoneKey,
-        fallbackValue,
-      }) ?? fallbackValue,
+    metrics: ({ scenario, session }) => {
+      const snapshot = snapshotFromSession({ scenario, session: session!, series: args.series });
+      return {
+        value: comparableExperienceMetric({ snapshot, metric: args.metric, milestoneKey: args.milestoneKey, fallbackValue }) ?? fallbackValue,
+        session: {
+          horizonSec: snapshot.session.horizonSec,
+          activeSec: snapshot.session.activeSec,
+          budgetStops: snapshot.session.budgetStops,
+        },
+      };
+    },
   });
 
-  return summarizeNumeric(summary.results.map((entry) => entry.metrics), args.quantiles);
+  return {
+    ...summarizeNumeric(summary.results.map((entry) => entry.metrics.value), args.quantiles),
+    sessions: summary.results.map((entry) => entry.metrics.session),
+  };
 }
 
 export function resolveSessionPatternId(value: string | undefined): SessionPatternId | undefined {
@@ -488,8 +493,8 @@ export function renderExperienceMarkdown(args: {
   monteCarlo?: ExperienceMonteCarloSummary;
 }): string {
   const { snapshot, monteCarlo } = args;
-  const seconds = (value: number | undefined, digits = 2) =>
-    value === undefined || !Number.isFinite(value) ? "n/a" : `${formatMetric(value, digits)}s`;
+  const seconds = (value: number | undefined) =>
+    value === undefined || !Number.isFinite(value) ? "n/a" : `${Number(value.toPrecision(12))}s`;
   const coverage = snapshot.milestones.coverage ?? "complete";
   const firstTime = coverage === "incomplete" ? undefined
     : snapshot.milestones.firstMilestoneSec ?? snapshot.milestones.milestones[0]?.firstSeenSec;
@@ -509,7 +514,15 @@ export function renderExperienceMarkdown(args: {
   const growthRows = [...slowWindows]
     .sort((a, b) => (b.tTo - b.tFrom) - (a.tTo - a.tFrom) || a.tFrom - b.tFrom)
     .slice(0, 8)
-    .map((segment) => `| ${seconds(segment.tFrom)} | ${seconds(segment.tTo)} | ${segment.regime} | ${formatMetric(segment.slope, 6)} |`);
+    .map((segment) => {
+      let from = seconds(segment.tFrom);
+      let to = seconds(segment.tTo);
+      if (segment.tFrom !== segment.tTo && from === to) {
+        from = `${segment.tFrom}s`;
+        to = `${segment.tTo}s`;
+      }
+      return `| ${from} | ${to} | ${segment.regime} | ${formatMetric(segment.slope, 6)} |`;
+    });
 
   const lines = [
     "# Experience Report",
