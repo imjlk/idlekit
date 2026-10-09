@@ -1,5 +1,6 @@
 import { cpSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync } from "fs";
 import { join, relative, resolve } from "path";
+import type { ReadableStreamDefaultReader, ReadableStreamReadResult } from "stream/web";
 import { createTempDir, sha256Hex, writeText } from "./_bun";
 import { ttsxLauncherPath } from "./compiler-bin";
 import {

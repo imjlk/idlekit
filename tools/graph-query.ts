@@ -1,4 +1,5 @@
 import { join, resolve } from "path";
+import type { ReadableStreamDefaultReader, ReadableStreamReadResult } from "stream/web";
 import { installedCompilerBin, ttsxLauncherPath } from "./compiler-bin";
 
 export const root = resolve(import.meta.dir, "..");
@@ -53,7 +54,7 @@ function asRecord(value: unknown): Record<string, unknown> {
 function resolveSchema(schema: JsonSchema, rootSchema: JsonSchema): JsonSchema {
   if (!schema.$ref) return schema;
   const match = /^#\/\$defs\/(.+)$/.exec(schema.$ref);
-  const target = match ? rootSchema.$defs?.[match[1]] : undefined;
+  const target = match?.[1] ? rootSchema.$defs?.[match[1]] : undefined;
   if (!target) throw new Error(`live schema $ref ${schema.$ref} did not resolve`);
   return target;
 }
@@ -304,7 +305,7 @@ function readWithDeadline(
 
 export class GraphSession {
   readonly cwd: string;
-  private proc: ReturnType<typeof Bun.spawn> | null = null;
+  private proc: Bun.PipedSubprocess | null = null;
   private reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
   private buffer = "";
   // A chunk can end inside a UTF-8 sequence. The tail carries over to the next read.

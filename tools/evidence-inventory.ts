@@ -610,6 +610,13 @@ export async function checkInventory(projectRoot = root): Promise<string[]> {
         env: { ...plainTestEnv(), IDLEKIT_EVIDENCE_LOCK: lock.env },
       });
       exitCode = proc.exitCode ?? 1;
+      if (exitCode !== 0) {
+        fail(failures, [
+          `Inventory test failed in ${first.cwd}: ${first.args.join(" ")}`,
+          proc.stdout.toString().slice(-16000),
+          proc.stderr.toString().slice(-16000),
+        ].filter(Boolean).join("\n"));
+      }
       try {
         output = readFileSync(reportPath, "utf8");
       } catch {

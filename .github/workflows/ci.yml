@@ -156,6 +156,16 @@ jobs:
       - name: Build CLI
         run: bun run --cwd packages/cli build
 
+      - name: Typecheck tools
+        run: bun run typecheck:tools
+
+      - name: Windows CLI tests
+        run: bun run --cwd packages/cli test
+
+      - name: Session clock regression tests
+        working-directory: packages/core
+        run: bun test src/sim/session.test.ts
+
       - name: Public package readiness
         run: bun run public:check
 

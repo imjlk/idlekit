@@ -1,3 +1,5 @@
+export {};
+
 const proc = Bun.spawn([
   "sampo",
   "release",

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { relative, resolve } from "path";
+import { isAbsolute, relative, resolve } from "path";
 import type { ScenarioV1 } from "@idlekit/core";
 import { loadRegistries, parsePluginPaths, parsePluginRoots, parsePluginSecurityOptions, parsePluginSha256 } from "./load";
 import { prepareResolvedRun } from "../lib/runConfiguration";
@@ -18,7 +18,7 @@ describe("plugin load", () => {
   it("parses plugin root paths as absolute paths", () => {
     const roots = parsePluginRoots("./a,./b");
     expect(roots.length).toBe(2);
-    expect(roots.every((x) => x.startsWith("/"))).toBeTrue();
+    expect(roots.every(isAbsolute)).toBeTrue();
   });
 
   it("parses plugin sha256 map", () => {

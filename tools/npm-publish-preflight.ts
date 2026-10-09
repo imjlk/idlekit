@@ -24,7 +24,7 @@ function semverParts(version: string): [number, number, number, string?] {
 function compareSemver(a: string, b: string): number {
   const ap = semverParts(a);
   const bp = semverParts(b);
-  for (let i = 0; i < 3; i++) {
+  for (const i of [0, 1, 2] as const) {
     if (ap[i] !== bp[i]) return ap[i] - bp[i];
   }
   if (ap[3] === bp[3]) return 0;

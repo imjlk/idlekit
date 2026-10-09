@@ -18,7 +18,8 @@
   },
   "scripts": {
     "build": "bun run --cwd packages/money build && bun run --cwd packages/core build && bun run --cwd packages/cli build",
-    "typecheck": "bun run --cwd packages/money typecheck && bun run --cwd packages/core typecheck && bun run --cwd packages/cli typecheck && bun tools/tsconfig-program-check.ts && bun tools/evidence-check.ts && bun tools/format-check.ts",
+    "typecheck": "bun run --cwd packages/money typecheck && bun run --cwd packages/core typecheck && bun run --cwd packages/cli typecheck && bun run typecheck:tools && bun tools/tsconfig-program-check.ts && bun tools/evidence-check.ts && bun tools/format-check.ts",
+    "typecheck:tools": "ttsc -p tsconfig.tools.json --noEmit",
     "evidence:check": "bun tools/evidence-check.ts",
     "evidence:smoke": "bun tools/evidence-smoke.ts",
     "format:check": "bun tools/format-check.ts",
