@@ -132,6 +132,13 @@
           "args": ["test", "src/testkit/conformance.test.ts"]
         },
         {
+          "file": "packages/core/src/testkit/conformance.test.ts",
+          "exportName": "replaysDeclaredCooldownAcrossTheSeedCorpus",
+          "registeredAs": "replays declared prestige cooldown across the seed corpus",
+          "cwd": "packages/core",
+          "args": ["test", "src/testkit/conformance.test.ts"]
+        },
+        {
           "file": "tools/conformance.negative.test.ts",
           "exportName": "runsTheNegativeConformanceRunner",
           "registeredAs": "DX-01 conformance harness > runs the negative conformance runner",

@@ -10,6 +10,7 @@ import type { Strategy } from "../sim/strategy/types";
 import { compareAmounts } from "./compareAmounts";
 import {
   checkBulk,
+  checkCooldownResumeFromJson,
   checkDurationBoundary,
   checkJsonRoundTrip,
   checkNonNegative,
@@ -147,7 +148,7 @@ function thresholdScenario(stepSec: number): CompiledScenario<number, UnitCode, 
 
 /**
  * @evidence docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness Replays the saved shrink-gap counterexample and one constant-income run.
- * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #a195f0e Re-read the section, then ran this function: the gap shrinks to 1 and the constant-income replay matches.
+ * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #f518b31 Re-read the section, then ran this function: the gap shrinks to 1 and the constant-income replay matches.
  * @evidence ./conformance.ts#conformanceGeneratorVersion Reads generator version 1 from the shrink report and from this export.
  * @evidenceReview ./conformance.ts#conformanceGeneratorVersion #80e01c8 The declaration is the number 1. The shrink report stores that same generatorVersion.
  * @evidence ./conformanceRun.ts#checkReplay Replays the constant-income scenario through the harness.
@@ -276,7 +277,7 @@ export function replaysConstantIncomeAndShrinksGap(): void {
 
 /**
  * @evidence docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness A property draw records the test seed and a separate game seed, and a JSON round-trip preserves the economy snapshot.
- * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #a195f0e Re-read the section, then ran this function: every constant-replay case passes checkReplay and checkJsonRoundTrip, and both checks apply.
+ * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #f518b31 Re-read the section, then ran this function: every constant-replay case passes checkReplay and checkJsonRoundTrip, and both checks apply.
  * @evidence ./conformanceRun.ts#expectProperty Runs the constant-replay corpus and expects every case to pass.
  * @evidenceReview ./conformanceRun.ts#expectProperty #46079f1 Runs the constant-replay corpus and expects every case to pass. A bigint or cyclic counterexample still reports the seed, case index, and shrink path.
  * @evidence ./conformanceRun.ts#conformanceCaseCount Uses the harness case count as the corpus size.
@@ -339,7 +340,7 @@ describe("DX-01 conformance harness", () => {
 
 /**
  * @evidence docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness bulk matches repeated single buys only when the fixture declares that equivalence.
- * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #a195f0e Re-read the section: a declared equal total applies, and an undeclared bonus mismatch is skipped.
+ * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #f518b31 Re-read the section: a declared equal total applies, and an undeclared bonus mismatch is skipped.
  * @evidence ./conformanceRun.ts#checkBulk Declared equal totals apply; an undeclared bonus mismatch is skipped.
  * @evidenceReview ./conformanceRun.ts#checkBulk #e513eda Declared equal totals apply; an undeclared bonus mismatch is skipped.
  */
@@ -363,7 +364,7 @@ export function checksBulkEqualityOnlyWhenTheFixtureDeclaresIt(): void {
 
 /**
  * @evidence docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness bulk(n) matches repeated single buys only when the fixture declares that equivalence.
- * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #a195f0e Re-read the section: the seed corpus calls the declared flat-bulk relation, and an undeclared mismatch stays in the other check.
+ * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #f518b31 Re-read the section: the seed corpus calls the declared flat-bulk relation, and an undeclared mismatch stays in the other check.
  * @evidence ./conformance.ts#declaredFlatBulkMatches The seed corpus asks the harness whether one quoted flat bulk buy matches the same number of single buys.
  * @evidenceReview ./conformance.ts#declaredFlatBulkMatches #89115c0 Re-read declaredFlatBulkMatches: one quoted flat bulk buy and the same number of single buys return the same wallet string and buy count. Ran this function across the seed corpus.
  */
@@ -396,13 +397,13 @@ describe("PR-01 bulk equivalence", () => {
 
 /**
  * @evidence docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness The same scenario replays from an on-grid checkpoint, and an off-grid checkpoint does not apply.
- * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #a195f0e Re-read the section: the 0.1 grid resume at 0.2 applies, and the resume at 1.5 does not.
+ * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #f518b31 Re-read the section: the 0.1 grid resume at 0.2 applies, and the resume at 1.5 does not.
  * @evidence ./conformanceRun.ts#checkDurationBoundary A 4s run at step 1, a 0.3s run at step 0.1, and a 0.8s run at step 0.1 apply; an until at t greater than or equal to 3 does not. A maxSteps below the runner's tick count does not apply, and one equal to it does. A timestamp that stepSec cannot advance does not apply.
  * @evidenceReview ./conformanceRun.ts#checkDurationBoundary #5525a5e Re-read the function and runnerTicks: it replays the runner's clock through nextBoundary from the run's own start, skips before the run when maxSteps is not an integer or is below that replayed tick count, since nextBoundary stops on duration before it checks the budget, and skips when t cannot advance by the chosen dt. It snapshots and restores the strategy around the run, then fails unless the run ends at the replayed end time after the whole-step tick count. Ran this function: maxSteps 3 and 6 skip while 4 and 7 apply, the 0.8s run at step 0.1 applies without maxSteps and with maxSteps 8 and skips with 7, and the run at t 1e20 skips as unable to advance.
  * @evidence ./conformanceRun.ts#rejectNonPositiveStep Step 0 is a failing applicable check.
  * @evidenceReview ./conformanceRun.ts#rejectNonPositiveStep #31155b2 Step 0 is a failing applicable check.
  * @evidence ./conformanceRun.ts#checkResume An off-grid resume at 1.5 does not apply; a 0.2 resume on the 0.1 grid does.
- * @evidenceReview ./conformanceRun.ts#checkResume #db56c7a An off-grid resume at 1.5 does not apply; a 0.2 resume on the 0.1 grid does.
+ * @evidenceReview ./conformanceRun.ts#checkResume #9330c4d An off-grid resume at 1.5 does not apply; a 0.2 resume on the 0.1 grid does.
  */
 export function stopsOnAPositiveTickGridAndRefusesANonPositiveStep(): void {
   const scenario = constantScenario({ rate: 2, durationSec: 4, stepSec: 1 });
@@ -508,7 +509,7 @@ export function stopsOnAPositiveTickGridAndRefusesANonPositiveStep(): void {
 
 /**
  * @evidence docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness Step 1 and 0.5 match for constant income and differ when a purchase threshold sits between them.
- * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #a195f0e Re-read the section, then ran this function: constant income matches across those steps and the threshold buy does not.
+ * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #f518b31 Re-read the section, then ran this function: constant income matches across those steps and the threshold buy does not.
  * @evidence ./conformanceRun.ts#economyAfter Runs constant income and the threshold buy at steps 1 and 0.5.
  * @evidenceReview ./conformanceRun.ts#economyAfter #749e95e Runs constant income and the threshold buy at steps 1 and 0.5.
  * @evidence ./conformanceRun.ts#checkSnapshots Constant income matches across those steps; the threshold buy does not.
@@ -538,9 +539,9 @@ describe("PR-02 time boundaries", () => {
 
 /**
  * @evidence docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness The same scripted grant replays, resumes on grid, keeps its economy under retention and a recording observer, and preserves the JSON snapshot.
- * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #a195f0e Re-read the section, then ran this function: replay, resume, JSON resume, retention, and the observer all apply, and buys stays 1.
+ * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #f518b31 Re-read the section, then ran this function: replay, resume, JSON resume, retention, and the observer all apply, and buys stays 1.
  * @evidence ./conformanceRun.ts#checkResumeFromJson Resumes a 4s scripted grant from JSON at t=2.
- * @evidenceReview ./conformanceRun.ts#checkResumeFromJson #91c215a Resumes a 4s scripted grant from JSON at t=2.
+ * @evidenceReview ./conformanceRun.ts#checkResumeFromJson #7cf84ab Resumes a 4s scripted grant from JSON at t=2.
  * @evidence ./conformanceRun.ts#checkRetention Retention applies to the scripted grant. A scenario that already has an emitter does not apply.
  * @evidenceReview ./conformanceRun.ts#checkRetention #264a5d1 Re-read the function: the retained and dropped runs must end with the same economy and the same stats, or the check fails. Retention applies to the scripted grant. A negative eventLog.maxEvents fails before the check substitutes another capacity. A run that retains no events is inapplicable. A scenario that already has an emitter does not apply, so that emitter is left untouched.
  * @evidence ./conformanceRun.ts#checkObserver The observer check applies to the scripted grant. A scenario that already has an emitter does not apply.
@@ -566,9 +567,9 @@ export function replaysOneShotScriptedGrantFromTheSameCursor(): void {
 
 /**
  * @evidence docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness The checkpoint replay applies only when that checkpoint is inside the run.
- * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #a195f0e Re-read the section: a checkpoint at t=5 does not apply when until stops at t=3, and the skipped check stays ok.
+ * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #f518b31 Re-read the section: a checkpoint at t=5 does not apply when until stops at t=3, and the skipped check stays ok.
  * @evidence ./conformanceRun.ts#checkResume A checkpoint at t=5 does not apply when until stops at t=3. A checkpoint where until is already true does not apply.
- * @evidenceReview ./conformanceRun.ts#checkResume #db56c7a A checkpoint at t=5 does not apply when until stops at t=3. A checkpoint where until is already true does not apply.
+ * @evidenceReview ./conformanceRun.ts#checkResume #9330c4d A checkpoint at t=5 does not apply when until stops at t=3. A checkpoint where until is already true does not apply.
  * @evidence ./conformanceRun.ts#RelationCheck.ok That skipped resume is ok.
  * @evidenceReview ./conformanceRun.ts#RelationCheck.ok #e196dd9 That skipped resume is ok.
  * @evidence ./conformanceRun.ts#RelationCheck.applicable That skipped resume is not applicable.
@@ -625,7 +626,7 @@ describe("stateful strategy and currency identity", () => {
 
 /**
  * @evidence docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness The harness economy snapshot records the wallet unit and the max-money unit.
- * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #a195f0e Re-read the section, then ran this function: the COIN snapshot records COIN for both units, and a GEM snapshot is a different string.
+ * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #f518b31 Re-read the section, then ran this function: the COIN snapshot records COIN for both units, and a GEM snapshot is a different string.
  * @evidence ./conformanceRun.ts#snapshotEconomy Reads amountUnit and maxUnit for COIN, and a GEM snapshot is a different string. A bigint or cyclic vars value stays in the snapshot.
  * @evidenceReview ./conformanceRun.ts#snapshotEconomy #66ecfea Reads amountUnit and maxUnit for COIN, and a GEM snapshot is a different string. A bigint or cyclic vars value stays in the snapshot string instead of throwing.
  */
@@ -955,7 +956,7 @@ export function recordsWalletAndMaxMoneyUnitsOnTheEconomySnapshot(): void {
 
 /**
  * @evidence docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness An on-grid checkpoint replays from memory and from JSON, and independent trials are compared by game seed.
- * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #a195f0e Re-read the section, then ran this function: memory resume, JSON resume, and the JSON round-trip apply, and the two game seeds stay ordered.
+ * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #f518b31 Re-read the section, then ran this function: memory resume, JSON resume, and the JSON round-trip apply, and the two game seeds stay ordered.
  * @evidence ./conformanceRun.ts#checkJsonRoundTrip The constant-income scenario matches after a JSON round trip, and the restored wallet and max-money units are the scenario unit when the codes match.
  * @evidenceReview ./conformanceRun.ts#checkJsonRoundTrip #2b25391 Re-read the function: it restores the strategy around the run, accepts a dense array and an empty array, rejects shared refs, symbol keys, non-enumerable names, sparse holes, frozen data, non-extensible objects and arrays, a non-writable array length, a nonstandard array prototype, and enumerable getters before stringify, and the constant-income round trip matches. A restored unit that shares the scenario code must be the scenario unit object. A vars object that also appears on the wallet, max-money, or prestige graph is inapplicable. The round trip matches economy snapshot strings, so wallet money and max-money may deserialize as distinct objects. Ran this function: the dense round trip passed, and the sparse, frozen, non-extensible, locked-length, custom-prototype, and getter round trips did not.
  * @evidence ./conformanceRun.ts#checkTrialOrder Two distinct game seeds keep distinct economy snapshots. Fewer than two distinct seeds does not apply.
@@ -1468,6 +1469,75 @@ describe("PR-03 resume isolation", () => {
   });
 });
 
+/**
+ * @evidence docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness The declared positive-cooldown fixture preserves reset timing across on-grid JSON resumes.
+ * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #f518b31 Re-read the declared cooldown clause and ran the short and 200-case corpus. Anchored and unanchored starts preserve the economy snapshot; undeclared and disabled cases do not apply.
+ * @evidence ./conformance.ts#checkCooldownResumeFromJson Runs seeded declared cooldown fixtures from JSON, including unanchored starts, saved prior resets, negative timestamps, and different on-grid splits.
+ * @evidenceReview ./conformance.ts#checkCooldownResumeFromJson #cb32a56 Read the declaration guard and checkpoint call, then ran the short and 200-case corpus. Declared positive cooldown fixtures preserve reset timing from JSON and memory; undeclared and disabled fixtures do not apply.
+ */
+export function replaysDeclaredCooldownAcrossTheSeedCorpus(): void {
+  const testSeed = 0xc001;
+  const unconstrained = constantScenario({ rate: 0, durationSec: 10, stepSec: 1 });
+  expect(checkCooldownResumeFromJson(true, unconstrained, 2).applicable).toBe(false);
+  const disabled = { ...unconstrained, constraints: { minPrestigeIntervalSec: 0 } };
+  expect(checkCooldownResumeFromJson(true, disabled, 2).applicable).toBe(false);
+  expectProperty({
+    predicateId: "declared-prestige-cooldown-resume",
+    testSeed,
+    cases: conformanceCaseCount(),
+    generate: (index, rng) => ({
+      interval: rng.int(5, 20),
+      split: rng.int(1, 4),
+      initialT: rng.int(-4, 4),
+      anchored: index % 2 === 1,
+      gameSeed: gameSeedForCase(testSeed, index),
+    }),
+    shrink: () => [],
+    predicate: (value) => {
+      const scenario = constantScenario({
+        rate: 0,
+        durationSec: value.interval * 3 + 2,
+        stepSec: 1,
+        seed: value.gameSeed,
+      });
+      const reset: Action<number, UnitCode, Vars> = {
+        id: "reset",
+        kind: "prestige",
+        canApply: () => true,
+        cost: () => null,
+        apply: (_ctx, current) => ({
+          ...current,
+          prestige: { ...current.prestige, count: current.prestige.count + 1 },
+          vars: { buys: current.t },
+        }),
+      };
+      const constrained = {
+        ...scenario,
+        initial: { ...scenario.initial, t: value.initialT },
+        model: { ...scenario.model, actions: () => [reset] },
+        strategy: { id: "reset-every-tick", decide: () => [{ action: reset }] },
+        constraints: {
+          minPrestigeIntervalSec: value.interval,
+          ...(value.anchored ? { lastPrestigeResetT: value.initialT - 2 } : {}),
+        },
+      };
+      expectApplicable(checkCooldownResumeFromJson(true, constrained, value.split));
+      expectApplicable(checkResume(constrained, value.split));
+      expect(checkCooldownResumeFromJson(false, constrained, value.split).applicable).toBe(false);
+      return true;
+    },
+    describeCase: (value) => ({
+      gameSeed: value.gameSeed,
+      engineId: "number",
+      modelId: "declared-prestige-cooldown",
+      strategyId: "reset-every-tick",
+      tickSchedule: { stepSec: 1, durationSec: value.interval * 3 + 2 },
+    }),
+  });
+}
+
+it("replays declared prestige cooldown across the seed corpus", replaysDeclaredCooldownAcrossTheSeedCorpus);
+
 describe("counterexample report", () => {
   it("rejects a property run that executes no cases", () => {
     const empty = {
@@ -1815,7 +1885,7 @@ describe("PR-05 observation retention", () => {
 
 /**
  * @evidence docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness A negative balance fails the check only when the payment policy disallows debt.
- * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #a195f0e Re-read the section: checkNonNegative applies when debt is disallowed and does not apply when debt is allowed.
+ * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #f518b31 Re-read the section: checkNonNegative applies when debt is disallowed and does not apply when debt is allowed.
  * @evidence ./conformanceRun.ts#checkNonNegative A non-negative wallet applies when debt is disallowed. A negative wallet fails when debt is disallowed, and does not apply when debt is allowed.
  * @evidenceReview ./conformanceRun.ts#checkNonNegative #d87668f A non-negative wallet applies when debt is disallowed. A negative wallet fails when debt is disallowed, and does not apply when debt is allowed.
  */
@@ -1879,7 +1949,7 @@ describe("analysis source labels", () => {
 
 /**
  * @evidence docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness Formula seconds stay labeled apart from executed etaSimulate and etaAnalytic results.
- * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #a195f0e Re-read the section, then ran this function: formula, simulate, and analytic seconds are 3 and the executed modes stay distinct.
+ * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #f518b31 Re-read the section, then ran this function: formula, simulate, and analytic seconds are 3 and the executed modes stay distinct.
  * @evidence ./conformanceRun.ts#checkTimedSources Formula, simulate, and analytic seconds are all 3, and the executed modes stay distinct.
  * @evidenceReview ./conformanceRun.ts#checkTimedSources #25df548 Formula, simulate, and analytic seconds are all 3, and the executed modes stay distinct.
  */
@@ -1910,7 +1980,7 @@ export function keepsFormulaSecondsApartFromExecutedEtaResults(): void {
 
 /**
  * @evidence docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness Cross-engine comparison matches a finite constant-income amount and refuses a number Infinity collapse.
- * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #a195f0e Re-read the section, then ran this function: 24 matches across engines and 1e400 is refused on the number engine.
+ * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #f518b31 Re-read the section, then ran this function: 24 matches across engines and 1e400 is refused on the number engine.
  * @evidence ./compareAmounts.ts#compareAmounts The number engine and break-infinity engine agree on 24, and 1e400 collapses only on the number engine. A negative or non-finite logTolerance is rejected before the status is calculated.
  * @evidenceReview ./compareAmounts.ts#compareAmounts #98e12f6 Re-read compareAmounts: 24 matches by absLog10, and 1e400 returns refused-number-collapse because the number engine is not finite. A negative or non-finite logTolerance throws before the status is calculated.
  * @evidence ./compareAmounts.ts#AmountComparison.status Expects equal for 24, refused-number-collapse for 1e400, and different for the near-zero and opposite-sign pairs.

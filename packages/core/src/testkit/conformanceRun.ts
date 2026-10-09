@@ -854,7 +854,7 @@ function isRelationCheck(value: StrategyBracket | RelationCheck): value is Relat
 
 /**
  * @evidence docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness Replays one compiled scenario from the same initial strategy snapshot.
- * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #a195f0e Re-read the section and this function: both runs restore the same strategy snapshot, and the check fails when the economy strings differ. A scenario that already has an emitter does not apply.
+ * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #f518b31 Re-read the section and this function: both runs restore the same strategy snapshot, and the check fails when the economy strings differ. A scenario that already has an emitter does not apply.
  */
 export function checkReplay<N, U extends string, Vars>(scenario: CompiledScenario<N, U, Vars>): RelationCheck {
   if (scenario.ctx.emit !== undefined) return skip("scenario already has an emitter");
@@ -965,6 +965,7 @@ type TailStart<N, U extends string, Vars> = {
   state: SimState<N, U, Vars>;
   strategyState?: unknown;
   persistedStrategy: boolean;
+  lastPrestigeResetT?: number;
 };
 
 /** `JSON.stringify` turns `NaN` into `null`. Reject that corrupted checkpoint. */
@@ -1020,6 +1021,7 @@ function jsonResumeCheckpoint<N, U extends string, Vars>(
   scenario: CompiledScenario<N, U, Vars>,
   state: SimState<N, U, Vars>,
   engineName: string,
+  lastPrestigeResetT?: number,
 ): TailStart<N, U, Vars> | RelationCheck {
   if (varsAliasSerializedState(state)) return skip("vars alias another checkpoint field");
   const strategy = scenario.strategy;
@@ -1027,6 +1029,7 @@ function jsonResumeCheckpoint<N, U extends string, Vars>(
   const payload = serializeSimState(scenario.ctx.E, state, {
     seed: scenario.ctx.seed,
     engineName,
+    lastPrestigeResetT,
     strategy:
       strategy && persistedStrategy
         ? {
@@ -1056,6 +1059,7 @@ function jsonResumeCheckpoint<N, U extends string, Vars>(
       }),
       strategyState: parsed.strategy?.state,
       persistedStrategy,
+      lastPrestigeResetT: parsed.meta?.lastPrestigeResetT,
     };
   } catch {
     return fail("checkpoint is not JSON");
@@ -1065,7 +1069,10 @@ function jsonResumeCheckpoint<N, U extends string, Vars>(
 function resumeFromCheckpoint<N, U extends string, Vars>(
   scenario: CompiledScenario<N, U, Vars>,
   splitSec: number,
-  startTail: (headEnd: SimState<N, U, Vars>) => TailStart<N, U, Vars> | RelationCheck,
+  startTail: (
+    headEnd: SimState<N, U, Vars>,
+    lastPrestigeResetT: number | undefined,
+  ) => TailStart<N, U, Vars> | RelationCheck,
 ): RelationCheck {
   const refused = onGrid(scenario, splitSec);
   if (refused) return refused;
@@ -1093,9 +1100,17 @@ function resumeFromCheckpoint<N, U extends string, Vars>(
   try {
     const full = economyAfter(scenario);
     bracket.restore(initial);
+    let lastPrestigeResetT = scenario.constraints?.lastPrestigeResetT;
     const head = runScenario({
       ...scenario,
-      run: { ...scenario.run, maxSteps: splitTicks },
+      run: {
+        ...scenario.run,
+        maxSteps: splitTicks,
+        onPrestigeReset(t) {
+          lastPrestigeResetT = t;
+          scenario.run.onPrestigeReset?.(t);
+        },
+      },
     });
     if (head.end.t !== headTicks.endT) {
       return skip("head stopped before the checkpoint");
@@ -1103,7 +1118,7 @@ function resumeFromCheckpoint<N, U extends string, Vars>(
     if (scenario.run.until?.(head.end)) {
       return skip("until is already true at the checkpoint");
     }
-    const started = startTail(head.end);
+    const started = startTail(head.end, lastPrestigeResetT);
     if ("applicable" in started) return started;
     if (started.persistedStrategy) {
       bracket.restore(initial);
@@ -1114,6 +1129,9 @@ function resumeFromCheckpoint<N, U extends string, Vars>(
     const tail = economyAfter({
       ...scenario,
       initial: started.state,
+      constraints: started.lastPrestigeResetT === undefined
+        ? scenario.constraints
+        : { ...scenario.constraints, lastPrestigeResetT: started.lastPrestigeResetT },
       run: { ...scenario.run, durationSec: tailDuration },
     });
     return full === tail ? pass(full) : fail(`${full} != ${tail}`);
@@ -1126,9 +1144,10 @@ export function checkResume<N, U extends string, Vars>(
   scenario: CompiledScenario<N, U, Vars>,
   splitSec: number,
 ): RelationCheck {
-  return resumeFromCheckpoint(scenario, splitSec, (headEnd) => ({
+  return resumeFromCheckpoint(scenario, splitSec, (headEnd, lastPrestigeResetT) => ({
     state: headEnd,
     persistedStrategy: false,
+    lastPrestigeResetT,
   }));
 }
 
@@ -1136,8 +1155,8 @@ export function checkResumeFromJson<N, U extends string, Vars>(
   scenario: CompiledScenario<N, U, Vars>,
   splitSec: number,
 ): RelationCheck {
-  return resumeFromCheckpoint(scenario, splitSec, (headEnd) =>
-    jsonResumeCheckpoint(scenario, headEnd, "checkpoint"),
+  return resumeFromCheckpoint(scenario, splitSec, (headEnd, lastPrestigeResetT) =>
+    jsonResumeCheckpoint(scenario, headEnd, "checkpoint", lastPrestigeResetT),
   );
 }
 

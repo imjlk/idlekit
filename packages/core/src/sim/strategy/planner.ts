@@ -52,7 +52,7 @@ const rolloutBudget = 256;
  * TC-05 has not registered this DTO.
  *
  * @evidence docs/requirements/active/planner-rollout.md#req-pr04-planner-rollout A capped beam search records that it is not a global optimum.
- * @evidenceReview docs/requirements/active/planner-rollout.md#req-pr04-planner-rollout #a52946e Re-read the section: globallyOptimal stays false, and a budget stop is not an optimum.
+ * @evidenceReview docs/requirements/active/planner-rollout.md#req-pr04-planner-rollout #35741cf Re-read the section: globallyOptimal stays false, and a budget stop is not an optimum.
  */
 export const plannerSearchContract = "idlekit.planner-search" as const;
 
