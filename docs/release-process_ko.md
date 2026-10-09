@@ -114,11 +114,24 @@ bun run release:publish:dry-run
 
 - [release.yml](../.github/workflows/release.yml)
 
-GitHub Actions release job은 아래 순서로 동작합니다.
+`main` push와 `publish=false` 수동 실행은 보류 중인 changeset에서 버전, changelog,
+Bun workspace lockfile을 생성하고 Ready 상태의 `release/main` PR을 만들거나 갱신합니다.
+브랜치 보호 설정과 관계없이 동작하며, changeset이 없으면 아무 작업도 하지 않습니다.
+PR을 자동 머지하거나 패키지를 배포하지 않습니다.
 
-1. Bun으로 install / build / public check / release plan
-2. Node/npm을 publish 전용으로 준비
-3. Sampo가 version/changelog/tag/publish를 실행
+고정한 Sampo action의 `release` 명령은 버전과 changelog만 변경하므로 PR 생성은
+워크플로가 따로 수행합니다. `auto`는 배포로 이어질 수 있어 사용하지 않습니다.
+준비 job에는 npm 인증 정보와 OIDC 권한을 주지 않습니다.
+
+배포는 릴리즈 PR을 머지하고 changeset을 소비한 뒤, `main`에서 Release를
+`publish=true`로 수동 실행해야 합니다. 이 job만 Node/npm과 대응하는 Sampo CLI를
+설치하고 `publish:gate`와 `readme:smoke`를 거쳐 명시적인 `publish` 단계에 인증 정보를 제공합니다.
+수동 실행에서 선택한 커밋을 checkout하고, preflight 전과 실제 배포 직전에 원격
+`main`과 같은지 확인합니다. `main`이 바뀌면 새로운 수동 실행 요청이 필요합니다.
+
+저장소 Settings → Actions → General에서 GitHub Actions의 PR 생성을 허용해야 합니다.
+`GITHUB_TOKEN`으로 만든 PR의 CI 실행은 관리자의 승인이 필요할 수 있습니다.
+[GitHub 공식 안내](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow#triggering-a-workflow-from-a-workflow)를 참고하세요.
 
 인증 정책:
 
@@ -155,8 +168,8 @@ NPM_CONFIG_USERCONFIG=$PWD/.npmrc.publish.local bun run release:publish
 
 - 현재 설정은 `main`만 release branch로 취급합니다.
 - feature branch에서 릴리즈 계산을 보고 싶어서 `release:plan`은 `SAMPO_RELEASE_BRANCH=main`을 강제로 넣었습니다.
-- GitHub Actions에서는 `main` push 또는 수동 실행 시 `sampo auto`로 release/publish 흐름을 처리합니다.
-- GitHub release workflow 안에서는 npm만 publish 용도로 준비하고, 나머지 install/build/check는 계속 Bun으로 실행합니다.
+- GitHub Actions의 `main` push와 기본 수동 실행은 릴리즈 PR만 준비합니다. 배포에는 `main`에서 명시적인 `publish=true` 수동 실행이 필요합니다.
+- npm 인증은 배포 job의 `publish` 단계에만 전달하며, 나머지 install/build/check는 Bun으로 실행합니다.
 
 ## 3) 릴리즈 전 체크리스트
 

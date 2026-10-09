@@ -5,25 +5,136 @@ on:
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish already merged package versions to npm
+        type: boolean
+        required: true
+        default: false
 
 permissions:
-  contents: write
-  pull-requests: write
-  id-token: write
+  contents: read
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-main
   cancel-in-progress: false
 
 jobs:
-  release:
-    if: github.event_name == 'workflow_dispatch' || github.ref_protected == true
+  prepare:
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && !inputs.publish))
+    permissions:
+      contents: write
+      pull-requests: write
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout main
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: main
           fetch-depth: 0
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: "1.4.2"
+
+      - name: Find pending changesets
+        id: changesets
+        shell: bash
+        run: |
+          if find .sampo/changesets -maxdepth 1 -type f -name '*.md' -print -quit | grep -q .; then
+            echo "pending=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "pending=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install
+        if: steps.changesets.outputs.pending == 'true'
+        run: bun install --frozen-lockfile
+
+      # In the pinned action, release only changes versions/changelogs; auto can publish.
+      - name: Prepare versions and changelogs
+        if: steps.changesets.outputs.pending == 'true'
+        uses: bruits/sampo/crates/sampo-github-action@e976f8a2089ffe94ee9bf508c0b6f1df5e0f108e # action 0.19.0, core 0.17.0
+        with:
+          command: release
+        env:
+          SAMPO_RELEASE_BRANCH: main
+
+      - name: Refresh workspace lockfile
+        if: steps.changesets.outputs.pending == 'true'
+        run: bun install --lockfile-only --ignore-scripts
+
+      - name: Create or update release PR
+        if: steps.changesets.outputs.pending == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          base_sha=$(git rev-parse HEAD)
+          current_main=$(git ls-remote origin refs/heads/main | cut -f1)
+          if [[ "$current_main" != "$base_sha" ]]; then
+            echo "main advanced; the next queued run will prepare the newer release."
+            exit 0
+          fi
+          git diff --name-only | while IFS= read -r file; do
+            case "$file" in
+              .sampo/changesets/*.md|packages/money/package.json|packages/core/package.json|packages/cli/package.json|packages/money/CHANGELOG.md|packages/core/CHANGELOG.md|packages/cli/CHANGELOG.md|bun.lock) ;;
+              *) echo "Unexpected release change: $file" >&2; exit 1 ;;
+            esac
+          done
+          git checkout -B release/main
+          git add -- .sampo/changesets packages/money/package.json packages/core/package.json packages/cli/package.json packages/money/CHANGELOG.md packages/core/CHANGELOG.md packages/cli/CHANGELOG.md bun.lock
+          if git diff --cached --quiet; then
+            echo "No release changes to commit."
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'chore(release): prepare package versions'
+          lease=$(git ls-remote origin refs/heads/release/main | cut -f1)
+          git push --force-with-lease="refs/heads/release/main:$lease" origin HEAD:refs/heads/release/main
+          body=$(mktemp)
+          printf '%s\n' "Prepared from main ($base_sha)." '' 'Review the versions and changelogs before merging. Publishing requires a separate manual Release run with publish=true.' '' > "$body"
+          bun -e 'for (const pkg of ["money", "core", "cli"]) { const p = await Bun.file(`packages/${pkg}/package.json`).json(); console.log(`- ${p.name}: ${p.version}`); }' >> "$body"
+          pr=$(gh pr list --base main --head release/main --state open --json number --jq '.[0].number // empty')
+          if [[ -n "$pr" ]]; then
+            gh pr edit "$pr" --title 'chore(release): prepare package versions' --body-file "$body"
+          else
+            gh pr create --base main --head release/main --title 'chore(release): prepare package versions' --body-file "$body"
+          fi
+
+  publish:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.publish
+    permissions:
+      contents: write
+      id-token: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout selected publish commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Verify selected main commit
+        shell: bash
+        env:
+          SELECTED_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          [[ "$(git rev-parse HEAD)" == "$SELECTED_SHA" ]]
+          [[ "$(git ls-remote origin refs/heads/main | cut -f1)" == "$SELECTED_SHA" ]]
+          git checkout -B main "$SELECTED_SHA"
+
+      - name: Require consumed changesets
+        shell: bash
+        run: |
+          if find .sampo/changesets -maxdepth 1 -type f -name '*.md' -print -quit | grep -q .; then
+            echo 'Merge the release PR before requesting publication.' >&2
+            exit 1
+          fi
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
@@ -37,8 +148,8 @@ jobs:
           registry-url: "https://registry.npmjs.org"
           package-manager-cache: false
 
-      - name: Upgrade npm for trusted publishing
-        run: npm install -g npm@12.2.0
+      - name: Install pinned publish tools
+        run: npm install -g npm@12.2.0 sampo@0.21.0
 
       - name: Install
         run: bun install --frozen-lockfile
@@ -48,11 +159,19 @@ jobs:
           bun run publish:gate
           bun run readme:smoke
 
-      - name: Run Sampo Release/Publish
-        id: sampo
-        uses: bruits/sampo/crates/sampo-github-action@e976f8a2089ffe94ee9bf508c0b6f1df5e0f108e # main @ 2026-03-11
+      - name: Recheck selected commit before publishing
+        shell: bash
+        env:
+          SELECTED_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          [[ "$(git rev-parse HEAD)" == "$SELECTED_SHA" ]]
+          [[ "$(git ls-remote origin refs/heads/main | cut -f1)" == "$SELECTED_SHA" ]]
+
+      - name: Publish merged versions
+        uses: bruits/sampo/crates/sampo-github-action@e976f8a2089ffe94ee9bf508c0b6f1df5e0f108e # action 0.19.0, core 0.17.0
         with:
-          command: auto
+          command: publish
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
