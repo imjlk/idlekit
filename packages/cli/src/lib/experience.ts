@@ -561,7 +561,7 @@ export function renderExperienceMarkdown(args: {
     "",
     `- Series requested: \`${snapshot.growth.seriesRequested}\``,
     `- Value source: \`${snapshot.growth.valueSource}\``,
-    `- Window: ${snapshot.growth.windowSec}s`,
+    `- Configured sampling window: ${snapshot.growth.windowSec}s`,
     `- Segments: ${snapshot.growth.segments.length}`,
     `- Bottlenecks: ${snapshot.growth.bottlenecks.length}`,
     "",
@@ -569,9 +569,9 @@ export function renderExperienceMarkdown(args: {
     "",
     ...(growthRows.length ? ["| From | To | Regime | Log10 slope / second |", "| --- | --- | --- | --- |", ...growthRows]
       : ["- No stall or softcap window classified in the sampled trace."]),
-    ...(slowWindows.length > growthRows.length ? [`- Showing ${growthRows.length} of ${slowWindows.length} classified windows.`] : []),
+    ...(slowWindows.length > growthRows.length ? ["", `- Showing ${growthRows.length} of ${slowWindows.length} classified windows.`] : []),
     "",
-    `- Classification uses ${snapshot.growth.windowSec}s samples and the \`${snapshot.growth.valueSource}\` series; windows are observations, not a cause diagnosis.`,
+    `- The configured window is used when downsampling long traces; read actual intervals from the table. Classification uses the \`${snapshot.growth.valueSource}\` series; windows are observations, not a cause diagnosis.`,
     ...(snapshot.session.budgetStops > 0 ? ["- Active play was cut short by maxSteps; read these windows and progression rates with that time budget in mind."] : []),
   ];
 

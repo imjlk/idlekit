@@ -6,8 +6,8 @@ function snapshot(): ExperienceSnapshot {
     endMoney: "100", endNetWorth: "200", endNetWorthLog10: Math.log10(200),
     growth: {
       windowSec: 60, seriesRequested: "netWorth", valueSource: "netWorth",
-      segments: [{ tFrom: 0, tTo: 60, regime: "stall", slope: 0 }],
-      bottlenecks: [{ t: 60, reason: "stall" }],
+      segments: [{ tFrom: 0, tTo: 1, regime: "stall", slope: 0 }],
+      bottlenecks: [{ t: 1, reason: "stall" }],
     },
     milestones: { milestones: [], coverage: "partial", firstMilestoneSec: 0, firstActionSec: 0, firstPrestigeSec: 8 },
     perceived: {
@@ -32,7 +32,9 @@ describe("experience report coverage and interpretation", () => {
     expect(report).toContain("Milestone coverage: partial");
     expect(report).toContain("First prestige: 8s");
     expect(report).toContain("Final prestige multiplier: `2`");
-    expect(report).toContain("| 0s | 60s | stall |");
+    expect(report).toContain("| 0s | 1s | stall |");
+    expect(report).toContain("Configured sampling window: 60s");
+    expect(report).not.toContain("60s samples");
     expect(report).toContain("counterfactual");
   });
 
