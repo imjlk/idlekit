@@ -1,1 +1,1 @@
-export type { CoreOptions, MoneyEvent, TickPolicy, TickResult, TickStatus } from "@idlekit/money";
+export type { CoreOptions, MoneyEvent, TickFactCounts, TickPolicy, TickResult, TickStatus } from "@idlekit/money";
