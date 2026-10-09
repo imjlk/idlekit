@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { mkdtemp, mkdir, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import {
   applySheetCsv,
   exportSheetCsv,
@@ -24,6 +24,27 @@ const schema: SheetSchema = {
 const source = { shop: { price: 1.5 }, items: [{ count: 2 }], unrelated: true };
 const csv = "id,value,unit\r\nprice,0,coins\r\ncount,3,items\r\n";
 const temporary: string[] = [];
+async function canCreateFileSymlink(): Promise<boolean> {
+  const prefix = resolve(tmpdir(), "idlekit-sheet-link-probe-");
+  const root = await mkdtemp(prefix);
+  try {
+    const target = join(root, "target.csv");
+    await writeFile(target, csv);
+    try {
+      await symlink(target, join(root, "alias.csv"), "file");
+      return true;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === "EPERM" || code === "EACCES") return false;
+      throw error;
+    }
+  } finally {
+    if (!resolve(root).startsWith(prefix)) throw new Error("Unexpected link probe path");
+    await rm(root, { recursive: true, force: true });
+  }
+}
+const fileSymlinksAvailable = process.platform !== "win32" || await canCreateFileSymlink();
+const directoryLinkType = process.platform === "win32" ? "junction" : "dir";
 afterEach(async () => {
   await Promise.all(temporary.splice(0).map((path) => rm(path, { recursive: true, force: true })));
 });
@@ -224,14 +245,28 @@ describe("atomic refresh bundle", () => {
     await expect(refreshSheetBundle({ ...fixture, limits: { maxOutputFiles: 1 }, compute: async () => ({ "a.csv": "a", "b.csv": "b" }) })).rejects.toThrow();
     expect(await readFile(fixture.input, "utf8")).toBe(csv);
   });
-  test("rejects input/output directory collision including symlink aliases", async () => {
+  test("rejects input/output directory collision", async () => {
     const fixture = await setup();
     await expect(refreshSheetBundle({ ...fixture, outputDir: fixture.root, compute: async () => ({ "result.csv": "evil" }) })).rejects.toThrow(/input|collision/i);
+    expect(await readFile(fixture.input, "utf8")).toBe(csv);
+  });
+  test("rejects input/output directory collision through directory aliases", async () => {
+    const fixture = await setup();
+    await mkdir(fixture.outputDir);
+    const inside = join(fixture.outputDir, "source.csv");
+    await writeFile(inside, csv);
+    const alias = join(fixture.root, "alias");
+    await symlink(fixture.outputDir, alias, directoryLinkType);
+    await expect(refreshSheetBundle({ ...fixture, inputFiles: { csv: join(alias, "source.csv") }, compute: async () => ({ "result.csv": "evil" }) })).rejects.toThrow(/input|collision/i);
+    expect(await readFile(inside, "utf8")).toBe(csv);
+  });
+  test.skipIf(!fileSymlinksAvailable)("rejects input/output directory collision through file symlink aliases", async () => {
+    const fixture = await setup();
     await mkdir(fixture.outputDir);
     const inside = join(fixture.outputDir, "source.csv");
     await writeFile(inside, csv);
     const alias = join(fixture.root, "alias.csv");
-    await symlink(inside, alias);
+    await symlink(inside, alias, "file");
     await expect(refreshSheetBundle({ ...fixture, inputFiles: { csv: alias }, compute: async () => ({ "result.csv": "evil" }) })).rejects.toThrow(/input|collision/i);
     expect(await readFile(inside, "utf8")).toBe(csv);
   });
@@ -254,22 +289,22 @@ describe("atomic refresh bundle", () => {
     const external = join(fixture.root, "external");
     await mkdir(external);
     await rm(join(fixture.outputDir, "generations"), { recursive: true });
-    await symlink(external, join(fixture.outputDir, "generations"));
+    await symlink(external, join(fixture.outputDir, "generations"), directoryLinkType);
     await expect(refreshSheetBundle({ ...fixture, compute: async () => ({ "result.csv": "second" }) })).rejects.toThrow(/symlink/i);
     expect(await readFile(join(fixture.outputDir, "current.json"), "utf8")).toBe(pointer);
     expect(await readdir(external)).toEqual([]);
     expect((await readCurrentBundle(fixture.outputDir)).state).toBe("stale");
     expect(first.generationPath).toContain("generations");
   });
-  test("treats replacing the input symlink as a conflict even when bytes match", async () => {
+  test.skipIf(!fileSymlinksAvailable)("treats replacing the input symlink as a conflict even when bytes match", async () => {
     const fixture = await setup();
     const same = join(fixture.root, "same.csv");
     const alias = join(fixture.root, "alias.csv");
     await writeFile(same, csv);
-    await symlink(fixture.input, alias);
+    await symlink(fixture.input, alias, "file");
     await expect(refreshSheetBundle({ ...fixture, inputFiles: { csv: alias }, compute: async () => {
       await rm(alias);
-      await symlink(same, alias);
+      await symlink(same, alias, "file");
       return { "result.csv": "second" };
     } })).rejects.toThrow(/changed|conflict/i);
   });

@@ -926,7 +926,8 @@ describe("session segments", () => {
 describe("session active time at a large reward clock", () => {
   it("counts an active block in tick seconds, not the rounded t difference", () => {
     // At t 1e15 an ulp is 0.125, so ten 0.1 s ticks move t by 1.25.
-    const base = clockScenario({ income: 1 });
+    // Keep the ten active ticks; cap the unrelated remaining offline gap at zero.
+    const base = clockScenario({ income: 1, offline: { maxSec: 0, overflowPolicy: "clamp" } });
     const scenario = {
       ...base,
       ctx: { ...base.ctx, stepSec: 0.1 },
@@ -939,6 +940,7 @@ describe("session active time at a large reward clock", () => {
       schedule: [{ day: 0, startOffsetSec: 0, durationSec: 1 }],
     });
     const active = out.segments.find((segment) => segment.kind === "active")!;
+    expect(active.run.end.t - active.run.start.t).not.toBe(1);
     expect(active.durationSec).toBeCloseTo(1, 9);
     expect(active.clock.activeSec).toBeCloseTo(1, 9);
     expect(out.summary.activeSec).toBeCloseTo(1, 9);

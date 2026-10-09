@@ -522,7 +522,7 @@ async function main(): Promise<void> {
       }),
     );
     const plannerSource = readFileSync(join(root, "packages/core/src/sim/strategy/planner.ts"), "utf8");
-    const plannerBody = plannerDecl ? declarationSource(plannerSource, plannerDecl.line) : "";
+    const plannerBody = plannerDecl?.line !== undefined ? declarationSource(plannerSource, plannerDecl.line) : "";
     const bindsDefault = plannerStepOnceBound(plannerBody);
     const plannerLinked = endpointsConnect(collectHops(plannerPath), "createPlannerStrategy", "stepOnce");
     if (plannerLinked) {

@@ -6,7 +6,7 @@ const packages = ["packages/money", "packages/core", "packages/cli"];
 
 function parsePackOutput(raw: string): unknown {
   const match = raw.match(/(\[\s*{[\s\S]*}\s*\])\s*$/);
-  if (!match) {
+  if (!match?.[1]) {
     throw new Error(`npm pack output did not include JSON payload:\n${raw}`);
   }
   return JSON.parse(match[1]) as unknown;

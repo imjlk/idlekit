@@ -165,6 +165,10 @@ describe("CLI golden outputs", () => {
       "../../examples/tutorials/12-my-game-compare-b.json",
       "--bundle",
       "design",
+      "--days",
+      "1",
+      "--step",
+      "60",
       "--format",
       "json",
     ]);
@@ -173,6 +177,9 @@ describe("CLI golden outputs", () => {
     expect(out.milestoneKey).toBe("progress.first-upgrade");
     expect(Array.isArray(out.results)).toBeTrue();
     expect(out.results.length).toBe(3);
+    expect(out.results.map((result: { metric: string }) => result.metric)).toEqual([
+      "visibleChangesPerMinute", "maxNoRewardGapSec", "timeToMilestone",
+    ]);
     expect(out._meta?.schemaRef).toBe("docs/schemas/compare.output.schema.json");
   }, 180000);
 
