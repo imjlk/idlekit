@@ -850,6 +850,16 @@ export default defineCommand({
         if (timeSamplesDiffer(aActive, bActive)) {
           markdownWarnings.add(`Measured design sessions include different active play time (A: ${describeTimes(aActive)}, B: ${describeTimes(bActive)}).`);
         }
+        const aReward = aSessions.map((session) => session.rewardSec);
+        const bReward = bSessions.map((session) => session.rewardSec);
+        if (timeSamplesDiffer(aReward, bReward)) {
+          markdownWarnings.add(`Measured design sessions include different rewarded durations (A: ${describeTimes(aReward)}, B: ${describeTimes(bReward)}); milestone times follow the reward clock.`);
+        }
+        const aElapsed = aSessions.map((session) => session.elapsedSec);
+        const bElapsed = bSessions.map((session) => session.elapsedSec);
+        if (timeSamplesDiffer(aElapsed, bElapsed)) {
+          markdownWarnings.add(`Measured design sessions cover different wall elapsed durations (A: ${describeTimes(aElapsed)}, B: ${describeTimes(bElapsed)}).`);
+        }
         if ([...aSessions, ...bSessions].some((session) => session.budgetStops > 0)) {
           markdownWarnings.add("Active play hit maxSteps in one or more measured design sessions; progression rates and waits describe the shortened play time.");
         }

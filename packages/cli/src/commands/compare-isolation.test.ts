@@ -192,6 +192,21 @@ describe("compare run isolation", () => {
     expect(report).toContain("A: 1s, B: 300s");
   });
 
+  it("warns about different rewarded durations in Monte Carlo milestone comparisons", async () => {
+    const input = JSON.parse(await readText(scriptedPath));
+    const cappedPath = resolve(dir, "offline-capped.json");
+    await writeText(cappedPath, JSON.stringify({ ...input, sim: {
+      ...input.sim, offline: { maxSec: 60, overflowPolicy: "clamp" },
+    } }));
+    const report = runCli([
+      "compare", cappedPath, scriptedPath, "--metric", "timeToMilestone", "--milestone-key", MILESTONE, "--session-pattern", "offline-heavy",
+      "--days", "1", "--draws", "2", "--seed", "1", "--format", "md",
+    ]).stdout;
+    expect(report).toContain("different rewarded durations");
+    expect(report).toContain("A: 360s, B: 86400s");
+    expect(report).toContain("milestone times follow the reward clock");
+  });
+
   it("validates override defaults before invoking the strategy factory", async () => {
     // Plugins may replace a builtin id, including one accepted by --strategy.
     const pluginPath = resolve(dir, "invalid-override.mjs");

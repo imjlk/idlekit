@@ -438,7 +438,7 @@ export function summarizeComparableExperienceMetric<N, U extends string, Vars>(a
   registries?: RunFactoryDeps;
   isolation?: RunBindOptions;
 }): ExperienceNumericSummary & Readonly<{
-  sessions: readonly Pick<ExperienceSnapshot["session"], "horizonSec" | "activeSec" | "budgetStops">[];
+  sessions: readonly Pick<ExperienceSnapshot["session"], "horizonSec" | "activeSec" | "rewardSec" | "elapsedSec" | "budgetStops">[];
 }> {
   const fallbackValue = args.sessionPattern.days * 86400 + 1;
   const summary = simulateMonteCarlo({
@@ -455,6 +455,8 @@ export function summarizeComparableExperienceMetric<N, U extends string, Vars>(a
         session: {
           horizonSec: snapshot.session.horizonSec,
           activeSec: snapshot.session.activeSec,
+          rewardSec: snapshot.session.rewardSec,
+          elapsedSec: snapshot.session.elapsedSec,
           budgetStops: snapshot.session.budgetStops,
         },
       };
