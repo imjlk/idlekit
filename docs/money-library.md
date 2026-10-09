@@ -52,6 +52,16 @@ state = tickMoney({
 console.log(formatMoney(E, state.money));
 ```
 
+## Event collection and compact facts
+
+`options.collectEvents: false` omits event records and emitter calls. Add
+`options.collectFacts: true` to receive readonly `facts` counts for `applied`,
+`dropped`, `queued`, `flushed`, and `blocked`, with the same wallet and bucket.
+`appliedDelta` and `flushedBucket` preserve the corresponding event amounts when
+those events occur. Facts are optional and independent of event collection;
+the default result shape is unchanged. Core uses them when money events are
+omitted so observation counters and exact positive reward detection remain intact.
+
 ## When to use it directly
 
 Use `@idlekit/money` without `@idlekit/core` when you only need:

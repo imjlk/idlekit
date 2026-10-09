@@ -8,7 +8,7 @@ Requirement `REQ-PR05-OBSERVATION-RETENTION`. `PR-05` owns it.
 
 `runScenario` and `applyOfflineSeconds` record a compact observation after each committed step. `stepOnce` does not call the observer. A planner rollout calls `stepOnce`, so that rollout is not an observation.
 
-`stepOnce` always asks `tickMoney` for events. Those counts are `observedMoney`. The retained event list includes a money event only when collection is on and fast mode is not omitting money events. Fast and non-fast runs with observation on have the same money counters. Collecting the events does not change the wallet: `collectEvents` only fills the event array.
+`stepOnce` asks `tickMoney` for retained events when collection is on, and for compact facts when money events are omitted. Both paths supply `observedMoney`, including the applied delta and prior flushed bucket needed for exact positive reward detection. Explicit `ctx.collectMoneyEvents` takes precedence: `true` retains money events even when `fast.disableMoneyEvents` is `true`, and `false` omits them. With no explicit setting, fast money-event omission determines retention. Fast and non-fast runs with observation on have the same money counters. Collecting events or facts does not change the wallet; policy decisions reuse the same computed log gap.
 
 `observation.enabled: false` sets money and action status to `missing`, rates to null, and coverage to `disabled`. Those zeros are not measured counts. `analyzeUX` does not treat a null rate as a drop or a rare flush. `runCandidateAndScore` reports a missing `droppedRate` or action count as null in its seed results, and `pacingBalancedLog10` throws instead of scoring missing counters as zero.
 

@@ -7,7 +7,7 @@ import type { SimEvent, SimState } from "./types";
  * Resolved observation contract. TC-05 has not registered this DTO.
  *
  * @evidence docs/requirements/active/observation-retention.md#req-pr05-observation-retention Counters come from the committed step, not from the retained event log.
- * @evidenceReview docs/requirements/active/observation-retention.md#req-pr05-observation-retention #8088abb Re-read the section: retention does not change these counters, a disabled mode is missing rather than zero, a sample cap does not hide a fact from the observer, including an action-derived milestone key, the shared session cap sentence is about the recorder's ledger and simulateSessionPattern, not this name, the start-goal sentence is about the recorder's start hook, not this name, and the tuning sentence is about runCandidateAndScore and pacingBalancedLog10, which read these missing counters.
+ * @evidenceReview docs/requirements/active/observation-retention.md#req-pr05-observation-retention #d4a8252 Re-read explicit collectMoneyEvents precedence and the compact facts clause: omitted events still supply exact reward amounts and the same counters without altering the wallet. Re-read the section: retention does not change these counters, a disabled mode is missing rather than zero, a sample cap does not hide a fact from the observer, including an action-derived milestone key, the shared session cap sentence is about the recorder's ledger and simulateSessionPattern, not this name, the start-goal sentence is about the recorder's start hook, not this name, and the tuning sentence is about runCandidateAndScore and pacingBalancedLog10, which read these missing counters.
  */
 export const observationContract = "idlekit.run-observation" as const;
 

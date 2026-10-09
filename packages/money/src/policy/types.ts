@@ -7,6 +7,8 @@ export type TickPolicy = Readonly<{
 
 export type CoreOptions = Readonly<{
   collectEvents?: boolean;
+  /** Compact event counts and reward amounts, independent of event retention. */
+  collectFacts?: boolean;
 }>;
 
 export type MoneyEvent<N> =
@@ -48,8 +50,22 @@ export type MoneyEvent<N> =
 
 export type TickStatus = "ok" | "blocked";
 
+export type TickFactCounts = Readonly<{
+  applied: number;
+  dropped: number;
+  queued: number;
+  flushed: number;
+  blocked: number;
+}>;
+
 export type TickResult<N, U extends string> = Readonly<{
   status: TickStatus;
   state: MoneyState<N, U>;
   events: readonly MoneyEvent<N>[];
+  /** Present only when collectFacts is requested. Counts match the full event stream. */
+  facts?: TickFactCounts;
+  /** The applied event's delta, including queued money in accumulate mode. */
+  appliedDelta?: N;
+  /** The flushed event's prior bucket, when that event occurs. */
+  flushedBucket?: N;
 }>;
