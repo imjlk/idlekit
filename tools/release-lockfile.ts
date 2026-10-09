@@ -1,6 +1,4 @@
-import { unlink } from "node:fs/promises";
-import { resolve } from "node:path";
-import { isDeepStrictEqual } from "node:util";
+import { resolve } from "path";
 
 export const releaseWorkspaces = ["packages/money", "packages/core", "packages/cli"] as const;
 
@@ -29,7 +27,7 @@ export function verifyReleaseLockfile(beforeText: string, afterText: string, ver
     if (previous.version === undefined) delete next.version;
     else next.version = previous.version;
   }
-  if (!isDeepStrictEqual(before, after)) {
+  if (!Bun.deepEquals(before, after, true)) {
     throw new Error("Release preparation changed locked dependency data; dependency upgrades require a separate PR");
   }
 }
@@ -64,7 +62,7 @@ export async function refreshReleaseLockfile(snapshot: string | Uint8Array, proj
 export async function preserveReleaseLockfile(projectRoot: string, release: () => void | Promise<void>): Promise<void> {
   const lockPath = resolve(projectRoot, "bun.lock");
   const snapshot = new Uint8Array(await Bun.file(lockPath).arrayBuffer());
-  await unlink(lockPath);
+  await Bun.file(lockPath).delete();
   try {
     await release();
   } finally {
