@@ -61,6 +61,7 @@ jobs:
       - name: Toolchain smoke
         run: |
           bun test tools/_bun.test.ts tools/compiler-bin.test.ts tools/evidence/program.test.ts
+          bun test tools/release-workflow.test.ts
           bun run toolchain:smoke
 
       - name: Graph check

@@ -25,10 +25,10 @@ English version: [public-repo-ops.md](./public-repo-ops.md)
 
 ## 릴리즈 workflow 정책
 
-- release는 protected `main` 또는 manual dispatch에서만 허용
-- 감독 가능한 수동 릴리즈를 위해 `workflow_dispatch` 유지
-- npm Trusted Publishing을 위해 `id-token: write` 유지
-- `NPM_TOKEN`은 fallback 용도로만 유지
+- `main` push와 기본 수동 실행은 릴리즈 PR만 준비
+- 릴리즈 PR 머지 후 `main`에서 명시적인 `publish=true` 수동 실행으로만 배포
+- npm Trusted Publishing의 `id-token: write`는 배포 job에만 부여
+- fallback `NPM_TOKEN`은 배포 단계에만 전달
 
 ## npm org `idlekit` 체크리스트
 

@@ -55,11 +55,24 @@ idk setup plugin-trust --plugin ./custom-econ-plugin.ts --out ./.idk/plugin-trus
 - local development commands use Bun
 - release-time registry publishing uses `npm publish` only
 
-The GitHub release workflow prepares both runtimes:
+Pushes to `main` and manual runs with `publish=false` prepare or update a Ready
+`release/main` PR from pending changesets, including versions, changelogs, and the
+Bun workspace lockfile. This works without branch protection. With no pending
+changesets, preparation is a no-op. It never merges the PR or publishes packages.
 
-1. Bun for install/build/public checks
-2. Node/npm only for registry publishing
-3. Sampo as the release orchestrator
+The pinned Sampo action's `release` command only edits versions and changelogs;
+the workflow creates the PR separately. Its `auto` command can fall through to
+publishing, so neither job uses it. The preparation job has no npm credentials
+or OIDC permission.
+
+Publication requires a separate manual Release run on `main` with `publish=true`,
+after the release PR is merged and changesets are consumed. Only that job sets
+up Node/npm, installs the matching Sampo CLI, runs the full publish preflight,
+and exposes npm authentication to the explicit `publish` step.
+
+Repository Settings → Actions → General must allow GitHub Actions to create pull
+requests. A `GITHUB_TOKEN`-created PR can require a maintainer to approve its CI
+runs; see [GitHub's workflow trigger documentation](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow#triggering-a-workflow-from-a-workflow).
 
 Workflow file:
 
@@ -71,7 +84,7 @@ Release auth policy:
 - fallback: `NPM_TOKEN` secret exposed as `NODE_AUTH_TOKEN` at release time only
 - local publish can use `NPM_CONFIG_USERCONFIG=/path/to/.npmrc`
 
-If you use Trusted Publishing, configure npm to trust this repository and workflow before enabling automatic publish on `main`.
+If you use Trusted Publishing, configure npm to trust this repository and workflow before requesting a manual publish.
 
 ## Local publish preflight
 
@@ -123,6 +136,6 @@ bun run release:dry-run
 ## Public repo notes
 
 - The release workflow is pinned to commit SHAs for third-party GitHub Actions.
-- Keep `main` protected before enabling automatic publish on push.
-- Until branch protection and registry secrets are fully configured, prefer manual dispatch.
+- Protect `main` and review release PR validation before requesting a publish.
+- Pushes and default manual runs only prepare a PR; publishing always needs `publish=true` on `main`.
 - The release workflow upgrades npm only inside GitHub Actions so local development can stay Bun-first.

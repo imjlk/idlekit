@@ -25,10 +25,10 @@ Do not require the `Release` workflow as a merge gate.
 
 ## Release workflow policy
 
-- allow release only from protected `main` or manual dispatch
-- keep `workflow_dispatch` enabled for supervised releases
-- keep `id-token: write` enabled for npm Trusted Publishing
-- keep `NPM_TOKEN` as fallback only
+- prepare release PRs on `main` pushes and default manual dispatches
+- publish only from an explicit manual `publish=true` dispatch on `main`, after the release PR is merged
+- scope `id-token: write` for npm Trusted Publishing to the publish job
+- expose fallback `NPM_TOKEN` only to the publish step
 
 ## npm org `idlekit` checklist
 
