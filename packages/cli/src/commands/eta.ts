@@ -7,6 +7,7 @@ import {
   validateScenarioV1,
 } from "@idlekit/core";
 import { z } from "zod";
+import { resolveFastMode } from "../lib/fastMode";
 import { loadRegistriesFromFlags, pluginOptions } from "./_shared/plugin";
 import { scenarioInvalidError, usageError } from "../errors";
 import { buildOutputMeta } from "../io/outputMeta";
@@ -28,7 +29,7 @@ export default defineCommand({
     "include-run": option(z.coerce.boolean().default(false), {
       description: "Include detailed run payload in simulate mode output",
     }),
-    fast: option(z.coerce.boolean().default(false), { description: "Fast simulation mode" }),
+    fast: option(z.coerce.boolean().optional(), { description: "Override fast mode (omitted: scenario setting)" }),
     out: option(z.string().optional(), { description: "Output path" }),
     format: option(z.enum(["json", "md", "csv"]).default("json"), { description: "Output format" }),
   },
@@ -81,9 +82,7 @@ export default defineCommand({
               enabled: false,
               maxEvents: 0,
             },
-        fast: flags.fast
-          ? { enabled: true, kind: "log-domain" as const, disableMoneyEvents: true }
-          : compiled.run.fast,
+        fast: resolveFastMode(flags.fast, compiled.run.fast),
       },
     };
 

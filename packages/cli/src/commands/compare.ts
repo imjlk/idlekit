@@ -13,6 +13,7 @@ import {
 } from "@idlekit/core";
 import { resolve } from "path";
 import { z } from "zod";
+import { resolveFastMode } from "../lib/fastMode";
 import { betterFromCmp, formatEtaLabel, toComparableEta } from "./_shared/compareEval";
 import { loadRegistriesFromFlags, pluginOptions } from "./_shared/plugin";
 import {
@@ -66,7 +67,7 @@ function compileComparableScenario(args: {
     strategy?: string;
     step?: number;
     duration?: number;
-    fast: boolean;
+    fast?: boolean;
     seed?: number;
   };
 }) {
@@ -99,9 +100,7 @@ function compileComparableScenario(args: {
       },
       stepSec: args.flags.step ?? compiled.run.stepSec,
       durationSec: args.flags.duration ?? compiled.run.durationSec,
-      fast: args.flags.fast
-        ? { enabled: true as const, kind: "log-domain" as const, disableMoneyEvents: true }
-        : compiled.run.fast,
+      fast: resolveFastMode(args.flags.fast, compiled.run.fast),
     },
   };
   const registries = { models: args.loaded.modelRegistry, strategies: args.loaded.strategyRegistry };
@@ -126,7 +125,7 @@ type CompareFlags = Readonly<{
   strategy?: string;
   step?: number;
   duration?: number;
-  fast: boolean;
+  fast?: boolean;
   metric?: CompareMetric;
   bundle?: CompareBundle;
   "target-worth"?: string;
@@ -183,7 +182,7 @@ function compareIdentity(args: {
       strategy,
       stepSec: flags.step ?? scenario.clock.stepSec,
       durationSec: flags.duration ?? scenario.clock.durationSec ?? null,
-      fast: flags.fast || scenario.sim?.fast === true,
+      fast: flags.fast ?? scenario.sim?.fast === true,
       session: design
         ? {
             ...resolveSessionPatternSpec({
@@ -644,7 +643,7 @@ export default defineCommand({
     duration: option(z.coerce.number().optional(), { description: "Override durationSec" }),
     step: option(z.coerce.number().optional(), { description: "Override stepSec" }),
     strategy: option(strategySchema, { description: "Override strategy id (greedy|planner|scripted)" }),
-    fast: option(z.coerce.boolean().default(false), { description: "Enable fast(log-domain) mode" }),
+    fast: option(z.coerce.boolean().optional(), { description: "Override fast mode (omitted: scenario setting)" }),
     "target-worth": option(z.string().optional(), {
       description: "Required for etaToTargetWorth metric, optional otherwise",
     }),
@@ -730,7 +729,7 @@ export default defineCommand({
             milestoneKey: undefined,
           },
         },
-        runs: [{ identity, defaults: compareIdentity({ scenarios, flags: { fast: false, "max-duration": DEFAULT_MAX_DURATION }, loaded }) }],
+        runs: [{ identity, defaults: compareIdentity({ scenarios, flags: { "max-duration": DEFAULT_MAX_DURATION }, loaded }) }],
       });
 
     const E = createNumberEngine();

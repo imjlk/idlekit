@@ -118,7 +118,7 @@ export default defineCommand({
     engine: option(z.string().min(1).optional(), {
       description: "Execution engine. Default number. scenario.engine is metadata. breakInfinity is explicit. breakEternity is unsupported.",
     }),
-    fast: option(z.coerce.boolean().default(false), { description: "Enable fast(log-domain) mode" }),
+    fast: option(z.coerce.boolean().optional(), { description: "Override fast mode (omitted: scenario setting)" }),
     "event-log-enabled": option(z.coerce.boolean().optional(), {
       description: "Override event log retention enabled flag",
     }),

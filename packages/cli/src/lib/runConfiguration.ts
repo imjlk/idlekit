@@ -18,6 +18,7 @@ import {
 import { unknownStrategyError } from "../errors";
 import { deriveDeterministicSeed, hashContent } from "../io/outputMeta";
 import { resolveSessionPatternId, resolveSessionPatternSpec } from "./experience";
+import { resolveFastMode } from "./fastMode";
 
 /**
  * Resolved CLI run plan. TC-05 has not registered this DTO.
@@ -25,7 +26,7 @@ import { resolveSessionPatternId, resolveSessionPatternSpec } from "./experience
  * `scenario.engine` is metadata. It does not select the runtime.
  *
  * @evidence docs/requirements/active/cli-resolved-run.md#req-pr07-resolved-run One plan feeds evaluate stages, and each stage opens a fresh run.
- * @evidenceReview docs/requirements/active/cli-resolved-run.md#req-pr07-resolved-run #5ac9a33 Re-read the optional cooldown-anchor input; descriptive save metadata still stays out. Re-read the elapsed-clock exception: the resolved saved clock affects only the report digest, not the seed. Re-read the section: strategy override reaches simulate and experience and replaces the scenario strategy without building it, step stays on the simulate stage unless consistent overrides are set, and the stage digest adds the step and fast mode the stage runs, the session pattern and days experience runs with the always-on and 7-day defaults from resolveSessionPatternSpec, the stage name (not its scope), command inputs, and plugin digests in load order while ignoring the directory. The default seed reads the same identity without the seed, through defaultSeed and defaultRunSeed. The plugin digest values, including the local-import closure, come from loadRegistries in packages/cli/src/plugin/load.ts; this plan only keeps them in load order.
+ * @evidenceReview docs/requirements/active/cli-resolved-run.md#req-pr07-resolved-run #6ac57a8 Re-read the explicit fast override rule: omission inherits the scenario, false disables it within the stage scope, and disabled effective modes share one identity. Re-read the optional cooldown-anchor input; descriptive save metadata still stays out. Re-read the elapsed-clock exception: the resolved saved clock affects only the report digest, not the seed. Re-read the section: strategy override reaches simulate and experience and replaces the scenario strategy without building it, step stays on the simulate stage unless consistent overrides are set, and the stage digest adds the step and fast mode the stage runs, the session pattern and days experience runs with the always-on and 7-day defaults from resolveSessionPatternSpec, the stage name (not its scope), command inputs, and plugin digests in load order while ignoring the directory. The default seed reads the same identity without the seed, through defaultSeed and defaultRunSeed. The plugin digest values, including the local-import closure, come from loadRegistries in packages/cli/src/plugin/load.ts; this plan only keeps them in load order.
  */
 export const resolvedRunContract = "idlekit.resolved-run-configuration" as const;
 
@@ -33,7 +34,7 @@ export const resolvedRunContract = "idlekit.resolved-run-configuration" as const
  * Repro label for this case. The runs pass seed 1 and do not draw from this label.
  *
  * @evidence docs/requirements/active/cli-resolved-run.md#req-pr07-resolved-run The label is 0x7107. Runs use seed 1.
- * @evidenceReview docs/requirements/active/cli-resolved-run.md#req-pr07-resolved-run #5ac9a33 Re-read the optional cooldown-anchor input; descriptive save metadata still stays out. Re-read the elapsed-clock exception: the resolved saved clock affects only the report digest, not the seed. Re-read the section, including the default seed and evaluate seed sentences: the label is not the RNG seed, and the executed tests in runConfiguration.test.ts use seed 1.
+ * @evidenceReview docs/requirements/active/cli-resolved-run.md#req-pr07-resolved-run #6ac57a8 Re-read the explicit fast override rule: omission inherits the scenario, false disables it within the stage scope, and disabled effective modes share one identity. Re-read the optional cooldown-anchor input; descriptive save metadata still stays out. Re-read the elapsed-clock exception: the resolved saved clock affects only the report digest, not the seed. Re-read the section, including the default seed and evaluate seed sentences: the label is not the RNG seed, and the executed tests in runConfiguration.test.ts use seed 1.
  */
 export const sessionCaseSeed = 0x7107;
 
@@ -265,7 +266,7 @@ function runIdentity(args: IdentityArgs): Record<string, unknown> {
     stepSec: args.stepSec,
     session: args.session ? { id: args.session.id ?? null, days: args.session.days ?? null } : null,
     pluginDigests: [...args.pluginDigests],
-    fast: args.fast ?? null,
+    fast: args.fast?.enabled ? args.fast : null,
     stage: args.stage?.name ?? null,
     inputs: args.inputs ?? null,
   };
@@ -346,7 +347,7 @@ function stagePlan(args: PrepareArgs & { engine: ResolvedEngine; stage: StageNam
     paramsMode: args.paramsMode,
   });
   const stepOverride = applies.step && args.stepSec !== undefined;
-  const fastOverride = applies.fast && args.fast === true;
+  const fastOverride = applies.fast && args.fast !== undefined;
   const sessionOverride = args.sessionId !== undefined || args.days !== undefined;
   // The pattern and days the session runs, with the runtime defaults, so flags that repeat them keep the hash.
   const session = applies.session
@@ -374,7 +375,7 @@ function stagePlan(args: PrepareArgs & { engine: ResolvedEngine; stage: StageNam
       source: stepOverride ? "command" : "scenario",
     },
     ...(fastOverride
-      ? { fast: { enabled: true as const, kind: "log-domain" as const, disableMoneyEvents: true } }
+      ? { fast: resolveFastMode(args.fast, undefined) }
       : {}),
     ...(session ? { session } : {}),
     ...(args.seed !== undefined ? { seed: args.seed } : {}),

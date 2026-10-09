@@ -253,10 +253,18 @@ describe("effectiveRunHash", () => {
         ["ltv", fast, "--horizons", "30m"],
       ]) {
         const plain = meta(command, []);
-        for (const extra of [["--fast", "true"], ["--fast", "false"]]) {
+        for (const extra of [["--fast", "true"], ["--fast"]]) {
           const same = meta(command, extra);
           expect(same.seed).toBe(plain.seed);
           expect(same.effectiveRunHash).toBe(plain.effectiveRunHash);
+        }
+        const disabled = meta(command, ["--fast", "false"]);
+        expect(disabled.seed).not.toBe(plain.seed);
+        expect(disabled.effectiveRunHash).not.toBe(plain.effectiveRunHash);
+        for (const extra of [["--no-fast"], ["--fast=false"]]) {
+          const same = meta(command, extra);
+          expect(same.seed).toBe(disabled.seed);
+          expect(same.effectiveRunHash).toBe(disabled.effectiveRunHash);
         }
       }
       for (const command of [
