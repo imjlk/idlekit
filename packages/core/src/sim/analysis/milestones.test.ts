@@ -71,7 +71,7 @@ describe("analyzeMilestones", () => {
       money: { status: "observed", applied: 0, dropped: 0, queued: 0, flushed: 0, blocked: 0 },
       actions: { status: "observed", applied: 1, skippedCannotApply: 0, skippedInsufficientFunds: 0, skippedInvalidQuote: 0, skippedCooldown: 0 },
       rewardGap: { status: "observed", startT: 0, endT: 10, interiorMaxGapSec: 0 },
-      milestones: [{ key: "unlock", firstSeenT: 3, source: "milestone" }, { key: "action.buy.firstApplied", firstSeenT: 5, source: "action" }, { key: "prestige.first", firstSeenT: 8, source: "prestige" }],
+      milestones: [{ key: "prestige.first", firstSeenT: 1, source: "goal" }, { key: "unlock", firstSeenT: 3, source: "milestone" }, { key: "action.buy.firstApplied", firstSeenT: 5, source: "action" }, { key: "prestige.first", firstSeenT: 8, source: "prestige" }],
       goals: [], droppedMilestones: 0, droppedGoals: 0,
     };
     const newer = { ...older, coverage: "partial" as const, rewardGap: { ...older.rewardGap, startT: 10, endT: 20 }, milestones: [], firstMilestoneT: 12, firstActionT: 12, firstPrestigeT: 18, droppedMilestones: 3 };

@@ -188,9 +188,9 @@ export function mergeObservations(parts: readonly RunObservation[]): RunObservat
   const moneyObserved = parts.every((part) => part.money.status === "observed" && !part.legacyEventFallback);
   const actionsObserved = parts.every((part) => part.actions.status === "observed" && !part.legacyEventFallback);
   const goals = new Map<string, GoalSample>();
-  const firstMilestoneT = earliestTime(parts.map((part) => part.firstMilestoneT ?? earliestTime(part.milestones.map((sample) => sample.firstSeenT))));
+  const firstMilestoneT = earliestTime(parts.map((part) => part.firstMilestoneT ?? earliestTime(part.milestones.filter((sample) => sample.source !== "goal").map((sample) => sample.firstSeenT))));
   const firstActionT = earliestTime(parts.map((part) => part.firstActionT ?? earliestTime(part.milestones.filter((sample) => sample.source === "action").map((sample) => sample.firstSeenT))));
-  const firstPrestigeT = earliestTime(parts.map((part) => part.firstPrestigeT ?? earliestTime(part.milestones.filter((sample) => sample.key === "prestige.first").map((sample) => sample.firstSeenT))));
+  const firstPrestigeT = earliestTime(parts.map((part) => part.firstPrestigeT ?? earliestTime(part.milestones.filter((sample) => sample.source !== "goal" && sample.key === "prestige.first").map((sample) => sample.firstSeenT))));
   for (const part of parts) {
     for (const goal of part.goals) {
       const prev = goals.get(goal.id);
