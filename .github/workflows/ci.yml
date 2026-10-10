@@ -69,7 +69,7 @@ jobs:
       - name: Toolchain smoke
         run: |
           bun test tools/_bun.test.ts tools/compiler-bin.test.ts tools/evidence/program.test.ts tools/evidence/source-lock.test.ts
-          bun test tools/release-workflow.test.ts tools/release-lockfile.test.ts tools/npm-pack.test.ts
+          bun test tools/release-workflow.test.ts tools/release-lockfile.test.ts tools/npm-pack.test.ts tools/tarball-check.test.ts
           bun run toolchain:smoke
 
       - name: Graph check
@@ -159,7 +159,7 @@ jobs:
         run: |
           bun run toolchain:doctor
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          bun test tools/_bun.test.ts tools/compiler-bin.test.ts tools/evidence/program.test.ts
+          bun test tools/_bun.test.ts tools/compiler-bin.test.ts tools/evidence/program.test.ts tools/tarball-check.test.ts
 
       - name: Build CLI
         run: bun run --cwd packages/cli build
@@ -173,6 +173,9 @@ jobs:
       - name: Session clock regression tests
         working-directory: packages/core
         run: bun test src/sim/session.test.ts
+
+      - name: Install smoke
+        run: bun run install:smoke
 
       - name: Public package readiness
         run: bun run public:check

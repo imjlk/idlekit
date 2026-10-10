@@ -2,18 +2,13 @@ import { $ } from "bun";
 import { dirname, resolve } from "path";
 import { withFileLock } from "./_bun";
 import { parseNpmPackEntries } from "./npm-pack";
+import { inspectTarballListing, type TarballCheck } from "./tarball-check";
 
 type PackEntry = {
   filename: string;
   name: string;
   version: string;
 };
-
-type TarballCheck = Readonly<{
-  hasReadme: boolean;
-  hasLicense: boolean;
-  hasTestArtifacts: boolean;
-}>;
 
 const ROOT = process.cwd();
 const TMP_ROOT = resolve(ROOT, "tmp", "install-smoke");
@@ -48,11 +43,7 @@ async function packPackage(pkgDir: string): Promise<Readonly<{ packageDir: strin
 
 async function inspectTarball(tarballPath: string): Promise<TarballCheck> {
   const listing = await $`tar -tzf ${tarballPath}`.text();
-  const files = listing.trim().split("\n").filter(Boolean);
-  const hasReadme = files.some((file) => /package\/README\.md$/i.test(file));
-  const hasLicense = files.some((file) => /package\/LICENSE$/i.test(file));
-  const hasTestArtifacts = files.some((file) => /\.test\.(d\.ts|js|js\.map|ts|tsx)$/.test(file));
-  return { hasReadme, hasLicense, hasTestArtifacts };
+  return inspectTarballListing(listing);
 }
 
 async function writeConsumerPackageJson(): Promise<void> {
