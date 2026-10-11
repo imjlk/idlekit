@@ -14,7 +14,10 @@
     "REQ-TC05-PUBLISHED-VALIDATOR-TRANSFORMED",
     "REQ-PR08-SHARED-GOAL",
     "REQ-PR08-CUSTOM-METRIC",
-    "REQ-PR08-ANALYSIS-ARTIFACT"
+    "REQ-PR08-ANALYSIS-ARTIFACT",
+    "REQ-PR09-ENGINE-RATIO",
+    "REQ-PR09-EXACT-LOCAL",
+    "REQ-PR09-CENSORED-OBSERVATION"
   ],
   "protectedFiles": [
     "docs/requirements/active/typia-transform.md",
@@ -59,6 +62,9 @@
     "packages/core/src/scenario/scenarioContract.test.ts",
     "packages/core/src/sim/analysis/contracts.ts",
     "packages/core/src/sim/analysis/analysisContract.test.ts",
+    "docs/requirements/active/eta-numeric-and-goal-semantics.md",
+    "packages/core/src/sim/analysis/eta.ts",
+    "packages/core/src/sim/analysis/eta.semantics.test.ts",
     "packages/cli/src/lib/runConfiguration.ts",
     "packages/cli/src/lib/runConfiguration.test.ts",
     "fixtures/conformance/shrink-gap.json",

@@ -111,6 +111,7 @@ export function keepsTypedContractSingleSource(): void {
   expect(registeredContracts().map((entry) => entry.id)).toEqual([
     "idlekit.scenario.v1",
     "idlekit.analysis.artifact.v1",
+    "idlekit.eta.estimate.v1",
   ]);
   const text = canonicalJson(buildContractDocument(sources));
   expect(canonicalJson(buildContractDocument(sources))).toBe(text);
