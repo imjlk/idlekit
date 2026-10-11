@@ -485,7 +485,9 @@ export function applyDecisions<N, U extends string, Vars>(args: {
       }
     }
 
-    const before = resetSnapshot(ctx, next);
+    // Only an action that can emit a reset fact needs the before snapshot.
+    const resetKind = (action.kind === "prestige" || action.kind === "custom") && resetKinds.has(action.kind);
+    const before = resetKind ? resetSnapshot(ctx, next) : undefined;
     let settledSize = d.bulkSize;
     let paid: Money<N, U> | null = null;
     if (d.bulkSize !== undefined && d.bulkSize !== singleBuySize) {
@@ -578,21 +580,19 @@ export function applyDecisions<N, U extends string, Vars>(args: {
       label: action.label,
       bulkSize: settledSize,
     });
-    if (action.kind === "prestige" || action.kind === "custom") {
-      if (resetKinds.has(action.kind)) {
-        committedResets.push({
-          actionId: action.id,
-          kind: action.kind,
-          t: decisionT,
-          wallT: wallNow(ctx),
-          cost: paid
-            ? { unit: paid.unit.code, decimal: E.toString(paid.amount) }
-            : null,
-          rewardDelta: E.toString(E.sub(next.prestige.points, pointsBefore)),
-          before,
-          after: resetSnapshot(ctx, next),
-        });
-      }
+    if ((action.kind === "prestige" || action.kind === "custom") && before !== undefined) {
+      committedResets.push({
+        actionId: action.id,
+        kind: action.kind,
+        t: decisionT,
+        wallT: wallNow(ctx),
+        cost: paid
+          ? { unit: paid.unit.code, decimal: E.toString(paid.amount) }
+          : null,
+        rewardDelta: E.toString(E.sub(next.prestige.points, pointsBefore)),
+        before,
+        after: resetSnapshot(ctx, next),
+      });
     }
   }
 
