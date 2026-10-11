@@ -11,6 +11,8 @@ type RegistryStatus = Readonly<{
   localVersion: string;
   publishedVersion: string | null;
   publishable: boolean;
+  /** The registry already has this exact version; Sampo skips it, so it does not block a publish. */
+  alreadyPublished: boolean;
 }>;
 
 const PACKAGE_DIRS = ["packages/money", "packages/core", "packages/cli"] as const;
@@ -105,6 +107,7 @@ async function main(): Promise<void> {
           localVersion: pkg.version,
           publishedVersion: null,
           publishable: true,
+          alreadyPublished: false,
         });
         continue;
       }
@@ -117,10 +120,11 @@ async function main(): Promise<void> {
       localVersion: pkg.version,
       publishedVersion,
       publishable: compareSemver(pkg.version, publishedVersion) > 0,
+      alreadyPublished: compareSemver(pkg.version, publishedVersion) === 0,
     });
   }
 
-  const blocked = statuses.filter((status) => !status.publishable);
+  const blocked = statuses.filter((status) => !status.publishable && !status.alreadyPublished);
   if (blocked.length > 0) {
     throw new Error(
       [
@@ -130,6 +134,10 @@ async function main(): Promise<void> {
         ),
       ].join("\n"),
     );
+  }
+
+  if (!statuses.some((status) => status.publishable)) {
+    throw new Error("every package version is already published; there is nothing to publish.");
   }
 
   const out = {

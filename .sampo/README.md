@@ -9,7 +9,7 @@ Release automation policy:
 - day-to-day development and CI use Bun
 - GitHub release automation still uses Sampo for release orchestration
 - registry publish happens through `npm publish` only at release time
-- preferred registry auth is npm Trusted Publishing (OIDC); `NPM_TOKEN` is fallback-only
+- registry auth is npm Trusted Publishing (OIDC); the workflow passes no npm token
 
 ## Local workflow
 
@@ -35,8 +35,8 @@ Expected GitHub/npm configuration:
 
 - protected `main` branch, or manual dispatch while the repo is still private
 - GitHub Actions permission `id-token: write`
-- npm Trusted Publishing configured for this repository/workflow
-- optional `NPM_TOKEN` repository secret only if Trusted Publishing is not available
+- npm Trusted Publishing configured for this repository/workflow on every `@idlekit/*` package
+- each package set to require 2FA and disallow tokens; a new package's first version is published locally (see [../docs/release-process.md](../docs/release-process.md#local-publish-preflight))
 
 ## Changeset authoring rules
 

@@ -243,6 +243,9 @@ export function validateAnalysisSemantics(artifact: AnalysisArtifactV1): readonl
   artifact.metrics.forEach((reading, index) => {
     const path = `metrics.${index}`;
     const unavailable = reading.reading === "unavailable" || reading.status !== "ok";
+    if (reading.status !== "ok" && reading.reading !== "unavailable") {
+      issues.push({ path, message: "non-ok reading is not labeled unavailable" });
+    }
     if (unavailable && (reading.amount !== undefined || reading.value !== undefined)) {
       issues.push({ path, message: "unavailable reading carries a value" });
     }
@@ -260,9 +263,15 @@ export function validateAnalysisSemantics(artifact: AnalysisArtifactV1): readonl
     if (goal.status !== "ok" && goal.reached !== undefined) {
       issues.push({ path: `goals.${index}`, message: "unreached status still carries reached" });
     }
+    if (goal.status !== "ok" && goal.method !== undefined) {
+      issues.push({ path: `goals.${index}`, message: "non-ok goal carries a method" });
+    }
   });
-  if (artifact.sampleCount !== undefined && !Number.isFinite(artifact.sampleCount)) {
-    issues.push({ path: "sampleCount", message: "sampleCount is nonfinite" });
+  if (
+    artifact.sampleCount !== undefined &&
+    (!Number.isInteger(artifact.sampleCount) || artifact.sampleCount < 0)
+  ) {
+    issues.push({ path: "sampleCount", message: "sampleCount is not a nonnegative integer" });
   }
   return issues;
 }
@@ -286,7 +295,11 @@ export function renderAnalysisMarkdown(artifact: AnalysisArtifactV1): string {
   lines.push("", "## Metrics");
   if (artifact.metrics.length === 0) lines.push("None.");
   for (const metric of artifact.metrics) {
-    const wire = metric.amount?.decimal ?? (metric.value !== undefined ? String(metric.value) : "absent");
+    const wire = metric.amount
+      ? `${metric.amount.decimal} ${metric.amount.unit}`
+      : metric.value !== undefined
+        ? String(metric.value)
+        : "absent";
     lines.push(`- ${metric.metricId}@${metric.metricVersion} ${metric.reading} ${metric.status} ${wire}`);
   }
   lines.push("", "## Goals");

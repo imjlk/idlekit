@@ -153,6 +153,14 @@ export function readMetric<N, U extends string, Vars>(
       ...(extracted.reason !== undefined ? { reason: extracted.reason } : {}),
     });
   }
+  // A registered extractor is typed apart from its definition. A mismatch is reported, not mixed into one reading.
+  if (extracted.domain !== metric.domain) {
+    return unavailableReading({
+      ...base,
+      status: "invalid",
+      reason: `extractor returned domain ${extracted.domain}; the metric declares ${metric.domain}`,
+    });
+  }
   const classified = extracted.domain === "amount"
     ? classifyAmount(ctx.E, extracted.amount, extracted.unit)
     : classifyFinite(extracted.value);
