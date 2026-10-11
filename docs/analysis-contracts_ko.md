@@ -18,9 +18,9 @@
 
 ## Artifact
 
-생성 schema는 `docs/schemas/generated/analysis.artifact.v1.schema.json`이다. `contracts:check`가 비교하고 덮어쓰지 않는다. provenance는 schema, algorithm version, assumption 본문의 hash다. `linkAnalysisArtifact`는 artifact를 `_meta` 옆에 둔다. JSON과 Markdown 렌더는 core에 있다. Markdown은 금액을 단위와 함께 출력한다.
+생성 schema는 `docs/schemas/generated/analysis.artifact.v1.schema.json`이다. `contracts:check`가 비교하고 덮어쓰지 않는다. provenance는 schema, algorithm version, assumption 본문의 hash이며 지갑 대체 같은 goal 단위 assumption도 포함한다. `linkAnalysisArtifact`는 artifact를 `_meta` 옆에 둔다. JSON과 Markdown 렌더는 core에 있다. Markdown은 금액을 단위와 함께 출력한다.
 
-`validateAnalysisSemantics`는 구조 schema가 못 하는 검사를 한다. ok가 아닌 reading은 `unavailable`이어야 하고 값이 없어야 한다. ok가 아닌 goal에는 `reached`도 `method`도 없다. `sampleCount`는 음수가 아닌 정수이며 `0`은 유효하다. extractor가 정의와 다른 domain을 돌려주는 metric은 `invalid`로 읽는다.
+`validateAnalysisSemantics`는 구조 schema가 못 하는 검사를 한다. ok가 아닌 reading은 `unavailable`이어야 하고 값이 없어야 한다. ok가 아닌 goal에는 `reached`도 `method`도 없다. `sampleCount`는 음수가 아닌 정수이며 `0`은 유효하다. extractor가 정의와 다른 domain을 돌려주는 metric은 `invalid`로 읽는다. 금액 reading에는 `value`가 없고 수치 reading에는 `amount`가 없다. version, `atSec`, `horizon.sec`는 유한해야 한다. JSON은 유한하지 않은 수를 `null`로 쓰기 때문이다.
 
 기존 `eta.ts`와 `growth.ts`는 일부 금액에 `toNumber` 또는 `Number`를 아직 쓴다. 그 호출은 추정 경로로 분류한다. artifact 계약이 아니다. 유한 변환을 전부 금지하지 않는다.
 

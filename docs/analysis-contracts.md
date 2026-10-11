@@ -18,9 +18,9 @@ Custom units, `vars`, and metric ids are registered by the caller. Core does not
 
 ## Artifact
 
-The generated schema is `docs/schemas/generated/analysis.artifact.v1.schema.json`. `contracts:check` compares it and does not rewrite it. Provenance hashes the schema, the algorithm version, and the assumption text. `linkAnalysisArtifact` puts the artifact next to `_meta`. JSON and Markdown renderers live in core. Markdown prints an amount with its unit.
+The generated schema is `docs/schemas/generated/analysis.artifact.v1.schema.json`. `contracts:check` compares it and does not rewrite it. Provenance hashes the schema, the algorithm version, and the assumption text, including goal-level assumptions such as a wallet fallback. `linkAnalysisArtifact` puts the artifact next to `_meta`. JSON and Markdown renderers live in core. Markdown prints an amount with its unit.
 
-`validateAnalysisSemantics` checks what the structural schema cannot. A non-ok reading must be labeled `unavailable` and carry no value. A non-ok goal carries neither `reached` nor `method`. `sampleCount` is a nonnegative integer, and `0` stays valid. A metric whose extractor returns a different domain than its definition is read as `invalid`.
+`validateAnalysisSemantics` checks what the structural schema cannot. A non-ok reading must be labeled `unavailable` and carry no value. A non-ok goal carries neither `reached` nor `method`. `sampleCount` is a nonnegative integer, and `0` stays valid. A metric whose extractor returns a different domain than its definition is read as `invalid`. An amount reading carries no `value`, and a numeric reading carries no `amount`. Versions, `atSec`, and `horizon.sec` must be finite, because JSON writes a nonfinite number as `null`.
 
 Legacy `eta.ts` and `growth.ts` still narrow some amounts with `toNumber` or `Number`. Those calls are classified as estimate paths, not as the artifact contract. This change does not ban every finite conversion.
 
