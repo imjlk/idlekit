@@ -192,9 +192,9 @@ function simulate(spec: CaseSpec): RunResult<number, UnitCode, Vars> {
  * @evidence ./growthFit.ts#growthFitJsonSchema Reads the generated schema.
  * @evidenceReview ./growthFit.ts#growthFitJsonSchema #ff8650e The function memoizes typia.json.schema of GrowthFitArtifactV1.
  * @evidence ./growthFit.ts#fitGrowth Fits slow, fast, and softcap-configured literal series.
- * @evidenceReview ./growthFit.ts#fitGrowth #f61a642 The function finds sign and drop breaks, an exact tenfold drop included, on every prepared point, keeps both sides of each break through the sampling budget, handles a one-point budget, keeps a non-positive domain invalid under coarse cadence, fits on time since the window start, fits value space in units of the series magnitude, reads saturation from gap-normalized rates, prefers an exact value fit, and withholds shape claims when the action history is incomplete.
+ * @evidenceReview ./growthFit.ts#fitGrowth #bad1630 The function finds sign and drop breaks, an exact tenfold drop included, on every prepared point, keeps both sides of each break through the sampling budget, reads irregular cadence from the input, handles a one-point budget, keeps a non-positive domain invalid under coarse cadence, fits on time since the window start, fits value space in units of the series magnitude, reads saturation from gap-normalized rates, lets an exact value fit win only when it beats the log fit's relative error, and withholds shape claims when the action history is incomplete.
  * @evidence ./growthFit.ts#fitGrowthFromRun Fits executed runs of the slow and fast models.
- * @evidenceReview ./growthFit.ts#fitGrowthFromRun #7910493 The function keeps a present but empty trace empty, maps each action row to the first trace state after it, marks prestige count changes as breaks, reports whether the action history is complete, uses netWorthFallback without a model netWorth, and calls fitGrowth.
+ * @evidenceReview ./growthFit.ts#fitGrowthFromRun #2e570b1 The function keeps a present but empty trace empty, maps each action row by binary search to the first trace state after it, marks prestige count changes as breaks, reports whether the action history is complete, uses netWorthFallback without a model netWorth, and calls fitGrowth.
  * @evidence ./growthFit.ts#growthFitSchemaId Reads the growth fit schema id.
  * @evidenceReview ./growthFit.ts#growthFitSchemaId #5247d65 The function returns the growth.fit.v1 schema URL constant.
  * @evidence ./growthFit.ts#growthFitAlgorithmVersion Reads the algorithm version on the artifact.
@@ -443,6 +443,16 @@ export function refusesDisguisedDomains(): void {
   const unitExp = onlyWindow(fitNumbers(offsets.map((t) => ({ t, amount: Math.exp(0.05 * t) }))));
   expect(tinyExp.shape).toBe("exponential");
   expect(tinyExp.shape).toBe(unitExp.shape);
+
+  // A slow exponential keeps its exact log fit over a threshold-close value parabola.
+  const slowExp = onlyWindow(fitNumbers(offsets.map((t) => ({ t, amount: Math.exp(1e-5 * t) }))));
+  expect(slowExp.shape).toBe("exponential");
+  expect(onlyWindow(fitNumbers(offsets.map((t) => ({ t, amount: 10000 + 3 * t })))).shape).toBe("polynomial");
+
+  // An irregular input cadence stays irregular after the sampling budget thins it.
+  const gappedTimes = [...Array.from({ length: 40 }, (_unused, index) => index), ...Array.from({ length: 41 }, (_unused, index) => 50 + index)];
+  const gapped = fitNumbers(gappedTimes.map((t) => ({ t, amount: Math.exp(0.05 * t) })), { samplingBudget: 8 });
+  expect(gapped.irregular).toBe(true);
 
   // A trace that retention emptied stays empty.
   const emptyTraceRun = runScenario({

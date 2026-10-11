@@ -482,7 +482,12 @@ function classifyPositive(
   };
   // An exact value-space line or parabola is polynomial whatever its intercept. A large intercept can make
   // the same series look nearly straight in log space.
-  const valueExact = valueRmse !== null && valueRmse <= VALUE_EXACT;
+  // An exact log fit keeps precedence: a value fit wins only when it is closer than the log fit's
+  // relative error (log10 residual times ln 10), so a slow exponential is not read as a parabola.
+  const valueExact =
+    valueRmse !== null &&
+    valueRmse <= VALUE_EXACT &&
+    !(linear !== null && linear.rmse * Math.LN10 < valueRmse);
   if (logSpan < 1e-6) {
     shape = "constant";
     residual = { space: "log10", rmse: rmseAround(ys.map(() => mean(ys)), ys) };
@@ -547,10 +552,26 @@ function pushBreak(breaks: GrowthDiscontinuity[], next: GrowthDiscontinuity): vo
   }
 }
 
+/**
+ * Index of the first time-ordered item at or after `t` (strictly after when `strict`), or -1.
+ * Binary search keeps break and action lookups at O(log n) per item.
+ */
+function firstIndexAtOrAfter(items: readonly { readonly t: number }[], t: number, strict: boolean): number {
+  let low = 0;
+  let high = items.length;
+  while (low < high) {
+    const mid = (low + high) >>> 1;
+    const at = items[mid]!.t;
+    if (strict ? at > t : at >= t) high = mid;
+    else low = mid + 1;
+  }
+  return low < items.length ? low : -1;
+}
+
 function slicesOf(points: readonly Point<unknown>[], breaks: readonly GrowthDiscontinuity[], windowSec: number): Slice[] {
   const opening = points.map(() => "none" as GrowthDiscontinuityKind);
   for (const item of breaks) {
-    const index = points.findIndex((point) => point.t >= item.t);
+    const index = firstIndexAtOrAfter(points, item.t, false);
     if (index > 0) opening[index] = item.kind;
   }
   const coarse: Array<{ start: number; end: number; discontinuity: GrowthDiscontinuityKind }> = [];
@@ -683,7 +704,7 @@ export function fitGrowth<N>(args: {
     }
   }
   for (const item of breaks) {
-    const index = prepared.findIndex((point) => point.t >= item.t);
+    const index = firstIndexAtOrAfter(prepared, item.t, false);
     if (index >= 0) {
       boundary.add(index);
       if (index > 0) boundary.add(index - 1);
@@ -708,7 +729,8 @@ export function fitGrowth<N>(args: {
   if (args.retention && args.retention.dropped > 0) {
     warnings.push("The fit sees the retained trace only.");
   }
-  const irregular = irregularSpacing(kept);
+  // Irregular spacing is a property of the input cadence; the sampling budget must not hide it.
+  const irregular = irregularSpacing(prepared);
   if (irregular) warnings.push("Sample spacing is irregular. Observed times are not rewritten onto a grid.");
   const cadenceCoarse =
     args.sampling.cadenceSec !== undefined && args.sampling.cadenceSec >= args.sampling.windowSec;
@@ -816,8 +838,8 @@ export function fitGrowthFromRun<N, U extends string, Vars>(args: {
   for (const row of args.run.actionsLog ?? []) {
     const id = row.actionId.toLowerCase();
     // An action row is stamped at decision time; the trace point at that t is the state before it.
-    // The break opens at the first trace state strictly after the action.
-    const after = states.find((state) => state.t > row.t);
+    // The break opens at the first trace state strictly after the action, found by binary search.
+    const after = states[firstIndexAtOrAfter(states, row.t, true)];
     if (!after) continue;
     discontinuities.push({
       t: after.t,
