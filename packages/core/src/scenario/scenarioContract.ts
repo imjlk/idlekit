@@ -293,14 +293,11 @@ export function structuralFieldMetadata(unit: { schema: unknown; components: unk
       const values = record.enum.filter((item): item is string => typeof item === "string");
       if (values.length > 0) enums[path] = values;
     }
-    if (Array.isArray(record.oneOf) && path.length > 0 && enums[path] === undefined) {
-      const values = record.oneOf.map((entry) => {
-        if (!entry || typeof entry !== "object" || Array.isArray(entry)) return undefined;
-        return (entry as Record<string, unknown>).const;
-      });
-      if (values.length > 0 && values.every((entry): entry is string => typeof entry === "string")) {
-        enums[path] = values;
-      }
+    // A string const is one legal value at its path. Union branches, inline or behind a ref, each
+    // reach this path, so their constants accumulate in branch order.
+    if (typeof record.const === "string" && path.length > 0) {
+      const values = (enums[path] ??= []);
+      if (!values.includes(record.const)) values.push(record.const);
     }
     const props = record.properties;
     if (props && typeof props === "object" && !Array.isArray(props)) {
