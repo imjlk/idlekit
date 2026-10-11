@@ -142,9 +142,11 @@ Sampo는 `bun.lock`이 있으면 `bun publish`를 선택합니다. 마지막 커
 
 인증 정책:
 
-- 기본: npm Trusted Publishing + GitHub OIDC
-- fallback: `NPM_TOKEN`을 `NODE_AUTH_TOKEN`으로 주입
-- 로컬 publish는 `NPM_CONFIG_USERCONFIG=/path/to/.npmrc` 방식 지원
+- npm Trusted Publishing + GitHub OIDC만 사용하며, workflow는 npm 토큰을 전달하지 않음
+- `@idlekit/*` 패키지는 2FA 필수이고 토큰 배포를 거부하므로, 배포는 Release workflow로 진행
+- 로컬 preflight와 dry run은 `NPM_CONFIG_USERCONFIG=/path/to/.npmrc` 방식 지원
+
+npm에 아직 없는 패키지는 workflow를 신뢰하도록 설정할 수 없습니다. 첫 버전은 로컬에서 배포한 뒤, 다음 수동 배포 전에 이 저장소와 `release.yml`로 Trusted Publishing을 설정합니다.
 
 즉, 평소 개발에서 npm을 쓰는 게 아니라, GitHub release 경로에서만 npm publish를 호출합니다.
 

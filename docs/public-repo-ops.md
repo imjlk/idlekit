@@ -28,7 +28,7 @@ Do not require the `Release` workflow as a merge gate.
 - prepare release PRs on `main` pushes and default manual dispatches
 - publish only from an explicit manual `publish=true` dispatch on `main`, after the release PR is merged
 - scope `id-token: write` for npm Trusted Publishing to the publish job
-- expose fallback `NPM_TOKEN` only to the publish step
+- publish through npm Trusted Publishing only; the workflow passes no npm token
 
 ## npm org `idlekit` checklist
 
@@ -37,7 +37,7 @@ Before the first public publish:
 1. confirm the `idlekit` npm org owns the `@idlekit/*` scope
 2. connect the GitHub repository/workflow for Trusted Publishing
 3. verify provenance is enabled
-4. keep a fallback `NPM_TOKEN` secret available until Trusted Publishing is proven stable
+4. after the first Trusted Publishing release, set each package to require 2FA and disallow tokens
 5. run `bun run release:publish:preflight`
 
 ## Automation already included

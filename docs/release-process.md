@@ -89,11 +89,11 @@ Workflow file:
 
 Release auth policy:
 
-- preferred: npm Trusted Publishing with GitHub OIDC
-- fallback: `NPM_TOKEN` secret exposed as `NODE_AUTH_TOKEN` at release time only
-- local publish can use `NPM_CONFIG_USERCONFIG=/path/to/.npmrc`
+- npm Trusted Publishing with GitHub OIDC; the workflow passes no npm token
+- each `@idlekit/*` package requires 2FA and refuses token publishes, so the Release workflow is the publish path
+- local preflight and dry runs can use `NPM_CONFIG_USERCONFIG=/path/to/.npmrc`
 
-If you use Trusted Publishing, configure npm to trust this repository and workflow before requesting a manual publish.
+A package that is not on npm yet cannot trust a workflow. Publish its first version locally, then configure Trusted Publishing for this repository and `release.yml` before the next manual publish.
 
 ## Local publish preflight
 

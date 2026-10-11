@@ -28,7 +28,7 @@ English version: [public-repo-ops.md](./public-repo-ops.md)
 - `main` push와 기본 수동 실행은 릴리즈 PR만 준비
 - 릴리즈 PR 머지 후 `main`에서 명시적인 `publish=true` 수동 실행으로만 배포
 - npm Trusted Publishing의 `id-token: write`는 배포 job에만 부여
-- fallback `NPM_TOKEN`은 배포 단계에만 전달
+- npm Trusted Publishing으로만 배포하며, workflow는 npm 토큰을 전달하지 않음
 
 ## npm org `idlekit` 체크리스트
 
@@ -37,7 +37,7 @@ English version: [public-repo-ops.md](./public-repo-ops.md)
 1. `idlekit` npm org가 `@idlekit/*` scope를 소유하는지 확인
 2. GitHub repository/workflow를 Trusted Publishing에 연결
 3. provenance 활성화 확인
-4. Trusted Publishing 안정화 전까지 fallback `NPM_TOKEN` secret 유지
+4. Trusted Publishing으로 첫 배포를 마친 뒤 각 패키지를 2FA 필수, 토큰 배포 차단으로 설정
 5. `bun run release:publish:preflight` 실행
 
 ## 이미 포함된 자동화
