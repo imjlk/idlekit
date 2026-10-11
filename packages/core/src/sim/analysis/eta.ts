@@ -167,8 +167,9 @@ export function etaSecondsFromEngineRatio<N>(
     return { status: "invalid", seconds: null, secondsDecimal: E.toString(ratio) };
   }
   // A nonzero ratio below the number range narrows to 0, which would read as already reached.
-  // absLog10 is finite only for a nonzero ratio; cmp against zero can round such a ratio to equal.
-  if (seconds === 0 && Number.isFinite(magnitude)) {
+  // absLog10 is finite only for a nonzero value; cmp against zero can round such a ratio to equal.
+  // The engine's own division can also lose the ratio, so a nonzero gap is checked as well.
+  if (seconds === 0 && (Number.isFinite(magnitude) || Number.isFinite(E.absLog10(E.sub(target, current))))) {
     return { status: "invalid", seconds: null, secondsDecimal: E.toString(ratio) };
   }
   return { status: "ok", seconds };
@@ -350,7 +351,21 @@ function analyticEstimate<N, U extends string, Vars>(
     };
   }
 
-  const rate = scenario.model.income(scenario.ctx, scenario.initial).amount;
+  const income = scenario.model.income(scenario.ctx, scenario.initial);
+  // The tick blocks income in another unit, so its amount cannot move this wallet.
+  if (income.unit.code !== scenario.initial.wallet.money.unit.code) {
+    return {
+      reached: false,
+      seconds: legacyInfinity(),
+      estimate: baseEstimate(binding, "invalid", {
+        assumptions: [
+          `income unit ${income.unit.code} does not match wallet unit ${scenario.initial.wallet.money.unit.code}; the tick blocks it`,
+          ...blocks,
+        ],
+      }),
+    };
+  }
+  const rate = income.amount;
   const ratio = etaSecondsFromEngineRatio(E, binding.threshold, current, rate, proven);
   if (ratio.status !== "ok" || ratio.seconds === null) {
     const assumptions = [
