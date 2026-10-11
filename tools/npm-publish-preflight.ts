@@ -1,5 +1,6 @@
 import { resolve } from "path";
 import { ROOT, pathExists, readJson, writeText } from "./_bun";
+import { compareSemver } from "./release-registry";
 
 type PackageManifest = Readonly<{
   name: string;
@@ -16,24 +17,6 @@ type RegistryStatus = Readonly<{
 }>;
 
 const PACKAGE_DIRS = ["packages/money", "packages/core", "packages/cli"] as const;
-
-function semverParts(version: string): [number, number, number, string?] {
-  const match = version.match(/^(\d+)\.(\d+)\.(\d+)(-.+)?$/);
-  if (!match) throw new Error(`unsupported semver format: ${version}`);
-  return [Number(match[1]), Number(match[2]), Number(match[3]), match[4] ?? undefined];
-}
-
-function compareSemver(a: string, b: string): number {
-  const ap = semverParts(a);
-  const bp = semverParts(b);
-  for (const i of [0, 1, 2] as const) {
-    if (ap[i] !== bp[i]) return ap[i] - bp[i];
-  }
-  if (ap[3] === bp[3]) return 0;
-  if (!ap[3]) return 1;
-  if (!bp[3]) return -1;
-  return ap[3].localeCompare(bp[3]);
-}
 
 function npmEnv(): NodeJS.ProcessEnv {
   const env = { ...process.env };

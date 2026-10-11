@@ -95,7 +95,10 @@ async function runCliSmoke(): Promise<Readonly<{ helpHasIdk: boolean; validateOk
 await $`rm -rf ${TMP_ROOT}`.quiet();
 await $`mkdir -p ${PACKS_DIR} ${CONSUMER_DIR}`.quiet();
 
-const packed = await Promise.all(PACKAGES.map(packPackage));
+// Pack one package at a time, in dependency order. Each prepack rewrites its package.json, and a
+// concurrent CLI bundle reads core's package.json while that rewrite is in flight.
+const packed: Awaited<ReturnType<typeof packPackage>>[] = [];
+for (const pkgDir of PACKAGES) packed.push(await packPackage(pkgDir));
 await writeConsumerPackageJson();
 await $`npm install --no-audit --no-fund ${packed.map((entry) => entry.tarballPath)}`.cwd(CONSUMER_DIR).quiet();
 

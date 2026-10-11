@@ -76,9 +76,12 @@ async function prepareConsumer(): Promise<string> {
   await $`rm -rf ${tmpRoot}`.quiet();
   await $`mkdir -p ${packsDir} ${consumerDir}`.quiet();
 
-  const tarballs = await Promise.all(
-    ["packages/money", "packages/core", "packages/cli"].map((pkgDir) => packPackage(pkgDir, packsDir)),
-  );
+  // Pack one package at a time, in dependency order. Each prepack rewrites its package.json, and a
+  // concurrent CLI bundle reads core's package.json while that rewrite is in flight.
+  const tarballs: string[] = [];
+  for (const pkgDir of ["packages/money", "packages/core", "packages/cli"]) {
+    tarballs.push(await packPackage(pkgDir, packsDir));
+  }
   await writeText(
     resolve(consumerDir, "package.json"),
     `${JSON.stringify({ name: "idlekit-readme-smoke", private: true, type: "module" }, null, 2)}\n`,

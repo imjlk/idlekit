@@ -25,8 +25,8 @@ English version: [public-repo-ops.md](./public-repo-ops.md)
 
 ## 릴리즈 workflow 정책
 
-- `main` push와 기본 수동 실행은 릴리즈 PR만 준비
-- 릴리즈 PR 머지 후 `main`에서 명시적인 `publish=true` 수동 실행으로만 배포
+- `main` push와 기본 수동 실행은 릴리즈 PR을 준비하고 CI를 실행
+- 릴리즈 PR을 머지하면 배포하며, `main`에서 `publish=true` 수동 실행은 실패한 배포의 재시도
 - npm Trusted Publishing의 `id-token: write`는 배포 job에만 부여
 - npm Trusted Publishing으로만 배포하며, workflow는 npm 토큰을 전달하지 않음
 
@@ -38,14 +38,14 @@ npm에 아직 없는 패키지:
 
 1. `idlekit` npm org가 `@idlekit/*` scope를 소유하는지 확인
 2. `bun run release:publish:preflight` 실행
-3. 첫 버전을 로컬 배포 ([release-process_ko.md](./release-process_ko.md#로컬-publish-preflight) 참고)
+3. 첫 버전을 로컬 배포하고 ([release-process_ko.md](./release-process_ko.md#로컬-publish-preflight) 참고), 그 버전을 `tools/release-registry.ts`의 `PROVENANCE_EXEMPT`에 추가
 4. 패키지의 다음 버전을 배포할 준비가 되면 이 저장소와 `release.yml`을 Trusted Publisher로 등록하고, **Allowed actions**에 `npm publish`를 포함 (2026-09-03 이후 만든 설정은 기본적으로 `npm stage publish`만 허용)
-5. 그 버전을 2일 안에 Release workflow로 배포: npm은 그때까지 배포를 마치지 못한 새 Trusted Publisher 설정을 만료시키며, 만료된 설정은 지우고 다시 만들어야 함
+5. 그 버전의 릴리즈 PR을 머지해 Release workflow가 설정 후 2일 안에 첫 배포를 성공적으로 마치게 함: npm은 그때까지 배포를 마치지 못한 새 Trusted Publisher 설정을 만료시키며, 만료된 설정은 지우고 다시 만들어야 함
 6. 패키지를 2FA 필수, 토큰 배포 차단으로 설정
 
 [npm Trusted Publishing](https://docs.npmjs.com/trusted-publishers/) 참고.
 
-이후 버전은 릴리즈 PR을 머지하고 Release workflow를 `publish=true`로 실행합니다. 배포된 버전에 provenance가 붙었는지 확인합니다.
+이후 버전은 릴리즈 PR을 머지하면 됩니다. Release workflow가 배포하고 provenance와 npm 설치를 확인합니다.
 
 ## 이미 포함된 자동화
 
