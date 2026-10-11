@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { symlink } from "fs/promises";
 import { isAbsolute, relative, resolve } from "path";
 import type { ScenarioV1 } from "@idlekit/core";
 import { loadRegistries, parsePluginPaths, parsePluginRoots, parsePluginSecurityOptions, parsePluginSha256 } from "./load";
@@ -194,7 +195,10 @@ describe("plugin load", () => {
       };
       const run = async (path: string) => {
         const loaded = await loadRegistries([path]);
+        // Keyed by the resolved path the caller passed, so a missing key fails here instead of
+        // comparing undefined digests below.
         const digest = loaded.pluginDigest[path]!;
+        expect(digest).toMatch(/^[0-9a-f]{64}$/);
         const hash = prepareResolvedRun({ scenario, ...loaded, seed: 1 }).open("simulate", "x").hash;
         return { digest, hash };
       };
@@ -235,6 +239,25 @@ describe("plugin load", () => {
       const body = `export const strategies = [];\n`;
       await writeText(single, body);
       expect((await loadRegistries([single])).pluginDigest[single]).toBe(sha256Hex(body));
+    } finally {
+      await removePath(dir);
+    }
+  });
+
+  it("loads a plugin created after a sibling was loaded through a symlinked directory", async () => {
+    const dir = await createTempDir("idlekit-plugin-symlink");
+    try {
+      await writeText(resolve(dir, "real", "first.mjs"), `export const strategies = [];\n`);
+      const link = resolve(dir, "link");
+      await symlink(resolve(dir, "real"), link, process.platform === "win32" ? "junction" : "dir");
+      const first = resolve(link, "first.mjs");
+      expect(Object.keys((await loadRegistries([first])).pluginDigest)).toEqual([first]);
+
+      const later = resolve(link, "later.mjs");
+      const body = `export const strategies = [];\n// later\n`;
+      await writeText(later, body);
+      const loaded = await loadRegistries([later]);
+      expect(loaded.pluginDigest).toEqual({ [later]: sha256Hex(body) });
     } finally {
       await removePath(dir);
     }
