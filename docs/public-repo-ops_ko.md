@@ -25,8 +25,8 @@ English version: [public-repo-ops.md](./public-repo-ops.md)
 
 ## 릴리즈 workflow 정책
 
-- `main` push와 기본 수동 실행은 릴리즈 PR만 준비
-- 릴리즈 PR 머지 후 `main`에서 명시적인 `publish=true` 수동 실행으로만 배포
+- `main` push와 기본 수동 실행은 릴리즈 PR을 준비하고 CI를 실행
+- 릴리즈 PR을 머지하면 배포하며, `main`에서 `publish=true` 수동 실행은 실패한 배포의 재시도
 - npm Trusted Publishing의 `id-token: write`는 배포 job에만 부여
 - npm Trusted Publishing으로만 배포하며, workflow는 npm 토큰을 전달하지 않음
 
@@ -42,7 +42,7 @@ npm에 아직 없는 패키지:
 4. npm에서 이 저장소와 `release.yml`을 패키지의 Trusted Publisher로 등록
 5. 패키지를 2FA 필수, 토큰 배포 차단으로 설정
 
-이후 버전은 릴리즈 PR을 머지하고 Release workflow를 `publish=true`로 실행합니다. 배포된 버전에 provenance가 붙었는지 확인합니다.
+이후 버전은 릴리즈 PR을 머지하면 됩니다. Release workflow가 배포하고 provenance와 npm 설치를 확인합니다.
 
 ## 이미 포함된 자동화
 

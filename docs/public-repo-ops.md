@@ -25,8 +25,8 @@ Do not require the `Release` workflow as a merge gate.
 
 ## Release workflow policy
 
-- prepare release PRs on `main` pushes and default manual dispatches
-- publish only from an explicit manual `publish=true` dispatch on `main`, after the release PR is merged
+- prepare release PRs on `main` pushes and default manual dispatches, and run CI on them
+- publish when the release PR is merged; a manual `publish=true` dispatch on `main` retries a failed publication
 - scope `id-token: write` for npm Trusted Publishing to the publish job
 - publish through npm Trusted Publishing only; the workflow passes no npm token
 
@@ -42,7 +42,7 @@ For a package that is not on npm yet:
 4. on npm, add this repository and `release.yml` as the package's Trusted Publisher
 5. set the package to require 2FA and disallow tokens
 
-For every later version, merge the release PR and run the Release workflow with `publish=true`. Check that the published version has provenance.
+For every later version, merge the release PR. The Release workflow publishes it and checks provenance and installation from npm.
 
 ## Automation already included
 

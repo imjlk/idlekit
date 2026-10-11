@@ -16,13 +16,14 @@ type Step = {
   with?: Record<string, string>;
   env?: Record<string, string>;
 };
-type Job = { if: string; permissions: Record<string, string>; steps: Step[] };
+type Job = { if: string; needs?: string; permissions: Record<string, string>; outputs?: Record<string, string>; steps: Step[] };
 type Workflow = {
   on: { push: { branches: string[] }; workflow_dispatch: { inputs: { publish: { type: string; default: boolean } } } };
   permissions: Record<string, string>;
-  jobs: { prepare: Job; publish: Job };
+  jobs: { prepare: Job; plan: Job; publish: Job };
 };
 const workflow = parse(readFileSync(resolve(import.meta.dir, "../.github/workflows/release.yml"), "utf8")) as Workflow;
+const ci = parse(readFileSync(resolve(import.meta.dir, "../.github/workflows/ci.yml"), "utf8")) as { on: Record<string, unknown> };
 
 /** Evaluate only the boolean/string subset used by these job guards. */
 function allows(guard: string, event: string, ref: string, publish: boolean): boolean {
@@ -139,30 +140,53 @@ describe("release preparation and publishing", () => {
     }
   });
 
-  it("publishes only on an explicit manual request on main", () => {
+  it("plans publication on every main push and on a manual retry, and publishes only what the plan selects", () => {
     const cases = [
-      ["push", "refs/heads/main", false, true, false],
-      ["push", "refs/heads/main", true, true, false],
+      ["push", "refs/heads/main", false, true, true],
+      ["push", "refs/heads/main", true, true, true],
       ["workflow_dispatch", "refs/heads/main", false, true, false],
       ["workflow_dispatch", "refs/heads/main", true, false, true],
       ["workflow_dispatch", "refs/heads/feature", false, false, false],
       ["workflow_dispatch", "refs/heads/feature", true, false, false],
       ["pull_request", "refs/heads/main", true, false, false],
     ] as const;
-    for (const [event, ref, publish, prepareAllowed, publishAllowed] of cases) {
+    for (const [event, ref, publish, prepareAllowed, planAllowed] of cases) {
       expect(allows(workflow.jobs.prepare.if, event, ref, publish)).toBe(prepareAllowed);
-      expect(allows(workflow.jobs.publish.if, event, ref, publish)).toBe(publishAllowed);
+      expect(allows(workflow.jobs.plan.if, event, ref, publish)).toBe(planAllowed);
     }
+    expect(workflow.jobs.publish.needs).toBe("plan");
+    expect(workflow.jobs.publish.if).toBe("needs.plan.outputs.publish == 'true'");
+    const decide = workflow.jobs.plan.steps.find((step) => step.run === "bun tools/release-registry.ts plan");
+    expect(workflow.jobs.plan.outputs?.publish).toBe(`\${{ steps.${(decide as Step & { id?: string })?.id}.outputs.publish }}`);
+    expect(decide?.env).toEqual({ RELEASE_EVENT: "${{ github.event_name }}", SELECTED_SHA: "${{ github.sha }}" });
     expect(workflow.on.push.branches).toEqual(["main"]);
     expect(workflow.on.workflow_dispatch.inputs.publish).toMatchObject({ type: "boolean", default: false });
+  });
+
+  it("runs CI on the release PR, which GITHUB_TOKEN pushes would not start", () => {
+    expect(workflow.jobs.prepare.permissions.actions).toBe("write");
+    const create = workflow.jobs.prepare.steps.find((step) => step.name === "Create or update release PR")!.run!;
+    expect(create.indexOf("gh workflow run ci.yml --ref release/main")).toBeGreaterThan(create.indexOf("git push"));
+    expect(create).toContain("Merging this PR publishes");
+    expect(ci.on).toHaveProperty("workflow_dispatch");
+  });
+
+  it("verifies the published versions from the registry after publishing", () => {
+    const steps = workflow.jobs.publish.steps;
+    const verify = steps.findIndex((step) => step.name === "Verify published packages");
+    expect(verify).toBeGreaterThan(steps.findIndex((step) => step.name === "Restore publish lockfile"));
+    expect((steps[verify] as Step & { if?: string }).if).toBeUndefined();
+    expect(steps[verify]?.run).toBe("bun tools/release-registry.ts verify");
+    expect(steps[verify]?.env).toEqual({ PUBLISHED_PACKAGES: "${{ needs.plan.outputs.packages }}" });
   });
 
   it("keeps publish commands and registry credentials out of preparation", () => {
     expect(workflow.permissions).toEqual({ contents: "read" });
     expect(workflow.jobs.prepare.permissions["id-token"]).toBeUndefined();
+    expect(workflow.jobs.plan.permissions).toEqual({ contents: "read" });
     expect(workflow.jobs.publish.permissions["id-token"]).toBe("write");
-    const preparation = JSON.stringify(workflow.jobs.prepare);
-    expect(preparation).not.toContain("setup-node@");
+    expect(JSON.stringify(workflow.jobs.prepare)).not.toContain("setup-node@");
+    expect(JSON.stringify(workflow.jobs.plan)).not.toContain("setup-node@");
     // npm publishes through Trusted Publishing only; the packages refuse token publishes.
     for (const job of Object.values(workflow.jobs)) {
       expect(JSON.stringify(job)).not.toContain("NPM_TOKEN");
@@ -170,9 +194,8 @@ describe("release preparation and publishing", () => {
     }
     for (const [jobName, job] of Object.entries(workflow.jobs)) {
       const actions = job.steps.filter((step) => step.uses?.startsWith("bruits/sampo/"));
-      expect(actions).toHaveLength(1);
-      expect(actions[0]?.with?.command).toBe(jobName === "prepare" ? "release" : "publish");
-      expect(actions[0]?.with?.command).not.toBe("auto");
+      const expected = { prepare: ["release"], plan: [], publish: ["publish"] }[jobName];
+      expect(actions.map((action) => action.with?.command)).toEqual(expected!);
     }
     expect(workflow.jobs.publish.steps.findIndex((step) => step.name === "Require consumed changesets"))
       .toBeLessThan(workflow.jobs.publish.steps.findIndex((step) => step.with?.command === "publish"));

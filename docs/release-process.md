@@ -58,19 +58,29 @@ idk setup plugin-trust --plugin ./custom-econ-plugin.ts --out ./.idk/plugin-trus
 Pushes to `main` and manual runs with `publish=false` prepare or update a Ready
 `release/main` PR from pending changesets, including versions, changelogs, and the
 Bun workspace lockfile. This works without branch protection. With no pending
-changesets, preparation is a no-op. It never merges the PR or publishes packages.
+changesets, preparation is a no-op. It never merges the PR. After pushing the PR
+branch it dispatches CI on `release/main`, because pushes made with `GITHUB_TOKEN`
+do not start `pull_request` workflows.
 
 The pinned Sampo action's `release` command only edits versions and changelogs;
 the workflow creates the PR separately. Its `auto` command can fall through to
 publishing, so neither job uses it. The preparation job has no npm credentials
 or OIDC permission.
 
-Publication requires a separate manual Release run on `main` with `publish=true`,
-after the release PR is merged and changesets are consumed. Only that job sets
-up Node/npm, installs the matching Sampo CLI, runs `publish:gate` and `readme:smoke`,
-and exposes npm authentication to the explicit `publish` step.
-The dispatch's selected commit is checked out and must still match remote `main`
-before preflight and immediately before publishing. A newer `main` needs a fresh request.
+Merging the release PR publishes. On every push to `main`, the `plan` job
+(`bun tools/release-registry.ts plan`) publishes only when no changeset is pending,
+the pushed commit is still the head of `main`, and some package version is not on
+npm yet; in practice that is the push that merges the release PR. Any other push
+skips publication with the reason in the log. A manual run with `publish=true` is a
+retry for the same commit and fails instead of skipping.
+
+Only the `publish` job sets up Node/npm, installs the matching Sampo CLI, runs
+`publish:gate` and `readme:smoke`, and gets the OIDC permission for the `publish` step.
+Its commit must still match remote `main` before preflight and immediately before
+publishing. After publishing, `bun tools/release-registry.ts verify` waits for the
+new versions on the registry, rejects `workspace:` specs in their registry metadata,
+requires provenance for the versions this run published, installs every current
+version from npm, and checks `idk --version`.
 
 Sampo selects `bun publish` when `bun.lock` is present. After the final commit check,
 the publish job temporarily moves that lockfile outside the checkout so Sampo selects
@@ -93,7 +103,7 @@ Release auth policy:
 - each published `@idlekit/*` package requires 2FA and refuses token publishes; the Release workflow is the publish path for every version after the first
 - local preflight and dry runs can use `NPM_CONFIG_USERCONFIG=/path/to/.npmrc`
 
-A package that is not on npm yet cannot trust a workflow. Publish its first version locally, then configure Trusted Publishing for this repository and `release.yml` before the next manual publish.
+A package that is not on npm yet cannot trust a workflow. Publish its first version locally, then configure Trusted Publishing for this repository and `release.yml` before merging the next release PR.
 
 ## Local publish preflight
 
@@ -151,6 +161,6 @@ bun run release:dry-run
 ## Public repo notes
 
 - The release workflow is pinned to commit SHAs for third-party GitHub Actions.
-- Protect `main` and review release PR validation before requesting a publish.
-- Pushes and default manual runs only prepare a PR; publishing always needs `publish=true` on `main`.
+- Protect `main` and review the release PR and its CI before merging it; merging publishes.
+- Other pushes and default manual runs only prepare a PR; `publish=true` retries a publication that failed.
 - The release workflow upgrades npm only inside GitHub Actions so local development can stay Bun-first.
