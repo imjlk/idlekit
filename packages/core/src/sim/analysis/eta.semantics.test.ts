@@ -66,7 +66,7 @@ function modelOf<N>(
  * @evidence ./eta.ts#etaEstimateJsonSchema Reads the generated OpenAPI 3.1 schema object.
  * @evidenceReview ./eta.ts#etaEstimateJsonSchema #2f0bdab The function memoizes typia.json.schema of EtaEstimateV1.
  * @evidence ./eta.ts#etaSecondsFromEngineRatio Divides 1e402 by 1e400 in the engine and rejects a 1e400 second ratio.
- * @evidenceReview ./eta.ts#etaSecondsFromEngineRatio #ce3e42d The function checks finiteness, divides the gap by the rate with divN, and narrows only a finite ratio within 1e308.
+ * @evidenceReview ./eta.ts#etaSecondsFromEngineRatio #b52176a The function checks finiteness, divides the gap by the rate with divN, narrows only a finite ratio within 1e308, and rejects a positive ratio that narrows to zero.
  * @evidence ./eta.ts#etaAnalytic Runs the analytic estimate on the break_infinity fixture and the suffix goal.
  * @evidenceReview ./eta.ts#etaAnalytic #17a1808 The function wraps analyticEstimate, whose exact label also needs no maxLogGap tick policy, and adds a fixed-step compare only when a fallback is requested.
  * @evidence ./eta.ts#etaSimulate Runs the fixed-step estimate on the same fixtures and compares goal ids.
@@ -98,6 +98,14 @@ export function keepsEngineRatioBeforeNarrowing(): void {
   expect(huge.status).toBe("invalid");
   expect(huge.secondsDecimal).toBeDefined();
   expect(Number.isFinite(Number(huge.secondsDecimal))).toBe(false);
+  // A positive ratio below the number range is not zero seconds.
+  const tiny = etaSecondsFromEngineRatio(big, big.from(1), big.zero(), big.from("1e400"), true);
+  expect(tiny.status).toBe("invalid");
+  expect(tiny.seconds).toBeNull();
+  expect(tiny.secondsDecimal).toBeDefined();
+  const notYet = etaAnalytic({ scenario: modelOf(big, big.from("1e400")), target: { kind: "money", value: "1" } });
+  expect(notYet.reached).toBe(false);
+  expect(notYet.estimate.status).toBe("invalid");
 
   const scenario = modelOf(big, big.from("1e400"));
   const analytic = etaAnalytic({ scenario, target: { kind: "money", value: "1e402" } });
@@ -152,6 +160,22 @@ export function separatesExactAndLocalEta(): void {
   expect(settled.estimate.method).toBe("analytic-local");
   expect(settled.confidence).not.toBe("high");
   expect(settled.estimate.assumptions.join(" ")).toContain("maxLogGap");
+  // A pending accumulate bucket flushes on the next tick, so constant income is not exact either.
+  const pending = etaAnalytic({
+    scenario: {
+      ...gapped,
+      ctx: { ...gapped.ctx, tickPolicy: { mode: "accumulate" } },
+      initial: { ...gapped.initial, wallet: { ...gapped.initial.wallet, bucket: 100 } },
+    },
+    target: { kind: "money", value: "50" },
+  });
+  expect(pending.estimate.method).toBe("analytic-local");
+  expect(pending.confidence).not.toBe("high");
+  expect(pending.estimate.assumptions.join(" ")).toContain("accumulated bucket");
+  // A constant non-positive income estimate passes its own semantic validator.
+  const stalled = etaAnalytic({ scenario: modelOf(engine, 0), target: { kind: "money", value: "3" } });
+  expect(stalled.estimate.status).toBe("unsupported");
+  expect(validateEtaEstimateSemantics(stalled.estimate)).toEqual([]);
   expect(exact.estimate.method).toBe("exact");
   expect(exact.estimate.compare?.localSec).toBe(3);
   expect(exact.estimate.compare?.fixedStepSec).toBe(3);

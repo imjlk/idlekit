@@ -166,6 +166,11 @@ export function etaSecondsFromEngineRatio<N>(
   if (seconds === undefined) {
     return { status: "invalid", seconds: null, secondsDecimal: E.toString(ratio) };
   }
+  // A nonzero ratio below the number range narrows to 0, which would read as already reached.
+  // absLog10 is finite only for a nonzero ratio; cmp against zero can round such a ratio to equal.
+  if (seconds === 0 && Number.isFinite(magnitude)) {
+    return { status: "invalid", seconds: null, secondsDecimal: E.toString(ratio) };
+  }
   return { status: "ok", seconds };
 }
 
@@ -216,6 +221,12 @@ function exactBlocks<N, U extends string, Vars>(scenario: CompiledScenario<N, U,
   if (scenario.constraints) blocks.push("a policy constraint can change the schedule");
   if (scenario.ctx.tickPolicy.maxLogGap !== undefined) {
     blocks.push("tick settlement can drop or hold income below maxLogGap");
+  }
+  if (
+    scenario.ctx.tickPolicy.mode === "accumulate" &&
+    scenario.ctx.E.cmp(scenario.initial.wallet.bucket, scenario.ctx.E.zero()) !== 0
+  ) {
+    blocks.push("a pending accumulated bucket can flush into the wallet on the next tick");
   }
   return blocks;
 }
@@ -344,7 +355,7 @@ function analyticEstimate<N, U extends string, Vars>(
   if (ratio.status !== "ok" || ratio.seconds === null) {
     const assumptions = [
       ratio.status === "unsupported"
-        ? "constant non-positive income does not reach a higher target; this is not labeled unreachable"
+        ? "constant non-positive income does not reach a higher target; the estimate makes no reachability claim"
         : ratio.status === "insufficient-data"
           ? "the local rate is not positive; that is not proof the target stays out of reach"
           : "the engine ratio is not a finite seconds count",
