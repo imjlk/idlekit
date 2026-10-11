@@ -20,6 +20,8 @@ These are the canonical JSON output contracts for the CLI.
 - `replay.verify.output.schema.json`
 - `kpi.regress.output.schema.json`
 
+`docs/schemas/generated/scenario.v1.schema.json` is the generated structural schema for `ScenarioV1`. It is not a CLI output schema. See [Contract generation](../contract-generation.md).
+
 ## Notes
 
 - Schemas apply to `--format json` outputs

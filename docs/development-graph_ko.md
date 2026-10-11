@@ -114,3 +114,17 @@ macOS arm64, Bun `1.3.10`, `@ttsc/graph` `0.30.4`, protocol `2025-11-25`에서 �
 `createPlannerStrategy`의 forward execution trace(`maxDepth` 3, `maxNodes` 32)는 여전히 `stepOnce`를 가리키지 않는다. rollout 호출은 `packages/core/src/sim/strategy/planner.ts:322`의 `PlannerDeps.d.stepOnce`다. 그 edge는 미관측이다.
 
 `bun run graph:check`는 종료 코드 0이다. `bench:sim:check`, `bench:sim:suite:check`, `tune:regress`, `kpi:report`, `kpi:regress`, `bunx ttsc -p tsconfig.tools.json`, `bunx ttsc -p tsconfig.examples.json`, `test:conformance:extended`는 실행하지 않았다.
+
+## TC-05 호출자
+
+commit `8bdef6fdc6c9f763e4f4e946ff16c67d88d129c4`에서 macOS arm64, Bun `1.4.2`, `@ttsc/graph` `0.30.4`, protocol `2025-11-25`로 조회했다. 생성 식별자는 없다. 서버 cwd는 이 작업 트리이고 프로그램은 `tsconfig.graph.json`이다. lookup은 `validateScenarioStructure`를 `packages/core/src/scenario/scenarioContract.ts:64`, `buildContractDocument`를 `packages/core/src/scenario/scenarioContract.ts:205`, `writeContracts`를 `tools/contract-files.ts:42`, `createPlannerStrategy`를 `packages/core/src/sim/strategy/planner.ts:286`, `stepOnce`를 `packages/core/src/sim/step.ts:356`에 둔다. 이 revision에서 `validateScenarioV1` lookup은 그 이름을 돌려주지 않았다. 소스 확인상 선언은 `packages/core/src/scenario/validate.ts:777`이다.
+
+`validateScenarioStructure`의 reverse execution trace(`maxDepth` 3, `maxNodes` 32)는 `packages/core/src/scenario/scenarioContract.probe.ts:17`, `packages/core/src/scenario/scenarioContract.probe.ts:18`, `packages/core/src/scenario/scenarioContract.test.ts:214`의 `keepsSemanticValidation`을 가리킨다. 같은 trace는 `packages/core/src/scenario/scenarioContract.test.ts:218`과 `packages/core/src/scenario/scenarioContract.test.ts:300` span을 포함한다.
+
+`buildContractDocument`의 reverse execution trace(`maxDepth` 3, `maxNodes` 32)는 `tools/contract-files.ts:34`의 `renderedContracts`, `packages/core/src/scenario/scenarioContract.test.ts:109`의 `keepsTypedContractSingleSource`, `tools/contract-files.ts:42`의 `writeContracts`, `tools/contract-files.ts:49`의 `compareContracts`, `tools/contracts-check.ts:15`의 호출을 가리킨다.
+
+`writeContracts`의 reverse execution trace(`maxDepth` 2, `maxNodes` 16)는 선언만 가리킨다. 소스 확인상 호출은 `tools/generate-contracts.ts:15`다. 그 줄은 리뷰다. graph hop이 아니다. `contracts:generate`와 `contracts:check` 패키지 스크립트는 graph에 없다.
+
+`createPlannerStrategy`의 forward execution trace(`maxDepth` 3, `maxNodes` 32)는 여전히 `stepOnce`를 가리키지 않는다. rollout 호출은 `packages/core/src/sim/strategy/planner.ts:358`의 `PlannerDeps.d.stepOnce`다. 그 edge는 미관측이다.
+
+`bun run graph:check`는 종료 코드 0이다. 이 변경에서 `bench:sim:check`, `bench:sim:suite:check`, `tune:regress`, `kpi:report`, `kpi:regress`, `bunx ttsc -p tsconfig.tools.json`, `bunx ttsc -p tsconfig.examples.json`, `test:conformance:extended`는 실행하지 않았다.

@@ -71,7 +71,7 @@ Dependabot은 `ttsc`, `@ttsc/*`, `typia`, `@typia/*`를 한 그룹 PR로 연다.
 | emit | plain `bun`이 생성된 JS를 실행하고 `typia.createValidate`는 대체됨 | 남은 `typia.createValidate`나 `@ttsc/*` import는 smoke 실패 |
 | TSX | 로컬 `h` factory로 JSX를 변환한다 | React/OpenTUI import가 남으면 smoke가 실패한다 |
 
-툴체인 fixture는 Evidence와 Graph를 따로 확인한다. `TC-03`이 저장소 `evidence:check`와 `evidence:smoke`를 추가한다. `TC-04`가 저장소 프로그램용 `graph:check`를 추가한다. `DX-01`이 `test:conformance`를 추가한다. `contracts:generate`와 `contracts:check`는 아직 없다.
+툴체인 fixture는 Evidence와 Graph를 따로 확인한다. `TC-03`이 저장소 `evidence:check`와 `evidence:smoke`를 추가한다. `TC-04`가 저장소 프로그램용 `graph:check`를 추가한다. `DX-01`이 `test:conformance`를 추가한다. `TC-05`가 `contracts:generate`와 `contracts:check`를 추가한다. [계약 생성](./contract-generation_ko.md)을 본다.
 
 ## Evidence 범위
 

@@ -6,7 +6,7 @@
  * TC-02 requires package check and money/core emit to call ttsc, not tsc.
  * toolchain:doctor and toolchain:prepare are real after that pin.
  * Evidence and Graph repository gates arrived in TC-03 and TC-04.
- * DX-01 adds test:conformance. contracts:generate and contracts:check stay absent.
+ * DX-01 adds test:conformance. TC-05 adds contracts:generate and contracts:check.
  */
 import { resolve } from "path";
 
@@ -79,7 +79,7 @@ const mustBeAbsent = [
   "tsconfig.json",
 ];
 
-const absentRootScripts = ["contracts:generate", "contracts:check"];
+const absentRootScripts: string[] = [];
 
 const cliCommandFiles = [
   "inspect.ts",
@@ -144,6 +144,23 @@ for (const name of ["evidence:check", "evidence:smoke", "format:check"]) {
 if (!("graph:check" in scripts)) fail("TC-04 script is missing: graph:check");
 if (!scripts["test:conformance"]?.includes("tools/conformance.ts")) {
   fail("DX-01 test:conformance script is missing");
+}
+if (scripts["contracts:generate"] !== "bun --preload @ttsc/unplugin/bun-register tools/generate-contracts.ts") {
+  fail("TC-05 contracts:generate script is missing");
+}
+if (scripts["contracts:check"] !== "bun --preload @ttsc/unplugin/bun-register tools/contracts-check.ts") {
+  fail("TC-05 contracts:check script is missing");
+}
+for (const rel of [
+  "tools/generate-contracts.ts",
+  "tools/contracts-check.ts",
+  "tools/contract-files.ts",
+  "tools/contract-smoke.ts",
+  "packages/core/src/scenario/scenarioContract.ts",
+  "docs/contract-generation.md",
+  "docs/schemas/generated/scenario.v1.schema.json",
+]) {
+  if (!entryExists(resolve(root, rel))) fail(`TC-05 path is missing: ${rel}`);
 }
 for (const rel of [
   "packages/core/src/testkit/conformance.ts",

@@ -314,6 +314,54 @@
           "args": ["test", "src/lib/runConfiguration.test.ts"]
         }
       ]
+    },
+    {
+      "id": "REQ-TC05-TYPED-CONTRACT-SINGLE-SOURCE",
+      "pr": "TC-05",
+      "anchor": "req-tc05-typed-contract-single-source",
+      "doc": "docs/requirements/active/typed-contract-generation.md",
+      "production": ["packages/core/src/scenario/scenarioContract.ts"],
+      "tests": [
+        {
+          "file": "packages/core/src/scenario/scenarioContract.test.ts",
+          "exportName": "keepsTypedContractSingleSource",
+          "registeredAs": "TC-05 typed contract > keeps one scenario schema",
+          "cwd": "packages/core",
+          "args": ["test", "--timeout", "180000", "src/scenario/scenarioContract.test.ts"]
+        }
+      ]
+    },
+    {
+      "id": "REQ-TC05-SEMANTIC-VALIDATION-RETAINED",
+      "pr": "TC-05",
+      "anchor": "req-tc05-semantic-validation-retained",
+      "doc": "docs/requirements/active/typed-contract-generation.md",
+      "production": ["packages/core/src/scenario/scenarioContract.ts"],
+      "tests": [
+        {
+          "file": "packages/core/src/scenario/scenarioContract.test.ts",
+          "exportName": "keepsSemanticValidation",
+          "registeredAs": "TC-05 typed contract > keeps semantic validation",
+          "cwd": "packages/core",
+          "args": ["test", "--timeout", "180000", "src/scenario/scenarioContract.test.ts"]
+        }
+      ]
+    },
+    {
+      "id": "REQ-TC05-PUBLISHED-VALIDATOR-TRANSFORMED",
+      "pr": "TC-05",
+      "anchor": "req-tc05-published-validator-transformed",
+      "doc": "docs/requirements/active/typed-contract-generation.md",
+      "production": ["packages/core/src/scenario/scenarioContract.ts"],
+      "tests": [
+        {
+          "file": "packages/core/src/scenario/scenarioContract.test.ts",
+          "exportName": "runsPublishedScenarioValidator",
+          "registeredAs": "TC-05 typed contract > runs the published scenario validator",
+          "cwd": "packages/core",
+          "args": ["test", "--timeout", "180000", "src/scenario/scenarioContract.test.ts"]
+        }
+      ]
     }
   ]
 }

@@ -12,6 +12,8 @@
 - `replay.verify.output.schema.json`
 - `kpi.regress.output.schema.json`
 
+`docs/schemas/generated/scenario.v1.schema.json`은 `ScenarioV1`의 생성 구조 schema다. CLI 출력 schema가 아니다. [계약 생성](../contract-generation_ko.md)을 본다.
+
 주의:
 
 - 스키마는 JSON 출력(`--format json`) 기준입니다.

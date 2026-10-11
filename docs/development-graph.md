@@ -114,3 +114,17 @@ A forward execution trace of `prepareResolvedRun` (`maxDepth` 2, `maxNodes` 32) 
 A forward execution trace of `createPlannerStrategy` (`maxDepth` 3, `maxNodes` 32) still does not name `stepOnce`. The rollout call remains `d.stepOnce` on `PlannerDeps` at `packages/core/src/sim/strategy/planner.ts:322`. That edge stays unobserved.
 
 `bun run graph:check` exited 0. `bench:sim:check`, `bench:sim:suite:check`, `tune:regress`, `kpi:report`, `kpi:regress`, `bunx ttsc -p tsconfig.tools.json`, `bunx ttsc -p tsconfig.examples.json`, and `test:conformance:extended` were not run.
+
+## TC-05 callers
+
+Queried at commit `8bdef6fdc6c9f763e4f4e946ff16c67d88d129c4` on macOS arm64 with Bun `1.4.2`, `@ttsc/graph` `0.30.4`, protocol `2025-11-25`. No generation identifier. The server cwd was this worktree and the program was `tsconfig.graph.json`. Lookup places `validateScenarioStructure` at `packages/core/src/scenario/scenarioContract.ts:64`, `buildContractDocument` at `packages/core/src/scenario/scenarioContract.ts:205`, `writeContracts` at `tools/contract-files.ts:42`, `createPlannerStrategy` at `packages/core/src/sim/strategy/planner.ts:286`, and `stepOnce` at `packages/core/src/sim/step.ts:356`. The `validateScenarioV1` lookup did not return that name on this revision. Source review places it at `packages/core/src/scenario/validate.ts:777`.
+
+A reverse execution trace of `validateScenarioStructure` (`maxDepth` 3, `maxNodes` 32) names `packages/core/src/scenario/scenarioContract.probe.ts:17`, `packages/core/src/scenario/scenarioContract.probe.ts:18`, and `keepsSemanticValidation` at `packages/core/src/scenario/scenarioContract.test.ts:214`. The same trace includes spans at `packages/core/src/scenario/scenarioContract.test.ts:218` and `packages/core/src/scenario/scenarioContract.test.ts:300`.
+
+A reverse execution trace of `buildContractDocument` (`maxDepth` 3, `maxNodes` 32) names `renderedContracts` at `tools/contract-files.ts:34`, `keepsTypedContractSingleSource` at `packages/core/src/scenario/scenarioContract.test.ts:109`, `writeContracts` at `tools/contract-files.ts:42`, `compareContracts` at `tools/contract-files.ts:49`, and the call in `tools/contracts-check.ts:15`.
+
+A reverse execution trace of `writeContracts` (`maxDepth` 2, `maxNodes` 16) names only its declaration. Source review shows the call at `tools/generate-contracts.ts:15`. That line is the review. It is not a graph hop. Package scripts `contracts:generate` and `contracts:check` are not in the graph.
+
+A forward execution trace of `createPlannerStrategy` (`maxDepth` 3, `maxNodes` 32) still does not name `stepOnce`. The rollout call remains `d.stepOnce` on `PlannerDeps` at `packages/core/src/sim/strategy/planner.ts:358`. That edge stays unobserved.
+
+`bun run graph:check` exited 0. `bench:sim:check`, `bench:sim:suite:check`, `tune:regress`, `kpi:report`, `kpi:regress`, `bunx ttsc -p tsconfig.tools.json`, `bunx ttsc -p tsconfig.examples.json`, and `test:conformance:extended` were not run on this change.
