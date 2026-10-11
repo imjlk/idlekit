@@ -16,6 +16,8 @@ const MIN_SAMPLES = 8;
 const MIN_SPAN_SEC = 30;
 const LOG_RMSE_OK = 1e-4;
 const VALUE_REL_OK = 1e-4;
+/** A value-space fit this close is exact for a line or parabola, not an approximation. */
+const VALUE_EXACT = 1e-9;
 const SLOPE_TOLERANCE = 1e-4;
 const DROP_LOG10 = 1;
 
@@ -232,6 +234,8 @@ function preparePoints<N>(E: Engine<N>, samples: readonly GrowthSampleInput<N>[]
 
 function evenKeep<T>(items: readonly T[], budget: number): T[] {
   if (items.length <= budget) return [...items];
+  // A one-point budget keeps the first observation instead of dividing by budget - 1.
+  if (budget <= 1) return items.slice(0, Math.max(0, budget));
   const last = items.length - 1;
   const kept: T[] = [];
   for (let index = 0; index < budget; index += 1) {
@@ -351,10 +355,11 @@ function fitQuadratic(xs: readonly number[], ys: readonly number[]): QuadFit | n
   return { a, b, c, rmse: rmseAround(predicted, ys) };
 }
 
-function relativeRmse(fit: LinearFit | QuadFit | null, values: readonly number[]): number | null {
-  if (!fit) return null;
-  const scale = Math.max(1, Math.abs(mean(values)));
-  return fit.rmse / scale;
+/** max(1, |mean|), computed on halves so a series near the number range does not overflow the sum. */
+function seriesScale(values: readonly number[]): number {
+  let sum = 0;
+  for (const value of values) sum += value / 2;
+  return Math.max(1, Math.abs((sum / values.length) * 2));
 }
 
 function saturating(values: readonly number[], uniform: boolean): boolean {
@@ -434,7 +439,8 @@ function classifyPositive(
     return blankWindow(points, discontinuity, "insufficient-data", `samples ${points.length} span ${span}`);
   }
   const ys = logs.map((value) => value!);
-  const ts = points.map((point) => point.t);
+  // Fit on time since the window start. Raw moments of a large absolute t cancel catastrophically.
+  const ts = points.map((point) => point.t - first.t);
   const logSpan = Math.max(...ys) - Math.min(...ys);
   const linear = fitLinear(ts, ys);
   const quadratic = fitQuadratic(ts, ys);
@@ -442,10 +448,13 @@ function classifyPositive(
   const power = fitLinear(powerX, ys);
   const numbers = points.map((point) => point.numeric);
   const valueReady = numbers.every((value): value is number => value !== null);
-  const valueLinear = valueReady ? fitLinear(ts, numbers) : null;
-  const valueQuadratic = valueReady ? fitQuadratic(ts, numbers) : null;
-  const valueLinearRel = valueReady ? relativeRmse(valueLinear, numbers) : null;
-  const valueQuadraticRel = valueReady ? relativeRmse(valueQuadratic, numbers) : null;
+  // Value-space fits run in units of the series scale, so a large series cannot overflow the squared error.
+  const valueScale = valueReady ? seriesScale(numbers) : 1;
+  const scaled = valueReady ? numbers.map((value) => value / valueScale) : [];
+  const valueLinear = valueReady ? fitLinear(ts, scaled) : null;
+  const valueQuadratic = valueReady ? fitQuadratic(ts, scaled) : null;
+  const valueLinearRel = valueLinear ? valueLinear.rmse : null;
+  const valueQuadraticRel = valueQuadratic ? valueQuadratic.rmse : null;
   const valueRmse =
     valueLinearRel === null
       ? null
@@ -470,9 +479,15 @@ function classifyPositive(
     space: "log10",
     rmse: linear?.rmse ?? null,
   };
+  // An exact value-space line or parabola is polynomial whatever its intercept. A large intercept can make
+  // the same series look nearly straight in log space.
+  const valueExact = valueRmse !== null && valueRmse <= VALUE_EXACT;
   if (logSpan < 1e-6) {
     shape = "constant";
     residual = { space: "log10", rmse: rmseAround(ys.map(() => mean(ys)), ys) };
+  } else if (valueExact) {
+    shape = "polynomial";
+    residual = { space: "value", rmse: valueRmse };
   } else if (expOk && !accelOk) {
     shape = "exponential";
     residual = { space: "log10", rmse: linear.rmse };
@@ -633,10 +648,49 @@ export function fitGrowth<N>(args: {
   discontinuities?: readonly GrowthDiscontinuity[];
   softcap?: GrowthFitArtifactV1["softcap"];
   retention?: GrowthFitArtifactV1["retention"];
+  /** "incomplete" when purchases may have happened that `discontinuities` does not list. */
+  actionHistory?: "complete" | "incomplete";
 }): GrowthFitArtifactV1 {
   assertSampling(args.sampling);
   const prepared = preparePoints(args.E, args.samples);
-  const kept = evenKeep(prepared, args.sampling.samplingBudget);
+  // Find sign changes and drops on every prepared point, then keep both sides of each break through the
+  // sampling budget, so downsampling cannot hide an invalid domain or a discontinuity.
+  const breaks = [...(args.discontinuities ?? [])];
+  const boundary = new Set<number>();
+  for (let index = 1; index < prepared.length; index += 1) {
+    const previous = prepared[index - 1]!;
+    const current = prepared[index]!;
+    let found = false;
+    if (previous.sign !== current.sign) {
+      pushBreak(breaks, { t: current.t, kind: "sign" });
+      found = true;
+    }
+    if (
+      previous.sign === "positive" &&
+      current.sign === "positive" &&
+      previous.log10 !== null &&
+      current.log10 !== null &&
+      previous.log10 - current.log10 > DROP_LOG10
+    ) {
+      pushBreak(breaks, { t: current.t, kind: "drop" });
+      found = true;
+    }
+    if (found) {
+      boundary.add(index - 1);
+      boundary.add(index);
+    }
+  }
+  for (const item of breaks) {
+    const index = prepared.findIndex((point) => point.t >= item.t);
+    if (index >= 0) {
+      boundary.add(index);
+      if (index > 0) boundary.add(index - 1);
+    }
+  }
+  const evenly = evenKeep(prepared, args.sampling.samplingBudget);
+  const keptSet = new Set<Point<N>>(evenly);
+  for (const index of boundary) keptSet.add(prepared[index]!);
+  const kept = prepared.filter((point) => keptSet.has(point));
   const downsampled =
     kept.length === prepared.length ? undefined : { seen: prepared.length, kept: kept.length };
   const warnings = [
@@ -673,22 +727,30 @@ export function fitGrowth<N>(args: {
       windows: [blankWindow(kept, "none", "insufficient-data", "cadence coarser than window")],
     });
   }
-  const breaks = [...(args.discontinuities ?? [])];
-  for (let index = 1; index < kept.length; index += 1) {
-    const previous = kept[index - 1]!;
-    const current = kept[index]!;
-    if (previous.sign !== current.sign) pushBreak(breaks, { t: current.t, kind: "sign" });
-    if (
-      previous.sign === "positive" &&
-      current.sign === "positive" &&
-      previous.log10 !== null &&
-      current.log10 !== null &&
-      previous.log10 - current.log10 > DROP_LOG10
-    ) {
-      pushBreak(breaks, { t: current.t, kind: "drop" });
-    }
+  const fitted =
+    kept.length === 0
+      ? [blankWindow(kept, "none", "insufficient-data", "no retained samples")]
+      : slicesOf(kept, breaks, args.sampling.windowSec).map((slice) => classifySlice(slice));
+  if (kept.length > args.sampling.samplingBudget) {
+    warnings.push("Break boundary points were kept beyond the sampling budget.");
   }
-  const windows = slicesOf(kept, breaks, args.sampling.windowSec).map((slice) => classifySlice(slice));
+  const incomplete = args.actionHistory === "incomplete";
+  if (incomplete) {
+    warnings.push("The action history is incomplete, so a purchase break can be missing. Shape claims are withheld.");
+  }
+  const windows = incomplete
+    ? fitted.map((window): GrowthFitWindowV1 =>
+        window.status === "ok"
+          ? {
+              ...window,
+              status: "insufficient-data",
+              shape: "unknown",
+              legacySpeedBucket: null,
+              quality: `${window.quality}; action history incomplete`,
+            }
+          : window,
+      )
+    : fitted;
   return baseArtifact({
     seriesRequested: args.seriesRequested,
     valueSource: args.valueSource,
@@ -731,7 +793,8 @@ export function fitGrowthFromRun<N, U extends string, Vars>(args: {
   }
   const hasNetWorth = args.scenario.model.netWorth !== undefined;
   const valueSource = args.series === "money" ? "money" : hasNetWorth ? "netWorth" : "netWorthFallback";
-  const states = args.run.trace && args.run.trace.length > 0 ? args.run.trace : [args.run.start, args.run.end];
+  // A present but empty trace was emptied by retention. It is not replaced by start and end.
+  const states = args.run.trace !== undefined ? args.run.trace : [args.run.start, args.run.end];
   const samples = states.map((state) => ({
     t: state.t,
     amount:
@@ -742,11 +805,18 @@ export function fitGrowthFromRun<N, U extends string, Vars>(args: {
   const discontinuities: GrowthDiscontinuity[] = [];
   for (const row of args.run.actionsLog ?? []) {
     const id = row.actionId.toLowerCase();
+    // An action row is stamped at decision time; the trace point at that t is the state before it.
+    // The break opens at the first trace state strictly after the action.
+    const after = states.find((state) => state.t > row.t);
+    if (!after) continue;
     discontinuities.push({
-      t: row.t,
+      t: after.t,
       kind: id.includes("prestige") || id.includes("reset") ? "reset" : "purchase",
     });
   }
+  const loggedEveryAction =
+    args.run.actionsLog !== undefined && (args.run.actionsLogMeta?.dropped ?? 0) === 0;
+  const noActionApplied = args.run.stats?.actions.applied === 0;
   let previousCount = states[0]?.prestige.count;
   for (const state of states.slice(1)) {
     if (previousCount !== undefined && state.prestige.count !== previousCount) {
@@ -761,6 +831,7 @@ export function fitGrowthFromRun<N, U extends string, Vars>(args: {
     valueSource,
     sampling: args.sampling,
     discontinuities,
+    actionHistory: loggedEveryAction || noActionApplied ? "complete" : "incomplete",
     softcap: softcapOf(args.scenario, args.softcap),
     retention: args.run.traceLog
       ? {

@@ -192,9 +192,9 @@ function simulate(spec: CaseSpec): RunResult<number, UnitCode, Vars> {
  * @evidence ./growthFit.ts#growthFitJsonSchema Reads the generated schema.
  * @evidenceReview ./growthFit.ts#growthFitJsonSchema #ff8650e The function memoizes typia.json.schema of GrowthFitArtifactV1.
  * @evidence ./growthFit.ts#fitGrowth Fits slow, fast, and softcap-configured literal series.
- * @evidenceReview ./growthFit.ts#fitGrowth #968cc16 The function keeps amounts in the Engine until log10, evenly reduces to the sampling budget, splits windows at sign changes and drops, and classifies each slice.
+ * @evidenceReview ./growthFit.ts#fitGrowth #5df9853 The function finds sign and drop breaks on every prepared point, keeps both sides of each break through the sampling budget, handles a one-point budget, fits on time since the window start, fits value space in units of the series scale, prefers an exact value fit, and withholds shape claims when the action history is incomplete.
  * @evidence ./growthFit.ts#fitGrowthFromRun Fits executed runs of the slow and fast models.
- * @evidenceReview ./growthFit.ts#fitGrowthFromRun #c7ef04c The function reads the trace or start and end, marks action and prestige count changes as breaks, uses netWorthFallback without a model netWorth, and calls fitGrowth.
+ * @evidenceReview ./growthFit.ts#fitGrowthFromRun #7910493 The function keeps a present but empty trace empty, maps each action row to the first trace state after it, marks prestige count changes as breaks, reports whether the action history is complete, uses netWorthFallback without a model netWorth, and calls fitGrowth.
  * @evidence ./growthFit.ts#growthFitSchemaId Reads the growth fit schema id.
  * @evidenceReview ./growthFit.ts#growthFitSchemaId #5247d65 The function returns the growth.fit.v1 schema URL constant.
  * @evidence ./growthFit.ts#growthFitAlgorithmVersion Reads the algorithm version on the artifact.
@@ -373,6 +373,92 @@ export function refusesDisguisedDomains(): void {
   expect(retained.status).toBe("insufficient-data");
   expect(retained.warnings.some((warning) => warning.includes("retained trace"))).toBe(true);
   expect(onlyWindow(retained).shape).toBe("unknown");
+
+  const fitNumbers = (samples: GrowthSampleInput<number>[], overrides: Partial<GrowthSamplingContract> = {}) =>
+    fitGrowth({
+      E: createNumberEngine(),
+      samples,
+      seriesRequested: "money",
+      valueSource: "money",
+      sampling: { ...sampling(), ...overrides },
+      softcap: "absent",
+    });
+  const offsets = Array.from({ length: 81 }, (_unused, index) => index);
+
+  // A large absolute t does not change the fitted slope or shape.
+  const lateWindow = onlyWindow(fitNumbers(offsets.map((offset) => ({ t: 1e9 + offset, amount: Math.exp(0.2 * offset) }))));
+  expect(lateWindow.shape).toBe("exponential");
+  expect(Math.abs((lateWindow.speed.logSlopePerSec ?? 0) - 0.2 / Math.LN10)).toBeLessThan(growthFitSlopeTolerance());
+
+  // A one-point budget keeps one observation.
+  const onePoint = fitNumbers(samplesFor(caseById("fast-exp")), { samplingBudget: 1 });
+  expect(onePoint.sampleCount).toBe(1);
+  expect(onlyWindow(onePoint).status).toBe("insufficient-data");
+  expect(onlyWindow(onePoint).domain).toBe("positive");
+
+  // A value-space fit near 1e200 keeps a finite residual instead of an overflowed square.
+  const hugeFit = fitNumbers(offsets.map((t) => ({ t, amount: 1e200 + 1e198 * t })));
+  for (const window of hugeFit.windows) {
+    if (window.residual.rmse !== null) expect(Number.isFinite(window.residual.rmse)).toBe(true);
+  }
+  expect(hugeFit.windows.some((window) => window.residual.space === "value")).toBe(true);
+
+  // An exact line with a large intercept is polynomial, not exponential.
+  const lineWindow = onlyWindow(fitNumbers(offsets.map((t) => ({ t, amount: 10000 + 3 * t }))));
+  expect(lineWindow.shape).toBe("polynomial");
+  expect(lineWindow.residual.space).toBe("value");
+
+  // Downsampling keeps both sides of a zero, so the sign break is not hidden.
+  const zeroedFit = fitNumbers(
+    offsets.map((t) => ({ t, amount: t === 40 ? 0 : Math.exp(0.2 * t) })),
+    { samplingBudget: 8 },
+  );
+  expect(zeroedFit.windows.some((window) => window.domain !== "positive")).toBe(true);
+  expect(zeroedFit.windows.some((window) => window.discontinuity === "sign")).toBe(true);
+
+  // A trace that retention emptied stays empty.
+  const emptyTraceRun = runScenario({
+    ...scenarioFor(1, 10, model(1)),
+    run: { stepSec: 1, durationSec: 10, trace: { everySteps: 1, maxPoints: 0, keepActionsLog: false } },
+  });
+  expect(emptyTraceRun.trace).toEqual([]);
+  const emptyTraceFit = fitGrowthFromRun({ run: emptyTraceRun, series: "money", scenario: scenarioFor(1, 10, model(1)), sampling: sampling() });
+  expect(emptyTraceFit.sampleCount).toBe(0);
+  expect(emptyTraceFit.status).toBe("insufficient-data");
+
+  // An action row opens its window at the first trace state after the action.
+  const fastTrace = simulate(caseById("fast-exp"));
+  const withActionRows = (rows: { t: number; actionId: string }[], logged: boolean): RunResult<number, UnitCode, Vars> => ({
+    ...fastTrace,
+    actionsLog: logged ? rows : undefined,
+    ...(logged ? { actionsLogMeta: { totalSeen: rows.length, dropped: 0, retained: rows.length } } : {}),
+    stats: { ...fastTrace.stats!, actions: { ...fastTrace.stats!.actions, applied: rows.length } },
+  });
+  const boughtFit = fitGrowthFromRun({
+    run: withActionRows([{ t: 40, actionId: "buy" }], true),
+    series: "money",
+    scenario: scenarioFor(1, 80, model(0)),
+    sampling: sampling(),
+  });
+  expect(boughtFit.windows.map((window) => window.startSec)).toEqual([0, 41]);
+  expect(boughtFit.windows[1]?.discontinuity).toBe("purchase");
+  const openingFit = fitGrowthFromRun({
+    run: withActionRows([{ t: 0, actionId: "buy" }], true),
+    series: "money",
+    scenario: scenarioFor(1, 80, model(0)),
+    sampling: sampling(),
+  });
+  expect(openingFit.windows.some((window) => window.startSec === 1 && window.discontinuity === "purchase")).toBe(true);
+
+  // Without a complete action history the fit withholds shape claims.
+  const unloggedFit = fitGrowthFromRun({
+    run: withActionRows([{ t: 40, actionId: "buy" }], false),
+    series: "money",
+    scenario: scenarioFor(1, 80, model(0)),
+    sampling: sampling(),
+  });
+  expect(unloggedFit.windows.every((window) => window.status !== "ok" && window.shape === "unknown")).toBe(true);
+  expect(unloggedFit.warnings.some((warning) => warning.includes("action history is incomplete"))).toBe(true);
 }
 
 /**

@@ -8,6 +8,8 @@ Korean version: [growth-classification_ko.md](./growth-classification_ko.md)
 
 Amounts stay in the Engine. `absLog10` is used for positive finite values. A value is narrowed with `toNumber` only when its absolute log10 is inside the safe number range, and only for a value-domain residual. Zero and negative samples are a separate domain. They are not passed through `abs`. A purchase, reset, sign change, or tenfold drop starts a new window. A configured `analytic.softcap` is recorded beside the shape and does not select it.
 
+Breaks are found on every sample before the sampling budget applies, and both sides of each break are kept, so downsampling cannot hide a zero or a drop. Fits use time since the window start, so a large absolute `t` does not change the slope. Value-space fits run in units of the series scale. An exact value-space line or parabola is `polynomial` whatever its intercept. From a run, an action opens its window at the first trace state after the action. A trace that retention emptied stays empty. Without a complete action history, windows withhold shape claims.
+
 A later Analyzer adapter should pass `GrowthSamplingContract` and read `GrowthFitArtifactV1`. It should not infer a regime from the legacy enum. The structural schema is `idlekit.growth-fit.v1`.
 
 There is no RNG. The formulas and the executed simulation cases are `fixtures/conformance/growth-shapes.json`. The repro label is that file. The slope tolerance is `1e-4`.

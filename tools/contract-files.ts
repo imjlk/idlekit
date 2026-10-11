@@ -61,7 +61,8 @@ const analysisInputs = [
 // EtaEstimateV1 embeds AnalysisStatus and AnalysisMethod from contracts.ts.
 const etaInputs = ["packages/core/src/sim/analysis/contracts.ts", "packages/core/src/sim/analysis/eta.ts"];
 const resetInputs = ["packages/core/src/sim/analysis/resetCycle.ts"];
-const growthInputs = ["packages/core/src/sim/analysis/growthFit.ts"];
+// GrowthFitArtifactV1 embeds AnalysisStatus from contracts.ts.
+const growthInputs = ["packages/core/src/sim/analysis/contracts.ts", "packages/core/src/sim/analysis/growthFit.ts"];
 
 /** Digest each source with LF line endings, so a CRLF checkout matches the tracked contract. */
 export function digestSources(paths: readonly string[], base = root): SourceDigest[] {

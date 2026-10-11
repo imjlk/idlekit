@@ -8,6 +8,8 @@
 
 양은 Engine에 남긴다. 양의 유한 값은 `absLog10`를 쓴다. `toNumber`는 절대 log10이 안전한 수 범위 안일 때만, 값 영역 잔차에만 쓴다. 0과 음수는 별도 domain이며 `abs`로 넘기지 않는다. 구매, reset, 부호 변화, 10배 하락은 새 창을 시작한다. 설정된 `analytic.softcap`은 형태 옆에 기록되고 형태를 고르지 않는다.
 
+끊김은 sampling budget을 적용하기 전에 모든 표본에서 찾고, 각 끊김의 양쪽 점을 남기므로 downsampling이 0이나 하락을 숨기지 않는다. fit은 창 시작부터의 시간을 쓰므로 큰 절대 `t`가 기울기를 바꾸지 않는다. 값 영역 fit은 계열 규모 단위로 한다. 값 영역에서 정확한 직선이나 포물선은 절편과 관계없이 `polynomial`이다. 실행 결과에서 action은 그 뒤 첫 trace 상태에서 새 창을 연다. retention이 비운 trace는 비어 있는 그대로다. action 기록이 완전하지 않으면 창은 형태 주장을 보류한다.
+
 이후 Analyzer adapter는 `GrowthSamplingContract`를 넘기고 `GrowthFitArtifactV1`를 읽어야 한다. legacy enum으로 regime을 추론하지 않는다. 구조 schema는 `idlekit.growth-fit.v1`이다.
 
 RNG는 없다. 수식과 실행한 시뮬레이션 케이스는 `fixtures/conformance/growth-shapes.json`이다. 재현 라벨은 그 파일이다. slope 허용 오차는 `1e-4`다.
