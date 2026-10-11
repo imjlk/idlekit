@@ -39,8 +39,11 @@ npm에 아직 없는 패키지:
 1. `idlekit` npm org가 `@idlekit/*` scope를 소유하는지 확인
 2. `bun run release:publish:preflight` 실행
 3. 첫 버전을 로컬 배포 ([release-process_ko.md](./release-process_ko.md#로컬-publish-preflight) 참고)
-4. npm에서 이 저장소와 `release.yml`을 패키지의 Trusted Publisher로 등록
-5. 패키지를 2FA 필수, 토큰 배포 차단으로 설정
+4. 패키지의 다음 버전을 배포할 준비가 되면 이 저장소와 `release.yml`을 Trusted Publisher로 등록하고, **Allowed actions**에 `npm publish`를 포함 (2026-09-03 이후 만든 설정은 기본적으로 `npm stage publish`만 허용)
+5. 그 버전을 2일 안에 Release workflow로 배포: npm은 그때까지 배포를 마치지 못한 새 Trusted Publisher 설정을 만료시키며, 만료된 설정은 지우고 다시 만들어야 함
+6. 패키지를 2FA 필수, 토큰 배포 차단으로 설정
+
+[npm Trusted Publishing](https://docs.npmjs.com/trusted-publishers/) 참고.
 
 이후 버전은 릴리즈 PR을 머지하고 Release workflow를 `publish=true`로 실행합니다. 배포된 버전에 provenance가 붙었는지 확인합니다.
 
