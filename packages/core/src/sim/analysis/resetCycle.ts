@@ -22,6 +22,8 @@ import { deepClonePreservingPrototype } from "../../utils/deepClone";
  */
 
 const RESET_CYCLE_ALGORITHM_VERSION = "reset-cycle-v1" as const;
+/** Relative slack for summed fractional intervals, such as 0.1 three times against a 0.3 horizon. */
+const HORIZON_TOLERANCE = 1e-9;
 const RESET_CYCLE_SCHEMA_ID = "https://idlekit.dev/schemas/reset.cycle.v1.schema.json" as const;
 
 /**
@@ -154,6 +156,8 @@ export type ResetCycleCheckpoint<N, U extends string, Vars> = Readonly<{
   constraints?: ScenarioConstraints;
   nextIndex: number;
   originSec: number;
+  /** Simulated seconds since the origin, summed from each runner result. Absent on older checkpoints. */
+  elapsedSec?: number;
   accumulatedReward: N;
   strategyState?: unknown;
   rngState?: unknown;
@@ -249,20 +253,17 @@ export function resetAdapterFor<N, U extends string, Vars>(
 function withoutResetActions<N, U extends string, Vars>(
   model: Model<N, U, Vars>,
   adapter: ResetAdapter<N, U, Vars> | undefined,
-  ctx: SimContext<N, U, Vars>,
-  state: SimState<N, U, Vars>,
 ): Model<N, U, Vars> {
   const kind = adapter?.kind ?? "prestige";
-  const customId = kind === "custom" ? adapter?.action(ctx, state)?.id : undefined;
-  return {
-    ...model,
-    actions: (actionCtx, actionState) =>
-      model
-        .actions(actionCtx, actionState)
-        .filter((candidate) =>
-          kind === "prestige" ? candidate.kind !== "prestige" : !(candidate.kind === "custom" && candidate.id === customId),
-        ),
+  const actions = (actionCtx: SimContext<N, U, Vars>, actionState: SimState<N, U, Vars>) => {
+    const listed = model.actions(actionCtx, actionState);
+    if (kind === "prestige") return listed.filter((candidate) => candidate.kind !== "prestige");
+    // Resolve the custom reset for this state. Its id can change, or appear, as the interval earns resources.
+    const customId = adapter?.action(actionCtx, actionState)?.id;
+    return listed.filter((candidate) => !(candidate.kind === "custom" && candidate.id === customId));
   };
+  // Delegate to the original model through its prototype chain, so class-based models keep their methods.
+  return Object.assign(Object.create(model) as Model<N, U, Vars>, { actions });
 }
 
 function skipReason(fact: CommittedResetFact | undefined, eventReason: string | undefined): ResetSkipReason {
@@ -334,6 +335,8 @@ export function executeResetCycles<N, U extends string, Vars>(args: {
   }
   if (args.resume?.rngState !== undefined) args.rng?.restore(deepClonePreservingPrototype(args.resume.rngState));
   const startAdapter = resetAdapterFor(scenario, args.adapter, state);
+  // Elapsed seconds are summed from runner results. Absolute t can round away from simulated time.
+  let elapsed = args.resume?.elapsedSec ?? state.t - originSec;
 
   const warnings: string[] = ["legacy interval scan fields are not reset evidence"];
   const requested = args.policy.kind === "fixed-interval" ? args.policy.cycles : args.policy.steps.length;
@@ -352,7 +355,7 @@ export function executeResetCycles<N, U extends string, Vars>(args: {
     const duration =
       args.policy.kind === "fixed-interval" ? args.policy.intervalSec : args.policy.steps[rows.length]!.durationSec;
     // horizonSec is elapsed time from the study origin, not an absolute t.
-    if (args.horizonSec !== undefined && state.t + duration - originSec > args.horizonSec) {
+    if (args.horizonSec !== undefined && elapsed + duration > args.horizonSec * (1 + HORIZON_TOLERANCE) + HORIZON_TOLERANCE) {
       guard = "censored";
       warnings.push("horizon");
       break;
@@ -363,7 +366,7 @@ export function executeResetCycles<N, U extends string, Vars>(args: {
     const { maxSteps: _ignoredMax, until: _ignoredUntil, trace: _ignoredTrace, ...runRest } = scenario.run;
     const run = runScenario({
       ...scenario,
-      model: withoutResetActions(scenario.model, intervalAdapter, scenario.ctx, state),
+      model: withoutResetActions(scenario.model, intervalAdapter),
       initial: state,
       ...(constraints ? { constraints } : {}),
       run: {
@@ -375,8 +378,10 @@ export function executeResetCycles<N, U extends string, Vars>(args: {
     if (remainingBudget !== undefined) remainingBudget = Math.max(0, remainingBudget - (run.stop?.steps ?? 0));
     // The runner's elapsed seconds, not an end.t difference that rounds at a large t.
     const played = runElapsedSec(run);
+    elapsed += played;
     state = run.end;
-    const shortBudget = run.stop?.reason === "budget" && played + 1e-9 < duration;
+    // nextBoundary checks the duration before the budget, so a budget stop never completed the interval.
+    const shortBudget = run.stop?.reason === "budget";
     if (shortBudget) {
       rows.push({
         index: nextIndex,
@@ -496,12 +501,12 @@ export function executeResetCycles<N, U extends string, Vars>(args: {
     policy: args.policy.kind,
     appliedResets,
     originSec,
-    globalElapsedSec: state.t - originSec,
+    globalElapsedSec: elapsed,
     assumptions: [
       ...(guard === "unsupported" ? ["no prestige action or prestige spec was found at the reset boundary"] : []),
       "reward delta is the adapter metric after the reset minus the metric before it",
       "cycle-local duration is the simulated seconds of the interval",
-      "global elapsed is absolute t minus the study origin",
+      "global elapsed is the simulated seconds summed since the study origin",
       "the reset action does not receive an income tick",
     ],
     warnings,
@@ -511,7 +516,7 @@ export function executeResetCycles<N, U extends string, Vars>(args: {
     artifact,
     state,
     ...(constraints ? { constraints } : {}),
-    checkpoint: checkpointOf(scenario, args.rng, state, constraints, nextIndex, originSec, accumulated),
+    checkpoint: checkpointOf(scenario, args.rng, state, constraints, nextIndex, originSec, accumulated, elapsed),
   };
 }
 
@@ -523,6 +528,7 @@ function checkpointOf<N, U extends string, Vars>(
   nextIndex: number,
   originSec: number,
   accumulatedReward: N,
+  elapsedSec: number,
 ): ResetCycleCheckpoint<N, U, Vars> {
   // Copy live snapshot objects, so later strategy or RNG use cannot rewrite a returned checkpoint.
   const strategyState = deepClonePreservingPrototype(scenario.strategy?.snapshotState?.());
@@ -534,6 +540,7 @@ function checkpointOf<N, U extends string, Vars>(
     ...(constraints ? { constraints } : {}),
     nextIndex,
     originSec,
+    elapsedSec,
     accumulatedReward,
     ...(strategyState !== undefined ? { strategyState } : {}),
     ...(rngState !== undefined ? { rngState } : {}),

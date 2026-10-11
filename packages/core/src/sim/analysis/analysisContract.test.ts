@@ -220,11 +220,11 @@ export function registersCustomMetric(): void {
  * @evidence ./contracts.ts#analysisArtifactJson Renders the artifact as canonical JSON text.
  * @evidenceReview ./contracts.ts#analysisArtifactJson #52695d2 The function appends a newline to analysisCanonicalJson of the artifact.
  * @evidence ./contracts.ts#validateAnalysisSemantics Accepts the fixture and rejects an unavailable reading that carries a value.
- * @evidenceReview ./contracts.ts#validateAnalysisSemantics #a34c2bd The function rejects a value on an unavailable reading, a non-ok reading not labeled unavailable, missing ok values, nonfinite values, reached or method on a non-ok goal, and a sampleCount that is not a nonnegative integer.
+ * @evidenceReview ./contracts.ts#validateAnalysisSemantics #702b8ef The function rejects a value on an unavailable reading, a non-ok reading not labeled unavailable, missing ok values, a second representation for the domain, nonfinite values and versions, reached or method on a non-ok goal, a nonfinite atSec or horizon, and a sampleCount that is not a nonnegative integer.
  * @evidence ./contracts.ts#analysisSchemaHash Hashes the generated schema for provenance.
  * @evidenceReview ./contracts.ts#analysisSchemaHash #0ec17bb The function hashes the canonical JSON of the memoized artifact schema.
  * @evidence ./contracts.ts#artifactProvenance Changes provenance with assumptions, algorithm, and schema, and not with the run hash.
- * @evidenceReview ./contracts.ts#artifactProvenance #689a3a5 The function hashes the algorithm version, the assumption hash, and the schema hash only.
+ * @evidenceReview ./contracts.ts#artifactProvenance #4aa6614 The function hashes the algorithm version, the schema hash, and the top-level and goal-level assumptions; the run hash does not enter it.
  * @evidence ./contracts.ts#classifyAmount Classifies negative, zero, and nonfinite amounts directly and through readMetric.
  * @evidenceReview ./contracts.ts#classifyAmount #3f6b4bb The function returns invalid nonfinite for a nonfinite amount and a signed decimal otherwise.
  * @evidence ./contracts.ts#classifyFinite Classifies NaN, negative, and positive numbers.
@@ -336,6 +336,28 @@ export function roundTripsAnalysisArtifact(): void {
     expect(validateAnalysisSemantics({ ...artifact, sampleCount }).map((issue) => issue.path)).toContain("sampleCount");
   }
   expect(validateAnalysisSemantics({ ...artifact, sampleCount: 0 })).toEqual([]);
+  const doubled: AnalysisArtifactV1 = {
+    ...artifact,
+    metrics: [
+      { ...negative, value: 5 },
+      { ...unavailableReading({ metricId: "count", metricVersion: 1, meaning: "count", metricKind: "stock", timeAxis: "instant", domain: "count", status: "unknown" }), status: "ok", reading: "observed", value: 5, amount: { unit: "COIN", decimal: "9" } },
+    ],
+  };
+  const doubledMessages = validateAnalysisSemantics(doubled).map((issue) => issue.message);
+  expect(doubledMessages).toContain("amount reading carries a numeric value");
+  expect(doubledMessages).toContain("numeric reading carries an amount");
+  const nonfinite: AnalysisArtifactV1 = {
+    ...artifact,
+    horizon: { sec: Number.POSITIVE_INFINITY, kind: "duration" },
+    metrics: [{ ...negative, metricVersion: Number.NaN }],
+    goals: [{ goalId: "money.atLeast", goalVersion: Number.NaN, status: "ok", reached: true, atSec: Number.NaN, assumptions: [] }],
+  };
+  expect(validateAnalysisSemantics(nonfinite).map((issue) => issue.path)).toEqual(
+    expect.arrayContaining(["horizon.sec", "metrics.0", "goals.0"]),
+  );
+  expect(validateAnalysisSemantics(nonfinite).map((issue) => issue.message)).toEqual(
+    expect.arrayContaining(["metricVersion is nonfinite", "goalVersion is nonfinite", "atSec is nonfinite"]),
+  );
   const mismatched = readMetric<number, Coin, Vars>(
     {
       id: "custom.count",
@@ -385,6 +407,14 @@ export function roundTripsAnalysisArtifact(): void {
   expect(changedSchema.provenance).not.toBe(first.provenance);
   expect(changedRun.provenance).toBe(first.provenance);
   expect(first.algorithmVersion).toBe(artifact.algorithmVersion);
+  // A goal-level assumption, such as a wallet fallback, changes the provenance.
+  const fallbackGoal = { goalId: "netWorth.atLeast", goalVersion: 1, status: "ok" as const, reached: true, assumptions: ["netWorth fell back to wallet money"] };
+  const plainGoal = { ...fallbackGoal, assumptions: [] };
+  const withFallback = artifactProvenance({ ...artifact, goals: [fallbackGoal] }, schemaHash);
+  const withoutFallback = artifactProvenance({ ...artifact, goals: [plainGoal] }, schemaHash);
+  expect(withFallback.assumptionHash).not.toBe(withoutFallback.assumptionHash);
+  expect(withFallback.provenance).not.toBe(withoutFallback.provenance);
+  expect(withoutFallback.assumptionHash).toBe(artifactProvenance({ ...artifact, goals: [] }, schemaHash).assumptionHash);
 
   const markdown = renderAnalysisMarkdown(artifact);
   expect(markdown).toContain("analysis-artifact-v1");

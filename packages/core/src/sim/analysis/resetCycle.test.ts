@@ -161,7 +161,7 @@ function makeRng(seed: number): ResetCycleRng & { next: () => number } {
  * @evidence ./resetCycle.ts#resetCycleJsonSchema The schema is 3.1.
  * @evidenceReview ./resetCycle.ts#resetCycleJsonSchema #c6690d5 The function memoizes typia.json.schema of ResetCycleArtifactV1.
  * @evidence ./resetCycle.ts#executeResetCycles Runs three fixed intervals, an explicit list, a resume, and the horizon and budget guards.
- * @evidenceReview ./resetCycle.ts#executeResetCycles #5514248 The function runs each interval with runScenario on a model whose reset action the strategy cannot see, measures the horizon from the origin and durations from runElapsedSec, resolves the adapter at the boundary, commits one reset through applyDecisions with live constraints, refreshes maxMoneyEver, records a refusal instead of forcing it, and copies strategy and RNG snapshots into the checkpoint.
+ * @evidenceReview ./resetCycle.ts#executeResetCycles #ad8b452 The function runs each interval with runScenario on a prototype-delegating model whose reset action, resolved per state, the strategy cannot see, measures the horizon and global elapsed on summed runner seconds, censors any budget stop, resolves the adapter at the boundary, commits one reset through applyDecisions with live constraints, refreshes maxMoneyEver, records a refusal instead of forcing it, and copies strategy and RNG snapshots into the checkpoint.
  * @evidence ./resetCycle.ts#resetAdapterFor Picks the prestige action and returns nothing for a model with neither an action nor a spec.
  * @evidenceReview ./resetCycle.ts#resetAdapterFor #5f8e044 The function returns an explicit adapter first, then the prestige action adapter when the given state lists one, then the spec adapter, and undefined when the model has no spec.
  * @evidence ./resetCycle.ts#resetCycleSchemaId Reads the reset cycle schema id.
@@ -169,7 +169,7 @@ function makeRng(seed: number): ResetCycleRng & { next: () => number } {
  * @evidence ./resetCycle.ts#resetCycleAlgorithmVersion Reads the algorithm version on the artifact.
  * @evidenceReview ./resetCycle.ts#resetCycleAlgorithmVersion #7b0fecb The function returns the reset-cycle-v1 constant.
  * @evidence ../step.ts#applyDecisions Commits one prestige action directly and checks that no income tick or t advance follows.
- * @evidenceReview ../step.ts#applyDecisions #fa1f49c The function pays and applies the decisions, records a committed reset for the requested kinds, and leaves income, evolve, and t to stepOnce.
+ * @evidenceReview ../step.ts#applyDecisions #902ff05 The function pays and applies the decisions, snapshots and records a committed reset only for the requested kinds, and leaves income, evolve, and t to stepOnce.
  * @evidence ../observation.ts#emitCommittedResets Sends the reset facts to onReset and skips an observer without one.
  * @evidenceReview ../observation.ts#emitCommittedResets #05b889d The function returns early without onReset or facts and notifies each fact in order otherwise.
  */
@@ -387,6 +387,80 @@ export function runsThreeCommittedResets(): void {
   expect(watchedCtx.artifact.appliedResets).toBe(2);
   expect(seenAnchors).toEqual([undefined, 2]);
   expect(watchedCtx.state.maxMoneyEver.amount).toBeGreaterThanOrEqual(watchedCtx.state.wallet.money.amount);
+
+  // Fractional intervals fit a horizon on the summed elapsed clock, not on a rounded t difference.
+  const tenths = executeResetCycles({
+    scenario: scenario(),
+    policy: { kind: "fixed-interval", intervalSec: 0.1, cycles: 3 },
+    horizonSec: 0.3,
+  });
+  expect(tenths.artifact.appliedResets).toBe(3);
+  expect(tenths.artifact.status).toBe("ok");
+  expect(tenths.checkpoint.elapsedSec).toBeCloseTo(0.3, 12);
+
+  // Any budget stop censors the cycle, even a stop a hair short of the duration.
+  const thirds = scenario();
+  const nearly = executeResetCycles({
+    scenario: { ...thirds, ctx: { ...thirds.ctx, stepSec: 0.3333333332 }, run: { ...thirds.run, stepSec: 0.3333333332 } },
+    policy: { kind: "fixed-interval", intervalSec: 1, cycles: 1 },
+    budgetSteps: 3,
+  });
+  expect(nearly.artifact.status).toBe("censored");
+  expect(nearly.artifact.appliedResets).toBe(0);
+  expect(nearly.state.prestige.count).toBe(0);
+
+  // A custom reset that appears mid-interval is still hidden from the strategy.
+  const scoreAction: Action<number, "COIN", Vars> = {
+    id: "score",
+    kind: "custom",
+    canApply: () => true,
+    cost: () => null,
+    apply: (_ctx, current) => ({ ...current, vars: { ...current.vars, score: current.vars.score + 1 } }),
+  };
+  const lateCustom = executeResetCycles({
+    scenario: {
+      ...scenario({ actions: [] }),
+      model: {
+        ...scenario().model,
+        actions: (_ctx, current) => (current.wallet.money.amount >= 1 ? [scoreAction] : []),
+      },
+      strategy: {
+        id: "eager-custom",
+        decide(ctx, model, current) {
+          const reset = model.actions(ctx, current).find((candidate) => candidate.id === "score");
+          return reset ? [{ action: reset }] : [];
+        },
+      },
+    },
+    policy: { kind: "fixed-interval", intervalSec: 3, cycles: 1 },
+    adapter: {
+      id: "score.reset",
+      kind: "custom",
+      preserved: ["vars"],
+      action: (_ctx, current) => (current.wallet.money.amount >= 1 ? scoreAction : undefined),
+      reward: (_ctx, current) => current.vars.score,
+    },
+  });
+  expect(lateCustom.artifact.appliedResets).toBe(1);
+  expect(lateCustom.state.vars.score).toBe(1);
+
+  // A class-based model keeps its prototype methods through the interval filter.
+  class ClassModel {
+    readonly id = "class-model";
+    readonly version = 1;
+    income(_ctx: unknown, current: SimState<number, "COIN", Vars>) {
+      return coin(current.prestige.multiplier);
+    }
+    actions() {
+      return [prestigeAction()];
+    }
+  }
+  const classRun = executeResetCycles({
+    scenario: { ...scenario(), model: new ClassModel() as unknown as Model<number, "COIN", Vars> },
+    policy: { kind: "fixed-interval", intervalSec: 2, cycles: 2 },
+  });
+  expect(classRun.artifact.appliedResets).toBe(2);
+  expect(classRun.state.prestige.count).toBe(2);
 
   // A checkpoint keeps its own copy of live strategy and RNG snapshots.
   const liveStrategy = { cursor: 1 };
