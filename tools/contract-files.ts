@@ -44,7 +44,8 @@ const analysisInputs = [
   "packages/core/src/sim/analysis/registry.ts",
 ];
 
-const etaInputs = ["packages/core/src/sim/analysis/eta.ts"];
+// EtaEstimateV1 embeds AnalysisStatus and AnalysisMethod from contracts.ts.
+const etaInputs = ["packages/core/src/sim/analysis/contracts.ts", "packages/core/src/sim/analysis/eta.ts"];
 
 /** Digest each source with LF line endings, so a CRLF checkout matches the tracked contract. */
 export function digestSources(paths: readonly string[], base = root): SourceDigest[] {

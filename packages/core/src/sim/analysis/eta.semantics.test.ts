@@ -68,15 +68,15 @@ function modelOf<N>(
  * @evidence ./eta.ts#etaSecondsFromEngineRatio Divides 1e402 by 1e400 in the engine and rejects a 1e400 second ratio.
  * @evidenceReview ./eta.ts#etaSecondsFromEngineRatio #ce3e42d The function checks finiteness, divides the gap by the rate with divN, and narrows only a finite ratio within 1e308.
  * @evidence ./eta.ts#etaAnalytic Runs the analytic estimate on the break_infinity fixture and the suffix goal.
- * @evidenceReview ./eta.ts#etaAnalytic #17a1808 The function wraps analyticEstimate and adds a fixed-step compare only when a fallback is requested.
+ * @evidenceReview ./eta.ts#etaAnalytic #17a1808 The function wraps analyticEstimate, whose exact label also needs no maxLogGap tick policy, and adds a fixed-step compare only when a fallback is requested.
  * @evidence ./eta.ts#etaSimulate Runs the fixed-step estimate on the same fixtures and compares goal ids.
- * @evidenceReview ./eta.ts#etaSimulate #a298152 The function runs the scenario until the shared goal, rejects a budget stop, and censors a missed horizon.
+ * @evidenceReview ./eta.ts#etaSimulate #60518f4 The function runs the scenario until the shared goal holds on a finite threshold and observed amount, rejects a budget stop, reports a non-finite run as invalid and a wallet-proxy net worth as unsupported, and censors a missed horizon.
  * @evidence ./eta.ts#etaGoalForTarget Binds the 1aa suffix goal twice and evaluates it at the target.
- * @evidenceReview ./eta.ts#etaGoalForTarget #ed715cb The function parses the target once and returns moneyAtLeast or netWorthAtLeast on its wire string.
+ * @evidenceReview ./eta.ts#etaGoalForTarget #8b4ac78 The function parses the target once, returns moneyAtLeast or netWorthAtLeast on its wire string, and records the kind, decimal, and unit for the estimate.
  * @evidence ./eta.ts#parseEtaAmount Parses the 1aa suffix with the ETA notation.
  * @evidenceReview ./eta.ts#parseEtaAmount #a8a175b The function calls parseMoney with the scenario unit and the alphaInfinite suffix of minimum length 2.
  * @evidence ./eta.ts#validateEtaEstimateSemantics Accepts the 100 second estimate.
- * @evidenceReview ./eta.ts#validateEtaEstimateSemantics #dd6cd28 The function rejects censored seconds, non-finite ok seconds, a non-ok exact method, a non-ok bracket, and the word unreachable.
+ * @evidenceReview ./eta.ts#validateEtaEstimateSemantics #7ff402f The function rejects seconds on any non-ok estimate, missing, non-finite, or negative ok seconds, a non-ok exact method, a non-ok bracket, and the word unreachable.
  * @evidence ./eta.ts#etaEstimateSchemaId Reads the estimate schema id.
  * @evidenceReview ./eta.ts#etaEstimateSchemaId #f15f511 The function returns the eta.estimate.v1 schema URL constant.
  * @evidence ./eta.ts#etaEstimateAlgorithmVersion Reads the algorithm version stamped on the estimate.
@@ -143,6 +143,15 @@ export function separatesExactAndLocalEta(): void {
     fallback: { maxDurationSec: 10 },
   });
   expect(exact.seconds).toBe(3);
+  // A tick policy with maxLogGap can drop or hold income, so constant income is not exact under it.
+  const gapped = modelOf(engine, 1);
+  const settled = etaAnalytic({
+    scenario: { ...gapped, ctx: { ...gapped.ctx, tickPolicy: { mode: "drop", maxLogGap: 3 } } },
+    target: { kind: "money", value: "3" },
+  });
+  expect(settled.estimate.method).toBe("analytic-local");
+  expect(settled.confidence).not.toBe("high");
+  expect(settled.estimate.assumptions.join(" ")).toContain("maxLogGap");
   expect(exact.estimate.method).toBe("exact");
   expect(exact.estimate.compare?.localSec).toBe(3);
   expect(exact.estimate.compare?.fixedStepSec).toBe(3);
@@ -262,6 +271,39 @@ export function censorsUnreachedHorizon(): void {
   expect(hidden.estimate.bracket).toBeUndefined();
   expect(hidden.estimate.observationResolutionSec).toBe(1);
   expect(hidden.estimate.assumptions.join(" ")).toContain("hidden crossing");
+
+  // The estimate names the target it answers.
+  expect(missed.estimate.target).toEqual({ kind: "money", decimal: "999", unit: "COIN" });
+  const near = etaSimulate({ scenario, target: { kind: "money", value: "3" }, maxDurationSec: 10 });
+  expect(near.estimate.target.decimal).toBe("3");
+  expect(near.estimate.goalId).toBe(missed.estimate.goalId);
+
+  // A NaN wallet does not end the run as a reached goal.
+  const nan = etaSimulate({
+    scenario: { ...scenario, initial: coinState(Number.NaN, 0, 1) },
+    target: { kind: "money", value: "3" },
+    maxDurationSec: 5,
+  });
+  expect(nan.reached).toBe(false);
+  expect(nan.estimate.status).toBe("invalid");
+  expect(nan.estimate.seconds).toBeNull();
+  expect(validateEtaEstimateSemantics(nan.estimate)).toEqual([]);
+
+  // Without model.netWorth the simulated crossing is a wallet proxy, not a net worth observation.
+  const proxy = etaSimulate({ scenario, target: { kind: "netWorth", value: "3" }, maxDurationSec: 10 });
+  expect(proxy.reached).toBe(true);
+  expect(proxy.seconds).toBe(3);
+  expect(proxy.estimate.status).toBe("unsupported");
+  expect(proxy.estimate.seconds).toBeNull();
+  expect(proxy.estimate.assumptions.join(" ")).toContain("not a net worth observation");
+
+  // Every non-ok status carries null seconds, and ok seconds are not negative.
+  expect(validateEtaEstimateSemantics({ ...missed.estimate, status: "invalid", seconds: 5 })).toContain(
+    "invalid estimate carries seconds",
+  );
+  expect(validateEtaEstimateSemantics({ ...near.estimate, status: "ok", seconds: -1 })).toContain(
+    "ok estimate has negative seconds",
+  );
 }
 
 describe("PR-09 eta semantics", () => {

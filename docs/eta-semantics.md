@@ -16,6 +16,8 @@ The ratio is `E.divN(E.sub(target, current), rate)`. `toNumber` runs only after 
 
 The earlier fail-closed rules stay. A run that stops on `maxSteps` before the target or the horizon throws, and observed seconds are the simulated seconds, not the `t` difference. A non-finite wallet, net worth, target, or income is not reached at t=0. A money estimate is then `invalid`, a net worth estimate stays `unsupported`, and legacy `seconds` is `Infinity` with low confidence.
 
+Each estimate records its `target` as kind, engine decimal, and unit, so estimates for different thresholds stay distinct. A `maxLogGap` tick policy can drop or hold income, so it blocks `exact`. In simulate mode a non-finite threshold or observed amount never ends the run as the goal and the estimate is `invalid`. A net worth target without `Model.netWorth` is `unsupported` on the estimate, even though legacy fields keep the wallet proxy. Every non-ok estimate has `seconds: null`.
+
 `DX-02` may wrap these functions. It does not add another ETA engine.
 
 Node.js and browser runtimes are not part of the v1 compatibility contract.
