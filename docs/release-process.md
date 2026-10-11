@@ -89,15 +89,17 @@ Workflow file:
 
 Release auth policy:
 
-- preferred: npm Trusted Publishing with GitHub OIDC
-- fallback: `NPM_TOKEN` secret exposed as `NODE_AUTH_TOKEN` at release time only
-- local publish can use `NPM_CONFIG_USERCONFIG=/path/to/.npmrc`
+- npm Trusted Publishing with GitHub OIDC; the workflow passes no npm token
+- each published `@idlekit/*` package requires 2FA and refuses token publishes; the Release workflow is the publish path for every version after the first
+- local preflight and dry runs can use `NPM_CONFIG_USERCONFIG=/path/to/.npmrc`
 
-If you use Trusted Publishing, configure npm to trust this repository and workflow before requesting a manual publish.
+A package that is not on npm yet cannot trust a workflow. Publish its first version locally, then configure Trusted Publishing for this repository and `release.yml` before the next manual publish.
 
 ## Local publish preflight
 
-For local publish runs, keep the token outside the repository and point npm at it explicitly:
+Use a local publish only for the first version of a package that is not on npm yet. A published package refuses token publishes, so later versions go through the Release workflow.
+
+Keep the token outside the repository and point npm at it explicitly:
 
 ```bash
 cp .npmrc.publish.example .npmrc.publish.local
@@ -110,13 +112,17 @@ What `release:publish:preflight` checks:
 1. `publish:gate` succeeds
 2. `readme:smoke` succeeds
 3. `npm whoami` and `npm ping` succeed
-4. current package versions are greater than already-published npm versions
+4. at least one package version is new, and no package version is lower than the one on npm (a version that is already published is skipped)
 
-If preflight passes, the matching publish command is:
+The preflight, the publish, and the manifest rewrite only know the packages listed in `tools/npm-publish-preflight.ts`, `tools/release-lockfile.ts`, `tools/package-manifest.ts`, and the prepare job of `.github/workflows/release.yml`. Add a new package to those lists first.
+
+If preflight passes, publish with the same npm config. npm asks for a one-time password when your account requires 2FA for writes. The example config sets `provenance=true`, which npm supports only in CI, so turn provenance off for this local publish:
 
 ```bash
-NPM_CONFIG_USERCONFIG=$PWD/.npmrc.publish.local bun run release:publish
+NPM_CONFIG_USERCONFIG=$PWD/.npmrc.publish.local NPM_CONFIG_PROVENANCE=false bun run release:publish
 ```
+
+Then add the Trusted Publisher and set the package to require 2FA and disallow tokens.
 
 ## Release checklist
 

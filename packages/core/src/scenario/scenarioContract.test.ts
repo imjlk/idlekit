@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, writeFileSync } from "fs";
+import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join, resolve } from "path";
 import typia from "typia";
@@ -13,7 +13,9 @@ import {
   registeredContracts,
   parseScenarioStructure,
   semanticValidationRetained,
+  rootSchemaDocument,
   sha256Text,
+  sourceTextDigest,
   structuralFieldMetadata,
   typedContractSingleSource,
   validateFiniteUnitRate,
@@ -29,6 +31,33 @@ const sources: SourceDigest[] = [
   { path: "packages/core/src/scenario/scenarioContract.ts", sha256: "b" },
   { path: "packages/core/src/scenario/types.ts", sha256: "c" },
 ];
+
+/** Every local `$ref` in a generated file must resolve inside that file. */
+function unresolvedLocalRefs(doc: unknown): string[] {
+  const refs: string[] = [];
+  const walk = (node: unknown): void => {
+    if (!node || typeof node !== "object") return;
+    if (Array.isArray(node)) {
+      for (const entry of node) walk(entry);
+      return;
+    }
+    for (const [key, value] of Object.entries(node)) {
+      if (key === "$ref" && typeof value === "string") refs.push(value);
+      else walk(value);
+    }
+  };
+  walk(doc);
+  return refs.filter((ref) => {
+    if (!ref.startsWith("#/")) return true;
+    let cursor: unknown = doc;
+    for (const part of ref.slice(2).split("/")) {
+      const key = part.replace(/~1/g, "/").replace(/~0/g, "~");
+      if (!cursor || typeof cursor !== "object" || !(key in cursor)) return true;
+      cursor = (cursor as Record<string, unknown>)[key];
+    }
+    return false;
+  });
+}
 
 function minimal(): ScenarioV1 {
   return {
@@ -63,7 +92,11 @@ function spawnContract(args: string[], cwd = repoRoot): { exitCode: number; stdo
  * @evidence ./scenarioContract.ts#canonicalJson Renders the contract document twice and round-trips it.
  * @evidenceReview ./scenarioContract.ts#canonicalJson #c5c90d7 The function delegates to renderCanonical, which sorts keys and drops undefined entries.
  * @evidence ./scenarioContract.ts#buildContractDocument Builds the document and checks its schema id, version, and policies.
- * @evidenceReview ./scenarioContract.ts#buildContractDocument #fd83812 The function orders sources, stamps the generator fields, and copies the memoized typia 3.1 schema.
+ * @evidenceReview ./scenarioContract.ts#buildContractDocument #975f383 The function orders sources and returns rootSchemaDocument of the memoized typia 3.1 unit with the generator annotation.
+ * @evidence ./scenarioContract.ts#rootSchemaDocument Puts generated constraints and components at the root, and every local ref resolves.
+ * @evidenceReview ./scenarioContract.ts#rootSchemaDocument #01ed4fc The function spreads the generated root schema, sets $schema 2020-12 and $id, and adds components and the idlekitContract annotation beside it.
+ * @evidence ./scenarioContract.ts#sourceTextDigest Hashes CRLF and LF source text the same.
+ * @evidenceReview ./scenarioContract.ts#sourceTextDigest #df40357 The function replaces CRLF with LF before sha256Text.
  * @evidence ./scenarioContract.ts#contractSourceHash Compares the document hash with a direct call and with reversed sources.
  * @evidenceReview ./scenarioContract.ts#contractSourceHash #f62fd37 The function orders sources before hashing, so input order does not change the digest.
  * @evidence ./scenarioContract.ts#sha256Text Hashes the empty string.
@@ -71,7 +104,7 @@ function spawnContract(args: string[], cwd = repoRoot): { exitCode: number; stdo
  * @evidence ./scenarioContract.ts#buildFieldMetadata Reads enum, property, and comment metadata from the scenario schema.
  * @evidenceReview ./scenarioContract.ts#buildFieldMetadata #2791f4d The function runs structuralFieldMetadata on the memoized scenario schema and stamps the source hash.
  * @evidence ./scenarioContract.ts#structuralFieldMetadata Walks a small inline schema with one enum property.
- * @evidenceReview ./scenarioContract.ts#structuralFieldMetadata #eb29715 The walker records property paths and string enums from the schema node.
+ * @evidenceReview ./scenarioContract.ts#structuralFieldMetadata #09b7142 The walker records property paths and string enums, follows a component ref at every path that uses it, and stops only on a ref cycle in the current path.
  */
 export function keepsTypedContractSingleSource(): void {
   expect(typedContractSingleSource).toBe("idlekit.scenario.v1");
@@ -87,12 +120,28 @@ export function keepsTypedContractSingleSource(): void {
   expect(text).not.toContain("/Users/");
   expect(text).not.toContain("generatedAt");
   const doc = buildContractDocument(sources);
-  expect(doc.schema.version).toBe("3.1");
-  expect(doc.schema.$id).toBe("https://idlekit.dev/schemas/scenario.v1.schema.json");
+  expect(doc.$schema).toBe("https://json-schema.org/draft/2020-12/schema");
+  expect(doc.$id).toBe("https://idlekit.dev/schemas/scenario.v1.schema.json");
+  expect(doc.idlekitContract.dialect).toBe("openapi-3.1");
+  expect(doc.type).toBe("object");
+  expect(Object.keys(doc.properties as object)).toContain("schemaVersion");
+  expect(doc).not.toHaveProperty("schema");
+  expect(unresolvedLocalRefs(doc)).toEqual([]);
+  const wrappedId = "https://example.test/x.json";
+  const wrapped = rootSchemaDocument(
+    wrappedId,
+    { version: "3.1", schema: { $ref: "#/components/schemas/X" }, components: { schemas: { X: { type: "string" } } } },
+    { note: "annotation" },
+  );
+  expect(wrapped.$ref).toBe("#/components/schemas/X");
+  expect(unresolvedLocalRefs(wrapped)).toEqual([]);
+  expect(wrapped.idlekitContract).toEqual({ note: "annotation" });
   expect(doc.idlekitContract.exportApi).toBe("typia.json.schema");
   expect(doc.idlekitContract.unknownFieldPolicy).toBe("runtime-allow");
   expect(doc.idlekitContract.jsonSchemaAdditionalProperties).toBe(false);
-  expect(canonicalJson(doc.schema)).toContain('"additionalProperties":false');
+  expect(canonicalJson(doc)).toContain('"additionalProperties":false');
+  expect(sourceTextDigest("a\r\nb\r\n")).toBe(sourceTextDigest("a\nb\n"));
+  expect(sourceTextDigest("a\nb\n")).toBe(sha256Text("a\nb\n"));
   const fields = buildFieldMetadata(sources);
   expect(fields.enums["policy.mode"]).toEqual(["accumulate", "drop"]);
   expect(fields.properties).toContain("clock.stepSec");
@@ -115,6 +164,25 @@ export function keepsTypedContractSingleSource(): void {
       components: {},
     }),
   ).toEqual({ properties: ["mode"], enums: { mode: ["a", "b"] }, comments: {} });
+  // One component referenced at two paths records its enum at both, and a ref cycle stops.
+  expect(
+    structuralFieldMetadata({
+      schema: {
+        type: "object",
+        properties: {
+          first: { $ref: "#/components/schemas/Status" },
+          second: { $ref: "#/components/schemas/Status" },
+          tree: { $ref: "#/components/schemas/Node" },
+        },
+      },
+      components: {
+        schemas: {
+          Status: { type: "string", enum: ["ok", "unknown"] },
+          Node: { type: "object", properties: { child: { $ref: "#/components/schemas/Node" } } },
+        },
+      },
+    }).enums,
+  ).toEqual({ first: ["ok", "unknown"], second: ["ok", "unknown"] });
 }
 
 /**
@@ -278,6 +346,15 @@ export function runsPublishedScenarioValidator(): void {
   const drifted = spawnContract(["tools/contracts-check.ts", "--expected", stale]);
   expect(drifted.exitCode).toBe(1);
   expect(drifted.stderr).toContain("drift");
+
+  // A CRLF checkout of the tracked files is the same contract.
+  const crlf = join(tmpdir(), `idlekit-tc05-crlf-${crypto.randomUUID()}`);
+  mkdirSync(crlf, { recursive: true });
+  for (const name of readdirSync(left)) {
+    writeFileSync(join(crlf, name), readFileSync(join(left, name), "utf8").replace(/\n/g, "\r\n"));
+  }
+  const crlfChecked = spawnContract(["tools/contracts-check.ts", "--expected", crlf]);
+  expect(crlfChecked.exitCode).toBe(0);
 
   const refused = spawnContract(["tools/contracts-check.ts", "--write"]);
   expect(refused.exitCode).toBe(2);

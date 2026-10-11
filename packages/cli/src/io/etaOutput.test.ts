@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { createNumberEngine, etaSimulate } from "@idlekit/core";
-import { OUTPUT_CONTRACT_VERSION, linkAnalysisArtifact } from "./outputMeta";
+import { OUTPUT_CONTRACT_VERSION } from "./outputMeta";
 import { readEtaOutput } from "./etaOutput";
 
 describe("eta output reader", () => {
@@ -43,7 +43,8 @@ describe("eta output reader", () => {
         schemaRef: "docs/schemas/eta.output.schema.json",
       },
     };
-    const linked = linkAnalysisArtifact(legacy, result.estimate);
+    // The ETA estimate is its own contract, not AnalysisArtifactV1, so it sits beside _meta as `analysis` directly.
+    const linked = { ...legacy, analysis: result.estimate };
     const read = readEtaOutput({ ...legacy, analysis: result.estimate });
     expect(linked._meta.contractVersion).toBe("1.4.0");
     expect(linked._meta.schemaRef).toBe("docs/schemas/eta.output.schema.json");

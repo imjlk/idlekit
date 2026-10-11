@@ -33,5 +33,10 @@ describe("analysis artifact link", () => {
     expect("analysis" in linked._meta).toBe(false);
     expect(linked.analysis).toBe(analysis);
     expect(linked._meta.schemaRef).toBe("docs/schemas/generated/analysis.artifact.v1.schema.json");
+    // Type check only: a payload that is not an analysis artifact does not compile.
+    const rejectsOtherPayloads = () =>
+      // @ts-expect-error a string is not AnalysisArtifactV1
+      linkAnalysisArtifact({ _meta: linked._meta }, "not an artifact");
+    expect(typeof rejectsOtherPayloads).toBe("function");
   });
 });
