@@ -355,30 +355,40 @@ function fitQuadratic(xs: readonly number[], ys: readonly number[]): QuadFit | n
   return { a, b, c, rmse: rmseAround(predicted, ys) };
 }
 
-/** max(1, |mean|), computed on halves so a series near the number range does not overflow the sum. */
+/**
+ * |mean| of the series, computed on halves so a series near the number range does not overflow the sum.
+ * It is not floored at 1, so a sub-unit series keeps a relative residual and a unit change does not change shape.
+ */
 function seriesScale(values: readonly number[]): number {
   let sum = 0;
   for (const value of values) sum += value / 2;
-  return Math.max(1, Math.abs((sum / values.length) * 2));
+  const scale = Math.abs((sum / values.length) * 2);
+  return Number.isFinite(scale) && scale > 0 ? scale : 1;
 }
 
-function saturating(values: readonly number[], uniform: boolean): boolean {
-  if (!uniform || values.length < MIN_SAMPLES) return false;
-  const steps: number[] = [];
+/**
+ * Saturation: the growth rate per second decays geometrically. Rates are normalized by each gap, so an
+ * evenly downsampled trace with gaps of 11 and 12 is read the same as the full-resolution trace.
+ */
+function saturating(ts: readonly number[], values: readonly number[]): boolean {
+  if (values.length < MIN_SAMPLES) return false;
+  const mids: number[] = [];
+  const logRates: number[] = [];
+  let gapSum = 0;
   for (let index = 1; index < values.length; index += 1) {
+    const gap = ts[index]! - ts[index - 1]!;
     const step = values[index]! - values[index - 1]!;
-    if (!(step > 0)) return false;
-    steps.push(step);
+    if (!(gap > 0) || !(step > 0)) return false;
+    gapSum += gap;
+    mids.push((ts[index]! + ts[index - 1]!) / 2);
+    logRates.push(Math.log(step / gap));
   }
-  const ratios: number[] = [];
-  for (let index = 1; index < steps.length; index += 1) ratios.push(steps[index]! / steps[index - 1]!);
-  if (ratios.length < 4) return false;
-  const ratioMean = mean(ratios);
-  if (!(ratioMean > 0.05 && ratioMean < 0.95)) return false;
-  let deviation = 0;
-  for (const ratio of ratios) deviation = Math.max(deviation, Math.abs(ratio - ratioMean));
-  if (deviation / ratioMean > 0.25) return false;
-  return steps[steps.length - 1]! / steps[0]! < 0.25;
+  if (logRates.length < 4) return false;
+  const fit = fitLinear(mids, logRates);
+  if (!fit || !(fit.b < 0) || fit.rmse > 0.1) return false;
+  const perGap = Math.exp(fit.b * (gapSum / logRates.length));
+  if (!(perGap > 0.05 && perGap < 0.95)) return false;
+  return Math.exp(logRates[logRates.length - 1]! - logRates[0]!) < 0.25;
 }
 
 function irregularSpacing(points: readonly Point<unknown>[]): boolean {
@@ -392,16 +402,6 @@ function irregularSpacing(points: readonly Point<unknown>[]): boolean {
   const smallest = Math.min(...positive);
   const largest = Math.max(...positive);
   return largest / smallest > 3;
-}
-
-function uniformSpacing(points: readonly Point<unknown>[]): boolean {
-  if (points.length < 3) return false;
-  const gap = points[1]!.t - points[0]!.t;
-  if (!(gap > 0)) return false;
-  for (let index = 2; index < points.length; index += 1) {
-    if (Math.abs(points[index]!.t - points[index - 1]!.t - gap) > gap * 1e-6 + 1e-9) return false;
-  }
-  return true;
 }
 
 function blankWindow(
@@ -444,7 +444,8 @@ function classifyPositive(
   const logSpan = Math.max(...ys) - Math.min(...ys);
   const linear = fitLinear(ts, ys);
   const quadratic = fitQuadratic(ts, ys);
-  const powerX = ts.map((t) => Math.log10(t - first.t + 1));
+  // ts is already measured from the window start.
+  const powerX = ts.map((t) => Math.log10(t + 1));
   const power = fitLinear(powerX, ys);
   const numbers = points.map((point) => point.numeric);
   const valueReady = numbers.every((value): value is number => value !== null);
@@ -473,7 +474,7 @@ function classifyPositive(
   const powerOk =
     power !== null && linear !== null && power.rmse <= 1e-3 && power.rmse * 4 < linear.rmse;
   const valuePolyOk = valueRmse !== null && valueRmse <= VALUE_REL_OK;
-  const satOk = valueReady && saturating(numericValues, uniformSpacing(points));
+  const satOk = valueReady && saturating(ts, numericValues);
   let shape: GrowthShape = "unknown";
   let residual: GrowthFitWindowV1["residual"] = {
     space: "log10",
@@ -670,7 +671,8 @@ export function fitGrowth<N>(args: {
       current.sign === "positive" &&
       previous.log10 !== null &&
       current.log10 !== null &&
-      previous.log10 - current.log10 > DROP_LOG10
+      // An exact tenfold drop is a drop. The tolerance absorbs log10 rounding.
+      previous.log10 - current.log10 >= DROP_LOG10 - 1e-9
     ) {
       pushBreak(breaks, { t: current.t, kind: "drop" });
       found = true;
@@ -724,7 +726,15 @@ export function fitGrowth<N>(args: {
       downsampled,
       irregular,
       warnings,
-      windows: [blankWindow(kept, "none", "insufficient-data", "cadence coarser than window")],
+      // Coarse cadence hides the window, not the observed domain. Non-positive or nonfinite values stay invalid.
+      windows: [
+        blankWindow(
+          kept,
+          "none",
+          domainOf(kept) === "positive" || domainOf(kept) === "empty" ? "insufficient-data" : "invalid",
+          "cadence coarser than window",
+        ),
+      ],
     });
   }
   const fitted =

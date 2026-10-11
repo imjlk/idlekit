@@ -8,7 +8,7 @@
 
 양은 Engine에 남긴다. 양의 유한 값은 `absLog10`를 쓴다. `toNumber`는 절대 log10이 안전한 수 범위 안일 때만, 값 영역 잔차에만 쓴다. 0과 음수는 별도 domain이며 `abs`로 넘기지 않는다. 구매, reset, 부호 변화, 10배 하락은 새 창을 시작한다. 설정된 `analytic.softcap`은 형태 옆에 기록되고 형태를 고르지 않는다.
 
-끊김은 sampling budget을 적용하기 전에 모든 표본에서 찾고, 각 끊김의 양쪽 점을 남기므로 downsampling이 0이나 하락을 숨기지 않는다. fit은 창 시작부터의 시간을 쓰므로 큰 절대 `t`가 기울기를 바꾸지 않는다. 값 영역 fit은 계열 규모 단위로 한다. 값 영역에서 정확한 직선이나 포물선은 절편과 관계없이 `polynomial`이다. 실행 결과에서 action은 그 뒤 첫 trace 상태에서 새 창을 연다. retention이 비운 trace는 비어 있는 그대로다. action 기록이 완전하지 않으면 창은 형태 주장을 보류한다.
+끊김은 sampling budget을 적용하기 전에 모든 표본에서 찾고, 각 끊김의 양쪽 점을 남기므로 downsampling이 0이나 하락을 숨기지 않는다. fit은 창 시작부터의 시간을 쓰므로 큰 절대 `t`가 기울기를 바꾸지 않는다. 값 영역 fit은 1로 내림하지 않은 계열 크기 단위로 하므로 단위를 바꿔도 형태가 바뀌지 않는다. 포화는 간격으로 나눈 증가율로 읽으므로 고르게 줄인 표본의 간격이 고르지 않아도 포화로 본다. 정확히 10배 하락도 하락이다. cadence가 거칠어도 양이 아니거나 유한하지 않은 domain은 `invalid`로 남는다. 값 영역에서 정확한 직선이나 포물선은 절편과 관계없이 `polynomial`이다. 실행 결과에서 action은 그 뒤 첫 trace 상태에서 새 창을 연다. retention이 비운 trace는 비어 있는 그대로다. action 기록이 완전하지 않으면 창은 형태 주장을 보류한다.
 
 이후 Analyzer adapter는 `GrowthSamplingContract`를 넘기고 `GrowthFitArtifactV1`를 읽어야 한다. legacy enum으로 regime을 추론하지 않는다. 구조 schema는 `idlekit.growth-fit.v1`이다.
 

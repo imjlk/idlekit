@@ -192,7 +192,7 @@ function simulate(spec: CaseSpec): RunResult<number, UnitCode, Vars> {
  * @evidence ./growthFit.ts#growthFitJsonSchema Reads the generated schema.
  * @evidenceReview ./growthFit.ts#growthFitJsonSchema #ff8650e The function memoizes typia.json.schema of GrowthFitArtifactV1.
  * @evidence ./growthFit.ts#fitGrowth Fits slow, fast, and softcap-configured literal series.
- * @evidenceReview ./growthFit.ts#fitGrowth #5df9853 The function finds sign and drop breaks on every prepared point, keeps both sides of each break through the sampling budget, handles a one-point budget, fits on time since the window start, fits value space in units of the series scale, prefers an exact value fit, and withholds shape claims when the action history is incomplete.
+ * @evidenceReview ./growthFit.ts#fitGrowth #f61a642 The function finds sign and drop breaks, an exact tenfold drop included, on every prepared point, keeps both sides of each break through the sampling budget, handles a one-point budget, keeps a non-positive domain invalid under coarse cadence, fits on time since the window start, fits value space in units of the series magnitude, reads saturation from gap-normalized rates, prefers an exact value fit, and withholds shape claims when the action history is incomplete.
  * @evidence ./growthFit.ts#fitGrowthFromRun Fits executed runs of the slow and fast models.
  * @evidenceReview ./growthFit.ts#fitGrowthFromRun #7910493 The function keeps a present but empty trace empty, maps each action row to the first trace state after it, marks prestige count changes as breaks, reports whether the action history is complete, uses netWorthFallback without a model netWorth, and calls fitGrowth.
  * @evidence ./growthFit.ts#growthFitSchemaId Reads the growth fit schema id.
@@ -415,6 +415,34 @@ export function refusesDisguisedDomains(): void {
   );
   expect(zeroedFit.windows.some((window) => window.domain !== "positive")).toBe(true);
   expect(zeroedFit.windows.some((window) => window.discontinuity === "sign")).toBe(true);
+
+  // A cubic that starts at t=1000 is a log-space power fit on rebased time.
+  const shiftedPower = onlyWindow(fitNumbers(offsets.map((offset) => ({ t: 1000 + offset, amount: (offset + 1) ** 3 }))));
+  expect(shiftedPower.shape).toBe("polynomial");
+  expect(shiftedPower.residual.space).toBe("log10");
+
+  // An exact tenfold drop opens a new window.
+  const tenfold = fitNumbers(
+    offsets.map((t) => ({ t, amount: t <= 40 ? 10 ** (t / 20) : 10 ** ((t - 41) / 20 + 1) })),
+  );
+  expect(tenfold.windows.some((window) => window.discontinuity === "drop")).toBe(true);
+
+  // A saturating trace downsampled to uneven gaps is still saturating.
+  const saturatingFull = onlyWindow(fitSpec(caseById("saturating")));
+  const saturatingCoarse = onlyWindow(fitNumbers(samplesFor(caseById("saturating")), { samplingBudget: 8 }));
+  expect(saturatingFull.shape).toBe("saturating");
+  expect(saturatingCoarse.shape).toBe("saturating");
+
+  // Coarse cadence keeps an all-zero trace invalid.
+  const coarseZero = fitNumbers(samplesFor(caseById("zero")), { windowSec: 80, cadenceSec: 80 });
+  expect(onlyWindow(coarseZero).status).toBe("invalid");
+
+  // A sub-unit exponential keeps its shape; a unit conversion does not make it polynomial.
+  // 1e-11 stays above the number engine's zero tolerance, and the whole series stays below 1e-9.
+  const tinyExp = onlyWindow(fitNumbers(offsets.map((t) => ({ t, amount: 1e-11 * Math.exp(0.05 * t) }))));
+  const unitExp = onlyWindow(fitNumbers(offsets.map((t) => ({ t, amount: Math.exp(0.05 * t) }))));
+  expect(tinyExp.shape).toBe("exponential");
+  expect(tinyExp.shape).toBe(unitExp.shape);
 
   // A trace that retention emptied stays empty.
   const emptyTraceRun = runScenario({
