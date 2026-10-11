@@ -1,21 +1,43 @@
 import { appendFileSync, readdirSync } from "fs";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdtemp, rm } from "fs/promises";
+import { tmpdir } from "os";
 import { resolve } from "path";
 import { releaseWorkspaces } from "./release-lockfile";
 
 const ROOT = resolve(import.meta.dir, "..");
 const REGISTRY = "https://registry.npmjs.org";
 const DEPENDENCY_SECTIONS = ["dependencies", "peerDependencies", "optionalDependencies"] as const;
+/** Versions published locally before the package could trust this workflow carry no provenance. */
+export const PROVENANCE_EXEMPT: ReadonlySet<string> = new Set(["@idlekit/money@0.2.0"]);
 
-export type ReleaseVersion = Readonly<{ name: string; version: string; published: boolean }>;
-export type PublishPlan = Readonly<{ publish: boolean; reason: string; packages: string[] }>;
+function semverParts(version: string): [number, number, number, string?] {
+  const match = version.match(/^(\d+)\.(\d+)\.(\d+)(-.+)?$/);
+  if (!match) throw new Error(`unsupported semver format: ${version}`);
+  return [Number(match[1]), Number(match[2]), Number(match[3]), match[4] ?? undefined];
+}
+
+export function compareSemver(a: string, b: string): number {
+  const ap = semverParts(a);
+  const bp = semverParts(b);
+  for (const i of [0, 1, 2] as const) {
+    if (ap[i] !== bp[i]) return ap[i] - bp[i];
+  }
+  if (ap[3] === bp[3]) return 0;
+  if (!ap[3]) return 1;
+  if (!bp[3]) return -1;
+  return ap[3].localeCompare(bp[3]);
+}
+
+/** `latest` is the registry's `latest` dist-tag, or null for a package npm does not have yet. */
+export type ReleaseVersion = Readonly<{ name: string; version: string; published: boolean; latest: string | null }>;
+export type PublishPlan = Readonly<{ publish: boolean; verify: boolean; reason: string }>;
 
 /**
  * A push to main publishes once the release PR has consumed every changeset and some
  * package version is not on npm yet. A push that still has changesets, or whose commit
  * is no longer the head of main, leaves publication to a later run. A manual run is an
- * explicit request, so the same conditions fail it instead.
+ * explicit request, so the same conditions fail it; when npm already has every version,
+ * for example after a run that uploaded and then failed, it only verifies the registry.
  */
 export function planPublication(input: Readonly<{
   manual: boolean;
@@ -25,15 +47,23 @@ export function planPublication(input: Readonly<{
 }>): PublishPlan {
   const skip = (reason: string): PublishPlan => {
     if (input.manual) throw new Error(reason);
-    return { publish: false, reason, packages: [] };
+    return { publish: false, verify: false, reason };
   };
   if (input.pendingChangesets > 0) {
     return skip(`${input.pendingChangesets} pending changeset(s); merge the release PR to publish.`);
   }
   if (!input.selectedIsMain) return skip("main moved past this commit; the newer run decides publication.");
-  const packages = input.versions.filter((entry) => !entry.published).map((entry) => `${entry.name}@${entry.version}`);
-  if (packages.length === 0) return skip("every package version is already on npm.");
-  return { publish: true, reason: `publishing ${packages.join(", ")}`, packages };
+  const pending = input.versions.filter((entry) => !entry.published);
+  // npm tags a publish `latest` by default, so an older unpublished version would move it backward.
+  const older = pending.filter((entry) => entry.latest !== null && compareSemver(entry.version, entry.latest) < 0);
+  if (older.length > 0) {
+    throw new Error(older.map((entry) => `${entry.name}@${entry.version} is older than npm latest ${entry.latest}`).join("\n"));
+  }
+  if (pending.length === 0) {
+    if (input.manual) return { publish: false, verify: true, reason: "every package version is already on npm; verifying the registry only." };
+    return skip("every package version is already on npm.");
+  }
+  return { publish: true, verify: true, reason: `publishing ${pending.map((entry) => `${entry.name}@${entry.version}`).join(", ")}` };
 }
 
 type RegistryManifest = Partial<Record<(typeof DEPENDENCY_SECTIONS)[number], Record<string, string>>> & {
@@ -65,8 +95,22 @@ async function releaseManifests(): Promise<Array<{ name: string; version: string
   return out;
 }
 
+function registryPath(name: string): string {
+  return name.replaceAll("/", "%2f");
+}
+
+async function fetchPackage(name: string): Promise<{ versions: string[]; latest: string | null } | null> {
+  const response = await fetch(`${REGISTRY}/${registryPath(name)}`, {
+    headers: { accept: "application/vnd.npm.install-v1+json", "cache-control": "no-cache" },
+  });
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error(`npm registry returned ${response.status} for ${name}`);
+  const packument = (await response.json()) as { versions?: Record<string, unknown>; "dist-tags"?: { latest?: string } };
+  return { versions: Object.keys(packument.versions ?? {}), latest: packument["dist-tags"]?.latest ?? null };
+}
+
 async function fetchVersion(name: string, version: string): Promise<RegistryManifest | null> {
-  const response = await fetch(`${REGISTRY}/${name.replace("/", "%2f")}/${version}`, {
+  const response = await fetch(`${REGISTRY}/${registryPath(name)}/${version}`, {
     headers: { accept: "application/json", "cache-control": "no-cache" },
   });
   if (response.status === 404) return null;
@@ -92,7 +136,8 @@ async function plan(): Promise<void> {
   const pendingChangesets = readdirSync(resolve(ROOT, ".sampo/changesets")).filter((file) => file.endsWith(".md")).length;
   const versions: ReleaseVersion[] = [];
   for (const { name, version } of await releaseManifests()) {
-    versions.push({ name, version, published: (await fetchVersion(name, version)) !== null });
+    const registry = await fetchPackage(name);
+    versions.push({ name, version, published: registry?.versions.includes(version) ?? false, latest: registry?.latest ?? null });
   }
   const result = planPublication({
     manual: process.env.RELEASE_EVENT === "workflow_dispatch",
@@ -101,11 +146,10 @@ async function plan(): Promise<void> {
     versions,
   });
   console.log(result.reason);
-  writeOutputs({ publish: String(result.publish), packages: JSON.stringify(result.packages) });
+  writeOutputs({ publish: String(result.publish), verify: String(result.verify) });
 }
 
 async function verify(): Promise<void> {
-  const published = new Set<string>(JSON.parse(process.env.PUBLISHED_PACKAGES ?? "[]"));
   const deadline = Date.now() + Number(process.env.REGISTRY_WAIT_SEC ?? 900) * 1000;
   const manifests = await releaseManifests();
   const problems: string[] = [];
@@ -118,7 +162,8 @@ async function verify(): Promise<void> {
       manifest = await fetchVersion(name, version);
     }
     if (!manifest) throw new Error(`${id} did not appear on the npm registry`);
-    problems.push(...checkRegistryManifest(id, manifest, published.has(id)));
+    // Every current version is checked, so a retry also covers uploads from a failed earlier attempt.
+    problems.push(...checkRegistryManifest(id, manifest, !PROVENANCE_EXEMPT.has(id)));
   }
   if (problems.length > 0) throw new Error(problems.join("\n"));
 

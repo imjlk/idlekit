@@ -40,7 +40,7 @@ npm에 아직 없는 패키지:
 2. `bun run release:publish:preflight` 실행
 3. 첫 버전을 로컬 배포 ([release-process_ko.md](./release-process_ko.md#로컬-publish-preflight) 참고)
 4. npm에서 이 저장소와 `release.yml`을 패키지의 Trusted Publisher로 등록
-5. 패키지를 2FA 필수, 토큰 배포 차단으로 설정
+5. 패키지를 2FA 필수, 토큰 배포 차단으로 설정하고, 첫 버전을 `tools/release-registry.ts`의 `PROVENANCE_EXEMPT`에 추가
 
 이후 버전은 릴리즈 PR을 머지하면 됩니다. Release workflow가 배포하고 provenance와 npm 설치를 확인합니다.
 

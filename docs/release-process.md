@@ -59,8 +59,8 @@ Pushes to `main` and manual runs with `publish=false` prepare or update a Ready
 `release/main` PR from pending changesets, including versions, changelogs, and the
 Bun workspace lockfile. This works without branch protection. With no pending
 changesets, preparation is a no-op. It never merges the PR. After pushing the PR
-branch it dispatches CI on `release/main`, because pushes made with `GITHUB_TOKEN`
-do not start `pull_request` workflows.
+branch it dispatches CI, Docs Verify, and CodeQL on `release/main`, because pushes
+made with `GITHUB_TOKEN` do not start `pull_request` workflows.
 
 The pinned Sampo action's `release` command only edits versions and changelogs;
 the workflow creates the PR separately. Its `auto` command can fall through to
@@ -71,16 +71,20 @@ Merging the release PR publishes. On every push to `main`, the `plan` job
 (`bun tools/release-registry.ts plan`) publishes only when no changeset is pending,
 the pushed commit is still the head of `main`, and some package version is not on
 npm yet; in practice that is the push that merges the release PR. Any other push
-skips publication with the reason in the log. A manual run with `publish=true` is a
-retry for the same commit and fails instead of skipping.
+skips publication with the reason in the log. An unpublished version older than the
+package's npm `latest` fails the run, because npm would move `latest` backward. A manual
+run with `publish=true` is a retry for the same commit and fails instead of skipping.
+When npm already has every version, for example after a run whose uploads succeeded
+but whose tags or GitHub releases failed, the retry only verifies the registry; create
+any missing tag or GitHub release by hand.
 
 Only the `publish` job sets up Node/npm, installs the matching Sampo CLI, runs
 `publish:gate` and `readme:smoke`, and gets the OIDC permission for the `publish` step.
 Its commit must still match remote `main` before preflight and immediately before
 publishing. After publishing, `bun tools/release-registry.ts verify` waits for the
 new versions on the registry, rejects `workspace:` specs in their registry metadata,
-requires provenance for the versions this run published, installs every current
-version from npm, and checks `idk --version`.
+requires provenance for every current version except the locally bootstrapped ones in
+`PROVENANCE_EXEMPT`, installs every current version from npm, and checks `idk --version`.
 
 Sampo selects `bun publish` when `bun.lock` is present. After the final commit check,
 the publish job temporarily moves that lockfile outside the checkout so Sampo selects

@@ -1,20 +1,21 @@
 import { describe, expect, it } from "bun:test";
-import { checkRegistryManifest, planPublication, type ReleaseVersion } from "./release-registry";
+import { checkRegistryManifest, compareSemver, planPublication, PROVENANCE_EXEMPT, type ReleaseVersion } from "./release-registry";
 
 const versions: ReleaseVersion[] = [
-  { name: "@idlekit/money", version: "0.2.0", published: true },
-  { name: "@idlekit/core", version: "0.2.2", published: false },
-  { name: "@idlekit/cli", version: "0.2.2", published: false },
+  { name: "@idlekit/money", version: "0.2.0", published: true, latest: "0.2.0" },
+  { name: "@idlekit/core", version: "0.2.2", published: false, latest: "0.2.1" },
+  { name: "@idlekit/cli", version: "0.2.2", published: false, latest: "0.2.1" },
 ];
 const ready = { pendingChangesets: 0, selectedIsMain: true, versions };
+const allPublished = versions.map((entry) => ({ ...entry, published: true }));
 
 describe("publication plan", () => {
   it("publishes the unpublished versions once the release PR consumed every changeset", () => {
     for (const manual of [false, true]) {
       expect(planPublication({ manual, ...ready })).toEqual({
         publish: true,
+        verify: true,
         reason: "publishing @idlekit/core@0.2.2, @idlekit/cli@0.2.2",
-        packages: ["@idlekit/core@0.2.2", "@idlekit/cli@0.2.2"],
       });
     }
   });
@@ -23,20 +24,39 @@ describe("publication plan", () => {
     const cases = [
       [{ ...ready, pendingChangesets: 2 }, "2 pending changeset(s)"],
       [{ ...ready, selectedIsMain: false }, "main moved past this commit"],
-      [{ ...ready, versions: versions.map((entry) => ({ ...entry, published: true })) }, "already on npm"],
     ] as const;
     for (const [input, reason] of cases) {
-      const pushed = planPublication({ manual: false, ...input });
-      expect(pushed.publish).toBeFalse();
-      expect(pushed.packages).toEqual([]);
-      expect(pushed.reason).toContain(reason);
+      expect(planPublication({ manual: false, ...input })).toEqual({ publish: false, verify: false, reason: expect.stringContaining(reason) });
       expect(() => planPublication({ manual: true, ...input })).toThrow(reason);
     }
+  });
+
+  it("skips a push with nothing new and lets a manual retry verify the registry", () => {
+    expect(planPublication({ manual: false, ...ready, versions: allPublished }))
+      .toEqual({ publish: false, verify: false, reason: "every package version is already on npm." });
+    expect(planPublication({ manual: true, ...ready, versions: allPublished }))
+      .toEqual({ publish: false, verify: true, reason: expect.stringContaining("verifying the registry only") });
+  });
+
+  it("refuses an unpublished version older than npm latest on a push or a manual run", () => {
+    const behind = [{ name: "@idlekit/core", version: "0.2.0-rc.1", published: false, latest: "0.2.1" }];
+    for (const manual of [false, true]) {
+      expect(() => planPublication({ manual, ...ready, versions: behind })).toThrow("@idlekit/core@0.2.0-rc.1 is older than npm latest 0.2.1");
+    }
+    const fresh = [{ name: "@idlekit/new", version: "0.1.0", published: false, latest: null }];
+    expect(planPublication({ manual: false, ...ready, versions: fresh }).publish).toBeTrue();
   });
 
   it("checks pending changesets before the main head and the registry", () => {
     const plan = planPublication({ manual: false, pendingChangesets: 1, selectedIsMain: false, versions: [] });
     expect(plan.reason).toContain("pending changeset");
+  });
+
+  it("orders semver releases after their prereleases", () => {
+    expect(compareSemver("0.2.1", "0.2.0")).toBeGreaterThan(0);
+    expect(compareSemver("0.10.0", "0.9.9")).toBeGreaterThan(0);
+    expect(compareSemver("0.2.0", "0.2.0-rc.1")).toBeGreaterThan(0);
+    expect(compareSemver("0.2.0", "0.2.0")).toBe(0);
   });
 });
 
@@ -59,7 +79,8 @@ describe("registry manifest check", () => {
     ]);
   });
 
-  it("requires provenance only for versions this run published", () => {
+  it("requires provenance except for the locally bootstrapped versions", () => {
+    expect([...PROVENANCE_EXEMPT]).toEqual(["@idlekit/money@0.2.0"]);
     expect(checkRegistryManifest("@idlekit/money@0.2.0", {}, false)).toEqual([]);
     expect(checkRegistryManifest("@idlekit/money@0.2.1", {}, true)).toEqual(["@idlekit/money@0.2.1 has no provenance attestation"]);
   });

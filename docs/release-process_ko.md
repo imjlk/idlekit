@@ -118,7 +118,7 @@ bun run release:publish:dry-run
 Bun workspace lockfile을 생성하고 Ready 상태의 `release/main` PR을 만들거나 갱신합니다.
 브랜치 보호 설정과 관계없이 동작하며, changeset이 없으면 아무 작업도 하지 않습니다.
 PR을 자동 머지하지 않습니다. `GITHUB_TOKEN`으로 push한 브랜치는 `pull_request` workflow를
-시작하지 않으므로, PR 브랜치를 push한 뒤 `release/main`에 CI를 직접 실행합니다.
+시작하지 않으므로, PR 브랜치를 push한 뒤 `release/main`에 CI, Docs Verify, CodeQL을 직접 실행합니다.
 
 고정한 Sampo action의 `release` 명령은 버전과 changelog만 변경하므로 PR 생성은
 워크플로가 따로 수행합니다. `auto`는 배포로 이어질 수 있어 사용하지 않습니다.
@@ -128,13 +128,17 @@ PR을 자동 머지하지 않습니다. `GITHUB_TOKEN`으로 push한 브랜치�
 (`bun tools/release-registry.ts plan`)이 보류 중인 changeset이 없고, push한 커밋이
 아직 `main`의 최신이며, npm에 없는 패키지 버전이 있을 때만 배포를 결정합니다. 실제로는
 릴리즈 PR을 머지한 push가 여기에 해당합니다. 다른 push는 이유를 로그에 남기고 배포를
-건너뜁니다. `publish=true` 수동 실행은 같은 커밋의 재시도이며, 건너뛰는 대신 실패합니다.
+건너뜁니다. npm `latest`보다 낮은 미배포 버전은 `latest`를 뒤로 옮기므로 실행을 실패시킵니다.
+`publish=true` 수동 실행은 같은 커밋의 재시도이며, 건너뛰는 대신 실패합니다. 업로드는 성공했지만
+태그나 GitHub 릴리즈 생성이 실패한 경우처럼 npm에 모든 버전이 이미 있으면 재시도는 레지스트리
+확인만 합니다. 빠진 태그나 GitHub 릴리즈는 직접 만듭니다.
 
 `publish` job만 Node/npm과 대응하는 Sampo CLI를 설치하고 `publish:gate`와
 `readme:smoke`를 거쳐 `publish` 단계에 OIDC 권한을 줍니다. preflight 전과 실제 배포
 직전에 커밋이 원격 `main`과 같은지 확인합니다. 배포 후 `bun tools/release-registry.ts verify`가
 레지스트리에 새 버전이 보일 때까지 기다린 뒤, 레지스트리 메타데이터의 `workspace:` 지정자를
-거부하고, 이번 실행이 배포한 버전의 provenance를 확인하고, 현재 버전을 npm에서 설치해
+거부하고, `PROVENANCE_EXEMPT`에 있는 로컬 첫 배포 버전을 제외한 모든 현재 버전의 provenance를
+확인하고, 현재 버전을 npm에서 설치해
 `idk --version`을 확인합니다.
 
 Sampo는 `bun.lock`이 있으면 `bun publish`를 선택합니다. 마지막 커밋 확인 뒤

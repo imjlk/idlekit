@@ -7,6 +7,8 @@ on:
   pull_request:
   schedule:
     - cron: "0 3 * * 1"
+  # The Release workflow dispatches this on release/main, whose GITHUB_TOKEN pushes start no pull_request runs.
+  workflow_dispatch:
 
 # A new push to the same pull request or branch replaces the run already in progress.
 # The pull request number keeps two forks that share a branch name from cancelling each other.

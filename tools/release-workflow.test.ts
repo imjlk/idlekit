@@ -23,7 +23,8 @@ type Workflow = {
   jobs: { prepare: Job; plan: Job; publish: Job };
 };
 const workflow = parse(readFileSync(resolve(import.meta.dir, "../.github/workflows/release.yml"), "utf8")) as Workflow;
-const ci = parse(readFileSync(resolve(import.meta.dir, "../.github/workflows/ci.yml"), "utf8")) as { on: Record<string, unknown> };
+const triggers = (file: string) =>
+  (parse(readFileSync(resolve(import.meta.dir, "../.github/workflows", file), "utf8")) as { on: Record<string, unknown> }).on;
 
 /** Evaluate only the boolean/string subset used by these job guards. */
 function allows(guard: string, event: string, ref: string, publish: boolean): boolean {
@@ -163,21 +164,24 @@ describe("release preparation and publishing", () => {
     expect(workflow.on.workflow_dispatch.inputs.publish).toMatchObject({ type: "boolean", default: false });
   });
 
-  it("runs CI on the release PR, which GITHUB_TOKEN pushes would not start", () => {
+  it("runs every required check on the release PR, which GITHUB_TOKEN pushes would not start", () => {
     expect(workflow.jobs.prepare.permissions.actions).toBe("write");
     const create = workflow.jobs.prepare.steps.find((step) => step.name === "Create or update release PR")!.run!;
-    expect(create.indexOf("gh workflow run ci.yml --ref release/main")).toBeGreaterThan(create.indexOf("git push"));
+    expect(create.indexOf("for workflow in ci.yml docs-verify.yml codeql.yml; do")).toBeGreaterThan(create.indexOf("git push"));
+    expect(create).toContain('gh workflow run "$workflow" --ref release/main');
     expect(create).toContain("Merging this PR publishes");
-    expect(ci.on).toHaveProperty("workflow_dispatch");
+    for (const file of ["ci.yml", "docs-verify.yml", "codeql.yml"]) expect(triggers(file)).toHaveProperty("workflow_dispatch");
   });
 
-  it("verifies the published versions from the registry after publishing", () => {
+  it("verifies the registry after publishing, and only verifies on a manual retry with nothing to publish", () => {
     const steps = workflow.jobs.publish.steps;
     const verify = steps.findIndex((step) => step.name === "Verify published packages");
     expect(verify).toBeGreaterThan(steps.findIndex((step) => step.name === "Restore publish lockfile"));
     expect((steps[verify] as Step & { if?: string }).if).toBeUndefined();
     expect(steps[verify]?.run).toBe("bun tools/release-registry.ts verify");
-    expect(steps[verify]?.env).toEqual({ PUBLISHED_PACKAGES: "${{ needs.plan.outputs.packages }}" });
+    const retry = workflow.jobs.plan.steps.find((step) => step.name === "Verify published packages") as Step & { if?: string };
+    expect(retry.run).toBe("bun tools/release-registry.ts verify");
+    expect(retry.if).toBe("steps.plan.outputs.publish == 'false' && steps.plan.outputs.verify == 'true'");
   });
 
   it("keeps publish commands and registry credentials out of preparation", () => {

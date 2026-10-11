@@ -115,7 +115,10 @@ jobs:
             gh pr create --base main --head release/main --title 'chore(release): prepare package versions' --body-file "$body"
           fi
           # Pushes made with GITHUB_TOKEN do not start pull_request workflows; a dispatch does.
-          gh workflow run ci.yml --ref release/main
+          # Run every check the release PR needs before it can merge.
+          for workflow in ci.yml docs-verify.yml codeql.yml; do
+            gh workflow run "$workflow" --ref release/main
+          done
 
   plan:
     if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish))
@@ -124,7 +127,6 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       publish: ${{ steps.plan.outputs.publish }}
-      packages: ${{ steps.plan.outputs.packages }}
     steps:
       - name: Checkout selected commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -144,6 +146,12 @@ jobs:
           RELEASE_EVENT: ${{ github.event_name }}
           SELECTED_SHA: ${{ github.sha }}
         run: bun tools/release-registry.ts plan
+
+      # A manual retry after npm accepted every upload only re-checks the registry.
+      # Recreate any missing tag or GitHub release by hand.
+      - name: Verify published packages
+        if: steps.plan.outputs.publish == 'false' && steps.plan.outputs.verify == 'true'
+        run: bun tools/release-registry.ts verify
 
   publish:
     needs: plan
@@ -244,9 +252,7 @@ jobs:
             mv -- "$RUNNER_TEMP/idlekit-publish.bun.lock" bun.lock
           fi
 
-      # Installers read registry metadata, not the tarball. Wait for the new versions, then
-      # check their dependencies and provenance and install them from npm.
+      # Installers read registry metadata, not the tarball. Wait for the new versions, then check
+      # every current version's dependencies and provenance and install them from npm.
       - name: Verify published packages
-        env:
-          PUBLISHED_PACKAGES: ${{ needs.plan.outputs.packages }}
         run: bun tools/release-registry.ts verify
