@@ -81,8 +81,14 @@ if (import.meta.main) {
     });
   } else if (mode === "publish") {
     // Without bun.lock, Sampo selects npm publish, which supports trusted publishing.
+    // npm sends the pre-prepack manifest to the registry, so hold rewritten manifests for the whole run.
     await preserveReleaseLockfile(projectRoot, () => {
-      run(["sampo", "publish", ...process.argv.slice(3)], projectRoot, { ...process.env, SAMPO_RELEASE_BRANCH: "main" });
+      run([process.execPath, "tools/package-manifest.ts", "hold"], projectRoot);
+      try {
+        run(["sampo", "publish", ...process.argv.slice(3)], projectRoot, { ...process.env, SAMPO_RELEASE_BRANCH: "main" });
+      } finally {
+        run([process.execPath, "tools/package-manifest.ts", "release"], projectRoot);
+      }
     });
   } else if (mode === "refresh" && process.argv.length === 4) {
     await refreshReleaseLockfile(new Uint8Array(await Bun.file(process.argv[3]!).arrayBuffer()), projectRoot);

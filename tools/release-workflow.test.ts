@@ -79,6 +79,19 @@ describe("release preparation and publishing", () => {
     });
   }
 
+  it("holds publish manifests across the whole publisher run and always releases them", () => {
+    const steps = workflow.jobs.publish.steps;
+    const hold = steps.findIndex((step) => step.name === "Hold publish manifests");
+    const publish = steps.findIndex((step) => step.with?.command === "publish");
+    const release = steps.findIndex((step) => step.name === "Release publish manifests");
+    expect(hold).toBeGreaterThan(steps.findIndex((step) => step.name === "Release preflight"));
+    expect(hold).toBeLessThan(publish);
+    expect(release).toBeGreaterThan(publish);
+    expect(steps[hold]?.run).toBe("bun tools/package-manifest.ts hold");
+    expect(steps[release]?.run).toBe("bun tools/package-manifest.ts release");
+    expect((steps[release] as Step & { if?: string })?.if).toBe("always()");
+  });
+
   it("preserves dependencies while preparing workspace versions through the actual workflow steps", async () => {
     const steps = workflow.jobs.prepare.steps;
     const preservation = steps.findIndex((step) => step.name === "Preserve release dependency resolutions");

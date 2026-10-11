@@ -14,6 +14,8 @@ type PackageManifest = {
 
 const ROOT = resolve(import.meta.dir, "..");
 const BACKUP_FILE = ".package.json.prepack.backup";
+const HOLD_FILE = resolve(ROOT, ".publish-manifests.hold");
+const RELEASE_WORKSPACES = ["packages/money", "packages/core", "packages/cli"] as const;
 const SECTIONS = ["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"] as const;
 const PUBLISH_EXPORTS: Record<string, { types: string; bun: string }> = {
   "@idlekit/money": { types: "./dist/index.d.ts", bun: "./dist/index.js" },
@@ -25,9 +27,8 @@ async function readJson<T>(path: string): Promise<T> {
 }
 
 async function readWorkspaceVersions(): Promise<Map<string, string>> {
-  const packageDirs = ["packages/money", "packages/core", "packages/cli"];
   const versions = new Map<string, string>();
-  for (const pkgDir of packageDirs) {
+  for (const pkgDir of RELEASE_WORKSPACES) {
     const manifest = await readJson<PackageManifest>(resolve(ROOT, pkgDir, "package.json"));
     if (manifest.name && manifest.version) {
       versions.set(manifest.name, manifest.version);
@@ -91,9 +92,17 @@ function stableStringify(value: unknown): string {
   return `${JSON.stringify(value, null, 2)}\n`;
 }
 
-async function prepare(): Promise<void> {
-  const manifestPath = resolve(process.cwd(), "package.json");
-  const backupPath = resolve(process.cwd(), BACKUP_FILE);
+function unresolvedWorkspaceSpecs(manifest: PackageManifest): string[] {
+  return SECTIONS.flatMap((section) =>
+    Object.entries(manifest[section] ?? {})
+      .filter(([, spec]) => spec.startsWith("workspace:"))
+      .map(([name, spec]) => `${section}.${name}=${spec}`),
+  );
+}
+
+async function prepare(packageDir: string, versions: Map<string, string>): Promise<void> {
+  const manifestPath = resolve(packageDir, "package.json");
+  const backupPath = resolve(packageDir, BACKUP_FILE);
   const backup = Bun.file(backupPath);
   if (await backup.exists()) {
     const backupText = await backup.text();
@@ -105,7 +114,11 @@ async function prepare(): Promise<void> {
   }
 
   const original = await readJson<PackageManifest>(manifestPath);
-  const rewritten = rewriteManifest(original, await readWorkspaceVersions());
+  const rewritten = rewriteManifest(original, versions);
+  const unresolved = unresolvedWorkspaceSpecs(rewritten);
+  if (unresolved.length > 0) {
+    throw new Error(`${original.name ?? packageDir} keeps unresolved workspace: specs: ${unresolved.join(", ")}`);
+  }
   const originalText = stableStringify(original);
   const rewrittenText = stableStringify(rewritten);
 
@@ -115,23 +128,49 @@ async function prepare(): Promise<void> {
   await Bun.write(manifestPath, rewrittenText);
 }
 
-async function restore(): Promise<void> {
-  const manifestPath = resolve(process.cwd(), "package.json");
-  const backupPath = resolve(process.cwd(), BACKUP_FILE);
+async function restore(packageDir: string): Promise<void> {
+  const manifestPath = resolve(packageDir, "package.json");
+  const backupPath = resolve(packageDir, BACKUP_FILE);
   const backup = Bun.file(backupPath);
   if (!(await backup.exists())) return;
   await Bun.write(manifestPath, await backup.text());
   await $`rm -f ${backupPath}`.quiet();
 }
 
+/**
+ * npm sends the manifest it read before prepack to the registry, so publishing rewrites every
+ * release manifest first and keeps it rewritten until `release`. Pack lifecycles leave a held
+ * manifest alone, including the postpack of the dry run Sampo runs before the real publish.
+ */
+async function hold(): Promise<void> {
+  if (await Bun.file(HOLD_FILE).exists()) throw new Error(`publish manifests are already held: ${HOLD_FILE}`);
+  const versions = await readWorkspaceVersions();
+  await Bun.write(HOLD_FILE, `${new Date().toISOString()}\n`);
+  try {
+    for (const pkgDir of RELEASE_WORKSPACES) await prepare(resolve(ROOT, pkgDir), versions);
+  } catch (error) {
+    await release();
+    throw error;
+  }
+}
+
+async function release(): Promise<void> {
+  for (const pkgDir of RELEASE_WORKSPACES) await restore(resolve(ROOT, pkgDir));
+  await $`rm -f ${HOLD_FILE}`.quiet();
+}
+
 const mode = process.argv[2];
-const packageDir = process.argv[3];
-if (packageDir) process.chdir(resolve(packageDir));
+const packageDir = resolve(process.argv[3] ?? ".");
+const held = await Bun.file(HOLD_FILE).exists();
 
 if (mode === "prepare") {
-  await prepare();
+  if (!held) await prepare(packageDir, await readWorkspaceVersions());
 } else if (mode === "restore") {
-  await restore();
+  if (!held) await restore(packageDir);
+} else if (mode === "hold") {
+  await hold();
+} else if (mode === "release") {
+  await release();
 } else {
-  throw new Error("usage: bun tools/package-manifest.ts <prepare|restore>");
+  throw new Error("usage: bun tools/package-manifest.ts <prepare|restore> [packageDir] | <hold|release>");
 }
