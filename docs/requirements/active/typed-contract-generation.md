@@ -10,7 +10,7 @@ Requirement `REQ-TC05-TYPED-CONTRACT-SINGLE-SOURCE`. `TC-05` owns it.
 
 The source hash covers the relative path and sha256 of `types.ts`, `offlinePolicy.ts`, and `scenarioContract.ts`, plus the generator name, version, typia pin, dialect, and registrations. It omits timestamps, the working directory, and absolute paths.
 
-`contractRegistry` lists `idlekit.scenario.v1` only. Later analysis DTOs append there. This change does not migrate every existing DTO. `idlekit.resolved-run-configuration` stays a CLI plan id.
+`contractRegistry` lists `idlekit.scenario.v1`. `PR-08` appends `idlekit.analysis.artifact.v1` through the same generator. This change does not migrate every existing DTO. `idlekit.resolved-run-configuration` stays a CLI plan id.
 
 `scenario.v1.fields.json` lists property names, `oneOf` const values, and descriptions already present on the schema. It does not add design intent, example balances, or Korean copy. `policy.mode` is `accumulate` then `drop`.
 

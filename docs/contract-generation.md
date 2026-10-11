@@ -21,7 +21,7 @@ The file is a JSON Schema 2020-12 document. The generated constraints and `compo
 
 ## What is registered
 
-`contractRegistry` in `packages/core/src/scenario/scenarioContract.ts` lists `idlekit.scenario.v1` only. A later analysis DTO appends an entry and a concrete `typia.json.schema` call. Do not point that list at every legacy output schema. CLI output schemas under `docs/schemas/*.output.schema.json` stay handwritten.
+`contractRegistry` in `packages/core/src/scenario/scenarioContract.ts` lists `idlekit.scenario.v1` and `idlekit.analysis.artifact.v1`. The analysis entry is `typia.json.schema<AnalysisArtifactV1, "3.1">()`. Do not point that list at every legacy output schema. CLI output schemas under `docs/schemas/*.output.schema.json` stay handwritten. Replay `artifact.v1.schema.json` is not this contract.
 
 `scenario.v1.fields.json` is names, const values, and descriptions copied from the generated schema. Design intent, example numbers, and Korean text stay in authored docs.
 

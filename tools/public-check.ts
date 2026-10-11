@@ -29,6 +29,7 @@ const DOCS_WITH_KO = [
   "docs/virtual-scenario-design.md",
   "docs/schemas/README.md",
   "docs/contract-generation.md",
+  "docs/analysis-contracts.md",
   "examples/adapter-pattern/README.md",
   "examples/money-package/README.md",
   "examples/plugins/README.md",

@@ -60,6 +60,9 @@ export * from "./sim/analysis/prestigeCycle";
 export * from "./sim/analysis/growth";
 export * from "./sim/analysis/milestones";
 export * from "./sim/analysis/ux";
+export * from "./sim/analysis/contracts";
+export * from "./sim/analysis/metrics";
+export * from "./sim/analysis/registry";
 
 export * from "./report/timeline";
 export * from "./report/compare";

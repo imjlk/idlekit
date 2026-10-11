@@ -1,3 +1,4 @@
+import type { AnalysisArtifactV1 } from "@idlekit/core";
 import { dirname, resolve } from "path";
 import cliPackageJson from "../../package.json" with { type: "json" };
 import { runText, sha256Hex } from "../runtime/bun";
@@ -10,6 +11,8 @@ function repoRoot(): string {
 
 const REPO_ROOT = repoRoot();
 export const OUTPUT_CONTRACT_VERSION = "1.4.0";
+/** Analysis artifact v1 is a sibling of `_meta`, not a field of it. */
+export const ANALYSIS_ARTIFACT_SCHEMA_REF = "docs/schemas/generated/analysis.artifact.v1.schema.json";
 const UNKNOWN_GIT_SHA = "unknown";
 
 const OUTPUT_SCHEMA_REF: Readonly<Record<string, string>> = {
@@ -112,6 +115,13 @@ export function deriveDeterministicRunId(args: {
 
 export function outputSchemaRefForCommand(command: string): string | undefined {
   return OUTPUT_SCHEMA_REF[command];
+}
+
+export function linkAnalysisArtifact<T extends { _meta: OutputMeta }>(
+  output: T,
+  analysis: AnalysisArtifactV1,
+): T & { analysis: AnalysisArtifactV1 } {
+  return { ...output, analysis };
 }
 
 export function buildOutputMeta(args: {

@@ -84,7 +84,7 @@ function spawnContract(args: string[], cwd = repoRoot): { exitCode: number; stdo
 
 /**
  * @evidence docs/requirements/active/typed-contract-generation.md#req-tc05-typed-contract-single-source Two generations match, a type field changes the schema, and the digest has no directory.
- * @evidenceReview docs/requirements/active/typed-contract-generation.md#req-tc05-typed-contract-single-source #edaebf8 Re-read the section, then checked the registry, the 3.1 schema id, and the directory-free hash.
+ * @evidenceReview docs/requirements/active/typed-contract-generation.md#req-tc05-typed-contract-single-source #4326433 Re-read the section, then checked the registry, the 3.1 schema id, and the directory-free hash.
  * @evidence ./scenarioContract.ts#typedContractSingleSource Reads the scenario registration id.
  * @evidenceReview ./scenarioContract.ts#typedContractSingleSource #fff2b70 The declaration is idlekit.scenario.v1.
  * @evidence ./scenarioContract.ts#registeredContracts Reads the registry ids.
@@ -108,7 +108,10 @@ function spawnContract(args: string[], cwd = repoRoot): { exitCode: number; stdo
  */
 export function keepsTypedContractSingleSource(): void {
   expect(typedContractSingleSource).toBe("idlekit.scenario.v1");
-  expect(registeredContracts().map((entry) => entry.id)).toEqual(["idlekit.scenario.v1"]);
+  expect(registeredContracts().map((entry) => entry.id)).toEqual([
+    "idlekit.scenario.v1",
+    "idlekit.analysis.artifact.v1",
+  ]);
   const text = canonicalJson(buildContractDocument(sources));
   expect(canonicalJson(buildContractDocument(sources))).toBe(text);
   expect(text).not.toContain("/tmp/");

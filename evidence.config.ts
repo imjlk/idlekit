@@ -16,6 +16,7 @@ export const productionFiles = [
   "packages/core/src/scenario/typiaTransformMissing.ts",
   "packages/core/src/scenario/standardSchema.ts",
   "packages/core/src/scenario/scenarioContract.ts",
+  "packages/core/src/sim/analysis/contracts.ts",
   "packages/core/src/sim/step.ts",
   "packages/core/src/sim/timeBoundary.ts",
   "packages/core/src/sim/runFactory.ts",
@@ -36,6 +37,7 @@ export const productionFiles = [
 export const testFiles = [
   "packages/core/src/scenario/concreteValidator.test.ts",
   "packages/core/src/scenario/scenarioContract.test.ts",
+  "packages/core/src/sim/analysis/analysisContract.test.ts",
   "packages/core/src/sim/step.bulk.test.ts",
   "packages/core/src/sim/simulator.time.test.ts",
   "packages/core/src/sim/runFactory.test.ts",

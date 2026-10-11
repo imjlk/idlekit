@@ -163,6 +163,14 @@ for (const rel of [
   if (!entryExists(resolve(root, rel))) fail(`TC-05 path is missing: ${rel}`);
 }
 for (const rel of [
+  "docs/schemas/generated/analysis.artifact.v1.schema.json",
+  "packages/core/src/sim/analysis/contracts.ts",
+  "packages/core/src/sim/analysis/metrics.ts",
+  "packages/core/src/sim/analysis/registry.ts",
+]) {
+  if (!entryExists(resolve(root, rel))) fail(`PR-08 path is missing: ${rel}`);
+}
+for (const rel of [
   "packages/core/src/testkit/conformance.ts",
   "packages/money/src/testkit/compareAmounts.ts",
   "fixtures/conformance/shrink-gap.json",

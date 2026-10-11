@@ -11,7 +11,10 @@
     "REQ-PR07-RESOLVED-RUN",
     "REQ-TC05-TYPED-CONTRACT-SINGLE-SOURCE",
     "REQ-TC05-SEMANTIC-VALIDATION-RETAINED",
-    "REQ-TC05-PUBLISHED-VALIDATOR-TRANSFORMED"
+    "REQ-TC05-PUBLISHED-VALIDATOR-TRANSFORMED",
+    "REQ-PR08-SHARED-GOAL",
+    "REQ-PR08-CUSTOM-METRIC",
+    "REQ-PR08-ANALYSIS-ARTIFACT"
   ],
   "protectedFiles": [
     "docs/requirements/active/typia-transform.md",
@@ -51,8 +54,11 @@
     "docs/requirements/active/session-clock.md",
     "docs/requirements/active/cli-resolved-run.md",
     "docs/requirements/active/typed-contract-generation.md",
+    "docs/requirements/active/analysis-contracts.md",
     "packages/core/src/scenario/scenarioContract.ts",
     "packages/core/src/scenario/scenarioContract.test.ts",
+    "packages/core/src/sim/analysis/contracts.ts",
+    "packages/core/src/sim/analysis/analysisContract.test.ts",
     "packages/cli/src/lib/runConfiguration.ts",
     "packages/cli/src/lib/runConfiguration.test.ts",
     "fixtures/conformance/shrink-gap.json",
