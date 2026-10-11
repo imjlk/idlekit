@@ -7,7 +7,7 @@
 - 평소 개발과 CI는 Bun 기준으로 진행합니다.
 - GitHub 릴리즈 자동화는 Sampo가 orchestrator 역할을 맡습니다.
 - 레지스트리 배포는 릴리즈 시점에만 `npm publish`를 사용합니다.
-- npm 인증은 Trusted Publishing(OIDC)을 우선하고, `NPM_TOKEN`은 fallback입니다.
+- npm 인증은 Trusted Publishing(OIDC)만 사용하며, workflow는 npm 토큰을 전달하지 않습니다.
 
 ## Local workflow
 
@@ -33,8 +33,8 @@ GitHub workflow는 [../.github/workflows/release.yml](../.github/workflows/relea
 
 - protected `main` 또는 private 단계에서는 manual dispatch
 - GitHub Actions `id-token: write` 권한
-- npm Trusted Publishing에 이 저장소/workflow 등록
-- Trusted Publishing을 못 쓰는 경우에만 `NPM_TOKEN` secret 추가
+- 모든 `@idlekit/*` 패키지의 npm Trusted Publishing에 이 저장소/workflow 등록
+- 각 패키지를 2FA 필수, 토큰 배포 차단으로 설정. 새 패키지의 첫 버전은 로컬에서 배포 ([../docs/release-process_ko.md](../docs/release-process_ko.md#로컬-publish-preflight) 참고)
 
 ## Changeset authoring rules
 
