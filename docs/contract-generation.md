@@ -15,7 +15,9 @@ bun run contracts:generate
 
 `contracts:check` is the CI path. It writes nothing under `docs/schemas/generated/`. A byte mismatch exits 1. `contracts:generate` is the only writer. `--write` on the check exits 2.
 
-The installed export is `typia.json.schema` from typia `14.0.6`, OpenAPI `3.1`. `$id` is `https://idlekit.dev/schemas/scenario.v1.schema.json`. The document records the generator name `idlekit.contract-generator`, version `1`, the typia pin, and a sha256 of the relative sources it read. That hash omits timestamps and absolute paths.
+The installed export is `typia.json.schema` from typia `14.0.6`, OpenAPI `3.1`. `$id` is `https://idlekit.dev/schemas/scenario.v1.schema.json`. The document records the generator name `idlekit.contract-generator`, version `1`, the typia pin, and a sha256 of the relative sources it read. That hash omits timestamps and absolute paths. Sources are hashed with LF line endings, and the check reads the tracked JSON the same way, so a CRLF checkout is not drift.
+
+The file is a JSON Schema 2020-12 document. The generated constraints and `components` sit at its root, so a standard validator can load the file and resolve every `#/components/schemas/...` ref inside it. The generator record is the `idlekitContract` annotation keyword beside them, which validators ignore.
 
 ## What is registered
 

@@ -15,7 +15,9 @@ bun run contracts:generate
 
 `contracts:check`가 CI 경로다. `docs/schemas/generated/`를 쓰지 않는다. 바이트가 다르면 종료 코드 1이다. 기록은 `contracts:generate`만 한다. check에 `--write`를 주면 종료 코드 2다.
 
-설치본 export는 typia `14.0.6`의 `typia.json.schema`이고 OpenAPI `3.1`이다. `$id`는 `https://idlekit.dev/schemas/scenario.v1.schema.json`이다. 문서에는 생성기 이름 `idlekit.contract-generator`, 버전 `1`, typia pin, 읽은 상대 경로 소스의 sha256이 있다. 그 해시에 시각과 절대 경로는 없다.
+설치본 export는 typia `14.0.6`의 `typia.json.schema`이고 OpenAPI `3.1`이다. `$id`는 `https://idlekit.dev/schemas/scenario.v1.schema.json`이다. 문서에는 생성기 이름 `idlekit.contract-generator`, 버전 `1`, typia pin, 읽은 상대 경로 소스의 sha256이 있다. 그 해시에 시각과 절대 경로는 없다. 소스는 LF 줄바꿈으로 해시하고, check도 추적 중인 JSON을 같은 방식으로 읽으므로 CRLF checkout은 drift가 아니다.
+
+파일은 JSON Schema 2020-12 문서다. 생성된 제약과 `components`가 루트에 있으므로 표준 validator가 파일을 그대로 읽고 모든 `#/components/schemas/...` ref를 파일 안에서 푼다. 생성기 기록은 그 옆의 `idlekitContract` annotation keyword이며 validator는 무시한다.
 
 ## 등록 범위
 

@@ -1,10 +1,10 @@
-import { createHash } from "crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "fs";
 import { join, resolve } from "path";
 import {
   buildContractDocument,
   buildFieldMetadata,
   canonicalJson,
+  sourceTextDigest,
   type SourceDigest,
 } from "../packages/core/src/scenario/scenarioContract";
 
@@ -19,11 +19,16 @@ const inputs = [
   "packages/core/src/scenario/types.ts",
 ];
 
-export function sourceDigests(base = root): SourceDigest[] {
-  return inputs.map((path) => ({
+/** Digest each source with LF line endings, so a CRLF checkout matches the tracked contract. */
+export function digestSources(paths: readonly string[], base = root): SourceDigest[] {
+  return paths.map((path) => ({
     path,
-    sha256: createHash("sha256").update(readFileSync(join(base, path))).digest("hex"),
+    sha256: sourceTextDigest(readFileSync(join(base, path), "utf8")),
   }));
+}
+
+export function sourceDigests(base = root): SourceDigest[] {
+  return digestSources(inputs, base);
 }
 
 export function renderedContracts(base = root): { schema: string; fields: string } {
@@ -51,7 +56,8 @@ export function compareContracts(dir: string, base = root): string[] {
     const path = join(dir, name);
     let current = "";
     try {
-      current = readFileSync(path, "utf8");
+      // A CRLF checkout of the tracked JSON is the same contract.
+      current = readFileSync(path, "utf8").replace(/\r\n/g, "\n");
     } catch {
       failures.push(`missing ${name}`);
       continue;
