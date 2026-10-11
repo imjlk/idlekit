@@ -104,7 +104,7 @@ function spawnContract(args: string[], cwd = repoRoot): { exitCode: number; stdo
  * @evidence ./scenarioContract.ts#buildFieldMetadata Reads enum, property, and comment metadata from the scenario schema.
  * @evidenceReview ./scenarioContract.ts#buildFieldMetadata #2791f4d The function runs structuralFieldMetadata on the memoized scenario schema and stamps the source hash.
  * @evidence ./scenarioContract.ts#structuralFieldMetadata Walks a small inline schema with one enum property.
- * @evidenceReview ./scenarioContract.ts#structuralFieldMetadata #09b7142 The walker records property paths and string enums, follows a component ref at every path that uses it, and stops only on a ref cycle in the current path.
+ * @evidenceReview ./scenarioContract.ts#structuralFieldMetadata #5f535ce The walker records property paths, string enums, and string consts accumulated across union branches at each path, follows a component ref at every path that uses it, and stops only on a ref cycle in the current path.
  */
 export function keepsTypedContractSingleSource(): void {
   expect(typedContractSingleSource).toBe("idlekit.scenario.v1");
@@ -183,6 +183,25 @@ export function keepsTypedContractSingleSource(): void {
       },
     }).enums,
   ).toEqual({ first: ["ok", "unknown"], second: ["ok", "unknown"] });
+  // Discriminator constants behind referenced union branches are collected at their shared path.
+  expect(
+    structuralFieldMetadata({
+      schema: {
+        type: "object",
+        properties: {
+          policy: { oneOf: [{ $ref: "#/components/schemas/Allow" }, { $ref: "#/components/schemas/None" }] },
+          inline: { oneOf: [{ const: "x" }, { const: "y" }] },
+        },
+      },
+      components: {
+        schemas: {
+          Allow: { type: "object", properties: { mode: { const: "allow" } } },
+          None: { type: "object", properties: { mode: { const: "none" } } },
+        },
+      },
+    }).enums,
+  ).toEqual({ inline: ["x", "y"], "policy.mode": ["allow", "none"] });
+  expect(fields.enums["sim.offline.actions.mode"]).toEqual(expect.arrayContaining(["allow", "legacy-all", "none"]));
 }
 
 /**

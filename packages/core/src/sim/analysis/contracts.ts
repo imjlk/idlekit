@@ -180,8 +180,19 @@ export function analysisSchemaHash(): string {
   return sha256Text(analysisCanonicalJson(analysisArtifactJsonSchema()));
 }
 
-export function artifactProvenance(artifact: Pick<AnalysisArtifactV1, "algorithmVersion" | "assumptions">, schemaHash: string): ArtifactProvenance {
-  const assumptionHash = sha256Text(analysisCanonicalJson(artifact.assumptions));
+export function artifactProvenance(
+  artifact: Pick<AnalysisArtifactV1, "algorithmVersion" | "assumptions"> & Partial<Pick<AnalysisArtifactV1, "goals">>,
+  schemaHash: string,
+): ArtifactProvenance {
+  // Goal-level assumptions, such as a wallet fallback for net worth, are part of the analytical basis.
+  const goalAssumptions = (artifact.goals ?? [])
+    .filter((goal) => goal.assumptions.length > 0)
+    .map((goal) => ({ goalId: goal.goalId, goalVersion: goal.goalVersion, assumptions: goal.assumptions }));
+  const assumptionHash = sha256Text(
+    analysisCanonicalJson(
+      goalAssumptions.length > 0 ? { assumptions: artifact.assumptions, goalAssumptions } : artifact.assumptions,
+    ),
+  );
   const provenance = sha256Text(
     analysisCanonicalJson({
       algorithmVersion: artifact.algorithmVersion,
@@ -258,6 +269,16 @@ export function validateAnalysisSemantics(artifact: AnalysisArtifactV1): readonl
     if (reading.value !== undefined && !Number.isFinite(reading.value)) {
       issues.push({ path, message: "numeric value is nonfinite" });
     }
+    // One representation per domain: an amount reading has no number, and a numeric reading has no amount.
+    if (reading.domain === "amount" && reading.value !== undefined) {
+      issues.push({ path, message: "amount reading carries a numeric value" });
+    }
+    if (reading.domain !== "amount" && reading.amount !== undefined) {
+      issues.push({ path, message: "numeric reading carries an amount" });
+    }
+    if (!Number.isFinite(reading.metricVersion)) {
+      issues.push({ path, message: "metricVersion is nonfinite" });
+    }
   });
   artifact.goals.forEach((goal, index) => {
     if (goal.status !== "ok" && goal.reached !== undefined) {
@@ -266,7 +287,17 @@ export function validateAnalysisSemantics(artifact: AnalysisArtifactV1): readonl
     if (goal.status !== "ok" && goal.method !== undefined) {
       issues.push({ path: `goals.${index}`, message: "non-ok goal carries a method" });
     }
+    if (!Number.isFinite(goal.goalVersion)) {
+      issues.push({ path: `goals.${index}`, message: "goalVersion is nonfinite" });
+    }
+    if (goal.atSec !== undefined && !Number.isFinite(goal.atSec)) {
+      issues.push({ path: `goals.${index}`, message: "atSec is nonfinite" });
+    }
   });
+  // JSON writes a nonfinite number as null, which the generated schema rejects.
+  if (artifact.horizon !== undefined && !Number.isFinite(artifact.horizon.sec)) {
+    issues.push({ path: "horizon.sec", message: "horizon.sec is nonfinite" });
+  }
   if (
     artifact.sampleCount !== undefined &&
     (!Number.isInteger(artifact.sampleCount) || artifact.sampleCount < 0)
