@@ -197,7 +197,6 @@ jobs:
           create-github-release: "true"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_CONFIG_PROVENANCE: "true"
           SAMPO_RELEASE_BRANCH: main
 

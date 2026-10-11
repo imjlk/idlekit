@@ -12,10 +12,14 @@ type Step = {
 };
 
 const steps: Step[] = [];
+let lastStepAt = performance.now();
 
 function record(name: string, ok: boolean, detail?: string): void {
   steps.push({ name, ok, detail });
-  console.error(`${ok ? "ok" : "FAIL"} ${name}`);
+  const now = performance.now();
+  // Wall time since the previous step, so a slow check names itself in CI logs.
+  console.error(`${ok ? "ok" : "FAIL"} ${name} ${((now - lastStepAt) / 1000).toFixed(1)}s`);
+  lastStepAt = now;
   if (!ok && detail) console.error(detail.slice(0, 2000));
 }
 
@@ -76,6 +80,8 @@ function spawn(
 
 function graphLookup(dir: string, query: string): { exitCode: number; text: string } {
   const project = realpathSync(dir);
+  // `--cwd` names the project. The process starts outside the temporary workspace,
+  // so nothing it leaves running keeps that directory busy on Windows.
   return spawn(
     [
       process.execPath,
@@ -89,7 +95,7 @@ function graphLookup(dir: string, query: string): { exitCode: number; text: stri
       "--request",
       JSON.stringify({ type: "lookup", query, limit: 5 }),
     ],
-    project,
+    realpathSync(root),
   );
 }
 
@@ -108,10 +114,40 @@ export function createNegativeWorkspace(base: string): string {
   return mkdtempSync(join(base, "tmp", "conformance-negative-"));
 }
 
+const TRANSIENT_REMOVE_CODES = new Set(["EBUSY", "EPERM", "ENOTEMPTY"]);
+
+/**
+ * Windows refuses to delete a directory while a handle in it is open, including
+ * a process that is still exiting. Those errors are retried a bounded number of
+ * times. Any other error, or one that outlasts the attempts, is returned so the
+ * caller reports it next to the check verdicts instead of replacing them.
+ */
+export function removeNegativeWorkspace(
+  work: string,
+  remove: (path: string) => void = (path) => rmSync(path, { recursive: true, force: true }),
+  pause: (ms: number) => void = (ms) => Bun.sleepSync(ms),
+  attempts = 5,
+): string | undefined {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      remove(work);
+      return undefined;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code ?? "";
+      const message = error instanceof Error ? error.message : String(error);
+      if (!TRANSIENT_REMOVE_CODES.has(code) || attempt >= attempts) {
+        return `could not remove ${work} after ${attempt} attempt(s): ${message}`;
+      }
+      pause(100 * 2 ** (attempt - 1));
+    }
+  }
+}
+
 function negative(): void {
   // macOS /tmp is a symlink of /private/tmp. ttsc rejects a project seen through both.
   const base = realpathSync(root);
   const work = createNegativeWorkspace(base);
+  lastStepAt = performance.now();
   try {
     const preload = join(work, "bun-preload");
     // Copy the package boundary too: this probe needs typia, not the parent
@@ -184,6 +220,9 @@ function negative(): void {
     );
 
     const graphEmpty = join(work, "graph-empty");
+    // The fixture's own package.json stops plugin discovery. Without it, ttsc-graph
+    // reads the repository manifest and loads, or on a cold cache builds, the
+    // @ttsc/lint and typia plugins for a project that configures neither.
     copyFixture("fixtures/toolchain/graph-empty", graphEmpty);
     // The shared fixture matches no TypeScript inputs, so ttscgraph exits before lookup.
     // An unrelated source lets this query finish without declaring quoteBudget.
@@ -200,7 +239,8 @@ function negative(): void {
       missed.exitCode === 0 && !declared ? `exit=${missed.exitCode}` : missed.text.slice(0, 1500),
     );
   } finally {
-    rmSync(work, { recursive: true, force: true });
+    const leftover = removeNegativeWorkspace(work);
+    if (leftover) record("workspace-cleanup", false, leftover);
   }
   finish();
 }
