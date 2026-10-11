@@ -1,4 +1,5 @@
 import { $ } from "bun";
+import { realpath } from "fs/promises";
 import { dirname, resolve } from "path";
 
 export const CLI_CWD = process.cwd();
@@ -22,10 +23,13 @@ function tempRoot(): string {
   return process.env.TMPDIR || process.env.TMP || process.env.TEMP || "/tmp";
 }
 
+// The macOS default TMPDIR (/var/folders/...) is a symlink to /private/var. Bun names modules by
+// their realpath, so tests that compare plugin paths or import files they create get the
+// canonical directory.
 export async function createTempDir(prefix: string): Promise<string> {
   const dir = resolve(tempRoot(), `${prefix}-${crypto.randomUUID()}`);
   await $`mkdir -p ${dir}`.quiet();
-  return dir;
+  return realpath(dir);
 }
 
 export async function removePath(path: string): Promise<void> {

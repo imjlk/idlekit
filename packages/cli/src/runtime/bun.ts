@@ -1,4 +1,5 @@
 import { $ } from "bun";
+import { realpath } from "fs/promises";
 import { dirname } from "path";
 import { cliError, errorDetail } from "../errors";
 
@@ -53,7 +54,7 @@ export async function createTempDir(prefix: string): Promise<string> {
   const root = process.env.TMPDIR || process.env.TMP || process.env.TEMP || "/tmp";
   const path = `${root.replace(/\/$/, "")}/${prefix}-${crypto.randomUUID()}`;
   await ensureDir(path);
-  return path;
+  return realpath(path);
 }
 
 export function sha256Hex(value: string | Uint8Array): string {

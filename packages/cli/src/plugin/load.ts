@@ -446,7 +446,9 @@ export async function loadRegistries(
     // A repeated path loads last again, so its digest moves to the end.
     delete pluginDigest[abs];
     pluginDigest[abs] = await pluginClosureDigest(abs, actualDigest);
-    const mod = (await import(abs)) as PluginModule;
+    // Bun names the module by its realpath anyway. Importing through a symlinked directory can
+    // miss a file created after Bun cached that directory (Bun 1.4.2), so import the realpath.
+    const mod = (await import(realpathSync(abs))) as PluginModule;
     const parsed = parsePluginModule(mod);
 
     if (parsed.models) modelFactories.push(...parsed.models);
