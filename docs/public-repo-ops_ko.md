@@ -32,13 +32,17 @@ English version: [public-repo-ops.md](./public-repo-ops.md)
 
 ## npm org `idlekit` 체크리스트
 
-첫 public publish 전 확인 항목:
+npm은 이미 존재하는 패키지에만 workflow 신뢰를 설정할 수 있으므로, 새 `@idlekit/*` 패키지는 로컬 배포 한 번으로 시작합니다.
+
+npm에 아직 없는 패키지:
 
 1. `idlekit` npm org가 `@idlekit/*` scope를 소유하는지 확인
-2. GitHub repository/workflow를 Trusted Publishing에 연결
-3. provenance 활성화 확인
-4. Trusted Publishing으로 첫 배포를 마친 뒤 각 패키지를 2FA 필수, 토큰 배포 차단으로 설정
-5. `bun run release:publish:preflight` 실행
+2. `bun run release:publish:preflight` 실행
+3. 본인 npm 로그인으로 첫 버전을 로컬 배포 (`bun run release:publish`, [release-process_ko.md](./release-process_ko.md#로컬-publish-preflight) 참고)
+4. npm에서 이 저장소와 `release.yml`을 패키지의 Trusted Publisher로 등록
+5. 패키지를 2FA 필수, 토큰 배포 차단으로 설정
+
+이후 버전은 릴리즈 PR을 머지하고 Release workflow를 `publish=true`로 실행합니다. 배포된 버전에 provenance가 붙었는지 확인합니다.
 
 ## 이미 포함된 자동화
 

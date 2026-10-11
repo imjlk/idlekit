@@ -90,14 +90,16 @@ Workflow file:
 Release auth policy:
 
 - npm Trusted Publishing with GitHub OIDC; the workflow passes no npm token
-- each `@idlekit/*` package requires 2FA and refuses token publishes, so the Release workflow is the publish path
+- each published `@idlekit/*` package requires 2FA and refuses token publishes; the Release workflow is the publish path for every version after the first
 - local preflight and dry runs can use `NPM_CONFIG_USERCONFIG=/path/to/.npmrc`
 
 A package that is not on npm yet cannot trust a workflow. Publish its first version locally, then configure Trusted Publishing for this repository and `release.yml` before the next manual publish.
 
 ## Local publish preflight
 
-For local publish runs, keep the token outside the repository and point npm at it explicitly:
+Use a local publish only for the first version of a package that is not on npm yet. A published package refuses token publishes, so later versions go through the Release workflow.
+
+Keep the token outside the repository and point npm at it explicitly:
 
 ```bash
 cp .npmrc.publish.example .npmrc.publish.local
@@ -112,11 +114,13 @@ What `release:publish:preflight` checks:
 3. `npm whoami` and `npm ping` succeed
 4. current package versions are greater than already-published npm versions
 
-If preflight passes, the matching publish command is:
+If preflight passes, publish the new package with your own npm login. npm asks for a one-time password when your account requires 2FA for writes. The example config sets `provenance=true`, which npm supports only in CI, so do not point the publish at it:
 
 ```bash
-NPM_CONFIG_USERCONFIG=$PWD/.npmrc.publish.local bun run release:publish
+bun run release:publish
 ```
+
+Then add the Trusted Publisher and set the package to require 2FA and disallow tokens.
 
 ## Release checklist
 
