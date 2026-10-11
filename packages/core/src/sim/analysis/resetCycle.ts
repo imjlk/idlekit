@@ -259,11 +259,35 @@ function withoutResetActions<N, U extends string, Vars>(
     const listed = model.actions(actionCtx, actionState);
     if (kind === "prestige") return listed.filter((candidate) => candidate.kind !== "prestige");
     // Resolve the custom reset for this state. Its id can change, or appear, as the interval earns resources.
-    const customId = adapter?.action(actionCtx, actionState)?.id;
-    return listed.filter((candidate) => !(candidate.kind === "custom" && candidate.id === customId));
+    const reset = adapter?.action(actionCtx, actionState);
+    if (!reset) return listed;
+    // A listed reset is removed by identity, so an ordinary custom action sharing its id stays available.
+    if (listed.includes(reset)) return listed.filter((candidate) => candidate !== reset);
+    return listed.filter((candidate) => !(candidate.kind === "custom" && candidate.id === reset.id));
   };
-  // Delegate to the original model through its prototype chain, so class-based models keep their methods.
-  return Object.assign(Object.create(model) as Model<N, U, Vars>, { actions });
+  return delegateModel(model, actions);
+}
+
+/**
+ * A plain object whose members read from, and call on, the original model. Methods keep the model as
+ * their receiver, so class methods that use private fields still work.
+ */
+function delegateModel<N, U extends string, Vars>(
+  model: Model<N, U, Vars>,
+  actions: Model<N, U, Vars>["actions"],
+): Model<N, U, Vars> {
+  const out: Record<PropertyKey, unknown> = {};
+  const seen = new Set<PropertyKey>();
+  for (let level: object | null = model; level && level !== Object.prototype; level = Object.getPrototypeOf(level)) {
+    for (const key of Reflect.ownKeys(level)) {
+      if (key === "constructor" || seen.has(key)) continue;
+      seen.add(key);
+      const value: unknown = Reflect.get(model, key, model);
+      out[key] = typeof value === "function" ? (value as (...args: unknown[]) => unknown).bind(model) : value;
+    }
+  }
+  out.actions = actions;
+  return out as unknown as Model<N, U, Vars>;
 }
 
 function skipReason(fact: CommittedResetFact | undefined, eventReason: string | undefined): ResetSkipReason {
@@ -330,10 +354,11 @@ export function executeResetCycles<N, U extends string, Vars>(args: {
   let accumulated = args.resume?.accumulatedReward ?? E.zero();
   let nextIndex = args.resume?.nextIndex ?? 0;
   // Restore from a copy, so a restore that keeps or edits its argument cannot change the checkpoint.
-  if (args.resume?.strategyState !== undefined) {
+  // Presence is the key, not the value: an undefined snapshot is still restored.
+  if (args.resume && "strategyState" in args.resume) {
     scenario.strategy?.restoreState?.(deepClonePreservingPrototype(args.resume.strategyState));
   }
-  if (args.resume?.rngState !== undefined) args.rng?.restore(deepClonePreservingPrototype(args.resume.rngState));
+  if (args.resume && "rngState" in args.resume) args.rng?.restore(deepClonePreservingPrototype(args.resume.rngState));
   const startAdapter = resetAdapterFor(scenario, args.adapter, state);
   // Elapsed seconds are summed from runner results. Absolute t can round away from simulated time.
   let elapsed = args.resume?.elapsedSec ?? state.t - originSec;
@@ -355,7 +380,8 @@ export function executeResetCycles<N, U extends string, Vars>(args: {
     const duration =
       args.policy.kind === "fixed-interval" ? args.policy.intervalSec : args.policy.steps[rows.length]!.durationSec;
     // horizonSec is elapsed time from the study origin, not an absolute t.
-    if (args.horizonSec !== undefined && elapsed + duration > args.horizonSec * (1 + HORIZON_TOLERANCE) + HORIZON_TOLERANCE) {
+    // The slack is relative only, so a zero horizon admits no positive interval.
+    if (args.horizonSec !== undefined && elapsed + duration > args.horizonSec * (1 + HORIZON_TOLERANCE)) {
       guard = "censored";
       warnings.push("horizon");
       break;
@@ -542,7 +568,7 @@ function checkpointOf<N, U extends string, Vars>(
     originSec,
     elapsedSec,
     accumulatedReward,
-    ...(strategyState !== undefined ? { strategyState } : {}),
-    ...(rngState !== undefined ? { rngState } : {}),
+    ...(scenario.strategy?.snapshotState ? { strategyState } : {}),
+    ...(rng ? { rngState } : {}),
   };
 }

@@ -161,7 +161,7 @@ function makeRng(seed: number): ResetCycleRng & { next: () => number } {
  * @evidence ./resetCycle.ts#resetCycleJsonSchema The schema is 3.1.
  * @evidenceReview ./resetCycle.ts#resetCycleJsonSchema #c6690d5 The function memoizes typia.json.schema of ResetCycleArtifactV1.
  * @evidence ./resetCycle.ts#executeResetCycles Runs three fixed intervals, an explicit list, a resume, and the horizon and budget guards.
- * @evidenceReview ./resetCycle.ts#executeResetCycles #ad8b452 The function runs each interval with runScenario on a prototype-delegating model whose reset action, resolved per state, the strategy cannot see, measures the horizon and global elapsed on summed runner seconds, censors any budget stop, resolves the adapter at the boundary, commits one reset through applyDecisions with live constraints, refreshes maxMoneyEver, records a refusal instead of forcing it, and copies strategy and RNG snapshots into the checkpoint.
+ * @evidenceReview ./resetCycle.ts#executeResetCycles #a79adcb The function runs each interval with runScenario on a model that delegates every member to the original receiver and hides the reset action, resolved per state and removed by identity when listed, measures the horizon with relative slack on summed runner seconds, censors any budget stop, resolves the adapter at the boundary, commits one reset through applyDecisions with live constraints, refreshes maxMoneyEver, records a refusal instead of forcing it, and records strategy and RNG snapshots by presence with copies.
  * @evidence ./resetCycle.ts#resetAdapterFor Picks the prestige action and returns nothing for a model with neither an action nor a spec.
  * @evidenceReview ./resetCycle.ts#resetAdapterFor #5f8e044 The function returns an explicit adapter first, then the prestige action adapter when the given state lists one, then the spec adapter, and undefined when the model has no spec.
  * @evidence ./resetCycle.ts#resetCycleSchemaId Reads the reset cycle schema id.
@@ -461,6 +461,100 @@ export function runsThreeCommittedResets(): void {
   });
   expect(classRun.artifact.appliedResets).toBe(2);
   expect(classRun.state.prestige.count).toBe(2);
+
+  // A class model whose methods use private fields keeps its receiver through the interval filter.
+  class PrivateModel {
+    readonly id = "private-model";
+    readonly version = 1;
+    #rate = 1;
+    income(_ctx: unknown, current: SimState<number, "COIN", Vars>) {
+      return coin(this.#rate * current.prestige.multiplier);
+    }
+    actions() {
+      return this.#rate > 0 ? [prestigeAction()] : [];
+    }
+  }
+  const privateRun = executeResetCycles({
+    scenario: { ...scenario(), model: new PrivateModel() as unknown as Model<number, "COIN", Vars> },
+    policy: { kind: "fixed-interval", intervalSec: 2, cycles: 2 },
+  });
+  expect(privateRun.artifact.appliedResets).toBe(2);
+
+  // A zero horizon admits no positive interval, however small.
+  const zeroHorizon = executeResetCycles({
+    scenario: scenario(),
+    policy: { kind: "fixed-interval", intervalSec: 5e-10, cycles: 1 },
+    horizonSec: 0,
+  });
+  expect(zeroHorizon.artifact.status).toBe("censored");
+  expect(zeroHorizon.artifact.appliedResets).toBe(0);
+
+  // An ordinary custom action that shares the reset's id stays available to the strategy.
+  const resetDup: Action<number, "COIN", Vars> = {
+    id: "dup",
+    kind: "custom",
+    canApply: () => true,
+    cost: () => null,
+    apply: (_ctx, current) => ({ ...current, vars: { ...current.vars, score: current.vars.score + 1 } }),
+  };
+  const ordinaryDup: Action<number, "COIN", Vars> = {
+    id: "dup",
+    kind: "custom",
+    canApply: () => true,
+    cost: () => null,
+    apply: (_ctx, current) => ({ ...current, vars: { ...current.vars, bought: current.vars.bought + 1 } }),
+  };
+  const duplicated = executeResetCycles({
+    scenario: scenario({
+      actions: [resetDup, ordinaryDup],
+      strategy: {
+        id: "ordinary-dup",
+        decide(ctx, model, current) {
+          const listed = model.actions(ctx, current);
+          return listed.includes(ordinaryDup) ? [{ action: ordinaryDup }] : [];
+        },
+      },
+    }),
+    policy: { kind: "fixed-interval", intervalSec: 3, cycles: 1 },
+    adapter: {
+      id: "dup.reset",
+      kind: "custom",
+      preserved: ["vars"],
+      action: () => resetDup,
+      reward: (_ctx, current) => current.vars.score,
+    },
+  });
+  expect(duplicated.artifact.appliedResets).toBe(1);
+  expect(duplicated.state.vars.score).toBe(1);
+  expect(duplicated.state.vars.bought).toBe(3);
+
+  // An undefined snapshot is recorded and restored, not dropped.
+  const undefinedRestores: string[] = [];
+  const blankHooks = () => ({
+    strategy: {
+      id: "blank",
+      decide: () => [],
+      snapshotState: () => undefined,
+      restoreState: (saved: unknown) => undefinedRestores.push(`strategy:${String(saved)}`),
+    },
+    rng: { snapshot: () => undefined, restore: (saved: unknown) => undefinedRestores.push(`rng:${String(saved)}`) },
+  });
+  const blankFirst = blankHooks();
+  const blank = executeResetCycles({
+    scenario: scenario({ strategy: blankFirst.strategy }),
+    policy: { kind: "fixed-interval", intervalSec: 1, cycles: 1 },
+    rng: blankFirst.rng,
+  });
+  expect("strategyState" in blank.checkpoint).toBe(true);
+  expect("rngState" in blank.checkpoint).toBe(true);
+  const blankSecond = blankHooks();
+  executeResetCycles({
+    scenario: scenario({ strategy: blankSecond.strategy }),
+    policy: { kind: "fixed-interval", intervalSec: 1, cycles: 1 },
+    resume: blank.checkpoint,
+    rng: blankSecond.rng,
+  });
+  expect(undefinedRestores).toEqual(["strategy:undefined", "rng:undefined"]);
 
   // A checkpoint keeps its own copy of live strategy and RNG snapshots.
   const liveStrategy = { cursor: 1 };
