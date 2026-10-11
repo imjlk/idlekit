@@ -69,7 +69,7 @@ jobs:
       - name: Toolchain smoke
         run: |
           bun test tools/_bun.test.ts tools/compiler-bin.test.ts tools/evidence/program.test.ts tools/evidence/source-lock.test.ts
-          bun test tools/release-workflow.test.ts tools/release-lockfile.test.ts tools/npm-pack.test.ts tools/tarball-check.test.ts
+          bun test tools/release-workflow.test.ts tools/release-lockfile.test.ts tools/npm-pack.test.ts tools/tarball-check.test.ts tools/package-manifest.test.ts
           bun run toolchain:smoke
 
       - name: Graph check

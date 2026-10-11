@@ -185,6 +185,11 @@ jobs:
           set -euo pipefail
           mv -- bun.lock "$RUNNER_TEMP/idlekit-publish.bun.lock"
 
+      # npm sends the manifest it read before prepack to the registry. Rewrite workspace:
+      # dependencies for the whole Sampo run, including its dry-run validation pass.
+      - name: Hold publish manifests
+        run: bun tools/package-manifest.ts hold
+
       - name: Publish merged versions
         uses: bruits/sampo/crates/sampo-github-action@e976f8a2089ffe94ee9bf508c0b6f1df5e0f108e # action 0.19.0, core 0.17.0
         with:
@@ -195,6 +200,10 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_CONFIG_PROVENANCE: "true"
           SAMPO_RELEASE_BRANCH: main
+
+      - name: Release publish manifests
+        if: always()
+        run: bun tools/package-manifest.ts release
 
       - name: Restore publish lockfile
         if: always()
