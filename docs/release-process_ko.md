@@ -167,12 +167,14 @@ NPM_CONFIG_USERCONFIG=$PWD/.npmrc.publish.local bun run release:publish:prefligh
 1. `publish:gate` 통과
 2. `readme:smoke` 통과
 3. `npm whoami`, `npm ping` 성공
-4. 현재 패키지 버전이 npm에 이미 올라간 버전보다 높은지
+4. 새 버전이 하나 이상 있고, npm에 올라간 버전보다 낮은 패키지가 없는지 (이미 배포된 같은 버전은 건너뜀)
 
-preflight가 통과하면 본인 npm 로그인으로 새 패키지를 배포합니다. 계정이 쓰기 작업에 2FA를 요구하면 npm이 OTP를 묻습니다. 예시 설정의 `provenance=true`는 CI에서만 지원되므로 실제 배포에는 이 설정 파일을 지정하지 않습니다.
+preflight, 배포, manifest 변환은 `tools/npm-publish-preflight.ts`, `tools/release-lockfile.ts`, `tools/package-manifest.ts`, `.github/workflows/release.yml` prepare job에 적힌 패키지만 다룹니다. 새 패키지는 먼저 이 목록에 추가합니다.
+
+preflight가 통과하면 같은 npm 설정으로 배포합니다. 계정이 쓰기 작업에 2FA를 요구하면 npm이 OTP를 묻습니다. 예시 설정의 `provenance=true`는 CI에서만 지원되므로 로컬 배포에서는 provenance를 끕니다.
 
 ```bash
-bun run release:publish
+NPM_CONFIG_USERCONFIG=$PWD/.npmrc.publish.local NPM_CONFIG_PROVENANCE=false bun run release:publish
 ```
 
 배포 후 Trusted Publisher를 등록하고 패키지를 2FA 필수, 토큰 배포 차단으로 설정합니다.

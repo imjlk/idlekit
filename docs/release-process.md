@@ -112,12 +112,14 @@ What `release:publish:preflight` checks:
 1. `publish:gate` succeeds
 2. `readme:smoke` succeeds
 3. `npm whoami` and `npm ping` succeed
-4. current package versions are greater than already-published npm versions
+4. at least one package version is new, and no package version is lower than the one on npm (a version that is already published is skipped)
 
-If preflight passes, publish the new package with your own npm login. npm asks for a one-time password when your account requires 2FA for writes. The example config sets `provenance=true`, which npm supports only in CI, so do not point the publish at it:
+The preflight, the publish, and the manifest rewrite only know the packages listed in `tools/npm-publish-preflight.ts`, `tools/release-lockfile.ts`, `tools/package-manifest.ts`, and the prepare job of `.github/workflows/release.yml`. Add a new package to those lists first.
+
+If preflight passes, publish with the same npm config. npm asks for a one-time password when your account requires 2FA for writes. The example config sets `provenance=true`, which npm supports only in CI, so turn provenance off for this local publish:
 
 ```bash
-bun run release:publish
+NPM_CONFIG_USERCONFIG=$PWD/.npmrc.publish.local NPM_CONFIG_PROVENANCE=false bun run release:publish
 ```
 
 Then add the Trusted Publisher and set the package to require 2FA and disallow tokens.

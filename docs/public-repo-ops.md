@@ -38,7 +38,7 @@ For a package that is not on npm yet:
 
 1. confirm the `idlekit` npm org owns the `@idlekit/*` scope
 2. run `bun run release:publish:preflight`
-3. publish its first version locally with your own npm login (`bun run release:publish`, see [release-process.md](./release-process.md#local-publish-preflight))
+3. publish its first version locally (see [release-process.md](./release-process.md#local-publish-preflight))
 4. on npm, add this repository and `release.yml` as the package's Trusted Publisher
 5. set the package to require 2FA and disallow tokens
 
