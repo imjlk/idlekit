@@ -398,7 +398,7 @@ function wallNow<N, U extends string, Vars>(ctx: SimContext<N, U, Vars>): number
  * Each decision re-reads `model.actions` for the state so far, so a later buy is quoted after earlier applies.
  *
  * @evidence docs/requirements/active/reset-cycle-execution.md#req-pr10-committed-reset A reset commits through this payment path and does not mint a tick of income.
- * @evidenceReview docs/requirements/active/reset-cycle-execution.md#req-pr10-committed-reset #dff6bbb Re-read the section: the reset call does not tick income or advance t.
+ * @evidenceReview docs/requirements/active/reset-cycle-execution.md#req-pr10-committed-reset #22d7a8a Re-read the section: the reset call does not tick income or advance t.
  */
 export function applyDecisions<N, U extends string, Vars>(args: {
   ctx: SimContext<N, U, Vars>;

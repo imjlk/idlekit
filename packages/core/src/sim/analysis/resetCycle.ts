@@ -4,14 +4,16 @@ import { recordPrestigeReset } from "../constraints";
 import { emitCommittedResets } from "../observation";
 import { runScenario } from "../simulator";
 import { applyDecisions, type CommittedResetFact } from "../step";
-import type {
-  Action,
-  CompiledScenario,
-  Model,
-  ScenarioConstraints,
-  SimContext,
-  SimState,
+import {
+  runElapsedSec,
+  type Action,
+  type CompiledScenario,
+  type Model,
+  type ScenarioConstraints,
+  type SimContext,
+  type SimState,
 } from "../types";
+import { deepClonePreservingPrototype } from "../../utils/deepClone";
 
 /**
  * Reset-cycle execution v1.
@@ -24,7 +26,7 @@ const RESET_CYCLE_SCHEMA_ID = "https://idlekit.dev/schemas/reset.cycle.v1.schema
 
 /**
  * @evidence docs/requirements/active/reset-cycle-execution.md#req-pr10-committed-reset Each cycle commits a reset through the action payment path.
- * @evidenceReview docs/requirements/active/reset-cycle-execution.md#req-pr10-committed-reset #dff6bbb Re-read the section: three cycles leave three resets, and the reset does not mint income.
+ * @evidenceReview docs/requirements/active/reset-cycle-execution.md#req-pr10-committed-reset #22d7a8a Re-read the section: three cycles leave three resets, and the reset does not mint income.
  */
 export const resetCycleExecution = "committed-reset-transition" as const;
 
@@ -103,7 +105,7 @@ let resetCycleValidator: ((input: unknown) => IValidation<ResetCycleArtifactV1>)
 
 /**
  * @evidence docs/requirements/active/reset-cycle-execution.md#req-pr10-committed-reset The generated validator accepts this artifact and rejects a missing status.
- * @evidenceReview docs/requirements/active/reset-cycle-execution.md#req-pr10-committed-reset #dff6bbb Re-read the section: the wire object is reset cycle v1.
+ * @evidenceReview docs/requirements/active/reset-cycle-execution.md#req-pr10-committed-reset #22d7a8a Re-read the section: the wire object is reset cycle v1.
  */
 export const validateResetCycleArtifact = (input: unknown): IValidation<ResetCycleArtifactV1> =>
   (resetCycleValidator ??= typia.createValidate<ResetCycleArtifactV1>())(input);
@@ -116,7 +118,7 @@ let resetCycleJsonSchemaUnit: ReturnType<typeof buildResetCycleJsonSchema> | und
 
 /**
  * @evidence docs/requirements/active/reset-cycle-execution.md#req-pr10-committed-reset The structural schema is OpenAPI 3.1 from typia.
- * @evidenceReview docs/requirements/active/reset-cycle-execution.md#req-pr10-committed-reset #dff6bbb Re-read the section: schema version is 3.1.
+ * @evidenceReview docs/requirements/active/reset-cycle-execution.md#req-pr10-committed-reset #22d7a8a Re-read the section: schema version is 3.1.
  */
 export function resetCycleJsonSchema(): ReturnType<typeof buildResetCycleJsonSchema> {
   resetCycleJsonSchemaUnit ??= buildResetCycleJsonSchema();
@@ -224,18 +226,43 @@ function specAdapter<N, U extends string, Vars>(model: Model<N, U, Vars>): Reset
  * A model with neither needs the caller to pass an adapter.
  *
  * @evidence docs/requirements/active/reset-cycle-execution.md#req-pr10-committed-reset The default adapter uses the prestige action, or the spec when no action exists.
- * @evidenceReview docs/requirements/active/reset-cycle-execution.md#req-pr10-committed-reset #dff6bbb Re-read the section: an action and a spec are not both applied.
+ * @evidenceReview docs/requirements/active/reset-cycle-execution.md#req-pr10-committed-reset #22d7a8a Re-read the section: an action and a spec are not both applied.
  */
 export function resetAdapterFor<N, U extends string, Vars>(
   scenario: CompiledScenario<N, U, Vars>,
   explicit?: ResetAdapter<N, U, Vars>,
+  state: SimState<N, U, Vars> = scenario.initial,
 ): ResetAdapter<N, U, Vars> | undefined {
   if (explicit) return explicit;
-  const discovered = scenario.model.actions(scenario.ctx, scenario.initial);
+  // Read the state where the reset would happen. A model can list its prestige action only later.
+  const discovered = scenario.model.actions(scenario.ctx, state);
   if (discovered.some((candidate) => candidate.kind === "prestige")) {
     return actionAdapter(scenario.model, "prestige");
   }
   return specAdapter(scenario.model);
+}
+
+/**
+ * The executor is the only reset authority. During an interval the strategy does not see the reset action,
+ * so it cannot commit a reset the artifact would not count.
+ */
+function withoutResetActions<N, U extends string, Vars>(
+  model: Model<N, U, Vars>,
+  adapter: ResetAdapter<N, U, Vars> | undefined,
+  ctx: SimContext<N, U, Vars>,
+  state: SimState<N, U, Vars>,
+): Model<N, U, Vars> {
+  const kind = adapter?.kind ?? "prestige";
+  const customId = kind === "custom" ? adapter?.action(ctx, state)?.id : undefined;
+  return {
+    ...model,
+    actions: (actionCtx, actionState) =>
+      model
+        .actions(actionCtx, actionState)
+        .filter((candidate) =>
+          kind === "prestige" ? candidate.kind !== "prestige" : !(candidate.kind === "custom" && candidate.id === customId),
+        ),
+  };
 }
 
 function skipReason(fact: CommittedResetFact | undefined, eventReason: string | undefined): ResetSkipReason {
@@ -264,7 +291,7 @@ function carried<N, U extends string, Vars>(
  * Each completed cycle ends in one committed reset. A refused reset is kept and not forced.
  *
  * @evidence docs/requirements/active/reset-cycle-execution.md#req-pr10-committed-reset The executor chains cycle end into the next cycle start.
- * @evidenceReview docs/requirements/active/reset-cycle-execution.md#req-pr10-committed-reset #dff6bbb Re-read the section: carried points and multiplier are the next cycle's start, and a split resume matches one run.
+ * @evidenceReview docs/requirements/active/reset-cycle-execution.md#req-pr10-committed-reset #22d7a8a Re-read the section: carried points and multiplier are the next cycle's start, and a split resume matches one run.
  */
 export function executeResetCycles<N, U extends string, Vars>(args: {
   scenario: CompiledScenario<N, U, Vars>;
@@ -296,46 +323,25 @@ export function executeResetCycles<N, U extends string, Vars>(args: {
     throw new ResetCycleRejected("reset cycle budgetSteps must be an integer >= 0");
   }
 
-  const adapter = resetAdapterFor(scenario, args.adapter);
   const originSec = args.resume?.originSec ?? args.resume?.state.t ?? scenario.initial.t;
   let state = args.resume?.state ?? scenario.initial;
   let constraints = args.resume?.constraints ?? scenario.constraints;
   let accumulated = args.resume?.accumulatedReward ?? E.zero();
   let nextIndex = args.resume?.nextIndex ?? 0;
-  if (args.resume?.strategyState !== undefined) scenario.strategy?.restoreState?.(args.resume.strategyState);
-  if (args.resume?.rngState !== undefined) args.rng?.restore(args.resume.rngState);
+  // Restore from a copy, so a restore that keeps or edits its argument cannot change the checkpoint.
+  if (args.resume?.strategyState !== undefined) {
+    scenario.strategy?.restoreState?.(deepClonePreservingPrototype(args.resume.strategyState));
+  }
+  if (args.resume?.rngState !== undefined) args.rng?.restore(deepClonePreservingPrototype(args.resume.rngState));
+  const startAdapter = resetAdapterFor(scenario, args.adapter, state);
 
   const warnings: string[] = ["legacy interval scan fields are not reset evidence"];
-  if (!adapter) {
-    warnings.push("explicit adapter required");
-    const artifact: ResetCycleArtifactV1 = {
-      schemaVersion: 1,
-      algorithmVersion: RESET_CYCLE_ALGORITHM_VERSION,
-      status: "unsupported",
-      policy: args.policy.kind,
-      appliedResets: 0,
-      originSec,
-      globalElapsedSec: state.t - originSec,
-      assumptions: ["no prestige action or prestige spec was found"],
-      warnings,
-      cycles: [],
-    };
-    return {
-      artifact,
-      state,
-      ...(constraints ? { constraints } : {}),
-      checkpoint: checkpointOf(scenario, args.rng, state, constraints, nextIndex, originSec, accumulated),
-    };
-  }
-
-  if (adapter.id === "prestige.action" && scenario.model.prestige) {
-    warnings.push("prestige spec was not applied because a prestige action commits the reset");
-  }
-
   const requested = args.policy.kind === "fixed-interval" ? args.policy.cycles : args.policy.steps.length;
   const rows: ResetCycleRowV1[] = [];
-  let guard: "ok" | "incomplete" | "censored" = "ok";
+  let guard: "ok" | "incomplete" | "censored" | "unsupported" = "ok";
   let remainingBudget = args.budgetSteps;
+  const rewardOf = (adapter: ResetAdapter<N, U, Vars> | undefined, current: SimState<N, U, Vars>): N =>
+    adapter ? adapter.reward(scenario.ctx, current) : current.prestige.points;
 
   while (rows.length < requested && guard === "ok") {
     if (args.maxCycles !== undefined && rows.length >= args.maxCycles) {
@@ -345,16 +351,19 @@ export function executeResetCycles<N, U extends string, Vars>(args: {
     }
     const duration =
       args.policy.kind === "fixed-interval" ? args.policy.intervalSec : args.policy.steps[rows.length]!.durationSec;
-    if (args.horizonSec !== undefined && state.t + duration > args.horizonSec) {
+    // horizonSec is elapsed time from the study origin, not an absolute t.
+    if (args.horizonSec !== undefined && state.t + duration - originSec > args.horizonSec) {
       guard = "censored";
       warnings.push("horizon");
       break;
     }
 
     const startSec = state.t;
+    const intervalAdapter = args.adapter ?? resetAdapterFor(scenario, undefined, state) ?? startAdapter;
     const { maxSteps: _ignoredMax, until: _ignoredUntil, trace: _ignoredTrace, ...runRest } = scenario.run;
     const run = runScenario({
       ...scenario,
+      model: withoutResetActions(scenario.model, intervalAdapter, scenario.ctx, state),
       initial: state,
       ...(constraints ? { constraints } : {}),
       run: {
@@ -364,7 +373,8 @@ export function executeResetCycles<N, U extends string, Vars>(args: {
       },
     });
     if (remainingBudget !== undefined) remainingBudget = Math.max(0, remainingBudget - (run.stop?.steps ?? 0));
-    const played = run.end.t - startSec;
+    // The runner's elapsed seconds, not an end.t difference that rounds at a large t.
+    const played = runElapsedSec(run);
     state = run.end;
     const shortBudget = run.stop?.reason === "budget" && played + 1e-9 < duration;
     if (shortBudget) {
@@ -377,7 +387,7 @@ export function executeResetCycles<N, U extends string, Vars>(args: {
         rewardDelta: E.toString(E.zero()),
         accumulatedReward: E.toString(accumulated),
         resetSkippedReason: "budget",
-        carried: carried(E, state, adapter.reward(scenario.ctx, state)),
+        carried: carried(E, state, rewardOf(intervalAdapter, state)),
       });
       nextIndex += 1;
       guard = "censored";
@@ -385,12 +395,38 @@ export function executeResetCycles<N, U extends string, Vars>(args: {
       break;
     }
 
-    const beforeReward = adapter.reward(scenario.ctx, state);
-    const action = adapter.action(scenario.ctx, state);
+    // Resolve the adapter where the reset happens. A prestige action can appear only after this interval.
+    const adapter = args.adapter ?? resetAdapterFor(scenario, undefined, state);
+    if (!adapter) {
+      rows.push({
+        index: nextIndex,
+        startSec,
+        endSec: state.t,
+        resetAtSec: null,
+        durationSec: played,
+        rewardDelta: E.toString(E.zero()),
+        accumulatedReward: E.toString(accumulated),
+        resetSkippedReason: "missing-adapter",
+        carried: carried(E, state, state.prestige.points),
+      });
+      nextIndex += 1;
+      guard = "unsupported";
+      warnings.push("explicit adapter required");
+      break;
+    }
+    const specNote = "prestige spec was not applied because a prestige action commits the reset";
+    if (adapter.id === "prestige.action" && scenario.model.prestige && !warnings.includes(specNote)) {
+      warnings.push(specNote);
+    }
+
+    // The boundary action sees the live constraints, as it would inside runScenario.
+    const boundaryCtx = { ...scenario.ctx, ...(constraints ? { constraints } : {}) };
+    const beforeReward = adapter.reward(boundaryCtx, state);
+    const action = adapter.action(boundaryCtx, state);
     const kinds = new Set<"prestige" | "custom">();
     if (action && (action.kind === "prestige" || action.kind === "custom")) kinds.add(action.kind);
     const applied = applyDecisions({
-      ctx: scenario.ctx,
+      ctx: boundaryCtx,
       model: scenario.model,
       state,
       decisions: action ? [{ action }] : [],
@@ -408,7 +444,7 @@ export function executeResetCycles<N, U extends string, Vars>(args: {
         startSec,
         endSec: state.t,
         resetAtSec: null,
-        durationSec: state.t - startSec,
+        durationSec: played,
         rewardDelta: E.toString(E.zero()),
         accumulatedReward: E.toString(accumulated),
         resetSkippedReason: action ? reason : "missing-adapter",
@@ -420,7 +456,11 @@ export function executeResetCycles<N, U extends string, Vars>(args: {
     }
 
     state = applied.state;
-    const afterReward = adapter.reward(scenario.ctx, state);
+    // stepOnce keeps maxMoneyEver at or above the wallet. The boundary action does not pass through it.
+    if (E.cmp(state.wallet.money.amount, state.maxMoneyEver.amount) > 0) {
+      state = { ...state, maxMoneyEver: state.wallet.money };
+    }
+    const afterReward = adapter.reward(boundaryCtx, state);
     const delta = E.sub(afterReward, beforeReward);
     accumulated = E.add(accumulated, delta);
     if (action?.kind === "prestige") {
@@ -430,8 +470,9 @@ export function executeResetCycles<N, U extends string, Vars>(args: {
     emitCommittedResets(scenario.run.observer, [rewardFact]);
     if (adapter.id === "prestige.spec" && scenario.model.prestige) {
       const declared = scenario.model.prestige.multiplierFrom(scenario.ctx, state.prestige.points);
-      if (E.cmp(declared, state.prestige.multiplier) !== 0) {
-        warnings.push("multiplierFrom was not applied; resetState owns the multiplier");
+      const multiplierNote = "multiplierFrom was not applied; resetState owns the multiplier";
+      if (E.cmp(declared, state.prestige.multiplier) !== 0 && !warnings.includes(multiplierNote)) {
+        warnings.push(multiplierNote);
       }
     }
     rows.push({
@@ -439,7 +480,7 @@ export function executeResetCycles<N, U extends string, Vars>(args: {
       startSec,
       endSec: state.t,
       resetAtSec: fact.t,
-      durationSec: state.t - startSec,
+      durationSec: played,
       rewardDelta: E.toString(delta),
       accumulatedReward: E.toString(accumulated),
       carried: carried(E, state, afterReward),
@@ -457,8 +498,9 @@ export function executeResetCycles<N, U extends string, Vars>(args: {
     originSec,
     globalElapsedSec: state.t - originSec,
     assumptions: [
+      ...(guard === "unsupported" ? ["no prestige action or prestige spec was found at the reset boundary"] : []),
       "reward delta is the adapter metric after the reset minus the metric before it",
-      "cycle-local duration is endSec minus startSec",
+      "cycle-local duration is the simulated seconds of the interval",
       "global elapsed is absolute t minus the study origin",
       "the reset action does not receive an income tick",
     ],
@@ -482,8 +524,9 @@ function checkpointOf<N, U extends string, Vars>(
   originSec: number,
   accumulatedReward: N,
 ): ResetCycleCheckpoint<N, U, Vars> {
-  const strategyState = scenario.strategy?.snapshotState?.();
-  const rngState = rng?.snapshot();
+  // Copy live snapshot objects, so later strategy or RNG use cannot rewrite a returned checkpoint.
+  const strategyState = deepClonePreservingPrototype(scenario.strategy?.snapshotState?.());
+  const rngState = deepClonePreservingPrototype(rng?.snapshot());
   return {
     contract: "idlekit.reset-cycle-checkpoint",
     version: 1,

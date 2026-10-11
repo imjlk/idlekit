@@ -153,7 +153,7 @@ function makeRng(seed: number): ResetCycleRng & { next: () => number } {
 
 /**
  * @evidence docs/requirements/active/reset-cycle-execution.md#req-pr10-committed-reset Three intervals commit three resets, and a resumed run matches the continuous one.
- * @evidenceReview docs/requirements/active/reset-cycle-execution.md#req-pr10-committed-reset #dff6bbb Re-read the section: count 3 and multiplier 4 are carried, and cycles 1 is a different state.
+ * @evidenceReview docs/requirements/active/reset-cycle-execution.md#req-pr10-committed-reset #22d7a8a Re-read the section: count 3 and multiplier 4 are carried, and cycles 1 is a different state.
  * @evidence ./resetCycle.ts#resetCycleExecution Reads the committed-reset host.
  * @evidenceReview ./resetCycle.ts#resetCycleExecution #8bc8cf1 The declaration is committed-reset-transition.
  * @evidence ./resetCycle.ts#validateResetCycleArtifact The artifact validates.
@@ -161,9 +161,9 @@ function makeRng(seed: number): ResetCycleRng & { next: () => number } {
  * @evidence ./resetCycle.ts#resetCycleJsonSchema The schema is 3.1.
  * @evidenceReview ./resetCycle.ts#resetCycleJsonSchema #c6690d5 The function memoizes typia.json.schema of ResetCycleArtifactV1.
  * @evidence ./resetCycle.ts#executeResetCycles Runs three fixed intervals, an explicit list, a resume, and the horizon and budget guards.
- * @evidenceReview ./resetCycle.ts#executeResetCycles #9b86033 The function runs each interval with runScenario, commits one reset through applyDecisions without re-reading model.actions, records a refusal instead of forcing it, and chains the carried state into the next cycle.
+ * @evidenceReview ./resetCycle.ts#executeResetCycles #5514248 The function runs each interval with runScenario on a model whose reset action the strategy cannot see, measures the horizon from the origin and durations from runElapsedSec, resolves the adapter at the boundary, commits one reset through applyDecisions with live constraints, refreshes maxMoneyEver, records a refusal instead of forcing it, and copies strategy and RNG snapshots into the checkpoint.
  * @evidence ./resetCycle.ts#resetAdapterFor Picks the prestige action and returns nothing for a model with neither an action nor a spec.
- * @evidenceReview ./resetCycle.ts#resetAdapterFor #265bf85 The function returns an explicit adapter first, then the prestige action adapter, then the spec adapter, and undefined when the model has no spec.
+ * @evidenceReview ./resetCycle.ts#resetAdapterFor #5f8e044 The function returns an explicit adapter first, then the prestige action adapter when the given state lists one, then the spec adapter, and undefined when the model has no spec.
  * @evidence ./resetCycle.ts#resetCycleSchemaId Reads the reset cycle schema id.
  * @evidenceReview ./resetCycle.ts#resetCycleSchemaId #2121231 The function returns the reset.cycle.v1 schema URL constant.
  * @evidence ./resetCycle.ts#resetCycleAlgorithmVersion Reads the algorithm version on the artifact.
@@ -291,10 +291,12 @@ export function runsThreeCommittedResets(): void {
     scenario: bare,
     policy: { kind: "fixed-interval", intervalSec: 1, cycles: 1 },
   });
+  // The first interval runs, because a model can list its prestige action only at the boundary.
   expect(unsupported.artifact.status).toBe("unsupported");
-  expect(unsupported.state).toBe(bare.initial);
-  expect(unsupported.state.t).toBe(0);
+  expect(unsupported.state.t).toBe(1);
+  expect(unsupported.state.prestige.count).toBe(0);
   expect(unsupported.artifact.appliedResets).toBe(0);
+  expect(unsupported.artifact.cycles[0]?.resetSkippedReason).toBe("missing-adapter");
 
   const legacy = analyzePrestigeCycle({
     scenario: scenario(),
@@ -306,6 +308,122 @@ export function runsThreeCommittedResets(): void {
   expect(legacy.warnings.length).toBe(3);
   expect(legacy.rows[0]?.stability).toBe("stable");
   expect(legacy.rows[0]?.cycles).toBe(5);
+
+  // A prestige action that appears only after the interval is found at the reset boundary.
+  const unlocked = prestigeAction();
+  const late = executeResetCycles({
+    scenario: {
+      ...scenario({ actions: [] }),
+      model: {
+        ...scenario().model,
+        actions: (_ctx, current) => (current.wallet.money.amount >= 2 ? [unlocked] : []),
+      },
+    },
+    policy: { kind: "fixed-interval", intervalSec: 2, cycles: 1 },
+  });
+  expect(late.artifact.status).toBe("ok");
+  expect(late.artifact.appliedResets).toBe(1);
+  expect(late.state.prestige.count).toBe(1);
+
+  // A strategy that would choose prestige every step cannot reset inside an interval.
+  const greedyResets: string[] = [];
+  const eager = executeResetCycles({
+    scenario: scenario({
+      strategy: {
+        id: "eager-prestige",
+        decide(ctx, model, current) {
+          const reset = model.actions(ctx, current).find((candidate) => candidate.kind === "prestige");
+          return reset ? [{ action: reset }] : [];
+        },
+      },
+      observer: { onReset: (fact) => greedyResets.push(fact.actionId) },
+    }),
+    policy: { kind: "fixed-interval", intervalSec: 3, cycles: 2 },
+  });
+  expect(eager.artifact.appliedResets).toBe(2);
+  expect(eager.state.prestige.count).toBe(2);
+  expect(greedyResets).toEqual(["prestige", "prestige"]);
+
+  // horizonSec counts from the study origin, not from absolute t 0.
+  const shifted = executeResetCycles({
+    scenario: scenario({ initial: state({ t: 100 }) }),
+    policy: { kind: "fixed-interval", intervalSec: 1, cycles: 3 },
+    horizonSec: 2,
+  });
+  expect(shifted.artifact.appliedResets).toBe(2);
+  expect(shifted.artifact.status).toBe("censored");
+  expect(shifted.artifact.globalElapsedSec).toBe(2);
+
+  // At a large t a 0.1s tick moves t by 0.125. The cycle duration is the simulated seconds.
+  const coarse = scenario({ initial: state({ t: 1e15 }) });
+  const rounded = executeResetCycles({
+    scenario: { ...coarse, ctx: { ...coarse.ctx, stepSec: 0.1 }, run: { ...coarse.run, stepSec: 0.1 } },
+    policy: { kind: "fixed-interval", intervalSec: 1, cycles: 1 },
+  });
+  expect(rounded.artifact.cycles[0]?.durationSec).toBeCloseTo(1, 9);
+  expect(rounded.artifact.cycles[0]!.endSec - rounded.artifact.cycles[0]!.startSec).not.toBeCloseTo(1, 9);
+
+  // The boundary action sees the live constraints, and a wallet-raising reset refreshes maxMoneyEver.
+  const seenAnchors: Array<number | undefined> = [];
+  const windfall = prestigeAction((current) => ({
+    ...current,
+    wallet: { ...current.wallet, money: coin(100), bucket: 0 },
+    prestige: { ...current.prestige, count: current.prestige.count + 1 },
+  }));
+  const watchedCtx = executeResetCycles({
+    scenario: scenario({ actions: [windfall], constraints: { minPrestigeIntervalSec: 1 } }),
+    policy: { kind: "fixed-interval", intervalSec: 2, cycles: 2 },
+    adapter: {
+      id: "watched",
+      kind: "prestige",
+      preserved: ["points", "multiplier", "count"],
+      action(ctx, current) {
+        seenAnchors.push(ctx.constraints?.lastPrestigeResetT);
+        return windfall.canApply(ctx, current) ? windfall : undefined;
+      },
+      reward: (_ctx, current) => current.prestige.count,
+    },
+  });
+  expect(watchedCtx.artifact.appliedResets).toBe(2);
+  expect(seenAnchors).toEqual([undefined, 2]);
+  expect(watchedCtx.state.maxMoneyEver.amount).toBeGreaterThanOrEqual(watchedCtx.state.wallet.money.amount);
+
+  // A checkpoint keeps its own copy of live strategy and RNG snapshots.
+  const liveStrategy = { cursor: 1 };
+  const liveRng = { value: 7 };
+  const restored: unknown[] = [];
+  const snapshotted = executeResetCycles({
+    scenario: scenario({
+      strategy: {
+        id: "live",
+        decide: () => [],
+        snapshotState: () => liveStrategy,
+        restoreState: (saved) => restored.push(saved),
+      },
+    }),
+    policy: { kind: "fixed-interval", intervalSec: 1, cycles: 1 },
+    rng: { snapshot: () => liveRng, restore: (saved) => restored.push(saved) },
+  });
+  liveStrategy.cursor = 999;
+  liveRng.value = 999;
+  expect(snapshotted.checkpoint.strategyState).toEqual({ cursor: 1 });
+  expect(snapshotted.checkpoint.rngState).toEqual({ value: 7 });
+  executeResetCycles({
+    scenario: scenario({
+      strategy: {
+        id: "live",
+        decide: () => [],
+        snapshotState: () => liveStrategy,
+        restoreState: (saved) => restored.push(saved),
+      },
+    }),
+    policy: { kind: "fixed-interval", intervalSec: 1, cycles: 1 },
+    resume: snapshotted.checkpoint,
+    rng: { snapshot: () => liveRng, restore: (saved) => restored.push(saved) },
+  });
+  expect(restored).toEqual([{ cursor: 1 }, { value: 7 }]);
+  expect(restored[0]).not.toBe(snapshotted.checkpoint.strategyState);
+  expect(restored[1]).not.toBe(snapshotted.checkpoint.rngState);
 
   const rngA = makeRng(reproSeed);
   const rngB = makeRng(reproSeed);
