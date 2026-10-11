@@ -164,7 +164,8 @@ function renderCanonical(value: unknown, seen: Set<object>): string {
   seen.add(value);
   try {
     if (Array.isArray(value)) {
-      return `[${value.map((entry) => renderCanonical(entry ?? null, seen)).join(",")}]`;
+      // Array.from visits holes, so a sparse slot renders as null like JSON.stringify.
+      return `[${Array.from(value, (entry) => renderCanonical(entry ?? null, seen)).join(",")}]`;
     }
     const entries = Object.entries(value).filter(([, entry]) => entry !== undefined);
     entries.sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0));
@@ -245,6 +246,9 @@ export function classifyFinite(value: number): Pick<MetricReadingV1, "status" | 
 
 export type AnalysisIssue = Readonly<{ path: string; message: string }>;
 
+/** Nonfinite spellings an engine can print. A nonfinite amount is invalid and omits `amount`. */
+const NONFINITE_DECIMAL = /^[+-]?(nan|inf|infinity)$/i;
+
 /**
  * Cross-field rules the generator does not claim.
  * Unavailable readings must not carry a numeric stand-in.
@@ -275,6 +279,13 @@ export function validateAnalysisSemantics(artifact: AnalysisArtifactV1): readonl
     }
     if (reading.domain !== "amount" && reading.amount !== undefined) {
       issues.push({ path, message: "numeric reading carries an amount" });
+    }
+    if (reading.value !== undefined && Number.isFinite(reading.value) && reading.sign !== undefined) {
+      const expected = reading.value < 0 ? "negative" : reading.value === 0 ? "zero" : "positive";
+      if (reading.sign !== expected) issues.push({ path, message: "sign does not match the value" });
+    }
+    if (reading.amount !== undefined && NONFINITE_DECIMAL.test(reading.amount.decimal.trim())) {
+      issues.push({ path, message: "amount decimal is a nonfinite spelling" });
     }
     if (!Number.isFinite(reading.metricVersion)) {
       issues.push({ path, message: "metricVersion is nonfinite" });
@@ -337,7 +348,8 @@ export function renderAnalysisMarkdown(artifact: AnalysisArtifactV1): string {
   if (artifact.goals.length === 0) lines.push("None.");
   for (const goal of artifact.goals) {
     const reached = goal.reached === undefined ? "absent" : String(goal.reached);
-    lines.push(`- ${goal.goalId}@${goal.goalVersion} ${goal.status} reached ${reached}`);
+    const at = goal.atSec === undefined ? "" : ` at ${goal.atSec}s`;
+    lines.push(`- ${goal.goalId}@${goal.goalVersion} ${goal.status} reached ${reached}${at}`);
   }
   return `${lines.join("\n")}\n`;
 }

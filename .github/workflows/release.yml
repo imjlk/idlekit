@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       publish:
-        description: Publish already merged package versions to npm
+        description: Retry publishing merged package versions that are not on npm yet
         type: boolean
         required: true
         default: false
@@ -23,6 +23,7 @@ jobs:
   prepare:
     if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && !inputs.publish))
     permissions:
+      actions: write
       contents: write
       pull-requests: write
     runs-on: ubuntu-latest
@@ -105,7 +106,7 @@ jobs:
           lease=$(git ls-remote origin refs/heads/release/main | cut -f1)
           git push --force-with-lease="refs/heads/release/main:$lease" origin HEAD:refs/heads/release/main
           body=$(mktemp)
-          printf '%s\n' "Prepared from main ($base_sha)." '' 'Review the versions and changelogs before merging. Publishing requires a separate manual Release run with publish=true.' '' > "$body"
+          printf '%s\n' "Prepared from main ($base_sha)." '' 'Review the versions and changelogs before merging. Merging this PR publishes the new versions to npm.' '' > "$body"
           bun -e 'for (const pkg of ["money", "core", "cli"]) { const p = await Bun.file(`packages/${pkg}/package.json`).json(); console.log(`- ${p.name}: ${p.version}`); }' >> "$body"
           pr=$(gh pr list --base main --head release/main --state open --json number --jq '.[0].number // empty')
           if [[ -n "$pr" ]]; then
@@ -113,9 +114,48 @@ jobs:
           else
             gh pr create --base main --head release/main --title 'chore(release): prepare package versions' --body-file "$body"
           fi
+          # Pushes made with GITHUB_TOKEN do not start pull_request workflows; a dispatch does.
+          # Run every check the release PR needs before it can merge.
+          for workflow in ci.yml docs-verify.yml codeql.yml; do
+            gh workflow run "$workflow" --ref release/main
+          done
+
+  plan:
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish))
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    outputs:
+      publish: ${{ steps.plan.outputs.publish }}
+    steps:
+      - name: Checkout selected commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: "1.4.2"
+
+      # A push to the head of main publishes manifest versions npm lacks; only a merged release
+      # PR changes them. A manual run replans the current main and fails when it cannot publish.
+      - name: Decide publication
+        id: plan
+        env:
+          RELEASE_EVENT: ${{ github.event_name }}
+          SELECTED_SHA: ${{ github.sha }}
+        run: bun tools/release-registry.ts plan
+
+      # A manual retry after npm accepted every upload only re-checks the registry.
+      # Recreate any missing tag or GitHub release by hand.
+      - name: Verify published packages
+        if: steps.plan.outputs.publish == 'false' && steps.plan.outputs.verify == 'true'
+        run: bun tools/release-registry.ts verify
 
   publish:
-    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.publish
+    needs: plan
+    if: needs.plan.outputs.publish == 'true'
     permissions:
       contents: write
       id-token: write
@@ -136,14 +176,6 @@ jobs:
           [[ "$(git rev-parse HEAD)" == "$SELECTED_SHA" ]]
           [[ "$(git ls-remote origin refs/heads/main | cut -f1)" == "$SELECTED_SHA" ]]
           git checkout -B main "$SELECTED_SHA"
-
-      - name: Require consumed changesets
-        shell: bash
-        run: |
-          if find .sampo/changesets -maxdepth 1 -type f -name '*.md' -print -quit | grep -q .; then
-            echo 'Merge the release PR before requesting publication.' >&2
-            exit 1
-          fi
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
@@ -211,3 +243,8 @@ jobs:
           if [[ -f "$RUNNER_TEMP/idlekit-publish.bun.lock" ]]; then
             mv -- "$RUNNER_TEMP/idlekit-publish.bun.lock" bun.lock
           fi
+
+      # Installers read registry metadata, not the tarball. Wait for the new versions, then check
+      # every current version's dependencies and provenance and install them from npm.
+      - name: Verify published packages
+        run: bun tools/release-registry.ts verify
