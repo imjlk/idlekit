@@ -190,7 +190,8 @@ function renderCanonical(value: unknown, seen: Set<object>): string {
   seen.add(value);
   try {
     if (Array.isArray(value)) {
-      return `[${value.map((entry) => renderCanonical(entry ?? null, seen)).join(",")}]`;
+      // Array.from visits holes, so a sparse slot renders as null like JSON.stringify.
+      return `[${Array.from(value, (entry) => renderCanonical(entry ?? null, seen)).join(",")}]`;
     }
     const entries = Object.entries(value).filter(([key, entry]) => key !== "__type" && entry !== undefined);
     entries.sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0));

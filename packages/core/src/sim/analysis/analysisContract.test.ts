@@ -174,6 +174,10 @@ export function registersCustomMetric(): void {
   expect(registry.knowledge("gem-shop", 1, "flow")).toBe("unsupported");
   expect(registry.knowledge("gem-shop", 1, "reset")).toBe("unsupported");
   expect(registry.knowledge("missing", 1, "flow")).toBe("unknown");
+  // A registered adapter without a capabilities map declares none, which is unsupported, not unknown.
+  registry.register({ modelId: "bare", modelVersion: 1 });
+  expect(registry.knowledge("bare", 1, "flow")).toBe("unsupported");
+  expect(registry.knowledge("bare", 1, "metrics")).toBe("unsupported");
   const flow = flowResult("unsupported");
   const reset = resetResult("unsupported");
   expect(flow.status).toBe("unsupported");
@@ -216,11 +220,11 @@ export function registersCustomMetric(): void {
  * @evidence ./contracts.ts#parseAnalysisArtifact Parses the rendered artifact JSON.
  * @evidenceReview ./contracts.ts#parseAnalysisArtifact #b7b8a89 The function is typia.json.validateParse of AnalysisArtifactV1.
  * @evidence ./contracts.ts#analysisCanonicalJson Compares the parsed artifact with the rendered text.
- * @evidenceReview ./contracts.ts#analysisCanonicalJson #4f8ccf4 The function delegates to renderCanonical, which sorts keys and drops undefined entries.
+ * @evidenceReview ./contracts.ts#analysisCanonicalJson #4f8ccf4 The function delegates to renderCanonical, which sorts keys, drops undefined entries, and renders array holes as null.
  * @evidence ./contracts.ts#analysisArtifactJson Renders the artifact as canonical JSON text.
  * @evidenceReview ./contracts.ts#analysisArtifactJson #52695d2 The function appends a newline to analysisCanonicalJson of the artifact.
  * @evidence ./contracts.ts#validateAnalysisSemantics Accepts the fixture and rejects an unavailable reading that carries a value.
- * @evidenceReview ./contracts.ts#validateAnalysisSemantics #702b8ef The function rejects a value on an unavailable reading, a non-ok reading not labeled unavailable, missing ok values, a second representation for the domain, nonfinite values and versions, reached or method on a non-ok goal, a nonfinite atSec or horizon, and a sampleCount that is not a nonnegative integer.
+ * @evidenceReview ./contracts.ts#validateAnalysisSemantics #bd0f98a The function rejects a value on an unavailable reading, a non-ok reading not labeled unavailable, missing ok values, a second representation for the domain, a value whose sign disagrees, a nonfinite decimal spelling, nonfinite values and versions, reached or method on a non-ok goal, a nonfinite atSec or horizon, and a sampleCount that is not a nonnegative integer.
  * @evidence ./contracts.ts#analysisSchemaHash Hashes the generated schema for provenance.
  * @evidenceReview ./contracts.ts#analysisSchemaHash #0ec17bb The function hashes the canonical JSON of the memoized artifact schema.
  * @evidence ./contracts.ts#artifactProvenance Changes provenance with assumptions, algorithm, and schema, and not with the run hash.
@@ -232,7 +236,7 @@ export function registersCustomMetric(): void {
  * @evidence ./contracts.ts#unavailableReading Builds unknown and censored readings without a value.
  * @evidenceReview ./contracts.ts#unavailableReading #9f1f861 The function copies the metric fields, sets reading unavailable, and adds reason only when given.
  * @evidence ./contracts.ts#renderAnalysisMarkdown Renders the fixture and an artifact without sampleCount.
- * @evidenceReview ./contracts.ts#renderAnalysisMarkdown #b210302 The function prints samples only when sampleCount is present and prints each amount as its decimal string with the unit.
+ * @evidenceReview ./contracts.ts#renderAnalysisMarkdown #c45cd8e The function prints samples only when sampleCount is present, prints each amount as its decimal string with the unit, and prints a goal's atSec when present.
  */
 export function roundTripsAnalysisArtifact(): void {
   expect(analysisArtifactContract).toBe("idlekit.analysis.artifact.v1");
@@ -355,6 +359,23 @@ export function roundTripsAnalysisArtifact(): void {
   expect(validateAnalysisSemantics(nonfinite).map((issue) => issue.path)).toEqual(
     expect.arrayContaining(["horizon.sec", "metrics.0", "goals.0"]),
   );
+  // A finite value must agree with its sign, and an amount cannot spell a nonfinite number.
+  const contradictory: AnalysisArtifactV1 = {
+    ...artifact,
+    metrics: [
+      { ...unavailableReading({ metricId: "count", metricVersion: 1, meaning: "count", metricKind: "stock", timeAxis: "instant", domain: "count", status: "unknown" }), status: "ok", reading: "observed", value: -1, sign: "positive" },
+      { ...negative, sign: "positive", amount: { unit: "COIN", decimal: "NaN" } },
+      { ...negative, amount: { unit: "COIN", decimal: "-Infinity" } },
+    ],
+  };
+  const contradictoryMessages = validateAnalysisSemantics(contradictory).map((issue) => issue.message);
+  expect(contradictoryMessages).toContain("sign does not match the value");
+  expect(contradictoryMessages.filter((message) => message === "amount decimal is a nonfinite spelling")).toHaveLength(2);
+  // A sparse array renders holes as null, so the canonical text stays valid JSON.
+  const sparse = new Array<string>(2);
+  sparse[1] = "kept";
+  expect(analysisCanonicalJson(sparse)).toBe('[null,"kept"]');
+  expect(JSON.parse(analysisCanonicalJson(new Array(2)))).toEqual([null, null]);
   expect(validateAnalysisSemantics(nonfinite).map((issue) => issue.message)).toEqual(
     expect.arrayContaining(["metricVersion is nonfinite", "goalVersion is nonfinite", "atSec is nonfinite"]),
   );
@@ -421,6 +442,11 @@ export function roundTripsAnalysisArtifact(): void {
   expect(markdown).toContain(hugeReading.amount?.decimal ?? "");
   expect(markdown).toContain(`${negative.amount?.decimal} COIN`);
   expect(markdown).not.toContain("자주");
+  const timed = renderAnalysisMarkdown({
+    ...artifact,
+    goals: [{ goalId: "money.atLeast", goalVersion: 1, status: "ok", reached: true, atSec: 42, assumptions: [] }],
+  });
+  expect(timed).toContain("reached true at 42s");
   const omitted = renderAnalysisMarkdown(buildAnalysisArtifact());
   expect(omitted).not.toContain("Samples:");
 }

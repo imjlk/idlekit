@@ -44,7 +44,8 @@ export function createModelAnalysisRegistry<N, U extends string, Vars>(): ModelA
     knowledge(modelId, modelVersion, name) {
       const adapter = map.get(keyOf(modelId, modelVersion));
       if (!adapter) return "unknown";
-      return capabilityKnowledge(adapter.capabilities, name);
+      // A registered adapter that omits capabilities declares none; "unknown" is only for no adapter.
+      return capabilityKnowledge(adapter.capabilities ?? {}, name);
     },
   };
 }
