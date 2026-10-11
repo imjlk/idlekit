@@ -1,5 +1,19 @@
 # @idlekit/cli
 
+## 0.2.1 — 2026-10-11
+
+### Patch changes
+
+- [c915f08](https://github.com/imjlk/idlekit/commit/c915f0831f7bfe884e57e9411c992a91053a781d) Publish registry metadata with concrete internal dependency versions.
+  
+  - `@idlekit/core@0.2.0` and `@idlekit/cli@0.2.0` were published with `workspace:*` in their registry dependencies, so npm and Bun could not install them; their tarballs already named `0.2.0`
+  - the release rewrites every package manifest before Sampo's dry run and real publish, and restores it afterwards, because npm sends the manifest it read before `prepack`
+  - package contents, exports, and CLI behavior are unchanged — Thanks @imjlk!
+- [2e86c9e](https://github.com/imjlk/idlekit/commit/2e86c9e2d612fa55ad8b1d64d96d3305bd404988) Load a plugin reached through a symlinked directory even when its file was created after a sibling plugin in that directory was loaded in the same process.
+  
+  - import each plugin by its realpath; Bun already names the module by it, and `pluginDigest` stays keyed by the resolved path that was passed — Thanks @imjlk!
+- Updated dependencies: core@0.2.1
+
 ## 0.2.0 — 2026-10-09
 
 ### Minor changes

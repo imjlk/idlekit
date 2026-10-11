@@ -1,5 +1,15 @@
 # @idlekit/core
 
+## 0.2.1 — 2026-10-11
+
+### Patch changes
+
+- [c915f08](https://github.com/imjlk/idlekit/commit/c915f0831f7bfe884e57e9411c992a91053a781d) Publish registry metadata with concrete internal dependency versions.
+  
+  - `@idlekit/core@0.2.0` and `@idlekit/cli@0.2.0` were published with `workspace:*` in their registry dependencies, so npm and Bun could not install them; their tarballs already named `0.2.0`
+  - the release rewrites every package manifest before Sampo's dry run and real publish, and restores it afterwards, because npm sends the manifest it read before `prepack`
+  - package contents, exports, and CLI behavior are unchanged — Thanks @imjlk!
+
 ## 0.2.0 — 2026-10-09
 
 ### Minor changes
