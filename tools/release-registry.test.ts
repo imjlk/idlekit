@@ -6,11 +6,11 @@ const versions: ReleaseVersion[] = [
   { name: "@idlekit/core", version: "0.2.2", published: false, latest: "0.2.1" },
   { name: "@idlekit/cli", version: "0.2.2", published: false, latest: "0.2.1" },
 ];
-const ready = { pendingChangesets: 0, selectedIsMain: true, versions };
+const ready = { selectedIsMain: true, versions };
 const allPublished = versions.map((entry) => ({ ...entry, published: true }));
 
 describe("publication plan", () => {
-  it("publishes the unpublished versions once the release PR consumed every changeset", () => {
+  it("publishes the versions a merged release PR prepared, whatever changesets are pending", () => {
     for (const manual of [false, true]) {
       expect(planPublication({ manual, ...ready })).toEqual({
         publish: true,
@@ -21,14 +21,9 @@ describe("publication plan", () => {
   });
 
   it("skips a push that cannot publish and fails the same manual request", () => {
-    const cases = [
-      [{ ...ready, pendingChangesets: 2 }, "2 pending changeset(s)"],
-      [{ ...ready, selectedIsMain: false }, "main moved past this commit"],
-    ] as const;
-    for (const [input, reason] of cases) {
-      expect(planPublication({ manual: false, ...input })).toEqual({ publish: false, verify: false, reason: expect.stringContaining(reason) });
-      expect(() => planPublication({ manual: true, ...input })).toThrow(reason);
-    }
+    const moved = { ...ready, selectedIsMain: false };
+    expect(planPublication({ manual: false, ...moved })).toEqual({ publish: false, verify: false, reason: expect.stringContaining("main moved past this commit") });
+    expect(() => planPublication({ manual: true, ...moved })).toThrow("main moved past this commit");
   });
 
   it("skips a push with nothing new and lets a manual retry verify the registry", () => {
@@ -47,10 +42,6 @@ describe("publication plan", () => {
     expect(planPublication({ manual: false, ...ready, versions: fresh }).publish).toBeTrue();
   });
 
-  it("checks pending changesets before the main head and the registry", () => {
-    const plan = planPublication({ manual: false, pendingChangesets: 1, selectedIsMain: false, versions: [] });
-    expect(plan.reason).toContain("pending changeset");
-  });
 
   it("orders semver releases after their prereleases", () => {
     expect(compareSemver("0.2.1", "0.2.0")).toBeGreaterThan(0);
@@ -66,6 +57,12 @@ describe("publication plan", () => {
       expect(compareSemver(ordered[i - 1]!, ordered[i]!)).toBeLessThan(0);
     }
     expect(compareSemver("0.2.0-rc.10", "0.2.0-rc.2")).toBeGreaterThan(0);
+  });
+
+  it("ignores build metadata", () => {
+    expect(compareSemver("1.0.0+build.1", "1.0.0")).toBe(0);
+    expect(compareSemver("1.0.0-rc.2+build.1", "1.0.0-rc.10")).toBeLessThan(0);
+    expect(compareSemver("1.0.1+a", "1.0.0+z")).toBeGreaterThan(0);
   });
 });
 

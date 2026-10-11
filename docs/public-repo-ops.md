@@ -40,7 +40,7 @@ For a package that is not on npm yet:
 2. run `bun run release:publish:preflight`
 3. publish its first version locally (see [release-process.md](./release-process.md#local-publish-preflight)), and add that version to `PROVENANCE_EXEMPT` in `tools/release-registry.ts`
 4. once the package's next version is ready to publish, add this repository and `release.yml` as its Trusted Publisher, with **Allowed actions** including `npm publish` (configurations created after 2026-09-03 allow only `npm stage publish` by default)
-5. merge that version's release PR within 2 days: npm expires a new Trusted Publisher configuration that has not completed a publish by then, and an expired one must be deleted and recreated
+5. merge that version's release PR so the Release workflow completes its first successful publish within 2 days of configuring the publisher: npm expires a new Trusted Publisher configuration that has not completed a publish by then, and an expired one must be deleted and recreated
 6. set the package to require 2FA and disallow tokens
 
 See [npm Trusted Publishing](https://docs.npmjs.com/trusted-publishers/).

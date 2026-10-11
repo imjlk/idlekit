@@ -1,4 +1,4 @@
-import { appendFileSync, readdirSync } from "fs";
+import { appendFileSync } from "fs";
 import { mkdtemp, rm } from "fs/promises";
 import { tmpdir } from "os";
 import { resolve } from "path";
@@ -11,7 +11,8 @@ const DEPENDENCY_SECTIONS = ["dependencies", "peerDependencies", "optionalDepend
 export const PROVENANCE_EXEMPT: ReadonlySet<string> = new Set(["@idlekit/money@0.2.0"]);
 
 function semverParts(version: string): [number, number, number, string?] {
-  const match = version.match(/^(\d+)\.(\d+)\.(\d+)(-.+)?$/);
+  // Build metadata (`+...`) does not affect precedence (SemVer 2.0.0 section 10).
+  const match = version.replace(/\+[0-9A-Za-z.-]+$/, "").match(/^(\d+)\.(\d+)\.(\d+)(-.+)?$/);
   if (!match) throw new Error(`unsupported semver format: ${version}`);
   return [Number(match[1]), Number(match[2]), Number(match[3]), match[4] ?? undefined];
 }
@@ -48,15 +49,14 @@ export type ReleaseVersion = Readonly<{ name: string; version: string; published
 export type PublishPlan = Readonly<{ publish: boolean; verify: boolean; reason: string }>;
 
 /**
- * A push to main publishes once the release PR has consumed every changeset and some
- * package version is not on npm yet. A push that still has changesets, or whose commit
- * is no longer the head of main, leaves publication to a later run. A manual run is an
- * explicit request, so the same conditions fail it; when npm already has every version,
+ * Manifest versions change only through a merged release PR, so a version npm does not have
+ * is ready to publish, even when changesets for later work are already pending. A push whose
+ * commit is no longer the head of main leaves publication to the newer run. A manual run is
+ * an explicit request, so the same condition fails it; when npm already has every version,
  * for example after a run that uploaded and then failed, it only verifies the registry.
  */
 export function planPublication(input: Readonly<{
   manual: boolean;
-  pendingChangesets: number;
   selectedIsMain: boolean;
   versions: readonly ReleaseVersion[];
 }>): PublishPlan {
@@ -64,9 +64,6 @@ export function planPublication(input: Readonly<{
     if (input.manual) throw new Error(reason);
     return { publish: false, verify: false, reason };
   };
-  if (input.pendingChangesets > 0) {
-    return skip(`${input.pendingChangesets} pending changeset(s); merge the release PR to publish.`);
-  }
   if (!input.selectedIsMain) return skip("main moved past this commit; the newer run decides publication.");
   const pending = input.versions.filter((entry) => !entry.published);
   // npm tags a publish `latest` by default, so an older unpublished version would move it backward.
@@ -148,7 +145,6 @@ function writeOutputs(values: Record<string, string>): void {
 async function plan(): Promise<void> {
   const selected = process.env.SELECTED_SHA || git(["rev-parse", "HEAD"]);
   const remoteMain = git(["ls-remote", "origin", "refs/heads/main"]).split(/\s+/)[0];
-  const pendingChangesets = readdirSync(resolve(ROOT, ".sampo/changesets")).filter((file) => file.endsWith(".md")).length;
   const versions: ReleaseVersion[] = [];
   for (const { name, version } of await releaseManifests()) {
     const registry = await fetchPackage(name);
@@ -156,7 +152,6 @@ async function plan(): Promise<void> {
   }
   const result = planPublication({
     manual: process.env.RELEASE_EVENT === "workflow_dispatch",
-    pendingChangesets,
     selectedIsMain: remoteMain === selected,
     versions,
   });

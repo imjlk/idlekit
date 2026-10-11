@@ -201,8 +201,6 @@ describe("release preparation and publishing", () => {
       const expected = { prepare: ["release"], plan: [], publish: ["publish"] }[jobName];
       expect(actions.map((action) => action.with?.command)).toEqual(expected!);
     }
-    expect(workflow.jobs.publish.steps.findIndex((step) => step.name === "Require consumed changesets"))
-      .toBeLessThan(workflow.jobs.publish.steps.findIndex((step) => step.with?.command === "publish"));
   });
 
   it("pins publication to the manual request and checks main on both sides of preflight", () => {

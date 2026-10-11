@@ -68,12 +68,14 @@ publishing, so neither job uses it. The preparation job has no npm credentials
 or OIDC permission.
 
 Merging the release PR publishes. On every push to `main`, the `plan` job
-(`bun tools/release-registry.ts plan`) publishes only when no changeset is pending,
-the pushed commit is still the head of `main`, and some package version is not on
-npm yet; in practice that is the push that merges the release PR. Any other push
-skips publication with the reason in the log. An unpublished version older than the
+(`bun tools/release-registry.ts plan`) publishes only when the pushed commit is still the
+head of `main` and some package version is not on npm yet. Only a merged release PR changes
+package versions, so pending changesets for later work do not hold those versions back: if
+another PR lands before the release run publishes, the newer run publishes them. Any other
+push skips publication with the reason in the log. An unpublished version older than the
 package's npm `latest` fails the run, because npm would move `latest` backward. A manual
-run with `publish=true` is a retry for the same commit and fails instead of skipping.
+run with `publish=true` replans the current head of `main`, not the commit of a failed run,
+and fails instead of skipping.
 When npm already has every version, for example after a run whose uploads succeeded
 but whose tags or GitHub releases failed, the retry only verifies the registry; create
 any missing tag or GitHub release by hand.

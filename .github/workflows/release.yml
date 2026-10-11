@@ -138,8 +138,8 @@ jobs:
         with:
           bun-version: "1.4.2"
 
-      # A push publishes once the merged release PR left no changesets and npm lacks a
-      # version; a manual run is a retry and fails when it cannot publish.
+      # A push to the head of main publishes manifest versions npm lacks; only a merged release
+      # PR changes them. A manual run replans the current main and fails when it cannot publish.
       - name: Decide publication
         id: plan
         env:
@@ -176,14 +176,6 @@ jobs:
           [[ "$(git rev-parse HEAD)" == "$SELECTED_SHA" ]]
           [[ "$(git ls-remote origin refs/heads/main | cut -f1)" == "$SELECTED_SHA" ]]
           git checkout -B main "$SELECTED_SHA"
-
-      - name: Require consumed changesets
-        shell: bash
-        run: |
-          if find .sampo/changesets -maxdepth 1 -type f -name '*.md' -print -quit | grep -q .; then
-            echo 'Merge the release PR before requesting publication.' >&2
-            exit 1
-          fi
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
