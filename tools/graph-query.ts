@@ -399,8 +399,11 @@ export class GraphSession {
     if (graphBin !== installedCompilerBin(root, "ttsc-graph")) {
       throw new Error(`refusing non-ttsc-graph command: ${graphBin}`);
     }
+    // `--cwd` names the project. The process directory stays at the repository
+    // root: a native session that outlives shutdown must not hold a temporary
+    // project directory busy, which Windows reports as EBUSY on deletion.
     this.proc = Bun.spawn([graphBin, "--cwd", this.cwd, "--tsconfig", this.tsconfig], {
-      cwd: this.cwd,
+      cwd: root,
       env: graphEnv(),
       stdin: "pipe",
       stdout: "pipe",
