@@ -220,7 +220,7 @@ export function registersCustomMetric(): void {
  * @evidence ./contracts.ts#analysisArtifactJson Renders the artifact as canonical JSON text.
  * @evidenceReview ./contracts.ts#analysisArtifactJson #52695d2 The function appends a newline to analysisCanonicalJson of the artifact.
  * @evidence ./contracts.ts#validateAnalysisSemantics Accepts the fixture and rejects an unavailable reading that carries a value.
- * @evidenceReview ./contracts.ts#validateAnalysisSemantics #21ef7c1 The function reports unavailable readings with values, missing ok values, nonfinite values, and reached on unreached goals.
+ * @evidenceReview ./contracts.ts#validateAnalysisSemantics #a34c2bd The function rejects a value on an unavailable reading, a non-ok reading not labeled unavailable, missing ok values, nonfinite values, reached or method on a non-ok goal, and a sampleCount that is not a nonnegative integer.
  * @evidence ./contracts.ts#analysisSchemaHash Hashes the generated schema for provenance.
  * @evidenceReview ./contracts.ts#analysisSchemaHash #0ec17bb The function hashes the canonical JSON of the memoized artifact schema.
  * @evidence ./contracts.ts#artifactProvenance Changes provenance with assumptions, algorithm, and schema, and not with the run hash.
@@ -232,7 +232,7 @@ export function registersCustomMetric(): void {
  * @evidence ./contracts.ts#unavailableReading Builds unknown and censored readings without a value.
  * @evidenceReview ./contracts.ts#unavailableReading #9f1f861 The function copies the metric fields, sets reading unavailable, and adds reason only when given.
  * @evidence ./contracts.ts#renderAnalysisMarkdown Renders the fixture and an artifact without sampleCount.
- * @evidenceReview ./contracts.ts#renderAnalysisMarkdown #102dd42 The function prints samples only when sampleCount is present and prints decimals as wire strings.
+ * @evidenceReview ./contracts.ts#renderAnalysisMarkdown #b210302 The function prints samples only when sampleCount is present and prints each amount as its decimal string with the unit.
  */
 export function roundTripsAnalysisArtifact(): void {
   expect(analysisArtifactContract).toBe("idlekit.analysis.artifact.v1");
@@ -321,6 +321,39 @@ export function roundTripsAnalysisArtifact(): void {
     metrics: [{ ...unknown, value: 0 }],
   };
   expect(validateAnalysisSemantics(bad).length).toBeGreaterThan(0);
+  const labeledObserved: AnalysisArtifactV1 = { ...artifact, metrics: [{ ...unknown, reading: "observed" }] };
+  expect(validateAnalysisSemantics(labeledObserved).map((issue) => issue.message)).toContain(
+    "non-ok reading is not labeled unavailable",
+  );
+  const methodOnUnsupported: AnalysisArtifactV1 = {
+    ...artifact,
+    goals: [{ goalId: "money.atLeast", goalVersion: 1, status: "unsupported", method: "exact", assumptions: [] }],
+  };
+  expect(validateAnalysisSemantics(methodOnUnsupported).map((issue) => issue.message)).toContain(
+    "non-ok goal carries a method",
+  );
+  for (const sampleCount of [-1, 0.5, Number.NaN]) {
+    expect(validateAnalysisSemantics({ ...artifact, sampleCount }).map((issue) => issue.path)).toContain("sampleCount");
+  }
+  expect(validateAnalysisSemantics({ ...artifact, sampleCount: 0 })).toEqual([]);
+  const mismatched = readMetric<number, Coin, Vars>(
+    {
+      id: "custom.count",
+      version: 1,
+      meaning: "Declared as a count",
+      domain: "count",
+      timeAxis: "instant",
+      kind: "stock",
+      extract: () => ({ available: true, domain: "amount", amount: 5, unit: "GEM" }),
+    },
+    numberCtx,
+    state(0),
+  );
+  expect(mismatched.status).toBe("invalid");
+  expect(mismatched.reading).toBe("unavailable");
+  expect(mismatched.domain).toBe("count");
+  expect(mismatched.amount).toBeUndefined();
+  expect(mismatched.value).toBeUndefined();
 
   expect(analysisArtifactJsonSchema().version).toBe("3.1");
   expect(analysisSchemaId()).toBe("https://idlekit.dev/schemas/analysis.artifact.v1.schema.json");
@@ -356,6 +389,7 @@ export function roundTripsAnalysisArtifact(): void {
   const markdown = renderAnalysisMarkdown(artifact);
   expect(markdown).toContain("analysis-artifact-v1");
   expect(markdown).toContain(hugeReading.amount?.decimal ?? "");
+  expect(markdown).toContain(`${negative.amount?.decimal} COIN`);
   expect(markdown).not.toContain("자주");
   const omitted = renderAnalysisMarkdown(buildAnalysisArtifact());
   expect(omitted).not.toContain("Samples:");

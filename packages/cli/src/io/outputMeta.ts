@@ -1,3 +1,4 @@
+import type { AnalysisArtifactV1 } from "@idlekit/core";
 import { dirname, resolve } from "path";
 import cliPackageJson from "../../package.json" with { type: "json" };
 import { runText, sha256Hex } from "../runtime/bun";
@@ -118,8 +119,8 @@ export function outputSchemaRefForCommand(command: string): string | undefined {
 
 export function linkAnalysisArtifact<T extends { _meta: OutputMeta }>(
   output: T,
-  analysis: unknown,
-): T & { analysis: unknown } {
+  analysis: AnalysisArtifactV1,
+): T & { analysis: AnalysisArtifactV1 } {
   return { ...output, analysis };
 }
 
