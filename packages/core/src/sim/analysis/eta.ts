@@ -61,6 +61,8 @@ export type EtaEstimateV1 = Readonly<{
   metricId: string;
   meaning: string;
   timeAxis: "interval";
+  /** The goal threshold this estimate answers, as an engine decimal string and its unit. */
+  target: Readonly<{ kind: "money" | "netWorth"; decimal: string; unit: string }>;
   status: AnalysisStatus;
   method?: AnalysisMethod;
   seconds: number | null;
@@ -124,6 +126,7 @@ export type EtaRatioResult = Readonly<{
 type GoalBinding<N, U extends string, Vars> = Readonly<{
   goal: GoalDefinition<N, U, Vars>;
   threshold: N;
+  target: EtaEstimateV1["target"];
   metricId: string;
   meaning: string;
 }>;
@@ -182,9 +185,10 @@ export function etaGoalForTarget<N, U extends string, Vars>(
 ): GoalBinding<N, U, Vars> {
   const threshold = parseEtaAmount(scenario, target.value);
   const wire = scenario.ctx.E.toString(threshold);
+  const identity = { kind: target.kind, decimal: wire, unit: scenario.ctx.unit.code };
   if (target.kind === "money") {
     const metric = walletMoneyMetric<N, U, Vars>();
-    return { goal: moneyAtLeast(wire), threshold, metricId: metric.id, meaning: metric.meaning };
+    return { goal: moneyAtLeast(wire), threshold, target: identity, metricId: metric.id, meaning: metric.meaning };
   }
   return {
     goal: netWorthAtLeast({
@@ -193,6 +197,7 @@ export function etaGoalForTarget<N, U extends string, Vars>(
       fallbackToWallet: scenario.model.netWorth === undefined,
     }),
     threshold,
+    target: identity,
     metricId: "netWorth",
     meaning: "Current net worth amount",
   };
@@ -209,6 +214,9 @@ function exactBlocks<N, U extends string, Vars>(scenario: CompiledScenario<N, U,
   if (scenario.model.prestige) blocks.push("prestige reset can make the metric non-monotonic");
   if (scenario.strategy) blocks.push("a strategy can apply a decision");
   if (scenario.constraints) blocks.push("a policy constraint can change the schedule");
+  if (scenario.ctx.tickPolicy.maxLogGap !== undefined) {
+    blocks.push("tick settlement can drop or hold income below maxLogGap");
+  }
   return blocks;
 }
 
@@ -225,6 +233,7 @@ function baseEstimate(
     metricId: binding.metricId,
     meaning: binding.meaning,
     timeAxis: "interval",
+    target: binding.target,
     status,
     seconds: extra.seconds ?? null,
     assumptions: extra.assumptions ?? [],
@@ -385,7 +394,15 @@ export function etaSimulate<N, U extends string, Vars>(args: {
   includeRun?: boolean;
 }): ETAResult {
   const binding = etaGoalForTarget(args.scenario, args.target);
-  const until = (state: SimState<N, U, Vars>) => binding.goal.met(state, args.scenario.ctx) === true;
+  const { E } = args.scenario.ctx;
+  const netWorthOf = args.target.kind === "netWorth" ? args.scenario.model.netWorth : undefined;
+  const observedAmount = (state: SimState<N, U, Vars>): N =>
+    netWorthOf ? netWorthOf(args.scenario.ctx, state).amount : state.wallet.money.amount;
+  // cmp reads NaN as reached, so a non-finite threshold or observed amount never ends the run as the goal.
+  const finiteAt = (state: SimState<N, U, Vars>): boolean =>
+    E.isFinite(binding.threshold) && E.isFinite(observedAmount(state));
+  const until = (state: SimState<N, U, Vars>) =>
+    finiteAt(state) && binding.goal.met(state, args.scenario.ctx) === true;
   const scenario: CompiledScenario<N, U, Vars> = {
     ...args.scenario,
     run: {
@@ -398,7 +415,10 @@ export function etaSimulate<N, U extends string, Vars>(args: {
   const run = runScenario(scenario);
   // A budget stop is neither the target nor maxDurationSec.
   assertHorizonReached(run, "etaSimulate");
-  const reached = evaluateGoal(binding.goal, run.end, scenario.ctx).reached === true;
+  const reached = finiteAt(run.end) && evaluateGoal(binding.goal, run.end, scenario.ctx).reached === true;
+  const nonFinite = !reached && !finiteAt(run.end);
+  // Without model.netWorth the legacy goal reads wallet money. That is not a net worth observation.
+  const walletProxy = args.target.kind === "netWorth" && args.scenario.model.netWorth === undefined;
   const observed = reached ? runElapsedSec(run) : args.maxDurationSec;
   const resolution = args.scenario.run.stepSec;
   const blocks = exactBlocks(args.scenario);
@@ -411,7 +431,21 @@ export function etaSimulate<N, U extends string, Vars>(args: {
   ];
   const bracket = reached && continuousSeconds !== null ? bracketFor(continuousSeconds, observed) : undefined;
 
-  const estimate: EtaEstimateV1 = !reached
+  const estimate: EtaEstimateV1 = nonFinite
+    ? baseEstimate(binding, "invalid", {
+        observationResolutionSec: resolution,
+        assumptions: [...assumptions, "the threshold or the observed amount is not finite, so the goal is not evaluated"],
+      })
+    : walletProxy
+    ? baseEstimate(binding, "unsupported", {
+        observationResolutionSec: resolution,
+        assumptions: [
+          ...assumptions,
+          "unsupported-local",
+          "netWorth is absent; the legacy seconds field reuses wallet money and is not a net worth observation",
+        ],
+      })
+    : !reached
     ? baseEstimate(binding, "censored", {
         horizonSec: args.maxDurationSec,
         observationResolutionSec: resolution,
@@ -478,9 +512,14 @@ export function validateEtaEstimateSemantics(estimate: EtaEstimateV1): readonly 
   const issues: string[] = [];
   if (estimate.status === "censored" && estimate.seconds !== null) {
     issues.push("censored estimate carries seconds");
+  } else if (estimate.status !== "ok" && estimate.seconds !== null) {
+    issues.push(`${estimate.status} estimate carries seconds`);
   }
   if (estimate.status === "ok" && (estimate.seconds === null || !Number.isFinite(estimate.seconds))) {
     issues.push("ok estimate has no finite seconds");
+  }
+  if (estimate.status === "ok" && estimate.seconds !== null && estimate.seconds < 0) {
+    issues.push("ok estimate has negative seconds");
   }
   if (estimate.method === "exact" && estimate.status !== "ok") issues.push("exact method is not ok");
   if (estimate.bracket && estimate.status !== "ok") issues.push("bracket on a non-ok estimate");

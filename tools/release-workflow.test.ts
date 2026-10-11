@@ -162,18 +162,18 @@ describe("release preparation and publishing", () => {
     expect(workflow.jobs.prepare.permissions["id-token"]).toBeUndefined();
     expect(workflow.jobs.publish.permissions["id-token"]).toBe("write");
     const preparation = JSON.stringify(workflow.jobs.prepare);
-    expect(preparation).not.toContain("NPM_TOKEN");
-    expect(preparation).not.toContain("NODE_AUTH_TOKEN");
     expect(preparation).not.toContain("setup-node@");
+    // npm publishes through Trusted Publishing only; the packages refuse token publishes.
+    for (const job of Object.values(workflow.jobs)) {
+      expect(JSON.stringify(job)).not.toContain("NPM_TOKEN");
+      expect(JSON.stringify(job)).not.toContain("NODE_AUTH_TOKEN");
+    }
     for (const [jobName, job] of Object.entries(workflow.jobs)) {
       const actions = job.steps.filter((step) => step.uses?.startsWith("bruits/sampo/"));
       expect(actions).toHaveLength(1);
       expect(actions[0]?.with?.command).toBe(jobName === "prepare" ? "release" : "publish");
       expect(actions[0]?.with?.command).not.toBe("auto");
     }
-    const registrySteps = workflow.jobs.publish.steps.filter((step) => step.env?.NODE_AUTH_TOKEN);
-    expect(registrySteps).toHaveLength(1);
-    expect(registrySteps[0]?.with?.command).toBe("publish");
     expect(workflow.jobs.publish.steps.findIndex((step) => step.name === "Require consumed changesets"))
       .toBeLessThan(workflow.jobs.publish.steps.findIndex((step) => step.with?.command === "publish"));
   });

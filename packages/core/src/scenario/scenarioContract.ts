@@ -120,29 +120,66 @@ const SEMANTIC_NOT_GENERATED = [
 
 export type SourceDigest = Readonly<{ path: string; sha256: string }>;
 
-export type ContractDocument = Readonly<{
-  idlekitContract: Readonly<{
-    generator: typeof CONTRACT_GENERATOR;
-    generatorVersion: typeof CONTRACT_GENERATOR_VERSION;
-    exportApi: typeof JSON_SCHEMA_EXPORT;
-    dialect: typeof JSON_SCHEMA_DIALECT;
-    typia: typeof TYPIA_VERSION;
-    schemaId: typeof SCENARIO_SCHEMA_ID;
-    unknownFieldPolicy: "runtime-allow";
-    jsonSchemaAdditionalProperties: false;
-    runtimeValidator: typeof semanticValidationRetained;
-    semanticNotGenerated: readonly string[];
-    registrations: typeof contractRegistry;
-    sourceHash: string;
-    sources: readonly SourceDigest[];
-  }>;
-  schema: Readonly<{
-    $id: typeof SCENARIO_SCHEMA_ID;
-    version: "3.1";
-    schema: unknown;
+const JSON_SCHEMA_META = "https://json-schema.org/draft/2020-12/schema" as const;
+
+export type GeneratedSchemaUnit = Readonly<{ version: string; schema: unknown; components: unknown }>;
+
+/**
+ * A generated contract file is a JSON Schema 2020-12 document.
+ * The generated constraints and their `components` sit at the root, so `#/components/schemas/...` refs resolve
+ * in the file itself. `idlekitContract` is an annotation keyword that validators ignore.
+ */
+export type SchemaDocument<Contract> = Readonly<
+  Record<string, unknown> & {
+    $schema: typeof JSON_SCHEMA_META;
+    $id: string;
     components: unknown;
-  }>;
+    idlekitContract: Contract;
+  }
+>;
+
+export function rootSchemaDocument<Contract>(
+  id: string,
+  unit: GeneratedSchemaUnit,
+  contract: Contract,
+): SchemaDocument<Contract> {
+  const root =
+    unit.schema && typeof unit.schema === "object" && !Array.isArray(unit.schema)
+      ? (unit.schema as Record<string, unknown>)
+      : {};
+  return {
+    ...root,
+    $schema: JSON_SCHEMA_META,
+    $id: id,
+    components: unit.components,
+    idlekitContract: contract,
+  };
+}
+
+/**
+ * Hash source text with LF line endings, so a CRLF checkout digests the same bytes.
+ */
+export function sourceTextDigest(text: string): string {
+  return sha256Text(text.replace(/\r\n/g, "\n"));
+}
+
+export type ScenarioContractMetadata = Readonly<{
+  generator: typeof CONTRACT_GENERATOR;
+  generatorVersion: typeof CONTRACT_GENERATOR_VERSION;
+  exportApi: typeof JSON_SCHEMA_EXPORT;
+  dialect: typeof JSON_SCHEMA_DIALECT;
+  typia: typeof TYPIA_VERSION;
+  schemaId: typeof SCENARIO_SCHEMA_ID;
+  unknownFieldPolicy: "runtime-allow";
+  jsonSchemaAdditionalProperties: false;
+  runtimeValidator: typeof semanticValidationRetained;
+  semanticNotGenerated: readonly string[];
+  registrations: typeof contractRegistry;
+  sourceHash: string;
+  sources: readonly SourceDigest[];
 }>;
+
+export type ContractDocument = SchemaDocument<ScenarioContractMetadata>;
 
 export function canonicalJson(value: unknown): string {
   return renderCanonical(value, new Set());
@@ -194,29 +231,21 @@ export function contractSourceHash(sources: readonly SourceDigest[]): string {
 export function buildContractDocument(sources: readonly SourceDigest[]): ContractDocument {
   const ordered = orderedSources(sources);
   const unit = scenarioJsonSchema();
-  return {
-    idlekitContract: {
-      generator: CONTRACT_GENERATOR,
-      generatorVersion: CONTRACT_GENERATOR_VERSION,
-      exportApi: JSON_SCHEMA_EXPORT,
-      dialect: JSON_SCHEMA_DIALECT,
-      typia: TYPIA_VERSION,
-      schemaId: SCENARIO_SCHEMA_ID,
-      unknownFieldPolicy: "runtime-allow",
-      jsonSchemaAdditionalProperties: false,
-      runtimeValidator: semanticValidationRetained,
-      semanticNotGenerated: SEMANTIC_NOT_GENERATED,
-      registrations: contractRegistry,
-      sourceHash: contractSourceHash(ordered),
-      sources: ordered,
-    },
-    schema: {
-      $id: SCENARIO_SCHEMA_ID,
-      version: unit.version,
-      schema: unit.schema,
-      components: unit.components,
-    },
-  };
+  return rootSchemaDocument(SCENARIO_SCHEMA_ID, unit, {
+    generator: CONTRACT_GENERATOR,
+    generatorVersion: CONTRACT_GENERATOR_VERSION,
+    exportApi: JSON_SCHEMA_EXPORT,
+    dialect: JSON_SCHEMA_DIALECT,
+    typia: TYPIA_VERSION,
+    schemaId: SCENARIO_SCHEMA_ID,
+    unknownFieldPolicy: "runtime-allow",
+    jsonSchemaAdditionalProperties: false,
+    runtimeValidator: semanticValidationRetained,
+    semanticNotGenerated: SEMANTIC_NOT_GENERATED,
+    registrations: contractRegistry,
+    sourceHash: contractSourceHash(ordered),
+    sources: ordered,
+  });
 }
 
 export type FieldMetadata = Readonly<{
@@ -247,13 +276,22 @@ export function structuralFieldMetadata(unit: { schema: unknown; components: unk
   const properties: string[] = [];
   const enums: Record<string, string[]> = {};
   const comments: Record<string, string> = {};
-  const seen = new Set<unknown>();
+  // Ancestors only. A component referenced at several paths is read at each path,
+  // and only a ref cycle on the current path stops the walk.
+  const ancestors = new Set<unknown>();
 
   function walk(node: unknown, path: string): void {
     if (!node || typeof node !== "object") return;
-    if (seen.has(node)) return;
-    seen.add(node);
-    const record = node as Record<string, unknown>;
+    if (ancestors.has(node)) return;
+    ancestors.add(node);
+    try {
+      visit(node as Record<string, unknown>, path);
+    } finally {
+      ancestors.delete(node);
+    }
+  }
+
+  function visit(record: Record<string, unknown>, path: string): void {
     if (typeof record.$ref === "string") {
       const name = record.$ref.startsWith("#/components/schemas/")
         ? record.$ref.slice("#/components/schemas/".length)

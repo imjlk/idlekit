@@ -142,15 +142,19 @@ Sampo는 `bun.lock`이 있으면 `bun publish`를 선택합니다. 마지막 커
 
 인증 정책:
 
-- 기본: npm Trusted Publishing + GitHub OIDC
-- fallback: `NPM_TOKEN`을 `NODE_AUTH_TOKEN`으로 주입
-- 로컬 publish는 `NPM_CONFIG_USERCONFIG=/path/to/.npmrc` 방식 지원
+- npm Trusted Publishing + GitHub OIDC만 사용하며, workflow는 npm 토큰을 전달하지 않음
+- 이미 배포된 `@idlekit/*` 패키지는 2FA 필수이고 토큰 배포를 거부하므로, 첫 버전 이후 배포는 Release workflow로 진행
+- 로컬 preflight와 dry run은 `NPM_CONFIG_USERCONFIG=/path/to/.npmrc` 방식 지원
+
+npm에 아직 없는 패키지는 workflow를 신뢰하도록 설정할 수 없습니다. 첫 버전은 로컬에서 배포한 뒤, 다음 수동 배포 전에 이 저장소와 `release.yml`로 Trusted Publishing을 설정합니다.
 
 즉, 평소 개발에서 npm을 쓰는 게 아니라, GitHub release 경로에서만 npm publish를 호출합니다.
 
 ### 로컬 publish preflight
 
-로컬 publish는 토큰 파일을 저장소 밖에 두고, 필요할 때만 npm 설정 파일 경로를 넘기는 방식으로 가는 게 안전합니다.
+로컬 publish는 npm에 아직 없는 패키지의 첫 버전에만 사용합니다. 이미 배포된 패키지는 토큰 배포를 거부하므로 이후 버전은 Release workflow로 배포합니다.
+
+토큰 파일은 저장소 밖에 두고, 필요할 때만 npm 설정 파일 경로를 넘기는 방식으로 가는 게 안전합니다.
 
 ```bash
 cp .npmrc.publish.example .npmrc.publish.local
@@ -163,13 +167,17 @@ NPM_CONFIG_USERCONFIG=$PWD/.npmrc.publish.local bun run release:publish:prefligh
 1. `publish:gate` 통과
 2. `readme:smoke` 통과
 3. `npm whoami`, `npm ping` 성공
-4. 현재 패키지 버전이 npm에 이미 올라간 버전보다 높은지
+4. 새 버전이 하나 이상 있고, npm에 올라간 버전보다 낮은 패키지가 없는지 (이미 배포된 같은 버전은 건너뜀)
 
-preflight가 통과하면 실제 publish 명령은 아래입니다.
+preflight, 배포, manifest 변환은 `tools/npm-publish-preflight.ts`, `tools/release-lockfile.ts`, `tools/package-manifest.ts`, `.github/workflows/release.yml` prepare job에 적힌 패키지만 다룹니다. 새 패키지는 먼저 이 목록에 추가합니다.
+
+preflight가 통과하면 같은 npm 설정으로 배포합니다. 계정이 쓰기 작업에 2FA를 요구하면 npm이 OTP를 묻습니다. 예시 설정의 `provenance=true`는 CI에서만 지원되므로 로컬 배포에서는 provenance를 끕니다.
 
 ```bash
-NPM_CONFIG_USERCONFIG=$PWD/.npmrc.publish.local bun run release:publish
+NPM_CONFIG_USERCONFIG=$PWD/.npmrc.publish.local NPM_CONFIG_PROVENANCE=false bun run release:publish
 ```
+
+배포 후 Trusted Publisher를 등록하고 패키지를 2FA 필수, 토큰 배포 차단으로 설정합니다.
 
 노트:
 

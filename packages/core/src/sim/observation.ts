@@ -89,7 +89,7 @@ export type RunObserver = Readonly<{
  * Callers pass the action receipt. This function does not read `prestige.count`.
  *
  * @evidence docs/requirements/active/reset-cycle-execution.md#req-pr10-committed-reset Reset facts come from the committed action, not from a prestige count change.
- * @evidenceReview docs/requirements/active/reset-cycle-execution.md#req-pr10-committed-reset #dff6bbb Re-read the section: onReset is the action receipt, and a count change alone is not a reset.
+ * @evidenceReview docs/requirements/active/reset-cycle-execution.md#req-pr10-committed-reset #22d7a8a Re-read the section: onReset is the action receipt, and a count change alone is not a reset.
  */
 export function emitCommittedResets(
   observer: RunObserver | undefined,

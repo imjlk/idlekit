@@ -1,4 +1,3 @@
-import { createHash } from "crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "fs";
 import { join, resolve } from "path";
 import {
@@ -27,7 +26,9 @@ import {
   buildContractDocument,
   buildFieldMetadata,
   canonicalJson,
+  rootSchemaDocument,
   sha256Text,
+  sourceTextDigest,
   structuralFieldMetadata,
   type SourceDigest,
 } from "../packages/core/src/scenario/scenarioContract";
@@ -57,43 +58,37 @@ const analysisInputs = [
   "packages/core/src/sim/analysis/registry.ts",
 ];
 
-const etaInputs = ["packages/core/src/sim/analysis/eta.ts"];
+// EtaEstimateV1 embeds AnalysisStatus and AnalysisMethod from contracts.ts.
+const etaInputs = ["packages/core/src/sim/analysis/contracts.ts", "packages/core/src/sim/analysis/eta.ts"];
 const resetInputs = ["packages/core/src/sim/analysis/resetCycle.ts"];
 const growthInputs = ["packages/core/src/sim/analysis/growthFit.ts"];
 
-export function sourceDigests(base = root): SourceDigest[] {
-  return inputs.map((path) => ({
+/** Digest each source with LF line endings, so a CRLF checkout matches the tracked contract. */
+export function digestSources(paths: readonly string[], base = root): SourceDigest[] {
+  return paths.map((path) => ({
     path,
-    sha256: createHash("sha256").update(readFileSync(join(base, path))).digest("hex"),
+    sha256: sourceTextDigest(readFileSync(join(base, path), "utf8")),
   }));
+}
+
+export function sourceDigests(base = root): SourceDigest[] {
+  return digestSources(inputs, base);
 }
 
 export function analysisSourceDigests(base = root): SourceDigest[] {
-  return analysisInputs.map((path) => ({
-    path,
-    sha256: createHash("sha256").update(readFileSync(join(base, path))).digest("hex"),
-  }));
+  return digestSources(analysisInputs, base);
 }
 
 export function etaSourceDigests(base = root): SourceDigest[] {
-  return etaInputs.map((path) => ({
-    path,
-    sha256: createHash("sha256").update(readFileSync(join(base, path))).digest("hex"),
-  }));
+  return digestSources(etaInputs, base);
 }
 
 export function resetSourceDigests(base = root): SourceDigest[] {
-  return resetInputs.map((path) => ({
-    path,
-    sha256: createHash("sha256").update(readFileSync(join(base, path))).digest("hex"),
-  }));
+  return digestSources(resetInputs, base);
 }
 
 export function growthSourceDigests(base = root): SourceDigest[] {
-  return growthInputs.map((path) => ({
-    path,
-    sha256: createHash("sha256").update(readFileSync(join(base, path))).digest("hex"),
-  }));
+  return digestSources(growthInputs, base);
 }
 
 export function buildEtaContractDocument(sources: readonly SourceDigest[]) {
@@ -111,26 +106,18 @@ export function buildEtaContractDocument(sources: readonly SourceDigest[]) {
       typia: "14.0.6",
     }),
   );
-  return {
-    idlekitContract: {
-      generator: "idlekit.contract-generator" as const,
-      generatorVersion: 1 as const,
-      exportApi: "typia.json.schema" as const,
-      dialect: "openapi-3.1" as const,
-      typia: "14.0.6" as const,
-      schemaId: etaEstimateSchemaId(),
-      contractId: "idlekit.eta.estimate.v1",
-      algorithmVersion: etaEstimateAlgorithmVersion(),
-      sourceHash,
-      sources: ordered,
-    },
-    schema: {
-      $id: etaEstimateSchemaId(),
-      version: etaEstimateJsonSchema().version,
-      schema: etaEstimateJsonSchema().schema,
-      components: etaEstimateJsonSchema().components,
-    },
-  };
+  return rootSchemaDocument(etaEstimateSchemaId(), etaEstimateJsonSchema(), {
+    generator: "idlekit.contract-generator" as const,
+    generatorVersion: 1 as const,
+    exportApi: "typia.json.schema" as const,
+    dialect: "openapi-3.1" as const,
+    typia: "14.0.6" as const,
+    schemaId: etaEstimateSchemaId(),
+    contractId: "idlekit.eta.estimate.v1",
+    algorithmVersion: etaEstimateAlgorithmVersion(),
+    sourceHash,
+    sources: ordered,
+  });
 }
 
 export function buildResetContractDocument(sources: readonly SourceDigest[]) {
@@ -148,26 +135,18 @@ export function buildResetContractDocument(sources: readonly SourceDigest[]) {
       typia: "14.0.6",
     }),
   );
-  return {
-    idlekitContract: {
-      generator: "idlekit.contract-generator" as const,
-      generatorVersion: 1 as const,
-      exportApi: "typia.json.schema" as const,
-      dialect: "openapi-3.1" as const,
-      typia: "14.0.6" as const,
-      schemaId: resetCycleSchemaId(),
-      contractId: "idlekit.reset-cycle.v1",
-      algorithmVersion: resetCycleAlgorithmVersion(),
-      sourceHash,
-      sources: ordered,
-    },
-    schema: {
-      $id: resetCycleSchemaId(),
-      version: resetCycleJsonSchema().version,
-      schema: resetCycleJsonSchema().schema,
-      components: resetCycleJsonSchema().components,
-    },
-  };
+  return rootSchemaDocument(resetCycleSchemaId(), resetCycleJsonSchema(), {
+    generator: "idlekit.contract-generator" as const,
+    generatorVersion: 1 as const,
+    exportApi: "typia.json.schema" as const,
+    dialect: "openapi-3.1" as const,
+    typia: "14.0.6" as const,
+    schemaId: resetCycleSchemaId(),
+    contractId: "idlekit.reset-cycle.v1",
+    algorithmVersion: resetCycleAlgorithmVersion(),
+    sourceHash,
+    sources: ordered,
+  });
 }
 
 export function buildGrowthContractDocument(sources: readonly SourceDigest[]) {
@@ -185,26 +164,18 @@ export function buildGrowthContractDocument(sources: readonly SourceDigest[]) {
       typia: "14.0.6",
     }),
   );
-  return {
-    idlekitContract: {
-      generator: "idlekit.contract-generator" as const,
-      generatorVersion: 1 as const,
-      exportApi: "typia.json.schema" as const,
-      dialect: "openapi-3.1" as const,
-      typia: "14.0.6" as const,
-      schemaId: growthFitSchemaId(),
-      contractId: "idlekit.growth-fit.v1",
-      algorithmVersion: growthFitAlgorithmVersion(),
-      sourceHash,
-      sources: ordered,
-    },
-    schema: {
-      $id: growthFitSchemaId(),
-      version: growthFitJsonSchema().version,
-      schema: growthFitJsonSchema().schema,
-      components: growthFitJsonSchema().components,
-    },
-  };
+  return rootSchemaDocument(growthFitSchemaId(), growthFitJsonSchema(), {
+    generator: "idlekit.contract-generator" as const,
+    generatorVersion: 1 as const,
+    exportApi: "typia.json.schema" as const,
+    dialect: "openapi-3.1" as const,
+    typia: "14.0.6" as const,
+    schemaId: growthFitSchemaId(),
+    contractId: "idlekit.growth-fit.v1",
+    algorithmVersion: growthFitAlgorithmVersion(),
+    sourceHash,
+    sources: ordered,
+  });
 }
 
 export function buildAnalysisContractDocument(sources: readonly SourceDigest[]) {
@@ -222,26 +193,18 @@ export function buildAnalysisContractDocument(sources: readonly SourceDigest[]) 
       typia: "14.0.6",
     }),
   );
-  return {
-    idlekitContract: {
-      generator: "idlekit.contract-generator" as const,
-      generatorVersion: 1 as const,
-      exportApi: "typia.json.schema" as const,
-      dialect: "openapi-3.1" as const,
-      typia: "14.0.6" as const,
-      schemaId: analysisSchemaId(),
-      contractId: analysisArtifactContract,
-      algorithmVersion: analysisAlgorithmVersion(),
-      sourceHash,
-      sources: ordered,
-    },
-    schema: {
-      $id: analysisSchemaId(),
-      version: analysisArtifactJsonSchema().version,
-      schema: analysisArtifactJsonSchema().schema,
-      components: analysisArtifactJsonSchema().components,
-    },
-  };
+  return rootSchemaDocument(analysisSchemaId(), analysisArtifactJsonSchema(), {
+    generator: "idlekit.contract-generator" as const,
+    generatorVersion: 1 as const,
+    exportApi: "typia.json.schema" as const,
+    dialect: "openapi-3.1" as const,
+    typia: "14.0.6" as const,
+    schemaId: analysisSchemaId(),
+    contractId: analysisArtifactContract,
+    algorithmVersion: analysisAlgorithmVersion(),
+    sourceHash,
+    sources: ordered,
+  });
 }
 
 export function renderedContracts(base = root): {
@@ -356,7 +319,8 @@ export function compareContracts(dir: string, base = root): string[] {
     const path = join(dir, name);
     let current = "";
     try {
-      current = readFileSync(path, "utf8");
+      // A CRLF checkout of the tracked JSON is the same contract.
+      current = readFileSync(path, "utf8").replace(/\r\n/g, "\n");
     } catch {
       failures.push(`missing ${name}`);
       continue;
