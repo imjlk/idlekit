@@ -84,7 +84,8 @@ COMP_CWORD=2
 "$function_name"
 [[ "$fallback_options" == "-o default -o bashdefault" ]] || exit 5
 unset -f compopt
-enable -n compopt
+# Bash 3.2 (macOS /bin/bash) has no compopt builtin to disable.
+if [[ "$(type -t compopt)" == builtin ]]; then enable -n compopt; fi
 "$function_name"
 [[ -z "$(type -t compopt)" ]] || exit 6
 `], { stdout: "pipe", stderr: "pipe" });
