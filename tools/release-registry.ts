@@ -25,7 +25,22 @@ export function compareSemver(a: string, b: string): number {
   if (ap[3] === bp[3]) return 0;
   if (!ap[3]) return 1;
   if (!bp[3]) return -1;
-  return ap[3].localeCompare(bp[3]);
+  return comparePrerelease(ap[3].slice(1), bp[3].slice(1));
+}
+
+/** SemVer 2.0.0 §11: numeric identifiers compare numerically and sort before alphanumeric ones. */
+function comparePrerelease(a: string, b: string): number {
+  const as = a.split(".");
+  const bs = b.split(".");
+  for (let i = 0; i < Math.min(as.length, bs.length); i++) {
+    const [x, y] = [as[i]!, bs[i]!];
+    if (x === y) continue;
+    const [xn, yn] = [/^\d+$/.test(x), /^\d+$/.test(y)];
+    if (xn && yn) return Number(x) - Number(y);
+    if (xn !== yn) return xn ? -1 : 1;
+    return x < y ? -1 : 1;
+  }
+  return as.length - bs.length;
 }
 
 /** `latest` is the registry's `latest` dist-tag, or null for a package npm does not have yet. */
