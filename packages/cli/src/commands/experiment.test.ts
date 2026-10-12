@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { createHash } from "crypto";
 import { resolve } from "path";
-import { createTempDir, readJson, readText, removePath, runCliJson, writeText } from "../testkit/bun";
+import { createTempDir, readJson, readText, removePath, runCliFailure, runCliJson, writeText } from "../testkit/bun";
 
 const BASELINE = "../../examples/tutorials/01-cafe-baseline.json";
 
@@ -18,6 +18,7 @@ function canonical(value: unknown): string {
 describe("experiment command", () => {
   let dir = "";
   let specPath = "";
+  let malformedPath = "";
   let cliVersion = "";
 
   beforeAll(async () => {
@@ -53,6 +54,8 @@ describe("experiment command", () => {
         session: { pattern: "always-on", days: 1 },
       }),
     );
+    malformedPath = resolve(dir, "malformed.json");
+    await writeText(malformedPath, JSON.stringify({ schemaVersion: 1, scenario: { ref: 42, hash: "x" } }));
   });
 
   afterAll(async () => {
@@ -72,5 +75,12 @@ describe("experiment command", () => {
       expect(task.engineId).toBe("breakInfinity");
       expect(task.engineVersion).toBe(`idlekit-cli@${cliVersion}`);
     }
+  });
+
+  it("rejects a malformed spec before resolving its scenario", () => {
+    const failed = runCliFailure(["experiment", malformedPath]);
+    const output = `${failed.stderr}\n${failed.stdout}`;
+    expect(output).toContain("EXPERIMENT_SPEC_INVALID");
+    expect(output).toContain("scenario.ref");
   });
 });

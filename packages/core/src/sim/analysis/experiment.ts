@@ -37,7 +37,7 @@ export const experimentSeparateSpec = "experiment-spec-not-tunespec" as const;
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter Assignment uses a registered identifier path and the model or strategy schema. JSONPath, prototype, and eval paths are refused before a run.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #927919a Re-read the section: a prototype path, an out-of-range integer, a schema-invalid rate, a stripped path, overlapping paths, a session dimension, and a repeated seed throw before model create.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #855dbc6 Re-read the section: a prototype path, an out-of-range integer, a schema-invalid rate, a stripped path, overlapping paths, a session dimension, a repeated seed, a non-finite limit, and a repeated constraint id throw before model create.
  */
 export const experimentRegisteredSetter = "registered-key-not-jsonpath" as const;
 
@@ -49,7 +49,7 @@ export const experimentLocalOat = "one-at-a-time-local-not-sobol" as const;
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-candidate-order Candidate order does not change the report, and the input scenario object is not written.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-candidate-order #726b7d7 Re-read the section: reversed candidate ids keep the same effective hash, the scenario JSON is unchanged, and the one compile per experiment brings create to 6.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-candidate-order #7cede33 Re-read the section: reversed candidate ids keep the same effective hash, the scenario JSON is unchanged, the one compile per experiment brings create to 6, and elasticity rows follow the sorted dimension ids.
  */
 export const experimentCandidateOrder = "sorted-candidates-unmutated-scenario" as const;
 
@@ -67,7 +67,7 @@ export const experimentParetoUnknown = "unknown-is-not-superior" as const;
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-task-descriptor Each task records its id, parameter JSON, logical seed, and engine and model versions. It does not store a function.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-task-descriptor #ca14fb5 Re-read the section: the income candidate changes incomeRate and the policy candidate changes maxPicks on the same seed, both from the scenario params.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-task-descriptor #7ab1c92 Re-read the section: the income candidate changes incomeRate and the policy candidate changes maxPicks on the same seed, both from the raw scenario params, and a string probe id is JSON text.
  */
 export const experimentTaskDescriptor = "task-id-params-seed-version" as const;
 
@@ -227,7 +227,7 @@ let validateExperimentArtifactValidator: ((input: unknown) => IValidation<Experi
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-task-descriptor The generated validator accepts this artifact.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-task-descriptor #ca14fb5 Re-read the section: the wire object is experiment v1 and the method is fixed-sweep-and-one-at-a-time.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-task-descriptor #7ab1c92 Re-read the section: the wire object is experiment v1 and the method is fixed-sweep-and-one-at-a-time.
  */
 export const validateExperimentArtifact = (input: unknown): IValidation<ExperimentArtifactV1> =>
   (validateExperimentArtifactValidator ??= typia.createValidate<ExperimentArtifactV1>())(input);
@@ -386,7 +386,22 @@ function requireSpec(input: ExperimentSpecV1): ExperimentSpecV1 {
       if (!assignmentFitsParamSpace(dimension.space, probe)) reject(`probe for ${dimension.id} is outside its parameter space`);
     }
   }
+  // A violation lists only the constraint id, so the id must name one constraint. A JSON literal such as 1e400 parses to Infinity.
+  const constraintIds = new Set<string>();
+  for (const constraint of spec.constraints ?? []) {
+    if (constraintIds.has(constraint.id)) reject(`duplicate constraint ${constraint.id}`);
+    constraintIds.add(constraint.id);
+    if (!Number.isFinite(constraint.limit)) reject(`constraint ${constraint.id} limit must be finite`);
+  }
   return spec;
+}
+
+/**
+ * Generated probe id. A string probe is written as JSON text, so `1` and `"1"`, or `true` and `"true"`, stay distinct.
+ * A number, boolean, or null probe is written as its plain text.
+ */
+function probeCandidateId(dimension: ExperimentDimensionV1, probe: ExperimentScalar): string {
+  return `oat:${dimension.id}:${typeof probe === "string" ? JSON.stringify(probe) : String(probe)}`;
 }
 
 function plannedCandidates(spec: ExperimentSpecV1): ExperimentCandidateV1[] {
@@ -399,7 +414,7 @@ function plannedCandidates(spec: ExperimentSpecV1): ExperimentCandidateV1[] {
     for (const dimension of [...spec.dimensions].sort((left, right) => byText(left.id, right.id))) {
       for (const probe of dimension.probes ?? []) {
         generated.push({
-          id: `oat:${dimension.id}:${String(probe)}`,
+          id: probeCandidateId(dimension, probe),
           assignments: spec.dimensions.map((item) => ({
             dimensionId: item.id,
             value: item.id === dimension.id ? probe : item.baseline,
@@ -419,30 +434,31 @@ function plannedCandidates(spec: ExperimentSpecV1): ExperimentCandidateV1[] {
   return merged;
 }
 
-function enforceSchema(schema: StandardSchema<unknown> | undefined, params: unknown, label: string): unknown {
-  if (!schema) return params;
+/**
+ * Checks the candidate params like scenario compile does in legacy-raw mode. The schema output only confirms
+ * that every assigned path is registered: a schema that strips that path would leave the run at its default
+ * while the task claims the assignment. The candidate keeps the raw params, so unassigned fields stay as the
+ * scenario wrote them and `create` receives the same representation as a scenario run.
+ */
+function checkCandidateParams(
+  schema: StandardSchema<unknown> | undefined,
+  params: unknown,
+  assigned: readonly Readonly<{ dimension: ExperimentDimensionV1; value: ExperimentScalar }>[],
+  label: string,
+): void {
+  if (!schema) return;
   const result = schema["~standard"].validate(params);
   if (!result.success) {
     reject(`${label} params rejected: ${result.issues.map((issue) => issue.message).join("; ")}`);
   }
-  return result.value;
-}
-
-/** A schema that strips or rewrites an assigned path would run the default while the task claims the assignment. */
-function assertAssignmentsKept(
-  validated: unknown,
-  assigned: readonly Readonly<{ dimension: ExperimentDimensionV1; value: ExperimentScalar }>[],
-  label: string,
-): void {
-  for (const { dimension, value } of assigned) {
-    let cursor: unknown = validated;
+  for (const { dimension } of assigned) {
+    let cursor: unknown = result.value;
     for (const part of dimension.path.split(".")) {
       if (cursor === null || typeof cursor !== "object" || !Object.prototype.hasOwnProperty.call(cursor, part)) {
         reject(`${label} params schema does not register ${dimension.path} for ${dimension.id}`);
       }
       cursor = (cursor as Record<string, unknown>)[part];
     }
-    if (!Object.is(cursor, value)) reject(`${label} params schema rewrote ${dimension.path} for ${dimension.id}`);
   }
 }
 
@@ -511,14 +527,14 @@ function prepareCandidate(
         );
   const modelFactory = registries.modelRegistry.get(spec.model.id, spec.model.version);
   if (!modelFactory) reject(`model not found: ${spec.model.id}@${spec.model.version}`);
-  const modelParams = enforceSchema(modelFactory.paramsSchema, assign(base.modelParams, modelAssigned, "model"), "model");
-  if (modelFactory.paramsSchema) assertAssignmentsKept(modelParams, modelAssigned, "model");
+  const modelParams = assign(base.modelParams, modelAssigned, "model");
+  checkCandidateParams(modelFactory.paramsSchema, modelParams, modelAssigned, "model");
   let strategyParams: unknown = {};
   if (base.strategyId !== null) {
     const strategyFactory = registries.strategyRegistry.get(base.strategyId);
     if (!strategyFactory) reject(`strategy not found: ${base.strategyId}`);
-    strategyParams = enforceSchema(strategyFactory.paramsSchema, assign(base.strategyParams, strategyAssigned, "strategy"), "strategy");
-    if (strategyFactory.paramsSchema) assertAssignmentsKept(strategyParams, strategyAssigned, "strategy");
+    strategyParams = assign(base.strategyParams, strategyAssigned, "strategy");
+    checkCandidateParams(strategyFactory.paramsSchema, strategyParams, strategyAssigned, "strategy");
   }
   return { id: candidate.id, modelParams, strategyParams, sessionPattern: spec.session.pattern, sessionDays: spec.session.days };
 }
@@ -756,9 +772,10 @@ export function runExperiment<N>(request: ExperimentRunRequest<N>): ExperimentAr
 
   const baseline = measured.find((candidate) => candidate.id === "baseline");
   const elasticities = baseline
-    ? spec.dimensions.flatMap((dimension) =>
+    ? // The normalized order, so reordered dimensions with one effective hash give one artifact.
+      [...spec.dimensions].sort((left, right) => byText(left.id, right.id)).flatMap((dimension) =>
         (dimension.probes ?? []).flatMap((probe) => {
-          const candidateId = `oat:${dimension.id}:${String(probe)}`;
+          const candidateId = probeCandidateId(dimension, probe);
           const probeCandidate = measured.find((candidate) => candidate.id === candidateId);
           if (!probeCandidate) return [];
           return metrics.map((metricId) => {

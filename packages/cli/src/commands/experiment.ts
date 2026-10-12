@@ -1,6 +1,7 @@
 import { defineCommand, option } from "../runtime/command";
 import {
   runExperiment,
+  validateExperimentSpec,
   validateScenarioV1,
   type ExperimentSpecV1,
 } from "@idlekit/core";
@@ -34,11 +35,20 @@ export default defineCommand({
   async handler({ flags, positional }) {
     const specPath = positional[0];
     if (!specPath) throw usageError("Usage: idk experiment <spec>");
-    const loadedSpec = await readJsonFile<ExperimentSpecV1>(specPath).catch((error) => {
+    const loadedSpec = await readJsonFile<unknown>(specPath).catch((error) => {
       throw cliError("EXPERIMENT_SPEC_INVALID", `Unable to read experiment spec: ${specPath}`, { cause: error });
     });
-    const scenarioPath = resolve(loadedSpec.scenario?.ref ?? "");
-    if (!loadedSpec.scenario?.ref) throw usageError("Usage: idk experiment <spec>");
+    // Check the spec shape before any field is read or the scenario is resolved.
+    const checked = validateExperimentSpec(loadedSpec);
+    if (!checked.success) {
+      throw cliError(
+        "EXPERIMENT_SPEC_INVALID",
+        `Experiment spec rejected: ${checked.errors.map((error) => error.path).join(", ")}`,
+      );
+    }
+    const spec: ExperimentSpecV1 = checked.data;
+    if (spec.scenario.ref.length === 0) throw usageError("Usage: idk experiment <spec>");
+    const scenarioPath = resolve(spec.scenario.ref);
     const scenario = await readScenarioFile(scenarioPath);
     const loaded = await loadRegistriesFromFlags(flags);
     const valid = validateScenarioV1(scenario, loaded.modelRegistry);
@@ -56,7 +66,7 @@ export default defineCommand({
       effectiveEngine: prepared.engine.effectiveId,
     });
     const artifact = runExperiment({
-      spec: loadedSpec,
+      spec,
       scenario: valid.scenario,
       modelRegistry: loaded.modelRegistry,
       strategyRegistry: loaded.strategyRegistry,
