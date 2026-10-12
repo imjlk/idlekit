@@ -6,6 +6,7 @@ import { nextBoundary } from "../timeBoundary";
 import { plannerExpansionBound } from "../strategy/planner";
 import type { OfflinePolicy } from "../../scenario/offlinePolicy";
 import { untilExprLiterals } from "../../scenario/compile";
+import { alphaInfiniteIndex } from "../../notation/suffixer";
 
 /**
  * Inspect explains a resolved plan. It does not tick, import plugins, or call the network.
@@ -191,7 +192,7 @@ export function fixedDurationStepCount(
   let steps = 0;
   let lastDt: number | null = null;
   const limit = 1_000_000;
-  while (steps < limit) {
+  while (true) {
     const decision = nextBoundary({
       elapsedSec: elapsed,
       steps,
@@ -203,11 +204,12 @@ export function fixedDurationStepCount(
     if (decision.kind !== "step") {
       return { steps, lastDt, partial: lastDt !== null && lastDt + 1e-12 < stepSec };
     }
+    // The cap is checked only when another tick is due, so a horizon of exactly the cap keeps its count.
+    if (steps >= limit) return { steps: null, lastDt: null, partial: false };
     lastDt = decision.dt;
     elapsed += decision.dt;
     steps += 1;
   }
-  return { steps: null, lastDt: null, partial: false };
 }
 
 function exponentMagnitude(text: string): number {
@@ -229,7 +231,15 @@ export function decimalExceedsNumberDomain(literal: string): boolean {
   const scientific = /^[-+]?(?:\d+(?:\.\d*)?|\.\d+)[eE]([+-]?\d+)$/.exec(trimmed);
   if (scientific?.[1] !== undefined) return Math.abs(exponentMagnitude(scientific[1])) >= 15;
   const digits = trimmed.replace(/^[+-]/, "").split(".")[0] ?? "";
-  return /^\d+$/.test(digits) && digits.length > 15;
+  if (/^\d+$/.test(digits) && digits.length > 15) return true;
+  // An alpha suffix scales the mantissa by 1e3 per index, as the money parser reads it: 1aa is 1e3 and 1zz is 1e2028.
+  const suffixed = /^[-+]?(\d+(?:\.\d+)?|\.\d+)(?:[eE]([+-]?\d+))?([A-Za-z]+)$/.exec(trimmed);
+  if (suffixed?.[1] === undefined || suffixed[3] === undefined) return false;
+  const index = alphaInfiniteIndex(suffixed[3], 2);
+  if (index < 0) return false;
+  const whole = (suffixed[1].split(".")[0] ?? "").replace(/^0+/, "");
+  const exponent = (suffixed[2] !== undefined ? exponentMagnitude(suffixed[2]) : 0) + Math.max(whole.length - 1, 0);
+  return Math.abs(exponent + index * 3) >= 15;
 }
 
 function numericDomainOf(engine: ScenarioInspectRequest["engine"]): "safe-integer" | "decimal-string" | "unknown" {
@@ -404,7 +414,8 @@ export function buildScenarioInspect(request: ScenarioInspectRequest): ScenarioI
   });
 
   const stages = request.stages.map((stage) => {
-    const fast = stage.applies.fast ? stage.fast ?? null : null;
+    // A stage the fast override does not apply to still runs the scenario's fast mode, which the input carries.
+    const fast = stage.fast ?? null;
     const actionsLog = stage.actionsLog
       ? {
           kept: stage.actionsLog.kept,

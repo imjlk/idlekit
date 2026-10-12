@@ -7,13 +7,17 @@ import { validateScenarioV1 } from "@idlekit/core";
 
 const scenarioSource = resolve(import.meta.dir, "../../../../examples/simple-linear.json");
 
-async function scenarioFile(dir: string, patch: (raw: Record<string, unknown>) => void): Promise<string> {
+async function scenarioFile(
+  dir: string,
+  patch: (raw: Record<string, unknown>) => void,
+  name = "inspect.json",
+): Promise<string> {
   const raw = JSON.parse(await readText(scenarioSource)) as Record<string, unknown>;
   const clock = raw.clock as { durationSec: number; stepSec: number };
   clock.durationSec = 10;
   clock.stepSec = 3;
   patch(raw);
-  const scenario = resolve(dir, "inspect.json");
+  const scenario = resolve(dir, name);
   await writeText(scenario, JSON.stringify(raw));
   return scenario;
 }
@@ -292,6 +296,56 @@ export const models = [{ id: "noted", version: 1, create() { throw new Error("cr
     const replacedNote = replaced.diagnostics.find((item: { code: string }) => item.code === "plugin-skipped");
     expect(replacedNote?.evidence.model).toBe("linear@1");
     expect(replaced.invalid).toBe(false);
+    // Skipped plugins need no trust policy, so a missing trust file or a malformed digest does not stop the report.
+    const baseline = await scenarioFile(dir, () => undefined, "baseline.json");
+    const untrusted = runCliJson<any>([
+      "inspect",
+      baseline,
+      "--plugin",
+      replacement,
+      "--plugin-trust-file",
+      resolve(dir, "missing-trust.json"),
+      "--plugin-sha256",
+      "not-a-digest",
+      "--format",
+      "json",
+    ]);
+    expect(untrusted.diagnostics.some((item: { code: string }) => item.code === "plugin-skipped")).toBe(true);
+    // A skipped plugin may replace a built-in strategy with other params, so the built-in schema does not reject
+    // them and the built-in planner bound is not claimed.
+    const pluginPlanner = await scenarioFile(dir, (raw) => {
+      raw.strategy = { id: "planner", params: { pluginOnly: true, horizonSteps: "deep" } };
+    });
+    expect(runCli(["inspect", pluginPlanner, "--format", "json"], { check: false }).exitCode).not.toBe(0);
+    const skippedPlanner = runCliJson<any>(["inspect", pluginPlanner, "--plugin", replacement, "--format", "json"]);
+    const plannerNote = skippedPlanner.diagnostics.find((item: { code: string }) => item.code === "plugin-skipped");
+    expect(plannerNote?.evidence.strategy).toBe("planner");
+    const builtinPlanner = runCliJson<any>([
+      "inspect",
+      baseline,
+      "--strategy",
+      "planner",
+      "--plugin",
+      replacement,
+      "--format",
+      "json",
+    ]);
+    expect(builtinPlanner.planner).toBeNull();
+    expect(runCliJson<any>(["inspect", baseline, "--strategy", "planner", "--format", "json"]).planner).not.toBeNull();
+    // A resolved plugin's digest is in the output metadata, as the executable commands record it.
+    const digested = runCliJson<any>([
+      "inspect",
+      baseline,
+      "--resolve-plugins",
+      "--allow-plugin",
+      "--plugin",
+      replacement,
+      "--plugin-root",
+      dir,
+      "--format",
+      "json",
+    ]);
+    expect(Object.values(digested._meta.pluginDigest ?? {}).length).toBe(1);
     // A var compared in untilExpr is read with Number only when it is a number. A string var is compared as text.
     const varUntil = (expr: string) =>
       scenarioFile(dir, (raw) => {

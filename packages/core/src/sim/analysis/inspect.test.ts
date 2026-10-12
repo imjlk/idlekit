@@ -64,9 +64,9 @@ function request(overrides: Partial<ScenarioInspectRequest> = {}): ScenarioInspe
  * @evidence ./inspect.ts#inspectPartialTick Reads the partial-tick contract.
  * @evidenceReview ./inspect.ts#inspectPartialTick #fbcbcf5 The declaration is partial-tick-included.
  * @evidence ./inspect.ts#fixedDurationStepCount Counts whole and partial ticks with nextBoundary.
- * @evidenceReview ./inspect.ts#fixedDurationStepCount #94e929a The function steps nextBoundary without until until it stops, and reports the step count, the last dt, and whether that tick was partial. Past one million ticks it returns a null count.
+ * @evidenceReview ./inspect.ts#fixedDurationStepCount #aabb71b The function steps nextBoundary without until until it stops, and reports the step count, the last dt, and whether that tick was partial. Past one million ticks it returns a null count, and a horizon of exactly one million keeps its count because the cap is checked only when another tick is due.
  * @evidence ./inspect.ts#buildScenarioInspect Builds the report from a fixed-duration request.
- * @evidenceReview ./inspect.ts#buildScenarioInspect #b8b411c The function derives horizon kind, observation supply, stage plans, engine and plugin notes, the planner bound, and diagnostics without running the scenario. It treats an omitted event log as enabled, traces every step without a cadence, leaves session stages and capped counts unknown, reports each stage's fast mode, and names an unresolved model in plugin-skipped. A traced run's window is its cadence, and plugin-skipped names an unresolved strategy too. A custom engine's domain is unknown and still warns, and an ltv stage's count is unknown. A trace cadence that is not a positive integer supplies no cadence. It reads untilExpr literals itself: amount literals use the engine domain, while t, prestige.count, and the numericUntilPaths the caller names always warn, since they go through Number. Another path has a run-time parser and does not warn. Each stage reports the action log it keeps, and an uncapped kept log is unlimited.
+ * @evidenceReview ./inspect.ts#buildScenarioInspect #48c8bae The function derives horizon kind, observation supply, stage plans, engine and plugin notes, the planner bound, and diagnostics without running the scenario. It treats an omitted event log as enabled, traces every step without a cadence, leaves session stages and capped counts unknown, reports each stage's fast mode, and names an unresolved model in plugin-skipped. A traced run's window is its cadence, and plugin-skipped names an unresolved strategy too. A custom engine's domain is unknown and still warns, and an ltv stage's count is unknown. A trace cadence that is not a positive integer supplies no cadence. It reads untilExpr literals itself: amount literals use the engine domain, while t, prestige.count, and the numericUntilPaths the caller names always warn, since they go through Number. Another path has a run-time parser and does not warn. Each stage reports the action log it keeps, and an uncapped kept log is unlimited. A stage reports the fast mode its input carries, including one inherited from the scenario where the override does not apply.
  */
 export function countsFixedDurationSteps(): void {
   expect(inspectPartialTick).toBe("partial-tick-included");
@@ -96,6 +96,8 @@ export function countsFixedDurationSteps(): void {
   expect(report.simulated).toBe(false);
   // Past the counting cap the count is unknown, not the cap with a partial tick.
   expect(fixedDurationStepCount(1_000_001, 1)).toEqual({ steps: null, lastDt: null, partial: false });
+  // A horizon of exactly the cap keeps its count.
+  expect(fixedDurationStepCount(1_000_000, 1)).toEqual({ steps: 1_000_000, lastDt: 1, partial: false });
   expect(buildScenarioInspect(request({ clock: { stepSec: 1, durationSec: 1_000_001 } })).stages[0]?.stepCount).toBe(
     "unknown",
   );
@@ -204,7 +206,7 @@ export function marksUntilOnlyUnknown(): void {
  * @evidence ./inspect.ts#inspectDecimalRange Reads the decimal-range contract.
  * @evidenceReview ./inspect.ts#inspectDecimalRange #f9b5c90 The declaration is decimal-range-is-advisory.
  * @evidence ./inspect.ts#decimalExceedsNumberDomain Flags decimals with more than 15 integer digits or exponent magnitude.
- * @evidenceReview ./inspect.ts#decimalExceedsNumberDomain #5161515 The function reads a scientific exponent or the integer digits and reports a magnitude of 15 or more. A sign and a leading-dot mantissa are read too.
+ * @evidenceReview ./inspect.ts#decimalExceedsNumberDomain #0930a6d The function reads a scientific exponent or the integer digits and reports a magnitude of 15 or more. A sign and a leading-dot mantissa are read too. An alpha suffix adds 3 to the exponent per alphaInfiniteIndex step, as parseMoney scales it.
  */
 export function warnsOnDecimalRange(): void {
   expect(inspectDecimalRange).toBe("decimal-range-is-advisory");
@@ -214,6 +216,12 @@ export function warnsOnDecimalRange(): void {
   expect(decimalExceedsNumberDomain("+1e400")).toBe(true);
   expect(decimalExceedsNumberDomain(".1e400")).toBe(true);
   expect(decimalExceedsNumberDomain("1.e400")).toBe(true);
+  // An alpha suffix scales by 1e3 per index, as the money parser reads it: aa is 1e3 and zz is 1e2028.
+  expect(decimalExceedsNumberDomain("1zz")).toBe(true);
+  expect(decimalExceedsNumberDomain("1aa")).toBe(false);
+  expect(decimalExceedsNumberDomain("1ae")).toBe(true);
+  expect(decimalExceedsNumberDomain("1e10ab")).toBe(true);
+  expect(decimalExceedsNumberDomain("3d")).toBe(false);
   const numberReport = buildScenarioInspect(
     request({ decimals: ["1e400"], engine: { effectiveId: "number", source: "flag", accepted: true } }),
   );
@@ -340,9 +348,24 @@ export function explainsStageOverrides(): void {
   );
   expect(ltvReport.stages[0]?.stepCount).toBe("unknown");
   expect(simulate?.stepCount).toBe(5);
-  // The stage reports the fast mode it runs. A stage the fast flag does not apply to has none.
+  // The stage reports the fast mode it runs. A stage given no fast mode reports none.
   expect(simulate?.fast).toBeNull();
   expect(experience?.fast).toBeNull();
+  // A stage the fast flag does not apply to still runs the scenario's fast mode, so that mode is reported.
+  const inherited = buildScenarioInspect(
+    request({
+      stages: [
+        {
+          name: "experience",
+          applies: { strategy: true, step: false, fast: false, session: true },
+          stepSec: { value: 1, source: "scenario" },
+          strategySource: "scenario",
+          fast: { enabled: true, source: "scenario" },
+        },
+      ],
+    }),
+  );
+  expect(inherited.stages[0]?.fast).toEqual({ enabled: true, source: "scenario" });
   const fastReport = buildScenarioInspect(
     request({
       stages: [

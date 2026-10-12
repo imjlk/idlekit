@@ -9,11 +9,17 @@ import {
 } from "@idlekit/core";
 import { z } from "zod";
 import { loadRegistriesFromFlags, pluginOptions, type PluginOptionFlags } from "./_shared/plugin";
-import { CliError, cliError, scenarioInvalidError, usageError } from "../errors";
+import { cliError, scenarioInvalidError, usageError } from "../errors";
 import { buildOutputMeta } from "../io/outputMeta";
 import { readScenarioFile } from "../io/readScenario";
 import { writeOutput } from "../io/writeOutput";
-import { planResolvedRun, resolveEffectiveEngine, type ResolvedRunPlan } from "../lib/runConfiguration";
+import {
+  assertResolvedPlanInputs,
+  planResolvedRun,
+  resolveEffectiveEngine,
+  resolveStrategySelection,
+  type ResolvedRunPlan,
+} from "../lib/runConfiguration";
 
 function requestedPluginPaths(input: string): string[] {
   return input
@@ -172,9 +178,18 @@ export default defineCommand({
     const paths = requestedPluginPaths(flags.plugin);
     const resolvePlugins = flags["resolve-plugins"] && paths.length > 0;
     if (resolvePlugins) assertAnalyzerPluginsPermitted(flags["allow-plugin"], paths);
-    const silentFlags: PluginOptionFlags = { ...flags, plugin: "" };
+    // Skipped plugins need no trust policy, so the built-in registries read no root, digest, or trust file.
+    const silentFlags: PluginOptionFlags = {
+      plugin: "",
+      "allow-plugin": false,
+      "plugin-root": "",
+      "plugin-sha256": "",
+      "plugin-trust-file": "",
+    };
     const builtins = await loadRegistriesFromFlags(silentFlags);
     const loaded = resolvePlugins ? await loadRegistriesFromFlags(flags) : builtins;
+    // The output metadata names the plugin binaries that resolved the plan, as the executable commands do.
+    const pluginDigest = resolvePlugins ? loaded.pluginDigest : undefined;
     // Plugin registrations by origin, so a plugin that replaces a built-in id is still reported. Strategies and
     // analyzers count too: they can drive the plan or attach to it.
     const pluginStrategyIds = resolvePlugins ? [...new Set(loaded.pluginStrategyIds ?? [])] : [];
@@ -250,90 +265,95 @@ export default defineCommand({
     // Resolve the engine alone first, so only an engine the resolver rejects becomes bad-engine. A planning error
     // whose text names an engine, such as an initial amount of "breakEternity", is not an engine rejection.
     let engineRejection: string | undefined;
+    let engine: ReturnType<typeof resolveEffectiveEngine> | undefined;
     try {
-      resolveEffectiveEngine({ requested: flags.engine, scenarioEngine: scenario.engine });
+      engine = resolveEffectiveEngine({ requested: flags.engine, scenarioEngine: scenario.engine });
     } catch (error) {
       engineRejection = error instanceof Error ? error.message : "engine rejected";
     }
-    if (engineRejection !== undefined) {
+    if (engineRejection !== undefined || engine === undefined) {
       const report = buildScenarioInspect({
         ...base,
         engine: {
           effectiveId: flags.engine ?? "rejected",
           source: "rejected",
           accepted: false,
-          rejectReason: engineRejection,
+          rejectReason: engineRejection ?? "engine rejected",
         },
         stages: [],
         planner: null,
       });
-      await emit(flags, report, scenarioPath, scenario);
-      throw cliError("UNSUPPORTED_ENGINE", engineRejection);
+      await emit(flags, report, scenarioPath, scenario, pluginDigest);
+      throw cliError("UNSUPPORTED_ENGINE", engineRejection ?? "engine rejected");
     }
 
-    try {
-      // Plans only. Compiling would create the model and strategy, which may be plugin code.
-      const prepared = planResolvedRun({
-        scenario,
-        modelRegistry: loaded.modelRegistry,
-        strategyRegistry: loaded.strategyRegistry,
-        pluginDigest: loaded.pluginDigest,
-        engineRequest: flags.engine,
-        strategyOverride: flags.strategy,
-        stepSec: flags.step,
-        fast: flags.fast,
-        consistentOverrides: flags["consistent-overrides"],
-        sessionId: flags["session-pattern"],
-        days: flags.days,
-      });
-      const simulate = prepared.planFor("simulate");
-      const experience = prepared.planFor("experience");
-      // evaluate and ltv open an ltv stage too. Its horizon comes from the command, so its count stays unknown.
-      const ltv = prepared.planFor("ltv");
-      const plans = [simulate, experience, ltv];
+    const planArgs = {
+      scenario,
+      modelRegistry: loaded.modelRegistry,
+      strategyRegistry: loaded.strategyRegistry,
+      pluginDigest: loaded.pluginDigest,
+      engineRequest: flags.engine,
+      strategyOverride: flags.strategy,
+      stepSec: flags.step,
+      fast: flags.fast,
+      consistentOverrides: flags["consistent-overrides"],
+      sessionId: flags["session-pattern"],
+      days: flags.days,
+    };
+    // Plan inputs other than the strategy fail as they would for the run.
+    assertResolvedPlanInputs(planArgs, engine);
+    // A skipped plugin may provide the strategy, or replace a built-in one with other params, so a strategy the loaded
+    // registries cannot resolve is reported as unchecked instead of failing.
+    const skipping = !resolvePlugins && paths.length > 0;
+    const strategyId = flags.strategy?.trim() || scenario.strategy?.id;
+    let strategyUnchecked = false;
+    if (skipping) {
+      try {
+        resolveStrategySelection({ scenario, strategyRegistry: loaded.strategyRegistry, overrideId: flags.strategy });
+      } catch {
+        strategyUnchecked = true;
+      }
+    }
+    if (strategyUnchecked && strategyId !== undefined) {
       const report = buildScenarioInspect({
         ...base,
-        decimals: strategyDecimals(plans.map((plan) => plan.strategy.params)),
+        // An override's params are unknown. Without one the plugin strategy receives the scenario params.
+        decimals: strategyDecimals(flags.strategy?.trim() ? [] : [scenario.strategy?.params]),
         engine: {
-          effectiveId: prepared.engine.effectiveId,
-          source: prepared.engine.source,
+          effectiveId: engine.effectiveId,
+          source: engine.source,
           accepted: true,
-          ...(prepared.engine.scenarioEngine ? { scenarioEngine: prepared.engine.scenarioEngine } : {}),
+          ...(engine.scenarioEngine ? { scenarioEngine: engine.scenarioEngine } : {}),
         },
-        stages: plans.map((plan) => stageInput(plan, scenario)),
-        planner: plannerParams(simulate, pluginStrategyIds),
+        stages: [],
+        planner: null,
+        plugins: { ...base.plugins, unresolvedStrategy: strategyId },
       });
-      await emit(flags, report, scenarioPath, scenario);
-    } catch (error) {
-      // A strategy that only a skipped plugin provides cannot be planned. Report that instead of failing, as for a
-      // plugin-only model. Only the typed unknown-strategy error for the selected id counts, not matching text.
-      const strategyId = flags.strategy?.trim() || scenario.strategy?.id;
-      const unknownStrategy =
-        error instanceof CliError &&
-        error.code === "UNKNOWN_STRATEGY" &&
-        strategyId !== undefined &&
-        loaded.strategyRegistry.get(strategyId) === undefined;
-      if (unknownStrategy && !resolvePlugins && paths.length > 0) {
-        const engine = resolveEffectiveEngine({ requested: flags.engine, scenarioEngine: scenario.engine });
-        const report = buildScenarioInspect({
-          ...base,
-          // An override's params are unknown. Without one the plugin strategy receives the scenario params.
-          decimals: strategyDecimals(flags.strategy?.trim() ? [] : [scenario.strategy?.params]),
-          engine: {
-            effectiveId: engine.effectiveId,
-            source: engine.source,
-            accepted: true,
-            ...(engine.scenarioEngine ? { scenarioEngine: engine.scenarioEngine } : {}),
-          },
-          stages: [],
-          planner: null,
-          plugins: { ...base.plugins, unresolvedStrategy: strategyId },
-        });
-        await emit(flags, report, scenarioPath, scenario);
-        return;
-      }
-      throw error;
+      await emit(flags, report, scenarioPath, scenario, pluginDigest);
+      return;
     }
+
+    // Plans only. Compiling would create the model and strategy, which may be plugin code.
+    const prepared = planResolvedRun(planArgs);
+    const simulate = prepared.planFor("simulate");
+    const experience = prepared.planFor("experience");
+    // evaluate and ltv open an ltv stage too. Its horizon comes from the command, so its count stays unknown.
+    const ltv = prepared.planFor("ltv");
+    const plans = [simulate, experience, ltv];
+    const report = buildScenarioInspect({
+      ...base,
+      decimals: strategyDecimals(plans.map((plan) => plan.strategy.params)),
+      engine: {
+        effectiveId: prepared.engine.effectiveId,
+        source: prepared.engine.source,
+        accepted: true,
+        ...(prepared.engine.scenarioEngine ? { scenarioEngine: prepared.engine.scenarioEngine } : {}),
+      },
+      stages: plans.map((plan) => stageInput(plan, scenario)),
+      // A skipped plugin may replace the built-in planner, so its bound is not claimed then.
+      planner: skipping ? null : plannerParams(simulate, pluginStrategyIds),
+    });
+    await emit(flags, report, scenarioPath, scenario, pluginDigest);
   },
 });
 
@@ -342,6 +362,7 @@ async function emit(
   report: ScenarioInspectReport,
   scenarioPath: string,
   scenario: unknown,
+  pluginDigest?: Readonly<Record<string, string>>,
 ): Promise<void> {
   if (flags.format === "md") {
     const body = renderInspectMarkdown(report);
@@ -354,6 +375,6 @@ async function emit(
     format: flags.format === "md" ? "md" : "json",
     outPath: flags.out,
     data: flags.format === "md" ? renderInspectMarkdown(report) : report,
-    meta: flags.format === "json" ? buildOutputMeta({ command: "inspect", scenarioPath, scenario }) : undefined,
+    meta: flags.format === "json" ? buildOutputMeta({ command: "inspect", scenarioPath, scenario, pluginDigest }) : undefined,
   });
 }
