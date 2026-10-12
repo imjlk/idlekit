@@ -3,8 +3,10 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "bun:test";
 import { createBreakInfinityEngine, createNumberEngine } from "../../engine/breakInfinity";
 import { sessionActiveBlocks } from "../session";
+import type { Strategy } from "../strategy/types";
 import type { Action, CompiledScenario, Model, SimState } from "../types";
 import { analyzePrestigeCycle } from "./prestigeCycle";
+import type { ResetAdapter } from "./resetCycle";
 import {
   analyzeResetPolicies,
   resetPolicyAlgorithmVersion,
@@ -92,6 +94,22 @@ function scenario(args?: {
   };
 }
 
+function plainPrestige(): Action<number, "COIN", Vars> {
+  const base = scenario();
+  const action = base.model.actions(base.ctx, base.initial)[0];
+  if (!action) throw new Error("fixture prestige action");
+  return action;
+}
+
+function withModel(
+  base: CompiledScenario<number, "COIN", Vars>,
+  patch: Partial<Model<number, "COIN", Vars>>,
+): CompiledScenario<number, "COIN", Vars> {
+  return { ...base, model: { ...base.model, ...patch } };
+}
+
+const twiceDaily = { pattern: { id: "twice-daily" as const, days: 1 }, resetDelaySec: 0 };
+
 function baseRequest(
   createScenario: ResetPolicyRequest<number, "COIN", Vars>["createScenario"],
   patch?: Partial<ResetPolicyRequest<number, "COIN", Vars>>,
@@ -117,7 +135,7 @@ function baseRequest(
  * @evidence ./resetOptimization.ts#validateResetPolicyArtifact The canonical artifact validates.
  * @evidenceReview ./resetOptimization.ts#validateResetPolicyArtifact #02be060 The arrow builds typia.createValidate of ResetPolicyArtifactV1 on first call and reuses it.
  * @evidence ./resetOptimization.ts#analyzeResetPolicies Runs the always-active scan against the fixture rate.
- * @evidenceReview ./resetOptimization.ts#analyzeResetPolicies #ef528b0 The function validates the request, evaluates each scanned interval with or without a session, ranks with Engine.cmp, compares a known solution, and reports a scan-range artifact that never claims a global optimum.
+ * @evidenceReview ./resetOptimization.ts#analyzeResetPolicies #ba6ac7f The function validates the request, a goal for goal-reach-sec, and a finite nonnegative absolute tolerance, evaluates each scanned interval with or without a session, resolving the reset adapter at each boundary under the live constraints, hiding reset actions from the strategy, committing adapter actions without re-resolving them against model.actions, refreshing maxMoneyEver, reading goals on every committed state, playing the tail from the origin-relative horizon, and on a schedule applying offline progression, session clocks, and the full schedule after the budget, ranks with Engine.cmp, compares a known solution, reports an incomplete winner as an incomplete artifact, and never claims a global optimum.
  * @evidence ./resetOptimization.ts#resetPolicySchemaId Reads the reset policy schema id.
  * @evidenceReview ./resetOptimization.ts#resetPolicySchemaId #1dcacc7 The function returns the reset.policy.v1 schema URL constant.
  * @evidence ./resetOptimization.ts#resetPolicyAlgorithmVersion Reads the algorithm version on the artifact.
@@ -195,6 +213,114 @@ export function matchesTheoreticalRewardRate(): void {
   });
   expect(legacy.best.breakEvenSec).toBe(Math.min(10, 45));
   expect(legacy.best.stability).toBe("drifting");
+
+  // A prestige action unlocked by the interval's earnings is resolved at the boundary, not at the opening state.
+  const prestige = plainPrestige();
+  const gated = analyzeResetPolicies(
+    baseRequest(
+      () => withModel(scenario(), { actions: (_ctx, current) => (current.wallet.money.amount >= 5 ? [prestige] : []) }),
+      { knownSolution: undefined },
+    ),
+  );
+  expect(gated.candidates[0]?.status).toBe("ok");
+  expect(gated.candidates[0]?.completedCycles).toBe(4);
+  expect(gated.candidates[0]?.recovery.status).toBe("observed");
+
+  // A spec adapter's action is not in model.actions. It still commits in recovery and on a schedule.
+  const specOnly = () =>
+    withModel(scenario({ actions: [] }), {
+      prestige: {
+        pointsFrom: () => 1,
+        multiplierFrom: () => 1,
+        resetState: (_ctx, current, gained) => ({
+          ...current,
+          prestige: { count: current.prestige.count + 1, points: current.prestige.points + gained, multiplier: 1 },
+        }),
+      },
+    });
+  const specActive = analyzeResetPolicies(baseRequest(specOnly, { knownSolution: undefined }));
+  expect(specActive.candidates[0]?.completedCycles).toBe(4);
+  expect(specActive.candidates[0]?.recovery.status).toBe("observed");
+  expect(specActive.candidates[0]?.unrealizedReward).toBe("1");
+  const specSession = analyzeResetPolicies(
+    baseRequest(specOnly, {
+      scan: { fromSec: 400, toSec: 400, stepSec: 400 },
+      horizonSec: 86400,
+      cycleBudget: 3,
+      session: twiceDaily,
+      knownSolution: undefined,
+    }),
+  );
+  expect(specSession.candidates[0]?.completedCycles).toBe(3);
+  expect(specSession.candidates[0]?.realizedReward).toBe("3");
+
+  // A strategy that would prestige on every step commits nothing outside the policy's own resets.
+  const greedy: Strategy<number, "COIN", Vars> = {
+    id: "greedy",
+    decide(ctx, model, current) {
+      const action = model.actions(ctx, current).find((candidate) => candidate.kind === "prestige");
+      return action ? [{ action }] : [];
+    },
+  };
+  const suppressed = analyzeResetPolicies(
+    baseRequest(() => ({ ...scenario(), strategy: greedy }), { knownSolution: undefined }),
+  );
+  expect(suppressed.candidates[0]?.completedCycles).toBe(4);
+  expect(suppressed.candidates[0]?.finalPoints).toBe("4");
+  const suppressedSession = analyzeResetPolicies(
+    baseRequest(() => ({ ...scenario(), strategy: greedy }), {
+      scan: { fromSec: 400, toSec: 400, stepSec: 400 },
+      horizonSec: 86400,
+      cycleBudget: 3,
+      session: twiceDaily,
+      knownSolution: undefined,
+    }),
+  );
+  expect(suppressedSession.candidates[0]?.finalPoints).toBe("3");
+
+  // horizonSec is elapsed time from the scenario origin, so a later origin still plays its tail.
+  const later = analyzeResetPolicies(
+    baseRequest(() => scenario({ initial: state({ t: 100 }) }), { knownSolution: undefined }),
+  );
+  expect(later.candidates[0]?.completedCycles).toBe(4);
+  expect(later.candidates[0]?.incomplete).toEqual({ startSec: 140, endSec: 145, durationSec: 5 });
+  expect(later.candidates[0]?.finalNetWorth).toBe("45");
+  expect(later.candidates[0]?.recovery.status).toBe("observed");
+
+  // The unrealized dry run sees the cooldown the committed resets left.
+  const cooled = analyzeResetPolicies(
+    baseRequest(() => ({ ...scenario(), constraints: { minPrestigeIntervalSec: 10 } }), { knownSolution: undefined }),
+  );
+  expect(cooled.candidates[0]?.completedCycles).toBe(4);
+  expect(cooled.candidates[0]?.unrealizedReward).toBe("0");
+
+  // A winner that was refused partway is incomplete, and so is the artifact.
+  const refusing = analyzeResetPolicies(
+    baseRequest(
+      () =>
+        scenario({
+          actions: [{ ...prestige, canApply: (_ctx, current) => current.prestige.count < 2 }],
+        }),
+      { knownSolution: undefined },
+    ),
+  );
+  expect(refusing.candidates[0]?.status).toBe("incomplete");
+  expect(refusing.candidates[0]?.completedCycles).toBe(2);
+  expect(refusing.status).toBe("incomplete");
+  expect(validateResetPolicyArtifact(refusing).success).toBe(true);
+
+  // A goal objective needs a goal, and the absolute tolerance is a finite amount >= 0.
+  expect(() =>
+    analyzeResetPolicies(baseRequest(() => scenario(), { objective: "goal-reach-sec", knownSolution: undefined })),
+  ).toThrow("goal-reach-sec needs a goal predicate");
+  expect(() =>
+    analyzeResetPolicies(
+      baseRequest(() => scenario(), {
+        stability: { minObservedCycles: 4, windows: [2, 4], absoluteTolerance: "-1", relativeTolerance: 0 },
+        knownSolution: undefined,
+      }),
+    ),
+  ).toThrow("absoluteTolerance must be a finite amount >= 0");
 }
 
 /**
@@ -333,6 +459,41 @@ export function reportsRecoveryCrossing(): void {
   expect(censored.candidates[0]?.recovery.seconds).toBeNull();
   expect(censored.candidates[0]?.recovery.seconds).not.toBe(Math.min(10, 20));
   expect("breakEvenSec" in censored).toBe(false);
+
+  // A scheduled candidate measures recovery from its own first reset, deferred here from wall 2000 to 43200.
+  const windfallReset = (): CompiledScenario<number, "COIN", Vars> =>
+    scenario({
+      actions: [
+        {
+          id: "prestige",
+          kind: "prestige",
+          canApply: () => true,
+          cost: () => null,
+          apply: (_ctx, current) => ({
+            ...current,
+            wallet: { ...current.wallet, money: coin(0) },
+            prestige: { ...current.prestige, count: current.prestige.count + 1, points: current.prestige.points + 1 },
+          }),
+        },
+      ],
+    });
+  const scheduled = analyzeResetPolicies(
+    baseRequest(windfallReset, {
+      scan: { fromSec: 2000, toSec: 2000, stepSec: 2000 },
+      horizonSec: 172800,
+      cycleBudget: 1,
+      recovery: { metric: "pre-reset-net-worth" },
+      session: { pattern: { id: "twice-daily", days: 2 }, resetDelaySec: 0 },
+      knownSolution: undefined,
+    }),
+  );
+  expect(scheduled.candidates[0]?.resetWallTimes).toEqual([43200]);
+  expect(scheduled.candidates[0]?.recovery).toEqual({
+    metric: "pre-reset-net-worth",
+    status: "observed",
+    seconds: 43200,
+    threshold: "43200",
+  });
 }
 
 /**
@@ -341,7 +502,7 @@ export function reportsRecoveryCrossing(): void {
  * @evidence ./resetOptimization.ts#resetPolicySessionReset Reads the session reset contract.
  * @evidenceReview ./resetOptimization.ts#resetPolicySessionReset #b288402 The declaration is manual-reset-only-while-active.
  * @evidence ../session.ts#sessionActiveBlocks Reads the active blocks of the twice-daily preset.
- * @evidenceReview ../session.ts#sessionActiveBlocks #bccb8d5 The function returns the preset or explicit schedule blocks that simulateSessionPattern uses.
+ * @evidenceReview ../session.ts#sessionActiveBlocks #59d346c The function rejects a day count that is not a positive integer and returns the preset or explicit schedule blocks that simulateSessionPattern uses.
  */
 export function keepsManualResetInsideSession(): void {
   expect(resetPolicySessionReset).toBe("manual-reset-only-while-active");
@@ -378,6 +539,96 @@ export function keepsManualResetInsideSession(): void {
   expect(delayed.candidates[0]?.resetWallTimes).toEqual([400, 900, 1400]);
   expect(delayed.candidates[0]?.resetWallTimes.every(inside)).toBe(true);
   expect(delayed.candidates[0]?.resetWallTimes.includes(800)).toBe(false);
+
+  // The cycle budget stops resets, not the schedule. Offline gaps keep the default full offline credit.
+  const budgetRun = (cycleBudget: number) =>
+    analyzeResetPolicies(
+      baseRequest(() => scenario(), {
+        scan: { fromSec: 400, toSec: 400, stepSec: 400 },
+        horizonSec: 86400,
+        cycleBudget,
+        session: twiceDaily,
+        knownSolution: undefined,
+      }),
+    ).candidates[0];
+  expect(budgetRun(1)?.completedCycles).toBe(1);
+  expect(budgetRun(1)?.finalNetWorth).toBe("86400");
+  expect(budgetRun(3)?.finalNetWorth).toBe("86400");
+  // An offline cap limits the credit of each gap, as simulateSessionPattern applies it.
+  const capped = analyzeResetPolicies(
+    baseRequest(() => ({ ...scenario(), run: { stepSec: 1, durationSec: 1, offline: { maxSec: 100 } } }), {
+      scan: { fromSec: 400, toSec: 400, stepSec: 400 },
+      horizonSec: 86400,
+      cycleBudget: 1,
+      session: twiceDaily,
+      knownSolution: undefined,
+    }),
+  ).candidates[0];
+  expect(capped?.finalNetWorth).toBe(String(1800 + 100 + 1800 + 100));
+
+  // A model that reads session clocks gets them in every active block of the schedule.
+  const seenClocks: number[] = [];
+  analyzeResetPolicies(
+    baseRequest(
+      () =>
+        withModel(scenario(), {
+          clocks: { respondsTo: ["wall"] },
+          income: (ctx) => {
+            if (ctx.clocks) seenClocks.push(ctx.clocks.wallT);
+            return coin(1);
+          },
+        }),
+      { scan: { fromSec: 400, toSec: 400, stepSec: 400 }, horizonSec: 86400, cycleBudget: 3, session: twiceDaily, knownSolution: undefined },
+    ),
+  );
+  expect(seenClocks.length).toBeGreaterThan(0);
+  expect(seenClocks.some((wall) => wall >= 43200)).toBe(true);
+
+  // A boundary adapter sees the anchor of the previous reset, and a reward-granting reset refreshes maxMoneyEver.
+  const anchors: (number | undefined)[] = [];
+  const windfall: Action<number, "COIN", Vars> = {
+    ...plainPrestige(),
+    apply: (_ctx, current) => ({
+      ...current,
+      wallet: { ...current.wallet, money: coin(current.wallet.money.amount + 1000) },
+      prestige: { ...current.prestige, count: current.prestige.count + 1, points: current.prestige.points + 1 },
+    }),
+  };
+  const watching: ResetAdapter<number, "COIN", Vars> = {
+    id: "watching",
+    kind: "prestige",
+    preserved: ["points", "multiplier", "count"],
+    action: (ctx) => {
+      anchors.push(ctx.constraints?.lastPrestigeResetT);
+      return windfall;
+    },
+    reward: (_ctx, current) => current.prestige.points,
+  };
+  const anchored = analyzeResetPolicies(
+    baseRequest(() => scenario({ actions: [windfall] }), {
+      scan: { fromSec: 400, toSec: 400, stepSec: 400 },
+      horizonSec: 86400,
+      cycleBudget: 3,
+      session: twiceDaily,
+      adapter: watching,
+      objective: "goal-reach-sec",
+      goal: (_ctx, current) => current.maxMoneyEver.amount >= 1000,
+      knownSolution: undefined,
+    }),
+  );
+  expect(anchored.candidates[0]?.resetWallTimes).toEqual([400, 800, 1200]);
+  expect(anchors.filter((anchor) => anchor !== undefined)).toEqual([400, 800, 1200]);
+  expect(anchored.candidates[0]?.goalReachSec).toBe(400);
+
+  expect(() => sessionActiveBlocks({ id: "twice-daily", days: 0 })).toThrow("session days must be a positive integer");
+  expect(() =>
+    analyzeResetPolicies(
+      baseRequest(() => scenario(), {
+        session: { pattern: { id: "twice-daily", days: Number.NaN }, resetDelaySec: 0 },
+        knownSolution: undefined,
+      }),
+    ),
+  ).toThrow("session days must be a positive integer");
 }
 
 /**
@@ -497,6 +748,36 @@ export function ranksScanWithoutNumberCollapse(): void {
   expect(missed.candidates[0]?.goalReachSec).toBeNull();
   expect(missed.best.objective.value).toBe("censored");
   expect(missed.best.objective.value).not.toBe("15");
+
+  // A goal met between resets keeps its own time, and a reset that clears the goal resource does not hide it.
+  const midway = analyzeResetPolicies(
+    baseRequest(
+      () =>
+        scenario({
+          actions: [
+            {
+              id: "prestige",
+              kind: "prestige",
+              canApply: () => true,
+              cost: () => null,
+              apply: (_ctx, current) => ({
+                ...current,
+                wallet: { ...current.wallet, money: coin(0) },
+                prestige: { ...current.prestige, count: current.prestige.count + 1 },
+              }),
+            },
+          ],
+        }),
+      {
+        horizonSec: 40,
+        objective: "goal-reach-sec",
+        goal: (_ctx, current) => current.wallet.money.amount >= 5,
+        knownSolution: undefined,
+      },
+    ),
+  );
+  expect(midway.candidates[0]?.goalReachSec).toBe(5);
+  expect(midway.best.objective.value).toBe("5");
 
   const unsupported = analyzeResetPolicies(
     baseRequest(() => scenario({ actions: [], initial: state() }), { knownSolution: undefined }),

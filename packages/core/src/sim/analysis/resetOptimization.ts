@@ -2,10 +2,11 @@ import typia, { type IValidation } from "typia";
 import type { Engine } from "../../engine/types";
 import { recordPrestigeReset } from "../constraints";
 import { emitCommittedResets } from "../observation";
+import { applyOfflineSeconds } from "../offline";
 import { sessionActiveBlocks, type SessionPatternSpec } from "../session";
 import { runScenario } from "../simulator";
 import { applyDecisions } from "../step";
-import type { CompiledScenario, ScenarioConstraints, SimContext, SimState } from "../types";
+import { runElapsedSec, type CompiledScenario, type ScenarioConstraints, type SimContext, type SimState } from "../types";
 import {
   executeResetCycles,
   resetAdapterFor,
@@ -13,6 +14,7 @@ import {
   type ResetCycleCheckpoint,
   type ResetCycleRowV1,
 } from "./resetCycle";
+import { withoutResetActions } from "./resetActions";
 
 /**
  * Reset policy comparison v1.
@@ -144,7 +146,7 @@ export type ResetPolicyBest = Readonly<{
 export type ResetPolicyArtifactV1 = Readonly<{
   schemaVersion: 1;
   algorithmVersion: typeof RESET_POLICY_ALGORITHM_VERSION;
-  status: "ok" | "censored" | "insufficient-data" | "unsupported";
+  status: "ok" | "censored" | "incomplete" | "insufficient-data" | "unsupported";
   objective: ResetObjectiveKind;
   scope: "scan-range";
   globalOptimum: false;
@@ -209,6 +211,10 @@ export type ResetPolicyRequest<N, U extends string, Vars> = Readonly<{
 
 type Snap = Readonly<{ reward: string; durationSec: number; multiplier: string }>;
 
+/** Goal ids this analysis adds to a run's goals, so the runner reports the first committed state that meets them. */
+const GOAL_WATCH_ID = "reset-policy.goal";
+const RECOVERY_WATCH_ID = "reset-policy.recovery";
+
 function assertFinite(label: string, value: number): void {
   if (typeof value !== "number" || !Number.isFinite(value)) {
     throw new ResetPolicyRejected(`reset policy ${label} must be a finite number`);
@@ -253,6 +259,10 @@ function assertRequest<N, U extends string, Vars>(request: ResetPolicyRequest<N,
   if (!Number.isInteger(request.cycleBudget) || request.cycleBudget < 1) {
     throw new ResetPolicyRejected("reset policy cycleBudget must be a positive integer");
   }
+  // A goal-time objective without a goal has nothing to rank.
+  if (request.objective === "goal-reach-sec" && typeof request.goal !== "function") {
+    throw new ResetPolicyRejected("reset policy goal-reach-sec needs a goal predicate");
+  }
   if (!Number.isInteger(request.stability.minObservedCycles) || request.stability.minObservedCycles < 1) {
     throw new ResetPolicyRejected("reset policy minObservedCycles must be a positive integer");
   }
@@ -277,6 +287,20 @@ function assertRequest<N, U extends string, Vars>(request: ResetPolicyRequest<N,
       throw new ResetPolicyRejected("reset policy resetDelaySec must be a finite number >= 0");
     }
   }
+}
+
+/** The absolute tolerance in the scenario's engine. It must be a finite amount >= 0. */
+function absoluteToleranceOf<N>(E: Engine<N>, text: string): N {
+  let amount: N;
+  try {
+    amount = E.from(text);
+  } catch {
+    throw new ResetPolicyRejected("reset policy absoluteTolerance must be a finite amount >= 0");
+  }
+  if (!E.isFinite(amount) || E.cmp(amount, E.zero()) < 0) {
+    throw new ResetPolicyRejected("reset policy absoluteTolerance must be a finite amount >= 0");
+  }
+  return amount;
 }
 
 function magnitude<N>(E: Engine<N>, value: N): N {
@@ -372,6 +396,14 @@ function classify<N>(
   return "non-stationary";
 }
 
+/** The scenario context with the live constraints, as runScenario builds it for a step. */
+function liveCtx<N, U extends string, Vars>(
+  scenario: CompiledScenario<N, U, Vars>,
+  constraints: ScenarioConstraints | undefined,
+): SimContext<N, U, Vars> {
+  return { ...scenario.ctx, ...(constraints ? { constraints } : {}) };
+}
+
 function netWorth<N, U extends string, Vars>(scenario: CompiledScenario<N, U, Vars>, state: SimState<N, U, Vars>): N {
   return scenario.model.netWorth?.(scenario.ctx, state)?.amount ?? state.wallet.money.amount;
 }
@@ -380,16 +412,80 @@ function incomeOf<N, U extends string, Vars>(scenario: CompiledScenario<N, U, Va
   return scenario.model.income(scenario.ctx, state).amount;
 }
 
+function recoveryMetric<N, U extends string, Vars>(
+  request: ResetPolicyRequest<N, U, Vars>,
+  scenario: CompiledScenario<N, U, Vars>,
+  state: SimState<N, U, Vars>,
+): N {
+  return request.recovery.metric === "pre-reset-income" ? incomeOf(scenario, state) : netWorth(scenario, state);
+}
+
+/** The adapter where a reset would happen: the request's, or one discovered at this state and context. */
+function adapterAt<N, U extends string, Vars>(
+  request: ResetPolicyRequest<N, U, Vars>,
+  scenario: CompiledScenario<N, U, Vars>,
+  state: SimState<N, U, Vars>,
+  constraints: ScenarioConstraints | undefined,
+): ResetAdapter<N, U, Vars> | undefined {
+  return request.adapter ?? resetAdapterFor(scenario, undefined, state, liveCtx(scenario, constraints));
+}
+
+type Watcher<N, U extends string, Vars> = Readonly<{
+  id: string;
+  met: (state: SimState<N, U, Vars>) => boolean;
+  onMet: (t: number) => void;
+}>;
+
+/**
+ * The scenario a policy run plays: the caller's goals plus this analysis' watchers, read by the runner on every
+ * committed state, and an observer that routes a watcher's first crossing back here. Recording is on, since the
+ * runner reads goals only while it records.
+ */
+function watched<N, U extends string, Vars>(
+  scenario: CompiledScenario<N, U, Vars>,
+  watchers: readonly Watcher<N, U, Vars>[],
+): CompiledScenario<N, U, Vars> {
+  if (watchers.length === 0) return scenario;
+  const byId = new Map(watchers.map((watcher) => [watcher.id, watcher]));
+  const observer = scenario.run.observer;
+  return {
+    ...scenario,
+    run: {
+      ...scenario.run,
+      observation: { ...scenario.run.observation, enabled: true },
+      goals: [...(scenario.run.goals ?? []), ...watchers.map((watcher) => ({ id: watcher.id, met: watcher.met }))],
+      observer: {
+        ...observer,
+        onGoal: (fact) => {
+          const watcher = byId.get(fact.goalId);
+          if (watcher) watcher.onMet(fact.t);
+          else observer?.onGoal?.(fact);
+        },
+      },
+    },
+  };
+}
+
+/**
+ * Play without a reset. The reset action is hidden from the strategy, as `executeResetCycles` hides it, so only
+ * this analysis commits resets. The run sees the live constraints and, when the model reads them, session clocks.
+ */
 function play<N, U extends string, Vars>(
   scenario: CompiledScenario<N, U, Vars>,
   state: SimState<N, U, Vars>,
+  constraints: ScenarioConstraints | undefined,
+  adapter: ResetAdapter<N, U, Vars> | undefined,
   durationSec: number,
   until?: (state: SimState<N, U, Vars>) => boolean,
+  clocks?: SimContext<N, U, Vars>["clocks"],
 ) {
   const { maxSteps: _maxSteps, until: _until, trace: _trace, ...runRest } = scenario.run;
   return runScenario({
     ...scenario,
+    ...(clocks ? { ctx: { ...scenario.ctx, clocks } } : {}),
+    model: withoutResetActions(scenario.model, adapter),
     initial: state,
+    ...(constraints ? { constraints } : {}),
     run: {
       ...runRest,
       durationSec,
@@ -405,30 +501,38 @@ function commitReset<N, U extends string, Vars>(
   adapter: ResetAdapter<N, U, Vars>,
   emit: boolean,
 ):
-  | { ok: true; state: SimState<N, U, Vars>; constraints?: ScenarioConstraints; delta: N }
+  | { ok: true; state: SimState<N, U, Vars>; constraints?: ScenarioConstraints; delta: N; t: number }
   | { ok: false; state: SimState<N, U, Vars> } {
-  const before = adapter.reward(scenario.ctx, state);
-  const action = adapter.action(scenario.ctx, state);
+  const { E } = scenario.ctx;
+  // The adapter and the action see the live constraints, as the reset-cycle executor passes them.
+  const ctx = liveCtx(scenario, constraints);
+  const before = adapter.reward(ctx, state);
+  const action = adapter.action(ctx, state);
   const kinds = new Set<"prestige" | "custom">();
   if (action && (action.kind === "prestige" || action.kind === "custom")) kinds.add(action.kind);
   const applied = applyDecisions({
-    ctx: scenario.ctx,
+    ctx,
     model: scenario.model,
     state,
     decisions: action ? [{ action }] : [],
     ...(constraints ? { constraints } : {}),
     resetKinds: kinds,
+    // The adapter built this action for this state. A spec or custom adapter action is not in model.actions.
+    resolveAgainstModel: false,
   });
   const skipped = applied.events.find((event) => event.type === "action.skipped");
   const fact = applied.committedResets[0];
   if (!fact || skipped) return { ok: false, state };
-  const delta = scenario.ctx.E.sub(adapter.reward(scenario.ctx, applied.state), before);
-  let nextConstraints = constraints;
-  if (emit && action?.kind === "prestige") {
-    nextConstraints = recordPrestigeReset(constraints, fact.t, scenario.run.onPrestigeReset);
-  }
-  if (emit) emitCommittedResets(scenario.run.observer, [{ ...fact, rewardDelta: scenario.ctx.E.toString(delta) }]);
-  return { ok: true, state: applied.state, ...(nextConstraints ? { constraints: nextConstraints } : {}), delta };
+  let next = applied.state;
+  // stepOnce keeps maxMoneyEver at or above the wallet. The boundary action does not pass through it.
+  if (E.cmp(next.wallet.money.amount, next.maxMoneyEver.amount) > 0) next = { ...next, maxMoneyEver: next.wallet.money };
+  const delta = E.sub(adapter.reward(ctx, next), before);
+  const nextConstraints =
+    action?.kind === "prestige"
+      ? recordPrestigeReset(constraints, fact.t, emit ? scenario.run.onPrestigeReset : undefined)
+      : constraints;
+  if (emit) emitCommittedResets(scenario.run.observer, [{ ...fact, rewardDelta: E.toString(delta) }]);
+  return { ok: true, state: next, ...(nextConstraints ? { constraints: nextConstraints } : {}), delta, t: fact.t };
 }
 
 function sumAmounts<N>(E: Engine<N>, amounts: readonly N[]): N {
@@ -441,7 +545,7 @@ function stabilityReport<N, U extends string, Vars>(
   request: ResetPolicyRequest<N, U, Vars>,
 ): ResetStabilityReport {
   const { E } = scenario.ctx;
-  const absolute = E.from(request.stability.absoluteTolerance);
+  const absolute = absoluteToleranceOf(E, request.stability.absoluteTolerance);
   const status = classify(
     E,
     snaps.map((snap) => E.from(snap.reward)),
@@ -462,40 +566,39 @@ function stabilityReport<N, U extends string, Vars>(
   };
 }
 
+/** Recovery for an always-active candidate: one reset at intervalSec, then play without resets to the horizon. */
 function recover<N, U extends string, Vars>(
   request: ResetPolicyRequest<N, U, Vars>,
   intervalSec: number,
 ): ResetRecoveryReport {
   const scenario = request.createScenario();
   const { E } = scenario.ctx;
-  const adapter = resetAdapterFor(scenario, request.adapter);
   const blank = E.toString(E.zero());
-  if (!adapter) return { metric: request.recovery.metric, status: "unsupported", seconds: null, threshold: blank };
-  const available = request.horizonSec - scenario.initial.t;
-  if (!(intervalSec <= available)) {
+  // horizonSec is elapsed time from the scenario origin, as executeResetCycles reads it.
+  if (!(intervalSec <= request.horizonSec)) {
     return { metric: request.recovery.metric, status: "censored", seconds: null, threshold: blank };
   }
-  const lead = play(scenario, scenario.initial, intervalSec);
-  const threshold =
-    request.recovery.metric === "pre-reset-income" ? incomeOf(scenario, lead.end) : netWorth(scenario, lead.end);
-  const committed = commitReset(scenario, lead.end, scenario.constraints, adapter, false);
+  const constraints = scenario.constraints;
+  const lead = play(scenario, scenario.initial, constraints, adapterAt(request, scenario, scenario.initial, constraints), intervalSec);
+  const threshold = recoveryMetric(request, scenario, lead.end);
+  // Resolve the adapter where the reset happens. A prestige action can appear only after the lead.
+  const adapter = adapterAt(request, scenario, lead.end, constraints);
+  if (!adapter) return { metric: request.recovery.metric, status: "unsupported", seconds: null, threshold: blank };
+  const committed = commitReset(scenario, lead.end, constraints, adapter, false);
   if (!committed.ok) {
     return { metric: request.recovery.metric, status: "unsupported", seconds: null, threshold: E.toString(threshold) };
   }
-  const remaining = request.horizonSec - committed.state.t;
+  const remaining = request.horizonSec - runElapsedSec(lead);
   if (!(remaining > 0)) {
-    const already = request.recovery.metric === "pre-reset-income" ? incomeOf(scenario, committed.state) : netWorth(scenario, committed.state);
-    if (E.cmp(already, threshold) >= 0) {
+    if (E.cmp(recoveryMetric(request, scenario, committed.state), threshold) >= 0) {
       return { metric: request.recovery.metric, status: "observed", seconds: 0, threshold: E.toString(threshold) };
     }
     return { metric: request.recovery.metric, status: "censored", seconds: null, threshold: E.toString(threshold) };
   }
-  const search = play(scenario, committed.state, remaining, (state) => {
-    const current = request.recovery.metric === "pre-reset-income" ? incomeOf(scenario, state) : netWorth(scenario, state);
-    return E.cmp(current, threshold) >= 0;
-  });
-  const ended = request.recovery.metric === "pre-reset-income" ? incomeOf(scenario, search.end) : netWorth(scenario, search.end);
-  if (E.cmp(ended, threshold) < 0) {
+  const search = play(scenario, committed.state, committed.constraints, adapter, remaining, (state) =>
+    E.cmp(recoveryMetric(request, scenario, state), threshold) >= 0,
+  );
+  if (E.cmp(recoveryMetric(request, scenario, search.end), threshold) < 0) {
     return { metric: request.recovery.metric, status: "censored", seconds: null, threshold: E.toString(threshold) };
   }
   return {
@@ -507,11 +610,15 @@ function recover<N, U extends string, Vars>(
 }
 
 function unrealizedAt<N, U extends string, Vars>(
+  request: ResetPolicyRequest<N, U, Vars>,
   scenario: CompiledScenario<N, U, Vars>,
   state: SimState<N, U, Vars>,
-  adapter: ResetAdapter<N, U, Vars>,
+  constraints: ScenarioConstraints | undefined,
 ): N {
-  const committed = commitReset(scenario, state, scenario.constraints, adapter, false);
+  // The dry run sees the constraints the committed resets left, so a cooldown still blocks it.
+  const adapter = adapterAt(request, scenario, state, constraints);
+  if (!adapter) return scenario.ctx.E.zero();
+  const committed = commitReset(scenario, state, constraints, adapter, false);
   return committed.ok ? committed.delta : scenario.ctx.E.zero();
 }
 
@@ -580,28 +687,44 @@ function candidateFrom<N, U extends string, Vars>(
   };
 }
 
+/** A goal watcher that keeps the first reward time the goal holds on a committed state. */
+function goalWatcher<N, U extends string, Vars>(
+  request: ResetPolicyRequest<N, U, Vars>,
+  scenario: CompiledScenario<N, U, Vars>,
+  onMet: (t: number) => void,
+): Watcher<N, U, Vars>[] {
+  const goal = request.goal;
+  if (!goal) return [];
+  return [{ id: GOAL_WATCH_ID, met: (state) => goal(scenario.ctx, state), onMet }];
+}
+
 function evaluateAlwaysActive<N, U extends string, Vars>(
   request: ResetPolicyRequest<N, U, Vars>,
   intervalSec: number,
 ): { report: ResetCandidateReport; engine: Engine<N> } {
   const scenario = request.createScenario();
   const { E } = scenario.ctx;
+  absoluteToleranceOf(E, request.stability.absoluteTolerance);
   const recovery = recover(request, intervalSec);
-  const adapter = resetAdapterFor(scenario, request.adapter);
-  if (!adapter) {
-    return {
-      engine: E,
-      report: candidateFrom(request, scenario, intervalSec, "unsupported", [], scenario.initial, null, E.zero(), null, [], recovery),
-    };
-  }
+  const reached: { t: number | null } = { t: null };
+  // The runner reads the goal on every committed state, so a crossing between resets keeps its own time.
+  const observed = watched(
+    scenario,
+    goalWatcher(request, scenario, (t) => {
+      if (reached.t === null) reached.t = t;
+    }),
+  );
   const snaps: Snap[] = [];
   let resume: ResetCycleCheckpoint<N, U, Vars> | undefined;
   let state = scenario.initial;
-  let goalReachSec: number | null = null;
+  let constraints = scenario.constraints;
+  let elapsed = 0;
   let refused = false;
+  let unsupported = false;
   while (snaps.length < request.cycleBudget) {
+    // The executor resolves the adapter at each boundary, so a prestige action unlocked during the interval counts.
     const step = executeResetCycles({
-      scenario,
+      scenario: observed,
       policy: { kind: "fixed-interval", intervalSec, cycles: 1 },
       horizonSec: request.horizonSec,
       ...(request.adapter ? { adapter: request.adapter } : {}),
@@ -609,47 +732,74 @@ function evaluateAlwaysActive<N, U extends string, Vars>(
     });
     const row: ResetCycleRowV1 | undefined = step.artifact.cycles[0];
     state = step.state;
+    constraints = step.constraints;
     resume = step.checkpoint;
+    elapsed = step.artifact.globalElapsedSec;
+    if (step.artifact.status === "unsupported") {
+      unsupported = true;
+      break;
+    }
     if (!row || row.resetAtSec === null) {
       refused = row?.resetSkippedReason !== undefined;
       break;
     }
     snaps.push({ reward: row.rewardDelta, durationSec: row.durationSec, multiplier: row.carried.multiplier });
-    if (request.goal && goalReachSec === null && request.goal(scenario.ctx, step.state)) goalReachSec = row.resetAtSec;
   }
   let incomplete: ResetCandidateReport["incomplete"] = null;
-  let unrealized = E.zero();
-  const tail = request.horizonSec - state.t;
-  if (tail > 1e-9) {
-    const played = play(scenario, state, tail);
+  // horizonSec is elapsed time from the scenario origin. The tail is what the cycles did not play.
+  const tail = request.horizonSec - elapsed;
+  if (tail > 1e-9 * Math.max(1, request.horizonSec)) {
+    const startT = state.t;
+    const played = play(observed, state, constraints, adapterAt(request, scenario, state, constraints), tail);
     state = played.end;
-    incomplete = { startSec: request.horizonSec - tail, endSec: state.t, durationSec: state.t - (request.horizonSec - tail) };
-    if (request.goal && goalReachSec === null && request.goal(scenario.ctx, state)) goalReachSec = state.t;
-    unrealized = unrealizedAt(scenario, state, adapter);
+    incomplete = { startSec: startT, endSec: state.t, durationSec: runElapsedSec(played) };
   }
-  const status: ResetCandidateReport["status"] = refused ? "incomplete" : snaps.length === 0 ? "censored" : "ok";
+  // A goal met only by the last committed reset has no later run to read it.
+  if (request.goal && reached.t === null && request.goal(scenario.ctx, state)) reached.t = state.t;
+  const unrealized = incomplete ? unrealizedAt(request, scenario, state, constraints) : E.zero();
+  const status: ResetCandidateReport["status"] =
+    unsupported && snaps.length === 0
+      ? "unsupported"
+      : refused || unsupported
+        ? "incomplete"
+        : snaps.length === 0
+          ? "censored"
+          : "ok";
   return {
     engine: E,
-    report: candidateFrom(request, scenario, intervalSec, status, snaps, state, incomplete, unrealized, goalReachSec, [], recovery),
+    report: candidateFrom(request, scenario, intervalSec, status, snaps, state, incomplete, unrealized, reached.t, [], recovery),
   };
 }
 
-function evaluateSession<N, U extends string, Vars>(
+type ScheduleOutcome<N, U extends string, Vars> = Readonly<{
+  snaps: readonly Snap[];
+  walls: readonly number[];
+  state: SimState<N, U, Vars>;
+  constraints: ScenarioConstraints | undefined;
+  refused: boolean;
+  unsupported: boolean;
+  /** Wall time where the last active block ended. The span after it to the horizon is not a reset window. */
+  activeWallEnd: number;
+  goalReachSec: number | null;
+  recovery: Readonly<{ threshold: N; resetT: number; crossedT: number | null }> | null;
+}>;
+
+/**
+ * Play the session schedule once. Active blocks run with clocks when the model reads them, a manual reset commits
+ * only inside a block, and the gaps between blocks apply the scenario's offline progression, as
+ * `simulateSessionPattern` does. Reaching the cycle budget, a refusal, or a missing adapter stops further resets,
+ * not the schedule, so every candidate is played to the same horizon.
+ */
+function playSchedule<N, U extends string, Vars>(
   request: ResetPolicyRequest<N, U, Vars>,
+  scenario: CompiledScenario<N, U, Vars>,
   intervalSec: number,
-): { report: ResetCandidateReport; engine: Engine<N> } {
+  options: Readonly<{ budget: number; emit: boolean; watchRecovery: boolean; watchGoal: boolean }>,
+): ScheduleOutcome<N, U, Vars> {
   const session = request.session;
   if (!session) throw new ResetPolicyRejected("reset policy session is missing");
-  const scenario = request.createScenario();
   const { E } = scenario.ctx;
-  const recovery = recover(request, intervalSec);
-  const adapter = resetAdapterFor(scenario, request.adapter);
-  if (!adapter) {
-    return {
-      engine: E,
-      report: candidateFrom(request, scenario, intervalSec, "unsupported", [], scenario.initial, null, E.zero(), null, [], recovery),
-    };
-  }
+  const originT = scenario.initial.t;
   const blocks = sessionActiveBlocks(session.pattern)
     .map((block) => {
       const start = block.day * 86400 + block.startOffsetSec;
@@ -659,55 +809,166 @@ function evaluateSession<N, U extends string, Vars>(
   let state = scenario.initial;
   let constraints = scenario.constraints;
   let wall = 0;
+  let activeSec = 0;
   let lastResetWall = 0;
   let rewardStart = state.t;
+  let resetsOpen = true;
+  let refused = false;
+  let unsupported = false;
   const snaps: Snap[] = [];
   const walls: number[] = [];
-  let goalReachSec: number | null = null;
-  let refused = false;
+  const reached: { t: number | null } = { t: null };
+  let recovery: { threshold: N; resetT: number; crossedT: number | null } | null = null;
+  const watchers: Watcher<N, U, Vars>[] = options.watchGoal
+    ? goalWatcher(request, scenario, (t) => {
+        if (reached.t === null) reached.t = t;
+      })
+    : [];
+  const clocksFor = (wallStart: number, wallEnd: number): SimContext<N, U, Vars>["clocks"] | undefined =>
+    (scenario.model.clocks?.respondsTo?.length ?? 0) > 0
+      ? { wallT: originT + wallStart, wallEndT: originT + wallEnd, rewardT: state.t, activeT: activeSec }
+      : undefined;
+  const runActive = (durationSec: number) => {
+    const played = play(
+      watched(scenario, watchers),
+      state,
+      constraints,
+      adapterAt(request, scenario, state, constraints),
+      durationSec,
+      undefined,
+      clocksFor(wall, wall + durationSec),
+    );
+    activeSec += runElapsedSec(played);
+    state = played.end;
+    wall += durationSec;
+  };
+  const runOffline = (toWall: number) => {
+    if (!(wall < toWall)) return;
+    const clocks = clocksFor(wall, toWall);
+    const base = watched(scenario, watchers);
+    const offline = applyOfflineSeconds({
+      scenario: {
+        ...base,
+        ...(clocks ? { ctx: { ...base.ctx, clocks } } : {}),
+        model: withoutResetActions(base.model, adapterAt(request, scenario, state, constraints)),
+        ...(constraints ? { constraints } : {}),
+      },
+      seconds: toWall - wall,
+      options: {
+        fromState: state,
+        actions: scenario.run.offline?.actions ?? { mode: "legacy-all" },
+        fast: scenario.run.fast,
+        policy: scenario.run.offline,
+      },
+    });
+    state = offline.end;
+    wall = toWall;
+  };
+
   for (const block of blocks) {
-    if (refused || snaps.length >= request.cycleBudget) break;
+    runOffline(block.start);
     if (wall < block.start) wall = block.start;
-    let cursor = Math.max(wall, block.start);
-    while (snaps.length < request.cycleBudget) {
-      const at = Math.max(lastResetWall + intervalSec, cursor);
+    while (resetsOpen && snaps.length < options.budget) {
+      const at = Math.max(lastResetWall + intervalSec, wall);
       if (!(at < block.end)) break;
-      if (at > cursor) {
-        const lead = play(scenario, state, at - cursor);
-        state = lead.end;
-        cursor = at;
-      }
-      const committed = commitReset(scenario, state, constraints, adapter, true);
-      if (!committed.ok) {
-        refused = true;
-        state = committed.state;
+      if (at > wall) runActive(at - wall);
+      const adapter = adapterAt(request, scenario, state, constraints);
+      if (!adapter) {
+        unsupported = true;
+        resetsOpen = false;
         break;
       }
-      const delta = committed.delta;
+      const threshold = recoveryMetric(request, scenario, state);
+      const committed = commitReset(scenario, state, constraints, adapter, options.emit);
+      if (!committed.ok) {
+        refused = true;
+        resetsOpen = false;
+        break;
+      }
       snaps.push({
-        reward: E.toString(delta),
+        reward: E.toString(committed.delta),
         durationSec: state.t - rewardStart,
         multiplier: E.toString(committed.state.prestige.multiplier),
       });
       state = committed.state;
       constraints = committed.constraints;
       walls.push(at);
-      if (request.goal && goalReachSec === null && request.goal(scenario.ctx, state)) goalReachSec = state.t;
+      if (options.watchRecovery && recovery === null) {
+        const found = { threshold, resetT: committed.t, crossedT: null as number | null };
+        recovery = found;
+        if (E.cmp(recoveryMetric(request, scenario, state), threshold) >= 0) found.crossedT = committed.t;
+        else {
+          watchers.push({
+            id: RECOVERY_WATCH_ID,
+            met: (next) => E.cmp(recoveryMetric(request, scenario, next), threshold) >= 0,
+            onMet: (t) => {
+              if (found.crossedT === null) found.crossedT = t;
+            },
+          });
+        }
+      }
       lastResetWall = at;
       rewardStart = state.t;
-      cursor = at + session.resetDelaySec;
-      wall = cursor;
+      // The caller's delay advances wall time and grants no income.
+      wall = at + session.resetDelaySec;
     }
-    if (!refused && cursor < block.end) {
-      const rest = play(scenario, state, block.end - cursor);
-      state = rest.end;
-      cursor = block.end;
-    }
-    wall = Math.max(wall, block.end);
+    if (wall < block.end) runActive(block.end - wall);
   }
-  const incomplete = wall + 1e-9 < request.horizonSec ? { startSec: wall, endSec: request.horizonSec, durationSec: request.horizonSec - wall } : null;
-  const unrealized = unrealizedAt(scenario, state, adapter);
-  const status: ResetCandidateReport["status"] = refused ? "incomplete" : snaps.length === 0 ? "censored" : "ok";
+  const activeWallEnd = wall;
+  // The rest of the horizon is away time and applies the offline progression.
+  runOffline(request.horizonSec);
+  const goal = request.goal;
+  if (options.watchGoal && goal && reached.t === null && goal(scenario.ctx, state)) reached.t = state.t;
+  return { snaps, walls, state, constraints, refused, unsupported, activeWallEnd, goalReachSec: reached.t, recovery };
+}
+
+function evaluateSession<N, U extends string, Vars>(
+  request: ResetPolicyRequest<N, U, Vars>,
+  intervalSec: number,
+): { report: ResetCandidateReport; engine: Engine<N> } {
+  const scenario = request.createScenario();
+  const { E } = scenario.ctx;
+  absoluteToleranceOf(E, request.stability.absoluteTolerance);
+  // Recovery is measured on this candidate's own schedule: its first committed reset, then no further resets.
+  const probe = playSchedule(request, request.createScenario(), intervalSec, {
+    budget: 1,
+    emit: false,
+    watchRecovery: true,
+    watchGoal: false,
+  });
+  const blank = E.toString(E.zero());
+  const recovery: ResetRecoveryReport = probe.recovery
+    ? {
+        metric: request.recovery.metric,
+        status: probe.recovery.crossedT === null ? "censored" : "observed",
+        seconds: probe.recovery.crossedT === null ? null : probe.recovery.crossedT - probe.recovery.resetT,
+        threshold: E.toString(probe.recovery.threshold),
+      }
+    : {
+        metric: request.recovery.metric,
+        status: probe.refused || probe.unsupported ? "unsupported" : "censored",
+        seconds: null,
+        threshold: blank,
+      };
+  const outcome = playSchedule(request, scenario, intervalSec, {
+    budget: request.cycleBudget,
+    emit: true,
+    watchRecovery: false,
+    watchGoal: true,
+  });
+  const incomplete =
+    outcome.activeWallEnd + 1e-9 < request.horizonSec
+      ? { startSec: outcome.activeWallEnd, endSec: request.horizonSec, durationSec: request.horizonSec - outcome.activeWallEnd }
+      : null;
+  const unrealized = unrealizedAt(request, scenario, outcome.state, outcome.constraints);
+  const status: ResetCandidateReport["status"] =
+    outcome.unsupported && outcome.snaps.length === 0
+      ? "unsupported"
+      : outcome.refused || outcome.unsupported
+        ? "incomplete"
+        : outcome.snaps.length === 0
+          ? "censored"
+          : "ok";
   return {
     engine: E,
     report: candidateFrom(
@@ -715,12 +976,12 @@ function evaluateSession<N, U extends string, Vars>(
       scenario,
       intervalSec,
       status,
-      snaps,
-      state,
+      outcome.snaps,
+      outcome.state,
       incomplete,
       unrealized,
-      goalReachSec,
-      walls,
+      outcome.goalReachSec,
+      outcome.walls,
       recovery,
     ),
   };
@@ -787,16 +1048,20 @@ export function analyzeResetPolicies<N, U extends string, Vars>(
   if (request.session) {
     assumptions.push("manual reset is committed only inside an active session block");
     assumptions.push("resetDelaySec is the caller input, advances wall time, and grants no income");
-    assumptions.push("offline gaps advance wall time and do not commit a reset");
+    assumptions.push("offline gaps apply the scenario's offline progression and do not commit a reset");
+    assumptions.push("the cycle budget or a refused reset stops further resets, not the schedule");
   }
   const censoredGoal = request.objective === "goal-reach-sec" && bestReport.goalStatus === "censored";
+  // A winner that stopped on a refusal did not finish its requested evaluation, so the artifact is not ok.
   const status: ResetPolicyArtifactV1["status"] = evaluated.every((entry) => entry.report.status === "unsupported")
     ? "unsupported"
     : bestReport.status === "censored" || censoredGoal
       ? "censored"
-      : bestReport.stability.status === "insufficient-data" && bestReport.completedCycles === 0
-        ? "insufficient-data"
-        : "ok";
+      : bestReport.status === "incomplete"
+        ? "incomplete"
+        : bestReport.stability.status === "insufficient-data" && bestReport.completedCycles === 0
+          ? "insufficient-data"
+          : "ok";
   return {
     schemaVersion: 1,
     algorithmVersion: RESET_POLICY_ALGORITHM_VERSION,
