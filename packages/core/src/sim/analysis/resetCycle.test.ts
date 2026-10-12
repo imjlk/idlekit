@@ -161,7 +161,7 @@ function makeRng(seed: number): ResetCycleRng & { next: () => number } {
  * @evidence ./resetCycle.ts#resetCycleJsonSchema The schema is 3.1.
  * @evidenceReview ./resetCycle.ts#resetCycleJsonSchema #c6690d5 The function memoizes typia.json.schema of ResetCycleArtifactV1.
  * @evidence ./resetCycle.ts#executeResetCycles Runs three fixed intervals, an explicit list, a resume, and the horizon and budget guards.
- * @evidenceReview ./resetCycle.ts#executeResetCycles #e5ac1f2 The function accepts a maxCycles cap of 0, rejects a checkpoint of another contract or version, copies the resumed state and constraints, rejects a strategyState with no restoreState and an rngState with no rng, discovers adapters under the live constraints, runs each interval with runScenario on a model that delegates every member to the original receiver and hides prestige actions under any adapter and the custom reset, resolved per state and removed by identity when listed, measures the horizon on summed runner seconds with relative slack capped by a share of the interval, censors any budget stop, resolves the adapter at the boundary, commits one reset through applyDecisions with live constraints and forwards its action facts to onAction, refreshes maxMoneyEver, records a refusal instead of forcing it, and records copies of the state, a strategy snapshot only when restoreState exists, and the RNG snapshot. It binds a strategy snapshot to the writing strategy's id and state version and requires one for a restorable strategy, bounds the horizon slack to rounding ULPs, emits boundary events through ctx.emit, and recognizes its own spec and action adapters by identity. Intervals at or below the runner's 1e-12 second resolution are rejected.
+ * @evidenceReview ./resetCycle.ts#executeResetCycles #64e9c8d The function accepts a maxCycles cap of 0, rejects a checkpoint of another contract or version, copies the resumed state and constraints, rejects a strategyState with no restoreState and an rngState with no rng, discovers adapters under the live constraints, runs each interval with runScenario on a model that delegates every member to the original receiver and hides prestige actions under any adapter and the custom reset, resolved per state and removed by identity when listed, measures the horizon on summed runner seconds with relative slack capped by a share of the interval, censors any budget stop, resolves the adapter at the boundary, commits one reset through applyDecisions with live constraints and forwards its action facts to onAction, refreshes maxMoneyEver, records a refusal instead of forcing it, and records copies of the state, a strategy snapshot only when restoreState exists, and the RNG snapshot. It binds a strategy snapshot to the writing strategy's id and state version and requires one for a restorable strategy, bounds the horizon slack to rounding ULPs, emits boundary events through ctx.emit, and recognizes its own spec and action adapters by identity. Intervals at or below the runner's 1e-12 second resolution are rejected. It binds a checkpoint to its model, rejects nonfinite clock fields before any guard, and keeps the horizon slack below half the interval.
  * @evidence ../observation.ts#emitActionFacts Forwards a boundary decision to onAction.
  * @evidenceReview ../observation.ts#emitActionFacts #be50111 The function returns without onAction, and forwards each applied or skipped action event with its time, id, outcome, and reason.
  * @evidence ./resetCycle.ts#resetAdapterFor Picks the prestige action and returns nothing for a model with neither an action nor a spec.
@@ -171,7 +171,7 @@ function makeRng(seed: number): ResetCycleRng & { next: () => number } {
  * @evidence ./resetCycle.ts#resetCycleAlgorithmVersion Reads the algorithm version on the artifact.
  * @evidenceReview ./resetCycle.ts#resetCycleAlgorithmVersion #7b0fecb The function returns the reset-cycle-v1 constant.
  * @evidence ../step.ts#applyDecisions Commits one prestige action directly and checks that no income tick or t advance follows.
- * @evidenceReview ../step.ts#applyDecisions #902ff05 The function pays and applies the decisions, snapshots and records a committed reset only for the requested kinds, and leaves income, evolve, and t to stepOnce.
+ * @evidenceReview ../step.ts#applyDecisions #d70fdee The function pays and applies the decisions, snapshots and records a committed reset only for the requested kinds, and leaves income, evolve, and t to stepOnce. A committed reset's wallT is the segment's wall start plus the reward seconds since the segment began, capped at the segment's wall end.
  * @evidence ../observation.ts#emitCommittedResets Sends the reset facts to onReset and skips an observer without one.
  * @evidenceReview ../observation.ts#emitCommittedResets #05b889d The function returns early without onReset or facts and notifies each fact in order otherwise.
  */
@@ -969,6 +969,45 @@ export function runsThreeCommittedResets(): void {
   expect(() =>
     executeResetCycles({ scenario: scenario(), policy: { kind: "explicit", steps: [{ durationSec: 1e-12 }] } }),
   ).toThrow("runner's 1e-12 second resolution");
+
+  // A short interval at a horizon already reached is censored: the rounding slack stays below the interval.
+  const reached = executeResetCycles({
+    scenario: scenario(),
+    policy: { kind: "fixed-interval", intervalSec: 1e-9, cycles: 1 },
+    horizonSec: 1e6,
+    resume: { ...none.checkpoint, elapsedSec: 1e6 },
+  });
+  expect(reached.artifact.appliedResets).toBe(0);
+  expect(reached.artifact.status).toBe("censored");
+  // A checkpoint records its model, and another model is rejected.
+  expect(none.checkpoint.modelId).toBe("reset-cycle");
+  const otherModel = scenario();
+  expect(() =>
+    executeResetCycles({
+      scenario: { ...otherModel, model: { ...otherModel.model, id: "other-model" } },
+      policy: { kind: "fixed-interval", intervalSec: 2, cycles: 1 },
+      resume: none.checkpoint,
+    }),
+  ).toThrow("belongs to model reset-cycle@1");
+  // A nonfinite clock is rejected before a guard can stop early.
+  expect(() =>
+    executeResetCycles({
+      scenario: scenario({ initial: state({ t: Number.NaN }) }),
+      policy: { kind: "fixed-interval", intervalSec: 2, cycles: 1 },
+      maxCycles: 0,
+    }),
+  ).toThrow("clock fields must be finite");
+  // A reset fact's wall time advances with reward time inside a session segment.
+  const clockedBase = scenario();
+  const clockedApply = applyDecisions({
+    ctx: { ...clockedBase.ctx, clocks: { wallT: 100, wallEndT: 200, rewardT: 10, activeT: 0 } },
+    model: clockedBase.model,
+    state: state({ t: 15 }),
+    decisions: [{ action: prestigeAction() }],
+    resetKinds: new Set(["prestige"]),
+    resolveAgainstModel: false,
+  });
+  expect(clockedApply.committedResets[0]?.wallT).toBe(105);
 }
 
 /**
