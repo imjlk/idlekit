@@ -192,7 +192,7 @@ function simulate(spec: CaseSpec): RunResult<number, UnitCode, Vars> {
  * @evidence ./growthFit.ts#growthFitJsonSchema Reads the generated schema.
  * @evidenceReview ./growthFit.ts#growthFitJsonSchema #ff8650e The function memoizes typia.json.schema of GrowthFitArtifactV1.
  * @evidence ./growthFit.ts#fitGrowth Fits slow, fast, and softcap-configured literal series.
- * @evidenceReview ./growthFit.ts#fitGrowth #e0c7396 The function fits log values relative to the first one, reads log extrema in a loop, keeps a moving exact value fit out of constant, keeps one break per time by precedence, supplied ones included, finds sign and drop breaks, an exact tenfold drop included, on every prepared point, keeps both sides of each break through the sampling budget, reads irregular cadence from the input in one loop, handles a one-point budget, keeps a non-positive domain invalid under coarse cadence, fits on time since the window start, scaled by its largest magnitude so the regression moments stay finite, fits value space in units of the series magnitude, reads saturation from gap-normalized rates, lets an exact value fit win only when it beats the log fit's relative error, and withholds shape claims when the action history is incomplete. Saturation midpoints add half a gap to the earlier time, so they stay finite near the number limit. An exact log-linear fit with a real slope is not constant either. It keeps samples per fit window under the budget, judges acceleration by the quadratic term against its residual, judges saturation without the retained gap, and reports a doubling time for any positive slope. Saturation allows a flat plateau tail and reports its own log-rate residual. It splits the budget at breaks before windows, judges acceleration without a minimum line residual, and runs value-space fits on log-derived ratios when amounts leave the Number range. Under a tight budget it spends samples on fittable windows, rejects renewed growth after a plateau, and takes log rates as log(step) - log(gap).
+ * @evidenceReview ./growthFit.ts#fitGrowth #aea08bf The function fits log values relative to the first one, reads log extrema in a loop, keeps a moving exact value fit out of constant, keeps one break per time by precedence, supplied ones included, finds sign and drop breaks, an exact tenfold drop included, on every prepared point, keeps both sides of each break through the sampling budget, reads irregular cadence from the input in one loop, handles a one-point budget, keeps a non-positive domain invalid under coarse cadence, fits on time since the window start, scaled by its largest magnitude so the regression moments stay finite, fits value space in units of the series magnitude, reads saturation from gap-normalized rates, lets an exact value fit win only when it beats the log fit's relative error, and withholds shape claims when the action history is incomplete. Saturation midpoints add half a gap to the earlier time, so they stay finite near the number limit. An exact log-linear fit with a real slope is not constant either. It keeps samples per fit window under the budget, judges acceleration by the quadratic term against its residual, judges saturation without the retained gap, and reports a doubling time for any positive slope. Saturation allows a flat plateau tail and reports its own log-rate residual. It splits the budget at breaks before windows, judges acceleration without a minimum line residual, and runs value-space fits on log-derived ratios when amounts leave the Number range. Under a tight budget it spends samples on fittable windows, rejects renewed growth after a plateau, and takes log rates as log(step) - log(gap). An exact log-quadratic or power fit keeps precedence over an approximate value fit, thinning keeps samples before a window settles, power laws are also fitted from their break segment's start, and incomplete history withholds residual, speed, and diagnostics.
  * @evidence ./growthFit.ts#fitGrowthFromRun Fits executed runs of the slow and fast models.
  * @evidenceReview ./growthFit.ts#fitGrowthFromRun #44923e5 The function keeps a present but empty trace empty, maps each action row by binary search to the first trace state after it, takes its break kind from the model's Action.kind before falling back to the id, reads the softcap hint at the run's start, marks prestige count changes as breaks, reports the action history complete only for a full action log or an observed zero action count, uses netWorthFallback without a model netWorth, and calls fitGrowth. An action the model did not list at the traced state is a purchase unless a prestige count change confirms a reset.
  * @evidence ./growthFit.ts#growthFitSchemaId Reads the growth fit schema id.
@@ -716,6 +716,45 @@ export function refusesDisguisedDomains(): void {
     sampling: sampling(1e102),
   });
   expect(onlyWindow(tinyRates).shape).toBe("saturating");
+  // An exact log-quadratic curve is accelerating-log even when a value-space parabola is nearly as close.
+  const faintAccel = fitGrowth({
+    E: createNumberEngine(),
+    samples: Array.from({ length: 81 }, (_, t) => ({ t, amount: Math.exp(1e-8 * t * t) })),
+    seriesRequested: "money",
+    valueSource: "money",
+    sampling: sampling(80),
+  });
+  expect(onlyWindow(faintAccel).shape).toBe("accelerating-log");
+  // A long plateau does not take the samples a thinned saturation fit needs.
+  const longPlateau = fitGrowth({
+    E: createNumberEngine(),
+    samples: Array.from({ length: 1000 }, (_, index) => ({ t: index + 1, amount: 100 * (1 - Math.exp(-0.2 * (index + 1))) })),
+    seriesRequested: "money",
+    valueSource: "money",
+    sampling: { ...sampling(1000), samplingBudget: 16 },
+  });
+  expect(onlyWindow(longPlateau).shape).toBe("saturating");
+  // A power law keeps its shape in windows that do not start at its origin.
+  const cubic = fitGrowth({
+    E: createNumberEngine(),
+    samples: Array.from({ length: 241 }, (_, t) => ({ t, amount: (t + 1) ** 3 })),
+    seriesRequested: "money",
+    valueSource: "money",
+    sampling: { ...sampling(80), samplingBudget: 241 },
+  });
+  expect(cubic.windows.map((window) => window.shape)).toEqual(["polynomial", "polynomial", "polynomial"]);
+  // Incomplete history withholds the fitted shape's residual, speed, and diagnostics too.
+  const withheld = fitGrowth({
+    E: createNumberEngine(),
+    samples: Array.from({ length: 81 }, (_, t) => ({ t, amount: Math.exp(0.05 * t) })),
+    seriesRequested: "money",
+    valueSource: "money",
+    sampling: sampling(80),
+    actionHistory: "incomplete",
+  });
+  expect(onlyWindow(withheld).residual).toEqual({ space: "none", rmse: null });
+  expect(onlyWindow(withheld).speed).toEqual({ logSlopePerSec: null, doublingTimeSec: null });
+  expect(onlyWindow(withheld).quality).not.toContain("exponential");
   // Saturation does not depend on the retained cadence.
   const saturationSamples = Array.from({ length: 80 }, (_, index) => ({ t: index + 1, amount: 100 * (1 - Math.exp(-0.3 * (index + 1))) }));
   const fullSaturation = fitGrowth({

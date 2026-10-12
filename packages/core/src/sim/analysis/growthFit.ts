@@ -175,6 +175,8 @@ type QuadFit = Readonly<{ a: number; b: number; c: number; rmse: number }>;
 type Slice = Readonly<{
   points: readonly Point<unknown>[];
   discontinuity: GrowthDiscontinuityKind;
+  /** The first time of the break segment this window belongs to. Power fits also try it as their origin. */
+  originSec: number;
 }>;
 
 const ASSUMPTIONS = [
@@ -252,7 +254,32 @@ function evenKeep<T>(items: readonly T[], budget: number): T[] {
  * split the same way slicesOf splits them. When the budget cannot give every window MIN_SAMPLES points, an evenly
  * spaced subset of windows keeps MIN_SAMPLES each and the rest are left unfitted.
  */
-function windowKeep<T extends { readonly t: number }>(
+/** Two samples hold the same value to within a few ULPs. */
+function sameValue(a: Point<unknown>, b: Point<unknown>): boolean {
+  if (a.sign !== b.sign) return false;
+  if (a.numeric !== null && b.numeric !== null) {
+    return Math.abs(b.numeric - a.numeric) <= 4 * Number.EPSILON * Math.max(Math.abs(a.numeric), Math.abs(b.numeric));
+  }
+  return a.log10 !== null && a.log10 === b.log10;
+}
+
+/**
+ * Thin one window to the budget. A window that settles on its final value keeps its samples for the part before it
+ * settles, plus the settled point and the last one, so a long plateau does not take the samples a saturation fit needs.
+ */
+function thinWindow<T extends Point<unknown>>(window: readonly T[], budget: number): T[] {
+  if (window.length <= budget) return [...window];
+  const last = window[window.length - 1]!;
+  let settled = window.length - 1;
+  while (settled > 0 && sameValue(window[settled - 1]!, last)) settled -= 1;
+  // No interior settled samples, or a window that never moves: thin evenly.
+  if (window.length - 1 - settled < 2 || settled === 0) return evenKeep(window, budget);
+  const before = window.slice(0, settled + 1);
+  if (before.length >= budget - 1) return [...evenKeep(before, budget - 1), last];
+  return [...before, ...evenKeep(window.slice(settled + 1), budget - before.length)];
+}
+
+function windowKeep<T extends Point<unknown>>(
   items: readonly T[],
   budget: number,
   windowSec: number,
@@ -287,7 +314,7 @@ function windowKeep<T extends { readonly t: number }>(
   const perWindow = Math.floor(budget / windows.length);
   if (perWindow >= MIN_SAMPLES) {
     return {
-      kept: windows.flatMap((window) => evenKeep(window, perWindow)),
+      kept: windows.flatMap((window) => thinWindow(window, perWindow)),
       windows: windows.length,
       fittedWindows: windows.length,
     };
@@ -305,7 +332,7 @@ function windowKeep<T extends { readonly t: number }>(
   const pool = fittable.length > 0 ? fittable : windows.map((_, index) => index);
   const chosen = evenKeep(pool, count);
   return {
-    kept: chosen.flatMap((index) => evenKeep(windows[index]!, each)),
+    kept: chosen.flatMap((index) => thinWindow(windows[index]!, each)),
     windows: windows.length,
     fittedWindows: chosen.length,
   };
@@ -543,6 +570,7 @@ function blankWindow(
 function classifyPositive(
   points: readonly Point<unknown>[],
   discontinuity: GrowthDiscontinuityKind,
+  originSec: number = points[0]?.t ?? 0,
 ): GrowthFitWindowV1 {
   const first = points[0]!;
   const last = points[points.length - 1]!;
@@ -567,9 +595,16 @@ function classifyPositive(
   const logSpan = logHigh - logLow;
   const linear = fitLinear(ts, ys);
   const quadratic = fitQuadratic(ts, ys);
-  // ts is already measured from the window start.
-  const powerX = ts.map((t) => Math.log10(t + 1));
-  const power = fitLinear(powerX, ys);
+  // A power law is fitted from the window start and from the start of its break segment, and the closer fit is kept.
+  // Window partitioning alone then does not change a power law's shape.
+  const localPower = fitLinear(
+    ts.map((t) => Math.log10(t + 1)),
+    ys,
+  );
+  const segmentPower =
+    originSec < first.t ? fitLinear(points.map((point) => Math.log10(point.t - originSec + 1)), ys) : null;
+  const power =
+    segmentPower !== null && (localPower === null || segmentPower.rmse < localPower.rmse) ? segmentPower : localPower;
   // Value-space fits read each amount relative to the window's largest, through its log, when the amount itself is
   // outside the Number range. A unit change, such as a factor of 1e400, does not switch value-space shapes off.
   const direct = points.map((point) => point.numeric);
@@ -618,7 +653,9 @@ function classifyPositive(
   const valueExact =
     valueRmse !== null &&
     valueRmse <= VALUE_EXACT &&
-    !(linear !== null && linear.rmse * Math.LN10 < valueRmse);
+    !(linear !== null && linear.rmse * Math.LN10 < valueRmse) &&
+    !(accelOk && quadratic !== null && quadratic.rmse * Math.LN10 < valueRmse) &&
+    !(powerOk && power !== null && power.rmse * Math.LN10 < valueRmse);
   // An exact value fit whose change across the window stands well above its residual is a moving series, even
   // when a large intercept leaves almost no log span. A constant series fits exactly too, but does not move.
   const valueMoves =
@@ -680,7 +717,7 @@ function classifySlice(slice: Slice): GrowthFitWindowV1 {
     const status: AnalysisStatus = domain === "empty" ? "insufficient-data" : "invalid";
     return blankWindow(slice.points, slice.discontinuity, status, `domain ${domain}`);
   }
-  return classifyPositive(slice.points, slice.discontinuity);
+  return classifyPositive(slice.points, slice.discontinuity, slice.originSec);
 }
 
 const BREAK_RANK: Record<GrowthDiscontinuity["kind"], number> = { reset: 4, drop: 3, sign: 2, purchase: 1 };
@@ -739,6 +776,7 @@ function slicesOf(points: readonly Point<unknown>[], breaks: readonly GrowthDisc
       slices.push({
         points: points.slice(cursor, next),
         discontinuity: first ? segment.discontinuity : "none",
+        originSec: points[segment.start]!.t,
       });
       first = false;
       cursor = next;
@@ -931,8 +969,11 @@ export function fitGrowth<N>(args: {
               ...window,
               status: "insufficient-data",
               shape: "unknown",
+              // The fitted shape's residual, speed, and diagnostics would restate the withheld claim.
+              speed: { logSlopePerSec: null, doublingTimeSec: null },
               legacySpeedBucket: null,
-              quality: `${window.quality}; action history incomplete`,
+              residual: { space: "none", rmse: null },
+              quality: `action history incomplete; samples ${window.sampleCount}`,
             }
           : window,
       )
