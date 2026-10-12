@@ -256,15 +256,32 @@ function windowKeep<T extends { readonly t: number }>(
   items: readonly T[],
   budget: number,
   windowSec: number,
+  breakTimes: readonly number[],
 ): { kept: T[]; windows: number; fittedWindows: number } {
+  // Split at breaks first, as slicesOf does, so each side of a break gets its own share of the budget.
+  const opens = new Set<number>();
+  for (const t of breakTimes) {
+    const index = firstIndexAtOrAfter(items, t, false);
+    if (index > 0) opens.add(index);
+  }
+  const segments: T[][] = [];
+  let segmentStart = 0;
+  for (let index = 1; index <= items.length; index += 1) {
+    if (index === items.length || opens.has(index)) {
+      segments.push(items.slice(segmentStart, index));
+      segmentStart = index;
+    }
+  }
   const windows: T[][] = [];
-  let start = 0;
-  while (start < items.length) {
-    const endTime = items[start]!.t + windowSec;
-    let end = start + 1;
-    while (end < items.length && items[end]!.t <= endTime + 1e-9) end += 1;
-    windows.push(items.slice(start, end));
-    start = end;
+  for (const segment of segments) {
+    let start = 0;
+    while (start < segment.length) {
+      const endTime = segment[start]!.t + windowSec;
+      let end = start + 1;
+      while (end < segment.length && segment[end]!.t <= endTime + 1e-9) end += 1;
+      windows.push(segment.slice(start, end));
+      start = end;
+    }
   }
   if (items.length <= budget) return { kept: [...items], windows: windows.length, fittedWindows: windows.length };
   const perWindow = Math.floor(budget / windows.length);
@@ -544,8 +561,13 @@ function classifyPositive(
   // ts is already measured from the window start.
   const powerX = ts.map((t) => Math.log10(t + 1));
   const power = fitLinear(powerX, ys);
-  const numbers = points.map((point) => point.numeric);
-  const valueReady = numbers.every((value): value is number => value !== null);
+  // Value-space fits read each amount relative to the window's largest, through its log, when the amount itself is
+  // outside the Number range. A unit change, such as a factor of 1e400, does not switch value-space shapes off.
+  const direct = points.map((point) => point.numeric);
+  const numbers = direct.every((value): value is number => value !== null)
+    ? direct
+    : ys.map((y) => 10 ** (y - logHigh));
+  const valueReady = numbers.every((value): value is number => value !== null && Number.isFinite(value));
   // Value-space fits run in units of the series scale, so a large series cannot overflow the squared error.
   const valueScale = valueReady ? seriesScale(numbers) : 1;
   const scaled = valueReady ? numbers.map((value) => value / valueScale) : [];
@@ -569,7 +591,6 @@ function classifyPositive(
     quadratic.c > 0 &&
     quadratic.c * span * span > 1e3 * Math.max(quadratic.rmse, Number.EPSILON) &&
     quadratic.rmse <= LOG_RMSE_OK &&
-    linear.rmse > LOG_RMSE_OK &&
     linear.rmse > quadratic.rmse * 4;
   const powerOk =
     power !== null && linear !== null && power.rmse <= 1e-3 && power.rmse * 4 < linear.rmse;
@@ -828,7 +849,8 @@ export function fitGrowth<N>(args: {
       if (index > 0) boundary.add(index - 1);
     }
   }
-  const windowed = windowKeep(prepared, args.sampling.samplingBudget, args.sampling.windowSec);
+  const breakTimes = [...breakMap.values()].map((item) => item.t);
+  const windowed = windowKeep(prepared, args.sampling.samplingBudget, args.sampling.windowSec, breakTimes);
   const keptSet = new Set<Point<N>>(windowed.kept);
   for (const index of boundary) keptSet.add(prepared[index]!);
   const kept = prepared.filter((point) => keptSet.has(point));
