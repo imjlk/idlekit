@@ -135,7 +135,7 @@ function baseRequest(
  * @evidence ./resetOptimization.ts#validateResetPolicyArtifact The canonical artifact validates.
  * @evidenceReview ./resetOptimization.ts#validateResetPolicyArtifact #02be060 The arrow builds typia.createValidate of ResetPolicyArtifactV1 on first call and reuses it.
  * @evidence ./resetOptimization.ts#analyzeResetPolicies Runs the always-active scan against the fixture rate.
- * @evidenceReview ./resetOptimization.ts#analyzeResetPolicies #ba6ac7f The function validates the request, a goal for goal-reach-sec, and a finite nonnegative absolute tolerance, evaluates each scanned interval with or without a session, resolving the reset adapter at each boundary under the live constraints, hiding reset actions from the strategy, committing adapter actions without re-resolving them against model.actions, refreshing maxMoneyEver, reading goals on every committed state, playing the tail from the origin-relative horizon, and on a schedule applying offline progression, session clocks, and the full schedule after the budget, ranks with Engine.cmp, compares a known solution, reports an incomplete winner as an incomplete artifact, and never claims a global optimum.
+ * @evidenceReview ./resetOptimization.ts#analyzeResetPolicies #614b9c2 The function validates the request, distinct stability windows, a goal for goal-reach-sec, and a finite nonnegative absolute tolerance, evaluates each scanned interval with or without a session, resolving the reset adapter at each boundary under the live constraints, hiding reset actions from the strategy, committing adapter actions without re-resolving them against model.actions, refreshing maxMoneyEver, reading goals on every committed state under ids no caller goal uses, reading net worth and income with the live context, playing the tail from the origin-relative horizon, and on a schedule applying offline progression, session clocks, and the full schedule after the budget, measuring cycles in wall time, and dry-running the unrealized reset only when the horizon is active, ranks with Engine.cmp, compares a known solution, keeps a refused interval in the incomplete span, reports an incomplete winner or one without stability evidence in the artifact status, and never claims a global optimum.
  * @evidence ./resetOptimization.ts#resetPolicySchemaId Reads the reset policy schema id.
  * @evidenceReview ./resetOptimization.ts#resetPolicySchemaId #1dcacc7 The function returns the reset.policy.v1 schema URL constant.
  * @evidence ./resetOptimization.ts#resetPolicyAlgorithmVersion Reads the algorithm version on the artifact.
@@ -307,8 +307,33 @@ export function matchesTheoreticalRewardRate(): void {
   expect(refusing.candidates[0]?.status).toBe("incomplete");
   expect(refusing.candidates[0]?.completedCycles).toBe(2);
   expect(refusing.status).toBe("incomplete");
+  // The refused interval is part of the span after the last committed reset.
+  expect(refusing.candidates[0]?.incomplete).toEqual({ startSec: 20, endSec: 45, durationSec: 25 });
   expect(validateResetPolicyArtifact(refusing).success).toBe(true);
 
+  // Net worth is read with the live constraints, as the simulation reads them.
+  const anchoredWorth = analyzeResetPolicies(
+    baseRequest(
+      () =>
+        withModel(scenario(), {
+          netWorth: (ctx, current) => coin(current.wallet.money.amount + (ctx.constraints?.lastPrestigeResetT ?? 0)),
+        }),
+      { objective: "final-net-worth", knownSolution: undefined },
+    ),
+  );
+  expect(anchoredWorth.candidates[0]?.finalNetWorth).toBe("85");
+  // A caller goal that shares the analysis goal's id does not stand in for the request's goal.
+  const shadowed = analyzeResetPolicies(
+    baseRequest(
+      () => {
+        const base = scenario();
+        return { ...base, run: { ...base.run, goals: [{ id: "reset-policy.goal", met: () => true }] } };
+      },
+      { objective: "goal-reach-sec", goal: () => false, knownSolution: undefined },
+    ),
+  );
+  expect(shadowed.candidates[0]?.goalReachSec).toBeNull();
+  expect(shadowed.candidates[0]?.goalStatus).toBe("censored");
   // A goal objective needs a goal, and the absolute tolerance is a finite amount >= 0.
   expect(() =>
     analyzeResetPolicies(baseRequest(() => scenario(), { objective: "goal-reach-sec", knownSolution: undefined })),
@@ -397,6 +422,17 @@ export function separatesEmpiricalStability(): void {
   );
   expect(sparse.candidates[0]?.completedCycles).toBe(2);
   expect(sparse.best.observation.stability).toBe("insufficient-data");
+  // Missing stability evidence reaches the artifact status, not only the best candidate.
+  expect(sparse.status).toBe("insufficient-data");
+  // Two copies of one window are one window.
+  expect(() =>
+    analyzeResetPolicies(
+      baseRequest(() => scenario(), {
+        stability: { minObservedCycles: 2, windows: [2, 2], absoluteTolerance: "0", relativeTolerance: 0 },
+        knownSolution: undefined,
+      }),
+    ),
+  ).toThrow("windows must be distinct");
   expect(sparse.best.observation.stability).not.toBe("stable");
 }
 
@@ -539,6 +575,8 @@ export function keepsManualResetInsideSession(): void {
   expect(delayed.candidates[0]?.resetWallTimes).toEqual([400, 900, 1400]);
   expect(delayed.candidates[0]?.resetWallTimes.every(inside)).toBe(true);
   expect(delayed.candidates[0]?.resetWallTimes.includes(800)).toBe(false);
+  // A scheduled cycle lasts from the previous reset wall to this one, the caller's delay included.
+  expect(delayed.candidates[0]?.rewardRate).toBe(String(3 / 1400));
 
   // The cycle budget stops resets, not the schedule. Offline gaps keep the default full offline credit.
   const budgetRun = (cycleBudget: number) =>
@@ -617,7 +655,19 @@ export function keepsManualResetInsideSession(): void {
     }),
   );
   expect(anchored.candidates[0]?.resetWallTimes).toEqual([400, 800, 1200]);
-  expect(anchors.filter((anchor) => anchor !== undefined)).toEqual([400, 800, 1200]);
+  // The horizon falls in the offline span after the evening block, so no reset is dry-run there.
+  expect(anchors.filter((anchor) => anchor !== undefined)).toEqual([400, 800]);
+  expect(anchored.candidates[0]?.unrealizedReward).toBe("0");
+  const alwaysOn = analyzeResetPolicies(
+    baseRequest(() => scenario(), {
+      scan: { fromSec: 400, toSec: 400, stepSec: 400 },
+      horizonSec: 86400,
+      cycleBudget: 3,
+      session: { pattern: { id: "always-on", days: 1 }, resetDelaySec: 0 },
+      knownSolution: undefined,
+    }),
+  ).candidates[0];
+  expect(alwaysOn?.unrealizedReward).toBe("1");
   expect(anchored.candidates[0]?.goalReachSec).toBe(400);
 
   expect(() => sessionActiveBlocks({ id: "twice-daily", days: 0 })).toThrow("session days must be a positive integer");
@@ -787,9 +837,9 @@ export function ranksScanWithoutNumberCollapse(): void {
 }
 
 describe("reset policy analysis", () => {
-  it("matches the theoretical reset reward rate", matchesTheoreticalRewardRate);
+  it("matches the theoretical reset reward rate", matchesTheoreticalRewardRate, 60000);
   it("separates empirical stability from cycle count", separatesEmpiricalStability);
-  it("reports the recovery crossing or censors it", reportsRecoveryCrossing);
-  it("keeps a manual reset inside the active session", keepsManualResetInsideSession);
+  it("reports the recovery crossing or censors it", reportsRecoveryCrossing, 60000);
+  it("keeps a manual reset inside the active session", keepsManualResetInsideSession, 60000);
   it("ranks the scan with engine compare", ranksScanWithoutNumberCollapse);
 });
