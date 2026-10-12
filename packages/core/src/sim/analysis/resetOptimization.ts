@@ -334,13 +334,46 @@ function assertRequest<N, U extends string, Vars>(request: ResetPolicyRequest<N,
   if (request.session) {
     assertFinite("resetDelaySec", request.session.resetDelaySec);
     // An unknown preset id from an unchecked caller builds no block. That is not an all-offline schedule.
-    if (sessionActiveBlocks(request.session.pattern).length === 0) {
+    if (sessionActiveBlocks(horizonPattern(request)).length === 0) {
       throw new ResetPolicyRejected(`reset policy session pattern ${String(request.session.pattern.id)} has no active block`);
     }
     if (request.session.resetDelaySec < 0) {
       throw new ResetPolicyRejected("reset policy resetDelaySec must be a finite number >= 0");
     }
   }
+}
+
+type ScheduleBlock = Readonly<{ start: number; natural: number; end: number }>;
+type ScheduleInput = Readonly<{ horizonSec: number; session?: Readonly<{ pattern: SessionPatternSpec; resetDelaySec: number }> }>;
+
+/**
+ * The pattern's days that can reach the horizon. Every preset has a block on each day, and days past the horizon
+ * play nothing, so a long day count does not expand blocks the analysis never reaches. A schedule is used as given.
+ */
+function horizonPattern(request: ScheduleInput): SessionPatternSpec {
+  const pattern = request.session?.pattern;
+  if (!pattern) throw new ResetPolicyRejected("reset policy session is missing");
+  if (pattern.schedule || !Number.isInteger(pattern.days) || pattern.days <= 0) return pattern;
+  return { ...pattern, days: Math.min(pattern.days, Math.floor(request.horizonSec / 86400) + 1) };
+}
+
+/** Blocks inside the horizon, built once per request and shared by every candidate and probe. */
+const horizonBlockCache = new WeakMap<object, readonly ScheduleBlock[]>();
+
+function horizonBlocks(request: ScheduleInput): readonly ScheduleBlock[] {
+  const cached = horizonBlockCache.get(request);
+  if (cached) return cached;
+  const blocks = sessionActiveBlocks(horizonPattern(request))
+    .map((block) => {
+      const start = block.day * 86400 + block.startOffsetSec;
+      // Playback stops at the horizon, but a reset at the horizon is still inside the block's natural span.
+      const natural = start + block.durationSec;
+      return { start, natural, end: Math.min(natural, request.horizonSec) };
+    })
+    // A block that starts exactly at the horizon still admits a reset at the horizon, inside its natural span.
+    .filter((block) => block.end > block.start || (block.start === request.horizonSec && block.natural > block.start));
+  horizonBlockCache.set(request, blocks);
+  return blocks;
 }
 
 /** The absolute tolerance in the scenario's engine. It must be a finite amount >= 0. */
@@ -848,7 +881,7 @@ function evaluateAlwaysActive<N, U extends string, Vars>(
     request,
     () => metricCtx,
     (t) => {
-      if (reached.t === null) reached.t = t - originT;
+      if (reached.t === null) reached.t = Math.min(t - originT, request.horizonSec);
     },
   );
   // Every run of this candidate shares one ledger and the caller goals already reached.
@@ -888,8 +921,9 @@ function evaluateAlwaysActive<N, U extends string, Vars>(
       break;
     }
     snaps.push({ reward: row.rewardDelta, durationSec: row.durationSec, multiplier: row.carried.multiplier });
-    resetTimes.push(elapsed);
-    elapsedAtLastReset = elapsed;
+    // The executor admits a boundary a few ULPs past the horizon. Its position is the horizon.
+    elapsedAtLastReset = Math.min(elapsed, request.horizonSec);
+    resetTimes.push(elapsedAtLastReset);
   }
   metricCtx = liveCtx(scenario, constraints);
   // horizonSec is elapsed time from the scenario origin. The tail is what the cycles did not play.
@@ -906,7 +940,7 @@ function evaluateAlwaysActive<N, U extends string, Vars>(
   // A goal met only by the last committed reset has no later run to read it.
   // Read on a copy, as the runner reads goals, so a predicate that writes its argument cannot change the result.
   if (request.goal && reached.t === null && request.goal(metricCtx, deepClonePreservingPrototype(state))) {
-    reached.t = state.t - originT;
+    reached.t = Math.min(state.t - originT, request.horizonSec);
   }
   const unrealized = incomplete ? unrealizedAt(request, scenario, state, constraints) : E.zero();
   const status: ResetCandidateReport["status"] =
@@ -971,15 +1005,7 @@ function playSchedule<N, U extends string, Vars>(
   if (!session) throw new ResetPolicyRejected("reset policy session is missing");
   const { E } = scenario.ctx;
   const originT = scenario.initial.t;
-  const blocks = sessionActiveBlocks(session.pattern)
-    .map((block) => {
-      const start = block.day * 86400 + block.startOffsetSec;
-      // Playback stops at the horizon, but a reset at the horizon is still inside the block's natural span.
-      const natural = start + block.durationSec;
-      return { start, natural, end: Math.min(natural, request.horizonSec) };
-    })
-    // A block that starts exactly at the horizon still admits a reset at the horizon, inside its natural span.
-    .filter((block) => block.end > block.start || (block.start === request.horizonSec && block.natural > block.start));
+  const blocks = horizonBlocks(request);
   let state = scenario.initial;
   let constraints = scenario.constraints;
   let wall = 0;
@@ -1123,6 +1149,18 @@ function playSchedule<N, U extends string, Vars>(
       constraints = committed.constraints;
       walls.push(at);
       activeReach = at;
+      // The reset is the latest segment of the block. With no runner after it, as at a horizon-start block, the final
+      // reads keep the block's clocks.
+      segmentCtx = ctxAt(block.end);
+      // The reset state can be the first to meet a caller goal. A reset at the horizon has no later run to read it.
+      if (options.emit && scenario.run.observation?.enabled !== false) {
+        for (const callerGoal of scenario.run.goals ?? []) {
+          if (share.reachedGoals.has(callerGoal.id)) continue;
+          if (!callerGoal.met(deepClonePreservingPrototype(state))) continue;
+          share.reachedGoals.add(callerGoal.id);
+          scenario.run.observer?.onGoal?.({ t: state.t, goalId: callerGoal.id });
+        }
+      }
       // Two resets can follow each other with no runner in between when the delay covers the interval, so the
       // goal is read on the committed reset state too, on a copy as the runner reads it.
       const goal = request.goal;
