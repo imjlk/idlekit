@@ -6,6 +6,7 @@
  */
 import { createNumberEngine } from "../engine/breakInfinity";
 import type { MilestoneReport } from "../sim/analysis/milestones";
+import { analyzeResetPolicies } from "../sim/analysis/resetOptimization";
 import { stepOnce } from "../sim/step";
 import type { Action, CompiledScenario, Model, SimState } from "../sim/types";
 import { checkResumeFromJson, checkSnapshots } from "./conformanceRun";
@@ -107,6 +108,87 @@ export function checkMilestoneRetention(declared: boolean, full: MilestoneReport
     prestige: report.firstPrestigeSec,
   });
   return checkSnapshots(firsts(full), firsts(capped), "same");
+}
+
+type ResetVars = Record<string, never>;
+
+/**
+ * A declared reset-policy rate fixture keeps its known rate when `analyzeResetPolicies` plays it.
+ * Income is 1 coin per second and each committed reset grants `rewardPerReset` points. The relation checks the
+ * completed cycle count and time, and the committed reward over completed cycle time against the expected rate.
+ * Matching it is not a steady-state proof.
+ *
+ * @evidence docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness The known reset-policy rate is a declared relation: committed reward over completed cycle time. An undeclared fixture does not apply.
+ * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #bbb39a2 Re-read the section: seeded relations are conditional, so this one applies only when declared, and a wrong expected rate fails rather than skips.
+ */
+export function checkResetPolicyRate(
+  declared: boolean,
+  fixture: Readonly<{
+    id: string;
+    rewardPerReset: string;
+    intervalSec: number;
+    completedCycles: number;
+    completedCycleTimeSec: number;
+    horizonSec: number;
+    expectedRate: string;
+    denominator: string;
+  }>,
+): RelationCheck {
+  if (!declared) return { ok: true, applicable: false, summary: "reset policy rate is not declared" };
+  const engine = createNumberEngine();
+  const unit = { code: "COIN" as const };
+  const reward = engine.from(fixture.rewardPerReset);
+  const reset: Action<number, "COIN", ResetVars> = {
+    id: "reset",
+    kind: "prestige",
+    canApply: () => true,
+    cost: () => null,
+    apply: (_ctx, current) => ({
+      ...current,
+      prestige: { ...current.prestige, count: current.prestige.count + 1, points: current.prestige.points + reward },
+    }),
+  };
+  const model: Model<number, "COIN", ResetVars> = {
+    id: "declared-reset-rate",
+    version: 1,
+    income: () => ({ unit, amount: 1 }),
+    actions: () => [reset],
+  };
+  const artifact = analyzeResetPolicies<number, "COIN", ResetVars>({
+    createScenario: () => ({
+      ctx: { E: engine, unit, tickPolicy: { mode: "drop" }, stepSec: 1 },
+      model,
+      initial: {
+        t: 0,
+        wallet: { money: { unit, amount: 0 }, bucket: 0 },
+        maxMoneyEver: { unit, amount: 0 },
+        prestige: { count: 0, points: 0, multiplier: 1 },
+        vars: {},
+      },
+      run: { stepSec: 1, durationSec: 1 },
+    }),
+    scan: { fromSec: fixture.intervalSec, toSec: fixture.intervalSec, stepSec: fixture.intervalSec },
+    horizonSec: fixture.horizonSec,
+    cycleBudget: fixture.completedCycles + 2,
+    objective: "cumulative-reset-reward",
+    recovery: { metric: "pre-reset-income" },
+    stability: { minObservedCycles: 2, windows: [2, 3], absoluteTolerance: "0", relativeTolerance: 0 },
+    knownSolution: { fixtureId: fixture.id, expectedRate: fixture.expectedRate },
+  });
+  const row = artifact.candidates[0];
+  const observed = JSON.stringify({
+    denominator: row?.rewardRateDenominator,
+    cycles: row?.completedCycles,
+    cycleTimeSec: (row?.completedCycles ?? 0) * fixture.intervalSec,
+    matches: artifact.knownSolution?.matches === true,
+  });
+  const expected = JSON.stringify({
+    denominator: fixture.denominator,
+    cycles: fixture.completedCycles,
+    cycleTimeSec: fixture.completedCycleTimeSec,
+    matches: true,
+  });
+  return checkSnapshots(observed, expected, "same");
 }
 
 export {

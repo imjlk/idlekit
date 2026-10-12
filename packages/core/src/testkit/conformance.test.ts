@@ -19,6 +19,7 @@ import {
   checkNonNegative,
   checkObserver,
   checkReplay,
+  checkResetPolicyRate,
   checkResume,
   checkResumeFromJson,
   checkRetention,
@@ -1598,6 +1599,72 @@ export function preservesFirstMilestoneTimesAcrossTheSeedCorpus(): void {
 }
 
 it("preserves first milestone times across the seed corpus", preservesFirstMilestoneTimesAcrossTheSeedCorpus);
+
+const resetPolicyRateFixture = JSON.parse(
+  readFileSync(join(import.meta.dir, "../../../../fixtures/conformance/reset-policy-rate.json"), "utf8"),
+) as Parameters<typeof checkResetPolicyRate>[1];
+
+/**
+ * @evidence docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness Executes the declared known reset-policy rate fixture and constant-reward cases over the short and extended seed corpus.
+ * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #bbb39a2 Re-read the section and ran both corpora: the fixture realizes 4 over 40 seconds of completed cycles at rate 0.1, every case keeps reward over completed cycle time, and an undeclared fixture stays unchecked.
+ * @evidence ./conformance.ts#checkResetPolicyRate Plays the fixture through analyzeResetPolicies and compares its completed cycles, cycle time, and rate with the declared values.
+ * @evidenceReview ./conformance.ts#checkResetPolicyRate #f63ae5a Read the declaration guard, the constant-income reset model, and the snapshot comparison. The fixture and the short and 200-case corpus match, and an undeclared fixture does not apply.
+ */
+export function keepsTheDeclaredResetPolicyRateAcrossTheSeedCorpus(): void {
+  expect(resetPolicyRateFixture.denominator).toBe("completed-cycle-time");
+  expectApplicable(checkResetPolicyRate(true, resetPolicyRateFixture));
+  expect(checkResetPolicyRate(false, resetPolicyRateFixture).applicable).toBe(false);
+  // A wrong expected rate is a failed relation, not a skipped one.
+  const wrong = checkResetPolicyRate(true, { ...resetPolicyRateFixture, expectedRate: "0.2" });
+  expect(wrong.applicable).toBe(true);
+  expect(wrong.ok).toBe(false);
+  const testSeed = 0x2e5e;
+  expectProperty({
+    predicateId: "declared-reset-policy-rate",
+    testSeed,
+    cases: conformanceCaseCount(),
+    generate: (index, rng) => {
+      if (index === 0) {
+        return {
+          reward: Number(resetPolicyRateFixture.rewardPerReset),
+          intervalSec: resetPolicyRateFixture.intervalSec,
+          cycles: resetPolicyRateFixture.completedCycles,
+          tailSec: resetPolicyRateFixture.horizonSec - resetPolicyRateFixture.completedCycleTimeSec,
+        };
+      }
+      const intervalSec = rng.int(1, 12);
+      return { reward: rng.int(1, 9), intervalSec, cycles: rng.int(2, 6), tailSec: rng.int(0, intervalSec - 1) };
+    },
+    shrink: () => [],
+    predicate: (value) => {
+      const cycleTimeSec = value.intervalSec * value.cycles;
+      expectApplicable(
+        checkResetPolicyRate(true, {
+          id: `reset-rate-${value.reward}-${value.intervalSec}`,
+          rewardPerReset: String(value.reward),
+          intervalSec: value.intervalSec,
+          completedCycles: value.cycles,
+          completedCycleTimeSec: cycleTimeSec,
+          horizonSec: cycleTimeSec + value.tailSec,
+          expectedRate: String(value.reward / value.intervalSec),
+          denominator: "completed-cycle-time",
+        }),
+      );
+      return true;
+    },
+    describeCase: (value, index) => ({
+      gameSeed: gameSeedForCase(testSeed, index),
+      engineId: "number",
+      modelId: "declared-reset-rate",
+      strategyId: null,
+      tickSchedule: { stepSec: 1, durationSec: value.intervalSec * value.cycles + value.tailSec },
+    }),
+  });
+}
+
+describe("PR-11 reset policy rate", () => {
+  it("keeps the declared reset policy rate across the seed corpus", keepsTheDeclaredResetPolicyRateAcrossTheSeedCorpus, 60000);
+});
 
 describe("counterexample report", () => {
   it("rejects a property run that executes no cases", () => {
