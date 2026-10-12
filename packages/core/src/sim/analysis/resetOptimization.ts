@@ -1,7 +1,8 @@
 import typia, { type IValidation } from "typia";
 import type { Engine } from "../../engine/types";
 import { recordPrestigeReset } from "../constraints";
-import { emitCommittedResets } from "../observation";
+import { emitActionFacts, emitCommittedResets } from "../observation";
+import { offlineAbsenceForCredit } from "../offlineCredit";
 import { applyOfflineSeconds } from "../offline";
 import { sessionActiveBlocks, type SessionPatternSpec } from "../session";
 import { runScenario } from "../simulator";
@@ -551,6 +552,11 @@ function commitReset<N, U extends string, Vars>(
     // The adapter built this action for this state. A spec or custom adapter action is not in model.actions.
     resolveAgainstModel: false,
   });
+  if (emit) {
+    // The boundary decision, applied or refused, is an action fact and an emitted event, as in the executor.
+    emitActionFacts(scenario.run.observer, state.t, applied.events);
+    if (applied.events.length > 0) ctx.emit?.(applied.events);
+  }
   const skipped = applied.events.find((event) => event.type === "action.skipped");
   const fact = applied.committedResets[0];
   if (!fact || skipped) return { ok: false, state };
@@ -740,6 +746,8 @@ function evaluateAlwaysActive<N, U extends string, Vars>(
   const { E } = scenario.ctx;
   absoluteToleranceOf(E, request.stability.absoluteTolerance);
   const recovery = recover(request, intervalSec);
+  // Goal times are seconds from the scenario origin, as horizonSec is.
+  const originT = scenario.initial.t;
   const reached: { t: number | null } = { t: null };
   let constraints = scenario.constraints;
   // Constraints change only at a boundary, so the context of the next interval is known before it runs.
@@ -751,7 +759,7 @@ function evaluateAlwaysActive<N, U extends string, Vars>(
       request,
       () => metricCtx,
       (t) => {
-        if (reached.t === null) reached.t = t;
+        if (reached.t === null) reached.t = t - originT;
       },
     ),
   );
@@ -804,7 +812,9 @@ function evaluateAlwaysActive<N, U extends string, Vars>(
     openSec > 1e-9 * Math.max(1, request.horizonSec) ? { startSec: lastResetT, endSec: state.t, durationSec: openSec } : null;
   // A goal met only by the last committed reset has no later run to read it.
   // Read on a copy, as the runner reads goals, so a predicate that writes its argument cannot change the result.
-  if (request.goal && reached.t === null && request.goal(metricCtx, deepClonePreservingPrototype(state))) reached.t = state.t;
+  if (request.goal && reached.t === null && request.goal(metricCtx, deepClonePreservingPrototype(state))) {
+    reached.t = state.t - originT;
+  }
   const unrealized = incomplete ? unrealizedAt(request, scenario, state, constraints) : E.zero();
   const status: ResetCandidateReport["status"] =
     unsupported && snaps.length === 0
@@ -846,8 +856,10 @@ type ScheduleOutcome<N, U extends string, Vars> = Readonly<{
   lastResetWall: number;
   /** The context at the horizon: live constraints, and clocks when the model reads them. */
   endCtx: SimContext<N, U, Vars>;
+  /** Wall seconds from the origin when the goal first held. */
   goalReachSec: number | null;
-  recovery: Readonly<{ threshold: N; resetT: number; crossedT: number | null }> | null;
+  /** Wall seconds of the first reset and of the first recovery crossing after it. */
+  recovery: Readonly<{ threshold: N; resetWall: number; crossedWall: number | null }> | null;
 }>;
 
 /**
@@ -869,7 +881,9 @@ function playSchedule<N, U extends string, Vars>(
   const blocks = sessionActiveBlocks(session.pattern)
     .map((block) => {
       const start = block.day * 86400 + block.startOffsetSec;
-      return { start, end: Math.min(start + block.durationSec, request.horizonSec) };
+      // Playback stops at the horizon, but a reset at the horizon is still inside the block's natural span.
+      const natural = start + block.durationSec;
+      return { start, natural, end: Math.min(natural, request.horizonSec) };
     })
     .filter((block) => block.end > block.start);
   let state = scenario.initial;
@@ -885,7 +899,23 @@ function playSchedule<N, U extends string, Vars>(
   const snaps: Snap[] = [];
   const walls: number[] = [];
   const reached: { t: number | null } = { t: null };
-  let recovery: { threshold: N; resetT: number; crossedT: number | null } | null = null;
+  let recovery: { threshold: N; resetWall: number; crossedWall: number | null } | null = null;
+  // The running segment, so a watcher's reward time maps back to wall time. Active play advances both clocks
+  // together. An offline gap credits reward by its cap and decay, so its wall position is the absence that earned it.
+  let segment: { wallStart: number; rewardStart: number; offlineRequested: number | null } = {
+    wallStart: 0,
+    rewardStart: state.t,
+    offlineRequested: null,
+  };
+  const wallOf = (t: number): number => {
+    const credited = Math.max(0, t - segment.rewardStart);
+    return (
+      segment.wallStart +
+      (segment.offlineRequested === null
+        ? credited
+        : offlineAbsenceForCredit(credited, segment.offlineRequested, scenario.run.offline))
+    );
+  };
   const clocksFor = (wallStart: number, wallEnd: number): SimContext<N, U, Vars>["clocks"] | undefined =>
     (scenario.model.clocks?.respondsTo?.length ?? 0) > 0
       ? { wallT: originT + wallStart, wallEndT: originT + wallEnd, rewardT: state.t, activeT: activeSec }
@@ -901,12 +931,13 @@ function playSchedule<N, U extends string, Vars>(
         request,
         () => segmentCtx,
         (t) => {
-          if (reached.t === null) reached.t = t;
+          if (reached.t === null) reached.t = wallOf(t);
         },
       )
     : [];
   const runActive = (durationSec: number) => {
     segmentCtx = ctxAt(wall + durationSec);
+    segment = { wallStart: wall, rewardStart: state.t, offlineRequested: null };
     const played = play(
       watched(scenario, watchers),
       state,
@@ -924,6 +955,7 @@ function playSchedule<N, U extends string, Vars>(
   const runOffline = (toWall: number) => {
     if (!(wall < toWall)) return;
     segmentCtx = ctxAt(toWall);
+    segment = { wallStart: wall, rewardStart: state.t, offlineRequested: toWall - wall };
     const clocks = clocksFor(wall, toWall);
     const base = watched(scenario, watchers);
     const offline = applyOfflineSeconds({
@@ -950,7 +982,7 @@ function playSchedule<N, U extends string, Vars>(
     if (wall < block.start) wall = block.start;
     while (resetsOpen && snaps.length < options.budget) {
       const at = Math.max(lastResetWall + intervalSec, wall);
-      if (!(at < block.end)) break;
+      if (!(at < block.natural && at <= request.horizonSec)) break;
       if (at > wall) runActive(at - wall);
       const boundaryCtx = ctxAt(block.end);
       const adapter = adapterAt(request, scenario, state, constraints, boundaryCtx.clocks);
@@ -981,18 +1013,18 @@ function playSchedule<N, U extends string, Vars>(
       // goal is read on the committed reset state too, on a copy as the runner reads it.
       const goal = request.goal;
       if (options.watchGoal && goal && reached.t === null && goal(ctxAt(block.end), deepClonePreservingPrototype(state))) {
-        reached.t = committed.t;
+        reached.t = at;
       }
       if (options.watchRecovery && recovery === null) {
-        const found = { threshold, resetT: committed.t, crossedT: null as number | null };
+        const found = { threshold, resetWall: at, crossedWall: null as number | null };
         recovery = found;
-        if (E.cmp(recoveryMetric(request, scenario, state, ctxAt(block.end)), threshold) >= 0) found.crossedT = committed.t;
+        if (E.cmp(recoveryMetric(request, scenario, state, ctxAt(block.end)), threshold) >= 0) found.crossedWall = at;
         else {
           watchers.push({
             id: RECOVERY_WATCH_ID,
             met: (next) => E.cmp(recoveryMetric(request, scenario, next, segmentCtx), threshold) >= 0,
             onMet: (t) => {
-              if (found.crossedT === null) found.crossedT = t;
+              if (found.crossedWall === null) found.crossedWall = wallOf(t);
             },
           });
         }
@@ -1006,10 +1038,12 @@ function playSchedule<N, U extends string, Vars>(
   const activeWallEnd = activeReach;
   // The rest of the horizon is away time and applies the offline progression.
   runOffline(request.horizonSec);
+  // A reset delay can carry the wall cursor past the horizon. The final reads happen at the horizon.
+  if (wall > request.horizonSec) wall = request.horizonSec;
   const endCtx = ctxAt(wall);
   const goal = request.goal;
   if (options.watchGoal && goal && reached.t === null && goal(endCtx, deepClonePreservingPrototype(state))) {
-    reached.t = state.t;
+    reached.t = wall;
   }
   return {
     snaps,
@@ -1044,8 +1078,9 @@ function evaluateSession<N, U extends string, Vars>(
   const recovery: ResetRecoveryReport = probe.recovery
     ? {
         metric: request.recovery.metric,
-        status: probe.recovery.crossedT === null ? "censored" : "observed",
-        seconds: probe.recovery.crossedT === null ? null : probe.recovery.crossedT - probe.recovery.resetT,
+        status: probe.recovery.crossedWall === null ? "censored" : "observed",
+        // Wall seconds, as the interval and horizon are, so a reset delay or a capped absence counts in full.
+        seconds: probe.recovery.crossedWall === null ? null : probe.recovery.crossedWall - probe.recovery.resetWall,
         threshold: E.toString(probe.recovery.threshold),
       }
     : {
