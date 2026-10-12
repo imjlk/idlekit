@@ -1,5 +1,6 @@
 import {
   BREAK_ETERNITY_EXPERIMENTAL_MESSAGE,
+  assertScenarioUntilExpr,
   compileScenario,
   createBreakInfinityEngine,
   createNumberEngine,
@@ -447,7 +448,8 @@ export function planResolvedRun(
     scenarioEngine: args.scenario.engine,
     customEngines: args.customEngines,
   });
-  // Reject an unknown strategy, as prepareResolvedRun does, without building it.
+  // Reject an invalid untilExpr and an unknown strategy, as prepareResolvedRun does, without building either.
+  assertScenarioUntilExpr({ scenario: args.scenario, E: engine.engine as Engine<number>, allowSuffixNotation: true });
   resolveStrategySelection({
     scenario: args.scenario,
     strategyRegistry: args.strategyRegistry,

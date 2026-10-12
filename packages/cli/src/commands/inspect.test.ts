@@ -52,6 +52,9 @@ describe("idk inspect", () => {
     const stageNamed = (report: any, name: string) => report.stages.find((stage: { name: string }) => stage.name === name);
     expect(stageNamed(fastOff, "simulate").fast).toEqual({ enabled: false, source: "command" });
     expect(stageNamed(inherited, "simulate").fast).toEqual({ enabled: false, source: "scenario" });
+    // evaluate and ltv also open an ltv stage. Its horizon comes from the command, so its count is unknown.
+    expect(stageNamed(inherited, "ltv").stepCount).toBe("unknown");
+    expect(stageNamed(fastOff, "ltv").fast).toEqual({ enabled: false, source: "command" });
     // The executable commands' session flags, with the same schemas.
     const session = runCliJson<any>(["inspect", scenario, "--session-pattern", "twice-daily", "--days", "2", "--format", "json"]);
     expect(stageNamed(session, "experience").session).toMatchObject({ id: "twice-daily", days: 2, source: "command" });
@@ -144,6 +147,25 @@ export const models = [{ id: "noted", version: 1, create() { throw new Error("cr
     });
     const describedReport = runCliJson<any>(["inspect", described, "--format", "json"]);
     expect(describedReport.diagnostics.some((item: { code: string }) => item.code === "decimal-range")).toBe(false);
+    // A numeric-looking model id is an identifier, not an engine literal.
+    const numericModel = resolve(dir, "numeric-model.ts");
+    await writeText(numericModel, `export const models = [{ id: "1234567890123456", version: 1, create() { throw new Error("x"); } }];\n`);
+    const numericScenario = await scenarioFile(dir, (raw) => {
+      (raw.model as { id: string }).id = "1234567890123456";
+    });
+    const numericReport = runCliJson<any>([
+      "inspect",
+      numericScenario,
+      "--resolve-plugins",
+      "--allow-plugin",
+      "--plugin",
+      numericModel,
+      "--plugin-root",
+      dir,
+      "--format",
+      "json",
+    ]);
+    expect(numericReport.diagnostics.some((item: { code: string }) => item.code === "decimal-range")).toBe(false);
     // A plugin strategy is a plugin registration, and a strategy only a skipped plugin provides still gets a report.
     const walker = resolve(dir, "walker.ts");
     await writeText(

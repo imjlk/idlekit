@@ -4,6 +4,7 @@ import {
   buildScenarioInspect,
   validateScenarioV1,
   type ScenarioInspectReport,
+  type ScenarioV1,
 } from "@idlekit/core";
 import { z } from "zod";
 import { loadRegistriesFromFlags, pluginOptions, type PluginOptionFlags } from "./_shared/plugin";
@@ -20,8 +21,21 @@ function requestedPluginPaths(input: string): string[] {
     .filter((item) => item.length > 0);
 }
 
-/** Scenario sections whose literals can enter the engine. Descriptive fields such as meta ids are not numbers. */
-const NUMERIC_SECTIONS = ["model", "initial", "strategy", "analysis", "monetization", "design", "constraints"] as const;
+/**
+ * Scenario values whose literals can enter the engine. Identifiers and descriptive fields, such as model and
+ * strategy ids or meta, are not numbers, so only model and strategy params are read from those sections.
+ */
+function numericInputs(scenario: ScenarioV1): unknown[] {
+  return [
+    scenario.model.params,
+    scenario.initial,
+    scenario.strategy?.params,
+    scenario.analysis,
+    scenario.monetization,
+    scenario.design,
+    scenario.constraints,
+  ];
+}
 
 function collectDecimals(value: unknown, out: string[]): void {
   // The money grammar accepts a sign and a leading-dot mantissa, so +1e400 and .1e400 are candidates too.
@@ -157,7 +171,7 @@ export default defineCommand({
     if (!valid.ok || !valid.scenario) throw scenarioInvalidError(valid.issues);
     const scenario = valid.scenario;
     const decimals: string[] = [];
-    for (const section of NUMERIC_SECTIONS) collectDecimals(scenario[section], decimals);
+    for (const section of numericInputs(scenario)) collectDecimals(section, decimals);
 
     const base = {
       model: { id: scenario.model.id, version: scenario.model.version },
@@ -215,6 +229,8 @@ export default defineCommand({
       });
       const simulate = prepared.planFor("simulate");
       const experience = prepared.planFor("experience");
+      // evaluate and ltv open an ltv stage too. Its horizon comes from the command, so its count stays unknown.
+      const ltv = prepared.planFor("ltv");
       const report = buildScenarioInspect({
         ...base,
         engine: {
@@ -223,7 +239,7 @@ export default defineCommand({
           accepted: true,
           ...(prepared.engine.scenarioEngine ? { scenarioEngine: prepared.engine.scenarioEngine } : {}),
         },
-        stages: [stageInput(simulate, scenario.sim?.fast === true), stageInput(experience, scenario.sim?.fast === true)],
+        stages: [simulate, experience, ltv].map((plan) => stageInput(plan, scenario.sim?.fast === true)),
         planner: plannerParams(simulate, pluginStrategyIds),
       });
       await emit(flags, report, scenarioPath, scenario);

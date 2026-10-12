@@ -386,6 +386,24 @@ export function modelCreateParams(args: {
   return args.raw;
 }
 
+/**
+ * Throw when a scenario's untilExpr does not compile for this engine, as compileScenario would. Nothing is
+ * evaluated and no model is created, so a plan-only caller can reject the same scenario.
+ */
+export function assertScenarioUntilExpr<N>(args: {
+  scenario: ScenarioV1;
+  E: Engine<N>;
+  allowSuffixNotation?: boolean;
+}): void {
+  compileUntilExpr({
+    expr: args.scenario.clock.untilExpr,
+    E: args.E,
+    unit: buildUnit({ scenario: args.scenario }),
+    allowSuffixNotation: args.allowSuffixNotation ?? true,
+    allowUnsafe: false,
+  });
+}
+
 function buildUnit<U extends string>(args: {
   scenario: ScenarioV1;
   unitFactory?: (code: string) => Unit<U>;
