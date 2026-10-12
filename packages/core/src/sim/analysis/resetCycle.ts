@@ -438,7 +438,14 @@ export function executeResetCycles<N, U extends string, Vars>(args: {
     ? deepClonePreservingPrototype(args.resume.constraints)
     : scenario.constraints;
   // An RNG snapshot is opaque, so it is only checkpointed and restored under a named, versioned generator.
-  if (args.rng && (typeof args.rng.id !== "string" || typeof args.rng.stateVersion !== "number")) {
+  // The id must be nonempty and the version finite, or the recorded identity could not match itself on resume.
+  if (
+    args.rng &&
+    (typeof args.rng.id !== "string" ||
+      args.rng.id.length === 0 ||
+      typeof args.rng.stateVersion !== "number" ||
+      !Number.isFinite(args.rng.stateVersion))
+  ) {
     throw new ResetCycleRejected("reset cycle rng needs an id and a stateVersion");
   }
   let accumulated = args.resume?.accumulatedReward ?? E.zero();
@@ -470,6 +477,10 @@ export function executeResetCycles<N, U extends string, Vars>(args: {
     (typeof resumedDuration !== "number" || !Number.isFinite(resumedDuration) || !(resumedDuration > 0))
   ) {
     throw new ResetCycleRejected("reset cycle checkpoint pendingDurationSec must be a finite number > 0");
+  }
+  // A cut cycle has played less than its planned duration, or it would have reset before the cut.
+  if (pending > 0 && resumedDuration !== undefined && pending >= resumedDuration) {
+    throw new ResetCycleRejected("reset cycle checkpoint pendingSec must be less than pendingDurationSec");
   }
   // A checkpoint that runs no cycle is written again with the same cut-cycle metadata.
   let pendingDuration: number | undefined = pending > 0 ? resumedDuration : undefined;
@@ -551,7 +562,11 @@ export function executeResetCycles<N, U extends string, Vars>(args: {
         `reset cycle checkpoint cut a ${args.resume.pendingDurationSec}-second cycle, not a ${duration}-second one`,
       );
     }
-    const remainingSec = Math.max(0, duration - pending);
+    // An older checkpoint without pendingDurationSec is checked against the planned duration here.
+    if (pending > 0 && pending >= duration) {
+      throw new ResetCycleRejected(`reset cycle checkpoint played ${pending} seconds of a ${duration}-second cycle`);
+    }
+    const remainingSec = duration - pending;
     if (args.horizonSec !== undefined && elapsed + remainingSec > args.horizonSec + slack) {
       guard = "censored";
       warnings.push("horizon");
@@ -646,7 +661,14 @@ export function executeResetCycles<N, U extends string, Vars>(args: {
       constraints,
       resetKinds: kinds,
       // The boundary happens at the executor's summed elapsed seconds, not at a rounded reward timestamp.
-      ...(boundaryCtx.clocks ? { wallT: boundaryCtx.clocks.wallT + elapsed } : {}),
+      // It stays within the segment's wall end, as wallNow keeps a step's reset there.
+      ...(boundaryCtx.clocks
+        ? {
+            wallT: Number.isFinite(boundaryCtx.clocks.wallEndT)
+              ? Math.min(boundaryCtx.clocks.wallT + elapsed, boundaryCtx.clocks.wallEndT)
+              : boundaryCtx.clocks.wallT + elapsed,
+          }
+        : {}),
       // The adapter built this action for the current state. A spec or custom adapter action is not in model.actions.
       resolveAgainstModel: false,
     });

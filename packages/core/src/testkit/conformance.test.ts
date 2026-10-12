@@ -2110,7 +2110,7 @@ describe("engine differential", () => {
  * @evidence docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness Executes the declared reset-cycle resume relation over the short and extended seed corpus.
  * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #bbb39a2 Read the declared relation and ran both corpora. Splits between cycles and budget cuts inside a cycle resume to the continuous economy, reward total, elapsed seconds, and completed rows; an undeclared relation stays unchecked.
  * @evidence ./conformance.ts#checkResetCycleResume Runs a continuous and a split reset-cycle execution and compares their economy, reward total, elapsed seconds, and completed rows.
- * @evidenceReview ./conformance.ts#checkResetCycleResume #88e0394 The function returns inapplicable when undeclared, splits by cycles or by a step budget, resumes the remaining cycles from the checkpoint, and compares one snapshot.
+ * @evidenceReview ./conformance.ts#checkResetCycleResume #f32f133 The function returns inapplicable when undeclared, splits by cycles or by a step budget, resumes the remaining cycles from the checkpoint, and compares one snapshot. It rewinds a restorable strategy to its opening state before the split run and does not apply to a strategy whose state cannot be restored.
  */
 export function resumesDeclaredResetCyclesAcrossTheSeedCorpus(): void {
   const testSeed = 0xc0de;
@@ -2157,6 +2157,26 @@ export function resumesDeclaredResetCyclesAcrossTheSeedCorpus(): void {
       run: { stepSec, durationSec: 1 },
     };
   };
+  // A restorable strategy with a cursor is rewound before the split run, so both branches start from its opening.
+  let cursor = 0;
+  const cursorFixture = fixture(2, 3, 1, 0);
+  const cursored: CompiledScenario<number, UnitCode, Vars> = {
+    ...cursorFixture,
+    strategy: {
+      id: "every-other-tick",
+      stateVersion: 1,
+      decide: (ctx, model, current) => {
+        cursor += 1;
+        return cursor % 2 === 0 ? cursorFixture.strategy!.decide(ctx, model, current) : [];
+      },
+      snapshotState: () => cursor,
+      restoreState: (saved) => {
+        cursor = saved as number;
+      },
+    },
+  };
+  expectApplicable(checkResetCycleResume(true, cursored, { kind: "fixed-interval", intervalSec: 5, cycles: 3 }, { cycles: 1 }));
+  expectApplicable(checkResetCycleResume(true, cursored, { kind: "fixed-interval", intervalSec: 5, cycles: 3 }, { budgetSteps: 7 }));
   const undeclared = fixture(1, 2, 1, 0);
   expect(checkResetCycleResume(false, undeclared, { kind: "fixed-interval", intervalSec: 4, cycles: 2 }, { cycles: 1 }).applicable).toBe(false);
   expectProperty({

@@ -10,6 +10,7 @@ import { executeResetCycles } from "../sim/analysis/resetCycle";
 import type { ResetCycleExecution, ResetCyclePolicy } from "../sim/analysis/resetCycle";
 import { stepOnce } from "../sim/step";
 import type { Action, CompiledScenario, Model, SimState } from "../sim/types";
+import { deepClonePreservingPrototype } from "../utils/deepClone";
 import { checkResumeFromJson, checkSnapshots, snapshotEconomy } from "./conformanceRun";
 import type { RelationCheck } from "./conformanceRun";
 
@@ -125,7 +126,18 @@ export function checkResetCycleResume<N, U extends string, Vars>(
 ): RelationCheck {
   if (!declared) return { ok: true, applicable: false, summary: "reset-cycle resume equivalence is not declared" };
   const { E } = scenario.ctx;
+  // Both branches start from the strategy's initial state. The continuous run would otherwise advance it first.
+  const strategy = scenario.strategy;
+  const restorable = !!(strategy?.snapshotState && strategy.restoreState);
+  if (strategy?.snapshotState && !restorable) {
+    return { ok: true, applicable: false, summary: "reset-cycle resume needs a strategy whose state can be restored" };
+  }
+  const opening = restorable ? deepClonePreservingPrototype(strategy?.snapshotState?.()) : undefined;
+  const rewind = () => {
+    if (restorable) strategy?.restoreState?.call(strategy, deepClonePreservingPrototype(opening));
+  };
   const continuous = executeResetCycles({ scenario, policy });
+  rewind();
   const first =
     "cycles" in split
       ? executeResetCycles({ scenario, policy: { ...policy, cycles: split.cycles } })
