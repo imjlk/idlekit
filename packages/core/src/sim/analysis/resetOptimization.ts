@@ -27,6 +27,15 @@ import { deepClonePreservingPrototype } from "../../utils/deepClone";
 const RESET_POLICY_ALGORITHM_VERSION = "reset-policy-v1" as const;
 const RESET_POLICY_SCHEMA_ID = "https://idlekit.dev/schemas/reset.policy.v1.schema.json" as const;
 const MAX_CANDIDATES = 10000;
+/** The runner treats a duration at or below this as already complete, as `executeResetCycles` rejects it. */
+const RUNNER_MIN_DURATION_SEC = 1e-12;
+/** Rounding slack in ULPs of the magnitudes involved, as `executeResetCycles` admits an interval at the horizon. */
+const HORIZON_ULPS = 64;
+
+/** Rounding dust of a wall or elapsed sum near the horizon: a few ULPs, never a share of the horizon. */
+function horizonDust(horizonSec: number, reached: number): number {
+  return HORIZON_ULPS * Number.EPSILON * Math.max(Math.abs(horizonSec), Math.abs(reached));
+}
 
 /**
  * @evidence docs/requirements/active/reset-cycle-analysis.md#req-pr11-reward-rate Realized reward is the committed deltas. The rate uses completed cycle time.
@@ -235,6 +244,12 @@ function scanIntervals(scan: ResetPolicyRequest<never, string, never>["scan"]): 
   if (!(scan.fromSec > 0) || scan.toSec < scan.fromSec) {
     throw new ResetPolicyRejected("reset policy scan range must be finite and fromSec > 0");
   }
+  // Intervals ascend from fromSec. One at or below the runner resolution would commit resets without playing time.
+  if (scan.fromSec <= RUNNER_MIN_DURATION_SEC) {
+    throw new ResetPolicyRejected(
+      `reset policy scan.fromSec must be greater than the runner's ${RUNNER_MIN_DURATION_SEC} second resolution`,
+    );
+  }
   const steps = (scan.toSec - scan.fromSec) / scan.stepSec;
   if (!Number.isFinite(steps)) throw new ResetPolicyRejected("reset policy scan range is not finite");
   const count = Math.floor(steps + 1e-9) + 1;
@@ -410,6 +425,16 @@ function liveCtx<N, U extends string, Vars>(
   constraints: ScenarioConstraints | undefined,
 ): SimContext<N, U, Vars> {
   return { ...scenario.ctx, ...(constraints ? { constraints } : {}) };
+}
+
+/**
+ * A measurement-only copy: no observer, reset hook, or event emitter. A probe run is not the candidate run, so none
+ * of its steps, actions, goals, milestones, or resets reach the caller.
+ */
+function silent<N, U extends string, Vars>(scenario: CompiledScenario<N, U, Vars>): CompiledScenario<N, U, Vars> {
+  const { observer: _observer, onPrestigeReset: _onPrestigeReset, ...run } = scenario.run;
+  const { emit: _emit, ...ctx } = scenario.ctx;
+  return { ...scenario, ctx, run };
 }
 
 /** Net worth read with the context the simulation used: live constraints, and clocks on a schedule. */
@@ -608,7 +633,8 @@ function recover<N, U extends string, Vars>(
   request: ResetPolicyRequest<N, U, Vars>,
   intervalSec: number,
 ): ResetRecoveryReport {
-  const scenario = request.createScenario();
+  // A probe: its runs are measurement only and emit nothing to the caller's observer.
+  const scenario = silent(request.createScenario());
   const { E } = scenario.ctx;
   const blank = E.toString(E.zero());
   // horizonSec is elapsed time from the scenario origin, as executeResetCycles reads it.
@@ -642,7 +668,8 @@ function recover<N, U extends string, Vars>(
   return {
     metric: request.recovery.metric,
     status: "observed",
-    seconds: search.end.t - committed.state.t,
+    // The runner's accumulated duration. Absolute clocks round each addition at a large origin.
+    seconds: runElapsedSec(search),
     threshold: E.toString(threshold),
   };
 }
@@ -801,15 +828,16 @@ function evaluateAlwaysActive<N, U extends string, Vars>(
   }
   metricCtx = liveCtx(scenario, constraints);
   // horizonSec is elapsed time from the scenario origin. The tail is what the cycles did not play.
+  // Only rounding dust of the elapsed sum is skipped, so a long horizon still plays a real remainder.
   const tail = request.horizonSec - elapsed;
-  if (tail > 1e-9 * Math.max(1, request.horizonSec)) {
+  if (tail > Math.max(RUNNER_MIN_DURATION_SEC, horizonDust(request.horizonSec, elapsed))) {
     const played = play(observed, state, constraints, adapterAt(request, scenario, state, constraints), tail);
     state = played.end;
     elapsed += runElapsedSec(played);
   }
   const openSec = elapsed - elapsedAtLastReset;
   const incomplete: ResetCandidateReport["incomplete"] =
-    openSec > 1e-9 * Math.max(1, request.horizonSec) ? { startSec: lastResetT, endSec: state.t, durationSec: openSec } : null;
+    openSec > Math.max(RUNNER_MIN_DURATION_SEC, horizonDust(request.horizonSec, elapsed)) ? { startSec: lastResetT, endSec: state.t, durationSec: openSec } : null;
   // A goal met only by the last committed reset has no later run to read it.
   // Read on a copy, as the runner reads goals, so a predicate that writes its argument cannot change the result.
   if (request.goal && reached.t === null && request.goal(metricCtx, deepClonePreservingPrototype(state))) {
@@ -1069,7 +1097,8 @@ function evaluateSession<N, U extends string, Vars>(
   const { E } = scenario.ctx;
   absoluteToleranceOf(E, request.stability.absoluteTolerance);
   // Recovery is measured on this candidate's own schedule: its first committed reset, then no further resets.
-  const probe = playSchedule(request, request.createScenario(), intervalSec, {
+  // The probe is measurement only: its runs emit nothing to the caller's observer.
+  const probe = playSchedule(request, silent(request.createScenario()), intervalSec, {
     budget: 1,
     emit: false,
     watchRecovery: true,
@@ -1101,9 +1130,10 @@ function evaluateSession<N, U extends string, Vars>(
     outcome.lastResetWall + 1e-9 < request.horizonSec
       ? { startSec: outcome.lastResetWall, endSec: request.horizonSec, durationSec: request.horizonSec - outcome.lastResetWall }
       : null;
-  // A manual reset needs active play at the horizon. An offline span or a reset delay there has nothing to realize.
+  // A manual reset needs active play at the horizon. An offline span or a reset delay there has nothing to realize,
+  // and a reset committed at the horizon leaves no incomplete span to realize after.
   const activeAtHorizon = outcome.activeWallEnd + 1e-9 >= request.horizonSec;
-  const unrealized = activeAtHorizon
+  const unrealized = incomplete && activeAtHorizon
     ? unrealizedAt(request, scenario, outcome.state, outcome.constraints, outcome.endCtx.clocks)
     : E.zero();
   const status: ResetCandidateReport["status"] =
