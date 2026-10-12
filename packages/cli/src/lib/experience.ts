@@ -339,6 +339,27 @@ export function collectExperienceSnapshot<N, U extends string, Vars>(args: {
   };
 }
 
+/**
+ * Reward seconds from the session start to the end of its last active block. Visible changes are read only in
+ * active blocks, so a draw without one is censored here.
+ */
+function observedUntilSec<N, U extends string, Vars>(session: SessionRunResult<N, U, Vars>): number {
+  let end = session.start.t;
+  for (const segment of session.segments) {
+    if (segment.kind === "active") end = Math.max(end, segment.endT);
+  }
+  return Math.max(0, end - session.start.t);
+}
+
+/** One censoring horizon when every draw shares it, otherwise null, since the estimator needs a common horizon. */
+function commonHorizon(horizons: readonly number[]): number | null {
+  const first = horizons[0];
+  if (first === undefined) return null;
+  const slack = 1e-9 * Math.max(1, Math.abs(first));
+  if (!horizons.every((horizon) => Math.abs(horizon - first) <= slack)) return null;
+  return Math.max(...horizons);
+}
+
 export function summarizeExperienceMonteCarlo<N, U extends string, Vars>(args: {
   scenario: CompiledScenario<N, U, Vars>;
   sessionPattern: SessionPatternSpec;
@@ -370,6 +391,7 @@ export function summarizeExperienceMonteCarlo<N, U extends string, Vars>(args: {
         visibleChangesPerMinute: snapshot.perceived.visibleChangesPerMinute,
         maxNoRewardGapSec: snapshot.perceived.maxNoRewardGapSec,
         firstVisibleChangeSec: snapshot.perceived.firstVisibleChangeSec,
+        firstVisibleHorizonSec: observedUntilSec(session!),
       };
     },
   });
@@ -400,7 +422,7 @@ export function summarizeExperienceMonteCarlo<N, U extends string, Vars>(args: {
         }),
       ),
       quantiles: args.quantiles,
-      horizonSec: null,
+      horizonSec: commonHorizon(values.map((entry) => entry.firstVisibleHorizonSec)),
       populationProbability: 0.95,
     }),
   };

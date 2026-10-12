@@ -135,10 +135,12 @@ not provide evidence of uncertainty. A stochastic model/plugin must actually
 consume seeded randomness for draws to vary. Experience derives its draw seeds
 from the base seed independently of the workflow's pacing seed list.
 
-In experience Monte Carlo summaries, a missing `firstVisibleChangeSec` currently
-falls back to `totalActiveSec`, or `0` if absent, before quantile aggregation. That
-is not an observed milestone or a pacing pass/fail gate; balance timing metrics
-separately report an absent action as `unreached`.
+In experience Monte Carlo summaries, a draw without a visible change is censored.
+It is not replaced with `totalActiveSec` or `0`. The legacy `firstVisibleChangeSec`
+summary reads observed draws only, and `firstVisible` reports the censored count
+and, when every draw shares one observation horizon, the population p95. That is
+not a pacing pass/fail gate; balance timing metrics separately report an absent
+action as `unreached`.
 
 These handoffs use the existing analysis commands and produce separate reports.
 They are not included in the balance generation's atomic bundle or freshness

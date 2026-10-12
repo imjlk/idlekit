@@ -281,10 +281,57 @@ function formatFinite(value: number): string {
   return String(value);
 }
 
+const DECIMAL_WIRE = /^([+-]?)(\d*)(?:\.(\d*))?(?:e([+-]?\d+))?$/i;
+
+/** Sign, significant digits, and exponent of a decimal spelling, so two spellings of one value compare equal. */
+function decimalKey(text: string): string | null {
+  const match = DECIMAL_WIRE.exec(text.trim());
+  if (!match) return null;
+  const whole = match[2] ?? "";
+  const fraction = match[3] ?? "";
+  if (whole === "" && fraction === "") return null;
+  let digits = `${whole}${fraction}`.replace(/^0+/, "");
+  if (digits === "") return "0";
+  let exponent = Number(match[4] ?? "0") - fraction.length;
+  const trailing = digits.length - digits.replace(/0+$/, "").length;
+  digits = digits.slice(0, digits.length - trailing);
+  exponent += trailing;
+  return `${match[1] === "-" ? "-" : ""}${digits}e${exponent}`;
+}
+
+/**
+ * The observed value as a number, only when the number is the value the caller wrote.
+ * A spelling that rounds, such as 9007199254740993, is rejected rather than reported as a neighbour.
+ */
 function parseObserved(value: string | null): number | null {
   if (value === null) return null;
   const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : null;
+  if (!Number.isFinite(parsed)) return null;
+  const written = decimalKey(value);
+  if (written === null) return null;
+  if (written !== decimalKey(String(parsed)) && !(written === "0" && parsed === 0)) {
+    throw new DistributionRejected(`distribution observed value ${value} is not exactly representable`);
+  }
+  return parsed;
+}
+
+/** Mean that cannot overflow when the values are finite. The plain sum is used when it is finite. */
+function finiteMean(values: readonly number[]): number {
+  const plain = values.reduce((sum, value) => sum + value, 0) / values.length;
+  if (Number.isFinite(plain)) return plain;
+  return values.reduce((sum, value) => sum + value / values.length, 0);
+}
+
+/** Population variance, rescaled when the squares overflow. Null when the variance itself is not a finite number. */
+function finiteVariance(values: readonly number[], mean: number): number | null {
+  const plain = values.reduce((sum, value) => sum + (value - mean) ** 2, 0) / values.length;
+  if (Number.isFinite(plain)) return plain;
+  let scale = 0;
+  for (const value of values) scale = Math.max(scale, Math.abs(value - mean));
+  if (!Number.isFinite(scale) || scale === 0) return null;
+  const scaled = values.reduce((sum, value) => sum + ((value - mean) / scale) ** 2, 0) / values.length;
+  const variance = scaled * scale * scale;
+  return Number.isFinite(variance) ? variance : null;
 }
 
 function meanSlot(
@@ -405,21 +452,29 @@ export function analyzeDistribution(request: DistributionRequest): DistributionA
       unsupported += 1;
       continue;
     }
+    // Untyped input can carry any status. Only "observed" is counted as a completion.
+    if (sample.status !== "observed") {
+      throw new DistributionRejected(
+        "distribution sample status must be observed, censored, failed, or unsupported",
+      );
+    }
     const parsed = parseObserved(sample.value);
     if (parsed === null) {
       failed += 1;
       continue;
+    }
+    // The common-horizon estimator ranks every censored draw after every completion. A completion past the
+    // horizon would make that rank unknowable.
+    if (horizonSec !== null && parsed > horizonSec) {
+      throw new DistributionRejected("distribution observed value exceeds the common horizonSec");
     }
     observed.push(parsed);
   }
 
   const eligible = observed.length + rightCensored;
   const completionRate = eligible > 0 ? observed.length / eligible : null;
-  const arithmetic = observed.length > 0 ? observed.reduce((sum, value) => sum + value, 0) / observed.length : null;
-  const variance =
-    arithmetic === null
-      ? null
-      : observed.reduce((sum, value) => sum + (value - arithmetic) ** 2, 0) / observed.length;
+  const arithmetic = observed.length > 0 ? finiteMean(observed) : null;
+  const variance = arithmetic === null ? null : finiteVariance(observed, arithmetic);
   const positive = observed.every((value) => value > 0);
   const meanLog = arithmetic !== null && positive ? observed.reduce((sum, value) => sum + Math.log10(value), 0) / observed.length : null;
   const logMean = arithmetic !== null && arithmetic > 0 ? Math.log10(arithmetic) : null;
@@ -482,6 +537,7 @@ export function analyzeDistribution(request: DistributionRequest): DistributionA
       ),
     },
     reduction: { order: "logical-draw-index", workerCountIndependent: true },
-    warnings: WARNINGS,
+    warnings:
+      arithmetic !== null && variance === null ? [...WARNINGS, "variance exceeds the number range and is not reported"] : WARNINGS,
   };
 }

@@ -58,7 +58,7 @@ function sample(
  * @evidence ./distribution.ts#distributionSampleAccounting Reads the sample accounting contract.
  * @evidenceReview ./distribution.ts#distributionSampleAccounting #b204d5a The declaration is observed-censored-failed-unsupported.
  * @evidence ./distribution.ts#analyzeDistribution Analyzes observed, censored, failed, and unsupported samples.
- * @evidenceReview ./distribution.ts#analyzeDistribution #8a6e820 The function orders samples by draw index, rejects duplicate or invalid draws, counts each status apart, and keeps censored draws out of the conditional quantiles.
+ * @evidenceReview ./distribution.ts#analyzeDistribution #7837905 The function orders samples by draw index, rejects duplicate or invalid draws, an unknown status, an observed value the number does not hold exactly, and a completion past the common horizon, counts each status apart, keeps censored draws out of the conditional quantiles, and keeps the mean and variance finite or reports the variance as absent.
  */
 export function separatesCensoringFromObservedQuantiles(): void {
   expect(distributionSampleAccounting).toBe("observed-censored-failed-unsupported");
@@ -108,6 +108,36 @@ export function separatesCensoringFromObservedQuantiles(): void {
   expect(failed.accounting.failed).toBe(1);
   expect(failed.means.arithmetic.value).toBe("10");
   expect(failed.means.arithmetic.value).not.toBe("0");
+
+  // A completion past the common horizon would make the rank of a censored draw unknowable.
+  expect(() =>
+    analyzeDistribution({
+      samples: [sample(0, "observed", "100"), sample(1, "censored", null)],
+      quantiles: [0.5],
+      horizonSec: 40,
+    }),
+  ).toThrow("exceeds the common horizonSec");
+  // Untyped input with another status is not counted as a completion.
+  const typo = { ...sample(0, "observed", "10"), status: "failure" } as unknown as DistributionSample;
+  expect(() => analyzeDistribution({ samples: [typo], quantiles: [0.5] })).toThrow("sample status must be");
+  // A value the number cannot hold is rejected. Another spelling of a representable value is kept.
+  expect(() => analyzeDistribution({ samples: [sample(0, "observed", "9007199254740993")], quantiles: [0.5] })).toThrow(
+    "not exactly representable",
+  );
+  const spelled = analyzeDistribution({
+    samples: [sample(0, "observed", "1e3"), sample(1, "observed", "10.50"), sample(2, "observed", "-0")],
+    quantiles: [0, 1],
+  });
+  expect(spelled.conditional.map((point) => point.value)).toEqual(["0", "1000"]);
+  // Finite samples do not overflow the mean, and a variance past the number range is not reported.
+  const huge = analyzeDistribution({ samples: [sample(0, "observed", "1e308"), sample(1, "observed", "1e308")], quantiles: [0.5] });
+  expect(huge.means.arithmetic).toEqual({ label: "arithmetic-mean", status: "observed", value: "1e+308" });
+  expect(huge.uncertainty.variance).toBe(0);
+  const spread = analyzeDistribution({ samples: [sample(0, "observed", "-1e308"), sample(1, "observed", "1e308")], quantiles: [0.5] });
+  expect(spread.means.arithmetic.value).toBe("0");
+  expect(spread.uncertainty.variance).toBeNull();
+  expect(spread.uncertainty.zeroVariance).toBe(false);
+  expect(spread.warnings).toContain("variance exceeds the number range and is not reported");
 }
 
 /**
@@ -301,7 +331,7 @@ export function checksSeededDropAndZeroVariance(): void {
   const constant = analyzeDistribution({
     samples: [0, 1, 2, 3, 4].map((drawIndex) => sample(drawIndex, "observed", "5")),
     quantiles: [0.5],
-    horizonSec: 1,
+    horizonSec: 5,
   });
   expect(constant.uncertainty.zeroVariance).toBe(true);
   expect(constant.uncertainty.variance).toBe(0);
@@ -329,7 +359,7 @@ export function separatesMeansAndCensorsMissingVisibleChange(): void {
   const report = analyzeDistribution({
     samples: [sample(0, "observed", "10"), sample(1, "observed", "1000")],
     quantiles: [0.5],
-    horizonSec: 1,
+    horizonSec: 1000,
   });
   expect(report.means.arithmetic).toEqual({ label: "arithmetic-mean", status: "observed", value: "505" });
   expect(report.means.meanLog10).toEqual({ label: "mean-of-log10", status: "observed", value: "2" });
