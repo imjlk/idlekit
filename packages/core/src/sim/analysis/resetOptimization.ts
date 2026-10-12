@@ -885,7 +885,8 @@ function playSchedule<N, U extends string, Vars>(
       const natural = start + block.durationSec;
       return { start, natural, end: Math.min(natural, request.horizonSec) };
     })
-    .filter((block) => block.end > block.start);
+    // A block that starts exactly at the horizon still admits a reset at the horizon, inside its natural span.
+    .filter((block) => block.end > block.start || (block.start === request.horizonSec && block.natural > block.start));
   let state = scenario.initial;
   let constraints = scenario.constraints;
   let wall = 0;
