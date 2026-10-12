@@ -22,6 +22,9 @@ describe("idk analyze", () => {
     expect(json.kind).toBe("postprocess");
     expect(json.value.seriesRequested).toBe("money");
     expect(json._meta.command).toBe("analyze");
+    expect(json.provenance.semantics).toEqual({ sessionKey: "none", strategyKey: "greedy", horizonSec: 8, stepSec: 1, seed: null });
+    const fractional = runCli(["analyze", "growth", scenario, "--trace-every", "1.5"], { check: false });
+    expect(fractional.exitCode).not.toBe(0);
     const markdown = runCli(["analyze", "growth", scenario, "--window", "5", "--format", "md"]);
     expect(markdown.stdout).toContain("growth-report-v1");
     expect(markdown.stdout).toContain("```json");
@@ -48,6 +51,8 @@ describe("idk analyze", () => {
     expect(json.value.estimate.algorithmVersion).toBe("eta-estimate-v1");
     expect(json.value.mode).toBe("simulate");
     expect(json.provenance.freshRuns).toBe(1);
+    expect(json.provenance.semantics.strategyKey).toBe("greedy");
+    expect(json.provenance.semantics.horizonSec).toBe(20);
     await removePath(dir);
   }, 60000);
 

@@ -55,7 +55,7 @@ export default defineCommand({
     "analyzer-version": option(z.string().default("1"), { description: "Analyzer version" }),
     window: option(z.coerce.number().default(60), { description: "Growth window sec" }),
     series: option(z.enum(["money", "netWorth"]).default("money"), { description: "Growth series" }),
-    "trace-every": option(z.coerce.number().default(1), { description: "Trace every N steps" }),
+    "trace-every": option(z.coerce.number().int().min(1).default(1), { description: "Trace every N steps" }),
     "target-money": option(z.string().optional(), { description: "ETA target money NumStr" }),
     "target-worth": option(z.string().optional(), { description: "ETA target net worth NumStr" }),
     mode: option(z.enum(["simulate", "analytic"]).default("simulate"), { description: "ETA mode" }),
@@ -160,6 +160,7 @@ function runGrowth(
     window: number;
     series: "money" | "netWorth";
     "trace-every": number;
+    "max-duration": number;
   },
 ) {
   const run = tracedRun(compiled, flags["trace-every"]);
@@ -168,6 +169,7 @@ function runGrowth(
     scenario: compiled.compiled,
     series: flags.series,
     windowSec: flags.window,
+    semantics: scenarioSemantics(compiled, flags["max-duration"]),
     supply: {
       schema: observationContract,
       windowSec: flags.window,
@@ -206,6 +208,8 @@ function runEta(
     target,
     mode: flags.mode,
     maxDurationSec: flags["max-duration"],
+    // ETA simulates for max-duration, so that is its horizon; strategy, step, and seed come from the scenario.
+    semantics: { ...scenarioSemantics(compiled, flags["max-duration"]), horizonSec: flags["max-duration"] },
     budget: budgetFromFlags(flags),
     runFactory: runFactoryFor(loaded),
   });
