@@ -245,7 +245,8 @@ export function firstVisibleDistributionSample(args: Readonly<{
       source: "model-strategy-session",
     };
   }
-  if (!Number.isFinite(args.firstVisibleChangeSec)) {
+  // Seconds since the session start. A non-finite or negative time is not a completion.
+  if (!Number.isFinite(args.firstVisibleChangeSec) || args.firstVisibleChangeSec < 0) {
     return {
       drawIndex: args.drawIndex,
       seed: args.seed,
@@ -290,13 +291,15 @@ function decimalKey(text: string): string | null {
   const whole = match[2] ?? "";
   const fraction = match[3] ?? "";
   if (whole === "" && fraction === "") return null;
-  let digits = `${whole}${fraction}`.replace(/^0+/, "");
-  if (digits === "") return "0";
-  let exponent = Number(match[4] ?? "0") - fraction.length;
-  const trailing = digits.length - digits.replace(/0+$/, "").length;
-  digits = digits.slice(0, digits.length - trailing);
-  exponent += trailing;
-  return `${match[1] === "-" ? "-" : ""}${digits}e${exponent}`;
+  // Index scans, not /0+$/: a regex anchored at the end rescans a long run of zeros from every start.
+  const raw = `${whole}${fraction}`;
+  let first = 0;
+  while (first < raw.length && raw[first] === "0") first += 1;
+  let last = raw.length;
+  while (last > first && raw[last - 1] === "0") last -= 1;
+  if (first === last) return "0";
+  const exponent = Number(match[4] ?? "0") - fraction.length + (raw.length - last);
+  return `${match[1] === "-" ? "-" : ""}${raw.slice(first, last)}e${exponent}`;
 }
 
 /**
@@ -315,11 +318,24 @@ function parseObserved(value: string | null): number | null {
   return parsed;
 }
 
-/** Mean that cannot overflow when the values are finite. The plain sum is used when it is finite. */
+/**
+ * Mean that stays finite when the values are finite. The plain sum is used when it is finite. Otherwise the
+ * values are divided by the largest magnitude, and the result is kept inside [min, max], where every mean lies,
+ * so rounding at the number limit cannot step past it.
+ */
 function finiteMean(values: readonly number[]): number {
   const plain = values.reduce((sum, value) => sum + value, 0) / values.length;
   if (Number.isFinite(plain)) return plain;
-  return values.reduce((sum, value) => sum + value / values.length, 0);
+  let scale = 0;
+  let smallest = Number.POSITIVE_INFINITY;
+  let largest = Number.NEGATIVE_INFINITY;
+  for (const value of values) {
+    scale = Math.max(scale, Math.abs(value));
+    smallest = Math.min(smallest, value);
+    largest = Math.max(largest, value);
+  }
+  const scaled = (values.reduce((sum, value) => sum + value / scale, 0) / values.length) * scale;
+  return Math.min(largest, Math.max(smallest, scaled));
 }
 
 /** Population variance, rescaled when the squares overflow. Null when the variance itself is not a finite number. */
@@ -438,6 +454,10 @@ export function analyzeDistribution(request: DistributionRequest): DistributionA
     seen.add(sample.drawIndex);
     if (typeof sample.seed !== "number" || !Number.isFinite(sample.seed)) {
       throw new DistributionRejected("distribution seed must be finite");
+    }
+    // Untyped input can carry any source. The artifact names only the two the contract declares.
+    if (sample.source !== "model-strategy-session" && sample.source !== "monetization") {
+      throw new DistributionRejected("distribution sample source must be model-strategy-session or monetization");
     }
     sources.add(sample.source);
     if (sample.status === "censored") {

@@ -339,6 +339,15 @@ export function collectExperienceSnapshot<N, U extends string, Vars>(args: {
   };
 }
 
+function distinctQuantiles(quantiles: readonly number[]): number[] {
+  const byKey = new Map<string, number>();
+  for (const q of quantiles) {
+    const key = canonicalQuantileKey(q);
+    if (!byKey.has(key)) byKey.set(key, q);
+  }
+  return [...byKey.values()];
+}
+
 /**
  * Reward seconds from the session start to the end of its last active block. Visible changes are read only in
  * active blocks, so a draw without one is censored here.
@@ -351,13 +360,17 @@ function observedUntilSec<N, U extends string, Vars>(session: SessionRunResult<N
   return Math.max(0, end - session.start.t);
 }
 
-/** One censoring horizon when every draw shares it, otherwise null, since the estimator needs a common horizon. */
+/**
+ * One censoring horizon when every draw has exactly that horizon, otherwise null. A draw censored even a tick
+ * earlier has an unknown rank against completions after it, so near-equal horizons are not common.
+ */
 function commonHorizon(horizons: readonly number[]): number | null {
   const first = horizons[0];
   if (first === undefined) return null;
-  const slack = 1e-9 * Math.max(1, Math.abs(first));
-  if (!horizons.every((horizon) => Math.abs(horizon - first) <= slack)) return null;
-  return Math.max(...horizons);
+  for (const horizon of horizons) {
+    if (horizon !== first) return null;
+  }
+  return first;
 }
 
 export function summarizeExperienceMonteCarlo<N, U extends string, Vars>(args: {
@@ -421,7 +434,8 @@ export function summarizeExperienceMonteCarlo<N, U extends string, Vars>(args: {
           firstVisibleChangeSec: entry.firstVisibleChangeSec,
         }),
       ),
-      quantiles: args.quantiles,
+      // Scenario validation checks each quantile's range, not duplicates. One key per quantile is analyzed.
+      quantiles: distinctQuantiles(args.quantiles),
       horizonSec: commonHorizon(values.map((entry) => entry.firstVisibleHorizonSec)),
       populationProbability: 0.95,
     }),

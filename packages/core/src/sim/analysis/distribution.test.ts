@@ -58,7 +58,7 @@ function sample(
  * @evidence ./distribution.ts#distributionSampleAccounting Reads the sample accounting contract.
  * @evidenceReview ./distribution.ts#distributionSampleAccounting #b204d5a The declaration is observed-censored-failed-unsupported.
  * @evidence ./distribution.ts#analyzeDistribution Analyzes observed, censored, failed, and unsupported samples.
- * @evidenceReview ./distribution.ts#analyzeDistribution #7837905 The function orders samples by draw index, rejects duplicate or invalid draws, an unknown status, an observed value the number does not hold exactly, and a completion past the common horizon, counts each status apart, keeps censored draws out of the conditional quantiles, and keeps the mean and variance finite or reports the variance as absent.
+ * @evidenceReview ./distribution.ts#analyzeDistribution #b84e856 The function orders samples by draw index, rejects duplicate or invalid draws, an unknown status or source, an observed value the number does not hold exactly, and a completion past the common horizon, counts each status apart, keeps censored draws out of the conditional quantiles, and keeps the mean finite inside the sample range and the variance finite or absent.
  */
 export function separatesCensoringFromObservedQuantiles(): void {
   expect(distributionSampleAccounting).toBe("observed-censored-failed-unsupported");
@@ -138,6 +138,21 @@ export function separatesCensoringFromObservedQuantiles(): void {
   expect(spread.uncertainty.variance).toBeNull();
   expect(spread.uncertainty.zeroVariance).toBe(false);
   expect(spread.warnings).toContain("variance exceeds the number range and is not reported");
+  // At the number limit the scaled mean is kept inside [min, max], so it stays finite.
+  const limit = String(Number.MAX_VALUE);
+  const atLimit = analyzeDistribution({
+    samples: [sample(0, "observed", limit), sample(1, "observed", limit), sample(2, "observed", limit)],
+    quantiles: [0.5],
+  });
+  expect(atLimit.means.arithmetic).toEqual({ label: "arithmetic-mean", status: "observed", value: limit });
+  // A long run of zeros is read in linear time, and a value that underflows to 0 is not the value written.
+  const tiny = `0.${"0".repeat(20_000)}1${"0".repeat(20_000)}1`;
+  expect(() => analyzeDistribution({ samples: [sample(0, "observed", tiny)], quantiles: [0.5] })).toThrow(
+    "not exactly representable",
+  );
+  // Untyped input with another source is rejected, so the artifact names only declared sources.
+  const billing = { ...sample(0, "observed", "10"), source: "billing" } as unknown as DistributionSample;
+  expect(() => analyzeDistribution({ samples: [billing], quantiles: [0.5] })).toThrow("sample source must be");
 }
 
 /**
@@ -352,7 +367,7 @@ export function checksSeededDropAndZeroVariance(): void {
  * @evidence ./distribution.ts#distributionMeanIdentity Reads the mean identity contract.
  * @evidenceReview ./distribution.ts#distributionMeanIdentity #b0d53fa The declaration is arithmetic-mean-log-and-log-mean.
  * @evidence ./distribution.ts#firstVisibleDistributionSample Censors a missing first visible change.
- * @evidenceReview ./distribution.ts#firstVisibleDistributionSample #973803a The function validates the draw and seed, returns a censored sample for a missing change, and an observed value otherwise.
+ * @evidenceReview ./distribution.ts#firstVisibleDistributionSample #d243eb8 The function validates the draw and seed, returns a censored sample for a missing change, a failed sample for a non-finite or negative time, and an observed value otherwise.
  */
 export function separatesMeansAndCensorsMissingVisibleChange(): void {
   expect(distributionMeanIdentity).toBe("arithmetic-mean-log-and-log-mean");
@@ -373,6 +388,8 @@ export function separatesMeansAndCensorsMissingVisibleChange(): void {
   expect(missing.value).toBeNull();
   expect(missing.value).not.toBe("30");
   expect(missing.value).not.toBe("0");
+  // Seconds since the session start cannot be negative, so a negative time is a failed sample.
+  expect(firstVisibleDistributionSample({ drawIndex: 2, seed: 3, firstVisibleChangeSec: -1 }).status).toBe("failed");
   const seen = firstVisibleDistributionSample({ drawIndex: 1, seed: 2, firstVisibleChangeSec: 12 });
   expect(seen).toEqual({
     drawIndex: 1,

@@ -180,4 +180,15 @@ describe("experience Monte Carlo first visible change", () => {
     expect(summary.firstVisible.population.status).toBe("observed");
     expect(summary.firstVisible.population.value).not.toBeNull();
   });
+
+  it("analyzes one key per quantile when the scenario lists a quantile twice", () => {
+    const summary = summarizeExperienceMonteCarlo({
+      scenario: scenario(),
+      sessionPattern: { id: "twice-daily", days: 1 },
+      draws: 2,
+      seed: 1,
+      quantiles: [0.5, 0.5],
+    });
+    expect(summary.firstVisible.conditional.map((point) => point.key)).toEqual(["q0.5"]);
+  });
 });
