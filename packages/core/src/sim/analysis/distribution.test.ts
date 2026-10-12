@@ -58,7 +58,7 @@ function sample(
  * @evidence ./distribution.ts#distributionSampleAccounting Reads the sample accounting contract.
  * @evidenceReview ./distribution.ts#distributionSampleAccounting #b204d5a The declaration is observed-censored-failed-unsupported.
  * @evidence ./distribution.ts#analyzeDistribution Analyzes observed, censored, failed, and unsupported samples.
- * @evidenceReview ./distribution.ts#analyzeDistribution #b84e856 The function orders samples by draw index, rejects duplicate or invalid draws, an unknown status or source, an observed value the number does not hold exactly, and a completion past the common horizon, counts each status apart, keeps censored draws out of the conditional quantiles, and keeps the mean finite inside the sample range and the variance finite or absent.
+ * @evidenceReview ./distribution.ts#analyzeDistribution #b84e856 The function orders samples by draw index, rejects duplicate or invalid draws, an unknown status or source, an observed value the number does not hold exactly, and a completion past the common horizon, counts each status apart, keeps censored draws out of the conditional quantiles, and keeps the mean finite inside the sample range and the variance finite or absent. The mean is a compensated sum over a power-of-two scale, so cancelling extremes keep a small residual.
  */
 export function separatesCensoringFromObservedQuantiles(): void {
   expect(distributionSampleAccounting).toBe("observed-censored-failed-unsupported");
@@ -145,6 +145,19 @@ export function separatesCensoringFromObservedQuantiles(): void {
     quantiles: [0.5],
   });
   expect(atLimit.means.arithmetic).toEqual({ label: "arithmetic-mean", status: "observed", value: limit });
+  // Large values that cancel keep the small residual.
+  const negativeLimit = `-${limit}`;
+  const cancelling = analyzeDistribution({
+    samples: [
+      sample(0, "observed", limit),
+      sample(1, "observed", limit),
+      sample(2, "observed", negativeLimit),
+      sample(3, "observed", negativeLimit),
+      sample(4, "observed", "1e-100"),
+    ],
+    quantiles: [0.5],
+  });
+  expect(cancelling.means.arithmetic.value).toBe(String(1e-100 / 5));
   // A long run of zeros is read in linear time, and a value that underflows to 0 is not the value written.
   const tiny = `0.${"0".repeat(20_000)}1${"0".repeat(20_000)}1`;
   expect(() => analyzeDistribution({ samples: [sample(0, "observed", tiny)], quantiles: [0.5] })).toThrow(

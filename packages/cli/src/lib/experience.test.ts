@@ -191,4 +191,15 @@ describe("experience Monte Carlo first visible change", () => {
     });
     expect(summary.firstVisible.conditional.map((point) => point.key)).toEqual(["q0.5"]);
   });
+
+  it("keeps the q50 median key when a neighbour rounds to it", () => {
+    const summary = summarizeExperienceMonteCarlo({
+      scenario: scenario(),
+      sessionPattern: { id: "twice-daily", days: 1 },
+      draws: 2,
+      seed: 1,
+      quantiles: [0.5, 0.504],
+    });
+    expect(Object.keys(summary.endNetWorthLog10.quantiles).sort()).toEqual(["q0.504", "q50"]);
+  });
 });

@@ -318,24 +318,26 @@ function parseObserved(value: string | null): number | null {
   return parsed;
 }
 
-/**
- * Mean that stays finite when the values are finite. The plain sum is used when it is finite. Otherwise the
- * values are divided by the largest magnitude, and the result is kept inside [min, max], where every mean lies,
- * so rounding at the number limit cannot step past it.
- */
+/** Mean that stays finite when the values are finite and keeps small residuals when large values cancel. */
 function finiteMean(values: readonly number[]): number {
-  const plain = values.reduce((sum, value) => sum + value, 0) / values.length;
-  if (Number.isFinite(plain)) return plain;
-  let scale = 0;
+  // Divide by a power of two large enough that n terms cannot overflow. That division is exact, so a small value
+  // keeps its bits, and compensated (Neumaier) summation keeps the residual when large values cancel.
+  const scale = 2 ** (Math.ceil(Math.log2(values.length)) + 1);
+  let sum = 0;
+  let compensation = 0;
   let smallest = Number.POSITIVE_INFINITY;
   let largest = Number.NEGATIVE_INFINITY;
   for (const value of values) {
-    scale = Math.max(scale, Math.abs(value));
     smallest = Math.min(smallest, value);
     largest = Math.max(largest, value);
+    const term = value / scale;
+    const next = sum + term;
+    compensation += Math.abs(sum) >= Math.abs(term) ? sum - next + term : term - next + sum;
+    sum = next;
   }
-  const scaled = (values.reduce((sum, value) => sum + value / scale, 0) / values.length) * scale;
-  return Math.min(largest, Math.max(smallest, scaled));
+  const mean = ((sum + compensation) / values.length) * scale;
+  // Every mean lies inside [min, max], so rounding at the number limit cannot step past it.
+  return Math.min(largest, Math.max(smallest, mean));
 }
 
 /** Population variance, rescaled when the squares overflow. Null when the variance itself is not a finite number. */
