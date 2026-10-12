@@ -164,7 +164,8 @@ function renderCanonical(value: unknown, seen: Set<object>): string {
   seen.add(value);
   try {
     if (Array.isArray(value)) {
-      return `[${Array.from({ length: value.length }, (_, index) => renderCanonical(value[index] ?? null, seen)).join(",")}]`;
+      const entries = Array.from({ length: value.length }, (_, index) => renderCanonical(value[index] ?? null, seen));
+      return `[${entries.join(",")}]`;
     }
     const entries = Object.entries(value).filter(([, entry]) => entry !== undefined);
     entries.sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0));

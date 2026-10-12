@@ -58,7 +58,7 @@ describe("analysis contract validity", () => {
 
   it("serializes array indices even when the array has a custom iterator", () => {
     const values = [1, 2];
-    values[Symbol.iterator] = function* () { yield 9; };
+    values[Symbol.iterator] = () => [9][Symbol.iterator]();
     expect(analysisCanonicalJson(values)).toBe(JSON.stringify(values));
   });
 
