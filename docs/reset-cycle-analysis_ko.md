@@ -19,9 +19,9 @@ English version: [reset-cycle-analysis.md](./reset-cycle-analysis.md)
 
 `best`는 objective와 그 읽기(`flow`, `stock`, `time`), scan 범위, `scope: "scan-range"`, `globalOptimum: false`, session 가정, 관측 상태를 담는다. 순위는 `Engine.cmp`다. `toNumber`에서 같은 값이 `Engine.cmp`에서도 같은 값은 아니다. 승자는 scan한 후보 중 최선이지 전역 최적이 아니다.
 
-session 패턴은 active block 안에서만 수동 reset을 커밋한다. `resetDelaySec`는 호출자가 준 시간 비용이다. wall time만 밀고 수입은 주지 않는다. 오프라인 공백에서는 reset을 커밋하지 않는다. 그 공백은 `simulateSessionPattern`처럼 시나리오의 오프라인 진행(cap과 decay 포함)을 적용하고, 모델이 session clock을 읽으면 active block에 그 값을 준다. cycle budget에 닿거나 reset이 거절되면 이후 reset만 멈추고 일정은 계속 재생하므로, 모든 후보가 같은 horizon까지 진행한다. 일정이 있는 후보의 recovery는 그 후보의 첫 reset부터 잰다.
+session 패턴은 active block 안에서만 수동 reset을 커밋한다. `resetDelaySec`는 호출자가 준 시간 비용이다. wall time만 밀고 수입은 주지 않는다. 오프라인 공백에서는 reset을 커밋하지 않는다. 그 공백은 `simulateSessionPattern`처럼 시나리오의 오프라인 진행(cap과 decay 포함)을 적용하고, 모델이 session clock을 읽으면 active block에 그 값을 준다. cycle budget에 닿거나 reset이 거절되면 이후 reset만 멈추고 일정은 계속 재생하므로, 모든 후보가 같은 horizon까지 진행한다. 일정이 있는 후보의 recovery는 그 후보의 첫 reset부터 잰다. 일정이 있는 cycle의 길이는 이전 reset의 wall 시각부터 이번 reset까지이므로 reset delay도 보상률에 들어간다. 미실현 reset은 horizon이 active block 안에 있을 때만 시험 적용한다.
 
-재생 중에는 전략이 reset action을 보지 못하므로 policy만 reset을 커밋한다. reset adapter는 각 경계에서 현재 constraints로 다시 고른다. `horizonSec`는 시나리오 시작부터의 경과 시간이다. 목표 시간은 목표를 만족한 첫 커밋 상태의 시간이며 reset 사이도 포함한다. `goal-reach-sec`에는 goal이 필요하고 `absoluteTolerance`는 0 이상의 유한한 값이어야 한다. 중간에 거절된 승자가 있으면 artifact 상태는 `incomplete`다.
+재생 중에는 전략이 reset action을 보지 못하므로 policy만 reset을 커밋한다. reset adapter는 각 경계에서 현재 constraints로 다시 고른다. `horizonSec`는 시나리오 시작부터의 경과 시간이다. 목표 시간은 목표를 만족한 첫 커밋 상태의 시간이며 reset 사이도 포함한다. `goal-reach-sec`에는 goal이 필요하고 `absoluteTolerance`는 0 이상의 유한한 값이어야 한다. 중간에 거절된 승자가 있으면 artifact 상태는 `incomplete`이고, stability window에 필요한 cycle이 모자라면 `insufficient-data`다. stability window는 서로 달라야 한다. 순자산, 수입, goal은 현재 constraints로 읽고, 일정이 있으면 session clock도 함께 쓴다.
 
 ## 기준 예
 

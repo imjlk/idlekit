@@ -25,6 +25,8 @@ import { withoutResetActions } from "./resetActions";
 const RESET_CYCLE_ALGORITHM_VERSION = "reset-cycle-v1" as const;
 /** Relative slack for summed fractional intervals, such as 0.1 three times against a 0.3 horizon. */
 const HORIZON_TOLERANCE = 1e-9;
+/** The slack is also capped by this share of the next interval, so a long horizon cannot admit a whole extra interval. */
+const INTERVAL_TOLERANCE = 1e-6;
 const RESET_CYCLE_SCHEMA_ID = "https://idlekit.dev/schemas/reset.cycle.v1.schema.json" as const;
 
 /**
@@ -314,6 +316,13 @@ export function executeResetCycles<N, U extends string, Vars>(args: {
     throw new ResetCycleRejected("reset cycle budgetSteps must be an integer >= 0");
   }
 
+  // A checkpoint from another contract or version is not read as this one.
+  if (
+    args.resume &&
+    (args.resume.contract !== "idlekit.reset-cycle-checkpoint" || args.resume.version !== 1)
+  ) {
+    throw new ResetCycleRejected("reset cycle resume needs an idlekit.reset-cycle-checkpoint version 1");
+  }
   const originSec = args.resume?.originSec ?? args.resume?.state.t ?? scenario.initial.t;
   // Resume from copies, so in-place edits during the run cannot rewrite the checkpoint.
   let state = args.resume ? deepClonePreservingPrototype(args.resume.state) : scenario.initial;
@@ -324,13 +333,18 @@ export function executeResetCycles<N, U extends string, Vars>(args: {
   let nextIndex = args.resume?.nextIndex ?? 0;
   // Restore from a copy, so a restore that keeps or edits its argument cannot change the checkpoint.
   // Presence is the key, not the value: an undefined snapshot is still restored.
+  // A saved snapshot needs something to restore it into. Dropping it would resume on a different stream.
   if (args.resume && "strategyState" in args.resume) {
-    if (scenario.strategy && !scenario.strategy.restoreState) {
+    const restore = scenario.strategy?.restoreState;
+    if (!restore) {
       throw new ResetCycleRejected("reset cycle checkpoint has strategyState, but the strategy has no restoreState");
     }
-    scenario.strategy?.restoreState?.(deepClonePreservingPrototype(args.resume.strategyState));
+    restore.call(scenario.strategy, deepClonePreservingPrototype(args.resume.strategyState));
   }
-  if (args.resume && "rngState" in args.resume) args.rng?.restore(deepClonePreservingPrototype(args.resume.rngState));
+  if (args.resume && "rngState" in args.resume) {
+    if (!args.rng) throw new ResetCycleRejected("reset cycle checkpoint has rngState, but no rng was passed");
+    args.rng.restore(deepClonePreservingPrototype(args.resume.rngState));
+  }
   // The context the runner and the boundary action see: the scenario context with the live constraints.
   const liveCtx = (): SimContext<N, U, Vars> => ({ ...scenario.ctx, ...(constraints ? { constraints } : {}) });
   const startAdapter = resetAdapterFor(scenario, args.adapter, state, liveCtx());
@@ -357,8 +371,11 @@ export function executeResetCycles<N, U extends string, Vars>(args: {
     const duration =
       args.policy.kind === "fixed-interval" ? args.policy.intervalSec : args.policy.steps[rows.length]!.durationSec;
     // horizonSec is elapsed time from the study origin, not an absolute t.
-    // The slack is relative only, so a zero horizon admits no positive interval.
-    if (args.horizonSec !== undefined && elapsed + duration > args.horizonSec * (1 + HORIZON_TOLERANCE)) {
+    // The slack is relative only, so a zero horizon admits no positive interval, and it is capped by a share of
+    // the interval, so a horizon of 1e9 seconds does not admit a 0.5-second interval past it.
+    const slack =
+      args.horizonSec === undefined ? 0 : Math.min(args.horizonSec * HORIZON_TOLERANCE, duration * INTERVAL_TOLERANCE);
+    if (args.horizonSec !== undefined && elapsed + duration > args.horizonSec + slack) {
       guard = "censored";
       warnings.push("horizon");
       break;
@@ -477,7 +494,7 @@ export function executeResetCycles<N, U extends string, Vars>(args: {
     const rewardFact: CommittedResetFact = { ...fact, rewardDelta: E.toString(delta) };
     emitCommittedResets(scenario.run.observer, [rewardFact]);
     if (adapter.id === "prestige.spec" && scenario.model.prestige) {
-      const declared = scenario.model.prestige.multiplierFrom(scenario.ctx, state.prestige.points);
+      const declared = scenario.model.prestige.multiplierFrom(boundaryCtx, state.prestige.points);
       const multiplierNote = "multiplierFrom was not applied; resetState owns the multiplier";
       if (E.cmp(declared, state.prestige.multiplier) !== 0 && !warnings.includes(multiplierNote)) {
         warnings.push(multiplierNote);
