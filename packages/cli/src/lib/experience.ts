@@ -1,10 +1,15 @@
 import {
+  analyzeDistribution,
   analyzeGrowth,
   analyzeMilestones,
+  canonicalQuantileKey,
+  firstVisibleDistributionSample,
+  quantileInclusiveFloor,
   simulateMonteCarlo,
   simulateSessionPattern,
   VisibilityTracker,
   type CompiledScenario,
+  type DistributionArtifactV1,
   type GrowthReport,
   type MilestoneReport,
   type RunBindOptions,
@@ -69,27 +74,33 @@ export type ExperienceMonteCarloSummary = Readonly<{
   endNetWorthLog10: ExperienceNumericSummary;
   visibleChangesPerMinute: ExperienceNumericSummary;
   maxNoRewardGapSec: ExperienceNumericSummary;
-  firstVisibleChangeSec: ExperienceNumericSummary;
+  /** Legacy numeric view of observed changes only. Null when every draw is censored. */
+  firstVisibleChangeSec: ExperienceNumericSummary | null;
+  /** Population and conditional quantiles. A missing change stays censored. */
+  firstVisible: DistributionArtifactV1;
 }>;
 
-function quantile(values: number[], q: number): number {
-  if (values.length === 0) return 0;
-  const sorted = [...values].sort((a, b) => a - b);
-  const idx = Math.max(0, Math.min(sorted.length - 1, Math.floor((sorted.length - 1) * q)));
-  return sorted[idx] ?? 0;
+function quantile(values: number[], q: number): number | undefined {
+  return quantileInclusiveFloor(values, q) ?? undefined;
 }
 
-function summarizeNumeric(values: number[], quantiles: readonly number[]): ExperienceNumericSummary {
-  if (values.length === 0) {
-    return {
-      mean: 0,
-      quantiles: Object.fromEntries(quantiles.map((q) => [`q${Math.round(q * 100)}`, 0])),
-    };
-  }
+function quantileKey(quantiles: readonly number[], q: number): string {
+  const percent = Math.round(q * 100);
+  const legacy = `q${percent}`;
+  const collided = quantiles.some((other) => other !== q && `q${Math.round(other * 100)}` === legacy);
+  if (!collided) return legacy;
+  // The quantile spelled exactly as that percent keeps the legacy key, so q50 stays the median that design
+  // comparisons read. A neighbour that only rounds to it, however close, moves to its canonical key.
+  return String(percent / 100) === String(q) ? legacy : canonicalQuantileKey(q);
+}
 
+function summarizeNumeric(values: number[], quantiles: readonly number[]): ExperienceNumericSummary | null {
+  if (values.length === 0) return null;
   return {
     mean: values.reduce((sum, value) => sum + value, 0) / values.length,
-    quantiles: Object.fromEntries(quantiles.map((q) => [`q${Math.round(q * 100)}`, quantile(values, q)])),
+    quantiles: Object.fromEntries(
+      quantiles.map((q) => [quantileKey(quantiles, q), quantileInclusiveFloor(values, q) ?? Number.NaN]),
+    ),
   };
 }
 
@@ -180,6 +191,16 @@ export function analyzePerceivedProgression<N, U extends string, Vars>(args: {
 
   const startT = session.start.t;
   const changeTimes: number[] = [];
+  // Reward seconds before each segment, summed from tick durations, so the first visible change is on the same
+  // clock as the censoring horizon. Timestamps round away at a large start t.
+  const offsets = new Map<SessionSegment<N, U, Vars>, number>();
+  let elapsedBefore = 0;
+  for (const segment of session.segments) {
+    offsets.set(segment, elapsedBefore);
+    elapsedBefore += segment.durationSec;
+  }
+  const stepSec = scenario.run.stepSec;
+  let firstVisibleTickSec: number | undefined;
   const feedbackDelays: number[] = [];
   let totalActiveSec = 0;
   let maxNoRewardGapSec = 0;
@@ -203,13 +224,17 @@ export function analyzePerceivedProgression<N, U extends string, Vars>(args: {
     tracker.reset();
 
     const visibleTimestamps: number[] = [];
-    for (const state of trace) {
+    // An active block traces every step, so the point at index i is i ticks in, short of a partial last tick.
+    const tickElapsed = (index: number) =>
+      segment.run.trace ? Math.min(index * stepSec, segment.durationSec) : index === 0 ? 0 : segment.durationSec;
+    trace.forEach((state, index) => {
       const change = tracker.observe(moneyAtState(view, state, series));
       if (change.changed) {
         visibleTimestamps.push(state.t);
         changeTimes.push(state.t);
+        if (firstVisibleTickSec === undefined) firstVisibleTickSec = (offsets.get(segment) ?? 0) + tickElapsed(index);
       }
-    }
+    });
 
     if (visibleTimestamps.length === 0) {
       maxNoRewardGapSec = Math.max(maxNoRewardGapSec, segment.durationSec);
@@ -228,7 +253,7 @@ export function analyzePerceivedProgression<N, U extends string, Vars>(args: {
     }
   }
 
-  const firstVisibleChangeSec = changeTimes.length > 0 ? Math.max(0, changeTimes[0]! - startT) : undefined;
+  const firstVisibleChangeSec = firstVisibleTickSec;
   const visibleChangesPerMinute = totalActiveSec > 0 ? changeTimes.length / (totalActiveSec / 60) : 0;
   const avgPostPurchaseFeedbackSec =
     feedbackDelays.length > 0 ? feedbackDelays.reduce((sum, value) => sum + value, 0) / feedbackDelays.length : undefined;
@@ -332,6 +357,59 @@ export function collectExperienceSnapshot<N, U extends string, Vars>(args: {
   };
 }
 
+function distinctQuantiles(quantiles: readonly number[]): number[] {
+  const byKey = new Map<string, number>();
+  for (const q of quantiles) {
+    const key = canonicalQuantileKey(q);
+    if (!byKey.has(key)) byKey.set(key, q);
+  }
+  return [...byKey.values()];
+}
+
+/**
+ * Reward seconds from the session start to the end of its last active block. Visible changes are read only in
+ * active blocks, so a draw without one is censored here.
+ */
+function observedUntilSec<N, U extends string, Vars>(session: SessionRunResult<N, U, Vars>): number {
+  // Sum the segments' tick-derived reward seconds through the last active block. A difference of timestamps rounds
+  // away at a large start t.
+  let elapsed = 0;
+  let observed = 0;
+  for (const segment of session.segments) {
+    elapsed += segment.durationSec;
+    if (segment.kind === "active") observed = elapsed;
+  }
+  return observed;
+}
+
+/**
+ * The common censoring horizon. Censored draws must share exactly one horizon, since a draw censored even a tick
+ * earlier has an unknown rank against completions after it, and every observed first change must fall at or
+ * before it. Observed draws may stop at different times. With no censored draw, every rank is known: a horizon
+ * every draw shares is kept, and otherwise the latest observed change serves.
+ */
+function censoringHorizon(
+  entries: readonly Readonly<{ firstVisibleChangeSec: number | undefined; firstVisibleHorizonSec: number }>[],
+): number | null {
+  let horizon: number | null = null;
+  let latestObserved: number | null = null;
+  const shared = entries[0]?.firstVisibleHorizonSec;
+  let allShare = shared !== undefined;
+  for (const entry of entries) {
+    if (entry.firstVisibleHorizonSec !== shared) allShare = false;
+    const seen = entry.firstVisibleChangeSec;
+    if (seen === undefined) {
+      if (horizon === null) horizon = entry.firstVisibleHorizonSec;
+      else if (horizon !== entry.firstVisibleHorizonSec) return null;
+    } else if (Number.isFinite(seen) && seen >= 0) {
+      latestObserved = latestObserved === null ? seen : Math.max(latestObserved, seen);
+    }
+  }
+  // Without a censored draw, a horizon every draw shares is kept; otherwise the latest observed change serves.
+  if (horizon === null) return allShare && shared !== undefined ? shared : latestObserved;
+  return latestObserved === null || latestObserved <= horizon ? horizon : null;
+}
+
 export function summarizeExperienceMonteCarlo<N, U extends string, Vars>(args: {
   scenario: CompiledScenario<N, U, Vars>;
   sessionPattern: SessionPatternSpec;
@@ -350,30 +428,54 @@ export function summarizeExperienceMonteCarlo<N, U extends string, Vars>(args: {
     seed: args.seed,
     registries: args.registries,
     isolation: args.isolation,
-    metrics: ({ scenario, session }) => {
+    metrics: ({ scenario, session, drawIndex, seed }) => {
       const snapshot = snapshotFromSession({
         scenario,
         session: session!,
         series: args.series,
       });
       return {
+        drawIndex,
+        seed,
         endNetWorthLog10: snapshot.endNetWorthLog10,
         visibleChangesPerMinute: snapshot.perceived.visibleChangesPerMinute,
         maxNoRewardGapSec: snapshot.perceived.maxNoRewardGapSec,
-        firstVisibleChangeSec: snapshot.perceived.firstVisibleChangeSec ?? session?.summary.totalActiveSec ?? 0,
+        firstVisibleChangeSec: snapshot.perceived.firstVisibleChangeSec,
+        firstVisibleHorizonSec: observedUntilSec(session!),
       };
     },
   });
 
   const values = summary.results.map((entry) => entry.metrics);
+  const observedVisible = values
+    .map((entry) => entry.firstVisibleChangeSec)
+    .filter((value): value is number => value !== undefined);
+  const numeric = (name: string, series: number[]): ExperienceNumericSummary => {
+    const summarized = summarizeNumeric(series, args.quantiles);
+    if (!summarized) throw new Error(`experience summary ${name} has no observed values`);
+    return summarized;
+  };
   return {
     draws: summary.draws,
     seed: summary.seed,
     quantiles: args.quantiles,
-    endNetWorthLog10: summarizeNumeric(values.map((x) => x.endNetWorthLog10), args.quantiles),
-    visibleChangesPerMinute: summarizeNumeric(values.map((x) => x.visibleChangesPerMinute), args.quantiles),
-    maxNoRewardGapSec: summarizeNumeric(values.map((x) => x.maxNoRewardGapSec), args.quantiles),
-    firstVisibleChangeSec: summarizeNumeric(values.map((x) => x.firstVisibleChangeSec), args.quantiles),
+    endNetWorthLog10: numeric("endNetWorthLog10", values.map((x) => x.endNetWorthLog10)),
+    visibleChangesPerMinute: numeric("visibleChangesPerMinute", values.map((x) => x.visibleChangesPerMinute)),
+    maxNoRewardGapSec: numeric("maxNoRewardGapSec", values.map((x) => x.maxNoRewardGapSec)),
+    firstVisibleChangeSec: summarizeNumeric(observedVisible, args.quantiles),
+    firstVisible: analyzeDistribution({
+      samples: values.map((entry) =>
+        firstVisibleDistributionSample({
+          drawIndex: entry.drawIndex,
+          seed: entry.seed,
+          firstVisibleChangeSec: entry.firstVisibleChangeSec,
+        }),
+      ),
+      // Scenario validation checks each quantile's range, not duplicates. One key per quantile is analyzed.
+      quantiles: distinctQuantiles(args.quantiles),
+      horizonSec: censoringHorizon(values),
+      populationProbability: 0.95,
+    }),
   };
 }
 
@@ -465,8 +567,10 @@ export function summarizeComparableExperienceMetric<N, U extends string, Vars>(a
     },
   });
 
+  const summarized = summarizeNumeric(summary.results.map((entry) => entry.metrics.value), args.quantiles);
+  if (!summarized) throw new Error("experience comparison has no observed values");
   return {
-    ...summarizeNumeric(summary.results.map((entry) => entry.metrics.value), args.quantiles),
+    ...summarized,
     sessions: summary.results.map((entry) => entry.metrics.session),
   };
 }
@@ -598,6 +702,12 @@ export function renderExperienceMarkdown(args: {
       `- Net worth log10 mean: ${formatMetric(monteCarlo.endNetWorthLog10.mean, 3)}`,
       `- Visible changes / minute mean: ${formatMetric(monteCarlo.visibleChangesPerMinute.mean, 3)}`,
       `- No-reward gap mean: ${formatMetric(monteCarlo.maxNoRewardGapSec.mean, 2)}s`,
+      `- First visible completion: ${monteCarlo.firstVisible.accounting.completionRate ?? "unavailable"}`,
+      `- First visible population p95: ${
+        monteCarlo.firstVisible.population.status === "observed"
+          ? `${monteCarlo.firstVisible.population.value}s`
+          : monteCarlo.firstVisible.population.status
+      }`,
     );
   }
 

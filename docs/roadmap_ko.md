@@ -34,7 +34,7 @@ English version: [roadmap.md](./roadmap.md)
 
 `265c6ed`에서 root `packageManager`는 `bun@1.3.10`이었고 CI는 Bun `1.3.9`를 pin했다. `TC-01`이 CI를 Bun `1.3.10`으로 맞추고 ttsc를 pin한다. `TC-02`는 그 pin 위에서 check와 money/core emit을 `ttsc`로 실행한다. 그 compiler가 필요로 하는 개발용 Node나 Go는 host 세부사항이다. 제품 런타임은 Bun-first를 유지한다. [툴체인 pin](./toolchain_ko.md)을 본다.
 
-`prestigeCycle.stability`는 정상상태 측정값이 아니다. `analyzeResetPolicies`는 경험적 window와 tolerance를 기록하고 `provedSteadyState`는 false로 남긴다. `createBreakEternityEngine`은 미구현 placeholder다.
+`prestigeCycle.stability`는 정상상태 측정값이 아니다. `analyzeResetPolicies`는 경험적 window와 tolerance를 기록하고 `provedSteadyState`는 false로 남긴다. `analyzeDistribution`은 검열된 draw를 전체 분위수에 넣지 않는다. `createBreakEternityEngine`은 미구현 placeholder다.
 
 ## 공개 배포 전 게이트
 

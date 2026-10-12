@@ -5,6 +5,7 @@
  * lives here. Do not export this module from a package barrel.
  */
 import { createNumberEngine } from "../engine/breakInfinity";
+import { independentBernoulli } from "../sim/analysis/distribution";
 import type { GrowthFitArtifactV1 } from "../sim/analysis/growthFit";
 import type { MilestoneReport } from "../sim/analysis/milestones";
 import { analyzeResetPolicies } from "../sim/analysis/resetOptimization";
@@ -80,6 +81,34 @@ function flatBulkSnapshot(size: number, mode: "bulk" | "repeated"): string {
  */
 export function declaredFlatBulkMatches(size: number): boolean {
   return flatBulkSnapshot(size, "repeated") === flatBulkSnapshot(size, "bulk");
+}
+
+/**
+ * A declared seeded drop: one uniform per logical draw, from `independentBernoulli`, keeps the empirical rate of
+ * `draws` draws within `absoluteTolerance` of `probability`. The rate is not required to equal the probability.
+ *
+ * @evidence docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness The seeded-drop tolerance is a declared relation over logical draw seeds. An undeclared fixture does not apply.
+ * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #bbb39a2 Re-read the section: seeded relations are conditional, so this one applies only when declared, and a rate outside the tolerance fails rather than skips.
+ */
+export function checkSeededDrop(
+  declared: boolean,
+  fixture: Readonly<{ seed: number; draws: number; probability: number; absoluteTolerance: number }>,
+): RelationCheck {
+  if (!declared) return { ok: true, applicable: false, summary: "seeded drop tolerance is not declared" };
+  if (!Number.isSafeInteger(fixture.draws) || fixture.draws < 1) {
+    return { ok: false, applicable: true, summary: "seeded drop draws must be a positive integer" };
+  }
+  if (!Number.isFinite(fixture.absoluteTolerance) || fixture.absoluteTolerance < 0) {
+    return { ok: false, applicable: true, summary: "seeded drop tolerance must be a finite number >= 0" };
+  }
+  let hits = 0;
+  for (let drawIndex = 0; drawIndex < fixture.draws; drawIndex += 1) {
+    if (independentBernoulli(fixture.seed, drawIndex, fixture.probability)) hits += 1;
+  }
+  const rate = hits / fixture.draws;
+  const gap = Math.abs(rate - fixture.probability);
+  const summary = `rate ${rate} for probability ${fixture.probability}, gap ${gap}, tolerance ${fixture.absoluteTolerance}`;
+  return { ok: gap <= fixture.absoluteTolerance, applicable: true, summary };
 }
 
 /**

@@ -1,6 +1,12 @@
 import { describe, expect, it } from "bun:test";
 import { createNumberEngine, simulateSessionPattern, type CompiledScenario, type SimState } from "@idlekit/core";
-import { analyzePerceivedProgression, collectExperienceSnapshot, comparableExperienceMetric, firstMilestoneTime } from "./experience";
+import {
+  analyzePerceivedProgression,
+  collectExperienceSnapshot,
+  comparableExperienceMetric,
+  firstMilestoneTime,
+  summarizeExperienceMonteCarlo,
+} from "./experience";
 import { designObjectiveFactories } from "./designObjectives";
 
 type Vars = { bought: number };
@@ -156,5 +162,77 @@ describe("milestone times under the sample cap", () => {
     expect(() => objective.score({ scenario: manyActions(), run: undefined as never })).toThrow(
       "time to milestone action.a69.firstApplied needs a complete milestone report",
     );
+  });
+});
+
+describe("experience Monte Carlo first visible change", () => {
+  it("estimates the population quantile when every draw shares one observation horizon", () => {
+    const summary = summarizeExperienceMonteCarlo({
+      scenario: scenario(),
+      sessionPattern: { id: "twice-daily", days: 1 },
+      draws: 3,
+      seed: 1,
+      quantiles: [0.5, 0.95],
+    });
+    // Twice-daily for one day observes visible changes until the end of the second active block.
+    expect(summary.firstVisible.horizonSec).toBe(45000);
+    expect(summary.firstVisible.population.estimator).toBe("common-horizon-order-statistic");
+    expect(summary.firstVisible.population.status).toBe("observed");
+    expect(summary.firstVisible.population.value).not.toBeNull();
+  });
+
+  it("analyzes one key per quantile when the scenario lists a quantile twice", () => {
+    const summary = summarizeExperienceMonteCarlo({
+      scenario: scenario(),
+      sessionPattern: { id: "twice-daily", days: 1 },
+      draws: 2,
+      seed: 1,
+      quantiles: [0.5, 0.5],
+    });
+    expect(summary.firstVisible.conditional.map((point) => point.key)).toEqual(["q0.5"]);
+  });
+
+  it("keeps the q50 median key when a neighbour rounds to it", () => {
+    const summary = summarizeExperienceMonteCarlo({
+      scenario: scenario(),
+      sessionPattern: { id: "twice-daily", days: 1 },
+      draws: 2,
+      seed: 1,
+      quantiles: [0.5, 0.504],
+    });
+    expect(Object.keys(summary.endNetWorthLog10.quantiles).sort()).toEqual(["q0.504", "q50"]);
+    // A neighbour within any epsilon of 50% is still its own quantile.
+    const close = summarizeExperienceMonteCarlo({
+      scenario: scenario(),
+      sessionPattern: { id: "twice-daily", days: 1 },
+      draws: 2,
+      seed: 1,
+      quantiles: [0.5, 0.500000000001],
+    });
+    expect(Object.keys(close.endNetWorthLog10.quantiles).sort()).toEqual(["q0.500000000001", "q50"]);
+  });
+
+  it("measures the censoring horizon in tick seconds at a large start time", () => {
+    // At t = 2^51 a 0.3-second tick rounds to 0.5 seconds of timestamp, so timestamps overstate reward time.
+    const base = scenario();
+    const late = { ...base, initial: { ...base.initial, t: 2 ** 51 }, run: { ...base.run, stepSec: 0.3 } };
+    const summary = summarizeExperienceMonteCarlo({
+      scenario: late,
+      sessionPattern: { id: "twice-daily", days: 1 },
+      draws: 2,
+      seed: 1,
+      quantiles: [0.5],
+    });
+    expect(summary.firstVisible.horizonSec).toBeCloseTo(45000, 3);
+    // The first visible change is on the same tick clock, so a one-tick block does not overshoot its horizon.
+    const oneTick = { ...late, run: { ...late.run, maxSteps: 1 } };
+    const capped = summarizeExperienceMonteCarlo({
+      scenario: oneTick,
+      sessionPattern: { id: "twice-daily", days: 1 },
+      draws: 2,
+      seed: 1,
+      quantiles: [0.5],
+    });
+    expect(capped.firstVisible.status).not.toBe("unsupported");
   });
 });

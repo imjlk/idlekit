@@ -205,3 +205,16 @@ RNG는 없다. growth shape 재현 fixture는 `fixtures/conformance/growth-shape
 `executeResetCycles`의 reverse execution trace(`maxDepth` 3, `maxNodes` 32)는 `resetOptimization.ts:583`의 `evaluateAlwaysActive`, `analyzeResetPolicies`, reset policy 테스트 다섯 개, `resetCycle.test.ts`의 `runsThreeCommittedResets`, `recordsRejectedResetWithoutReward`, `excludesOpeningRewardFromDelta`를 가리킨다. `resetOptimization.ts:637`의 `evaluateSession`은 가리키지 않는다. 소스 확인상 session 경로는 `resetOptimization.ts:401`의 `commitReset`으로 커밋한다. 그 호출은 리뷰다. `executeResetCycles`로 가는 hop이 아니다.
 
 RNG는 없다. reset policy 재현 fixture는 `fixtures/conformance/reset-policy-rate.json`이다. 기대 비율은 완료된 cycle 시간 기준 `0.1`이다. fixture 일치는 정상 상태 증명이 아니다. `provedSteadyState`는 false로 남는다. 이 변경의 gate는 pull request에 적는다.
+## PR-13 호출자
+
+커밋 `1f9d87c`, macOS arm64, Bun `1.4.2`, `@ttsc/graph` `0.30.4`, protocol `2025-11-25`로 조회했다. 생성 식별자는 없다. 서버 cwd는 이 작업 트리이고 프로그램은 `tsconfig.graph.json`이다. 아래 span은 그 커밋의 것이며 현재 트리의 것이 아니다. 소스 확인상 `analyzeDistribution`은 `packages/core/src/sim/analysis/distribution.ts:367`, `firstVisibleDistributionSample`은 `distribution.ts:228`, `summarizeExperienceMonteCarlo`는 `packages/cli/src/lib/experience.ts:342`, `simulateMonteCarlo`는 `packages/core/src/sim/monteCarlo.ts:74`이다.
+
+`analyzeDistribution`의 reverse execution trace(`maxDepth` 3, `maxNodes` 32)는 `experience.ts:342`의 `summarizeExperienceMonteCarlo`, `distribution.test.ts:63`의 `separatesCensoringFromObservedQuantiles`, `distribution.test.ts:131`의 `fixesQuantileRanksAndKeys`, `distribution.test.ts:290`의 `checksSeededDropAndZeroVariance`, `distribution.test.ts:327`의 `separatesMeansAndCensorsMissingVisibleChange`를 가리킨다.
+
+`firstVisibleDistributionSample`의 reverse execution trace(`maxDepth` 3, `maxNodes` 32)는 `summarizeExperienceMonteCarlo`와 `separatesMeansAndCensorsMissingVisibleChange`를 가리킨다. CLI 호출은 `packages/cli/src/lib/experience.ts:396`이다.
+
+`summarizeExperienceMonteCarlo`의 reverse execution trace(`maxDepth` 3, `maxNodes` 32)는 선언만 가리킨다. 소스 확인상 호출은 `packages/cli/src/commands/experience.ts:113`과 `packages/cli/src/commands/evaluate.ts:217`이다. 그 줄은 리뷰다. graph hop이 아니다.
+
+`simulateMonteCarlo`의 reverse execution trace(`maxDepth` 3, `maxNodes` 32)는 `packages/cli/src/lib/designObjectives.ts`의 `evaluateVisibleProgress`, `evaluateMilestoneTime`, `evaluateExperienceBalanced`, `summarizeExperienceMonteCarlo`, `experience.ts:459`의 `summarizeComparableExperienceMetric`, `packages/core/src/sim/runFactory.test.ts:161`의 `isolatesIndependentRuns`, `distribution.test.ts:245`의 `keepsLogicalDrawsIndependentOfOrder` 안 `run` helper를 가리킨다.
+
+분포 재현 fixture는 `fixtures/conformance/independent-drop.json`, seed `28947`(`0x7113`), 10000 draws, 확률 `0.01`, 절대 허용 오차 `0.005`다. 상태가 있는 logical draw 검사도 같은 seed를 쓴다. 이 변경의 실행은 로컬이다. worker 수는 seed의 입력이 아니다. 이 변경의 gate는 pull request에 적는다.

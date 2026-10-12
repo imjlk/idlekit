@@ -34,7 +34,7 @@ Correctness work follows the toolchain, then the conformance harness:
 
 At `265c6ed`, root `packageManager` was `bun@1.3.10` and CI pinned Bun `1.3.9`. `TC-01` unifies CI on Bun `1.3.10` and pins ttsc. `TC-02` runs check and money/core emit through `ttsc` on that pin. Development Node or Go needed by that compiler is a host detail. The product runtime stays Bun-first. See [Toolchain pins](./toolchain.md).
 
-`prestigeCycle.stability` is not a steady-state measurement. `analyzeResetPolicies` records empirical windows and tolerances and still sets `provedSteadyState` to false. `createBreakEternityEngine` remains an unimplemented placeholder.
+`prestigeCycle.stability` is not a steady-state measurement. `analyzeResetPolicies` records empirical windows and tolerances and still sets `provedSteadyState` to false. `analyzeDistribution` keeps censored draws out of the population quantile. `createBreakEternityEngine` remains an unimplemented placeholder.
 
 ## Pre-publish gate
 

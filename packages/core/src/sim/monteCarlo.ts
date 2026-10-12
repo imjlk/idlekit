@@ -2,7 +2,38 @@ import { simulateSessionPattern, type SessionPatternSpec, type SessionRunResult 
 import { runScenario } from "./simulator";
 import { createRunFactory, type RunBindOptions, type RunFactoryDeps } from "./runFactory";
 import type { CompiledScenario, RunResult } from "./types";
-import { deriveDrawSeed } from "./random";
+import { logicalDrawId, logicalDrawSeed } from "./random";
+
+/**
+ * @evidence docs/requirements/active/simulation-distribution.md#req-pr13-logical-draws Draws and the base seed are finite. The loop bound is that integer.
+ * @evidenceReview docs/requirements/active/simulation-distribution.md#req-pr13-logical-draws #6e3688a Re-read the section: NaN and Infinity do not become an empty result or an open loop, and draw index 2 keeps its seed when the calls are reversed.
+ */
+export const monteCarloDrawBudget = "finite-integer-draws" as const;
+
+export class MonteCarloRejected extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "MonteCarloRejected";
+  }
+}
+
+/** Rejects a request that would clamp NaN into an empty run or loop forever. */
+export function assertMonteCarloDrawRequest(draws: number, seed: number, budget?: number): number {
+  if (typeof draws !== "number" || !Number.isFinite(draws) || draws < 1) {
+    throw new MonteCarloRejected("monte carlo draws must be a finite number >= 1");
+  }
+  const count = Math.floor(draws);
+  if (count < 1) throw new MonteCarloRejected("monte carlo draws must be a finite number >= 1");
+  if (typeof seed !== "number" || !Number.isFinite(seed)) {
+    throw new MonteCarloRejected("monte carlo seed must be finite");
+  }
+  if (budget !== undefined) {
+    if (typeof budget !== "number" || !Number.isFinite(budget) || budget < count) {
+      throw new MonteCarloRejected("monte carlo budget must be a finite number >= draws");
+    }
+  }
+  return count;
+}
 
 export type MonteCarloMetricEvaluator<N, U extends string, Vars, T> = (args: {
   scenario: CompiledScenario<N, U, Vars>;
@@ -18,6 +49,8 @@ export type MonteCarloOptions<N, U extends string, Vars, T> = Readonly<{
   seed: number;
   sessionPattern?: SessionPatternSpec;
   metrics: MonteCarloMetricEvaluator<N, U, Vars, T>;
+  /** Upper bound on the floored draw count. Non-finite values throw. */
+  budget?: number;
   /** Registries used to construct a new model or strategy for each draw. */
   registries?: RunFactoryDeps;
   /**
@@ -41,15 +74,15 @@ export type MonteCarloSummary<T> = Readonly<{
 export function simulateMonteCarlo<N, U extends string, Vars, T>(
   args: MonteCarloOptions<N, U, Vars, T>,
 ): MonteCarloSummary<T> {
-  const draws = Math.max(1, Math.floor(args.draws));
+  const draws = assertMonteCarloDrawRequest(args.draws, args.seed, args.budget);
   const results: Array<{ drawIndex: number; seed: number; metrics: T }> = [];
   const binding = createRunFactory(args.registries).bind(args.scenario, args.isolation);
 
   let failed = false;
   try {
     for (let drawIndex = 0; drawIndex < draws; drawIndex += 1) {
-      const seed = deriveDrawSeed(args.seed, drawIndex);
-      const scenario = binding.fresh({ trialId: String(drawIndex), seed }).scenario;
+      const seed = logicalDrawSeed(args.seed, drawIndex);
+      const scenario = binding.fresh({ trialId: logicalDrawId(drawIndex), seed }).scenario;
 
       if (args.sessionPattern) {
         const session = simulateSessionPattern({
