@@ -37,7 +37,7 @@ export const experimentSeparateSpec = "experiment-spec-not-tunespec" as const;
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter Assignment uses a registered identifier path and the model or strategy schema. JSONPath, prototype, and eval paths are refused before a run.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #b313204 Re-read the section: a prototype path, an out-of-range integer, a non-finite choice value, a non-finite space bound, a schema-invalid rate, a stripped path, overlapping paths, a session dimension, a repeated seed, a non-finite limit, and a repeated constraint id throw before model create.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #2c35139 Re-read the section: a prototype path, an out-of-range integer, a non-finite choice value, a non-finite space bound, a schema-invalid rate, a stripped path, overlapping paths, a session dimension, a repeated seed, a non-finite limit, and a repeated constraint id throw before model create.
  */
 export const experimentRegisteredSetter = "registered-key-not-jsonpath" as const;
 
@@ -493,7 +493,8 @@ function checkCandidateParams(
     }
     return;
   }
-  const result = schema["~standard"].validate(params);
+  // A detached copy: a schema that writes its input cannot reach the candidate, the base, or the caller.
+  const result = schema["~standard"].validate(cloneJsonData(params));
   if (!result.success) {
     reject(`${label} params rejected: ${result.issues.map((issue) => issue.message).join("; ")}`);
   }
@@ -567,8 +568,21 @@ function requireJsonParams(params: unknown, label: string, seen: Set<object>): v
   if (params !== undefined && !isJsonData(params, seen)) reject(`${label} params must be JSON data, because task descriptors and hashes record them as JSON`);
 }
 
+/**
+ * Every number in the scenario must be finite and not -0, and no value may be a bigint. Canonical JSON writes
+ * Infinity and NaN as null and -0 as 0, so a constraint such as maxActionsPerStep could change the run but not the hash.
+ */
+function hasOnlyCanonicalNumbers(value: unknown, seen: Set<object> = new Set()): boolean {
+  if (typeof value === "bigint") return false;
+  if (typeof value === "number") return Number.isFinite(value) && !Object.is(value, -0);
+  if (value === null || typeof value !== "object" || seen.has(value)) return true;
+  seen.add(value);
+  return Object.values(value).every((entry) => hasOnlyCanonicalNumbers(entry, seen));
+}
+
 /** Execution state from the scenario: params and the initial state, vars included. Checked before the scenario is hashed. */
 function requireScenarioData(scenario: ScenarioV1): void {
+  if (!hasOnlyCanonicalNumbers(scenario)) reject("scenario numbers must be finite and not -0, because the scenario hash records them as JSON");
   const seen = new Set<object>();
   requireJsonParams(scenario.model.params, "model", seen);
   requireJsonParams(scenario.strategy?.params, "strategy", seen);
@@ -838,13 +852,20 @@ function prepareExperiment(request: ExperimentCheckRequest) {
     reject("scenario cannot be written as canonical JSON");
   }
   if (scenarioHash !== spec.scenario.hash) reject("scenario hash does not match the experiment spec");
+  // Both spec hashes are taken now, so a field canonical JSON cannot write fails before any model is created.
+  let specHashes: Readonly<{ original: string; effective: string }>;
+  try {
+    specHashes = { original: sha256Text(canonicalJson(request.spec)), effective: sha256Text(canonicalJson(normalizeSpec(spec))) };
+  } catch {
+    reject("spec cannot be written as canonical JSON");
+  }
   const metrics = metricIds(spec);
   // A JSON literal such as 1e400 parses to Infinity, and canonical JSON would hash it as null.
   if (spec.goal !== undefined && !Number.isFinite(spec.goal.target)) reject("goal target must be finite");
   if (metrics.includes("timeToMoney") && spec.goal === undefined) reject("timeToMoney requires a finite goal target");
   const base = candidateBase(spec, request.scenario, request);
   const prepared = plannedCandidates(spec).map((candidate) => prepareCandidate(spec, base, candidate, request));
-  return { spec, metrics, base, prepared };
+  return { spec, metrics, base, prepared, specHashes };
 }
 
 /**
@@ -852,14 +873,14 @@ function prepareExperiment(request: ExperimentCheckRequest) {
  * A caller that compiles or opens a run first calls this, so a rejected spec never reaches a factory.
  *
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter Throws the same rejections as runExperiment before any model create.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #b313204 Re-read the section: the hash, spec, path, and schema checks run and no factory create is called.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #2c35139 Re-read the section: the hash, spec, path, and schema checks run and no factory create is called.
  */
 export function checkExperimentSpec(request: ExperimentCheckRequest): void {
   prepareExperiment(request);
 }
 
 export function runExperiment<N>(request: ExperimentRunRequest<N>): ExperimentArtifactV1 {
-  const { spec, metrics, base, prepared } = prepareExperiment(request);
+  const { spec, metrics, base, prepared, specHashes } = prepareExperiment(request);
   const measuresReach = metrics.includes("timeToMoney");
   const E = request.engine;
   // The plan builds the strategy, so compile does not build the scenario one.
@@ -1032,8 +1053,8 @@ export function runExperiment<N>(request: ExperimentRunRequest<N>): ExperimentAr
     globalSensitivity: false,
     sobol: false,
     scenario: spec.scenario,
-    originalSpecHash: sha256Text(canonicalJson(request.spec)),
-    effectiveSpecHash: sha256Text(canonicalJson(normalizeSpec(spec))),
+    originalSpecHash: specHashes.original,
+    effectiveSpecHash: specHashes.effective,
     effectiveRunHash: request.effectiveRunHash,
     budget: {
       candidates: spec.budget.candidates,
