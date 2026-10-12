@@ -246,6 +246,47 @@ function evenKeep<T>(items: readonly T[], budget: number): T[] {
   return kept;
 }
 
+/**
+ * Keep samples per fit window, so the budget leaves analyzable windows rather than one point per window. Windows
+ * split the same way slicesOf splits them. When the budget cannot give every window MIN_SAMPLES points, an evenly
+ * spaced subset of windows keeps MIN_SAMPLES each and the rest are left unfitted.
+ */
+function windowKeep<T extends { readonly t: number }>(
+  items: readonly T[],
+  budget: number,
+  windowSec: number,
+): { kept: T[]; windows: number; fittedWindows: number } {
+  const windows: T[][] = [];
+  let start = 0;
+  while (start < items.length) {
+    const endTime = items[start]!.t + windowSec;
+    let end = start + 1;
+    while (end < items.length && items[end]!.t <= endTime + 1e-9) end += 1;
+    windows.push(items.slice(start, end));
+    start = end;
+  }
+  if (items.length <= budget) return { kept: [...items], windows: windows.length, fittedWindows: windows.length };
+  const perWindow = Math.floor(budget / windows.length);
+  if (perWindow >= MIN_SAMPLES) {
+    return {
+      kept: windows.flatMap((window) => evenKeep(window, perWindow)),
+      windows: windows.length,
+      fittedWindows: windows.length,
+    };
+  }
+  const count = Math.max(1, Math.floor(budget / MIN_SAMPLES));
+  const each = Math.max(1, Math.floor(budget / count));
+  const chosen = evenKeep(
+    windows.map((_, index) => index),
+    count,
+  );
+  return {
+    kept: chosen.flatMap((index) => evenKeep(windows[index]!, each)),
+    windows: windows.length,
+    fittedWindows: chosen.length,
+  };
+}
+
 function domainOf(points: readonly Point<unknown>[]): GrowthDomain {
   if (points.length === 0) return "empty";
   if (points.some((point) => point.sign === "nonfinite")) return "nonfinite";
@@ -416,8 +457,9 @@ function saturating(ts: readonly number[], values: readonly number[]): boolean {
   if (logRates.length < 4) return false;
   const fit = fitLinear(mids, logRates);
   if (!fit || !(fit.b < 0) || fit.rmse > 0.1) return false;
-  const perGap = Math.exp(fit.b * (gapSum / logRates.length));
-  if (!(perGap > 0.05 && perGap < 0.95)) return false;
+  // The decay is judged per second and over the whole span, not per retained gap, so downsampling cannot change
+  // the verdict.
+  void gapSum;
   return Math.exp(logRates[logRates.length - 1]! - logRates[0]!) < 0.25;
 }
 
@@ -511,12 +553,15 @@ function classifyPositive(
         : Math.min(valueLinearRel, valueQuadraticRel);
   const numericValues = valueReady ? numbers.map((value) => value ?? 0) : [];
   const expOk = linear !== null && linear.rmse <= LOG_RMSE_OK;
+  // Acceleration is the quadratic term standing well above its residual across the window, with the quadratic fit a
+  // clear improvement on the line. A fixed minimum line residual would make the shape depend on acceleration strength.
   const accelOk =
     quadratic !== null &&
     linear !== null &&
-    quadratic.c > 1e-6 &&
+    quadratic.c > 0 &&
+    quadratic.c * span * span > 1e3 * Math.max(quadratic.rmse, Number.EPSILON) &&
     quadratic.rmse <= LOG_RMSE_OK &&
-    linear.rmse > 1e-3 &&
+    linear.rmse > LOG_RMSE_OK &&
     linear.rmse > quadratic.rmse * 4;
   const powerOk =
     power !== null && linear !== null && power.rmse <= 1e-3 && power.rmse * 4 < linear.rmse;
@@ -580,7 +625,8 @@ function classifyPositive(
     discontinuity,
     speed: {
       logSlopePerSec: slope,
-      doublingTimeSec: slope !== null && slope > 1e-12 ? Math.log10(2) / slope : null,
+      // Any positive slope has a doubling time while the quotient is finite.
+      doublingTimeSec: slope !== null && slope > 0 && Number.isFinite(Math.log10(2) / slope) ? Math.log10(2) / slope : null,
     },
     legacySpeedBucket: legacy,
     residual,
@@ -772,8 +818,8 @@ export function fitGrowth<N>(args: {
       if (index > 0) boundary.add(index - 1);
     }
   }
-  const evenly = evenKeep(prepared, args.sampling.samplingBudget);
-  const keptSet = new Set<Point<N>>(evenly);
+  const windowed = windowKeep(prepared, args.sampling.samplingBudget, args.sampling.windowSec);
+  const keptSet = new Set<Point<N>>(windowed.kept);
   for (const index of boundary) keptSet.add(prepared[index]!);
   const kept = prepared.filter((point) => keptSet.has(point));
   const downsampled =
@@ -787,6 +833,11 @@ export function fitGrowth<N>(args: {
   }
   if (downsampled) {
     warnings.push("Samples were evenly reduced to the sampling budget. windowSec is still the time window.");
+  }
+  if (windowed.fittedWindows < windowed.windows) {
+    warnings.push(
+      `The sampling budget fits ${windowed.fittedWindows} of ${windowed.windows} windows with enough samples. The rest are not fitted.`,
+    );
   }
   if (args.retention && args.retention.dropped > 0) {
     warnings.push("The fit sees the retained trace only.");
