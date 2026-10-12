@@ -139,6 +139,19 @@ describe("idk analyze", () => {
             value: { endT: ctx.input.run.end.t, cadence: ctx.supply.sampleCadenceSec, points: ctx.input.run.trace.length },
           }),
         },
+        {
+          id: "plugin.after",
+          version: "1",
+          kind: "execution",
+          validateParams: () => ({ ok: true, params: {} }),
+          requires: { capabilities: [], metricIds: [], observationSchema: "idlekit.run-observation" },
+          observation: { windowSec: null, sampleCadenceSec: null, coverage: "summary", metricIds: [], observationSchema: "idlekit.run-observation" },
+          outputContract: "test.analyzer",
+          algorithmVersion: "plugin-after-v1",
+          cost: { freshRuns: 0, samples: 0 },
+          dependencies: [{ id: "plugin.read", version: "1" }],
+          execute: () => ({ status: "ok", value: "after" }),
+        },
       ];
       `,
     );
@@ -158,6 +171,13 @@ describe("idk analyze", () => {
     const read = runCliJson<any>(["analyze", "plugin.read", scenario, ...pluginFlags, "--trace-every", "2", "--format", "json"]);
     expect(read.status).toBe("ok");
     expect(read.value).toEqual({ endT: 8, cadence: 2, points: 5 });
+    // A coarser trace than the analyzer demands is refused by the registry before the body.
+    const coarse = runCliJson<any>(["analyze", "plugin.read", scenario, ...pluginFlags, "--trace-every", "3", "--format", "json"]);
+    expect(coarse.status).toBe("insufficient-data");
+    // An execution analyzer whose postprocess dependency reads the run gets that run supplied.
+    const after = runCliJson<any>(["analyze", "plugin.after", scenario, ...pluginFlags, "--trace-every", "2", "--format", "json"]);
+    expect(after.status).toBe("ok");
+    expect(after.value).toBe("after");
     await removePath(dir);
   }, 60000);
 });

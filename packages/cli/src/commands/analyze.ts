@@ -11,6 +11,7 @@ import {
   runScenario,
   validateScenarioV1,
   type AnalyzerBudget,
+  type AnalyzerDefinition,
   type AnalyzerResult,
 } from "@idlekit/core";
 import { z } from "zod";
@@ -104,7 +105,8 @@ export default defineCommand({
     // runs inside the --budget-* flags, with the compiled scenario when one is given.
     // A postprocess analyzer reads a run, so the scenario is run once with a trace and supplied as input.
     const compiled = scenarioPath ? await compile(scenarioPath, loaded) : undefined;
-    const observed = compiled && defined.kind === "postprocess" ? observeScenario(compiled, flags["trace-every"]) : undefined;
+    const observed =
+      compiled && readsObservation(loaded, defined) ? observeScenario(compiled, flags["trace-every"]) : undefined;
     const batch = loaded.analyzerRegistry.run({
       requests: [{ id: analyzerId, version, params }],
       semantics: compiled ? scenarioSemantics(compiled, flags["max-duration"]) : analyzerSemantics(),
@@ -119,6 +121,23 @@ export default defineCommand({
     await emit(flags, result, scenarioPath, compiled, loaded);
   },
 });
+
+/** True when the analyzer or any dependency the registry will pull in is a postprocess analyzer. */
+function readsObservation(loaded: Loaded, root: AnalyzerDefinition<unknown>): boolean {
+  const seen = new Set<AnalyzerDefinition<unknown>>();
+  const pending = [root];
+  while (pending.length > 0) {
+    const definition = pending.pop()!;
+    if (seen.has(definition)) continue;
+    seen.add(definition);
+    if (definition.kind === "postprocess") return true;
+    for (const dependency of definition.dependencies) {
+      const next = loaded.analyzerRegistry.get(dependency.id, dependency.version);
+      if (next) pending.push(next);
+    }
+  }
+  return false;
+}
 
 function scenarioSemantics(compiled: Compiled, fallbackHorizonSec: number) {
   return analyzerSemantics({
