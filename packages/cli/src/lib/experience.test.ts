@@ -201,5 +201,28 @@ describe("experience Monte Carlo first visible change", () => {
       quantiles: [0.5, 0.504],
     });
     expect(Object.keys(summary.endNetWorthLog10.quantiles).sort()).toEqual(["q0.504", "q50"]);
+    // A neighbour within any epsilon of 50% is still its own quantile.
+    const close = summarizeExperienceMonteCarlo({
+      scenario: scenario(),
+      sessionPattern: { id: "twice-daily", days: 1 },
+      draws: 2,
+      seed: 1,
+      quantiles: [0.5, 0.500000000001],
+    });
+    expect(Object.keys(close.endNetWorthLog10.quantiles).sort()).toEqual(["q0.500000000001", "q50"]);
+  });
+
+  it("measures the censoring horizon in tick seconds at a large start time", () => {
+    // At t = 2^51 a 0.3-second tick rounds to 0.5 seconds of timestamp, so timestamps overstate reward time.
+    const base = scenario();
+    const late = { ...base, initial: { ...base.initial, t: 2 ** 51 }, run: { ...base.run, stepSec: 0.3 } };
+    const summary = summarizeExperienceMonteCarlo({
+      scenario: late,
+      sessionPattern: { id: "twice-daily", days: 1 },
+      draws: 2,
+      seed: 1,
+      quantiles: [0.5],
+    });
+    expect(summary.firstVisible.horizonSec).toBeCloseTo(45000, 3);
   });
 });

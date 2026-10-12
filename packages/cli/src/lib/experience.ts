@@ -89,9 +89,9 @@ function quantileKey(quantiles: readonly number[], q: number): string {
   const legacy = `q${percent}`;
   const collided = quantiles.some((other) => other !== q && `q${Math.round(other * 100)}` === legacy);
   if (!collided) return legacy;
-  // The quantile that is exactly that percent keeps the legacy key, so q50 stays the median that design comparisons
-  // read. Only the neighbour that merely rounds to it moves to its canonical key.
-  return Math.abs(q * 100 - percent) < 1e-9 ? legacy : canonicalQuantileKey(q);
+  // The quantile spelled exactly as that percent keeps the legacy key, so q50 stays the median that design
+  // comparisons read. A neighbour that only rounds to it, however close, moves to its canonical key.
+  return String(percent / 100) === String(q) ? legacy : canonicalQuantileKey(q);
 }
 
 function summarizeNumeric(values: number[], quantiles: readonly number[]): ExperienceNumericSummary | null {
@@ -357,11 +357,15 @@ function distinctQuantiles(quantiles: readonly number[]): number[] {
  * active blocks, so a draw without one is censored here.
  */
 function observedUntilSec<N, U extends string, Vars>(session: SessionRunResult<N, U, Vars>): number {
-  let end = session.start.t;
+  // Sum the segments' tick-derived reward seconds through the last active block. A difference of timestamps rounds
+  // away at a large start t.
+  let elapsed = 0;
+  let observed = 0;
   for (const segment of session.segments) {
-    if (segment.kind === "active") end = Math.max(end, segment.endT);
+    elapsed += segment.durationSec;
+    if (segment.kind === "active") observed = elapsed;
   }
-  return Math.max(0, end - session.start.t);
+  return observed;
 }
 
 /**
