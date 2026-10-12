@@ -37,7 +37,7 @@ export const experimentSeparateSpec = "experiment-spec-not-tunespec" as const;
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter Assignment uses a registered identifier path and the model or strategy schema. JSONPath, prototype, and eval paths are refused before a run.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #9527c33 Re-read the section: a prototype path, an out-of-range integer, a non-finite choice value, a non-finite space bound, a schema-invalid rate, a stripped path, overlapping paths, a session dimension, a repeated seed, a non-finite limit, and a repeated constraint id throw before model create.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #338ce12 Re-read the section: a prototype path, an out-of-range integer, a non-finite choice value, a non-finite space bound, a schema-invalid rate, a stripped path, overlapping paths, a session dimension, a repeated seed, a non-finite limit, and a repeated constraint id throw before model create.
  */
 export const experimentRegisteredSetter = "registered-key-not-jsonpath" as const;
 
@@ -513,23 +513,28 @@ function asParamRecord(params: unknown, label: string): Readonly<Record<string, 
  * Task descriptors and hashes write params as canonical JSON, so the params must be JSON data: null, booleans,
  * strings, finite numbers other than -0, arrays, and plain objects. A Date, a class instance, a function, or an
  * undefined field would run as one value and be recorded as another, and could not be copied faithfully.
+ * An object reached twice (a shared reference or a cycle) and a `__type` key, which canonical JSON drops,
+ * are refused too.
  */
 function isJsonData(value: unknown, seen: Set<object> = new Set()): boolean {
   if (value === null || typeof value === "boolean" || typeof value === "string") return true;
   if (typeof value === "number") return Number.isFinite(value) && !Object.is(value, -0);
   if (typeof value !== "object" || seen.has(value)) return false;
+  // Visited objects stay recorded, so a shared reference fails like a cycle.
   seen.add(value);
-  try {
-    if (Array.isArray(value)) return Array.from(value, (entry) => entry).every((entry) => isJsonData(entry, seen));
-    const prototype = Object.getPrototypeOf(value);
-    if (prototype !== Object.prototype && prototype !== null) return false;
-    return Reflect.ownKeys(value).every((key) => {
-      const descriptor = Object.getOwnPropertyDescriptor(value, key)!;
-      return typeof key === "string" && descriptor.enumerable === true && "value" in descriptor && isJsonData(descriptor.value, seen);
-    });
-  } finally {
-    seen.delete(value);
-  }
+  if (Array.isArray(value)) return Array.from(value, (entry) => entry).every((entry) => isJsonData(entry, seen));
+  const prototype = Object.getPrototypeOf(value);
+  if (prototype !== Object.prototype && prototype !== null) return false;
+  return Reflect.ownKeys(value).every((key) => {
+    const descriptor = Object.getOwnPropertyDescriptor(value, key)!;
+    return (
+      typeof key === "string" &&
+      key !== "__type" &&
+      descriptor.enumerable === true &&
+      "value" in descriptor &&
+      isJsonData(descriptor.value, seen)
+    );
+  });
 }
 
 function requireJsonParams(params: unknown, label: string): void {
@@ -790,7 +795,7 @@ function prepareExperiment(request: ExperimentCheckRequest) {
  * A caller that compiles or opens a run first calls this, so a rejected spec never reaches a factory.
  *
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter Throws the same rejections as runExperiment before any model create.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #9527c33 Re-read the section: the hash, spec, path, and schema checks run and no factory create is called.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #338ce12 Re-read the section: the hash, spec, path, and schema checks run and no factory create is called.
  */
 export function checkExperimentSpec(request: ExperimentCheckRequest): void {
   prepareExperiment(request);
