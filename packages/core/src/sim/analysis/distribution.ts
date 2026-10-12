@@ -318,24 +318,36 @@ function parseObserved(value: string | null): number | null {
   return parsed;
 }
 
-/** Mean that stays finite when the values are finite and keeps small residuals when large values cancel. */
-function finiteMean(values: readonly number[]): number {
-  // Divide by a power of two large enough that n terms cannot overflow. That division is exact, so a small value
-  // keeps its bits, and compensated (Neumaier) summation keeps the residual when large values cancel.
-  const scale = 2 ** (Math.ceil(Math.log2(values.length)) + 1);
+/** Neumaier compensated sum of value / scale. A large value that cancels does not erase a small residual. */
+function compensatedSum(values: readonly number[], scale: number): number {
   let sum = 0;
   let compensation = 0;
-  let smallest = Number.POSITIVE_INFINITY;
-  let largest = Number.NEGATIVE_INFINITY;
   for (const value of values) {
-    smallest = Math.min(smallest, value);
-    largest = Math.max(largest, value);
     const term = value / scale;
     const next = sum + term;
     compensation += Math.abs(sum) >= Math.abs(term) ? sum - next + term : term - next + sum;
     sum = next;
   }
-  const mean = ((sum + compensation) / values.length) * scale;
+  return sum + compensation;
+}
+
+/** Mean that stays finite when the values are finite and keeps small residuals when large values cancel. */
+function finiteMean(values: readonly number[]): number {
+  let smallest = Number.POSITIVE_INFINITY;
+  let largest = Number.NEGATIVE_INFINITY;
+  for (const value of values) {
+    smallest = Math.min(smallest, value);
+    largest = Math.max(largest, value);
+  }
+  // The unscaled sum keeps subnormal terms. Only when it overflows are the terms divided by a power of two large
+  // enough that n of them cannot overflow; that division is exact for every term that is not itself subnormal.
+  const unscaled = compensatedSum(values, 1);
+  const mean = Number.isFinite(unscaled)
+    ? unscaled / values.length
+    : (() => {
+        const scale = 2 ** (Math.ceil(Math.log2(values.length)) + 1);
+        return (compensatedSum(values, scale) / values.length) * scale;
+      })();
   // Every mean lies inside [min, max], so rounding at the number limit cannot step past it.
   return Math.min(largest, Math.max(smallest, mean));
 }
@@ -496,9 +508,15 @@ export function analyzeDistribution(request: DistributionRequest): DistributionA
   const eligible = observed.length + rightCensored;
   const completionRate = eligible > 0 ? observed.length / eligible : null;
   const arithmetic = observed.length > 0 ? finiteMean(observed) : null;
-  const variance = arithmetic === null ? null : finiteVariance(observed, arithmetic);
+  const identical = observed.every((value) => value === observed[0]);
+  const rawVariance = arithmetic === null ? null : finiteVariance(observed, arithmetic);
+  // Distinct observations whose squared deviations underflow are not zero variance. That variance is reported as
+  // absent, and zeroVariance stays tied to identical draws.
+  const variance = rawVariance === 0 && !identical ? null : rawVariance;
   const positive = observed.every((value) => value > 0);
-  const meanLog = arithmetic !== null && positive ? observed.reduce((sum, value) => sum + Math.log10(value), 0) / observed.length : null;
+  // The log values are summed with compensation too, so a small one survives large ones that cancel.
+  const meanLog =
+    arithmetic !== null && positive ? compensatedSum(observed.map((value) => Math.log10(value)), 1) / observed.length : null;
   const logMean = arithmetic !== null && arithmetic > 0 ? Math.log10(arithmetic) : null;
   const source: DistributionUncertaintySource = sources.size > 1 ? "mixed" : ([...sources][0] ?? "model-strategy-session");
   const population = populationAt(observed, rightCensored, probability, horizonSec);
@@ -540,7 +558,7 @@ export function analyzeDistribution(request: DistributionRequest): DistributionA
     })),
     uncertainty: {
       source,
-      zeroVariance: variance === 0,
+      zeroVariance: arithmetic !== null && identical,
       variance,
     },
     population,
@@ -560,6 +578,13 @@ export function analyzeDistribution(request: DistributionRequest): DistributionA
     },
     reduction: { order: "logical-draw-index", workerCountIndependent: true },
     warnings:
-      arithmetic !== null && variance === null ? [...WARNINGS, "variance exceeds the number range and is not reported"] : WARNINGS,
+      arithmetic !== null && variance === null
+        ? [
+            ...WARNINGS,
+            rawVariance === 0
+              ? "variance is below the number range and is not reported"
+              : "variance exceeds the number range and is not reported",
+          ]
+        : WARNINGS,
   };
 }
