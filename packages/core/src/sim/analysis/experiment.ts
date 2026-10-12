@@ -55,7 +55,7 @@ export const experimentCandidateOrder = "sorted-candidates-unmutated-scenario" a
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-censored-horizon A goal missed inside the horizon stays censored. That time is not the horizon and is not differentiated.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-censored-horizon #0d042e7 Re-read the section: horizon 9 with target 10 leaves the reach time null, not 9, the reach time is read on the way while the run continues to the horizon, and no scenario stop condition or step budget ends it early.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-censored-horizon #c62f60b Re-read the section: horizon 9 with target 10 leaves the reach time null, not 9, the reach time is read on the way while the run continues to the horizon, and no scenario stop condition or step budget ends it early.
  */
 export const experimentCensoredHorizon = "censored-time-not-horizon" as const;
 
@@ -282,7 +282,16 @@ type CandidateBase = Readonly<{
 type MetricReading = Readonly<{ metricId: ExperimentMetricId; status: ExperimentMetricStatus; value: string | null }>;
 
 /** An observed money reading keeps its engine amount. Time and benefit keep a number. */
-type Reading<N> = MetricReading & Readonly<{ amount?: N; num?: number }>;
+type Reading<N> = MetricReading &
+  Readonly<{
+    amount?: N;
+    num?: number;
+    /**
+     * A censored reach time is later than this simulated time. It is never written as the value.
+     * It only proves an `lte` constraint violation. `strict` marks that the reach time is strictly later.
+     */
+    lowerBound?: Readonly<{ sec: number; strict: boolean }>;
+  }>;
 
 const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const BANNED_SEGMENT = new Set(["__proto__", "prototype", "constructor", "eval"]);
@@ -581,7 +590,9 @@ function observeMetrics<N>(
   const benefit = readBenefit(end.vars);
   return metricIds(spec).map((metricId): Reading<N> => {
     if (metricId === "timeToMoney") {
-      if (reachedAt === undefined) return { metricId, status: "censored", value: null };
+      if (reachedAt === undefined) {
+        return { metricId, status: "censored", value: null, lowerBound: { sec: end.t - startT, strict: true } };
+      }
       const elapsed = reachedAt - startT;
       return { metricId, status: "observed", value: String(elapsed), num: elapsed };
     }
@@ -608,7 +619,12 @@ function aggregate<N>(E: Engine<N>, rows: readonly { seed: number; metrics: read
     return { metricId, status: "failed", value: null };
   }
   if (picked.some((metric) => metric!.status !== "observed" || metric!.value === null)) {
-    return { metricId, status: "censored", value: null };
+    // Every seed is either observed or censored with a known lower bound, so the mean has a lower bound too.
+    const bounded = picked.every((metric) => metric!.num !== undefined || metric!.lowerBound !== undefined);
+    if (metricId !== "timeToMoney" || !bounded) return { metricId, status: "censored", value: null };
+    const sec = picked.reduce((total, metric) => total + (metric!.num ?? metric!.lowerBound!.sec), 0) / picked.length;
+    const strict = picked.some((metric) => metric!.lowerBound?.strict === true);
+    return { metricId, status: "censored", value: null, lowerBound: { sec, strict } };
   }
   const observed = picked as Reading<N>[];
   const count = observed.length;
@@ -703,7 +719,7 @@ function readingElasticity<N>(
  * would keep every state of every candidate and seed while the experiment reads only the end state.
  *
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-censored-horizon Removes the scenario stop condition, step budget, and trace, so each candidate runs to the horizon without retaining states.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-censored-horizon #0d042e7 Re-read the section: until, maxSteps, and trace are removed and the rest of the run options stay.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-censored-horizon #c62f60b Re-read the section: until, maxSteps, and trace are removed and the rest of the run options stay.
  */
 export function experimentRunBase(run: SimRunOptions): SimRunOptions {
   const { until: _until, maxSteps: _maxSteps, trace: _trace, ...horizonRun } = run;
@@ -832,7 +848,10 @@ export function runExperiment<N>(request: ExperimentRunRequest<N>): ExperimentAr
     const constraintViolations = (spec.constraints ?? [])
       .filter((constraint) => {
         const reading = readings.find((metric) => metric.metricId === constraint.metricId);
-        return isObserved(reading) && violates(E, reading, constraint);
+        // A censored reach time is later than its lower bound. That proves an lte violation once the bound passes the limit.
+        const bound = reading !== undefined && reading.status === "censored" ? reading.lowerBound : undefined;
+        if (isObserved(reading)) return violates(E, reading, constraint);
+        return constraint.op === "lte" && bound !== undefined && (bound.sec > constraint.limit || (bound.strict && bound.sec >= constraint.limit));
       })
       .map((constraint) => constraint.id);
     return { id: candidate.id, readings, constraintViolations };

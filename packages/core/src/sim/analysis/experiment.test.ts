@@ -182,7 +182,7 @@ function runWith(scenario: ScenarioV1, spec: ExperimentSpecV1, creates: { count:
  * @evidence ./experiment.ts#experimentTaskDescriptor Reads the task descriptor contract.
  * @evidenceReview ./experiment.ts#experimentTaskDescriptor #03898ac The declaration is task-id-params-seed-version.
  * @evidence ./experiment.ts#runExperiment Runs the sweep and local sensitivity on a fixed spec.
- * @evidenceReview ./experiment.ts#runExperiment #2214af6 The function checks the scenario hash against the spec, rejects a timeToMoney metric without a finite goal, compiles the scenario once as the candidate base, runs each planned candidate per seed through a fresh binding to the horizon while reading the reach time, averages every seed, and reports local sensitivity only for completed horizons.
+ * @evidenceReview ./experiment.ts#runExperiment #0c68906 The function checks the scenario hash against the spec, rejects a timeToMoney metric without a finite goal, compiles the scenario once as the candidate base, runs each planned candidate per seed through a fresh binding to the horizon while reading the reach time, averages every seed, and reports local sensitivity only for completed horizons.
  * @evidence ./experiment.ts#experimentSchemaId Reads the experiment schema id.
  * @evidenceReview ./experiment.ts#experimentSchemaId #637335e The function returns the experiment.v1 schema URL constant.
  * @evidence ./experiment.ts#experimentAlgorithmVersion Reads the algorithm version.
@@ -613,7 +613,7 @@ export function keepsCandidateOrderAndScenario(): void {
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-censored-horizon Horizon 9 does not become the reach time of an unmet target 10.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-censored-horizon #0d042e7 Re-read the section, then ran this function: the censored value is null and elasticity is unavailable, and with an end money constraint rates 1 and 2 reach in 10 and 5 and end with 40 and 80.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-censored-horizon #c62f60b Re-read the section, then ran this function: the censored value is null and elasticity is unavailable, and with an end money constraint rates 1 and 2 reach in 10 and 5 and end with 40 and 80, and the censored bound proves lte 8 and lte 9 but not lte 12.
  * @evidence ./experiment.ts#experimentCensoredHorizon Reads the censor contract.
  * @evidenceReview ./experiment.ts#experimentCensoredHorizon #81f017f The declaration is censored-time-not-horizon.
  * @evidence ./experiment.ts#experimentRunBase Removes the inherited stop condition, step budget, and trace.
@@ -657,6 +657,28 @@ export function skipsCensoredHorizonForSensitivity(): void {
     direction: "unavailable",
   });
   expect(JSON.stringify(artifact.elasticities)).not.toContain("\"9\"");
+  // The censored reach time is later than 9. That proves lte 8 and lte 9 violated, while lte 12 stays unproven.
+  const deadlines = runWith(
+    scenario,
+    specFor(scenario, {
+      horizonSec: fixture.censoredHorizonSec,
+      constraints: [
+        { id: "by8", metricId: "timeToMoney", op: "lte", limit: 8 },
+        { id: "by9", metricId: "timeToMoney", op: "lte", limit: 9 },
+        { id: "by12", metricId: "timeToMoney", op: "lte", limit: 12 },
+        { id: "after3", metricId: "timeToMoney", op: "gte", limit: 3 },
+      ],
+      dimensions: [
+        { id: "incomeRate", target: "model", path: "incomeRate", space: { kind: "number", min: 0.1, max: 5 }, baseline: 1, probes: [2] },
+      ],
+      strategy: undefined,
+      budget: { candidates: 2, seeds: 1 },
+    }),
+  );
+  const missed = deadlines.candidates.find((candidate) => candidate.id === "baseline");
+  expect(missed?.constraintViolations).toEqual(["by8", "by9"]);
+  expect(missed?.metrics[0]).toEqual({ metricId: "timeToMoney", status: "censored", value: null });
+  expect(deadlines.candidates.find((candidate) => candidate.id === "oat:incomeRate:2")?.constraintViolations).toEqual([]);
   // A reach time and end money in one spec: the run continues past the goal, so end money is read at the horizon.
   const both = runWith(
     scenario,
@@ -795,7 +817,7 @@ export function matchesHandPareto(): void {
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-task-descriptor Candidates start from the referenced scenario and the candidate metric is the mean over every seed.
  * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-task-descriptor #10a3f42 Re-read the section, then ran this function: the GEM wallet starts at 100, maxPicks stays 3, the stripped note reaches create as kept, seeds 1 and 3 average to reach time 20 and end money 160, and probes 1 and "1" get distinct ids.
  * @evidence ./experiment.ts#runExperiment Runs every candidate from the compiled scenario and averages the seeds.
- * @evidenceReview ./experiment.ts#runExperiment #2214af6 The function compiles the request scenario once as the base, keeps its raw model and strategy params, and aggregates every seed row by its mean.
+ * @evidenceReview ./experiment.ts#runExperiment #0c68906 The function compiles the request scenario once as the base, keeps its raw model and strategy params, and aggregates every seed row by its mean.
  */
 export function startsCandidatesFromScenario(): void {
   const creates = { count: 0 };
@@ -886,7 +908,7 @@ export function startsCandidatesFromScenario(): void {
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown An amount past the double range stays an observed engine value for constraints, Pareto, and sensitivity.
  * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown #0c1079a Re-read the section, then ran this function: 1e400 and 1e401 are observed, both violate the cap, only the probe is non-dominated, 1e-10 to 1e400 keeps an engine elasticity near 2.44e409, and two seeds of benefit 1e308 or of the smallest subnormal, and a subnormal wallet, average to that value, and end money 1e308 to -1e308 keeps elasticity 1, and three seeds of the largest double average to it.
  * @evidence ./experiment.ts#runExperiment Compares engine amounts for constraints, Pareto, and elasticity.
- * @evidenceReview ./experiment.ts#runExperiment #2214af6 The function keeps money as engine amounts, checks constraints with the engine order, ranks each Pareto objective by that order, and divides money changes in the engine.
+ * @evidenceReview ./experiment.ts#runExperiment #0c68906 The function keeps money as engine amounts, checks constraints with the engine order, ranks each Pareto objective by that order, and divides money changes in the engine.
  */
 export function keepsLargeEngineAmounts(): void {
   const engine = createBreakInfinityEngine();

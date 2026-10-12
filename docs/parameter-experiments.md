@@ -12,7 +12,7 @@ Each candidate starts from the scenario named by `scenario.ref`: its wallet, uni
 
 Every run continues to `horizonSec`. The reach time is read on the way, so end money and `vars.benefit` are horizon values even when `timeToMoney` is also requested. A candidate metric is the arithmetic mean over every seed. One failed seed fails it and one censored seed censors it. Money stays an amount of the effective engine: constraints, Pareto order, and elasticity compare it in that engine, so a `breakInfinity` amount past the double range is still observed.
 
-Relative elasticity is reported only when baseline `p` and `y` are finite and greater than zero and `p` changes. Otherwise the row keeps an absolute change and a direction, or it is unavailable. A goal that is not reached stays censored. Its time is null. It is not replaced with the horizon, and it is not differentiated.
+Relative elasticity is reported only when baseline `p` and `y` are finite and greater than zero and `p` changes. Otherwise the row keeps an absolute change and a direction, or it is unavailable. A goal that is not reached stays censored. Its time is null. It is not replaced with the horizon, and it is not differentiated. Its lower bound, the simulated horizon, only proves an `lte` time constraint violated.
 
 The default report is per-metric change plus constraint violation ids. There is no weighted composite. Optional Pareto uses fully observed objectives only. A censored or failed objective is `uncompared` and cannot win.
 
