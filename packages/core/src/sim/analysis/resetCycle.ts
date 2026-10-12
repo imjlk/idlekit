@@ -1,7 +1,7 @@
 import typia, { type IValidation } from "typia";
 import type { Engine } from "../../engine/types";
 import { recordPrestigeReset } from "../constraints";
-import { emitCommittedResets } from "../observation";
+import { emitActionFacts, emitCommittedResets } from "../observation";
 import { runScenario } from "../simulator";
 import { applyDecisions, type CommittedResetFact } from "../step";
 import {
@@ -460,6 +460,8 @@ export function executeResetCycles<N, U extends string, Vars>(args: {
       // The adapter built this action for the current state. A spec or custom adapter action is not in model.actions.
       resolveAgainstModel: false,
     });
+    // The boundary decision is an action fact too, applied or refused, as it would be inside runScenario.
+    emitActionFacts(scenario.run.observer, state.t, applied.events);
     const skipped = applied.events.find((event) => event.type === "action.skipped");
     const fact = applied.committedResets[0];
     if (!fact || skipped) {
