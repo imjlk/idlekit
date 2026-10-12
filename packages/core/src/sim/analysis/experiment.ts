@@ -37,7 +37,7 @@ export const experimentSeparateSpec = "experiment-spec-not-tunespec" as const;
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter Assignment uses a registered identifier path and the model or strategy schema. JSONPath, prototype, and eval paths are refused before a run.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #855dbc6 Re-read the section: a prototype path, an out-of-range integer, a schema-invalid rate, a stripped path, overlapping paths, a session dimension, a repeated seed, a non-finite limit, and a repeated constraint id throw before model create.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #d298d7e Re-read the section: a prototype path, an out-of-range integer, a non-finite choice value, a schema-invalid rate, a stripped path, overlapping paths, a session dimension, a repeated seed, a non-finite limit, and a repeated constraint id throw before model create.
  */
 export const experimentRegisteredSetter = "registered-key-not-jsonpath" as const;
 
@@ -55,19 +55,19 @@ export const experimentCandidateOrder = "sorted-candidates-unmutated-scenario" a
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-censored-horizon A goal missed inside the horizon stays censored. That time is not the horizon and is not differentiated.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-censored-horizon #fae95bf Re-read the section: horizon 9 with target 10 leaves the reach time null, not 9, and the reach time is read on the way while the run continues to the horizon.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-censored-horizon #0bb2a93 Re-read the section: horizon 9 with target 10 leaves the reach time null, not 9, the reach time is read on the way while the run continues to the horizon, and no scenario stop condition or step budget ends it early.
  */
 export const experimentCensoredHorizon = "censored-time-not-horizon" as const;
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown Pareto keeps per-metric tradeoffs. An unknown objective is uncompared, not a win.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown #54618df Re-read the section: A, B, and C are non-dominated, D is dominated, E is uncompared, and money is compared in the effective engine.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown #90de272 Re-read the section: A, B, and C are non-dominated, D is dominated, E is uncompared, money is compared in the effective engine, and the elasticity stays in that engine until it is text.
  */
 export const experimentParetoUnknown = "unknown-is-not-superior" as const;
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-task-descriptor Each task records its id, parameter JSON, logical seed, and engine and model versions. It does not store a function.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-task-descriptor #7ab1c92 Re-read the section: the income candidate changes incomeRate and the policy candidate changes maxPicks on the same seed, both from the raw scenario params, and a string probe id is JSON text.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-task-descriptor #c36eb84 Re-read the section: the income candidate changes incomeRate and the policy candidate changes maxPicks on the same seed, both from the raw scenario params, and a string probe id is JSON text.
  */
 export const experimentTaskDescriptor = "task-id-params-seed-version" as const;
 
@@ -227,7 +227,7 @@ let validateExperimentArtifactValidator: ((input: unknown) => IValidation<Experi
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-task-descriptor The generated validator accepts this artifact.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-task-descriptor #7ab1c92 Re-read the section: the wire object is experiment v1 and the method is fixed-sweep-and-one-at-a-time.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-task-descriptor #c36eb84 Re-read the section: the wire object is experiment v1 and the method is fixed-sweep-and-one-at-a-time.
  */
 export const validateExperimentArtifact = (input: unknown): IValidation<ExperimentArtifactV1> =>
   (validateExperimentArtifactValidator ??= typia.createValidate<ExperimentArtifactV1>())(input);
@@ -601,7 +601,8 @@ function aggregate<N>(E: Engine<N>, rows: readonly { seed: number; metrics: read
     if (!E.isFinite(mean)) return { metricId, status: "censored", value: null };
     return { metricId, status: "observed", value: E.toString(mean), amount: mean };
   }
-  const mean = observed.reduce((sum, metric) => sum + (metric.num as number), 0) / count;
+  // Divide before adding here too, so two finite values near the double limit keep a finite mean.
+  const mean = observed.reduce((sum, metric) => sum + (metric.num as number) / count, 0);
   if (!Number.isFinite(mean)) return { metricId, status: "censored", value: null };
   return { metricId, status: "observed", value: String(mean), num: mean };
 }
@@ -635,14 +636,19 @@ function readingElasticity<N>(
   if (baseline.amount !== undefined && probe.amount !== undefined) {
     const delta = E.sub(probe.amount, baseline.amount);
     const order = E.cmp(probe.amount, baseline.amount);
-    const relative = E.cmp(baseline.amount, E.zero()) > 0 ? E.toNumber(E.divN(delta, baseline.amount)) : null;
-    return elasticityFromChange({
+    const unavailable = elasticityFromChange({
       baselineP,
       probeP,
       absoluteChange: E.toString(delta),
       direction: order > 0 ? "higher" : order < 0 ? "lower" : "flat",
-      relativeChange: relative,
+      relativeChange: null,
     });
+    const pChanged = Number.isFinite(baselineP) && Number.isFinite(probeP) && probeP !== baselineP;
+    if (!(E.cmp(baseline.amount, E.zero()) > 0) || !(baselineP > 0) || !pChanged) return unavailable;
+    // The ratio of two engine amounts can leave the double range, so the elasticity stays in the engine until it is text.
+    const elasticity = E.div(E.divN(delta, baseline.amount), (probeP - baselineP) / baselineP);
+    if (!E.isFinite(elasticity)) return unavailable;
+    return { ...unavailable, status: "observed", elasticity: E.toString(elasticity) };
   }
   return localElasticity({ baselineP, probeP, baselineY: baseline.num ?? null, probeY: probe.num ?? null });
 }
@@ -681,8 +687,8 @@ export function runExperiment<N>(request: ExperimentRunRequest<N>): ExperimentAr
     strategyRegistry: request.strategyRegistry,
     opts: { allowSuffixNotation: true },
   });
-  // Every candidate runs to the spec horizon. A scenario stop condition would cut the horizon metrics short.
-  const { until: _scenarioUntil, ...horizonRun } = compiled.run;
+  // Every candidate runs to the spec horizon. A scenario stop condition or step budget would cut the horizon metrics short.
+  const { until: _scenarioUntil, maxSteps: _scenarioMaxSteps, ...horizonRun } = compiled.run;
   const shared: CompiledScenario<N, string, Record<string, unknown>> = { ...compiled, run: horizonRun };
   const bindingFor = createRunFactory({
     models: request.modelRegistry,

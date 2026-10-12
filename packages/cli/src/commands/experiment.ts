@@ -57,12 +57,14 @@ export default defineCommand({
       scenario: valid.scenario,
       modelRegistry: loaded.modelRegistry,
       strategyRegistry: loaded.strategyRegistry,
+      pluginDigest: loaded.pluginDigest,
       engineRequest: flags.engine,
     });
     const meta = buildOutputMeta({
       command: "experiment",
       scenarioPath,
       scenario: valid.scenario,
+      pluginDigest: loaded.pluginDigest,
       effectiveEngine: prepared.engine.effectiveId,
     });
     const artifact = runExperiment({

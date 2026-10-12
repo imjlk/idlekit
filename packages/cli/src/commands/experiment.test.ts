@@ -19,6 +19,7 @@ describe("experiment command", () => {
   let dir = "";
   let specPath = "";
   let malformedPath = "";
+  let pluginPath = "";
   let cliVersion = "";
 
   beforeAll(async () => {
@@ -54,6 +55,9 @@ describe("experiment command", () => {
         session: { pattern: "always-on", days: 1 },
       }),
     );
+    // A plugin that adds an unused strategy still changes the loaded code, so it must reach provenance.
+    pluginPath = resolve(dir, "noop-plugin.mjs");
+    await writeText(pluginPath, `export const strategies = [{ id: "plugin.noop", create: () => ({ id: "plugin.noop", decide: () => [] }) }];\n`);
     malformedPath = resolve(dir, "malformed.json");
     await writeText(malformedPath, JSON.stringify({ schemaVersion: 1, scenario: { ref: 42, hash: "x" } }));
   });
@@ -75,6 +79,14 @@ describe("experiment command", () => {
       expect(task.engineId).toBe("breakInfinity");
       expect(task.engineVersion).toBe(`idlekit-cli@${cliVersion}`);
     }
+  });
+
+  it("records loaded plugin digests in the run hash and output meta", () => {
+    const plain = runCliJson(["experiment", specPath]);
+    const plugged = runCliJson(["experiment", specPath, "--plugin", pluginPath, "--allow-plugin", "true"]);
+    expect(Object.keys(plain._meta.pluginDigest)).toEqual([]);
+    expect(Object.values(plugged._meta.pluginDigest)).toHaveLength(1);
+    expect(plugged.effectiveRunHash).not.toBe(plain.effectiveRunHash);
   });
 
   it("rejects a malformed spec before resolving its scenario", () => {

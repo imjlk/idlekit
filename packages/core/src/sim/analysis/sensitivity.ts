@@ -52,6 +52,8 @@ export function assignmentFitsParamSpace(space: ParamSpace, value: string | numb
   if (space.kind === "number") {
     return typeof value === "number" && Number.isFinite(value) && value >= space.min && value <= space.max;
   }
+  // A JSON literal such as 1e400 parses to Infinity, and canonical JSON would write it as null.
+  if (typeof value === "number" && !Number.isFinite(value)) return false;
   return space.values.some((entry) => entry === value);
 }
 
