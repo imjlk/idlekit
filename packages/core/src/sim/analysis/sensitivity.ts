@@ -156,6 +156,13 @@ export function paretoFrontBy<T>(
 ): ParetoFront {
   // The front lists ids, so two points with one id would be ambiguous and would never compare against each other.
   if (new Set(points.map((point) => point.id)).size !== points.length) throw new Error("Pareto point ids must be unique");
+  // Dominance reads each position with one sense, so every point must list the same objective count and senses.
+  const shape = points[0]?.objectives.map((item) => item.sense) ?? [];
+  for (const point of points) {
+    if (point.objectives.length !== shape.length || point.objectives.some((item, index) => item.sense !== shape[index])) {
+      throw new Error(`Pareto point ${point.id} does not share the objective count and senses of the other points`);
+    }
+  }
   const comparable: ComparablePoint<T>[] = [];
   const uncompared: string[] = [];
   for (const point of points) {

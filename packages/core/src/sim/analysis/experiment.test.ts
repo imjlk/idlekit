@@ -35,7 +35,7 @@ import {
   type ExperimentArtifactV1,
   type ExperimentSpecV1,
 } from "./experiment";
-import { assignmentFitsParamSpace, localElasticity, paretoFront } from "./sensitivity";
+import { assignmentFitsParamSpace, localElasticity, paretoFront, paretoFrontBy } from "./sensitivity";
 
 const fixture = JSON.parse(
   readFileSync(resolve(import.meta.dir, "../../../../../fixtures/conformance/parameter-experiment.json"), "utf8"),
@@ -227,6 +227,25 @@ export function checksLocalElasticityDirection(): void {
       { id: "A", objectives: [{ id: "x", sense: "higher", value: 1 }] },
     ]),
   ).toThrow("ids must be unique");
+  const byNumber = (left: number, right: number) => left - right;
+  expect(() =>
+    paretoFrontBy(
+      [
+        { id: "A", objectives: [{ sense: "higher", value: 2 }] },
+        { id: "B", objectives: [{ sense: "lower", value: 1 }] },
+      ],
+      byNumber,
+    ),
+  ).toThrow("objective count and senses");
+  expect(() =>
+    paretoFrontBy(
+      [
+        { id: "A", objectives: [{ sense: "higher", value: 2 }] },
+        { id: "B", objectives: [{ sense: "higher", value: 1 }, { sense: "lower", value: 1 }] },
+      ],
+      byNumber,
+    ),
+  ).toThrow("objective count and senses");
   // Opposite-sign parameters near the double limit: the parameter change overflows, the ratio -2 does not, so the elasticity is 1.
   expect(localElasticity({ baselineP: 1e308, probeP: -1e308, baselineY: 1, probeY: -1 })).toMatchObject({ status: "observed", elasticity: "1" });
   // Opposite-sign values near the double limit: the difference overflows, the ratio -2 does not.
@@ -745,7 +764,7 @@ export function skipsCensoredHorizonForSensitivity(): void {
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown The hand tradeoff keeps A, B, and C, drops D, and leaves E uncompared.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown #249d72e Re-read the section, then ran this function: nonDominated is A, B, C and E is uncompared, and end money 0, 0.75e-12, and 1.5e-12 give the front B and C.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown #1e93b71 Re-read the section, then ran this function: nonDominated is A, B, C and E is uncompared, and end money 0, 0.75e-12, and 1.5e-12 give the front B and C.
  * @evidence ./experiment.ts#experimentParetoUnknown Reads the Pareto contract.
  * @evidenceReview ./experiment.ts#experimentParetoUnknown #4c62a0c The declaration is unknown-is-not-superior.
  */
@@ -949,7 +968,7 @@ export function startsCandidatesFromScenario(): void {
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown An amount past the double range stays an observed engine value for constraints, Pareto, and sensitivity.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown #249d72e Re-read the section, then ran this function: 1e400 and 1e401 are observed, both violate the cap, only the probe is non-dominated, 1e-10 to 1e400 keeps an engine elasticity near 2.44e409, and two seeds of benefit 1e308 or of the smallest subnormal, and a subnormal wallet, average to that value, and end money 1e308 to -1e308 keeps elasticity 1, and three seeds of the largest double average to it.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown #1e93b71 Re-read the section, then ran this function: 1e400 and 1e401 are observed, both violate the cap, only the probe is non-dominated, 1e-10 to 1e400 keeps an engine elasticity near 2.44e409, and two seeds of benefit 1e308 or of the smallest subnormal, and a subnormal wallet, average to that value, and end money 1e308 to -1e308 keeps elasticity 1, and three seeds of the largest double average to it.
  * @evidence ./experiment.ts#runExperiment Compares engine amounts for constraints, Pareto, and elasticity.
  * @evidenceReview ./experiment.ts#runExperiment #0c68906 The function keeps money as engine amounts, checks constraints with the engine order, ranks each Pareto objective by that order, and divides money changes in the engine.
  */
