@@ -37,7 +37,7 @@ export const experimentSeparateSpec = "experiment-spec-not-tunespec" as const;
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter Assignment uses a registered identifier path and the model or strategy schema. JSONPath, prototype, and eval paths are refused before a run.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #1392a7f Re-read the section: a prototype path, an out-of-range integer, a non-finite choice value, a non-finite space bound, a schema-invalid rate, a stripped path, overlapping paths, a session dimension, a repeated seed, a non-finite limit, and a repeated constraint id throw before model create.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #b249f4e Re-read the section: a prototype path, an out-of-range integer, a non-finite choice value, a non-finite space bound, a schema-invalid rate, a stripped path, overlapping paths, a session dimension, a repeated seed, a non-finite limit, and a repeated constraint id throw before model create.
  */
 export const experimentRegisteredSetter = "registered-key-not-jsonpath" as const;
 
@@ -413,6 +413,12 @@ function requireSpec(input: ExperimentSpecV1): ExperimentSpecV1 {
     for (const probe of dimension.probes ?? []) {
       if (!assignmentFitsParamSpace(dimension.space, probe)) reject(`probe for ${dimension.id} is outside its parameter space`);
     }
+  }
+  // An objective id names one Pareto objective. A repeated id would be compared as two independent positions.
+  const objectiveIds = new Set<string>();
+  for (const objective of spec.objectives ?? []) {
+    if (objectiveIds.has(objective.id)) reject(`duplicate objective ${objective.id}`);
+    objectiveIds.add(objective.id);
   }
   // A violation lists only the constraint id, so the id must name one constraint. A JSON literal such as 1e400 parses to Infinity.
   const constraintIds = new Set<string>();
@@ -876,7 +882,7 @@ function prepareExperiment(request: ExperimentCheckRequest) {
  * A caller that compiles or opens a run first calls this, so a rejected spec never reaches a factory.
  *
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter Throws the same rejections as runExperiment before any model create.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #1392a7f Re-read the section: the hash, spec, path, and schema checks run and no factory create is called.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #b249f4e Re-read the section: the hash, spec, path, and schema checks run and no factory create is called.
  */
 export function checkExperimentSpec(request: ExperimentCheckRequest): void {
   prepareExperiment(request);

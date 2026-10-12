@@ -372,7 +372,7 @@ export function keepsStrategyTuneSignature(): void {
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter Unsafe paths and invalid parameters throw before the model factory runs.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #1392a7f Re-read the section, then ran this function: a stripped typo path, overlapping model and strategy paths, a session dimension, a repeated seed, another model version, an Infinity choice value, an Infinity space bound, an Infinity limit, an Infinity goal, a schema-less typo path, -0, a -0 seed, a __type path, non-JSON params, a malformed untyped spec, and a repeated constraint id throw, and create count stays 0.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #b249f4e Re-read the section, then ran this function: a stripped typo path, overlapping model and strategy paths, a session dimension, a repeated seed, another model version, an Infinity choice value, an Infinity space bound, an Infinity limit, an Infinity goal, a schema-less typo path, -0, a -0 seed, a __type path, non-JSON params, a malformed untyped spec, and a repeated constraint or objective id throw, and create count stays 0.
  * @evidence ./experiment.ts#experimentRegisteredSetter Reads the setter contract.
  * @evidenceReview ./experiment.ts#experimentRegisteredSetter #080a763 The declaration is registered-key-not-jsonpath.
  * @evidence ./experiment.ts#assertRegisteredPath Rejects prototype, bracket, and traversal paths, and session paths other than pattern or days.
@@ -496,6 +496,15 @@ export function rejectsUnsafeParametersBeforeRun(): void {
     ],
     ["seeds must be unique", specFor(scenario, { seeds: [fixture.seed, fixture.seed] })],
     ["seeds must not be -0", specFor(scenario, { seeds: [-0] })],
+    [
+      "duplicate objective x",
+      specFor(scenario, {
+        objectives: [
+          { id: "x", metricId: "endMoney", sense: "higher" },
+          { id: "x", metricId: "endMoney", sense: "lower" },
+        ],
+      }),
+    ],
     ["model version must be finite", specFor(scenario, { model: { id: fixture.modelId, version: JSON.parse("1e400") as number } })],
     ["model version must be finite and not -0", specFor(scenario, { model: { id: fixture.modelId, version: -0 } })],
     [
