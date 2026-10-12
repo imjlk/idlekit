@@ -174,6 +174,9 @@ export function registersCustomMetric(): void {
   expect(registry.knowledge("gem-shop", 1, "flow")).toBe("unsupported");
   expect(registry.knowledge("gem-shop", 1, "reset")).toBe("unsupported");
   expect(registry.knowledge("missing", 1, "flow")).toBe("unknown");
+  registry.register({ modelId: "plain", modelVersion: 1 });
+  expect(registry.knowledge("plain", 1, "flow")).toBe("unsupported");
+  expect(registry.knowledge("plain", 1, "reset")).toBe("unsupported");
   const flow = flowResult("unsupported");
   const reset = resetResult("unsupported");
   expect(flow.status).toBe("unsupported");
@@ -220,7 +223,7 @@ export function registersCustomMetric(): void {
  * @evidence ./contracts.ts#analysisArtifactJson Renders the artifact as canonical JSON text.
  * @evidenceReview ./contracts.ts#analysisArtifactJson #52695d2 The function appends a newline to analysisCanonicalJson of the artifact.
  * @evidence ./contracts.ts#validateAnalysisSemantics Accepts the fixture and rejects an unavailable reading that carries a value.
- * @evidenceReview ./contracts.ts#validateAnalysisSemantics #702b8ef The function rejects a value on an unavailable reading, a non-ok reading not labeled unavailable, missing ok values, a second representation for the domain, nonfinite values and versions, reached or method on a non-ok goal, a nonfinite atSec or horizon, and a sampleCount that is not a nonnegative integer.
+ * @evidenceReview ./contracts.ts#validateAnalysisSemantics #4b2557b Re-read the function: it also rejects NaN or Infinity amount strings without narrowing large finite decimals and a declared numeric sign contradicting its finite value; the unavailable, domain, version, goal, horizon, and sampleCount rules remain.
  * @evidence ./contracts.ts#analysisSchemaHash Hashes the generated schema for provenance.
  * @evidenceReview ./contracts.ts#analysisSchemaHash #0ec17bb The function hashes the canonical JSON of the memoized artifact schema.
  * @evidence ./contracts.ts#artifactProvenance Changes provenance with assumptions, algorithm, and schema, and not with the run hash.
@@ -316,6 +319,15 @@ export function roundTripsAnalysisArtifact(): void {
   expect(analysisCanonicalJson(parsed.data)).toBe(json.trim());
   expect(validateAnalysisArtifact(parsed.data).success).toBe(true);
   expect(validateAnalysisSemantics(parsed.data)).toEqual([]);
+  expect(analysisCanonicalJson(new Array(2))).toBe("[null,null]");
+  expect(validateAnalysisSemantics({
+    ...artifact,
+    metrics: [{ ...hugeReading, amount: { unit: "COIN", decimal: "NaN" } }],
+  }).map((issue) => issue.message)).toContain("amount decimal is nonfinite");
+  expect(validateAnalysisSemantics({
+    ...artifact,
+    metrics: [{ ...hugeReading, domain: "count", amount: undefined, value: -1, sign: "positive" }],
+  }).map((issue) => issue.message)).toContain("numeric sign contradicts its value");
   const bad: AnalysisArtifactV1 = {
     ...artifact,
     metrics: [{ ...unknown, value: 0 }],

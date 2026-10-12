@@ -164,7 +164,8 @@ function renderCanonical(value: unknown, seen: Set<object>): string {
   seen.add(value);
   try {
     if (Array.isArray(value)) {
-      return `[${value.map((entry) => renderCanonical(entry ?? null, seen)).join(",")}]`;
+      const entries = Array.from({ length: value.length }, (_, index) => renderCanonical(value[index] ?? null, seen));
+      return `[${entries.join(",")}]`;
     }
     const entries = Object.entries(value).filter(([, entry]) => entry !== undefined);
     entries.sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0));
@@ -268,6 +269,13 @@ export function validateAnalysisSemantics(artifact: AnalysisArtifactV1): readonl
     }
     if (reading.value !== undefined && !Number.isFinite(reading.value)) {
       issues.push({ path, message: "numeric value is nonfinite" });
+    }
+    if (reading.amount !== undefined && /^[+-]?(?:nan|infinity)$/i.test(reading.amount.decimal.trim())) {
+      issues.push({ path, message: "amount decimal is nonfinite" });
+    }
+    if (reading.value !== undefined && Number.isFinite(reading.value) && reading.sign !== undefined) {
+      const sign = reading.value < 0 ? "negative" : reading.value === 0 ? "zero" : "positive";
+      if (reading.sign !== sign) issues.push({ path, message: "numeric sign contradicts its value" });
     }
     // One representation per domain: an amount reading has no number, and a numeric reading has no amount.
     if (reading.domain === "amount" && reading.value !== undefined) {

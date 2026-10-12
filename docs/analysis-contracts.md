@@ -8,6 +8,8 @@ Korean version: [analysis-contracts_ko.md](./analysis-contracts_ko.md)
 
 `ModelAnalysisAdapter` says what one model version can provide: metrics, goals, and whether reset, flow, and advance are known. It is registered by model id and version. `Model` does not grow a required method.
 
+A registered adapter treats each omitted capability as `unsupported`, including when the entire `capabilities` field is omitted. An unregistered model id or version remains `unknown`.
+
 `AnalyzerRegistry` is `DX-02`. It will choose an analysis method. This change does not run one. Flow and advance bodies are later work. A model with no flow or reset capability is `unsupported`. That is not a score of 0 and not a stable state. No adapter at all is `unknown`, which is what `DX-03` inspect can report as not statically known.
 
 ## Goals and metrics
@@ -25,6 +27,8 @@ The generated schema is `docs/schemas/generated/analysis.artifact.v1.schema.json
 `validateAnalysisSemantics` checks what the structural schema cannot. A non-ok reading must be labeled `unavailable` and carry no value. A non-ok goal carries neither `reached` nor `method`. `sampleCount` is a nonnegative integer, and `0` stays valid. A metric whose extractor returns a different domain than its definition is read as `invalid`. An amount reading carries no `value`, and a numeric reading carries no `amount`. Versions, `atSec`, and `horizon.sec` must be finite, because JSON writes a nonfinite number as `null`.
 
 Legacy `eta.ts` and `growth.ts` still narrow some amounts with `toNumber` or `Number`. Those calls are classified as estimate paths, not as the artifact contract. This change does not ban every finite conversion.
+
+Semantic validation rejects amount strings spelling NaN or Infinity without narrowing large finite engine strings such as `1e400`. A declared numeric `sign` must match its finite `value`; omitting the optional sign remains valid. Canonical JSON writes every sparse array slot as `null`, preserving array length and valid JSON.
 
 Node.js and browser runtimes are not part of the v1 compatibility contract.
 

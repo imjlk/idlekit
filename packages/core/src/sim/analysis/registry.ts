@@ -10,6 +10,7 @@ import type { GoalDefinition, MetricDefinition } from "./metrics";
 export type ModelAnalysisAdapter<N, U extends string, Vars> = Readonly<{
   modelId: string;
   modelVersion: number;
+  /** Omitted capabilities on a registered adapter are unsupported. */
   capabilities?: Partial<Record<AnalysisCapabilityName, "statically-known" | "unsupported">>;
   metrics?: readonly MetricDefinition<N, U, Vars>[];
   goals?: readonly GoalDefinition<N, U, Vars>[];
@@ -44,7 +45,7 @@ export function createModelAnalysisRegistry<N, U extends string, Vars>(): ModelA
     knowledge(modelId, modelVersion, name) {
       const adapter = map.get(keyOf(modelId, modelVersion));
       if (!adapter) return "unknown";
-      return capabilityKnowledge(adapter.capabilities, name);
+      return capabilityKnowledge(adapter.capabilities ?? {}, name);
     },
   };
 }
