@@ -169,6 +169,8 @@ export type ResetCycleCheckpoint<N, U extends string, Vars> = Readonly<{
   adapterKind?: "prestige" | "custom";
   /** Seconds already played of a cycle a budget cut. A resume plays only the rest of that cycle. */
   pendingSec?: number;
+  /** The planned duration of that cut cycle. A resume must plan the same duration for it. */
+  pendingDurationSec?: number;
   /** The model the state belongs to. A resume checks it. */
   modelId?: string;
   modelVersion?: number;
@@ -459,6 +461,7 @@ export function executeResetCycles<N, U extends string, Vars>(args: {
   let elapsed = args.resume?.elapsedSec ?? state.t - originSec;
   // Seconds a budget already played of the next cycle. That cycle keeps its index and plays only the rest.
   let pending = args.resume?.pendingSec ?? 0;
+  let pendingDuration: number | undefined;
   if (typeof pending !== "number" || !Number.isFinite(pending) || pending < 0) {
     throw new ResetCycleRejected("reset cycle checkpoint pendingSec must be a finite number >= 0");
   }
@@ -493,6 +496,12 @@ export function executeResetCycles<N, U extends string, Vars>(args: {
             HORIZON_ULPS * Number.EPSILON * Math.max(Math.abs(elapsed) + Math.abs(duration), Math.abs(args.horizonSec)),
             duration / 2,
           );
+    // A cut cycle resumes under the duration it was planned with. Another duration would change where it resets.
+    if (pending > 0 && args.resume?.pendingDurationSec !== undefined && duration !== args.resume.pendingDurationSec) {
+      throw new ResetCycleRejected(
+        `reset cycle checkpoint cut a ${args.resume.pendingDurationSec}-second cycle, not a ${duration}-second one`,
+      );
+    }
     const remainingSec = Math.max(0, duration - pending);
     if (args.horizonSec !== undefined && elapsed + remainingSec > args.horizonSec + slack) {
       guard = "censored";
@@ -538,6 +547,7 @@ export function executeResetCycles<N, U extends string, Vars>(args: {
       });
       // The cycle is not finished. A resume continues it under the same index for the remaining seconds.
       pending = played;
+      pendingDuration = duration;
       guard = "censored";
       warnings.push("budget");
       break;
@@ -570,9 +580,14 @@ export function executeResetCycles<N, U extends string, Vars>(args: {
     }
 
     const beforeReward = adapter.reward(boundaryCtx, state);
+    if (!E.isFinite(beforeReward)) throw new ResetCycleRejected(`reset adapter ${adapter.id} reward is not finite`);
     const action = adapter.action(boundaryCtx, state);
+    // A reset is a prestige or custom action. Another kind would be paid and applied without a reset fact.
+    if (action && action.kind !== "prestige" && action.kind !== "custom") {
+      throw new ResetCycleRejected(`reset adapter ${adapter.id} returned a ${action.kind} action, not a reset`);
+    }
     const kinds = new Set<"prestige" | "custom">();
-    if (action && (action.kind === "prestige" || action.kind === "custom")) kinds.add(action.kind);
+    if (action) kinds.add(action.kind as "prestige" | "custom");
     const applied = applyDecisions({
       ctx: boundaryCtx,
       model: scenario.model,
@@ -580,6 +595,8 @@ export function executeResetCycles<N, U extends string, Vars>(args: {
       decisions: action ? [{ action }] : [],
       constraints,
       resetKinds: kinds,
+      // The boundary happens at the executor's summed elapsed seconds, not at a rounded reward timestamp.
+      ...(boundaryCtx.clocks ? { wallT: boundaryCtx.clocks.wallT + elapsed } : {}),
       // The adapter built this action for the current state. A spec or custom adapter action is not in model.actions.
       resolveAgainstModel: false,
     });
@@ -608,6 +625,10 @@ export function executeResetCycles<N, U extends string, Vars>(args: {
       break;
     }
 
+    // The boundary does not advance time. A reset that moved t would split the clock from the elapsed seconds.
+    if (applied.state.t !== state.t) {
+      throw new ResetCycleRejected(`reset action ${String(action?.id)} changed t from ${state.t} to ${applied.state.t}`);
+    }
     state = applied.state;
     // stepOnce keeps maxMoneyEver at or above the wallet. The boundary action does not pass through it.
     if (E.cmp(state.wallet.money.amount, state.maxMoneyEver.amount) > 0) {
@@ -615,6 +636,9 @@ export function executeResetCycles<N, U extends string, Vars>(args: {
     }
     const afterReward = adapter.reward(boundaryCtx, state);
     const delta = E.sub(afterReward, beforeReward);
+    if (!E.isFinite(afterReward) || !E.isFinite(delta)) {
+      throw new ResetCycleRejected(`reset adapter ${adapter.id} reward is not finite after the reset`);
+    }
     accumulated = E.add(accumulated, delta);
     if (action?.kind === "prestige") {
       constraints = recordPrestigeReset(constraints, fact.t, scenario.run.onPrestigeReset);
@@ -668,7 +692,7 @@ export function executeResetCycles<N, U extends string, Vars>(args: {
     checkpoint: {
       ...checkpointOf(scenario, args.rng, state, constraints, nextIndex, originSec, accumulated, elapsed),
       ...(args.adapter ? { adapterId: args.adapter.id, adapterKind: args.adapter.kind } : {}),
-      ...(pending > 0 ? { pendingSec: pending } : {}),
+      ...(pending > 0 ? { pendingSec: pending, pendingDurationSec: pendingDuration } : {}),
     },
   };
 }
