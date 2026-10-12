@@ -488,7 +488,10 @@ export async function loadRegistries(
       objectiveFactories.push(...parsed.objectives);
       for (const factory of parsed.objectives) pluginObjectiveIds.push(factory.id);
     }
-    if (parsed.analyzers) {
+    // A plugin export is a runtime value: a non-array is one isolated failure, not a crash.
+    if (parsed.analyzers !== undefined && parsed.analyzers !== null && !Array.isArray(parsed.analyzers)) {
+      analyzerFailures.push({ path: abs, message: "plugin analyzers export must be an array" });
+    } else if (parsed.analyzers) {
       for (const analyzer of parsed.analyzers) {
         const message = registerAnalyzerIsolated(analyzerRegistry, analyzer);
         if (message) analyzerFailures.push({ path: abs, message });

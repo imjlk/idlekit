@@ -115,7 +115,7 @@ const sharedDemand = observationDemand({ coverage: "window", sampleCadenceSec: 2
 
 /**
  * @evidence docs/requirements/active/analyzer-registry.md#req-dx02-registry-conflicts A duplicate, a cycle, a missing dependency, bad params, and an unsupported capability do not run the body.
- * @evidenceReview docs/requirements/active/analyzer-registry.md#req-dx02-registry-conflicts #315b573 Re-read the section, then ran this function: the call log stays empty, flow is unsupported, an incomplete definition, a two-run cost, and version b@c are refused at register, a null resolved demand throws, base takes the semantics of left, and after.gate and after.short do not run.
+ * @evidenceReview docs/requirements/active/analyzer-registry.md#req-dx02-registry-conflicts #ddadf25 Re-read the section, then ran this function: boom is error while peer runs and post.run is refused, base requested with other semantics throws, a null body is error and after.nothing does not run, null and params-less validator results and NaN or infinite semantics throw, the call log stays empty, flow is unsupported, an incomplete definition, a two-run cost, and version b@c are refused at register, a null resolved demand throws, base takes the semantics of left, and after.gate and after.short do not run.
  * @evidence ./analyzers.ts#analyzerRegistryConflicts Reads the conflict contract.
  * @evidenceReview ./analyzers.ts#analyzerRegistryConflicts #a1dbd92 The declaration is fail-before-run.
  * @evidence ./analyzers.ts#AnalyzerRegistryError.prototype.issues Reads the issue list stored when params fail before a body.
@@ -282,6 +282,76 @@ export function rejectsRegistryConflictsBeforeRun(): void {
     malformed.run({ requests: [{ id: "plugin.demand", version: "1", params: {} }], semantics: analyzerSemantics() }),
   ).toThrow("bad demand for plugin.demand@1");
   expect(calls).toEqual(["m", "a"]);
+
+  // A validator result is checked before `ok` or `params` is read.
+  const validators = createAnalyzerRegistry();
+  validators.register({ ...probe({ id: "null.result", onPostprocess: () => calls.push("null.result") }), validateParams: () => null as never });
+  validators.register({ ...probe({ id: "no.params", onPostprocess: () => calls.push("no.params") }), validateParams: () => ({ ok: true }) as never });
+  validators.register(probe({ id: "m", onPostprocess: () => calls.push("m") }));
+  expect(() =>
+    validators.run({ requests: [{ id: "null.result", version: "1", params: {} }], semantics: analyzerSemantics() }),
+  ).toThrow("bad params result for null.result@1");
+  expect(() =>
+    validators.run({ requests: [{ id: "no.params", version: "1", params: {} }], semantics: analyzerSemantics() }),
+  ).toThrow("an ok result must carry params");
+  // Semantics are checked before grouping: NaN would pass every budget comparison.
+  expect(() =>
+    validators.run({ requests: [], semantics: analyzerSemantics({ horizonSec: Number.NaN }) }),
+  ).toThrow("bad semantics for the request");
+  expect(() =>
+    validators.run({
+      requests: [{ id: "m", version: "1", params: {}, semantics: analyzerSemantics({ seed: Number.POSITIVE_INFINITY }) }],
+      semantics: analyzerSemantics(),
+    }),
+  ).toThrow("bad semantics for m@1");
+  expect(calls).toEqual(["m", "a"]);
+
+  // An explicitly requested dependency must share each parent's semantics too.
+  expect(() =>
+    implied.run({
+      requests: [
+        { id: "left", version: "1", params: {}, semantics: session },
+        { id: "base", version: "1", params: {} },
+      ],
+      semantics: analyzerSemantics(),
+    }),
+  ).toThrow("dependency base@1 is requested with different semantics than left@1");
+  // A malformed body result is recorded as error, so its dependent does not run.
+  const malformedBody = createAnalyzerRegistry();
+  malformedBody.register({ ...probe({ id: "nothing" }), postprocess: () => null as never });
+  malformedBody.register(probe({
+    id: "after.nothing",
+    dependencies: [{ id: "nothing", version: "1" }],
+    onPostprocess: () => calls.push("after.nothing"),
+  }));
+  const malformedById = new Map(
+    malformedBody
+      .run({ requests: [{ id: "after.nothing", version: "1", params: {} }], semantics: analyzerSemantics() })
+      .results.map((result) => [result.id, result]),
+  );
+  expect(malformedById.get("nothing")?.status).toBe("error");
+  expect(malformedById.get("nothing")?.issues).toEqual(["analyzer body returned no result object"]);
+  expect(malformedById.get("after.nothing")?.status).toBe("insufficient-data");
+  expect(calls).toEqual(["m", "a"]);
+  // A thrown body is an error result: the batch continues, its dependent does not run, and a peer does.
+  const throwing = createAnalyzerRegistry();
+  throwing.register({ ...probe({ id: "boom" }), postprocess: () => { throw new Error("plugin failed"); } });
+  throwing.register(probe({ id: "after.boom", dependencies: [{ id: "boom", version: "1" }], onPostprocess: () => calls.push("after.boom") }));
+  throwing.register(probe({ id: "peer" }));
+  const thrownById = new Map(
+    throwing
+      .run({ requests: ["after.boom", "peer"].map((id) => ({ id, version: "1", params: {} })), semantics: analyzerSemantics() })
+      .results.map((result) => [result.id, result]),
+  );
+  expect(thrownById.get("boom")?.status).toBe("error");
+  expect(thrownById.get("boom")?.issues).toEqual(["analyzer body threw: plugin failed"]);
+  expect(thrownById.get("after.boom")?.status).toBe("insufficient-data");
+  expect(thrownById.get("peer")?.status).toBe("ok");
+  expect(calls).toEqual(["m", "a"]);
+  // A postprocess analyzer cannot request a run, so a fresh-run cost is refused at register.
+  expect(() =>
+    throwing.register({ ...probe({ id: "post.run" }), cost: { freshRuns: 1, samples: 0 } }),
+  ).toThrow("a postprocess analyzer cannot request a run");
 }
 
 /**
@@ -369,13 +439,13 @@ export function runsCustomMetricAnalyzer(): void {
 
 /**
  * @evidence docs/requirements/active/analyzer-registry.md#req-dx02-insufficient-observation Summary coverage does not run analyzeGrowth. The result names a rerun.
- * @evidenceReview docs/requirements/active/analyzer-registry.md#req-dx02-insufficient-observation #3499285 Re-read the section, then ran this function: value is null and the proxy input is not read.
+ * @evidenceReview docs/requirements/active/analyzer-registry.md#req-dx02-insufficient-observation #0be001c Re-read the section, then ran this function: bogus, NaN, and missing-metric supplies meet nothing, heavy is refused on samples, value is null, the proxy input is not read, and plugin.read is refused on a cadence 3 supply and runs on cadence 2.
  * @evidence ./analyzers.ts#analyzerInsufficientObservation Reads the insufficient-observation contract.
  * @evidenceReview ./analyzers.ts#analyzerInsufficientObservation #f1e3b70 The declaration is insufficient-observation-rerun-plan.
  * @evidence ./analyzers.ts#observationDemand Builds the demand that the supplied observation must meet.
  * @evidenceReview ./analyzers.ts#observationDemand #4fc7f7f The function returns a summary-coverage demand with no window, cadence, or metrics and the observation contract schema, plus overrides.
  * @evidence ./analyzers.ts#observationMeets Checks a supply against coverage, window, cadence, and metrics.
- * @evidenceReview ./analyzers.ts#observationMeets #2c058ec The function requires the same schema, at least the demanded coverage, a window and cadence no coarser than demanded, and every demanded metric.
+ * @evidenceReview ./analyzers.ts#observationMeets #457c9c9 The function rejects a malformed supply, then requires the same schema, at least the demanded coverage, a window and cadence no coarser than demanded, and every demanded metric.
  */
 export function reportsInsufficientObservation(): void {
   const demand = observationDemand({ coverage: "trace", sampleCadenceSec: 5, metricIds: ["money"] });
@@ -404,11 +474,53 @@ export function reportsInsufficientObservation(): void {
   expect(result?.provenance.rerun?.reason).toBe("insufficient-data");
   expect(result?.provenance.demand.coverage).toBe("trace");
   expect(result?.provenance.freshRuns).toBe(0);
+
+  // The registry checks every postprocess demand before the body, not only the growth adapter.
+  let reads = 0;
+  const gated = createAnalyzerRegistry();
+  gated.register(probe({
+    id: "plugin.read",
+    observation: observationDemand({ coverage: "trace", sampleCadenceSec: 2, metricIds: ["money"] }),
+    onPostprocess: () => {
+      reads += 1;
+      return "read";
+    },
+  }));
+  const readWith = (sampleCadenceSec: number) =>
+    gated.run({
+      requests: [{ id: "plugin.read", version: "1", params: {} }],
+      semantics: analyzerSemantics(),
+      supply: { schema: observationContract, windowSec: null, sampleCadenceSec, coverage: "trace", metricIds: ["money"] },
+    }).results[0];
+  const coarse = readWith(3);
+  expect(coarse?.status).toBe("insufficient-data");
+  expect(coarse?.provenance.rerun?.reason).toBe("insufficient-data");
+  expect(reads).toBe(0);
+  expect(readWith(2)?.value).toBe("read");
+  expect(reads).toBe(1);
+  // A malformed supply is not sufficient: an unknown coverage or a NaN cadence fails no comparison.
+  const traceDemand = observationDemand({ coverage: "trace", sampleCadenceSec: 2, metricIds: ["money"] });
+  const goodSupply = { schema: observationContract, windowSec: null, sampleCadenceSec: 2, coverage: "trace" as const, metricIds: ["money"] };
+  expect(observationMeets(traceDemand, goodSupply)).toBe(true);
+  expect(observationMeets(traceDemand, { ...goodSupply, coverage: "bogus" as never })).toBe(false);
+  expect(observationMeets(traceDemand, { ...goodSupply, sampleCadenceSec: Number.NaN })).toBe(false);
+  expect(observationMeets(traceDemand, { ...goodSupply, metricIds: undefined as never })).toBe(false);
+  // A postprocess sample cost is reserved against the batch budget before the body.
+  const sampledRead = createAnalyzerRegistry();
+  sampledRead.register(probe({ id: "heavy", samples: 100, onPostprocess: () => (reads += 1) }));
+  const heavy = sampledRead.run({
+    requests: [{ id: "heavy", version: "1", params: {} }],
+    semantics: analyzerSemantics(),
+    budget: { maxFreshRuns: 0, maxDurationSec: 1, maxSamples: 0 },
+  }).results[0];
+  expect(heavy?.status).toBe("insufficient-data");
+  expect(heavy?.provenance.rerun?.reason).toBe("budget");
+  expect(reads).toBe(1);
 }
 
 /**
  * @evidence docs/requirements/active/analyzer-registry.md#req-dx02-execution-budget A zero run budget and a horizon past the budget do not call execute. A granted run receives the factory.
- * @evidenceReview docs/requirements/active/analyzer-registry.md#req-dx02-execution-budget #d0e5349 Re-read the section, then ran this function: refused calls stay 0, one grant is not a second run, s2 is refused on samples, g2 runs after unsupported g1, eta reports missing-scenario, analytic eta is ok with no run budget, a 100 second eta is refused under a 10 second budget, a NaN budget throws, and other.exec runs after dep.exec is skipped.
+ * @evidenceReview docs/requirements/active/analyzer-registry.md#req-dx02-execution-budget #2ec64cc Re-read the section, then ran this function: eta with step 2 or seed 7 is invalid, b.paid gets the run after a.free was refused, strategy greedy throws on a none scenario, a.zero and b.other run while c.late is skipped without sharing, refused calls stay 0, one grant is not a second run, s2 is refused on samples, g2 runs after unsupported g1, eta reports missing-scenario, analytic eta is ok with no run budget, a 100 second eta is refused under a 10 second budget, a NaN budget throws, and other.exec runs after dep.exec is skipped.
  * @evidence ./analyzers.ts#analyzerExecutionBudget Reads the budget contract.
  * @evidenceReview ./analyzers.ts#analyzerExecutionBudget #9687833 The declaration is explicit-budget-not-silent-run.
  */
@@ -539,6 +651,18 @@ export function enforcesExecutionBudget(): void {
   expect(understated.status).toBe("insufficient-data");
   expect(understated.provenance.rerun?.reason).toBe("budget");
   expect(understated.provenance.freshRuns).toBe(0);
+  // ETA runs the scenario as compiled, so a different step or seed in semantics is invalid, not relabeled.
+  for (const override of [{ stepSec: 2 }, { seed: 7 }]) {
+    const relabeled = runEtaAnalyzer({
+      ...etaArgs,
+      mode: "simulate",
+      maxDurationSec: 4,
+      semantics: analyzerSemantics({ horizonSec: 4, ...override }),
+      budget: { maxFreshRuns: 1, maxDurationSec: 4, maxSamples: 10 },
+    });
+    expect(relabeled.status).toBe("invalid");
+    expect(relabeled.provenance.freshRuns).toBe(0);
+  }
 
   // A budget limit that is not a finite count is refused, since NaN passes no comparison.
   expect(() =>
@@ -575,6 +699,64 @@ export function enforcesExecutionBudget(): void {
   const failureById = new Map(failureBatch.results.map((result) => [result.id, result.status]));
   expect(failureById.get("dep.exec")).toBe("insufficient-data");
   expect(failureById.get("other.exec")).toBe("ok");
+
+  // A cost-zero member admitted first does not reserve the run of a later peer whose dependency fails,
+  // and the skipped peer is not listed as sharing.
+  const peerCosts = createAnalyzerRegistry();
+  peerCosts.register({ ...probe({ id: "bad" }), postprocess: () => ({ status: "error" as const, value: null }) });
+  peerCosts.register({
+    ...probe({ id: "a.zero", kind: "execution", observation: observationDemand({ metricIds: ["a"] }) }),
+    cost: { freshRuns: 0, samples: 0 },
+  });
+  peerCosts.register(probe({ id: "b.other", kind: "execution", observation: observationDemand({ metricIds: ["b"] }) }));
+  peerCosts.register(probe({
+    id: "c.late",
+    kind: "execution",
+    dependencies: [{ id: "bad", version: "1" }],
+    observation: observationDemand({ metricIds: ["a"] }),
+  }));
+  const peerBatch = peerCosts.run({
+    requests: ["a.zero", "b.other", "c.late"].map((id) => ({ id, version: "1", params: {} })),
+    semantics,
+    allowExecution: true,
+    budget: { ...execBudget, maxFreshRuns: 1 },
+    runFactory: factory,
+  });
+  const peerById = new Map(peerBatch.results.map((result) => [result.id, result]));
+  expect(peerById.get("a.zero")?.status).toBe("ok");
+  expect(peerById.get("b.other")?.status).toBe("ok");
+  expect(peerById.get("c.late")?.status).toBe("insufficient-data");
+  expect(peerById.get("a.zero")?.provenance.sharedWith).toEqual([]);
+  expect(peerById.get("c.late")?.provenance.sharedWith).toEqual([]);
+
+  // A refusal seen by a cost-zero member is not cached for the group: a later cost-one member that
+  // tops the group up to a run gets it.
+  const topUp = createAnalyzerRegistry();
+  topUp.register({
+    ...probe({ id: "a.free", kind: "execution", onExecute: (ctx) => ctx.requestRun("a.free").accepted }),
+    cost: { freshRuns: 0, samples: 0 },
+  });
+  topUp.register(probe({ id: "b.paid", kind: "execution", onExecute: (ctx) => ctx.requestRun("b.paid").accepted }));
+  const topUpBatch = topUp.run({
+    requests: ["a.free", "b.paid"].map((id) => ({ id, version: "1", params: {} })),
+    semantics,
+    allowExecution: true,
+    budget: { ...execBudget, maxFreshRuns: 1 },
+    runFactory: factory,
+  });
+  expect(topUpBatch.results.map((result) => result.value)).toEqual([false, true]);
+  expect(topUpBatch.freshRuns).toBe(1);
+  // The shared run executes the scenario's strategy, so another strategyKey is refused before any body.
+  expect(() =>
+    topUp.run({
+      requests: [{ id: "b.paid", version: "1", params: {} }],
+      semantics: analyzerSemantics({ horizonSec: 4, strategyKey: "greedy" }),
+      scenario: makeScenario(),
+      allowExecution: true,
+      budget: execBudget,
+      runFactory: factory,
+    }),
+  ).toThrow("strategy greedy for b.paid@1 is not the scenario strategy none");
 }
 
 /**
@@ -585,7 +767,7 @@ export function enforcesExecutionBudget(): void {
  * @evidence ./analyzers.ts#runGrowthAnalyzer Runs the growth analyzer on an executed run.
  * @evidenceReview ./analyzers.ts#runGrowthAnalyzer #d4aae6e The function runs the built-in growth analyzer as a postprocess request with the given series and window.
  * @evidence ./analyzers.ts#runEtaAnalyzer Runs the eta analyzer with an explicit budget.
- * @evidenceReview ./analyzers.ts#runEtaAnalyzer #8ef7e05 The function runs the built-in eta analyzer as an execution request with the target, mode, maximum duration, and budget.
+ * @evidenceReview ./analyzers.ts#runEtaAnalyzer #cd8e0dd The function runs the built-in eta analyzer as an execution request with the target, mode, maximum duration, and budget, and defaults semantics to that duration and the scenario step and seed.
  * @evidence ./analyzers.ts#growthAnalyzerAlgorithmVersion Reads the growth analyzer algorithm version.
  * @evidenceReview ./analyzers.ts#growthAnalyzerAlgorithmVersion #8646050 The function returns the growth analyzer algorithm version constant.
  */
@@ -649,7 +831,7 @@ export function matchesExistingAlgorithmVersions(): void {
 
 /**
  * @evidence docs/requirements/active/analyzer-registry.md#req-dx02-observation-plan Shared semantics use one fresh run. A different horizon is a separate plan, and cadence is recorded.
- * @evidenceReview docs/requirements/active/analyzer-registry.md#req-dx02-observation-plan #c77935d Re-read the section, then ran this function: everySteps is 2, the longer horizon is not in the shared group, cadence 1 at step 2 and cadence 2 with summary coverage are refused, one and two get the same RunResult from one fresh run, delimiter and sharesRun false pairs take two runs, and a blocked peer is not in sharedWith.
+ * @evidenceReview docs/requirements/active/analyzer-registry.md#req-dx02-observation-plan #2fa0460 Re-read the section, then ran this function: a throwing fresh run is attempted once, two groups make two compiles, a 5 second window at step 10 is refused, everySteps is 2, the longer horizon is not in the shared group, cadence 1 at step 2 and cadence 2 with summary coverage are refused, one and two get the same RunResult from one fresh run, delimiter and sharesRun false pairs take two runs, and a blocked peer is not in sharedWith.
  * @evidence ./analyzers.ts#analyzerObservationPlan Reads the plan contract.
  * @evidenceReview ./analyzers.ts#analyzerObservationPlan #e5b0d7f The declaration is demand-on-plan-and-provenance.
  * @evidence ./analyzers.ts#executionPlanForDemand Builds the execution plan a demand needs.
@@ -779,6 +961,26 @@ export function recordsObservationDemandOnThePlan(): void {
   });
   expect(untraced.results[0]?.provenance.rerun?.reason).toBe("insufficient-data");
   expect(fineCalls).toBe(0);
+  // A traced window finer than the trace spacing cannot be resolved either.
+  const coarseWindow = createAnalyzerRegistry();
+  coarseWindow.register(probe({
+    id: "fine",
+    kind: "execution",
+    observation: observationDemand({ coverage: "window", windowSec: 5 }),
+    onExecute: () => {
+      fineCalls += 1;
+      return null;
+    },
+  }));
+  const windowed = coarseWindow.run({
+    requests: [{ id: "fine", version: "1", params: {} }],
+    semantics: analyzerSemantics({ horizonSec: 10, stepSec: 10 }),
+    allowExecution: true,
+    budget,
+    runFactory: createRunFactory(),
+  });
+  expect(windowed.results[0]?.provenance.rerun?.reason).toBe("insufficient-data");
+  expect(fineCalls).toBe(0);
 
   // Members of one group share the run itself, not only the grant: one fresh run is opened.
   let opened = 0;
@@ -816,6 +1018,66 @@ export function recordsObservationDemandOnThePlan(): void {
   expect(sharedRun?.end.t).toBe(4);
   expect(sharedRun?.trace?.map((state) => state.t)).toEqual([0, 2, 4]);
   expect(sharedBatch.results[1]?.value).toBe(sharedRun);
+
+  // A failed shared run is attempted once: the peer gets null instead of opening a second run.
+  let attempts = 0;
+  const failing: RunFactory = {
+    bind: (scenario, options) => {
+      const binding = base.bind(scenario, options);
+      return {
+        ...binding,
+        fresh: () => {
+          attempts += 1;
+          throw new Error("model failed");
+        },
+      };
+    },
+  };
+  const failedBatch = shared.run({
+    requests: [
+      { id: "one", version: "1", params: {} },
+      { id: "two", version: "1", params: {} },
+    ],
+    semantics: analyzerSemantics({ horizonSec: 4, stepSec: 1 }),
+    scenario: makeScenario(),
+    allowExecution: true,
+    budget,
+    runFactory: failing,
+  });
+  expect(attempts).toBe(1);
+  expect(failedBatch.results.map((result) => result.status)).toEqual(["error", "ok"]);
+  expect(failedBatch.results[1]?.value).toBeNull();
+
+  // freshScenario gives each group's run its own compile, so no run starts from another's closures.
+  const compiles: CompiledScenario<number, string, Record<string, unknown>>[] = [];
+  const perGroup = createAnalyzerRegistry();
+  for (const [id, metric] of [["one", "a"], ["two", "b"]] as const) {
+    perGroup.register(probe({
+      id,
+      kind: "execution",
+      observation: observationDemand({ metricIds: [metric] }),
+      onExecute: (ctx) => ctx.requestRun(id).run(),
+    }));
+  }
+  const perGroupBatch = perGroup.run({
+    requests: [
+      { id: "one", version: "1", params: {} },
+      { id: "two", version: "1", params: {} },
+    ],
+    semantics: analyzerSemantics({ horizonSec: 4, stepSec: 1 }),
+    scenario: makeScenario(),
+    freshScenario: () => {
+      const compiled = makeScenario();
+      compiles.push(compiled);
+      return compiled;
+    },
+    allowExecution: true,
+    budget: { maxFreshRuns: 2, maxDurationSec: 4, maxSamples: 10 },
+    runFactory: createRunFactory(),
+  });
+  expect(compiles).toHaveLength(2);
+  expect(perGroupBatch.freshRuns).toBe(2);
+  expect(perGroupBatch.results.every((result) => result.status === "ok")).toBe(true);
 
   const twoRuns = { maxFreshRuns: 2, maxDurationSec: 10, maxSamples: 10 };
   const pair = (registry: ReturnType<typeof createAnalyzerRegistry>, left: RunSemantics, right: RunSemantics) =>

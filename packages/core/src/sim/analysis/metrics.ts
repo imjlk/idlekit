@@ -32,6 +32,10 @@ export type MetricDefinition<N, U extends string, Vars> = Readonly<{
   extract: (ctx: SimContext<N, U, Vars>, state: SimState<N, U, Vars>) => MetricExtract<N>;
 }>;
 
+type GoalObservation =
+  | Readonly<{ status: "ok"; reached: boolean }>
+  | Readonly<{ status: "unsupported" | "invalid" }>;
+
 export type GoalDefinition<N, U extends string, Vars> = Readonly<{
   id: string;
   version: number;
@@ -45,11 +49,18 @@ export type GoalEvaluation = Readonly<{
   goalId: string;
   goalVersion: number;
   reached?: boolean;
-  status: "ok" | "unsupported" | "insufficient-data";
+  status: "ok" | "unsupported" | "insufficient-data" | "invalid";
   assumptions: readonly string[];
 }>;
 
 const NET_WORTH_FALLBACK = "netWorth missing; wallet amount used";
+
+// Attach the observer to the original predicate so met overrides keep working.
+// A shared symbol also works when a plugin and its caller load separate core copies.
+const GOAL_OBSERVATION = Symbol.for("@idlekit/core.goalObservation.v1");
+type ObservedGoalPredicate<N, U extends string, Vars> = GoalDefinition<N, U, Vars>["met"] & {
+  [GOAL_OBSERVATION]?: (state: SimState<N, U, Vars>, ctx: SimContext<N, U, Vars>) => GoalObservation;
+};
 
 export function walletMoneyMetric<N, U extends string, Vars>(): MetricDefinition<N, U, Vars> {
   return {
@@ -173,15 +184,35 @@ export function readMetric<N, U extends string, Vars>(
   };
 }
 
+function amountGoalObservation<N, U extends string, Vars>(
+  target: string,
+  read: (state: SimState<N, U, Vars>, ctx: SimContext<N, U, Vars>) => N | undefined,
+): Pick<GoalDefinition<N, U, Vars>, "met"> {
+  const observe = (state: SimState<N, U, Vars>, ctx: SimContext<N, U, Vars>): GoalObservation => {
+    // Some decimal engines saturate an Infinity spelling to a finite sentinel.
+    if (/^[+-]?(?:nan|infinity)$/i.test(target.trim())) return { status: "invalid" };
+    const threshold = ctx.E.from(target);
+    if (!ctx.E.isFinite(threshold)) return { status: "invalid" };
+    const amount = read(state, ctx);
+    if (amount === undefined) return { status: "unsupported" };
+    if (!ctx.E.isFinite(amount)) return { status: "invalid" };
+    return { status: "ok", reached: ctx.E.cmp(amount, threshold) >= 0 };
+  };
+  const met = (state: SimState<N, U, Vars>, ctx: SimContext<N, U, Vars>): boolean | undefined => {
+    const result = observe(state, ctx);
+    return result.status === "ok" ? result.reached : undefined;
+  };
+  Object.defineProperty(met, GOAL_OBSERVATION, { value: observe });
+  return { met };
+}
+
 export function moneyAtLeast<N, U extends string, Vars>(target: string): GoalDefinition<N, U, Vars> {
   return {
     id: "money.atLeast",
     version: 1,
     observation: "state",
     timeResolution: "step",
-    met(state, ctx) {
-      return ctx.E.cmp(state.wallet.money.amount, ctx.E.from(target)) >= 0;
-    },
+    ...amountGoalObservation<N, U, Vars>(target, (state) => state.wallet.money.amount),
   };
 }
 
@@ -195,14 +226,10 @@ export function netWorthAtLeast<N, U extends string, Vars>(args: {
     version: 1,
     observation: "state",
     timeResolution: "step",
-    met(state, ctx) {
+    ...amountGoalObservation<N, U, Vars>(args.target, (state, ctx) => {
       const worth = args.netWorth(state, ctx);
-      if (worth === undefined) {
-        if (!args.fallbackToWallet) return undefined;
-        return ctx.E.cmp(state.wallet.money.amount, ctx.E.from(args.target)) >= 0;
-      }
-      return ctx.E.cmp(worth, ctx.E.from(args.target)) >= 0;
-    },
+      return worth ?? (args.fallbackToWallet ? state.wallet.money.amount : undefined);
+    }),
     assumptionsFor(state, ctx) {
       if (!args.fallbackToWallet || args.netWorth(state, ctx) !== undefined) return [];
       return [NET_WORTH_FALLBACK];
@@ -216,9 +243,7 @@ export function prestigePointsAtLeast<N, U extends string, Vars>(target: string)
     version: 1,
     observation: "state",
     timeResolution: "step",
-    met(state, ctx) {
-      return ctx.E.cmp(state.prestige.points, ctx.E.from(target)) >= 0;
-    },
+    ...amountGoalObservation<N, U, Vars>(target, (state) => state.prestige.points),
   };
 }
 
@@ -246,19 +271,26 @@ export function evaluateGoal<N, U extends string, Vars>(
   state: SimState<N, U, Vars>,
   ctx: SimContext<N, U, Vars>,
 ): GoalEvaluation {
-  const reached = goal.met(state, ctx);
-  if (reached === undefined) {
+  let observation: GoalObservation;
+  const observe = (goal.met as ObservedGoalPredicate<N, U, Vars>)[GOAL_OBSERVATION];
+  if (observe) {
+    observation = observe(state, ctx);
+  } else {
+    const reached = goal.met(state, ctx);
+    observation = reached === undefined ? { status: "unsupported" } : { status: "ok", reached };
+  }
+  if (observation.status !== "ok") {
     return {
       goalId: goal.id,
       goalVersion: goal.version,
-      status: "unsupported",
+      status: observation.status,
       assumptions: [],
     };
   }
   return {
     goalId: goal.id,
     goalVersion: goal.version,
-    reached,
+    reached: observation.reached,
     status: "ok",
     assumptions: goal.assumptionsFor?.(state, ctx) ?? [],
   };

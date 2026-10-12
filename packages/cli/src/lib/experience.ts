@@ -191,6 +191,16 @@ export function analyzePerceivedProgression<N, U extends string, Vars>(args: {
 
   const startT = session.start.t;
   const changeTimes: number[] = [];
+  // Reward seconds before each segment, summed from tick durations, so the first visible change is on the same
+  // clock as the censoring horizon. Timestamps round away at a large start t.
+  const offsets = new Map<SessionSegment<N, U, Vars>, number>();
+  let elapsedBefore = 0;
+  for (const segment of session.segments) {
+    offsets.set(segment, elapsedBefore);
+    elapsedBefore += segment.durationSec;
+  }
+  const stepSec = scenario.run.stepSec;
+  let firstVisibleTickSec: number | undefined;
   const feedbackDelays: number[] = [];
   let totalActiveSec = 0;
   let maxNoRewardGapSec = 0;
@@ -214,13 +224,17 @@ export function analyzePerceivedProgression<N, U extends string, Vars>(args: {
     tracker.reset();
 
     const visibleTimestamps: number[] = [];
-    for (const state of trace) {
+    // An active block traces every step, so the point at index i is i ticks in, short of a partial last tick.
+    const tickElapsed = (index: number) =>
+      segment.run.trace ? Math.min(index * stepSec, segment.durationSec) : index === 0 ? 0 : segment.durationSec;
+    trace.forEach((state, index) => {
       const change = tracker.observe(moneyAtState(view, state, series));
       if (change.changed) {
         visibleTimestamps.push(state.t);
         changeTimes.push(state.t);
+        if (firstVisibleTickSec === undefined) firstVisibleTickSec = (offsets.get(segment) ?? 0) + tickElapsed(index);
       }
-    }
+    });
 
     if (visibleTimestamps.length === 0) {
       maxNoRewardGapSec = Math.max(maxNoRewardGapSec, segment.durationSec);
@@ -239,7 +253,7 @@ export function analyzePerceivedProgression<N, U extends string, Vars>(args: {
     }
   }
 
-  const firstVisibleChangeSec = changeTimes.length > 0 ? Math.max(0, changeTimes[0]! - startT) : undefined;
+  const firstVisibleChangeSec = firstVisibleTickSec;
   const visibleChangesPerMinute = totalActiveSec > 0 ? changeTimes.length / (totalActiveSec / 60) : 0;
   const avgPostPurchaseFeedbackSec =
     feedbackDelays.length > 0 ? feedbackDelays.reduce((sum, value) => sum + value, 0) / feedbackDelays.length : undefined;

@@ -14,6 +14,7 @@ export function createNumberEngine(opts?: NumberEngineOptions): Engine<number> {
   const epsilon = opts?.epsilon ?? 1e-12;
 
   return {
+    comparisonIsExact: epsilon === 0,
     zero: () => 0,
     from(input) {
       if (typeof input === "number") return input;
@@ -69,6 +70,7 @@ export function createBreakInfinityEngine(opts?: BreakInfinityEngineOptions): En
   const epsilon = toDecimal(opts?.epsilon ?? "1e-12");
 
   return {
+    comparisonIsExact: epsilon.eq(0),
     zero: () => new Decimal(0),
     from(input) {
       return toDecimal(input);
