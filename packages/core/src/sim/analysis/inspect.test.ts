@@ -66,7 +66,7 @@ function request(overrides: Partial<ScenarioInspectRequest> = {}): ScenarioInspe
  * @evidence ./inspect.ts#fixedDurationStepCount Counts whole and partial ticks with nextBoundary.
  * @evidenceReview ./inspect.ts#fixedDurationStepCount #94e929a The function steps nextBoundary without until until it stops, and reports the step count, the last dt, and whether that tick was partial. Past one million ticks it returns a null count.
  * @evidence ./inspect.ts#buildScenarioInspect Builds the report from a fixed-duration request.
- * @evidenceReview ./inspect.ts#buildScenarioInspect #fde0f80 The function derives horizon kind, observation supply, stage plans, engine and plugin notes, the planner bound, and diagnostics without running the scenario. It treats an omitted event log as enabled, traces every step without a cadence, leaves session stages and capped counts unknown, reports each stage's fast mode, and names an unresolved model in plugin-skipped.
+ * @evidenceReview ./inspect.ts#buildScenarioInspect #b108c05 The function derives horizon kind, observation supply, stage plans, engine and plugin notes, the planner bound, and diagnostics without running the scenario. It treats an omitted event log as enabled, traces every step without a cadence, leaves session stages and capped counts unknown, reports each stage's fast mode, and names an unresolved model in plugin-skipped. A traced run's window is its cadence, and plugin-skipped names an unresolved strategy too.
  */
 export function countsFixedDurationSteps(): void {
   expect(inspectPartialTick).toBe("partial-tick-included");
@@ -124,6 +124,27 @@ export function countsFixedDurationSteps(): void {
   );
   expect(traced.budgets.trace.everySteps).toBe(1);
   expect(traced.analyzers[0]?.met).toBe(true);
+  // A traced run supplies windows as fine as its cadence, whatever its total duration.
+  const longTrace = buildScenarioInspect(
+    request({
+      clock: { stepSec: 1, durationSec: 100 },
+      trace: { include: true },
+      analyzers: [
+        { id: "window", version: "1", kind: "postprocess", observation: observationDemand({ coverage: "trace", windowSec: 5 }) },
+      ],
+    }),
+  );
+  expect(longTrace.analyzers[0]?.met).toBe(true);
+  // A strategy that only a skipped plugin provides is named in plugin-skipped.
+  const skippedStrategy = buildScenarioInspect(
+    request({
+      stages: [],
+      plugins: { resolve: false, requested: true, loadedIds: [], unresolvedStrategy: "plugin.walk" },
+    }),
+  );
+  const skippedNote = skippedStrategy.diagnostics.find((item) => item.code === "plugin-skipped");
+  expect(skippedNote?.evidence.strategy).toBe("plugin.walk");
+  expect(skippedStrategy.invalid).toBe(false);
 }
 
 /**

@@ -138,6 +138,48 @@ export const models = [{ id: "noted", version: 1, create() { throw new Error("cr
     });
     const signedReport = runCliJson<any>(["inspect", signed, "--format", "json"]);
     expect(signedReport.diagnostics.some((item: { code: string }) => item.code === "decimal-range")).toBe(true);
+    // A numeric-looking descriptive field never enters the engine, so it does not warn.
+    const described = await scenarioFile(dir, (raw) => {
+      raw.meta = { ...(raw.meta as Record<string, unknown>), id: "12345678901234567890" };
+    });
+    const describedReport = runCliJson<any>(["inspect", described, "--format", "json"]);
+    expect(describedReport.diagnostics.some((item: { code: string }) => item.code === "decimal-range")).toBe(false);
+    // A plugin strategy is a plugin registration, and a strategy only a skipped plugin provides still gets a report.
+    const walker = resolve(dir, "walker.ts");
+    await writeText(
+      walker,
+      `export const strategies = [
+  { id: "plugin.walk", create() { throw new Error("WALK_CREATE_SENTINEL"); } },
+  { id: "planner", defaultParams: { horizonSteps: 4 }, create() { throw new Error("PLANNER_CREATE_SENTINEL"); } },
+];
+`,
+    );
+    const walking = await scenarioFile(dir, (raw) => {
+      raw.strategy = { id: "plugin.walk" };
+    });
+    const unresolvedWalk = runCliJson<any>(["inspect", walking, "--plugin", walker, "--format", "json"]);
+    const walkNote = unresolvedWalk.diagnostics.find((item: { code: string }) => item.code === "plugin-skipped");
+    expect(walkNote?.evidence.strategy).toBe("plugin.walk");
+    expect(unresolvedWalk.stages).toEqual([]);
+    const resolvedWalk = runCliJson<any>([
+      "inspect",
+      walking,
+      "--resolve-plugins",
+      "--allow-plugin",
+      "--plugin",
+      walker,
+      "--plugin-root",
+      dir,
+      "--strategy",
+      "planner",
+      "--format",
+      "json",
+    ]);
+    expect(resolvedWalk.plugins.loadedIds).toContain("strategy:plugin.walk");
+    expect(resolvedWalk.plugins.loadedIds).toContain("strategy:planner");
+    // A plugin planner is not the built-in planner, so the built-in bound is not claimed for it.
+    expect(resolvedWalk.planner).toBeNull();
+    expect(JSON.stringify(resolvedWalk).includes("CREATE_SENTINEL")).toBe(false);
     await removePath(dir);
   }, 60000);
 

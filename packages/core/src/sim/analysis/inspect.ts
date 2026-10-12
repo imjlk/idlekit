@@ -122,6 +122,8 @@ export type ScenarioInspectRequest = Readonly<{
     loadedIds: readonly string[];
     /** A scenario model no loaded registry holds, because its plugin was not resolved. */
     unresolvedModel?: string;
+    /** A strategy no loaded registry holds, because its plugin was not resolved. The stages are not planned. */
+    unresolvedStrategy?: string;
   }>;
 }>;
 
@@ -236,7 +238,8 @@ function observationSupply(request: ScenarioInspectRequest, stepSec: number): Ob
   const every = request.trace.everySteps ?? 1;
   return {
     schema: observationContract,
-    windowSec: request.clock.durationSec ?? null,
+    // The finest window the samples supply is the trace cadence. A summary supplies no finite window.
+    windowSec: request.trace.include ? every * stepSec : null,
     sampleCadenceSec: request.trace.include ? every * stepSec : null,
     coverage: untilOnly && !request.trace.include ? "missing" : coverage,
     metricIds: ["money", "netWorth"],
@@ -328,7 +331,11 @@ export function buildScenarioInspect(request: ScenarioInspectRequest): ScenarioI
     diagnostics.push({
       severity: "warning",
       code: "plugin-skipped",
-      evidence: { userCode: "not-run", model: request.plugins.unresolvedModel ?? null },
+      evidence: {
+        userCode: "not-run",
+        model: request.plugins.unresolvedModel ?? null,
+        strategy: request.plugins.unresolvedStrategy ?? null,
+      },
     });
   }
   if (request.plugins.resolve) {
