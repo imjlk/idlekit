@@ -220,7 +220,6 @@ export function applyOfflineSeconds<N, U extends string, Vars>(args: {
       scenario.strategy?.restoreState?.(saved);
     }
     constraints = recordPrestigeReset(constraints, out.prestigeResetT, scenario.run.onPrestigeReset);
-    if (scenario.run.observation?.enabled !== false) emitCommittedResets(scenario.run.observer, out.committedResets ?? []);
 
     state = out.next;
     simulatedSec += decision.dt;
@@ -234,6 +233,8 @@ export function applyOfflineSeconds<N, U extends string, Vars>(args: {
       prestigeApplied: out.prestigeResetT !== undefined,
       state,
     });
+    // The reset fact follows the action fact the recorder sent, as online and at a reset-cycle boundary.
+    if (scenario.run.observation?.enabled !== false) emitCommittedResets(scenario.run.observer, out.committedResets ?? []);
     eventBuffer.pushTimed(timeStepEvents(out.events, actionStartT, state.t));
     if (out.actionsApplied?.length) {
       for (const row of out.actionsApplied) {

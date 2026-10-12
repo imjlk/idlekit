@@ -28,6 +28,8 @@ const RESET_CYCLE_ALGORITHM_VERSION = "reset-cycle-v1" as const;
  * far larger.
  */
 const HORIZON_ULPS = 64;
+/** The largest share of an interval the horizon slack may cover. A visible overshoot is never rounding. */
+const HORIZON_SHARE = 1e-6;
 const RESET_CYCLE_SCHEMA_ID = "https://idlekit.dev/schemas/reset.cycle.v1.schema.json" as const;
 
 /**
@@ -150,9 +152,9 @@ export type ResetCyclePolicy =
 
 export type ResetCycleRng = Readonly<{
   /** Names the generator. A checkpoint records it, and a resume with another generator is rejected. */
-  id?: string;
+  id: string;
   /** The version of the snapshot format. A checkpoint records it, and a resume with another version is rejected. */
-  stateVersion?: number;
+  stateVersion: number;
   snapshot: () => unknown;
   restore: (state: unknown) => void;
 }>;
@@ -435,6 +437,10 @@ export function executeResetCycles<N, U extends string, Vars>(args: {
   let constraints = args.resume?.constraints
     ? deepClonePreservingPrototype(args.resume.constraints)
     : scenario.constraints;
+  // An RNG snapshot is opaque, so it is only checkpointed and restored under a named, versioned generator.
+  if (args.rng && (typeof args.rng.id !== "string" || typeof args.rng.stateVersion !== "number")) {
+    throw new ResetCycleRejected("reset cycle rng needs an id and a stateVersion");
+  }
   let accumulated = args.resume?.accumulatedReward ?? E.zero();
   let nextIndex = args.resume?.nextIndex ?? 0;
   // Every checkpoint field is checked before any restore hook runs, so a rejected resume leaves the caller's strategy
@@ -488,7 +494,8 @@ export function executeResetCycles<N, U extends string, Vars>(args: {
   }
   if (args.resume && "rngState" in args.resume) {
     if (!args.rng) throw new ResetCycleRejected("reset cycle checkpoint has rngState, but no rng was passed");
-    // An opaque RNG snapshot belongs to the generator, and the state version, that wrote it.
+    // An opaque RNG snapshot belongs to the generator, and the state version, that wrote it. A snapshot without them
+    // is ambiguous and is rejected.
     if (args.resume.rngId !== args.rng.id || args.resume.rngStateVersion !== args.rng.stateVersion) {
       throw new ResetCycleRejected(
         `reset cycle checkpoint rngState was written by ${String(args.resume.rngId)}@${String(args.resume.rngStateVersion)}, not ${String(args.rng.id)}@${String(args.rng.stateVersion)}`,
@@ -529,13 +536,14 @@ export function executeResetCycles<N, U extends string, Vars>(args: {
     // horizonSec is elapsed time from the study origin, not an absolute t.
     // The slack covers the rounding of this addition only: a few ULPs of the magnitudes involved, so a zero horizon
     // admits no positive interval and a long horizon admits no real overshoot.
-    // It also stays below half the interval, so even a very short interval at a reached horizon cannot pass.
+    // It also stays below a millionth of the interval, so at a large horizon, where the ULP-based bound grows to
+    // seconds, a real overshoot of the interval is still censored.
     const slack =
       args.horizonSec === undefined
         ? 0
         : Math.min(
             HORIZON_ULPS * Number.EPSILON * Math.max(Math.abs(elapsed) + Math.abs(duration), Math.abs(args.horizonSec)),
-            duration / 2,
+            duration * HORIZON_SHARE,
           );
     // A cut cycle resumes under the duration it was planned with. Another duration would change where it resets.
     if (pending > 0 && args.resume?.pendingDurationSec !== undefined && duration !== args.resume.pendingDurationSec) {
@@ -678,6 +686,14 @@ export function executeResetCycles<N, U extends string, Vars>(args: {
       throw new ResetCycleRejected(`reset action ${String(action?.id)} changed t from ${state.t} to ${applied.state.t}`);
     }
     state = applied.state;
+    // The carried prestige fields are written to the row and the checkpoint, so they must stay finite.
+    if (
+      !Number.isFinite(state.prestige.count) ||
+      !E.isFinite(state.prestige.points) ||
+      !E.isFinite(state.prestige.multiplier)
+    ) {
+      throw new ResetCycleRejected(`reset action ${String(action?.id)} left nonfinite prestige fields`);
+    }
     // stepOnce keeps maxMoneyEver at or above the wallet. The boundary action does not pass through it.
     if (E.cmp(state.wallet.money.amount, state.maxMoneyEver.amount) > 0) {
       state = { ...state, maxMoneyEver: state.wallet.money };
@@ -787,8 +803,8 @@ function checkpointOf<N, U extends string, Vars>(
     ...(rng
       ? {
           rngState,
-          ...(rng.id !== undefined ? { rngId: rng.id } : {}),
-          ...(rng.stateVersion !== undefined ? { rngStateVersion: rng.stateVersion } : {}),
+          rngId: rng.id,
+          rngStateVersion: rng.stateVersion,
         }
       : {}),
   };
