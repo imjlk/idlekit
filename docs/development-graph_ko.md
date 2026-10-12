@@ -177,7 +177,7 @@ reset cycle 재현 seed는 `packages/core/src/sim/analysis/resetCycle.test.ts`�
 
 ## PR-12 호출자
 
-macOS arm64, Bun `1.4.2`, `@ttsc/graph` `0.30.4`, protocol `2025-11-25`에서 조회했다. 생성 식별자는 없다. 서버 cwd는 이 작업 트리이고 프로그램은 `tsconfig.graph.json`이다. lookup은 `fitGrowth`를 `packages/core/src/sim/analysis/growthFit.ts:627`, `fitGrowthFromRun`을 `growthFit.ts:722`, `analyzeGrowth`를 `packages/core/src/sim/analysis/growth.ts:79`, `legacyGrowthSpeedBucket`을 `growth.ts:68`에 둔다. `createPlannerStrategy` lookup은 `packages/core/src/sim/strategy/planner.ts:286`, `stepOnce` lookup은 `packages/core/src/sim/step.ts:618`이다.
+커밋 `98ba164`, macOS arm64, Bun `1.4.2`, `@ttsc/graph` `0.30.4`, protocol `2025-11-25`에서 조회했다. 생성 식별자는 없다. 서버 cwd는 이 작업 트리이고 프로그램은 `tsconfig.graph.json`이다. 아래 span은 그 커밋의 것이며 현재 트리의 것이 아니다. lookup은 `fitGrowth`를 `packages/core/src/sim/analysis/growthFit.ts:627`, `fitGrowthFromRun`을 `growthFit.ts:722`, `analyzeGrowth`를 `packages/core/src/sim/analysis/growth.ts:79`, `legacyGrowthSpeedBucket`을 `growth.ts:68`에 둔다. `createPlannerStrategy` lookup은 `packages/core/src/sim/strategy/planner.ts:286`, `stepOnce` lookup은 `packages/core/src/sim/step.ts:618`이다.
 
 `fitGrowth`의 reverse execution trace(`maxDepth` 3, `maxNodes` 32)는 `growthFit.ts:722`의 `fitGrowthFromRun`, `growth.fit.test.ts:119`의 `fitSpec`, `growth.fit.test.ts:205`의 `separatesShapeFromSpeed`, `growth.fit.test.ts:285`의 `refusesDisguisedDomains`, `growth.fit.test.ts:384`의 `preservesLegacyNetWorthFallback`을 가리킨다. CLI command는 가리키지 않는다. 소스 확인상 `packages/cli/src/commands/growth.ts:61`, `packages/cli/src/commands/report.ts:100`, `packages/cli/src/lib/experience.ts:265`는 여전히 `analyzeGrowth`를 부른다. 그 줄은 리뷰다. `fitGrowth`로 가는 hop이 아니다.
 
