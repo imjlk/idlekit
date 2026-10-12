@@ -5,7 +5,12 @@
  * lives here. Do not export this module from a package barrel.
  */
 import { createNumberEngine } from "../engine/breakInfinity";
+import { createModelRegistry, defineModelFactory } from "../scenario/registry";
+import { canonicalJson, sha256Text } from "../scenario/scenarioContract";
+import type { ScenarioV1 } from "../scenario/types";
+import { runExperiment } from "../sim/analysis/experiment";
 import type { MilestoneReport } from "../sim/analysis/milestones";
+import { createStrategyRegistry } from "../sim/strategy/registry";
 import { stepOnce } from "../sim/step";
 import type { Action, CompiledScenario, Model, SimState } from "../sim/types";
 import { checkResumeFromJson, checkSnapshots } from "./conformanceRun";
@@ -107,6 +112,88 @@ export function checkMilestoneRetention(declared: boolean, full: MilestoneReport
     prestige: report.firstPrestigeSec,
   });
   return checkSnapshots(firsts(full), firsts(capped), "same");
+}
+
+/** Inputs of the constant-income experiment relation. Both rates divide the target, so each reach time is on the step-1 grid. */
+type ConstantIncomeExperimentCase = Readonly<{
+  target: number;
+  baselineRate: number;
+  probeRate: number;
+  seed: number;
+}>;
+
+/**
+ * A declared constant-income experiment reaches money `T` at `T/p` and its local reach-time elasticity is `-p/p'`.
+ * The relation runs `runExperiment` on a scenario with rate `p`, one probe `p'`, step `1`, and a horizon past both reach times.
+ *
+ * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-local-elasticity Runs the constant-income experiment and compares reach times T/p and T/p' and elasticity -p/p'.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-local-elasticity #bd1aa44 Re-read the section: the conformance relation runs divisor rates through runExperiment and an undeclared case does not apply.
+ */
+export function checkConstantIncomeExperiment(declared: boolean, value: ConstantIncomeExperimentCase): RelationCheck {
+  if (!declared) return { ok: true, applicable: false, summary: "constant-income experiment relation is not declared" };
+  const { target, baselineRate, probeRate, seed } = value;
+  const model = defineModelFactory({
+    id: "conformance-constant-income",
+    version: 1,
+    create: (params: { incomeRate: number }) => ({
+      id: "conformance-constant-income",
+      version: 1,
+      income: (ctx: { unit: { code: string } }) => ({ unit: ctx.unit, amount: params.incomeRate }),
+      actions: () => [],
+    }),
+  });
+  const scenario: ScenarioV1 = {
+    schemaVersion: 1,
+    unit: { code: "COIN" },
+    policy: { mode: "drop" },
+    model: { id: "conformance-constant-income", version: 1, params: { incomeRate: baselineRate } },
+    initial: { wallet: { unit: "COIN", amount: "0" } },
+    clock: { stepSec: 1, durationSec: 1 },
+  };
+  const horizonSec = target / Math.min(baselineRate, probeRate) + 1;
+  const artifact = runExperiment({
+    spec: {
+      schemaVersion: 1,
+      scenario: { ref: "conformance:constant-income", hash: sha256Text(canonicalJson(scenario)) },
+      model: { id: "conformance-constant-income", version: 1 },
+      metricId: "timeToMoney",
+      goal: { target },
+      dimensions: [
+        {
+          id: "incomeRate",
+          target: "model",
+          path: "incomeRate",
+          space: { kind: "number", min: 0, max: Math.max(baselineRate, probeRate) },
+          baseline: baselineRate,
+          probes: [probeRate],
+        },
+      ],
+      budget: { candidates: 2, seeds: 1 },
+      seeds: [seed],
+      horizonSec,
+      stepSec: 1,
+      session: { pattern: "always-on", days: 1 },
+    },
+    scenario,
+    modelRegistry: createModelRegistry([model]),
+    strategyRegistry: createStrategyRegistry([]),
+    engine: createNumberEngine(),
+    engineId: "number",
+    engineVersion: "conformance",
+    effectiveRunHash: "conformance:constant-income",
+  });
+  const reach = (id: string) => artifact.candidates.find((candidate) => candidate.id === id)?.metrics[0]?.value;
+  const row = artifact.elasticities.find((entry) => entry.metricId === "timeToMoney");
+  const expected = -baselineRate / probeRate;
+  const measured = Number(row?.elasticity);
+  const reachOk = reach("baseline") === String(target / baselineRate) && reach(`oat:incomeRate:${probeRate}`) === String(target / probeRate);
+  const elasticityOk = row?.status === "observed" && Math.abs(measured - expected) <= 1e-12 * Math.abs(expected);
+  const directionOk = row?.direction === (probeRate > baselineRate ? "lower" : "higher");
+  return {
+    ok: reachOk && elasticityOk && directionOk,
+    applicable: true,
+    summary: `target ${target}, rates ${baselineRate} and ${probeRate}: reach ${reach("baseline")} and ${reach(`oat:incomeRate:${probeRate}`)}, elasticity ${row?.elasticity} against ${expected}`,
+  };
 }
 
 export {

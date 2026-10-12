@@ -224,7 +224,7 @@ export function registersCustomMetric(): void {
  * @evidence ./contracts.ts#analysisArtifactJson Renders the artifact as canonical JSON text.
  * @evidenceReview ./contracts.ts#analysisArtifactJson #52695d2 The function appends a newline to analysisCanonicalJson of the artifact.
  * @evidence ./contracts.ts#validateAnalysisSemantics Accepts the fixture and rejects an unavailable reading that carries a value.
- * @evidenceReview ./contracts.ts#validateAnalysisSemantics #bd0f98a The function rejects a value on an unavailable reading, a non-ok reading not labeled unavailable, missing ok values, a second representation for the domain, a value whose sign disagrees, a nonfinite decimal spelling, nonfinite values and versions, reached or method on a non-ok goal, a nonfinite atSec or horizon, and a sampleCount that is not a nonnegative integer.
+ * @evidenceReview ./contracts.ts#validateAnalysisSemantics #5126871 The function rejects a value on an unavailable reading, a non-ok reading not labeled unavailable, missing ok values, a second representation for the domain, a value or amount decimal whose sign disagrees, a nonfinite decimal spelling, nonfinite values and versions, reached or method on a non-ok goal, a nonfinite atSec or horizon, and a sampleCount that is not a nonnegative integer.
  * @evidence ./contracts.ts#analysisSchemaHash Hashes the generated schema for provenance.
  * @evidenceReview ./contracts.ts#analysisSchemaHash #0ec17bb The function hashes the canonical JSON of the memoized artifact schema.
  * @evidence ./contracts.ts#artifactProvenance Changes provenance with assumptions, algorithm, and schema, and not with the run hash.
@@ -236,7 +236,7 @@ export function registersCustomMetric(): void {
  * @evidence ./contracts.ts#unavailableReading Builds unknown and censored readings without a value.
  * @evidenceReview ./contracts.ts#unavailableReading #9f1f861 The function copies the metric fields, sets reading unavailable, and adds reason only when given.
  * @evidence ./contracts.ts#renderAnalysisMarkdown Renders the fixture and an artifact without sampleCount.
- * @evidenceReview ./contracts.ts#renderAnalysisMarkdown #c45cd8e The function prints samples only when sampleCount is present, prints each amount as its decimal string with the unit, and prints a goal's atSec when present.
+ * @evidenceReview ./contracts.ts#renderAnalysisMarkdown #50bb769 The function prints samples only when sampleCount is present, prints each amount as its decimal string with the unit, and prints a goal's atSec only when the goal is ok and reached.
  */
 export function roundTripsAnalysisArtifact(): void {
   expect(analysisArtifactContract).toBe("idlekit.analysis.artifact.v1");
@@ -371,6 +371,22 @@ export function roundTripsAnalysisArtifact(): void {
   const contradictoryMessages = validateAnalysisSemantics(contradictory).map((issue) => issue.message);
   expect(contradictoryMessages).toContain("sign does not match the value");
   expect(contradictoryMessages.filter((message) => message === "amount decimal is a nonfinite spelling")).toHaveLength(2);
+  // An amount decimal carries its own sign, so a contradictory sign fails without an engine.
+  const amountSigns: AnalysisArtifactV1 = {
+    ...artifact,
+    metrics: [
+      { ...negative, sign: "positive", amount: { unit: "COIN", decimal: "-3" } },
+      { ...negative, sign: "positive", amount: { unit: "COIN", decimal: "0" } },
+      { ...negative, sign: "negative", amount: { unit: "COIN", decimal: "-0.0e5" } },
+      { ...negative, sign: "positive", amount: { unit: "COIN", decimal: "1.5e+400" } },
+      { ...negative, sign: "negative", amount: { unit: "COIN", decimal: "-3" } },
+    ],
+  };
+  expect(
+    validateAnalysisSemantics(amountSigns)
+      .filter((issue) => issue.message === "sign does not match the amount decimal")
+      .map((issue) => issue.path),
+  ).toEqual(["metrics.0", "metrics.1", "metrics.2"]);
   // A sparse array renders holes as null, so the canonical text stays valid JSON.
   const sparse = new Array<string>(2);
   sparse[1] = "kept";
@@ -447,6 +463,17 @@ export function roundTripsAnalysisArtifact(): void {
     goals: [{ goalId: "money.atLeast", goalVersion: 1, status: "ok", reached: true, atSec: 42, assumptions: [] }],
   });
   expect(timed).toContain("reached true at 42s");
+  // A reach time is shown only for a goal that was reached.
+  const unreachedTimes = renderAnalysisMarkdown({
+    ...artifact,
+    goals: [
+      { goalId: "money.atLeast", goalVersion: 1, status: "unsupported", atSec: 42, assumptions: [] },
+      { goalId: "money.atLeast", goalVersion: 1, status: "ok", reached: false, atSec: 43, assumptions: [] },
+    ],
+  });
+  expect(unreachedTimes).toContain("unsupported reached absent");
+  expect(unreachedTimes).not.toContain(" at 42s");
+  expect(unreachedTimes).not.toContain(" at 43s");
   const omitted = renderAnalysisMarkdown(buildAnalysisArtifact());
   expect(omitted).not.toContain("Samples:");
 }

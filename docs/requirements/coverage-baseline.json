@@ -125,6 +125,7 @@
     "packages/core/src/sim/analysis/distribution.ts",
     "packages/core/src/sim/analysis/distribution.test.ts",
     "packages/core/src/sim/monteCarlo.ts",
+    "packages/core/src/sim/random.ts",
     "fixtures/conformance/independent-drop.json",
     "docs/requirements/active/parameter-experiments.md",
     "packages/core/src/sim/analysis/experiment.ts",

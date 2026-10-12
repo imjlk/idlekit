@@ -2,7 +2,7 @@ import typia, { type IValidation } from "typia";
 import type { Engine } from "../../engine/types";
 import type { AnalysisStatus } from "./contracts";
 import { legacyGrowthSpeedBucket } from "./growth";
-import type { CompiledScenario, RunResult } from "../types";
+import type { CompiledScenario, RunResult, SimState } from "../types";
 
 /**
  * Growth fit v1.
@@ -296,8 +296,27 @@ function solve(matrix: number[][], rhs: number[]): number[] | null {
   return rows.map((row) => row[size]!);
 }
 
+/**
+ * Largest |x|, so a fit runs on x / scale. Rebased times can still be wide enough that x * x overflows;
+ * on the scaled axis the moments stay finite, and the coefficients are mapped back.
+ */
+function axisScale(xs: readonly number[]): number {
+  let scale = 0;
+  for (const x of xs) scale = Math.max(scale, Math.abs(x));
+  return Number.isFinite(scale) && scale > 0 ? scale : 1;
+}
+
 function fitLinear(xs: readonly number[], ys: readonly number[]): LinearFit | null {
   if (xs.length !== ys.length || xs.length < 2) return null;
+  const scale = axisScale(xs);
+  const fit = fitLinearScaled(xs.map((x) => x / scale), ys);
+  if (!fit) return null;
+  const b = fit.b / scale;
+  if (!Number.isFinite(fit.a) || !Number.isFinite(b) || !Number.isFinite(fit.rmse)) return null;
+  return { a: fit.a, b, rmse: fit.rmse };
+}
+
+function fitLinearScaled(xs: readonly number[], ys: readonly number[]): LinearFit | null {
   const n = xs.length;
   let sx = 0;
   let sy = 0;
@@ -320,6 +339,16 @@ function fitLinear(xs: readonly number[], ys: readonly number[]): LinearFit | nu
 
 function fitQuadratic(xs: readonly number[], ys: readonly number[]): QuadFit | null {
   if (xs.length !== ys.length || xs.length < 3) return null;
+  const scale = axisScale(xs);
+  const fit = fitQuadraticScaled(xs.map((x) => x / scale), ys);
+  if (!fit) return null;
+  const b = fit.b / scale;
+  const c = fit.c / scale / scale;
+  if (!Number.isFinite(fit.a) || !Number.isFinite(b) || !Number.isFinite(c) || !Number.isFinite(fit.rmse)) return null;
+  return { a: fit.a, b, c, rmse: fit.rmse };
+}
+
+function fitQuadraticScaled(xs: readonly number[], ys: readonly number[]): QuadFit | null {
   let sx = 0;
   let sx2 = 0;
   let sx3 = 0;
@@ -397,10 +426,17 @@ function irregularSpacing(points: readonly Point<unknown>[]): boolean {
     gaps.push(points[index]!.t - points[index - 1]!.t);
   }
   if (gaps.length < 2) return false;
-  const positive = gaps.filter((gap) => gap > 0);
-  if (positive.length < 2) return false;
-  const smallest = Math.min(...positive);
-  const largest = Math.max(...positive);
+  // A loop, not Math.min(...gaps): a million-point trace exceeds the argument limit of a spread call.
+  let count = 0;
+  let smallest = Number.POSITIVE_INFINITY;
+  let largest = 0;
+  for (const gap of gaps) {
+    if (!(gap > 0)) continue;
+    count += 1;
+    if (gap < smallest) smallest = gap;
+    if (gap > largest) largest = gap;
+  }
+  if (count < 2) return false;
   return largest / smallest > 3;
 }
 
@@ -438,10 +474,20 @@ function classifyPositive(
   if (points.length < MIN_SAMPLES || span < MIN_SPAN_SEC || logs.some((value) => value === null)) {
     return blankWindow(points, discontinuity, "insufficient-data", `samples ${points.length} span ${span}`);
   }
-  const ys = logs.map((value) => value!);
+  // Fit log values relative to the first one. A large log offset, such as 1e12, otherwise drowns the low-order
+  // digits of the regression sums, and the shape would depend on the series scale.
+  const logOrigin = logs[0]!;
+  const ys = logs.map((value) => value! - logOrigin);
   // Fit on time since the window start. Raw moments of a large absolute t cancel catastrophically.
   const ts = points.map((point) => point.t - first.t);
-  const logSpan = Math.max(...ys) - Math.min(...ys);
+  // A loop, not Math.max(...ys): a large sampling budget can exceed the argument limit of a spread call.
+  let logLow = Number.POSITIVE_INFINITY;
+  let logHigh = Number.NEGATIVE_INFINITY;
+  for (const y of ys) {
+    if (y < logLow) logLow = y;
+    if (y > logHigh) logHigh = y;
+  }
+  const logSpan = logHigh - logLow;
   const linear = fitLinear(ts, ys);
   const quadratic = fitQuadratic(ts, ys);
   // ts is already measured from the window start.
@@ -488,7 +534,14 @@ function classifyPositive(
     valueRmse !== null &&
     valueRmse <= VALUE_EXACT &&
     !(linear !== null && linear.rmse * Math.LN10 < valueRmse);
-  if (logSpan < 1e-6) {
+  // An exact value fit whose change across the window stands well above its residual is a moving series, even
+  // when a large intercept leaves almost no log span. A constant series fits exactly too, but does not move.
+  const valueMoves =
+    valueExact &&
+    ((valueLinear !== null && Math.abs(valueLinear.b * span) > 1e3 * Math.max(valueLinear.rmse, Number.EPSILON)) ||
+      (valueQuadratic !== null &&
+        Math.abs(valueQuadratic.c * span * span) > 1e3 * Math.max(valueQuadratic.rmse, Number.EPSILON)));
+  if (logSpan < 1e-6 && !valueMoves) {
     shape = "constant";
     residual = { space: "log10", rmse: rmseAround(ys.map(() => mean(ys)), ys) };
   } else if (valueExact) {
@@ -540,16 +593,15 @@ function classifySlice(slice: Slice): GrowthFitWindowV1 {
   return classifyPositive(slice.points, slice.discontinuity);
 }
 
-function pushBreak(breaks: GrowthDiscontinuity[], next: GrowthDiscontinuity): void {
-  const rank: Record<GrowthDiscontinuity["kind"], number> = { reset: 4, drop: 3, sign: 2, purchase: 1 };
-  const existing = breaks.find((item) => item.t === next.t);
-  if (!existing) {
-    breaks.push(next);
-    return;
-  }
-  if (rank[next.kind] > rank[existing.kind]) {
-    breaks.splice(breaks.indexOf(existing), 1, next);
-  }
+const BREAK_RANK: Record<GrowthDiscontinuity["kind"], number> = { reset: 4, drop: 3, sign: 2, purchase: 1 };
+
+/**
+ * Breaks keyed by time. One time keeps the highest-ranked kind: reset, then drop, then sign, then purchase.
+ * The map keeps a lookup O(1), so a trace that alternates sign on every point stays linear.
+ */
+function pushBreak(breaks: Map<number, GrowthDiscontinuity>, next: GrowthDiscontinuity): void {
+  const existing = breaks.get(next.t);
+  if (!existing || BREAK_RANK[next.kind] > BREAK_RANK[existing.kind]) breaks.set(next.t, next);
 }
 
 /**
@@ -572,7 +624,10 @@ function slicesOf(points: readonly Point<unknown>[], breaks: readonly GrowthDisc
   const opening = points.map(() => "none" as GrowthDiscontinuityKind);
   for (const item of breaks) {
     const index = firstIndexAtOrAfter(points, item.t, false);
-    if (index > 0) opening[index] = item.kind;
+    if (index <= 0) continue;
+    // Breaks that open at one kept point keep the same precedence as breaks at one time.
+    const current = opening[index]!;
+    if (current === "none" || BREAK_RANK[item.kind] > BREAK_RANK[current]) opening[index] = item.kind;
   }
   const coarse: Array<{ start: number; end: number; discontinuity: GrowthDiscontinuityKind }> = [];
   let start = 0;
@@ -677,14 +732,16 @@ export function fitGrowth<N>(args: {
   const prepared = preparePoints(args.E, args.samples);
   // Find sign changes and drops on every prepared point, then keep both sides of each break through the
   // sampling budget, so downsampling cannot hide an invalid domain or a discontinuity.
-  const breaks = [...(args.discontinuities ?? [])];
+  // Supplied breaks go through the same precedence as detected ones, so a purchase cannot replace a reset.
+  const breakMap = new Map<number, GrowthDiscontinuity>();
+  for (const item of args.discontinuities ?? []) pushBreak(breakMap, item);
   const boundary = new Set<number>();
   for (let index = 1; index < prepared.length; index += 1) {
     const previous = prepared[index - 1]!;
     const current = prepared[index]!;
     let found = false;
     if (previous.sign !== current.sign) {
-      pushBreak(breaks, { t: current.t, kind: "sign" });
+      pushBreak(breakMap, { t: current.t, kind: "sign" });
       found = true;
     }
     if (
@@ -695,7 +752,7 @@ export function fitGrowth<N>(args: {
       // An exact tenfold drop is a drop. The tolerance absorbs log10 rounding.
       previous.log10 - current.log10 >= DROP_LOG10 - 1e-9
     ) {
-      pushBreak(breaks, { t: current.t, kind: "drop" });
+      pushBreak(breakMap, { t: current.t, kind: "drop" });
       found = true;
     }
     if (found) {
@@ -703,6 +760,7 @@ export function fitGrowth<N>(args: {
       boundary.add(index);
     }
   }
+  const breaks = [...breakMap.values()].sort((left, right) => left.t - right.t);
   for (const item of breaks) {
     const index = firstIndexAtOrAfter(prepared, item.t, false);
     if (index >= 0) {
@@ -802,11 +860,30 @@ export function fitGrowth<N>(args: {
 function softcapOf<N, U extends string, Vars>(
   scenario: CompiledScenario<N, U, Vars> | undefined,
   explicit: GrowthFitArtifactV1["softcap"] | undefined,
+  state: SimState<N, U, Vars> | undefined,
 ): GrowthFitArtifactV1["softcap"] {
   if (explicit) return explicit;
   if (!scenario?.model.analytic) return scenario ? "absent" : "unknown";
-  const hint = scenario.model.analytic(scenario.ctx, scenario.initial);
+  // The hint is read at the analyzed run's start, not the scenario's opening state, so a resumed run is judged
+  // by the state it fitted.
+  const hint = scenario.model.analytic(scenario.ctx, state ?? scenario.initial);
   return hint?.softcap ? "configured" : "absent";
+}
+
+/**
+ * The break an action row opens. Action.kind is the source of truth: a prestige action is a reset and a buy is a
+ * purchase whatever its id says. Only a custom action, or one the model no longer lists, falls back to its id.
+ */
+function actionBreakKind<N, U extends string, Vars>(
+  scenario: CompiledScenario<N, U, Vars>,
+  before: SimState<N, U, Vars> | undefined,
+  actionId: string,
+): GrowthDiscontinuity["kind"] {
+  const listed = before ? scenario.model.actions(scenario.ctx, before).find((action) => action.id === actionId) : undefined;
+  if (listed?.kind === "prestige") return "reset";
+  if (listed && listed.kind !== "custom") return "purchase";
+  const id = actionId.toLowerCase();
+  return id.includes("prestige") || id.includes("reset") ? "reset" : "purchase";
 }
 
 /**
@@ -836,19 +913,17 @@ export function fitGrowthFromRun<N, U extends string, Vars>(args: {
   }));
   const discontinuities: GrowthDiscontinuity[] = [];
   for (const row of args.run.actionsLog ?? []) {
-    const id = row.actionId.toLowerCase();
     // An action row is stamped at decision time; the trace point at that t is the state before it.
     // The break opens at the first trace state strictly after the action, found by binary search.
-    const after = states[firstIndexAtOrAfter(states, row.t, true)];
+    const afterIndex = firstIndexAtOrAfter(states, row.t, true);
+    const after = states[afterIndex];
     if (!after) continue;
-    discontinuities.push({
-      t: after.t,
-      kind: id.includes("prestige") || id.includes("reset") ? "reset" : "purchase",
-    });
+    discontinuities.push({ t: after.t, kind: actionBreakKind(args.scenario, states[afterIndex - 1], row.actionId) });
   }
   const loggedEveryAction =
     args.run.actionsLog !== undefined && (args.run.actionsLogMeta?.dropped ?? 0) === 0;
-  const noActionApplied = args.run.stats?.actions.applied === 0;
+  // A zero count proves no action ran only when the counter was observed. A disabled observation reports 0 too.
+  const noActionApplied = args.run.stats?.actions.status === "observed" && args.run.stats.actions.applied === 0;
   let previousCount = states[0]?.prestige.count;
   for (const state of states.slice(1)) {
     if (previousCount !== undefined && state.prestige.count !== previousCount) {
@@ -864,7 +939,7 @@ export function fitGrowthFromRun<N, U extends string, Vars>(args: {
     sampling: args.sampling,
     discontinuities,
     actionHistory: loggedEveryAction || noActionApplied ? "complete" : "incomplete",
-    softcap: softcapOf(args.scenario, args.softcap),
+    softcap: softcapOf(args.scenario, args.softcap, args.run.start),
     retention: args.run.traceLog
       ? {
           totalSeen: args.run.traceLog.totalSeen,

@@ -10,6 +10,7 @@ import {
   runGrowthAnalyzer,
   runScenario,
   validateScenarioV1,
+  type AnalyzerBudget,
   type AnalyzerResult,
 } from "@idlekit/core";
 import { z } from "zod";
@@ -19,11 +20,30 @@ import { buildOutputMeta } from "../io/outputMeta";
 import { readScenarioFile } from "../io/readScenario";
 import { writeOutput } from "../io/writeOutput";
 
+type Loaded = Awaited<ReturnType<typeof loadRegistriesFromFlags>>;
+type Compiled = Awaited<ReturnType<typeof compile>>;
+
 function requestedPluginPaths(input: string): string[] {
   return input
     .split(",")
     .map((item) => item.trim())
     .filter((item) => item.length > 0);
+}
+
+function budgetFromFlags(flags: {
+  "budget-runs": number;
+  "budget-duration": number;
+  "budget-samples": number;
+}): AnalyzerBudget {
+  return {
+    maxFreshRuns: flags["budget-runs"],
+    maxDurationSec: flags["budget-duration"],
+    maxSamples: flags["budget-samples"],
+  };
+}
+
+function runFactoryFor(loaded: Loaded) {
+  return createRunFactory({ models: loaded.modelRegistry, strategies: loaded.strategyRegistry });
 }
 
 export default defineCommand({
@@ -35,7 +55,7 @@ export default defineCommand({
     "analyzer-version": option(z.string().default("1"), { description: "Analyzer version" }),
     window: option(z.coerce.number().default(60), { description: "Growth window sec" }),
     series: option(z.enum(["money", "netWorth"]).default("money"), { description: "Growth series" }),
-    "trace-every": option(z.coerce.number().default(1), { description: "Trace every N steps" }),
+    "trace-every": option(z.coerce.number().int().min(1).default(1), { description: "Trace every N steps" }),
     "target-money": option(z.string().optional(), { description: "ETA target money NumStr" }),
     "target-worth": option(z.string().optional(), { description: "ETA target net worth NumStr" }),
     mode: option(z.enum(["simulate", "analytic"]).default("simulate"), { description: "ETA mode" }),
@@ -57,14 +77,15 @@ export default defineCommand({
 
     if (analyzerId === "growth" && version === "1") {
       if (!scenarioPath) throw usageError("Usage: idk analyze growth <scenario>");
-      const result = await runGrowth(scenarioPath, flags, loaded);
-      await emit(flags, result, scenarioPath, loaded);
+      const compiled = await compile(scenarioPath, loaded);
+      await emit(flags, runGrowth(compiled, flags), scenarioPath, compiled, loaded);
       return;
     }
     if (analyzerId === "eta" && version === "1") {
       if (!scenarioPath) throw usageError("Usage: idk analyze eta <scenario> --target-money <NumStr> | --target-worth <NumStr>");
-      const result = await runEta(scenarioPath, flags, loaded);
-      await emit(flags, result, scenarioPath, loaded);
+      const target = etaTarget(flags);
+      const compiled = await compile(scenarioPath, loaded);
+      await emit(flags, runEta(compiled, target, flags, loaded), scenarioPath, compiled, loaded);
       return;
     }
 
@@ -79,39 +100,76 @@ export default defineCommand({
       const failure = loaded.analyzerFailures.find((item) => item.message.includes(analyzerId));
       throw usageError(failure ? `Analyzer ${analyzerId}@${version} failed to load: ${failure.message}` : `Unknown analyzer ${analyzerId}@${version}`);
     }
+    // `idk analyze <id>` is an explicit request, like `idk analyze eta`: an execution analyzer
+    // runs inside the --budget-* flags, with the compiled scenario when one is given.
+    // A postprocess analyzer reads a run, so the scenario is run once with a trace and supplied as input.
+    const compiled = scenarioPath ? await compile(scenarioPath, loaded) : undefined;
+    const observed = compiled && defined.kind === "postprocess" ? observeScenario(compiled, flags["trace-every"]) : undefined;
     const batch = loaded.analyzerRegistry.run({
       requests: [{ id: analyzerId, version, params }],
-      semantics: analyzerSemantics(),
-      allowExecution: false,
+      semantics: compiled ? scenarioSemantics(compiled, flags["max-duration"]) : analyzerSemantics(),
+      ...(observed ? { supply: observed.supply, input: { run: observed.run, scenario: compiled?.compiled } } : {}),
+      scenario: compiled?.compiled ?? null,
+      budget: budgetFromFlags(flags),
+      runFactory: runFactoryFor(loaded),
+      allowExecution: true,
     });
-    const result = batch.results[0];
+    const result = batch.results.find((item) => item.id === analyzerId && item.version === version);
     if (!result) throw usageError(`Analyzer ${analyzerId}@${version} produced no result`);
-    await emit(flags, result, scenarioPath, loaded);
+    await emit(flags, result, scenarioPath, compiled, loaded);
   },
 });
 
-async function runGrowth(
-  scenarioPath: string,
+function scenarioSemantics(compiled: Compiled, fallbackHorizonSec: number) {
+  return analyzerSemantics({
+    strategyKey: compiled.scenario.strategy?.id ?? "none",
+    horizonSec: compiled.compiled.run.durationSec ?? fallbackHorizonSec,
+    stepSec: compiled.compiled.run.stepSec,
+    seed: compiled.compiled.ctx.seed ?? null,
+  });
+}
+
+function tracedRun(compiled: Compiled, traceEvery: number) {
+  return runScenario({
+    ...compiled.compiled,
+    run: {
+      ...compiled.compiled.run,
+      trace: { everySteps: Math.max(1, traceEvery), keepActionsLog: false },
+    },
+  });
+}
+
+/** One traced run. Its trace cadence is also the finest window it can supply. */
+function observeScenario(compiled: Compiled, traceEvery: number) {
+  const cadence = Math.max(1, traceEvery) * compiled.compiled.run.stepSec;
+  return {
+    run: tracedRun(compiled, traceEvery),
+    supply: {
+      schema: observationContract,
+      windowSec: cadence,
+      sampleCadenceSec: cadence,
+      coverage: "trace" as const,
+      metricIds: ["money", "netWorth"],
+    },
+  };
+}
+
+function runGrowth(
+  compiled: Compiled,
   flags: {
     window: number;
     series: "money" | "netWorth";
     "trace-every": number;
+    "max-duration": number;
   },
-  loaded: Awaited<ReturnType<typeof loadRegistriesFromFlags>>,
 ) {
-  const compiled = await compile(scenarioPath, loaded);
-  const run = runScenario({
-    ...compiled.compiled,
-    run: {
-      ...compiled.compiled.run,
-      trace: { everySteps: Math.max(1, flags["trace-every"]), keepActionsLog: false },
-    },
-  });
+  const run = tracedRun(compiled, flags["trace-every"]);
   return runGrowthAnalyzer({
     run,
     scenario: compiled.compiled,
     series: flags.series,
     windowSec: flags.window,
+    semantics: scenarioSemantics(compiled, flags["max-duration"]),
     supply: {
       schema: observationContract,
       windowSec: flags.window,
@@ -122,42 +180,42 @@ async function runGrowth(
   });
 }
 
-async function runEta(
-  scenarioPath: string,
+function etaTarget(flags: { "target-money"?: string; "target-worth"?: string }) {
+  const targetMoney = flags["target-money"];
+  const targetWorth = flags["target-worth"];
+  if ((targetMoney ? 1 : 0) + (targetWorth ? 1 : 0) !== 1) {
+    throw usageError("Exactly one target is required: --target-money or --target-worth");
+  }
+  return targetMoney
+    ? { kind: "money" as const, value: targetMoney }
+    : { kind: "netWorth" as const, value: targetWorth! };
+}
+
+function runEta(
+  compiled: Compiled,
+  target: ReturnType<typeof etaTarget>,
   flags: {
-    "target-money"?: string;
-    "target-worth"?: string;
     mode: "simulate" | "analytic";
     "max-duration": number;
     "budget-runs": number;
     "budget-duration": number;
     "budget-samples": number;
   },
-  loaded: Awaited<ReturnType<typeof loadRegistriesFromFlags>>,
+  loaded: Loaded,
 ) {
-  const targetMoney = flags["target-money"];
-  const targetWorth = flags["target-worth"];
-  if ((targetMoney ? 1 : 0) + (targetWorth ? 1 : 0) !== 1) {
-    throw usageError("Exactly one target is required: --target-money or --target-worth");
-  }
-  const compiled = await compile(scenarioPath, loaded);
   return runEtaAnalyzer({
     scenario: compiled.compiled,
-    target: targetMoney
-      ? { kind: "money", value: targetMoney }
-      : { kind: "netWorth", value: targetWorth! },
+    target,
     mode: flags.mode,
     maxDurationSec: flags["max-duration"],
-    budget: {
-      maxFreshRuns: flags["budget-runs"],
-      maxDurationSec: flags["budget-duration"],
-      maxSamples: flags["budget-samples"],
-    },
-    runFactory: createRunFactory(),
+    // ETA simulates for max-duration, so that is its horizon; strategy, step, and seed come from the scenario.
+    semantics: { ...scenarioSemantics(compiled, flags["max-duration"]), horizonSec: flags["max-duration"] },
+    budget: budgetFromFlags(flags),
+    runFactory: runFactoryFor(loaded),
   });
 }
 
-async function compile(scenarioPath: string, loaded: Awaited<ReturnType<typeof loadRegistriesFromFlags>>) {
+async function compile(scenarioPath: string, loaded: Loaded) {
   const input = await readScenarioFile(scenarioPath);
   const valid = validateScenarioV1(input, loaded.modelRegistry);
   if (!valid.ok || !valid.scenario) throw scenarioInvalidError(valid.issues);
@@ -171,21 +229,25 @@ async function compile(scenarioPath: string, loaded: Awaited<ReturnType<typeof l
   return { compiled, scenario: valid.scenario };
 }
 
+/** The hash is of the scenario that was compiled and analyzed. The file is not read again. */
 async function emit(
   flags: { format: "json" | "md"; out?: string },
   result: AnalyzerResult,
   scenarioPath: string | undefined,
-  loaded: Awaited<ReturnType<typeof loadRegistriesFromFlags>>,
+  compiled: Compiled | undefined,
+  loaded: Loaded,
 ): Promise<void> {
-  const input = scenarioPath ? await readScenarioFile(scenarioPath) : undefined;
-  const valid = input ? validateScenarioV1(input, loaded.modelRegistry) : undefined;
   await writeOutput({
     format: flags.format,
     outPath: flags.out,
     data: result,
     meta:
-      flags.format === "json" && valid?.scenario
-        ? buildOutputMeta({ command: "analyze", scenarioPath, scenario: valid.scenario })
+      flags.format === "json"
+        ? buildOutputMeta({
+            command: "analyze",
+            ...(scenarioPath && compiled ? { scenarioPath, scenario: compiled.scenario } : {}),
+            pluginDigest: loaded.pluginDigest,
+          })
         : undefined,
   });
 }
