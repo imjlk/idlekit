@@ -1,13 +1,21 @@
 import typia, { type IValidation } from "typia";
 import type { Engine } from "../../engine/types";
 import { recordPrestigeReset } from "../constraints";
+import { shareObservation } from "../goalRead";
 import { emitActionFacts, emitCommittedResets } from "../observation";
 import { offlineAbsenceForCredit } from "../offlineCredit";
 import { applyOfflineSeconds } from "../offline";
 import { sessionActiveBlocks, type SessionPatternSpec } from "../session";
 import { runScenario } from "../simulator";
 import { applyDecisions } from "../step";
-import { runElapsedSec, type CompiledScenario, type ScenarioConstraints, type SimContext, type SimState } from "../types";
+import {
+  runElapsedSec,
+  type CompiledScenario,
+  type ScenarioConstraints,
+  type SimContext,
+  type SimRunOptions,
+  type SimState,
+} from "../types";
 import {
   executeResetCycles,
   resetAdapterFor,
@@ -268,9 +276,19 @@ function scanIntervals(scan: ResetPolicyRequest<never, string, never>["scan"]): 
   return intervals;
 }
 
+const OBJECTIVE_KINDS: readonly ResetObjectiveKind[] = ["cumulative-reset-reward", "final-net-worth", "goal-reach-sec"];
+const RECOVERY_METRICS: readonly RecoveryMetricKind[] = ["pre-reset-income", "pre-reset-net-worth"];
+
 function assertRequest<N, U extends string, Vars>(request: ResetPolicyRequest<N, U, Vars>): void {
   if (typeof request.createScenario !== "function") {
     throw new ResetPolicyRejected("reset policy createScenario must be a function");
+  }
+  // An unchecked caller can pass any string. An unknown kind would fall back to another ranking or metric.
+  if (!OBJECTIVE_KINDS.includes(request.objective)) {
+    throw new ResetPolicyRejected(`reset policy objective must be one of ${OBJECTIVE_KINDS.join(", ")}`);
+  }
+  if (!RECOVERY_METRICS.includes(request.recovery?.metric)) {
+    throw new ResetPolicyRejected(`reset policy recovery.metric must be one of ${RECOVERY_METRICS.join(", ")}`);
   }
   scanIntervals(request.scan);
   assertFinite("horizonSec", request.horizonSec);
@@ -428,11 +446,11 @@ function liveCtx<N, U extends string, Vars>(
 }
 
 /**
- * A measurement-only copy: no observer, reset hook, or event emitter. A probe run is not the candidate run, so none
- * of its steps, actions, goals, milestones, or resets reach the caller.
+ * A measurement-only copy: no observer, reset hook, event emitter, or caller goal. A probe run is not the candidate
+ * run, so none of its steps, actions, goals, milestones, or resets reach the caller, and no caller predicate runs.
  */
 function silent<N, U extends string, Vars>(scenario: CompiledScenario<N, U, Vars>): CompiledScenario<N, U, Vars> {
-  const { observer: _observer, onPrestigeReset: _onPrestigeReset, ...run } = scenario.run;
+  const { observer: _observer, onPrestigeReset: _onPrestigeReset, goals: _goals, ...run } = scenario.run;
   const { emit: _emit, ...ctx } = scenario.ctx;
   return { ...scenario, ctx, run };
 }
@@ -482,15 +500,33 @@ type Watcher<N, U extends string, Vars> = Readonly<{
 }>;
 
 /**
- * The scenario a policy run plays: the caller's goals plus this analysis' watchers, read by the runner on every
+ * Observation shared by every run of one candidate, as `simulateSessionPattern` shares it across segments: one
+ * ledger, so caps cover the whole candidate and a milestone key is heard once, and the caller goals already reached,
+ * so a later run does not report them again.
+ */
+type ObservationShare = Readonly<{
+  observation: NonNullable<SimRunOptions["observation"]>;
+  reachedGoals: Set<string>;
+}>;
+
+function observationShare<N, U extends string, Vars>(scenario: CompiledScenario<N, U, Vars>): ObservationShare {
+  return {
+    observation: shareObservation({ ...scenario.run.observation, enabled: true }).observation,
+    reachedGoals: new Set(),
+  };
+}
+
+/**
+ * The scenario a policy run plays: the caller's open goals plus this analysis' watchers, read by the runner on every
  * committed state, and an observer that routes a watcher's first crossing back here. Recording is on, since the
  * runner reads goals only while it records.
  */
 function watched<N, U extends string, Vars>(
   scenario: CompiledScenario<N, U, Vars>,
   watchers: readonly Watcher<N, U, Vars>[],
+  share: ObservationShare,
 ): CompiledScenario<N, U, Vars> {
-  if (watchers.length === 0) return scenario;
+  const callerGoals = (scenario.run.goals ?? []).filter((goal) => !share.reachedGoals.has(goal.id));
   // A caller goal can use any id. Each watcher takes an id no caller goal uses, so a caller goal is never
   // routed to a watcher and a watcher is never marked reached by a caller goal.
   const taken = new Set((scenario.run.goals ?? []).map((goal) => goal.id));
@@ -506,14 +542,18 @@ function watched<N, U extends string, Vars>(
     ...scenario,
     run: {
       ...scenario.run,
-      observation: { ...scenario.run.observation, enabled: true },
-      goals: [...(scenario.run.goals ?? []), ...[...byId].map(([id, watcher]) => ({ id, met: watcher.met }))],
+      observation: share.observation,
+      goals: [...callerGoals, ...[...byId].map(([id, watcher]) => ({ id, met: watcher.met }))],
       observer: {
         ...observer,
         onGoal: (fact) => {
           const watcher = byId.get(fact.goalId);
-          if (watcher) watcher.onMet(fact.t);
-          else observer?.onGoal?.(fact);
+          if (watcher) {
+            watcher.onMet(fact.t);
+            return;
+          }
+          share.reachedGoals.add(fact.goalId);
+          observer?.onGoal?.(fact);
         },
       },
     },
@@ -780,16 +820,16 @@ function evaluateAlwaysActive<N, U extends string, Vars>(
   // Constraints change only at a boundary, so the context of the next interval is known before it runs.
   let metricCtx = liveCtx(scenario, constraints);
   // The runner reads the goal on every committed state, so a crossing between resets keeps its own time.
-  const observed = watched(
-    scenario,
-    goalWatcher(
-      request,
-      () => metricCtx,
-      (t) => {
-        if (reached.t === null) reached.t = t - originT;
-      },
-    ),
+  const watchers = goalWatcher(
+    request,
+    () => metricCtx,
+    (t) => {
+      if (reached.t === null) reached.t = t - originT;
+    },
   );
+  // Every run of this candidate shares one ledger and the caller goals already reached.
+  const share = observationShare(scenario);
+  const observed = () => watched(scenario, watchers, share);
   const snaps: Snap[] = [];
   let resume: ResetCycleCheckpoint<N, U, Vars> | undefined;
   let state = scenario.initial;
@@ -803,7 +843,7 @@ function evaluateAlwaysActive<N, U extends string, Vars>(
     metricCtx = liveCtx(scenario, constraints);
     // The executor resolves the adapter at each boundary, so a prestige action unlocked during the interval counts.
     const step = executeResetCycles({
-      scenario: observed,
+      scenario: observed(),
       policy: { kind: "fixed-interval", intervalSec, cycles: 1 },
       horizonSec: request.horizonSec,
       ...(request.adapter ? { adapter: request.adapter } : {}),
@@ -831,7 +871,7 @@ function evaluateAlwaysActive<N, U extends string, Vars>(
   // Only rounding dust of the elapsed sum is skipped, so a long horizon still plays a real remainder.
   const tail = request.horizonSec - elapsed;
   if (tail > Math.max(RUNNER_MIN_DURATION_SEC, horizonDust(request.horizonSec, elapsed))) {
-    const played = play(observed, state, constraints, adapterAt(request, scenario, state, constraints), tail);
+    const played = play(observed(), state, constraints, adapterAt(request, scenario, state, constraints), tail);
     state = played.end;
     elapsed += runElapsedSec(played);
   }
@@ -955,6 +995,8 @@ function playSchedule<N, U extends string, Vars>(
     return { ...liveCtx(scenario, constraints), ...(clocks ? { clocks } : {}) };
   };
   let segmentCtx = ctxAt(wall);
+  // Segments share one ledger and the caller goals already reached, as simulateSessionPattern's segments do.
+  const share = observationShare(scenario);
   const watchers: Watcher<N, U, Vars>[] = options.watchGoal
     ? goalWatcher(
         request,
@@ -968,7 +1010,7 @@ function playSchedule<N, U extends string, Vars>(
     segmentCtx = ctxAt(wall + durationSec);
     segment = { wallStart: wall, rewardStart: state.t, offlineRequested: null };
     const played = play(
-      watched(scenario, watchers),
+      watched(scenario, watchers, share),
       state,
       constraints,
       adapterAt(request, scenario, state, constraints),
@@ -986,7 +1028,7 @@ function playSchedule<N, U extends string, Vars>(
     segmentCtx = ctxAt(toWall);
     segment = { wallStart: wall, rewardStart: state.t, offlineRequested: toWall - wall };
     const clocks = clocksFor(wall, toWall);
-    const base = watched(scenario, watchers);
+    const base = watched(scenario, watchers, share);
     const offline = applyOfflineSeconds({
       scenario: {
         ...base,
@@ -1021,6 +1063,12 @@ function playSchedule<N, U extends string, Vars>(
         break;
       }
       const threshold = recoveryMetric(request, scenario, state, boundaryCtx);
+      // With no runner since the previous reset, as after a delay that covers the interval, the boundary state has
+      // not been read at this wall time. A clock-aware goal can first hold here, before the reset changes the state.
+      const boundaryGoal = request.goal;
+      if (options.watchGoal && boundaryGoal && reached.t === null && boundaryGoal(boundaryCtx, deepClonePreservingPrototype(state))) {
+        reached.t = at;
+      }
       const committed = commitReset(scenario, state, constraints, adapter, options.emit, boundaryCtx.clocks);
       if (!committed.ok) {
         refused = true;
@@ -1127,12 +1175,12 @@ function evaluateSession<N, U extends string, Vars>(
   });
   // The span after the last committed reset is not a completed cycle, as on the always-active path.
   const incomplete =
-    outcome.lastResetWall + 1e-9 < request.horizonSec
+    outcome.lastResetWall + horizonDust(request.horizonSec, outcome.lastResetWall) < request.horizonSec
       ? { startSec: outcome.lastResetWall, endSec: request.horizonSec, durationSec: request.horizonSec - outcome.lastResetWall }
       : null;
   // A manual reset needs active play at the horizon. An offline span or a reset delay there has nothing to realize,
   // and a reset committed at the horizon leaves no incomplete span to realize after.
-  const activeAtHorizon = outcome.activeWallEnd + 1e-9 >= request.horizonSec;
+  const activeAtHorizon = outcome.activeWallEnd + horizonDust(request.horizonSec, outcome.activeWallEnd) >= request.horizonSec;
   const unrealized = incomplete && activeAtHorizon
     ? unrealizedAt(request, scenario, outcome.state, outcome.constraints, outcome.endCtx.clocks)
     : E.zero();
