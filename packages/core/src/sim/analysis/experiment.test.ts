@@ -372,7 +372,7 @@ export function keepsStrategyTuneSignature(): void {
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter Unsafe paths and invalid parameters throw before the model factory runs.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #338ce12 Re-read the section, then ran this function: a stripped typo path, overlapping model and strategy paths, a session dimension, a repeated seed, another model version, an Infinity choice value, an Infinity space bound, an Infinity limit, an Infinity goal, a schema-less typo path, -0, a -0 seed, a __type path, non-JSON params, a malformed untyped spec, and a repeated constraint id throw, and create count stays 0.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #01cbc40 Re-read the section, then ran this function: a stripped typo path, overlapping model and strategy paths, a session dimension, a repeated seed, another model version, an Infinity choice value, an Infinity space bound, an Infinity limit, an Infinity goal, a schema-less typo path, -0, a -0 seed, a __type path, non-JSON params, a malformed untyped spec, and a repeated constraint id throw, and create count stays 0.
  * @evidence ./experiment.ts#experimentRegisteredSetter Reads the setter contract.
  * @evidenceReview ./experiment.ts#experimentRegisteredSetter #080a763 The declaration is registered-key-not-jsonpath.
  * @evidence ./experiment.ts#assertRegisteredPath Rejects prototype, bracket, and traversal paths, and session paths other than pattern or days.
@@ -537,7 +537,9 @@ export function rejectsUnsafeParametersBeforeRun(): void {
   }
   // Params are recorded as canonical JSON, so a Date or a class instance in them is refused before any create.
   const shared = { rate: 1 };
-  for (const odd of [new Date(0), new (class Curve { rate = 1 })(), undefined, { __type: "curve" }, { a: shared, b: shared }]) {
+  const named = Object.assign([1, 2], { mode: "fast" });
+  class Steps extends Array<number> {}
+  for (const odd of [new Date(0), new (class Curve { rate = 1 })(), undefined, { __type: "curve" }, { a: shared, b: shared }, named, Steps.from([1, 2]), [1, , 3]]) {
     const oddScenario = incomeScenario({ model: { id: "tiny-income", version: 1, params: { amount: 1, extra: odd } }, strategy: undefined });
     expect(() =>
       runExperiment({
@@ -560,6 +562,13 @@ export function rejectsUnsafeParametersBeforeRun(): void {
       }),
     ).toThrow("model params must be JSON data");
   }
+  // One object shared by the model and strategy params is refused as well.
+  const sharedRoot = { maxPicks: 1 };
+  const crossScenario = incomeScenario({
+    model: { id: fixture.modelId, version: fixture.modelVersion, params: { incomeRate: 1, shape: sharedRoot } },
+    strategy: { id: fixture.strategyId, params: sharedRoot },
+  });
+  expect(() => runWith(crossScenario, specFor(crossScenario), creates)).toThrow("strategy params must be JSON data");
   // Without a params schema, a path must already be in the scenario params, so a typo is not added as an ignored key.
   const bare = incomeScenario({ model: { id: "tiny-income", version: 1, params: { amount: 1 } }, strategy: undefined });
   const bareRun = (path: string) =>
