@@ -8,6 +8,8 @@
 
 `ModelAnalysisAdapter`는 모델 버전이 metric, goal, reset, flow, advance를 제공하는지 말한다. 모델 id와 version으로 등록한다. `Model`에 필수 메서드를 넣지 않는다.
 
+등록된 adapter에서 생략한 capability는 `unsupported`다. `capabilities` 필드 전체를 생략해도 같다. 등록하지 않은 모델 id나 version은 `unknown`이다.
+
 `AnalyzerRegistry`는 `DX-02`다. 분석법을 고르는 쪽이다. 이 변경은 그것을 실행하지 않는다. flow와 advance 본체는 이후 작업이다. flow나 reset capability가 없는 모델은 `unsupported`다. 0점이나 안정 상태가 아니다. adapter가 없으면 `unknown`이다. `DX-03` inspect가 정적으로 알지 못한다고 말할 수 있는 값이다.
 
 ## 목표와 지표
@@ -25,6 +27,8 @@
 `validateAnalysisSemantics`는 구조 schema가 못 하는 검사를 한다. ok가 아닌 reading은 `unavailable`이어야 하고 값이 없어야 한다. ok가 아닌 goal에는 `reached`도 `method`도 없다. `sampleCount`는 음수가 아닌 정수이며 `0`은 유효하다. extractor가 정의와 다른 domain을 돌려주는 metric은 `invalid`로 읽는다. 금액 reading에는 `value`가 없고 수치 reading에는 `amount`가 없다. version, `atSec`, `horizon.sec`는 유한해야 한다. JSON은 유한하지 않은 수를 `null`로 쓰기 때문이다.
 
 기존 `eta.ts`와 `growth.ts`는 일부 금액에 `toNumber` 또는 `Number`를 아직 쓴다. 그 호출은 추정 경로로 분류한다. artifact 계약이 아니다. 유한 변환을 전부 금지하지 않는다.
+
+의미 검증은 NaN 또는 Infinity를 나타내는 금액 문자열을 거부하며 `1e400` 같은 큰 유한 엔진 문자열을 number로 좁히지 않는다. 수치 `sign`을 제공하면 유한한 `value`와 일치해야 하며, 선택 필드인 sign을 생략한 값은 유효하다. 정규 JSON은 sparse 배열의 모든 빈 칸을 `null`로 써서 길이와 JSON 유효성을 보존한다.
 
 Node.js and browser runtimes are not part of the v1 compatibility contract.
 
