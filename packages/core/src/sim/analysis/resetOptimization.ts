@@ -15,6 +15,7 @@ import {
   type ResetCycleRowV1,
 } from "./resetCycle";
 import { withoutResetActions } from "./resetActions";
+import { deepClonePreservingPrototype } from "../../utils/deepClone";
 
 /**
  * Reset policy comparison v1.
@@ -242,7 +243,9 @@ function scanIntervals(scan: ResetPolicyRequest<never, string, never>["scan"]): 
   const intervals: number[] = [];
   for (let index = 0; index < count; index += 1) {
     const interval = scan.fromSec + index * scan.stepSec;
-    if (interval > scan.toSec + scan.stepSec * 1e-9) break;
+    // Rounding dust only: a share of a large step could admit an interval well past toSec.
+    const dust = 8 * Number.EPSILON * Math.max(Math.abs(scan.toSec), Math.abs(interval));
+    if (interval > scan.toSec + dust) break;
     intervals.push(interval);
   }
   if (intervals.length === 0) throw new ResetPolicyRejected("reset policy scan produced no candidates");
@@ -440,8 +443,10 @@ function adapterAt<N, U extends string, Vars>(
   scenario: CompiledScenario<N, U, Vars>,
   state: SimState<N, U, Vars>,
   constraints: ScenarioConstraints | undefined,
+  clocks?: SimContext<N, U, Vars>["clocks"],
 ): ResetAdapter<N, U, Vars> | undefined {
-  return request.adapter ?? resetAdapterFor(scenario, undefined, state, liveCtx(scenario, constraints));
+  const ctx = liveCtx(scenario, constraints);
+  return request.adapter ?? resetAdapterFor(scenario, undefined, state, clocks ? { ...ctx, clocks } : ctx);
 }
 
 type Watcher<N, U extends string, Vars> = Readonly<{
@@ -523,12 +528,15 @@ function commitReset<N, U extends string, Vars>(
   constraints: ScenarioConstraints | undefined,
   adapter: ResetAdapter<N, U, Vars>,
   emit: boolean,
+  clocks?: SimContext<N, U, Vars>["clocks"],
 ):
   | { ok: true; state: SimState<N, U, Vars>; constraints?: ScenarioConstraints; delta: N; t: number }
   | { ok: false; state: SimState<N, U, Vars> } {
   const { E } = scenario.ctx;
-  // The adapter and the action see the live constraints, as the reset-cycle executor passes them.
-  const ctx = liveCtx(scenario, constraints);
+  // The adapter and the action see the live constraints, as the reset-cycle executor passes them, and on a
+  // schedule the session clocks of the block the reset happens in.
+  const live = liveCtx(scenario, constraints);
+  const ctx = clocks ? { ...live, clocks } : live;
   const before = adapter.reward(ctx, state);
   const action = adapter.action(ctx, state);
   const kinds = new Set<"prestige" | "custom">();
@@ -638,11 +646,12 @@ function unrealizedAt<N, U extends string, Vars>(
   scenario: CompiledScenario<N, U, Vars>,
   state: SimState<N, U, Vars>,
   constraints: ScenarioConstraints | undefined,
+  clocks?: SimContext<N, U, Vars>["clocks"],
 ): N {
   // The dry run sees the constraints the committed resets left, so a cooldown still blocks it.
-  const adapter = adapterAt(request, scenario, state, constraints);
+  const adapter = adapterAt(request, scenario, state, constraints, clocks);
   if (!adapter) return scenario.ctx.E.zero();
-  const committed = commitReset(scenario, state, constraints, adapter, false);
+  const committed = commitReset(scenario, state, constraints, adapter, false, clocks);
   return committed.ok ? committed.delta : scenario.ctx.E.zero();
 }
 
@@ -794,7 +803,8 @@ function evaluateAlwaysActive<N, U extends string, Vars>(
   const incomplete: ResetCandidateReport["incomplete"] =
     openSec > 1e-9 * Math.max(1, request.horizonSec) ? { startSec: lastResetT, endSec: state.t, durationSec: openSec } : null;
   // A goal met only by the last committed reset has no later run to read it.
-  if (request.goal && reached.t === null && request.goal(metricCtx, state)) reached.t = state.t;
+  // Read on a copy, as the runner reads goals, so a predicate that writes its argument cannot change the result.
+  if (request.goal && reached.t === null && request.goal(metricCtx, deepClonePreservingPrototype(state))) reached.t = state.t;
   const unrealized = incomplete ? unrealizedAt(request, scenario, state, constraints) : E.zero();
   const status: ResetCandidateReport["status"] =
     unsupported && snaps.length === 0
@@ -830,8 +840,10 @@ type ScheduleOutcome<N, U extends string, Vars> = Readonly<{
   constraints: ScenarioConstraints | undefined;
   refused: boolean;
   unsupported: boolean;
-  /** Wall time where the last active block ended. The span after it to the horizon is not a reset window. */
+  /** Wall time active play last reached. A reset delay is not active play. */
   activeWallEnd: number;
+  /** Wall time of the last committed reset, or 0 without one. */
+  lastResetWall: number;
   /** The context at the horizon: live constraints, and clocks when the model reads them. */
   endCtx: SimContext<N, U, Vars>;
   goalReachSec: number | null;
@@ -865,6 +877,8 @@ function playSchedule<N, U extends string, Vars>(
   let wall = 0;
   let activeSec = 0;
   let lastResetWall = 0;
+  // Where active play last reached. A reset delay advances wall time but is not active play.
+  let activeReach = 0;
   let resetsOpen = true;
   let refused = false;
   let unsupported = false;
@@ -905,6 +919,7 @@ function playSchedule<N, U extends string, Vars>(
     activeSec += runElapsedSec(played);
     state = played.end;
     wall += durationSec;
+    activeReach = wall;
   };
   const runOffline = (toWall: number) => {
     if (!(wall < toWall)) return;
@@ -937,14 +952,15 @@ function playSchedule<N, U extends string, Vars>(
       const at = Math.max(lastResetWall + intervalSec, wall);
       if (!(at < block.end)) break;
       if (at > wall) runActive(at - wall);
-      const adapter = adapterAt(request, scenario, state, constraints);
+      const boundaryCtx = ctxAt(block.end);
+      const adapter = adapterAt(request, scenario, state, constraints, boundaryCtx.clocks);
       if (!adapter) {
         unsupported = true;
         resetsOpen = false;
         break;
       }
-      const threshold = recoveryMetric(request, scenario, state, ctxAt(block.end));
-      const committed = commitReset(scenario, state, constraints, adapter, options.emit);
+      const threshold = recoveryMetric(request, scenario, state, boundaryCtx);
+      const committed = commitReset(scenario, state, constraints, adapter, options.emit, boundaryCtx.clocks);
       if (!committed.ok) {
         refused = true;
         resetsOpen = false;
@@ -960,6 +976,13 @@ function playSchedule<N, U extends string, Vars>(
       state = committed.state;
       constraints = committed.constraints;
       walls.push(at);
+      activeReach = at;
+      // Two resets can follow each other with no runner in between when the delay covers the interval, so the
+      // goal is read on the committed reset state too, on a copy as the runner reads it.
+      const goal = request.goal;
+      if (options.watchGoal && goal && reached.t === null && goal(ctxAt(block.end), deepClonePreservingPrototype(state))) {
+        reached.t = committed.t;
+      }
       if (options.watchRecovery && recovery === null) {
         const found = { threshold, resetT: committed.t, crossedT: null as number | null };
         recovery = found;
@@ -980,12 +1003,14 @@ function playSchedule<N, U extends string, Vars>(
     }
     if (wall < block.end) runActive(block.end - wall);
   }
-  const activeWallEnd = wall;
+  const activeWallEnd = activeReach;
   // The rest of the horizon is away time and applies the offline progression.
   runOffline(request.horizonSec);
   const endCtx = ctxAt(wall);
   const goal = request.goal;
-  if (options.watchGoal && goal && reached.t === null && goal(endCtx, state)) reached.t = state.t;
+  if (options.watchGoal && goal && reached.t === null && goal(endCtx, deepClonePreservingPrototype(state))) {
+    reached.t = state.t;
+  }
   return {
     snaps,
     walls,
@@ -994,6 +1019,7 @@ function playSchedule<N, U extends string, Vars>(
     refused,
     unsupported,
     activeWallEnd,
+    lastResetWall: walls.length > 0 ? lastResetWall : 0,
     endCtx,
     goalReachSec: reached.t,
     recovery,
@@ -1034,13 +1060,16 @@ function evaluateSession<N, U extends string, Vars>(
     watchRecovery: false,
     watchGoal: true,
   });
+  // The span after the last committed reset is not a completed cycle, as on the always-active path.
   const incomplete =
-    outcome.activeWallEnd + 1e-9 < request.horizonSec
-      ? { startSec: outcome.activeWallEnd, endSec: request.horizonSec, durationSec: request.horizonSec - outcome.activeWallEnd }
+    outcome.lastResetWall + 1e-9 < request.horizonSec
+      ? { startSec: outcome.lastResetWall, endSec: request.horizonSec, durationSec: request.horizonSec - outcome.lastResetWall }
       : null;
-  // A manual reset needs an active block. When the horizon falls in an offline span there is nothing to realize.
+  // A manual reset needs active play at the horizon. An offline span or a reset delay there has nothing to realize.
   const activeAtHorizon = outcome.activeWallEnd + 1e-9 >= request.horizonSec;
-  const unrealized = activeAtHorizon ? unrealizedAt(request, scenario, outcome.state, outcome.constraints) : E.zero();
+  const unrealized = activeAtHorizon
+    ? unrealizedAt(request, scenario, outcome.state, outcome.constraints, outcome.endCtx.clocks)
+    : E.zero();
   const status: ResetCandidateReport["status"] =
     outcome.unsupported && outcome.snaps.length === 0
       ? "unsupported"

@@ -135,7 +135,7 @@ function baseRequest(
  * @evidence ./resetOptimization.ts#validateResetPolicyArtifact The canonical artifact validates.
  * @evidenceReview ./resetOptimization.ts#validateResetPolicyArtifact #02be060 The arrow builds typia.createValidate of ResetPolicyArtifactV1 on first call and reuses it.
  * @evidence ./resetOptimization.ts#analyzeResetPolicies Runs the always-active scan against the fixture rate.
- * @evidenceReview ./resetOptimization.ts#analyzeResetPolicies #614b9c2 The function validates the request, distinct stability windows, a goal for goal-reach-sec, and a finite nonnegative absolute tolerance, evaluates each scanned interval with or without a session, resolving the reset adapter at each boundary under the live constraints, hiding reset actions from the strategy, committing adapter actions without re-resolving them against model.actions, refreshing maxMoneyEver, reading goals on every committed state under ids no caller goal uses, reading net worth and income with the live context, playing the tail from the origin-relative horizon, and on a schedule applying offline progression, session clocks, and the full schedule after the budget, measuring cycles in wall time, and dry-running the unrealized reset only when the horizon is active, ranks with Engine.cmp, compares a known solution, keeps a refused interval in the incomplete span, reports an incomplete winner or one without stability evidence in the artifact status, and never claims a global optimum.
+ * @evidenceReview ./resetOptimization.ts#analyzeResetPolicies #614b9c2 The function keeps scanned intervals within toSec up to rounding dust, validates the request, distinct stability windows, a goal for goal-reach-sec, and a finite nonnegative absolute tolerance, evaluates each scanned interval with or without a session, resolving the reset adapter at each boundary under the live constraints and, on a schedule, the block's clocks, hiding prestige actions and the custom reset from the strategy, committing adapter actions without re-resolving them against model.actions, refreshing maxMoneyEver, reading goals on copies of every committed state, each scheduled reset state included, under ids no caller goal uses, reading net worth and income with the live context, playing the tail from the origin-relative horizon, and on a schedule applying offline progression, session clocks, and the full schedule after the budget, measuring cycles in wall time, starting the incomplete span at the last reset, and dry-running the unrealized reset only when active play reaches the horizon, ranks with Engine.cmp, compares a known solution, keeps a refused interval in the incomplete span, reports an incomplete winner or one without stability evidence in the artifact status, and never claims a global optimum.
  * @evidence ./resetOptimization.ts#resetPolicySchemaId Reads the reset policy schema id.
  * @evidenceReview ./resetOptimization.ts#resetPolicySchemaId #1dcacc7 The function returns the reset.policy.v1 schema URL constant.
  * @evidence ./resetOptimization.ts#resetPolicyAlgorithmVersion Reads the algorithm version on the artifact.
@@ -334,6 +334,50 @@ export function matchesTheoreticalRewardRate(): void {
   );
   expect(shadowed.candidates[0]?.goalReachSec).toBeNull();
   expect(shadowed.candidates[0]?.goalStatus).toBe("censored");
+  // The last goal read is on a copy, so a predicate that writes its argument cannot change the reported state.
+  const writer = analyzeResetPolicies(
+    baseRequest(() => scenario(), {
+      goal: (_ctx, current) => {
+        (current.prestige as { points: number }).points = 999;
+        return false;
+      },
+      knownSolution: undefined,
+    }),
+  );
+  expect(writer.candidates[0]?.finalPoints).toBe("4");
+  // A custom reset adapter does not let the strategy commit prestige resets during an interval.
+  const rebirth: Action<number, "COIN", Vars> = {
+    id: "rebirth",
+    kind: "custom",
+    canApply: () => true,
+    cost: () => null,
+    apply: (_ctx, current) => ({ ...current, vars: { generators: current.vars.generators + 1 } }),
+  };
+  const rebirthAdapter: ResetAdapter<number, "COIN", Vars> = {
+    id: "rebirth",
+    kind: "custom",
+    preserved: ["vars"],
+    action: () => rebirth,
+    reward: (_ctx, current) => current.vars.generators,
+  };
+  const customPolicy = analyzeResetPolicies(
+    baseRequest(() => ({ ...scenario({ actions: [plainPrestige(), rebirth] }), strategy: greedy }), {
+      adapter: rebirthAdapter,
+      knownSolution: undefined,
+    }),
+  );
+  expect(customPolicy.candidates[0]?.completedCycles).toBe(4);
+  expect(customPolicy.candidates[0]?.finalPoints).toBe("0");
+  // A huge step does not admit an interval past toSec through a share of the step.
+  const wideScan = analyzeResetPolicies(
+    baseRequest(() => scenario(), {
+      scan: { fromSec: 1e12, toSec: 2e12 - 1000, stepSec: 1e12 },
+      horizonSec: 10,
+      knownSolution: undefined,
+    }),
+  );
+  expect(wideScan.best.comparison.candidateCount).toBe(1);
+  expect(wideScan.candidates.map((candidate) => candidate.intervalSec)).toEqual([1e12]);
   // A goal objective needs a goal, and the absolute tolerance is a finite amount >= 0.
   expect(() =>
     analyzeResetPolicies(baseRequest(() => scenario(), { objective: "goal-reach-sec", knownSolution: undefined })),
@@ -668,6 +712,57 @@ export function keepsManualResetInsideSession(): void {
     }),
   ).candidates[0];
   expect(alwaysOn?.unrealizedReward).toBe("1");
+  // A scheduled incomplete span starts at the last committed reset.
+  const shortOn = (patch: Partial<ResetPolicyRequest<number, "COIN", Vars>>, create = () => scenario()) =>
+    analyzeResetPolicies(
+      baseRequest(create, {
+        scan: { fromSec: 10, toSec: 10, stepSec: 10 },
+        horizonSec: 45,
+        session: { pattern: { id: "always-on", days: 1 }, resetDelaySec: 0 },
+        knownSolution: undefined,
+        ...patch,
+      }),
+    ).candidates[0];
+  expect(shortOn({})?.incomplete).toEqual({ startSec: 40, endSec: 45, durationSec: 5 });
+  // A reset delay that runs past the horizon is not active play, so no reset is dry-run there.
+  const delayedPast = shortOn({
+    scan: { fromSec: 400, toSec: 400, stepSec: 400 },
+    horizonSec: 1000,
+    session: { pattern: { id: "always-on", days: 1 }, resetDelaySec: 500 },
+  });
+  expect(delayedPast?.resetWallTimes).toEqual([400, 900]);
+  expect(delayedPast?.unrealizedReward).toBe("0");
+  // A model that lists its reset only inside a clocked block is resolved with the block's clocks.
+  const clockGated = shortOn({}, () =>
+    withModel(scenario(), {
+      clocks: { respondsTo: ["wall"] },
+      actions: (ctx) => (ctx.clocks ? [plainPrestige()] : []),
+    }),
+  );
+  expect(clockGated?.status).toBe("ok");
+  expect(clockGated?.completedCycles).toBe(4);
+  // Back-to-back resets with no runner between them still read the goal on each committed reset state.
+  const toggle: Action<number, "COIN", Vars> = {
+    ...plainPrestige(),
+    apply: (_ctx, current) => ({
+      ...current,
+      vars: { generators: current.prestige.count % 2 === 0 ? 1 : 0 },
+      prestige: { ...current.prestige, count: current.prestige.count + 1 },
+    }),
+  };
+  const backToBack = shortOn(
+    {
+      scan: { fromSec: 100, toSec: 100, stepSec: 100 },
+      horizonSec: 1000,
+      cycleBudget: 2,
+      session: { pattern: { id: "always-on", days: 1 }, resetDelaySec: 200 },
+      objective: "goal-reach-sec",
+      goal: (_ctx, current) => current.vars.generators === 1,
+    },
+    () => scenario({ actions: [toggle] }),
+  );
+  expect(backToBack?.completedCycles).toBe(2);
+  expect(backToBack?.goalReachSec).toBe(100);
   expect(anchored.candidates[0]?.goalReachSec).toBe(400);
 
   expect(() => sessionActiveBlocks({ id: "twice-daily", days: 0 })).toThrow("session days must be a positive integer");
