@@ -352,7 +352,9 @@ export function buildScenarioInspect(request: ScenarioInspectRequest): ScenarioI
   // The runner keeps the event log unless the scenario turns it off, so an omitted eventLog is enabled.
   const eventsEnabled = request.eventLog?.enabled !== false;
   const eventsUnlimited = eventsEnabled && request.eventLog?.maxEvents === undefined;
-  const traceUnlimited = (request.trace.include && request.clock.durationSec === undefined) || eventsUnlimited;
+  // compileScenario sets no maxPoints, so an included trace keeps every periodic state, however long the duration.
+  const traceUncapped = request.trace.include;
+  const traceUnlimited = traceUncapped || eventsUnlimited;
   if (traceUnlimited) {
     diagnostics.push({
       severity: "warning",
@@ -480,7 +482,7 @@ export function buildScenarioInspect(request: ScenarioInspectRequest): ScenarioI
       trace: {
         include: request.trace.include,
         everySteps: request.trace.include ? request.trace.everySteps ?? 1 : request.trace.everySteps ?? null,
-        unlimited: request.trace.include && request.clock.durationSec === undefined,
+        unlimited: traceUncapped,
       },
     },
     numericDomain: {

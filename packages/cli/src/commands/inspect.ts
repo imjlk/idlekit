@@ -31,7 +31,9 @@ function requestedPluginPaths(input: string): string[] {
 /**
  * Scenario values whose literals can enter the engine. Identifiers and descriptive fields, such as model ids or
  * meta, are not numbers, so only model params are read from those sections. Strategy params are read from the
- * plan, since an override replaces the scenario strategy. buildScenarioInspect reads the untilExpr literals.
+ * plan, since an override replaces the scenario strategy. buildScenarioInspect reads the untilExpr literals. The
+ * analysis, monetization, design, and constraints sections hold numbers, enums, and command-parsed text such as
+ * `analysis.prestigeCycle.scan`, none of which the engine parses, so they are not read.
  */
 function numericInputs(scenario: ScenarioV1): unknown[] {
   const initial = scenario.initial;
@@ -43,10 +45,6 @@ function numericInputs(scenario: ScenarioV1): unknown[] {
     initial.maxMoneyEver,
     initial.prestige?.points,
     initial.prestige?.multiplier,
-    scenario.analysis,
-    scenario.monetization,
-    scenario.design,
-    scenario.constraints,
   ];
 }
 

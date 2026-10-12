@@ -346,6 +346,11 @@ export const models = [{ id: "noted", version: 1, create() { throw new Error("cr
       "json",
     ]);
     expect(Object.values(digested._meta.pluginDigest ?? {}).length).toBe(1);
+    // analysis.prestigeCycle.scan is parsed by prestige-cycle from its flag, not by the engine, so it does not warn.
+    const scanText = await scenarioFile(dir, (raw) => {
+      raw.analysis = { prestigeCycle: { scan: "9999999999999999" } };
+    });
+    expect(hasDecimalRange(runCliJson<any>(["inspect", scanText, "--format", "json"]))).toBe(false);
     // A var compared in untilExpr is read with Number only when it is a number. A string var is compared as text.
     const varUntil = (expr: string) =>
       scenarioFile(dir, (raw) => {
