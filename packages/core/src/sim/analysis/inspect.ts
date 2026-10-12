@@ -118,6 +118,11 @@ export type ScenarioInspectRequest = Readonly<{
   analyzers: readonly InspectAnalyzerInput[];
   planner?: Readonly<{ horizonSteps: number; beamWidth?: number; maxBranchingActions?: number }> | null;
   decimals: readonly string[];
+  /**
+   * untilExpr paths outside the fixed amount and number sets whose state value is known to be a number, such as a
+   * numeric initial var. The runner reads their literals with Number. Other such paths have an unknown parser.
+   */
+  numericUntilPaths?: readonly string[];
   prestigeRequested: boolean;
   plugins: Readonly<{
     resolve: boolean;
@@ -279,7 +284,8 @@ export function buildScenarioInspect(request: ScenarioInspectRequest): ScenarioI
 
   // A custom engine declares no numeric domain. Its id does not say whether it narrows literals through Number,
   // so wide literals warn for it as for the number engine. An untilExpr amount literal goes through the engine. A
-  // `t`, `prestige.count`, or numeric state comparison goes through Number whatever the engine, so it always warns.
+  // `t`, `prestige.count`, or known numeric state comparison goes through Number whatever the engine, so it always
+  // warns. Any other path picks its parser from the run-time value, which may be a string, so it does not warn.
   const exact = numericDomainOf(request.engine);
   if (request.engine.accepted) {
     const until = untilExprLiterals(request.clock.untilExpr);
@@ -287,7 +293,10 @@ export function buildScenarioInspect(request: ScenarioInspectRequest): ScenarioI
       ...request.decimals,
       ...until.filter((term) => term.parse === "engine").map((term) => term.literal),
     ];
-    const numberLiterals = until.filter((term) => term.parse !== "engine").map((term) => term.literal);
+    const numericPaths = new Set(request.numericUntilPaths ?? []);
+    const numberLiterals = until
+      .filter((term) => term.parse === "number" || (term.parse === "runtime" && numericPaths.has(term.path)))
+      .map((term) => term.literal);
     const numberWide = numberLiterals.filter(decimalExceedsNumberDomain);
     const wide = [
       ...(exact !== "decimal-string" ? engineLiterals.filter(decimalExceedsNumberDomain) : []),

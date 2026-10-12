@@ -66,7 +66,7 @@ function request(overrides: Partial<ScenarioInspectRequest> = {}): ScenarioInspe
  * @evidence ./inspect.ts#fixedDurationStepCount Counts whole and partial ticks with nextBoundary.
  * @evidenceReview ./inspect.ts#fixedDurationStepCount #94e929a The function steps nextBoundary without until until it stops, and reports the step count, the last dt, and whether that tick was partial. Past one million ticks it returns a null count.
  * @evidence ./inspect.ts#buildScenarioInspect Builds the report from a fixed-duration request.
- * @evidenceReview ./inspect.ts#buildScenarioInspect #24980fe The function derives horizon kind, observation supply, stage plans, engine and plugin notes, the planner bound, and diagnostics without running the scenario. It treats an omitted event log as enabled, traces every step without a cadence, leaves session stages and capped counts unknown, reports each stage's fast mode, and names an unresolved model in plugin-skipped. A traced run's window is its cadence, and plugin-skipped names an unresolved strategy too. A custom engine's domain is unknown and still warns, and an ltv stage's count is unknown. A trace cadence that is not a positive integer supplies no cadence. It reads untilExpr literals itself: amount literals use the engine domain, while t, prestige.count, and other numeric comparisons always warn, since they go through Number. Each stage reports the action log it keeps, and an uncapped kept log is unlimited.
+ * @evidenceReview ./inspect.ts#buildScenarioInspect #b8b411c The function derives horizon kind, observation supply, stage plans, engine and plugin notes, the planner bound, and diagnostics without running the scenario. It treats an omitted event log as enabled, traces every step without a cadence, leaves session stages and capped counts unknown, reports each stage's fast mode, and names an unresolved model in plugin-skipped. A traced run's window is its cadence, and plugin-skipped names an unresolved strategy too. A custom engine's domain is unknown and still warns, and an ltv stage's count is unknown. A trace cadence that is not a positive integer supplies no cadence. It reads untilExpr literals itself: amount literals use the engine domain, while t, prestige.count, and the numericUntilPaths the caller names always warn, since they go through Number. Another path has a run-time parser and does not warn. Each stage reports the action log it keeps, and an uncapped kept log is unlimited.
  */
 export function countsFixedDurationSteps(): void {
   expect(inspectPartialTick).toBe("partial-tick-included");
@@ -257,6 +257,21 @@ export function warnsOnDecimalRange(): void {
     request({ clock: { stepSec: 1, untilExpr: "prestige.count >= 1e20" }, engine: breakInfinity }),
   );
   expect(countUntil.diagnostics.some((item) => item.code === "decimal-range")).toBe(true);
+  // Another path picks its parser from the run-time value. A string var is compared as text, so it does not warn
+  // unless the caller knows the value is a number.
+  const dynamicUntil = { stepSec: 1, untilExpr: "vars.code == 9999999999999999" };
+  expect(
+    buildScenarioInspect(request({ clock: dynamicUntil, engine: breakInfinity })).diagnostics.some(
+      (item) => item.code === "decimal-range",
+    ),
+  ).toBe(false);
+  expect(
+    buildScenarioInspect(request({ clock: dynamicUntil })).diagnostics.some((item) => item.code === "decimal-range"),
+  ).toBe(false);
+  const numericVar = buildScenarioInspect(
+    request({ clock: dynamicUntil, engine: breakInfinity, numericUntilPaths: ["vars.code"] }),
+  );
+  expect(numericVar.diagnostics.find((item) => item.code === "decimal-range")?.evidence.numberParsed).toBe(1);
   const source =readFileSync(join(import.meta.dir, "inspect.ts"), "utf8");
   expect(source.includes("Number(")).toBe(false);
 }

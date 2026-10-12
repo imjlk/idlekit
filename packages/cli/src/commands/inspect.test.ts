@@ -281,6 +281,31 @@ export const models = [{ id: "noted", version: 1, create() { throw new Error("cr
     expect(moneyFailed.exitCode).not.toBe(0);
     expect(moneyFailed.stdout.includes("bad-engine")).toBe(false);
     expect(moneyFailed.stderr.includes("UNSUPPORTED_ENGINE")).toBe(false);
+    // A skipped plugin may replace a built-in model with other params, so the built-in schema does not reject them.
+    const replacement = resolve(dir, "replacement.ts");
+    await writeText(replacement, `export const models = [{ id: "linear", version: 1, create() { throw new Error("x"); } }];\n`);
+    const numericParams = await scenarioFile(dir, (raw) => {
+      (raw.model as { params: Record<string, unknown> }).params.incomePerSec = 1;
+    });
+    expect(runCli(["inspect", numericParams, "--format", "json"], { check: false }).exitCode).not.toBe(0);
+    const replaced = runCliJson<any>(["inspect", numericParams, "--plugin", replacement, "--format", "json"]);
+    const replacedNote = replaced.diagnostics.find((item: { code: string }) => item.code === "plugin-skipped");
+    expect(replacedNote?.evidence.model).toBe("linear@1");
+    expect(replaced.invalid).toBe(false);
+    // A var compared in untilExpr is read with Number only when it is a number. A string var is compared as text.
+    const varUntil = (expr: string) =>
+      scenarioFile(dir, (raw) => {
+        (raw.initial as { vars: Record<string, unknown> }).vars = { owned: 0, code: "x" };
+        (raw.clock as { untilExpr?: string }).untilExpr = expr;
+      });
+    const stringVar = await varUntil("vars.code == 9999999999999999");
+    expect(hasDecimalRange(runCliJson<any>(["inspect", stringVar, "--engine", "breakInfinity", "--format", "json"]))).toBe(
+      false,
+    );
+    const numberVar = await varUntil("vars.owned >= 9999999999999999");
+    expect(hasDecimalRange(runCliJson<any>(["inspect", numberVar, "--engine", "breakInfinity", "--format", "json"]))).toBe(
+      true,
+    );
     await removePath(dir);
   }, 300000);
 

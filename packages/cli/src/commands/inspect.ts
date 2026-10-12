@@ -2,6 +2,7 @@ import { defineCommand, option } from "../runtime/command";
 import {
   assertAnalyzerPluginsPermitted,
   buildScenarioInspect,
+  untilExprLiterals,
   validateScenarioV1,
   type ScenarioInspectReport,
   type ScenarioV1,
@@ -41,6 +42,24 @@ function numericInputs(scenario: ScenarioV1): unknown[] {
     scenario.design,
     scenario.constraints,
   ];
+}
+
+/**
+ * untilExpr `vars.` paths whose initial value is a number. The runner reads their literals with Number. A string or
+ * object var, or a path the scenario does not set, has no known parser.
+ */
+function numericUntilPaths(scenario: ScenarioV1): string[] {
+  return untilExprLiterals(scenario.clock.untilExpr)
+    .filter((term) => term.parse === "runtime" && term.path.startsWith("vars."))
+    .filter((term) => {
+      let value: unknown = scenario.initial.vars;
+      for (const part of term.path.slice("vars.".length).split(".")) {
+        if (!value || typeof value !== "object" || !Object.hasOwn(value, part)) return false;
+        value = (value as Record<string, unknown>)[part];
+      }
+      return typeof value === "number";
+    })
+    .map((term) => term.path);
 }
 
 function collectDecimals(value: unknown, out: string[]): void {
@@ -170,15 +189,13 @@ export default defineCommand({
         ]
       : [];
     const input = await readScenarioFile(scenarioPath);
-    // A model that only a skipped plugin provides is not in the loaded registry. Validate the scenario without the
-    // model then, so the report can still say the plugin was skipped.
+    // A skipped plugin may provide the model, or replace a built-in one with other params. When only the model check
+    // of the loaded registry fails, validate the scenario without the model, so the report can still say the plugin
+    // was skipped and which model it left unchecked.
     const structural = validateScenarioV1(input);
-    const modelKnown =
-      structural.ok && structural.scenario
-        ? loaded.modelRegistry.get(structural.scenario.model.id, structural.scenario.model.version) !== undefined
-        : true;
-    const skippedModel = !resolvePlugins && paths.length > 0 && !modelKnown;
-    const valid = skippedModel ? structural : validateScenarioV1(input, loaded.modelRegistry);
+    const full = structural.ok ? validateScenarioV1(input, loaded.modelRegistry) : structural;
+    const skippedModel = !resolvePlugins && paths.length > 0 && structural.ok && !full.ok;
+    const valid = skippedModel ? structural : full;
     if (!valid.ok || !valid.scenario) throw scenarioInvalidError(valid.issues);
     const scenario = valid.scenario;
     const decimals: string[] = [];
@@ -220,6 +237,7 @@ export default defineCommand({
         return [{ id: defined.id, version: defined.version, kind: defined.kind, observation: defined.observation }];
       }),
       decimals,
+      numericUntilPaths: numericUntilPaths(scenario),
       prestigeRequested: scenario.analysis?.prestigeCycle !== undefined,
       plugins: {
         resolve: resolvePlugins,
