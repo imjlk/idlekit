@@ -28,7 +28,7 @@ const GROWTH_OUTPUT_CONTRACT = "idlekit.growth-report.v1" as const;
 
 /**
  * @evidence docs/requirements/active/analyzer-registry.md#req-dx02-registry-conflicts Duplicate ids, cycles, missing dependencies, and bad params fail before a body runs.
- * @evidenceReview docs/requirements/active/analyzer-registry.md#req-dx02-registry-conflicts #5c64299 Re-read the section: a malformed validateParams result, bad semantics, a cycle, a duplicate, a missing dependency, bad params, an incomplete definition, a fresh-run cost above one, a version with @, and a malformed resolved demand do not call the body, an implied dependency takes its parent's semantics, and a dependent of a failed dependency does not run.
+ * @evidenceReview docs/requirements/active/analyzer-registry.md#req-dx02-registry-conflicts #c9a6b98 Re-read the section: an explicit dependency with other semantics and a malformed body result are handled before dependents run, a malformed validateParams result, bad semantics, a cycle, a duplicate, a missing dependency, bad params, an incomplete definition, a fresh-run cost above one, a version with @, and a malformed resolved demand do not call the body, an implied dependency takes its parent's semantics, and a dependent of a failed dependency does not run.
  */
 export const analyzerRegistryConflicts = "fail-before-run" as const;
 
@@ -40,13 +40,13 @@ export const analyzerCustomRegistration = "caller-metric-and-analyzer" as const;
 
 /**
  * @evidence docs/requirements/active/analyzer-registry.md#req-dx02-insufficient-observation A short observation returns insufficient-data and a rerun plan. The growth body is not called.
- * @evidenceReview docs/requirements/active/analyzer-registry.md#req-dx02-insufficient-observation #1c620f3 Re-read the section: summary coverage does not satisfy a trace demand, and the registry checks every postprocess demand before the body.
+ * @evidenceReview docs/requirements/active/analyzer-registry.md#req-dx02-insufficient-observation #0be001c Re-read the section: summary coverage does not satisfy a trace demand, a malformed supply meets nothing, a postprocess sample cost is budgeted, and the registry checks every postprocess demand before the body.
  */
 export const analyzerInsufficientObservation = "insufficient-observation-rerun-plan" as const;
 
 /**
  * @evidence docs/requirements/active/analyzer-registry.md#req-dx02-execution-budget An execution analyzer receives a RunFactory and a budget. A short budget does not start the body.
- * @evidenceReview docs/requirements/active/analyzer-registry.md#req-dx02-execution-budget #3641e07 Re-read the section: each member reserves its own cost in dependency order, horizon past the budget is refused, a zero run budget does not call execute, samples are reserved across the batch, blocked groups and groups skipped for a failed dependency reserve nothing, a NaN budget throws, missing-scenario is kept, analytic ETA costs no run, and simulated ETA is checked on maxDurationSec.
+ * @evidenceReview docs/requirements/active/analyzer-registry.md#req-dx02-execution-budget #307957d Re-read the section: a refused grant is not cached for the group, a strategyKey other than the scenario strategy throws, each member reserves its own cost in dependency order, horizon past the budget is refused, a zero run budget does not call execute, samples are reserved across the batch, blocked groups and groups skipped for a failed dependency reserve nothing, a NaN budget throws, missing-scenario is kept, analytic ETA costs no run, and simulated ETA is checked on maxDurationSec.
  */
 export const analyzerExecutionBudget = "explicit-budget-not-silent-run" as const;
 
@@ -58,7 +58,7 @@ export const analyzerSameAlgorithm = "adapter-keeps-algorithm-version" as const;
 
 /**
  * @evidence docs/requirements/active/analyzer-registry.md#req-dx02-observation-plan The same session, strategy, horizon, and observation semantics share one fresh run. A different horizon does not.
- * @evidenceReview docs/requirements/active/analyzer-registry.md#req-dx02-observation-plan #ea66c04 Re-read the section: sharedWith lists only members whose body ran, cadence rounds down onto the execution plan and is on provenance, a cadence without a trace is refused, a different horizon or a sharesRun false definition is a separate group, the key is JSON, group members get one shared RunResult, and blocked peers are not in sharedWith.
+ * @evidenceReview docs/requirements/active/analyzer-registry.md#req-dx02-observation-plan #140ac0a Re-read the section: a traced window finer than the trace spacing is refused, sharedWith lists only members whose body ran, cadence rounds down onto the execution plan and is on provenance, a cadence without a trace is refused, a different horizon or a sharesRun false definition is a separate group, the key is JSON, group members get one shared RunResult, and blocked peers are not in sharedWith.
  */
 export const analyzerObservationPlan = "demand-on-plan-and-provenance" as const;
 
@@ -303,8 +303,21 @@ function compareIdentity(left: AnalyzerIdVersion, right: AnalyzerIdVersion): num
   return 0;
 }
 
+/** A supply from a runtime caller is checked first: NaN or an unknown coverage would pass every comparison. */
+function supplyIsWellFormed(supply: ObservationSupply): boolean {
+  const temporal = (value: unknown) => value === null || (typeof value === "number" && Number.isFinite(value) && value >= 0);
+  return (
+    typeof supply.schema === "string" &&
+    Object.prototype.hasOwnProperty.call(coverageRank, supply.coverage) &&
+    temporal(supply.windowSec) &&
+    temporal(supply.sampleCadenceSec) &&
+    Array.isArray(supply.metricIds) &&
+    supply.metricIds.every((metricId) => typeof metricId === "string")
+  );
+}
+
 export function observationMeets(demand: ObservationDemand, supply: ObservationSupply | null): boolean {
-  if (!supply) return false;
+  if (!supply || typeof supply !== "object" || !supplyIsWellFormed(supply)) return false;
   if (supply.schema !== demand.observationSchema) return false;
   if (coverageRank[supply.coverage] < coverageRank[demand.coverage]) return false;
   if (demand.windowSec !== null) {
@@ -341,11 +354,15 @@ export function executionPlanForDemand(semantics: RunSemantics, demand: Observat
 }
 
 function planMeetsDemand(plan: ExecutionPlan, demand: ObservationDemand): boolean {
+  const spacing = plan.trace ? plan.stepSec * (plan.trace.everySteps ?? 1) : null;
+  // A traced window finer than the trace spacing cannot be resolved from that trace.
+  if (demand.windowSec !== null && spacing !== null && spacing > demand.windowSec * (1 + cadenceTolerance)) {
+    return false;
+  }
   if (demand.sampleCadenceSec === null) return true;
   // A cadence with summary coverage gets no trace, so the plan has no samples at that cadence.
-  if (!plan.trace) return false;
-  const actual = plan.stepSec * (plan.trace.everySteps ?? 1);
-  return actual <= demand.sampleCadenceSec * (1 + cadenceTolerance);
+  if (spacing === null) return false;
+  return spacing <= demand.sampleCadenceSec * (1 + cadenceTolerance);
 }
 
 export function analyzerModuleBoundaryIssues(source: string): readonly string[] {
@@ -667,6 +684,38 @@ function checkedSemantics(value: RunSemantics, label: string): RunSemantics {
   return value;
 }
 
+const analysisStatuses: ReadonlySet<string> = new Set<AnalysisStatus>([
+  "ok",
+  "censored",
+  "unsupported",
+  "insufficient-data",
+  "invalid",
+  "error",
+  "unknown",
+]);
+const rerunReasons: ReadonlySet<string> = new Set<AnalyzerRerunPlan["reason"]>([
+  "insufficient-data",
+  "budget",
+  "execution-not-requested",
+  "missing-scenario",
+]);
+
+/** A body is plugin code. A malformed result is recorded as `error`, so dependents see it failed. */
+function checkedBody(raw: unknown): AnalyzerBodyResult {
+  const invalid = (issue: string): AnalyzerBodyResult => ({ status: "error", value: null, issues: [issue] });
+  if (!raw || typeof raw !== "object") return invalid("analyzer body returned no result object");
+  const body = raw as Record<string, unknown>;
+  if (typeof body.status !== "string" || !analysisStatuses.has(body.status)) {
+    return invalid("analyzer body returned an unknown status");
+  }
+  if (body.issues !== undefined && !isStringList(body.issues)) return invalid("analyzer body issues must be strings");
+  if (body.rerun !== undefined && typeof body.rerun !== "boolean") return invalid("analyzer body rerun must be a boolean");
+  if (body.rerunReason !== undefined && (typeof body.rerunReason !== "string" || !rerunReasons.has(body.rerunReason))) {
+    return invalid("analyzer body rerunReason is unknown");
+  }
+  return raw as AnalyzerBodyResult;
+}
+
 /** A demand that asks for nothing observed is met without a supply. */
 function demandIsEmpty(demand: ObservationDemand): boolean {
   return (
@@ -726,11 +775,15 @@ function runRegistered(
         params.set(dependencyKey, parseParams(next, {}, dependencyKey));
         semanticsByKey.set(dependencyKey, parentSemantics);
         implicit.add(dependencyKey);
-      } else if (implicit.has(dependencyKey)) {
+      } else {
+        // One instance per id serves every parent, so every parent must share its semantics,
+        // whether the dependency was implied or requested.
         const current = semanticsByKey.get(dependencyKey) ?? request.semantics;
         if (!sameSemantics(current, parentSemantics)) {
           throw new AnalyzerRegistryError(
-            `dependency ${dependencyKey} is implied with different semantics; request it with explicit semantics`,
+            implicit.has(dependencyKey)
+              ? `dependency ${dependencyKey} is implied with different semantics; request it with explicit semantics`
+              : `dependency ${dependencyKey} is requested with different semantics than ${key}`,
           );
         }
       }
@@ -764,6 +817,19 @@ function runRegistered(
         ? { status: dependencyBlock.status, issue: `dependency ${blockedDependency} ${dependencyBlock.status}` }
         : null);
     blockByKey.set(key, block);
+    // The shared run executes the scenario's compiled strategy, so a different strategyKey would
+    // label and group one strategy's run as another's. `none` names no strategy.
+    const compiledStrategy = request.scenario?.strategy?.id ?? "none";
+    if (
+      definition.kind === "execution" &&
+      request.scenario &&
+      semantics.strategyKey !== "none" &&
+      semantics.strategyKey !== compiledStrategy
+    ) {
+      throw new AnalyzerRegistryError(
+        `strategy ${semantics.strategyKey} for ${key} is not the scenario strategy ${compiledStrategy}`,
+      );
+    }
     return {
       definition,
       params: itemParams,
@@ -846,27 +912,32 @@ function runRegistered(
     return result;
   };
 
+  // Accepted grants are shared per group. A refusal is not cached for the group: it can come only
+  // from the group's reservation at that moment, and a later member may top the group up to a run.
   const grants = new Map<string, FreshRunGrant>();
+  const itemGrants = new Map<string, FreshRunGrant>();
   let freshRuns = 0;
-  const requestRun = (item: Prepared): FreshRunGrant => {
-    const existing = grants.get(item.key);
-    if (existing) return existing;
-    const plan = executionPlanForDemand(item.semantics, item.demand);
-    // A group that reserved no fresh run (cost 0) is refused, so an unbudgeted run is never opened.
-    if (
-      !budget ||
-      !runGroups.has(item.key) ||
-      freshRuns >= budget.maxFreshRuns ||
-      item.semantics.horizonSec > budget.maxDurationSec
-    ) {
-      const refused = { accepted: false, plan, run: () => null } satisfies FreshRunGrant;
-      grants.set(item.key, refused);
-      return refused;
-    }
-    freshRuns += 1;
-    const accepted = { accepted: true, plan, run: () => openSharedRun(item, plan) } satisfies FreshRunGrant;
-    grants.set(item.key, accepted);
-    return accepted;
+  const requestRun = (item: Prepared, identity: string): FreshRunGrant => {
+    const grant = ((): FreshRunGrant => {
+      const existing = grants.get(item.key);
+      if (existing) return existing;
+      const plan = executionPlanForDemand(item.semantics, item.demand);
+      // A group that reserved no fresh run (cost 0) is refused, so an unbudgeted run is never opened.
+      if (
+        !budget ||
+        !runGroups.has(item.key) ||
+        freshRuns >= budget.maxFreshRuns ||
+        item.semantics.horizonSec > budget.maxDurationSec
+      ) {
+        return { accepted: false, plan, run: () => null };
+      }
+      freshRuns += 1;
+      const accepted = { accepted: true, plan, run: () => openSharedRun(item, plan) } satisfies FreshRunGrant;
+      grants.set(item.key, accepted);
+      return accepted;
+    })();
+    itemGrants.set(identity, grant);
+    return grant;
   };
 
   const results: AnalyzerResult[] = [];
@@ -931,13 +1002,27 @@ function runRegistered(
         );
         continue;
       }
+      // Samples are a batch-wide budget, so a postprocess sample cost is reserved like any other.
+      if (budget && item.cost.samples > 0) {
+        if (reservedSamples + item.cost.samples > budget.maxSamples) {
+          record(
+            envelope(item.definition, "insufficient-data", null, ["budget"], {
+              ...baseProvenance,
+              freshRuns: 0,
+              rerun: rerunPlan("budget", item.demand, item.semantics, budget),
+            }),
+          );
+          continue;
+        }
+        reservedSamples += item.cost.samples;
+      }
       participate(item, identity);
-      const body = item.definition.postprocess?.(item.params, {
+      const body = checkedBody(item.definition.postprocess?.(item.params, {
         demand: item.demand,
         supply: request.supply ?? null,
         input: request.input,
         plan,
-      }) ?? { status: "error" as const, value: null, issues: ["missing postprocess"] };
+      }));
       const insufficient = body.status === "insufficient-data" || body.rerun === true;
       record(
         envelope(item.definition, body.status, body.value, body.issues ?? [], {
@@ -964,16 +1049,16 @@ function runRegistered(
     }
 
     participate(item, identity);
-    const body = item.definition.execute?.(item.params, {
+    const body = checkedBody(item.definition.execute?.(item.params, {
       runFactory: request.runFactory ?? null,
       budget: budget as AnalyzerBudget,
       plan,
       semantics: item.semantics,
       demand: item.demand,
       scenario: request.scenario ?? null,
-      requestRun: () => requestRun(item),
-    }) ?? { status: "error" as const, value: null, issues: ["missing execute"] };
-    const grant = grants.get(item.key);
+      requestRun: () => requestRun(item, identity),
+    }));
+    const grant = itemGrants.get(identity);
     const insufficient = body.status === "insufficient-data" || body.rerun === true;
     const reason = body.rerunReason ?? (grant && !grant.accepted ? "budget" : "insufficient-data");
     record(

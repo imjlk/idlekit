@@ -115,7 +115,7 @@ const sharedDemand = observationDemand({ coverage: "window", sampleCadenceSec: 2
 
 /**
  * @evidence docs/requirements/active/analyzer-registry.md#req-dx02-registry-conflicts A duplicate, a cycle, a missing dependency, bad params, and an unsupported capability do not run the body.
- * @evidenceReview docs/requirements/active/analyzer-registry.md#req-dx02-registry-conflicts #5c64299 Re-read the section, then ran this function: null and params-less validator results and NaN or infinite semantics throw, the call log stays empty, flow is unsupported, an incomplete definition, a two-run cost, and version b@c are refused at register, a null resolved demand throws, base takes the semantics of left, and after.gate and after.short do not run.
+ * @evidenceReview docs/requirements/active/analyzer-registry.md#req-dx02-registry-conflicts #c9a6b98 Re-read the section, then ran this function: base requested with other semantics throws, a null body is error and after.nothing does not run, null and params-less validator results and NaN or infinite semantics throw, the call log stays empty, flow is unsupported, an incomplete definition, a two-run cost, and version b@c are refused at register, a null resolved demand throws, base takes the semantics of left, and after.gate and after.short do not run.
  * @evidence ./analyzers.ts#analyzerRegistryConflicts Reads the conflict contract.
  * @evidenceReview ./analyzers.ts#analyzerRegistryConflicts #a1dbd92 The declaration is fail-before-run.
  * @evidence ./analyzers.ts#AnalyzerRegistryError.prototype.issues Reads the issue list stored when params fail before a body.
@@ -305,6 +305,34 @@ export function rejectsRegistryConflictsBeforeRun(): void {
     }),
   ).toThrow("bad semantics for m@1");
   expect(calls).toEqual(["m", "a"]);
+
+  // An explicitly requested dependency must share each parent's semantics too.
+  expect(() =>
+    implied.run({
+      requests: [
+        { id: "left", version: "1", params: {}, semantics: session },
+        { id: "base", version: "1", params: {} },
+      ],
+      semantics: analyzerSemantics(),
+    }),
+  ).toThrow("dependency base@1 is requested with different semantics than left@1");
+  // A malformed body result is recorded as error, so its dependent does not run.
+  const malformedBody = createAnalyzerRegistry();
+  malformedBody.register({ ...probe({ id: "nothing" }), postprocess: () => null as never });
+  malformedBody.register(probe({
+    id: "after.nothing",
+    dependencies: [{ id: "nothing", version: "1" }],
+    onPostprocess: () => calls.push("after.nothing"),
+  }));
+  const malformedById = new Map(
+    malformedBody
+      .run({ requests: [{ id: "after.nothing", version: "1", params: {} }], semantics: analyzerSemantics() })
+      .results.map((result) => [result.id, result]),
+  );
+  expect(malformedById.get("nothing")?.status).toBe("error");
+  expect(malformedById.get("nothing")?.issues).toEqual(["analyzer body returned no result object"]);
+  expect(malformedById.get("after.nothing")?.status).toBe("insufficient-data");
+  expect(calls).toEqual(["m", "a"]);
 }
 
 /**
@@ -392,13 +420,13 @@ export function runsCustomMetricAnalyzer(): void {
 
 /**
  * @evidence docs/requirements/active/analyzer-registry.md#req-dx02-insufficient-observation Summary coverage does not run analyzeGrowth. The result names a rerun.
- * @evidenceReview docs/requirements/active/analyzer-registry.md#req-dx02-insufficient-observation #1c620f3 Re-read the section, then ran this function: value is null, the proxy input is not read, and plugin.read is refused on a cadence 3 supply and runs on cadence 2.
+ * @evidenceReview docs/requirements/active/analyzer-registry.md#req-dx02-insufficient-observation #0be001c Re-read the section, then ran this function: bogus, NaN, and missing-metric supplies meet nothing, heavy is refused on samples, value is null, the proxy input is not read, and plugin.read is refused on a cadence 3 supply and runs on cadence 2.
  * @evidence ./analyzers.ts#analyzerInsufficientObservation Reads the insufficient-observation contract.
  * @evidenceReview ./analyzers.ts#analyzerInsufficientObservation #f1e3b70 The declaration is insufficient-observation-rerun-plan.
  * @evidence ./analyzers.ts#observationDemand Builds the demand that the supplied observation must meet.
  * @evidenceReview ./analyzers.ts#observationDemand #4fc7f7f The function returns a summary-coverage demand with no window, cadence, or metrics and the observation contract schema, plus overrides.
  * @evidence ./analyzers.ts#observationMeets Checks a supply against coverage, window, cadence, and metrics.
- * @evidenceReview ./analyzers.ts#observationMeets #2c058ec The function requires the same schema, at least the demanded coverage, a window and cadence no coarser than demanded, and every demanded metric.
+ * @evidenceReview ./analyzers.ts#observationMeets #457c9c9 The function rejects a malformed supply, then requires the same schema, at least the demanded coverage, a window and cadence no coarser than demanded, and every demanded metric.
  */
 export function reportsInsufficientObservation(): void {
   const demand = observationDemand({ coverage: "trace", sampleCadenceSec: 5, metricIds: ["money"] });
@@ -451,11 +479,29 @@ export function reportsInsufficientObservation(): void {
   expect(reads).toBe(0);
   expect(readWith(2)?.value).toBe("read");
   expect(reads).toBe(1);
+  // A malformed supply is not sufficient: an unknown coverage or a NaN cadence fails no comparison.
+  const traceDemand = observationDemand({ coverage: "trace", sampleCadenceSec: 2, metricIds: ["money"] });
+  const goodSupply = { schema: observationContract, windowSec: null, sampleCadenceSec: 2, coverage: "trace" as const, metricIds: ["money"] };
+  expect(observationMeets(traceDemand, goodSupply)).toBe(true);
+  expect(observationMeets(traceDemand, { ...goodSupply, coverage: "bogus" as never })).toBe(false);
+  expect(observationMeets(traceDemand, { ...goodSupply, sampleCadenceSec: Number.NaN })).toBe(false);
+  expect(observationMeets(traceDemand, { ...goodSupply, metricIds: undefined as never })).toBe(false);
+  // A postprocess sample cost is reserved against the batch budget before the body.
+  const sampledRead = createAnalyzerRegistry();
+  sampledRead.register(probe({ id: "heavy", samples: 100, onPostprocess: () => (reads += 1) }));
+  const heavy = sampledRead.run({
+    requests: [{ id: "heavy", version: "1", params: {} }],
+    semantics: analyzerSemantics(),
+    budget: { maxFreshRuns: 0, maxDurationSec: 1, maxSamples: 0 },
+  }).results[0];
+  expect(heavy?.status).toBe("insufficient-data");
+  expect(heavy?.provenance.rerun?.reason).toBe("budget");
+  expect(reads).toBe(1);
 }
 
 /**
  * @evidence docs/requirements/active/analyzer-registry.md#req-dx02-execution-budget A zero run budget and a horizon past the budget do not call execute. A granted run receives the factory.
- * @evidenceReview docs/requirements/active/analyzer-registry.md#req-dx02-execution-budget #3641e07 Re-read the section, then ran this function: a.zero and b.other run while c.late is skipped without sharing, refused calls stay 0, one grant is not a second run, s2 is refused on samples, g2 runs after unsupported g1, eta reports missing-scenario, analytic eta is ok with no run budget, a 100 second eta is refused under a 10 second budget, a NaN budget throws, and other.exec runs after dep.exec is skipped.
+ * @evidenceReview docs/requirements/active/analyzer-registry.md#req-dx02-execution-budget #307957d Re-read the section, then ran this function: b.paid gets the run after a.free was refused, strategy greedy throws on a none scenario, a.zero and b.other run while c.late is skipped without sharing, refused calls stay 0, one grant is not a second run, s2 is refused on samples, g2 runs after unsupported g1, eta reports missing-scenario, analytic eta is ok with no run budget, a 100 second eta is refused under a 10 second budget, a NaN budget throws, and other.exec runs after dep.exec is skipped.
  * @evidence ./analyzers.ts#analyzerExecutionBudget Reads the budget contract.
  * @evidenceReview ./analyzers.ts#analyzerExecutionBudget #9687833 The declaration is explicit-budget-not-silent-run.
  */
@@ -651,6 +697,35 @@ export function enforcesExecutionBudget(): void {
   expect(peerById.get("c.late")?.status).toBe("insufficient-data");
   expect(peerById.get("a.zero")?.provenance.sharedWith).toEqual([]);
   expect(peerById.get("c.late")?.provenance.sharedWith).toEqual([]);
+
+  // A refusal seen by a cost-zero member is not cached for the group: a later cost-one member that
+  // tops the group up to a run gets it.
+  const topUp = createAnalyzerRegistry();
+  topUp.register({
+    ...probe({ id: "a.free", kind: "execution", onExecute: (ctx) => ctx.requestRun("a.free").accepted }),
+    cost: { freshRuns: 0, samples: 0 },
+  });
+  topUp.register(probe({ id: "b.paid", kind: "execution", onExecute: (ctx) => ctx.requestRun("b.paid").accepted }));
+  const topUpBatch = topUp.run({
+    requests: ["a.free", "b.paid"].map((id) => ({ id, version: "1", params: {} })),
+    semantics,
+    allowExecution: true,
+    budget: { ...execBudget, maxFreshRuns: 1 },
+    runFactory: factory,
+  });
+  expect(topUpBatch.results.map((result) => result.value)).toEqual([false, true]);
+  expect(topUpBatch.freshRuns).toBe(1);
+  // The shared run executes the scenario's strategy, so another strategyKey is refused before any body.
+  expect(() =>
+    topUp.run({
+      requests: [{ id: "b.paid", version: "1", params: {} }],
+      semantics: analyzerSemantics({ horizonSec: 4, strategyKey: "greedy" }),
+      scenario: makeScenario(),
+      allowExecution: true,
+      budget: execBudget,
+      runFactory: factory,
+    }),
+  ).toThrow("strategy greedy for b.paid@1 is not the scenario strategy none");
 }
 
 /**
@@ -725,7 +800,7 @@ export function matchesExistingAlgorithmVersions(): void {
 
 /**
  * @evidence docs/requirements/active/analyzer-registry.md#req-dx02-observation-plan Shared semantics use one fresh run. A different horizon is a separate plan, and cadence is recorded.
- * @evidenceReview docs/requirements/active/analyzer-registry.md#req-dx02-observation-plan #ea66c04 Re-read the section, then ran this function: everySteps is 2, the longer horizon is not in the shared group, cadence 1 at step 2 and cadence 2 with summary coverage are refused, one and two get the same RunResult from one fresh run, delimiter and sharesRun false pairs take two runs, and a blocked peer is not in sharedWith.
+ * @evidenceReview docs/requirements/active/analyzer-registry.md#req-dx02-observation-plan #140ac0a Re-read the section, then ran this function: a 5 second window at step 10 is refused, everySteps is 2, the longer horizon is not in the shared group, cadence 1 at step 2 and cadence 2 with summary coverage are refused, one and two get the same RunResult from one fresh run, delimiter and sharesRun false pairs take two runs, and a blocked peer is not in sharedWith.
  * @evidence ./analyzers.ts#analyzerObservationPlan Reads the plan contract.
  * @evidenceReview ./analyzers.ts#analyzerObservationPlan #e5b0d7f The declaration is demand-on-plan-and-provenance.
  * @evidence ./analyzers.ts#executionPlanForDemand Builds the execution plan a demand needs.
@@ -854,6 +929,26 @@ export function recordsObservationDemandOnThePlan(): void {
     runFactory: createRunFactory(),
   });
   expect(untraced.results[0]?.provenance.rerun?.reason).toBe("insufficient-data");
+  expect(fineCalls).toBe(0);
+  // A traced window finer than the trace spacing cannot be resolved either.
+  const coarseWindow = createAnalyzerRegistry();
+  coarseWindow.register(probe({
+    id: "fine",
+    kind: "execution",
+    observation: observationDemand({ coverage: "window", windowSec: 5 }),
+    onExecute: () => {
+      fineCalls += 1;
+      return null;
+    },
+  }));
+  const windowed = coarseWindow.run({
+    requests: [{ id: "fine", version: "1", params: {} }],
+    semantics: analyzerSemantics({ horizonSec: 10, stepSec: 10 }),
+    allowExecution: true,
+    budget,
+    runFactory: createRunFactory(),
+  });
+  expect(windowed.results[0]?.provenance.rerun?.reason).toBe("insufficient-data");
   expect(fineCalls).toBe(0);
 
   // Members of one group share the run itself, not only the grant: one fresh run is opened.
