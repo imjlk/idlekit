@@ -161,7 +161,7 @@ function makeRng(seed: number): ResetCycleRng & { next: () => number } {
  * @evidence ./resetCycle.ts#resetCycleJsonSchema The schema is 3.1.
  * @evidenceReview ./resetCycle.ts#resetCycleJsonSchema #c6690d5 The function memoizes typia.json.schema of ResetCycleArtifactV1.
  * @evidence ./resetCycle.ts#executeResetCycles Runs three fixed intervals, an explicit list, a resume, and the horizon and budget guards.
- * @evidenceReview ./resetCycle.ts#executeResetCycles #ae133fc The function accepts a maxCycles cap of 0, copies the resumed state and constraints, rejects a strategyState the strategy cannot restore, discovers adapters under the live constraints, runs each interval with runScenario on a model that delegates every member to the original receiver and hides the reset action, resolved per state and removed by identity when listed, measures the horizon with relative slack on summed runner seconds, censors any budget stop, resolves the adapter at the boundary, commits one reset through applyDecisions with live constraints, refreshes maxMoneyEver, records a refusal instead of forcing it, and records copies of the state, a strategy snapshot only when restoreState exists, and the RNG snapshot.
+ * @evidenceReview ./resetCycle.ts#executeResetCycles #2b819fb The function accepts a maxCycles cap of 0, rejects a checkpoint of another contract or version, copies the resumed state and constraints, rejects a strategyState with no restoreState and an rngState with no rng, discovers adapters under the live constraints, runs each interval with runScenario on a model that delegates every member to the original receiver and hides the reset action, resolved per state and removed by identity when listed, measures the horizon on summed runner seconds with relative slack capped by a share of the interval, censors any budget stop, resolves the adapter at the boundary, commits one reset through applyDecisions with live constraints, refreshes maxMoneyEver, records a refusal instead of forcing it, and records copies of the state, a strategy snapshot only when restoreState exists, and the RNG snapshot.
  * @evidence ./resetCycle.ts#resetAdapterFor Picks the prestige action and returns nothing for a model with neither an action nor a spec.
  * @evidenceReview ./resetCycle.ts#resetAdapterFor #de4bddc The function returns an explicit adapter first, then the prestige action adapter when the given state and context list one, then the spec adapter, and undefined when the model has no spec.
  * @evidence ./resetCycle.ts#resetCycleSchemaId Reads the reset cycle schema id.
@@ -750,6 +750,68 @@ export function runsThreeCommittedResets(): void {
       resume: { ...unpaired.checkpoint, strategyState: { cursor: 1 } },
     }),
   ).toThrow("the strategy has no restoreState");
+  // A snapshot needs a restorer. A scenario without a strategy, or a resume without an rng, is rejected.
+  expect(() =>
+    executeResetCycles({
+      scenario: scenario(),
+      policy: { kind: "fixed-interval", intervalSec: 2, cycles: 1 },
+      resume: { ...unpaired.checkpoint, strategyState: { cursor: 1 } },
+    }),
+  ).toThrow("the strategy has no restoreState");
+  const seeded = executeResetCycles({
+    scenario: scenario(),
+    policy: { kind: "fixed-interval", intervalSec: 2, cycles: 1 },
+    rng: makeRng(3),
+  });
+  expect("rngState" in seeded.checkpoint).toBe(true);
+  expect(() =>
+    executeResetCycles({
+      scenario: scenario(),
+      policy: { kind: "fixed-interval", intervalSec: 2, cycles: 1 },
+      resume: seeded.checkpoint,
+    }),
+  ).toThrow("no rng was passed");
+  // A checkpoint from another contract or version is not read as this one.
+  expect(() =>
+    executeResetCycles({
+      scenario: scenario(),
+      policy: { kind: "fixed-interval", intervalSec: 2, cycles: 1 },
+      resume: { ...none.checkpoint, version: 2 } as unknown as typeof none.checkpoint,
+    }),
+  ).toThrow("version 1");
+  // The horizon slack is capped by a share of the interval, so a long study does not admit one more short cycle.
+  const longStudy = executeResetCycles({
+    scenario: scenario(),
+    policy: { kind: "fixed-interval", intervalSec: 0.5, cycles: 1 },
+    horizonSec: 1e9,
+    resume: { ...none.checkpoint, elapsedSec: 1e9 },
+  });
+  expect(longStudy.artifact.status).toBe("censored");
+  expect(longStudy.artifact.appliedResets).toBe(0);
+  const fractional = executeResetCycles({
+    scenario: scenario(),
+    policy: { kind: "fixed-interval", intervalSec: 0.1, cycles: 3 },
+    horizonSec: 0.3,
+  });
+  expect(fractional.artifact.appliedResets).toBe(3);
+  // multiplierFrom reads the same boundary context as the spec's other callbacks.
+  const constrainedSpec = executeResetCycles({
+    scenario: scenario({
+      actions: [],
+      constraints: { minPrestigeIntervalSec: 1 },
+      prestige: {
+        pointsFrom: () => 1,
+        multiplierFrom: (ctx) => (ctx.constraints?.minPrestigeIntervalSec === 1 ? 2 : 99),
+        resetState: (_ctx, current, gained) => ({
+          ...current,
+          prestige: { count: current.prestige.count + 1, points: current.prestige.points + gained, multiplier: 2 },
+        }),
+      },
+    }),
+    policy: { kind: "fixed-interval", intervalSec: 2, cycles: 1 },
+  });
+  expect(constrainedSpec.artifact.appliedResets).toBe(1);
+  expect(constrainedSpec.artifact.warnings.some((warning) => warning.includes("multiplierFrom was not applied"))).toBe(false);
 }
 
 /**
