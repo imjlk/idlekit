@@ -190,9 +190,15 @@ function assertNonNegativeInt(label: string, value: number): void {
   }
 }
 
+/** The runner treats a duration at or below this as already complete, so such an interval would play no time. */
+const RUNNER_MIN_DURATION_SEC = 1e-12;
+
 function assertPositiveTime(label: string, value: number): void {
   if (typeof value !== "number" || !Number.isFinite(value) || !(value > 0)) {
     throw new ResetCycleRejected(`reset cycle ${label} must be a finite number > 0`);
+  }
+  if (value <= RUNNER_MIN_DURATION_SEC) {
+    throw new ResetCycleRejected(`reset cycle ${label} must be greater than the runner's ${RUNNER_MIN_DURATION_SEC} second resolution`);
   }
 }
 

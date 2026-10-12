@@ -192,7 +192,7 @@ function simulate(spec: CaseSpec): RunResult<number, UnitCode, Vars> {
  * @evidence ./growthFit.ts#growthFitJsonSchema Reads the generated schema.
  * @evidenceReview ./growthFit.ts#growthFitJsonSchema #ff8650e The function memoizes typia.json.schema of GrowthFitArtifactV1.
  * @evidence ./growthFit.ts#fitGrowth Fits slow, fast, and softcap-configured literal series.
- * @evidenceReview ./growthFit.ts#fitGrowth #1c798b9 The function fits log values relative to the first one, reads log extrema in a loop, keeps a moving exact value fit out of constant, keeps one break per time by precedence, supplied ones included, finds sign and drop breaks, an exact tenfold drop included, on every prepared point, keeps both sides of each break through the sampling budget, reads irregular cadence from the input in one loop, handles a one-point budget, keeps a non-positive domain invalid under coarse cadence, fits on time since the window start, scaled by its largest magnitude so the regression moments stay finite, fits value space in units of the series magnitude, reads saturation from gap-normalized rates, lets an exact value fit win only when it beats the log fit's relative error, and withholds shape claims when the action history is incomplete. Saturation midpoints add half a gap to the earlier time, so they stay finite near the number limit.
+ * @evidenceReview ./growthFit.ts#fitGrowth #1c798b9 The function fits log values relative to the first one, reads log extrema in a loop, keeps a moving exact value fit out of constant, keeps one break per time by precedence, supplied ones included, finds sign and drop breaks, an exact tenfold drop included, on every prepared point, keeps both sides of each break through the sampling budget, reads irregular cadence from the input in one loop, handles a one-point budget, keeps a non-positive domain invalid under coarse cadence, fits on time since the window start, scaled by its largest magnitude so the regression moments stay finite, fits value space in units of the series magnitude, reads saturation from gap-normalized rates, lets an exact value fit win only when it beats the log fit's relative error, and withholds shape claims when the action history is incomplete. Saturation midpoints add half a gap to the earlier time, so they stay finite near the number limit. An exact log-linear fit with a real slope is not constant either.
  * @evidence ./growthFit.ts#fitGrowthFromRun Fits executed runs of the slow and fast models.
  * @evidenceReview ./growthFit.ts#fitGrowthFromRun #44923e5 The function keeps a present but empty trace empty, maps each action row by binary search to the first trace state after it, takes its break kind from the model's Action.kind before falling back to the id, reads the softcap hint at the run's start, marks prestige count changes as breaks, reports the action history complete only for a full action log or an observed zero action count, uses netWorthFallback without a model netWorth, and calls fitGrowth.
  * @evidence ./growthFit.ts#growthFitSchemaId Reads the growth fit schema id.
@@ -634,6 +634,15 @@ export function refusesDisguisedDomains(): void {
     sampling: sampling(7 * 2.5e307),
   });
   expect(onlyWindow(farSaturating).shape).toBe("saturating");
+  // A slow but exact exponential is exponential, not constant, even when its log span is tiny.
+  const slowExact = fitGrowth({
+    E: createNumberEngine(),
+    samples: Array.from({ length: 81 }, (_, t) => ({ t, amount: Math.exp(1e-8 * t) })),
+    seriesRequested: "money",
+    valueSource: "money",
+    sampling: sampling(80),
+  });
+  expect(onlyWindow(slowExact).shape).toBe("exponential");
 }
 
 /**
