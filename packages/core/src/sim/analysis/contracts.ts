@@ -246,6 +246,16 @@ export function classifyFinite(value: number): Pick<MetricReadingV1, "status" | 
 
 export type AnalysisIssue = Readonly<{ path: string; message: string }>;
 
+const DECIMAL_SPELLING = /^([+-])?(\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?$/i;
+
+/** The sign a finite decimal spelling denotes, without an engine. An unparsed spelling is null. */
+function decimalSign(decimal: string): "negative" | "zero" | "positive" | null {
+  const match = DECIMAL_SPELLING.exec(decimal.trim());
+  if (!match) return null;
+  if (!/[1-9]/.test(match[2] ?? "")) return "zero";
+  return match[1] === "-" ? "negative" : "positive";
+}
+
 /** Nonfinite spellings an engine can print. A nonfinite amount is invalid and omits `amount`. */
 const NONFINITE_DECIMAL = /^[+-]?(nan|inf|infinity)$/i;
 
@@ -286,6 +296,12 @@ export function validateAnalysisSemantics(artifact: AnalysisArtifactV1): readonl
     }
     if (reading.amount !== undefined && NONFINITE_DECIMAL.test(reading.amount.decimal.trim())) {
       issues.push({ path, message: "amount decimal is a nonfinite spelling" });
+    }
+    if (reading.amount !== undefined && reading.sign !== undefined) {
+      const expected = decimalSign(reading.amount.decimal);
+      if (expected !== null && reading.sign !== expected) {
+        issues.push({ path, message: "sign does not match the amount decimal" });
+      }
     }
     if (!Number.isFinite(reading.metricVersion)) {
       issues.push({ path, message: "metricVersion is nonfinite" });
@@ -348,7 +364,8 @@ export function renderAnalysisMarkdown(artifact: AnalysisArtifactV1): string {
   if (artifact.goals.length === 0) lines.push("None.");
   for (const goal of artifact.goals) {
     const reached = goal.reached === undefined ? "absent" : String(goal.reached);
-    const at = goal.atSec === undefined ? "" : ` at ${goal.atSec}s`;
+    // A reach time belongs to a goal that was reached. Other statuses do not print one.
+    const at = goal.atSec === undefined || goal.status !== "ok" || goal.reached !== true ? "" : ` at ${goal.atSec}s`;
     lines.push(`- ${goal.goalId}@${goal.goalVersion} ${goal.status} reached ${reached}${at}`);
   }
   return `${lines.join("\n")}\n`;
