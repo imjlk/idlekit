@@ -672,7 +672,8 @@ function classifyPositive(
   } else if (valueExact) {
     shape = "polynomial";
     residual = { space: "value", rmse: valueRmse };
-  } else if (expOk && !accelOk) {
+  } else if (expOk && !accelOk && !(powerOk && power !== null && power.rmse * 100 < linear.rmse)) {
+    // A power fit far closer than the log-linear one is a power law that only looks exponential over this window.
     shape = "exponential";
     residual = { space: "log10", rmse: linear.rmse };
   } else if (accelOk && quadratic) {

@@ -2152,8 +2152,8 @@ export function keepsGrowthShapesAcrossScaleAndSampling(): void {
       expectApplicable(checkGrowthShapes(true, base, fit(amounts, value.budget)));
       return true;
     },
-    describeCase: (value) => ({
-      gameSeed: gameSeedForCase(testSeed, 0),
+    describeCase: (value, index) => ({
+      gameSeed: gameSeedForCase(testSeed, index),
       engineId: "number",
       modelId: `growth-${value.kind}`,
       strategyId: "none",
