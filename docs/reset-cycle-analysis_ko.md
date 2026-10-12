@@ -25,7 +25,7 @@ session 패턴은 active block 안에서만 수동 reset을 커밋한다. `reset
 
 ## 기준 예
 
-RNG는 없다. 엔진은 number engine이다. 시작 points는 100, 시작 money는 50이다. 수입은 초당 1코인이다. reset은 point를 1 주고 multiplier는 1로 두며 money를 지우지 않는다. scan은 10..10 step 10이다. horizon은 45초다. cycle budget은 8이다. stability는 cycle 4개, window 2와 4, 절대 tolerance `0`, 상대 tolerance 0을 요구한다. recovery는 reset 직전 income을 읽는다. 알려진 보상률은 [reset-policy-rate.json](../fixtures/conformance/reset-policy-rate.json)이다.
+RNG는 없다. 엔진은 number engine이다. 시작 points는 100, 시작 money는 50이다. 수입은 초당 1코인이다. reset은 point를 1 주고 multiplier는 1로 두며 money를 지우지 않는다. scan은 10..10 step 10이다. horizon은 45초다. cycle budget은 8이다. stability는 cycle 4개, window 2와 4, 절대 tolerance `0`, 상대 tolerance 0을 요구한다. recovery는 reset 직전 income을 읽는다. 알려진 보상률은 [reset-policy-rate.json](../fixtures/conformance/reset-policy-rate.json)이다. `bun run test:conformance`는 `packages/core/src/testkit/conformance.ts`의 `checkResetPolicyRate`로 그 fixture와 seed corpus의 고정 보상 사례를 재생한다. `test:conformance:extended`는 200개 사례를 돈다.
 
 기대 결과:
 

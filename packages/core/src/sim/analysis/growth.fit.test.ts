@@ -192,9 +192,9 @@ function simulate(spec: CaseSpec): RunResult<number, UnitCode, Vars> {
  * @evidence ./growthFit.ts#growthFitJsonSchema Reads the generated schema.
  * @evidenceReview ./growthFit.ts#growthFitJsonSchema #ff8650e The function memoizes typia.json.schema of GrowthFitArtifactV1.
  * @evidence ./growthFit.ts#fitGrowth Fits slow, fast, and softcap-configured literal series.
- * @evidenceReview ./growthFit.ts#fitGrowth #1c798b9 The function fits log values relative to the first one, reads log extrema in a loop, keeps a moving exact value fit out of constant, keeps one break per time by precedence, supplied ones included, finds sign and drop breaks, an exact tenfold drop included, on every prepared point, keeps both sides of each break through the sampling budget, reads irregular cadence from the input in one loop, handles a one-point budget, keeps a non-positive domain invalid under coarse cadence, fits on time since the window start, scaled by its largest magnitude so the regression moments stay finite, fits value space in units of the series magnitude, reads saturation from gap-normalized rates, lets an exact value fit win only when it beats the log fit's relative error, and withholds shape claims when the action history is incomplete. Saturation midpoints add half a gap to the earlier time, so they stay finite near the number limit.
+ * @evidenceReview ./growthFit.ts#fitGrowth #16ad62c The function fits log values relative to the first one, reads log extrema in a loop, keeps a moving exact value fit out of constant, keeps one break per time by precedence, supplied ones included, finds sign and drop breaks, an exact tenfold drop included, on every prepared point, keeps both sides of each break through the sampling budget, reads irregular cadence from the input in one loop, handles a one-point budget, keeps a non-positive domain invalid under coarse cadence, fits on time since the window start, scaled by its largest magnitude so the regression moments stay finite, fits value space in units of the series magnitude, reads saturation from gap-normalized rates, lets an exact value fit win only when it beats the log fit's relative error, and withholds shape claims when the action history is incomplete. Saturation midpoints add half a gap to the earlier time, so they stay finite near the number limit. An exact log-linear fit with a real slope is not constant either. It keeps samples per fit window under the budget, judges acceleration by the quadratic term against its residual, judges saturation without the retained gap, and reports a doubling time for any positive slope. Saturation allows a flat plateau tail and reports its own log-rate residual. It splits the budget at breaks before windows, judges acceleration without a minimum line residual, and runs value-space fits on log-derived ratios when amounts leave the Number range. Under a tight budget it spends samples on fittable windows, rejects renewed growth after a plateau, and takes log rates as log(step) - log(gap). An exact log-quadratic or power fit keeps precedence over an approximate value fit, thinning keeps samples before a window settles, power laws are also fitted from their break segment's start, and incomplete history withholds residual, speed, and diagnostics. A power fit far closer than the log-linear fit takes precedence over the exponential shortcut. Power laws are also fitted on absolute time, and detected saturation precedes the near-flat, exponential, acceleration, and power readings and a value fit exact only against the series scale. Incomplete history withholds the diagnostics of unclassified windows too.
  * @evidence ./growthFit.ts#fitGrowthFromRun Fits executed runs of the slow and fast models.
- * @evidenceReview ./growthFit.ts#fitGrowthFromRun #44923e5 The function keeps a present but empty trace empty, maps each action row by binary search to the first trace state after it, takes its break kind from the model's Action.kind before falling back to the id, reads the softcap hint at the run's start, marks prestige count changes as breaks, reports the action history complete only for a full action log or an observed zero action count, uses netWorthFallback without a model netWorth, and calls fitGrowth.
+ * @evidenceReview ./growthFit.ts#fitGrowthFromRun #44923e5 The function keeps a present but empty trace empty, maps each action row by binary search to the first trace state after it, takes its break kind from the model's Action.kind before falling back to the id, reads the softcap hint at the run's start, marks prestige count changes as breaks, reports the action history complete only for a full action log or an observed zero action count, uses netWorthFallback without a model netWorth, and calls fitGrowth. An action the model did not list at the traced state is a purchase unless a prestige count change confirms a reset. When actions of different kinds share a logged id, the row is a purchase unless a prestige count change confirms a reset. A custom action is a purchase whatever its id says, unless a prestige count change confirms a reset.
  * @evidence ./growthFit.ts#growthFitSchemaId Reads the growth fit schema id.
  * @evidenceReview ./growthFit.ts#growthFitSchemaId #5247d65 The function returns the growth.fit.v1 schema URL constant.
  * @evidence ./growthFit.ts#growthFitAlgorithmVersion Reads the algorithm version on the artifact.
@@ -611,6 +611,30 @@ export function refusesDisguisedDomains(): void {
     sampling: sampling(),
   });
   expect(namedFit.windows[1]?.discontinuity).toBe("purchase");
+  // An action the model did not list at the traced state is a purchase, whatever its id says.
+  const unlistedFit = fitGrowthFromRun({
+    run: withActionRows([{ t: 40, actionId: "prestige-generator" }], true),
+    series: "money",
+    scenario: scenarioFor(1, 80, model(0)),
+    sampling: sampling(),
+  });
+  expect(unlistedFit.windows[1]?.discontinuity).toBe("purchase");
+  // When a prestige and a buy share the logged id, the applied kind is unknown, so the row is a purchase.
+  const ambiguousFit = fitGrowthFromRun({
+    run: withActionRows([{ t: 40, actionId: "prestige-generator" }], true),
+    series: "money",
+    scenario: scenarioFor(1, 80, { ...model(0), actions: () => [{ ...generator, kind: "prestige" as const }, generator] }),
+    sampling: sampling(),
+  });
+  expect(ambiguousFit.windows[1]?.discontinuity).toBe("purchase");
+  // A custom action is a purchase whatever its id says, unless a prestige count change confirms a reset.
+  const customFit = fitGrowthFromRun({
+    run: withActionRows([{ t: 40, actionId: "reset-upgrade" }], true),
+    series: "money",
+    scenario: scenarioFor(1, 80, { ...model(0), actions: () => [{ ...generator, id: "reset-upgrade", kind: "custom" as const }] }),
+    sampling: sampling(),
+  });
+  expect(customFit.windows[1]?.discontinuity).toBe("purchase");
 
   // The softcap hint is read at the analyzed run's start.
   const softcapped = fitGrowthFromRun({
@@ -634,6 +658,211 @@ export function refusesDisguisedDomains(): void {
     sampling: sampling(7 * 2.5e307),
   });
   expect(onlyWindow(farSaturating).shape).toBe("saturating");
+  // A slow but exact exponential is exponential, not constant, even when its log span is tiny.
+  const slowExact = fitGrowth({
+    E: createNumberEngine(),
+    samples: Array.from({ length: 81 }, (_, t) => ({ t, amount: Math.exp(1e-8 * t) })),
+    seriesRequested: "money",
+    valueSource: "money",
+    sampling: sampling(80),
+  });
+  expect(onlyWindow(slowExact).shape).toBe("exponential");
+  // An exact log-quadratic is accelerating however gentle the acceleration.
+  const gentleAccel = fitGrowth({
+    E: createNumberEngine(),
+    samples: Array.from({ length: 81 }, (_, t) => ({ t, amount: Math.exp(3e-6 * t * t) })),
+    seriesRequested: "money",
+    valueSource: "money",
+    sampling: sampling(80),
+  });
+  expect(onlyWindow(gentleAccel).shape).toBe("accelerating-log");
+  const gentlerAccel = fitGrowth({
+    E: createNumberEngine(),
+    samples: Array.from({ length: 81 }, (_, t) => ({ t, amount: Math.exp(1e-7 * t * t) })),
+    seriesRequested: "money",
+    valueSource: "money",
+    sampling: sampling(80),
+  });
+  expect(onlyWindow(gentlerAccel).shape).toBe("accelerating-log");
+  // Each side of a break gets its own share of the budget.
+  const splitBudget = fitGrowth({
+    E: createNumberEngine(),
+    samples: Array.from({ length: 81 }, (_, t) => ({ t, amount: Math.exp(0.05 * t) })),
+    seriesRequested: "money",
+    valueSource: "money",
+    sampling: { ...sampling(80), samplingBudget: 16 },
+    discontinuities: [{ t: 31, kind: "purchase" }],
+  });
+  expect(splitBudget.windows.map((window) => window.status)).toEqual(["ok", "ok"]);
+  // A big-number affine series is a polynomial, as the same series in small units is.
+  const bigEngine = createBreakInfinityEngine();
+  const bigLine = fitGrowth({
+    E: bigEngine,
+    samples: Array.from({ length: 81 }, (_, t) => ({ t, amount: bigEngine.mul(bigEngine.from("1e400"), 10 + 3 * t) })),
+    seriesRequested: "money",
+    valueSource: "money",
+    sampling: sampling(80),
+  });
+  expect(onlyWindow(bigLine).shape).toBe("polynomial");
+  // The budget goes to windows that can be fitted, not to an isolated sample before them.
+  const isolated = fitGrowth({
+    E: createNumberEngine(),
+    samples: [{ t: 0, amount: 1 }, ...Array.from({ length: 81 }, (_, index) => ({ t: 100 + index, amount: Math.exp(0.05 * index) }))],
+    seriesRequested: "money",
+    valueSource: "money",
+    sampling: { ...sampling(80), samplingBudget: 8 },
+  });
+  expect(isolated.windows.some((window) => window.shape === "exponential")).toBe(true);
+  // Renewed growth after a flat step is not a saturating tail.
+  const renewed = fitGrowth({
+    E: createNumberEngine(),
+    samples: [1, 50, 75, 87.5, 93.75, 96.875, 96.875, 200, 300, 500, 900].map((amount, index) => ({ t: index * 5, amount })),
+    seriesRequested: "money",
+    valueSource: "money",
+    sampling: sampling(80),
+  });
+  expect(onlyWindow(renewed).shape).not.toBe("saturating");
+  // Rates whose quotient would underflow stay finite through log(step) - log(gap).
+  // The default number engine treats amounts within 1e-12 of zero as zero, so this probe turns that tolerance off.
+  const tinyRates = fitGrowth({
+    E: createNumberEngine({ epsilon: 0 }),
+    samples: Array.from({ length: 10 }, (_, index) => ({ t: index * 1e100, amount: 1e-240 * (2 - 0.5 ** index) })),
+    seriesRequested: "money",
+    valueSource: "money",
+    sampling: sampling(1e102),
+  });
+  expect(onlyWindow(tinyRates).shape).toBe("saturating");
+  // An exact log-quadratic curve is accelerating-log even when a value-space parabola is nearly as close.
+  const faintAccel = fitGrowth({
+    E: createNumberEngine(),
+    samples: Array.from({ length: 81 }, (_, t) => ({ t, amount: Math.exp(1e-8 * t * t) })),
+    seriesRequested: "money",
+    valueSource: "money",
+    sampling: sampling(80),
+  });
+  expect(onlyWindow(faintAccel).shape).toBe("accelerating-log");
+  // A long plateau does not take the samples a thinned saturation fit needs.
+  const longPlateau = fitGrowth({
+    E: createNumberEngine(),
+    samples: Array.from({ length: 1000 }, (_, index) => ({ t: index + 1, amount: 100 * (1 - Math.exp(-0.2 * (index + 1))) })),
+    seriesRequested: "money",
+    valueSource: "money",
+    sampling: { ...sampling(1000), samplingBudget: 16 },
+  });
+  expect(onlyWindow(longPlateau).shape).toBe("saturating");
+  // A power law keeps its shape in windows that do not start at its origin.
+  const cubic = fitGrowth({
+    E: createNumberEngine(),
+    samples: Array.from({ length: 241 }, (_, t) => ({ t, amount: (t + 1) ** 3 })),
+    seriesRequested: "money",
+    valueSource: "money",
+    sampling: { ...sampling(80), samplingBudget: 241 },
+  });
+  expect(cubic.windows.map((window) => window.shape)).toEqual(["polynomial", "polynomial", "polynomial"]);
+  // Far from its origin a power law is nearly log-linear, but the exact power fit still wins.
+  const farCubic = fitGrowth({
+    E: createNumberEngine(),
+    samples: Array.from({ length: 3078 }, (_, t) => ({ t, amount: (t + 1) ** 3 })),
+    seriesRequested: "money",
+    valueSource: "money",
+    sampling: { ...sampling(80), samplingBudget: 3078 },
+  });
+  expect(farCubic.windows[farCubic.windows.length - 1]?.shape).toBe("polynomial");
+  // A trace that starts after the power law's origin is fitted on absolute time too.
+  const lateCubic = fitGrowth({
+    E: createNumberEngine(),
+    samples: Array.from({ length: 81 }, (_, index) => ({ t: 10000 + index, amount: (10001 + index) ** 3 })),
+    seriesRequested: "money",
+    valueSource: "money",
+    sampling: sampling(80),
+  });
+  expect(onlyWindow(lateCubic).shape).toBe("polynomial");
+  // Saturation above a large baseline is still saturation, not constant, exponential, or polynomial.
+  for (const baseline of [0, 1e5, 1e12]) {
+    const based = fitGrowth({
+      E: createNumberEngine(),
+      samples: Array.from({ length: 81 }, (_, t) => ({ t, amount: baseline + 100 * (1 - Math.exp(-0.08 * (t + 1))) })),
+      seriesRequested: "money",
+      valueSource: "money",
+      sampling: sampling(80),
+    });
+    expect(onlyWindow(based).shape).toBe("saturating");
+  }
+  // Incomplete history withholds the fitted shape's residual, speed, and diagnostics too.
+  const withheld = fitGrowth({
+    E: createNumberEngine(),
+    samples: Array.from({ length: 81 }, (_, t) => ({ t, amount: Math.exp(0.05 * t) })),
+    seriesRequested: "money",
+    valueSource: "money",
+    sampling: sampling(80),
+    actionHistory: "incomplete",
+  });
+  expect(onlyWindow(withheld).residual).toEqual({ space: "none", rmse: null });
+  expect(onlyWindow(withheld).speed).toEqual({ logSlopePerSec: null, doublingTimeSec: null });
+  expect(onlyWindow(withheld).quality).not.toContain("exponential");
+  // An unclassified window withholds its diagnostics too.
+  const withheldUnknown = fitGrowth({
+    E: createNumberEngine(),
+    samples: Array.from({ length: 81 }, (_, t) => ({ t, amount: 10 + Math.sin(t) })),
+    seriesRequested: "money",
+    valueSource: "money",
+    sampling: sampling(80),
+    actionHistory: "incomplete",
+  });
+  expect(onlyWindow(withheldUnknown).residual).toEqual({ space: "none", rmse: null });
+  expect(onlyWindow(withheldUnknown).speed).toEqual({ logSlopePerSec: null, doublingTimeSec: null });
+  expect(onlyWindow(withheldUnknown).quality).not.toContain("shape=");
+  // Saturation does not depend on the retained cadence.
+  const saturationSamples = Array.from({ length: 80 }, (_, index) => ({ t: index + 1, amount: 100 * (1 - Math.exp(-0.3 * (index + 1))) }));
+  const fullSaturation = fitGrowth({
+    E: createNumberEngine(),
+    samples: saturationSamples,
+    seriesRequested: "money",
+    valueSource: "money",
+    sampling: { ...sampling(80), samplingBudget: 80 },
+  });
+  const thinSaturation = fitGrowth({
+    E: createNumberEngine(),
+    samples: saturationSamples,
+    seriesRequested: "money",
+    valueSource: "money",
+    sampling: { ...sampling(80), samplingBudget: 8 },
+  });
+  expect(onlyWindow(fullSaturation).shape).toBe("saturating");
+  expect(onlyWindow(thinSaturation).shape).toBe("saturating");
+  // The saturating residual is the saturation fit's own, in log-rate space.
+  expect(onlyWindow(fullSaturation).residual.space).toBe("log-rate");
+  expect(onlyWindow(fullSaturation).residual.rmse).toBeLessThan(1e-6);
+  // A plateau that rounds to equal values does not hide saturation.
+  const plateau = fitGrowth({
+    E: createNumberEngine(),
+    samples: Array.from({ length: 500 }, (_, index) => ({ t: index + 1, amount: 100 * (1 - Math.exp(-0.08 * (index + 1))) })),
+    seriesRequested: "money",
+    valueSource: "money",
+    sampling: { ...sampling(500), samplingBudget: 500 },
+  });
+  expect(onlyWindow(plateau).shape).toBe("saturating");
+  // A very slow exponential still has a finite doubling time.
+  const verySlow = fitGrowth({
+    E: createNumberEngine(),
+    samples: Array.from({ length: 81 }, (_, t) => ({ t, amount: 10 ** (1e-13 * t) })),
+    seriesRequested: "money",
+    valueSource: "money",
+    sampling: sampling(80),
+  });
+  const verySlowDoubling = onlyWindow(verySlow).speed.doublingTimeSec;
+  expect(verySlowDoubling).not.toBeNull();
+  expect(Math.abs((verySlowDoubling ?? 0) / (Math.log10(2) / 1e-13) - 1)).toBeLessThan(1e-3);
+  // A long trace under a small budget keeps analyzable windows instead of one point per window.
+  const longExp = fitGrowth({
+    E: createNumberEngine(),
+    samples: Array.from({ length: 100_001 }, (_, t) => ({ t, amount: Math.exp(1e-4 * t) })),
+    seriesRequested: "money",
+    valueSource: "money",
+    sampling: { ...sampling(80), samplingBudget: 256 },
+  });
+  expect(longExp.windows.some((window) => window.shape === "exponential")).toBe(true);
+  expect(longExp.warnings.some((warning) => warning.includes("The rest are not fitted"))).toBe(true);
 }
 
 /**

@@ -2,6 +2,24 @@ import { describe, expect, it } from "bun:test";
 import { Decimal, breakInfinityEngine, createBreakInfinityEngine, createNumberEngine } from "./breakInfinity";
 
 describe("breakInfinity engine adapters", () => {
+  it("declares number comparison exactness consistently with epsilon", () => {
+    const strict = createNumberEngine({ epsilon: 0 });
+    const tolerant = createNumberEngine();
+    expect(strict.comparisonIsExact).toBe(true);
+    expect(tolerant.comparisonIsExact).toBe(false);
+    expect(strict.cmp(1, 1 + 1e-13)).toBe(-1);
+    expect(tolerant.cmp(1, 1 + 1e-13)).toBe(0);
+  });
+
+  it("declares decimal comparison exactness consistently with epsilon", () => {
+    const strict = createBreakInfinityEngine({ epsilon: 0 });
+    const tolerant = createBreakInfinityEngine({ epsilon: "1e-6" });
+    expect(strict.comparisonIsExact).toBe(true);
+    expect(tolerant.comparisonIsExact).toBe(false);
+    expect(strict.cmp(strict.from(1), strict.from("1.0000004"))).toBe(-1);
+    expect(tolerant.cmp(tolerant.from(1), tolerant.from("1.0000004"))).toBe(0);
+  });
+
   it("supports huge values without Number overflow", () => {
     const E = createBreakInfinityEngine();
     const huge = E.from("1e100000");

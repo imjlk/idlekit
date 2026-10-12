@@ -26,7 +26,7 @@
 
 ## 기준 예
 
-시드는 고정이다. drop fixture는 [independent-drop.json](../fixtures/conformance/independent-drop.json)이다. seed `28947`, draw 10000, 확률 `0.01`, 절대 tolerance `0.005`. 논리 draw마다 uniform을 하나 쓴다. 검사는 tolerance이고 `0.01`과 정확히 같아야 한다는 조건이 아니다.
+시드는 고정이다. drop fixture는 [independent-drop.json](../fixtures/conformance/independent-drop.json)이다. seed `28947`, draw 10000, 확률 `0.01`, 절대 tolerance `0.005`. 논리 draw마다 uniform을 하나 쓴다. 검사는 tolerance이고 `0.01`과 정확히 같아야 한다는 조건이 아니다. `bun run test:conformance`는 `packages/core/src/testkit/conformance.ts`의 `checkSeededDrop`으로 그 fixture와 seed corpus의 seeded Bernoulli 사례를 재생하며, 사례는 표준오차 5배 안에 있어야 한다. `test:conformance:extended`는 200개 사례를 돈다.
 
 분위수 예는 정렬된 표본 `[1, 2, 3, 4, 5]`다.
 

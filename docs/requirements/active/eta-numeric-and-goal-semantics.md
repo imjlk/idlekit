@@ -12,7 +12,7 @@ Requirement `REQ-PR09-ENGINE-RATIO`. `PR-09` owns it.
 
 Requirement `REQ-PR09-EXACT-LOCAL`. `PR-09` owns it.
 
-`etaExactOrLocal` is `exact-or-analytic-local`. `method: "exact"` requires money, `incomeKind: "constant"`, and no action, evolve, prestige, strategy, or policy constraint. `incomeKind: "constant"` with an action is `analytic-local`, not high confidence. A model `netWorth` function is `unsupported` and `unsupported-local`. Money income is not used as that derivative. A missing `netWorth` is also `unsupported-local`. Its legacy `seconds` may still reuse wallet money. A requested `fallback` records `localMethod`, `fixedStepMethod`, both seconds, and `diffSec`.
+`etaExactOrLocal` is `exact-or-analytic-local`. `method: "exact"` requires money, `incomeKind: "constant"`, an Engine declaring `comparisonIsExact: true`, and no action, evolve, prestige, strategy, or policy constraint. A tolerant or undeclared comparison keeps the legacy ratio but is `analytic-local`, because the goal may be met before the literal threshold. The strict-comparison fixture uses epsilon 0. `incomeKind: "constant"` with an action is `analytic-local`, not high confidence. A model `netWorth` function is `unsupported` and `unsupported-local`. Money income is not used as that derivative. A missing `netWorth` is also `unsupported-local`. Its legacy `seconds` may still reuse wallet money. A requested `fallback` records `localMethod`, `fixedStepMethod`, both seconds, and `diffSec`.
 
 Constant non-positive income is `unsupported`. A negative rate that is not a confirmed constant is `insufficient-data`. Prestige keeps the estimate `analytic-local` and omits a bracket.
 

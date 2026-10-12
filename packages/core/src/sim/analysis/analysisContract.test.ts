@@ -174,10 +174,9 @@ export function registersCustomMetric(): void {
   expect(registry.knowledge("gem-shop", 1, "flow")).toBe("unsupported");
   expect(registry.knowledge("gem-shop", 1, "reset")).toBe("unsupported");
   expect(registry.knowledge("missing", 1, "flow")).toBe("unknown");
-  // A registered adapter without a capabilities map declares none, which is unsupported, not unknown.
-  registry.register({ modelId: "bare", modelVersion: 1 });
-  expect(registry.knowledge("bare", 1, "flow")).toBe("unsupported");
-  expect(registry.knowledge("bare", 1, "metrics")).toBe("unsupported");
+  registry.register({ modelId: "plain", modelVersion: 1 });
+  expect(registry.knowledge("plain", 1, "flow")).toBe("unsupported");
+  expect(registry.knowledge("plain", 1, "reset")).toBe("unsupported");
   const flow = flowResult("unsupported");
   const reset = resetResult("unsupported");
   expect(flow.status).toBe("unsupported");
@@ -224,7 +223,7 @@ export function registersCustomMetric(): void {
  * @evidence ./contracts.ts#analysisArtifactJson Renders the artifact as canonical JSON text.
  * @evidenceReview ./contracts.ts#analysisArtifactJson #52695d2 The function appends a newline to analysisCanonicalJson of the artifact.
  * @evidence ./contracts.ts#validateAnalysisSemantics Accepts the fixture and rejects an unavailable reading that carries a value.
- * @evidenceReview ./contracts.ts#validateAnalysisSemantics #5126871 The function rejects a value on an unavailable reading, a non-ok reading not labeled unavailable, missing ok values, a second representation for the domain, a value or amount decimal whose sign disagrees, a nonfinite decimal spelling, nonfinite values and versions, reached or method on a non-ok goal, a nonfinite atSec or horizon, and a sampleCount that is not a nonnegative integer.
+ * @evidenceReview ./contracts.ts#validateAnalysisSemantics #162154c Re-read the merged function: it rejects a value on an unavailable reading, a non-ok reading not labeled unavailable, missing ok values, nonfinite numeric values, nonfinite amount spellings (NaN, Inf, Infinity) without narrowing large finite decimals, a finite value whose sign contradicts it, a second representation for the domain, an amount decimal whose sign disagrees, nonfinite versions, atSec and horizon, reached or method on a non-ok goal, and a sampleCount that is not a nonnegative integer.
  * @evidence ./contracts.ts#analysisSchemaHash Hashes the generated schema for provenance.
  * @evidenceReview ./contracts.ts#analysisSchemaHash #0ec17bb The function hashes the canonical JSON of the memoized artifact schema.
  * @evidence ./contracts.ts#artifactProvenance Changes provenance with assumptions, algorithm, and schema, and not with the run hash.
@@ -320,6 +319,15 @@ export function roundTripsAnalysisArtifact(): void {
   expect(analysisCanonicalJson(parsed.data)).toBe(json.trim());
   expect(validateAnalysisArtifact(parsed.data).success).toBe(true);
   expect(validateAnalysisSemantics(parsed.data)).toEqual([]);
+  expect(analysisCanonicalJson(new Array(2))).toBe("[null,null]");
+  expect(validateAnalysisSemantics({
+    ...artifact,
+    metrics: [{ ...hugeReading, amount: { unit: "COIN", decimal: "NaN" } }],
+  }).map((issue) => issue.message)).toContain("amount decimal is nonfinite");
+  expect(validateAnalysisSemantics({
+    ...artifact,
+    metrics: [{ ...hugeReading, domain: "count", amount: undefined, value: -1, sign: "positive" }],
+  }).map((issue) => issue.message)).toContain("numeric sign contradicts its value");
   const bad: AnalysisArtifactV1 = {
     ...artifact,
     metrics: [{ ...unknown, value: 0 }],
@@ -369,8 +377,8 @@ export function roundTripsAnalysisArtifact(): void {
     ],
   };
   const contradictoryMessages = validateAnalysisSemantics(contradictory).map((issue) => issue.message);
-  expect(contradictoryMessages).toContain("sign does not match the value");
-  expect(contradictoryMessages.filter((message) => message === "amount decimal is a nonfinite spelling")).toHaveLength(2);
+  expect(contradictoryMessages).toContain("numeric sign contradicts its value");
+  expect(contradictoryMessages.filter((message) => message === "amount decimal is nonfinite")).toHaveLength(2);
   // An amount decimal carries its own sign, so a contradictory sign fails without an engine.
   const amountSigns: AnalysisArtifactV1 = {
     ...artifact,
