@@ -64,9 +64,9 @@ function request(overrides: Partial<ScenarioInspectRequest> = {}): ScenarioInspe
  * @evidence ./inspect.ts#inspectPartialTick Reads the partial-tick contract.
  * @evidenceReview ./inspect.ts#inspectPartialTick #fbcbcf5 The declaration is partial-tick-included.
  * @evidence ./inspect.ts#fixedDurationStepCount Counts whole and partial ticks with nextBoundary.
- * @evidenceReview ./inspect.ts#fixedDurationStepCount #58c6750 The function steps nextBoundary without until until it stops, and reports the step count, the last dt, and whether that tick was partial.
+ * @evidenceReview ./inspect.ts#fixedDurationStepCount #94e929a The function steps nextBoundary without until until it stops, and reports the step count, the last dt, and whether that tick was partial. Past one million ticks it returns a null count.
  * @evidence ./inspect.ts#buildScenarioInspect Builds the report from a fixed-duration request.
- * @evidenceReview ./inspect.ts#buildScenarioInspect #387f33b The function derives horizon kind, observation supply, stage plans, engine and plugin notes, the planner bound, and diagnostics without running the scenario.
+ * @evidenceReview ./inspect.ts#buildScenarioInspect #fde0f80 The function derives horizon kind, observation supply, stage plans, engine and plugin notes, the planner bound, and diagnostics without running the scenario. It treats an omitted event log as enabled, traces every step without a cadence, leaves session stages and capped counts unknown, reports each stage's fast mode, and names an unresolved model in plugin-skipped.
  */
 export function countsFixedDurationSteps(): void {
   expect(inspectPartialTick).toBe("partial-tick-included");
@@ -94,6 +94,36 @@ export function countsFixedDurationSteps(): void {
   expect(report.stages[0]?.stepCount).toBe(4);
   expect(report.stages[0]?.partialTick).toBe(true);
   expect(report.simulated).toBe(false);
+  // Past the counting cap the count is unknown, not the cap with a partial tick.
+  expect(fixedDurationStepCount(1_000_001, 1)).toEqual({ steps: null, lastDt: null, partial: false });
+  expect(buildScenarioInspect(request({ clock: { stepSec: 1, durationSec: 1_000_001 } })).stages[0]?.stepCount).toBe(
+    "unknown",
+  );
+  // An omitted eventLog is the runner's enabled, unbounded log.
+  const defaults = buildScenarioInspect(request());
+  expect(defaults.budgets.events).toEqual({ enabled: true, maxEvents: null, unlimited: true });
+  expect(defaults.diagnostics.some((item) => item.code === "unlimited-trace")).toBe(true);
+  const bounded = buildScenarioInspect(request({ eventLog: { maxEvents: 100 } }));
+  expect(bounded.budgets.events).toEqual({ enabled: true, maxEvents: 100, unlimited: false });
+  expect(bounded.diagnostics.some((item) => item.code === "unlimited-trace")).toBe(false);
+  const off = buildScenarioInspect(request({ eventLog: { enabled: false } }));
+  expect(off.budgets.events.enabled).toBe(false);
+  // A trace without a cadence is traced every step, as compileScenario runs it.
+  const traced = buildScenarioInspect(
+    request({
+      trace: { include: true },
+      analyzers: [
+        {
+          id: "cadence",
+          version: "1",
+          kind: "postprocess",
+          observation: observationDemand({ coverage: "trace", sampleCadenceSec: 1 }),
+        },
+      ],
+    }),
+  );
+  expect(traced.budgets.trace.everySteps).toBe(1);
+  expect(traced.analyzers[0]?.met).toBe(true);
 }
 
 /**
@@ -118,12 +148,16 @@ export function marksUntilOnlyUnknown(): void {
  * @evidence ./inspect.ts#inspectDecimalRange Reads the decimal-range contract.
  * @evidenceReview ./inspect.ts#inspectDecimalRange #f9b5c90 The declaration is decimal-range-is-advisory.
  * @evidence ./inspect.ts#decimalExceedsNumberDomain Flags decimals with more than 15 integer digits or exponent magnitude.
- * @evidenceReview ./inspect.ts#decimalExceedsNumberDomain #75460f0 The function reads a scientific exponent or the integer digits and reports a magnitude of 15 or more.
+ * @evidenceReview ./inspect.ts#decimalExceedsNumberDomain #5161515 The function reads a scientific exponent or the integer digits and reports a magnitude of 15 or more. A sign and a leading-dot mantissa are read too.
  */
 export function warnsOnDecimalRange(): void {
   expect(inspectDecimalRange).toBe("decimal-range-is-advisory");
   expect(decimalExceedsNumberDomain("1e400")).toBe(true);
   expect(decimalExceedsNumberDomain("15")).toBe(false);
+  // The money grammar's sign and leading-dot spellings are read too.
+  expect(decimalExceedsNumberDomain("+1e400")).toBe(true);
+  expect(decimalExceedsNumberDomain(".1e400")).toBe(true);
+  expect(decimalExceedsNumberDomain("1.e400")).toBe(true);
   const numberReport = buildScenarioInspect(
     request({ decimals: ["1e400"], engine: { effectiveId: "number", source: "flag", accepted: true } }),
   );
@@ -145,16 +179,19 @@ export function warnsOnDecimalRange(): void {
 
 /**
  * @evidence docs/requirements/active/scenario-inspect.md#req-dx03-stage-override The command step applies to simulate. Experience keeps the scenario step and the session. A long planner bound is not a duration.
- * @evidenceReview docs/requirements/active/scenario-inspect.md#req-dx03-stage-override #83026b4 Re-read the section, then ran this function: simulate step is 2 and measuredDurationSec is null.
+ * @evidenceReview docs/requirements/active/scenario-inspect.md#req-dx03-stage-override #d77f1bd Re-read the section, then ran this function: simulate step is 2 and measuredDurationSec is null.
  * @evidence ./inspect.ts#inspectStageOverride Reads the stage-plan contract.
  * @evidenceReview ./inspect.ts#inspectStageOverride #3f1fcca The declaration is stage-plans-differ.
  * @evidence ../strategy/planner.ts#plannerExpansionBound Caps the planner request and reports the expansion bound.
- * @evidenceReview ../strategy/planner.ts#plannerExpansionBound #2b867ed The function floors the request at 1, caps horizon, beam, and branching, reports the capped expansion count and whether it clamped, and has no measured duration.
+ * @evidenceReview ../strategy/planner.ts#plannerExpansionBound #bb124b8 The function floors the request at 1, caps horizon, beam, and branching, counts a wait branch beside the capped actions up to the rollout budget, reports whether it clamped, and has no measured duration.
  */
 export function explainsStageOverrides(): void {
   const bound = plannerExpansionBound({ horizonSteps: 100, beamWidth: 20, maxBranchingActions: 20 });
   expect(bound.capped).toEqual({ horizonSteps: 32, beamWidth: 8, maxBranchingActions: 8 });
-  expect(bound.expansionUpperBound).toBe(8 * (1 + 31 * 8));
+  // Each node also rolls out a wait branch, and decide stops at the rollout budget.
+  expect(bound.expansionUpperBound).toBe(256);
+  expect(bound.rolloutBudget).toBe(256);
+  expect(plannerExpansionBound({ horizonSteps: 1, maxBranchingActions: 1 }).expansionUpperBound).toBe(2);
   expect(bound.clamped).toBe(true);
   expect(bound.measuredDurationSec).toBeNull();
   expect(inspectStageOverride).toBe("stage-plans-differ");
@@ -188,6 +225,26 @@ export function explainsStageOverrides(): void {
   expect(experience?.stepSec).toEqual({ value: 1, source: "scenario" });
   expect(experience?.applies.session).toBe(true);
   expect(experience?.session?.id).toBe("short-bursts");
+  // A session stage runs its schedule, not the scenario duration, so its tick count is unknown.
+  expect(experience?.stepCount).toBe("unknown");
+  expect(simulate?.stepCount).toBe(5);
+  // The stage reports the fast mode it runs. A stage the fast flag does not apply to has none.
+  expect(simulate?.fast).toBeNull();
+  expect(experience?.fast).toBeNull();
+  const fastReport = buildScenarioInspect(
+    request({
+      stages: [
+        {
+          name: "simulate",
+          applies: { strategy: true, step: true, fast: true, session: false },
+          stepSec: { value: 1, source: "scenario" },
+          strategySource: "scenario",
+          fast: { enabled: false, source: "command" },
+        },
+      ],
+    }),
+  );
+  expect(fastReport.stages[0]?.fast).toEqual({ enabled: false, source: "command" });
   expect(report.planner?.measuredDurationSec).toBeNull();
   expect(report.planner?.clamped).toBe(true);
   const cost = report.diagnostics.find((item) => item.code === "planner-cost");

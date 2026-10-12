@@ -45,6 +45,8 @@ const UNAVAILABLE: LocalElasticity = {
 };
 
 export function assignmentFitsParamSpace(space: ParamSpace, value: string | number | boolean | null): boolean {
+  // Canonical JSON, task text, and probe ids write -0 as 0, so -0 would share every descriptor with 0.
+  if (Object.is(value, -0)) return false;
   if (space.kind === "bool") return typeof value === "boolean";
   if (space.kind === "int") {
     return typeof value === "number" && Number.isInteger(value) && value >= space.min && value <= space.max;
@@ -52,6 +54,8 @@ export function assignmentFitsParamSpace(space: ParamSpace, value: string | numb
   if (space.kind === "number") {
     return typeof value === "number" && Number.isFinite(value) && value >= space.min && value <= space.max;
   }
+  // A JSON literal such as 1e400 parses to Infinity, and canonical JSON would write it as null.
+  if (typeof value === "number" && !Number.isFinite(value)) return false;
   return space.values.some((entry) => entry === value);
 }
 
@@ -69,31 +73,55 @@ export function localElasticity(args: Readonly<{
   if (baselineY === null || probeY === null || !Number.isFinite(baselineY) || !Number.isFinite(probeY)) {
     return UNAVAILABLE;
   }
+  // Two finite values of opposite sign near the double limit have a difference outside it. The ratio stays finite.
   const delta = probeY - baselineY;
-  const direction: ElasticityDirection = delta > 0 ? "higher" : delta < 0 ? "lower" : "flat";
-  const absoluteChange = String(delta);
+  const finiteDelta = Number.isFinite(delta);
+  return elasticityFromChange({
+    baselineP,
+    probeP,
+    absoluteChange: finiteDelta ? String(delta) : null,
+    direction: probeY > baselineY ? "higher" : probeY < baselineY ? "lower" : "flat",
+    relativeChange: baselineY > 0 ? (finiteDelta ? delta / baselineY : probeY / baselineY - 1) : null,
+  });
+}
+
+/**
+ * `(probeP - baselineP) / baselineP`. When the difference of two finite parameters overflows, the ratio
+ * `probeP / baselineP - 1` gives the same relative change without leaving the double range.
+ */
+export function relativeParameterChange(baselineP: number, probeP: number): number {
+  const delta = probeP - baselineP;
+  return Number.isFinite(delta) ? delta / baselineP : probeP / baselineP - 1;
+}
+
+/**
+ * Relative elasticity from a change measured in the metric's own arithmetic, such as an engine amount.
+ * `relativeChange` is `(probeY - baselineY) / baselineY`, or null when baseline y is not greater than zero.
+ * The elasticity is reported only when baseline p is finite and greater than zero and p changes.
+ */
+export function elasticityFromChange(args: Readonly<{
+  baselineP: number;
+  probeP: number;
+  absoluteChange: string | null;
+  direction: Exclude<ElasticityDirection, "unavailable">;
+  relativeChange: number | null;
+}>): LocalElasticity {
+  const { baselineP, probeP, absoluteChange, direction, relativeChange } = args;
+  const unavailable: LocalElasticity = {
+    status: "unavailable",
+    elasticity: null,
+    absoluteChange,
+    direction,
+    globalSensitivity: false,
+    sobol: false,
+  };
   const pChanged = Number.isFinite(baselineP) && Number.isFinite(probeP) && probeP !== baselineP;
-  if (!(baselineP > 0) || !(baselineY > 0) || !pChanged) {
-    return {
-      status: "unavailable",
-      elasticity: null,
-      absoluteChange,
-      direction,
-      globalSensitivity: false,
-      sobol: false,
-    };
-  }
-  const elasticity = (delta / baselineY) / ((probeP - baselineP) / baselineP);
-  if (!Number.isFinite(elasticity)) {
-    return {
-      status: "unavailable",
-      elasticity: null,
-      absoluteChange,
-      direction,
-      globalSensitivity: false,
-      sobol: false,
-    };
-  }
+  if (relativeChange === null || !Number.isFinite(relativeChange) || !(baselineP > 0) || !pChanged) return unavailable;
+  // A tiny positive baseline can make the parameter change overflow. Dividing by it would report a false 0.
+  const parameterChange = relativeParameterChange(baselineP, probeP);
+  if (!Number.isFinite(parameterChange) || parameterChange === 0) return unavailable;
+  const elasticity = relativeChange / parameterChange;
+  if (!Number.isFinite(elasticity)) return unavailable;
   return {
     status: "observed",
     elasticity: String(elasticity),
@@ -104,40 +132,59 @@ export function localElasticity(args: Readonly<{
   };
 }
 
-function dominates(
-  left: Readonly<{ values: readonly number[]; senses: readonly ParetoSense[] }>,
-  right: Readonly<{ values: readonly number[]; senses: readonly ParetoSense[] }>,
-): boolean {
+type ComparablePoint<T> = { id: string; values: T[]; senses: ParetoSense[] };
+
+function dominates<T>(left: ComparablePoint<T>, right: ComparablePoint<T>, compare: (a: T, b: T) => number): boolean {
   let better = false;
   for (let index = 0; index < left.values.length; index += 1) {
-    const sense = left.senses[index];
-    const ahead = sense === "lower" ? left.values[index]! < right.values[index]! : left.values[index]! > right.values[index]!;
-    const behind = sense === "lower" ? left.values[index]! > right.values[index]! : left.values[index]! < right.values[index]!;
+    const order = compare(left.values[index]!, right.values[index]!);
+    const ahead = left.senses[index] === "lower" ? order < 0 : order > 0;
+    const behind = left.senses[index] === "lower" ? order > 0 : order < 0;
     if (behind) return false;
     if (ahead) better = true;
   }
   return better;
 }
 
-/** Fully observed points only. A null objective cannot dominate and is not dominated into a win. */
-export function paretoFront(points: readonly ParetoPoint[]): ParetoFront {
-  const comparable: { id: string; values: number[]; senses: ParetoSense[] }[] = [];
+/**
+ * Pareto front under a caller order, such as an engine comparison. Every pair is compared directly,
+ * so an order with a tolerance is not chained through a third point. A null objective is uncompared.
+ */
+export function paretoFrontBy<T>(
+  points: readonly Readonly<{ id: string; objectives: readonly Readonly<{ sense: ParetoSense; value: T | null }>[] }>[],
+  compare: (left: T, right: T) => number,
+): ParetoFront {
+  const comparable: ComparablePoint<T>[] = [];
   const uncompared: string[] = [];
   for (const point of points) {
-    if (point.objectives.length === 0 || point.objectives.some((item) => item.value === null || !Number.isFinite(item.value))) {
+    if (point.objectives.length === 0 || point.objectives.some((item) => item.value === null)) {
       uncompared.push(point.id);
       continue;
     }
     comparable.push({
       id: point.id,
-      values: point.objectives.map((item) => item.value as number),
+      values: point.objectives.map((item) => item.value as T),
       senses: point.objectives.map((item) => item.sense),
     });
   }
   const nonDominated = comparable
-    .filter((candidate) => !comparable.some((other) => other.id !== candidate.id && dominates(other, candidate)))
+    .filter((candidate) => !comparable.some((other) => other.id !== candidate.id && dominates(other, candidate, compare)))
     .map((candidate) => candidate.id)
     .sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
   uncompared.sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
   return { sense: "per-metric", nonDominated, uncompared };
+}
+
+/** Fully observed points only. A null objective cannot dominate and is not dominated into a win. */
+export function paretoFront(points: readonly ParetoPoint[]): ParetoFront {
+  return paretoFrontBy(
+    points.map((point) => ({
+      id: point.id,
+      objectives: point.objectives.map((item) => ({
+        sense: item.sense,
+        value: item.value === null || !Number.isFinite(item.value) ? null : item.value,
+      })),
+    })),
+    (left: number, right: number) => (left < right ? -1 : left > right ? 1 : 0),
+  );
 }

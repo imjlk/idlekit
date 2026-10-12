@@ -9,7 +9,7 @@ import {
   simulateMonteCarlo,
 } from "../monteCarlo";
 import { createRunFactory } from "../runFactory";
-import { logicalDrawId, logicalDrawSeed } from "../random";
+import { deriveDrawSeed, logicalDrawId, logicalDrawSeed, mulberry32 } from "../random";
 import { runScenario } from "../simulator";
 import type { CompiledScenario, Model, SimState } from "../types";
 import {
@@ -58,7 +58,7 @@ function sample(
  * @evidence ./distribution.ts#distributionSampleAccounting Reads the sample accounting contract.
  * @evidenceReview ./distribution.ts#distributionSampleAccounting #b204d5a The declaration is observed-censored-failed-unsupported.
  * @evidence ./distribution.ts#analyzeDistribution Analyzes observed, censored, failed, and unsupported samples.
- * @evidenceReview ./distribution.ts#analyzeDistribution #8a6e820 The function orders samples by draw index, rejects duplicate or invalid draws, counts each status apart, and keeps censored draws out of the conditional quantiles.
+ * @evidenceReview ./distribution.ts#analyzeDistribution #b84e856 The function orders samples by draw index, rejects duplicate or invalid draws, an unknown status or source, an observed value the number does not hold exactly, and a completion past the common horizon, counts each status apart, keeps censored draws out of the conditional quantiles, and keeps the mean finite inside the sample range and the variance finite or absent.
  */
 export function separatesCensoringFromObservedQuantiles(): void {
   expect(distributionSampleAccounting).toBe("observed-censored-failed-unsupported");
@@ -108,6 +108,51 @@ export function separatesCensoringFromObservedQuantiles(): void {
   expect(failed.accounting.failed).toBe(1);
   expect(failed.means.arithmetic.value).toBe("10");
   expect(failed.means.arithmetic.value).not.toBe("0");
+
+  // A completion past the common horizon would make the rank of a censored draw unknowable.
+  expect(() =>
+    analyzeDistribution({
+      samples: [sample(0, "observed", "100"), sample(1, "censored", null)],
+      quantiles: [0.5],
+      horizonSec: 40,
+    }),
+  ).toThrow("exceeds the common horizonSec");
+  // Untyped input with another status is not counted as a completion.
+  const typo = { ...sample(0, "observed", "10"), status: "failure" } as unknown as DistributionSample;
+  expect(() => analyzeDistribution({ samples: [typo], quantiles: [0.5] })).toThrow("sample status must be");
+  // A value the number cannot hold is rejected. Another spelling of a representable value is kept.
+  expect(() => analyzeDistribution({ samples: [sample(0, "observed", "9007199254740993")], quantiles: [0.5] })).toThrow(
+    "not exactly representable",
+  );
+  const spelled = analyzeDistribution({
+    samples: [sample(0, "observed", "1e3"), sample(1, "observed", "10.50"), sample(2, "observed", "-0")],
+    quantiles: [0, 1],
+  });
+  expect(spelled.conditional.map((point) => point.value)).toEqual(["0", "1000"]);
+  // Finite samples do not overflow the mean, and a variance past the number range is not reported.
+  const huge = analyzeDistribution({ samples: [sample(0, "observed", "1e308"), sample(1, "observed", "1e308")], quantiles: [0.5] });
+  expect(huge.means.arithmetic).toEqual({ label: "arithmetic-mean", status: "observed", value: "1e+308" });
+  expect(huge.uncertainty.variance).toBe(0);
+  const spread = analyzeDistribution({ samples: [sample(0, "observed", "-1e308"), sample(1, "observed", "1e308")], quantiles: [0.5] });
+  expect(spread.means.arithmetic.value).toBe("0");
+  expect(spread.uncertainty.variance).toBeNull();
+  expect(spread.uncertainty.zeroVariance).toBe(false);
+  expect(spread.warnings).toContain("variance exceeds the number range and is not reported");
+  // At the number limit the scaled mean is kept inside [min, max], so it stays finite.
+  const limit = String(Number.MAX_VALUE);
+  const atLimit = analyzeDistribution({
+    samples: [sample(0, "observed", limit), sample(1, "observed", limit), sample(2, "observed", limit)],
+    quantiles: [0.5],
+  });
+  expect(atLimit.means.arithmetic).toEqual({ label: "arithmetic-mean", status: "observed", value: limit });
+  // A long run of zeros is read in linear time, and a value that underflows to 0 is not the value written.
+  const tiny = `0.${"0".repeat(20_000)}1${"0".repeat(20_000)}1`;
+  expect(() => analyzeDistribution({ samples: [sample(0, "observed", tiny)], quantiles: [0.5] })).toThrow(
+    "not exactly representable",
+  );
+  // Untyped input with another source is rejected, so the artifact names only declared sources.
+  const billing = { ...sample(0, "observed", "10"), source: "billing" } as unknown as DistributionSample;
+  expect(() => analyzeDistribution({ samples: [billing], quantiles: [0.5] })).toThrow("sample source must be");
 }
 
 /**
@@ -185,10 +230,31 @@ export function fixesQuantileRanksAndKeys(): void {
  * @evidenceReview ../monteCarlo.ts#simulateMonteCarlo #3487593 The function validates the draw request, binds a run factory, opens a fresh scenario per logical draw seed, and releases the binding without masking a draw failure.
  * @evidence ../monteCarlo.ts#assertMonteCarloDrawRequest Rejects NaN and Infinity draws, seeds, and budgets.
  * @evidenceReview ../monteCarlo.ts#assertMonteCarloDrawRequest #30c61b4 The function floors finite draws to at least 1 and rejects a nonfinite seed or a budget below the draws.
+ * @evidence ../random.ts#mulberry32 Replays one stream from one seed.
+ * @evidenceReview ../random.ts#mulberry32 #4d4aba0 The function returns a 32-bit mulberry generator whose outputs are in [0, 1) and repeat for the same seed.
+ * @evidence ../random.ts#deriveDrawSeed Derives the seed of one draw.
+ * @evidenceReview ../random.ts#deriveDrawSeed #f9d31a5 The function seeds mulberry32 with the base seed mixed with the draw index and returns one unsigned 32-bit integer.
+ * @evidence ../random.ts#logicalDrawSeed Checks its inputs and derives the logical draw seed.
+ * @evidenceReview ../random.ts#logicalDrawSeed #d14b996 The function rejects a non-finite base and an index that is not an integer >= 0, then returns deriveDrawSeed.
+ * @evidence ../random.ts#logicalDrawId Spells the logical draw id.
+ * @evidenceReview ../random.ts#logicalDrawId #5e0466d The function rejects an index that is not an integer >= 0 and returns its decimal spelling.
  * @evidence ./distribution.ts#assertDistributionRun Rejects nonfinite draws and common random numbers without the execution stream.
  * @evidenceReview ./distribution.ts#assertDistributionRun #95dc466 The function checks draws, seed, budget, and quantile keys, and rejects coupling without the execution stream.
  */
 export function keepsLogicalDrawsIndependentOfOrder(): void {
+  const left = mulberry32(7);
+  const right = mulberry32(7);
+  const stream = [left(), left(), left()];
+  expect(stream).toEqual([right(), right(), right()]);
+  expect(stream.every((value) => value >= 0 && value < 1)).toBe(true);
+  const derived = deriveDrawSeed(0x7113, 2);
+  expect(Number.isInteger(derived) && derived >= 0 && derived < 2 ** 32).toBe(true);
+  expect(logicalDrawSeed(0x7113, 2)).toBe(derived);
+  expect(logicalDrawSeed(0x7113, 3)).not.toBe(derived);
+  expect(() => logicalDrawSeed(Number.NaN, 0)).toThrow("logical draw seed base must be finite");
+  expect(() => logicalDrawSeed(1, -1)).toThrow("logical draw index must be an integer >= 0");
+  expect(logicalDrawId(12)).toBe("12");
+  expect(() => logicalDrawId(1.5)).toThrow("logical draw index must be an integer >= 0");
   expect(distributionLogicalDraws).toBe("logical-index-not-worker-slot");
   expect(monteCarloDrawBudget).toBe("finite-integer-draws");
   expect(() => assertMonteCarloDrawRequest(Number.NaN, 1)).toThrow(/draws/);
@@ -301,7 +367,7 @@ export function checksSeededDropAndZeroVariance(): void {
   const constant = analyzeDistribution({
     samples: [0, 1, 2, 3, 4].map((drawIndex) => sample(drawIndex, "observed", "5")),
     quantiles: [0.5],
-    horizonSec: 1,
+    horizonSec: 5,
   });
   expect(constant.uncertainty.zeroVariance).toBe(true);
   expect(constant.uncertainty.variance).toBe(0);
@@ -322,14 +388,14 @@ export function checksSeededDropAndZeroVariance(): void {
  * @evidence ./distribution.ts#distributionMeanIdentity Reads the mean identity contract.
  * @evidenceReview ./distribution.ts#distributionMeanIdentity #b0d53fa The declaration is arithmetic-mean-log-and-log-mean.
  * @evidence ./distribution.ts#firstVisibleDistributionSample Censors a missing first visible change.
- * @evidenceReview ./distribution.ts#firstVisibleDistributionSample #973803a The function validates the draw and seed, returns a censored sample for a missing change, and an observed value otherwise.
+ * @evidenceReview ./distribution.ts#firstVisibleDistributionSample #d243eb8 The function validates the draw and seed, returns a censored sample for a missing change, a failed sample for a non-finite or negative time, and an observed value otherwise.
  */
 export function separatesMeansAndCensorsMissingVisibleChange(): void {
   expect(distributionMeanIdentity).toBe("arithmetic-mean-log-and-log-mean");
   const report = analyzeDistribution({
     samples: [sample(0, "observed", "10"), sample(1, "observed", "1000")],
     quantiles: [0.5],
-    horizonSec: 1,
+    horizonSec: 1000,
   });
   expect(report.means.arithmetic).toEqual({ label: "arithmetic-mean", status: "observed", value: "505" });
   expect(report.means.meanLog10).toEqual({ label: "mean-of-log10", status: "observed", value: "2" });
@@ -343,6 +409,8 @@ export function separatesMeansAndCensorsMissingVisibleChange(): void {
   expect(missing.value).toBeNull();
   expect(missing.value).not.toBe("30");
   expect(missing.value).not.toBe("0");
+  // Seconds since the session start cannot be negative, so a negative time is a failed sample.
+  expect(firstVisibleDistributionSample({ drawIndex: 2, seed: 3, firstVisibleChangeSec: -1 }).status).toBe("failed");
   const seen = firstVisibleDistributionSample({ drawIndex: 1, seed: 2, firstVisibleChangeSec: 12 });
   expect(seen).toEqual({
     drawIndex: 1,

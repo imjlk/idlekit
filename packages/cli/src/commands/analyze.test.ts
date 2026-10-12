@@ -22,6 +22,9 @@ describe("idk analyze", () => {
     expect(json.kind).toBe("postprocess");
     expect(json.value.seriesRequested).toBe("money");
     expect(json._meta.command).toBe("analyze");
+    expect(json.provenance.semantics).toEqual({ sessionKey: "none", strategyKey: "greedy", horizonSec: 8, stepSec: 1, seed: null });
+    const fractional = runCli(["analyze", "growth", scenario, "--trace-every", "1.5"], { check: false });
+    expect(fractional.exitCode).not.toBe(0);
     const markdown = runCli(["analyze", "growth", scenario, "--window", "5", "--format", "md"]);
     expect(markdown.stdout).toContain("growth-report-v1");
     expect(markdown.stdout).toContain("```json");
@@ -48,6 +51,8 @@ describe("idk analyze", () => {
     expect(json.value.estimate.algorithmVersion).toBe("eta-estimate-v1");
     expect(json.value.mode).toBe("simulate");
     expect(json.provenance.freshRuns).toBe(1);
+    expect(json.provenance.semantics.strategyKey).toBe("greedy");
+    expect(json.provenance.semantics.horizonSec).toBe(20);
     await removePath(dir);
   }, 60000);
 
@@ -92,6 +97,67 @@ describe("idk analyze", () => {
       allowExecution: false,
     });
     expect(note.results[0]?.value).toBe("note");
+    await removePath(dir);
+  }, 60000);
+
+  it("runs a registered execution analyzer inside the budget flags and records the plugin digest", async () => {
+    const dir = await createTempDir("idlekit-analyze-exec");
+    const scenario = await shortScenario(dir);
+    const plugin = resolve(dir, "exec.ts");
+    await writeText(
+      plugin,
+      `export const analyzers = [
+        {
+          id: "plugin.exec",
+          version: "1",
+          kind: "execution",
+          validateParams: () => ({ ok: true, params: {} }),
+          requires: { capabilities: [], metricIds: [], observationSchema: "idlekit.run-observation" },
+          observation: { windowSec: null, sampleCadenceSec: null, coverage: "summary", metricIds: [], observationSchema: "idlekit.run-observation" },
+          outputContract: "test.analyzer",
+          algorithmVersion: "plugin-exec-v1",
+          cost: { freshRuns: 1, samples: 1 },
+          dependencies: [],
+          execute: (_params, ctx) => {
+            const run = ctx.requestRun("plugin.exec").run();
+            return run ? { status: "ok", value: { endT: run.end.t } } : { status: "insufficient-data", value: null, rerun: true };
+          },
+        },
+        {
+          id: "plugin.read",
+          version: "1",
+          kind: "postprocess",
+          validateParams: () => ({ ok: true, params: {} }),
+          requires: { capabilities: [], metricIds: [], observationSchema: "idlekit.run-observation" },
+          observation: { windowSec: null, sampleCadenceSec: 2, coverage: "trace", metricIds: ["money"], observationSchema: "idlekit.run-observation" },
+          outputContract: "test.analyzer",
+          algorithmVersion: "plugin-read-v1",
+          cost: { freshRuns: 0, samples: 0 },
+          dependencies: [],
+          postprocess: (_params, ctx) => ({
+            status: "ok",
+            value: { endT: ctx.input.run.end.t, cadence: ctx.supply.sampleCadenceSec, points: ctx.input.run.trace.length },
+          }),
+        },
+      ];
+      `,
+    );
+    const base = ["analyze", "plugin.exec", scenario, "--plugin", plugin, "--allow-plugin", "true", "--plugin-root", dir];
+    const json = runCliJson<any>([...base, "--budget-duration", "20", "--format", "json"]);
+    expect(json.status).toBe("ok");
+    expect(json.value.endT).toBe(8);
+    expect(json.provenance.freshRuns).toBe(1);
+    expect(json.provenance.semantics.horizonSec).toBe(8);
+    expect(Object.keys(json._meta.pluginDigest)).toHaveLength(1);
+    expect(Object.keys(json._meta.pluginDigest)[0]).toEndWith("exec.ts");
+    expect(typeof json._meta.scenarioHash).toBe("string");
+    const refused = runCliJson<any>([...base, "--budget-runs", "0", "--format", "json"]);
+    expect(refused.status).toBe("insufficient-data");
+    expect(refused.provenance.rerun.reason).toBe("budget");
+    const pluginFlags = ["--plugin", plugin, "--allow-plugin", "true", "--plugin-root", dir];
+    const read = runCliJson<any>(["analyze", "plugin.read", scenario, ...pluginFlags, "--trace-every", "2", "--format", "json"]);
+    expect(read.status).toBe("ok");
+    expect(read.value).toEqual({ endT: 8, cadence: 2, points: 5 });
     await removePath(dir);
   }, 60000);
 });

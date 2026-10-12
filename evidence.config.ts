@@ -37,6 +37,7 @@ export const productionFiles = [
   "packages/cli/src/lib/runConfiguration.ts",
   "packages/core/src/sim/simulator.ts",
   "packages/core/src/sim/offline.ts",
+  "packages/core/src/sim/random.ts",
   "packages/core/src/testkit/conformance.ts",
   "packages/core/src/testkit/conformanceRun.ts",
   "packages/core/src/testkit/compareAmounts.ts",

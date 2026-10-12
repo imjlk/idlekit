@@ -11,7 +11,7 @@ import { cliError, scenarioInvalidError, usageError } from "../errors";
 import { buildOutputMeta } from "../io/outputMeta";
 import { readScenarioFile } from "../io/readScenario";
 import { writeOutput } from "../io/writeOutput";
-import { prepareResolvedRun, type ResolvedRunPlan } from "../lib/runConfiguration";
+import { planResolvedRun, type ResolvedRunPlan } from "../lib/runConfiguration";
 
 function requestedPluginPaths(input: string): string[] {
   return input
@@ -21,7 +21,8 @@ function requestedPluginPaths(input: string): string[] {
 }
 
 function collectDecimals(value: unknown, out: string[]): void {
-  if (typeof value === "string" && /^-?\d/.test(value)) out.push(value);
+  // The money grammar accepts a sign and a leading-dot mantissa, so +1e400 and .1e400 are candidates too.
+  if (typeof value === "string" && /^[+-]?(?:\d|\.\d)/.test(value.trim())) out.push(value);
   else if (Array.isArray(value)) {
     for (const item of value) collectDecimals(item, out);
   } else if (value && typeof value === "object") {
@@ -29,7 +30,7 @@ function collectDecimals(value: unknown, out: string[]): void {
   }
 }
 
-function stageInput(plan: ResolvedRunPlan) {
+function stageInput(plan: ResolvedRunPlan, scenarioFast: boolean) {
   return {
     name: plan.stage.name,
     applies: plan.stage.applies,
@@ -37,6 +38,11 @@ function stageInput(plan: ResolvedRunPlan) {
     strategyId: plan.strategy.id,
     strategySource: plan.strategy.source,
     ...(plan.session ? { session: plan.session } : {}),
+    // An override sets the stage's fast mode. Without one the stage inherits the scenario setting.
+    fast:
+      plan.fast !== undefined
+        ? { enabled: plan.fast.enabled === true, source: "command" as const }
+        : { enabled: scenarioFast, source: "scenario" as const },
   };
 }
 
@@ -87,7 +93,14 @@ export default defineCommand({
       description: "Execution engine. Default number. scenario.engine is metadata. breakInfinity is explicit. breakEternity is unsupported.",
     }),
     strategy: option(z.string().min(1).optional(), { description: "Registered strategy id" }),
-    step: option(z.coerce.number().optional(), { description: "Override stepSec for stages that apply step" }),
+    step: option(
+      z.coerce
+        .number()
+        .positive()
+        .refine((value) => Number.isFinite(value), "step must be finite")
+        .optional(),
+      { description: "Override stepSec for stages that apply step (finite, > 0)" },
+    ),
     // Same as simulate: an omitted flag keeps the scenario's fast setting, and false disables it.
     fast: option(z.coerce.boolean().optional(), {
       description: "Override fast mode where the stage applies it (omitted: scenario setting)",
@@ -98,8 +111,12 @@ export default defineCommand({
     "resolve-plugins": option(z.coerce.boolean().default(false), {
       description: "Load trusted plugin modules. Import may run user code. Default is not to load plugins.",
     }),
-    "session-id": option(z.string().optional(), { description: "Session pattern id for stages that apply session" }),
-    days: option(z.coerce.number().optional(), { description: "Session days for stages that apply session" }),
+    // The same flags and schemas as experience and evaluate, so one invocation can be inspected as written.
+    "session-pattern": option(
+      z.enum(["always-on", "short-bursts", "twice-daily", "offline-heavy", "weekend-marathon"]).optional(),
+      { description: "Session pattern id for stages that apply session" },
+    ),
+    days: option(z.coerce.number().int().positive().optional(), { description: "Session days for stages that apply session" }),
   },
   async handler({ flags, positional }) {
     const scenarioPath = positional[0];
@@ -110,13 +127,18 @@ export default defineCommand({
     const silentFlags: PluginOptionFlags = { ...flags, plugin: "" };
     const builtins = await loadRegistriesFromFlags(silentFlags);
     const loaded = resolvePlugins ? await loadRegistriesFromFlags(flags) : builtins;
-    const builtinIds = new Set(builtins.modelRegistry.list().map((item) => `${item.id}@${item.version}`));
-    const loadedIds = loaded.modelRegistry
-      .list()
-      .filter((item) => !builtinIds.has(`${item.id}@${item.version}`))
-      .map((item) => `${item.id}@${item.version}`);
+    // Plugin registrations by origin, so a plugin that replaces a built-in id is still reported.
+    const loadedIds = resolvePlugins ? [...new Set(loaded.pluginModelIds ?? [])] : [];
     const input = await readScenarioFile(scenarioPath);
-    const valid = validateScenarioV1(input, loaded.modelRegistry);
+    // A model that only a skipped plugin provides is not in the loaded registry. Validate the scenario without the
+    // model then, so the report can still say the plugin was skipped.
+    const structural = validateScenarioV1(input);
+    const modelKnown =
+      structural.ok && structural.scenario
+        ? loaded.modelRegistry.get(structural.scenario.model.id, structural.scenario.model.version) !== undefined
+        : true;
+    const skippedModel = !resolvePlugins && paths.length > 0 && !modelKnown;
+    const valid = skippedModel ? structural : validateScenarioV1(input, loaded.modelRegistry);
     if (!valid.ok || !valid.scenario) throw scenarioInvalidError(valid.issues);
     const scenario = valid.scenario;
     const decimals: string[] = [];
@@ -157,11 +179,13 @@ export default defineCommand({
         resolve: resolvePlugins,
         requested: paths.length > 0,
         loadedIds,
+        ...(skippedModel ? { unresolvedModel: `${scenario.model.id}@${scenario.model.version}` } : {}),
       },
     };
 
     try {
-      const prepared = prepareResolvedRun({
+      // Plans only. Compiling would create the model and strategy, which may be plugin code.
+      const prepared = planResolvedRun({
         scenario,
         modelRegistry: loaded.modelRegistry,
         strategyRegistry: loaded.strategyRegistry,
@@ -171,7 +195,7 @@ export default defineCommand({
         stepSec: flags.step,
         fast: flags.fast,
         consistentOverrides: flags["consistent-overrides"],
-        sessionId: flags["session-id"],
+        sessionId: flags["session-pattern"],
         days: flags.days,
       });
       const simulate = prepared.planFor("simulate");
@@ -184,7 +208,7 @@ export default defineCommand({
           accepted: true,
           ...(prepared.engine.scenarioEngine ? { scenarioEngine: prepared.engine.scenarioEngine } : {}),
         },
-        stages: [stageInput(simulate), stageInput(experience)],
+        stages: [stageInput(simulate, scenario.sim?.fast === true), stageInput(experience, scenario.sim?.fast === true)],
         planner: plannerParams(simulate),
       });
       await emit(flags, report, scenarioPath, scenario);

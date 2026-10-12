@@ -31,7 +31,7 @@ export const inspectDecimalRange = "decimal-range-is-advisory" as const;
 
 /**
  * @evidence docs/requirements/active/scenario-inspect.md#req-dx03-stage-override Simulate and experience keep different step and session applies. Planner cost is a bound.
- * @evidenceReview docs/requirements/active/scenario-inspect.md#req-dx03-stage-override #83026b4 Re-read the section: the command step stays on simulate, and the planner figure is not a duration.
+ * @evidenceReview docs/requirements/active/scenario-inspect.md#req-dx03-stage-override #d77f1bd Re-read the section: the command step stays on simulate, and the planner figure is not a duration.
  */
 export const inspectStageOverride = "stage-plans-differ" as const;
 
@@ -84,6 +84,8 @@ export type InspectStageInput = Readonly<{
   strategyId?: string;
   strategySource: "scenario" | "command";
   session?: Readonly<{ id?: string; days?: number; source: "scenario" | "command" }>;
+  /** The fast mode the stage runs: the command override, or the scenario setting it inherits. */
+  fast?: Readonly<{ enabled: boolean; source: "scenario" | "command" }>;
 }>;
 
 export type InspectAnalyzerInput = Readonly<{
@@ -114,7 +116,13 @@ export type ScenarioInspectRequest = Readonly<{
   planner?: Readonly<{ horizonSteps: number; beamWidth?: number; maxBranchingActions?: number }> | null;
   decimals: readonly string[];
   prestigeRequested: boolean;
-  plugins: Readonly<{ resolve: boolean; requested: boolean; loadedIds: readonly string[] }>;
+  plugins: Readonly<{
+    resolve: boolean;
+    requested: boolean;
+    loadedIds: readonly string[];
+    /** A scenario model no loaded registry holds, because its plugin was not resolved. */
+    unresolvedModel?: string;
+  }>;
 }>;
 
 export type ScenarioInspectReport = Readonly<{
@@ -137,6 +145,7 @@ export type ScenarioInspectReport = Readonly<{
     strategyId: string | null;
     strategySource: InspectStageInput["strategySource"];
     session: InspectStageInput["session"] | null;
+    fast: NonNullable<InspectStageInput["fast"]> | null;
     stepCount: number | "unknown";
     lastDt: number | null;
     partialTick: boolean;
@@ -162,10 +171,11 @@ export type ScenarioInspectReport = Readonly<{
 
 const PLANNER_WARN_EXPANSIONS = 64;
 
+/** Ticks of a fixed duration. Past the counting cap the count is null, not the cap. */
 export function fixedDurationStepCount(
   durationSec: number,
   stepSec: number,
-): Readonly<{ steps: number; lastDt: number | null; partial: boolean }> {
+): Readonly<{ steps: number | null; lastDt: number | null; partial: boolean }> {
   let elapsed = 0;
   let steps = 0;
   let lastDt: number | null = null;
@@ -186,7 +196,7 @@ export function fixedDurationStepCount(
     elapsed += decision.dt;
     steps += 1;
   }
-  return { steps: limit, lastDt, partial: true };
+  return { steps: null, lastDt: null, partial: false };
 }
 
 function exponentMagnitude(text: string): number {
@@ -204,7 +214,8 @@ function exponentMagnitude(text: string): number {
 
 export function decimalExceedsNumberDomain(literal: string): boolean {
   const trimmed = literal.trim();
-  const scientific = /^[-+]?\d+(?:\.\d+)?[eE]([+-]?\d+)$/.exec(trimmed);
+  // The money parser accepts a sign and a leading-dot mantissa, such as +1e400 and .1e400.
+  const scientific = /^[-+]?(?:\d+(?:\.\d*)?|\.\d+)[eE]([+-]?\d+)$/.exec(trimmed);
   if (scientific?.[1] !== undefined) return Math.abs(exponentMagnitude(scientific[1])) >= 15;
   const digits = trimmed.replace(/^[+-]/, "").split(".")[0] ?? "";
   return /^\d+$/.test(digits) && digits.length > 15;
@@ -221,11 +232,12 @@ function engineReason(engine: ScenarioInspectRequest["engine"]): string {
 function observationSupply(request: ScenarioInspectRequest, stepSec: number): ObservationSupply {
   const untilOnly = request.clock.durationSec === undefined && Boolean(request.clock.untilExpr?.trim());
   const coverage = request.trace.include ? "trace" : request.clock.durationSec !== undefined ? "summary" : "missing";
-  const every = request.trace.everySteps;
+  // compileScenario traces every step when the scenario includes a trace without a cadence.
+  const every = request.trace.everySteps ?? 1;
   return {
     schema: observationContract,
     windowSec: request.clock.durationSec ?? null,
-    sampleCadenceSec: request.trace.include && every !== undefined ? every * stepSec : null,
+    sampleCadenceSec: request.trace.include ? every * stepSec : null,
     coverage: untilOnly && !request.trace.include ? "missing" : coverage,
     metricIds: ["money", "netWorth"],
   };
@@ -283,9 +295,10 @@ export function buildScenarioInspect(request: ScenarioInspectRequest): ScenarioI
     });
   }
 
-  const traceUnlimited =
-    (request.trace.include && request.clock.durationSec === undefined) ||
-    (request.eventLog?.enabled === true && request.eventLog.maxEvents === undefined);
+  // The runner keeps the event log unless the scenario turns it off, so an omitted eventLog is enabled.
+  const eventsEnabled = request.eventLog?.enabled !== false;
+  const eventsUnlimited = eventsEnabled && request.eventLog?.maxEvents === undefined;
+  const traceUnlimited = (request.trace.include && request.clock.durationSec === undefined) || eventsUnlimited;
   if (traceUnlimited) {
     diagnostics.push({
       severity: "warning",
@@ -315,7 +328,7 @@ export function buildScenarioInspect(request: ScenarioInspectRequest): ScenarioI
     diagnostics.push({
       severity: "warning",
       code: "plugin-skipped",
-      evidence: { userCode: "not-run" },
+      evidence: { userCode: "not-run", model: request.plugins.unresolvedModel ?? null },
     });
   }
   if (request.plugins.resolve) {
@@ -343,7 +356,9 @@ export function buildScenarioInspect(request: ScenarioInspectRequest): ScenarioI
   });
 
   const stages = request.stages.map((stage) => {
-    if (request.clock.durationSec === undefined) {
+    const fast = stage.applies.fast ? stage.fast ?? null : null;
+    // A session stage runs its schedule, not the scenario duration, so the duration does not count its ticks.
+    if (request.clock.durationSec === undefined || stage.applies.session) {
       return {
         name: stage.name,
         applies: stage.applies,
@@ -351,6 +366,7 @@ export function buildScenarioInspect(request: ScenarioInspectRequest): ScenarioI
         strategyId: stage.strategyId ?? null,
         strategySource: stage.strategySource,
         session: stage.applies.session ? stage.session ?? null : null,
+        fast,
         stepCount: "unknown" as const,
         lastDt: null,
         partialTick: false,
@@ -364,7 +380,8 @@ export function buildScenarioInspect(request: ScenarioInspectRequest): ScenarioI
       strategyId: stage.strategyId ?? null,
       strategySource: stage.strategySource,
       session: stage.applies.session ? stage.session ?? null : null,
-      stepCount: counted.steps,
+      fast,
+      stepCount: counted.steps ?? ("unknown" as const),
       lastDt: counted.lastDt,
       partialTick: counted.partial,
     };
@@ -387,13 +404,13 @@ export function buildScenarioInspect(request: ScenarioInspectRequest): ScenarioI
     offline: request.offline ?? null,
     budgets: {
       events: {
-        enabled: request.eventLog?.enabled === true,
+        enabled: eventsEnabled,
         maxEvents: request.eventLog?.maxEvents ?? null,
-        unlimited: request.eventLog?.enabled === true && request.eventLog.maxEvents === undefined,
+        unlimited: eventsUnlimited,
       },
       trace: {
         include: request.trace.include,
-        everySteps: request.trace.everySteps ?? null,
+        everySteps: request.trace.include ? request.trace.everySteps ?? 1 : request.trace.everySteps ?? null,
         unlimited: request.trace.include && request.clock.durationSec === undefined,
       },
     },

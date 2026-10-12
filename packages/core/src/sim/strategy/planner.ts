@@ -51,7 +51,7 @@ const rolloutBudget = 256;
  * Upper bound of planner expansions. This is not a measured duration.
  *
  * @evidence docs/requirements/active/scenario-inspect.md#req-dx03-stage-override Inspect reports this capped bound as a budget proposal.
- * @evidenceReview docs/requirements/active/scenario-inspect.md#req-dx03-stage-override #83026b4 Re-read the section: horizon 100, beam 8, and branch 8 cap at 32, 8, and 8, clamped is true, and measuredDurationSec is null.
+ * @evidenceReview docs/requirements/active/scenario-inspect.md#req-dx03-stage-override #d77f1bd Re-read the section: horizon 100, beam 8, and branch 8 cap at 32, 8, and 8, clamped is true, the bound counts the wait branch up to the rollout budget, and measuredDurationSec is null.
  */
 export function plannerExpansionBound(params: Readonly<{
   horizonSteps: number;
@@ -61,6 +61,7 @@ export function plannerExpansionBound(params: Readonly<{
   requested: Readonly<{ horizonSteps: number; beamWidth: number; maxBranchingActions: number }>;
   capped: Readonly<{ horizonSteps: number; beamWidth: number; maxBranchingActions: number }>;
   expansionUpperBound: number;
+  rolloutBudget: number;
   clamped: boolean;
   measuredDurationSec: null;
 }> {
@@ -74,12 +75,16 @@ export function plannerExpansionBound(params: Readonly<{
     beamWidth: Math.min(beamCap, requested.beamWidth),
     maxBranchingActions: Math.min(branchCap, requested.maxBranchingActions),
   };
-  const expansionUpperBound =
-    capped.maxBranchingActions * (1 + Math.max(0, capped.horizonSteps - 1) * capped.beamWidth);
+  // Each expanded node rolls out a wait branch beside its capped actions, and decide stops at the rollout budget.
+  const expansionUpperBound = Math.min(
+    rolloutBudget,
+    (capped.maxBranchingActions + 1) * (1 + Math.max(0, capped.horizonSteps - 1) * capped.beamWidth),
+  );
   return {
     requested,
     capped,
     expansionUpperBound,
+    rolloutBudget,
     clamped:
       capped.horizonSteps !== requested.horizonSteps ||
       capped.beamWidth !== requested.beamWidth ||

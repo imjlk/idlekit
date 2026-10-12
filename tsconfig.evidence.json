@@ -51,6 +51,7 @@
     "packages/cli/src/lib/runConfiguration.test.ts",
     "packages/core/src/sim/simulator.ts",
     "packages/core/src/sim/offline.ts",
+    "packages/core/src/sim/random.ts",
     "packages/core/src/sim/simulator.time.test.ts",
     "packages/core/src/sim/runFactory.test.ts",
     "packages/core/src/testkit/conformance.ts",
