@@ -115,7 +115,7 @@ const sharedDemand = observationDemand({ coverage: "window", sampleCadenceSec: 2
 
 /**
  * @evidence docs/requirements/active/analyzer-registry.md#req-dx02-registry-conflicts A duplicate, a cycle, a missing dependency, bad params, and an unsupported capability do not run the body.
- * @evidenceReview docs/requirements/active/analyzer-registry.md#req-dx02-registry-conflicts #c9a6b98 Re-read the section, then ran this function: base requested with other semantics throws, a null body is error and after.nothing does not run, null and params-less validator results and NaN or infinite semantics throw, the call log stays empty, flow is unsupported, an incomplete definition, a two-run cost, and version b@c are refused at register, a null resolved demand throws, base takes the semantics of left, and after.gate and after.short do not run.
+ * @evidenceReview docs/requirements/active/analyzer-registry.md#req-dx02-registry-conflicts #ddadf25 Re-read the section, then ran this function: boom is error while peer runs and post.run is refused, base requested with other semantics throws, a null body is error and after.nothing does not run, null and params-less validator results and NaN or infinite semantics throw, the call log stays empty, flow is unsupported, an incomplete definition, a two-run cost, and version b@c are refused at register, a null resolved demand throws, base takes the semantics of left, and after.gate and after.short do not run.
  * @evidence ./analyzers.ts#analyzerRegistryConflicts Reads the conflict contract.
  * @evidenceReview ./analyzers.ts#analyzerRegistryConflicts #a1dbd92 The declaration is fail-before-run.
  * @evidence ./analyzers.ts#AnalyzerRegistryError.prototype.issues Reads the issue list stored when params fail before a body.
@@ -333,6 +333,25 @@ export function rejectsRegistryConflictsBeforeRun(): void {
   expect(malformedById.get("nothing")?.issues).toEqual(["analyzer body returned no result object"]);
   expect(malformedById.get("after.nothing")?.status).toBe("insufficient-data");
   expect(calls).toEqual(["m", "a"]);
+  // A thrown body is an error result: the batch continues, its dependent does not run, and a peer does.
+  const throwing = createAnalyzerRegistry();
+  throwing.register({ ...probe({ id: "boom" }), postprocess: () => { throw new Error("plugin failed"); } });
+  throwing.register(probe({ id: "after.boom", dependencies: [{ id: "boom", version: "1" }], onPostprocess: () => calls.push("after.boom") }));
+  throwing.register(probe({ id: "peer" }));
+  const thrownById = new Map(
+    throwing
+      .run({ requests: ["after.boom", "peer"].map((id) => ({ id, version: "1", params: {} })), semantics: analyzerSemantics() })
+      .results.map((result) => [result.id, result]),
+  );
+  expect(thrownById.get("boom")?.status).toBe("error");
+  expect(thrownById.get("boom")?.issues).toEqual(["analyzer body threw: plugin failed"]);
+  expect(thrownById.get("after.boom")?.status).toBe("insufficient-data");
+  expect(thrownById.get("peer")?.status).toBe("ok");
+  expect(calls).toEqual(["m", "a"]);
+  // A postprocess analyzer cannot request a run, so a fresh-run cost is refused at register.
+  expect(() =>
+    throwing.register({ ...probe({ id: "post.run" }), cost: { freshRuns: 1, samples: 0 } }),
+  ).toThrow("a postprocess analyzer cannot request a run");
 }
 
 /**
@@ -501,7 +520,7 @@ export function reportsInsufficientObservation(): void {
 
 /**
  * @evidence docs/requirements/active/analyzer-registry.md#req-dx02-execution-budget A zero run budget and a horizon past the budget do not call execute. A granted run receives the factory.
- * @evidenceReview docs/requirements/active/analyzer-registry.md#req-dx02-execution-budget #307957d Re-read the section, then ran this function: b.paid gets the run after a.free was refused, strategy greedy throws on a none scenario, a.zero and b.other run while c.late is skipped without sharing, refused calls stay 0, one grant is not a second run, s2 is refused on samples, g2 runs after unsupported g1, eta reports missing-scenario, analytic eta is ok with no run budget, a 100 second eta is refused under a 10 second budget, a NaN budget throws, and other.exec runs after dep.exec is skipped.
+ * @evidenceReview docs/requirements/active/analyzer-registry.md#req-dx02-execution-budget #2ec64cc Re-read the section, then ran this function: eta with step 2 or seed 7 is invalid, b.paid gets the run after a.free was refused, strategy greedy throws on a none scenario, a.zero and b.other run while c.late is skipped without sharing, refused calls stay 0, one grant is not a second run, s2 is refused on samples, g2 runs after unsupported g1, eta reports missing-scenario, analytic eta is ok with no run budget, a 100 second eta is refused under a 10 second budget, a NaN budget throws, and other.exec runs after dep.exec is skipped.
  * @evidence ./analyzers.ts#analyzerExecutionBudget Reads the budget contract.
  * @evidenceReview ./analyzers.ts#analyzerExecutionBudget #9687833 The declaration is explicit-budget-not-silent-run.
  */
@@ -632,6 +651,18 @@ export function enforcesExecutionBudget(): void {
   expect(understated.status).toBe("insufficient-data");
   expect(understated.provenance.rerun?.reason).toBe("budget");
   expect(understated.provenance.freshRuns).toBe(0);
+  // ETA runs the scenario as compiled, so a different step or seed in semantics is invalid, not relabeled.
+  for (const override of [{ stepSec: 2 }, { seed: 7 }]) {
+    const relabeled = runEtaAnalyzer({
+      ...etaArgs,
+      mode: "simulate",
+      maxDurationSec: 4,
+      semantics: analyzerSemantics({ horizonSec: 4, ...override }),
+      budget: { maxFreshRuns: 1, maxDurationSec: 4, maxSamples: 10 },
+    });
+    expect(relabeled.status).toBe("invalid");
+    expect(relabeled.provenance.freshRuns).toBe(0);
+  }
 
   // A budget limit that is not a finite count is refused, since NaN passes no comparison.
   expect(() =>
@@ -736,7 +767,7 @@ export function enforcesExecutionBudget(): void {
  * @evidence ./analyzers.ts#runGrowthAnalyzer Runs the growth analyzer on an executed run.
  * @evidenceReview ./analyzers.ts#runGrowthAnalyzer #d4aae6e The function runs the built-in growth analyzer as a postprocess request with the given series and window.
  * @evidence ./analyzers.ts#runEtaAnalyzer Runs the eta analyzer with an explicit budget.
- * @evidenceReview ./analyzers.ts#runEtaAnalyzer #8ef7e05 The function runs the built-in eta analyzer as an execution request with the target, mode, maximum duration, and budget.
+ * @evidenceReview ./analyzers.ts#runEtaAnalyzer #cd8e0dd The function runs the built-in eta analyzer as an execution request with the target, mode, maximum duration, and budget, and defaults semantics to that duration and the scenario step and seed.
  * @evidence ./analyzers.ts#growthAnalyzerAlgorithmVersion Reads the growth analyzer algorithm version.
  * @evidenceReview ./analyzers.ts#growthAnalyzerAlgorithmVersion #8646050 The function returns the growth analyzer algorithm version constant.
  */

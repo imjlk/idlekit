@@ -28,7 +28,7 @@ const GROWTH_OUTPUT_CONTRACT = "idlekit.growth-report.v1" as const;
 
 /**
  * @evidence docs/requirements/active/analyzer-registry.md#req-dx02-registry-conflicts Duplicate ids, cycles, missing dependencies, and bad params fail before a body runs.
- * @evidenceReview docs/requirements/active/analyzer-registry.md#req-dx02-registry-conflicts #c9a6b98 Re-read the section: an explicit dependency with other semantics and a malformed body result are handled before dependents run, a malformed validateParams result, bad semantics, a cycle, a duplicate, a missing dependency, bad params, an incomplete definition, a fresh-run cost above one, a version with @, and a malformed resolved demand do not call the body, an implied dependency takes its parent's semantics, and a dependent of a failed dependency does not run.
+ * @evidenceReview docs/requirements/active/analyzer-registry.md#req-dx02-registry-conflicts #ddadf25 Re-read the section: a thrown body is an error result and a postprocess fresh-run cost is refused, an explicit dependency with other semantics and a malformed body result are handled before dependents run, a malformed validateParams result, bad semantics, a cycle, a duplicate, a missing dependency, bad params, an incomplete definition, a fresh-run cost above one, a version with @, and a malformed resolved demand do not call the body, an implied dependency takes its parent's semantics, and a dependent of a failed dependency does not run.
  */
 export const analyzerRegistryConflicts = "fail-before-run" as const;
 
@@ -46,7 +46,7 @@ export const analyzerInsufficientObservation = "insufficient-observation-rerun-p
 
 /**
  * @evidence docs/requirements/active/analyzer-registry.md#req-dx02-execution-budget An execution analyzer receives a RunFactory and a budget. A short budget does not start the body.
- * @evidenceReview docs/requirements/active/analyzer-registry.md#req-dx02-execution-budget #307957d Re-read the section: a refused grant is not cached for the group, a strategyKey other than the scenario strategy throws, each member reserves its own cost in dependency order, horizon past the budget is refused, a zero run budget does not call execute, samples are reserved across the batch, blocked groups and groups skipped for a failed dependency reserve nothing, a NaN budget throws, missing-scenario is kept, analytic ETA costs no run, and simulated ETA is checked on maxDurationSec.
+ * @evidenceReview docs/requirements/active/analyzer-registry.md#req-dx02-execution-budget #2ec64cc Re-read the section: ETA semantics must match the scenario step and seed, a refused grant is not cached for the group, a strategyKey other than the scenario strategy throws, each member reserves its own cost in dependency order, horizon past the budget is refused, a zero run budget does not call execute, samples are reserved across the batch, blocked groups and groups skipped for a failed dependency reserve nothing, a NaN budget throws, missing-scenario is kept, analytic ETA costs no run, and simulated ETA is checked on maxDurationSec.
  */
 export const analyzerExecutionBudget = "explicit-budget-not-silent-run" as const;
 
@@ -490,6 +490,9 @@ function assertDefinition(input: AnalyzerDefinition<any>): void {
   if (!isNonEmptyString(definition.outputContract)) issues.push("outputContract must be a string");
   if (!isNonEmptyString(definition.algorithmVersion)) issues.push("algorithmVersion must be a string");
   issues.push(...costIssues(definition.cost));
+  if (definition.kind === "postprocess" && (definition.cost as { freshRuns?: unknown } | null)?.freshRuns !== 0) {
+    issues.push("a postprocess analyzer cannot request a run, so cost.freshRuns must be 0");
+  }
   if (!Array.isArray(definition.dependencies) || !definition.dependencies.every(isIdentity)) {
     issues.push("dependencies must be a list of id and version");
   }
@@ -700,6 +703,16 @@ const rerunReasons: ReadonlySet<string> = new Set<AnalyzerRerunPlan["reason"]>([
   "missing-scenario",
 ]);
 
+/** A thrown body is recorded as `error`, so the batch continues and dependents see the failure. */
+function callBody(call: () => unknown): AnalyzerBodyResult {
+  try {
+    return checkedBody(call());
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return { status: "error", value: null, issues: [`analyzer body threw: ${message}`] };
+  }
+}
+
 /** A body is plugin code. A malformed result is recorded as `error`, so dependents see it failed. */
 function checkedBody(raw: unknown): AnalyzerBodyResult {
   const invalid = (issue: string): AnalyzerBodyResult => ({ status: "error", value: null, issues: [issue] });
@@ -807,6 +820,9 @@ function runRegistered(
     const cost = resolvedCost(definition, itemParams);
     const costProblems = costIssues(cost);
     if (costProblems.length > 0) throw new AnalyzerRegistryError(`bad cost for ${key}`, costProblems);
+    if (definition.kind === "postprocess" && cost.freshRuns !== 0) {
+      throw new AnalyzerRegistryError(`bad cost for ${key}`, ["a postprocess analyzer cannot request a run"]);
+    }
     const blockedDependency = definition.dependencies
       .map((dependency) => analyzerKey(dependency.id, dependency.version))
       .find((dependencyKey) => blockByKey.get(dependencyKey));
@@ -1017,7 +1033,7 @@ function runRegistered(
         reservedSamples += item.cost.samples;
       }
       participate(item, identity);
-      const body = checkedBody(item.definition.postprocess?.(item.params, {
+      const body = callBody(() => item.definition.postprocess?.(item.params, {
         demand: item.demand,
         supply: request.supply ?? null,
         input: request.input,
@@ -1049,7 +1065,7 @@ function runRegistered(
     }
 
     participate(item, identity);
-    const body = checkedBody(item.definition.execute?.(item.params, {
+    const body = callBody(() => item.definition.execute?.(item.params, {
       runFactory: request.runFactory ?? null,
       budget: budget as AnalyzerBudget,
       plan,
@@ -1230,6 +1246,15 @@ function etaDefinition(): AnalyzerDefinition<EtaParams> {
           rerunReason: "missing-scenario",
         };
       }
+      // ETA runs the scenario as compiled, so semantics that name another step or seed would
+      // record a configuration that did not produce the result.
+      if (ctx.semantics.stepSec !== ctx.scenario.run.stepSec || ctx.semantics.seed !== (ctx.scenario.ctx.seed ?? null)) {
+        return {
+          status: "invalid",
+          value: null,
+          issues: ["semantics stepSec and seed must match the scenario's run step and seed"],
+        };
+      }
       if (params.mode === "analytic") {
         return { status: "ok", value: etaAnalytic({ scenario: ctx.scenario, target: params.target }) };
       }
@@ -1310,6 +1335,7 @@ export function runEtaAnalyzer(args: Readonly<{
     semantics: args.semantics ?? analyzerSemantics({
       horizonSec: args.maxDurationSec,
       stepSec: args.scenario.run.stepSec,
+      seed: args.scenario.ctx.seed ?? null,
     }),
     scenario: args.scenario,
     budget: args.budget,
