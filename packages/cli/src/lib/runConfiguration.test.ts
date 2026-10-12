@@ -105,7 +105,7 @@ function registries() {
  * @evidence ./runConfiguration.ts#openResolvedStage Each stage opens a fresh compiled scenario with its own strategy, simulate on step 5 and experience on step 1.
  * @evidenceReview ./runConfiguration.ts#openResolvedStage #79dfd66 Re-read openResolvedStage: it binds a new createRunFactory with stageBindOptions, the scenario model and the plan strategy, and opens a fresh trial with the plan seed and an execution plan built from the stage plan. Ran this function: the opened simulate scenario is not the prepared definition, the two stages hold different strategies, and simulate runs on step 5 while experience runs on step 1.
  * @evidence ./runConfiguration.ts#planResolvedRun Plans the same stages as prepareResolvedRun without compiling the scenario.
- * @evidenceReview ./runConfiguration.ts#planResolvedRun #da3d434 Re-read planResolvedRun: it resolves the engine, rejects an unknown strategy, and returns stagePlan for each stage without calling compileScenario. Ran this function: its simulate and experience plans equal prepareResolvedRun's, a model whose create throws still plans, and an unknown override throws.
+ * @evidenceReview ./runConfiguration.ts#planResolvedRun #b418b79 Re-read planResolvedRun: it resolves the engine, rejects an invalid untilExpr and an unknown strategy, and returns stagePlan for each stage without calling compileScenario. Ran this function: its simulate and experience plans equal prepareResolvedRun's, a model whose create throws still plans, and an unknown override throws.
  * @evidence ./runConfiguration.ts#prepareResolvedRun One prepared run opens simulate and experience stages that each buy once and match a standalone simulate open.
  * @evidenceReview ./runConfiguration.ts#prepareResolvedRun #9dbe932 Re-read prepareResolvedRun, whose planFor returns a stage plan without opening the stage: it resolves the engine, rejects an unknown strategy before any stage opens, compiles once without the scenario strategy when an override or validated params replace it, and open builds a stage plan, its stage hash from stageIdentity with the compiled scenario fast mode and any output inputs, a fresh stage scenario, and the registries and bind options that rebuild that stage's model and strategy. Ran this function: simulate and experience each end with bought 1, the standalone simulate matches, and an unknown override throws at prepare.
  */
@@ -151,6 +151,9 @@ export function keepsResolvedRunConfiguration(): void {
   ]);
   expect(planResolvedRun({ ...planArgs, modelRegistry: throwingCreate }).planFor("simulate").stepSec.value).toBe(5);
   expect(() => planResolvedRun({ ...planArgs, strategyOverride: "plugin.not-loaded" })).toThrow("Unknown strategy");
+  // An untilExpr that compileScenario rejects is rejected while planning too.
+  const badUntil = { ...input, clock: { ...input.clock, untilExpr: "s.t >= 1 ? true : false" } };
+  expect(() => planResolvedRun({ ...planArgs, scenario: badUntil })).toThrow("Invalid untilExpr");
   const swapped = prepareResolvedRun({
     scenario: input,
     ...loaded,

@@ -424,6 +424,10 @@ export type LoadedRegistries = Readonly<{
   pluginDigest: Readonly<Record<string, string>>;
   /** Model ids a plugin registered, in load order, including a plugin that replaces a built-in id. */
   pluginModelIds?: readonly string[];
+  /** Strategy ids a plugin registered, in load order. */
+  pluginStrategyIds?: readonly string[];
+  /** Analyzer keys (id@version) a plugin registered, in load order. */
+  pluginAnalyzerKeys?: readonly string[];
 }>;
 
 export async function loadRegistries(
@@ -444,6 +448,8 @@ export async function loadRegistries(
   const hasShaPolicy = Object.keys(requiredSha256).length > 0;
   const pluginDigest: Record<string, string> = {};
   const pluginModelIds: string[] = [];
+  const pluginStrategyIds: string[] = [];
+  const pluginAnalyzerKeys: string[] = [];
 
   for (const p of pluginPaths) {
     const abs = await resolveAndValidatePluginPath(p, allowedRoots);
@@ -471,12 +477,16 @@ export async function loadRegistries(
       modelFactories.push(...parsed.models);
       for (const factory of parsed.models) pluginModelIds.push(`${factory.id}@${factory.version}`);
     }
-    if (parsed.strategies) strategyFactories.push(...parsed.strategies);
+    if (parsed.strategies) {
+      strategyFactories.push(...parsed.strategies);
+      for (const factory of parsed.strategies) pluginStrategyIds.push(factory.id);
+    }
     if (parsed.objectives) objectiveFactories.push(...parsed.objectives);
     if (parsed.analyzers) {
       for (const analyzer of parsed.analyzers) {
         const message = registerAnalyzerIsolated(analyzerRegistry, analyzer);
         if (message) analyzerFailures.push({ path: abs, message });
+        else pluginAnalyzerKeys.push(`${analyzer.id}@${analyzer.version}`);
       }
     }
   }
@@ -489,6 +499,8 @@ export async function loadRegistries(
     analyzerFailures,
     pluginDigest,
     pluginModelIds,
+    pluginStrategyIds,
+    pluginAnalyzerKeys,
   };
 }
 

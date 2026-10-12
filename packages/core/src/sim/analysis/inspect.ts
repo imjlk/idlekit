@@ -122,6 +122,8 @@ export type ScenarioInspectRequest = Readonly<{
     loadedIds: readonly string[];
     /** A scenario model no loaded registry holds, because its plugin was not resolved. */
     unresolvedModel?: string;
+    /** A strategy no loaded registry holds, because its plugin was not resolved. The stages are not planned. */
+    unresolvedStrategy?: string;
   }>;
 }>;
 
@@ -155,7 +157,7 @@ export type ScenarioInspectReport = Readonly<{
     events: Readonly<{ enabled: boolean; maxEvents: number | null; unlimited: boolean }>;
     trace: Readonly<{ include: boolean; everySteps: number | null; unlimited: boolean }>;
   }>;
-  numericDomain: Readonly<{ engineId: string; exact: "safe-integer" | "decimal-string" }>;
+  numericDomain: Readonly<{ engineId: string; exact: "safe-integer" | "decimal-string" | "unknown" }>;
   capabilities: ScenarioInspectRequest["capabilities"];
   analyzers: readonly Readonly<{
     id: string;
@@ -221,6 +223,13 @@ export function decimalExceedsNumberDomain(literal: string): boolean {
   return /^\d+$/.test(digits) && digits.length > 15;
 }
 
+function numericDomainOf(engine: ScenarioInspectRequest["engine"]): "safe-integer" | "decimal-string" | "unknown" {
+  if (engine.source === "custom") return "unknown";
+  if (engine.effectiveId === "number") return "safe-integer";
+  if (engine.effectiveId === "breakInfinity") return "decimal-string";
+  return "unknown";
+}
+
 function engineReason(engine: ScenarioInspectRequest["engine"]): string {
   if (!engine.accepted) return engine.rejectReason ?? "The engine was rejected before a run.";
   if (engine.source === "default") return "Number is the default. scenario.engine is metadata and is not applied.";
@@ -236,7 +245,8 @@ function observationSupply(request: ScenarioInspectRequest, stepSec: number): Ob
   const every = request.trace.everySteps ?? 1;
   return {
     schema: observationContract,
-    windowSec: request.clock.durationSec ?? null,
+    // The finest window the samples supply is the trace cadence. A summary supplies no finite window.
+    windowSec: request.trace.include ? every * stepSec : null,
     sampleCadenceSec: request.trace.include ? every * stepSec : null,
     coverage: untilOnly && !request.trace.include ? "missing" : coverage,
     metricIds: ["money", "netWorth"],
@@ -261,13 +271,16 @@ export function buildScenarioInspect(request: ScenarioInspectRequest): ScenarioI
     });
   }
 
-  if (request.engine.accepted && request.engine.effectiveId === "number") {
+  // A custom engine declares no numeric domain. Its id does not say whether it narrows literals through Number,
+  // so wide literals warn for it as for the number engine.
+  const exact = numericDomainOf(request.engine);
+  if (request.engine.accepted && exact !== "decimal-string") {
     const wide = request.decimals.filter(decimalExceedsNumberDomain);
     if (wide.length > 0) {
       diagnostics.push({
         severity: "warning",
         code: "decimal-range",
-        evidence: { engineId: "number", literal: wide[0] ?? null, count: wide.length },
+        evidence: { engineId: request.engine.effectiveId, literal: wide[0] ?? null, count: wide.length },
       });
     }
   }
@@ -328,7 +341,11 @@ export function buildScenarioInspect(request: ScenarioInspectRequest): ScenarioI
     diagnostics.push({
       severity: "warning",
       code: "plugin-skipped",
-      evidence: { userCode: "not-run", model: request.plugins.unresolvedModel ?? null },
+      evidence: {
+        userCode: "not-run",
+        model: request.plugins.unresolvedModel ?? null,
+        strategy: request.plugins.unresolvedStrategy ?? null,
+      },
     });
   }
   if (request.plugins.resolve) {
@@ -357,8 +374,9 @@ export function buildScenarioInspect(request: ScenarioInspectRequest): ScenarioI
 
   const stages = request.stages.map((stage) => {
     const fast = stage.applies.fast ? stage.fast ?? null : null;
-    // A session stage runs its schedule, not the scenario duration, so the duration does not count its ticks.
-    if (request.clock.durationSec === undefined || stage.applies.session) {
+    // A session stage runs its schedule, and ltv runs the command's horizon, not the scenario duration, so the
+    // duration does not count their ticks.
+    if (request.clock.durationSec === undefined || stage.applies.session || stage.name === "ltv") {
       return {
         name: stage.name,
         applies: stage.applies,
@@ -416,7 +434,7 @@ export function buildScenarioInspect(request: ScenarioInspectRequest): ScenarioI
     },
     numericDomain: {
       engineId: request.engine.effectiveId,
-      exact: request.engine.effectiveId === "number" ? "safe-integer" : "decimal-string",
+      exact,
     },
     capabilities: request.capabilities,
     analyzers,

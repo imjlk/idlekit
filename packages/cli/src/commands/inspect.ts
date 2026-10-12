@@ -4,6 +4,7 @@ import {
   buildScenarioInspect,
   validateScenarioV1,
   type ScenarioInspectReport,
+  type ScenarioV1,
 } from "@idlekit/core";
 import { z } from "zod";
 import { loadRegistriesFromFlags, pluginOptions, type PluginOptionFlags } from "./_shared/plugin";
@@ -11,13 +12,29 @@ import { cliError, scenarioInvalidError, usageError } from "../errors";
 import { buildOutputMeta } from "../io/outputMeta";
 import { readScenarioFile } from "../io/readScenario";
 import { writeOutput } from "../io/writeOutput";
-import { planResolvedRun, type ResolvedRunPlan } from "../lib/runConfiguration";
+import { planResolvedRun, resolveEffectiveEngine, type ResolvedRunPlan } from "../lib/runConfiguration";
 
 function requestedPluginPaths(input: string): string[] {
   return input
     .split(",")
     .map((item) => item.trim())
     .filter((item) => item.length > 0);
+}
+
+/**
+ * Scenario values whose literals can enter the engine. Identifiers and descriptive fields, such as model and
+ * strategy ids or meta, are not numbers, so only model and strategy params are read from those sections.
+ */
+function numericInputs(scenario: ScenarioV1): unknown[] {
+  return [
+    scenario.model.params,
+    scenario.initial,
+    scenario.strategy?.params,
+    scenario.analysis,
+    scenario.monetization,
+    scenario.design,
+    scenario.constraints,
+  ];
 }
 
 function collectDecimals(value: unknown, out: string[]): void {
@@ -46,7 +63,9 @@ function stageInput(plan: ResolvedRunPlan, scenarioFast: boolean) {
   };
 }
 
-function plannerParams(plan: ResolvedRunPlan) {
+function plannerParams(plan: ResolvedRunPlan, pluginStrategyIds: readonly string[]) {
+  // The caps and rollout budget are the built-in planner's. A plugin that replaces the id has no such bound.
+  if (pluginStrategyIds.includes("planner")) return null;
   if (plan.strategy.id !== "planner" || !plan.strategy.params || typeof plan.strategy.params !== "object") return null;
   const params = plan.strategy.params as {
     horizonSteps?: unknown;
@@ -127,8 +146,18 @@ export default defineCommand({
     const silentFlags: PluginOptionFlags = { ...flags, plugin: "" };
     const builtins = await loadRegistriesFromFlags(silentFlags);
     const loaded = resolvePlugins ? await loadRegistriesFromFlags(flags) : builtins;
-    // Plugin registrations by origin, so a plugin that replaces a built-in id is still reported.
-    const loadedIds = resolvePlugins ? [...new Set(loaded.pluginModelIds ?? [])] : [];
+    // Plugin registrations by origin, so a plugin that replaces a built-in id is still reported. Strategies and
+    // analyzers count too: they can drive the plan or attach to it.
+    const pluginStrategyIds = resolvePlugins ? [...new Set(loaded.pluginStrategyIds ?? [])] : [];
+    const loadedIds = resolvePlugins
+      ? [
+          ...new Set([
+            ...(loaded.pluginModelIds ?? []),
+            ...pluginStrategyIds.map((id) => `strategy:${id}`),
+            ...(loaded.pluginAnalyzerKeys ?? []).map((key) => `analyzer:${key}`),
+          ]),
+        ]
+      : [];
     const input = await readScenarioFile(scenarioPath);
     // A model that only a skipped plugin provides is not in the loaded registry. Validate the scenario without the
     // model then, so the report can still say the plugin was skipped.
@@ -142,7 +171,7 @@ export default defineCommand({
     if (!valid.ok || !valid.scenario) throw scenarioInvalidError(valid.issues);
     const scenario = valid.scenario;
     const decimals: string[] = [];
-    collectDecimals(scenario, decimals);
+    for (const section of numericInputs(scenario)) collectDecimals(section, decimals);
 
     const base = {
       model: { id: scenario.model.id, version: scenario.model.version },
@@ -200,6 +229,8 @@ export default defineCommand({
       });
       const simulate = prepared.planFor("simulate");
       const experience = prepared.planFor("experience");
+      // evaluate and ltv open an ltv stage too. Its horizon comes from the command, so its count stays unknown.
+      const ltv = prepared.planFor("ltv");
       const report = buildScenarioInspect({
         ...base,
         engine: {
@@ -208,12 +239,32 @@ export default defineCommand({
           accepted: true,
           ...(prepared.engine.scenarioEngine ? { scenarioEngine: prepared.engine.scenarioEngine } : {}),
         },
-        stages: [stageInput(simulate, scenario.sim?.fast === true), stageInput(experience, scenario.sim?.fast === true)],
-        planner: plannerParams(simulate),
+        stages: [simulate, experience, ltv].map((plan) => stageInput(plan, scenario.sim?.fast === true)),
+        planner: plannerParams(simulate, pluginStrategyIds),
       });
       await emit(flags, report, scenarioPath, scenario);
     } catch (error) {
       const message = error instanceof Error ? error.message : "engine rejected";
+      // A strategy that only a skipped plugin provides cannot be planned. Report that instead of failing, as for a
+      // plugin-only model.
+      const strategyId = flags.strategy ?? scenario.strategy?.id;
+      if (message.includes("Unknown strategy") && !resolvePlugins && paths.length > 0 && strategyId !== undefined) {
+        const engine = resolveEffectiveEngine({ requested: flags.engine, scenarioEngine: scenario.engine });
+        const report = buildScenarioInspect({
+          ...base,
+          engine: {
+            effectiveId: engine.effectiveId,
+            source: engine.source,
+            accepted: true,
+            ...(engine.scenarioEngine ? { scenarioEngine: engine.scenarioEngine } : {}),
+          },
+          stages: [],
+          planner: null,
+          plugins: { ...base.plugins, unresolvedStrategy: strategyId },
+        });
+        await emit(flags, report, scenarioPath, scenario);
+        return;
+      }
       const rejected = message.includes("Unknown engine") || message.includes("breakEternity");
       if (!rejected) throw error;
       const report = buildScenarioInspect({
