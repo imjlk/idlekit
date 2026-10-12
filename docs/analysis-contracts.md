@@ -16,6 +16,8 @@ The default goals are wallet money, net worth, prestige points, and a milestone 
 
 Custom units, `vars`, and metric ids are registered by the caller. Core does not hardcode those resource names.
 
+Built-in amount goals report `invalid` when their target or observed amount is NaN or infinite, and omit `reached` and `method`. An absent net worth remains `unsupported`; a requested wallet fallback validates the wallet amount. Custom `met` predicates keep their existing behavior, including a copied built-in goal whose predicate is replaced.
+
 ## Artifact
 
 The generated schema is `docs/schemas/generated/analysis.artifact.v1.schema.json`. `contracts:check` compares it and does not rewrite it. Provenance hashes the schema, the algorithm version, and the assumption text, including goal-level assumptions such as a wallet fallback. `linkAnalysisArtifact` puts the artifact next to `_meta`. JSON and Markdown renderers live in core. Markdown prints an amount with its unit.

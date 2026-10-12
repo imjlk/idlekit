@@ -16,6 +16,8 @@
 
 단위, `vars`, metric id는 호출자가 등록한다. core는 그 자원 이름을 박아 두지 않는다.
 
+기본 금액 목표는 목표값이나 관측 금액이 NaN 또는 무한대이면 `invalid`를 반환하고 `reached`와 `method`를 생략한다. 없는 순자산은 `unsupported`이며, 지갑 대체를 요청하면 지갑 금액을 검증한다. 사용자 정의 `met` predicate는 기본 목표를 복제해 교체한 경우에도 기존대로 동작한다.
+
 ## Artifact
 
 생성 schema는 `docs/schemas/generated/analysis.artifact.v1.schema.json`이다. `contracts:check`가 비교하고 덮어쓰지 않는다. provenance는 schema, algorithm version, assumption 본문의 hash이며 지갑 대체 같은 goal 단위 assumption도 포함한다. `linkAnalysisArtifact`는 artifact를 `_meta` 옆에 둔다. JSON과 Markdown 렌더는 core에 있다. Markdown은 금액을 단위와 함께 출력한다.
