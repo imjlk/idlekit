@@ -28,7 +28,7 @@ const GROWTH_OUTPUT_CONTRACT = "idlekit.growth-report.v1" as const;
 
 /**
  * @evidence docs/requirements/active/analyzer-registry.md#req-dx02-registry-conflicts Duplicate ids, cycles, missing dependencies, and bad params fail before a body runs.
- * @evidenceReview docs/requirements/active/analyzer-registry.md#req-dx02-registry-conflicts #f1a5463 Re-read the section: a cycle, a duplicate, a missing dependency, bad params, an incomplete definition, and a fresh-run cost above one do not call the body, an implied dependency takes its parent's semantics, and a dependent of a failed dependency does not run.
+ * @evidenceReview docs/requirements/active/analyzer-registry.md#req-dx02-registry-conflicts #315b573 Re-read the section: a cycle, a duplicate, a missing dependency, bad params, an incomplete definition, a fresh-run cost above one, a version with @, and a malformed resolved demand do not call the body, an implied dependency takes its parent's semantics, and a dependent of a failed dependency does not run.
  */
 export const analyzerRegistryConflicts = "fail-before-run" as const;
 
@@ -46,7 +46,7 @@ export const analyzerInsufficientObservation = "insufficient-observation-rerun-p
 
 /**
  * @evidence docs/requirements/active/analyzer-registry.md#req-dx02-execution-budget An execution analyzer receives a RunFactory and a budget. A short budget does not start the body.
- * @evidenceReview docs/requirements/active/analyzer-registry.md#req-dx02-execution-budget #252cfcc Re-read the section: horizon past the budget is refused, a zero run budget does not call execute, samples are reserved across the batch, a blocked group reserves nothing, missing-scenario is kept, analytic ETA costs no run, and simulated ETA is checked on maxDurationSec.
+ * @evidenceReview docs/requirements/active/analyzer-registry.md#req-dx02-execution-budget #d0e5349 Re-read the section: horizon past the budget is refused, a zero run budget does not call execute, samples are reserved across the batch, blocked groups and groups skipped for a failed dependency reserve nothing, a NaN budget throws, missing-scenario is kept, analytic ETA costs no run, and simulated ETA is checked on maxDurationSec.
  */
 export const analyzerExecutionBudget = "explicit-budget-not-silent-run" as const;
 
@@ -58,7 +58,7 @@ export const analyzerSameAlgorithm = "adapter-keeps-algorithm-version" as const;
 
 /**
  * @evidence docs/requirements/active/analyzer-registry.md#req-dx02-observation-plan The same session, strategy, horizon, and observation semantics share one fresh run. A different horizon does not.
- * @evidenceReview docs/requirements/active/analyzer-registry.md#req-dx02-observation-plan #d7e6325 Re-read the section: cadence rounds down onto the execution plan and is on provenance, a different horizon or a sharesRun false definition is a separate group, the key is JSON, group members get one shared RunResult, and blocked peers are not in sharedWith.
+ * @evidenceReview docs/requirements/active/analyzer-registry.md#req-dx02-observation-plan #c77935d Re-read the section: cadence rounds down onto the execution plan and is on provenance, a cadence without a trace is refused, a different horizon or a sharesRun false definition is a separate group, the key is JSON, group members get one shared RunResult, and blocked peers are not in sharedWith.
  */
 export const analyzerObservationPlan = "demand-on-plan-and-provenance" as const;
 
@@ -341,7 +341,9 @@ export function executionPlanForDemand(semantics: RunSemantics, demand: Observat
 }
 
 function planMeetsDemand(plan: ExecutionPlan, demand: ObservationDemand): boolean {
-  if (demand.sampleCadenceSec === null || !plan.trace) return true;
+  if (demand.sampleCadenceSec === null) return true;
+  // A cadence with summary coverage gets no trace, so the plan has no samples at that cadence.
+  if (!plan.trace) return false;
   const actual = plan.stepSec * (plan.trace.everySteps ?? 1);
   return actual <= demand.sampleCadenceSec * (1 + cadenceTolerance);
 }
@@ -395,7 +397,12 @@ function isCount(value: unknown): value is number {
 function isIdentity(value: unknown): boolean {
   if (!value || typeof value !== "object") return false;
   const item = value as Record<string, unknown>;
-  return isNonEmptyString(item.id) && isNonEmptyString(item.version);
+  return isNonEmptyString(item.id) && isVersion(item.version);
+}
+
+/** No `@` in a version, so `id@version` splits at its last `@` and two identities never share a key. */
+function isVersion(value: unknown): value is string {
+  return isNonEmptyString(value) && !value.includes("@");
 }
 
 function demandIssues(label: string, value: unknown): readonly string[] {
@@ -429,6 +436,9 @@ function assertDefinition(input: AnalyzerDefinition<any>): void {
   const definition = input as unknown as Record<string, unknown>;
   if (!isNonEmptyString(definition.id) || !isNonEmptyString(definition.version)) {
     throw new AnalyzerRegistryError("analyzer id and version are required");
+  }
+  if (!isVersion(definition.version)) {
+    throw new AnalyzerRegistryError(`analyzer version must not contain @ (${definition.id})`);
   }
   const key = analyzerKey(definition.id, definition.version);
   if (definition.kind !== "postprocess" && definition.kind !== "execution") {
@@ -605,7 +615,7 @@ export function createAnalyzerRegistry(): AnalyzerRegistry {
       }
     },
     get(id, version) {
-      return map.get(analyzerKey(id, version));
+      return isVersion(version) ? map.get(analyzerKey(id, version)) : undefined;
     },
     list() {
       return [...map.values()]
@@ -622,6 +632,14 @@ function runRegistered(
   map: ReadonlyMap<string, AnalyzerDefinition<any>>,
   request: AnalyzerRunRequest,
 ): AnalyzerBatchResult {
+  // NaN fails every comparison, so an unchecked budget would admit every run.
+  const requestBudget = request.budget ?? null;
+  if (
+    requestBudget &&
+    ![requestBudget.maxFreshRuns, requestBudget.maxDurationSec, requestBudget.maxSamples].every(isCount)
+  ) {
+    throw new AnalyzerRegistryError("budget limits must be finite numbers >= 0");
+  }
   const seen = new Set<string>();
   const requested: AnalyzerDefinition<any>[] = [];
   const params = new Map<string, unknown>();
@@ -630,7 +648,7 @@ function runRegistered(
     const key = analyzerKey(entry.id, entry.version);
     if (seen.has(key)) throw new AnalyzerRegistryError(`duplicate analyzer ${key}`);
     seen.add(key);
-    const definition = map.get(key);
+    const definition = isVersion(entry.version) ? map.get(key) : undefined;
     if (!definition) throw new AnalyzerRegistryError(`missing analyzer ${key}`);
     const parsed = definition.validateParams(entry.params);
     if (!parsed.ok) {
@@ -685,6 +703,9 @@ function runRegistered(
     const itemParams = params.get(key);
     const semantics = semanticsByKey.get(key) ?? request.semantics;
     const demand = resolvedDemand(definition, itemParams);
+    // resolveDemand is plugin code whose result depends on params, so it is checked per request.
+    const demandProblems = demandIssues("resolved demand", demand);
+    if (demandProblems.length > 0) throw new AnalyzerRegistryError(`bad demand for ${key}`, demandProblems);
     const cost = resolvedCost(definition, itemParams);
     const costProblems = costIssues(cost);
     if (costProblems.length > 0) throw new AnalyzerRegistryError(`bad cost for ${key}`, costProblems);
@@ -721,7 +742,9 @@ function runRegistered(
   for (const list of members.values()) list.sort();
 
   // Each runnable group reserves one fresh run and its sample cost against the whole batch.
-  // Blocked items reserve nothing, so they cannot take a slot from a later group.
+  // The decision is made when the group's first member is reached in dependency order, after its
+  // dependencies finished, so a member skipped for a failed dependency reserves nothing.
+  // Blocked items reserve nothing either, so neither can take a slot from a later group.
   const budget = request.budget ?? null;
   const allowExecution = request.allowExecution === true;
   const groupDecision = new Map<string, "run" | AnalyzerRerunPlan["reason"]>();
@@ -729,36 +752,36 @@ function runRegistered(
   let reservedSamples = 0;
   const runGroups = new Set<string>();
   const groupKeys = [...new Set(prepared.map((item) => item.key))].sort();
-  for (const key of groupKeys) {
-    const runnable = prepared.filter(
-      (item) => item.key === key && item.definition.kind === "execution" && item.block === null,
-    );
-    const sample = runnable[0];
-    if (!sample) continue;
-    if (!allowExecution || !budget) {
-      groupDecision.set(key, "execution-not-requested");
-      continue;
-    }
-    if (!planMeetsDemand(executionPlanForDemand(sample.semantics, sample.demand), sample.demand)) {
-      groupDecision.set(key, "insufficient-data");
-      continue;
-    }
-    // Costs are 0 or 1 fresh runs (checked at register and on resolveCost): a group holds at most one.
-    const runs = Math.max(...runnable.map((item) => item.cost.freshRuns));
-    const sampleCost = Math.max(...runnable.map((item) => item.cost.samples));
-    if (
-      (runs > 0 && sample.semantics.horizonSec > budget.maxDurationSec) ||
-      reservedRuns + runs > budget.maxFreshRuns ||
-      reservedSamples + sampleCost > budget.maxSamples
-    ) {
-      groupDecision.set(key, "budget");
-      continue;
-    }
-    reservedRuns += runs;
-    reservedSamples += sampleCost;
-    if (runs > 0) runGroups.add(key);
-    groupDecision.set(key, "run");
-  }
+  const decideGroup = (key: string): "run" | AnalyzerRerunPlan["reason"] => {
+    const existing = groupDecision.get(key);
+    if (existing) return existing;
+    const decision = ((): "run" | AnalyzerRerunPlan["reason"] => {
+      const runnable = prepared.filter(
+        (item) => item.key === key && item.definition.kind === "execution" && item.block === null,
+      );
+      const sample = runnable[0];
+      if (!sample || !allowExecution || !budget) return "execution-not-requested";
+      if (!planMeetsDemand(executionPlanForDemand(sample.semantics, sample.demand), sample.demand)) {
+        return "insufficient-data";
+      }
+      // Costs are 0 or 1 fresh runs (checked at register and on resolveCost): a group holds at most one.
+      const runs = Math.max(...runnable.map((item) => item.cost.freshRuns));
+      const sampleCost = Math.max(...runnable.map((item) => item.cost.samples));
+      if (
+        (runs > 0 && sample.semantics.horizonSec > budget.maxDurationSec) ||
+        reservedRuns + runs > budget.maxFreshRuns ||
+        reservedSamples + sampleCost > budget.maxSamples
+      ) {
+        return "budget";
+      }
+      reservedRuns += runs;
+      reservedSamples += sampleCost;
+      if (runs > 0) runGroups.add(key);
+      return "run";
+    })();
+    groupDecision.set(key, decision);
+    return decision;
+  };
 
   const sharedRuns = new Map<string, SharedRun | null>();
   const openSharedRun = (item: Prepared, plan: ExecutionPlan): SharedRun | null => {
@@ -874,7 +897,7 @@ function runRegistered(
       continue;
     }
 
-    const decision = groupDecision.get(item.key) ?? "execution-not-requested";
+    const decision = decideGroup(item.key);
     if (decision !== "run") {
       record(
         envelope(item.definition, "insufficient-data", null, [decision], {

@@ -115,13 +115,13 @@ const sharedDemand = observationDemand({ coverage: "window", sampleCadenceSec: 2
 
 /**
  * @evidence docs/requirements/active/analyzer-registry.md#req-dx02-registry-conflicts A duplicate, a cycle, a missing dependency, bad params, and an unsupported capability do not run the body.
- * @evidenceReview docs/requirements/active/analyzer-registry.md#req-dx02-registry-conflicts #f1a5463 Re-read the section, then ran this function: the call log stays empty, flow is unsupported, an incomplete definition and a two-run cost are refused at register, base takes the semantics of left, and after.gate and after.short do not run.
+ * @evidenceReview docs/requirements/active/analyzer-registry.md#req-dx02-registry-conflicts #315b573 Re-read the section, then ran this function: the call log stays empty, flow is unsupported, an incomplete definition, a two-run cost, and version b@c are refused at register, a null resolved demand throws, base takes the semantics of left, and after.gate and after.short do not run.
  * @evidence ./analyzers.ts#analyzerRegistryConflicts Reads the conflict contract.
  * @evidenceReview ./analyzers.ts#analyzerRegistryConflicts #a1dbd92 The declaration is fail-before-run.
  * @evidence ./analyzers.ts#AnalyzerRegistryError.prototype.issues Reads the issue list stored when params fail before a body.
  * @evidenceReview ./analyzers.ts#AnalyzerRegistryError.prototype.issues #577e5a5 The field holds the validator issues on the thrown error.
  * @evidence ./analyzers.ts#createAnalyzerRegistry Rejects duplicate keys and dependency cycles before any run.
- * @evidenceReview ./analyzers.ts#createAnalyzerRegistry #2ae8007 The function validates each definition, rejects a duplicate key, removes a definition that closes a dependency cycle, lists sorted identities, and runs requests in dependency order.
+ * @evidenceReview ./analyzers.ts#createAnalyzerRegistry #4d14ca0 The function validates each definition, rejects a duplicate key, removes a definition that closes a dependency cycle, returns no definition for a version with @, lists sorted identities, and runs requests in dependency order.
  * @evidence ./analyzers.ts#analyzerSemantics Builds run semantics for the registry requests.
  * @evidenceReview ./analyzers.ts#analyzerSemantics #9bf6cad The function returns no session, no strategy, a 1 second horizon and step, a null seed, and the given overrides.
  * @evidence ./analyzers.ts#analyzerKey Reads the id@version key for a request.
@@ -263,6 +263,25 @@ export function rejectsRegistryConflictsBeforeRun(): void {
   expect(byId.get("after.short")?.status).toBe("insufficient-data");
   expect(byId.get("after.short")?.issues).toEqual(["dependency short@1 insufficient-data"]);
   expect(dependents).toEqual([]);
+
+  // A version cannot hold `@`, so `a@b`/`c` and `a`/`b@c` never share the key `a@b@c`.
+  const identities = createAnalyzerRegistry();
+  identities.register(probe({ id: "a@b", version: "c" }));
+  expect(() => identities.register(probe({ id: "a", version: "b@c" }))).toThrow("must not contain @");
+  expect(identities.get("a", "b@c")).toBeUndefined();
+  expect(() =>
+    identities.run({ requests: [{ id: "a", version: "b@c", params: {} }], semantics: analyzerSemantics() }),
+  ).toThrow("missing analyzer");
+  // A parameter-resolved demand is checked per request, before any body.
+  const malformed = createAnalyzerRegistry();
+  malformed.register({
+    ...probe({ id: "plugin.demand", onPostprocess: () => calls.push("plugin.demand") }),
+    resolveDemand: () => null as unknown as ObservationDemand,
+  });
+  expect(() =>
+    malformed.run({ requests: [{ id: "plugin.demand", version: "1", params: {} }], semantics: analyzerSemantics() }),
+  ).toThrow("bad demand for plugin.demand@1");
+  expect(calls).toEqual(["m", "a"]);
 }
 
 /**
@@ -389,7 +408,7 @@ export function reportsInsufficientObservation(): void {
 
 /**
  * @evidence docs/requirements/active/analyzer-registry.md#req-dx02-execution-budget A zero run budget and a horizon past the budget do not call execute. A granted run receives the factory.
- * @evidenceReview docs/requirements/active/analyzer-registry.md#req-dx02-execution-budget #252cfcc Re-read the section, then ran this function: refused calls stay 0, one grant is not a second run, s2 is refused on samples, g2 runs after unsupported g1, eta reports missing-scenario, analytic eta is ok with no run budget, and a 100 second eta is refused under a 10 second budget.
+ * @evidenceReview docs/requirements/active/analyzer-registry.md#req-dx02-execution-budget #d0e5349 Re-read the section, then ran this function: refused calls stay 0, one grant is not a second run, s2 is refused on samples, g2 runs after unsupported g1, eta reports missing-scenario, analytic eta is ok with no run budget, a 100 second eta is refused under a 10 second budget, a NaN budget throws, and other.exec runs after dep.exec is skipped.
  * @evidence ./analyzers.ts#analyzerExecutionBudget Reads the budget contract.
  * @evidenceReview ./analyzers.ts#analyzerExecutionBudget #9687833 The declaration is explicit-budget-not-silent-run.
  */
@@ -520,6 +539,42 @@ export function enforcesExecutionBudget(): void {
   expect(understated.status).toBe("insufficient-data");
   expect(understated.provenance.rerun?.reason).toBe("budget");
   expect(understated.provenance.freshRuns).toBe(0);
+
+  // A budget limit that is not a finite count is refused, since NaN passes no comparison.
+  expect(() =>
+    registry.run({
+      requests: [{ id: "fixture.exec", version: "1", params: {} }],
+      semantics,
+      allowExecution: true,
+      budget: { maxFreshRuns: Number.NaN, maxDurationSec: 4, maxSamples: 10 },
+      runFactory: factory,
+    }),
+  ).toThrow("budget limits must be finite");
+  expect(calls).toBe(1);
+
+  // An execution analyzer skipped for a failed dependency reserves nothing, so a later group runs.
+  const afterFailure = createAnalyzerRegistry();
+  afterFailure.register({ ...probe({ id: "short" }), postprocess: () => ({ status: "error" as const, value: null }) });
+  afterFailure.register(probe({
+    id: "dep.exec",
+    kind: "execution",
+    dependencies: [{ id: "short", version: "1" }],
+    observation: observationDemand({ metricIds: ["a"] }),
+  }));
+  afterFailure.register(probe({ id: "other.exec", kind: "execution", observation: observationDemand({ metricIds: ["b"] }) }));
+  const failureBatch = afterFailure.run({
+    requests: [
+      { id: "dep.exec", version: "1", params: {} },
+      { id: "other.exec", version: "1", params: {} },
+    ],
+    semantics,
+    allowExecution: true,
+    budget: { ...execBudget, maxFreshRuns: 1 },
+    runFactory: factory,
+  });
+  const failureById = new Map(failureBatch.results.map((result) => [result.id, result.status]));
+  expect(failureById.get("dep.exec")).toBe("insufficient-data");
+  expect(failureById.get("other.exec")).toBe("ok");
 }
 
 /**
@@ -594,7 +649,7 @@ export function matchesExistingAlgorithmVersions(): void {
 
 /**
  * @evidence docs/requirements/active/analyzer-registry.md#req-dx02-observation-plan Shared semantics use one fresh run. A different horizon is a separate plan, and cadence is recorded.
- * @evidenceReview docs/requirements/active/analyzer-registry.md#req-dx02-observation-plan #d7e6325 Re-read the section, then ran this function: everySteps is 2, the longer horizon is not in the shared group, cadence 1 at step 2 is refused, one and two get the same RunResult from one fresh run, delimiter and sharesRun false pairs take two runs, and a blocked peer is not in sharedWith.
+ * @evidenceReview docs/requirements/active/analyzer-registry.md#req-dx02-observation-plan #c77935d Re-read the section, then ran this function: everySteps is 2, the longer horizon is not in the shared group, cadence 1 at step 2 and cadence 2 with summary coverage are refused, one and two get the same RunResult from one fresh run, delimiter and sharesRun false pairs take two runs, and a blocked peer is not in sharedWith.
  * @evidence ./analyzers.ts#analyzerObservationPlan Reads the plan contract.
  * @evidenceReview ./analyzers.ts#analyzerObservationPlan #e5b0d7f The declaration is demand-on-plan-and-provenance.
  * @evidence ./analyzers.ts#executionPlanForDemand Builds the execution plan a demand needs.
@@ -703,6 +758,26 @@ export function recordsObservationDemandOnThePlan(): void {
   expect(refusedFine.results[0]?.status).toBe("insufficient-data");
   expect(refusedFine.results[0]?.provenance.rerun?.reason).toBe("insufficient-data");
   expect(refusedFine.freshRuns).toBe(0);
+  expect(fineCalls).toBe(0);
+  // A cadence with summary coverage gets no trace, so the plan cannot meet it either.
+  const summaryCadence = createAnalyzerRegistry();
+  summaryCadence.register(probe({
+    id: "fine",
+    kind: "execution",
+    observation: observationDemand({ coverage: "summary", sampleCadenceSec: 2 }),
+    onExecute: () => {
+      fineCalls += 1;
+      return null;
+    },
+  }));
+  const untraced = summaryCadence.run({
+    requests: [{ id: "fine", version: "1", params: {} }],
+    semantics: analyzerSemantics({ horizonSec: 4, stepSec: 1 }),
+    allowExecution: true,
+    budget,
+    runFactory: createRunFactory(),
+  });
+  expect(untraced.results[0]?.provenance.rerun?.reason).toBe("insufficient-data");
   expect(fineCalls).toBe(0);
 
   // Members of one group share the run itself, not only the grant: one fresh run is opened.
