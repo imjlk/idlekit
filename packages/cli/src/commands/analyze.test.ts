@@ -118,6 +118,22 @@ describe("idk analyze", () => {
             return run ? { status: "ok", value: { endT: run.end.t } } : { status: "insufficient-data", value: null, rerun: true };
           },
         },
+        {
+          id: "plugin.read",
+          version: "1",
+          kind: "postprocess",
+          validateParams: () => ({ ok: true, params: {} }),
+          requires: { capabilities: [], metricIds: [], observationSchema: "idlekit.run-observation" },
+          observation: { windowSec: null, sampleCadenceSec: 2, coverage: "trace", metricIds: ["money"], observationSchema: "idlekit.run-observation" },
+          outputContract: "test.analyzer",
+          algorithmVersion: "plugin-read-v1",
+          cost: { freshRuns: 0, samples: 0 },
+          dependencies: [],
+          postprocess: (_params, ctx) => ({
+            status: "ok",
+            value: { endT: ctx.input.run.end.t, cadence: ctx.supply.sampleCadenceSec, points: ctx.input.run.trace.length },
+          }),
+        },
       ];
       `,
     );
@@ -133,6 +149,10 @@ describe("idk analyze", () => {
     const refused = runCliJson<any>([...base, "--budget-runs", "0", "--format", "json"]);
     expect(refused.status).toBe("insufficient-data");
     expect(refused.provenance.rerun.reason).toBe("budget");
+    const pluginFlags = ["--plugin", plugin, "--allow-plugin", "true", "--plugin-root", dir];
+    const read = runCliJson<any>(["analyze", "plugin.read", scenario, ...pluginFlags, "--trace-every", "2", "--format", "json"]);
+    expect(read.status).toBe("ok");
+    expect(read.value).toEqual({ endT: 8, cadence: 2, points: 5 });
     await removePath(dir);
   }, 60000);
 });

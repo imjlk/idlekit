@@ -102,10 +102,13 @@ export default defineCommand({
     }
     // `idk analyze <id>` is an explicit request, like `idk analyze eta`: an execution analyzer
     // runs inside the --budget-* flags, with the compiled scenario when one is given.
+    // A postprocess analyzer reads a run, so the scenario is run once with a trace and supplied as input.
     const compiled = scenarioPath ? await compile(scenarioPath, loaded) : undefined;
+    const observed = compiled && defined.kind === "postprocess" ? observeScenario(compiled, flags["trace-every"]) : undefined;
     const batch = loaded.analyzerRegistry.run({
       requests: [{ id: analyzerId, version, params }],
       semantics: compiled ? scenarioSemantics(compiled, flags["max-duration"]) : analyzerSemantics(),
+      ...(observed ? { supply: observed.supply, input: { run: observed.run, scenario: compiled?.compiled } } : {}),
       scenario: compiled?.compiled ?? null,
       budget: budgetFromFlags(flags),
       runFactory: runFactoryFor(loaded),
@@ -126,6 +129,31 @@ function scenarioSemantics(compiled: Compiled, fallbackHorizonSec: number) {
   });
 }
 
+function tracedRun(compiled: Compiled, traceEvery: number) {
+  return runScenario({
+    ...compiled.compiled,
+    run: {
+      ...compiled.compiled.run,
+      trace: { everySteps: Math.max(1, traceEvery), keepActionsLog: false },
+    },
+  });
+}
+
+/** One traced run. Its trace cadence is also the finest window it can supply. */
+function observeScenario(compiled: Compiled, traceEvery: number) {
+  const cadence = Math.max(1, traceEvery) * compiled.compiled.run.stepSec;
+  return {
+    run: tracedRun(compiled, traceEvery),
+    supply: {
+      schema: observationContract,
+      windowSec: cadence,
+      sampleCadenceSec: cadence,
+      coverage: "trace" as const,
+      metricIds: ["money", "netWorth"],
+    },
+  };
+}
+
 function runGrowth(
   compiled: Compiled,
   flags: {
@@ -134,13 +162,7 @@ function runGrowth(
     "trace-every": number;
   },
 ) {
-  const run = runScenario({
-    ...compiled.compiled,
-    run: {
-      ...compiled.compiled.run,
-      trace: { everySteps: Math.max(1, flags["trace-every"]), keepActionsLog: false },
-    },
-  });
+  const run = tracedRun(compiled, flags["trace-every"]);
   return runGrowthAnalyzer({
     run,
     scenario: compiled.compiled,
