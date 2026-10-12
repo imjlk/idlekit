@@ -52,6 +52,8 @@ console.log(formatMoney(E, restored.money));
 
 `@idlekit/money` is maintained as a Bun-first ESM package.
 
+`Engine.comparisonIsExact` optionally declares that `cmp` has no comparison tolerance. Number and break-infinity adapters report `true` with epsilon 0 and `false` with their default epsilon. Custom adapters may declare `true` only for strict comparisons; omission means unknown to analyses that require an exact goal boundary.
+
 ## Documentation
 
 - Repository: [github.com/imjlk/idlekit](https://github.com/imjlk/idlekit)

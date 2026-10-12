@@ -153,6 +153,13 @@
           "args": ["test", "src/testkit/conformance.test.ts"]
         },
         {
+          "file": "packages/core/src/testkit/conformance.test.ts",
+          "exportName": "keepsTheDeclaredResetPolicyRateAcrossTheSeedCorpus",
+          "registeredAs": "PR-11 reset policy rate > keeps the declared reset policy rate across the seed corpus",
+          "cwd": "packages/core",
+          "args": ["test", "src/testkit/conformance.test.ts"]
+        },
+        {
           "file": "tools/conformance.negative.test.ts",
           "exportName": "runsTheNegativeConformanceRunner",
           "registeredAs": "DX-01 conformance harness > runs the negative conformance runner",
@@ -165,6 +172,20 @@
           "registeredAs": "money conformance comparator > matches finite amounts by log distance and refuses Infinity collapse",
           "cwd": "packages/money",
           "args": ["test", "src/testkit/compareAmounts.test.ts"]
+        },
+        {
+          "file": "packages/core/src/testkit/conformance.test.ts",
+          "exportName": "keepsGrowthShapesAcrossScaleAndSampling",
+          "registeredAs": "keeps growth shapes across scale and sampling",
+          "cwd": "packages/core",
+          "args": ["test", "src/testkit/conformance.test.ts"]
+        },
+        {
+          "file": "packages/core/src/testkit/conformance.test.ts",
+          "exportName": "resumesDeclaredResetCyclesAcrossTheSeedCorpus",
+          "registeredAs": "resumes declared reset cycles across the seed corpus",
+          "cwd": "packages/core",
+          "args": ["test", "src/testkit/conformance.test.ts"]
         }
       ]
     },
