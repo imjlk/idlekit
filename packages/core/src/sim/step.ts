@@ -46,6 +46,9 @@ export type StepInput<N, U extends string, Vars> = Readonly<{
   /** Checks the action a decision re-resolves to. A rejected one is dropped without an event. */
   admits?: (action: Action<N, U, Vars>) => boolean;
 
+  /** Wall time of this step's decisions, from the runner's elapsed clock. Without it, the segment clock is used. */
+  wallT?: number;
+
   constraints?: ScenarioConstraints;
 
   fast?: Readonly<{
@@ -387,9 +390,16 @@ function resetSnapshot<N, U extends string, Vars>(
   };
 }
 
-function wallNow<N, U extends string, Vars>(ctx: SimContext<N, U, Vars>): number | null {
-  const wallT = ctx.clocks?.wallT;
-  return typeof wallT === "number" && Number.isFinite(wallT) ? wallT : null;
+/**
+ * Wall time of a decision at reward time t. The segment clock records where the segment began on both clocks, and
+ * wall time advances with reward time inside it, up to the segment's wall end.
+ */
+function wallNow<N, U extends string, Vars>(ctx: SimContext<N, U, Vars>, t: number): number | null {
+  const clocks = ctx.clocks;
+  if (!clocks || typeof clocks.wallT !== "number" || !Number.isFinite(clocks.wallT)) return null;
+  const offset = Number.isFinite(clocks.rewardT) ? Math.max(0, t - clocks.rewardT) : 0;
+  const wall = clocks.wallT + offset;
+  return Number.isFinite(clocks.wallEndT) ? Math.min(wall, clocks.wallEndT) : wall;
 }
 
 /**
@@ -408,6 +418,8 @@ export function applyDecisions<N, U extends string, Vars>(args: {
   constraints?: ScenarioConstraints;
   admits?: (action: Action<N, U, Vars>) => boolean;
   resetKinds?: ReadonlySet<"prestige" | "custom">;
+  /** Wall time of the decisions, from the caller's elapsed clock. Without it, the segment clock is used. */
+  wallT?: number;
   /**
    * Default true: re-read `model.actions` and drop a decision the model no longer lists.
    * A reset adapter passes false. Its action was built for this state and may not be a model action.
@@ -585,7 +597,7 @@ export function applyDecisions<N, U extends string, Vars>(args: {
         actionId: action.id,
         kind: action.kind,
         t: decisionT,
-        wallT: wallNow(ctx),
+        wallT: args.wallT ?? wallNow(ctx, decisionT),
         cost: paid
           ? { unit: paid.unit.code, decimal: E.toString(paid.amount) }
           : null,
@@ -629,6 +641,7 @@ export function stepOnce<N, U extends string, Vars>(
     decisions: input.decisions,
     constraints,
     ...(input.admits ? { admits: input.admits } : {}),
+    ...(input.wallT !== undefined ? { wallT: input.wallT } : {}),
   });
   let next = applied.state;
   const events = applied.events;

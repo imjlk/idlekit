@@ -13,14 +13,14 @@ export function withoutResetActions<N, U extends string, Vars>(
   model: Model<N, U, Vars>,
   adapter: ResetAdapter<N, U, Vars> | undefined,
 ): Model<N, U, Vars> {
-  const kind = adapter?.kind ?? "prestige";
   const actions = (actionCtx: SimContext<N, U, Vars>, actionState: SimState<N, U, Vars>) => {
     // Prestige actions are resets under any adapter. A custom adapter does not make them ordinary interval actions.
     const listed = model.actions(actionCtx, actionState).filter((candidate) => candidate.kind !== "prestige");
-    if (kind === "prestige") return listed;
-    // Resolve the custom reset for this state. Its id can change, or appear, as the interval earns resources.
-    const reset = adapter?.action(actionCtx, actionState);
-    if (!reset) return listed;
+    if (!adapter) return listed;
+    // Resolve the adapter's reset for this state, whatever kind the adapter declares. A prestige-declared adapter can
+    // still return a custom action, and the strategy must not commit it during the interval.
+    const reset = adapter.action(actionCtx, actionState);
+    if (!reset || reset.kind === "prestige") return listed;
     // A listed reset is removed by identity, so an ordinary custom action sharing its id stays available.
     if (listed.includes(reset)) return listed.filter((candidate) => candidate !== reset);
     return listed.filter((candidate) => !(candidate.kind === "custom" && candidate.id === reset.id));

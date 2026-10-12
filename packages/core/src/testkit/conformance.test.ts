@@ -4,6 +4,7 @@ import { join } from "path";
 import { createBreakInfinityEngine, createNumberEngine } from "../engine/breakInfinity";
 import type { Engine } from "../engine/types";
 import { etaAnalytic, etaSimulate } from "../sim/analysis/eta";
+import { fitGrowth } from "../sim/analysis/growthFit";
 import { analyzeMilestones } from "../sim/analysis/milestones";
 import { runScenario } from "../sim/simulator";
 import { createScriptedStrategy } from "../sim/strategy/scripted";
@@ -14,8 +15,10 @@ import {
   checkBulk,
   checkCooldownResumeFromJson,
   checkDurationBoundary,
+  checkGrowthShapes,
   checkJsonRoundTrip,
   checkMilestoneRetention,
+  checkResetCycleResume,
   checkNonNegative,
   checkObserver,
   checkReplay,
@@ -2171,3 +2174,167 @@ describe("engine differential", () => {
     matchesASafeConstantRunAndRefusesNumberInfinityCollapse,
   );
 });
+
+/**
+ * @evidence docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness Executes the declared growth scale and sampling relations over the short and extended seed corpus.
+ * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #bbb39a2 Read the declared relation and ran both corpora. Exponential, affine, and saturating fixtures keep their window shapes when rescaled by 10^k for k in [-8, 100] and when thinned to at least 16 samples; an undeclared relation stays unchecked.
+ * @evidence ./conformance.ts#checkGrowthShapes Compares window shapes and statuses of two executed fits and refuses an undeclared relation.
+ * @evidenceReview ./conformance.ts#checkGrowthShapes #36a95f6 The function returns inapplicable when undeclared and otherwise compares each window's shape and status as one snapshot.
+ */
+export function keepsGrowthShapesAcrossScaleAndSampling(): void {
+  const testSeed = 0x9a0f;
+  const engine = createNumberEngine();
+  const fit = (amounts: readonly number[], budget: number) =>
+    fitGrowth({
+      E: engine,
+      samples: amounts.map((amount, t) => ({ t, amount })),
+      seriesRequested: "money",
+      valueSource: "money",
+      sampling: { samplingBudget: budget, method: "growth-fit-v1", methodVersion: 1, windowSec: 80 },
+    });
+  const undeclared = fit([1, 2, 3], 81);
+  expect(checkGrowthShapes(false, undeclared, undeclared).applicable).toBe(false);
+  const kinds = ["exponential", "affine", "saturating"] as const;
+  expectProperty({
+    predicateId: "declared-growth-shape-scale-and-sampling",
+    testSeed,
+    cases: conformanceCaseCount(),
+    generate: (index, rng) => ({
+      kind: kinds[index % kinds.length]!,
+      rate: rng.int(2, 20) / 100,
+      // The number engine reads amounts within 1e-12 of zero as zero, so scales stay above that floor.
+      scaleLog10: rng.int(-8, 100),
+      budget: rng.int(16, 40),
+    }),
+    shrink: () => [],
+    predicate: (value) => {
+      const curve = (t: number) =>
+        value.kind === "exponential"
+          ? Math.exp(value.rate * t)
+          : value.kind === "affine"
+            ? 10 + value.rate * 100 * t
+            : 100 * (1 - Math.exp(-value.rate * (t + 1)));
+      const amounts = Array.from({ length: 81 }, (_, t) => curve(t));
+      const base = fit(amounts, 81);
+      expectApplicable(checkGrowthShapes(true, base, fit(amounts.map((amount) => amount * 10 ** value.scaleLog10), 81)));
+      expectApplicable(checkGrowthShapes(true, base, fit(amounts, value.budget)));
+      return true;
+    },
+    describeCase: (value, index) => ({
+      gameSeed: gameSeedForCase(testSeed, index),
+      engineId: "number",
+      modelId: `growth-${value.kind}`,
+      strategyId: "none",
+      tickSchedule: { stepSec: 1, durationSec: 80 },
+    }),
+  });
+}
+
+/**
+ * @evidence docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness Executes the declared reset-cycle resume relation over the short and extended seed corpus.
+ * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #bbb39a2 Read the declared relation and ran both corpora. Splits between cycles and budget cuts inside a cycle resume to the continuous economy, reward total, elapsed seconds, and completed rows; an undeclared relation stays unchecked.
+ * @evidence ./conformance.ts#checkResetCycleResume Runs a continuous and a split reset-cycle execution and compares their economy, reward total, elapsed seconds, and completed rows.
+ * @evidenceReview ./conformance.ts#checkResetCycleResume #f32f133 The function returns inapplicable when undeclared, splits by cycles or by a step budget, resumes the remaining cycles from the checkpoint, and compares one snapshot. It rewinds a restorable strategy to its opening state before the split run and does not apply to a strategy whose state cannot be restored.
+ */
+export function resumesDeclaredResetCyclesAcrossTheSeedCorpus(): void {
+  const testSeed = 0xc0de;
+  const engine = createNumberEngine();
+  const unit = { code: "COIN" as const };
+  const fixture = (rate: number, price: number, stepSec: number, seed: number): CompiledScenario<number, UnitCode, Vars> => {
+    const buy: Action<number, UnitCode, Vars> = {
+      id: "buy",
+      kind: "buy",
+      canApply: (_ctx, current) => current.wallet.money.amount >= price,
+      cost: () => ({ unit, amount: price }),
+      apply: (_ctx, current) => ({ ...current, vars: { buys: current.vars.buys + 1 } }),
+    };
+    const reset: Action<number, UnitCode, Vars> = {
+      id: "reset",
+      kind: "prestige",
+      canApply: () => true,
+      cost: () => null,
+      apply: (_ctx, current) => ({
+        ...current,
+        wallet: { money: { unit, amount: 0 }, bucket: 0 },
+        vars: { buys: 0 },
+        prestige: {
+          count: current.prestige.count + 1,
+          points: current.prestige.points + current.vars.buys,
+          multiplier: 1 + (current.prestige.points + current.vars.buys) / 10,
+        },
+      }),
+    };
+    return {
+      ctx: { E: engine, unit, tickPolicy: { mode: "drop" }, seed, stepSec },
+      model: {
+        id: "declared-reset-cycles",
+        version: 1,
+        income: (_ctx, current) => ({ unit, amount: rate * current.prestige.multiplier }),
+        actions: () => [buy, reset],
+      },
+      initial: state(engine, 0),
+      strategy: {
+        id: "buy-when-able",
+        decide: (ctx, model, current) =>
+          model.actions(ctx, current).filter((action) => action.kind === "buy" && action.canApply(ctx, current)).map((action) => ({ action })),
+      },
+      run: { stepSec, durationSec: 1 },
+    };
+  };
+  // A restorable strategy with a cursor is rewound before the split run, so both branches start from its opening.
+  let cursor = 0;
+  const cursorFixture = fixture(2, 3, 1, 0);
+  const cursored: CompiledScenario<number, UnitCode, Vars> = {
+    ...cursorFixture,
+    strategy: {
+      id: "every-other-tick",
+      stateVersion: 1,
+      decide: (ctx, model, current) => {
+        cursor += 1;
+        return cursor % 2 === 0 ? cursorFixture.strategy!.decide(ctx, model, current) : [];
+      },
+      snapshotState: () => cursor,
+      restoreState: (saved) => {
+        cursor = saved as number;
+      },
+    },
+  };
+  expectApplicable(checkResetCycleResume(true, cursored, { kind: "fixed-interval", intervalSec: 5, cycles: 3 }, { cycles: 1 }));
+  expectApplicable(checkResetCycleResume(true, cursored, { kind: "fixed-interval", intervalSec: 5, cycles: 3 }, { budgetSteps: 7 }));
+  const undeclared = fixture(1, 2, 1, 0);
+  expect(checkResetCycleResume(false, undeclared, { kind: "fixed-interval", intervalSec: 4, cycles: 2 }, { cycles: 1 }).applicable).toBe(false);
+  expectProperty({
+    predicateId: "declared-reset-cycle-resume",
+    testSeed,
+    cases: conformanceCaseCount(),
+    generate: (index, rng) => ({
+      rate: rng.int(1, 5),
+      price: rng.int(1, 8),
+      stepSec: rng.int(1, 2),
+      intervalTicks: rng.int(2, 8),
+      cycles: rng.int(2, 5),
+      splitCycles: rng.int(1, 4),
+      budgetSteps: rng.int(0, 30),
+      byBudget: index % 2 === 1,
+      gameSeed: gameSeedForCase(testSeed, index),
+    }),
+    shrink: () => [],
+    predicate: (value) => {
+      const scenario = fixture(value.rate, value.price, value.stepSec, value.gameSeed);
+      const policy = { kind: "fixed-interval", intervalSec: value.intervalTicks * value.stepSec, cycles: value.cycles } as const;
+      const split = value.byBudget ? { budgetSteps: value.budgetSteps } : { cycles: Math.min(value.splitCycles, value.cycles - 1) };
+      expectApplicable(checkResetCycleResume(true, scenario, policy, split));
+      return true;
+    },
+    describeCase: (value) => ({
+      gameSeed: value.gameSeed,
+      engineId: "number",
+      modelId: "declared-reset-cycles",
+      strategyId: "buy-when-able",
+      tickSchedule: { stepSec: value.stepSec, durationSec: value.intervalTicks * value.stepSec * value.cycles },
+    }),
+  });
+}
+
+it("keeps growth shapes across scale and sampling", keepsGrowthShapesAcrossScaleAndSampling);
+it("resumes declared reset cycles across the seed corpus", resumesDeclaredResetCyclesAcrossTheSeedCorpus);
