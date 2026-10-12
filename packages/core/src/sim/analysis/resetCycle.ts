@@ -164,6 +164,9 @@ export type ResetCycleCheckpoint<N, U extends string, Vars> = Readonly<{
   elapsedSec?: number;
   accumulatedReward: N;
   strategyState?: unknown;
+  /** The model the state belongs to. A resume checks it. */
+  modelId?: string;
+  modelVersion?: number;
   /** The id and state version of the strategy that wrote strategyState. A resume checks them. */
   strategyId?: string;
   strategyStateVersion?: number;
@@ -386,7 +389,22 @@ export function executeResetCycles<N, U extends string, Vars>(args: {
   ) {
     throw new ResetCycleRejected("reset cycle resume needs an idlekit.reset-cycle-checkpoint version 1");
   }
+  // A state belongs to the model that produced it. Another model would read it under different rules.
+  if (
+    args.resume &&
+    (args.resume.modelId !== undefined || args.resume.modelVersion !== undefined) &&
+    (args.resume.modelId !== scenario.model.id || args.resume.modelVersion !== scenario.model.version)
+  ) {
+    throw new ResetCycleRejected(
+      `reset cycle checkpoint belongs to model ${String(args.resume.modelId)}@${String(args.resume.modelVersion)}, not ${scenario.model.id}@${scenario.model.version}`,
+    );
+  }
   const originSec = args.resume?.originSec ?? args.resume?.state.t ?? scenario.initial.t;
+  // A guard can stop before the runner validates the clock, so the clock fields are checked here.
+  const clockFields = [originSec, args.resume?.state.t ?? scenario.initial.t, args.resume?.elapsedSec ?? 0];
+  if (clockFields.some((value) => typeof value !== "number" || !Number.isFinite(value))) {
+    throw new ResetCycleRejected("reset cycle clock fields must be finite numbers");
+  }
   // Resume from copies, so in-place edits during the run cannot rewrite the checkpoint.
   let state = args.resume ? deepClonePreservingPrototype(args.resume.state) : scenario.initial;
   let constraints = args.resume?.constraints
@@ -448,10 +466,14 @@ export function executeResetCycles<N, U extends string, Vars>(args: {
     // horizonSec is elapsed time from the study origin, not an absolute t.
     // The slack covers the rounding of this addition only: a few ULPs of the magnitudes involved, so a zero horizon
     // admits no positive interval and a long horizon admits no real overshoot.
+    // It also stays below half the interval, so even a very short interval at a reached horizon cannot pass.
     const slack =
       args.horizonSec === undefined
         ? 0
-        : HORIZON_ULPS * Number.EPSILON * Math.max(Math.abs(elapsed) + Math.abs(duration), Math.abs(args.horizonSec));
+        : Math.min(
+            HORIZON_ULPS * Number.EPSILON * Math.max(Math.abs(elapsed) + Math.abs(duration), Math.abs(args.horizonSec)),
+            duration / 2,
+          );
     if (args.horizonSec !== undefined && elapsed + duration > args.horizonSec + slack) {
       guard = "censored";
       warnings.push("horizon");
@@ -640,6 +662,8 @@ function checkpointOf<N, U extends string, Vars>(
   return {
     contract: "idlekit.reset-cycle-checkpoint",
     version: 1,
+    modelId: scenario.model.id,
+    modelVersion: scenario.model.version,
     state: deepClonePreservingPrototype(state),
     ...(constraints ? { constraints: deepClonePreservingPrototype(constraints) } : {}),
     nextIndex,

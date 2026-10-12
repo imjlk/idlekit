@@ -387,9 +387,16 @@ function resetSnapshot<N, U extends string, Vars>(
   };
 }
 
-function wallNow<N, U extends string, Vars>(ctx: SimContext<N, U, Vars>): number | null {
-  const wallT = ctx.clocks?.wallT;
-  return typeof wallT === "number" && Number.isFinite(wallT) ? wallT : null;
+/**
+ * Wall time of a decision at reward time t. The segment clock records where the segment began on both clocks, and
+ * wall time advances with reward time inside it, up to the segment's wall end.
+ */
+function wallNow<N, U extends string, Vars>(ctx: SimContext<N, U, Vars>, t: number): number | null {
+  const clocks = ctx.clocks;
+  if (!clocks || typeof clocks.wallT !== "number" || !Number.isFinite(clocks.wallT)) return null;
+  const offset = Number.isFinite(clocks.rewardT) ? Math.max(0, t - clocks.rewardT) : 0;
+  const wall = clocks.wallT + offset;
+  return Number.isFinite(clocks.wallEndT) ? Math.min(wall, clocks.wallEndT) : wall;
 }
 
 /**
@@ -585,7 +592,7 @@ export function applyDecisions<N, U extends string, Vars>(args: {
         actionId: action.id,
         kind: action.kind,
         t: decisionT,
-        wallT: wallNow(ctx),
+        wallT: wallNow(ctx, decisionT),
         cost: paid
           ? { unit: paid.unit.code, decimal: E.toString(paid.amount) }
           : null,
