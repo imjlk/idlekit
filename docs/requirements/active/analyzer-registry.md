@@ -6,6 +6,8 @@ Requirement `REQ-DX02-REGISTRY-CONFLICTS`. `DX-02` owns it.
 
 `analyzerRegistryConflicts` in `packages/core/src/sim/analysis/analyzers.ts` is `fail-before-run`. `createAnalyzerRegistry` rejects a duplicate id and version when `register` is called. A dependency cycle is rejected when the definition that closes the cycle is registered, and that definition is not stored. A missing dependency throws `AnalyzerRegistryError` before any body. Params that fail `validateParams` throw before any body. Capability knowledge `unsupported` returns status `unsupported` and does not call the body. Bodies run in dependency order. Results are sorted by id, then version. The probe bodies run `m` then `a`. The returned ids are `a` then `m`.
 
+`register` also checks every field `run` reads, because a plugin definition is a runtime value. A definition without `validateParams`, with a negative cost, or with a dependency that has no version is refused at `register`, and `registerAnalyzerIsolated` returns the message. An unrequested dependency runs under the semantics of the analyzer that pulled it in. Two parents with the same semantics share it. Two parents with different semantics throw before any body.
+
 `ModelAnalysisAdapter` is not this registry. This requirement does not add a second numeric engine.
 
 The executed test is `rejectsRegistryConflictsBeforeRun` in `packages/core/src/sim/analysis/analyzers.test.ts`.
@@ -14,7 +16,7 @@ The executed test is `rejectsRegistryConflictsBeforeRun` in `packages/core/src/s
 
 Requirement `REQ-DX02-CUSTOM-ANALYZER`. `DX-02` owns it.
 
-`analyzerCustomRegistration` is `caller-metric-and-analyzer`. The builtin registry lists `eta` version `1` and `growth` version `1`. A caller registers metric `fixture.ore` on `ModelAnalysisRegistry` and analyzer `fixture.custom` on a separate `AnalyzerRegistry`. Core source does not contain those names. The model registry has no `run` method. With the registered metric id, the analyzer returns `3`. With an empty metric list, the status is `unsupported` and the body is not called again.
+`analyzerCustomRegistration` is `caller-metric-and-analyzer`. The builtin registry lists `eta` version `1` and `growth` version `1`. A caller registers metric `fixture.ore` on `ModelAnalysisRegistry` and analyzer `fixture.custom` on a separate `AnalyzerRegistry`. Core source does not contain those names. The model registry has no `run` method. With the registered metric id, the analyzer returns `3`. With an empty metric list, the status is `unsupported` and the body is not called again. A definition with `resolveDemand` is checked against the metrics of its resolved demand, not the static union. With only `money` registered, growth for `money` is `ok` and growth for `netWorth` is `unsupported`.
 
 The executed test is `runsCustomMetricAnalyzer` in `packages/core/src/sim/analysis/analyzers.test.ts`.
 
@@ -30,7 +32,7 @@ The executed test is `reportsInsufficientObservation` in `packages/core/src/sim/
 
 Requirement `REQ-DX02-EXECUTION-BUDGET`. `DX-02` owns it.
 
-`analyzerExecutionBudget` is `explicit-budget-not-silent-run`. An execution definition receives the caller `RunFactory` and the caller budget. `maxFreshRuns` `0` does not call `execute`. Horizon `100` with `maxDurationSec` `10` does not call `execute`. The rerun note says the fresh run exceeds the explicit budget. A granted run calls `requestRun` twice and gets the same grant. The batch `freshRuns` is `1`. `allowExecution` false returns rerun reason `execution-not-requested` and does not call the body.
+`analyzerExecutionBudget` is `explicit-budget-not-silent-run`. An execution definition receives the caller `RunFactory` and the caller budget. `maxFreshRuns` `0` does not call `execute`. Horizon `100` with `maxDurationSec` `10` does not call `execute`. The rerun note says the fresh run exceeds the explicit budget. A granted run calls `requestRun` twice and gets the same grant. The batch `freshRuns` is `1`. `allowExecution` false returns rerun reason `execution-not-requested` and does not call the body. Samples are reserved across the batch: two groups of `8` samples under `maxSamples` `10` run the first and refuse the second with `budget`. A group blocked by an `unsupported` capability reserves no run, so a later group gets the only run under `maxFreshRuns` `1`. ETA without a scenario returns rerun reason `missing-scenario`, and the batch `freshRuns` is `0`.
 
 The executed test is `enforcesExecutionBudget` in `packages/core/src/sim/analysis/analyzers.test.ts`.
 
@@ -47,6 +49,8 @@ The executed test is `matchesExistingAlgorithmVersions` in `packages/core/src/si
 Requirement `REQ-DX02-OBSERVATION-PLAN`. `DX-02` owns it.
 
 `analyzerObservationPlan` is `demand-on-plan-and-provenance`. Analyzers that share session `session-a`, strategy `greedy`, horizon `10`, step `1`, seed `4`, and observation cadence `2` use one fresh run. `executionPlan.trace.everySteps` is `2`. `executionPlan.durationSec` is `10`. Provenance demand records cadence `2`. A third analyzer with horizon `11` is a separate group and a second fresh run. Its duration is `11`. Result order is `alpha`, `late`, `zeta`. `alpha` shares with `zeta@1` only. The batch `freshRuns` count is `2`.
+
+The traced cadence rounds down, so it is never coarser than the demand. Cadence `5` at step `2` traces every `2` steps. Cadence `0.3` at step `0.1` traces every `3`. Cadence `1` at step `2` returns `insufficient-data` and does not call the body. The grant's `run()` opens the group's fresh run once through the caller `RunFactory`. Two members of one group get the same `RunResult`, the factory opens one fresh run, and the trace holds `t` `0`, `2`, and `4`.
 
 The executed test is `recordsObservationDemandOnThePlan` in `packages/core/src/sim/analysis/analyzers.test.ts`.
 
