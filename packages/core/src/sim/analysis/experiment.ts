@@ -37,7 +37,7 @@ export const experimentSeparateSpec = "experiment-spec-not-tunespec" as const;
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter Assignment uses a registered identifier path and the model or strategy schema. JSONPath, prototype, and eval paths are refused before a run.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #5fa4e48 Re-read the section: a prototype path, an out-of-range integer, a non-finite choice value, a non-finite space bound, a schema-invalid rate, a stripped path, overlapping paths, a session dimension, a repeated seed, a non-finite limit, and a repeated constraint id throw before model create.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #b0ceab6 Re-read the section: a prototype path, an out-of-range integer, a non-finite choice value, a non-finite space bound, a schema-invalid rate, a stripped path, overlapping paths, a session dimension, a repeated seed, a non-finite limit, and a repeated constraint id throw before model create.
  */
 export const experimentRegisteredSetter = "registered-key-not-jsonpath" as const;
 
@@ -61,7 +61,7 @@ export const experimentCensoredHorizon = "censored-time-not-horizon" as const;
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown Pareto keeps per-metric tradeoffs. An unknown objective is uncompared, not a win.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown #8c525c9 Re-read the section: A, B, and C are non-dominated, D is dominated, E is uncompared, money is compared pairwise in the effective engine, and the elasticity stays in that engine until it is text.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown #249d72e Re-read the section: A, B, and C are non-dominated, D is dominated, E is uncompared, money is compared pairwise in the effective engine, and the elasticity stays in that engine until it is text.
  */
 export const experimentParetoUnknown = "unknown-is-not-superior" as const;
 
@@ -319,9 +319,16 @@ export function assertRegisteredPath(path: string, target: ExperimentDimensionV1
 export function setRegisteredParam(root: Readonly<Record<string, unknown>>, path: string, value: ExperimentScalar): Record<string, unknown> {
   const parts = assertRegisteredPath(path, "model");
   // Copy only the objects on the assigned path, with their prototype and property descriptors.
-  // Every other value keeps its identity and exact number.
-  const copy = (source: object): Record<string, unknown> =>
-    Object.create(Object.getPrototypeOf(source), Object.getOwnPropertyDescriptors(source)) as Record<string, unknown>;
+  // Every other value keeps its identity and exact number. A copied property is configurable, so a frozen
+  // or read-only source can still take the assigned value as a new own data property.
+  const copy = (source: object): Record<string, unknown> => {
+    const descriptors = Object.getOwnPropertyDescriptors(source);
+    for (const descriptor of Object.values(descriptors)) descriptor.configurable = true;
+    return Object.create(Object.getPrototypeOf(source), descriptors) as Record<string, unknown>;
+  };
+  const put = (target: Record<string, unknown>, key: string, entry: unknown): void => {
+    Object.defineProperty(target, key, { value: entry, writable: true, enumerable: true, configurable: true });
+  };
   const clone = copy(root);
   let cursor = clone;
   for (let index = 0; index < parts.length - 1; index += 1) {
@@ -330,12 +337,12 @@ export function setRegisteredParam(root: Readonly<Record<string, unknown>>, path
     if (key === "__proto__" || key === "constructor" || key === "prototype") reject("parameter path is not a registered identifier");
     const next = Object.prototype.hasOwnProperty.call(cursor, key) ? cursor[key] : undefined;
     const copied: Record<string, unknown> = next === null || typeof next !== "object" || Array.isArray(next) ? {} : copy(next);
-    cursor[key] = copied;
+    put(cursor, key, copied);
     cursor = copied;
   }
   const leaf = parts[parts.length - 1]!;
   if (leaf === "__proto__" || leaf === "constructor" || leaf === "prototype") reject("parameter path is not a registered identifier");
-  cursor[leaf] = value;
+  put(cursor, leaf, value);
   return clone;
 }
 
@@ -372,6 +379,8 @@ function requireSpec(input: ExperimentSpecV1): ExperimentSpecV1 {
   }
   const spec = parsed.data;
   if (!Number.isFinite(spec.horizonSec) || spec.horizonSec <= 0) reject("horizon must be a positive finite number");
+  // A JSON literal such as 1e400 parses to Infinity, which the artifact and canonical JSON cannot carry.
+  if (!Number.isFinite(spec.model.version)) reject("model version must be finite");
   if (!Number.isFinite(spec.stepSec) || spec.stepSec <= 0) reject("step must be a positive finite number");
   if (!Number.isInteger(spec.budget.candidates) || spec.budget.candidates < 1) reject("candidate budget must be a positive integer");
   if (!Number.isInteger(spec.budget.seeds) || spec.budget.seeds < 1) reject("seed budget must be a positive integer");
@@ -554,7 +563,8 @@ function prepareCandidate(
       ? params
       : [...assigned].sort((left, right) => byText(left.dimension.id, right.dimension.id)).reduce<Record<string, unknown>>(
           (acc, { dimension, value }) => setRegisteredParam(acc, dimension.path, value),
-          { ...asParamRecord(params, label) },
+          // setRegisteredParam copies the root with its prototype, so the scenario object is not spread here.
+          asParamRecord(params, label) as Record<string, unknown>,
         );
   const modelFactory = registries.modelRegistry.get(spec.model.id, spec.model.version);
   if (!modelFactory) reject(`model not found: ${spec.model.id}@${spec.model.version}`);
@@ -753,7 +763,7 @@ function prepareExperiment(request: ExperimentCheckRequest) {
  * A caller that compiles or opens a run first calls this, so a rejected spec never reaches a factory.
  *
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter Throws the same rejections as runExperiment before any model create.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #5fa4e48 Re-read the section: the hash, spec, path, and schema checks run and no factory create is called.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #b0ceab6 Re-read the section: the hash, spec, path, and schema checks run and no factory create is called.
  */
 export function checkExperimentSpec(request: ExperimentCheckRequest): void {
   prepareExperiment(request);

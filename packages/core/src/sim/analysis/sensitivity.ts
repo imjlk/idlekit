@@ -154,6 +154,8 @@ export function paretoFrontBy<T>(
   points: readonly Readonly<{ id: string; objectives: readonly Readonly<{ sense: ParetoSense; value: T | null }>[] }>[],
   compare: (left: T, right: T) => number,
 ): ParetoFront {
+  // The front lists ids, so two points with one id would be ambiguous and would never compare against each other.
+  if (new Set(points.map((point) => point.id)).size !== points.length) throw new Error("Pareto point ids must be unique");
   const comparable: ComparablePoint<T>[] = [];
   const uncompared: string[] = [];
   for (const point of points) {
