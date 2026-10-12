@@ -13,9 +13,8 @@ import {
   assignmentFitsParamSpace,
   elasticityFromChange,
   localElasticity,
-  paretoFront,
+  paretoFrontBy,
   type LocalElasticity,
-  type ParetoPoint,
 } from "./sensitivity";
 
 /**
@@ -37,7 +36,7 @@ export const experimentSeparateSpec = "experiment-spec-not-tunespec" as const;
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter Assignment uses a registered identifier path and the model or strategy schema. JSONPath, prototype, and eval paths are refused before a run.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #a02d313 Re-read the section: a prototype path, an out-of-range integer, a non-finite choice value, a non-finite space bound, a schema-invalid rate, a stripped path, overlapping paths, a session dimension, a repeated seed, a non-finite limit, and a repeated constraint id throw before model create.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #6962259 Re-read the section: a prototype path, an out-of-range integer, a non-finite choice value, a non-finite space bound, a schema-invalid rate, a stripped path, overlapping paths, a session dimension, a repeated seed, a non-finite limit, and a repeated constraint id throw before model create.
  */
 export const experimentRegisteredSetter = "registered-key-not-jsonpath" as const;
 
@@ -61,7 +60,7 @@ export const experimentCensoredHorizon = "censored-time-not-horizon" as const;
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown Pareto keeps per-metric tradeoffs. An unknown objective is uncompared, not a win.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown #90de272 Re-read the section: A, B, and C are non-dominated, D is dominated, E is uncompared, money is compared in the effective engine, and the elasticity stays in that engine until it is text.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown #2896909 Re-read the section: A, B, and C are non-dominated, D is dominated, E is uncompared, money is compared pairwise in the effective engine, and the elasticity stays in that engine until it is text.
  */
 export const experimentParetoUnknown = "unknown-is-not-superior" as const;
 
@@ -660,18 +659,6 @@ function readingElasticity<N>(
   return localElasticity({ baselineP, probeP, baselineY: baseline.num ?? null, probeY: probe.num ?? null });
 }
 
-/** Dense rank per objective under the metric's own order. Dominance reads only that order, so ranks keep the front. */
-function objectiveRanks<N>(E: Engine<N>, readings: readonly (Reading<N> | undefined)[]): (number | null)[] {
-  const observed = readings.filter(isObserved).sort((left, right) => compareReadings(E, left, right));
-  const ranks = new Map<Reading<N>, number>();
-  let rank = 0;
-  observed.forEach((reading, index) => {
-    if (index > 0 && compareReadings(E, observed[index - 1]!, reading) !== 0) rank += 1;
-    ranks.set(reading, rank);
-  });
-  return readings.map((reading) => (reading !== undefined && ranks.has(reading) ? ranks.get(reading)! : null));
-}
-
 /**
  * Run options every candidate inherits from the compiled scenario.
  * A scenario stop condition or step budget would end a candidate before the spec horizon, and a report trace
@@ -685,19 +672,37 @@ export function experimentRunBase(run: SimRunOptions): SimRunOptions {
   return horizonRun;
 }
 
-export function runExperiment<N>(request: ExperimentRunRequest<N>): ExperimentArtifactV1 {
+type ExperimentCheckRequest = Pick<ExperimentRunRequest, "spec" | "scenario" | "modelRegistry" | "strategyRegistry">;
+
+/** Every rejection that does not need a model instance. No factory `create` runs here. */
+function prepareExperiment(request: ExperimentCheckRequest) {
   const scenarioHash = sha256Text(canonicalJson(request.scenario));
   if (scenarioHash !== request.spec.scenario.hash) reject("scenario hash does not match the experiment spec");
   const spec = requireSpec(request.spec);
   const metrics = metricIds(spec);
-  const measuresReach = metrics.includes("timeToMoney");
-  if (measuresReach) {
+  if (metrics.includes("timeToMoney")) {
     if (spec.goal === undefined || !Number.isFinite(spec.goal.target)) reject("timeToMoney requires a finite goal target");
   }
-  const E = request.engine;
   const base = candidateBase(spec, request.scenario, request);
-  const listed = plannedCandidates(spec);
-  const prepared = listed.map((candidate) => prepareCandidate(spec, base, candidate, request));
+  const prepared = plannedCandidates(spec).map((candidate) => prepareCandidate(spec, base, candidate, request));
+  return { spec, metrics, base, prepared };
+}
+
+/**
+ * Runs every spec, scenario-hash, path, and parameter check of `runExperiment` without creating a model.
+ * A caller that compiles or opens a run first calls this, so a rejected spec never reaches a factory.
+ *
+ * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter Throws the same rejections as runExperiment before any model create.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #6962259 Re-read the section: the hash, spec, path, and schema checks run and no factory create is called.
+ */
+export function checkExperimentSpec(request: ExperimentCheckRequest): void {
+  prepareExperiment(request);
+}
+
+export function runExperiment<N>(request: ExperimentRunRequest<N>): ExperimentArtifactV1 {
+  const { spec, metrics, base, prepared } = prepareExperiment(request);
+  const measuresReach = metrics.includes("timeToMoney");
+  const E = request.engine;
   // The plan builds the strategy, so compile does not build the scenario one.
   const { strategy: _scenarioStrategy, ...withoutStrategy } = request.scenario;
   const compiled = compileScenario<N, string, Record<string, unknown>>({
@@ -829,21 +834,19 @@ export function runExperiment<N>(request: ExperimentRunRequest<N>): ExperimentAr
     : [];
 
   const objectives = spec.objectives ?? [];
-  const ranks = objectives.map((objective) =>
-    objectiveRanks(E, measured.map((candidate) => candidate.readings.find((metric) => metric.metricId === objective.metricId))),
-  );
+  // Each pair of candidates is compared in the engine. Ranks would chain the engine tolerance through a third value.
   const pareto =
     objectives.length === 0
       ? { sense: "per-metric" as const, nonDominated: [] as string[], uncompared: [] as string[] }
-      : paretoFront(
-          measured.map((candidate, index): ParetoPoint => ({
+      : paretoFrontBy(
+          measured.map((candidate) => ({
             id: candidate.id,
-            objectives: objectives.map((objective, slot) => ({
-              id: objective.id,
-              sense: objective.sense,
-              value: ranks[slot]![index]!,
-            })),
+            objectives: objectives.map((objective) => {
+              const reading = candidate.readings.find((metric) => metric.metricId === objective.metricId);
+              return { sense: objective.sense, value: isObserved(reading) ? reading : null };
+            }),
           })),
+          (left: Reading<N>, right: Reading<N>) => compareReadings(E, left, right),
         );
 
   const candidates = measured.map((candidate) => ({

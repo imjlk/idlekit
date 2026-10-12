@@ -1,5 +1,6 @@
 import { defineCommand, option } from "../runtime/command";
 import {
+  checkExperimentSpec,
   runExperiment,
   validateExperimentSpec,
   validateScenarioV1,
@@ -53,6 +54,13 @@ export default defineCommand({
     const loaded = await loadRegistriesFromFlags(flags);
     const valid = validateScenarioV1(scenario, loaded.modelRegistry);
     if (!valid.ok || !valid.scenario) throw scenarioInvalidError(valid.issues);
+    // Reject a semantically invalid spec before run preparation compiles the scenario and creates a model.
+    checkExperimentSpec({
+      spec,
+      scenario: valid.scenario,
+      modelRegistry: loaded.modelRegistry,
+      strategyRegistry: loaded.strategyRegistry,
+    });
     const prepared = prepareResolvedRun({
       scenario: valid.scenario,
       modelRegistry: loaded.modelRegistry,

@@ -22,6 +22,8 @@ describe("experiment command", () => {
   let pluginPath = "";
   let bareSpecPath = "";
   let chosenSpecPath = "";
+  let boomFlags: string[] = [];
+  let boomSpecPath = "";
   let cliVersion = "";
 
   beforeAll(async () => {
@@ -69,6 +71,25 @@ describe("experiment command", () => {
     await writeText(bareSpecPath, JSON.stringify(bareSpec));
     chosenSpecPath = resolve(dir, "chosen-spec.json");
     await writeText(chosenSpecPath, JSON.stringify({ ...bareSpec, strategy: { id: "greedy" } }));
+    // A plugin model whose create throws. A spec rejection must come before run preparation creates it.
+    const boomPlugin = resolve(dir, "boom-plugin.mjs");
+    await writeText(boomPlugin, `export const models = [{ id: "plugin.boom", version: 1, create: () => { throw new Error("boom create ran"); } }];\n`);
+    boomFlags = ["--plugin", boomPlugin, "--allow-plugin", "true"];
+    const boom = { ...bare, model: { id: "plugin.boom", version: 1, params: {} } };
+    const boomPath = resolve(dir, "boom.json");
+    await writeText(boomPath, JSON.stringify(boom, null, 2));
+    boomSpecPath = resolve(dir, "boom-spec.json");
+    await writeText(
+      boomSpecPath,
+      JSON.stringify({
+        ...bareSpec,
+        scenario: { ref: boomPath, hash: createHash("sha256").update(canonical(boom)).digest("hex") },
+        model: { id: "plugin.boom", version: 1 },
+        dimensions: [],
+        seeds: [7, 7],
+        budget: { candidates: 1, seeds: 2 },
+      }),
+    );
     // A plugin that adds an unused strategy still changes the loaded code, so it must reach provenance.
     pluginPath = resolve(dir, "noop-plugin.mjs");
     await writeText(pluginPath, `export const strategies = [{ id: "plugin.noop", create: () => ({ id: "plugin.noop", decide: () => [] }) }];\n`);
@@ -109,6 +130,14 @@ describe("experiment command", () => {
     expect(bareRun.tasks[0].strategyId).toBeNull();
     expect(chosenRun.tasks[0].strategyId).toBe("greedy");
     expect(chosenRun.effectiveRunHash).not.toBe(bareRun.effectiveRunHash);
+  });
+
+  it("rejects a semantically invalid spec before any model is created", () => {
+    const failed = runCliFailure(["experiment", boomSpecPath, ...boomFlags]);
+    const output = `${failed.stderr}\n${failed.stdout}`;
+    expect(output).toContain("EXPERIMENT_SPEC_INVALID");
+    expect(output).toContain("seeds must be unique");
+    expect(output).not.toContain("boom create ran");
   });
 
   it("rejects a malformed spec before resolving its scenario", () => {

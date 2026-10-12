@@ -14,6 +14,7 @@ import { createStrategyRegistry, type StrategyFactory } from "../strategy/regist
 import type { CompiledScenario, SimState } from "../types";
 import {
   assertRegisteredPath,
+  checkExperimentSpec,
   experimentAlgorithmVersion,
   experimentCandidateOrder,
   experimentEstimatorVersion,
@@ -169,7 +170,7 @@ function runWith(scenario: ScenarioV1, spec: ExperimentSpecV1, creates: { count:
  * @evidence ./experiment.ts#experimentTaskDescriptor Reads the task descriptor contract.
  * @evidenceReview ./experiment.ts#experimentTaskDescriptor #03898ac The declaration is task-id-params-seed-version.
  * @evidence ./experiment.ts#runExperiment Runs the sweep and local sensitivity on a fixed spec.
- * @evidenceReview ./experiment.ts#runExperiment #7c9a48a The function checks the scenario hash against the spec, rejects a timeToMoney metric without a finite goal, compiles the scenario once as the candidate base, runs each planned candidate per seed through a fresh binding to the horizon while reading the reach time, averages every seed, and reports local sensitivity only for completed horizons.
+ * @evidenceReview ./experiment.ts#runExperiment #2214af6 The function checks the scenario hash against the spec, rejects a timeToMoney metric without a finite goal, compiles the scenario once as the candidate base, runs each planned candidate per seed through a fresh binding to the horizon while reading the reach time, averages every seed, and reports local sensitivity only for completed horizons.
  * @evidence ./experiment.ts#experimentSchemaId Reads the experiment schema id.
  * @evidenceReview ./experiment.ts#experimentSchemaId #637335e The function returns the experiment.v1 schema URL constant.
  * @evidence ./experiment.ts#experimentAlgorithmVersion Reads the algorithm version.
@@ -307,11 +308,13 @@ export function keepsStrategyTuneSignature(): void {
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter Unsafe paths and invalid parameters throw before the model factory runs.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #a02d313 Re-read the section, then ran this function: a stripped typo path, overlapping model and strategy paths, a session dimension, a repeated seed, another model version, an Infinity choice value, an Infinity space bound, an Infinity limit, and a repeated constraint id throw, and create count stays 0.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #6962259 Re-read the section, then ran this function: a stripped typo path, overlapping model and strategy paths, a session dimension, a repeated seed, another model version, an Infinity choice value, an Infinity space bound, an Infinity limit, and a repeated constraint id throw, and create count stays 0.
  * @evidence ./experiment.ts#experimentRegisteredSetter Reads the setter contract.
  * @evidenceReview ./experiment.ts#experimentRegisteredSetter #080a763 The declaration is registered-key-not-jsonpath.
  * @evidence ./experiment.ts#assertRegisteredPath Rejects prototype, bracket, and traversal paths, and session paths other than pattern or days.
  * @evidenceReview ./experiment.ts#assertRegisteredPath #7465c3e The function splits a trimmed dotted identifier path and rejects empty, bracketed, traversing, or banned segments, and session paths other than pattern or days.
+ * @evidence ./experiment.ts#checkExperimentSpec Runs the rejections alone, before any compile or create.
+ * @evidenceReview ./experiment.ts#checkExperimentSpec #5a81db2 The function runs the hash, spec, path, and parameter checks of runExperiment and returns without creating a model.
  * @evidence ./experiment.ts#setRegisteredParam Sets a nested model parameter on a copy.
  * @evidenceReview ./experiment.ts#setRegisteredParam #247b31e The function validates the path, deep-copies the root through JSON, refuses a prototype key at each segment, creates missing own objects, and sets the leaf without changing the input.
  */
@@ -438,6 +441,10 @@ export function rejectsUnsafeParametersBeforeRun(): void {
   for (const [message, spec] of rejected) {
     expect(() => runWith(scenario, spec, creates)).toThrow(message);
   }
+  // The same checks run alone before a caller compiles the scenario, and a valid spec passes without a create.
+  const registries = { modelRegistry: createModelRegistry([incomeFactory(creates)]), strategyRegistry: createStrategyRegistry([policyFactory()]) };
+  expect(() => checkExperimentSpec({ spec: rejected.find(([message]) => message === "seeds must be unique")![1], scenario, ...registries })).toThrow("seeds must be unique");
+  expect(() => checkExperimentSpec({ spec: specFor(scenario), scenario, ...registries })).not.toThrow();
   expect(creates.count).toBe(0);
 }
 
@@ -610,7 +617,7 @@ export function skipsCensoredHorizonForSensitivity(): void {
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown The hand tradeoff keeps A, B, and C, drops D, and leaves E uncompared.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown #90de272 Re-read the section, then ran this function: nonDominated is A, B, C and E is uncompared.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown #2896909 Re-read the section, then ran this function: nonDominated is A, B, C and E is uncompared, and end money 0, 0.75e-12, and 1.5e-12 give the front B and C.
  * @evidence ./experiment.ts#experimentParetoUnknown Reads the Pareto contract.
  * @evidenceReview ./experiment.ts#experimentParetoUnknown #4c62a0c The declaration is unknown-is-not-superior.
  */
@@ -690,13 +697,48 @@ export function matchesHandPareto(): void {
     value: null,
   });
   expect(JSON.stringify(artifact)).not.toContain("weightedScore");
+  // The number engine treats amounts within 1e-12 as equal. Each pair is compared directly, so 0 is still below 1.5e-12.
+  const tiny = defineModelFactory({
+    id: "tiny-income",
+    version: 1,
+    create(params: { amount: number }) {
+      return { id: "tiny-income", version: 1, income: (ctx: { unit: { code: string } }) => ({ unit: ctx.unit, amount: params.amount }), actions: () => [] };
+    },
+  });
+  const tinyScenario = incomeScenario({ model: { id: "tiny-income", version: 1, params: { amount: 0 } }, strategy: undefined });
+  const amountDimension = { id: "amount", target: "model" as const, path: "amount", space: { kind: "number" as const, min: 0, max: 1 }, baseline: 0 };
+  const tinyFront = runExperiment({
+    spec: specFor(tinyScenario, {
+      model: { id: "tiny-income", version: 1 },
+      strategy: undefined,
+      metricId: "endMoney",
+      goal: undefined,
+      objectives: [{ id: "money", metricId: "endMoney", sense: "higher" }],
+      dimensions: [amountDimension],
+      candidates: [
+        { id: "A", assignments: [{ dimensionId: "amount", value: 0 }] },
+        { id: "B", assignments: [{ dimensionId: "amount", value: 0.75e-12 }] },
+        { id: "C", assignments: [{ dimensionId: "amount", value: 1.5e-12 }] },
+      ],
+      budget: { candidates: 3, seeds: 1 },
+      horizonSec: 1,
+    }),
+    scenario: tinyScenario,
+    modelRegistry: createModelRegistry([tiny]),
+    strategyRegistry: createStrategyRegistry([]),
+    engine: createNumberEngine(),
+    engineId: "number",
+    engineVersion: "1",
+    effectiveRunHash: "tolerance-front",
+  });
+  expect(tinyFront.pareto).toEqual({ sense: "per-metric", nonDominated: ["B", "C"], uncompared: [] });
 }
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-task-descriptor Candidates start from the referenced scenario and the candidate metric is the mean over every seed.
  * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-task-descriptor #10a3f42 Re-read the section, then ran this function: the GEM wallet starts at 100, maxPicks stays 3, the stripped note reaches create as kept, seeds 1 and 3 average to reach time 20 and end money 160, and probes 1 and "1" get distinct ids.
  * @evidence ./experiment.ts#runExperiment Runs every candidate from the compiled scenario and averages the seeds.
- * @evidenceReview ./experiment.ts#runExperiment #7c9a48a The function compiles the request scenario once as the base, keeps its raw model and strategy params, and aggregates every seed row by its mean.
+ * @evidenceReview ./experiment.ts#runExperiment #2214af6 The function compiles the request scenario once as the base, keeps its raw model and strategy params, and aggregates every seed row by its mean.
  */
 export function startsCandidatesFromScenario(): void {
   const creates = { count: 0 };
@@ -785,9 +827,9 @@ export function startsCandidatesFromScenario(): void {
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown An amount past the double range stays an observed engine value for constraints, Pareto, and sensitivity.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown #90de272 Re-read the section, then ran this function: 1e400 and 1e401 are observed, both violate the cap, only the probe is non-dominated, 1e-10 to 1e400 keeps an engine elasticity near 2.44e409, and two seeds of benefit 1e308 average to 1e308.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown #2896909 Re-read the section, then ran this function: 1e400 and 1e401 are observed, both violate the cap, only the probe is non-dominated, 1e-10 to 1e400 keeps an engine elasticity near 2.44e409, and two seeds of benefit 1e308 average to 1e308.
  * @evidence ./experiment.ts#runExperiment Compares engine amounts for constraints, Pareto, and elasticity.
- * @evidenceReview ./experiment.ts#runExperiment #7c9a48a The function keeps money as engine amounts, checks constraints with the engine order, ranks each Pareto objective by that order, and divides money changes in the engine.
+ * @evidenceReview ./experiment.ts#runExperiment #2214af6 The function keeps money as engine amounts, checks constraints with the engine order, ranks each Pareto objective by that order, and divides money changes in the engine.
  */
 export function keepsLargeEngineAmounts(): void {
   const engine = createBreakInfinityEngine();
