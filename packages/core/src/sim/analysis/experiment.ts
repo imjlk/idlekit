@@ -37,7 +37,7 @@ export const experimentSeparateSpec = "experiment-spec-not-tunespec" as const;
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter Assignment uses a registered identifier path and the model or strategy schema. JSONPath, prototype, and eval paths are refused before a run.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #338ce12 Re-read the section: a prototype path, an out-of-range integer, a non-finite choice value, a non-finite space bound, a schema-invalid rate, a stripped path, overlapping paths, a session dimension, a repeated seed, a non-finite limit, and a repeated constraint id throw before model create.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #01cbc40 Re-read the section: a prototype path, an out-of-range integer, a non-finite choice value, a non-finite space bound, a schema-invalid rate, a stripped path, overlapping paths, a session dimension, a repeated seed, a non-finite limit, and a repeated constraint id throw before model create.
  */
 export const experimentRegisteredSetter = "registered-key-not-jsonpath" as const;
 
@@ -522,7 +522,23 @@ function isJsonData(value: unknown, seen: Set<object> = new Set()): boolean {
   if (typeof value !== "object" || seen.has(value)) return false;
   // Visited objects stay recorded, so a shared reference fails like a cycle.
   seen.add(value);
-  if (Array.isArray(value)) return Array.from(value, (entry) => entry).every((entry) => isJsonData(entry, seen));
+  if (Array.isArray(value)) {
+    // Only a plain array of index slots: no subclass prototype, no named or symbol own property, no holes or accessors.
+    if (Object.getPrototypeOf(value) !== Array.prototype) return false;
+    const keys = Reflect.ownKeys(value);
+    if (keys.length !== value.length + 1) return false;
+    return keys.every((key) => {
+      if (key === "length") return true;
+      const descriptor = Object.getOwnPropertyDescriptor(value, key)!;
+      return (
+        typeof key === "string" &&
+        String(Number(key)) === key &&
+        descriptor.enumerable === true &&
+        "value" in descriptor &&
+        isJsonData(descriptor.value, seen)
+      );
+    });
+  }
   const prototype = Object.getPrototypeOf(value);
   if (prototype !== Object.prototype && prototype !== null) return false;
   return Reflect.ownKeys(value).every((key) => {
@@ -537,13 +553,15 @@ function isJsonData(value: unknown, seen: Set<object> = new Set()): boolean {
   });
 }
 
-function requireJsonParams(params: unknown, label: string): void {
-  if (params !== undefined && !isJsonData(params)) reject(`${label} params must be JSON data, because task descriptors and hashes record them as JSON`);
+/** One visited set spans the model and strategy params, so an object shared between them is refused too. */
+function requireJsonParams(params: unknown, label: string, seen: Set<object>): void {
+  if (params !== undefined && !isJsonData(params, seen)) reject(`${label} params must be JSON data, because task descriptors and hashes record them as JSON`);
 }
 
 function candidateBase(spec: ExperimentSpecV1, scenario: ScenarioV1, registries: Pick<ExperimentRunRequest, "strategyRegistry">): CandidateBase {
-  requireJsonParams(scenario.model.params, "model");
-  requireJsonParams(scenario.strategy?.params, "strategy");
+  const seen = new Set<object>();
+  requireJsonParams(scenario.model.params, "model", seen);
+  requireJsonParams(scenario.strategy?.params, "strategy", seen);
   if (scenario.model.id !== spec.model.id || scenario.model.version !== spec.model.version) {
     reject(`model ${spec.model.id}@${spec.model.version} does not match the scenario model ${scenario.model.id}@${scenario.model.version}`);
   }
@@ -559,7 +577,8 @@ function candidateBase(spec: ExperimentSpecV1, scenario: ScenarioV1, registries:
   const strategyFactory = registries.strategyRegistry.get(strategyId);
   if (!strategyFactory) reject(`strategy not found: ${strategyId}`);
   const strategyParams = scenarioStrategy?.params ?? strategyFactory.defaultParams ?? {};
-  requireJsonParams(strategyParams, "strategy");
+  // Factory defaults are checked on their own: they are not part of the scenario object.
+  if (scenarioStrategy?.params === undefined) requireJsonParams(strategyParams, "strategy", seen);
   return { modelParams: scenario.model.params, strategyId, strategyParams };
 }
 
@@ -795,7 +814,7 @@ function prepareExperiment(request: ExperimentCheckRequest) {
  * A caller that compiles or opens a run first calls this, so a rejected spec never reaches a factory.
  *
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter Throws the same rejections as runExperiment before any model create.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #338ce12 Re-read the section: the hash, spec, path, and schema checks run and no factory create is called.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #01cbc40 Re-read the section: the hash, spec, path, and schema checks run and no factory create is called.
  */
 export function checkExperimentSpec(request: ExperimentCheckRequest): void {
   prepareExperiment(request);
