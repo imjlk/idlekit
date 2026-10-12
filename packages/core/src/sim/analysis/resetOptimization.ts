@@ -271,6 +271,11 @@ function scanIntervals(scan: ResetPolicyRequest<never, string, never>["scan"]): 
     // Rounding dust only: a share of a large step could admit an interval well past toSec.
     const dust = 8 * Number.EPSILON * Math.max(Math.abs(scan.toSec), Math.abs(interval));
     if (interval > scan.toSec + dust) break;
+    // A step below the spacing of floats at this interval repeats a candidate instead of scanning a new one.
+    const previous = intervals[intervals.length - 1];
+    if (previous !== undefined && !(interval > previous)) {
+      throw new ResetPolicyRejected("reset policy scan.stepSec must advance every scanned interval");
+    }
     intervals.push(interval);
   }
   if (intervals.length === 0) throw new ResetPolicyRejected("reset policy scan produced no candidates");
@@ -618,6 +623,24 @@ function watched<N, U extends string, Vars>(
 }
 
 /**
+ * Read the caller's open goals on a committed boundary reset state, which no runner records, and tell the observer
+ * about each first crossing once. A caller that disabled observation reads no goal.
+ */
+function readCallerGoals<N, U extends string, Vars>(
+  scenario: CompiledScenario<N, U, Vars>,
+  state: SimState<N, U, Vars>,
+  share: ObservationShare<N, U, Vars>,
+): void {
+  if (scenario.run.observation?.enabled === false) return;
+  for (const goal of scenario.run.goals ?? []) {
+    if (share.reachedGoals.has(goal.id)) continue;
+    if (!goal.met(deepClonePreservingPrototype(state))) continue;
+    share.reachedGoals.add(goal.id);
+    scenario.run.observer?.onGoal?.({ t: state.t, goalId: goal.id });
+  }
+}
+
+/**
  * Play without a reset. The reset action is hidden from the strategy, as `executeResetCycles` hides it, so only
  * this analysis commits resets. The run sees the live constraints and, when the model reads them, session clocks.
  */
@@ -924,6 +947,8 @@ function evaluateAlwaysActive<N, U extends string, Vars>(
     // The executor admits a boundary a few ULPs past the horizon. Its position is the horizon.
     elapsedAtLastReset = Math.min(elapsed, request.horizonSec);
     resetTimes.push(elapsedAtLastReset);
+    // The executor's interval run recorded the state before the reset. The reset state can meet a caller goal first.
+    readCallerGoals(scenario, state, share);
   }
   metricCtx = liveCtx(scenario, constraints);
   // horizonSec is elapsed time from the scenario origin. The tail is what the cycles did not play.
@@ -1153,14 +1178,7 @@ function playSchedule<N, U extends string, Vars>(
       // reads keep the block's clocks.
       segmentCtx = ctxAt(block.end);
       // The reset state can be the first to meet a caller goal. A reset at the horizon has no later run to read it.
-      if (options.emit && scenario.run.observation?.enabled !== false) {
-        for (const callerGoal of scenario.run.goals ?? []) {
-          if (share.reachedGoals.has(callerGoal.id)) continue;
-          if (!callerGoal.met(deepClonePreservingPrototype(state))) continue;
-          share.reachedGoals.add(callerGoal.id);
-          scenario.run.observer?.onGoal?.({ t: state.t, goalId: callerGoal.id });
-        }
-      }
+      if (options.emit) readCallerGoals(scenario, state, share);
       // Two resets can follow each other with no runner in between when the delay covers the interval, so the
       // goal is read on the committed reset state too, on a copy as the runner reads it.
       const goal = request.goal;
