@@ -8,7 +8,7 @@
 
 양은 Engine에 남긴다. 양의 유한 값은 `absLog10`를 쓴다. `toNumber`는 절대 log10이 안전한 수 범위 안일 때만, 값 영역 잔차에만 쓴다. 0과 음수는 별도 domain이며 `abs`로 넘기지 않는다. 구매, reset, 부호 변화, 10배 하락은 새 창을 시작한다. 설정된 `analytic.softcap`은 형태 옆에 기록되고 형태를 고르지 않는다.
 
-끊김은 sampling budget을 적용하기 전에 모든 표본에서 찾고, 각 끊김의 양쪽 점을 남기므로 downsampling이 0이나 하락을 숨기지 않는다. fit은 창 시작부터의 시간을 쓰므로 큰 절대 `t`가 기울기를 바꾸지 않는다. 값 영역 fit은 1로 내림하지 않은 계열 크기 단위로 하므로 단위를 바꿔도 형태가 바뀌지 않는다. 포화는 간격으로 나눈 증가율로 읽으므로 고르게 줄인 표본의 간격이 고르지 않아도 포화로 본다. 정확히 10배 하락도 하락이다. cadence가 거칠어도 양이 아니거나 유한하지 않은 domain은 `invalid`로 남는다. 값 영역에서 정확한 직선이나 포물선은 절편과 관계없이 `polynomial`이다. 다만 log 선형 fit이 더 정확하면 느린 지수도 `exponential`로 남는다. 불규칙 간격은 budget으로 줄이기 전의 입력 표본에서 읽는다. 실행 결과에서 action은 그 뒤 첫 trace 상태에서 새 창을 연다. retention이 비운 trace는 비어 있는 그대로다. action 기록이 완전하지 않으면 창은 형태 주장을 보류한다.
+끊김은 sampling budget을 적용하기 전에 모든 표본에서 찾고, 각 끊김의 양쪽 점을 남기므로 downsampling이 0이나 하락을 숨기지 않는다. fit은 창 시작부터의 시간을 쓰므로 큰 절대 `t`가 기울기를 바꾸지 않는다. 값 영역 fit은 1로 내림하지 않은 계열 크기 단위로 하므로 단위를 바꿔도 형태가 바뀌지 않는다. 포화는 간격으로 나눈 증가율로 읽으므로 고르게 줄인 표본의 간격이 고르지 않아도 포화로 본다. 정확히 10배 하락도 하락이다. cadence가 거칠어도 양이 아니거나 유한하지 않은 domain은 `invalid`로 남는다. 값 영역에서 정확한 직선이나 포물선은 절편과 관계없이 `polynomial`이다. 다만 log 선형 fit이 더 정확하면 느린 지수도 `exponential`로 남는다. 불규칙 간격은 budget으로 줄이기 전의 입력 표본에서 읽는다. 실행 결과에서 action은 그 뒤 첫 trace 상태에서 새 창을 연다. retention이 비운 trace는 비어 있는 그대로다. action 기록이 완전하지 않으면 창은 형태 주장을 보류한다. action 수 0은 action 카운터가 관측됐을 때만 완전한 기록으로 본다. 기록된 action은 모델이 prestige action으로 내놓으면 reset이고, custom이 아닌 다른 kind면 id와 관계없이 purchase다. log 값은 첫 값에 대한 상대값으로 fit하므로 큰 log offset이 형태를 바꾸지 않고, 값이 움직이는 정확한 값 fit은 log 폭이 아주 작아도 `constant`가 아니다. softcap 힌트는 분석한 실행의 시작 상태에서 읽는다.
 
 이후 Analyzer adapter는 `GrowthSamplingContract`를 넘기고 `GrowthFitArtifactV1`를 읽어야 한다. legacy enum으로 regime을 추론하지 않는다. 구조 schema는 `idlekit.growth-fit.v1`이다.
 
