@@ -361,16 +361,31 @@ function observedUntilSec<N, U extends string, Vars>(session: SessionRunResult<N
 }
 
 /**
- * One censoring horizon when every draw has exactly that horizon, otherwise null. A draw censored even a tick
- * earlier has an unknown rank against completions after it, so near-equal horizons are not common.
+ * The common censoring horizon. Censored draws must share exactly one horizon, since a draw censored even a tick
+ * earlier has an unknown rank against completions after it, and every observed first change must fall at or
+ * before it. Observed draws may stop at different times. With no censored draw, every rank is known: a horizon
+ * every draw shares is kept, and otherwise the latest observed change serves.
  */
-function commonHorizon(horizons: readonly number[]): number | null {
-  const first = horizons[0];
-  if (first === undefined) return null;
-  for (const horizon of horizons) {
-    if (horizon !== first) return null;
+function censoringHorizon(
+  entries: readonly Readonly<{ firstVisibleChangeSec: number | undefined; firstVisibleHorizonSec: number }>[],
+): number | null {
+  let horizon: number | null = null;
+  let latestObserved: number | null = null;
+  const shared = entries[0]?.firstVisibleHorizonSec;
+  let allShare = shared !== undefined;
+  for (const entry of entries) {
+    if (entry.firstVisibleHorizonSec !== shared) allShare = false;
+    const seen = entry.firstVisibleChangeSec;
+    if (seen === undefined) {
+      if (horizon === null) horizon = entry.firstVisibleHorizonSec;
+      else if (horizon !== entry.firstVisibleHorizonSec) return null;
+    } else if (Number.isFinite(seen) && seen >= 0) {
+      latestObserved = latestObserved === null ? seen : Math.max(latestObserved, seen);
+    }
   }
-  return first;
+  // Without a censored draw, a horizon every draw shares is kept; otherwise the latest observed change serves.
+  if (horizon === null) return allShare && shared !== undefined ? shared : latestObserved;
+  return latestObserved === null || latestObserved <= horizon ? horizon : null;
 }
 
 export function summarizeExperienceMonteCarlo<N, U extends string, Vars>(args: {
@@ -436,7 +451,7 @@ export function summarizeExperienceMonteCarlo<N, U extends string, Vars>(args: {
       ),
       // Scenario validation checks each quantile's range, not duplicates. One key per quantile is analyzed.
       quantiles: distinctQuantiles(args.quantiles),
-      horizonSec: commonHorizon(values.map((entry) => entry.firstVisibleHorizonSec)),
+      horizonSec: censoringHorizon(values),
       populationProbability: 0.95,
     }),
   };

@@ -9,7 +9,7 @@ import {
   simulateMonteCarlo,
 } from "../monteCarlo";
 import { createRunFactory } from "../runFactory";
-import { logicalDrawId, logicalDrawSeed } from "../random";
+import { deriveDrawSeed, logicalDrawId, logicalDrawSeed, mulberry32 } from "../random";
 import { runScenario } from "../simulator";
 import type { CompiledScenario, Model, SimState } from "../types";
 import {
@@ -230,10 +230,31 @@ export function fixesQuantileRanksAndKeys(): void {
  * @evidenceReview ../monteCarlo.ts#simulateMonteCarlo #3487593 The function validates the draw request, binds a run factory, opens a fresh scenario per logical draw seed, and releases the binding without masking a draw failure.
  * @evidence ../monteCarlo.ts#assertMonteCarloDrawRequest Rejects NaN and Infinity draws, seeds, and budgets.
  * @evidenceReview ../monteCarlo.ts#assertMonteCarloDrawRequest #30c61b4 The function floors finite draws to at least 1 and rejects a nonfinite seed or a budget below the draws.
+ * @evidence ../random.ts#mulberry32 Replays one stream from one seed.
+ * @evidenceReview ../random.ts#mulberry32 #4d4aba0 The function returns a 32-bit mulberry generator whose outputs are in [0, 1) and repeat for the same seed.
+ * @evidence ../random.ts#deriveDrawSeed Derives the seed of one draw.
+ * @evidenceReview ../random.ts#deriveDrawSeed #f9d31a5 The function seeds mulberry32 with the base seed mixed with the draw index and returns one unsigned 32-bit integer.
+ * @evidence ../random.ts#logicalDrawSeed Checks its inputs and derives the logical draw seed.
+ * @evidenceReview ../random.ts#logicalDrawSeed #d14b996 The function rejects a non-finite base and an index that is not an integer >= 0, then returns deriveDrawSeed.
+ * @evidence ../random.ts#logicalDrawId Spells the logical draw id.
+ * @evidenceReview ../random.ts#logicalDrawId #5e0466d The function rejects an index that is not an integer >= 0 and returns its decimal spelling.
  * @evidence ./distribution.ts#assertDistributionRun Rejects nonfinite draws and common random numbers without the execution stream.
  * @evidenceReview ./distribution.ts#assertDistributionRun #95dc466 The function checks draws, seed, budget, and quantile keys, and rejects coupling without the execution stream.
  */
 export function keepsLogicalDrawsIndependentOfOrder(): void {
+  const left = mulberry32(7);
+  const right = mulberry32(7);
+  const stream = [left(), left(), left()];
+  expect(stream).toEqual([right(), right(), right()]);
+  expect(stream.every((value) => value >= 0 && value < 1)).toBe(true);
+  const derived = deriveDrawSeed(0x7113, 2);
+  expect(Number.isInteger(derived) && derived >= 0 && derived < 2 ** 32).toBe(true);
+  expect(logicalDrawSeed(0x7113, 2)).toBe(derived);
+  expect(logicalDrawSeed(0x7113, 3)).not.toBe(derived);
+  expect(() => logicalDrawSeed(Number.NaN, 0)).toThrow("logical draw seed base must be finite");
+  expect(() => logicalDrawSeed(1, -1)).toThrow("logical draw index must be an integer >= 0");
+  expect(logicalDrawId(12)).toBe("12");
+  expect(() => logicalDrawId(1.5)).toThrow("logical draw index must be an integer >= 0");
   expect(distributionLogicalDraws).toBe("logical-index-not-worker-slot");
   expect(monteCarloDrawBudget).toBe("finite-integer-draws");
   expect(() => assertMonteCarloDrawRequest(Number.NaN, 1)).toThrow(/draws/);
