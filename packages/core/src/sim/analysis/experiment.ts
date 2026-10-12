@@ -37,7 +37,7 @@ export const experimentSeparateSpec = "experiment-spec-not-tunespec" as const;
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter Assignment uses a registered identifier path and the model or strategy schema. JSONPath, prototype, and eval paths are refused before a run.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #6962259 Re-read the section: a prototype path, an out-of-range integer, a non-finite choice value, a non-finite space bound, a schema-invalid rate, a stripped path, overlapping paths, a session dimension, a repeated seed, a non-finite limit, and a repeated constraint id throw before model create.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #57f993a Re-read the section: a prototype path, an out-of-range integer, a non-finite choice value, a non-finite space bound, a schema-invalid rate, a stripped path, overlapping paths, a session dimension, a repeated seed, a non-finite limit, and a repeated constraint id throw before model create.
  */
 export const experimentRegisteredSetter = "registered-key-not-jsonpath" as const;
 
@@ -440,31 +440,43 @@ function plannedCandidates(spec: ExperimentSpecV1): ExperimentCandidateV1[] {
   return merged;
 }
 
+function hasOwnPath(root: unknown, path: string): boolean {
+  let cursor: unknown = root;
+  for (const part of path.split(".")) {
+    if (cursor === null || typeof cursor !== "object" || !Object.prototype.hasOwnProperty.call(cursor, part)) return false;
+    cursor = (cursor as Record<string, unknown>)[part];
+  }
+  return true;
+}
+
 /**
- * Checks the candidate params like scenario compile does in legacy-raw mode. The schema output only confirms
- * that every assigned path is registered: a schema that strips that path would leave the run at its default
- * while the task claims the assignment. The candidate keeps the raw params, so unassigned fields stay as the
- * scenario wrote them and `create` receives the same representation as a scenario run.
+ * Checks the candidate params like scenario compile does in legacy-raw mode. With a schema, its output only
+ * confirms that every assigned path is registered: a schema that strips that path would leave the run at its
+ * default while the task claims the assignment. Without a schema, the path must already be in the scenario or
+ * default params, so a typo is not added as a key the factory ignores. The candidate keeps the raw params, so
+ * unassigned fields stay as the scenario wrote them and `create` receives the same representation as a scenario run.
  */
 function checkCandidateParams(
   schema: StandardSchema<unknown> | undefined,
+  baseParams: unknown,
   params: unknown,
   assigned: readonly Readonly<{ dimension: ExperimentDimensionV1; value: ExperimentScalar }>[],
   label: string,
 ): void {
-  if (!schema) return;
+  if (!schema) {
+    for (const { dimension } of assigned) {
+      if (!hasOwnPath(baseParams, dimension.path)) {
+        reject(`${label} has no params schema and its scenario params do not register ${dimension.path} for ${dimension.id}`);
+      }
+    }
+    return;
+  }
   const result = schema["~standard"].validate(params);
   if (!result.success) {
     reject(`${label} params rejected: ${result.issues.map((issue) => issue.message).join("; ")}`);
   }
   for (const { dimension } of assigned) {
-    let cursor: unknown = result.value;
-    for (const part of dimension.path.split(".")) {
-      if (cursor === null || typeof cursor !== "object" || !Object.prototype.hasOwnProperty.call(cursor, part)) {
-        reject(`${label} params schema does not register ${dimension.path} for ${dimension.id}`);
-      }
-      cursor = (cursor as Record<string, unknown>)[part];
-    }
+    if (!hasOwnPath(result.value, dimension.path)) reject(`${label} params schema does not register ${dimension.path} for ${dimension.id}`);
   }
 }
 
@@ -535,13 +547,13 @@ function prepareCandidate(
   const modelFactory = registries.modelRegistry.get(spec.model.id, spec.model.version);
   if (!modelFactory) reject(`model not found: ${spec.model.id}@${spec.model.version}`);
   const modelParams = assign(base.modelParams, modelAssigned, "model");
-  checkCandidateParams(modelFactory.paramsSchema, modelParams, modelAssigned, "model");
+  checkCandidateParams(modelFactory.paramsSchema, base.modelParams, modelParams, modelAssigned, "model");
   let strategyParams: unknown = {};
   if (base.strategyId !== null) {
     const strategyFactory = registries.strategyRegistry.get(base.strategyId);
     if (!strategyFactory) reject(`strategy not found: ${base.strategyId}`);
     strategyParams = assign(base.strategyParams, strategyAssigned, "strategy");
-    checkCandidateParams(strategyFactory.paramsSchema, strategyParams, strategyAssigned, "strategy");
+    checkCandidateParams(strategyFactory.paramsSchema, base.strategyParams, strategyParams, strategyAssigned, "strategy");
   }
   return { id: candidate.id, modelParams, strategyParams, sessionPattern: spec.session.pattern, sessionDays: spec.session.days };
 }
@@ -690,9 +702,9 @@ function prepareExperiment(request: ExperimentCheckRequest) {
   if (scenarioHash !== request.spec.scenario.hash) reject("scenario hash does not match the experiment spec");
   const spec = requireSpec(request.spec);
   const metrics = metricIds(spec);
-  if (metrics.includes("timeToMoney")) {
-    if (spec.goal === undefined || !Number.isFinite(spec.goal.target)) reject("timeToMoney requires a finite goal target");
-  }
+  // A JSON literal such as 1e400 parses to Infinity, and canonical JSON would hash it as null.
+  if (spec.goal !== undefined && !Number.isFinite(spec.goal.target)) reject("goal target must be finite");
+  if (metrics.includes("timeToMoney") && spec.goal === undefined) reject("timeToMoney requires a finite goal target");
   const base = candidateBase(spec, request.scenario, request);
   const prepared = plannedCandidates(spec).map((candidate) => prepareCandidate(spec, base, candidate, request));
   return { spec, metrics, base, prepared };
@@ -703,7 +715,7 @@ function prepareExperiment(request: ExperimentCheckRequest) {
  * A caller that compiles or opens a run first calls this, so a rejected spec never reaches a factory.
  *
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter Throws the same rejections as runExperiment before any model create.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #6962259 Re-read the section: the hash, spec, path, and schema checks run and no factory create is called.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #57f993a Re-read the section: the hash, spec, path, and schema checks run and no factory create is called.
  */
 export function checkExperimentSpec(request: ExperimentCheckRequest): void {
   prepareExperiment(request);

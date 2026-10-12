@@ -321,7 +321,7 @@ export function keepsStrategyTuneSignature(): void {
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter Unsafe paths and invalid parameters throw before the model factory runs.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #6962259 Re-read the section, then ran this function: a stripped typo path, overlapping model and strategy paths, a session dimension, a repeated seed, another model version, an Infinity choice value, an Infinity space bound, an Infinity limit, and a repeated constraint id throw, and create count stays 0.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #57f993a Re-read the section, then ran this function: a stripped typo path, overlapping model and strategy paths, a session dimension, a repeated seed, another model version, an Infinity choice value, an Infinity space bound, an Infinity limit, an Infinity goal, a schema-less typo path, and a repeated constraint id throw, and create count stays 0.
  * @evidence ./experiment.ts#experimentRegisteredSetter Reads the setter contract.
  * @evidenceReview ./experiment.ts#experimentRegisteredSetter #080a763 The declaration is registered-key-not-jsonpath.
  * @evidence ./experiment.ts#assertRegisteredPath Rejects prototype, bracket, and traversal paths, and session paths other than pattern or days.
@@ -454,6 +454,33 @@ export function rejectsUnsafeParametersBeforeRun(): void {
   for (const [message, spec] of rejected) {
     expect(() => runWith(scenario, spec, creates)).toThrow(message);
   }
+  // Without a params schema, a path must already be in the scenario params, so a typo is not added as an ignored key.
+  const bare = incomeScenario({ model: { id: "tiny-income", version: 1, params: { amount: 1 } }, strategy: undefined });
+  const bareRun = (path: string) =>
+    runExperiment({
+      spec: specFor(bare, {
+        model: { id: "tiny-income", version: 1 },
+        strategy: undefined,
+        metricId: "endMoney",
+        goal: undefined,
+        dimensions: [{ id: "amount", target: "model", path, space: { kind: "number", min: 0, max: 5 }, baseline: 1, probes: [2] }],
+        budget: { candidates: 2, seeds: 1 },
+        horizonSec: 1,
+      }),
+      scenario: bare,
+      modelRegistry: createModelRegistry([tinyIncomeFactory()]),
+      strategyRegistry: createStrategyRegistry([]),
+      engine: createNumberEngine(),
+      engineId: "number",
+      engineVersion: "1",
+      effectiveRunHash: "schema-less",
+    });
+  expect(() => bareRun("amout")).toThrow("has no params schema and its scenario params do not register amout");
+  expect(bareRun("amount").candidates.map((candidate) => candidate.metrics[0]?.value)).toEqual(["1", "2"]);
+  // A goal is checked even when no metric reads it. JSON.parse turns the literal 1e400 into Infinity.
+  expect(() =>
+    runWith(scenario, specFor(scenario, { metricId: "endMoney", goal: { target: JSON.parse("1e400") as number } }), creates),
+  ).toThrow("goal target must be finite");
   // The same checks run alone before a caller compiles the scenario, and a valid spec passes without a create.
   const registries = { modelRegistry: createModelRegistry([incomeFactory(creates)]), strategyRegistry: createStrategyRegistry([policyFactory()]) };
   expect(() => checkExperimentSpec({ spec: rejected.find(([message]) => message === "seeds must be unique")![1], scenario, ...registries })).toThrow("seeds must be unique");
@@ -523,6 +550,8 @@ export function keepsCandidateOrderAndScenario(): void {
   const keyed = defineModelFactory({
     id: "key-order",
     version: 1,
+    // Both keys are registered and optional, so a candidate adds them to empty scenario params.
+    paramsSchema: zodStandardSchema(z.object({ a: z.number().int().optional(), b: z.number().int().optional() })),
     create(params: Record<string, unknown>) {
       keyOrders.push(Object.keys(params).join(","));
       return { id: "key-order", version: 1, income: (ctx: { unit: { code: string } }) => ({ unit: ctx.unit, amount: 1 }), actions: () => [] };
