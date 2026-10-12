@@ -973,7 +973,8 @@ export function fitGrowth<N>(args: {
   }
   const windows = incomplete
     ? fitted.map((window): GrowthFitWindowV1 =>
-        window.status === "ok"
+        // A fitted window, classified or not, read samples a missing purchase break may have split.
+        window.status === "ok" || window.status === "unknown"
           ? {
               ...window,
               status: "insufficient-data",
@@ -1017,8 +1018,8 @@ function softcapOf<N, U extends string, Vars>(
 }
 
 /**
- * The break an action row opens. Action.kind is the source of truth: a prestige action is a reset and a buy is a
- * purchase whatever its id says. Only a custom action, or one the model no longer lists, falls back to its id.
+ * The break an action row opens. Action.kind is the source of truth: a prestige action is a reset, and every other
+ * action is a purchase whatever its id says, unless a prestige count change confirms a reset.
  */
 function actionBreakKind<N, U extends string, Vars>(
   scenario: CompiledScenario<N, U, Vars>,
@@ -1031,13 +1032,9 @@ function actionBreakKind<N, U extends string, Vars>(
   if (new Set(matches.map((action) => action.kind)).size > 1) return "purchase";
   const listed = matches[0];
   if (listed?.kind === "prestige") return "reset";
-  // A custom action the model lists is named by the model, so its id is the only hint. An action the model did not
-  // list at the traced state, such as one unlocked between trace points, is a purchase unless a prestige count
-  // change confirms a reset; the count loop below adds those.
-  if (listed?.kind === "custom") {
-    const id = actionId.toLowerCase();
-    return id.includes("prestige") || id.includes("reset") ? "reset" : "purchase";
-  }
+  // A custom action, or one the model did not list at the traced state, such as one unlocked between trace points, is
+  // a purchase unless a prestige count change confirms a reset; the count loop below adds those. An id is not
+  // evidence of what the action does.
   return "purchase";
 }
 
