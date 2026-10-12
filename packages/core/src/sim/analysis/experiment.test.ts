@@ -372,7 +372,7 @@ export function keepsStrategyTuneSignature(): void {
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter Unsafe paths and invalid parameters throw before the model factory runs.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #2c35139 Re-read the section, then ran this function: a stripped typo path, overlapping model and strategy paths, a session dimension, a repeated seed, another model version, an Infinity choice value, an Infinity space bound, an Infinity limit, an Infinity goal, a schema-less typo path, -0, a -0 seed, a __type path, non-JSON params, a malformed untyped spec, and a repeated constraint id throw, and create count stays 0.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #1392a7f Re-read the section, then ran this function: a stripped typo path, overlapping model and strategy paths, a session dimension, a repeated seed, another model version, an Infinity choice value, an Infinity space bound, an Infinity limit, an Infinity goal, a schema-less typo path, -0, a -0 seed, a __type path, non-JSON params, a malformed untyped spec, and a repeated constraint id throw, and create count stays 0.
  * @evidence ./experiment.ts#experimentRegisteredSetter Reads the setter contract.
  * @evidenceReview ./experiment.ts#experimentRegisteredSetter #080a763 The declaration is registered-key-not-jsonpath.
  * @evidence ./experiment.ts#assertRegisteredPath Rejects prototype, bracket, and traversal paths, and session paths other than pattern or days.
@@ -769,6 +769,27 @@ export function keepsCandidateOrderAndScenario(): void {
       engineVersion: "1",
       effectiveRunHash: "key-order",
     });
+  // Scenario params whose keys differ only in order reach the factory in canonical key order too.
+  const reordered = incomeScenario({ model: { id: "key-order", version: 1, params: { b: 2, a: 1 } }, strategy: undefined });
+  runExperiment({
+    spec: specFor(reordered, {
+      model: { id: "key-order", version: 1 },
+      strategy: undefined,
+      metricId: "endMoney",
+      goal: undefined,
+      dimensions: [],
+      budget: { candidates: 1, seeds: 1 },
+      horizonSec: 1,
+    }),
+    scenario: reordered,
+    modelRegistry: createModelRegistry([keyed]),
+    strategyRegistry: createStrategyRegistry([]),
+    engine: createNumberEngine(),
+    engineId: "number",
+    engineVersion: "1",
+    effectiveRunHash: "key-order-scenario",
+  });
+  expect(keyOrders.splice(0)).toEqual(["a,b", "a,b"]);
   const ab = keyRun([{ dimensionId: "a", value: 1 }, { dimensionId: "b", value: 2 }]);
   const ba = keyRun([{ dimensionId: "b", value: 2 }, { dimensionId: "a", value: 1 }]);
   expect(ba.effectiveSpecHash).toBe(ab.effectiveSpecHash);
