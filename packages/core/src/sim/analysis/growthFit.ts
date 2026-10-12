@@ -426,10 +426,17 @@ function irregularSpacing(points: readonly Point<unknown>[]): boolean {
     gaps.push(points[index]!.t - points[index - 1]!.t);
   }
   if (gaps.length < 2) return false;
-  const positive = gaps.filter((gap) => gap > 0);
-  if (positive.length < 2) return false;
-  const smallest = Math.min(...positive);
-  const largest = Math.max(...positive);
+  // A loop, not Math.min(...gaps): a million-point trace exceeds the argument limit of a spread call.
+  let count = 0;
+  let smallest = Number.POSITIVE_INFINITY;
+  let largest = 0;
+  for (const gap of gaps) {
+    if (!(gap > 0)) continue;
+    count += 1;
+    if (gap < smallest) smallest = gap;
+    if (gap > largest) largest = gap;
+  }
+  if (count < 2) return false;
   return largest / smallest > 3;
 }
 
@@ -569,16 +576,15 @@ function classifySlice(slice: Slice): GrowthFitWindowV1 {
   return classifyPositive(slice.points, slice.discontinuity);
 }
 
-function pushBreak(breaks: GrowthDiscontinuity[], next: GrowthDiscontinuity): void {
-  const rank: Record<GrowthDiscontinuity["kind"], number> = { reset: 4, drop: 3, sign: 2, purchase: 1 };
-  const existing = breaks.find((item) => item.t === next.t);
-  if (!existing) {
-    breaks.push(next);
-    return;
-  }
-  if (rank[next.kind] > rank[existing.kind]) {
-    breaks.splice(breaks.indexOf(existing), 1, next);
-  }
+const BREAK_RANK: Record<GrowthDiscontinuity["kind"], number> = { reset: 4, drop: 3, sign: 2, purchase: 1 };
+
+/**
+ * Breaks keyed by time. One time keeps the highest-ranked kind: reset, then drop, then sign, then purchase.
+ * The map keeps a lookup O(1), so a trace that alternates sign on every point stays linear.
+ */
+function pushBreak(breaks: Map<number, GrowthDiscontinuity>, next: GrowthDiscontinuity): void {
+  const existing = breaks.get(next.t);
+  if (!existing || BREAK_RANK[next.kind] > BREAK_RANK[existing.kind]) breaks.set(next.t, next);
 }
 
 /**
@@ -601,7 +607,10 @@ function slicesOf(points: readonly Point<unknown>[], breaks: readonly GrowthDisc
   const opening = points.map(() => "none" as GrowthDiscontinuityKind);
   for (const item of breaks) {
     const index = firstIndexAtOrAfter(points, item.t, false);
-    if (index > 0) opening[index] = item.kind;
+    if (index <= 0) continue;
+    // Breaks that open at one kept point keep the same precedence as breaks at one time.
+    const current = opening[index]!;
+    if (current === "none" || BREAK_RANK[item.kind] > BREAK_RANK[current]) opening[index] = item.kind;
   }
   const coarse: Array<{ start: number; end: number; discontinuity: GrowthDiscontinuityKind }> = [];
   let start = 0;
@@ -706,14 +715,16 @@ export function fitGrowth<N>(args: {
   const prepared = preparePoints(args.E, args.samples);
   // Find sign changes and drops on every prepared point, then keep both sides of each break through the
   // sampling budget, so downsampling cannot hide an invalid domain or a discontinuity.
-  const breaks = [...(args.discontinuities ?? [])];
+  // Supplied breaks go through the same precedence as detected ones, so a purchase cannot replace a reset.
+  const breakMap = new Map<number, GrowthDiscontinuity>();
+  for (const item of args.discontinuities ?? []) pushBreak(breakMap, item);
   const boundary = new Set<number>();
   for (let index = 1; index < prepared.length; index += 1) {
     const previous = prepared[index - 1]!;
     const current = prepared[index]!;
     let found = false;
     if (previous.sign !== current.sign) {
-      pushBreak(breaks, { t: current.t, kind: "sign" });
+      pushBreak(breakMap, { t: current.t, kind: "sign" });
       found = true;
     }
     if (
@@ -724,7 +735,7 @@ export function fitGrowth<N>(args: {
       // An exact tenfold drop is a drop. The tolerance absorbs log10 rounding.
       previous.log10 - current.log10 >= DROP_LOG10 - 1e-9
     ) {
-      pushBreak(breaks, { t: current.t, kind: "drop" });
+      pushBreak(breakMap, { t: current.t, kind: "drop" });
       found = true;
     }
     if (found) {
@@ -732,6 +743,7 @@ export function fitGrowth<N>(args: {
       boundary.add(index);
     }
   }
+  const breaks = [...breakMap.values()].sort((left, right) => left.t - right.t);
   for (const item of breaks) {
     const index = firstIndexAtOrAfter(prepared, item.t, false);
     if (index >= 0) {
@@ -877,7 +889,8 @@ export function fitGrowthFromRun<N, U extends string, Vars>(args: {
   }
   const loggedEveryAction =
     args.run.actionsLog !== undefined && (args.run.actionsLogMeta?.dropped ?? 0) === 0;
-  const noActionApplied = args.run.stats?.actions.applied === 0;
+  // A zero count proves no action ran only when the counter was observed. A disabled observation reports 0 too.
+  const noActionApplied = args.run.stats?.actions.status === "observed" && args.run.stats.actions.applied === 0;
   let previousCount = states[0]?.prestige.count;
   for (const state of states.slice(1)) {
     if (previousCount !== undefined && state.prestige.count !== previousCount) {
