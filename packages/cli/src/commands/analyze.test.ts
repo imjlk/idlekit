@@ -152,6 +152,22 @@ describe("idk analyze", () => {
           dependencies: [{ id: "plugin.read", version: "1" }],
           execute: () => ({ status: "ok", value: "after" }),
         },
+        {
+          id: "plugin.both",
+          version: "1",
+          kind: "execution",
+          validateParams: () => ({ ok: true, params: {} }),
+          requires: { capabilities: [], metricIds: [], observationSchema: "idlekit.run-observation" },
+          observation: { windowSec: null, sampleCadenceSec: null, coverage: "summary", metricIds: [], observationSchema: "idlekit.run-observation" },
+          outputContract: "test.analyzer",
+          algorithmVersion: "plugin-both-v1",
+          cost: { freshRuns: 1, samples: 1 },
+          dependencies: [{ id: "plugin.read", version: "1" }],
+          execute: (_params, ctx) => {
+            const run = ctx.requestRun("plugin.both").run();
+            return run ? { status: "ok", value: run.end.t } : { status: "insufficient-data", value: null, rerun: true };
+          },
+        },
       ];
       `,
     );
@@ -174,6 +190,15 @@ describe("idk analyze", () => {
     // A coarser trace than the analyzer demands is refused by the registry before the body.
     const coarse = runCliJson<any>(["analyze", "plugin.read", scenario, ...pluginFlags, "--trace-every", "3", "--format", "json"]);
     expect(coarse.status).toBe("insufficient-data");
+    // The observation run counts against the run budget: with no runs left, nothing is simulated.
+    const unbudgeted = runCliJson<any>(["analyze", "plugin.read", scenario, ...pluginFlags, "--trace-every", "2", "--budget-runs", "0", "--format", "json"]);
+    expect(unbudgeted.status).toBe("insufficient-data");
+    // plugin.exec needs a run of its own, so one run spent observing for plugin.read leaves it none.
+    const spent = runCliJson<any>(["analyze", "plugin.both", scenario, ...pluginFlags, "--trace-every", "2", "--budget-duration", "20", "--format", "json"]);
+    expect(spent.status).toBe("insufficient-data");
+    expect(spent.provenance.rerun.reason).toBe("budget");
+    const both = runCliJson<any>(["analyze", "plugin.both", scenario, ...pluginFlags, "--trace-every", "2", "--budget-duration", "20", "--budget-runs", "2", "--format", "json"]);
+    expect(both.status).toBe("ok");
     // An execution analyzer whose postprocess dependency reads the run gets that run supplied.
     const after = runCliJson<any>(["analyze", "plugin.after", scenario, ...pluginFlags, "--trace-every", "2", "--format", "json"]);
     expect(after.status).toBe("ok");

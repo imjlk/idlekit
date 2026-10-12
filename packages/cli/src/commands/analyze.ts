@@ -105,14 +105,23 @@ export default defineCommand({
     // runs inside the --budget-* flags, with the compiled scenario when one is given.
     // A postprocess analyzer reads a run, so the scenario is run once with a trace and supplied as input.
     const compiled = scenarioPath ? await compile(scenarioPath, loaded) : undefined;
+    const semantics = compiled ? scenarioSemantics(compiled, flags["max-duration"]) : analyzerSemantics();
+    const budget = budgetFromFlags(flags);
+    // The observation run is a fresh run too: it needs one run and the duration budget, and the
+    // registry gets what is left. Without it, an analyzer that reads the run is insufficient-data.
     const observed =
-      compiled && readsObservation(loaded, defined) ? observeScenario(compiled, flags["trace-every"]) : undefined;
+      compiled &&
+      readsObservation(loaded, defined) &&
+      budget.maxFreshRuns >= 1 &&
+      semantics.horizonSec <= budget.maxDurationSec
+        ? observeScenario(compiled, flags["trace-every"])
+        : undefined;
     const batch = loaded.analyzerRegistry.run({
       requests: [{ id: analyzerId, version, params }],
-      semantics: compiled ? scenarioSemantics(compiled, flags["max-duration"]) : analyzerSemantics(),
+      semantics,
       ...(observed ? { supply: observed.supply, input: { run: observed.run, scenario: compiled?.compiled } } : {}),
       scenario: compiled?.compiled ?? null,
-      budget: budgetFromFlags(flags),
+      budget: observed ? { ...budget, maxFreshRuns: budget.maxFreshRuns - 1 } : budget,
       runFactory: runFactoryFor(loaded),
       allowExecution: true,
     });
