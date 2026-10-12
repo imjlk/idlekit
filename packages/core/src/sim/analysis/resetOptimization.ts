@@ -293,6 +293,11 @@ function assertRequest<N, U extends string, Vars>(request: ResetPolicyRequest<N,
   scanIntervals(request.scan);
   assertFinite("horizonSec", request.horizonSec);
   if (!(request.horizonSec > 0)) throw new ResetPolicyRejected("reset policy horizonSec must be a finite number > 0");
+  // Every wall or elapsed time is at most the horizon. When the shortest interval still advances the horizon, it
+  // advances every earlier time too, so no two resets share an instant.
+  if (!(request.horizonSec + request.scan.fromSec > request.horizonSec)) {
+    throw new ResetPolicyRejected("reset policy scan.fromSec must advance a time at horizonSec");
+  }
   if (!Number.isInteger(request.cycleBudget) || request.cycleBudget < 1) {
     throw new ResetPolicyRejected("reset policy cycleBudget must be a positive integer");
   }
@@ -1008,7 +1013,7 @@ function playSchedule<N, U extends string, Vars>(
   let segmentCtx = ctxAt(wall);
   // Segments share one ledger and the caller goals already reached, as simulateSessionPattern's segments do.
   const share = observationShare(scenario);
-  const watchers: Watcher<N, U, Vars>[] = options.watchGoal
+  const goalWatchers: Watcher<N, U, Vars>[] = options.watchGoal
     ? goalWatcher(
         request,
         () => segmentCtx,
@@ -1017,6 +1022,12 @@ function playSchedule<N, U extends string, Vars>(
         },
       )
     : [];
+  const watchers: Watcher<N, U, Vars>[] = [...goalWatchers];
+  // A goal first met on a boundary read closes its watcher too, so later runs do not read the predicate again.
+  const reachGoalAt = (wallAt: number): void => {
+    reached.t = wallAt;
+    for (const watcher of goalWatchers) share.reachedWatchers.add(watcher);
+  };
   const runActive = (durationSec: number) => {
     segmentCtx = ctxAt(wall + durationSec);
     segment = { wallStart: wall, rewardStart: state.t, offlineRequested: null };
@@ -1078,7 +1089,7 @@ function playSchedule<N, U extends string, Vars>(
       // not been read at this wall time. A clock-aware goal can first hold here, before the reset changes the state.
       const boundaryGoal = request.goal;
       if (options.watchGoal && boundaryGoal && reached.t === null && boundaryGoal(boundaryCtx, deepClonePreservingPrototype(state))) {
-        reached.t = at;
+        reachGoalAt(at);
       }
       const committed = commitReset(scenario, state, constraints, adapter, options.emit, boundaryCtx.clocks);
       if (!committed.ok) {
@@ -1101,7 +1112,7 @@ function playSchedule<N, U extends string, Vars>(
       // goal is read on the committed reset state too, on a copy as the runner reads it.
       const goal = request.goal;
       if (options.watchGoal && goal && reached.t === null && goal(ctxAt(block.end), deepClonePreservingPrototype(state))) {
-        reached.t = at;
+        reachGoalAt(at);
       }
       if (options.watchRecovery && recovery === null) {
         const found = { threshold, resetWall: at, crossedWall: null as number | null };
@@ -1131,7 +1142,16 @@ function playSchedule<N, U extends string, Vars>(
   const endCtx = ctxAt(wall);
   const goal = request.goal;
   if (options.watchGoal && goal && reached.t === null && goal(endCtx, deepClonePreservingPrototype(state))) {
-    reached.t = wall;
+    reachGoalAt(wall);
+  }
+  // A delay past the horizon leaves no runner after the reset, so an open recovery crossing is read here too.
+  const openRecovery = recovery as { threshold: N; resetWall: number; crossedWall: number | null } | null;
+  if (
+    openRecovery &&
+    openRecovery.crossedWall === null &&
+    E.cmp(recoveryMetric(request, scenario, state, endCtx), openRecovery.threshold) >= 0
+  ) {
+    openRecovery.crossedWall = wall;
   }
   return {
     snaps,
