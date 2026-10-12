@@ -12,6 +12,7 @@ import {
   type AnalyzerBudget,
   type AnalyzerDefinition,
   type AnalyzerResult,
+  type ScenarioV1,
 } from "@idlekit/core";
 import { z } from "zod";
 import { loadRegistriesFromFlags, pluginOptions } from "./_shared/plugin";
@@ -99,6 +100,8 @@ export default defineCommand({
       const failure = loaded.analyzerFailures.find((item) => item.message.includes(analyzerId));
       throw usageError(failure ? `Analyzer ${analyzerId}@${version} failed to load: ${failure.message}` : `Unknown analyzer ${analyzerId}@${version}`);
     }
+    // Params are checked before any run, so a request the registry would reject spends nothing.
+    assertParams(loaded, defined, params, `${analyzerId}@${version}`);
     // `idk analyze <id>` is an explicit request, like `idk analyze eta`: an execution analyzer
     // runs inside the --budget-* flags, with the compiled scenario when one is given.
     // A postprocess analyzer reads a run, so the scenario is run once with a trace and supplied as input.
@@ -112,13 +115,19 @@ export default defineCommand({
       readsObservation(loaded, defined, params) &&
       budget.maxFreshRuns >= 1 &&
       semantics.horizonSec <= budget.maxDurationSec
-        ? observeScenario(compiled, flags["trace-every"], semantics.horizonSec)
+        ? observeScenario(
+            // Its own compile: a stateful model or strategy must not carry this run's state into an analyzer run.
+            { ...compiled, compiled: compileValid(compiled.scenario, loaded) },
+            flags["trace-every"],
+            semantics.horizonSec,
+          )
         : undefined;
     const batch = loaded.analyzerRegistry.run({
       requests: [{ id: analyzerId, version, params }],
       semantics,
-      ...(observed ? { supply: observed.supply, input: { run: observed.run, scenario: compiled?.compiled } } : {}),
+      ...(observed ? { supply: observed.supply, input: { run: observed.run, scenario: observed.scenario } } : {}),
       scenario: compiled?.compiled ?? null,
+      freshScenario: compiled ? () => compileValid(compiled.scenario, loaded) : null,
       budget: observed ? { ...budget, maxFreshRuns: budget.maxFreshRuns - 1 } : budget,
       runFactory: runFactoryFor(loaded),
       allowExecution: true,
@@ -132,6 +141,32 @@ export default defineCommand({
     await emit(flags, result, scenarioPath, compiled, loaded);
   },
 });
+
+/** The same params the registry will validate: the root's, and `{}` for each dependency it implies. */
+function assertParams(loaded: Loaded, root: AnalyzerDefinition<unknown>, rootParams: unknown, label: string): void {
+  const seen = new Set<AnalyzerDefinition<unknown>>();
+  const pending: [AnalyzerDefinition<unknown>, unknown][] = [[root, rootParams]];
+  while (pending.length > 0) {
+    const [definition, params] = pending.pop()!;
+    if (seen.has(definition)) continue;
+    seen.add(definition);
+    let parsed: unknown;
+    try {
+      parsed = definition.validateParams(params);
+    } catch (error) {
+      throw usageError(`Analyzer ${label} params for ${definition.id}@${definition.version} failed: ${String(error)}`);
+    }
+    if (!parsed || typeof parsed !== "object" || (parsed as { ok?: unknown }).ok !== true) {
+      const issues = (parsed as { issues?: unknown } | null)?.issues;
+      const detail = Array.isArray(issues) ? issues.join("; ") : "invalid params";
+      throw usageError(`Analyzer ${label} params for ${definition.id}@${definition.version} are invalid: ${detail}`);
+    }
+    for (const dependency of definition.dependencies) {
+      const next = loaded.analyzerRegistry.get(dependency.id, dependency.version);
+      if (next) pending.push([next, {}]);
+    }
+  }
+}
 
 /** The demand the registry will resolve. Anything it cannot resolve here is treated as non-empty. */
 function demandIsEmpty(definition: AnalyzerDefinition<unknown>, rawParams: unknown): boolean {
@@ -196,6 +231,7 @@ function observeScenario(compiled: Compiled, traceEvery: number, horizonSec: num
   });
   return {
     run,
+    scenario: compiled.compiled,
     supply: {
       schema: observationContract,
       windowSec: cadence,
@@ -245,14 +281,18 @@ async function compile(scenarioPath: string, loaded: Loaded) {
   const input = await readScenarioFile(scenarioPath);
   const valid = validateScenarioV1(input, loaded.modelRegistry);
   if (!valid.ok || !valid.scenario) throw scenarioInvalidError(valid.issues);
-  const compiled = compileScenario<number, string, Record<string, unknown>>({
+  return { compiled: compileValid(valid.scenario, loaded), scenario: valid.scenario };
+}
+
+/** Each compile creates new model and strategy instances, so two runs never share closure state. */
+function compileValid(scenario: ScenarioV1, loaded: Loaded) {
+  return compileScenario<number, string, Record<string, unknown>>({
     E: createNumberEngine(),
-    scenario: valid.scenario,
+    scenario,
     registry: loaded.modelRegistry,
     strategyRegistry: loaded.strategyRegistry,
     opts: { allowSuffixNotation: true },
   });
-  return { compiled, scenario: valid.scenario };
 }
 
 /** The hash is of the scenario that was compiled and analyzed. The file is not read again. */

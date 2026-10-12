@@ -63,6 +63,69 @@ describe("idk analyze", () => {
     await removePath(dir);
   }, 60000);
 
+  it("gives the observation run and the analyzer run their own model instances", async () => {
+    const dir = await createTempDir("idlekit-analyze-isolation");
+    const raw = JSON.parse(await readText(resolve(import.meta.dir, "../../../../examples/tutorials/01-cafe-baseline.json")));
+    raw.initial.wallet.amount = "10000";
+    raw.clock = { stepSec: 1, durationSec: 10 };
+    raw.strategy = { id: "scripted", params: { schemaVersion: 1, program: [{ actionId: "buy.generator", bulkSize: 25 }], loop: false } };
+    raw.model = { id: "plugin.first-buy", version: 1 };
+    const scenario = resolve(dir, "first-buy.json");
+    await writeText(scenario, JSON.stringify(raw));
+    const plugin = resolve(dir, "first-buy.mjs");
+    const demand = `{ windowSec: null, sampleCadenceSec: 1, coverage: "trace", metricIds: ["money"], observationSchema: "idlekit.run-observation" }`;
+    await writeText(
+      plugin,
+      `export const models = [{
+        id: "plugin.first-buy", version: 1,
+        create: () => {
+          let bought = false;
+          return {
+            id: "plugin.first-buy", version: 1,
+            income: (ctx) => ({ unit: ctx.unit, amount: ctx.E.from(1) }),
+            actions: () => bought ? [] : [{
+              id: "buy.generator", kind: "buy", canApply: () => true, cost: () => null,
+              bulk: () => [{ size: 25, cost: null }],
+              apply: (_ctx, state) => {
+                bought = true;
+                return { ...state, vars: { ...state.vars, owned: state.vars.owned + 1 } };
+              },
+            }],
+          };
+        },
+      }];
+      const base = {
+        version: "1",
+        validateParams: () => ({ ok: true, params: {} }),
+        requires: { capabilities: [], metricIds: [], observationSchema: "idlekit.run-observation" },
+        outputContract: "test.analyzer",
+        algorithmVersion: "plugin-owned-v1",
+      };
+      export const analyzers = [
+        { ...base, id: "plugin.peek", kind: "postprocess", observation: ${demand}, cost: { freshRuns: 0, samples: 0 },
+          dependencies: [], postprocess: (_p, ctx) => ({ status: "ok", value: ctx.input.run.end.vars.owned }) },
+        { ...base, id: "plugin.owned", kind: "execution",
+          observation: { windowSec: null, sampleCadenceSec: null, coverage: "summary", metricIds: [], observationSchema: "idlekit.run-observation" },
+          cost: { freshRuns: 1, samples: 1 }, dependencies: [{ id: "plugin.peek", version: "1" }],
+          execute: (_p, ctx) => {
+            const run = ctx.requestRun("plugin.owned").run();
+            return run ? { status: "ok", value: run.end.vars.owned } : { status: "insufficient-data", value: null, rerun: true };
+          } },
+      ];
+      `,
+    );
+    const pluginFlags = ["--plugin", plugin, "--allow-plugin", "true", "--plugin-root", dir];
+    // The observation run bought once; the analyzer run must start from a model that has not.
+    const owned = runCliJson<any>(["analyze", "plugin.owned", scenario, ...pluginFlags, "--budget-runs", "2", "--budget-duration", "20", "--format", "json"]);
+    expect(owned.status).toBe("ok");
+    expect(owned.value).toBe(1);
+    // Bad params fail before any run, with the CLI's own message rather than the registry's.
+    const badWindow = runCli(["analyze", "growth", scenario, ...pluginFlags, "--window", "0"], { check: false });
+    expect(badWindow.exitCode).not.toBe(0);
+    expect(`${badWindow.stderr}\n${badWindow.stdout}`).toContain("params for growth@1 are invalid");
+    await removePath(dir);
+  }, 120000);
+
   it("does not import a plugin before allow-plugin and isolates a bad analyzer", async () => {
     const dir = await createTempDir("idlekit-analyze-plugin");
     const blocked = resolve(dir, "blocked.ts");
