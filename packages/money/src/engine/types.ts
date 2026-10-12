@@ -13,6 +13,9 @@ export interface Engine<N> {
 
   cmp(a: N, b: N): -1 | 0 | 1;
 
+  /** True only when cmp has no comparison tolerance; omission means unknown. */
+  readonly comparisonIsExact?: boolean;
+
   /**
    * Exact order for values whose `toString` is not a bare decimal.
    * Settlement rejects the comparison when this hook is absent.
