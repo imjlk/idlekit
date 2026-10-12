@@ -432,6 +432,31 @@ export function openResolvedStage(args: {
   }).scenario;
 }
 
+/**
+ * The engine and stage plans of a run, without compiling the scenario. No model or strategy factory is created,
+ * so a caller that only explains the plan runs no factory code.
+ *
+ * @evidence docs/requirements/active/scenario-inspect.md#req-dx03-no-run Inspect reads stage plans without compiling the scenario.
+ * @evidenceReview docs/requirements/active/scenario-inspect.md#req-dx03-no-run #97d9296 Re-read the section: inspect does not run the scenario, so it does not create its model either.
+ */
+export function planResolvedRun(
+  args: PrepareArgs,
+): Readonly<{ engine: ResolvedEngine; planFor: (stage: StageName) => ResolvedRunPlan }> {
+  const engine = resolveEffectiveEngine({
+    requested: args.engineRequest,
+    scenarioEngine: args.scenario.engine,
+    customEngines: args.customEngines,
+  });
+  // Reject an unknown strategy, as prepareResolvedRun does, without building it.
+  resolveStrategySelection({
+    scenario: args.scenario,
+    strategyRegistry: args.strategyRegistry,
+    overrideId: args.strategyOverride,
+    paramsMode: args.paramsMode,
+  });
+  return { engine, planFor: (stage) => stagePlan({ ...args, engine, stage }) };
+}
+
 export function prepareResolvedRun(args: PrepareArgs): PreparedRun {
   const engine = resolveEffectiveEngine({
     requested: args.engineRequest,

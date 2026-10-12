@@ -6,7 +6,7 @@
 
 설명과 실제 실행은 `prepareResolvedRun`의 `planFor`를 공유한다. stage plan을 읽고 `fresh`는 호출하지 않는다. `scenario.engine`은 metadata다. 기본 엔진은 `number`다. `breakInfinity`는 명시적 플래그이며 `Number`로 통과시키지 않는다. `breakEternity`는 거절된다. JSON 보고서는 남고 프로세스는 0이 아닌 코드로 끝난다.
 
-고정 duration은 `nextBoundary`로 마지막 짧은 틱까지 센다. `durationSec`가 없는 until-only 시계의 step 수는 `unknown`이다. planner expansion은 horizon, beam, branch 상한에서 나온 상한이다. `measuredDurationSec`는 null이다. 경고는 budget 제안이며 측정된 소요 시간이 아니다.
+고정 duration은 `nextBoundary`로 마지막 짧은 틱까지 센다. `durationSec`가 없는 until-only 시계의 step 수는 `unknown`이다. 100만 틱을 넘는 수는 `unknown`이고, 시나리오 duration이 아니라 일정을 도는 session stage도 `unknown`이다. planner expansion은 horizon, beam, branch 상한에서 나온 상한이며, 각 노드의 action 옆에 대기 branch를 더하고 rollout budget 256까지로 자른다. `measuredDurationSec`는 null이다. 경고는 budget 제안이며 측정된 소요 시간이 아니다. `sim.eventLog`가 없으면 runner처럼 켜진 무제한 로그로 보고, cadence 없는 trace는 매 step 기록한다. 각 stage는 실행할 fast 모드와 그 출처(command 또는 scenario)를 적는다. inspect는 시나리오를 compile하지 않고 stage 계획만 읽으므로 model이나 strategy factory를 만들지 않는다. experience와 같은 `--session-pattern`, `--days` 플래그를 쓰고, `--step`은 유한한 양수여야 한다. 내장 id를 대체한 plugin도 load된 것으로 보고한다. 건너뛴 plugin만 가진 model의 시나리오도 보고서를 받고, `plugin-skipped`가 그 model을 적는다.
 
 분석 adapter가 없으면 builtin 모델 capability는 `unknown`이다. `unsupported`는 선언된 불가이다. 로드하지 않은 plugin은 `unknown`이다. `--resolve-plugins`만 plugin을 import하며, 기존의 allow, root, sha256 검사 뒤에만 한다. 이 모드는 사용자 코드가 실행될 수 있다고 경고한다. 보고서는 factory id와 version을 남긴다. plugin 원문, secret, 환경 값은 넣지 않는다.
 

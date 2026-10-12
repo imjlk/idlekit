@@ -19,6 +19,7 @@ import { deriveDeterministicSeed } from "../io/outputMeta";
 import {
   defaultRunSeed,
   effectiveRunHash,
+  planResolvedRun,
   pluginDigestValues,
   prepareResolvedRun,
   resolveEffectiveEngine,
@@ -103,6 +104,8 @@ function registries() {
  * @evidenceReview ./runConfiguration.ts#effectiveRunHash #93139b8 Re-read effectiveRunHash and runIdentity: it ignores cwd, scenarioPath, and generatedAt and hashes the contract, scenario, engine, strategy, params mode, step, session, plugin digests in load order, the fast mode object or null, the stage name, inputs, and the seed. Ran this function: two directories give one hash, and stepSec 2 or strategy greedy changes it.
  * @evidence ./runConfiguration.ts#openResolvedStage Each stage opens a fresh compiled scenario with its own strategy, simulate on step 5 and experience on step 1.
  * @evidenceReview ./runConfiguration.ts#openResolvedStage #79dfd66 Re-read openResolvedStage: it binds a new createRunFactory with stageBindOptions, the scenario model and the plan strategy, and opens a fresh trial with the plan seed and an execution plan built from the stage plan. Ran this function: the opened simulate scenario is not the prepared definition, the two stages hold different strategies, and simulate runs on step 5 while experience runs on step 1.
+ * @evidence ./runConfiguration.ts#planResolvedRun Plans the same stages as prepareResolvedRun without compiling the scenario.
+ * @evidenceReview ./runConfiguration.ts#planResolvedRun #da3d434 Re-read planResolvedRun: it resolves the engine, rejects an unknown strategy, and returns stagePlan for each stage without calling compileScenario. Ran this function: its simulate and experience plans equal prepareResolvedRun's, a model whose create throws still plans, and an unknown override throws.
  * @evidence ./runConfiguration.ts#prepareResolvedRun One prepared run opens simulate and experience stages that each buy once and match a standalone simulate open.
  * @evidenceReview ./runConfiguration.ts#prepareResolvedRun #9dbe932 Re-read prepareResolvedRun, whose planFor returns a stage plan without opening the stage: it resolves the engine, rejects an unknown strategy before any stage opens, compiles once without the scenario strategy when an override or validated params replace it, and open builds a stage plan, its stage hash from stageIdentity with the compiled scenario fast mode and any output inputs, a fresh stage scenario, and the registries and bind options that rebuild that stage's model and strategy. Ran this function: simulate and experience each end with bought 1, the standalone simulate matches, and an unknown override throws at prepare.
  */
@@ -131,6 +134,23 @@ export function keepsResolvedRunConfiguration(): void {
     pluginDigest: { "/var/other/copy.ts": "abc", "/var/other/plugin.ts": "def" },
   });
   expect(prepared.open("simulate", "x").hash).toBe(standalone.open("simulate", "y").hash);
+  // Planning alone gives the same stage plans and never compiles, so a model whose create throws still plans.
+  const planArgs = { scenario: input, ...loaded, strategyOverride: "custom.once", stepSec: 5, fast: true, seed: 1 };
+  const planned = planResolvedRun(planArgs);
+  const compiledPlans = prepareResolvedRun(planArgs);
+  expect(planned.planFor("simulate")).toEqual(compiledPlans.planFor("simulate"));
+  expect(planned.planFor("experience")).toEqual(compiledPlans.planFor("experience"));
+  expect(planned.engine.effectiveId).toBe("number");
+  const throwingCreate = createModelRegistry([
+    {
+      ...modelFactory,
+      create() {
+        throw new Error("create must not run while planning");
+      },
+    },
+  ]);
+  expect(planResolvedRun({ ...planArgs, modelRegistry: throwingCreate }).planFor("simulate").stepSec.value).toBe(5);
+  expect(() => planResolvedRun({ ...planArgs, strategyOverride: "plugin.not-loaded" })).toThrow("Unknown strategy");
   const swapped = prepareResolvedRun({
     scenario: input,
     ...loaded,

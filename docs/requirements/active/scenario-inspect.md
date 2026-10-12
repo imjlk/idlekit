@@ -28,7 +28,7 @@ The executed test is `warnsOnDecimalRange` in `packages/core/src/sim/analysis/in
 
 Requirement `REQ-DX03-STAGE-OVERRIDE`. `DX-03` owns it.
 
-`inspectStageOverride` is `stage-plans-differ`. Simulate keeps the command step. Experience keeps the scenario step and applies session. A planner request of horizon 100, beam 8, and branch 8 is capped at 32, 8, and 8. `expansionUpperBound` is that cap, `clamped` is true, and `measuredDurationSec` is null. Diagnostic `planner-cost` is a warning. The bound is a budget proposal, not a measured duration. `plannerExpansionBound` does not call `stepOnce`.
+`inspectStageOverride` is `stage-plans-differ`. Simulate keeps the command step. Experience keeps the scenario step and applies session. A planner request of horizon 100, beam 8, and branch 8 is capped at 32, 8, and 8. `expansionUpperBound` counts a wait branch beside each node's capped actions and stops at the rollout budget of 256, `clamped` is true, and `measuredDurationSec` is null. Diagnostic `planner-cost` is a warning. The bound is a budget proposal, not a measured duration. `plannerExpansionBound` does not call `stepOnce`.
 
 The executed test is `explainsStageOverrides` in `packages/core/src/sim/analysis/inspect.test.ts`.
 
