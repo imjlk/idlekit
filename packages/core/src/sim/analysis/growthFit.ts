@@ -603,8 +603,13 @@ function classifyPositive(
   );
   const segmentPower =
     originSec < first.t ? fitLinear(points.map((point) => Math.log10(point.t - originSec + 1)), ys) : null;
-  const power =
-    segmentPower !== null && (localPower === null || segmentPower.rmse < localPower.rmse) ? segmentPower : localPower;
+  // The absolute time origin too, when every time is past it, so a trace that starts late keeps the law's basis.
+  const absolutePower =
+    first.t > 0 && Number.isFinite(last.t + 1) ? fitLinear(points.map((point) => Math.log10(point.t + 1)), ys) : null;
+  let power = localPower;
+  for (const candidate of [segmentPower, absolutePower]) {
+    if (candidate !== null && (power === null || candidate.rmse < power.rmse)) power = candidate;
+  }
   // Value-space fits read each amount relative to the window's largest, through its log, when the amount itself is
   // outside the Number range. A unit change, such as a factor of 1e400, does not switch value-space shapes off.
   const direct = points.map((point) => point.numeric);
@@ -666,12 +671,19 @@ function classifyPositive(
   // The same holds in log space: an exact log-linear fit with a real slope is a slow exponential, not a constant.
   const logMoves =
     linear !== null && Math.abs(linear.b * span) > 1e3 * Math.max(linear.rmse, Number.EPSILON);
-  if (logSpan < 1e-6 && !valueMoves && !logMoves) {
+  // Detected saturation is not constant, and its decaying rates rule out exponential, accelerating, and power
+  // growth. A value fit exact only against the series scale, not against its movement, does not outrank it either,
+  // so a large baseline under the same curve keeps the shape.
+  if (logSpan < 1e-6 && !valueMoves && !logMoves && !satOk) {
     shape = "constant";
     residual = { space: "log10", rmse: rmseAround(ys.map(() => mean(ys)), ys) };
-  } else if (valueExact) {
+  } else if (valueExact && (valueMoves || !satOk)) {
     shape = "polynomial";
     residual = { space: "value", rmse: valueRmse };
+  } else if (satOk) {
+    shape = "saturating";
+    // The saturation fit's own error, not the unrelated value-space line or parabola.
+    residual = { space: "log-rate", rmse: satRmse };
   } else if (expOk && !accelOk && !(powerOk && power !== null && power.rmse * 100 < linear.rmse)) {
     // A power fit far closer than the log-linear one is a power law that only looks exponential over this window.
     shape = "exponential";
@@ -682,10 +694,6 @@ function classifyPositive(
   } else if (powerOk && power) {
     shape = "polynomial";
     residual = { space: "log10", rmse: power.rmse };
-  } else if (satOk) {
-    shape = "saturating";
-    // The saturation fit's own error, not the unrelated value-space line or parabola.
-    residual = { space: "log-rate", rmse: satRmse };
   } else if (valuePolyOk) {
     shape = "polynomial";
     residual = { space: "value", rmse: valueRmse };
@@ -1017,7 +1025,11 @@ function actionBreakKind<N, U extends string, Vars>(
   before: SimState<N, U, Vars> | undefined,
   actionId: string,
 ): GrowthDiscontinuity["kind"] {
-  const listed = before ? scenario.model.actions(scenario.ctx, before).find((action) => action.id === actionId) : undefined;
+  const matches = before ? scenario.model.actions(scenario.ctx, before).filter((action) => action.id === actionId) : [];
+  // The log keeps only the id. When actions of different kinds share it, the applied kind is unknown, so the row is
+  // a purchase unless a prestige count change confirms a reset.
+  if (new Set(matches.map((action) => action.kind)).size > 1) return "purchase";
+  const listed = matches[0];
   if (listed?.kind === "prestige") return "reset";
   // A custom action the model lists is named by the model, so its id is the only hint. An action the model did not
   // list at the traced state, such as one unlocked between trace points, is a purchase unless a prestige count
