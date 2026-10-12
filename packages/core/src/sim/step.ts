@@ -46,6 +46,9 @@ export type StepInput<N, U extends string, Vars> = Readonly<{
   /** Checks the action a decision re-resolves to. A rejected one is dropped without an event. */
   admits?: (action: Action<N, U, Vars>) => boolean;
 
+  /** Wall time of this step's decisions, from the runner's elapsed clock. Without it, the segment clock is used. */
+  wallT?: number;
+
   constraints?: ScenarioConstraints;
 
   fast?: Readonly<{
@@ -415,6 +418,8 @@ export function applyDecisions<N, U extends string, Vars>(args: {
   constraints?: ScenarioConstraints;
   admits?: (action: Action<N, U, Vars>) => boolean;
   resetKinds?: ReadonlySet<"prestige" | "custom">;
+  /** Wall time of the decisions, from the caller's elapsed clock. Without it, the segment clock is used. */
+  wallT?: number;
   /**
    * Default true: re-read `model.actions` and drop a decision the model no longer lists.
    * A reset adapter passes false. Its action was built for this state and may not be a model action.
@@ -592,7 +597,7 @@ export function applyDecisions<N, U extends string, Vars>(args: {
         actionId: action.id,
         kind: action.kind,
         t: decisionT,
-        wallT: wallNow(ctx, decisionT),
+        wallT: args.wallT ?? wallNow(ctx, decisionT),
         cost: paid
           ? { unit: paid.unit.code, decimal: E.toString(paid.amount) }
           : null,
@@ -636,6 +641,7 @@ export function stepOnce<N, U extends string, Vars>(
     decisions: input.decisions,
     constraints,
     ...(input.admits ? { admits: input.admits } : {}),
+    ...(input.wallT !== undefined ? { wallT: input.wallT } : {}),
   });
   let next = applied.state;
   const events = applied.events;

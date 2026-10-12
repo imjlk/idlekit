@@ -109,10 +109,13 @@ export function runScenario<N, U extends string, Vars>(
       decisions,
       constraints,
       fast: sc.run.fast,
+      // Inside a session segment, wall time advances with the runner's summed tick seconds.
+      ...(sc.ctx.clocks ? { wallT: sc.ctx.clocks.wallT + elapsedSec } : {}),
     });
     assertTickAdvanced("runScenario", actionStartT, step.next.t, decision.dt, stepSec, start.t);
     constraints = recordPrestigeReset(constraints, step.prestigeResetT, sc.run.onPrestigeReset);
-    emitCommittedResets(sc.run.observer, step.committedResets ?? []);
+    // A run with observation off notifies no observer, resets included, as the recorder does for the rest.
+    if (sc.run.observation?.enabled !== false) emitCommittedResets(sc.run.observer, step.committedResets ?? []);
 
     state = step.next;
     recorder.recordStep({
