@@ -261,7 +261,7 @@ async function main(): Promise<void> {
     const runtime: number[] = [];
     const retained: number[] = [];
     let prepareCold: number | undefined;
-    const beforeRuntime = { rss: 0, heap: 0 };
+    let beforeRuntime = { rss: 0, heap: 0 };
     let afterRuntime = { rss: 0, heap: 0 };
 
     for (let i = 0; i < 1 + args.warmup + args.iterations; i++) {

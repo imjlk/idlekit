@@ -1097,7 +1097,7 @@
         {
           "file": "tools/performanceBudget.test.ts",
           "exportName": "acceptsPerformanceBudgetSchema",
-          "registeredAs": "accepts the performance budget schema",
+          "registeredAs": "performance budget > accepts the performance budget schema",
           "cwd": ".",
           "args": ["test", "--timeout", "120000", "tools/performanceBudget.test.ts"]
         }
@@ -1113,7 +1113,7 @@
         {
           "file": "tools/performanceBudget.test.ts",
           "exportName": "keepsRuntimeWorkloadDenominator",
-          "registeredAs": "uses workload count over runtime only",
+          "registeredAs": "performance budget > uses workload count over runtime only",
           "cwd": ".",
           "args": ["test", "--timeout", "120000", "tools/performanceBudget.test.ts"]
         }
@@ -1129,7 +1129,7 @@
         {
           "file": "tools/performanceBudget.test.ts",
           "exportName": "keepsEmptyDurationAbsent",
-          "registeredAs": "keeps an empty duration absent",
+          "registeredAs": "performance budget > keeps an empty duration absent",
           "cwd": ".",
           "args": ["test", "--timeout", "120000", "tools/performanceBudget.test.ts"]
         }
@@ -1145,7 +1145,7 @@
         {
           "file": "tools/performanceBudget.test.ts",
           "exportName": "keepsUnknownMetricsUnmeasured",
-          "registeredAs": "keeps unknown metrics unmeasured",
+          "registeredAs": "performance budget > keeps unknown metrics unmeasured",
           "cwd": ".",
           "args": ["test", "--timeout", "120000", "tools/performanceBudget.test.ts"]
         }
@@ -1161,7 +1161,7 @@
         {
           "file": "tools/performanceBudget.test.ts",
           "exportName": "failsUnfavorableBudget",
-          "registeredAs": "fails an unfavorable budget",
+          "registeredAs": "performance budget > fails an unfavorable budget",
           "cwd": ".",
           "args": ["test", "--timeout", "120000", "tools/performanceBudget.test.ts"]
         }
@@ -1177,7 +1177,7 @@
         {
           "file": "tools/performanceBudget.test.ts",
           "exportName": "rejectsBaselineHashMismatch",
-          "registeredAs": "rejects a baseline hash mismatch",
+          "registeredAs": "performance budget > rejects a baseline hash mismatch",
           "cwd": ".",
           "args": ["test", "--timeout", "120000", "tools/performanceBudget.test.ts"]
         }
@@ -1193,7 +1193,7 @@
         {
           "file": "tools/performanceBudget.test.ts",
           "exportName": "comparesOnlyTheSameConfig",
-          "registeredAs": "compares only the same config",
+          "registeredAs": "performance budget > compares only the same config",
           "cwd": ".",
           "args": ["test", "--timeout", "120000", "tools/performanceBudget.test.ts"]
         }
@@ -1209,7 +1209,7 @@
         {
           "file": "tools/performanceBudget.test.ts",
           "exportName": "keepsColdAndWarmLabels",
-          "registeredAs": "keeps cold and warm labels",
+          "registeredAs": "performance budget > keeps cold and warm labels",
           "cwd": ".",
           "args": ["test", "--timeout", "120000", "tools/performanceBudget.test.ts"]
         }

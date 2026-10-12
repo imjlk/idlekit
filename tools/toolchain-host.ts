@@ -186,16 +186,25 @@ export function inspectToolchain(): DoctorReport {
   } else if (!nodeSatisfies(nodeVersion, pins.nodeLauncher)) {
     failures.push(`Node launcher ${nodeVersion} does not satisfy ${pins.nodeLauncher}`);
   }
-  for (const workflow of ["ci.yml", "codeql.yml", "docs-verify.yml", "release.yml", "conformance-extended.yml"]) {
+  for (const workflow of [
+    "ci.yml",
+    "codeql.yml",
+    "docs-verify.yml",
+    "release.yml",
+    "conformance-extended.yml",
+    "performance-corpus.yml",
+  ]) {
     const body = readFileSync(join(root, ".github/workflows", workflow), "utf8");
     if (!body.includes(`bun-version: "${pins.bun}"`)) failures.push(`${workflow} does not pin Bun ${pins.bun}`);
   }
   const ci = readFileSync(join(root, ".github/workflows/ci.yml"), "utf8");
   if (!ci.includes(`node-version: "${pins.ciNode}"`)) failures.push(`ci.yml does not pin Node ${pins.ciNode}`);
   if (!ci.includes("bun run toolchain:smoke")) failures.push("ci.yml does not run toolchain:smoke");
-  const extended = readFileSync(join(root, ".github/workflows/conformance-extended.yml"), "utf8");
-  if (!extended.includes(`node-version: "${pins.ciNode}"`)) {
-    failures.push(`conformance-extended.yml does not pin Node ${pins.ciNode}`);
+  for (const workflow of ["conformance-extended.yml", "performance-corpus.yml"]) {
+    const scheduled = readFileSync(join(root, ".github/workflows", workflow), "utf8");
+    if (!scheduled.includes(`node-version: "${pins.ciNode}"`)) {
+      failures.push(`${workflow} does not pin Node ${pins.ciNode}`);
+    }
   }
   const release = readFileSync(join(root, ".github/workflows/release.yml"), "utf8");
   if (!release.includes(`node-version: "${pins.publishNode}"`)) {

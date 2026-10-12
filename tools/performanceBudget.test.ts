@@ -10,8 +10,13 @@ import {
   budgetUnknownMetric,
   buildPerformanceArtifact,
   comparePerformanceBudgets,
+  configHash,
+  currentHost,
+  median,
   readPerformanceArtifact,
   representativeConfig,
+  sameBenchConfig,
+  workloadStepCount,
   type ArtifactInput,
   type PerformanceArtifact,
 } from "./performanceBudget";
@@ -41,8 +46,19 @@ function built(overrides: Partial<ArtifactInput> = {}): PerformanceArtifact {
  * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-bench-schema #b85a868 Re-read the section, then ran this function: contract is idlekit.performance-budget and alloc/step is unsupported.
  * @evidence ./performanceBudget.ts#budgetSchema Reads the bench output schema contract.
  * @evidenceReview ./performanceBudget.ts#budgetSchema #59b4f49 The declaration is bench-output-schema.
+ * @evidence ./performanceBudget.ts#buildPerformanceArtifact Builds the artifact from phases, config, host, and counters.
+ * @evidenceReview ./performanceBudget.ts#buildPerformanceArtifact #529165e The function hashes the config, labels phases, derives median, p95, and rates from runtime samples only, and fixes alloc/step as unsupported and worker timings as absent.
+ * @evidence ./performanceBudget.ts#readPerformanceArtifact Accepts a round-tripped artifact and rejects a forged alloc/step.
+ * @evidenceReview ./performanceBudget.ts#readPerformanceArtifact #c92efd8 The function checks contract, version, corpus, config, hash type, and each metric status, and returns null for an alloc/step other than unsupported.
+ * @evidence ./performanceBudget.ts#currentHost Reports the running Bun, platform, and architecture.
+ * @evidenceReview ./performanceBudget.ts#currentHost #45ed392 The function reads Bun.version, process.platform, and process.arch, and on darwin reads the CPU brand, otherwise unsupported.
  */
 export function acceptsPerformanceBudgetSchema(): void {
+  const running = currentHost();
+  expect(running.bun).toBe(Bun.version);
+  expect(running.os).toBe(process.platform);
+  expect(running.arch).toBe(process.arch);
+  expect(running.cpu.length).toBeGreaterThan(0);
   expect(budgetSchema).toBe("bench-output-schema");
   const artifact = built({
     phases: { installMs: 1, prepareColdMs: 2, prepareWarmMs: [3], checkMs: 4, buildMs: 5, runtimeMs: [100] },
@@ -69,8 +85,20 @@ export function acceptsPerformanceBudgetSchema(): void {
  * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-workload-denominator #11a4355 Re-read the section, then ran this function: the rate uses 150ms.
  * @evidence ./performanceBudget.ts#budgetDenominator Reads the runtime denominator contract.
  * @evidenceReview ./performanceBudget.ts#budgetDenominator #1306650 The declaration is runtime-denominator.
+ * @evidence ./performanceBudget.ts#median Takes the middle runtime sample, or the mean of the middle pair.
+ * @evidenceReview ./performanceBudget.ts#median #0f23953 The function sorts a copy, returns null for no samples, the middle value for an odd count, and the mean of the middle pair for an even count.
+ * @evidence ./performanceBudget.ts#workloadStepCount Counts duration steps with a shorter last tick.
+ * @evidenceReview ./performanceBudget.ts#workloadStepCount #9e2c19a The function steps min(stepSec, remaining) until the duration is reached and returns null for a non-finite or non-positive step or a negative duration.
  */
 export function keepsRuntimeWorkloadDenominator(): void {
+  expect(median([])).toBeNull();
+  expect(median([3, 1, 2])).toBe(2);
+  expect(median([200, 100])).toBe(150);
+  expect(workloadStepCount(10, 3)).toBe(4);
+  expect(workloadStepCount(10, 2)).toBe(5);
+  expect(workloadStepCount(0, 1)).toBe(0);
+  expect(workloadStepCount(10, 0)).toBeNull();
+  expect(workloadStepCount(Number.NaN, 1)).toBeNull();
   expect(budgetDenominator).toBe("runtime-denominator");
   const artifact = built({
     workloadCount: 100,
@@ -125,6 +153,8 @@ export function keepsUnknownMetricsUnmeasured(): void {
  * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-gate-failure #c1a6c6b Re-read the section, then ran this function: the unfavorable pair fails and the writer is not called.
  * @evidence ./performanceBudget.ts#budgetGateFailure Reads the gate failure contract.
  * @evidenceReview ./performanceBudget.ts#budgetGateFailure #38dd0b8 The declaration is unfavorable-fails.
+ * @evidence ./performanceBudget.ts#comparePerformanceBudgets Fails a slower median only past both the relative and absolute limits.
+ * @evidenceReview ./performanceBudget.ts#comparePerformanceBudgets #0e41023 The function rejects a recomputed hash mismatch or a different config, fails too few repeats or an unmeasured median, fails when both limits are exceeded, and never calls the baseline writer.
  */
 export function failsUnfavorableBudget(): void {
   expect(budgetGateFailure).toBe("unfavorable-fails");
@@ -176,8 +206,32 @@ export function rejectsBaselineHashMismatch(): void {
  * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-same-config #2373b21 Re-read the section, then ran this function: the small pair passes and the other configs are rejected.
  * @evidence ./performanceBudget.ts#budgetSameConfig Reads the same-config contract.
  * @evidenceReview ./performanceBudget.ts#budgetSameConfig #0d25c6b The declaration is same-config-only.
+ * @evidence ./performanceBudget.ts#sameBenchConfig Treats configs with the same fields in another key order as the same.
+ * @evidenceReview ./performanceBudget.ts#sameBenchConfig #da10445 The function compares canonical JSON with sorted keys.
+ * @evidence ./performanceBudget.ts#configHash Hashes the canonical config, independent of key order.
+ * @evidenceReview ./performanceBudget.ts#configHash #46c5a1e The function returns the sha256 hex digest of the canonical JSON with sorted keys.
+ * @evidence ./performanceBudget.ts#representativeConfig Defaults to the number engine with trace, observer, worker, and planner off.
+ * @evidenceReview ./performanceBudget.ts#representativeConfig #872d7ee The function returns the representative config and applies overrides on top.
  */
 export function comparesOnlyTheSameConfig(): void {
+  const base = representativeConfig();
+  expect(base).toEqual({
+    engineId: "number",
+    seed: null,
+    modelId: "linear",
+    modelVersion: 1,
+    stepSec: 1,
+    trace: "off",
+    observer: "off",
+    worker: "none",
+    planner: "off",
+  });
+  const reordered = Object.fromEntries(Object.entries(base).reverse()) as typeof base;
+  expect(sameBenchConfig(base, reordered)).toBe(true);
+  expect(sameBenchConfig(base, representativeConfig({ stepSec: 2 }))).toBe(false);
+  expect(configHash(base)).toMatch(/^[0-9a-f]{64}$/);
+  expect(configHash(reordered)).toBe(configHash(base));
+  expect(configHash(representativeConfig({ stepSec: 2 }))).not.toBe(configHash(base));
   expect(budgetSameConfig).toBe("same-config-only");
   const policy = { minIterations: 4, relativeSlowdown: 0.25, absoluteMedianMs: 50 };
   let writes = 0;
