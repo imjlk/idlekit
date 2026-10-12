@@ -8,6 +8,8 @@ Korean version: [eta-semantics_ko.md](./eta-semantics_ko.md)
 
 Money and net worth targets share `etaGoalForTarget`. Analytic and simulate modes use that goal. `exact` is only a constant money derivative with no action, evolve, prestige, strategy, or policy constraint. Anything else that still has a local rate is `analytic-local`. `incomeKind: "constant"` does not by itself make every strategy exact.
 
+An exact estimate also requires `Engine.comparisonIsExact: true`. Built-in engines declare it only with epsilon 0. Their default epsilon and custom comparators without a declaration keep the legacy ratio as `analytic-local`; a tolerant goal can be met before that ratio, so no reach bracket is claimed. Income in a different wallet or target unit is `invalid`. If engine division loses a positive gap to zero, the estimate is `invalid` and does not store that zero as a decimal result.
+
 A model `netWorth` function is `unsupported-local`. Money income is not its derivative. The legacy `seconds` field may still carry the old initial-income ratio when that ratio is a finite number, and that number is not a net worth result. A missing net worth function is also `unsupported-local`. Its legacy `seconds` may reuse wallet money.
 
 Fixed-step `seconds` are the first observation. A monotonic constant model can add a bracket from the continuous ratio to that observation. Other traces record `observationResolutionSec` and do not invent a bracket. A goal still inside the horizon is `censored`. It is not called unreachable. Legacy `seconds` stay on the horizon number.
