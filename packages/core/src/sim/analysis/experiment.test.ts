@@ -89,6 +89,17 @@ function policyFactory(): StrategyFactory {
   };
 }
 
+/** Income per second is the `amount` param, with no schema. */
+function tinyIncomeFactory() {
+  return defineModelFactory({
+    id: "tiny-income",
+    version: 1,
+    create(params: { amount: number }) {
+      return { id: "tiny-income", version: 1, income: (ctx: { unit: { code: string } }) => ({ unit: ctx.unit, amount: params.amount }), actions: () => [] };
+    },
+  });
+}
+
 /** A scenario for the constant-income model. The experiment starts every candidate from it. */
 function incomeScenario(patch: Partial<ScenarioV1> = {}): ScenarioV1 {
   return {
@@ -619,7 +630,7 @@ export function skipsCensoredHorizonForSensitivity(): void {
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown The hand tradeoff keeps A, B, and C, drops D, and leaves E uncompared.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown #1da34f7 Re-read the section, then ran this function: nonDominated is A, B, C and E is uncompared, and end money 0, 0.75e-12, and 1.5e-12 give the front B and C.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown #ab90466 Re-read the section, then ran this function: nonDominated is A, B, C and E is uncompared, and end money 0, 0.75e-12, and 1.5e-12 give the front B and C.
  * @evidence ./experiment.ts#experimentParetoUnknown Reads the Pareto contract.
  * @evidenceReview ./experiment.ts#experimentParetoUnknown #4c62a0c The declaration is unknown-is-not-superior.
  */
@@ -700,13 +711,7 @@ export function matchesHandPareto(): void {
   });
   expect(JSON.stringify(artifact)).not.toContain("weightedScore");
   // The number engine treats amounts within 1e-12 as equal. Each pair is compared directly, so 0 is still below 1.5e-12.
-  const tiny = defineModelFactory({
-    id: "tiny-income",
-    version: 1,
-    create(params: { amount: number }) {
-      return { id: "tiny-income", version: 1, income: (ctx: { unit: { code: string } }) => ({ unit: ctx.unit, amount: params.amount }), actions: () => [] };
-    },
-  });
+  const tiny = tinyIncomeFactory();
   const tinyScenario = incomeScenario({ model: { id: "tiny-income", version: 1, params: { amount: 0 } }, strategy: undefined });
   const amountDimension = { id: "amount", target: "model" as const, path: "amount", space: { kind: "number" as const, min: 0, max: 1 }, baseline: 0 };
   const tinyFront = runExperiment({
@@ -829,7 +834,7 @@ export function startsCandidatesFromScenario(): void {
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown An amount past the double range stays an observed engine value for constraints, Pareto, and sensitivity.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown #1da34f7 Re-read the section, then ran this function: 1e400 and 1e401 are observed, both violate the cap, only the probe is non-dominated, 1e-10 to 1e400 keeps an engine elasticity near 2.44e409, and two seeds of benefit 1e308 or of the smallest subnormal average to that value.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown #ab90466 Re-read the section, then ran this function: 1e400 and 1e401 are observed, both violate the cap, only the probe is non-dominated, 1e-10 to 1e400 keeps an engine elasticity near 2.44e409, and two seeds of benefit 1e308 or of the smallest subnormal, and a subnormal wallet, average to that value, and end money 1e308 to -1e308 keeps elasticity 1.
  * @evidence ./experiment.ts#runExperiment Compares engine amounts for constraints, Pareto, and elasticity.
  * @evidenceReview ./experiment.ts#runExperiment #2214af6 The function keeps money as engine amounts, checks constraints with the engine order, ranks each Pareto objective by that order, and divides money changes in the engine.
  */
@@ -925,13 +930,17 @@ export function keepsLargeEngineAmounts(): void {
       };
     },
   });
-  const averageOf = (value: number) => {
-    const edge = incomeScenario({ model: { id: "edge-benefit", version: 1, params: { value } }, strategy: undefined });
+  const averageOf = (value: number, metricId: "varBenefit" | "endMoney" = "varBenefit", wallet = "0") => {
+    const edge = incomeScenario({
+      model: { id: "edge-benefit", version: 1, params: { value } },
+      initial: { wallet: { unit: "COIN", amount: wallet } },
+      strategy: undefined,
+    });
     return runExperiment({
       spec: specFor(edge, {
         model: { id: "edge-benefit", version: 1 },
         strategy: undefined,
-        metricId: "varBenefit",
+        metricId,
         goal: undefined,
         dimensions: [],
         seeds: [1, 2],
@@ -949,6 +958,32 @@ export function keepsLargeEngineAmounts(): void {
   };
   expect(averageOf(1e308)).toEqual([{ metricId: "varBenefit", status: "observed", value: String(1e308) }]);
   expect(averageOf(Number.MIN_VALUE)).toEqual([{ metricId: "varBenefit", status: "observed", value: String(Number.MIN_VALUE) }]);
+  // The engine money mean also sums first: a wallet of the smallest subnormal on two seeds averages to itself.
+  expect(averageOf(0, "endMoney", String(Number.MIN_VALUE))).toEqual([{ metricId: "endMoney", status: "observed", value: String(Number.MIN_VALUE) }]);
+  // End money 1e308 and -1e308 differ by more than the double range. The ratio -2 over a parameter ratio -2 is 1.
+  const signed = incomeScenario({ model: { id: "tiny-income", version: 1, params: { amount: 1e308 } }, strategy: undefined });
+  const flipped = runExperiment({
+    spec: specFor(signed, {
+      model: { id: "tiny-income", version: 1 },
+      strategy: undefined,
+      metricId: "endMoney",
+      goal: undefined,
+      dimensions: [
+        { id: "amount", target: "model", path: "amount", space: { kind: "number", min: -1e308, max: 1e308 }, baseline: 1e308, probes: [-1e308] },
+      ],
+      budget: { candidates: 2, seeds: 1 },
+      horizonSec: 1,
+    }),
+    scenario: signed,
+    modelRegistry: createModelRegistry([tinyIncomeFactory()]),
+    strategyRegistry: createStrategyRegistry([]),
+    engine: createNumberEngine(),
+    engineId: "number",
+    engineVersion: "1",
+    effectiveRunHash: "signed-money",
+  });
+  expect(flipped.candidates.map((candidate) => candidate.metrics[0]?.value)).toEqual([String(1e308), String(-1e308)]);
+  expect(flipped.elasticities[0]).toMatchObject({ status: "observed", elasticity: "1", absoluteChange: null, direction: "lower" });
 }
 
 describe("parameter experiments", () => {

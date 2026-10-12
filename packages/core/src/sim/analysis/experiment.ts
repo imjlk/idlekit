@@ -61,7 +61,7 @@ export const experimentCensoredHorizon = "censored-time-not-horizon" as const;
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown Pareto keeps per-metric tradeoffs. An unknown objective is uncompared, not a win.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown #1da34f7 Re-read the section: A, B, and C are non-dominated, D is dominated, E is uncompared, money is compared pairwise in the effective engine, and the elasticity stays in that engine until it is text.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown #ab90466 Re-read the section: A, B, and C are non-dominated, D is dominated, E is uncompared, money is compared pairwise in the effective engine, and the elasticity stays in that engine until it is text.
  */
 export const experimentParetoUnknown = "unknown-is-not-superior" as const;
 
@@ -603,8 +603,12 @@ function aggregate<N>(E: Engine<N>, rows: readonly { seed: number; metrics: read
   const observed = picked as Reading<N>[];
   const count = observed.length;
   if (metricId === "endMoney") {
-    // Divide before adding so the sum of large finite amounts cannot leave the engine range.
-    const mean = observed.reduce((sum, metric) => E.add(sum, E.div(metric.amount as N, count)), E.zero());
+    // Sum, then divide, so subnormal amounts keep their mean. Only when the sum leaves the engine range,
+    // divide before adding, so large finite amounts keep a finite mean.
+    const sum = observed.reduce((total, metric) => E.add(total, metric.amount as N), E.zero());
+    const mean = E.isFinite(sum)
+      ? E.div(sum, count)
+      : observed.reduce((total, metric) => E.add(total, E.div(metric.amount as N, count)), E.zero());
     if (!E.isFinite(mean)) return { metricId, status: "censored", value: null };
     return { metricId, status: "observed", value: E.toString(mean), amount: mean };
   }
@@ -644,18 +648,21 @@ function readingElasticity<N>(
   if (!isObserved(baseline) || !isObserved(probe)) return localElasticity({ baselineP, probeP, baselineY: null, probeY: null });
   if (baseline.amount !== undefined && probe.amount !== undefined) {
     const delta = E.sub(probe.amount, baseline.amount);
+    // Two finite amounts of opposite sign can differ by more than the engine range. Their ratio stays finite.
+    const finiteDelta = E.isFinite(delta);
     const order = E.cmp(probe.amount, baseline.amount);
     const unavailable = elasticityFromChange({
       baselineP,
       probeP,
-      absoluteChange: E.toString(delta),
+      absoluteChange: finiteDelta ? E.toString(delta) : null,
       direction: order > 0 ? "higher" : order < 0 ? "lower" : "flat",
       relativeChange: null,
     });
     const pChanged = Number.isFinite(baselineP) && Number.isFinite(probeP) && probeP !== baselineP;
     if (!(E.cmp(baseline.amount, E.zero()) > 0) || !(baselineP > 0) || !pChanged) return unavailable;
     // The ratio of two engine amounts can leave the double range, so the elasticity stays in the engine until it is text.
-    const elasticity = E.div(E.divN(delta, baseline.amount), relativeParameterChange(baselineP, probeP));
+    const relative = finiteDelta ? E.divN(delta, baseline.amount) : E.sub(E.divN(probe.amount, baseline.amount), E.from(1));
+    const elasticity = E.div(relative, relativeParameterChange(baselineP, probeP));
     if (!E.isFinite(elasticity)) return unavailable;
     return { ...unavailable, status: "observed", elasticity: E.toString(elasticity) };
   }
