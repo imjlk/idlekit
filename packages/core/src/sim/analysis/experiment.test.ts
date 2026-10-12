@@ -372,7 +372,7 @@ export function keepsStrategyTuneSignature(): void {
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter Unsafe paths and invalid parameters throw before the model factory runs.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #dc4466b Re-read the section, then ran this function: a stripped typo path, overlapping model and strategy paths, a session dimension, a repeated seed, another model version, an Infinity choice value, an Infinity space bound, an Infinity limit, an Infinity goal, a schema-less typo path, -0, a -0 seed, a __type path, non-JSON params, a malformed untyped spec, and a repeated constraint id throw, and create count stays 0.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #b990f16 Re-read the section, then ran this function: a stripped typo path, overlapping model and strategy paths, a session dimension, a repeated seed, another model version, an Infinity choice value, an Infinity space bound, an Infinity limit, an Infinity goal, a schema-less typo path, -0, a -0 seed, a __type path, non-JSON params, a malformed untyped spec, and a repeated constraint id throw, and create count stays 0.
  * @evidence ./experiment.ts#experimentRegisteredSetter Reads the setter contract.
  * @evidenceReview ./experiment.ts#experimentRegisteredSetter #080a763 The declaration is registered-key-not-jsonpath.
  * @evidence ./experiment.ts#assertRegisteredPath Rejects prototype, bracket, and traversal paths, and session paths other than pattern or days.
@@ -542,7 +542,20 @@ export function rejectsUnsafeParametersBeforeRun(): void {
   // A hole balanced by a non-index key keeps the key count of a plain array.
   const balanced: unknown[] = new Array(1);
   (balanced as unknown as Record<string, unknown>)["4294967295"] = "secret";
-  for (const odd of [new Date(0), new (class Curve { rate = 1 })(), undefined, { __type: "curve" }, { a: shared, b: shared }, named, Steps.from([1, 2]), [1, , 3], balanced]) {
+  const odds = [
+    new Date(0),
+    new (class Curve { rate = 1 })(),
+    undefined,
+    { __type: "curve" },
+    { a: shared, b: shared },
+    named,
+    Steps.from([1, 2]),
+    [1, , 3],
+    balanced,
+    Object.freeze({ rate: 1 }),
+    Object.defineProperty({}, "rate", { value: 1, enumerable: true, writable: false, configurable: true }),
+  ];
+  for (const odd of odds) {
     const oddScenario = incomeScenario({ model: { id: "tiny-income", version: 1, params: { amount: 1, extra: odd } }, strategy: undefined });
     expect(() =>
       runExperiment({
@@ -564,6 +577,13 @@ export function rejectsUnsafeParametersBeforeRun(): void {
         effectiveRunHash: "odd-params",
       }),
     ).toThrow("model params must be JSON data");
+  }
+  // Initial vars reach every run and the scenario hash, so a Date or a cycle in them is refused too.
+  const cyclic: Record<string, unknown> = {};
+  cyclic.self = cyclic;
+  for (const vars of [{ at: new Date(0) }, cyclic]) {
+    const varsScenario = incomeScenario({ initial: { wallet: { unit: "COIN", amount: "0" }, vars } });
+    expect(() => runWith(varsScenario, specFor(varsScenario), creates)).toThrow("initial state must be JSON data");
   }
   // Explicit null params would share the record of omitted params.
   const nullScenario = incomeScenario({ model: { id: fixture.modelId, version: fixture.modelVersion, params: null } });

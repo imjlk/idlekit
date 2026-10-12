@@ -37,7 +37,7 @@ export const experimentSeparateSpec = "experiment-spec-not-tunespec" as const;
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter Assignment uses a registered identifier path and the model or strategy schema. JSONPath, prototype, and eval paths are refused before a run.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #dc4466b Re-read the section: a prototype path, an out-of-range integer, a non-finite choice value, a non-finite space bound, a schema-invalid rate, a stripped path, overlapping paths, a session dimension, a repeated seed, a non-finite limit, and a repeated constraint id throw before model create.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #b990f16 Re-read the section: a prototype path, an out-of-range integer, a non-finite choice value, a non-finite space bound, a schema-invalid rate, a stripped path, overlapping paths, a session dimension, a repeated seed, a non-finite limit, and a repeated constraint id throw before model create.
  */
 export const experimentRegisteredSetter = "registered-key-not-jsonpath" as const;
 
@@ -516,12 +516,25 @@ function asParamRecord(params: unknown, label: string): Readonly<Record<string, 
  * An object reached twice (a shared reference or a cycle) and a `__type` key, which canonical JSON drops,
  * are refused too.
  */
+/** An enumerable, writable, configurable data property: the only kind JSON.parse creates. */
+function isOrdinaryData(descriptor: PropertyDescriptor | undefined): boolean {
+  return (
+    descriptor !== undefined &&
+    "value" in descriptor &&
+    descriptor.enumerable === true &&
+    descriptor.writable === true &&
+    descriptor.configurable === true
+  );
+}
+
 function isJsonData(value: unknown, seen: Set<object> = new Set()): boolean {
   if (value === null || typeof value === "boolean" || typeof value === "string") return true;
   if (typeof value === "number") return Number.isFinite(value) && !Object.is(value, -0);
   if (typeof value !== "object" || seen.has(value)) return false;
   // Visited objects stay recorded, so a shared reference fails like a cycle.
   seen.add(value);
+  // A frozen, sealed, or non-extensible object is observable but writes the same JSON as an ordinary one.
+  if (!Object.isExtensible(value)) return false;
   if (Array.isArray(value)) {
     // Only a plain array of index slots: no subclass prototype, no named or symbol own property, no holes or accessors.
     if (Object.getPrototypeOf(value) !== Array.prototype) return false;
@@ -529,7 +542,7 @@ function isJsonData(value: unknown, seen: Set<object> = new Set()): boolean {
     if (Reflect.ownKeys(value).length !== value.length + 1) return false;
     for (let index = 0; index < value.length; index += 1) {
       const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
-      if (!descriptor || descriptor.enumerable !== true || !("value" in descriptor) || !isJsonData(descriptor.value, seen)) return false;
+      if (!isOrdinaryData(descriptor) || !isJsonData(descriptor!.value, seen)) return false;
     }
     return true;
   }
@@ -540,8 +553,7 @@ function isJsonData(value: unknown, seen: Set<object> = new Set()): boolean {
     return (
       typeof key === "string" &&
       key !== "__type" &&
-      descriptor.enumerable === true &&
-      "value" in descriptor &&
+      isOrdinaryData(descriptor) &&
       isJsonData(descriptor.value, seen)
     );
   });
@@ -558,6 +570,8 @@ function candidateBase(spec: ExperimentSpecV1, scenario: ScenarioV1, registries:
   const seen = new Set<object>();
   requireJsonParams(scenario.model.params, "model", seen);
   requireJsonParams(scenario.strategy?.params, "strategy", seen);
+  // The initial state, vars included, reaches every run and the scenario hash. It must be JSON data too.
+  if (!isJsonData(scenario.initial, seen)) reject("scenario initial state must be JSON data, because the scenario hash records it as JSON");
   if (scenario.model.id !== spec.model.id || scenario.model.version !== spec.model.version) {
     reject(`model ${spec.model.id}@${spec.model.version} does not match the scenario model ${scenario.model.id}@${scenario.model.version}`);
   }
@@ -812,7 +826,7 @@ function prepareExperiment(request: ExperimentCheckRequest) {
  * A caller that compiles or opens a run first calls this, so a rejected spec never reaches a factory.
  *
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter Throws the same rejections as runExperiment before any model create.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #dc4466b Re-read the section: the hash, spec, path, and schema checks run and no factory create is called.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #b990f16 Re-read the section: the hash, spec, path, and schema checks run and no factory create is called.
  */
 export function checkExperimentSpec(request: ExperimentCheckRequest): void {
   prepareExperiment(request);
