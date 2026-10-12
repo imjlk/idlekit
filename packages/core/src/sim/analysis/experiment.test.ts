@@ -2,9 +2,10 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "bun:test";
 import { z } from "zod";
-import { createNumberEngine } from "../../engine/breakInfinity";
+import { createBreakInfinityEngine, createNumberEngine, Decimal } from "../../engine/breakInfinity";
 import { createModelRegistry, defineModelFactory } from "../../scenario/registry";
 import { canonicalJson, sha256Text } from "../../scenario/scenarioContract";
+import type { ScenarioV1 } from "../../scenario/types";
 import { zodStandardSchema } from "../../scenario/validate";
 import { createObjectiveRegistry } from "../strategy/opt/registry";
 import { runCandidateAndScore } from "../strategy/opt/runner";
@@ -65,7 +66,7 @@ function incomeFactory(creates: { count: number }) {
       return {
         id: fixture.modelId,
         version: fixture.modelVersion,
-        income: () => ({ unit, amount: params.incomeRate }),
+        income: (ctx: { unit: { code: string } }) => ({ unit: ctx.unit, amount: params.incomeRate }),
         actions: () => [],
       };
     },
@@ -83,6 +84,21 @@ function policyFactory(): StrategyFactory {
         return [];
       },
     }),
+  };
+}
+
+/** A scenario for the constant-income model. The experiment starts every candidate from it. */
+function incomeScenario(patch: Partial<ScenarioV1> = {}): ScenarioV1 {
+  return {
+    schemaVersion: 1,
+    meta: { id: fixture.id },
+    unit: { code: "COIN" },
+    policy: { mode: "drop" },
+    model: { id: fixture.modelId, version: fixture.modelVersion, params: { incomeRate: fixture.incomeBaseline } },
+    initial: { wallet: { unit: "COIN", amount: "0" } },
+    clock: { stepSec: fixture.stepSec, durationSec: fixture.horizonSec },
+    strategy: { id: fixture.strategyId, params: { maxPicks: fixture.policyBaseline } },
+    ...patch,
   };
 }
 
@@ -129,7 +145,7 @@ function specFor(scenario: unknown, patch: Partial<ExperimentSpecV1> = {}): Expe
   return spec;
 }
 
-function runWith(scenario: unknown, spec: ExperimentSpecV1, creates: { count: number } = { count: 0 }): ExperimentArtifactV1 {
+function runWith(scenario: ScenarioV1, spec: ExperimentSpecV1, creates: { count: number } = { count: 0 }): ExperimentArtifactV1 {
   return runExperiment({
     spec,
     scenario,
@@ -146,13 +162,13 @@ function runWith(scenario: unknown, spec: ExperimentSpecV1, creates: { count: nu
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-local-elasticity Rate 2 and rate 0.5 move reach time in opposite directions, and the policy probe stays flat.
  * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-local-elasticity #253b8c6 Re-read the section, then ran this function: elasticity is -0.5 and -2, and maxPicks elasticity is 0.
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-task-descriptor The income candidate and the policy candidate record different parameter JSON on the same logical seed.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-task-descriptor #9da008d Re-read the section, then ran this function: incomeRate becomes 2 on one task and maxPicks becomes 2 on another.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-task-descriptor #ca14fb5 Re-read the section, then ran this function: incomeRate becomes 2 on one task and maxPicks becomes 2 on another.
  * @evidence ./experiment.ts#experimentLocalOat Reads the local method contract.
  * @evidenceReview ./experiment.ts#experimentLocalOat #1c1bffa The declaration is one-at-a-time-local-not-sobol.
  * @evidence ./experiment.ts#experimentTaskDescriptor Reads the task descriptor contract.
  * @evidenceReview ./experiment.ts#experimentTaskDescriptor #03898ac The declaration is task-id-params-seed-version.
  * @evidence ./experiment.ts#runExperiment Runs the sweep and local sensitivity on a fixed spec.
- * @evidenceReview ./experiment.ts#runExperiment #1429075 The function checks the scenario hash against the spec, rejects a timeToMoney metric without a finite goal, runs each planned candidate per seed through a fresh binding, and reports local sensitivity only for completed horizons.
+ * @evidenceReview ./experiment.ts#runExperiment #254424e The function checks the scenario hash against the spec, rejects a timeToMoney metric without a finite goal, compiles the scenario once as the candidate base, runs each planned candidate per seed through a fresh binding to the horizon while reading the reach time, averages every seed, and reports local sensitivity only for completed horizons.
  * @evidence ./experiment.ts#experimentSchemaId Reads the experiment schema id.
  * @evidenceReview ./experiment.ts#experimentSchemaId #637335e The function returns the experiment.v1 schema URL constant.
  * @evidence ./experiment.ts#experimentAlgorithmVersion Reads the algorithm version.
@@ -174,7 +190,7 @@ export function checksLocalElasticityDirection(): void {
     globalSensitivity: false,
     sobol: false,
   });
-  const scenario = { id: fixture.id, incomeRate: 0, nested: { keep: true } };
+  const scenario = incomeScenario();
   const before = JSON.stringify(scenario);
   const artifact = runWith(scenario, specFor(scenario));
   expect(JSON.stringify(scenario)).toBe(before);
@@ -281,13 +297,13 @@ export function keepsStrategyTuneSignature(): void {
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter Unsafe paths and invalid parameters throw before the model factory runs.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #a9ad2ba Re-read the section, then ran this function: create count stays 0.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #927919a Re-read the section, then ran this function: a stripped typo path, overlapping model and strategy paths, a session dimension, a repeated seed, and another model version throw, and create count stays 0.
  * @evidence ./experiment.ts#experimentRegisteredSetter Reads the setter contract.
  * @evidenceReview ./experiment.ts#experimentRegisteredSetter #080a763 The declaration is registered-key-not-jsonpath.
  * @evidence ./experiment.ts#assertRegisteredPath Rejects prototype, bracket, and traversal paths, and session paths other than pattern or days.
  * @evidenceReview ./experiment.ts#assertRegisteredPath #7465c3e The function splits a trimmed dotted identifier path and rejects empty, bracketed, traversing, or banned segments, and session paths other than pattern or days.
  * @evidence ./experiment.ts#setRegisteredParam Sets a nested model parameter on a copy.
- * @evidenceReview ./experiment.ts#setRegisteredParam #2ac17d5 The function validates the path, deep-copies the root through JSON, creates missing objects, and sets the leaf without changing the input.
+ * @evidenceReview ./experiment.ts#setRegisteredParam #247b31e The function validates the path, deep-copies the root through JSON, refuses a prototype key at each segment, creates missing own objects, and sets the leaf without changing the input.
  */
 export function rejectsUnsafeParametersBeforeRun(): void {
   const safePath = "income.rate";
@@ -301,7 +317,7 @@ export function rejectsUnsafeParametersBeforeRun(): void {
   expect(setRegisteredParam(root, "income.bonus", 2)).toEqual({ income: { rate: 1, bonus: 2 } });
   expect(root).toEqual({ income: { rate: 1 } });
   expect(experimentRegisteredSetter).toBe("registered-key-not-jsonpath");
-  const scenario = { id: "reject" };
+  const scenario = incomeScenario();
   const creates = { count: 0 };
   const cases: ExperimentSpecV1[] = [
     specFor(scenario, {
@@ -340,18 +356,58 @@ export function rejectsUnsafeParametersBeforeRun(): void {
   for (const spec of cases) {
     expect(() => runWith(scenario, spec, creates)).toThrow();
   }
+  const incomeDimension = {
+    id: "incomeRate",
+    target: "model" as const,
+    path: "incomeRate",
+    space: { kind: "number" as const, min: 0.1, max: 5 },
+    baseline: 1,
+    probes: [2],
+  };
+  const rejected: readonly (readonly [string, ExperimentSpecV1])[] = [
+    // The zod object schema strips an unknown key, so the typo would run at the default rate.
+    [
+      "does not register incomeRat",
+      specFor(scenario, { dimensions: [{ ...incomeDimension, id: "typo", path: "incomeRat" }] }),
+    ],
+    [
+      "target the same model parameter",
+      specFor(scenario, { dimensions: [incomeDimension, { ...incomeDimension, id: "again", probes: [0.5] }] }),
+    ],
+    [
+      "target the same strategy parameter",
+      specFor(scenario, {
+        dimensions: [
+          { id: "picks", target: "strategy", path: "limits", space: { kind: "int", min: 1, max: 3 }, baseline: 1 },
+          { id: "picksMax", target: "strategy", path: "limits.max", space: { kind: "int", min: 1, max: 3 }, baseline: 1 },
+        ],
+      }),
+    ],
+    [
+      "session dimension days is not executed",
+      specFor(scenario, {
+        dimensions: [{ id: "days", target: "session", path: "days", space: { kind: "int", min: 1, max: 3 }, baseline: 1, probes: [2] }],
+      }),
+    ],
+    ["seeds must be unique", specFor(scenario, { seeds: [fixture.seed, fixture.seed] })],
+    ["does not match the scenario model", specFor(scenario, { model: { id: fixture.modelId, version: 2 } })],
+  ];
+  for (const [message, spec] of rejected) {
+    expect(() => runWith(scenario, spec, creates)).toThrow(message);
+  }
   expect(creates.count).toBe(0);
 }
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-candidate-order Reversed candidates keep the same report and leave the scenario JSON unchanged.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-candidate-order #b77cabc Re-read the section, then ran this function: effective hashes match and incomeRate on the scenario stays 0.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-candidate-order #726b7d7 Re-read the section, then ran this function: effective hashes match, incomeRate on the scenario stays 0, and create runs 6 times.
  * @evidence ./experiment.ts#experimentCandidateOrder Reads the order contract.
  * @evidenceReview ./experiment.ts#experimentCandidateOrder #b4dbc98 The declaration is sorted-candidates-unmutated-scenario.
  */
 export function keepsCandidateOrderAndScenario(): void {
   expect(experimentCandidateOrder).toBe("sorted-candidates-unmutated-scenario");
-  const scenario = { id: "order", incomeRate: 0 };
+  // The top-level incomeRate is a decoy. It is not the model parameter.
+  const scenario = { ...incomeScenario({ strategy: undefined }), incomeRate: 0 } as ScenarioV1;
   const before = JSON.stringify(scenario);
   const dimensions = [
     {
@@ -384,7 +440,8 @@ export function keepsCandidateOrderAndScenario(): void {
   const first = runWith(scenario, forward, creates);
   const second = runWith(scenario, reversed, creates);
   expect(JSON.stringify(scenario)).toBe(before);
-  expect(creates.count).toBe(4);
+  // Each experiment compiles the scenario once, then each fresh run creates a model.
+  expect(creates.count).toBe(6);
   expect(first.effectiveSpecHash).toBe(second.effectiveSpecHash);
   expect(first.originalSpecHash).not.toBe(second.originalSpecHash);
   expect(first.candidates.map((candidate) => candidate.id)).toEqual(["a", "b"]);
@@ -394,13 +451,13 @@ export function keepsCandidateOrderAndScenario(): void {
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-censored-horizon Horizon 9 does not become the reach time of an unmet target 10.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-censored-horizon #988285f Re-read the section, then ran this function: the censored value is null and elasticity is unavailable.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-censored-horizon #fae95bf Re-read the section, then ran this function: the censored value is null and elasticity is unavailable, and with an end money constraint rates 1 and 2 reach in 10 and 5 and end with 40 and 80.
  * @evidence ./experiment.ts#experimentCensoredHorizon Reads the censor contract.
  * @evidenceReview ./experiment.ts#experimentCensoredHorizon #81f017f The declaration is censored-time-not-horizon.
  */
 export function skipsCensoredHorizonForSensitivity(): void {
   expect(experimentCensoredHorizon).toBe("censored-time-not-horizon");
-  const scenario = { id: "censor" };
+  const scenario = incomeScenario({ strategy: undefined });
   const artifact = runWith(
     scenario,
     specFor(scenario, {
@@ -431,17 +488,39 @@ export function skipsCensoredHorizonForSensitivity(): void {
     direction: "unavailable",
   });
   expect(JSON.stringify(artifact.elasticities)).not.toContain("\"9\"");
+  // A reach time and end money in one spec: the run continues past the goal, so end money is read at the horizon.
+  const both = runWith(
+    scenario,
+    specFor(scenario, {
+      strategy: undefined,
+      constraints: [{ id: "floor", metricId: "endMoney", op: "gte", limit: fixture.horizonSec }],
+      dimensions: [
+        { id: "incomeRate", target: "model", path: "incomeRate", space: { kind: "number", min: 0.1, max: 5 }, baseline: 1, probes: [2] },
+      ],
+      budget: { candidates: 2, seeds: 1 },
+    }),
+  );
+  const read = (id: string, metricId: string) =>
+    both.candidates.find((candidate) => candidate.id === id)?.metrics.find((metric) => metric.metricId === metricId)?.value;
+  expect(read("baseline", "timeToMoney")).toBe("10");
+  expect(read("baseline", "endMoney")).toBe(String(fixture.horizonSec));
+  expect(read("oat:incomeRate:2", "timeToMoney")).toBe("5");
+  expect(read("oat:incomeRate:2", "endMoney")).toBe(String(2 * fixture.horizonSec));
+  expect(both.candidates.map((candidate) => candidate.constraintViolations)).toEqual([[], []]);
 }
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown The hand tradeoff keeps A, B, and C, drops D, and leaves E uncompared.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown #b316c8c Re-read the section, then ran this function: nonDominated is A, B, C and E is uncompared.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown #54618df Re-read the section, then ran this function: nonDominated is A, B, C and E is uncompared.
  * @evidence ./experiment.ts#experimentParetoUnknown Reads the Pareto contract.
  * @evidenceReview ./experiment.ts#experimentParetoUnknown #4c62a0c The declaration is unknown-is-not-superior.
  */
 export function matchesHandPareto(): void {
   expect(experimentParetoUnknown).toBe("unknown-is-not-superior");
-  const scenario = { id: "pareto-hand" };
+  const scenario = incomeScenario({
+    model: { id: "tradeoff", version: 1, params: { cost: 1, benefit: 1, reportBenefit: true } },
+    strategy: undefined,
+  });
   const creates = { count: 0 };
   const model = defineModelFactory({
     id: "tradeoff",
@@ -499,7 +578,7 @@ export function matchesHandPareto(): void {
     engineVersion: "1",
     effectiveRunHash: "pareto-hand",
   });
-  expect(creates.count).toBe(5);
+  expect(creates.count).toBe(6);
   expect(artifact.pareto).toEqual({ sense: "per-metric", nonDominated: ["A", "B", "C"], uncompared: ["E"] });
   expect(artifact.pareto.nonDominated).not.toContain("D");
   expect(artifact.pareto.nonDominated).not.toContain("E");
@@ -514,6 +593,125 @@ export function matchesHandPareto(): void {
   expect(JSON.stringify(artifact)).not.toContain("weightedScore");
 }
 
+/**
+ * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-task-descriptor Candidates start from the referenced scenario and the candidate metric is the mean over every seed.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-task-descriptor #ca14fb5 Re-read the section, then ran this function: the GEM wallet starts at 100, maxPicks stays 3, and seeds 1 and 3 average to reach time 20 and end money 160.
+ * @evidence ./experiment.ts#runExperiment Runs every candidate from the compiled scenario and averages the seeds.
+ * @evidenceReview ./experiment.ts#runExperiment #254424e The function compiles the request scenario once as the base, keeps its strategy params, and aggregates every seed row by its mean.
+ */
+export function startsCandidatesFromScenario(): void {
+  const creates = { count: 0 };
+  // Income per second is the rate times the logical seed, so each seed reaches the target at its own time.
+  const seeded = defineModelFactory({
+    id: "seeded-income",
+    version: 1,
+    paramsSchema: zodStandardSchema(z.object({ incomeRate: z.number().positive() })),
+    create(params: { incomeRate: number }) {
+      creates.count += 1;
+      return {
+        id: "seeded-income",
+        version: 1,
+        income: (ctx: { unit: { code: string }; seed?: number }) => ({ unit: ctx.unit, amount: params.incomeRate * Number(ctx.seed) }),
+        actions: () => [],
+      };
+    },
+  });
+  const scenario = incomeScenario({
+    unit: { code: "GEM" },
+    model: { id: "seeded-income", version: 1, params: { incomeRate: 1 } },
+    initial: { wallet: { unit: "GEM", amount: "100" } },
+    strategy: { id: fixture.strategyId, params: { maxPicks: 3 } },
+  });
+  const spec = specFor(scenario, {
+    model: { id: "seeded-income", version: 1 },
+    goal: { target: 130 },
+    constraints: [{ id: "floor", metricId: "endMoney", op: "gte", limit: 0 }],
+    dimensions: [
+      { id: "incomeRate", target: "model", path: "incomeRate", space: { kind: "number", min: 0.1, max: 5 }, baseline: 1 },
+    ],
+    seeds: [1, 3],
+    budget: { candidates: 1, seeds: 2 },
+    horizonSec: 30,
+  });
+  const artifact = runExperiment({
+    spec,
+    scenario,
+    modelRegistry: createModelRegistry([seeded]),
+    strategyRegistry: createStrategyRegistry([policyFactory()]),
+    engine: createNumberEngine(),
+    engineId: "number",
+    engineVersion: "1",
+    effectiveRunHash: "scenario-base",
+  });
+  // Seed 1 earns 1 per second from 100 and reaches 130 at 30. Seed 3 earns 3 and reaches it at 10.
+  expect(artifact.tasks.map((task) => [task.taskId, task.value])).toEqual([
+    ["baseline#1", "30"],
+    ["baseline#3", "10"],
+  ]);
+  expect(artifact.tasks[0]).toMatchObject({ modelParams: "{\"incomeRate\":1}", strategyParams: "{\"maxPicks\":3}", strategyId: fixture.strategyId });
+  expect(artifact.candidates[0]?.metrics).toEqual([
+    { metricId: "timeToMoney", status: "observed", value: "20" },
+    { metricId: "endMoney", status: "observed", value: "160" },
+  ]);
+  expect(creates.count).toBe(3);
+}
+
+/**
+ * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown An amount past the double range stays an observed engine value for constraints, Pareto, and sensitivity.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown #54618df Re-read the section, then ran this function: 1e400 and 1e401 are observed, both violate the cap, and only the probe is non-dominated.
+ * @evidence ./experiment.ts#runExperiment Compares engine amounts for constraints, Pareto, and elasticity.
+ * @evidenceReview ./experiment.ts#runExperiment #254424e The function keeps money as engine amounts, checks constraints with the engine order, ranks each Pareto objective by that order, and divides money changes in the engine.
+ */
+export function keepsLargeEngineAmounts(): void {
+  const engine = createBreakInfinityEngine();
+  const huge = defineModelFactory({
+    id: "huge-income",
+    version: 1,
+    paramsSchema: zodStandardSchema(z.object({ exponent: z.number().int() })),
+    create(params: { exponent: number }) {
+      return {
+        id: "huge-income",
+        version: 1,
+        income: (ctx: { unit: { code: string } }) => ({ unit: ctx.unit, amount: new Decimal(`1e${params.exponent}`) }),
+        actions: () => [],
+      };
+    },
+  });
+  const scenario = incomeScenario({ model: { id: "huge-income", version: 1, params: { exponent: 400 } }, strategy: undefined });
+  const spec = specFor(scenario, {
+    model: { id: "huge-income", version: 1 },
+    strategy: undefined,
+    metricId: "endMoney",
+    goal: undefined,
+    objectives: [{ id: "money", metricId: "endMoney", sense: "higher" }],
+    constraints: [{ id: "cap", metricId: "endMoney", op: "lte", limit: 1e300 }],
+    dimensions: [
+      { id: "exponent", target: "model", path: "exponent", space: { kind: "int", min: 300, max: 500 }, baseline: 400, probes: [401] },
+    ],
+    budget: { candidates: 2, seeds: 1 },
+    horizonSec: 1,
+  });
+  const artifact = runExperiment({
+    spec,
+    scenario,
+    modelRegistry: createModelRegistry([huge]),
+    strategyRegistry: createStrategyRegistry([]),
+    engine,
+    engineId: "breakInfinity",
+    engineVersion: "1",
+    effectiveRunHash: "large-amounts",
+  });
+  const money = (id: string) => artifact.candidates.find((candidate) => candidate.id === id)?.metrics[0];
+  expect(money("baseline")).toEqual({ metricId: "endMoney", status: "observed", value: engine.toString(engine.from("1e400")) });
+  expect(money("oat:exponent:401")).toEqual({ metricId: "endMoney", status: "observed", value: engine.toString(engine.from("1e401")) });
+  expect(artifact.candidates.map((candidate) => candidate.constraintViolations)).toEqual([["cap"], ["cap"]]);
+  expect(artifact.pareto).toEqual({ sense: "per-metric", nonDominated: ["oat:exponent:401"], uncompared: [] });
+  const row = artifact.elasticities[0]!;
+  expect(row).toMatchObject({ status: "observed", direction: "higher" });
+  // (1e401 - 1e400) / 1e400 is 9, over a parameter change of 1/400.
+  expect(Number(row.elasticity)).toBeCloseTo(3600, 6);
+}
+
 describe("parameter experiments", () => {
   it("checks local elasticity direction", checksLocalElasticityDirection);
   it("keeps the strategy tune signature", keepsStrategyTuneSignature);
@@ -521,4 +719,6 @@ describe("parameter experiments", () => {
   it("keeps candidate order and the input scenario", keepsCandidateOrderAndScenario);
   it("skips a censored horizon for sensitivity", skipsCensoredHorizonForSensitivity);
   it("matches the hand Pareto front", matchesHandPareto);
+  it("starts candidates from the scenario", startsCandidatesFromScenario);
+  it("keeps large engine amounts", keepsLargeEngineAmounts);
 });

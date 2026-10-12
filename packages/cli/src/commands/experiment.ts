@@ -2,7 +2,6 @@ import { defineCommand, option } from "../runtime/command";
 import {
   runExperiment,
   validateScenarioV1,
-  type Engine,
   type ExperimentSpecV1,
 } from "@idlekit/core";
 import { resolve } from "path";
@@ -12,12 +11,20 @@ import { cliError, scenarioInvalidError, usageError } from "../errors";
 import { buildOutputMeta } from "../io/outputMeta";
 import { readScenarioFile } from "../io/readScenario";
 import { writeOutput } from "../io/writeOutput";
-import { prepareResolvedRun } from "../lib/runConfiguration";
+import { prepareResolvedRun, type ResolvedEngine } from "../lib/runConfiguration";
 import { readJsonFile } from "../runtime/bun";
+
+/**
+ * Version of the engine that ran, not the scenario's engine metadata.
+ * Built-in engines ship inside this CLI build. A trusted custom factory declares no version.
+ */
+export function experimentEngineVersion(engine: Pick<ResolvedEngine, "source">, cliVersion: string): string {
+  return engine.source === "custom" ? "unversioned" : `idlekit-cli@${cliVersion}`;
+}
 
 export default defineCommand({
   name: "experiment",
-  description: "Compare model, policy, and session parameters with a fixed sweep and local sensitivity",
+  description: "Compare model and policy parameters with a fixed sweep and local sensitivity",
   options: {
     ...pluginOptions(),
     engine: option(z.string().optional(), { description: "Effective engine id" }),
@@ -42,14 +49,20 @@ export default defineCommand({
       strategyRegistry: loaded.strategyRegistry,
       engineRequest: flags.engine,
     });
+    const meta = buildOutputMeta({
+      command: "experiment",
+      scenarioPath,
+      scenario: valid.scenario,
+      effectiveEngine: prepared.engine.effectiveId,
+    });
     const artifact = runExperiment({
       spec: loadedSpec,
-      scenario,
+      scenario: valid.scenario,
       modelRegistry: loaded.modelRegistry,
       strategyRegistry: loaded.strategyRegistry,
-      engine: prepared.engine.engine as Engine<number>,
+      engine: prepared.engine.engine,
       engineId: prepared.engine.effectiveId,
-      engineVersion: valid.scenario.engine?.version ?? prepared.engine.effectiveId,
+      engineVersion: experimentEngineVersion(prepared.engine, meta.cliVersion),
       // The candidates vary the base simulate stage of this scenario; its digest names that run.
       effectiveRunHash: prepared.open("simulate", "experiment:base").hash,
     });
@@ -57,11 +70,7 @@ export default defineCommand({
       format: flags.format,
       outPath: flags.out,
       data: artifact,
-      meta: buildOutputMeta({
-        command: "experiment",
-        scenarioPath,
-        scenario: valid.scenario,
-      }),
+      meta,
     });
   },
 });

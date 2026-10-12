@@ -84,7 +84,8 @@ const etaInputs = ["packages/core/src/sim/analysis/contracts.ts", "packages/core
 const resetInputs = ["packages/core/src/sim/analysis/resetCycle.ts"];
 // GrowthFitArtifactV1 embeds AnalysisStatus from contracts.ts.
 const growthInputs = ["packages/core/src/sim/analysis/contracts.ts", "packages/core/src/sim/analysis/growthFit.ts"];
-const experimentInputs = ["packages/core/src/sim/analysis/experiment.ts"];
+// The artifact values come from the sweep in experiment.ts and the elasticity and Pareto rules in sensitivity.ts.
+const experimentInputs = ["packages/core/src/sim/analysis/experiment.ts", "packages/core/src/sim/analysis/sensitivity.ts"];
 const distributionInputs = ["packages/core/src/sim/analysis/distribution.ts"];
 const policyInputs = ["packages/core/src/sim/analysis/resetOptimization.ts"];
 

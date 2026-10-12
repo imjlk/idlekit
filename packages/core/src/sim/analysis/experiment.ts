@@ -1,16 +1,20 @@
 import typia, { type IValidation } from "typia";
 import type { Engine } from "../../engine/types";
+import { compileScenario } from "../../scenario/compile";
 import type { ModelRegistry } from "../../scenario/registry";
+import type { ScenarioV1 } from "../../scenario/types";
 import type { StandardSchema } from "../../scenario/validate";
 import { canonicalJson, sha256Text } from "../../scenario/scenarioContract";
 import { createRunFactory, type ExecutionPlan } from "../runFactory";
 import { runScenario } from "../simulator";
 import type { StrategyRegistry } from "../strategy/registry";
-import type { CompiledScenario, Model, SimState } from "../types";
+import type { CompiledScenario, SimState } from "../types";
 import {
   assignmentFitsParamSpace,
+  elasticityFromChange,
   localElasticity,
   paretoFront,
+  type LocalElasticity,
   type ParetoPoint,
 } from "./sensitivity";
 
@@ -33,7 +37,7 @@ export const experimentSeparateSpec = "experiment-spec-not-tunespec" as const;
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter Assignment uses a registered identifier path and the model or strategy schema. JSONPath, prototype, and eval paths are refused before a run.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #a9ad2ba Re-read the section: a prototype path, an out-of-range integer, and a schema-invalid rate throw before model create.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #927919a Re-read the section: a prototype path, an out-of-range integer, a schema-invalid rate, a stripped path, overlapping paths, a session dimension, and a repeated seed throw before model create.
  */
 export const experimentRegisteredSetter = "registered-key-not-jsonpath" as const;
 
@@ -45,25 +49,25 @@ export const experimentLocalOat = "one-at-a-time-local-not-sobol" as const;
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-candidate-order Candidate order does not change the report, and the input scenario object is not written.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-candidate-order #b77cabc Re-read the section: reversed candidate ids keep the same effective hash and the scenario JSON is unchanged.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-candidate-order #726b7d7 Re-read the section: reversed candidate ids keep the same effective hash, the scenario JSON is unchanged, and the one compile per experiment brings create to 6.
  */
 export const experimentCandidateOrder = "sorted-candidates-unmutated-scenario" as const;
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-censored-horizon A goal missed inside the horizon stays censored. That time is not the horizon and is not differentiated.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-censored-horizon #988285f Re-read the section: horizon 9 with target 10 leaves the reach time null, not 9.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-censored-horizon #fae95bf Re-read the section: horizon 9 with target 10 leaves the reach time null, not 9, and the reach time is read on the way while the run continues to the horizon.
  */
 export const experimentCensoredHorizon = "censored-time-not-horizon" as const;
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown Pareto keeps per-metric tradeoffs. An unknown objective is uncompared, not a win.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown #b316c8c Re-read the section: A, B, and C are non-dominated, D is dominated, and E is uncompared.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown #54618df Re-read the section: A, B, and C are non-dominated, D is dominated, E is uncompared, and money is compared in the effective engine.
  */
 export const experimentParetoUnknown = "unknown-is-not-superior" as const;
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-task-descriptor Each task records its id, parameter JSON, logical seed, and engine and model versions. It does not store a function.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-task-descriptor #9da008d Re-read the section: the income candidate changes incomeRate and the policy candidate changes maxPicks on the same seed.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-task-descriptor #ca14fb5 Re-read the section: the income candidate changes incomeRate and the policy candidate changes maxPicks on the same seed, both from the scenario params.
  */
 export const experimentTaskDescriptor = "task-id-params-seed-version" as const;
 
@@ -223,7 +227,7 @@ let validateExperimentArtifactValidator: ((input: unknown) => IValidation<Experi
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-task-descriptor The generated validator accepts this artifact.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-task-descriptor #9da008d Re-read the section: the wire object is experiment v1 and the method is fixed-sweep-and-one-at-a-time.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-task-descriptor #ca14fb5 Re-read the section: the wire object is experiment v1 and the method is fixed-sweep-and-one-at-a-time.
  */
 export const validateExperimentArtifact = (input: unknown): IValidation<ExperimentArtifactV1> =>
   (validateExperimentArtifactValidator ??= typia.createValidate<ExperimentArtifactV1>())(input);
@@ -248,12 +252,14 @@ let validateExperimentSpecValidator: ((input: unknown) => IValidation<Experiment
 export const validateExperimentSpec = (input: unknown): IValidation<ExperimentSpecV1> =>
   (validateExperimentSpecValidator ??= typia.createValidate<ExperimentSpecV1>())(input);
 
-export type ExperimentRunRequest = Readonly<{
+export type ExperimentRunRequest<N = number> = Readonly<{
   spec: ExperimentSpecV1;
-  scenario: unknown;
+  /** The scenario named by `spec.scenario.ref`. Every candidate starts from it. Only the assigned parameters change. */
+  scenario: ScenarioV1;
   modelRegistry: ModelRegistry;
   strategyRegistry: StrategyRegistry;
-  engine: Engine<number>;
+  /** The effective engine. Amounts stay engine values until they are written as text. */
+  engine: Engine<N>;
   engineId: string;
   engineVersion: string;
   effectiveRunHash: string;
@@ -261,13 +267,22 @@ export type ExperimentRunRequest = Readonly<{
 
 type PreparedCandidate = Readonly<{
   id: string;
-  modelParams: Record<string, unknown>;
-  strategyParams: Record<string, unknown>;
+  modelParams: unknown;
+  strategyParams: unknown;
   sessionPattern: string;
   sessionDays: number;
 }>;
 
+type CandidateBase = Readonly<{
+  modelParams: unknown;
+  strategyId: string | null;
+  strategyParams: unknown;
+}>;
+
 type MetricReading = Readonly<{ metricId: ExperimentMetricId; status: ExperimentMetricStatus; value: string | null }>;
+
+/** An observed money reading keeps its engine amount. Time and benefit keep a number. */
+type Reading<N> = MetricReading & Readonly<{ amount?: N; num?: number }>;
 
 const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const BANNED_SEGMENT = new Set(["__proto__", "prototype", "constructor", "eval"]);
@@ -297,7 +312,9 @@ export function setRegisteredParam(root: Readonly<Record<string, unknown>>, path
   let cursor = clone;
   for (let index = 0; index < parts.length - 1; index += 1) {
     const key = parts[index]!;
-    const next = cursor[key];
+    // assertRegisteredPath already bans these. The inline guard keeps the write visibly safe at the assignment.
+    if (key === "__proto__" || key === "constructor" || key === "prototype") reject("parameter path is not a registered identifier");
+    const next = Object.prototype.hasOwnProperty.call(cursor, key) ? cursor[key] : undefined;
     if (next === null || typeof next !== "object" || Array.isArray(next)) {
       const created: Record<string, unknown> = {};
       cursor[key] = created;
@@ -306,7 +323,9 @@ export function setRegisteredParam(root: Readonly<Record<string, unknown>>, path
       cursor = next as Record<string, unknown>;
     }
   }
-  cursor[parts[parts.length - 1]!] = value;
+  const leaf = parts[parts.length - 1]!;
+  if (leaf === "__proto__" || leaf === "constructor" || leaf === "prototype") reject("parameter path is not a registered identifier");
+  cursor[leaf] = value;
   return clone;
 }
 
@@ -331,6 +350,11 @@ function normalizeSpec(spec: ExperimentSpecV1): ExperimentSpecV1 {
   };
 }
 
+/** Two dimensions on one target overlap when one path equals the other or is a dotted prefix of it. */
+function pathsOverlap(left: string, right: string): boolean {
+  return left === right || left.startsWith(`${right}.`) || right.startsWith(`${left}.`);
+}
+
 function requireSpec(input: ExperimentSpecV1): ExperimentSpecV1 {
   const parsed = validateExperimentSpec(input);
   if (!parsed.success) {
@@ -342,13 +366,21 @@ function requireSpec(input: ExperimentSpecV1): ExperimentSpecV1 {
   if (!Number.isInteger(spec.budget.candidates) || spec.budget.candidates < 1) reject("candidate budget must be a positive integer");
   if (!Number.isInteger(spec.budget.seeds) || spec.budget.seeds < 1) reject("seed budget must be a positive integer");
   if (spec.seeds.length === 0 || spec.seeds.some((seed) => !Number.isFinite(seed))) reject("seeds must be finite");
+  if (new Set(spec.seeds).size !== spec.seeds.length) reject("seeds must be unique logical seeds");
   if (spec.seeds.length > spec.budget.seeds) reject("seed budget exceeded");
   if (!Number.isFinite(spec.session.days) || spec.session.days <= 0) reject("session days must be positive");
   const ids = new Set<string>();
-  for (const dimension of spec.dimensions) {
+  for (const [index, dimension] of spec.dimensions.entries()) {
     if (ids.has(dimension.id)) reject(`duplicate dimension ${dimension.id}`);
     ids.add(dimension.id);
     assertRegisteredPath(dimension.path, dimension.target);
+    // Each candidate runs one continuous horizon. No session schedule is executed, so a session value would not reach the run.
+    if (dimension.target === "session") reject(`session dimension ${dimension.id} is not executed: each candidate runs one continuous horizon`);
+    for (const other of spec.dimensions.slice(0, index)) {
+      if (other.target === dimension.target && pathsOverlap(other.path, dimension.path)) {
+        reject(`dimensions ${other.id} and ${dimension.id} target the same ${dimension.target} parameter`);
+      }
+    }
     if (!assignmentFitsParamSpace(dimension.space, dimension.baseline)) reject(`baseline for ${dimension.id} is outside its parameter space`);
     for (const probe of dimension.probes ?? []) {
       if (!assignmentFitsParamSpace(dimension.space, probe)) reject(`probe for ${dimension.id} is outside its parameter space`);
@@ -396,12 +428,63 @@ function enforceSchema(schema: StandardSchema<unknown> | undefined, params: unkn
   return result.value;
 }
 
-function prepareCandidate(spec: ExperimentSpecV1, candidate: ExperimentCandidateV1, registries: Pick<ExperimentRunRequest, "modelRegistry" | "strategyRegistry">): PreparedCandidate {
+/** A schema that strips or rewrites an assigned path would run the default while the task claims the assignment. */
+function assertAssignmentsKept(
+  validated: unknown,
+  assigned: readonly Readonly<{ dimension: ExperimentDimensionV1; value: ExperimentScalar }>[],
+  label: string,
+): void {
+  for (const { dimension, value } of assigned) {
+    let cursor: unknown = validated;
+    for (const part of dimension.path.split(".")) {
+      if (cursor === null || typeof cursor !== "object" || !Object.prototype.hasOwnProperty.call(cursor, part)) {
+        reject(`${label} params schema does not register ${dimension.path} for ${dimension.id}`);
+      }
+      cursor = (cursor as Record<string, unknown>)[part];
+    }
+    if (!Object.is(cursor, value)) reject(`${label} params schema rewrote ${dimension.path} for ${dimension.id}`);
+  }
+}
+
+function asParamRecord(params: unknown, label: string): Readonly<Record<string, unknown>> {
+  if (params === undefined) return {};
+  if (params === null || typeof params !== "object" || Array.isArray(params)) {
+    reject(`${label} params of the scenario are not an object, so a path cannot be assigned`);
+  }
+  return params as Readonly<Record<string, unknown>>;
+}
+
+function candidateBase(spec: ExperimentSpecV1, scenario: ScenarioV1, registries: Pick<ExperimentRunRequest, "strategyRegistry">): CandidateBase {
+  if (scenario.model.id !== spec.model.id || scenario.model.version !== spec.model.version) {
+    reject(`model ${spec.model.id}@${spec.model.version} does not match the scenario model ${scenario.model.id}@${scenario.model.version}`);
+  }
+  const scenarioStrategy = scenario.strategy;
+  if (spec.strategy && scenarioStrategy && scenarioStrategy.id !== spec.strategy.id) {
+    reject(`strategy ${spec.strategy.id} does not match the scenario strategy ${scenarioStrategy.id}`);
+  }
+  const strategyId = spec.strategy?.id ?? scenarioStrategy?.id ?? null;
+  if (strategyId === null) {
+    if (spec.dimensions.some((dimension) => dimension.target === "strategy")) reject("strategy id is required");
+    return { modelParams: scenario.model.params, strategyId: null, strategyParams: {} };
+  }
+  const strategyFactory = registries.strategyRegistry.get(strategyId);
+  if (!strategyFactory) reject(`strategy not found: ${strategyId}`);
+  return {
+    modelParams: scenario.model.params,
+    strategyId,
+    strategyParams: scenarioStrategy?.params ?? strategyFactory.defaultParams ?? {},
+  };
+}
+
+function prepareCandidate(
+  spec: ExperimentSpecV1,
+  base: CandidateBase,
+  candidate: ExperimentCandidateV1,
+  registries: Pick<ExperimentRunRequest, "modelRegistry" | "strategyRegistry">,
+): PreparedCandidate {
   const dimensions = new Map(spec.dimensions.map((dimension) => [dimension.id, dimension]));
-  let modelParams: Record<string, unknown> = {};
-  let strategyParams: Record<string, unknown> = {};
-  let sessionPattern = spec.session.pattern;
-  let sessionDays = spec.session.days;
+  const modelAssigned: { dimension: ExperimentDimensionV1; value: ExperimentScalar }[] = [];
+  const strategyAssigned: { dimension: ExperimentDimensionV1; value: ExperimentScalar }[] = [];
   const applied = new Set<string>();
   for (const assignment of candidate.assignments) {
     const dimension = dimensions.get(assignment.dimensionId);
@@ -412,29 +495,32 @@ function prepareCandidate(spec: ExperimentSpecV1, candidate: ExperimentCandidate
     if (!assignmentFitsParamSpace(dimension.space, assignment.value)) {
       reject(`value for ${dimension.id} is outside its parameter space`);
     }
-    if (dimension.target === "model") modelParams = setRegisteredParam(modelParams, dimension.path, assignment.value);
-    else if (dimension.target === "strategy") strategyParams = setRegisteredParam(strategyParams, dimension.path, assignment.value);
-    else if (dimension.path === "pattern") {
-      if (typeof assignment.value !== "string") reject("session pattern must be a string");
-      sessionPattern = assignment.value;
-    } else {
-      if (typeof assignment.value !== "number") reject("session days must be a number");
-      sessionDays = assignment.value;
-    }
+    if (dimension.target === "model") modelAssigned.push({ dimension, value: assignment.value });
+    else if (dimension.target === "strategy") strategyAssigned.push({ dimension, value: assignment.value });
+    else reject(`session dimension ${dimension.id} is not executed`);
   }
   for (const dimension of spec.dimensions) {
     if (!applied.has(dimension.id)) reject(`candidate ${candidate.id} omits ${dimension.id}`);
   }
+  const assign = (params: unknown, assigned: typeof modelAssigned, label: string): unknown =>
+    assigned.length === 0
+      ? params
+      : assigned.reduce<Record<string, unknown>>(
+          (acc, { dimension, value }) => setRegisteredParam(acc, dimension.path, value),
+          { ...asParamRecord(params, label) },
+        );
   const modelFactory = registries.modelRegistry.get(spec.model.id, spec.model.version);
   if (!modelFactory) reject(`model not found: ${spec.model.id}@${spec.model.version}`);
-  modelParams = enforceSchema(modelFactory.paramsSchema, modelParams, "model") as Record<string, unknown>;
-  if (spec.strategy || spec.dimensions.some((dimension) => dimension.target === "strategy")) {
-    if (!spec.strategy) reject("strategy id is required");
-    const strategyFactory = registries.strategyRegistry.get(spec.strategy.id);
-    if (!strategyFactory) reject(`strategy not found: ${spec.strategy.id}`);
-    strategyParams = enforceSchema(strategyFactory.paramsSchema, strategyParams, "strategy") as Record<string, unknown>;
+  const modelParams = enforceSchema(modelFactory.paramsSchema, assign(base.modelParams, modelAssigned, "model"), "model");
+  if (modelFactory.paramsSchema) assertAssignmentsKept(modelParams, modelAssigned, "model");
+  let strategyParams: unknown = {};
+  if (base.strategyId !== null) {
+    const strategyFactory = registries.strategyRegistry.get(base.strategyId);
+    if (!strategyFactory) reject(`strategy not found: ${base.strategyId}`);
+    strategyParams = enforceSchema(strategyFactory.paramsSchema, assign(base.strategyParams, strategyAssigned, "strategy"), "strategy");
+    if (strategyFactory.paramsSchema) assertAssignmentsKept(strategyParams, strategyAssigned, "strategy");
   }
-  return { id: candidate.id, modelParams, strategyParams, sessionPattern, sessionDays };
+  return { id: candidate.id, modelParams, strategyParams, sessionPattern: spec.session.pattern, sessionDays: spec.session.days };
 }
 
 function metricIds(spec: ExperimentSpecV1): ExperimentMetricId[] {
@@ -444,112 +530,160 @@ function metricIds(spec: ExperimentSpecV1): ExperimentMetricId[] {
   return [...ids];
 }
 
-function shellScenario(engine: Engine<number>, stepSec: number): CompiledScenario<number, "COIN", Record<string, unknown>> {
-  const unit = { code: "COIN" as const };
-  const zero = engine.zero();
-  const model: Model<number, "COIN", Record<string, unknown>> = {
-    id: "experiment-shell",
-    version: 0,
-    income: () => ({ unit, amount: zero }),
-    actions: () => [],
-  };
-  return {
-    ctx: { E: engine, unit, tickPolicy: { mode: "drop" }, stepSec },
-    model,
-    initial: {
-      t: 0,
-      wallet: { money: { unit, amount: zero }, bucket: zero },
-      maxMoneyEver: { unit, amount: zero },
-      prestige: { count: 0, points: zero, multiplier: engine.from(1) },
-      vars: {},
-    },
-    run: { stepSec, durationSec: 1, eventLog: { enabled: false, maxEvents: 0 } },
-  };
-}
-
-function readMoney(amount: unknown): number | null {
-  const value = typeof amount === "number" ? amount : Number(amount);
-  return Number.isFinite(value) ? value : null;
-}
-
 function readBenefit(vars: unknown): number | null {
   if (vars === null || typeof vars !== "object") return null;
   const value = (vars as { benefit?: unknown }).benefit;
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
-function observeMetrics(
+/** Metrics at the horizon. The reach time is the first committed state at or above the target, read on the way. */
+function observeMetrics<N>(
+  E: Engine<N>,
   spec: ExperimentSpecV1,
-  end: SimState<number, "COIN", Record<string, unknown>>,
+  end: SimState<N, string, Record<string, unknown>>,
   startT: number,
-): MetricReading[] {
-  const money = readMoney(end.wallet.money.amount);
-  const elapsed = end.t - startT;
+  reachedAt: number | undefined,
+): Reading<N>[] {
+  const amount = end.wallet.money.amount;
   const benefit = readBenefit(end.vars);
-  const target = spec.goal?.target;
-  return metricIds(spec).map((metricId) => {
+  return metricIds(spec).map((metricId): Reading<N> => {
     if (metricId === "timeToMoney") {
-      if (target === undefined || money === null || money < target) return { metricId, status: "censored", value: null };
-      return { metricId, status: "observed", value: String(elapsed) };
+      if (reachedAt === undefined) return { metricId, status: "censored", value: null };
+      const elapsed = reachedAt - startT;
+      return { metricId, status: "observed", value: String(elapsed), num: elapsed };
     }
     if (metricId === "endMoney") {
-      if (money === null) return { metricId, status: "censored", value: null };
-      return { metricId, status: "observed", value: String(money) };
+      if (!E.isFinite(amount)) return { metricId, status: "censored", value: null };
+      return { metricId, status: "observed", value: E.toString(amount), amount };
     }
     if (benefit === null) return { metricId, status: "censored", value: null };
-    return { metricId, status: "observed", value: String(benefit) };
+    return { metricId, status: "observed", value: String(benefit), num: benefit };
   });
 }
 
-function failedMetrics(spec: ExperimentSpecV1): MetricReading[] {
+function failedMetrics<N>(spec: ExperimentSpecV1): Reading<N>[] {
   return metricIds(spec).map((metricId) => ({ metricId, status: "failed", value: null }));
 }
 
-function aggregate(spec: ExperimentSpecV1, rows: readonly { seed: number; metrics: readonly MetricReading[] }[], metricId: ExperimentMetricId): MetricReading {
-  const picked = rows.map((row) => ({ seed: row.seed, metric: row.metrics.find((metric) => metric.metricId === metricId) }));
-  if (picked.some((row) => row.metric === undefined || row.metric.status === "failed")) {
+/**
+ * Arithmetic mean over every seed. One failed seed fails the candidate metric and one censored seed censors it,
+ * so a mean never mixes a missing draw with observed ones. Money is averaged in the engine.
+ */
+function aggregate<N>(E: Engine<N>, rows: readonly { seed: number; metrics: readonly Reading<N>[] }[], metricId: ExperimentMetricId): Reading<N> {
+  const picked = rows.map((row) => row.metrics.find((metric) => metric.metricId === metricId));
+  if (picked.some((metric) => metric === undefined || metric.status === "failed")) {
     return { metricId, status: "failed", value: null };
   }
-  if (picked.some((row) => row.metric!.status !== "observed" || row.metric!.value === null)) {
+  if (picked.some((metric) => metric!.status !== "observed" || metric!.value === null)) {
     return { metricId, status: "censored", value: null };
   }
-  const lowest = [...picked].sort((left, right) => left.seed - right.seed)[0]!;
-  return { metricId, status: "observed", value: lowest.metric!.value };
+  const observed = picked as Reading<N>[];
+  const count = observed.length;
+  if (metricId === "endMoney") {
+    // Divide before adding so the sum of large finite amounts cannot leave the engine range.
+    const mean = observed.reduce((sum, metric) => E.add(sum, E.div(metric.amount as N, count)), E.zero());
+    if (!E.isFinite(mean)) return { metricId, status: "censored", value: null };
+    return { metricId, status: "observed", value: E.toString(mean), amount: mean };
+  }
+  const mean = observed.reduce((sum, metric) => sum + (metric.num as number), 0) / count;
+  if (!Number.isFinite(mean)) return { metricId, status: "censored", value: null };
+  return { metricId, status: "observed", value: String(mean), num: mean };
 }
 
-function numericValue(reading: MetricReading | undefined): number | null {
-  if (!reading || reading.status !== "observed" || reading.value === null) return null;
-  const value = Number(reading.value);
-  return Number.isFinite(value) ? value : null;
+function isObserved<N>(reading: Reading<N> | undefined): reading is Reading<N> {
+  return reading !== undefined && reading.status === "observed" && (reading.amount !== undefined || reading.num !== undefined);
 }
 
-function violates(value: number, constraint: ExperimentConstraintV1): boolean {
-  return constraint.op === "lte" ? value > constraint.limit : value < constraint.limit;
+function compareReadings<N>(E: Engine<N>, left: Reading<N>, right: Reading<N>): number {
+  if (left.amount !== undefined && right.amount !== undefined) return E.cmp(left.amount, right.amount);
+  const a = left.num as number;
+  const b = right.num as number;
+  return a < b ? -1 : a > b ? 1 : 0;
 }
 
-export function runExperiment(request: ExperimentRunRequest): ExperimentArtifactV1 {
+function violates<N>(E: Engine<N>, reading: Reading<N>, constraint: ExperimentConstraintV1): boolean {
+  const order = reading.amount !== undefined
+    ? E.cmp(reading.amount, E.from(constraint.limit))
+    : (reading.num as number) < constraint.limit ? -1 : (reading.num as number) > constraint.limit ? 1 : 0;
+  return constraint.op === "lte" ? order > 0 : order < 0;
+}
+
+function readingElasticity<N>(
+  E: Engine<N>,
+  baselineP: number,
+  probeP: number,
+  baseline: Reading<N> | undefined,
+  probe: Reading<N> | undefined,
+): LocalElasticity {
+  if (!isObserved(baseline) || !isObserved(probe)) return localElasticity({ baselineP, probeP, baselineY: null, probeY: null });
+  if (baseline.amount !== undefined && probe.amount !== undefined) {
+    const delta = E.sub(probe.amount, baseline.amount);
+    const order = E.cmp(probe.amount, baseline.amount);
+    const relative = E.cmp(baseline.amount, E.zero()) > 0 ? E.toNumber(E.divN(delta, baseline.amount)) : null;
+    return elasticityFromChange({
+      baselineP,
+      probeP,
+      absoluteChange: E.toString(delta),
+      direction: order > 0 ? "higher" : order < 0 ? "lower" : "flat",
+      relativeChange: relative,
+    });
+  }
+  return localElasticity({ baselineP, probeP, baselineY: baseline.num ?? null, probeY: probe.num ?? null });
+}
+
+/** Dense rank per objective under the metric's own order. Dominance reads only that order, so ranks keep the front. */
+function objectiveRanks<N>(E: Engine<N>, readings: readonly (Reading<N> | undefined)[]): (number | null)[] {
+  const observed = readings.filter(isObserved).sort((left, right) => compareReadings(E, left, right));
+  const ranks = new Map<Reading<N>, number>();
+  let rank = 0;
+  observed.forEach((reading, index) => {
+    if (index > 0 && compareReadings(E, observed[index - 1]!, reading) !== 0) rank += 1;
+    ranks.set(reading, rank);
+  });
+  return readings.map((reading) => (reading !== undefined && ranks.has(reading) ? ranks.get(reading)! : null));
+}
+
+export function runExperiment<N>(request: ExperimentRunRequest<N>): ExperimentArtifactV1 {
   const scenarioHash = sha256Text(canonicalJson(request.scenario));
   if (scenarioHash !== request.spec.scenario.hash) reject("scenario hash does not match the experiment spec");
   const spec = requireSpec(request.spec);
-  if (metricIds(spec).includes("timeToMoney")) {
+  const metrics = metricIds(spec);
+  const measuresReach = metrics.includes("timeToMoney");
+  if (measuresReach) {
     if (spec.goal === undefined || !Number.isFinite(spec.goal.target)) reject("timeToMoney requires a finite goal target");
   }
+  const E = request.engine;
+  const base = candidateBase(spec, request.scenario, request);
   const listed = plannedCandidates(spec);
-  const prepared = listed.map((candidate) => prepareCandidate(spec, candidate, request));
-  const shell = shellScenario(request.engine, spec.stepSec);
+  const prepared = listed.map((candidate) => prepareCandidate(spec, base, candidate, request));
+  // The plan builds the strategy, so compile does not build the scenario one.
+  const { strategy: _scenarioStrategy, ...withoutStrategy } = request.scenario;
+  const compiled = compileScenario<N, string, Record<string, unknown>>({
+    E,
+    scenario: withoutStrategy,
+    registry: request.modelRegistry,
+    strategyRegistry: request.strategyRegistry,
+    opts: { allowSuffixNotation: true },
+  });
+  // Every candidate runs to the spec horizon. A scenario stop condition would cut the horizon metrics short.
+  const { until: _scenarioUntil, ...horizonRun } = compiled.run;
+  const shared: CompiledScenario<N, string, Record<string, unknown>> = { ...compiled, run: horizonRun };
   const bindingFor = createRunFactory({
     models: request.modelRegistry,
     strategies: request.strategyRegistry,
   });
+  const target = measuresReach && spec.goal !== undefined ? E.from(spec.goal.target) : undefined;
+  // Stopping at the goal is safe only when no other metric reads the horizon state.
+  const stopAtReach = metrics.every((metricId) => metricId === "timeToMoney");
   const tasks: ExperimentTaskV1[] = [];
-  const perCandidate: { id: string; rows: { seed: number; metrics: MetricReading[] }[]; prepared: PreparedCandidate }[] = [];
+  const perCandidate: { id: string; rows: { seed: number; metrics: Reading<N>[] }[] }[] = [];
 
   for (const candidate of prepared) {
-    const binding = bindingFor.bind(shell, {
+    const binding = bindingFor.bind(shared, {
       statefulModel: true,
       model: { id: spec.model.id, version: spec.model.version, params: candidate.modelParams },
     });
-    const rows: { seed: number; metrics: MetricReading[] }[] = [];
+    const rows: { seed: number; metrics: Reading<N>[] }[] = [];
     for (const seed of spec.seeds) {
       const taskId = `${candidate.id}#${seed}`;
       const plan: ExecutionPlan = {
@@ -558,28 +692,33 @@ export function runExperiment(request: ExperimentRunRequest): ExperimentArtifact
         stepSec: spec.stepSec,
         durationSec: spec.horizonSec,
         seed,
-        ...(spec.strategy ? { strategyId: spec.strategy.id, strategyParams: candidate.strategyParams } : {}),
+        ...(base.strategyId !== null ? { strategyId: base.strategyId, strategyParams: candidate.strategyParams } : {}),
         eventLog: { enabled: false, maxEvents: 0 },
       };
-      let metrics: MetricReading[];
+      let readings: Reading<N>[];
       try {
         const opened = binding.fresh({ trialId: taskId, seed, plan });
-        const compiled = opened.scenario;
-        const target = spec.goal?.target;
+        const scenario = opened.scenario;
+        let reachedAt: number | undefined;
         const result = runScenario({
-          ...compiled,
+          ...scenario,
           run: {
-            ...compiled.run,
-            ...(metricIds(spec).includes("timeToMoney") && target !== undefined
-              ? { until: (state: SimState<number, "COIN", Record<string, unknown>>) => (readMoney(state.wallet.money.amount) ?? -1) >= target }
+            ...scenario.run,
+            ...(target !== undefined
+              ? {
+                  until: (state: SimState<N, string, Record<string, unknown>>) => {
+                    if (reachedAt === undefined && E.cmp(state.wallet.money.amount, target) >= 0) reachedAt = state.t;
+                    return stopAtReach && reachedAt !== undefined;
+                  },
+                }
               : {}),
           },
         });
-        metrics = observeMetrics(spec, result.end, result.start.t);
+        readings = observeMetrics(E, spec, result.end, result.start.t, reachedAt);
       } catch {
-        metrics = failedMetrics(spec);
+        readings = failedMetrics(spec);
       }
-      const primary = metrics.find((metric) => metric.metricId === spec.metricId) ?? failedMetrics(spec)[0]!;
+      const primary = readings.find((metric) => metric.metricId === spec.metricId) ?? failedMetrics<N>(spec)[0]!;
       tasks.push({
         taskId,
         candidateId: candidate.id,
@@ -588,9 +727,9 @@ export function runExperiment(request: ExperimentRunRequest): ExperimentArtifact
         engineVersion: request.engineVersion,
         modelId: spec.model.id,
         modelVersion: spec.model.version,
-        strategyId: spec.strategy?.id ?? null,
-        modelParams: canonicalJson(candidate.modelParams),
-        strategyParams: canonicalJson(candidate.strategyParams),
+        strategyId: base.strategyId,
+        modelParams: canonicalJson(candidate.modelParams ?? null),
+        strategyParams: canonicalJson(candidate.strategyParams ?? null),
         sessionPattern: candidate.sessionPattern,
         sessionDays: candidate.sessionDays,
         horizonSec: spec.horizonSec,
@@ -599,37 +738,37 @@ export function runExperiment(request: ExperimentRunRequest): ExperimentArtifact
         status: primary.status,
         value: primary.value,
       });
-      rows.push({ seed, metrics });
+      rows.push({ seed, metrics: readings });
     }
-    perCandidate.push({ id: candidate.id, rows, prepared: candidate });
+    perCandidate.push({ id: candidate.id, rows });
   }
 
-  const candidates = perCandidate.map((candidate) => {
-    const metrics = metricIds(spec).map((metricId) => aggregate(spec, candidate.rows, metricId));
+  const measured = perCandidate.map((candidate) => {
+    const readings = metrics.map((metricId) => aggregate(E, candidate.rows, metricId));
     const constraintViolations = (spec.constraints ?? [])
       .filter((constraint) => {
-        const reading = metrics.find((metric) => metric.metricId === constraint.metricId);
-        const value = numericValue(reading);
-        return value !== null && violates(value, constraint);
+        const reading = readings.find((metric) => metric.metricId === constraint.metricId);
+        return isObserved(reading) && violates(E, reading, constraint);
       })
       .map((constraint) => constraint.id);
-    return { id: candidate.id, metrics, constraintViolations };
+    return { id: candidate.id, readings, constraintViolations };
   });
 
-  const baseline = candidates.find((candidate) => candidate.id === "baseline");
+  const baseline = measured.find((candidate) => candidate.id === "baseline");
   const elasticities = baseline
     ? spec.dimensions.flatMap((dimension) =>
         (dimension.probes ?? []).flatMap((probe) => {
           const candidateId = `oat:${dimension.id}:${String(probe)}`;
-          const probeCandidate = candidates.find((candidate) => candidate.id === candidateId);
+          const probeCandidate = measured.find((candidate) => candidate.id === candidateId);
           if (!probeCandidate) return [];
-          return metricIds(spec).map((metricId) => {
-            const measured = localElasticity({
-              baselineP: typeof dimension.baseline === "number" ? dimension.baseline : Number.NaN,
-              probeP: typeof probe === "number" ? probe : Number.NaN,
-              baselineY: numericValue(baseline.metrics.find((metric) => metric.metricId === metricId)),
-              probeY: numericValue(probeCandidate.metrics.find((metric) => metric.metricId === metricId)),
-            });
+          return metrics.map((metricId) => {
+            const local = readingElasticity(
+              E,
+              typeof dimension.baseline === "number" ? dimension.baseline : Number.NaN,
+              typeof probe === "number" ? probe : Number.NaN,
+              baseline.readings.find((metric) => metric.metricId === metricId),
+              probeCandidate.readings.find((metric) => metric.metricId === metricId),
+            );
             return {
               dimensionId: dimension.id,
               candidateId,
@@ -638,10 +777,10 @@ export function runExperiment(request: ExperimentRunRequest): ExperimentArtifact
               methodVersion: 1 as const,
               globalSensitivity: false as const,
               sobol: false as const,
-              status: measured.status,
-              elasticity: measured.elasticity,
-              absoluteChange: measured.absoluteChange,
-              direction: measured.direction,
+              status: local.status,
+              elasticity: local.elasticity,
+              absoluteChange: local.absoluteChange,
+              direction: local.direction,
             };
           });
         }),
@@ -649,20 +788,28 @@ export function runExperiment(request: ExperimentRunRequest): ExperimentArtifact
     : [];
 
   const objectives = spec.objectives ?? [];
+  const ranks = objectives.map((objective) =>
+    objectiveRanks(E, measured.map((candidate) => candidate.readings.find((metric) => metric.metricId === objective.metricId))),
+  );
   const pareto =
     objectives.length === 0
       ? { sense: "per-metric" as const, nonDominated: [] as string[], uncompared: [] as string[] }
       : paretoFront(
-          candidates.map((candidate): ParetoPoint => ({
+          measured.map((candidate, index): ParetoPoint => ({
             id: candidate.id,
-            objectives: objectives.map((objective) => ({
+            objectives: objectives.map((objective, slot) => ({
               id: objective.id,
               sense: objective.sense,
-              value: numericValue(candidate.metrics.find((metric) => metric.metricId === objective.metricId)),
+              value: ranks[slot]![index]!,
             })),
           })),
         );
 
+  const candidates = measured.map((candidate) => ({
+    id: candidate.id,
+    metrics: candidate.readings.map(({ metricId, status, value }) => ({ metricId, status, value })),
+    constraintViolations: candidate.constraintViolations,
+  }));
   tasks.sort((left, right) => byText(left.candidateId, right.candidateId) || left.logicalSeed - right.logicalSeed);
   const artifact: ExperimentArtifactV1 = {
     schemaVersion: 1,

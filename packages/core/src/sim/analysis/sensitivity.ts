@@ -70,30 +70,40 @@ export function localElasticity(args: Readonly<{
     return UNAVAILABLE;
   }
   const delta = probeY - baselineY;
-  const direction: ElasticityDirection = delta > 0 ? "higher" : delta < 0 ? "lower" : "flat";
-  const absoluteChange = String(delta);
+  return elasticityFromChange({
+    baselineP,
+    probeP,
+    absoluteChange: String(delta),
+    direction: delta > 0 ? "higher" : delta < 0 ? "lower" : "flat",
+    relativeChange: baselineY > 0 ? delta / baselineY : null,
+  });
+}
+
+/**
+ * Relative elasticity from a change measured in the metric's own arithmetic, such as an engine amount.
+ * `relativeChange` is `(probeY - baselineY) / baselineY`, or null when baseline y is not greater than zero.
+ * The elasticity is reported only when baseline p is finite and greater than zero and p changes.
+ */
+export function elasticityFromChange(args: Readonly<{
+  baselineP: number;
+  probeP: number;
+  absoluteChange: string;
+  direction: Exclude<ElasticityDirection, "unavailable">;
+  relativeChange: number | null;
+}>): LocalElasticity {
+  const { baselineP, probeP, absoluteChange, direction, relativeChange } = args;
+  const unavailable: LocalElasticity = {
+    status: "unavailable",
+    elasticity: null,
+    absoluteChange,
+    direction,
+    globalSensitivity: false,
+    sobol: false,
+  };
   const pChanged = Number.isFinite(baselineP) && Number.isFinite(probeP) && probeP !== baselineP;
-  if (!(baselineP > 0) || !(baselineY > 0) || !pChanged) {
-    return {
-      status: "unavailable",
-      elasticity: null,
-      absoluteChange,
-      direction,
-      globalSensitivity: false,
-      sobol: false,
-    };
-  }
-  const elasticity = (delta / baselineY) / ((probeP - baselineP) / baselineP);
-  if (!Number.isFinite(elasticity)) {
-    return {
-      status: "unavailable",
-      elasticity: null,
-      absoluteChange,
-      direction,
-      globalSensitivity: false,
-      sobol: false,
-    };
-  }
+  if (relativeChange === null || !Number.isFinite(relativeChange) || !(baselineP > 0) || !pChanged) return unavailable;
+  const elasticity = relativeChange / ((probeP - baselineP) / baselineP);
+  if (!Number.isFinite(elasticity)) return unavailable;
   return {
     status: "observed",
     elasticity: String(elasticity),

@@ -748,6 +748,13 @@
           "registeredAs": "parameter experiments > checks local elasticity direction",
           "cwd": "packages/core",
           "args": ["test", "--timeout", "120000", "src/sim/analysis/experiment.test.ts"]
+        },
+        {
+          "file": "packages/core/src/sim/analysis/experiment.test.ts",
+          "exportName": "startsCandidatesFromScenario",
+          "registeredAs": "parameter experiments > starts candidates from the scenario",
+          "cwd": "packages/core",
+          "args": ["test", "--timeout", "120000", "src/sim/analysis/experiment.test.ts"]
         }
       ]
     },
@@ -826,6 +833,13 @@
           "file": "packages/core/src/sim/analysis/experiment.test.ts",
           "exportName": "matchesHandPareto",
           "registeredAs": "parameter experiments > matches the hand Pareto front",
+          "cwd": "packages/core",
+          "args": ["test", "--timeout", "120000", "src/sim/analysis/experiment.test.ts"]
+        },
+        {
+          "file": "packages/core/src/sim/analysis/experiment.test.ts",
+          "exportName": "keepsLargeEngineAmounts",
+          "registeredAs": "parameter experiments > keeps large engine amounts",
           "cwd": "packages/core",
           "args": ["test", "--timeout", "120000", "src/sim/analysis/experiment.test.ts"]
         }
