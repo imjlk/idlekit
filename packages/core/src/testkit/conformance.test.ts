@@ -22,6 +22,7 @@ import {
   checkResume,
   checkResumeFromJson,
   checkRetention,
+  checkSeededDrop,
   checkSnapshots,
   checkTimedSources,
   checkTrialOrder,
@@ -2103,4 +2104,55 @@ describe("engine differential", () => {
     "matches a safe constant run and refuses number Infinity collapse",
     matchesASafeConstantRunAndRefusesNumberInfinityCollapse,
   );
+});
+
+const seededDropFixture = JSON.parse(
+  readFileSync(join(import.meta.dir, "../../../../fixtures/conformance/independent-drop.json"), "utf8"),
+) as Parameters<typeof checkSeededDrop>[1] & { id: string };
+
+/**
+ * @evidence docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness Executes the declared seeded-drop fixture and seeded Bernoulli cases over the short and extended seed corpus.
+ * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #bbb39a2 Re-read the section and ran both corpora: the 1% fixture stays within 0.005, every generated case stays within five standard errors, a rate outside the tolerance fails, and an undeclared fixture stays unchecked.
+ * @evidence ./conformance.ts#checkSeededDrop Counts one independentBernoulli uniform per logical draw and compares the empirical rate with the declared tolerance.
+ * @evidenceReview ./conformance.ts#checkSeededDrop #55610e1 Read the declaration guard, the input checks, and the per-draw count. The fixture and the short and 200-case corpus stay within tolerance, and an undeclared fixture does not apply.
+ */
+export function keepsTheDeclaredSeededDropAcrossTheSeedCorpus(): void {
+  expect(seededDropFixture.id).toBe("independent-drop-one-percent");
+  expectApplicable(checkSeededDrop(true, seededDropFixture));
+  expect(checkSeededDrop(false, seededDropFixture).applicable).toBe(false);
+  // A rate outside the tolerance is a failed relation, not a skipped one.
+  const outside = checkSeededDrop(true, { ...seededDropFixture, draws: 1, probability: 0.5, absoluteTolerance: 0 });
+  expect(outside.applicable).toBe(true);
+  expect(outside.ok).toBe(false);
+  const testSeed = 0xd209;
+  const probabilities = [0.01, 0.1, 0.25, 0.5];
+  expectProperty({
+    predicateId: "declared-seeded-drop",
+    testSeed,
+    cases: conformanceCaseCount(),
+    generate: (index, rng) => {
+      if (index === 0) return { ...seededDropFixture };
+      const probability = probabilities[rng.int(0, probabilities.length - 1)] ?? 0.01;
+      const draws = 4000;
+      // Five standard errors of the empirical rate.
+      const absoluteTolerance = 5 * Math.sqrt((probability * (1 - probability)) / draws);
+      return { seed: gameSeedForCase(testSeed, index), draws, probability, absoluteTolerance };
+    },
+    shrink: () => [],
+    predicate: (value) => {
+      expectApplicable(checkSeededDrop(true, value));
+      return true;
+    },
+    describeCase: (value) => ({
+      gameSeed: value.seed,
+      engineId: "number",
+      modelId: "seeded-drop",
+      strategyId: null,
+      tickSchedule: { stepSec: 0, durationSec: value.draws },
+    }),
+  });
+}
+
+describe("PR-13 seeded drop", () => {
+  it("keeps the declared seeded drop across the seed corpus", keepsTheDeclaredSeededDropAcrossTheSeedCorpus, 60000);
 });

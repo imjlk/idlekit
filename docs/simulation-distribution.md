@@ -26,7 +26,7 @@ Uncertainty source is `model-strategy-session`, `monetization`, or `mixed`. A de
 
 ## Canonical example
 
-There is a fixed seed. The drop fixture is [independent-drop.json](../fixtures/conformance/independent-drop.json). Seed `28947`, 10000 draws, probability `0.01`, absolute tolerance `0.005`. One uniform comes from each logical draw. The check is the tolerance, not an exact `0.01`.
+There is a fixed seed. The drop fixture is [independent-drop.json](../fixtures/conformance/independent-drop.json). Seed `28947`, 10000 draws, probability `0.01`, absolute tolerance `0.005`. One uniform comes from each logical draw. The check is the tolerance, not an exact `0.01`. `bun run test:conformance` replays that fixture through `checkSeededDrop` in `packages/core/src/testkit/conformance.ts`, with seeded Bernoulli cases from the seed corpus held to five standard errors. `test:conformance:extended` runs 200 cases.
 
 The quantile example is the sorted sample `[1, 2, 3, 4, 5]`.
 

@@ -56,6 +56,13 @@
         },
         {
           "file": "packages/core/src/testkit/conformance.test.ts",
+          "exportName": "keepsTheDeclaredSeededDropAcrossTheSeedCorpus",
+          "registeredAs": "PR-13 seeded drop > keeps the declared seeded drop across the seed corpus",
+          "cwd": "packages/core",
+          "args": ["test", "src/testkit/conformance.test.ts"]
+        },
+        {
+          "file": "packages/core/src/testkit/conformance.test.ts",
           "exportName": "checksBulkEqualityOnlyWhenTheFixtureDeclaresIt",
           "registeredAs": "PR-01 bulk equivalence > checks bulk equality only when the fixture declares it",
           "cwd": "packages/core",
