@@ -14,6 +14,7 @@ import {
   type SimState,
 } from "../types";
 import { deepClonePreservingPrototype } from "../../utils/deepClone";
+import { withoutResetActions } from "./resetActions";
 
 /**
  * Reset-cycle execution v1.
@@ -176,6 +177,12 @@ function assertPositiveInt(label: string, value: number): void {
   }
 }
 
+function assertNonNegativeInt(label: string, value: number): void {
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
+    throw new ResetCycleRejected(`reset cycle ${label} must be an integer >= 0`);
+  }
+}
+
 function assertPositiveTime(label: string, value: number): void {
   if (typeof value !== "number" || !Number.isFinite(value) || !(value > 0)) {
     throw new ResetCycleRejected(`reset cycle ${label} must be a finite number > 0`);
@@ -236,58 +243,16 @@ export function resetAdapterFor<N, U extends string, Vars>(
   scenario: CompiledScenario<N, U, Vars>,
   explicit?: ResetAdapter<N, U, Vars>,
   state: SimState<N, U, Vars> = scenario.initial,
+  ctx: SimContext<N, U, Vars> = scenario.ctx,
 ): ResetAdapter<N, U, Vars> | undefined {
   if (explicit) return explicit;
-  // Read the state where the reset would happen. A model can list its prestige action only later.
-  const discovered = scenario.model.actions(scenario.ctx, state);
+  // Read the state and context where the reset would happen. A model can list its prestige action only later,
+  // or only under the live constraints.
+  const discovered = scenario.model.actions(ctx, state);
   if (discovered.some((candidate) => candidate.kind === "prestige")) {
     return actionAdapter(scenario.model, "prestige");
   }
   return specAdapter(scenario.model);
-}
-
-/**
- * The executor is the only reset authority. During an interval the strategy does not see the reset action,
- * so it cannot commit a reset the artifact would not count.
- */
-function withoutResetActions<N, U extends string, Vars>(
-  model: Model<N, U, Vars>,
-  adapter: ResetAdapter<N, U, Vars> | undefined,
-): Model<N, U, Vars> {
-  const kind = adapter?.kind ?? "prestige";
-  const actions = (actionCtx: SimContext<N, U, Vars>, actionState: SimState<N, U, Vars>) => {
-    const listed = model.actions(actionCtx, actionState);
-    if (kind === "prestige") return listed.filter((candidate) => candidate.kind !== "prestige");
-    // Resolve the custom reset for this state. Its id can change, or appear, as the interval earns resources.
-    const reset = adapter?.action(actionCtx, actionState);
-    if (!reset) return listed;
-    // A listed reset is removed by identity, so an ordinary custom action sharing its id stays available.
-    if (listed.includes(reset)) return listed.filter((candidate) => candidate !== reset);
-    return listed.filter((candidate) => !(candidate.kind === "custom" && candidate.id === reset.id));
-  };
-  return delegateModel(model, actions);
-}
-
-/**
- * A plain object whose members read from, and call on, the original model. Methods keep the model as
- * their receiver, so class methods that use private fields still work.
- */
-function delegateModel<N, U extends string, Vars>(
-  model: Model<N, U, Vars>,
-  actions: Model<N, U, Vars>["actions"],
-): Model<N, U, Vars> {
-  const out: Record<PropertyKey, unknown> = {};
-  const seen = new Set<PropertyKey>();
-  for (let level: object | null = model; level && level !== Object.prototype; level = Object.getPrototypeOf(level)) {
-    for (const key of Reflect.ownKeys(level)) {
-      if (key === "constructor" || seen.has(key)) continue;
-      seen.add(key);
-      const value: unknown = Reflect.get(model, key, model);
-      out[key] = typeof value === "function" ? (value as (...args: unknown[]) => unknown).bind(model) : value;
-    }
-  }
-  out.actions = actions;
-  return out as unknown as Model<N, U, Vars>;
 }
 
 function skipReason(fact: CommittedResetFact | undefined, eventReason: string | undefined): ResetSkipReason {
@@ -337,7 +302,8 @@ export function executeResetCycles<N, U extends string, Vars>(args: {
     assertPositiveInt("steps", args.policy.steps.length);
     for (const step of args.policy.steps) assertPositiveTime("intervalSec", step.durationSec);
   }
-  if (args.maxCycles !== undefined) assertPositiveInt("maxCycles", args.maxCycles);
+  // maxCycles is a cap, like horizonSec and budgetSteps, so 0 censors the run before any reset.
+  if (args.maxCycles !== undefined) assertNonNegativeInt("maxCycles", args.maxCycles);
   if (args.horizonSec !== undefined && (typeof args.horizonSec !== "number" || !Number.isFinite(args.horizonSec) || args.horizonSec < 0)) {
     throw new ResetCycleRejected("reset cycle horizonSec must be a finite number >= 0");
   }
@@ -349,27 +315,38 @@ export function executeResetCycles<N, U extends string, Vars>(args: {
   }
 
   const originSec = args.resume?.originSec ?? args.resume?.state.t ?? scenario.initial.t;
-  let state = args.resume?.state ?? scenario.initial;
-  let constraints = args.resume?.constraints ?? scenario.constraints;
+  // Resume from copies, so in-place edits during the run cannot rewrite the checkpoint.
+  let state = args.resume ? deepClonePreservingPrototype(args.resume.state) : scenario.initial;
+  let constraints = args.resume?.constraints
+    ? deepClonePreservingPrototype(args.resume.constraints)
+    : scenario.constraints;
   let accumulated = args.resume?.accumulatedReward ?? E.zero();
   let nextIndex = args.resume?.nextIndex ?? 0;
   // Restore from a copy, so a restore that keeps or edits its argument cannot change the checkpoint.
   // Presence is the key, not the value: an undefined snapshot is still restored.
   if (args.resume && "strategyState" in args.resume) {
+    if (scenario.strategy && !scenario.strategy.restoreState) {
+      throw new ResetCycleRejected("reset cycle checkpoint has strategyState, but the strategy has no restoreState");
+    }
     scenario.strategy?.restoreState?.(deepClonePreservingPrototype(args.resume.strategyState));
   }
   if (args.resume && "rngState" in args.resume) args.rng?.restore(deepClonePreservingPrototype(args.resume.rngState));
-  const startAdapter = resetAdapterFor(scenario, args.adapter, state);
+  // The context the runner and the boundary action see: the scenario context with the live constraints.
+  const liveCtx = (): SimContext<N, U, Vars> => ({ ...scenario.ctx, ...(constraints ? { constraints } : {}) });
+  const startAdapter = resetAdapterFor(scenario, args.adapter, state, liveCtx());
   // Elapsed seconds are summed from runner results. Absolute t can round away from simulated time.
   let elapsed = args.resume?.elapsedSec ?? state.t - originSec;
 
   const warnings: string[] = ["legacy interval scan fields are not reset evidence"];
+  if (scenario.strategy?.snapshotState && !scenario.strategy.restoreState) {
+    warnings.push("strategy state is not checkpointed: snapshotState has no restoreState");
+  }
   const requested = args.policy.kind === "fixed-interval" ? args.policy.cycles : args.policy.steps.length;
   const rows: ResetCycleRowV1[] = [];
   let guard: "ok" | "incomplete" | "censored" | "unsupported" = "ok";
   let remainingBudget = args.budgetSteps;
   const rewardOf = (adapter: ResetAdapter<N, U, Vars> | undefined, current: SimState<N, U, Vars>): N =>
-    adapter ? adapter.reward(scenario.ctx, current) : current.prestige.points;
+    adapter ? adapter.reward(liveCtx(), current) : current.prestige.points;
 
   while (rows.length < requested && guard === "ok") {
     if (args.maxCycles !== undefined && rows.length >= args.maxCycles) {
@@ -388,7 +365,7 @@ export function executeResetCycles<N, U extends string, Vars>(args: {
     }
 
     const startSec = state.t;
-    const intervalAdapter = args.adapter ?? resetAdapterFor(scenario, undefined, state) ?? startAdapter;
+    const intervalAdapter = args.adapter ?? resetAdapterFor(scenario, undefined, state, liveCtx()) ?? startAdapter;
     const { maxSteps: _ignoredMax, until: _ignoredUntil, trace: _ignoredTrace, ...runRest } = scenario.run;
     const run = runScenario({
       ...scenario,
@@ -427,7 +404,9 @@ export function executeResetCycles<N, U extends string, Vars>(args: {
     }
 
     // Resolve the adapter where the reset happens. A prestige action can appear only after this interval.
-    const adapter = args.adapter ?? resetAdapterFor(scenario, undefined, state);
+    // The boundary action sees the live constraints, as it would inside runScenario, and so does discovery.
+    const boundaryCtx = liveCtx();
+    const adapter = args.adapter ?? resetAdapterFor(scenario, undefined, state, boundaryCtx);
     if (!adapter) {
       rows.push({
         index: nextIndex,
@@ -450,8 +429,6 @@ export function executeResetCycles<N, U extends string, Vars>(args: {
       warnings.push(specNote);
     }
 
-    // The boundary action sees the live constraints, as it would inside runScenario.
-    const boundaryCtx = { ...scenario.ctx, ...(constraints ? { constraints } : {}) };
     const beforeReward = adapter.reward(boundaryCtx, state);
     const action = adapter.action(boundaryCtx, state);
     const kinds = new Set<"prestige" | "custom">();
@@ -557,18 +534,20 @@ function checkpointOf<N, U extends string, Vars>(
   elapsedSec: number,
 ): ResetCycleCheckpoint<N, U, Vars> {
   // Copy live snapshot objects, so later strategy or RNG use cannot rewrite a returned checkpoint.
-  const strategyState = deepClonePreservingPrototype(scenario.strategy?.snapshotState?.());
+  // A strategy snapshot is kept only when the strategy can restore it.
+  const restorable = !!(scenario.strategy?.snapshotState && scenario.strategy.restoreState);
+  const strategyState = restorable ? deepClonePreservingPrototype(scenario.strategy?.snapshotState?.()) : undefined;
   const rngState = deepClonePreservingPrototype(rng?.snapshot());
   return {
     contract: "idlekit.reset-cycle-checkpoint",
     version: 1,
-    state,
-    ...(constraints ? { constraints } : {}),
+    state: deepClonePreservingPrototype(state),
+    ...(constraints ? { constraints: deepClonePreservingPrototype(constraints) } : {}),
     nextIndex,
     originSec,
     elapsedSec,
     accumulatedReward,
-    ...(scenario.strategy?.snapshotState ? { strategyState } : {}),
+    ...(restorable ? { strategyState } : {}),
     ...(rng ? { rngState } : {}),
   };
 }

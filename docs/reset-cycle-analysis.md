@@ -19,7 +19,9 @@ The new wire object is `ResetPolicyArtifactV1`, schema `idlekit.reset-policy.v1`
 
 `best` carries the objective and its reading (`flow`, `stock`, or `time`), the scan range, `scope: "scan-range"`, `globalOptimum: false`, the session assumption, and the observation status. Ranking uses `Engine.cmp`. A tie under `toNumber` is not a tie under that compare. The winner is the best scanned candidate, not a global optimum.
 
-A session pattern commits a manual reset only while a block is active. `resetDelaySec` is the caller's time cost. It advances wall time and grants no income. Offline gaps do not commit a reset.
+A session pattern commits a manual reset only while a block is active. `resetDelaySec` is the caller's time cost. It advances wall time and grants no income. Offline gaps do not commit a reset. They apply the scenario's offline progression, cap and decay included, as `simulateSessionPattern` does, and active blocks see session clocks when the model reads them. Reaching the cycle budget or a refused reset stops further resets, not the schedule, so every candidate plays to the same horizon. A scheduled candidate measures recovery from its own first reset.
+
+During playback the reset action is hidden from the strategy, so only the policy commits resets. A reset adapter is resolved at each boundary under the live constraints. `horizonSec` is elapsed time from the scenario origin. A goal time is the first committed state that meets the goal, between resets included. `goal-reach-sec` needs a goal, and `absoluteTolerance` must be a finite amount of at least 0. A winner that was refused partway leaves the artifact `incomplete`.
 
 ## Canonical example
 

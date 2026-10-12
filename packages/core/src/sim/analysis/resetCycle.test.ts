@@ -161,9 +161,9 @@ function makeRng(seed: number): ResetCycleRng & { next: () => number } {
  * @evidence ./resetCycle.ts#resetCycleJsonSchema The schema is 3.1.
  * @evidenceReview ./resetCycle.ts#resetCycleJsonSchema #c6690d5 The function memoizes typia.json.schema of ResetCycleArtifactV1.
  * @evidence ./resetCycle.ts#executeResetCycles Runs three fixed intervals, an explicit list, a resume, and the horizon and budget guards.
- * @evidenceReview ./resetCycle.ts#executeResetCycles #a79adcb The function runs each interval with runScenario on a model that delegates every member to the original receiver and hides the reset action, resolved per state and removed by identity when listed, measures the horizon with relative slack on summed runner seconds, censors any budget stop, resolves the adapter at the boundary, commits one reset through applyDecisions with live constraints, refreshes maxMoneyEver, records a refusal instead of forcing it, and records strategy and RNG snapshots by presence with copies.
+ * @evidenceReview ./resetCycle.ts#executeResetCycles #ae133fc The function accepts a maxCycles cap of 0, copies the resumed state and constraints, rejects a strategyState the strategy cannot restore, discovers adapters under the live constraints, runs each interval with runScenario on a model that delegates every member to the original receiver and hides the reset action, resolved per state and removed by identity when listed, measures the horizon with relative slack on summed runner seconds, censors any budget stop, resolves the adapter at the boundary, commits one reset through applyDecisions with live constraints, refreshes maxMoneyEver, records a refusal instead of forcing it, and records copies of the state, a strategy snapshot only when restoreState exists, and the RNG snapshot.
  * @evidence ./resetCycle.ts#resetAdapterFor Picks the prestige action and returns nothing for a model with neither an action nor a spec.
- * @evidenceReview ./resetCycle.ts#resetAdapterFor #5f8e044 The function returns an explicit adapter first, then the prestige action adapter when the given state lists one, then the spec adapter, and undefined when the model has no spec.
+ * @evidenceReview ./resetCycle.ts#resetAdapterFor #de4bddc The function returns an explicit adapter first, then the prestige action adapter when the given state and context list one, then the spec adapter, and undefined when the model has no spec.
  * @evidence ./resetCycle.ts#resetCycleSchemaId Reads the reset cycle schema id.
  * @evidenceReview ./resetCycle.ts#resetCycleSchemaId #2121231 The function returns the reset.cycle.v1 schema URL constant.
  * @evidence ./resetCycle.ts#resetCycleAlgorithmVersion Reads the algorithm version on the artifact.
@@ -659,6 +659,97 @@ export function runsThreeCommittedResets(): void {
   expect(budget.state.prestige.count).toBe(0);
   expect(resetAdapterFor(scenario())?.id).toBe("prestige.action");
   expect(resetAdapterFor(scenario({ actions: [] }))).toBeUndefined();
+
+  // maxCycles is a cap: 0 censors the run before any reset, and a negative or fractional cap is rejected.
+  const none = executeResetCycles({
+    scenario: scenario(),
+    policy: { kind: "fixed-interval", intervalSec: 2, cycles: 3 },
+    maxCycles: 0,
+  });
+  expect(none.artifact.status).toBe("censored");
+  expect(none.artifact.appliedResets).toBe(0);
+  expect(none.artifact.cycles).toEqual([]);
+  expect(none.artifact.warnings).toContain("max-cycles");
+  for (const maxCycles of [-1, 1.5]) {
+    expect(() =>
+      executeResetCycles({ scenario: scenario(), policy: { kind: "fixed-interval", intervalSec: 2, cycles: 1 }, maxCycles }),
+    ).toThrow("maxCycles must be an integer >= 0");
+  }
+
+  // A model that lists its prestige action only under live constraints is discovered with them.
+  const gatedBase = scenario({ constraints: { minPrestigeIntervalSec: 1 } });
+  const gated: CompiledScenario<number, "COIN", Vars> = {
+    ...gatedBase,
+    model: {
+      ...gatedBase.model,
+      actions: (ctx) => (ctx.constraints?.minPrestigeIntervalSec === 1 ? [prestigeAction()] : []),
+    },
+  };
+  expect(resetAdapterFor(gated)).toBeUndefined();
+  expect(resetAdapterFor(gated, undefined, gated.initial, { ...gated.ctx, constraints: gated.constraints })?.id).toBe(
+    "prestige.action",
+  );
+  const gatedRun = executeResetCycles({ scenario: gated, policy: { kind: "fixed-interval", intervalSec: 2, cycles: 2 } });
+  expect(gatedRun.artifact.status).toBe("ok");
+  expect(gatedRun.artifact.appliedResets).toBe(2);
+
+  // A checkpoint holds a copy of the state. In-place edits after it, or during a resume, do not rewrite it.
+  const inPlaceBuy: Action<number, "COIN", Vars> = {
+    id: "buy",
+    kind: "buy",
+    canApply: () => true,
+    cost: () => null,
+    apply: (_ctx, current) => {
+      (current.vars as { bought: number }).bought += 1;
+      return current;
+    },
+  };
+  const alwaysBuy: Strategy<number, "COIN", Vars> = {
+    id: "always-buy",
+    decide(ctx, model, current) {
+      const action = model.actions(ctx, current).find((candidate) => candidate.id === "buy");
+      return action ? [{ action }] : [];
+    },
+  };
+  const inPlace = () =>
+    scenario({ income: 0, actions: [inPlaceBuy, prestigeAction()], strategy: alwaysBuy, initial: state() });
+  const opened = executeResetCycles({ scenario: inPlace(), policy: { kind: "fixed-interval", intervalSec: 2, cycles: 1 } });
+  const saved = economy(opened.checkpoint.state);
+  (opened.state.vars as { bought: number }).bought = 1000;
+  expect(economy(opened.checkpoint.state)).toEqual(saved);
+  const resumedA = executeResetCycles({
+    scenario: inPlace(),
+    policy: { kind: "fixed-interval", intervalSec: 2, cycles: 1 },
+    resume: opened.checkpoint,
+  });
+  const resumedB = executeResetCycles({
+    scenario: inPlace(),
+    policy: { kind: "fixed-interval", intervalSec: 2, cycles: 1 },
+    resume: opened.checkpoint,
+  });
+  expect(economy(opened.checkpoint.state)).toEqual(saved);
+  expect(economy(resumedA.state)).toEqual(economy(resumedB.state));
+  expect(resumedA.state.vars.bought).toBeGreaterThan(saved.bought);
+
+  // A strategy that can snapshot but not restore leaves no strategyState, and a resume that needs one is rejected.
+  const snapshotOnly: Strategy<number, "COIN", Vars> = {
+    id: "snapshot-only",
+    decide: () => [],
+    snapshotState: () => ({ cursor: 1 }),
+  };
+  const unpaired = executeResetCycles({
+    scenario: scenario({ strategy: snapshotOnly }),
+    policy: { kind: "fixed-interval", intervalSec: 2, cycles: 1 },
+  });
+  expect("strategyState" in unpaired.checkpoint).toBe(false);
+  expect(unpaired.artifact.warnings).toContain("strategy state is not checkpointed: snapshotState has no restoreState");
+  expect(() =>
+    executeResetCycles({
+      scenario: scenario({ strategy: snapshotOnly }),
+      policy: { kind: "fixed-interval", intervalSec: 2, cycles: 1 },
+      resume: { ...unpaired.checkpoint, strategyState: { cursor: 1 } },
+    }),
+  ).toThrow("the strategy has no restoreState");
 }
 
 /**

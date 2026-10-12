@@ -296,8 +296,27 @@ function solve(matrix: number[][], rhs: number[]): number[] | null {
   return rows.map((row) => row[size]!);
 }
 
+/**
+ * Largest |x|, so a fit runs on x / scale. Rebased times can still be wide enough that x * x overflows;
+ * on the scaled axis the moments stay finite, and the coefficients are mapped back.
+ */
+function axisScale(xs: readonly number[]): number {
+  let scale = 0;
+  for (const x of xs) scale = Math.max(scale, Math.abs(x));
+  return Number.isFinite(scale) && scale > 0 ? scale : 1;
+}
+
 function fitLinear(xs: readonly number[], ys: readonly number[]): LinearFit | null {
   if (xs.length !== ys.length || xs.length < 2) return null;
+  const scale = axisScale(xs);
+  const fit = fitLinearScaled(xs.map((x) => x / scale), ys);
+  if (!fit) return null;
+  const b = fit.b / scale;
+  if (!Number.isFinite(fit.a) || !Number.isFinite(b) || !Number.isFinite(fit.rmse)) return null;
+  return { a: fit.a, b, rmse: fit.rmse };
+}
+
+function fitLinearScaled(xs: readonly number[], ys: readonly number[]): LinearFit | null {
   const n = xs.length;
   let sx = 0;
   let sy = 0;
@@ -320,6 +339,16 @@ function fitLinear(xs: readonly number[], ys: readonly number[]): LinearFit | nu
 
 function fitQuadratic(xs: readonly number[], ys: readonly number[]): QuadFit | null {
   if (xs.length !== ys.length || xs.length < 3) return null;
+  const scale = axisScale(xs);
+  const fit = fitQuadraticScaled(xs.map((x) => x / scale), ys);
+  if (!fit) return null;
+  const b = fit.b / scale;
+  const c = fit.c / scale / scale;
+  if (!Number.isFinite(fit.a) || !Number.isFinite(b) || !Number.isFinite(c) || !Number.isFinite(fit.rmse)) return null;
+  return { a: fit.a, b, c, rmse: fit.rmse };
+}
+
+function fitQuadraticScaled(xs: readonly number[], ys: readonly number[]): QuadFit | null {
   let sx = 0;
   let sx2 = 0;
   let sx3 = 0;
