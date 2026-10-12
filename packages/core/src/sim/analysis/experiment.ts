@@ -13,6 +13,7 @@ import {
   assignmentFitsParamSpace,
   elasticityFromChange,
   localElasticity,
+  relativeParameterChange,
   paretoFrontBy,
   type LocalElasticity,
 } from "./sensitivity";
@@ -42,7 +43,7 @@ export const experimentRegisteredSetter = "registered-key-not-jsonpath" as const
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-local-elasticity Constant income reaches T/p. Local elasticity is signed and is not a Sobol or global index.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-local-elasticity #683a43d Re-read the section: rate 2 reaches in 5 with elasticity -0.5, rate 0.5 reaches in 20 with elasticity -2, maxPicks stays flat, and the conformance relation checks -p/p' for divisor rates.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-local-elasticity #8e1bfdc Re-read the section: rate 2 reaches in 5 with elasticity -0.5, rate 0.5 reaches in 20 with elasticity -2, maxPicks stays flat, and the conformance relation checks -p/p' for divisor rates.
  */
 export const experimentLocalOat = "one-at-a-time-local-not-sobol" as const;
 
@@ -60,7 +61,7 @@ export const experimentCensoredHorizon = "censored-time-not-horizon" as const;
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown Pareto keeps per-metric tradeoffs. An unknown objective is uncompared, not a win.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown #2896909 Re-read the section: A, B, and C are non-dominated, D is dominated, E is uncompared, money is compared pairwise in the effective engine, and the elasticity stays in that engine until it is text.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown #1da34f7 Re-read the section: A, B, and C are non-dominated, D is dominated, E is uncompared, money is compared pairwise in the effective engine, and the elasticity stays in that engine until it is text.
  */
 export const experimentParetoUnknown = "unknown-is-not-superior" as const;
 
@@ -607,8 +608,10 @@ function aggregate<N>(E: Engine<N>, rows: readonly { seed: number; metrics: read
     if (!E.isFinite(mean)) return { metricId, status: "censored", value: null };
     return { metricId, status: "observed", value: E.toString(mean), amount: mean };
   }
-  // Divide before adding here too, so two finite values near the double limit keep a finite mean.
-  const mean = observed.reduce((sum, metric) => sum + (metric.num as number) / count, 0);
+  // Sum, then divide, so subnormal values keep their mean. Only when the sum overflows, divide before adding,
+  // so two finite values near the double limit keep a finite mean.
+  const sum = observed.reduce((total, metric) => total + (metric.num as number), 0);
+  const mean = Number.isFinite(sum) ? sum / count : observed.reduce((total, metric) => total + (metric.num as number) / count, 0);
   if (!Number.isFinite(mean)) return { metricId, status: "censored", value: null };
   return { metricId, status: "observed", value: String(mean), num: mean };
 }
@@ -652,7 +655,7 @@ function readingElasticity<N>(
     const pChanged = Number.isFinite(baselineP) && Number.isFinite(probeP) && probeP !== baselineP;
     if (!(E.cmp(baseline.amount, E.zero()) > 0) || !(baselineP > 0) || !pChanged) return unavailable;
     // The ratio of two engine amounts can leave the double range, so the elasticity stays in the engine until it is text.
-    const elasticity = E.div(E.divN(delta, baseline.amount), (probeP - baselineP) / baselineP);
+    const elasticity = E.div(E.divN(delta, baseline.amount), relativeParameterChange(baselineP, probeP));
     if (!E.isFinite(elasticity)) return unavailable;
     return { ...unavailable, status: "observed", elasticity: E.toString(elasticity) };
   }

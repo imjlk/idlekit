@@ -84,6 +84,15 @@ export function localElasticity(args: Readonly<{
 }
 
 /**
+ * `(probeP - baselineP) / baselineP`. When the difference of two finite parameters overflows, the ratio
+ * `probeP / baselineP - 1` gives the same relative change without leaving the double range.
+ */
+export function relativeParameterChange(baselineP: number, probeP: number): number {
+  const delta = probeP - baselineP;
+  return Number.isFinite(delta) ? delta / baselineP : probeP / baselineP - 1;
+}
+
+/**
  * Relative elasticity from a change measured in the metric's own arithmetic, such as an engine amount.
  * `relativeChange` is `(probeY - baselineY) / baselineY`, or null when baseline y is not greater than zero.
  * The elasticity is reported only when baseline p is finite and greater than zero and p changes.
@@ -106,7 +115,7 @@ export function elasticityFromChange(args: Readonly<{
   };
   const pChanged = Number.isFinite(baselineP) && Number.isFinite(probeP) && probeP !== baselineP;
   if (relativeChange === null || !Number.isFinite(relativeChange) || !(baselineP > 0) || !pChanged) return unavailable;
-  const elasticity = relativeChange / ((probeP - baselineP) / baselineP);
+  const elasticity = relativeChange / relativeParameterChange(baselineP, probeP);
   if (!Number.isFinite(elasticity)) return unavailable;
   return {
     status: "observed",
