@@ -25,11 +25,18 @@ describe("idk analyze", () => {
     expect(json.provenance.semantics).toEqual({ sessionKey: "none", strategyKey: "greedy", horizonSec: 8, stepSec: 1, seed: null });
     const fractional = runCli(["analyze", "growth", scenario, "--trace-every", "1.5"], { check: false });
     expect(fractional.exitCode).not.toBe(0);
+    // growth honors the run budget, and a window finer than the trace spacing is not met.
+    const unbudgeted = runCliJson<any>(["analyze", "growth", scenario, "--window", "2", "--budget-runs", "0", "--format", "json"]);
+    expect(unbudgeted.status).toBe("insufficient-data");
+    expect(unbudgeted.provenance.freshRuns).toBe(0);
+    const coarse = runCliJson<any>(["analyze", "growth", scenario, "--window", "2", "--trace-every", "4", "--format", "json"]);
+    expect(coarse.status).toBe("insufficient-data");
+    expect(json.provenance.freshRuns).toBe(1);
     const markdown = runCli(["analyze", "growth", scenario, "--window", "5", "--format", "md"]);
     expect(markdown.stdout).toContain("growth-report-v1");
     expect(markdown.stdout).toContain("```json");
     await removePath(dir);
-  }, 60000);
+  }, 120000);
 
   it("matches eta algorithm version without a network call", async () => {
     const dir = await createTempDir("idlekit-analyze-eta");
@@ -97,6 +104,12 @@ describe("idk analyze", () => {
       allowExecution: false,
     });
     expect(note.results[0]?.value).toBe("note");
+    // A non-array analyzers export is one isolated failure; builtins stay registered.
+    const objectExport = resolve(dir, "object.ts");
+    await writeText(objectExport, `export const analyzers = {};\n`);
+    const fromObject = await loadRegistries([objectExport], { allowedRoots: [dir] });
+    expect(fromObject.analyzerFailures.map((failure) => failure.message)).toEqual(["plugin analyzers export must be an array"]);
+    expect(fromObject.analyzerRegistry.get("growth", "1")).toBeDefined();
     await removePath(dir);
   }, 60000);
 
@@ -153,6 +166,19 @@ describe("idk analyze", () => {
           execute: () => ({ status: "ok", value: "after" }),
         },
         {
+          id: "plugin.note",
+          version: "1",
+          kind: "postprocess",
+          validateParams: () => ({ ok: true, params: {} }),
+          requires: { capabilities: [], metricIds: [], observationSchema: "idlekit.run-observation" },
+          observation: { windowSec: null, sampleCadenceSec: null, coverage: "summary", metricIds: [], observationSchema: "idlekit.run-observation" },
+          outputContract: "test.analyzer",
+          algorithmVersion: "plugin-note-v1",
+          cost: { freshRuns: 0, samples: 0 },
+          dependencies: [],
+          postprocess: () => ({ status: "ok", value: "note" }),
+        },
+        {
           id: "plugin.both",
           version: "1",
           kind: "execution",
@@ -199,10 +225,25 @@ describe("idk analyze", () => {
     expect(spent.provenance.rerun.reason).toBe("budget");
     const both = runCliJson<any>(["analyze", "plugin.both", scenario, ...pluginFlags, "--trace-every", "2", "--budget-duration", "20", "--budget-runs", "2", "--format", "json"]);
     expect(both.status).toBe("ok");
+    // The observation run is counted in provenance: plugin.both made it plus its own run.
+    expect(read.provenance.freshRuns).toBe(1);
+    expect(both.provenance.freshRuns).toBe(2);
+    // An empty postprocess demand needs no observation, so no run is made for it.
+    const note = runCliJson<any>(["analyze", "plugin.note", scenario, ...pluginFlags, "--format", "json"]);
+    expect(note.status).toBe("ok");
+    expect(note.provenance.freshRuns).toBe(0);
+    // An until-only scenario is bounded by the horizon the budget admitted (--max-duration).
+    const untilOnly = resolve(dir, "until.json");
+    const untilRaw = JSON.parse(await readText(scenario)) as { clock: Record<string, unknown> };
+    delete untilRaw.clock.durationSec;
+    untilRaw.clock.untilExpr = "t >= 50";
+    await writeText(untilOnly, JSON.stringify(untilRaw));
+    const bounded = runCliJson<any>(["analyze", "plugin.read", untilOnly, ...pluginFlags, "--trace-every", "2", "--max-duration", "6", "--budget-duration", "6", "--format", "json"]);
+    expect(bounded.value.endT).toBe(6);
     // An execution analyzer whose postprocess dependency reads the run gets that run supplied.
     const after = runCliJson<any>(["analyze", "plugin.after", scenario, ...pluginFlags, "--trace-every", "2", "--format", "json"]);
     expect(after.status).toBe("ok");
     expect(after.value).toBe("after");
     await removePath(dir);
-  }, 60000);
+  }, 240000);
 });

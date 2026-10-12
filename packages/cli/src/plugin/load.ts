@@ -467,7 +467,10 @@ export async function loadRegistries(
     if (parsed.models) modelFactories.push(...parsed.models);
     if (parsed.strategies) strategyFactories.push(...parsed.strategies);
     if (parsed.objectives) objectiveFactories.push(...parsed.objectives);
-    if (parsed.analyzers) {
+    // A plugin export is a runtime value: a non-array is one isolated failure, not a crash.
+    if (parsed.analyzers !== undefined && parsed.analyzers !== null && !Array.isArray(parsed.analyzers)) {
+      analyzerFailures.push({ path: abs, message: "plugin analyzers export must be an array" });
+    } else if (parsed.analyzers) {
       for (const analyzer of parsed.analyzers) {
         const message = registerAnalyzerIsolated(analyzerRegistry, analyzer);
         if (message) analyzerFailures.push({ path: abs, message });

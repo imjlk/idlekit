@@ -7,7 +7,6 @@ import {
   createRunFactory,
   observationContract,
   runEtaAnalyzer,
-  runGrowthAnalyzer,
   runScenario,
   validateScenarioV1,
   type AnalyzerBudget,
@@ -76,12 +75,8 @@ export default defineCommand({
     const version = flags["analyzer-version"];
     const scenarioPath = positional[1];
 
-    if (analyzerId === "growth" && version === "1") {
-      if (!scenarioPath) throw usageError("Usage: idk analyze growth <scenario>");
-      const compiled = await compile(scenarioPath, loaded);
-      await emit(flags, runGrowth(compiled, flags), scenarioPath, compiled, loaded);
-      return;
-    }
+    const builtinGrowth = analyzerId === "growth" && version === "1";
+    if (builtinGrowth && !scenarioPath) throw usageError("Usage: idk analyze growth <scenario>");
     if (analyzerId === "eta" && version === "1") {
       if (!scenarioPath) throw usageError("Usage: idk analyze eta <scenario> --target-money <NumStr> | --target-worth <NumStr>");
       const target = etaTarget(flags);
@@ -96,6 +91,9 @@ export default defineCommand({
     } catch {
       throw usageError("Analyzer --params must be JSON");
     }
+    // growth runs through the same budgeted observation path as any postprocess analyzer;
+    // --series and --window are its params.
+    if (builtinGrowth) params = { series: flags.series, windowSec: flags.window };
     const defined = loaded.analyzerRegistry.get(analyzerId, version);
     if (!defined) {
       const failure = loaded.analyzerFailures.find((item) => item.message.includes(analyzerId));
@@ -111,10 +109,10 @@ export default defineCommand({
     // registry gets what is left. Without it, an analyzer that reads the run is insufficient-data.
     const observed =
       compiled &&
-      readsObservation(loaded, defined) &&
+      readsObservation(loaded, defined, params) &&
       budget.maxFreshRuns >= 1 &&
       semantics.horizonSec <= budget.maxDurationSec
-        ? observeScenario(compiled, flags["trace-every"])
+        ? observeScenario(compiled, flags["trace-every"], semantics.horizonSec)
         : undefined;
     const batch = loaded.analyzerRegistry.run({
       requests: [{ id: analyzerId, version, params }],
@@ -125,24 +123,48 @@ export default defineCommand({
       runFactory: runFactoryFor(loaded),
       allowExecution: true,
     });
-    const result = batch.results.find((item) => item.id === analyzerId && item.version === version);
-    if (!result) throw usageError(`Analyzer ${analyzerId}@${version} produced no result`);
+    const found = batch.results.find((item) => item.id === analyzerId && item.version === version);
+    if (!found) throw usageError(`Analyzer ${analyzerId}@${version} produced no result`);
+    // The observation run was a fresh run the command made for this analyzer, so provenance counts it.
+    const result = observed
+      ? { ...found, provenance: { ...found.provenance, freshRuns: found.provenance.freshRuns + 1 } }
+      : found;
     await emit(flags, result, scenarioPath, compiled, loaded);
   },
 });
 
-/** True when the analyzer or any dependency the registry will pull in is a postprocess analyzer. */
-function readsObservation(loaded: Loaded, root: AnalyzerDefinition<unknown>): boolean {
+/** The demand the registry will resolve. Anything it cannot resolve here is treated as non-empty. */
+function demandIsEmpty(definition: AnalyzerDefinition<unknown>, rawParams: unknown): boolean {
+  try {
+    const parsed = definition.validateParams(rawParams);
+    const demand = parsed.ok && definition.resolveDemand ? definition.resolveDemand(parsed.params) : definition.observation;
+    return (
+      demand.coverage === "summary" &&
+      demand.windowSec === null &&
+      demand.sampleCadenceSec === null &&
+      demand.metricIds.length === 0
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * True when the analyzer or any dependency the registry will pull in is a postprocess analyzer
+ * whose demand asks for an observation. An empty demand is met without one, so no run is made for it.
+ */
+function readsObservation(loaded: Loaded, root: AnalyzerDefinition<unknown>, rootParams: unknown): boolean {
   const seen = new Set<AnalyzerDefinition<unknown>>();
-  const pending = [root];
+  const pending: [AnalyzerDefinition<unknown>, unknown][] = [[root, rootParams]];
   while (pending.length > 0) {
-    const definition = pending.pop()!;
+    const [definition, params] = pending.pop()!;
     if (seen.has(definition)) continue;
     seen.add(definition);
-    if (definition.kind === "postprocess") return true;
+    if (definition.kind === "postprocess" && !demandIsEmpty(definition, params)) return true;
     for (const dependency of definition.dependencies) {
       const next = loaded.analyzerRegistry.get(dependency.id, dependency.version);
-      if (next) pending.push(next);
+      // An implied dependency gets params {} from the registry.
+      if (next) pending.push([next, {}]);
     }
   }
   return false;
@@ -157,21 +179,23 @@ function scenarioSemantics(compiled: Compiled, fallbackHorizonSec: number) {
   });
 }
 
-function tracedRun(compiled: Compiled, traceEvery: number) {
-  return runScenario({
+/**
+ * One traced run, bounded by the horizon the budget admitted: an until-only scenario gets that
+ * horizon as its duration, so the run cannot outlast the budget. Its trace spacing is also the
+ * finest window and cadence it can supply.
+ */
+function observeScenario(compiled: Compiled, traceEvery: number, horizonSec: number) {
+  const cadence = Math.max(1, traceEvery) * compiled.compiled.run.stepSec;
+  const run = runScenario({
     ...compiled.compiled,
     run: {
       ...compiled.compiled.run,
+      durationSec: compiled.compiled.run.durationSec ?? horizonSec,
       trace: { everySteps: Math.max(1, traceEvery), keepActionsLog: false },
     },
   });
-}
-
-/** One traced run. Its trace cadence is also the finest window it can supply. */
-function observeScenario(compiled: Compiled, traceEvery: number) {
-  const cadence = Math.max(1, traceEvery) * compiled.compiled.run.stepSec;
   return {
-    run: tracedRun(compiled, traceEvery),
+    run,
     supply: {
       schema: observationContract,
       windowSec: cadence,
@@ -180,32 +204,6 @@ function observeScenario(compiled: Compiled, traceEvery: number) {
       metricIds: ["money", "netWorth"],
     },
   };
-}
-
-function runGrowth(
-  compiled: Compiled,
-  flags: {
-    window: number;
-    series: "money" | "netWorth";
-    "trace-every": number;
-    "max-duration": number;
-  },
-) {
-  const run = tracedRun(compiled, flags["trace-every"]);
-  return runGrowthAnalyzer({
-    run,
-    scenario: compiled.compiled,
-    series: flags.series,
-    windowSec: flags.window,
-    semantics: scenarioSemantics(compiled, flags["max-duration"]),
-    supply: {
-      schema: observationContract,
-      windowSec: flags.window,
-      sampleCadenceSec: Math.max(1, flags["trace-every"]) * compiled.compiled.run.stepSec,
-      coverage: "trace",
-      metricIds: [flags.series],
-    },
-  });
 }
 
 function etaTarget(flags: { "target-money"?: string; "target-worth"?: string }) {
