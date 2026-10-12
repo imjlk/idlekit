@@ -1,5 +1,80 @@
 # @idlekit/core
 
+## 0.3.0 — 2026-10-12
+
+### Minor changes
+
+- [71504bd](https://github.com/imjlk/idlekit/commit/71504bd4169e1db7212f99471da5295bf021c239) Register growth and ETA analyzers without a second numeric engine.
+  
+  - `idk analyze <id>` runs a registered analyzer and keeps `idk eta`, `idk growth`, and `idk prestige-cycle`
+  - a short observation returns insufficient-data instead of a silent long run
+  - plugin analyzers still require the existing allow, root, and sha256 checks — Thanks @imjlk!
+- [1c922e1](https://github.com/imjlk/idlekit/commit/1c922e1ee361f4a193d012e5b1a463e60a1aea1f) Compare registered model and policy parameters with local one-at-a-time experiments.
+  
+  - `idk experiment <spec>` is a new command and does not replace `idk tune`
+  - censored reach times stay null instead of the horizon
+  - Pareto does not treat an unknown objective as a better point
+  - candidates start from the referenced scenario, run to the horizon, and average every seed — Thanks @imjlk!
+- [1f9d87c](https://github.com/imjlk/idlekit/commit/1f9d87c1f66255b191403af63b6909a2727877f8) Report censored simulation draws separately from completed quantiles.
+  
+  - population p95 stays unavailable when the common horizon does not cover it
+  - experience no longer fills a missing first visible change with active time or zero
+  - logical draw seeds do not depend on worker count — Thanks @imjlk!
+- [3d98c35](https://github.com/imjlk/idlekit/commit/3d98c35c3897aec8004b8ff7c296d991439fa37b) Explain a resolved run plan before it starts.
+  
+  - `idk inspect` reports the engine, stage step, horizon, and capability knowledge without a tick
+  - a planner expansion is an upper bound, and a wide number-engine decimal is a warning
+  - plugin modules stay unloaded unless `--resolve-plugins` passes the existing trust checks — Thanks @imjlk!
+- [24ef572](https://github.com/imjlk/idlekit/commit/24ef572763f63395a9e1bae2c2dcaf7f89753c82) Add analysis artifact v1 without replacing ScenarioV1 or CLI metadata.
+  
+  - money, net worth, prestige points, and milestone goals share one predicate
+  - model capabilities are registered outside Model and do not score missing flow as zero
+  - contracts:check compares the generated artifact schema and does not rewrite it
+  - CLI output keeps contractVersion 1.4.0 and links the artifact beside _meta — Thanks @imjlk!
+
+### Patch changes
+
+- [bb36b82](https://github.com/imjlk/idlekit/commit/bb36b8236d9e07f0605e3d24028f993155347500) Correct ETA goal meaning without replacing the legacy seconds field.
+  
+  - large ratios are divided in the Engine before a finite seconds number
+  - exact is not implied by a constant-income hint when a boundary exists
+  - a missed horizon is censored on the new estimate and still numeric on the legacy field — Thanks @imjlk!
+- [3b087b0](https://github.com/imjlk/idlekit/commit/3b087b0f340b1fe21dd61395f2ab008a53ed4325) Reject nonfinite amount strings and contradictory numeric signs in analysis semantic validation. Preserve sparse array slots as JSON null, and treat omitted capabilities on registered model adapters as unsupported. — Thanks @imjlk!
+- [daeb02f](https://github.com/imjlk/idlekit/commit/daeb02fa4665b10543e2a1192966032e428a6179) Reject nonfinite amounts and targets in shared money, net worth, and prestige goals.
+  
+  - invalid inputs omit reached and method instead of claiming the goal was met
+  - absent net worth remains unsupported unless wallet fallback is requested
+  - existing custom met predicates continue to work — Thanks @imjlk!
+- [98ba164](https://github.com/imjlk/idlekit/commit/98ba16487b15c4d2f3d3e10a4707d00e1883297f) Separate growth shape from legacy log-slope buckets.
+  
+  - slow and fast exponentials share a shape and keep different speeds
+  - zero, negative, and short traces are not reported as a speed claim
+  - the existing growth report and net-worth fallback stay in place — Thanks @imjlk!
+- [21c00ea](https://github.com/imjlk/idlekit/commit/21c00ea688055f79055b4eb30baac011ec464017) Compare reset intervals with a measured recovery time and an empirical stability report.
+  
+  - committed reward stays separate from the uncommitted tail and from opening stock
+  - recovery is a threshold crossing or censored, not `min(interval, horizon)`
+  - stability uses windows and tolerances, and it does not prove a steady state — Thanks @imjlk!
+- [5bce344](https://github.com/imjlk/idlekit/commit/5bce3446819140362f604a540bb57ca493459fae) Run a reset cycle as a committed action instead of copying the requested cycle count.
+  
+  - each completed interval pays and applies one reset without an extra income tick
+  - a refused cost, condition, or cooldown is recorded and pays no reward
+  - reward gained by the reset does not include stock already held — Thanks @imjlk!
+- [a6452e2](https://github.com/imjlk/idlekit/commit/a6452e2cda4f0c9655e215ccf26672fa7ce3e6a9) Generate the ScenarioV1 structural schema from the TypeScript type.
+  
+  - `typia.json.schema` OpenAPI 3.1 is the checked artifact
+  - `contracts:check` compares bytes and does not rewrite tracked schemas
+  - `validateScenarioV1` stays the semantic runtime gate
+  - unknown keys stay allowed at runtime even though the schema text sets `additionalProperties` to false
+  - analysis DTOs can append to `contractRegistry` later; existing DTOs are not migrated here — Thanks @imjlk!
+- [38c9836](https://github.com/imjlk/idlekit/commit/38c98360e701bb087295b59825fe51f3ccd74537) Keep ETA validity and exactness aligned with engine comparison and wallet settlement.
+  
+  - reject positive ETA ratios lost to zero during engine division
+  - reject income in a different wallet or target unit
+  - expose optional Engine comparisonIsExact metadata and keep tolerant or unknown comparisons analytic-local
+  - preserve legacy seconds while limiting exact labels and reach brackets to declared strict comparators — Thanks @imjlk!
+- Updated dependencies: money@0.3.0
+
 ## 0.2.1 — 2026-10-11
 
 ### Patch changes
