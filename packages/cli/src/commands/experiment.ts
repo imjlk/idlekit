@@ -59,6 +59,8 @@ export default defineCommand({
       strategyRegistry: loaded.strategyRegistry,
       pluginDigest: loaded.pluginDigest,
       engineRequest: flags.engine,
+      // runExperiment runs the spec strategy when the scenario names none, so the base run hash names it too.
+      strategyOverride: valid.scenario.strategy ? undefined : spec.strategy?.id,
     });
     const meta = buildOutputMeta({
       command: "experiment",

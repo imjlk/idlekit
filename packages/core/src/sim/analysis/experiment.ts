@@ -8,7 +8,7 @@ import { canonicalJson, sha256Text } from "../../scenario/scenarioContract";
 import { createRunFactory, type ExecutionPlan } from "../runFactory";
 import { runScenario } from "../simulator";
 import type { StrategyRegistry } from "../strategy/registry";
-import type { CompiledScenario, SimState } from "../types";
+import type { CompiledScenario, SimRunOptions, SimState } from "../types";
 import {
   assignmentFitsParamSpace,
   elasticityFromChange,
@@ -37,13 +37,13 @@ export const experimentSeparateSpec = "experiment-spec-not-tunespec" as const;
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter Assignment uses a registered identifier path and the model or strategy schema. JSONPath, prototype, and eval paths are refused before a run.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #d298d7e Re-read the section: a prototype path, an out-of-range integer, a non-finite choice value, a schema-invalid rate, a stripped path, overlapping paths, a session dimension, a repeated seed, a non-finite limit, and a repeated constraint id throw before model create.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #a02d313 Re-read the section: a prototype path, an out-of-range integer, a non-finite choice value, a non-finite space bound, a schema-invalid rate, a stripped path, overlapping paths, a session dimension, a repeated seed, a non-finite limit, and a repeated constraint id throw before model create.
  */
 export const experimentRegisteredSetter = "registered-key-not-jsonpath" as const;
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-local-elasticity Constant income reaches T/p. Local elasticity is signed and is not a Sobol or global index.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-local-elasticity #253b8c6 Re-read the section: rate 2 reaches in 5 with elasticity -0.5, rate 0.5 reaches in 20 with elasticity -2, and maxPicks stays flat.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-local-elasticity #683a43d Re-read the section: rate 2 reaches in 5 with elasticity -0.5, rate 0.5 reaches in 20 with elasticity -2, maxPicks stays flat, and the conformance relation checks -p/p' for divisor rates.
  */
 export const experimentLocalOat = "one-at-a-time-local-not-sobol" as const;
 
@@ -55,7 +55,7 @@ export const experimentCandidateOrder = "sorted-candidates-unmutated-scenario" a
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-censored-horizon A goal missed inside the horizon stays censored. That time is not the horizon and is not differentiated.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-censored-horizon #0bb2a93 Re-read the section: horizon 9 with target 10 leaves the reach time null, not 9, the reach time is read on the way while the run continues to the horizon, and no scenario stop condition or step budget ends it early.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-censored-horizon #0d042e7 Re-read the section: horizon 9 with target 10 leaves the reach time null, not 9, the reach time is read on the way while the run continues to the horizon, and no scenario stop condition or step budget ends it early.
  */
 export const experimentCensoredHorizon = "censored-time-not-horizon" as const;
 
@@ -67,7 +67,7 @@ export const experimentParetoUnknown = "unknown-is-not-superior" as const;
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-task-descriptor Each task records its id, parameter JSON, logical seed, and engine and model versions. It does not store a function.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-task-descriptor #c36eb84 Re-read the section: the income candidate changes incomeRate and the policy candidate changes maxPicks on the same seed, both from the raw scenario params, and a string probe id is JSON text.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-task-descriptor #10a3f42 Re-read the section: the income candidate changes incomeRate and the policy candidate changes maxPicks on the same seed, both from the raw scenario params applied in dimension id order, and a string probe id is JSON text.
  */
 export const experimentTaskDescriptor = "task-id-params-seed-version" as const;
 
@@ -227,7 +227,7 @@ let validateExperimentArtifactValidator: ((input: unknown) => IValidation<Experi
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-task-descriptor The generated validator accepts this artifact.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-task-descriptor #c36eb84 Re-read the section: the wire object is experiment v1 and the method is fixed-sweep-and-one-at-a-time.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-task-descriptor #10a3f42 Re-read the section: the wire object is experiment v1 and the method is fixed-sweep-and-one-at-a-time.
  */
 export const validateExperimentArtifact = (input: unknown): IValidation<ExperimentArtifactV1> =>
   (validateExperimentArtifactValidator ??= typia.createValidate<ExperimentArtifactV1>())(input);
@@ -374,6 +374,12 @@ function requireSpec(input: ExperimentSpecV1): ExperimentSpecV1 {
     if (ids.has(dimension.id)) reject(`duplicate dimension ${dimension.id}`);
     ids.add(dimension.id);
     assertRegisteredPath(dimension.path, dimension.target);
+    // A JSON literal such as 1e400 parses to Infinity, and canonical JSON would hash it as null.
+    if (dimension.space.kind === "int" || dimension.space.kind === "number") {
+      if (!Number.isFinite(dimension.space.min) || !Number.isFinite(dimension.space.max)) reject(`space bounds for ${dimension.id} must be finite`);
+    } else if (dimension.space.kind === "choice" && dimension.space.values.some((entry) => typeof entry === "number" && !Number.isFinite(entry))) {
+      reject(`choice values for ${dimension.id} must be finite`);
+    }
     // Each candidate runs one continuous horizon. No session schedule is executed, so a session value would not reach the run.
     if (dimension.target === "session") reject(`session dimension ${dimension.id} is not executed: each candidate runs one continuous horizon`);
     for (const other of spec.dimensions.slice(0, index)) {
@@ -518,10 +524,11 @@ function prepareCandidate(
   for (const dimension of spec.dimensions) {
     if (!applied.has(dimension.id)) reject(`candidate ${candidate.id} omits ${dimension.id}`);
   }
+  // Assignments apply in dimension id order, the order behind the effective spec hash, so a factory sees one key order.
   const assign = (params: unknown, assigned: typeof modelAssigned, label: string): unknown =>
     assigned.length === 0
       ? params
-      : assigned.reduce<Record<string, unknown>>(
+      : [...assigned].sort((left, right) => byText(left.dimension.id, right.dimension.id)).reduce<Record<string, unknown>>(
           (acc, { dimension, value }) => setRegisteredParam(acc, dimension.path, value),
           { ...asParamRecord(params, label) },
         );
@@ -665,6 +672,19 @@ function objectiveRanks<N>(E: Engine<N>, readings: readonly (Reading<N> | undefi
   return readings.map((reading) => (reading !== undefined && ranks.has(reading) ? ranks.get(reading)! : null));
 }
 
+/**
+ * Run options every candidate inherits from the compiled scenario.
+ * A scenario stop condition or step budget would end a candidate before the spec horizon, and a report trace
+ * would keep every state of every candidate and seed while the experiment reads only the end state.
+ *
+ * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-censored-horizon Removes the scenario stop condition, step budget, and trace, so each candidate runs to the horizon without retaining states.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-censored-horizon #0d042e7 Re-read the section: until, maxSteps, and trace are removed and the rest of the run options stay.
+ */
+export function experimentRunBase(run: SimRunOptions): SimRunOptions {
+  const { until: _until, maxSteps: _maxSteps, trace: _trace, ...horizonRun } = run;
+  return horizonRun;
+}
+
 export function runExperiment<N>(request: ExperimentRunRequest<N>): ExperimentArtifactV1 {
   const scenarioHash = sha256Text(canonicalJson(request.scenario));
   if (scenarioHash !== request.spec.scenario.hash) reject("scenario hash does not match the experiment spec");
@@ -687,9 +707,7 @@ export function runExperiment<N>(request: ExperimentRunRequest<N>): ExperimentAr
     strategyRegistry: request.strategyRegistry,
     opts: { allowSuffixNotation: true },
   });
-  // Every candidate runs to the spec horizon. A scenario stop condition or step budget would cut the horizon metrics short.
-  const { until: _scenarioUntil, maxSteps: _scenarioMaxSteps, ...horizonRun } = compiled.run;
-  const shared: CompiledScenario<N, string, Record<string, unknown>> = { ...compiled, run: horizonRun };
+  const shared: CompiledScenario<N, string, Record<string, unknown>> = { ...compiled, run: experimentRunBase(compiled.run) };
   const bindingFor = createRunFactory({
     models: request.modelRegistry,
     strategies: request.strategyRegistry,

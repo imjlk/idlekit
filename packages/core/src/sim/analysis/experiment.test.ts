@@ -24,6 +24,7 @@ import {
   experimentSchemaId,
   experimentJsonSchema,
   experimentSeparateSpec,
+  experimentRunBase,
   experimentTaskDescriptor,
   runExperiment,
   setRegisteredParam,
@@ -32,7 +33,7 @@ import {
   type ExperimentArtifactV1,
   type ExperimentSpecV1,
 } from "./experiment";
-import { localElasticity } from "./sensitivity";
+import { assignmentFitsParamSpace, localElasticity } from "./sensitivity";
 
 const fixture = JSON.parse(
   readFileSync(resolve(import.meta.dir, "../../../../../fixtures/conformance/parameter-experiment.json"), "utf8"),
@@ -160,15 +161,15 @@ function runWith(scenario: ScenarioV1, spec: ExperimentSpecV1, creates: { count:
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-local-elasticity Rate 2 and rate 0.5 move reach time in opposite directions, and the policy probe stays flat.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-local-elasticity #253b8c6 Re-read the section, then ran this function: elasticity is -0.5 and -2, and maxPicks elasticity is 0.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-local-elasticity #683a43d Re-read the section, then ran this function: elasticity is -0.5 and -2, and maxPicks elasticity is 0.
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-task-descriptor The income candidate and the policy candidate record different parameter JSON on the same logical seed.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-task-descriptor #c36eb84 Re-read the section, then ran this function: incomeRate becomes 2 on one task and maxPicks becomes 2 on another.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-task-descriptor #10a3f42 Re-read the section, then ran this function: incomeRate becomes 2 on one task and maxPicks becomes 2 on another.
  * @evidence ./experiment.ts#experimentLocalOat Reads the local method contract.
  * @evidenceReview ./experiment.ts#experimentLocalOat #1c1bffa The declaration is one-at-a-time-local-not-sobol.
  * @evidence ./experiment.ts#experimentTaskDescriptor Reads the task descriptor contract.
  * @evidenceReview ./experiment.ts#experimentTaskDescriptor #03898ac The declaration is task-id-params-seed-version.
  * @evidence ./experiment.ts#runExperiment Runs the sweep and local sensitivity on a fixed spec.
- * @evidenceReview ./experiment.ts#runExperiment #f37ad50 The function checks the scenario hash against the spec, rejects a timeToMoney metric without a finite goal, compiles the scenario once as the candidate base, runs each planned candidate per seed through a fresh binding to the horizon while reading the reach time, averages every seed, and reports local sensitivity only for completed horizons.
+ * @evidenceReview ./experiment.ts#runExperiment #7c9a48a The function checks the scenario hash against the spec, rejects a timeToMoney metric without a finite goal, compiles the scenario once as the candidate base, runs each planned candidate per seed through a fresh binding to the horizon while reading the reach time, averages every seed, and reports local sensitivity only for completed horizons.
  * @evidence ./experiment.ts#experimentSchemaId Reads the experiment schema id.
  * @evidenceReview ./experiment.ts#experimentSchemaId #637335e The function returns the experiment.v1 schema URL constant.
  * @evidence ./experiment.ts#experimentAlgorithmVersion Reads the algorithm version.
@@ -182,6 +183,15 @@ export function checksLocalElasticityDirection(): void {
   expect(experimentEstimatorVersion()).toBe("one-at-a-time-local-v1");
   expect(experimentLocalOat).toBe("one-at-a-time-local-not-sobol");
   expect(experimentTaskDescriptor).toBe("task-id-params-seed-version");
+  // Opposite-sign values near the double limit: the difference overflows, the ratio -2 does not.
+  expect(localElasticity({ baselineP: 1, probeP: 2, baselineY: 1e308, probeY: -1e308 })).toEqual({
+    status: "observed",
+    elasticity: "-2",
+    absoluteChange: null,
+    direction: "lower",
+    globalSensitivity: false,
+    sobol: false,
+  });
   expect(localElasticity({ baselineP: 0, probeP: 1, baselineY: 10, probeY: 12 })).toEqual({
     status: "unavailable",
     elasticity: null,
@@ -297,7 +307,7 @@ export function keepsStrategyTuneSignature(): void {
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter Unsafe paths and invalid parameters throw before the model factory runs.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #d298d7e Re-read the section, then ran this function: a stripped typo path, overlapping model and strategy paths, a session dimension, a repeated seed, another model version, an Infinity choice value, an Infinity limit, and a repeated constraint id throw, and create count stays 0.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #a02d313 Re-read the section, then ran this function: a stripped typo path, overlapping model and strategy paths, a session dimension, a repeated seed, another model version, an Infinity choice value, an Infinity space bound, an Infinity limit, and a repeated constraint id throw, and create count stays 0.
  * @evidence ./experiment.ts#experimentRegisteredSetter Reads the setter contract.
  * @evidenceReview ./experiment.ts#experimentRegisteredSetter #080a763 The declaration is registered-key-not-jsonpath.
  * @evidence ./experiment.ts#assertRegisteredPath Rejects prototype, bracket, and traversal paths, and session paths other than pattern or days.
@@ -390,9 +400,13 @@ export function rejectsUnsafeParametersBeforeRun(): void {
       }),
     ],
     ["seeds must be unique", specFor(scenario, { seeds: [fixture.seed, fixture.seed] })],
+    [
+      "space bounds for incomeRate must be finite",
+      specFor(scenario, { dimensions: [{ ...incomeDimension, space: { kind: "number", min: 0.1, max: JSON.parse("1e400") as number } }] }),
+    ],
     ["does not match the scenario model", specFor(scenario, { model: { id: fixture.modelId, version: 2 } })],
     [
-      "baseline for inf is outside its parameter space",
+      "choice values for inf must be finite",
       specFor(scenario, {
         dimensions: [
           {
@@ -420,6 +434,7 @@ export function rejectsUnsafeParametersBeforeRun(): void {
       }),
     ],
   ];
+  expect(assignmentFitsParamSpace({ kind: "choice", values: [JSON.parse("1e400") as number] }, JSON.parse("1e400") as number)).toBe(false);
   for (const [message, spec] of rejected) {
     expect(() => runWith(scenario, spec, creates)).toThrow(message);
   }
@@ -483,16 +498,64 @@ export function keepsCandidateOrderAndScenario(): void {
   expect(swapped.effectiveSpecHash).toBe(inOrder.effectiveSpecHash);
   expect(swapped.elasticities.map((row) => row.dimensionId)).toEqual(["incomeRate", "incomeRate", "maxPicks"]);
   expect(rest(swapped)).toEqual(rest(inOrder));
+  // Assignments that add keys reach the factory in dimension id order, whatever order the candidate lists them in.
+  const keyOrders: string[] = [];
+  const keyed = defineModelFactory({
+    id: "key-order",
+    version: 1,
+    create(params: Record<string, unknown>) {
+      keyOrders.push(Object.keys(params).join(","));
+      return { id: "key-order", version: 1, income: (ctx: { unit: { code: string } }) => ({ unit: ctx.unit, amount: 1 }), actions: () => [] };
+    },
+  });
+  const keyScenario = incomeScenario({ model: { id: "key-order", version: 1, params: {} }, strategy: undefined });
+  const keyDimensions = [
+    { id: "a", target: "model" as const, path: "a", space: { kind: "int" as const, min: 0, max: 9 }, baseline: 1 },
+    { id: "b", target: "model" as const, path: "b", space: { kind: "int" as const, min: 0, max: 9 }, baseline: 2 },
+  ];
+  const keyRun = (assignments: { dimensionId: string; value: number }[]) =>
+    runExperiment({
+      spec: specFor(keyScenario, {
+        model: { id: "key-order", version: 1 },
+        strategy: undefined,
+        metricId: "endMoney",
+        goal: undefined,
+        dimensions: keyDimensions,
+        candidates: [{ id: "only", assignments }],
+        budget: { candidates: 1, seeds: 1 },
+        horizonSec: 1,
+      }),
+      scenario: keyScenario,
+      modelRegistry: createModelRegistry([keyed]),
+      strategyRegistry: createStrategyRegistry([]),
+      engine: createNumberEngine(),
+      engineId: "number",
+      engineVersion: "1",
+      effectiveRunHash: "key-order",
+    });
+  const ab = keyRun([{ dimensionId: "a", value: 1 }, { dimensionId: "b", value: 2 }]);
+  const ba = keyRun([{ dimensionId: "b", value: 2 }, { dimensionId: "a", value: 1 }]);
+  expect(ba.effectiveSpecHash).toBe(ab.effectiveSpecHash);
+  // One compile and one fresh run per experiment.
+  expect(keyOrders.filter((order) => order === "a,b")).toHaveLength(2);
+  expect(keyOrders).not.toContain("b,a");
 }
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-censored-horizon Horizon 9 does not become the reach time of an unmet target 10.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-censored-horizon #0bb2a93 Re-read the section, then ran this function: the censored value is null and elasticity is unavailable, and with an end money constraint rates 1 and 2 reach in 10 and 5 and end with 40 and 80.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-censored-horizon #0d042e7 Re-read the section, then ran this function: the censored value is null and elasticity is unavailable, and with an end money constraint rates 1 and 2 reach in 10 and 5 and end with 40 and 80.
  * @evidence ./experiment.ts#experimentCensoredHorizon Reads the censor contract.
  * @evidenceReview ./experiment.ts#experimentCensoredHorizon #81f017f The declaration is censored-time-not-horizon.
+ * @evidence ./experiment.ts#experimentRunBase Removes the inherited stop condition, step budget, and trace.
+ * @evidenceReview ./experiment.ts#experimentRunBase #7667367 The function drops until, maxSteps, and trace and keeps the other run options.
  */
 export function skipsCensoredHorizonForSensitivity(): void {
   expect(experimentCensoredHorizon).toBe("censored-time-not-horizon");
+  // The scenario stop condition, step budget, and report trace do not reach a candidate run.
+  expect(experimentRunBase({ stepSec: 1, durationSec: 5, until: () => true, maxSteps: 3, trace: { everySteps: 1, keepActionsLog: true } })).toEqual({
+    stepSec: 1,
+    durationSec: 5,
+  });
   const scenario = incomeScenario({ strategy: undefined });
   const artifact = runWith(
     scenario,
@@ -631,9 +694,9 @@ export function matchesHandPareto(): void {
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-task-descriptor Candidates start from the referenced scenario and the candidate metric is the mean over every seed.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-task-descriptor #c36eb84 Re-read the section, then ran this function: the GEM wallet starts at 100, maxPicks stays 3, the stripped note reaches create as kept, seeds 1 and 3 average to reach time 20 and end money 160, and probes 1 and "1" get distinct ids.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-task-descriptor #10a3f42 Re-read the section, then ran this function: the GEM wallet starts at 100, maxPicks stays 3, the stripped note reaches create as kept, seeds 1 and 3 average to reach time 20 and end money 160, and probes 1 and "1" get distinct ids.
  * @evidence ./experiment.ts#runExperiment Runs every candidate from the compiled scenario and averages the seeds.
- * @evidenceReview ./experiment.ts#runExperiment #f37ad50 The function compiles the request scenario once as the base, keeps its raw model and strategy params, and aggregates every seed row by its mean.
+ * @evidenceReview ./experiment.ts#runExperiment #7c9a48a The function compiles the request scenario once as the base, keeps its raw model and strategy params, and aggregates every seed row by its mean.
  */
 export function startsCandidatesFromScenario(): void {
   const creates = { count: 0 };
@@ -724,7 +787,7 @@ export function startsCandidatesFromScenario(): void {
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown An amount past the double range stays an observed engine value for constraints, Pareto, and sensitivity.
  * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown #90de272 Re-read the section, then ran this function: 1e400 and 1e401 are observed, both violate the cap, only the probe is non-dominated, 1e-10 to 1e400 keeps an engine elasticity near 2.44e409, and two seeds of benefit 1e308 average to 1e308.
  * @evidence ./experiment.ts#runExperiment Compares engine amounts for constraints, Pareto, and elasticity.
- * @evidenceReview ./experiment.ts#runExperiment #f37ad50 The function keeps money as engine amounts, checks constraints with the engine order, ranks each Pareto objective by that order, and divides money changes in the engine.
+ * @evidenceReview ./experiment.ts#runExperiment #7c9a48a The function keeps money as engine amounts, checks constraints with the engine order, ranks each Pareto objective by that order, and divides money changes in the engine.
  */
 export function keepsLargeEngineAmounts(): void {
   const engine = createBreakInfinityEngine();

@@ -71,13 +71,15 @@ export function localElasticity(args: Readonly<{
   if (baselineY === null || probeY === null || !Number.isFinite(baselineY) || !Number.isFinite(probeY)) {
     return UNAVAILABLE;
   }
+  // Two finite values of opposite sign near the double limit have a difference outside it. The ratio stays finite.
   const delta = probeY - baselineY;
+  const finiteDelta = Number.isFinite(delta);
   return elasticityFromChange({
     baselineP,
     probeP,
-    absoluteChange: String(delta),
-    direction: delta > 0 ? "higher" : delta < 0 ? "lower" : "flat",
-    relativeChange: baselineY > 0 ? delta / baselineY : null,
+    absoluteChange: finiteDelta ? String(delta) : null,
+    direction: probeY > baselineY ? "higher" : probeY < baselineY ? "lower" : "flat",
+    relativeChange: baselineY > 0 ? (finiteDelta ? delta / baselineY : probeY / baselineY - 1) : null,
   });
 }
 
@@ -89,7 +91,7 @@ export function localElasticity(args: Readonly<{
 export function elasticityFromChange(args: Readonly<{
   baselineP: number;
   probeP: number;
-  absoluteChange: string;
+  absoluteChange: string | null;
   direction: Exclude<ElasticityDirection, "unavailable">;
   relativeChange: number | null;
 }>): LocalElasticity {

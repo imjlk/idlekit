@@ -12,6 +12,7 @@ import type { Strategy } from "../sim/strategy/types";
 import { compareAmounts } from "./compareAmounts";
 import {
   checkBulk,
+  checkConstantIncomeExperiment,
   checkCooldownResumeFromJson,
   checkDurationBoundary,
   checkJsonRoundTrip,
@@ -2102,5 +2103,66 @@ describe("engine differential", () => {
   it(
     "matches a safe constant run and refuses number Infinity collapse",
     matchesASafeConstantRunAndRefusesNumberInfinityCollapse,
+  );
+});
+
+const experimentFixture = JSON.parse(
+  readFileSync(join(import.meta.dir, "../../../../fixtures/conformance/parameter-experiment.json"), "utf8"),
+) as { seed: number; goalTarget: number; incomeBaseline: number; incomeProbes: number[] };
+
+/** Rates that divide every generated target, so each reach time sits on the step-1 grid. */
+const experimentRates = [1, 2, 4, 5] as const;
+
+/**
+ * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-local-elasticity Runs the constant-income experiment relation over the seed corpus: reach T/p and T/p', and elasticity -p/p'.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-local-elasticity #683a43d Re-read the section, then ran this function on the short and extended corpus: the fixture case and every generated divisor case hold, and an undeclared case does not apply.
+ * @evidence ./conformance.ts#checkConstantIncomeExperiment The seed corpus asks the harness to run each constant-income experiment case.
+ * @evidenceReview ./conformance.ts#checkConstantIncomeExperiment #b996593 Re-read checkConstantIncomeExperiment: it runs runExperiment on rate p with one probe p' and compares both reach times, the elasticity -p/p', and the direction.
+ */
+export function replaysConstantIncomeExperimentAcrossTheSeedCorpus(): void {
+  const testSeed = 0xe14;
+  expectProperty({
+    predicateId: "declared-constant-income-experiment",
+    testSeed,
+    cases: conformanceCaseCount(),
+    generate: (index, rng) => {
+      if (index === 0) {
+        // The fixture case: target 10, rate 1, probe 2.
+        return {
+          target: experimentFixture.goalTarget,
+          baselineRate: experimentFixture.incomeBaseline,
+          probeRate: experimentFixture.incomeProbes[0]!,
+          seed: experimentFixture.seed,
+        };
+      }
+      const baselineRate = experimentRates[rng.int(0, experimentRates.length - 1)]!;
+      const others = experimentRates.filter((rate) => rate !== baselineRate);
+      return {
+        target: 20 * rng.int(1, 5),
+        baselineRate,
+        probeRate: others[rng.int(0, others.length - 1)]!,
+        seed: gameSeedForCase(testSeed, index),
+      };
+    },
+    shrink: (value) => (value.target > 20 ? [{ ...value, target: value.target - 20 }] : []),
+    predicate: (value) => {
+      expectApplicable(checkConstantIncomeExperiment(true, value));
+      expect(checkConstantIncomeExperiment(false, value).applicable).toBe(false);
+      return true;
+    },
+    describeCase: (value) => ({
+      gameSeed: value.seed,
+      engineId: "number",
+      modelId: "conformance-constant-income",
+      strategyId: null,
+      tickSchedule: { stepSec: 1, durationSec: value.target / Math.min(value.baselineRate, value.probeRate) + 1 },
+    }),
+  });
+}
+
+describe("PR-14 experiment relation", () => {
+  it(
+    "replays constant-income reach and elasticity across the seed corpus",
+    replaysConstantIncomeExperimentAcrossTheSeedCorpus,
   );
 });

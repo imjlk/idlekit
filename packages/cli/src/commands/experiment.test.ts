@@ -20,6 +20,8 @@ describe("experiment command", () => {
   let specPath = "";
   let malformedPath = "";
   let pluginPath = "";
+  let bareSpecPath = "";
+  let chosenSpecPath = "";
   let cliVersion = "";
 
   beforeAll(async () => {
@@ -55,6 +57,18 @@ describe("experiment command", () => {
         session: { pattern: "always-on", days: 1 },
       }),
     );
+    // A scenario without a strategy, run once as is and once with a strategy chosen by the spec.
+    const { strategy: _strategy, ...bare } = scenario;
+    const barePath = resolve(dir, "bare.json");
+    await writeText(barePath, JSON.stringify(bare, null, 2));
+    const bareSpec = {
+      ...JSON.parse(await readText(specPath)),
+      scenario: { ref: barePath, hash: createHash("sha256").update(canonical(bare)).digest("hex") },
+    };
+    bareSpecPath = resolve(dir, "bare-spec.json");
+    await writeText(bareSpecPath, JSON.stringify(bareSpec));
+    chosenSpecPath = resolve(dir, "chosen-spec.json");
+    await writeText(chosenSpecPath, JSON.stringify({ ...bareSpec, strategy: { id: "greedy" } }));
     // A plugin that adds an unused strategy still changes the loaded code, so it must reach provenance.
     pluginPath = resolve(dir, "noop-plugin.mjs");
     await writeText(pluginPath, `export const strategies = [{ id: "plugin.noop", create: () => ({ id: "plugin.noop", decide: () => [] }) }];\n`);
@@ -87,6 +101,14 @@ describe("experiment command", () => {
     expect(Object.keys(plain._meta.pluginDigest)).toEqual([]);
     expect(Object.values(plugged._meta.pluginDigest)).toHaveLength(1);
     expect(plugged.effectiveRunHash).not.toBe(plain.effectiveRunHash);
+  });
+
+  it("hashes the strategy the spec chooses for a scenario without one", () => {
+    const bareRun = runCliJson(["experiment", bareSpecPath]);
+    const chosenRun = runCliJson(["experiment", chosenSpecPath]);
+    expect(bareRun.tasks[0].strategyId).toBeNull();
+    expect(chosenRun.tasks[0].strategyId).toBe("greedy");
+    expect(chosenRun.effectiveRunHash).not.toBe(bareRun.effectiveRunHash);
   });
 
   it("rejects a malformed spec before resolving its scenario", () => {
