@@ -94,4 +94,45 @@ describe("idk analyze", () => {
     expect(note.results[0]?.value).toBe("note");
     await removePath(dir);
   }, 60000);
+
+  it("runs a registered execution analyzer inside the budget flags and records the plugin digest", async () => {
+    const dir = await createTempDir("idlekit-analyze-exec");
+    const scenario = await shortScenario(dir);
+    const plugin = resolve(dir, "exec.ts");
+    await writeText(
+      plugin,
+      `export const analyzers = [
+        {
+          id: "plugin.exec",
+          version: "1",
+          kind: "execution",
+          validateParams: () => ({ ok: true, params: {} }),
+          requires: { capabilities: [], metricIds: [], observationSchema: "idlekit.run-observation" },
+          observation: { windowSec: null, sampleCadenceSec: null, coverage: "summary", metricIds: [], observationSchema: "idlekit.run-observation" },
+          outputContract: "test.analyzer",
+          algorithmVersion: "plugin-exec-v1",
+          cost: { freshRuns: 1, samples: 1 },
+          dependencies: [],
+          execute: (_params, ctx) => {
+            const run = ctx.requestRun("plugin.exec").run();
+            return run ? { status: "ok", value: { endT: run.end.t } } : { status: "insufficient-data", value: null, rerun: true };
+          },
+        },
+      ];
+      `,
+    );
+    const base = ["analyze", "plugin.exec", scenario, "--plugin", plugin, "--allow-plugin", "true", "--plugin-root", dir];
+    const json = runCliJson<any>([...base, "--budget-duration", "20", "--format", "json"]);
+    expect(json.status).toBe("ok");
+    expect(json.value.endT).toBe(8);
+    expect(json.provenance.freshRuns).toBe(1);
+    expect(json.provenance.semantics.horizonSec).toBe(8);
+    expect(Object.keys(json._meta.pluginDigest)).toHaveLength(1);
+    expect(Object.keys(json._meta.pluginDigest)[0]).toEndWith("exec.ts");
+    expect(typeof json._meta.scenarioHash).toBe("string");
+    const refused = runCliJson<any>([...base, "--budget-runs", "0", "--format", "json"]);
+    expect(refused.status).toBe("insufficient-data");
+    expect(refused.provenance.rerun.reason).toBe("budget");
+    await removePath(dir);
+  }, 60000);
 });

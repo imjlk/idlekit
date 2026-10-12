@@ -6,11 +6,11 @@
 
 `growth`와 `eta`는 adapter다. `growth`는 `analyzeGrowth`를 호출하고 legacy 속도 버킷 보고서를 유지한다. adapter 버전은 `growth-report-v1`이다. `fitGrowth`를 호출하지 않는다. `eta`는 `etaSimulate` 또는 `etaAnalytic`을 호출한다. 알고리즘 버전은 `eta-estimate-v1`이다. Jev를 포함한 judge는 analyzer가 아니다.
 
-postprocess analyzer는 이미 있는 run을 읽는다. coverage, window, cadence, metric id가 부족하면 결과는 `insufficient-data`와 재실행 계획이다. 시뮬레이션을 시작하지 않는다. 실행형 analyzer는 `RunFactory`와 명시적 budget을 받는다. `idk analyze eta`는 실행 요청이다. horizon이 `budget-duration`을 넘거나 `budget-runs`가 `0`이면 body를 호출하지 않는다.
+postprocess analyzer는 이미 있는 run을 읽는다. coverage, window, cadence, metric id가 부족하면 결과는 `insufficient-data`와 재실행 계획이다. 시뮬레이션을 시작하지 않는다. 실행형 analyzer는 `RunFactory`와 명시적 budget을 받는다. `idk analyze eta`는 실행 요청이다. horizon이 `budget-duration`을 넘거나 `budget-runs`가 `0`이면 body를 호출하지 않는다. fresh run과 sample은 batch 전체에 걸쳐 예약하며, capability와 metric 조건으로 실행할 수 있는 analyzer만 예약한다. `missing-scenario` 같은 body 자체의 재실행 이유는 유지한다.
 
-session, strategy, horizon, step, seed, 관측 요구가 같을 때만 fresh run 하나를 공유한다. horizon이 다르면 run을 나눈다. 중복 id, 의존 순환, 없는 의존, 잘못된 params는 body 전에 실패한다. 결과는 id, 그다음 version으로 정렬한다.
+session, strategy, horizon, step, seed, 관측 요구가 같을 때만 fresh run 하나를 공유한다. horizon이 다르면 run을 나눈다. grant의 `run()`은 호출자 `RunFactory`로 그 run을 한 번 열고, 그룹의 모든 구성원이 같은 `RunResult`를 받는다. trace cadence는 내림해서 요구보다 거칠어지지 않는다. step 하나보다 촘촘한 요구는 `insufficient-data`다. 요청하지 않은 의존은 그 의존을 끌어온 analyzer의 semantics로 실행한다. 중복 id, 의존 순환, 없는 의존, 불완전한 정의, 잘못된 params는 body 전에 실패한다. 결과는 id, 그다음 version으로 정렬한다.
 
-`idk analyze <id>`는 새 명령이다. analyzer 버전은 `--analyzer-version`으로 고르며 기본값은 `1`이다. `--version`은 CLI 버전으로 남는다. `idk eta`, `idk growth`, `idk prestige-cycle`은 유지한다. custom analyzer는 호출자나 plugin이 등록한다. plugin 모듈은 여전히 `--allow-plugin`과 기존 root, sha256 검사가 필요하다. analyzer 하나 거절이 builtin을 지우지 않는다. 이 레지스트리의 core는 CLI, Jev, 파일시스템, 네트워크를 import하지 않는다.
+`idk analyze <id>`는 새 명령이다. analyzer 버전은 `--analyzer-version`으로 고르며 기본값은 `1`이다. `--version`은 CLI 버전으로 남는다. 등록된 실행형 analyzer는 컴파일한 scenario와 `--budget-*` 플래그로 실행한다. JSON `_meta`는 plugin digest를 기록하고, 파일을 다시 읽지 않고 컴파일한 scenario를 hash한다. `idk eta`, `idk growth`, `idk prestige-cycle`은 유지한다. custom analyzer는 호출자나 plugin이 등록한다. plugin 모듈은 여전히 `--allow-plugin`과 기존 root, sha256 검사가 필요하다. analyzer 하나 거절이 builtin을 지우지 않는다. 이 레지스트리의 core는 CLI, Jev, 파일시스템, 네트워크를 import하지 않는다.
 
 Node.js와 browser 런타임은 v1 호환 계약에 포함되지 않는다.
 
