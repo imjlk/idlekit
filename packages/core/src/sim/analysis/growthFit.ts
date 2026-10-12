@@ -294,10 +294,16 @@ function windowKeep<T extends { readonly t: number }>(
   }
   const count = Math.max(1, Math.floor(budget / MIN_SAMPLES));
   const each = Math.max(1, Math.floor(budget / count));
-  const chosen = evenKeep(
-    windows.map((_, index) => index),
-    count,
-  );
+  // Spend the budget on windows that can be fitted: enough samples and span. Only when none can is any window used.
+  const fittable = windows
+    .map((window, index) => ({ window, index }))
+    .filter(
+      ({ window }) =>
+        window.length >= MIN_SAMPLES && window[window.length - 1]!.t - window[0]!.t >= MIN_SPAN_SEC,
+    )
+    .map(({ index }) => index);
+  const pool = fittable.length > 0 ? fittable : windows.map((_, index) => index);
+  const chosen = evenKeep(pool, count);
   return {
     kept: chosen.flatMap((index) => evenKeep(windows[index]!, each)),
     windows: windows.length,
@@ -471,15 +477,18 @@ function saturating(ts: readonly number[], values: readonly number[]): number | 
     const gap = ts[index]! - ts[index - 1]!;
     const step = values[index]! - values[index - 1]!;
     if (!(gap > 0) || step < 0 || Number.isNaN(step)) return null;
-    if (step === 0) {
+    // A step within a few ULPs of the values is rounding at the plateau, not growth.
+    const rounding = 4 * Number.EPSILON * Math.max(Math.abs(values[index]!), Math.abs(values[index - 1]!));
+    if (step <= rounding) {
       flat = true;
       continue;
     }
-    // After the plateau, increments are rounding at the series' precision. They are skipped, not fitted.
-    if (flat) continue;
+    // Real growth after the plateau means the series did not saturate there.
+    if (flat) return null;
     // previous + gap / 2, not (previous + next) / 2: two finite times near the number limit can sum to Infinity.
     mids.push(ts[index - 1]! + gap / 2);
-    logRates.push(Math.log(step / gap));
+    // log(step) - log(gap): the quotient of finite operands can underflow even when its log is representable.
+    logRates.push(Math.log(step) - Math.log(gap));
   }
   if (logRates.length < 4) return null;
   const fit = fitLinear(mids, logRates);

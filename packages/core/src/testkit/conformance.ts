@@ -5,6 +5,7 @@
  * lives here. Do not export this module from a package barrel.
  */
 import { createNumberEngine } from "../engine/breakInfinity";
+import type { GrowthFitArtifactV1 } from "../sim/analysis/growthFit";
 import type { MilestoneReport } from "../sim/analysis/milestones";
 import { stepOnce } from "../sim/step";
 import type { Action, CompiledScenario, Model, SimState } from "../sim/types";
@@ -107,6 +108,19 @@ export function checkMilestoneRetention(declared: boolean, full: MilestoneReport
     prestige: report.firstPrestigeSec,
   });
   return checkSnapshots(firsts(full), firsts(capped), "same");
+}
+
+/**
+ * A declared growth fixture keeps its window shapes when its amounts are rescaled or its samples are thinned within
+ * the budget the fit needs.
+ * @evidence docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness Checks the declared growth scale and sampling relations on executed fits; undeclared fixtures do not apply.
+ * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #bbb39a2 Read the declared relation clause and ran the short and extended corpus: rescaled and thinned fits keep each window's shape and status.
+ */
+export function checkGrowthShapes(declared: boolean, base: GrowthFitArtifactV1, other: GrowthFitArtifactV1): RelationCheck {
+  if (!declared) return { ok: true, applicable: false, summary: "growth shape equivalence is not declared" };
+  const shapes = (artifact: GrowthFitArtifactV1) =>
+    JSON.stringify(artifact.windows.map((window) => ({ shape: window.shape, status: window.status })));
+  return checkSnapshots(shapes(base), shapes(other), "same");
 }
 
 export {

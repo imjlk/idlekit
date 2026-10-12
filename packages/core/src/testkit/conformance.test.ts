@@ -4,6 +4,7 @@ import { join } from "path";
 import { createBreakInfinityEngine, createNumberEngine } from "../engine/breakInfinity";
 import type { Engine } from "../engine/types";
 import { etaAnalytic, etaSimulate } from "../sim/analysis/eta";
+import { fitGrowth } from "../sim/analysis/growthFit";
 import { analyzeMilestones } from "../sim/analysis/milestones";
 import { runScenario } from "../sim/simulator";
 import { createScriptedStrategy } from "../sim/strategy/scripted";
@@ -14,6 +15,7 @@ import {
   checkBulk,
   checkCooldownResumeFromJson,
   checkDurationBoundary,
+  checkGrowthShapes,
   checkJsonRoundTrip,
   checkMilestoneRetention,
   checkNonNegative,
@@ -2104,3 +2106,60 @@ describe("engine differential", () => {
     matchesASafeConstantRunAndRefusesNumberInfinityCollapse,
   );
 });
+
+/**
+ * @evidence docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness Executes the declared growth scale and sampling relations over the short and extended seed corpus.
+ * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #bbb39a2 Read the declared relation and ran both corpora. Exponential, affine, and saturating fixtures keep their window shapes when rescaled by 10^k for k in [-8, 100] and when thinned to at least 16 samples; an undeclared relation stays unchecked.
+ * @evidence ./conformance.ts#checkGrowthShapes Compares window shapes and statuses of two executed fits and refuses an undeclared relation.
+ * @evidenceReview ./conformance.ts#checkGrowthShapes #36a95f6 The function returns inapplicable when undeclared and otherwise compares each window's shape and status as one snapshot.
+ */
+export function keepsGrowthShapesAcrossScaleAndSampling(): void {
+  const testSeed = 0x9a0f;
+  const engine = createNumberEngine();
+  const fit = (amounts: readonly number[], budget: number) =>
+    fitGrowth({
+      E: engine,
+      samples: amounts.map((amount, t) => ({ t, amount })),
+      seriesRequested: "money",
+      valueSource: "money",
+      sampling: { samplingBudget: budget, method: "growth-fit-v1", methodVersion: 1, windowSec: 80 },
+    });
+  const undeclared = fit([1, 2, 3], 81);
+  expect(checkGrowthShapes(false, undeclared, undeclared).applicable).toBe(false);
+  const kinds = ["exponential", "affine", "saturating"] as const;
+  expectProperty({
+    predicateId: "declared-growth-shape-scale-and-sampling",
+    testSeed,
+    cases: conformanceCaseCount(),
+    generate: (index, rng) => ({
+      kind: kinds[index % kinds.length]!,
+      rate: rng.int(2, 20) / 100,
+      // The number engine reads amounts within 1e-12 of zero as zero, so scales stay above that floor.
+      scaleLog10: rng.int(-8, 100),
+      budget: rng.int(16, 40),
+    }),
+    shrink: () => [],
+    predicate: (value) => {
+      const curve = (t: number) =>
+        value.kind === "exponential"
+          ? Math.exp(value.rate * t)
+          : value.kind === "affine"
+            ? 10 + value.rate * 100 * t
+            : 100 * (1 - Math.exp(-value.rate * (t + 1)));
+      const amounts = Array.from({ length: 81 }, (_, t) => curve(t));
+      const base = fit(amounts, 81);
+      expectApplicable(checkGrowthShapes(true, base, fit(amounts.map((amount) => amount * 10 ** value.scaleLog10), 81)));
+      expectApplicable(checkGrowthShapes(true, base, fit(amounts, value.budget)));
+      return true;
+    },
+    describeCase: (value) => ({
+      gameSeed: gameSeedForCase(testSeed, 0),
+      engineId: "number",
+      modelId: `growth-${value.kind}`,
+      strategyId: "none",
+      tickSchedule: { stepSec: 1, durationSec: 80 },
+    }),
+  });
+}
+
+it("keeps growth shapes across scale and sampling", keepsGrowthShapesAcrossScaleAndSampling);
