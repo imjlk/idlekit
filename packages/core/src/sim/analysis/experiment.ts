@@ -37,7 +37,7 @@ export const experimentSeparateSpec = "experiment-spec-not-tunespec" as const;
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter Assignment uses a registered identifier path and the model or strategy schema. JSONPath, prototype, and eval paths are refused before a run.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #365ac87 Re-read the section: a prototype path, an out-of-range integer, a non-finite choice value, a non-finite space bound, a schema-invalid rate, a stripped path, overlapping paths, a session dimension, a repeated seed, a non-finite limit, and a repeated constraint id throw before model create.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #bd73880 Re-read the section: a prototype path, an out-of-range integer, a non-finite choice value, a non-finite space bound, a schema-invalid rate, a stripped path, overlapping paths, a session dimension, a repeated seed, a non-finite limit, and a repeated constraint id throw before model create.
  */
 export const experimentRegisteredSetter = "registered-key-not-jsonpath" as const;
 
@@ -61,7 +61,7 @@ export const experimentCensoredHorizon = "censored-time-not-horizon" as const;
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown Pareto keeps per-metric tradeoffs. An unknown objective is uncompared, not a win.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown #0c1079a Re-read the section: A, B, and C are non-dominated, D is dominated, E is uncompared, money is compared pairwise in the effective engine, and the elasticity stays in that engine until it is text.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown #02ce1ea Re-read the section: A, B, and C are non-dominated, D is dominated, E is uncompared, money is compared pairwise in the effective engine, and the elasticity stays in that engine until it is text.
  */
 export const experimentParetoUnknown = "unknown-is-not-superior" as const;
 
@@ -294,7 +294,8 @@ type Reading<N> = MetricReading &
   }>;
 
 const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
-const BANNED_SEGMENT = new Set(["__proto__", "prototype", "constructor", "eval"]);
+// Canonical JSON drops `__type`, so a parameter with that name would vanish from task descriptors and hashes.
+const BANNED_SEGMENT = new Set(["__proto__", "prototype", "constructor", "eval", "__type"]);
 
 function reject(message: string): never {
   throw new ExperimentRejected(`Experiment ${message}`);
@@ -374,6 +375,8 @@ function requireSpec(input: ExperimentSpecV1): ExperimentSpecV1 {
   if (!Number.isInteger(spec.budget.seeds) || spec.budget.seeds < 1) reject("seed budget must be a positive integer");
   if (spec.seeds.length === 0 || spec.seeds.some((seed) => !Number.isFinite(seed))) reject("seeds must be finite");
   if (new Set(spec.seeds).size !== spec.seeds.length) reject("seeds must be unique logical seeds");
+  // Task ids, logical seeds, and canonical JSON write -0 as 0, while ctx.seed would still carry -0.
+  if (spec.seeds.some((seed) => Object.is(seed, -0))) reject("seeds must not be -0");
   if (spec.seeds.length > spec.budget.seeds) reject("seed budget exceeded");
   if (!Number.isFinite(spec.session.days) || spec.session.days <= 0) reject("session days must be positive");
   const ids = new Set<string>();
@@ -748,7 +751,7 @@ function prepareExperiment(request: ExperimentCheckRequest) {
  * A caller that compiles or opens a run first calls this, so a rejected spec never reaches a factory.
  *
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter Throws the same rejections as runExperiment before any model create.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #365ac87 Re-read the section: the hash, spec, path, and schema checks run and no factory create is called.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #bd73880 Re-read the section: the hash, spec, path, and schema checks run and no factory create is called.
  */
 export function checkExperimentSpec(request: ExperimentCheckRequest): void {
   prepareExperiment(request);

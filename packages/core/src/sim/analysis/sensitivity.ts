@@ -175,16 +175,26 @@ export function paretoFrontBy<T>(
   return { sense: "per-metric", nonDominated, uncompared };
 }
 
-/** Fully observed points only. A null objective cannot dominate and is not dominated into a win. */
+/**
+ * Fully observed points only. A null objective cannot dominate and is not dominated into a win.
+ * Objectives are matched by id, so two points may list them in different orders. Points must share one id set.
+ */
 export function paretoFront(points: readonly ParetoPoint[]): ParetoFront {
+  const ids = [...(points[0]?.objectives ?? [])].map((item) => item.id).sort();
   return paretoFrontBy(
-    points.map((point) => ({
-      id: point.id,
-      objectives: point.objectives.map((item) => ({
-        sense: item.sense,
-        value: item.value === null || !Number.isFinite(item.value) ? null : item.value,
-      })),
-    })),
+    points.map((point) => {
+      const byId = new Map(point.objectives.map((item) => [item.id, item]));
+      if (byId.size !== point.objectives.length || byId.size !== ids.length || ids.some((id) => !byId.has(id))) {
+        throw new Error(`Pareto point ${point.id} does not list the same objective ids as the other points`);
+      }
+      return {
+        id: point.id,
+        objectives: ids.map((id) => {
+          const item = byId.get(id)!;
+          return { sense: item.sense, value: item.value === null || !Number.isFinite(item.value) ? null : item.value };
+        }),
+      };
+    }),
     (left: number, right: number) => (left < right ? -1 : left > right ? 1 : 0),
   );
 }

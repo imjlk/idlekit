@@ -35,7 +35,7 @@ import {
   type ExperimentArtifactV1,
   type ExperimentSpecV1,
 } from "./experiment";
-import { assignmentFitsParamSpace, localElasticity } from "./sensitivity";
+import { assignmentFitsParamSpace, localElasticity, paretoFront } from "./sensitivity";
 
 const fixture = JSON.parse(
   readFileSync(resolve(import.meta.dir, "../../../../../fixtures/conformance/parameter-experiment.json"), "utf8"),
@@ -202,6 +202,19 @@ export function checksLocalElasticityDirection(): void {
     elasticity: null,
     absoluteChange: "1",
   });
+  // Pareto objectives are matched by id, so a point that lists them in another order is still dominated.
+  expect(
+    paretoFront([
+      { id: "A", objectives: [{ id: "cost", sense: "lower", value: 1 }, { id: "benefit", sense: "higher", value: 5 }] },
+      { id: "B", objectives: [{ id: "benefit", sense: "higher", value: 4 }, { id: "cost", sense: "lower", value: 2 }] },
+    ]),
+  ).toEqual({ sense: "per-metric", nonDominated: ["A"], uncompared: [] });
+  expect(() =>
+    paretoFront([
+      { id: "A", objectives: [{ id: "cost", sense: "lower", value: 1 }] },
+      { id: "B", objectives: [{ id: "benefit", sense: "higher", value: 4 }] },
+    ]),
+  ).toThrow("same objective ids");
   // Opposite-sign parameters near the double limit: the parameter change overflows, the ratio -2 does not, so the elasticity is 1.
   expect(localElasticity({ baselineP: 1e308, probeP: -1e308, baselineY: 1, probeY: -1 })).toMatchObject({ status: "observed", elasticity: "1" });
   // Opposite-sign values near the double limit: the difference overflows, the ratio -2 does not.
@@ -328,7 +341,7 @@ export function keepsStrategyTuneSignature(): void {
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter Unsafe paths and invalid parameters throw before the model factory runs.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #365ac87 Re-read the section, then ran this function: a stripped typo path, overlapping model and strategy paths, a session dimension, a repeated seed, another model version, an Infinity choice value, an Infinity space bound, an Infinity limit, an Infinity goal, a schema-less typo path, -0, a malformed untyped spec, and a repeated constraint id throw, and create count stays 0.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #bd73880 Re-read the section, then ran this function: a stripped typo path, overlapping model and strategy paths, a session dimension, a repeated seed, another model version, an Infinity choice value, an Infinity space bound, an Infinity limit, an Infinity goal, a schema-less typo path, -0, a -0 seed, a __type path, a malformed untyped spec, and a repeated constraint id throw, and create count stays 0.
  * @evidence ./experiment.ts#experimentRegisteredSetter Reads the setter contract.
  * @evidenceReview ./experiment.ts#experimentRegisteredSetter #080a763 The declaration is registered-key-not-jsonpath.
  * @evidence ./experiment.ts#assertRegisteredPath Rejects prototype, bracket, and traversal paths, and session paths other than pattern or days.
@@ -341,7 +354,7 @@ export function keepsStrategyTuneSignature(): void {
 export function rejectsUnsafeParametersBeforeRun(): void {
   const safePath = "income.rate";
   expect(assertRegisteredPath(safePath, "model")).toEqual(["income", "rate"]);
-  for (const path of ["__proto__.x", "a..b", "a[0]", "a/b", " a"]) {
+  for (const path of ["__proto__.x", "a..b", "a[0]", "a/b", " a", "__type", "a.__type"]) {
     expect(() => assertRegisteredPath(path, "model")).toThrow();
   }
   const sessionPath = "speed";
@@ -435,6 +448,7 @@ export function rejectsUnsafeParametersBeforeRun(): void {
       }),
     ],
     ["seeds must be unique", specFor(scenario, { seeds: [fixture.seed, fixture.seed] })],
+    ["seeds must not be -0", specFor(scenario, { seeds: [-0] })],
     [
       "space bounds for incomeRate must be finite",
       specFor(scenario, { dimensions: [{ ...incomeDimension, space: { kind: "number", min: 0.1, max: JSON.parse("1e400") as number } }] }),
@@ -702,7 +716,7 @@ export function skipsCensoredHorizonForSensitivity(): void {
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown The hand tradeoff keeps A, B, and C, drops D, and leaves E uncompared.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown #0c1079a Re-read the section, then ran this function: nonDominated is A, B, C and E is uncompared, and end money 0, 0.75e-12, and 1.5e-12 give the front B and C.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown #02ce1ea Re-read the section, then ran this function: nonDominated is A, B, C and E is uncompared, and end money 0, 0.75e-12, and 1.5e-12 give the front B and C.
  * @evidence ./experiment.ts#experimentParetoUnknown Reads the Pareto contract.
  * @evidenceReview ./experiment.ts#experimentParetoUnknown #4c62a0c The declaration is unknown-is-not-superior.
  */
@@ -906,7 +920,7 @@ export function startsCandidatesFromScenario(): void {
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown An amount past the double range stays an observed engine value for constraints, Pareto, and sensitivity.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown #0c1079a Re-read the section, then ran this function: 1e400 and 1e401 are observed, both violate the cap, only the probe is non-dominated, 1e-10 to 1e400 keeps an engine elasticity near 2.44e409, and two seeds of benefit 1e308 or of the smallest subnormal, and a subnormal wallet, average to that value, and end money 1e308 to -1e308 keeps elasticity 1, and three seeds of the largest double average to it.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown #02ce1ea Re-read the section, then ran this function: 1e400 and 1e401 are observed, both violate the cap, only the probe is non-dominated, 1e-10 to 1e400 keeps an engine elasticity near 2.44e409, and two seeds of benefit 1e308 or of the smallest subnormal, and a subnormal wallet, average to that value, and end money 1e308 to -1e308 keeps elasticity 1, and three seeds of the largest double average to it.
  * @evidence ./experiment.ts#runExperiment Compares engine amounts for constraints, Pareto, and elasticity.
  * @evidenceReview ./experiment.ts#runExperiment #0c68906 The function keeps money as engine amounts, checks constraints with the engine order, ranks each Pareto objective by that order, and divides money changes in the engine.
  */
