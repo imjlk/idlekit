@@ -192,7 +192,7 @@ function simulate(spec: CaseSpec): RunResult<number, UnitCode, Vars> {
  * @evidence ./growthFit.ts#growthFitJsonSchema Reads the generated schema.
  * @evidenceReview ./growthFit.ts#growthFitJsonSchema #ff8650e The function memoizes typia.json.schema of GrowthFitArtifactV1.
  * @evidence ./growthFit.ts#fitGrowth Fits slow, fast, and softcap-configured literal series.
- * @evidenceReview ./growthFit.ts#fitGrowth #bad1630 The function finds sign and drop breaks, an exact tenfold drop included, on every prepared point, keeps both sides of each break through the sampling budget, reads irregular cadence from the input, handles a one-point budget, keeps a non-positive domain invalid under coarse cadence, fits on time since the window start, fits value space in units of the series magnitude, reads saturation from gap-normalized rates, lets an exact value fit win only when it beats the log fit's relative error, and withholds shape claims when the action history is incomplete.
+ * @evidenceReview ./growthFit.ts#fitGrowth #bad1630 The function finds sign and drop breaks, an exact tenfold drop included, on every prepared point, keeps both sides of each break through the sampling budget, reads irregular cadence from the input, handles a one-point budget, keeps a non-positive domain invalid under coarse cadence, fits on time since the window start, scaled by its largest magnitude so the regression moments stay finite, fits value space in units of the series magnitude, reads saturation from gap-normalized rates, lets an exact value fit win only when it beats the log fit's relative error, and withholds shape claims when the action history is incomplete.
  * @evidence ./growthFit.ts#fitGrowthFromRun Fits executed runs of the slow and fast models.
  * @evidenceReview ./growthFit.ts#fitGrowthFromRun #2e570b1 The function keeps a present but empty trace empty, maps each action row by binary search to the first trace state after it, marks prestige count changes as breaks, reports whether the action history is complete, uses netWorthFallback without a model netWorth, and calls fitGrowth.
  * @evidence ./growthFit.ts#growthFitSchemaId Reads the growth fit schema id.
@@ -274,6 +274,19 @@ export function separatesShapeFromSpeed(): void {
   expect(configured.softcap).toBe("configured");
   expect(onlyWindow(configured).shape).toBe("exponential");
   expect(configured.warnings.some((warning) => warning.includes("configured softcap"))).toBe(true);
+  // A time axis wide enough that t * t overflows still fits on a scaled axis.
+  const wide = fitGrowth({
+    E: createNumberEngine(),
+    samples: Array.from({ length: 8 }, (_, index) => ({ t: index * 1e155, amount: 10 ** index })),
+    seriesRequested: "money",
+    valueSource: "money",
+    sampling: sampling(7e155),
+  });
+  const wideWindow = onlyWindow(wide);
+  expect(wideWindow.shape).toBe("exponential");
+  expect(Number.isFinite(wideWindow.residual.rmse ?? Number.NaN)).toBe(true);
+  expect(Math.abs((wideWindow.speed.logSlopePerSec ?? 0) / 1e-155 - 1)).toBeLessThan(1e-9);
+  expect(validateGrowthFitArtifact(wide).success).toBe(true);
 }
 
 /**
