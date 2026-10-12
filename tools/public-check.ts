@@ -34,6 +34,7 @@ const DOCS_WITH_KO = [
   "docs/reset-cycle.md",
   "docs/reset-cycle-analysis.md",
   "docs/growth-classification.md",
+  "docs/analyzer-registry.md",
   "examples/adapter-pattern/README.md",
   "examples/money-package/README.md",
   "examples/plugins/README.md",

@@ -4,10 +4,14 @@ import { fileURLToPath } from "url";
 import {
   builtinObjectiveFactories,
   builtinStrategyFactories,
+  createBuiltinAnalyzerRegistry,
   createModelRegistry,
   createObjectiveRegistry,
   createStrategyRegistry,
   defineModelFactory,
+  registerAnalyzerIsolated,
+  type AnalyzerDefinition,
+  type AnalyzerRegistry,
   type ModelFactory,
   type Engine,
   type ModelRegistry,
@@ -242,6 +246,7 @@ type PluginModule = {
   models?: ModelFactory[];
   strategies?: StrategyFactory[];
   objectives?: ObjectiveFactory[];
+  analyzers?: readonly AnalyzerDefinition[];
   default?:
     | EconPluginModule
     | ModelFactory[]
@@ -249,6 +254,7 @@ type PluginModule = {
         models?: ModelFactory[];
         strategies?: StrategyFactory[];
         objectives?: ObjectiveFactory[];
+        analyzers?: readonly AnalyzerDefinition[];
       };
 };
 
@@ -269,6 +275,7 @@ function parsePluginModule(mod: PluginModule): EconPluginModule {
     models: mod.models ?? fromDefault.models,
     strategies: mod.strategies ?? fromDefault.strategies,
     objectives: mod.objectives ?? fromDefault.objectives,
+    analyzers: mod.analyzers ?? fromDefault.analyzers,
   };
 }
 
@@ -406,10 +413,14 @@ function mergeShaPolicies(
   return out;
 }
 
+export type AnalyzerLoadFailure = Readonly<{ path: string; message: string }>;
+
 export type LoadedRegistries = Readonly<{
   modelRegistry: ModelRegistry;
   strategyRegistry: StrategyRegistry;
   objectiveRegistry: ObjectiveRegistry;
+  analyzerRegistry: AnalyzerRegistry;
+  analyzerFailures: readonly AnalyzerLoadFailure[];
   pluginDigest: Readonly<Record<string, string>>;
 }>;
 
@@ -420,6 +431,8 @@ export async function loadRegistries(
   const modelFactories: ModelFactory[] = [createLinearFactory()];
   const strategyFactories: StrategyFactory[] = [...builtinStrategyFactories];
   const objectiveFactories: ObjectiveFactory[] = [...builtinObjectiveFactories, ...designObjectiveFactories];
+  const analyzerRegistry = createBuiltinAnalyzerRegistry();
+  const analyzerFailures: AnalyzerLoadFailure[] = [];
   const allowedRoots = (securityOptions.allowedRoots ?? []).map((x) => resolve(x));
   const trustFileSha256 =
     securityOptions.trustFile !== undefined
@@ -454,12 +467,23 @@ export async function loadRegistries(
     if (parsed.models) modelFactories.push(...parsed.models);
     if (parsed.strategies) strategyFactories.push(...parsed.strategies);
     if (parsed.objectives) objectiveFactories.push(...parsed.objectives);
+    // A plugin export is a runtime value: a non-array is one isolated failure, not a crash.
+    if (parsed.analyzers !== undefined && parsed.analyzers !== null && !Array.isArray(parsed.analyzers)) {
+      analyzerFailures.push({ path: abs, message: "plugin analyzers export must be an array" });
+    } else if (parsed.analyzers) {
+      for (const analyzer of parsed.analyzers) {
+        const message = registerAnalyzerIsolated(analyzerRegistry, analyzer);
+        if (message) analyzerFailures.push({ path: abs, message });
+      }
+    }
   }
 
   return {
     modelRegistry: createModelRegistry(modelFactories),
     strategyRegistry: createStrategyRegistry(strategyFactories),
     objectiveRegistry: createObjectiveRegistry(objectiveFactories),
+    analyzerRegistry,
+    analyzerFailures,
     pluginDigest,
   };
 }

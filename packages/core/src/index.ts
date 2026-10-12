@@ -69,6 +69,7 @@ export * from "./sim/analysis/ux";
 export * from "./sim/analysis/contracts";
 export * from "./sim/analysis/metrics";
 export * from "./sim/analysis/registry";
+export * from "./sim/analysis/analyzers";
 
 export * from "./report/timeline";
 export * from "./report/compare";

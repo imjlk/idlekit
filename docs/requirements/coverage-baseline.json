@@ -40,7 +40,15 @@
     "REQ-PR14-REGISTERED-SETTER",
     "REQ-PR14-CANDIDATE-ORDER",
     "REQ-PR14-CENSORED-HORIZON",
-    "REQ-PR14-PARETO-UNKNOWN"
+    "REQ-PR14-PARETO-UNKNOWN",
+    "REQ-DX02-REGISTRY-CONFLICTS",
+    "REQ-DX02-CUSTOM-ANALYZER",
+    "REQ-DX02-INSUFFICIENT-OBSERVATION",
+    "REQ-DX02-EXECUTION-BUDGET",
+    "REQ-DX02-SAME-ALGORITHM",
+    "REQ-DX02-OBSERVATION-PLAN",
+    "REQ-DX02-PLUGIN-ISOLATION",
+    "REQ-DX02-LOCAL-OUTPUT"
   ],
   "protectedFiles": [
     "docs/requirements/active/typia-transform.md",
@@ -114,6 +122,9 @@
     "docs/requirements/active/parameter-experiments.md",
     "packages/core/src/sim/analysis/experiment.ts",
     "packages/core/src/sim/analysis/experiment.test.ts",
-    "fixtures/conformance/parameter-experiment.json"
+    "fixtures/conformance/parameter-experiment.json",
+    "docs/requirements/active/analyzer-registry.md",
+    "packages/core/src/sim/analysis/analyzers.ts",
+    "packages/core/src/sim/analysis/analyzers.test.ts"
   ]
 }
