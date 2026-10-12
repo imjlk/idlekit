@@ -180,7 +180,9 @@ export function paretoFrontBy<T>(
  * Objectives are matched by id, so two points may list them in different orders. Points must share one id set.
  */
 export function paretoFront(points: readonly ParetoPoint[]): ParetoFront {
-  const ids = [...(points[0]?.objectives ?? [])].map((item) => item.id).sort();
+  const first = points[0]?.objectives ?? [];
+  const ids = first.map((item) => item.id).sort();
+  const senses = new Map(first.map((item) => [item.id, item.sense]));
   return paretoFrontBy(
     points.map((point) => {
       const byId = new Map(point.objectives.map((item) => [item.id, item]));
@@ -191,6 +193,7 @@ export function paretoFront(points: readonly ParetoPoint[]): ParetoFront {
         id: point.id,
         objectives: ids.map((id) => {
           const item = byId.get(id)!;
+          if (item.sense !== senses.get(id)) throw new Error(`Pareto point ${point.id} gives objective ${id} another sense`);
           return { sense: item.sense, value: item.value === null || !Number.isFinite(item.value) ? null : item.value };
         }),
       };

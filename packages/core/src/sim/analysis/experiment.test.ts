@@ -215,6 +215,12 @@ export function checksLocalElasticityDirection(): void {
       { id: "B", objectives: [{ id: "benefit", sense: "higher", value: 4 }] },
     ]),
   ).toThrow("same objective ids");
+  expect(() =>
+    paretoFront([
+      { id: "A", objectives: [{ id: "x", sense: "higher", value: 2 }] },
+      { id: "B", objectives: [{ id: "x", sense: "lower", value: 1 }] },
+    ]),
+  ).toThrow("another sense");
   // Opposite-sign parameters near the double limit: the parameter change overflows, the ratio -2 does not, so the elasticity is 1.
   expect(localElasticity({ baselineP: 1e308, probeP: -1e308, baselineY: 1, probeY: -1 })).toMatchObject({ status: "observed", elasticity: "1" });
   // Opposite-sign values near the double limit: the difference overflows, the ratio -2 does not.
@@ -341,7 +347,7 @@ export function keepsStrategyTuneSignature(): void {
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter Unsafe paths and invalid parameters throw before the model factory runs.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #bd73880 Re-read the section, then ran this function: a stripped typo path, overlapping model and strategy paths, a session dimension, a repeated seed, another model version, an Infinity choice value, an Infinity space bound, an Infinity limit, an Infinity goal, a schema-less typo path, -0, a -0 seed, a __type path, a malformed untyped spec, and a repeated constraint id throw, and create count stays 0.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #5fa4e48 Re-read the section, then ran this function: a stripped typo path, overlapping model and strategy paths, a session dimension, a repeated seed, another model version, an Infinity choice value, an Infinity space bound, an Infinity limit, an Infinity goal, a schema-less typo path, -0, a -0 seed, a __type path, a malformed untyped spec, and a repeated constraint id throw, and create count stays 0.
  * @evidence ./experiment.ts#experimentRegisteredSetter Reads the setter contract.
  * @evidenceReview ./experiment.ts#experimentRegisteredSetter #080a763 The declaration is registered-key-not-jsonpath.
  * @evidence ./experiment.ts#assertRegisteredPath Rejects prototype, bracket, and traversal paths, and session paths other than pattern or days.
@@ -349,7 +355,7 @@ export function keepsStrategyTuneSignature(): void {
  * @evidence ./experiment.ts#checkExperimentSpec Runs the rejections alone, before any compile or create.
  * @evidenceReview ./experiment.ts#checkExperimentSpec #5a81db2 The function runs the hash, spec, path, and parameter checks of runExperiment and returns without creating a model.
  * @evidence ./experiment.ts#setRegisteredParam Sets a nested model parameter on a copy.
- * @evidenceReview ./experiment.ts#setRegisteredParam #58296bb The function validates the path, copies only the objects on that path, refuses a prototype key at each segment, creates missing own objects, and sets the leaf without changing the input or any value off the path.
+ * @evidenceReview ./experiment.ts#setRegisteredParam #673426e The function validates the path, copies only the objects on that path with their prototype and descriptors, refuses a prototype key at each segment, creates missing own objects, and sets the leaf without changing the input or any value off the path.
  */
 export function rejectsUnsafeParametersBeforeRun(): void {
   const safePath = "income.rate";
@@ -371,6 +377,16 @@ export function rejectsUnsafeParametersBeforeRun(): void {
   expect(Object.is(assigned.neg, -0)).toBe(true);
   expect(assigned.income).toEqual({ rate: 2 });
   expect(exotic.income).toEqual({ rate: 1 });
+  // An object on the path keeps its prototype, so a class instance still has its methods.
+  class Curve {
+    rate = 1;
+    double(): number {
+      return this.rate * 2;
+    }
+  }
+  const curved = setRegisteredParam({ curve: new Curve() }, "curve.rate", 3);
+  expect(curved.curve).toBeInstanceOf(Curve);
+  expect((curved.curve as Curve).double()).toBe(6);
   // -0 would share every descriptor and hash with 0, so it is not a parameter value.
   expect(assignmentFitsParamSpace({ kind: "number", min: -1, max: 1 }, -0)).toBe(false);
   expect(assignmentFitsParamSpace({ kind: "choice", values: [0] }, -0)).toBe(false);
@@ -716,7 +732,7 @@ export function skipsCensoredHorizonForSensitivity(): void {
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown The hand tradeoff keeps A, B, and C, drops D, and leaves E uncompared.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown #02ce1ea Re-read the section, then ran this function: nonDominated is A, B, C and E is uncompared, and end money 0, 0.75e-12, and 1.5e-12 give the front B and C.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown #8c525c9 Re-read the section, then ran this function: nonDominated is A, B, C and E is uncompared, and end money 0, 0.75e-12, and 1.5e-12 give the front B and C.
  * @evidence ./experiment.ts#experimentParetoUnknown Reads the Pareto contract.
  * @evidenceReview ./experiment.ts#experimentParetoUnknown #4c62a0c The declaration is unknown-is-not-superior.
  */
@@ -920,7 +936,7 @@ export function startsCandidatesFromScenario(): void {
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown An amount past the double range stays an observed engine value for constraints, Pareto, and sensitivity.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown #02ce1ea Re-read the section, then ran this function: 1e400 and 1e401 are observed, both violate the cap, only the probe is non-dominated, 1e-10 to 1e400 keeps an engine elasticity near 2.44e409, and two seeds of benefit 1e308 or of the smallest subnormal, and a subnormal wallet, average to that value, and end money 1e308 to -1e308 keeps elasticity 1, and three seeds of the largest double average to it.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown #8c525c9 Re-read the section, then ran this function: 1e400 and 1e401 are observed, both violate the cap, only the probe is non-dominated, 1e-10 to 1e400 keeps an engine elasticity near 2.44e409, and two seeds of benefit 1e308 or of the smallest subnormal, and a subnormal wallet, average to that value, and end money 1e308 to -1e308 keeps elasticity 1, and three seeds of the largest double average to it.
  * @evidence ./experiment.ts#runExperiment Compares engine amounts for constraints, Pareto, and elasticity.
  * @evidenceReview ./experiment.ts#runExperiment #0c68906 The function keeps money as engine amounts, checks constraints with the engine order, ranks each Pareto objective by that order, and divides money changes in the engine.
  */

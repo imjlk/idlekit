@@ -37,7 +37,7 @@ export const experimentSeparateSpec = "experiment-spec-not-tunespec" as const;
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter Assignment uses a registered identifier path and the model or strategy schema. JSONPath, prototype, and eval paths are refused before a run.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #bd73880 Re-read the section: a prototype path, an out-of-range integer, a non-finite choice value, a non-finite space bound, a schema-invalid rate, a stripped path, overlapping paths, a session dimension, a repeated seed, a non-finite limit, and a repeated constraint id throw before model create.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #5fa4e48 Re-read the section: a prototype path, an out-of-range integer, a non-finite choice value, a non-finite space bound, a schema-invalid rate, a stripped path, overlapping paths, a session dimension, a repeated seed, a non-finite limit, and a repeated constraint id throw before model create.
  */
 export const experimentRegisteredSetter = "registered-key-not-jsonpath" as const;
 
@@ -61,7 +61,7 @@ export const experimentCensoredHorizon = "censored-time-not-horizon" as const;
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown Pareto keeps per-metric tradeoffs. An unknown objective is uncompared, not a win.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown #02ce1ea Re-read the section: A, B, and C are non-dominated, D is dominated, E is uncompared, money is compared pairwise in the effective engine, and the elasticity stays in that engine until it is text.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown #8c525c9 Re-read the section: A, B, and C are non-dominated, D is dominated, E is uncompared, money is compared pairwise in the effective engine, and the elasticity stays in that engine until it is text.
  */
 export const experimentParetoUnknown = "unknown-is-not-superior" as const;
 
@@ -318,16 +318,18 @@ export function assertRegisteredPath(path: string, target: ExperimentDimensionV1
 
 export function setRegisteredParam(root: Readonly<Record<string, unknown>>, path: string, value: ExperimentScalar): Record<string, unknown> {
   const parts = assertRegisteredPath(path, "model");
-  // Copy only the objects on the assigned path. Every other value keeps its identity, prototype, and exact number.
-  const clone: Record<string, unknown> = { ...root };
+  // Copy only the objects on the assigned path, with their prototype and property descriptors.
+  // Every other value keeps its identity and exact number.
+  const copy = (source: object): Record<string, unknown> =>
+    Object.create(Object.getPrototypeOf(source), Object.getOwnPropertyDescriptors(source)) as Record<string, unknown>;
+  const clone = copy(root);
   let cursor = clone;
   for (let index = 0; index < parts.length - 1; index += 1) {
     const key = parts[index]!;
     // assertRegisteredPath already bans these. The inline guard keeps the write visibly safe at the assignment.
     if (key === "__proto__" || key === "constructor" || key === "prototype") reject("parameter path is not a registered identifier");
     const next = Object.prototype.hasOwnProperty.call(cursor, key) ? cursor[key] : undefined;
-    const copied: Record<string, unknown> =
-      next === null || typeof next !== "object" || Array.isArray(next) ? {} : { ...(next as Record<string, unknown>) };
+    const copied: Record<string, unknown> = next === null || typeof next !== "object" || Array.isArray(next) ? {} : copy(next);
     cursor[key] = copied;
     cursor = copied;
   }
@@ -751,7 +753,7 @@ function prepareExperiment(request: ExperimentCheckRequest) {
  * A caller that compiles or opens a run first calls this, so a rejected spec never reaches a factory.
  *
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter Throws the same rejections as runExperiment before any model create.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #bd73880 Re-read the section: the hash, spec, path, and schema checks run and no factory create is called.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #5fa4e48 Re-read the section: the hash, spec, path, and schema checks run and no factory create is called.
  */
 export function checkExperimentSpec(request: ExperimentCheckRequest): void {
   prepareExperiment(request);
