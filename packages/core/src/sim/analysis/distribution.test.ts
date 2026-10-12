@@ -58,7 +58,7 @@ function sample(
  * @evidence ./distribution.ts#distributionSampleAccounting Reads the sample accounting contract.
  * @evidenceReview ./distribution.ts#distributionSampleAccounting #b204d5a The declaration is observed-censored-failed-unsupported.
  * @evidence ./distribution.ts#analyzeDistribution Analyzes observed, censored, failed, and unsupported samples.
- * @evidenceReview ./distribution.ts#analyzeDistribution #b84e856 The function orders samples by draw index, rejects duplicate or invalid draws, an unknown status or source, an observed value the number does not hold exactly, and a completion past the common horizon, counts each status apart, keeps censored draws out of the conditional quantiles, and keeps the mean finite inside the sample range and the variance finite or absent. The mean is a compensated sum over a power-of-two scale, so cancelling extremes keep a small residual.
+ * @evidenceReview ./distribution.ts#analyzeDistribution #7489a4c The function orders samples by draw index, rejects duplicate or invalid draws, an unknown status or source, an observed value the number does not hold exactly, and a completion past the common horizon, counts each status apart, keeps censored draws out of the conditional quantiles, and keeps the mean finite inside the sample range and the variance finite or absent. The mean is a compensated sum over a power-of-two scale, so cancelling extremes keep a small residual. The unscaled compensated sum keeps subnormal terms, the mean of log10 is compensated too, and zeroVariance holds only for identical draws.
  */
 export function separatesCensoringFromObservedQuantiles(): void {
   expect(distributionSampleAccounting).toBe("observed-censored-failed-unsupported");
@@ -158,6 +158,23 @@ export function separatesCensoringFromObservedQuantiles(): void {
     quantiles: [0.5],
   });
   expect(cancelling.means.arithmetic.value).toBe(String(1e-100 / 5));
+  // Subnormal terms are not scaled away: the mean of 5e-324 and 1e-323 rounds to 1e-323.
+  const subnormal = analyzeDistribution({
+    samples: [sample(0, "observed", "5e-324"), sample(1, "observed", "1e-323")],
+    quantiles: [0.5],
+  });
+  expect(subnormal.means.arithmetic.value).toBe("1e-323");
+  // The mean of log10 keeps a small log value between large ones that cancel.
+  const logs = analyzeDistribution({
+    samples: [sample(0, "observed", "1e308"), sample(1, "observed", "1.0000000000000002"), sample(2, "observed", "1e-308")],
+    quantiles: [0.5],
+  });
+  expect(Number(logs.means.meanLog10.value)).toBeGreaterThan(0);
+  // Distinct draws whose squared deviations underflow are not zero variance.
+  const underflowing = analyzeDistribution({ samples: [sample(0, "observed", "1e-200"), sample(1, "observed", "2e-200")], quantiles: [0.5] });
+  expect(underflowing.uncertainty.zeroVariance).toBe(false);
+  expect(underflowing.uncertainty.variance).toBeNull();
+  expect(underflowing.warnings).toContain("variance is below the number range and is not reported");
   // A long run of zeros is read in linear time, and a value that underflows to 0 is not the value written.
   const tiny = `0.${"0".repeat(20_000)}1${"0".repeat(20_000)}1`;
   expect(() => analyzeDistribution({ samples: [sample(0, "observed", tiny)], quantiles: [0.5] })).toThrow(
