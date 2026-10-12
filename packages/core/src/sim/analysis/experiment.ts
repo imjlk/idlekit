@@ -37,7 +37,7 @@ export const experimentSeparateSpec = "experiment-spec-not-tunespec" as const;
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter Assignment uses a registered identifier path and the model or strategy schema. JSONPath, prototype, and eval paths are refused before a run.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #b249f4e Re-read the section: a prototype path, an out-of-range integer, a non-finite choice value, a non-finite space bound, a schema-invalid rate, a stripped path, overlapping paths, a session dimension, a repeated seed, a non-finite limit, and a repeated constraint id throw before model create.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #847f7d0 Re-read the section: a prototype path, an out-of-range integer, a non-finite choice value, a non-finite space bound, a schema-invalid rate, a stripped path, overlapping paths, a session dimension, a repeated seed, a non-finite limit, and a repeated constraint id throw before model create.
  */
 export const experimentRegisteredSetter = "registered-key-not-jsonpath" as const;
 
@@ -61,7 +61,7 @@ export const experimentCensoredHorizon = "censored-time-not-horizon" as const;
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown Pareto keeps per-metric tradeoffs. An unknown objective is uncompared, not a win.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown #1e93b71 Re-read the section: A, B, and C are non-dominated, D is dominated, E is uncompared, money is compared pairwise in the effective engine, and the elasticity stays in that engine until it is text.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown #440698a Re-read the section: A, B, and C are non-dominated, D is dominated, E is uncompared, money is compared pairwise in the effective engine, and the elasticity stays in that engine until it is text.
  */
 export const experimentParetoUnknown = "unknown-is-not-superior" as const;
 
@@ -535,7 +535,11 @@ function isOrdinaryData(descriptor: PropertyDescriptor | undefined): boolean {
   );
 }
 
-function isJsonData(value: unknown, seen: Set<object> = new Set()): boolean {
+/**
+ * `allowUndefined` lets an object field hold undefined. Canonical JSON drops that field and spec and scenario
+ * readers treat it as absent. Params do not get this allowance, because a factory can see the key.
+ */
+function isJsonData(value: unknown, seen: Set<object> = new Set(), allowUndefined = false): boolean {
   if (value === null || typeof value === "boolean" || typeof value === "string") return true;
   if (typeof value === "number") return Number.isFinite(value) && !Object.is(value, -0);
   if (typeof value !== "object" || seen.has(value)) return false;
@@ -550,7 +554,7 @@ function isJsonData(value: unknown, seen: Set<object> = new Set()): boolean {
     if (Reflect.ownKeys(value).length !== value.length + 1) return false;
     for (let index = 0; index < value.length; index += 1) {
       const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
-      if (!isOrdinaryData(descriptor) || !isJsonData(descriptor!.value, seen)) return false;
+      if (!isOrdinaryData(descriptor) || !isJsonData(descriptor!.value, seen, allowUndefined)) return false;
     }
     return true;
   }
@@ -562,7 +566,7 @@ function isJsonData(value: unknown, seen: Set<object> = new Set()): boolean {
       typeof key === "string" &&
       key !== "__type" &&
       isOrdinaryData(descriptor) &&
-      isJsonData(descriptor.value, seen)
+      ((allowUndefined && descriptor.value === undefined) || isJsonData(descriptor.value, seen, allowUndefined))
     );
   });
 }
@@ -575,25 +579,18 @@ function requireJsonParams(params: unknown, label: string, seen: Set<object>): v
 }
 
 /**
- * Every number in the scenario must be finite and not -0, and no value may be a bigint. Canonical JSON writes
- * Infinity and NaN as null and -0 as 0, so a constraint such as maxActionsPerStep could change the run but not the hash.
+ * The whole scenario is checked before it is hashed: every field the run reads must be one canonical JSON records.
+ * Canonical JSON writes Infinity as null and -0 as 0 and skips non-enumerable fields, so a constraint such as
+ * maxActionsPerStep or a hidden policy.mode could change the run but not the hash. Params and the initial state
+ * then get the stricter params rule.
  */
-function hasOnlyCanonicalNumbers(value: unknown, seen: Set<object> = new Set()): boolean {
-  if (typeof value === "bigint") return false;
-  if (typeof value === "number") return Number.isFinite(value) && !Object.is(value, -0);
-  if (value === null || typeof value !== "object" || seen.has(value)) return true;
-  seen.add(value);
-  return Object.values(value).every((entry) => hasOnlyCanonicalNumbers(entry, seen));
-}
-
-/** Execution state from the scenario: params and the initial state, vars included. Checked before the scenario is hashed. */
 function requireScenarioData(scenario: ScenarioV1): void {
-  if (!hasOnlyCanonicalNumbers(scenario)) reject("scenario numbers must be finite and not -0, because the scenario hash records them as JSON");
   const seen = new Set<object>();
   requireJsonParams(scenario.model.params, "model", seen);
   requireJsonParams(scenario.strategy?.params, "strategy", seen);
   // The initial state, vars included, reaches every run and the scenario hash. It must be JSON data too.
   if (!isJsonData(scenario.initial, seen)) reject("scenario initial state must be JSON data, because the scenario hash records it as JSON");
+  if (!isJsonData(scenario, new Set(), true)) reject("scenario must be JSON data, because the scenario hash records it as JSON");
 }
 
 /**
@@ -742,7 +739,9 @@ function aggregate<N>(E: Engine<N>, rows: readonly { seed: number; metrics: read
     // Every seed is either observed or censored with a known lower bound, so the mean has a lower bound too.
     const bounded = picked.every((metric) => metric!.num !== undefined || metric!.lowerBound !== undefined);
     if (metricId !== "timeToMoney" || !bounded) return { metricId, status: "censored", value: null };
-    const sec = picked.reduce((total, metric) => total + (metric!.num ?? metric!.lowerBound!.sec), 0) / picked.length;
+    const bounds = picked.map((metric) => metric!.num ?? metric!.lowerBound!.sec);
+    const total = bounds.reduce((sum, bound) => sum + bound, 0);
+    const sec = Number.isFinite(total) ? total / bounds.length : scaledMean(bounds);
     const strict = picked.some((metric) => metric!.lowerBound?.strict === true);
     return { metricId, status: "censored", value: null, lowerBound: { sec, strict } };
   }
@@ -853,6 +852,12 @@ function prepareExperiment(request: ExperimentCheckRequest) {
   // Validate the spec shape and the execution state first, so an untyped caller gets ExperimentRejected
   // rather than a TypeError from hashing, for example on a bigint.
   const spec = requireSpec(request.spec);
+  const metrics = metricIds(spec);
+  // A JSON literal such as 1e400 parses to Infinity, and canonical JSON would hash it as null.
+  if (spec.goal !== undefined && !Number.isFinite(spec.goal.target)) reject("goal target must be finite");
+  if (metrics.includes("timeToMoney") && spec.goal === undefined) reject("timeToMoney requires a finite goal target");
+  // Every spec field the run reads must be one both spec hashes record.
+  if (!isJsonData(request.spec, new Set(), true)) reject("spec must be JSON data, because the spec hashes record it as JSON");
   requireScenarioData(request.scenario);
   let scenarioHash: string;
   try {
@@ -868,10 +873,6 @@ function prepareExperiment(request: ExperimentCheckRequest) {
   } catch {
     reject("spec cannot be written as canonical JSON");
   }
-  const metrics = metricIds(spec);
-  // A JSON literal such as 1e400 parses to Infinity, and canonical JSON would hash it as null.
-  if (spec.goal !== undefined && !Number.isFinite(spec.goal.target)) reject("goal target must be finite");
-  if (metrics.includes("timeToMoney") && spec.goal === undefined) reject("timeToMoney requires a finite goal target");
   const base = candidateBase(spec, request.scenario, request);
   const prepared = plannedCandidates(spec).map((candidate) => prepareCandidate(spec, base, candidate, request));
   return { spec, metrics, base, prepared, specHashes };
@@ -882,7 +883,7 @@ function prepareExperiment(request: ExperimentCheckRequest) {
  * A caller that compiles or opens a run first calls this, so a rejected spec never reaches a factory.
  *
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter Throws the same rejections as runExperiment before any model create.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #b249f4e Re-read the section: the hash, spec, path, and schema checks run and no factory create is called.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #847f7d0 Re-read the section: the hash, spec, path, and schema checks run and no factory create is called.
  */
 export function checkExperimentSpec(request: ExperimentCheckRequest): void {
   prepareExperiment(request);

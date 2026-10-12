@@ -372,7 +372,7 @@ export function keepsStrategyTuneSignature(): void {
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter Unsafe paths and invalid parameters throw before the model factory runs.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #b249f4e Re-read the section, then ran this function: a stripped typo path, overlapping model and strategy paths, a session dimension, a repeated seed, another model version, an Infinity choice value, an Infinity space bound, an Infinity limit, an Infinity goal, a schema-less typo path, -0, a -0 seed, a __type path, non-JSON params, a malformed untyped spec, and a repeated constraint or objective id throw, and create count stays 0.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #847f7d0 Re-read the section, then ran this function: a stripped typo path, overlapping model and strategy paths, a session dimension, a repeated seed, another model version, an Infinity choice value, an Infinity space bound, an Infinity limit, an Infinity goal, a schema-less typo path, -0, a -0 seed, a __type path, non-JSON params, a malformed untyped spec, and a repeated constraint or objective id throw, and create count stays 0.
  * @evidence ./experiment.ts#experimentRegisteredSetter Reads the setter contract.
  * @evidenceReview ./experiment.ts#experimentRegisteredSetter #080a763 The declaration is registered-key-not-jsonpath.
  * @evidence ./experiment.ts#assertRegisteredPath Rejects prototype, bracket, and traversal paths, and session paths other than pattern or days.
@@ -599,10 +599,17 @@ export function rejectsUnsafeParametersBeforeRun(): void {
   const bigScenario = incomeScenario({ model: { id: fixture.modelId, version: fixture.modelVersion, params: { incomeRate: 1, big: 1n } } });
   expect(() => runWith(bigScenario, { ...specFor(scenario), scenario: { ref: "big", hash: "unknown" } }, creates)).toThrow(ExperimentRejected);
   // An extra spec field canonical JSON cannot write fails before any create, as an ExperimentRejected.
-  expect(() => runWith(scenario, { ...specFor(scenario), debug: 1n } as unknown as ExperimentSpecV1, creates)).toThrow("spec cannot be written as canonical JSON");
+  expect(() => runWith(scenario, { ...specFor(scenario), debug: 1n } as unknown as ExperimentSpecV1, creates)).toThrow("spec must be JSON data");
   // An infinite constraint would change the run but hash as null.
   const loose = { ...incomeScenario(), constraints: { maxActionsPerStep: JSON.parse("1e400") as number } } as ScenarioV1;
-  expect(() => runWith(loose, specFor(loose), creates)).toThrow("scenario numbers must be finite");
+  expect(() => runWith(loose, specFor(loose), creates)).toThrow("scenario must be JSON data");
+  // A non-enumerable scenario or spec field is read by the run but skipped by the hash.
+  const hidden = incomeScenario();
+  Object.defineProperty(hidden.policy, "mode", { value: "accumulate", enumerable: false, writable: true, configurable: true });
+  expect(() => runWith(hidden, specFor(hidden), creates)).toThrow("scenario must be JSON data");
+  const hiddenSpec = specFor(scenario);
+  Object.defineProperty(hiddenSpec, "horizonSec", { value: 20, enumerable: false, writable: true, configurable: true });
+  expect(() => runWith(scenario, hiddenSpec, creates)).toThrow("spec must be JSON data");
   // A schema that writes its input sees a detached copy, so the caller's scenario keeps its hash.
   const writing = defineModelFactory({
     id: fixture.modelId,
@@ -898,7 +905,7 @@ export function skipsCensoredHorizonForSensitivity(): void {
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown The hand tradeoff keeps A, B, and C, drops D, and leaves E uncompared.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown #1e93b71 Re-read the section, then ran this function: nonDominated is A, B, C and E is uncompared, and end money 0, 0.75e-12, and 1.5e-12 give the front B and C.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown #440698a Re-read the section, then ran this function: nonDominated is A, B, C and E is uncompared, and end money 0, 0.75e-12, and 1.5e-12 give the front B and C.
  * @evidence ./experiment.ts#experimentParetoUnknown Reads the Pareto contract.
  * @evidenceReview ./experiment.ts#experimentParetoUnknown #4c62a0c The declaration is unknown-is-not-superior.
  */
@@ -1141,7 +1148,7 @@ export function startsCandidatesFromScenario(): void {
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown An amount past the double range stays an observed engine value for constraints, Pareto, and sensitivity.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown #1e93b71 Re-read the section, then ran this function: 1e400 and 1e401 are observed, both violate the cap, only the probe is non-dominated, 1e-10 to 1e400 keeps an engine elasticity near 2.44e409, and two seeds of benefit 1e308 or of the smallest subnormal, and a subnormal wallet, average to that value, and end money 1e308 to -1e308 keeps elasticity 1, and three seeds of the largest double average to it.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown #440698a Re-read the section, then ran this function: 1e400 and 1e401 are observed, both violate the cap, only the probe is non-dominated, 1e-10 to 1e400 keeps an engine elasticity near 2.44e409, and two seeds of benefit 1e308 or of the smallest subnormal, and a subnormal wallet, average to that value, and end money 1e308 to -1e308 keeps elasticity 1, and three seeds of the largest double average to it.
  * @evidence ./experiment.ts#runExperiment Compares engine amounts for constraints, Pareto, and elasticity.
  * @evidenceReview ./experiment.ts#runExperiment #9f9eb1a The function keeps money as engine amounts, checks constraints with the engine order, ranks each Pareto objective by that order, and divides money changes in the engine.
  */
