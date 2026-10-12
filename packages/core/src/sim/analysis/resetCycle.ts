@@ -171,6 +171,8 @@ export type ResetCycleCheckpoint<N, U extends string, Vars> = Readonly<{
   pendingSec?: number;
   /** The planned duration of that cut cycle. A resume must plan the same duration for it. */
   pendingDurationSec?: number;
+  /** The t at which that cut cycle started. The resumed row keeps it, so its span matches its duration. */
+  pendingStartSec?: number;
   /** The model the state belongs to. A resume checks it. */
   modelId?: string;
   modelVersion?: number;
@@ -460,11 +462,20 @@ export function executeResetCycles<N, U extends string, Vars>(args: {
   // Elapsed seconds are summed from runner results. Absolute t can round away from simulated time.
   let elapsed = args.resume?.elapsedSec ?? state.t - originSec;
   // Seconds a budget already played of the next cycle. That cycle keeps its index and plays only the rest.
+  // Elapsed seconds count forward from the origin. A negative count would let a resume pass the horizon.
+  if (elapsed < 0) throw new ResetCycleRejected("reset cycle checkpoint elapsedSec must be >= 0");
+  if (!E.isFinite(accumulated)) throw new ResetCycleRejected("reset cycle checkpoint accumulatedReward is not finite");
   let pending = args.resume?.pendingSec ?? 0;
   let pendingDuration: number | undefined;
   if (typeof pending !== "number" || !Number.isFinite(pending) || pending < 0) {
     throw new ResetCycleRejected("reset cycle checkpoint pendingSec must be a finite number >= 0");
   }
+  // A resumed cut cycle starts where it started before the cut. Older checkpoints place it pendingSec before t.
+  const resumedStart = args.resume?.pendingStartSec;
+  if (pending > 0 && resumedStart !== undefined && (typeof resumedStart !== "number" || !Number.isFinite(resumedStart))) {
+    throw new ResetCycleRejected("reset cycle checkpoint pendingStartSec must be a finite number");
+  }
+  let pendingStart: number | undefined;
 
   const warnings: string[] = ["legacy interval scan fields are not reset evidence"];
   if (scenario.strategy?.snapshotState && !scenario.strategy.restoreState) {
@@ -509,7 +520,7 @@ export function executeResetCycles<N, U extends string, Vars>(args: {
       break;
     }
 
-    const startSec = state.t;
+    const startSec = pending > 0 ? (resumedStart ?? state.t - pending) : state.t;
     const intervalAdapter = args.adapter ?? resetAdapterFor(scenario, undefined, state, liveCtx()) ?? startAdapter;
     const { maxSteps: _ignoredMax, until: _ignoredUntil, trace: _ignoredTrace, ...runRest } = scenario.run;
     const run = runScenario({
@@ -548,6 +559,7 @@ export function executeResetCycles<N, U extends string, Vars>(args: {
       // The cycle is not finished. A resume continues it under the same index for the remaining seconds.
       pending = played;
       pendingDuration = duration;
+      pendingStart = startSec;
       guard = "censored";
       warnings.push("budget");
       break;
@@ -601,13 +613,18 @@ export function executeResetCycles<N, U extends string, Vars>(args: {
       resolveAgainstModel: false,
     });
     // The boundary decision is an action fact too, applied or refused, as it would be inside runScenario, and its
-    // events reach the scenario emitter as a step's events do.
+    // events reach the scenario emitter as a step's events do. They are announced only once the boundary is valid,
+    // so a rejected reset leaves no applied action behind with observers.
     const observing = scenario.run.observation?.enabled !== false;
-    if (observing) emitActionFacts(scenario.run.observer, state.t, applied.events);
-    if (applied.events.length > 0) boundaryCtx.emit?.(applied.events);
+    const boundaryT = state.t;
+    const announce = () => {
+      if (observing) emitActionFacts(scenario.run.observer, boundaryT, applied.events);
+      if (applied.events.length > 0) boundaryCtx.emit?.(applied.events);
+    };
     const skipped = applied.events.find((event) => event.type === "action.skipped");
     const fact = applied.committedResets[0];
     if (!fact || skipped) {
+      announce();
       const reason = skipReason(fact, skipped && skipped.type === "action.skipped" ? skipped.reason : undefined);
       rows.push({
         index: nextIndex,
@@ -639,7 +656,13 @@ export function executeResetCycles<N, U extends string, Vars>(args: {
     if (!E.isFinite(afterReward) || !E.isFinite(delta)) {
       throw new ResetCycleRejected(`reset adapter ${adapter.id} reward is not finite after the reset`);
     }
-    accumulated = E.add(accumulated, delta);
+    // Finite deltas can still sum past the engine's range. The total is stored and resumed, so it must stay finite.
+    const total = E.add(accumulated, delta);
+    if (!E.isFinite(total)) {
+      throw new ResetCycleRejected(`reset adapter ${adapter.id} accumulated reward is not finite`);
+    }
+    accumulated = total;
+    announce();
     if (action?.kind === "prestige") {
       constraints = recordPrestigeReset(constraints, fact.t, scenario.run.onPrestigeReset);
     }
@@ -692,7 +715,7 @@ export function executeResetCycles<N, U extends string, Vars>(args: {
     checkpoint: {
       ...checkpointOf(scenario, args.rng, state, constraints, nextIndex, originSec, accumulated, elapsed),
       ...(args.adapter ? { adapterId: args.adapter.id, adapterKind: args.adapter.kind } : {}),
-      ...(pending > 0 ? { pendingSec: pending, pendingDurationSec: pendingDuration } : {}),
+      ...(pending > 0 ? { pendingSec: pending, pendingDurationSec: pendingDuration, pendingStartSec: pendingStart } : {}),
     },
   };
 }

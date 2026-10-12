@@ -16,6 +16,7 @@ import {
   checkDurationBoundary,
   checkJsonRoundTrip,
   checkMilestoneRetention,
+  checkResetCycleResume,
   checkNonNegative,
   checkObserver,
   checkReplay,
@@ -2104,3 +2105,91 @@ describe("engine differential", () => {
     matchesASafeConstantRunAndRefusesNumberInfinityCollapse,
   );
 });
+
+/**
+ * @evidence docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness Executes the declared reset-cycle resume relation over the short and extended seed corpus.
+ * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #bbb39a2 Read the declared relation and ran both corpora. Splits between cycles and budget cuts inside a cycle resume to the continuous economy, reward total, elapsed seconds, and completed rows; an undeclared relation stays unchecked.
+ * @evidence ./conformance.ts#checkResetCycleResume Runs a continuous and a split reset-cycle execution and compares their economy, reward total, elapsed seconds, and completed rows.
+ * @evidenceReview ./conformance.ts#checkResetCycleResume #88e0394 The function returns inapplicable when undeclared, splits by cycles or by a step budget, resumes the remaining cycles from the checkpoint, and compares one snapshot.
+ */
+export function resumesDeclaredResetCyclesAcrossTheSeedCorpus(): void {
+  const testSeed = 0xc0de;
+  const engine = createNumberEngine();
+  const unit = { code: "COIN" as const };
+  const fixture = (rate: number, price: number, stepSec: number, seed: number): CompiledScenario<number, UnitCode, Vars> => {
+    const buy: Action<number, UnitCode, Vars> = {
+      id: "buy",
+      kind: "buy",
+      canApply: (_ctx, current) => current.wallet.money.amount >= price,
+      cost: () => ({ unit, amount: price }),
+      apply: (_ctx, current) => ({ ...current, vars: { buys: current.vars.buys + 1 } }),
+    };
+    const reset: Action<number, UnitCode, Vars> = {
+      id: "reset",
+      kind: "prestige",
+      canApply: () => true,
+      cost: () => null,
+      apply: (_ctx, current) => ({
+        ...current,
+        wallet: { money: { unit, amount: 0 }, bucket: 0 },
+        vars: { buys: 0 },
+        prestige: {
+          count: current.prestige.count + 1,
+          points: current.prestige.points + current.vars.buys,
+          multiplier: 1 + (current.prestige.points + current.vars.buys) / 10,
+        },
+      }),
+    };
+    return {
+      ctx: { E: engine, unit, tickPolicy: { mode: "drop" }, seed, stepSec },
+      model: {
+        id: "declared-reset-cycles",
+        version: 1,
+        income: (_ctx, current) => ({ unit, amount: rate * current.prestige.multiplier }),
+        actions: () => [buy, reset],
+      },
+      initial: state(engine, 0),
+      strategy: {
+        id: "buy-when-able",
+        decide: (ctx, model, current) =>
+          model.actions(ctx, current).filter((action) => action.kind === "buy" && action.canApply(ctx, current)).map((action) => ({ action })),
+      },
+      run: { stepSec, durationSec: 1 },
+    };
+  };
+  const undeclared = fixture(1, 2, 1, 0);
+  expect(checkResetCycleResume(false, undeclared, { kind: "fixed-interval", intervalSec: 4, cycles: 2 }, { cycles: 1 }).applicable).toBe(false);
+  expectProperty({
+    predicateId: "declared-reset-cycle-resume",
+    testSeed,
+    cases: conformanceCaseCount(),
+    generate: (index, rng) => ({
+      rate: rng.int(1, 5),
+      price: rng.int(1, 8),
+      stepSec: rng.int(1, 2),
+      intervalTicks: rng.int(2, 8),
+      cycles: rng.int(2, 5),
+      splitCycles: rng.int(1, 4),
+      budgetSteps: rng.int(0, 30),
+      byBudget: index % 2 === 1,
+      gameSeed: gameSeedForCase(testSeed, index),
+    }),
+    shrink: () => [],
+    predicate: (value) => {
+      const scenario = fixture(value.rate, value.price, value.stepSec, value.gameSeed);
+      const policy = { kind: "fixed-interval", intervalSec: value.intervalTicks * value.stepSec, cycles: value.cycles } as const;
+      const split = value.byBudget ? { budgetSteps: value.budgetSteps } : { cycles: Math.min(value.splitCycles, value.cycles - 1) };
+      expectApplicable(checkResetCycleResume(true, scenario, policy, split));
+      return true;
+    },
+    describeCase: (value) => ({
+      gameSeed: value.gameSeed,
+      engineId: "number",
+      modelId: "declared-reset-cycles",
+      strategyId: "buy-when-able",
+      tickSchedule: { stepSec: value.stepSec, durationSec: value.intervalTicks * value.stepSec * value.cycles },
+    }),
+  });
+}
+
+it("resumes declared reset cycles across the seed corpus", resumesDeclaredResetCyclesAcrossTheSeedCorpus);

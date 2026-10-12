@@ -161,7 +161,7 @@ function makeRng(seed: number): ResetCycleRng & { next: () => number } {
  * @evidence ./resetCycle.ts#resetCycleJsonSchema The schema is 3.1.
  * @evidenceReview ./resetCycle.ts#resetCycleJsonSchema #c6690d5 The function memoizes typia.json.schema of ResetCycleArtifactV1.
  * @evidence ./resetCycle.ts#executeResetCycles Runs three fixed intervals, an explicit list, a resume, and the horizon and budget guards.
- * @evidenceReview ./resetCycle.ts#executeResetCycles #101429b The function accepts a maxCycles cap of 0, rejects a checkpoint of another contract or version, copies the resumed state and constraints, rejects a strategyState with no restoreState and an rngState with no rng, discovers adapters under the live constraints, runs each interval with runScenario on a model that delegates every member to the original receiver and hides prestige actions under any adapter and the custom reset, resolved per state and removed by identity when listed, measures the horizon on summed runner seconds with relative slack capped by a share of the interval, censors any budget stop, resolves the adapter at the boundary, commits one reset through applyDecisions with live constraints and forwards its action facts to onAction, refreshes maxMoneyEver, records a refusal instead of forcing it, and records copies of the state, a strategy snapshot only when restoreState exists, and the RNG snapshot. It binds a strategy snapshot to the writing strategy's id and state version and requires one for a restorable strategy, bounds the horizon slack to rounding ULPs, emits boundary events through ctx.emit, and recognizes its own spec and action adapters by identity. Intervals at or below the runner's 1e-12 second resolution are rejected. It binds a checkpoint to its model, rejects nonfinite clock fields before any guard, and keeps the horizon slack below half the interval. It binds a checkpoint to its explicit adapter, carries a budget-cut cycle's played seconds into the resume, hides an adapter's reset whatever its declared kind, and notifies no observer when observation is off. It binds a cut cycle to its planned duration, rejects a non-reset adapter action, a reset that moves t, and nonfinite rewards, and passes the boundary wallT from its elapsed clock.
+ * @evidenceReview ./resetCycle.ts#executeResetCycles #8930044 The function accepts a maxCycles cap of 0, rejects a checkpoint of another contract or version, copies the resumed state and constraints, rejects a strategyState with no restoreState and an rngState with no rng, discovers adapters under the live constraints, runs each interval with runScenario on a model that delegates every member to the original receiver and hides prestige actions under any adapter and the custom reset, resolved per state and removed by identity when listed, measures the horizon on summed runner seconds with relative slack capped by a share of the interval, censors any budget stop, resolves the adapter at the boundary, commits one reset through applyDecisions with live constraints and forwards its action facts to onAction, refreshes maxMoneyEver, records a refusal instead of forcing it, and records copies of the state, a strategy snapshot only when restoreState exists, and the RNG snapshot. It binds a strategy snapshot to the writing strategy's id and state version and requires one for a restorable strategy, bounds the horizon slack to rounding ULPs, emits boundary events through ctx.emit, and recognizes its own spec and action adapters by identity. Intervals at or below the runner's 1e-12 second resolution are rejected. It binds a checkpoint to its model, rejects nonfinite clock fields before any guard, and keeps the horizon slack below half the interval. It binds a checkpoint to its explicit adapter, carries a budget-cut cycle's played seconds into the resume, hides an adapter's reset whatever its declared kind, and notifies no observer when observation is off. It binds a cut cycle to its planned duration, rejects a non-reset adapter action, a reset that moves t, and nonfinite rewards, and passes the boundary wallT from its elapsed clock. It keeps a resumed cut cycle's start, rejects an accumulated reward that overflows and a negative checkpoint elapsedSec, and announces boundary events only after the boundary is validated.
  * @evidence ../observation.ts#emitActionFacts Forwards a boundary decision to onAction.
  * @evidenceReview ../observation.ts#emitActionFacts #be50111 The function returns without onAction, and forwards each applied or skipped action event with its time, id, outcome, and reason.
  * @evidence ./resetCycle.ts#resetAdapterFor Picks the prestige action and returns nothing for a model with neither an action nor a spec.
@@ -1139,6 +1139,45 @@ export function runsThreeCommittedResets(): void {
     policy: { kind: "fixed-interval", intervalSec: 2, cycles: 2 },
   });
   expect(boundaryWalls).toEqual([1002, 1004]);
+
+  // A resumed cut cycle keeps the start it had before the cut, so its span matches its duration.
+  expect(cut.checkpoint.pendingStartSec).toBe(0);
+  expect(finished.artifact.cycles[0]?.startSec).toBe(0);
+  expect(finished.artifact.cycles[0]?.endSec).toBe(10);
+  // Finite deltas that sum past the number range are rejected, not stored as Infinity.
+  const huge: ResetAdapter<number, "COIN", Vars> = {
+    ...scoreAdapter,
+    id: "huge",
+    action: () => prestigeAction((current) => ({ ...current, vars: { ...current.vars, score: 1e308 } })),
+  };
+  const zeroing = scenario({ actions: [] });
+  expect(() =>
+    executeResetCycles({
+      scenario: { ...zeroing, model: { ...zeroing.model, evolve: (_ctx, current) => ({ ...current, vars: { ...current.vars, score: 0 } }) } },
+      policy: { kind: "fixed-interval", intervalSec: 2, cycles: 3 },
+      adapter: huge,
+    }),
+  ).toThrow("accumulated reward is not finite");
+  // A rejected boundary announces no action to observers or the emitter.
+  const announced: string[] = [];
+  const announcedScenario = scenario({ observer: { onAction: () => void announced.push("action") } });
+  expect(() =>
+    executeResetCycles({
+      scenario: { ...announcedScenario, ctx: { ...announcedScenario.ctx, emit: (events) => void announced.push(...events.map((event) => event.type).filter((type) => type.startsWith("action"))) } },
+      policy: { kind: "fixed-interval", intervalSec: 2, cycles: 1 },
+      adapter: timeTravel,
+    }),
+  ).toThrow("changed t");
+  expect(announced).toEqual([]);
+  // Elapsed seconds in a checkpoint cannot be negative.
+  expect(() =>
+    executeResetCycles({
+      scenario: scenario(),
+      policy: { kind: "fixed-interval", intervalSec: 2, cycles: 1 },
+      horizonSec: 10,
+      resume: { ...scored.checkpoint, adapterId: undefined, adapterKind: undefined, elapsedSec: -100 },
+    }),
+  ).toThrow("elapsedSec must be >= 0");
 }
 
 /**
