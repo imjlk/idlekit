@@ -1,5 +1,52 @@
 # @idlekit/cli
 
+## 0.3.0 — 2026-10-12
+
+### Minor changes
+
+- [71504bd](https://github.com/imjlk/idlekit/commit/71504bd4169e1db7212f99471da5295bf021c239) Register growth and ETA analyzers without a second numeric engine.
+  
+  - `idk analyze <id>` runs a registered analyzer and keeps `idk eta`, `idk growth`, and `idk prestige-cycle`
+  - a short observation returns insufficient-data instead of a silent long run
+  - plugin analyzers still require the existing allow, root, and sha256 checks — Thanks @imjlk!
+- [3d98c35](https://github.com/imjlk/idlekit/commit/3d98c35c3897aec8004b8ff7c296d991439fa37b) Explain a resolved run plan before it starts.
+  
+  - `idk inspect` reports the engine, stage step, horizon, and capability knowledge without a tick
+  - a planner expansion is an upper bound, and a wide number-engine decimal is a warning
+  - plugin modules stay unloaded unless `--resolve-plugins` passes the existing trust checks — Thanks @imjlk!
+
+### Patch changes
+
+- [bb36b82](https://github.com/imjlk/idlekit/commit/bb36b8236d9e07f0605e3d24028f993155347500) Correct ETA goal meaning without replacing the legacy seconds field.
+  
+  - large ratios are divided in the Engine before a finite seconds number
+  - exact is not implied by a constant-income hint when a boundary exists
+  - a missed horizon is censored on the new estimate and still numeric on the legacy field — Thanks @imjlk!
+- [1c922e1](https://github.com/imjlk/idlekit/commit/1c922e1ee361f4a193d012e5b1a463e60a1aea1f) Compare registered model and policy parameters with local one-at-a-time experiments.
+  
+  - `idk experiment <spec>` is a new command and does not replace `idk tune`
+  - censored reach times stay null instead of the horizon
+  - Pareto does not treat an unknown objective as a better point
+  - candidates start from the referenced scenario, run to the horizon, and average every seed — Thanks @imjlk!
+- [1f9d87c](https://github.com/imjlk/idlekit/commit/1f9d87c1f66255b191403af63b6909a2727877f8) Report censored simulation draws separately from completed quantiles.
+  
+  - population p95 stays unavailable when the common horizon does not cover it
+  - experience no longer fills a missing first visible change with active time or zero
+  - logical draw seeds do not depend on worker count — Thanks @imjlk!
+- [38c9836](https://github.com/imjlk/idlekit/commit/38c98360e701bb087295b59825fe51f3ccd74537) Keep ETA validity and exactness aligned with engine comparison and wallet settlement.
+  
+  - reject positive ETA ratios lost to zero during engine division
+  - reject income in a different wallet or target unit
+  - expose optional Engine comparisonIsExact metadata and keep tolerant or unknown comparisons analytic-local
+  - preserve legacy seconds while limiting exact labels and reach brackets to declared strict comparators — Thanks @imjlk!
+- [24ef572](https://github.com/imjlk/idlekit/commit/24ef572763f63395a9e1bae2c2dcaf7f89753c82) Add analysis artifact v1 without replacing ScenarioV1 or CLI metadata.
+  
+  - money, net worth, prestige points, and milestone goals share one predicate
+  - model capabilities are registered outside Model and do not score missing flow as zero
+  - contracts:check compares the generated artifact schema and does not rewrite it
+  - CLI output keeps contractVersion 1.4.0 and links the artifact beside _meta — Thanks @imjlk!
+- Updated dependencies: core@0.3.0
+
 ## 0.2.1 — 2026-10-11
 
 ### Patch changes

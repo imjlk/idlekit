@@ -1,5 +1,16 @@
 # @idlekit/money
 
+## 0.3.0 — 2026-10-12
+
+### Minor changes
+
+- [38c9836](https://github.com/imjlk/idlekit/commit/38c98360e701bb087295b59825fe51f3ccd74537) Keep ETA validity and exactness aligned with engine comparison and wallet settlement.
+  
+  - reject positive ETA ratios lost to zero during engine division
+  - reject income in a different wallet or target unit
+  - expose optional Engine comparisonIsExact metadata and keep tolerant or unknown comparisons analytic-local
+  - preserve legacy seconds while limiting exact labels and reach brackets to declared strict comparators — Thanks @imjlk!
+
 ## 0.2.0 — 2026-10-09
 
 ### Minor changes
