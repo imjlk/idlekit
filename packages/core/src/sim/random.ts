@@ -19,6 +19,9 @@ export function deriveDrawSeed(baseSeed: number, drawIndex: number): number {
 /**
  * Seed for one logical draw.
  * Worker count and call order are not inputs. The same index is the same seed.
+ *
+ * @evidence docs/requirements/active/simulation-distribution.md#req-pr13-logical-draws The draw seed is a function of the base seed and the logical index only.
+ * @evidenceReview docs/requirements/active/simulation-distribution.md#req-pr13-logical-draws #6e3688a Re-read the section: reversed calls keep draw 2's seed, so the seed cannot depend on call order or workers.
  */
 export function logicalDrawSeed(baseSeed: number, drawIndex: number): number {
   if (typeof baseSeed !== "number" || !Number.isFinite(baseSeed)) {
@@ -30,7 +33,12 @@ export function logicalDrawSeed(baseSeed: number, drawIndex: number): number {
   return deriveDrawSeed(baseSeed, drawIndex);
 }
 
-/** Stable id for one logical draw. It is the decimal index, not a worker slot. */
+/**
+ * Stable id for one logical draw. It is the decimal index, not a worker slot.
+ *
+ * @evidence docs/requirements/active/simulation-distribution.md#req-pr13-logical-draws The draw id is the logical index.
+ * @evidenceReview docs/requirements/active/simulation-distribution.md#req-pr13-logical-draws #6e3688a Re-read the section: draw ids are the decimal draw index, not a worker slot.
+ */
 export function logicalDrawId(drawIndex: number): string {
   if (!Number.isInteger(drawIndex) || drawIndex < 0) {
     throw new Error("logical draw index must be an integer >= 0");
