@@ -115,7 +115,7 @@ const sharedDemand = observationDemand({ coverage: "window", sampleCadenceSec: 2
 
 /**
  * @evidence docs/requirements/active/analyzer-registry.md#req-dx02-registry-conflicts A duplicate, a cycle, a missing dependency, bad params, and an unsupported capability do not run the body.
- * @evidenceReview docs/requirements/active/analyzer-registry.md#req-dx02-registry-conflicts #5c30276 Re-read the section, then ran this function: the call log stays empty, flow is unsupported, an incomplete definition is refused at register, and base takes the semantics of left.
+ * @evidenceReview docs/requirements/active/analyzer-registry.md#req-dx02-registry-conflicts #f1a5463 Re-read the section, then ran this function: the call log stays empty, flow is unsupported, an incomplete definition and a two-run cost are refused at register, base takes the semantics of left, and after.gate and after.short do not run.
  * @evidence ./analyzers.ts#analyzerRegistryConflicts Reads the conflict contract.
  * @evidenceReview ./analyzers.ts#analyzerRegistryConflicts #a1dbd92 The declaration is fail-before-run.
  * @evidence ./analyzers.ts#AnalyzerRegistryError.prototype.issues Reads the issue list stored when params fail before a body.
@@ -201,6 +201,10 @@ export function rejectsRegistryConflictsBeforeRun(): void {
   expect(() =>
     incomplete.register({ ...probe({ id: "plugin.cost" }), cost: { freshRuns: -1, samples: 0 } }),
   ).toThrow("cost.freshRuns");
+  // A group shares one fresh run, so a declared cost of two runs is refused rather than undercounted.
+  expect(() =>
+    incomplete.register({ ...probe({ id: "plugin.two", kind: "execution" }), cost: { freshRuns: 2, samples: 0 } }),
+  ).toThrow("cost.freshRuns must be 0 or 1");
   expect(() =>
     incomplete.register({ ...probe({ id: "plugin.deps" }), dependencies: [{ id: "m" }] } as unknown as AnalyzerDefinition),
   ).toThrow("dependencies must be a list");
@@ -234,6 +238,31 @@ export function rejectsRegistryConflictsBeforeRun(): void {
       semantics: analyzerSemantics(),
     }),
   ).toThrow("dependency base@1 is implied with different semantics");
+
+  // A dependent does not run when its dependency is blocked or does not finish ok.
+  const dependents: string[] = [];
+  const chained = createAnalyzerRegistry();
+  chained.register(probe({ id: "gate", capabilities: ["flow"] }));
+  chained.register(probe({ id: "after.gate", dependencies: [{ id: "gate", version: "1" }], onPostprocess: () => dependents.push("after.gate") }));
+  chained.register({
+    ...probe({ id: "short" }),
+    postprocess: () => ({ status: "insufficient-data" as const, value: null }),
+  });
+  chained.register(probe({ id: "after.short", dependencies: [{ id: "short", version: "1" }], onPostprocess: () => dependents.push("after.short") }));
+  const chainedBatch = chained.run({
+    requests: [
+      { id: "after.gate", version: "1", params: {} },
+      { id: "after.short", version: "1", params: {} },
+    ],
+    semantics: analyzerSemantics(),
+    capabilities: { flow: "unsupported" },
+  });
+  const byId = new Map(chainedBatch.results.map((result) => [result.id, result]));
+  expect(byId.get("after.gate")?.status).toBe("unsupported");
+  expect(byId.get("after.gate")?.issues).toEqual(["dependency gate@1 unsupported"]);
+  expect(byId.get("after.short")?.status).toBe("insufficient-data");
+  expect(byId.get("after.short")?.issues).toEqual(["dependency short@1 insufficient-data"]);
+  expect(dependents).toEqual([]);
 }
 
 /**
@@ -360,7 +389,7 @@ export function reportsInsufficientObservation(): void {
 
 /**
  * @evidence docs/requirements/active/analyzer-registry.md#req-dx02-execution-budget A zero run budget and a horizon past the budget do not call execute. A granted run receives the factory.
- * @evidenceReview docs/requirements/active/analyzer-registry.md#req-dx02-execution-budget #4715791 Re-read the section, then ran this function: refused calls stay 0, one grant is not a second run, s2 is refused on samples, g2 runs after unsupported g1, and eta reports missing-scenario.
+ * @evidenceReview docs/requirements/active/analyzer-registry.md#req-dx02-execution-budget #252cfcc Re-read the section, then ran this function: refused calls stay 0, one grant is not a second run, s2 is refused on samples, g2 runs after unsupported g1, eta reports missing-scenario, analytic eta is ok with no run budget, and a 100 second eta is refused under a 10 second budget.
  * @evidence ./analyzers.ts#analyzerExecutionBudget Reads the budget contract.
  * @evidenceReview ./analyzers.ts#analyzerExecutionBudget #9687833 The declaration is explicit-budget-not-silent-run.
  */
@@ -425,8 +454,8 @@ export function enforcesExecutionBudget(): void {
   // Samples are reserved across the batch: two groups of 8 do not both fit a budget of 10.
   const execBudget = { maxFreshRuns: 2, maxDurationSec: 4, maxSamples: 10 };
   const sampled = createAnalyzerRegistry();
-  sampled.register(probe({ id: "s1", kind: "execution", samples: 8 }));
-  sampled.register(probe({ id: "s2", kind: "execution", samples: 8, observation: observationDemand({ metricIds: ["other"] }) }));
+  sampled.register(probe({ id: "s1", kind: "execution", samples: 8, observation: observationDemand({ metricIds: ["a"] }) }));
+  sampled.register(probe({ id: "s2", kind: "execution", samples: 8, observation: observationDemand({ metricIds: ["b"] }) }));
   const sampledBatch = sampled.run({
     requests: [
       { id: "s1", version: "1", params: {} },
@@ -469,6 +498,28 @@ export function enforcesExecutionBudget(): void {
   });
   expect(noScenario.results[0]?.provenance.rerun?.reason).toBe("missing-scenario");
   expect(noScenario.freshRuns).toBe(0);
+
+  // Analytic ETA does not simulate: it runs with no fresh-run budget and reports no fresh run.
+  const etaArgs = { scenario: makeScenario(), target: { kind: "money" as const, value: "3" }, runFactory: factory };
+  const analytic = runEtaAnalyzer({
+    ...etaArgs,
+    mode: "analytic",
+    maxDurationSec: 4,
+    budget: { maxFreshRuns: 0, maxDurationSec: 4, maxSamples: 0 },
+  });
+  expect(analytic.status).toBe("ok");
+  expect(analytic.provenance.freshRuns).toBe(0);
+  // Simulated ETA runs for maxDurationSec, so a shorter semantics horizon cannot slip it past the budget.
+  const understated = runEtaAnalyzer({
+    ...etaArgs,
+    mode: "simulate",
+    maxDurationSec: 100,
+    semantics: analyzerSemantics({ horizonSec: 1 }),
+    budget: { maxFreshRuns: 1, maxDurationSec: 10, maxSamples: 10 },
+  });
+  expect(understated.status).toBe("insufficient-data");
+  expect(understated.provenance.rerun?.reason).toBe("budget");
+  expect(understated.provenance.freshRuns).toBe(0);
 }
 
 /**
@@ -543,7 +594,7 @@ export function matchesExistingAlgorithmVersions(): void {
 
 /**
  * @evidence docs/requirements/active/analyzer-registry.md#req-dx02-observation-plan Shared semantics use one fresh run. A different horizon is a separate plan, and cadence is recorded.
- * @evidenceReview docs/requirements/active/analyzer-registry.md#req-dx02-observation-plan #896d208 Re-read the section, then ran this function: everySteps is 2, the longer horizon is not in the shared group, cadence 1 at step 2 is refused, and one and two get the same RunResult from one fresh run.
+ * @evidenceReview docs/requirements/active/analyzer-registry.md#req-dx02-observation-plan #d7e6325 Re-read the section, then ran this function: everySteps is 2, the longer horizon is not in the shared group, cadence 1 at step 2 is refused, one and two get the same RunResult from one fresh run, delimiter and sharesRun false pairs take two runs, and a blocked peer is not in sharedWith.
  * @evidence ./analyzers.ts#analyzerObservationPlan Reads the plan contract.
  * @evidenceReview ./analyzers.ts#analyzerObservationPlan #e5b0d7f The declaration is demand-on-plan-and-provenance.
  * @evidence ./analyzers.ts#executionPlanForDemand Builds the execution plan a demand needs.
@@ -690,6 +741,54 @@ export function recordsObservationDemandOnThePlan(): void {
   expect(sharedRun?.end.t).toBe(4);
   expect(sharedRun?.trace?.map((state) => state.t)).toEqual([0, 2, 4]);
   expect(sharedBatch.results[1]?.value).toBe(sharedRun);
+
+  const twoRuns = { maxFreshRuns: 2, maxDurationSec: 10, maxSamples: 10 };
+  const pair = (registry: ReturnType<typeof createAnalyzerRegistry>, left: RunSemantics, right: RunSemantics) =>
+    registry.run({
+      requests: [
+        { id: "one", version: "1", params: {}, semantics: left },
+        { id: "two", version: "1", params: {}, semantics: right },
+      ],
+      semantics: left,
+      allowExecution: true,
+      budget: twoRuns,
+      runFactory: createRunFactory(),
+    });
+  // A `|` inside a session or strategy key does not make two different semantics one group.
+  const plain = createAnalyzerRegistry();
+  plain.register(probe({ id: "one", kind: "execution", onExecute: (ctx) => ctx.requestRun("one").accepted }));
+  plain.register(probe({ id: "two", kind: "execution", onExecute: (ctx) => ctx.requestRun("two").accepted }));
+  const delimited = pair(
+    plain,
+    analyzerSemantics({ sessionKey: "a", strategyKey: "b|c" }),
+    analyzerSemantics({ sessionKey: "a|b", strategyKey: "c" }),
+  );
+  expect(delimited.freshRuns).toBe(2);
+  expect(delimited.results.map((result) => result.provenance.sharedWith)).toEqual([[], []]);
+  // An analyzer that runs its own simulation (sharesRun false) is never grouped with a peer.
+  const exclusive = createAnalyzerRegistry();
+  exclusive.register({ ...probe({ id: "one", kind: "execution", onExecute: (ctx) => ctx.requestRun("one").accepted }), sharesRun: false });
+  exclusive.register(probe({ id: "two", kind: "execution", onExecute: (ctx) => ctx.requestRun("two").accepted }));
+  const alone = pair(exclusive, analyzerSemantics(), analyzerSemantics());
+  expect(alone.freshRuns).toBe(2);
+  expect(alone.results[0]?.provenance.sharedWith).toEqual([]);
+  // A blocked peer in the same group is not reported in sharedWith.
+  const blockedPeer = createAnalyzerRegistry();
+  blockedPeer.register(probe({ id: "one", kind: "execution", capabilities: ["flow"] }));
+  blockedPeer.register(probe({ id: "two", kind: "execution" }));
+  const peerBatch = blockedPeer.run({
+    requests: [
+      { id: "one", version: "1", params: {} },
+      { id: "two", version: "1", params: {} },
+    ],
+    semantics: analyzerSemantics(),
+    capabilities: { flow: "unsupported" },
+    allowExecution: true,
+    budget: twoRuns,
+    runFactory: createRunFactory(),
+  });
+  expect(peerBatch.results.map((result) => result.status)).toEqual(["unsupported", "ok"]);
+  expect(peerBatch.results[1]?.provenance.sharedWith).toEqual([]);
 }
 
 /**

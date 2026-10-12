@@ -28,7 +28,7 @@ const GROWTH_OUTPUT_CONTRACT = "idlekit.growth-report.v1" as const;
 
 /**
  * @evidence docs/requirements/active/analyzer-registry.md#req-dx02-registry-conflicts Duplicate ids, cycles, missing dependencies, and bad params fail before a body runs.
- * @evidenceReview docs/requirements/active/analyzer-registry.md#req-dx02-registry-conflicts #5c30276 Re-read the section: a cycle, a duplicate, a missing dependency, bad params, and an incomplete definition do not call the body, and an implied dependency takes its parent's semantics.
+ * @evidenceReview docs/requirements/active/analyzer-registry.md#req-dx02-registry-conflicts #f1a5463 Re-read the section: a cycle, a duplicate, a missing dependency, bad params, an incomplete definition, and a fresh-run cost above one do not call the body, an implied dependency takes its parent's semantics, and a dependent of a failed dependency does not run.
  */
 export const analyzerRegistryConflicts = "fail-before-run" as const;
 
@@ -46,7 +46,7 @@ export const analyzerInsufficientObservation = "insufficient-observation-rerun-p
 
 /**
  * @evidence docs/requirements/active/analyzer-registry.md#req-dx02-execution-budget An execution analyzer receives a RunFactory and a budget. A short budget does not start the body.
- * @evidenceReview docs/requirements/active/analyzer-registry.md#req-dx02-execution-budget #4715791 Re-read the section: horizon past the budget is refused, a zero run budget does not call execute, samples are reserved across the batch, a blocked group reserves nothing, and missing-scenario is kept.
+ * @evidenceReview docs/requirements/active/analyzer-registry.md#req-dx02-execution-budget #252cfcc Re-read the section: horizon past the budget is refused, a zero run budget does not call execute, samples are reserved across the batch, a blocked group reserves nothing, missing-scenario is kept, analytic ETA costs no run, and simulated ETA is checked on maxDurationSec.
  */
 export const analyzerExecutionBudget = "explicit-budget-not-silent-run" as const;
 
@@ -58,7 +58,7 @@ export const analyzerSameAlgorithm = "adapter-keeps-algorithm-version" as const;
 
 /**
  * @evidence docs/requirements/active/analyzer-registry.md#req-dx02-observation-plan The same session, strategy, horizon, and observation semantics share one fresh run. A different horizon does not.
- * @evidenceReview docs/requirements/active/analyzer-registry.md#req-dx02-observation-plan #896d208 Re-read the section: cadence rounds down onto the execution plan and is on provenance, a different horizon is a second group, and group members get one shared RunResult.
+ * @evidenceReview docs/requirements/active/analyzer-registry.md#req-dx02-observation-plan #d7e6325 Re-read the section: cadence rounds down onto the execution plan and is on provenance, a different horizon or a sharesRun false definition is a separate group, the key is JSON, group members get one shared RunResult, and blocked peers are not in sharedWith.
  */
 export const analyzerObservationPlan = "demand-on-plan-and-provenance" as const;
 
@@ -202,7 +202,12 @@ export type AnalyzerDefinition<P = unknown> = Readonly<{
   resolveDemand?: (params: P) => ObservationDemand;
   outputContract: string;
   algorithmVersion: string;
+  /** `freshRuns` is 0 or 1: a group shares at most one fresh run. */
   cost: AnalyzerCost;
+  /** The cost of one request, when it depends on params. Omitted is `cost`. */
+  resolveCost?: (params: P) => AnalyzerCost;
+  /** False when the body runs its own simulation, so its group never holds another analyzer. */
+  sharesRun?: boolean;
   dependencies: readonly AnalyzerIdVersion[];
   postprocess?: (params: P, ctx: PostprocessContext) => AnalyzerBodyResult;
   execute?: (params: P, ctx: ExecutionContext) => AnalyzerBodyResult;
@@ -409,6 +414,15 @@ function demandIssues(label: string, value: unknown): readonly string[] {
   return issues;
 }
 
+/** A group shares one fresh run, so a declared cost above one run could not be honored. */
+function costIssues(value: unknown): readonly string[] {
+  const cost = value as Record<string, unknown> | null | undefined;
+  if (!cost || typeof cost !== "object" || (cost.freshRuns !== 0 && cost.freshRuns !== 1) || !isCount(cost.samples)) {
+    return ["cost.freshRuns must be 0 or 1 and cost.samples a number >= 0"];
+  }
+  return [];
+}
+
 /** A plugin definition is a runtime value. Every field `run` reads is checked before the definition is stored. */
 function assertDefinition(input: AnalyzerDefinition<any>): void {
   if (!input || typeof input !== "object") throw new AnalyzerRegistryError("analyzer definition must be an object");
@@ -431,6 +445,12 @@ function assertDefinition(input: AnalyzerDefinition<any>): void {
   if (definition.resolveDemand !== undefined && typeof definition.resolveDemand !== "function") {
     issues.push("resolveDemand must be a function");
   }
+  if (definition.resolveCost !== undefined && typeof definition.resolveCost !== "function") {
+    issues.push("resolveCost must be a function");
+  }
+  if (definition.sharesRun !== undefined && typeof definition.sharesRun !== "boolean") {
+    issues.push("sharesRun must be a boolean");
+  }
   const requires = definition.requires as Record<string, unknown> | null | undefined;
   if (!requires || typeof requires !== "object") {
     issues.push("requires must be an object");
@@ -442,10 +462,7 @@ function assertDefinition(input: AnalyzerDefinition<any>): void {
   issues.push(...demandIssues("observation", definition.observation));
   if (!isNonEmptyString(definition.outputContract)) issues.push("outputContract must be a string");
   if (!isNonEmptyString(definition.algorithmVersion)) issues.push("algorithmVersion must be a string");
-  const cost = definition.cost as Record<string, unknown> | null | undefined;
-  if (!cost || typeof cost !== "object" || !isCount(cost.freshRuns) || !isCount(cost.samples)) {
-    issues.push("cost.freshRuns and cost.samples must be numbers >= 0");
-  }
+  issues.push(...costIssues(definition.cost));
   if (!Array.isArray(definition.dependencies) || !definition.dependencies.every(isIdentity)) {
     issues.push("dependencies must be a list of id and version");
   }
@@ -485,20 +502,26 @@ function resolvedDemand<P>(definition: AnalyzerDefinition<P>, params: P): Observ
   return definition.resolveDemand ? definition.resolveDemand(params) : definition.observation;
 }
 
-function groupKey(kind: AnalyzerDefinition["kind"], semantics: RunSemantics, demand: ObservationDemand): string {
-  return [
-    kind,
+function resolvedCost<P>(definition: AnalyzerDefinition<P>, params: P): AnalyzerCost {
+  return definition.resolveCost ? definition.resolveCost(params) : definition.cost;
+}
+
+/** JSON of the fields, so a `|` or `,` inside a key cannot make two different groups equal. */
+function groupKey(definition: AnalyzerDefinition<any>, semantics: RunSemantics, demand: ObservationDemand): string {
+  return JSON.stringify([
+    definition.kind,
     semantics.sessionKey,
     semantics.strategyKey,
-    String(semantics.horizonSec),
-    String(semantics.stepSec),
-    semantics.seed ?? "",
+    semantics.horizonSec,
+    semantics.stepSec,
+    semantics.seed,
     demand.observationSchema,
     demand.coverage,
-    String(demand.windowSec),
-    String(demand.sampleCadenceSec),
-    [...demand.metricIds].sort().join(","),
-  ].join("|");
+    demand.windowSec,
+    demand.sampleCadenceSec,
+    [...demand.metricIds].sort(),
+    definition.sharesRun === false ? analyzerKey(definition.id, definition.version) : null,
+  ]);
 }
 
 function rerunPlan(
@@ -544,6 +567,7 @@ type Prepared = Readonly<{
   params: unknown;
   semantics: RunSemantics;
   demand: ObservationDemand;
+  cost: AnalyzerCost;
   key: string;
   block: Block;
 }>;
@@ -654,23 +678,41 @@ function runRegistered(
   };
   for (const definition of [...requested].sort(compareIdentity)) visit(definition);
 
+  // `ordered` lists dependencies first, so a blocked dependency is known before its dependents.
+  const blockByKey = new Map<string, Block>();
   const prepared: Prepared[] = ordered.map((definition) => {
     const key = analyzerKey(definition.id, definition.version);
     const itemParams = params.get(key);
     const semantics = semanticsByKey.get(key) ?? request.semantics;
     const demand = resolvedDemand(definition, itemParams);
+    const cost = resolvedCost(definition, itemParams);
+    const costProblems = costIssues(cost);
+    if (costProblems.length > 0) throw new AnalyzerRegistryError(`bad cost for ${key}`, costProblems);
+    const blockedDependency = definition.dependencies
+      .map((dependency) => analyzerKey(dependency.id, dependency.version))
+      .find((dependencyKey) => blockByKey.get(dependencyKey));
+    const dependencyBlock = blockedDependency ? blockByKey.get(blockedDependency) : null;
+    const block: Block =
+      eligibilityBlock(definition, demand, request) ??
+      (dependencyBlock && blockedDependency
+        ? { status: dependencyBlock.status, issue: `dependency ${blockedDependency} ${dependencyBlock.status}` }
+        : null);
+    blockByKey.set(key, block);
     return {
       definition,
       params: itemParams,
       semantics,
       demand,
-      key: groupKey(definition.kind, semantics, demand),
-      block: eligibilityBlock(definition, demand, request),
+      cost,
+      key: groupKey(definition, semantics, demand),
+      block,
     };
   });
 
+  // Only analyzers that can run are members of a group, so a blocked peer is never in sharedWith.
   const members = new Map<string, string[]>();
   for (const item of prepared) {
+    if (item.block) continue;
     const key = analyzerKey(item.definition.id, item.definition.version);
     const list = members.get(item.key) ?? [];
     list.push(key);
@@ -685,6 +727,7 @@ function runRegistered(
   const groupDecision = new Map<string, "run" | AnalyzerRerunPlan["reason"]>();
   let reservedRuns = 0;
   let reservedSamples = 0;
+  const runGroups = new Set<string>();
   const groupKeys = [...new Set(prepared.map((item) => item.key))].sort();
   for (const key of groupKeys) {
     const runnable = prepared.filter(
@@ -700,12 +743,11 @@ function runRegistered(
       groupDecision.set(key, "insufficient-data");
       continue;
     }
-    const freshRunCost = Math.max(...runnable.map((item) => item.definition.cost.freshRuns));
-    const sampleCost = Math.max(...runnable.map((item) => item.definition.cost.samples));
-    const runs = freshRunCost > 0 ? 1 : 0;
+    // Costs are 0 or 1 fresh runs (checked at register and on resolveCost): a group holds at most one.
+    const runs = Math.max(...runnable.map((item) => item.cost.freshRuns));
+    const sampleCost = Math.max(...runnable.map((item) => item.cost.samples));
     if (
-      sample.semantics.horizonSec > budget.maxDurationSec ||
-      freshRunCost > budget.maxFreshRuns ||
+      (runs > 0 && sample.semantics.horizonSec > budget.maxDurationSec) ||
       reservedRuns + runs > budget.maxFreshRuns ||
       reservedSamples + sampleCost > budget.maxSamples
     ) {
@@ -714,6 +756,7 @@ function runRegistered(
     }
     reservedRuns += runs;
     reservedSamples += sampleCost;
+    if (runs > 0) runGroups.add(key);
     groupDecision.set(key, "run");
   }
 
@@ -743,7 +786,13 @@ function runRegistered(
     const existing = grants.get(item.key);
     if (existing) return existing;
     const plan = executionPlanForDemand(item.semantics, item.demand);
-    if (!budget || freshRuns >= budget.maxFreshRuns || item.semantics.horizonSec > budget.maxDurationSec) {
+    // A group that reserved no fresh run (cost 0) is refused, so an unbudgeted run is never opened.
+    if (
+      !budget ||
+      !runGroups.has(item.key) ||
+      freshRuns >= budget.maxFreshRuns ||
+      item.semantics.horizonSec > budget.maxDurationSec
+    ) {
       const refused = { accepted: false, plan, run: () => null } satisfies FreshRunGrant;
       grants.set(item.key, refused);
       return refused;
@@ -755,6 +804,11 @@ function runRegistered(
   };
 
   const results: AnalyzerResult[] = [];
+  const statusByKey = new Map<string, AnalysisStatus>();
+  const record = (result: AnalyzerResult): void => {
+    statusByKey.set(analyzerKey(result.id, result.version), result.status);
+    results.push(result);
+  };
   for (const item of prepared) {
     const identity = analyzerKey(item.definition.id, item.definition.version);
     const sharedWith = (members.get(item.key) ?? []).filter((member) => member !== identity);
@@ -770,13 +824,31 @@ function runRegistered(
     };
 
     if (item.block) {
-      results.push(
+      record(
         envelope(item.definition, item.block.status, null, [item.block.issue], {
           ...baseProvenance,
           freshRuns: 0,
           rerun: item.block.status === "insufficient-data"
             ? rerunPlan("insufficient-data", item.demand, item.semantics, budget)
             : null,
+        }),
+      );
+      continue;
+    }
+
+    // A dependency that ran but did not finish ok leaves its dependents without a prerequisite.
+    const failedDependency = item.definition.dependencies
+      .map((dependency) => analyzerKey(dependency.id, dependency.version))
+      .find((dependencyKey) => {
+        const status = statusByKey.get(dependencyKey);
+        return status !== undefined && status !== "ok";
+      });
+    if (failedDependency) {
+      record(
+        envelope(item.definition, "insufficient-data", null, [`dependency ${failedDependency} ${statusByKey.get(failedDependency)}`], {
+          ...baseProvenance,
+          freshRuns: 0,
+          rerun: rerunPlan("insufficient-data", item.demand, item.semantics, budget),
         }),
       );
       continue;
@@ -790,7 +862,7 @@ function runRegistered(
         plan,
       }) ?? { status: "error" as const, value: null, issues: ["missing postprocess"] };
       const insufficient = body.status === "insufficient-data" || body.rerun === true;
-      results.push(
+      record(
         envelope(item.definition, body.status, body.value, body.issues ?? [], {
           ...baseProvenance,
           freshRuns: 0,
@@ -804,7 +876,7 @@ function runRegistered(
 
     const decision = groupDecision.get(item.key) ?? "execution-not-requested";
     if (decision !== "run") {
-      results.push(
+      record(
         envelope(item.definition, "insufficient-data", null, [decision], {
           ...baseProvenance,
           freshRuns: 0,
@@ -826,7 +898,7 @@ function runRegistered(
     const grant = grants.get(item.key);
     const insufficient = body.status === "insufficient-data" || body.rerun === true;
     const reason = body.rerunReason ?? (grant && !grant.accepted ? "budget" : "insufficient-data");
-    results.push(
+    record(
       envelope(item.definition, body.status, body.value, body.issues ?? [], {
         ...baseProvenance,
         executionPlan: grant?.plan ?? plan,
@@ -972,6 +1044,10 @@ function etaDefinition(): AnalyzerDefinition<EtaParams> {
     outputContract: etaEstimateSchemaId(),
     algorithmVersion: etaEstimateAlgorithmVersion(),
     cost: { freshRuns: 1, samples: 1 },
+    // Analytic ETA does not simulate, so it needs no fresh run.
+    resolveCost: (params) => (params.mode === "analytic" ? { freshRuns: 0, samples: 0 } : { freshRuns: 1, samples: 1 }),
+    // etaSimulate runs its own simulation and stops at the target, so it cannot share a group run.
+    sharesRun: false,
     dependencies: [],
     execute(params, ctx) {
       // No grant is requested without a scenario, so a missing scenario does not spend a fresh run.
@@ -984,18 +1060,28 @@ function etaDefinition(): AnalyzerDefinition<EtaParams> {
           rerunReason: "missing-scenario",
         };
       }
+      if (params.mode === "analytic") {
+        return { status: "ok", value: etaAnalytic({ scenario: ctx.scenario, target: params.target }) };
+      }
+      // The simulation runs for maxDurationSec, so that is the duration the budget and horizon must cover.
+      if (params.maxDurationSec > ctx.semantics.horizonSec || params.maxDurationSec > ctx.budget.maxDurationSec) {
+        return {
+          status: "insufficient-data",
+          value: null,
+          issues: ["maxDurationSec exceeds the run horizon or the duration budget"],
+          rerun: true,
+          rerunReason: "budget",
+        };
+      }
       const grant = ctx.requestRun("eta");
       if (!grant.accepted) {
         return { status: "insufficient-data", value: null, issues: ["budget"], rerun: true, rerunReason: "budget" };
       }
-      const value =
-        params.mode === "analytic"
-          ? etaAnalytic({ scenario: ctx.scenario, target: params.target })
-          : etaSimulate({
-              scenario: ctx.scenario,
-              target: params.target,
-              maxDurationSec: params.maxDurationSec,
-            });
+      const value = etaSimulate({
+        scenario: ctx.scenario,
+        target: params.target,
+        maxDurationSec: params.maxDurationSec,
+      });
       return { status: "ok", value };
     },
   };
