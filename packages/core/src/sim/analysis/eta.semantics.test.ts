@@ -66,9 +66,9 @@ function modelOf<N>(
  * @evidence ./eta.ts#etaEstimateJsonSchema Reads the generated OpenAPI 3.1 schema object.
  * @evidenceReview ./eta.ts#etaEstimateJsonSchema #2f0bdab The function memoizes typia.json.schema of EtaEstimateV1.
  * @evidence ./eta.ts#etaSecondsFromEngineRatio Divides 1e402 by 1e400 in the engine and rejects a 1e400 second ratio.
- * @evidenceReview ./eta.ts#etaSecondsFromEngineRatio #3b4b35a Re-read the function: divN precedes narrowing, and a known positive gap lost to zero in engine division is invalid without a misleading zero decimal.
+ * @evidenceReview ./eta.ts#etaSecondsFromEngineRatio #a54dc12 Re-read the merged function: it checks finiteness, divides the gap by the rate with divN before narrowing, narrows only a finite ratio within 1e308, returns invalid without a decimal when engine division loses a known positive gap, and rejects a zero result when the ratio or the gap is nonzero.
  * @evidence ./eta.ts#etaAnalytic Runs the analytic estimate on the break_infinity fixture and the suffix goal.
- * @evidenceReview ./eta.ts#etaAnalytic #17a1808 The function wraps analyticEstimate, whose exact label also needs no maxLogGap tick policy, and adds a fixed-step compare only when a fallback is requested.
+ * @evidenceReview ./eta.ts#etaAnalytic #17a1808 The function wraps analyticEstimate, which reports income in another unit as invalid and whose exact label also needs no maxLogGap tick policy or pending bucket, and adds a fixed-step compare only when a fallback is requested.
  * @evidence ./eta.ts#etaSimulate Runs the fixed-step estimate on the same fixtures and compares goal ids.
  * @evidenceReview ./eta.ts#etaSimulate #60518f4 The function runs the scenario until the shared goal holds on a finite threshold and observed amount, rejects a budget stop, reports a non-finite run as invalid and a wallet-proxy net worth as unsupported, and censors a missed horizon.
  * @evidence ./eta.ts#etaGoalForTarget Binds the 1aa suffix goal twice and evaluates it at the target.
@@ -103,6 +103,11 @@ export function keepsEngineRatioBeforeNarrowing(): void {
   expect(tiny.status).toBe("invalid");
   expect(tiny.seconds).toBeNull();
   expect(tiny.secondsDecimal).toBeDefined();
+  // The number engine's own division can underflow the ratio to zero; the nonzero gap still rejects it.
+  const exactZero = createNumberEngine({ epsilon: 0 });
+  const lost = etaSecondsFromEngineRatio(exactZero, 1e-300, 0, 1e100, true);
+  expect(lost.status).toBe("invalid");
+  expect(lost.seconds).toBeNull();
   const notYet = etaAnalytic({ scenario: modelOf(big, big.from("1e400")), target: { kind: "money", value: "1" } });
   expect(notYet.reached).toBe(false);
   expect(notYet.estimate.status).toBe("invalid");
@@ -172,6 +177,13 @@ export function separatesExactAndLocalEta(): void {
   expect(pending.estimate.method).toBe("analytic-local");
   expect(pending.confidence).not.toBe("high");
   expect(pending.estimate.assumptions.join(" ")).toContain("accumulated bucket");
+  // Income in another unit never reaches the wallet, so it is not an exact estimate.
+  const otherUnit = modelOf(engine, 1, { income: () => ({ unit: { code: "GEM" as "COIN" }, amount: 1 }) });
+  const blocked = etaAnalytic({ scenario: otherUnit, target: { kind: "money", value: "3" } });
+  expect(blocked.reached).toBe(false);
+  expect(blocked.estimate.status).toBe("invalid");
+  expect(blocked.estimate.method).toBeUndefined();
+  expect(blocked.estimate.assumptions.join(" ")).toContain("income unit differs from the wallet or target unit");
   // A constant non-positive income estimate passes its own semantic validator.
   const stalled = etaAnalytic({ scenario: modelOf(engine, 0), target: { kind: "money", value: "3" } });
   expect(stalled.estimate.status).toBe("unsupported");

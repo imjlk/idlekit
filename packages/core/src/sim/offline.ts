@@ -4,8 +4,8 @@ import { analyzeUX } from "./analysis/ux";
 import { recordPrestigeReset } from "./constraints";
 import { createBoundedLog, createEventBuffer } from "./eventBuffer";
 import { observationLedger } from "./goalRead";
-import { createObservationRecorder, statsFromObservation } from "./observation";
-import { resolveOfflineSeconds } from "./offlineCredit";
+import { createObservationRecorder, emitCommittedResets, statsFromObservation } from "./observation";
+import { offlineAbsenceForCredit, resolveOfflineSeconds } from "./offlineCredit";
 import { stepOnce } from "./step";
 import { assertSimulationClock, assertTickAdvanced, nextBoundary, stepContext, timeEpsilon, timeStepEvents } from "./timeBoundary";
 import type { Action, CompiledScenario, RunResult, RunStop, SimState } from "./types";
@@ -205,6 +205,10 @@ export function applyOfflineSeconds<N, U extends string, Vars>(args: {
       admits,
       constraints,
       fast: opts?.fast ?? scenario.run.fast,
+      // Away time is the absence that earned the credited seconds so far, after cap and decay.
+      ...(scenario.ctx.clocks
+        ? { wallT: scenario.ctx.clocks.wallT + offlineAbsenceForCredit(actionElapsedSec, seconds, capPolicy) }
+        : {}),
     });
     assertTickAdvanced("offline", actionStartT, out.next.t, decision.dt, stepSec, start.t);
     // Restore only a batch the policy rejected whole, before or at re-resolution. An empty decide keeps its own state.
@@ -229,6 +233,8 @@ export function applyOfflineSeconds<N, U extends string, Vars>(args: {
       prestigeApplied: out.prestigeResetT !== undefined,
       state,
     });
+    // The reset fact follows the action fact the recorder sent, as online and at a reset-cycle boundary.
+    if (scenario.run.observation?.enabled !== false) emitCommittedResets(scenario.run.observer, out.committedResets ?? []);
     eventBuffer.pushTimed(timeStepEvents(out.events, actionStartT, state.t));
     if (out.actionsApplied?.length) {
       for (const row of out.actionsApplied) {

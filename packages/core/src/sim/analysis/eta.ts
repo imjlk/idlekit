@@ -171,8 +171,9 @@ export function etaSecondsFromEngineRatio<N>(
     return { status: "invalid", seconds: null };
   }
   // A nonzero ratio below the number range narrows to 0, which would read as already reached.
-  // absLog10 is finite only for a nonzero ratio; cmp against zero can round such a ratio to equal.
-  if (seconds === 0 && Number.isFinite(magnitude)) {
+  // absLog10 is finite only for a nonzero value; cmp against zero can round such a ratio to equal.
+  // The engine's own division can also lose the ratio, so a nonzero gap is checked as well.
+  if (seconds === 0 && (Number.isFinite(magnitude) || Number.isFinite(E.absLog10(E.sub(target, current))))) {
     return { status: "invalid", seconds: null, secondsDecimal: E.toString(ratio) };
   }
   return { status: "ok", seconds };

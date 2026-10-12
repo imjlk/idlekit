@@ -219,11 +219,11 @@ export function registersCustomMetric(): void {
  * @evidence ./contracts.ts#parseAnalysisArtifact Parses the rendered artifact JSON.
  * @evidenceReview ./contracts.ts#parseAnalysisArtifact #b7b8a89 The function is typia.json.validateParse of AnalysisArtifactV1.
  * @evidence ./contracts.ts#analysisCanonicalJson Compares the parsed artifact with the rendered text.
- * @evidenceReview ./contracts.ts#analysisCanonicalJson #4f8ccf4 The function delegates to renderCanonical, which sorts keys and drops undefined entries.
+ * @evidenceReview ./contracts.ts#analysisCanonicalJson #4f8ccf4 The function delegates to renderCanonical, which sorts keys, drops undefined entries, and renders array holes as null.
  * @evidence ./contracts.ts#analysisArtifactJson Renders the artifact as canonical JSON text.
  * @evidenceReview ./contracts.ts#analysisArtifactJson #52695d2 The function appends a newline to analysisCanonicalJson of the artifact.
  * @evidence ./contracts.ts#validateAnalysisSemantics Accepts the fixture and rejects an unavailable reading that carries a value.
- * @evidenceReview ./contracts.ts#validateAnalysisSemantics #4b2557b Re-read the function: it also rejects NaN or Infinity amount strings without narrowing large finite decimals and a declared numeric sign contradicting its finite value; the unavailable, domain, version, goal, horizon, and sampleCount rules remain.
+ * @evidenceReview ./contracts.ts#validateAnalysisSemantics #162154c Re-read the merged function: it rejects a value on an unavailable reading, a non-ok reading not labeled unavailable, missing ok values, nonfinite numeric values, nonfinite amount spellings (NaN, Inf, Infinity) without narrowing large finite decimals, a finite value whose sign contradicts it, a second representation for the domain, an amount decimal whose sign disagrees, nonfinite versions, atSec and horizon, reached or method on a non-ok goal, and a sampleCount that is not a nonnegative integer.
  * @evidence ./contracts.ts#analysisSchemaHash Hashes the generated schema for provenance.
  * @evidenceReview ./contracts.ts#analysisSchemaHash #0ec17bb The function hashes the canonical JSON of the memoized artifact schema.
  * @evidence ./contracts.ts#artifactProvenance Changes provenance with assumptions, algorithm, and schema, and not with the run hash.
@@ -235,7 +235,7 @@ export function registersCustomMetric(): void {
  * @evidence ./contracts.ts#unavailableReading Builds unknown and censored readings without a value.
  * @evidenceReview ./contracts.ts#unavailableReading #9f1f861 The function copies the metric fields, sets reading unavailable, and adds reason only when given.
  * @evidence ./contracts.ts#renderAnalysisMarkdown Renders the fixture and an artifact without sampleCount.
- * @evidenceReview ./contracts.ts#renderAnalysisMarkdown #b210302 The function prints samples only when sampleCount is present and prints each amount as its decimal string with the unit.
+ * @evidenceReview ./contracts.ts#renderAnalysisMarkdown #50bb769 The function prints samples only when sampleCount is present, prints each amount as its decimal string with the unit, and prints a goal's atSec only when the goal is ok and reached.
  */
 export function roundTripsAnalysisArtifact(): void {
   expect(analysisArtifactContract).toBe("idlekit.analysis.artifact.v1");
@@ -367,6 +367,39 @@ export function roundTripsAnalysisArtifact(): void {
   expect(validateAnalysisSemantics(nonfinite).map((issue) => issue.path)).toEqual(
     expect.arrayContaining(["horizon.sec", "metrics.0", "goals.0"]),
   );
+  // A finite value must agree with its sign, and an amount cannot spell a nonfinite number.
+  const contradictory: AnalysisArtifactV1 = {
+    ...artifact,
+    metrics: [
+      { ...unavailableReading({ metricId: "count", metricVersion: 1, meaning: "count", metricKind: "stock", timeAxis: "instant", domain: "count", status: "unknown" }), status: "ok", reading: "observed", value: -1, sign: "positive" },
+      { ...negative, sign: "positive", amount: { unit: "COIN", decimal: "NaN" } },
+      { ...negative, amount: { unit: "COIN", decimal: "-Infinity" } },
+    ],
+  };
+  const contradictoryMessages = validateAnalysisSemantics(contradictory).map((issue) => issue.message);
+  expect(contradictoryMessages).toContain("numeric sign contradicts its value");
+  expect(contradictoryMessages.filter((message) => message === "amount decimal is nonfinite")).toHaveLength(2);
+  // An amount decimal carries its own sign, so a contradictory sign fails without an engine.
+  const amountSigns: AnalysisArtifactV1 = {
+    ...artifact,
+    metrics: [
+      { ...negative, sign: "positive", amount: { unit: "COIN", decimal: "-3" } },
+      { ...negative, sign: "positive", amount: { unit: "COIN", decimal: "0" } },
+      { ...negative, sign: "negative", amount: { unit: "COIN", decimal: "-0.0e5" } },
+      { ...negative, sign: "positive", amount: { unit: "COIN", decimal: "1.5e+400" } },
+      { ...negative, sign: "negative", amount: { unit: "COIN", decimal: "-3" } },
+    ],
+  };
+  expect(
+    validateAnalysisSemantics(amountSigns)
+      .filter((issue) => issue.message === "sign does not match the amount decimal")
+      .map((issue) => issue.path),
+  ).toEqual(["metrics.0", "metrics.1", "metrics.2"]);
+  // A sparse array renders holes as null, so the canonical text stays valid JSON.
+  const sparse = new Array<string>(2);
+  sparse[1] = "kept";
+  expect(analysisCanonicalJson(sparse)).toBe('[null,"kept"]');
+  expect(JSON.parse(analysisCanonicalJson(new Array(2)))).toEqual([null, null]);
   expect(validateAnalysisSemantics(nonfinite).map((issue) => issue.message)).toEqual(
     expect.arrayContaining(["metricVersion is nonfinite", "goalVersion is nonfinite", "atSec is nonfinite"]),
   );
@@ -433,6 +466,22 @@ export function roundTripsAnalysisArtifact(): void {
   expect(markdown).toContain(hugeReading.amount?.decimal ?? "");
   expect(markdown).toContain(`${negative.amount?.decimal} COIN`);
   expect(markdown).not.toContain("자주");
+  const timed = renderAnalysisMarkdown({
+    ...artifact,
+    goals: [{ goalId: "money.atLeast", goalVersion: 1, status: "ok", reached: true, atSec: 42, assumptions: [] }],
+  });
+  expect(timed).toContain("reached true at 42s");
+  // A reach time is shown only for a goal that was reached.
+  const unreachedTimes = renderAnalysisMarkdown({
+    ...artifact,
+    goals: [
+      { goalId: "money.atLeast", goalVersion: 1, status: "unsupported", atSec: 42, assumptions: [] },
+      { goalId: "money.atLeast", goalVersion: 1, status: "ok", reached: false, atSec: 43, assumptions: [] },
+    ],
+  });
+  expect(unreachedTimes).toContain("unsupported reached absent");
+  expect(unreachedTimes).not.toContain(" at 42s");
+  expect(unreachedTimes).not.toContain(" at 43s");
   const omitted = renderAnalysisMarkdown(buildAnalysisArtifact());
   expect(omitted).not.toContain("Samples:");
 }

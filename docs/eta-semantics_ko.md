@@ -18,7 +18,7 @@ fixed-step `seconds`는 첫 관측이다. 단조인 상수 모델은 연속 비�
 
 이전의 fail-closed 규칙은 유지한다. 목표나 horizon 전에 `maxSteps`로 멈춘 실행은 예외를 던지고, 관측 초는 `t` 차이가 아니라 시뮬레이션한 초다. 유한하지 않은 지갑, net worth, 목표, 수입은 t=0에 도달한 것으로 보지 않는다. 그때 money 추정은 `invalid`, net worth 추정은 `unsupported`이고, legacy `seconds`는 낮은 confidence의 `Infinity`다.
 
-모든 추정은 `target`을 kind, 엔진 decimal, 단위로 기록하므로 목표값이 다른 추정이 구별된다. `maxLogGap` tick policy는 수입을 버리거나 쌓아 둘 수 있고, 남은 `accumulate` bucket은 다음 tick에 지갑으로 들어가므로 둘 다 `exact`를 막는다. 수 범위보다 작은 양의 비율은 0초가 아니라 `secondsDecimal`이 있는 `invalid`다. simulate에서 유한하지 않은 목표나 관측값은 목표 도달로 실행을 끝내지 않으며 추정은 `invalid`다. `Model.netWorth` 없는 net worth 목표는 legacy 필드가 지갑 대리값을 유지해도 추정에서는 `unsupported`다. ok가 아닌 모든 추정은 `seconds: null`이다.
+모든 추정은 `target`을 kind, 엔진 decimal, 단위로 기록하므로 목표값이 다른 추정이 구별된다. `maxLogGap` tick policy는 수입을 버리거나 쌓아 둘 수 있고, 남은 `accumulate` bucket은 다음 tick에 지갑으로 들어가므로 둘 다 `exact`를 막는다. 수 범위보다 작은 양의 비율이나, 차이가 0이 아닌데 엔진 나눗셈이 0으로 잃은 비율은 0초가 아니라 `secondsDecimal`이 있는 `invalid`다. 지갑과 다른 단위의 수입은 tick이 막으므로 analytic 추정은 `invalid`다. simulate에서 유한하지 않은 목표나 관측값은 목표 도달로 실행을 끝내지 않으며 추정은 `invalid`다. `Model.netWorth` 없는 net worth 목표는 legacy 필드가 지갑 대리값을 유지해도 추정에서는 `unsupported`다. ok가 아닌 모든 추정은 `seconds: null`이다.
 
 `DX-02`는 이 함수를 감쌀 수 있다. ETA 엔진을 새로 만들지 않는다.
 
