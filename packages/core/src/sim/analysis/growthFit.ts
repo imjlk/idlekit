@@ -542,7 +542,10 @@ function classifyPositive(
     ((valueLinear !== null && Math.abs(valueLinear.b * span) > 1e3 * Math.max(valueLinear.rmse, Number.EPSILON)) ||
       (valueQuadratic !== null &&
         Math.abs(valueQuadratic.c * span * span) > 1e3 * Math.max(valueQuadratic.rmse, Number.EPSILON)));
-  if (logSpan < 1e-6 && !valueMoves) {
+  // The same holds in log space: an exact log-linear fit with a real slope is a slow exponential, not a constant.
+  const logMoves =
+    linear !== null && Math.abs(linear.b * span) > 1e3 * Math.max(linear.rmse, Number.EPSILON);
+  if (logSpan < 1e-6 && !valueMoves && !logMoves) {
     shape = "constant";
     residual = { space: "log10", rmse: rmseAround(ys.map(() => mean(ys)), ys) };
   } else if (valueExact) {

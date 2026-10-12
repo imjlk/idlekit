@@ -135,7 +135,7 @@ function baseRequest(
  * @evidence ./resetOptimization.ts#validateResetPolicyArtifact The canonical artifact validates.
  * @evidenceReview ./resetOptimization.ts#validateResetPolicyArtifact #02be060 The arrow builds typia.createValidate of ResetPolicyArtifactV1 on first call and reuses it.
  * @evidence ./resetOptimization.ts#analyzeResetPolicies Runs the always-active scan against the fixture rate.
- * @evidenceReview ./resetOptimization.ts#analyzeResetPolicies #614b9c2 The function keeps scanned intervals within toSec up to rounding dust, validates the request, distinct stability windows, a goal for goal-reach-sec, and a finite nonnegative absolute tolerance, evaluates each scanned interval with or without a session, resolving the reset adapter at each boundary under the live constraints and, on a schedule, the block's clocks, hiding prestige actions and the custom reset from the strategy, committing adapter actions without re-resolving them against model.actions, refreshing maxMoneyEver, reading goals on copies of every committed state, each scheduled reset state included, under ids no caller goal uses, reading net worth and income with the live context, playing the tail from the origin-relative horizon, and on a schedule applying offline progression, session clocks, and the full schedule after the budget, measuring cycles in wall time, starting the incomplete span at the last reset, and dry-running the unrealized reset only when active play reaches the horizon, ranks with Engine.cmp, compares a known solution, keeps a refused interval in the incomplete span, reports an incomplete winner or one without stability evidence in the artifact status, and never claims a global optimum. On a schedule it admits a reset at the horizon inside a block's natural span, reads the end state at the horizon after a long delay, forwards boundary action facts, and reports goal and recovery times in wall seconds.
+ * @evidenceReview ./resetOptimization.ts#analyzeResetPolicies #614b9c2 The function keeps scanned intervals within toSec up to rounding dust, validates the request, distinct stability windows, a goal for goal-reach-sec, and a finite nonnegative absolute tolerance, evaluates each scanned interval with or without a session, resolving the reset adapter at each boundary under the live constraints and, on a schedule, the block's clocks, hiding prestige actions and the custom reset from the strategy, committing adapter actions without re-resolving them against model.actions, refreshing maxMoneyEver, reading goals on copies of every committed state, each scheduled reset state included, under ids no caller goal uses, reading net worth and income with the live context, playing the tail from the origin-relative horizon, and on a schedule applying offline progression, session clocks, and the full schedule after the budget, measuring cycles in wall time, starting the incomplete span at the last reset, and dry-running the unrealized reset only when active play reaches the horizon, ranks with Engine.cmp, compares a known solution, keeps a refused interval in the incomplete span, reports an incomplete winner or one without stability evidence in the artifact status, and never claims a global optimum. On a schedule it admits a reset at the horizon inside a block's natural span, reads the end state at the horizon after a long delay, forwards boundary action facts, and reports goal and recovery times in wall seconds. A block that starts exactly at the horizon is kept for that reset.
  * @evidence ./resetOptimization.ts#resetPolicySchemaId Reads the reset policy schema id.
  * @evidenceReview ./resetOptimization.ts#resetPolicySchemaId #1dcacc7 The function returns the reset.policy.v1 schema URL constant.
  * @evidence ./resetOptimization.ts#resetPolicyAlgorithmVersion Reads the algorithm version on the artifact.
@@ -785,6 +785,17 @@ export function keepsManualResetInsideSession(): void {
   // A reset exactly at the horizon is still inside an always-on block, as the always-active executor commits it.
   const atHorizon = shortOn({ horizonSec: 40 });
   expect(atHorizon?.resetWallTimes).toEqual([10, 20, 30, 40]);
+  // A block that starts exactly at the horizon still takes the deferred reset at that instant.
+  const blockAtHorizon = analyzeResetPolicies(
+    baseRequest(() => scenario(), {
+      scan: { fromSec: 2000, toSec: 2000, stepSec: 2000 },
+      horizonSec: 43200,
+      cycleBudget: 1,
+      session: twiceDaily,
+      knownSolution: undefined,
+    }),
+  ).candidates[0];
+  expect(blockAtHorizon?.resetWallTimes).toEqual([43200]);
   expect(atHorizon?.completedCycles).toBe(4);
 
   // A reset delay that runs past the horizon does not move the final reads past it.
