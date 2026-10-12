@@ -333,6 +333,10 @@ function assertRequest<N, U extends string, Vars>(request: ResetPolicyRequest<N,
   }
   if (request.session) {
     assertFinite("resetDelaySec", request.session.resetDelaySec);
+    // An unknown preset id from an unchecked caller builds no block. That is not an all-offline schedule.
+    if (sessionActiveBlocks(request.session.pattern).length === 0) {
+      throw new ResetPolicyRejected(`reset policy session pattern ${String(request.session.pattern.id)} has no active block`);
+    }
     if (request.session.resetDelaySec < 0) {
       throw new ResetPolicyRejected("reset policy resetDelaySec must be a finite number >= 0");
     }
@@ -1083,8 +1087,10 @@ function playSchedule<N, U extends string, Vars>(
     if (wall < block.start) wall = block.start;
     blockClocks = { clocks: clocksFor(block.start, block.end) };
     while (resetsOpen && snaps.length < options.budget) {
-      const at = Math.max(lastResetWall + intervalSec, wall);
-      if (!(at < block.natural && at <= request.horizonSec)) break;
+      const next = Math.max(lastResetWall + intervalSec, wall);
+      // A sum of intervals can round a few ULPs past the horizon. That boundary is the horizon, as the executor admits it.
+      if (!(next < block.natural && next <= request.horizonSec + horizonDust(request.horizonSec, next))) break;
+      const at = Math.min(next, request.horizonSec);
       if (at > wall) runActive(at - wall);
       const boundaryCtx = ctxAt(block.end);
       const adapter = adapterAt(request, scenario, state, constraints, boundaryCtx.clocks);
@@ -1149,7 +1155,10 @@ function playSchedule<N, U extends string, Vars>(
   runOffline(request.horizonSec);
   // A reset delay can carry the wall cursor past the horizon. The final reads happen at the horizon.
   if (wall > request.horizonSec) wall = request.horizonSec;
-  const endCtx = ctxAt(wall);
+  // The final reads see the clocks of the last segment played, the active block's when the horizon falls inside one,
+  // with the constraints the resets left.
+  const endClocks = segmentCtx.clocks;
+  const endCtx: SimContext<N, U, Vars> = { ...liveCtx(scenario, constraints), ...(endClocks ? { clocks: endClocks } : {}) };
   const goal = request.goal;
   if (options.watchGoal && goal && reached.t === null && goal(endCtx, deepClonePreservingPrototype(state))) {
     reachGoalAt(wall);

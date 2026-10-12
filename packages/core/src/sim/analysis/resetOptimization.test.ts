@@ -135,7 +135,7 @@ function baseRequest(
  * @evidence ./resetOptimization.ts#validateResetPolicyArtifact The canonical artifact validates.
  * @evidenceReview ./resetOptimization.ts#validateResetPolicyArtifact #02be060 The arrow builds typia.createValidate of ResetPolicyArtifactV1 on first call and reuses it.
  * @evidence ./resetOptimization.ts#analyzeResetPolicies Runs the always-active scan against the fixture rate.
- * @evidenceReview ./resetOptimization.ts#analyzeResetPolicies #614b9c2 The function keeps scanned intervals within toSec up to rounding dust, validates the request, distinct stability windows, a goal for goal-reach-sec, and a finite nonnegative absolute tolerance, evaluates each scanned interval with or without a session, resolving the reset adapter at each boundary under the live constraints and, on a schedule, the block's clocks, hiding prestige actions and the custom reset from the strategy, committing adapter actions without re-resolving them against model.actions, refreshing maxMoneyEver, reading goals on copies of every committed state, each scheduled reset state included, under ids no caller goal uses, reading net worth and income with the live context, playing the tail from the origin-relative horizon, and on a schedule applying offline progression, session clocks, and the full schedule after the budget, measuring cycles in wall time, starting the incomplete span at the last reset, and dry-running the unrealized reset only when active play reaches the horizon, ranks with Engine.cmp, compares a known solution, keeps a refused interval in the incomplete span, reports an incomplete winner or one without stability evidence in the artifact status, and never claims a global optimum. On a schedule it admits a reset at the horizon inside a block's natural span, reads the end state at the horizon after a long delay, forwards boundary action facts, and reports goal and recovery times in wall seconds. A block that starts exactly at the horizon is kept for that reset. It rejects a scanned interval at or below the runner resolution, plays any remainder above rounding dust of the elapsed sum, reports recovery as the simulated duration, keeps recovery probes off the caller observer and caller goals, and dry-runs no reset after one committed at the horizon. It rejects an unknown objective or recovery metric, shares one observation ledger and the reached caller goals and watchers across every run of a candidate, keeps observation a caller disabled off, closes a goal watcher on a boundary read, reads an open recovery crossing at the clamped horizon, rejects an interval that cannot advance a time at the horizon, applies the candidate limit to intervals inside toSec, gives a scheduled model its block clocks across reset splits, reports always-active spans and reset times from the origin, reads a scheduled goal on the boundary state before each reset, and checks activity at the horizon within rounding dust.
+ * @evidenceReview ./resetOptimization.ts#analyzeResetPolicies #614b9c2 The function keeps scanned intervals within toSec up to rounding dust, validates the request, distinct stability windows, a goal for goal-reach-sec, and a finite nonnegative absolute tolerance, evaluates each scanned interval with or without a session, resolving the reset adapter at each boundary under the live constraints and, on a schedule, the block's clocks, hiding prestige actions and the custom reset from the strategy, committing adapter actions without re-resolving them against model.actions, refreshing maxMoneyEver, reading goals on copies of every committed state, each scheduled reset state included, under ids no caller goal uses, reading net worth and income with the live context, playing the tail from the origin-relative horizon, and on a schedule applying offline progression, session clocks, and the full schedule after the budget, measuring cycles in wall time, starting the incomplete span at the last reset, and dry-running the unrealized reset only when active play reaches the horizon, ranks with Engine.cmp, compares a known solution, keeps a refused interval in the incomplete span, reports an incomplete winner or one without stability evidence in the artifact status, and never claims a global optimum. On a schedule it admits a reset at the horizon inside a block's natural span, reads the end state at the horizon after a long delay, forwards boundary action facts, and reports goal and recovery times in wall seconds. A block that starts exactly at the horizon is kept for that reset. It rejects a scanned interval at or below the runner resolution, plays any remainder above rounding dust of the elapsed sum, reports recovery as the simulated duration, keeps recovery probes off the caller observer and caller goals, and dry-runs no reset after one committed at the horizon. It rejects an unknown objective or recovery metric, shares one observation ledger and the reached caller goals and watchers across every run of a candidate, keeps observation a caller disabled off, closes a goal watcher on a boundary read, reads an open recovery crossing at the clamped horizon, rejects an interval that cannot advance a time at the horizon, applies the candidate limit to intervals inside toSec, gives a scheduled model its block clocks across reset splits and in the final reads, admits a reset whose interval sum rounds just past the horizon, rejects a session pattern with no active block, reports always-active spans and reset times from the origin, reads a scheduled goal on the boundary state before each reset, and checks activity at the horizon within rounding dust.
  * @evidence ./resetOptimization.ts#resetPolicySchemaId Reads the reset policy schema id.
  * @evidenceReview ./resetOptimization.ts#resetPolicySchemaId #1dcacc7 The function returns the reset.policy.v1 schema URL constant.
  * @evidence ./resetOptimization.ts#resetPolicyAlgorithmVersion Reads the algorithm version on the artifact.
@@ -657,7 +657,8 @@ export function reportsRecoveryCrossing(): void {
     }),
   ).candidates[0];
   expect(delayedRecovery?.resetWallTimes).toEqual([43200]);
-  // A delay past the horizon leaves no runner after the reset. A clock-aware metric is read at the horizon.
+  // A delay past the horizon leaves no runner after the reset. The horizon read uses the clocks of the block the reset
+  // was in, so a metric gated on a later wall clock does not cross there.
   const clockedRecovery = analyzeResetPolicies(
     baseRequest(
       () =>
@@ -689,7 +690,7 @@ export function reportsRecoveryCrossing(): void {
     ),
   ).candidates[0];
   expect(clockedRecovery?.resetWallTimes).toEqual([10]);
-  expect(clockedRecovery?.recovery).toEqual({ metric: "pre-reset-income", status: "observed", seconds: 40, threshold: "1" });
+  expect(clockedRecovery?.recovery).toEqual({ metric: "pre-reset-income", status: "censored", seconds: null, threshold: "1" });
   expect(delayedRecovery?.recovery).toEqual({
     metric: "pre-reset-net-worth",
     status: "observed",
@@ -959,11 +960,25 @@ export function keepsManualResetInsideSession(): void {
     () =>
       withModel(scenario(), {
         clocks: { respondsTo: ["wall"] },
-        netWorth: (ctx) => coin(ctx.clocks?.wallT ?? -1),
+        netWorth: (ctx) => coin(ctx.clocks?.wallEndT ?? -1),
       }),
   );
   expect(clockedWorth?.resetWallTimes).toEqual([400, 900]);
   expect(clockedWorth?.finalNetWorth).toBe("1000");
+  // The final reads use the clocks the last block was played with, not a new segment at the horizon.
+  const blockWorth = shortOn({ horizonSec: 40 }, () =>
+    withModel(scenario(), { clocks: { respondsTo: ["wall"] }, netWorth: (ctx) => coin(ctx.clocks?.wallT ?? -1) }),
+  );
+  expect(blockWorth?.finalNetWorth).toBe("0");
+  // Interval sums that round past the horizon still reset at it, as the always-active executor does.
+  const rounded = shortOn({ scan: { fromSec: 0.1, toSec: 0.1, stepSec: 0.1 }, horizonSec: 0.3 });
+  expect(rounded?.resetWallTimes).toEqual([0.1, 0.2, 0.3]);
+  // An unknown preset id from an unchecked caller is rejected, not played as an all-offline schedule.
+  expect(() =>
+    shortOn({
+      session: { pattern: { id: "weekdays" as unknown as "always-on", days: 1 }, resetDelaySec: 0 },
+    }),
+  ).toThrow(/has no active block/);
 
   // Scheduled boundary decisions reach onAction, as the executor's do.
   const actionFacts: string[] = [];
