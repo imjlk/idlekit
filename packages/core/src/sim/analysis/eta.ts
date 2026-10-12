@@ -29,8 +29,8 @@ const ETA_SCHEMA_ID = "https://idlekit.dev/schemas/eta.estimate.v1.schema.json" 
 export const etaEngineRatio = "engine-divn-before-number" as const;
 
 /**
- * @evidence docs/requirements/active/eta-numeric-and-goal-semantics.md#req-pr09-exact-local Exact needs a constant derivative and no purchase, reset, evolve, or policy boundary.
- * @evidenceReview docs/requirements/active/eta-numeric-and-goal-semantics.md#req-pr09-exact-local #4433726 Re-read the section: incomeKind constant is not exact, and net worth is not money income.
+ * @evidence docs/requirements/active/eta-numeric-and-goal-semantics.md#req-pr09-exact-local Exact needs a constant derivative, declared strict comparison, and no purchase, reset, evolve, or policy boundary.
+ * @evidenceReview docs/requirements/active/eta-numeric-and-goal-semantics.md#req-pr09-exact-local #f2b843f Re-read the section: exact needs comparisonIsExact true, tolerant or unknown comparisons remain local, and net worth is not money income.
  */
 export const etaExactOrLocal = "exact-or-analytic-local" as const;
 
@@ -166,6 +166,10 @@ export function etaSecondsFromEngineRatio<N>(
   if (seconds === undefined) {
     return { status: "invalid", seconds: null, secondsDecimal: E.toString(ratio) };
   }
+  // The engine division itself can lose a positive gap, before narrowing sees it.
+  if (seconds === 0 && !Number.isFinite(magnitude) && E.cmp(target, current) > 0) {
+    return { status: "invalid", seconds: null };
+  }
   // A nonzero ratio below the number range narrows to 0, which would read as already reached.
   // absLog10 is finite only for a nonzero ratio; cmp against zero can round such a ratio to equal.
   if (seconds === 0 && Number.isFinite(magnitude)) {
@@ -208,6 +212,8 @@ export function etaGoalForTarget<N, U extends string, Vars>(
   };
 }
 
+const COMPARISON_BOUNDARY = "goal comparison uses a tolerance or has no exactness declaration";
+
 function exactBlocks<N, U extends string, Vars>(scenario: CompiledScenario<N, U, Vars>): string[] {
   const blocks: string[] = [];
   const hint = scenario.model.analytic?.(scenario.ctx, scenario.initial);
@@ -228,6 +234,7 @@ function exactBlocks<N, U extends string, Vars>(scenario: CompiledScenario<N, U,
   ) {
     blocks.push("a pending accumulated bucket can flush into the wallet on the next tick");
   }
+  if (scenario.ctx.E.comparisonIsExact !== true) blocks.push(COMPARISON_BOUNDARY);
   return blocks;
 }
 
@@ -278,6 +285,7 @@ function analyticEstimate<N, U extends string, Vars>(
   const binding = etaGoalForTarget(scenario, target);
   const blocks = exactBlocks(scenario);
   const proven = blocks.length === 0 && target.kind === "money";
+  const provenIncome = blocks.every((block) => block === COMPARISON_BOUNDARY) && target.kind === "money";
   const evaluation = evaluateGoal(binding.goal, scenario.initial, scenario.ctx);
   // cmp reads NaN as reached. A non-finite wallet or target falls through to the engine ratio, which is invalid.
   const already =
@@ -350,8 +358,21 @@ function analyticEstimate<N, U extends string, Vars>(
     };
   }
 
-  const rate = scenario.model.income(scenario.ctx, scenario.initial).amount;
-  const ratio = etaSecondsFromEngineRatio(E, binding.threshold, current, rate, proven);
+  const income = scenario.model.income(scenario.ctx, scenario.initial);
+  if (
+    income.unit.code !== scenario.initial.wallet.money.unit.code ||
+    income.unit.code !== scenario.ctx.unit.code
+  ) {
+    return {
+      reached: false,
+      seconds: legacyInfinity(),
+      estimate: baseEstimate(binding, "invalid", {
+        assumptions: ["income unit differs from the wallet or target unit and cannot be settled"],
+      }),
+    };
+  }
+  const rate = income.amount;
+  const ratio = etaSecondsFromEngineRatio(E, binding.threshold, current, rate, provenIncome);
   if (ratio.status !== "ok" || ratio.seconds === null) {
     const assumptions = [
       ratio.status === "unsupported"

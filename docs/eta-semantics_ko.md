@@ -8,6 +8,8 @@
 
 money와 net worth 목표는 `etaGoalForTarget`을 공유한다. analytic과 simulate가 그 목표를 쓴다. `exact`는 action, evolve, prestige, strategy, policy constraint가 없는 상수 money 미분일 때만이다. 국소 rate만 있는 나머지는 `analytic-local`이다. `incomeKind: "constant"`만으로 모든 전략이 exact가 되지는 않는다.
 
+정확한 추정에는 `Engine.comparisonIsExact: true`도 필요하다. 기본 엔진은 epsilon 0일 때만 이를 선언한다. 기본 epsilon이나 선언 없는 사용자 정의 비교기는 기존 비율을 `analytic-local`로 유지한다. 허용 오차 때문에 그 비율보다 일찍 목표에 도달할 수 있으므로 reach bracket도 표시하지 않는다. 수입의 단위가 지갑이나 목표와 다르면 `invalid`다. 엔진 나눗셈에서 양의 차이가 0으로 소실되면 추정은 `invalid`이며 그 0을 decimal 결과로 저장하지 않는다.
+
 모델 `netWorth` 함수는 `unsupported-local`이다. money income을 그 미분으로 쓰지 않는다. legacy `seconds`는 그 초기 수입 비율이 유한한 수일 때 예전 값을 유지할 수 있으며, 그 수는 net worth 결과가 아니다. `netWorth` 함수가 없어도 `unsupported-local`이다. 그때 legacy `seconds`는 지갑 금액을 재사용할 수 있다.
 
 fixed-step `seconds`는 첫 관측이다. 단조인 상수 모델은 연속 비율부터 그 관측까지의 bracket을 둘 수 있다. 그 밖에는 `observationResolutionSec`만 기록하고 bracket을 만들지 않는다. horizon 안에 남은 목표는 `censored`다. unreachable이라고 하지 않는다. legacy `seconds`는 horizon 숫자로 남는다.

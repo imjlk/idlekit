@@ -66,7 +66,7 @@ function modelOf<N>(
  * @evidence ./eta.ts#etaEstimateJsonSchema Reads the generated OpenAPI 3.1 schema object.
  * @evidenceReview ./eta.ts#etaEstimateJsonSchema #2f0bdab The function memoizes typia.json.schema of EtaEstimateV1.
  * @evidence ./eta.ts#etaSecondsFromEngineRatio Divides 1e402 by 1e400 in the engine and rejects a 1e400 second ratio.
- * @evidenceReview ./eta.ts#etaSecondsFromEngineRatio #b52176a The function checks finiteness, divides the gap by the rate with divN, narrows only a finite ratio within 1e308, and rejects a positive ratio that narrows to zero.
+ * @evidenceReview ./eta.ts#etaSecondsFromEngineRatio #3b4b35a Re-read the function: divN precedes narrowing, and a known positive gap lost to zero in engine division is invalid without a misleading zero decimal.
  * @evidence ./eta.ts#etaAnalytic Runs the analytic estimate on the break_infinity fixture and the suffix goal.
  * @evidenceReview ./eta.ts#etaAnalytic #17a1808 The function wraps analyticEstimate, whose exact label also needs no maxLogGap tick policy, and adds a fixed-step compare only when a fallback is requested.
  * @evidence ./eta.ts#etaSimulate Runs the fixed-step estimate on the same fixtures and compares goal ids.
@@ -138,13 +138,13 @@ export function keepsEngineRatioBeforeNarrowing(): void {
 
 /**
  * @evidence docs/requirements/active/eta-numeric-and-goal-semantics.md#req-pr09-exact-local Purchases and asset net worth are not exact. A requested fallback records both methods.
- * @evidenceReview docs/requirements/active/eta-numeric-and-goal-semantics.md#req-pr09-exact-local #4433726 Re-read the section: constant income alone is not enough when an action or a net-worth value exists.
+ * @evidenceReview docs/requirements/active/eta-numeric-and-goal-semantics.md#req-pr09-exact-local #f2b843f Re-read the section: exact also needs comparisonIsExact true, the strict fixture has epsilon 0, and tolerant comparisons retain a local ratio.
  * @evidence ./eta.ts#etaExactOrLocal Reads the exact-or-local contract id.
  * @evidenceReview ./eta.ts#etaExactOrLocal #92a4940 The declaration is exact-or-analytic-local.
  */
 export function separatesExactAndLocalEta(): void {
   expect(etaExactOrLocal).toBe("exact-or-analytic-local");
-  const engine = createNumberEngine();
+  const engine = createNumberEngine({ epsilon: 0 });
   const exact = etaAnalytic({
     scenario: modelOf(engine, 1),
     target: { kind: "money", value: "3" },
@@ -257,7 +257,7 @@ export function separatesExactAndLocalEta(): void {
  */
 export function censorsUnreachedHorizon(): void {
   expect(etaCensoredObservation).toBe("censored-fixed-step");
-  const engine = createNumberEngine();
+  const engine = createNumberEngine({ epsilon: 0 });
   const scenario = modelOf(engine, 1);
   const already = {
     ...scenario,
