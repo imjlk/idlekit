@@ -245,7 +245,8 @@ export function firstVisibleDistributionSample(args: Readonly<{
       source: "model-strategy-session",
     };
   }
-  if (!Number.isFinite(args.firstVisibleChangeSec)) {
+  // Seconds since the session start. A non-finite or negative time is not a completion.
+  if (!Number.isFinite(args.firstVisibleChangeSec) || args.firstVisibleChangeSec < 0) {
     return {
       drawIndex: args.drawIndex,
       seed: args.seed,
@@ -281,10 +282,72 @@ function formatFinite(value: number): string {
   return String(value);
 }
 
+const DECIMAL_WIRE = /^([+-]?)(\d*)(?:\.(\d*))?(?:e([+-]?\d+))?$/i;
+
+/** Sign, significant digits, and exponent of a decimal spelling, so two spellings of one value compare equal. */
+function decimalKey(text: string): string | null {
+  const match = DECIMAL_WIRE.exec(text.trim());
+  if (!match) return null;
+  const whole = match[2] ?? "";
+  const fraction = match[3] ?? "";
+  if (whole === "" && fraction === "") return null;
+  // Index scans, not /0+$/: a regex anchored at the end rescans a long run of zeros from every start.
+  const raw = `${whole}${fraction}`;
+  let first = 0;
+  while (first < raw.length && raw[first] === "0") first += 1;
+  let last = raw.length;
+  while (last > first && raw[last - 1] === "0") last -= 1;
+  if (first === last) return "0";
+  const exponent = Number(match[4] ?? "0") - fraction.length + (raw.length - last);
+  return `${match[1] === "-" ? "-" : ""}${raw.slice(first, last)}e${exponent}`;
+}
+
+/**
+ * The observed value as a number, only when the number is the value the caller wrote.
+ * A spelling that rounds, such as 9007199254740993, is rejected rather than reported as a neighbour.
+ */
 function parseObserved(value: string | null): number | null {
   if (value === null) return null;
   const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : null;
+  if (!Number.isFinite(parsed)) return null;
+  const written = decimalKey(value);
+  if (written === null) return null;
+  if (written !== decimalKey(String(parsed)) && !(written === "0" && parsed === 0)) {
+    throw new DistributionRejected(`distribution observed value ${value} is not exactly representable`);
+  }
+  return parsed;
+}
+
+/**
+ * Mean that stays finite when the values are finite. The plain sum is used when it is finite. Otherwise the
+ * values are divided by the largest magnitude, and the result is kept inside [min, max], where every mean lies,
+ * so rounding at the number limit cannot step past it.
+ */
+function finiteMean(values: readonly number[]): number {
+  const plain = values.reduce((sum, value) => sum + value, 0) / values.length;
+  if (Number.isFinite(plain)) return plain;
+  let scale = 0;
+  let smallest = Number.POSITIVE_INFINITY;
+  let largest = Number.NEGATIVE_INFINITY;
+  for (const value of values) {
+    scale = Math.max(scale, Math.abs(value));
+    smallest = Math.min(smallest, value);
+    largest = Math.max(largest, value);
+  }
+  const scaled = (values.reduce((sum, value) => sum + value / scale, 0) / values.length) * scale;
+  return Math.min(largest, Math.max(smallest, scaled));
+}
+
+/** Population variance, rescaled when the squares overflow. Null when the variance itself is not a finite number. */
+function finiteVariance(values: readonly number[], mean: number): number | null {
+  const plain = values.reduce((sum, value) => sum + (value - mean) ** 2, 0) / values.length;
+  if (Number.isFinite(plain)) return plain;
+  let scale = 0;
+  for (const value of values) scale = Math.max(scale, Math.abs(value - mean));
+  if (!Number.isFinite(scale) || scale === 0) return null;
+  const scaled = values.reduce((sum, value) => sum + ((value - mean) / scale) ** 2, 0) / values.length;
+  const variance = scaled * scale * scale;
+  return Number.isFinite(variance) ? variance : null;
 }
 
 function meanSlot(
@@ -392,6 +455,10 @@ export function analyzeDistribution(request: DistributionRequest): DistributionA
     if (typeof sample.seed !== "number" || !Number.isFinite(sample.seed)) {
       throw new DistributionRejected("distribution seed must be finite");
     }
+    // Untyped input can carry any source. The artifact names only the two the contract declares.
+    if (sample.source !== "model-strategy-session" && sample.source !== "monetization") {
+      throw new DistributionRejected("distribution sample source must be model-strategy-session or monetization");
+    }
     sources.add(sample.source);
     if (sample.status === "censored") {
       rightCensored += 1;
@@ -405,21 +472,29 @@ export function analyzeDistribution(request: DistributionRequest): DistributionA
       unsupported += 1;
       continue;
     }
+    // Untyped input can carry any status. Only "observed" is counted as a completion.
+    if (sample.status !== "observed") {
+      throw new DistributionRejected(
+        "distribution sample status must be observed, censored, failed, or unsupported",
+      );
+    }
     const parsed = parseObserved(sample.value);
     if (parsed === null) {
       failed += 1;
       continue;
+    }
+    // The common-horizon estimator ranks every censored draw after every completion. A completion past the
+    // horizon would make that rank unknowable.
+    if (horizonSec !== null && parsed > horizonSec) {
+      throw new DistributionRejected("distribution observed value exceeds the common horizonSec");
     }
     observed.push(parsed);
   }
 
   const eligible = observed.length + rightCensored;
   const completionRate = eligible > 0 ? observed.length / eligible : null;
-  const arithmetic = observed.length > 0 ? observed.reduce((sum, value) => sum + value, 0) / observed.length : null;
-  const variance =
-    arithmetic === null
-      ? null
-      : observed.reduce((sum, value) => sum + (value - arithmetic) ** 2, 0) / observed.length;
+  const arithmetic = observed.length > 0 ? finiteMean(observed) : null;
+  const variance = arithmetic === null ? null : finiteVariance(observed, arithmetic);
   const positive = observed.every((value) => value > 0);
   const meanLog = arithmetic !== null && positive ? observed.reduce((sum, value) => sum + Math.log10(value), 0) / observed.length : null;
   const logMean = arithmetic !== null && arithmetic > 0 ? Math.log10(arithmetic) : null;
@@ -482,6 +557,7 @@ export function analyzeDistribution(request: DistributionRequest): DistributionA
       ),
     },
     reduction: { order: "logical-draw-index", workerCountIndependent: true },
-    warnings: WARNINGS,
+    warnings:
+      arithmetic !== null && variance === null ? [...WARNINGS, "variance exceeds the number range and is not reported"] : WARNINGS,
   };
 }

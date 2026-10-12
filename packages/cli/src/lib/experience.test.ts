@@ -1,6 +1,12 @@
 import { describe, expect, it } from "bun:test";
 import { createNumberEngine, simulateSessionPattern, type CompiledScenario, type SimState } from "@idlekit/core";
-import { analyzePerceivedProgression, collectExperienceSnapshot, comparableExperienceMetric, firstMilestoneTime } from "./experience";
+import {
+  analyzePerceivedProgression,
+  collectExperienceSnapshot,
+  comparableExperienceMetric,
+  firstMilestoneTime,
+  summarizeExperienceMonteCarlo,
+} from "./experience";
 import { designObjectiveFactories } from "./designObjectives";
 
 type Vars = { bought: number };
@@ -156,5 +162,33 @@ describe("milestone times under the sample cap", () => {
     expect(() => objective.score({ scenario: manyActions(), run: undefined as never })).toThrow(
       "time to milestone action.a69.firstApplied needs a complete milestone report",
     );
+  });
+});
+
+describe("experience Monte Carlo first visible change", () => {
+  it("estimates the population quantile when every draw shares one observation horizon", () => {
+    const summary = summarizeExperienceMonteCarlo({
+      scenario: scenario(),
+      sessionPattern: { id: "twice-daily", days: 1 },
+      draws: 3,
+      seed: 1,
+      quantiles: [0.5, 0.95],
+    });
+    // Twice-daily for one day observes visible changes until the end of the second active block.
+    expect(summary.firstVisible.horizonSec).toBe(45000);
+    expect(summary.firstVisible.population.estimator).toBe("common-horizon-order-statistic");
+    expect(summary.firstVisible.population.status).toBe("observed");
+    expect(summary.firstVisible.population.value).not.toBeNull();
+  });
+
+  it("analyzes one key per quantile when the scenario lists a quantile twice", () => {
+    const summary = summarizeExperienceMonteCarlo({
+      scenario: scenario(),
+      sessionPattern: { id: "twice-daily", days: 1 },
+      draws: 2,
+      seed: 1,
+      quantiles: [0.5, 0.5],
+    });
+    expect(summary.firstVisible.conditional.map((point) => point.key)).toEqual(["q0.5"]);
   });
 });

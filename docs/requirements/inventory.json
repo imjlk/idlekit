@@ -676,7 +676,7 @@
       "pr": "PR-13",
       "anchor": "req-pr13-logical-draws",
       "doc": "docs/requirements/active/simulation-distribution.md",
-      "production": ["packages/core/src/sim/analysis/distribution.ts", "packages/core/src/sim/monteCarlo.ts"],
+      "production": ["packages/core/src/sim/analysis/distribution.ts", "packages/core/src/sim/monteCarlo.ts", "packages/core/src/sim/random.ts"],
       "tests": [
         {
           "file": "packages/core/src/sim/analysis/distribution.test.ts",

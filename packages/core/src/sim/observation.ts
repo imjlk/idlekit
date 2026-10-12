@@ -101,6 +101,24 @@ export function emitCommittedResets(
   }
 }
 
+/**
+ * Tell the observer about actions decided outside a runner step, such as a reset committed at a cycle boundary.
+ * The facts are the ones the runner's recorder forwards for an action decided inside a step.
+ *
+ * @evidence docs/requirements/active/reset-cycle-execution.md#req-pr10-committed-reset A boundary reset reaches onAction like an action decided in a step.
+ * @evidenceReview docs/requirements/active/reset-cycle-execution.md#req-pr10-committed-reset #22d7a8a Re-read the section: the boundary action is committed through the action payment path, so its applied or skipped fact is an action fact.
+ */
+export function emitActionFacts<N>(observer: RunObserver | undefined, t: number, events: readonly SimEvent<N>[]): void {
+  if (!observer?.onAction) return;
+  for (const event of events) {
+    if (event.type === "action.applied") {
+      notify(() => observer.onAction?.({ t, actionId: event.actionId, outcome: "applied" }));
+    } else if (event.type === "action.skipped") {
+      notify(() => observer.onAction?.({ t, actionId: event.actionId, outcome: "skipped", reason: event.reason }));
+    }
+  }
+}
+
 export type RunGoal<N, U extends string, Vars> = Readonly<{
   id: string;
   met: (state: SimState<N, U, Vars>) => boolean;
