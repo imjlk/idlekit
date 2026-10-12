@@ -213,6 +213,10 @@ function blocksFor(pattern: SessionPatternSpec): ActiveBlock[] {
  * @evidenceReview docs/requirements/active/reset-cycle-analysis.md#req-pr11-session-reset #0ea6f15 Re-read the section: a twice-daily day has active spans [0, 1800) and [43200, 45000), which are these blocks.
  */
 export function sessionActiveBlocks(pattern: SessionPatternSpec): readonly SessionOffsetBlock[] {
+  // A preset has no schedule to validate, so its day count is checked here. Zero days is not an empty session.
+  if (!Number.isInteger(pattern.days) || pattern.days <= 0) {
+    throw new Error("session days must be a positive integer");
+  }
   return blocksFor(pattern);
 }
 

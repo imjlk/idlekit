@@ -192,9 +192,9 @@ function simulate(spec: CaseSpec): RunResult<number, UnitCode, Vars> {
  * @evidence ./growthFit.ts#growthFitJsonSchema Reads the generated schema.
  * @evidenceReview ./growthFit.ts#growthFitJsonSchema #ff8650e The function memoizes typia.json.schema of GrowthFitArtifactV1.
  * @evidence ./growthFit.ts#fitGrowth Fits slow, fast, and softcap-configured literal series.
- * @evidenceReview ./growthFit.ts#fitGrowth #bad1630 The function finds sign and drop breaks, an exact tenfold drop included, on every prepared point, keeps both sides of each break through the sampling budget, reads irregular cadence from the input, handles a one-point budget, keeps a non-positive domain invalid under coarse cadence, fits on time since the window start, fits value space in units of the series magnitude, reads saturation from gap-normalized rates, lets an exact value fit win only when it beats the log fit's relative error, and withholds shape claims when the action history is incomplete.
+ * @evidenceReview ./growthFit.ts#fitGrowth #1c798b9 The function fits log values relative to the first one, reads log extrema in a loop, keeps a moving exact value fit out of constant, keeps one break per time by precedence, supplied ones included, finds sign and drop breaks, an exact tenfold drop included, on every prepared point, keeps both sides of each break through the sampling budget, reads irregular cadence from the input in one loop, handles a one-point budget, keeps a non-positive domain invalid under coarse cadence, fits on time since the window start, scaled by its largest magnitude so the regression moments stay finite, fits value space in units of the series magnitude, reads saturation from gap-normalized rates, lets an exact value fit win only when it beats the log fit's relative error, and withholds shape claims when the action history is incomplete.
  * @evidence ./growthFit.ts#fitGrowthFromRun Fits executed runs of the slow and fast models.
- * @evidenceReview ./growthFit.ts#fitGrowthFromRun #2e570b1 The function keeps a present but empty trace empty, maps each action row by binary search to the first trace state after it, marks prestige count changes as breaks, reports whether the action history is complete, uses netWorthFallback without a model netWorth, and calls fitGrowth.
+ * @evidenceReview ./growthFit.ts#fitGrowthFromRun #44923e5 The function keeps a present but empty trace empty, maps each action row by binary search to the first trace state after it, takes its break kind from the model's Action.kind before falling back to the id, reads the softcap hint at the run's start, marks prestige count changes as breaks, reports the action history complete only for a full action log or an observed zero action count, uses netWorthFallback without a model netWorth, and calls fitGrowth.
  * @evidence ./growthFit.ts#growthFitSchemaId Reads the growth fit schema id.
  * @evidenceReview ./growthFit.ts#growthFitSchemaId #5247d65 The function returns the growth.fit.v1 schema URL constant.
  * @evidence ./growthFit.ts#growthFitAlgorithmVersion Reads the algorithm version on the artifact.
@@ -274,6 +274,19 @@ export function separatesShapeFromSpeed(): void {
   expect(configured.softcap).toBe("configured");
   expect(onlyWindow(configured).shape).toBe("exponential");
   expect(configured.warnings.some((warning) => warning.includes("configured softcap"))).toBe(true);
+  // A time axis wide enough that t * t overflows still fits on a scaled axis.
+  const wide = fitGrowth({
+    E: createNumberEngine(),
+    samples: Array.from({ length: 8 }, (_, index) => ({ t: index * 1e155, amount: 10 ** index })),
+    seriesRequested: "money",
+    valueSource: "money",
+    sampling: sampling(7e155),
+  });
+  const wideWindow = onlyWindow(wide);
+  expect(wideWindow.shape).toBe("exponential");
+  expect(Number.isFinite(wideWindow.residual.rmse ?? Number.NaN)).toBe(true);
+  expect(Math.abs((wideWindow.speed.logSlopePerSec ?? 0) / 1e-155 - 1)).toBeLessThan(1e-9);
+  expect(validateGrowthFitArtifact(wide).success).toBe(true);
 }
 
 /**
@@ -497,6 +510,120 @@ export function refusesDisguisedDomains(): void {
   });
   expect(unloggedFit.windows.every((window) => window.status !== "ok" && window.shape === "unknown")).toBe(true);
   expect(unloggedFit.warnings.some((warning) => warning.includes("action history is incomplete"))).toBe(true);
+  // A missing action counter reports 0 too. That zero is not proof that no action ran.
+  const unobserved: RunResult<number, UnitCode, Vars> = {
+    ...fastTrace,
+    actionsLog: undefined,
+    stats: { ...fastTrace.stats!, actions: { ...fastTrace.stats!.actions, status: "missing", applied: 0 } },
+  };
+  const unobservedFit = fitGrowthFromRun({
+    run: unobserved,
+    series: "money",
+    scenario: scenarioFor(1, 80, model(0)),
+    sampling: sampling(),
+  });
+  expect(unobservedFit.warnings.some((warning) => warning.includes("action history is incomplete"))).toBe(true);
+  const observedZero = fitGrowthFromRun({
+    run: { ...unobserved, stats: { ...fastTrace.stats!, actions: { ...fastTrace.stats!.actions, status: "observed", applied: 0 } } },
+    series: "money",
+    scenario: scenarioFor(1, 80, model(0)),
+    sampling: sampling(),
+  });
+  expect(observedZero.warnings.some((warning) => warning.includes("action history is incomplete"))).toBe(false);
+
+  // Breaks at one time keep the reset, whatever order the caller lists them in.
+  const ordered = fitGrowth({
+    E: createNumberEngine(),
+    samples: samplesFor(caseById("fast-exp")),
+    seriesRequested: "money",
+    valueSource: "money",
+    sampling: sampling(),
+    discontinuities: [
+      { t: 40, kind: "reset" },
+      { t: 40, kind: "purchase" },
+    ],
+  });
+  expect(ordered.windows.find((window) => window.startSec >= 40)?.discontinuity).toBe("reset");
+
+  // A trace longer than the argument limit of a spread call is measured in a loop, gaps and kept log values both.
+  const longTrace = Array.from({ length: 1_000_001 }, (_, index) => ({ t: index / 1000, amount: Math.exp(index / 100_000) }));
+  const longFit = fitGrowth({
+    E: createNumberEngine(),
+    samples: longTrace,
+    seriesRequested: "money",
+    valueSource: "money",
+    sampling: { ...sampling(1000), samplingBudget: 1_000_001 },
+  });
+  expect(longFit.sampleCount).toBe(1_000_001);
+  expect(onlyWindow(longFit).shape).toBe("exponential");
+  // A trace that alternates sign on every point is split in linear time.
+  const flicker = fitGrowth({
+    E: createNumberEngine(),
+    samples: Array.from({ length: 20_001 }, (_, index) => ({ t: index, amount: index % 2 === 0 ? 1 : -1 })),
+    seriesRequested: "money",
+    valueSource: "money",
+    sampling: sampling(20_000),
+  });
+  expect(flicker.windows.length).toBeGreaterThan(0);
+
+  // An exact line with a large intercept is a polynomial, not a constant. A flat series stays constant.
+  const intercept = fitGrowth({
+    E: createNumberEngine(),
+    samples: Array.from({ length: 81 }, (_, t) => ({ t, amount: 1e9 + 3 * t })),
+    seriesRequested: "money",
+    valueSource: "money",
+    sampling: sampling(80),
+  });
+  expect(onlyWindow(intercept).shape).toBe("polynomial");
+  const flat = fitGrowth({
+    E: createNumberEngine(),
+    samples: Array.from({ length: 81 }, (_, t) => ({ t, amount: 1e9 })),
+    seriesRequested: "money",
+    valueSource: "money",
+    sampling: sampling(80),
+  });
+  expect(onlyWindow(flat).shape).toBe("constant");
+
+  // A large log offset does not change the shape. The fit runs on log values relative to the first one.
+  const offsetEngine = createBreakInfinityEngine();
+  const offset = fitGrowth({
+    E: offsetEngine,
+    samples: Array.from({ length: 81 }, (_, t) => ({ t, amount: offsetEngine.from(`1e${1e12 + 0.01 * t}`) })),
+    seriesRequested: "money",
+    valueSource: "money",
+    sampling: sampling(80),
+  });
+  expect(onlyWindow(offset).shape).toBe("exponential");
+  expect(Math.abs((onlyWindow(offset).speed.logSlopePerSec ?? 0) - 0.01)).toBeLessThan(1e-4);
+
+  // A buy whose id mentions prestige is a purchase. Action.kind decides, not the id.
+  const generator = {
+    id: "prestige-generator",
+    kind: "buy" as const,
+    canApply: () => true,
+    cost: () => null,
+    apply: (_ctx: unknown, state: SimState<number, UnitCode, Vars>) => state,
+  };
+  const namedFit = fitGrowthFromRun({
+    run: withActionRows([{ t: 40, actionId: "prestige-generator" }], true),
+    series: "money",
+    scenario: scenarioFor(1, 80, { ...model(0), actions: () => [generator] }),
+    sampling: sampling(),
+  });
+  expect(namedFit.windows[1]?.discontinuity).toBe("purchase");
+
+  // The softcap hint is read at the analyzed run's start.
+  const softcapped = fitGrowthFromRun({
+    run: { ...fastTrace, start: makeState(10, 1) },
+    series: "money",
+    scenario: scenarioFor(1, 80, {
+      ...model(0),
+      analytic: (_ctx, state) =>
+        state.t >= 10 ? { softcap: { kind: "log", startsAt: { unit: { code: "COIN" }, amount: 1 } } } : null,
+    }),
+    sampling: sampling(),
+  });
+  expect(softcapped.softcap).toBe("configured");
 }
 
 /**

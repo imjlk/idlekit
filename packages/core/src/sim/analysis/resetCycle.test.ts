@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { createNumberEngine } from "../../engine/breakInfinity";
-import { emitCommittedResets } from "../observation";
+import { emitActionFacts, emitCommittedResets } from "../observation";
 import { applyDecisions, type CommittedResetFact } from "../step";
 import type { Strategy } from "../strategy/types";
 import type { Action, CompiledScenario, Model, SimState } from "../types";
@@ -161,9 +161,11 @@ function makeRng(seed: number): ResetCycleRng & { next: () => number } {
  * @evidence ./resetCycle.ts#resetCycleJsonSchema The schema is 3.1.
  * @evidenceReview ./resetCycle.ts#resetCycleJsonSchema #c6690d5 The function memoizes typia.json.schema of ResetCycleArtifactV1.
  * @evidence ./resetCycle.ts#executeResetCycles Runs three fixed intervals, an explicit list, a resume, and the horizon and budget guards.
- * @evidenceReview ./resetCycle.ts#executeResetCycles #a79adcb The function runs each interval with runScenario on a model that delegates every member to the original receiver and hides the reset action, resolved per state and removed by identity when listed, measures the horizon with relative slack on summed runner seconds, censors any budget stop, resolves the adapter at the boundary, commits one reset through applyDecisions with live constraints, refreshes maxMoneyEver, records a refusal instead of forcing it, and records strategy and RNG snapshots by presence with copies.
+ * @evidenceReview ./resetCycle.ts#executeResetCycles #dd4407c The function accepts a maxCycles cap of 0, rejects a checkpoint of another contract or version, copies the resumed state and constraints, rejects a strategyState with no restoreState and an rngState with no rng, discovers adapters under the live constraints, runs each interval with runScenario on a model that delegates every member to the original receiver and hides prestige actions under any adapter and the custom reset, resolved per state and removed by identity when listed, measures the horizon on summed runner seconds with relative slack capped by a share of the interval, censors any budget stop, resolves the adapter at the boundary, commits one reset through applyDecisions with live constraints and forwards its action facts to onAction, refreshes maxMoneyEver, records a refusal instead of forcing it, and records copies of the state, a strategy snapshot only when restoreState exists, and the RNG snapshot.
+ * @evidence ../observation.ts#emitActionFacts Forwards a boundary decision to onAction.
+ * @evidenceReview ../observation.ts#emitActionFacts #be50111 The function returns without onAction, and forwards each applied or skipped action event with its time, id, outcome, and reason.
  * @evidence ./resetCycle.ts#resetAdapterFor Picks the prestige action and returns nothing for a model with neither an action nor a spec.
- * @evidenceReview ./resetCycle.ts#resetAdapterFor #5f8e044 The function returns an explicit adapter first, then the prestige action adapter when the given state lists one, then the spec adapter, and undefined when the model has no spec.
+ * @evidenceReview ./resetCycle.ts#resetAdapterFor #de4bddc The function returns an explicit adapter first, then the prestige action adapter when the given state and context list one, then the spec adapter, and undefined when the model has no spec.
  * @evidence ./resetCycle.ts#resetCycleSchemaId Reads the reset cycle schema id.
  * @evidenceReview ./resetCycle.ts#resetCycleSchemaId #2121231 The function returns the reset.cycle.v1 schema URL constant.
  * @evidence ./resetCycle.ts#resetCycleAlgorithmVersion Reads the algorithm version on the artifact.
@@ -659,6 +661,210 @@ export function runsThreeCommittedResets(): void {
   expect(budget.state.prestige.count).toBe(0);
   expect(resetAdapterFor(scenario())?.id).toBe("prestige.action");
   expect(resetAdapterFor(scenario({ actions: [] }))).toBeUndefined();
+
+  // maxCycles is a cap: 0 censors the run before any reset, and a negative or fractional cap is rejected.
+  const none = executeResetCycles({
+    scenario: scenario(),
+    policy: { kind: "fixed-interval", intervalSec: 2, cycles: 3 },
+    maxCycles: 0,
+  });
+  expect(none.artifact.status).toBe("censored");
+  expect(none.artifact.appliedResets).toBe(0);
+  expect(none.artifact.cycles).toEqual([]);
+  expect(none.artifact.warnings).toContain("max-cycles");
+  for (const maxCycles of [-1, 1.5]) {
+    expect(() =>
+      executeResetCycles({ scenario: scenario(), policy: { kind: "fixed-interval", intervalSec: 2, cycles: 1 }, maxCycles }),
+    ).toThrow("maxCycles must be an integer >= 0");
+  }
+
+  // A model that lists its prestige action only under live constraints is discovered with them.
+  const gatedBase = scenario({ constraints: { minPrestigeIntervalSec: 1 } });
+  const gated: CompiledScenario<number, "COIN", Vars> = {
+    ...gatedBase,
+    model: {
+      ...gatedBase.model,
+      actions: (ctx) => (ctx.constraints?.minPrestigeIntervalSec === 1 ? [prestigeAction()] : []),
+    },
+  };
+  expect(resetAdapterFor(gated)).toBeUndefined();
+  expect(resetAdapterFor(gated, undefined, gated.initial, { ...gated.ctx, constraints: gated.constraints })?.id).toBe(
+    "prestige.action",
+  );
+  const gatedRun = executeResetCycles({ scenario: gated, policy: { kind: "fixed-interval", intervalSec: 2, cycles: 2 } });
+  expect(gatedRun.artifact.status).toBe("ok");
+  expect(gatedRun.artifact.appliedResets).toBe(2);
+
+  // A checkpoint holds a copy of the state. In-place edits after it, or during a resume, do not rewrite it.
+  const inPlaceBuy: Action<number, "COIN", Vars> = {
+    id: "buy",
+    kind: "buy",
+    canApply: () => true,
+    cost: () => null,
+    apply: (_ctx, current) => {
+      (current.vars as { bought: number }).bought += 1;
+      return current;
+    },
+  };
+  const alwaysBuy: Strategy<number, "COIN", Vars> = {
+    id: "always-buy",
+    decide(ctx, model, current) {
+      const action = model.actions(ctx, current).find((candidate) => candidate.id === "buy");
+      return action ? [{ action }] : [];
+    },
+  };
+  const inPlace = () =>
+    scenario({ income: 0, actions: [inPlaceBuy, prestigeAction()], strategy: alwaysBuy, initial: state() });
+  const opened = executeResetCycles({ scenario: inPlace(), policy: { kind: "fixed-interval", intervalSec: 2, cycles: 1 } });
+  const saved = economy(opened.checkpoint.state);
+  (opened.state.vars as { bought: number }).bought = 1000;
+  expect(economy(opened.checkpoint.state)).toEqual(saved);
+  const resumedA = executeResetCycles({
+    scenario: inPlace(),
+    policy: { kind: "fixed-interval", intervalSec: 2, cycles: 1 },
+    resume: opened.checkpoint,
+  });
+  const resumedB = executeResetCycles({
+    scenario: inPlace(),
+    policy: { kind: "fixed-interval", intervalSec: 2, cycles: 1 },
+    resume: opened.checkpoint,
+  });
+  expect(economy(opened.checkpoint.state)).toEqual(saved);
+  expect(economy(resumedA.state)).toEqual(economy(resumedB.state));
+  expect(resumedA.state.vars.bought).toBeGreaterThan(saved.bought);
+
+  // A strategy that can snapshot but not restore leaves no strategyState, and a resume that needs one is rejected.
+  const snapshotOnly: Strategy<number, "COIN", Vars> = {
+    id: "snapshot-only",
+    decide: () => [],
+    snapshotState: () => ({ cursor: 1 }),
+  };
+  const unpaired = executeResetCycles({
+    scenario: scenario({ strategy: snapshotOnly }),
+    policy: { kind: "fixed-interval", intervalSec: 2, cycles: 1 },
+  });
+  expect("strategyState" in unpaired.checkpoint).toBe(false);
+  expect(unpaired.artifact.warnings).toContain("strategy state is not checkpointed: snapshotState has no restoreState");
+  expect(() =>
+    executeResetCycles({
+      scenario: scenario({ strategy: snapshotOnly }),
+      policy: { kind: "fixed-interval", intervalSec: 2, cycles: 1 },
+      resume: { ...unpaired.checkpoint, strategyState: { cursor: 1 } },
+    }),
+  ).toThrow("the strategy has no restoreState");
+  // A snapshot needs a restorer. A scenario without a strategy, or a resume without an rng, is rejected.
+  expect(() =>
+    executeResetCycles({
+      scenario: scenario(),
+      policy: { kind: "fixed-interval", intervalSec: 2, cycles: 1 },
+      resume: { ...unpaired.checkpoint, strategyState: { cursor: 1 } },
+    }),
+  ).toThrow("the strategy has no restoreState");
+  const seeded = executeResetCycles({
+    scenario: scenario(),
+    policy: { kind: "fixed-interval", intervalSec: 2, cycles: 1 },
+    rng: makeRng(3),
+  });
+  expect("rngState" in seeded.checkpoint).toBe(true);
+  expect(() =>
+    executeResetCycles({
+      scenario: scenario(),
+      policy: { kind: "fixed-interval", intervalSec: 2, cycles: 1 },
+      resume: seeded.checkpoint,
+    }),
+  ).toThrow("no rng was passed");
+  // A checkpoint from another contract or version is not read as this one.
+  expect(() =>
+    executeResetCycles({
+      scenario: scenario(),
+      policy: { kind: "fixed-interval", intervalSec: 2, cycles: 1 },
+      resume: { ...none.checkpoint, version: 2 } as unknown as typeof none.checkpoint,
+    }),
+  ).toThrow("version 1");
+  // The horizon slack is capped by a share of the interval, so a long study does not admit one more short cycle.
+  const longStudy = executeResetCycles({
+    scenario: scenario(),
+    policy: { kind: "fixed-interval", intervalSec: 0.5, cycles: 1 },
+    horizonSec: 1e9,
+    resume: { ...none.checkpoint, elapsedSec: 1e9 },
+  });
+  expect(longStudy.artifact.status).toBe("censored");
+  expect(longStudy.artifact.appliedResets).toBe(0);
+  const fractional = executeResetCycles({
+    scenario: scenario(),
+    policy: { kind: "fixed-interval", intervalSec: 0.1, cycles: 3 },
+    horizonSec: 0.3,
+  });
+  expect(fractional.artifact.appliedResets).toBe(3);
+  // multiplierFrom reads the same boundary context as the spec's other callbacks.
+  const constrainedSpec = executeResetCycles({
+    scenario: scenario({
+      actions: [],
+      constraints: { minPrestigeIntervalSec: 1 },
+      prestige: {
+        pointsFrom: () => 1,
+        multiplierFrom: (ctx) => (ctx.constraints?.minPrestigeIntervalSec === 1 ? 2 : 99),
+        resetState: (_ctx, current, gained) => ({
+          ...current,
+          prestige: { count: current.prestige.count + 1, points: current.prestige.points + gained, multiplier: 2 },
+        }),
+      },
+    }),
+    policy: { kind: "fixed-interval", intervalSec: 2, cycles: 1 },
+  });
+  expect(constrainedSpec.artifact.appliedResets).toBe(1);
+  expect(constrainedSpec.artifact.warnings.some((warning) => warning.includes("multiplierFrom was not applied"))).toBe(false);
+
+  // A custom adapter still hides prestige actions from the interval strategy.
+  const prestigeTaker: Strategy<number, "COIN", Vars> = {
+    id: "prestige-taker",
+    decide(ctx, model, current) {
+      const action = model.actions(ctx, current).find((candidate) => candidate.kind === "prestige");
+      return action ? [{ action }] : [];
+    },
+  };
+  const rebirth: Action<number, "COIN", Vars> = {
+    id: "rebirth",
+    kind: "custom",
+    canApply: () => true,
+    cost: () => null,
+    apply: (_ctx, current) => ({ ...current, vars: { ...current.vars, score: current.vars.score + 1 } }),
+  };
+  const rebirthAdapter: ResetAdapter<number, "COIN", Vars> = {
+    id: "rebirth",
+    kind: "custom",
+    preserved: ["vars"],
+    action: () => rebirth,
+    reward: (_ctx, current) => current.vars.score,
+  };
+  const customOnly = executeResetCycles({
+    scenario: scenario({ actions: [prestigeAction(), rebirth], strategy: prestigeTaker }),
+    policy: { kind: "fixed-interval", intervalSec: 2, cycles: 2 },
+    adapter: rebirthAdapter,
+  });
+  expect(customOnly.artifact.appliedResets).toBe(2);
+  expect(customOnly.state.prestige.count).toBe(0);
+  expect(customOnly.state.vars.score).toBe(2);
+
+  // The boundary decision reaches onAction, as an action decided inside a step does.
+  const actionFacts: string[] = [];
+  const observerFor = { onAction: (fact: { t: number; actionId: string; outcome: string }) => void actionFacts.push(`${fact.actionId}:${fact.outcome}@${fact.t}`) };
+  executeResetCycles({
+    scenario: scenario({ observer: observerFor }),
+    policy: { kind: "fixed-interval", intervalSec: 2, cycles: 2 },
+  });
+  expect(actionFacts).toEqual(["prestige:applied@2", "prestige:applied@4"]);
+  const directFacts: string[] = [];
+  emitActionFacts(
+    { onAction: (fact) => void directFacts.push(`${fact.actionId}:${fact.outcome}:${fact.reason ?? ""}@${fact.t}`) },
+    7,
+    [
+      { type: "action.applied", actionId: "a" },
+      { type: "action.skipped", actionId: "b", reason: "cooldown" },
+    ],
+  );
+  expect(directFacts).toEqual(["a:applied:@7", "b:skipped:cooldown@7"]);
+  emitActionFacts(undefined, 7, [{ type: "action.applied", actionId: "a" }]);
 }
 
 /**
