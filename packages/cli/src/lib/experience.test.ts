@@ -224,5 +224,15 @@ describe("experience Monte Carlo first visible change", () => {
       quantiles: [0.5],
     });
     expect(summary.firstVisible.horizonSec).toBeCloseTo(45000, 3);
+    // The first visible change is on the same tick clock, so a one-tick block does not overshoot its horizon.
+    const oneTick = { ...late, run: { ...late.run, maxSteps: 1 } };
+    const capped = summarizeExperienceMonteCarlo({
+      scenario: oneTick,
+      sessionPattern: { id: "twice-daily", days: 1 },
+      draws: 2,
+      seed: 1,
+      quantiles: [0.5],
+    });
+    expect(capped.firstVisible.status).not.toBe("unsupported");
   });
 });

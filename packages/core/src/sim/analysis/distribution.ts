@@ -345,8 +345,12 @@ function finiteMean(values: readonly number[]): number {
   const mean = Number.isFinite(unscaled)
     ? unscaled / values.length
     : (() => {
+        // Scale only the terms of at least 1, which cannot underflow when halved a few times. Smaller terms keep
+        // their own unscaled sum, so a subnormal residual survives large values that overflow and cancel.
         const scale = 2 ** (Math.ceil(Math.log2(values.length)) + 1);
-        return (compensatedSum(values, scale) / values.length) * scale;
+        const large = values.filter((value) => Math.abs(value) >= 1);
+        const small = values.filter((value) => Math.abs(value) < 1);
+        return (compensatedSum(large, scale) / values.length) * scale + compensatedSum(small, 1) / values.length;
       })();
   // Every mean lies inside [min, max], so rounding at the number limit cannot step past it.
   return Math.min(largest, Math.max(smallest, mean));
