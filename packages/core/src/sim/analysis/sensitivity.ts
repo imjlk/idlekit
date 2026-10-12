@@ -45,6 +45,8 @@ const UNAVAILABLE: LocalElasticity = {
 };
 
 export function assignmentFitsParamSpace(space: ParamSpace, value: string | number | boolean | null): boolean {
+  // Canonical JSON, task text, and probe ids write -0 as 0, so -0 would share every descriptor with 0.
+  if (Object.is(value, -0)) return false;
   if (space.kind === "bool") return typeof value === "boolean";
   if (space.kind === "int") {
     return typeof value === "number" && Number.isInteger(value) && value >= space.min && value <= space.max;
@@ -115,7 +117,10 @@ export function elasticityFromChange(args: Readonly<{
   };
   const pChanged = Number.isFinite(baselineP) && Number.isFinite(probeP) && probeP !== baselineP;
   if (relativeChange === null || !Number.isFinite(relativeChange) || !(baselineP > 0) || !pChanged) return unavailable;
-  const elasticity = relativeChange / relativeParameterChange(baselineP, probeP);
+  // A tiny positive baseline can make the parameter change overflow. Dividing by it would report a false 0.
+  const parameterChange = relativeParameterChange(baselineP, probeP);
+  if (!Number.isFinite(parameterChange) || parameterChange === 0) return unavailable;
+  const elasticity = relativeChange / parameterChange;
   if (!Number.isFinite(elasticity)) return unavailable;
   return {
     status: "observed",

@@ -37,13 +37,13 @@ export const experimentSeparateSpec = "experiment-spec-not-tunespec" as const;
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter Assignment uses a registered identifier path and the model or strategy schema. JSONPath, prototype, and eval paths are refused before a run.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #57f993a Re-read the section: a prototype path, an out-of-range integer, a non-finite choice value, a non-finite space bound, a schema-invalid rate, a stripped path, overlapping paths, a session dimension, a repeated seed, a non-finite limit, and a repeated constraint id throw before model create.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #783b454 Re-read the section: a prototype path, an out-of-range integer, a non-finite choice value, a non-finite space bound, a schema-invalid rate, a stripped path, overlapping paths, a session dimension, a repeated seed, a non-finite limit, and a repeated constraint id throw before model create.
  */
 export const experimentRegisteredSetter = "registered-key-not-jsonpath" as const;
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-local-elasticity Constant income reaches T/p. Local elasticity is signed and is not a Sobol or global index.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-local-elasticity #8e1bfdc Re-read the section: rate 2 reaches in 5 with elasticity -0.5, rate 0.5 reaches in 20 with elasticity -2, maxPicks stays flat, and the conformance relation checks -p/p' for divisor rates.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-local-elasticity #bd1aa44 Re-read the section: rate 2 reaches in 5 with elasticity -0.5, rate 0.5 reaches in 20 with elasticity -2, maxPicks stays flat, and the conformance relation checks -p/p' for divisor rates.
  */
 export const experimentLocalOat = "one-at-a-time-local-not-sobol" as const;
 
@@ -61,7 +61,7 @@ export const experimentCensoredHorizon = "censored-time-not-horizon" as const;
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown Pareto keeps per-metric tradeoffs. An unknown objective is uncompared, not a win.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown #ab90466 Re-read the section: A, B, and C are non-dominated, D is dominated, E is uncompared, money is compared pairwise in the effective engine, and the elasticity stays in that engine until it is text.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown #0c1079a Re-read the section: A, B, and C are non-dominated, D is dominated, E is uncompared, money is compared pairwise in the effective engine, and the elasticity stays in that engine until it is text.
  */
 export const experimentParetoUnknown = "unknown-is-not-superior" as const;
 
@@ -308,20 +308,18 @@ export function assertRegisteredPath(path: string, target: ExperimentDimensionV1
 
 export function setRegisteredParam(root: Readonly<Record<string, unknown>>, path: string, value: ExperimentScalar): Record<string, unknown> {
   const parts = assertRegisteredPath(path, "model");
-  const clone = JSON.parse(JSON.stringify(root)) as Record<string, unknown>;
+  // Copy only the objects on the assigned path. Every other value keeps its identity, prototype, and exact number.
+  const clone: Record<string, unknown> = { ...root };
   let cursor = clone;
   for (let index = 0; index < parts.length - 1; index += 1) {
     const key = parts[index]!;
     // assertRegisteredPath already bans these. The inline guard keeps the write visibly safe at the assignment.
     if (key === "__proto__" || key === "constructor" || key === "prototype") reject("parameter path is not a registered identifier");
     const next = Object.prototype.hasOwnProperty.call(cursor, key) ? cursor[key] : undefined;
-    if (next === null || typeof next !== "object" || Array.isArray(next)) {
-      const created: Record<string, unknown> = {};
-      cursor[key] = created;
-      cursor = created;
-    } else {
-      cursor = next as Record<string, unknown>;
-    }
+    const copied: Record<string, unknown> =
+      next === null || typeof next !== "object" || Array.isArray(next) ? {} : { ...(next as Record<string, unknown>) };
+    cursor[key] = copied;
+    cursor = copied;
   }
   const leaf = parts[parts.length - 1]!;
   if (leaf === "__proto__" || leaf === "constructor" || leaf === "prototype") reject("parameter path is not a registered identifier");
@@ -618,18 +616,33 @@ function aggregate<N>(E: Engine<N>, rows: readonly { seed: number; metrics: read
     // Sum, then divide, so subnormal amounts keep their mean. Only when the sum leaves the engine range,
     // divide before adding, so large finite amounts keep a finite mean.
     const sum = observed.reduce((total, metric) => E.add(total, metric.amount as N), E.zero());
-    const mean = E.isFinite(sum)
-      ? E.div(sum, count)
-      : observed.reduce((total, metric) => E.add(total, E.div(metric.amount as N, count)), E.zero());
+    const mean = E.isFinite(sum) ? E.div(sum, count) : scaledEngineMean(E, observed.map((metric) => metric.amount as N));
     if (!E.isFinite(mean)) return { metricId, status: "censored", value: null };
     return { metricId, status: "observed", value: E.toString(mean), amount: mean };
   }
   // Sum, then divide, so subnormal values keep their mean. Only when the sum overflows, divide before adding,
   // so two finite values near the double limit keep a finite mean.
-  const sum = observed.reduce((total, metric) => total + (metric.num as number), 0);
-  const mean = Number.isFinite(sum) ? sum / count : observed.reduce((total, metric) => total + (metric.num as number) / count, 0);
+  const values = observed.map((metric) => metric.num as number);
+  const sum = values.reduce((total, value) => total + value, 0);
+  const mean = Number.isFinite(sum) ? sum / count : scaledMean(values);
   if (!Number.isFinite(mean)) return { metricId, status: "censored", value: null };
   return { metricId, status: "observed", value: String(mean), num: mean };
+}
+
+/**
+ * Mean of finite values whose sum overflows. Each value is divided by the largest magnitude, so every scaled
+ * term is at most 1 and the scaled sum stays finite. The mean of the scaled terms is then scaled back.
+ */
+function scaledMean(values: readonly number[]): number {
+  const scale = values.reduce((largest, value) => Math.max(largest, Math.abs(value)), 0);
+  return scale * (values.reduce((total, value) => total + value / scale, 0) / values.length);
+}
+
+function scaledEngineMean<N>(E: Engine<N>, values: readonly N[]): N {
+  const scale = values.reduce((largest, value) => (E.absLog10(value) > E.absLog10(largest) ? value : largest), values[0]!);
+  const magnitude = E.cmp(scale, E.zero()) < 0 ? E.sub(E.zero(), scale) : scale;
+  const scaled = values.reduce((total, value) => E.add(total, E.divN(value, magnitude)), E.zero());
+  return E.mulN(magnitude, E.div(scaled, values.length));
 }
 
 function isObserved<N>(reading: Reading<N> | undefined): reading is Reading<N> {
@@ -674,7 +687,10 @@ function readingElasticity<N>(
     if (!(E.cmp(baseline.amount, E.zero()) > 0) || !(baselineP > 0) || !pChanged) return unavailable;
     // The ratio of two engine amounts can leave the double range, so the elasticity stays in the engine until it is text.
     const relative = finiteDelta ? E.divN(delta, baseline.amount) : E.sub(E.divN(probe.amount, baseline.amount), E.from(1));
-    const elasticity = E.div(relative, relativeParameterChange(baselineP, probeP));
+    // A tiny positive baseline can make the parameter change overflow. Dividing by it would report a false 0.
+    const parameterChange = relativeParameterChange(baselineP, probeP);
+    if (!Number.isFinite(parameterChange) || parameterChange === 0) return unavailable;
+    const elasticity = E.div(relative, parameterChange);
     if (!E.isFinite(elasticity)) return unavailable;
     return { ...unavailable, status: "observed", elasticity: E.toString(elasticity) };
   }
@@ -698,9 +714,10 @@ type ExperimentCheckRequest = Pick<ExperimentRunRequest, "spec" | "scenario" | "
 
 /** Every rejection that does not need a model instance. No factory `create` runs here. */
 function prepareExperiment(request: ExperimentCheckRequest) {
-  const scenarioHash = sha256Text(canonicalJson(request.scenario));
-  if (scenarioHash !== request.spec.scenario.hash) reject("scenario hash does not match the experiment spec");
+  // Validate the spec shape first, so an untyped caller gets ExperimentRejected rather than a TypeError.
   const spec = requireSpec(request.spec);
+  const scenarioHash = sha256Text(canonicalJson(request.scenario));
+  if (scenarioHash !== spec.scenario.hash) reject("scenario hash does not match the experiment spec");
   const metrics = metricIds(spec);
   // A JSON literal such as 1e400 parses to Infinity, and canonical JSON would hash it as null.
   if (spec.goal !== undefined && !Number.isFinite(spec.goal.target)) reject("goal target must be finite");
@@ -715,7 +732,7 @@ function prepareExperiment(request: ExperimentCheckRequest) {
  * A caller that compiles or opens a run first calls this, so a rejected spec never reaches a factory.
  *
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter Throws the same rejections as runExperiment before any model create.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #57f993a Re-read the section: the hash, spec, path, and schema checks run and no factory create is called.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #783b454 Re-read the section: the hash, spec, path, and schema checks run and no factory create is called.
  */
 export function checkExperimentSpec(request: ExperimentCheckRequest): void {
   prepareExperiment(request);

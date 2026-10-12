@@ -2115,7 +2115,7 @@ const experimentRates = [1, 2, 4, 5] as const;
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-local-elasticity Runs the constant-income experiment relation over the seed corpus: reach T/p and T/p', and elasticity -p/p'.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-local-elasticity #8e1bfdc Re-read the section, then ran this function on the short and extended corpus: the fixture case and every generated divisor case hold, and an undeclared case does not apply.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-local-elasticity #bd1aa44 Re-read the section, then ran this function on the short and extended corpus: the fixture case and every generated divisor case hold, and an undeclared case does not apply.
  * @evidence ./conformance.ts#checkConstantIncomeExperiment The seed corpus asks the harness to run each constant-income experiment case.
  * @evidenceReview ./conformance.ts#checkConstantIncomeExperiment #b996593 Re-read checkConstantIncomeExperiment: it runs runExperiment on rate p with one probe p' and compares both reach times, the elasticity -p/p', and the direction.
  */
