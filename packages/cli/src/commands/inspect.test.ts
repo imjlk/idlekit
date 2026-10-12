@@ -273,6 +273,14 @@ export const models = [{ id: "noted", version: 1, create() { throw new Error("cr
     const failed = runCli(["inspect", badMoney, "--plugin", blocked, "--format", "json"], { check: false });
     expect(failed.exitCode).not.toBe(0);
     expect(failed.stdout.includes("plugin-skipped")).toBe(false);
+    // Only the engine resolver's rejection is bad-engine. An amount that names an engine is a scenario error.
+    const engineNamed = await scenarioFile(dir, (raw) => {
+      (raw.initial as { wallet: { amount: string } }).wallet.amount = "breakEternity";
+    });
+    const moneyFailed = runCli(["inspect", engineNamed, "--format", "json"], { check: false });
+    expect(moneyFailed.exitCode).not.toBe(0);
+    expect(moneyFailed.stdout.includes("bad-engine")).toBe(false);
+    expect(moneyFailed.stderr.includes("UNSUPPORTED_ENGINE")).toBe(false);
     await removePath(dir);
   }, 300000);
 

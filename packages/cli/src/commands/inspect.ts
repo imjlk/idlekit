@@ -229,6 +229,30 @@ export default defineCommand({
       },
     };
 
+    // Resolve the engine alone first, so only an engine the resolver rejects becomes bad-engine. A planning error
+    // whose text names an engine, such as an initial amount of "breakEternity", is not an engine rejection.
+    let engineRejection: string | undefined;
+    try {
+      resolveEffectiveEngine({ requested: flags.engine, scenarioEngine: scenario.engine });
+    } catch (error) {
+      engineRejection = error instanceof Error ? error.message : "engine rejected";
+    }
+    if (engineRejection !== undefined) {
+      const report = buildScenarioInspect({
+        ...base,
+        engine: {
+          effectiveId: flags.engine ?? "rejected",
+          source: "rejected",
+          accepted: false,
+          rejectReason: engineRejection,
+        },
+        stages: [],
+        planner: null,
+      });
+      await emit(flags, report, scenarioPath, scenario);
+      throw cliError("UNSUPPORTED_ENGINE", engineRejection);
+    }
+
     try {
       // Plans only. Compiling would create the model and strategy, which may be plugin code.
       const prepared = planResolvedRun({
@@ -263,7 +287,6 @@ export default defineCommand({
       });
       await emit(flags, report, scenarioPath, scenario);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "engine rejected";
       // A strategy that only a skipped plugin provides cannot be planned. Report that instead of failing, as for a
       // plugin-only model. Only the typed unknown-strategy error for the selected id counts, not matching text.
       const strategyId = flags.strategy?.trim() || scenario.strategy?.id;
@@ -291,16 +314,7 @@ export default defineCommand({
         await emit(flags, report, scenarioPath, scenario);
         return;
       }
-      const rejected = message.includes("Unknown engine") || message.includes("breakEternity");
-      if (!rejected) throw error;
-      const report = buildScenarioInspect({
-        ...base,
-        engine: { effectiveId: flags.engine ?? "rejected", source: "rejected", accepted: false, rejectReason: message },
-        stages: [],
-        planner: null,
-      });
-      await emit(flags, report, scenarioPath, scenario);
-      throw cliError("UNSUPPORTED_ENGINE", message);
+      throw error;
     }
   },
 });
