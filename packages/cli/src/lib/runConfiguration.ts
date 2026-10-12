@@ -1,5 +1,6 @@
 import {
   BREAK_ETERNITY_EXPERIMENTAL_MESSAGE,
+  assertScenarioPlanInputs,
   compileScenario,
   createBreakInfinityEngine,
   createNumberEngine,
@@ -39,6 +40,8 @@ export const resolvedRunContract = "idlekit.resolved-run-configuration" as const
 export const sessionCaseSeed = 0x7107;
 
 export type StageName = "simulate" | "experience" | "ltv";
+
+const stageNames: readonly StageName[] = ["simulate", "experience", "ltv"];
 
 export type ValueSource = "scenario" | "command" | "stage";
 
@@ -103,6 +106,8 @@ export type PreparedRun = Readonly<{
    * they read only what every stage applies.
    */
   defaultSeed: (base: Readonly<Record<string, unknown>>, stages: readonly SeedStage[]) => number;
+  /** The resolved plan a stage would apply, without opening it. */
+  planFor: (stage: StageName) => ResolvedRunPlan;
   /** The same prepared run with this seed in every stage plan. */
   withSeed: (seed: number) => PreparedRun;
   /** `outputs` change only what the stage keeps or reports, so the digest reads them and the default seed does not. */
@@ -430,6 +435,51 @@ export function openResolvedStage(args: {
   }).scenario;
 }
 
+/**
+ * Throw for initial money or an untilExpr the engine cannot compile, as compileScenario would, and for a clock the
+ * runner rejects, checked with the step each stage runs. The strategy is not resolved here.
+ */
+export function assertResolvedPlanInputs(args: PrepareArgs, engine: ResolvedEngine): void {
+  const stepSecs = stageNames.map((stage) =>
+    stageApply(stage, args.consistentOverrides === true).step && args.stepSec !== undefined
+      ? args.stepSec
+      : args.scenario.clock.stepSec,
+  );
+  assertScenarioPlanInputs({
+    scenario: args.scenario,
+    E: engine.engine as Engine<number>,
+    allowSuffixNotation: true,
+    stepSecs,
+  });
+}
+
+/**
+ * The engine and stage plans of a run, without compiling the scenario. No model or strategy factory is created,
+ * so a caller that only explains the plan runs no factory code.
+ *
+ * @evidence docs/requirements/active/scenario-inspect.md#req-dx03-no-run Inspect reads stage plans without compiling the scenario.
+ * @evidenceReview docs/requirements/active/scenario-inspect.md#req-dx03-no-run #97d9296 Re-read the section: inspect does not run the scenario, so it does not create its model either.
+ */
+export function planResolvedRun(
+  args: PrepareArgs,
+): Readonly<{ engine: ResolvedEngine; planFor: (stage: StageName) => ResolvedRunPlan }> {
+  const engine = resolveEffectiveEngine({
+    requested: args.engineRequest,
+    scenarioEngine: args.scenario.engine,
+    customEngines: args.customEngines,
+  });
+  // Reject invalid plan inputs and an unknown strategy, as prepareResolvedRun does, without building a model or
+  // strategy.
+  assertResolvedPlanInputs(args, engine);
+  resolveStrategySelection({
+    scenario: args.scenario,
+    strategyRegistry: args.strategyRegistry,
+    overrideId: args.strategyOverride,
+    paramsMode: args.paramsMode,
+  });
+  return { engine, planFor: (stage) => stagePlan({ ...args, engine, stage }) };
+}
+
 export function prepareResolvedRun(args: PrepareArgs): PreparedRun {
   const engine = resolveEffectiveEngine({
     requested: args.engineRequest,
@@ -487,6 +537,9 @@ export function prepareResolvedRun(args: PrepareArgs): PreparedRun {
           })),
           ...(stages.length > 1 ? { keys: sharedIdentityKeys } : {}),
         });
+      },
+      planFor(stage) {
+        return stagePlan({ ...run, engine, stage });
       },
       withSeed(seed) {
         return build({ ...run, seed });

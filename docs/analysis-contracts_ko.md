@@ -10,7 +10,7 @@
 
 등록된 adapter에서 생략한 capability는 `unsupported`다. `capabilities` 필드 전체를 생략해도 같다. 등록하지 않은 모델 id나 version은 `unknown`이다.
 
-`AnalyzerRegistry`는 [`DX-02`](./analyzer-registry_ko.md)다. 분석법을 고르며 이 모델 capability 레지스트리를 대체하지 않는다. flow와 advance 본체는 이후 작업이다. flow나 reset capability가 없는 모델은 `unsupported`다. 0점이나 안정 상태가 아니다. adapter가 없으면 `unknown`이다. `DX-03` inspect가 정적으로 알지 못한다고 말할 수 있는 값이다.
+`AnalyzerRegistry`는 [`DX-02`](./analyzer-registry_ko.md)다. 분석법을 고르며 이 모델 capability 레지스트리를 대체하지 않는다. flow와 advance 본체는 이후 작업이다. flow나 reset capability가 없는 모델은 `unsupported`다. 0점이나 안정 상태가 아니다. adapter가 없으면 `unknown`이다. [`DX-03` inspect](./scenario-inspect_ko.md)가 정적으로 알지 못한다고 말할 수 있는 값이다.
 
 ## 목표와 지표
 

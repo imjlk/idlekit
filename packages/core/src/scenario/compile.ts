@@ -2,6 +2,7 @@ import type { Engine } from "../engine/types";
 import type { Unit } from "../money/types";
 import { parseMoney } from "../notation/parseMoney";
 import { cloneRunState } from "../sim/runFactory";
+import { assertSimulationClock } from "../sim/timeBoundary";
 import type { CompiledScenario, Model } from "../sim/types";
 import type { StrategyRegistry } from "../sim/strategy/registry";
 import type { ModelRegistry } from "./registry";
@@ -79,6 +80,38 @@ function parseUntilTerms(expr: string): ExprTerm[][] {
   }
 
   return allTerms;
+}
+
+export type UntilLiteral = Readonly<{
+  path: string;
+  literal: string;
+  /** engine: an amount path the engine parses. number: parsed with Number. runtime: chosen by the state value. */
+  parse: "engine" | "number" | "runtime";
+}>;
+
+/**
+ * The right-hand literals of an untilExpr and the parser the runner uses for each. Amount paths go through the
+ * engine, and `t` and `prestige.count` go through Number whatever the engine. Any other path picks its parser from
+ * the state value at run time, and a number there is read through Number too. An expression that does not parse
+ * has no literals.
+ */
+export function untilExprLiterals(expr: string | undefined): readonly UntilLiteral[] {
+  if (!expr || expr.trim().length === 0) return [];
+  let parsed: ExprTerm[][];
+  try {
+    parsed = parseUntilTerms(expr);
+  } catch {
+    return [];
+  }
+  return parsed.flat().map((term) => ({
+    path: term.path,
+    literal: term.rawRight,
+    parse: UNTIL_AMOUNT_PATHS.has(term.path)
+      ? ("engine" as const)
+      : UNTIL_NUMBER_PATHS.has(term.path)
+        ? ("number" as const)
+        : ("runtime" as const),
+  }));
 }
 
 function readPath(obj: unknown, path: string): unknown {
@@ -384,6 +417,47 @@ export function modelCreateParams(args: {
     throw new Error(`Invalid model params: ${standardIssues(result).join("; ")}`);
   }
   return args.raw;
+}
+
+/**
+ * Throw when the scenario's initial money or untilExpr does not compile for this engine, as compileScenario would,
+ * or when a clock a stage runs is one the runner rejects. `stepSecs` are the steps the stages run. Without them the
+ * scenario step is checked. Nothing is evaluated and no model is created, so a plan-only caller can reject the same
+ * scenario.
+ */
+export function assertScenarioPlanInputs<N>(args: {
+  scenario: ScenarioV1;
+  E: Engine<N>;
+  allowSuffixNotation?: boolean;
+  stepSecs?: readonly number[];
+}): void {
+  // validateScenarioV1 accepts an infinite step or duration, and runScenario does not.
+  const startT = args.scenario.initial.t ?? 0;
+  const durationSec = args.scenario.clock.durationSec;
+  for (const stepSec of args.stepSecs ?? [args.scenario.clock.stepSec]) {
+    assertSimulationClock("scenario clock", { stepSec, durationSec, startT });
+    // runScenario rejects a first tick that leaves state.t unchanged, which a large initial t rounds away. The first
+    // tick is a whole step, or the whole duration when that is shorter.
+    const firstDt = durationSec !== undefined ? Math.min(stepSec, durationSec) : stepSec;
+    if (firstDt > 0 && !(startT + firstDt > startT)) {
+      throw new Error(
+        `scenario clock tick did not advance state.t (start t: ${startT}, step: ${firstDt}); state.t is too large for stepSec ${stepSec}`,
+      );
+    }
+  }
+  buildInitialState({
+    E: args.E,
+    scenario: args.scenario,
+    unit: buildUnit({ scenario: args.scenario }),
+    allowSuffixNotation: args.allowSuffixNotation ?? true,
+  });
+  compileUntilExpr({
+    expr: args.scenario.clock.untilExpr,
+    E: args.E,
+    unit: buildUnit({ scenario: args.scenario }),
+    allowSuffixNotation: args.allowSuffixNotation ?? true,
+    allowUnsafe: false,
+  });
 }
 
 function buildUnit<U extends string>(args: {

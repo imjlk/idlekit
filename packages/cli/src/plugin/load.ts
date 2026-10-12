@@ -422,6 +422,14 @@ export type LoadedRegistries = Readonly<{
   analyzerRegistry: AnalyzerRegistry;
   analyzerFailures: readonly AnalyzerLoadFailure[];
   pluginDigest: Readonly<Record<string, string>>;
+  /** Model ids a plugin registered, in load order, including a plugin that replaces a built-in id. */
+  pluginModelIds?: readonly string[];
+  /** Strategy ids a plugin registered, in load order. */
+  pluginStrategyIds?: readonly string[];
+  /** Analyzer keys (id@version) a plugin registered, in load order. */
+  pluginAnalyzerKeys?: readonly string[];
+  /** Objective ids a plugin registered, in load order. */
+  pluginObjectiveIds?: readonly string[];
 }>;
 
 export async function loadRegistries(
@@ -441,6 +449,10 @@ export async function loadRegistries(
   const requiredSha256 = mergeShaPolicies(trustFileSha256, securityOptions.requiredSha256 ?? {});
   const hasShaPolicy = Object.keys(requiredSha256).length > 0;
   const pluginDigest: Record<string, string> = {};
+  const pluginModelIds: string[] = [];
+  const pluginStrategyIds: string[] = [];
+  const pluginAnalyzerKeys: string[] = [];
+  const pluginObjectiveIds: string[] = [];
 
   for (const p of pluginPaths) {
     const abs = await resolveAndValidatePluginPath(p, allowedRoots);
@@ -464,9 +476,18 @@ export async function loadRegistries(
     const mod = (await import(realpathSync(abs))) as PluginModule;
     const parsed = parsePluginModule(mod);
 
-    if (parsed.models) modelFactories.push(...parsed.models);
-    if (parsed.strategies) strategyFactories.push(...parsed.strategies);
-    if (parsed.objectives) objectiveFactories.push(...parsed.objectives);
+    if (parsed.models) {
+      modelFactories.push(...parsed.models);
+      for (const factory of parsed.models) pluginModelIds.push(`${factory.id}@${factory.version}`);
+    }
+    if (parsed.strategies) {
+      strategyFactories.push(...parsed.strategies);
+      for (const factory of parsed.strategies) pluginStrategyIds.push(factory.id);
+    }
+    if (parsed.objectives) {
+      objectiveFactories.push(...parsed.objectives);
+      for (const factory of parsed.objectives) pluginObjectiveIds.push(factory.id);
+    }
     // A plugin export is a runtime value: a non-array is one isolated failure, not a crash.
     if (parsed.analyzers !== undefined && parsed.analyzers !== null && !Array.isArray(parsed.analyzers)) {
       analyzerFailures.push({ path: abs, message: "plugin analyzers export must be an array" });
@@ -474,6 +495,7 @@ export async function loadRegistries(
       for (const analyzer of parsed.analyzers) {
         const message = registerAnalyzerIsolated(analyzerRegistry, analyzer);
         if (message) analyzerFailures.push({ path: abs, message });
+        else pluginAnalyzerKeys.push(`${analyzer.id}@${analyzer.version}`);
       }
     }
   }
@@ -485,6 +507,10 @@ export async function loadRegistries(
     analyzerRegistry,
     analyzerFailures,
     pluginDigest,
+    pluginModelIds,
+    pluginStrategyIds,
+    pluginAnalyzerKeys,
+    pluginObjectiveIds,
   };
 }
 

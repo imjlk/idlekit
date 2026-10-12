@@ -17,8 +17,10 @@ import {
 import { describe, expect, it } from "bun:test";
 import { deriveDeterministicSeed } from "../io/outputMeta";
 import {
+  assertResolvedPlanInputs,
   defaultRunSeed,
   effectiveRunHash,
+  planResolvedRun,
   pluginDigestValues,
   prepareResolvedRun,
   resolveEffectiveEngine,
@@ -103,8 +105,12 @@ function registries() {
  * @evidenceReview ./runConfiguration.ts#effectiveRunHash #93139b8 Re-read effectiveRunHash and runIdentity: it ignores cwd, scenarioPath, and generatedAt and hashes the contract, scenario, engine, strategy, params mode, step, session, plugin digests in load order, the fast mode object or null, the stage name, inputs, and the seed. Ran this function: two directories give one hash, and stepSec 2 or strategy greedy changes it.
  * @evidence ./runConfiguration.ts#openResolvedStage Each stage opens a fresh compiled scenario with its own strategy, simulate on step 5 and experience on step 1.
  * @evidenceReview ./runConfiguration.ts#openResolvedStage #79dfd66 Re-read openResolvedStage: it binds a new createRunFactory with stageBindOptions, the scenario model and the plan strategy, and opens a fresh trial with the plan seed and an execution plan built from the stage plan. Ran this function: the opened simulate scenario is not the prepared definition, the two stages hold different strategies, and simulate runs on step 5 while experience runs on step 1.
+ * @evidence ./runConfiguration.ts#planResolvedRun Plans the same stages as prepareResolvedRun without compiling the scenario.
+ * @evidenceReview ./runConfiguration.ts#planResolvedRun #bf642d2 Re-read planResolvedRun: it resolves the engine, rejects an invalid untilExpr and an unknown strategy, and returns stagePlan for each stage without calling compileScenario. Ran this function: its simulate and experience plans equal prepareResolvedRun's, a model whose create throws still plans, and an unknown override throws. It also rejects initial money the engine cannot parse, and a clock the runner rejects for the step each stage runs: an infinite scenario step or duration throws, while consistent overrides replace the scenario step on every stage. The plan-input checks live in assertResolvedPlanInputs, which planResolvedRun calls before resolving the strategy.
+ * @evidence ./runConfiguration.ts#assertResolvedPlanInputs Rejects an infinite scenario step before any strategy is resolved.
+ * @evidenceReview ./runConfiguration.ts#assertResolvedPlanInputs #dd021d5 Re-read assertResolvedPlanInputs: it derives the step each stage runs from stageApply, the step override, and consistent overrides, and passes those steps with the engine to assertScenarioPlanInputs, which checks initial money, untilExpr, and the runner clock. It does not resolve the strategy. Ran this function: an infinite scenario step throws even with an unloaded strategy override, and valid inputs with that override pass.
  * @evidence ./runConfiguration.ts#prepareResolvedRun One prepared run opens simulate and experience stages that each buy once and match a standalone simulate open.
- * @evidenceReview ./runConfiguration.ts#prepareResolvedRun #ec6b45b Re-read prepareResolvedRun: it resolves the engine, rejects an unknown strategy before any stage opens, compiles once without the scenario strategy when an override or validated params replace it, and open builds a stage plan, its stage hash from stageIdentity with the compiled scenario fast mode and any output inputs, a fresh stage scenario, and the registries and bind options that rebuild that stage's model and strategy. Ran this function: simulate and experience each end with bought 1, the standalone simulate matches, and an unknown override throws at prepare.
+ * @evidenceReview ./runConfiguration.ts#prepareResolvedRun #9dbe932 Re-read prepareResolvedRun, whose planFor returns a stage plan without opening the stage: it resolves the engine, rejects an unknown strategy before any stage opens, compiles once without the scenario strategy when an override or validated params replace it, and open builds a stage plan, its stage hash from stageIdentity with the compiled scenario fast mode and any output inputs, a fresh stage scenario, and the registries and bind options that rebuild that stage's model and strategy. Ran this function: simulate and experience each end with bought 1, the standalone simulate matches, and an unknown override throws at prepare.
  */
 export function keepsResolvedRunConfiguration(): void {
   expect(resolvedRunContract).toBe("idlekit.resolved-run-configuration");
@@ -131,6 +137,50 @@ export function keepsResolvedRunConfiguration(): void {
     pluginDigest: { "/var/other/copy.ts": "abc", "/var/other/plugin.ts": "def" },
   });
   expect(prepared.open("simulate", "x").hash).toBe(standalone.open("simulate", "y").hash);
+  // Planning alone gives the same stage plans and never compiles, so a model whose create throws still plans.
+  const planArgs = { scenario: input, ...loaded, strategyOverride: "custom.once", stepSec: 5, fast: true, seed: 1 };
+  const planned = planResolvedRun(planArgs);
+  const compiledPlans = prepareResolvedRun(planArgs);
+  expect(planned.planFor("simulate")).toEqual(compiledPlans.planFor("simulate"));
+  expect(planned.planFor("experience")).toEqual(compiledPlans.planFor("experience"));
+  expect(planned.engine.effectiveId).toBe("number");
+  const throwingCreate = createModelRegistry([
+    {
+      ...modelFactory,
+      create() {
+        throw new Error("create must not run while planning");
+      },
+    },
+  ]);
+  expect(planResolvedRun({ ...planArgs, modelRegistry: throwingCreate }).planFor("simulate").stepSec.value).toBe(5);
+  expect(() => planResolvedRun({ ...planArgs, strategyOverride: "plugin.not-loaded" })).toThrow("Unknown strategy");
+  // An untilExpr that compileScenario rejects is rejected while planning too.
+  const badUntil = { ...input, clock: { ...input.clock, untilExpr: "s.t >= 1 ? true : false" } };
+  expect(() => planResolvedRun({ ...planArgs, scenario: badUntil })).toThrow("Invalid untilExpr");
+  // Initial money that compileScenario cannot parse is rejected while planning too.
+  const badMoney = { ...input, initial: { ...input.initial, wallet: { ...input.initial.wallet, amount: "1.2.3" } } };
+  expect(() => planResolvedRun({ ...planArgs, scenario: badMoney })).toThrow();
+  expect(() => prepareResolvedRun({ ...planArgs, scenario: badMoney })).toThrow();
+  // A clock the runner rejects is rejected while planning, even though validateScenarioV1 accepts it.
+  const infiniteStep = { ...input, clock: { ...input.clock, stepSec: Number.POSITIVE_INFINITY } };
+  expect(() => planResolvedRun({ ...planArgs, scenario: infiniteStep })).toThrow("stepSec must be a finite number");
+  // The input checks run alone too, so a caller can check them before it resolves the strategy.
+  expect(() =>
+    assertResolvedPlanInputs({ ...planArgs, scenario: infiniteStep, strategyOverride: "plugin.not-loaded" }, planned.engine),
+  ).toThrow("stepSec must be a finite number");
+  assertResolvedPlanInputs({ ...planArgs, strategyOverride: "plugin.not-loaded" }, planned.engine);
+  const infiniteDuration = { ...input, clock: { ...input.clock, durationSec: Number.POSITIVE_INFINITY } };
+  expect(() => planResolvedRun({ ...planArgs, scenario: infiniteDuration })).toThrow(
+    "durationSec must be a finite number",
+  );
+  // A first tick that a large initial t rounds away is rejected, as runScenario rejects it.
+  const roundedStart = { ...input, initial: { ...input.initial, t: 1e20 } };
+  expect(() => planResolvedRun({ ...planArgs, scenario: roundedStart })).toThrow("did not advance state.t");
+  // A stage that runs the command step does not run the scenario step, so consistent overrides cover every stage.
+  expect(
+    planResolvedRun({ ...planArgs, scenario: infiniteStep, consistentOverrides: true }).planFor("experience").stepSec
+      .value,
+  ).toBe(5);
   const swapped = prepareResolvedRun({
     scenario: input,
     ...loaded,
@@ -380,7 +430,7 @@ export function digestsEachStageFromItsAppliedPlan(): void {
  * @evidence docs/requirements/active/cli-resolved-run.md#req-pr07-resolved-run An override runs over an unregistered scenario strategy and over invalid scenario strategy params, and without the override both still fail. Validated params build the scenario strategy only from the schema value.
  * @evidenceReview docs/requirements/active/cli-resolved-run.md#req-pr07-resolved-run #b541e66 Re-read evaluate's shared-seed exception: fast changes applicable stage digests while the shared seed reads only common fields. Re-read the explicit fast override rule: omission inherits the scenario, false disables it within the stage scope, and disabled effective modes share one identity. Re-read the elapsed-clock exception: the resolved saved clock affects only the report digest, not the seed. Re-read the strategy paragraph: the flag replaces the scenario strategy, which is not built, and without the flag a broken one still fails. Re-read the params mode paragraph: validated mode compiles without the scenario strategy and each stage builds it from result.value. Ran this function: custom.once buys once over plugin.missing and over scripted params without a program, and without the override they throw Unknown strategy and Invalid strategy params. A schema that coerces n "1" to 1 runs in validated mode, its create sees only 1, and legacy-raw still throws the create error at prepare. A schema that turns "1" into 1 and rejects 1 opens and buys once in validated mode, the stage and a rebind from its isolation options both create with 1, and legacy-raw with n 1 throws Invalid strategy params.
  * @evidence ./runConfiguration.ts#prepareResolvedRun An override or validated params compile without the scenario strategy, and a legacy-raw run without an override keeps the scenario strategy errors.
- * @evidenceReview ./runConfiguration.ts#prepareResolvedRun #ec6b45b Re-read prepareResolvedRun: resolveStrategySelection runs first, and a command-selected strategy or a validated selection compiles the scenario without its strategy field. Ran this function: both broken scenarios open a simulate stage that buys once under the override, and prepare throws the scenario strategy error without it. The validated custom.coerce scenario plans params { n: 1 }, buys once, and its create is called only with 1, while legacy-raw throws the create error at prepare. The validated custom.transform scenario, whose schema rejects its own value, opens and buys once, and its isolation options rebind with 1.
+ * @evidenceReview ./runConfiguration.ts#prepareResolvedRun #9dbe932 Re-read prepareResolvedRun, whose planFor returns a stage plan without opening the stage: resolveStrategySelection runs first, and a command-selected strategy or a validated selection compiles the scenario without its strategy field. Ran this function: both broken scenarios open a simulate stage that buys once under the override, and prepare throws the scenario strategy error without it. The validated custom.coerce scenario plans params { n: 1 }, buys once, and its create is called only with 1, while legacy-raw throws the create error at prepare. The validated custom.transform scenario, whose schema rejects its own value, opens and buys once, and its isolation options rebind with 1.
  */
 export function overrideReplacesBrokenScenarioStrategy(): void {
   const loaded = registries();
@@ -542,7 +592,7 @@ export function seedsTheDefaultEngineOnce(): void {
  * @evidence docs/requirements/active/cli-resolved-run.md#req-pr07-resolved-run The default seed reads the strategy that runs, so an override that resolves to the scenario strategy gives the no-flag seed.
  * @evidenceReview docs/requirements/active/cli-resolved-run.md#req-pr07-resolved-run #b541e66 Re-read evaluate's shared-seed exception: fast changes applicable stage digests while the shared seed reads only common fields. Re-read the explicit fast override rule: omission inherits the scenario, false disables it within the stage scope, and disabled effective modes share one identity. Re-read the elapsed-clock exception: the resolved saved clock affects only the report digest, not the seed. Re-read the strategy paragraph and the default seed sentences: an override replaces the scenario strategy with the factory defaults, the seed adds only fields that differ from the run without flags, and without a resolvable scenario strategy it adds every field. Ran this function: no flag, a blank flag, and greedy over the greedy scenario give the base seed, custom.once moves it, custom.once over its own default params keeps it and over loop true moves it, the overrides over a missing or invalid scenario strategy are stable and differ by id, and plugin.not-loaded throws Unknown strategy.
  * @evidence ./runConfiguration.ts#prepareResolvedRun defaultSeed compares the strategy the override runs with the scenario strategy, and a scenario strategy that does not resolve has no run without flags.
- * @evidenceReview ./runConfiguration.ts#prepareResolvedRun #ec6b45b Re-read prepareResolvedRun: defaultSeed builds each stage identity from the stage plan without the seed and the identity of the run without flags (no override, the default engine, and the scenario strategy) inside a try, and passes the shared keys only for several stages. Ran this function through defaultSeed: the strategy cases above, including the scenario strategies that do not resolve.
+ * @evidenceReview ./runConfiguration.ts#prepareResolvedRun #9dbe932 Re-read prepareResolvedRun, whose planFor returns a stage plan without opening the stage: defaultSeed builds each stage identity from the stage plan without the seed and the identity of the run without flags (no override, the default engine, and the scenario strategy) inside a try, and passes the shared keys only for several stages. Ran this function through defaultSeed: the strategy cases above, including the scenario strategies that do not resolve.
  */
 export function seedsTheScenarioStrategyOnce(): void {
   const loaded = registries();

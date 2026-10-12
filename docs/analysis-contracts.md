@@ -10,7 +10,7 @@ Korean version: [analysis-contracts_ko.md](./analysis-contracts_ko.md)
 
 A registered adapter treats each omitted capability as `unsupported`, including when the entire `capabilities` field is omitted. An unregistered model id or version remains `unknown`.
 
-`AnalyzerRegistry` is [`DX-02`](./analyzer-registry.md). It chooses an analysis method and does not replace this model-capability registry. Flow and advance bodies are later work. A model with no flow or reset capability is `unsupported`. That is not a score of 0 and not a stable state. No adapter at all is `unknown`, which is what `DX-03` inspect can report as not statically known.
+`AnalyzerRegistry` is [`DX-02`](./analyzer-registry.md). It chooses an analysis method and does not replace this model-capability registry. Flow and advance bodies are later work. A model with no flow or reset capability is `unsupported`. That is not a score of 0 and not a stable state. No adapter at all is `unknown`, which is what [`DX-03` inspect](./scenario-inspect.md) can report as not statically known.
 
 ## Goals and metrics
 

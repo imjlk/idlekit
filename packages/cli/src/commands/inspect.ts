@@ -1,0 +1,387 @@
+import { defineCommand, option } from "../runtime/command";
+import {
+  assertAnalyzerPluginsPermitted,
+  buildScenarioInspect,
+  untilExprLiterals,
+  validateScenarioV1,
+  type ScenarioInspectReport,
+  type ScenarioV1,
+} from "@idlekit/core";
+import { z } from "zod";
+import { loadRegistriesFromFlags, pluginOptions, type PluginOptionFlags } from "./_shared/plugin";
+import { cliError, scenarioInvalidError, usageError } from "../errors";
+import { buildOutputMeta } from "../io/outputMeta";
+import { readScenarioFile } from "../io/readScenario";
+import { writeOutput } from "../io/writeOutput";
+import {
+  assertResolvedPlanInputs,
+  planResolvedRun,
+  resolveEffectiveEngine,
+  resolveStrategySelection,
+  type ResolvedRunPlan,
+} from "../lib/runConfiguration";
+
+function requestedPluginPaths(input: string): string[] {
+  return input
+    .split(",")
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
+}
+
+/**
+ * Scenario values whose literals can enter the engine. Identifiers and descriptive fields, such as model ids or
+ * meta, are not numbers, so only model params are read from those sections. Strategy params are read from the
+ * plan, since an override replaces the scenario strategy. buildScenarioInspect reads the untilExpr literals. The
+ * analysis, monetization, design, and constraints sections hold numbers, enums, and command-parsed text such as
+ * `analysis.prestigeCycle.scan`, none of which the engine parses, so they are not read.
+ */
+function numericInputs(scenario: ScenarioV1): unknown[] {
+  const initial = scenario.initial;
+  return [
+    scenario.model.params,
+    // Only the initial amounts are parsed by the engine. The wallet unit and the model's vars are not.
+    initial.wallet.amount,
+    initial.wallet.bucket,
+    initial.maxMoneyEver,
+    initial.prestige?.points,
+    initial.prestige?.multiplier,
+  ];
+}
+
+/**
+ * untilExpr `vars.` paths whose initial value is a number. The runner reads their literals with Number. A string or
+ * object var, or a path the scenario does not set, has no known parser.
+ */
+function numericUntilPaths(scenario: ScenarioV1): string[] {
+  return untilExprLiterals(scenario.clock.untilExpr)
+    .filter((term) => term.parse === "runtime" && term.path.startsWith("vars."))
+    .filter((term) => {
+      let value: unknown = scenario.initial.vars;
+      for (const part of term.path.slice("vars.".length).split(".")) {
+        if (!value || typeof value !== "object" || !Object.hasOwn(value, part)) return false;
+        value = (value as Record<string, unknown>)[part];
+      }
+      return typeof value === "number";
+    })
+    .map((term) => term.path);
+}
+
+function collectDecimals(value: unknown, out: string[]): void {
+  // The money grammar accepts a sign and a leading-dot mantissa, so +1e400 and .1e400 are candidates too.
+  if (typeof value === "string" && /^[+-]?(?:\d|\.\d)/.test(value.trim())) out.push(value);
+  else if (Array.isArray(value)) {
+    for (const item of value) collectDecimals(item, out);
+  } else if (value && typeof value === "object") {
+    for (const item of Object.values(value)) collectDecimals(item, out);
+  }
+}
+
+function stageInput(plan: ResolvedRunPlan, scenario: ScenarioV1) {
+  const scenarioFast = scenario.sim?.fast === true;
+  return {
+    name: plan.stage.name,
+    applies: plan.stage.applies,
+    stepSec: plan.stepSec,
+    strategyId: plan.strategy.id,
+    strategySource: plan.strategy.source,
+    ...(plan.session ? { session: plan.session } : {}),
+    // An override sets the stage's fast mode. Without one the stage inherits the scenario setting.
+    fast:
+      plan.fast !== undefined
+        ? { enabled: plan.fast.enabled === true, source: "command" as const }
+        : { enabled: scenarioFast, source: "scenario" as const },
+    // A traced simulate run keeps its actions. A session keeps every action, and ltv forces an action log on its
+    // segments. No stage caps that log.
+    actionsLog: { kept: plan.stage.name === "simulate" ? scenario.outputs?.report?.includeTrace === true : true },
+    // A traced simulate run samples at the scenario cadence. A session forces a trace of every step with no point
+    // cap. ltv samples every Number.MAX_SAFE_INTEGER steps and does not read its trace, so it keeps none.
+    stateTrace:
+      plan.stage.name === "simulate"
+        ? {
+            kept: scenario.outputs?.report?.includeTrace === true,
+            everySteps: scenario.outputs?.report?.traceEverySteps ?? 1,
+          }
+        : { kept: plan.stage.name === "experience", everySteps: 1 },
+  };
+}
+
+function plannerParams(plan: ResolvedRunPlan, pluginStrategyIds: readonly string[]) {
+  // The caps and rollout budget are the built-in planner's. A plugin that replaces the id has no such bound.
+  if (pluginStrategyIds.includes("planner")) return null;
+  if (plan.strategy.id !== "planner" || !plan.strategy.params || typeof plan.strategy.params !== "object") return null;
+  const params = plan.strategy.params as {
+    horizonSteps?: unknown;
+    beamWidth?: unknown;
+    maxBranchingActions?: unknown;
+  };
+  if (typeof params.horizonSteps !== "number") return null;
+  return {
+    horizonSteps: params.horizonSteps,
+    ...(typeof params.beamWidth === "number" ? { beamWidth: params.beamWidth } : {}),
+    ...(typeof params.maxBranchingActions === "number" ? { maxBranchingActions: params.maxBranchingActions } : {}),
+  };
+}
+
+function renderInspectMarkdown(report: ScenarioInspectReport): string {
+  const simulate = report.stages.find((stage) => stage.name === "simulate");
+  const lines = [
+    "# Scenario inspect",
+    "",
+    "This is not doctor. The plan was not ticked.",
+    "",
+    `- Contract: ${report.contract}`,
+    `- Engine: ${report.engine.effectiveId}`,
+    `- Reason: ${report.engine.reason}`,
+    `- Model: ${report.model.id}@${report.model.version}`,
+    `- Simulate step: ${simulate?.stepSec.value ?? "unknown"} from ${simulate?.stepSec.source ?? "unknown"}`,
+    `- Simulate steps: ${String(simulate?.stepCount ?? "unknown")}`,
+  ];
+  if (report.planner) {
+    lines.push(`- Planner expansion upper bound: ${report.planner.expansionUpperBound}. This is not a measured duration.`);
+  }
+  for (const item of report.diagnostics) lines.push(`- ${item.severity} ${item.code}`);
+  return lines.join("\n");
+}
+
+export default defineCommand({
+  name: "inspect",
+  description: "Explain the resolved run plan without ticking, judging, or using the network",
+  options: {
+    ...pluginOptions(),
+    format: option(z.enum(["json", "md"]).default("json"), { description: "Output format" }),
+    out: option(z.string().optional(), { description: "Output path" }),
+    engine: option(z.string().min(1).optional(), {
+      description: "Execution engine. Default number. scenario.engine is metadata. breakInfinity is explicit. breakEternity is unsupported.",
+    }),
+    strategy: option(z.string().min(1).optional(), { description: "Registered strategy id" }),
+    step: option(
+      z.coerce
+        .number()
+        .positive()
+        .refine((value) => Number.isFinite(value), "step must be finite")
+        .optional(),
+      { description: "Override stepSec for stages that apply step (finite, > 0)" },
+    ),
+    // Same as simulate: an omitted flag keeps the scenario's fast setting, and false disables it.
+    fast: option(z.coerce.boolean().optional(), {
+      description: "Override fast mode where the stage applies it (omitted: scenario setting)",
+    }),
+    "consistent-overrides": option(z.coerce.boolean().default(false), {
+      description: "Also apply step and fast overrides on the experience stage",
+    }),
+    "resolve-plugins": option(z.coerce.boolean().default(false), {
+      description: "Load trusted plugin modules. Import may run user code. Default is not to load plugins.",
+    }),
+    // The same flags and schemas as experience and evaluate, so one invocation can be inspected as written.
+    "session-pattern": option(
+      z.enum(["always-on", "short-bursts", "twice-daily", "offline-heavy", "weekend-marathon"]).optional(),
+      { description: "Session pattern id for stages that apply session" },
+    ),
+    days: option(z.coerce.number().int().positive().optional(), { description: "Session days for stages that apply session" }),
+  },
+  async handler({ flags, positional }) {
+    const scenarioPath = positional[0];
+    if (!scenarioPath) throw usageError("Usage: idk inspect <scenario.(json|yaml)> [--format json|md]");
+    const paths = requestedPluginPaths(flags.plugin);
+    const resolvePlugins = flags["resolve-plugins"] && paths.length > 0;
+    if (resolvePlugins) assertAnalyzerPluginsPermitted(flags["allow-plugin"], paths);
+    // Skipped plugins need no trust policy, so the built-in registries read no root, digest, or trust file.
+    const silentFlags: PluginOptionFlags = {
+      plugin: "",
+      "allow-plugin": false,
+      "plugin-root": "",
+      "plugin-sha256": "",
+      "plugin-trust-file": "",
+    };
+    const builtins = await loadRegistriesFromFlags(silentFlags);
+    const loaded = resolvePlugins ? await loadRegistriesFromFlags(flags) : builtins;
+    // The output metadata names the plugin binaries that resolved the plan, as the executable commands do.
+    const pluginDigest = resolvePlugins ? loaded.pluginDigest : undefined;
+    // Plugin registrations by origin, so a plugin that replaces a built-in id is still reported. Strategies and
+    // analyzers count too: they can drive the plan or attach to it.
+    const pluginStrategyIds = resolvePlugins ? [...new Set(loaded.pluginStrategyIds ?? [])] : [];
+    const loadedIds = resolvePlugins
+      ? [
+          ...new Set([
+            ...(loaded.pluginModelIds ?? []),
+            ...pluginStrategyIds.map((id) => `strategy:${id}`),
+            ...(loaded.pluginAnalyzerKeys ?? []).map((key) => `analyzer:${key}`),
+            ...(loaded.pluginObjectiveIds ?? []).map((id) => `objective:${id}`),
+          ]),
+        ]
+      : [];
+    const input = await readScenarioFile(scenarioPath);
+    // A skipped plugin may provide the model, or replace a built-in one with other params. When only the model check
+    // of the loaded registry fails, validate the scenario without the model, so the report can still say the plugin
+    // was skipped and which model it left unchecked.
+    const structural = validateScenarioV1(input);
+    const full = structural.ok ? validateScenarioV1(input, loaded.modelRegistry) : structural;
+    const skippedModel = !resolvePlugins && paths.length > 0 && structural.ok && !full.ok;
+    const valid = skippedModel ? structural : full;
+    if (!valid.ok || !valid.scenario) throw scenarioInvalidError(valid.issues);
+    const scenario = valid.scenario;
+    const decimals: string[] = [];
+    for (const section of numericInputs(scenario)) collectDecimals(section, decimals);
+    // The strategy params a stage runs. An override replaces the scenario strategy and its params.
+    const strategyDecimals = (params: readonly unknown[]): string[] => {
+      const out = [...decimals];
+      for (const item of new Set(params)) collectDecimals(item, out);
+      return out;
+    };
+
+    const base = {
+      model: { id: scenario.model.id, version: scenario.model.version },
+      unitCode: scenario.unit.code,
+      walletUnit: scenario.initial.wallet.unit,
+      clock: {
+        stepSec: scenario.clock.stepSec,
+        ...(scenario.clock.durationSec !== undefined ? { durationSec: scenario.clock.durationSec } : {}),
+        ...(scenario.clock.untilExpr ? { untilExpr: scenario.clock.untilExpr } : {}),
+      },
+      ...(scenario.sim?.offline ? { offline: scenario.sim.offline } : {}),
+      ...(scenario.sim?.eventLog ? { eventLog: scenario.sim.eventLog } : {}),
+      trace: {
+        include: scenario.outputs?.report?.includeTrace === true,
+        ...(scenario.outputs?.report?.traceEverySteps !== undefined
+          ? { everySteps: scenario.outputs.report.traceEverySteps }
+          : {}),
+      },
+      capabilities: {
+        metrics: "unknown" as const,
+        goals: "unknown" as const,
+        reset: "unknown" as const,
+        flow: "unknown" as const,
+        advance: "unknown" as const,
+      },
+      analyzers: loaded.analyzerRegistry.list().flatMap((item) => {
+        const defined = loaded.analyzerRegistry.get(item.id, item.version);
+        if (!defined) return [];
+        return [{ id: defined.id, version: defined.version, kind: defined.kind, observation: defined.observation }];
+      }),
+      decimals,
+      numericUntilPaths: numericUntilPaths(scenario),
+      prestigeRequested: scenario.analysis?.prestigeCycle !== undefined,
+      plugins: {
+        resolve: resolvePlugins,
+        requested: paths.length > 0,
+        loadedIds,
+        ...(skippedModel ? { unresolvedModel: `${scenario.model.id}@${scenario.model.version}` } : {}),
+      },
+    };
+
+    // Resolve the engine alone first, so only an engine the resolver rejects becomes bad-engine. A planning error
+    // whose text names an engine, such as an initial amount of "breakEternity", is not an engine rejection.
+    let engineRejection: string | undefined;
+    let engine: ReturnType<typeof resolveEffectiveEngine> | undefined;
+    try {
+      engine = resolveEffectiveEngine({ requested: flags.engine, scenarioEngine: scenario.engine });
+    } catch (error) {
+      engineRejection = error instanceof Error ? error.message : "engine rejected";
+    }
+    if (engineRejection !== undefined || engine === undefined) {
+      const report = buildScenarioInspect({
+        ...base,
+        engine: {
+          effectiveId: flags.engine ?? "rejected",
+          source: "rejected",
+          accepted: false,
+          rejectReason: engineRejection ?? "engine rejected",
+        },
+        stages: [],
+        planner: null,
+      });
+      await emit(flags, report, scenarioPath, scenario, pluginDigest);
+      throw cliError("UNSUPPORTED_ENGINE", engineRejection ?? "engine rejected");
+    }
+
+    const planArgs = {
+      scenario,
+      modelRegistry: loaded.modelRegistry,
+      strategyRegistry: loaded.strategyRegistry,
+      pluginDigest: loaded.pluginDigest,
+      engineRequest: flags.engine,
+      strategyOverride: flags.strategy,
+      stepSec: flags.step,
+      fast: flags.fast,
+      consistentOverrides: flags["consistent-overrides"],
+      sessionId: flags["session-pattern"],
+      days: flags.days,
+    };
+    // Plan inputs other than the strategy fail as they would for the run.
+    assertResolvedPlanInputs(planArgs, engine);
+    // A skipped plugin may provide the strategy, or replace a built-in one with other params, so a strategy the loaded
+    // registries cannot resolve is reported as unchecked instead of failing.
+    const skipping = !resolvePlugins && paths.length > 0;
+    const strategyId = flags.strategy?.trim() || scenario.strategy?.id;
+    let strategyUnchecked = false;
+    if (skipping) {
+      try {
+        resolveStrategySelection({ scenario, strategyRegistry: loaded.strategyRegistry, overrideId: flags.strategy });
+      } catch {
+        strategyUnchecked = true;
+      }
+    }
+    if (strategyUnchecked && strategyId !== undefined) {
+      const report = buildScenarioInspect({
+        ...base,
+        // An override's params are unknown. Without one the plugin strategy receives the scenario params.
+        decimals: strategyDecimals(flags.strategy?.trim() ? [] : [scenario.strategy?.params]),
+        engine: {
+          effectiveId: engine.effectiveId,
+          source: engine.source,
+          accepted: true,
+          ...(engine.scenarioEngine ? { scenarioEngine: engine.scenarioEngine } : {}),
+        },
+        stages: [],
+        planner: null,
+        plugins: { ...base.plugins, unresolvedStrategy: strategyId },
+      });
+      await emit(flags, report, scenarioPath, scenario, pluginDigest);
+      return;
+    }
+
+    // Plans only. Compiling would create the model and strategy, which may be plugin code.
+    const prepared = planResolvedRun(planArgs);
+    const simulate = prepared.planFor("simulate");
+    const experience = prepared.planFor("experience");
+    // evaluate and ltv open an ltv stage too. Its horizon comes from the command, so its count stays unknown.
+    const ltv = prepared.planFor("ltv");
+    const plans = [simulate, experience, ltv];
+    const report = buildScenarioInspect({
+      ...base,
+      decimals: strategyDecimals(plans.map((plan) => plan.strategy.params)),
+      engine: {
+        effectiveId: prepared.engine.effectiveId,
+        source: prepared.engine.source,
+        accepted: true,
+        ...(prepared.engine.scenarioEngine ? { scenarioEngine: prepared.engine.scenarioEngine } : {}),
+      },
+      stages: plans.map((plan) => stageInput(plan, scenario)),
+      // A skipped plugin may replace the built-in planner, so its bound is not claimed then.
+      planner: skipping ? null : plannerParams(simulate, pluginStrategyIds),
+    });
+    await emit(flags, report, scenarioPath, scenario, pluginDigest);
+  },
+});
+
+async function emit(
+  flags: { format: "json" | "md"; out?: string },
+  report: ScenarioInspectReport,
+  scenarioPath: string,
+  scenario: unknown,
+  pluginDigest?: Readonly<Record<string, string>>,
+): Promise<void> {
+  if (flags.format === "md") {
+    const body = renderInspectMarkdown(report);
+    if (!flags.out) {
+      console.log(body);
+      return;
+    }
+  }
+  await writeOutput({
+    format: flags.format === "md" ? "md" : "json",
+    outPath: flags.out,
+    data: flags.format === "md" ? renderInspectMarkdown(report) : report,
+    meta: flags.format === "json" ? buildOutputMeta({ command: "inspect", scenarioPath, scenario, pluginDigest }) : undefined,
+  });
+}
