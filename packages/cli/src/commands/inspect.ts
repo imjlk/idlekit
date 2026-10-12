@@ -8,7 +8,7 @@ import {
 } from "@idlekit/core";
 import { z } from "zod";
 import { loadRegistriesFromFlags, pluginOptions, type PluginOptionFlags } from "./_shared/plugin";
-import { cliError, scenarioInvalidError, usageError } from "../errors";
+import { CliError, cliError, scenarioInvalidError, usageError } from "../errors";
 import { buildOutputMeta } from "../io/outputMeta";
 import { readScenarioFile } from "../io/readScenario";
 import { writeOutput } from "../io/writeOutput";
@@ -21,19 +21,10 @@ function requestedPluginPaths(input: string): string[] {
     .filter((item) => item.length > 0);
 }
 
-/** Right-hand literals of an untilExpr. They are compared through the engine, so they can exceed its range. */
-function untilLiterals(expr: string | undefined): string[] {
-  if (!expr) return [];
-  const literals: string[] = [];
-  for (const match of expr.matchAll(/(?:<=|>=|==|!=|<|>)\s*([^\s&|]+)/g)) {
-    if (match[1] !== undefined) literals.push(match[1]);
-  }
-  return literals;
-}
-
 /**
- * Scenario values whose literals can enter the engine. Identifiers and descriptive fields, such as model and
- * strategy ids or meta, are not numbers, so only model and strategy params are read from those sections.
+ * Scenario values whose literals can enter the engine. Identifiers and descriptive fields, such as model ids or
+ * meta, are not numbers, so only model params are read from those sections. Strategy params are read from the
+ * plan, since an override replaces the scenario strategy. buildScenarioInspect reads the untilExpr literals.
  */
 function numericInputs(scenario: ScenarioV1): unknown[] {
   const initial = scenario.initial;
@@ -45,8 +36,6 @@ function numericInputs(scenario: ScenarioV1): unknown[] {
     initial.maxMoneyEver,
     initial.prestige?.points,
     initial.prestige?.multiplier,
-    scenario.strategy?.params,
-    untilLiterals(scenario.clock.untilExpr),
     scenario.analysis,
     scenario.monetization,
     scenario.design,
@@ -64,7 +53,8 @@ function collectDecimals(value: unknown, out: string[]): void {
   }
 }
 
-function stageInput(plan: ResolvedRunPlan, scenarioFast: boolean) {
+function stageInput(plan: ResolvedRunPlan, scenario: ScenarioV1) {
+  const scenarioFast = scenario.sim?.fast === true;
   return {
     name: plan.stage.name,
     applies: plan.stage.applies,
@@ -77,6 +67,9 @@ function stageInput(plan: ResolvedRunPlan, scenarioFast: boolean) {
       plan.fast !== undefined
         ? { enabled: plan.fast.enabled === true, source: "command" as const }
         : { enabled: scenarioFast, source: "scenario" as const },
+    // A traced simulate run keeps its actions. A session keeps every action, and ltv forces an action log on its
+    // segments. No stage caps that log.
+    actionsLog: { kept: plan.stage.name === "simulate" ? scenario.outputs?.report?.includeTrace === true : true },
   };
 }
 
@@ -190,6 +183,12 @@ export default defineCommand({
     const scenario = valid.scenario;
     const decimals: string[] = [];
     for (const section of numericInputs(scenario)) collectDecimals(section, decimals);
+    // The strategy params a stage runs. An override replaces the scenario strategy and its params.
+    const strategyDecimals = (params: readonly unknown[]): string[] => {
+      const out = [...decimals];
+      for (const item of new Set(params)) collectDecimals(item, out);
+      return out;
+    };
 
     const base = {
       model: { id: scenario.model.id, version: scenario.model.version },
@@ -249,27 +248,36 @@ export default defineCommand({
       const experience = prepared.planFor("experience");
       // evaluate and ltv open an ltv stage too. Its horizon comes from the command, so its count stays unknown.
       const ltv = prepared.planFor("ltv");
+      const plans = [simulate, experience, ltv];
       const report = buildScenarioInspect({
         ...base,
+        decimals: strategyDecimals(plans.map((plan) => plan.strategy.params)),
         engine: {
           effectiveId: prepared.engine.effectiveId,
           source: prepared.engine.source,
           accepted: true,
           ...(prepared.engine.scenarioEngine ? { scenarioEngine: prepared.engine.scenarioEngine } : {}),
         },
-        stages: [simulate, experience, ltv].map((plan) => stageInput(plan, scenario.sim?.fast === true)),
+        stages: plans.map((plan) => stageInput(plan, scenario)),
         planner: plannerParams(simulate, pluginStrategyIds),
       });
       await emit(flags, report, scenarioPath, scenario);
     } catch (error) {
       const message = error instanceof Error ? error.message : "engine rejected";
       // A strategy that only a skipped plugin provides cannot be planned. Report that instead of failing, as for a
-      // plugin-only model.
-      const strategyId = flags.strategy ?? scenario.strategy?.id;
-      if (message.includes("Unknown strategy") && !resolvePlugins && paths.length > 0 && strategyId !== undefined) {
+      // plugin-only model. Only the typed unknown-strategy error for the selected id counts, not matching text.
+      const strategyId = flags.strategy?.trim() || scenario.strategy?.id;
+      const unknownStrategy =
+        error instanceof CliError &&
+        error.code === "UNKNOWN_STRATEGY" &&
+        strategyId !== undefined &&
+        loaded.strategyRegistry.get(strategyId) === undefined;
+      if (unknownStrategy && !resolvePlugins && paths.length > 0) {
         const engine = resolveEffectiveEngine({ requested: flags.engine, scenarioEngine: scenario.engine });
         const report = buildScenarioInspect({
           ...base,
+          // An override's params are unknown. Without one the plugin strategy receives the scenario params.
+          decimals: strategyDecimals(flags.strategy?.trim() ? [] : [scenario.strategy?.params]),
           engine: {
             effectiveId: engine.effectiveId,
             source: engine.source,

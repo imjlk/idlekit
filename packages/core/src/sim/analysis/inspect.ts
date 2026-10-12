@@ -5,6 +5,7 @@ import { observationContract } from "../observation";
 import { nextBoundary } from "../timeBoundary";
 import { plannerExpansionBound } from "../strategy/planner";
 import type { OfflinePolicy } from "../../scenario/offlinePolicy";
+import { untilExprLiterals } from "../../scenario/compile";
 
 /**
  * Inspect explains a resolved plan. It does not tick, import plugins, or call the network.
@@ -86,6 +87,8 @@ export type InspectStageInput = Readonly<{
   session?: Readonly<{ id?: string; days?: number; source: "scenario" | "command" }>;
   /** The fast mode the stage runs: the command override, or the scenario setting it inherits. */
   fast?: Readonly<{ enabled: boolean; source: "scenario" | "command" }>;
+  /** Whether the stage keeps every applied action, and the cap on that log. No cap keeps all of them. */
+  actionsLog?: Readonly<{ kept: boolean; maxActions?: number }>;
 }>;
 
 export type InspectAnalyzerInput = Readonly<{
@@ -148,6 +151,7 @@ export type ScenarioInspectReport = Readonly<{
     strategySource: InspectStageInput["strategySource"];
     session: InspectStageInput["session"] | null;
     fast: NonNullable<InspectStageInput["fast"]> | null;
+    actionsLog: Readonly<{ kept: boolean; maxActions: number | null; unlimited: boolean }> | null;
     stepCount: number | "unknown";
     lastDt: number | null;
     partialTick: boolean;
@@ -274,15 +278,31 @@ export function buildScenarioInspect(request: ScenarioInspectRequest): ScenarioI
   }
 
   // A custom engine declares no numeric domain. Its id does not say whether it narrows literals through Number,
-  // so wide literals warn for it as for the number engine.
+  // so wide literals warn for it as for the number engine. An untilExpr amount literal goes through the engine. A
+  // `t`, `prestige.count`, or numeric state comparison goes through Number whatever the engine, so it always warns.
   const exact = numericDomainOf(request.engine);
-  if (request.engine.accepted && exact !== "decimal-string") {
-    const wide = request.decimals.filter(decimalExceedsNumberDomain);
+  if (request.engine.accepted) {
+    const until = untilExprLiterals(request.clock.untilExpr);
+    const engineLiterals = [
+      ...request.decimals,
+      ...until.filter((term) => term.parse === "engine").map((term) => term.literal),
+    ];
+    const numberLiterals = until.filter((term) => term.parse !== "engine").map((term) => term.literal);
+    const numberWide = numberLiterals.filter(decimalExceedsNumberDomain);
+    const wide = [
+      ...(exact !== "decimal-string" ? engineLiterals.filter(decimalExceedsNumberDomain) : []),
+      ...numberWide,
+    ];
     if (wide.length > 0) {
       diagnostics.push({
         severity: "warning",
         code: "decimal-range",
-        evidence: { engineId: request.engine.effectiveId, literal: wide[0] ?? null, count: wide.length },
+        evidence: {
+          engineId: request.engine.effectiveId,
+          literal: wide[0] ?? null,
+          count: wide.length,
+          numberParsed: numberWide.length,
+        },
       });
     }
   }
@@ -376,6 +396,13 @@ export function buildScenarioInspect(request: ScenarioInspectRequest): ScenarioI
 
   const stages = request.stages.map((stage) => {
     const fast = stage.applies.fast ? stage.fast ?? null : null;
+    const actionsLog = stage.actionsLog
+      ? {
+          kept: stage.actionsLog.kept,
+          maxActions: stage.actionsLog.maxActions ?? null,
+          unlimited: stage.actionsLog.kept && stage.actionsLog.maxActions === undefined,
+        }
+      : null;
     // A session stage runs its schedule, and ltv runs the command's horizon, not the scenario duration, so the
     // duration does not count their ticks.
     if (request.clock.durationSec === undefined || stage.applies.session || stage.name === "ltv") {
@@ -387,6 +414,7 @@ export function buildScenarioInspect(request: ScenarioInspectRequest): ScenarioI
         strategySource: stage.strategySource,
         session: stage.applies.session ? stage.session ?? null : null,
         fast,
+        actionsLog,
         stepCount: "unknown" as const,
         lastDt: null,
         partialTick: false,
@@ -401,6 +429,7 @@ export function buildScenarioInspect(request: ScenarioInspectRequest): ScenarioI
       strategySource: stage.strategySource,
       session: stage.applies.session ? stage.session ?? null : null,
       fast,
+      actionsLog,
       stepCount: counted.steps ?? ("unknown" as const),
       lastDt: counted.lastDt,
       partialTick: counted.partial,

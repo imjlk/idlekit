@@ -66,7 +66,7 @@ function request(overrides: Partial<ScenarioInspectRequest> = {}): ScenarioInspe
  * @evidence ./inspect.ts#fixedDurationStepCount Counts whole and partial ticks with nextBoundary.
  * @evidenceReview ./inspect.ts#fixedDurationStepCount #94e929a The function steps nextBoundary without until until it stops, and reports the step count, the last dt, and whether that tick was partial. Past one million ticks it returns a null count.
  * @evidence ./inspect.ts#buildScenarioInspect Builds the report from a fixed-duration request.
- * @evidenceReview ./inspect.ts#buildScenarioInspect #1b602fb The function derives horizon kind, observation supply, stage plans, engine and plugin notes, the planner bound, and diagnostics without running the scenario. It treats an omitted event log as enabled, traces every step without a cadence, leaves session stages and capped counts unknown, reports each stage's fast mode, and names an unresolved model in plugin-skipped. A traced run's window is its cadence, and plugin-skipped names an unresolved strategy too. A custom engine's domain is unknown and still warns, and an ltv stage's count is unknown. A trace cadence that is not a positive integer supplies no cadence.
+ * @evidenceReview ./inspect.ts#buildScenarioInspect #24980fe The function derives horizon kind, observation supply, stage plans, engine and plugin notes, the planner bound, and diagnostics without running the scenario. It treats an omitted event log as enabled, traces every step without a cadence, leaves session stages and capped counts unknown, reports each stage's fast mode, and names an unresolved model in plugin-skipped. A traced run's window is its cadence, and plugin-skipped names an unresolved strategy too. A custom engine's domain is unknown and still warns, and an ltv stage's count is unknown. A trace cadence that is not a positive integer supplies no cadence. It reads untilExpr literals itself: amount literals use the engine domain, while t, prestige.count, and other numeric comparisons always warn, since they go through Number. Each stage reports the action log it keeps, and an uncapped kept log is unlimited.
  */
 export function countsFixedDurationSteps(): void {
   expect(inspectPartialTick).toBe("partial-tick-included");
@@ -155,6 +155,31 @@ export function countsFixedDurationSteps(): void {
   const skippedNote = skippedStrategy.diagnostics.find((item) => item.code === "plugin-skipped");
   expect(skippedNote?.evidence.strategy).toBe("plugin.walk");
   expect(skippedStrategy.invalid).toBe(false);
+  // A stage that keeps every action without a cap reports an unlimited action log, as ltv does.
+  const ltvStage = buildScenarioInspect(
+    request({
+      eventLog: { enabled: false },
+      stages: [
+        {
+          name: "ltv",
+          applies: { strategy: true, step: true, fast: true, session: false },
+          stepSec: { value: 1, source: "scenario" },
+          strategySource: "scenario",
+          actionsLog: { kept: true },
+        },
+        {
+          name: "simulate",
+          applies: { strategy: true, step: true, fast: true, session: false },
+          stepSec: { value: 1, source: "scenario" },
+          strategySource: "scenario",
+          actionsLog: { kept: false },
+        },
+      ],
+    }),
+  );
+  expect(ltvStage.stages[0]?.actionsLog).toEqual({ kept: true, maxActions: null, unlimited: true });
+  expect(ltvStage.stages[1]?.actionsLog).toEqual({ kept: false, maxActions: null, unlimited: false });
+  expect(defaults.stages[0]?.actionsLog).toBeNull();
 }
 
 /**
@@ -210,7 +235,29 @@ export function warnsOnDecimalRange(): void {
   );
   expect(customReport.numericDomain.exact).toBe("unknown");
   expect(customReport.diagnostics.find((item) => item.code === "decimal-range")?.evidence.engineId).toBe("plugin.decimal");
-  const source = readFileSync(join(import.meta.dir, "inspect.ts"), "utf8");
+  // An untilExpr amount literal goes through the engine, so breakInfinity keeps it exact.
+  const breakInfinity = { effectiveId: "breakInfinity", source: "flag", accepted: true } as const;
+  const amountUntil = buildScenarioInspect(
+    request({ clock: { stepSec: 1, untilExpr: "money >= 9999999999999999" }, engine: breakInfinity }),
+  );
+  expect(amountUntil.diagnostics.some((item) => item.code === "decimal-range")).toBe(false);
+  const amountUntilNumber = buildScenarioInspect(request({ clock: { stepSec: 1, untilExpr: "money >= 9999999999999999" } }));
+  expect(amountUntilNumber.diagnostics.find((item) => item.code === "decimal-range")?.evidence.literal).toBe(
+    "9999999999999999",
+  );
+  // t and prestige.count go through Number whatever the engine, so they still warn under breakInfinity.
+  const timeUntil = buildScenarioInspect(
+    request({ clock: { stepSec: 1, untilExpr: "money >= 1e400 || t >= 9999999999999999" }, engine: breakInfinity }),
+  );
+  const timeWarning = timeUntil.diagnostics.find((item) => item.code === "decimal-range");
+  expect(timeWarning?.evidence.literal).toBe("9999999999999999");
+  expect(timeWarning?.evidence.count).toBe(1);
+  expect(timeWarning?.evidence.numberParsed).toBe(1);
+  const countUntil = buildScenarioInspect(
+    request({ clock: { stepSec: 1, untilExpr: "prestige.count >= 1e20" }, engine: breakInfinity }),
+  );
+  expect(countUntil.diagnostics.some((item) => item.code === "decimal-range")).toBe(true);
+  const source =readFileSync(join(import.meta.dir, "inspect.ts"), "utf8");
   expect(source.includes("Number(")).toBe(false);
 }
 

@@ -41,6 +41,8 @@ export const sessionCaseSeed = 0x7107;
 
 export type StageName = "simulate" | "experience" | "ltv";
 
+const stageNames: readonly StageName[] = ["simulate", "experience", "ltv"];
+
 export type ValueSource = "scenario" | "command" | "stage";
 
 export type StageApply = Readonly<{
@@ -449,8 +451,19 @@ export function planResolvedRun(
     customEngines: args.customEngines,
   });
   // Reject invalid initial money, an invalid untilExpr, and an unknown strategy, as prepareResolvedRun does,
-  // without building a model or strategy.
-  assertScenarioPlanInputs({ scenario: args.scenario, E: engine.engine as Engine<number>, allowSuffixNotation: true });
+  // without building a model or strategy. The clock of each stage is checked as the runner checks it, with the
+  // step that stage runs.
+  const stepSecs = stageNames.map((stage) =>
+    stageApply(stage, args.consistentOverrides === true).step && args.stepSec !== undefined
+      ? args.stepSec
+      : args.scenario.clock.stepSec,
+  );
+  assertScenarioPlanInputs({
+    scenario: args.scenario,
+    E: engine.engine as Engine<number>,
+    allowSuffixNotation: true,
+    stepSecs,
+  });
   resolveStrategySelection({
     scenario: args.scenario,
     strategyRegistry: args.strategyRegistry,

@@ -235,6 +235,47 @@ export const models = [{ id: "noted", version: 1, create() { throw new Error("cr
     await removePath(dir);
   }, 300000);
 
+  it("plans the run the commands execute", async () => {
+    const dir = await createTempDir("idlekit-inspect-plan");
+    const hasDecimalRange = (report: any) =>
+      report.diagnostics.some((item: { code: string }) => item.code === "decimal-range");
+    // validateScenarioV1 accepts an infinite YAML step. The runner rejects it, so inspect does too.
+    const scenario = await scenarioFile(dir, () => undefined);
+    const infinite = resolve(dir, "infinite.yaml");
+    await writeText(infinite, (await readText(scenario)).replace('"stepSec":3', '"stepSec":.inf'));
+    const rejectedClock = runCli(["inspect", infinite, "--format", "json"], { check: false });
+    expect(rejectedClock.exitCode).not.toBe(0);
+    expect(`${rejectedClock.stdout}${rejectedClock.stderr}`).toContain("stepSec must be a finite number");
+    // The scenario strategy's params are scanned only when that strategy runs.
+    const wideParams = await scenarioFile(dir, (raw) => {
+      raw.strategy = { id: "greedy", params: { schemaVersion: 1, objective: "minPayback", unused: "1e400" } };
+    });
+    expect(hasDecimalRange(runCliJson<any>(["inspect", wideParams, "--format", "json"]))).toBe(true);
+    expect(hasDecimalRange(runCliJson<any>(["inspect", wideParams, "--strategy", "planner", "--format", "json"]))).toBe(
+      false,
+    );
+    // ltv forces an uncapped action log on its segments, and a session keeps every action.
+    const plain = await scenarioFile(dir, (raw) => {
+      (raw.outputs as { report: { includeTrace: boolean } }).report.includeTrace = false;
+      raw.sim = { eventLog: { enabled: false } };
+    });
+    const plainReport = runCliJson<any>(["inspect", plain, "--format", "json"]);
+    const stageNamed = (name: string) => plainReport.stages.find((stage: { name: string }) => stage.name === name);
+    expect(stageNamed("ltv").actionsLog).toEqual({ kept: true, maxActions: null, unlimited: true });
+    expect(stageNamed("experience").actionsLog).toEqual({ kept: true, maxActions: null, unlimited: true });
+    expect(stageNamed("simulate").actionsLog).toEqual({ kept: false, maxActions: null, unlimited: false });
+    // Only the typed unknown-strategy error marks a skipped plugin strategy. Other errors still fail.
+    const blocked = resolve(dir, "blocked.ts");
+    await writeText(blocked, `throw new Error("PLUGIN_LOADED_SENTINEL");\n`);
+    const badMoney = await scenarioFile(dir, (raw) => {
+      (raw.initial as { wallet: { amount: string } }).wallet.amount = "Unknown strategy";
+    });
+    const failed = runCli(["inspect", badMoney, "--plugin", blocked, "--format", "json"], { check: false });
+    expect(failed.exitCode).not.toBe(0);
+    expect(failed.stdout.includes("plugin-skipped")).toBe(false);
+    await removePath(dir);
+  }, 300000);
+
   it("rejects a bad engine and still explains it", async () => {
     const dir = await createTempDir("idlekit-inspect-engine");
     const scenario = await scenarioFile(dir, () => undefined);
