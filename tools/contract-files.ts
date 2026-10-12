@@ -13,6 +13,11 @@ import {
   etaEstimateSchemaId,
 } from "../packages/core/src/sim/analysis/eta";
 import {
+  growthFitAlgorithmVersion,
+  growthFitJsonSchema,
+  growthFitSchemaId,
+} from "../packages/core/src/sim/analysis/growthFit";
+import {
   resetCycleAlgorithmVersion,
   resetCycleJsonSchema,
   resetCycleSchemaId,
@@ -38,6 +43,8 @@ export const etaSchemaName = "eta.estimate.v1.schema.json";
 export const etaFieldsName = "eta.estimate.v1.fields.json";
 export const resetSchemaName = "reset.cycle.v1.schema.json";
 export const resetFieldsName = "reset.cycle.v1.fields.json";
+export const growthSchemaName = "growth.fit.v1.schema.json";
+export const growthFieldsName = "growth.fit.v1.fields.json";
 
 const inputs = [
   "packages/core/src/scenario/offlinePolicy.ts",
@@ -54,6 +61,8 @@ const analysisInputs = [
 // EtaEstimateV1 embeds AnalysisStatus and AnalysisMethod from contracts.ts.
 const etaInputs = ["packages/core/src/sim/analysis/contracts.ts", "packages/core/src/sim/analysis/eta.ts"];
 const resetInputs = ["packages/core/src/sim/analysis/resetCycle.ts"];
+// GrowthFitArtifactV1 embeds AnalysisStatus from contracts.ts.
+const growthInputs = ["packages/core/src/sim/analysis/contracts.ts", "packages/core/src/sim/analysis/growthFit.ts"];
 
 /** Digest each source with LF line endings, so a CRLF checkout matches the tracked contract. */
 export function digestSources(paths: readonly string[], base = root): SourceDigest[] {
@@ -77,6 +86,10 @@ export function etaSourceDigests(base = root): SourceDigest[] {
 
 export function resetSourceDigests(base = root): SourceDigest[] {
   return digestSources(resetInputs, base);
+}
+
+export function growthSourceDigests(base = root): SourceDigest[] {
+  return digestSources(growthInputs, base);
 }
 
 export function buildEtaContractDocument(sources: readonly SourceDigest[]) {
@@ -137,6 +150,35 @@ export function buildResetContractDocument(sources: readonly SourceDigest[]) {
   });
 }
 
+export function buildGrowthContractDocument(sources: readonly SourceDigest[]) {
+  const ordered = [...sources].sort((left, right) => (left.path < right.path ? -1 : left.path > right.path ? 1 : 0));
+  const sourceHash = sha256Text(
+    canonicalJson({
+      algorithmVersion: growthFitAlgorithmVersion(),
+      contractId: "idlekit.growth-fit.v1",
+      dialect: "openapi-3.1",
+      exportApi: "typia.json.schema",
+      generator: "idlekit.contract-generator",
+      generatorVersion: 1,
+      schemaId: growthFitSchemaId(),
+      sources: ordered,
+      typia: "14.0.6",
+    }),
+  );
+  return rootSchemaDocument(growthFitSchemaId(), growthFitJsonSchema(), {
+    generator: "idlekit.contract-generator" as const,
+    generatorVersion: 1 as const,
+    exportApi: "typia.json.schema" as const,
+    dialect: "openapi-3.1" as const,
+    typia: "14.0.6" as const,
+    schemaId: growthFitSchemaId(),
+    contractId: "idlekit.growth-fit.v1",
+    algorithmVersion: growthFitAlgorithmVersion(),
+    sourceHash,
+    sources: ordered,
+  });
+}
+
 export function buildAnalysisContractDocument(sources: readonly SourceDigest[]) {
   const ordered = [...sources].sort((left, right) => (left.path < right.path ? -1 : left.path > right.path ? 1 : 0));
   const sourceHash = sha256Text(
@@ -175,17 +217,22 @@ export function renderedContracts(base = root): {
   etaFields: string;
   resetSchema: string;
   resetFields: string;
+  growthSchema: string;
+  growthFields: string;
 } {
   const sources = sourceDigests(base);
   const analysisSources = analysisSourceDigests(base);
   const etaSources = etaSourceDigests(base);
   const resetSources = resetSourceDigests(base);
+  const growthSources = growthSourceDigests(base);
   const analysisDocument = buildAnalysisContractDocument(analysisSources);
   const etaDocument = buildEtaContractDocument(etaSources);
   const resetDocument = buildResetContractDocument(resetSources);
+  const growthDocument = buildGrowthContractDocument(growthSources);
   const analysisFields = structuralFieldMetadata(analysisArtifactJsonSchema());
   const etaFields = structuralFieldMetadata(etaEstimateJsonSchema());
   const resetFields = structuralFieldMetadata(resetCycleJsonSchema());
+  const growthFields = structuralFieldMetadata(growthFitJsonSchema());
   return {
     schema: `${canonicalJson(buildContractDocument(sources))}\n`,
     fields: `${canonicalJson(buildFieldMetadata(sources))}\n`,
@@ -225,6 +272,18 @@ export function renderedContracts(base = root): {
       enums: resetFields.enums,
       comments: resetFields.comments,
     })}\n`,
+    growthSchema: `${analysisCanonicalJson(growthDocument)}\n`,
+    growthFields: `${analysisCanonicalJson({
+      idlekitContract: {
+        kind: "structural-metadata",
+        schemaId: growthFitSchemaId(),
+        sourceHash: growthDocument.idlekitContract.sourceHash,
+        note: "Names, enum values, and schema descriptions only. No design intent, example balances, or translations.",
+      },
+      properties: growthFields.properties,
+      enums: growthFields.enums,
+      comments: growthFields.comments,
+    })}\n`,
   };
 }
 
@@ -239,6 +298,8 @@ export function writeContracts(dir: string, base = root): void {
   writeFileSync(join(dir, etaFieldsName), rendered.etaFields);
   writeFileSync(join(dir, resetSchemaName), rendered.resetSchema);
   writeFileSync(join(dir, resetFieldsName), rendered.resetFields);
+  writeFileSync(join(dir, growthSchemaName), rendered.growthSchema);
+  writeFileSync(join(dir, growthFieldsName), rendered.growthFields);
 }
 
 export function compareContracts(dir: string, base = root): string[] {
@@ -253,6 +314,8 @@ export function compareContracts(dir: string, base = root): string[] {
     [etaFieldsName, rendered.etaFields],
     [resetSchemaName, rendered.resetSchema],
     [resetFieldsName, rendered.resetFields],
+    [growthSchemaName, rendered.growthSchema],
+    [growthFieldsName, rendered.growthFields],
   ] as const) {
     const path = join(dir, name);
     let current = "";

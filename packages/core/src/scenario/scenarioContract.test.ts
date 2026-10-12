@@ -113,6 +113,7 @@ export function keepsTypedContractSingleSource(): void {
     "idlekit.analysis.artifact.v1",
     "idlekit.eta.estimate.v1",
     "idlekit.reset-cycle.v1",
+    "idlekit.growth-fit.v1",
   ]);
   const text = canonicalJson(buildContractDocument(sources));
   expect(canonicalJson(buildContractDocument(sources))).toBe(text);

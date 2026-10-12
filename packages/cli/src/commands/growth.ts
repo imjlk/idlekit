@@ -56,6 +56,8 @@ export default defineCommand({
         },
       },
     });
+    // This command still emits analyzeGrowth, the legacy speed-bucket report.
+    // fitGrowth is the shape and speed artifact and is not mixed into this output.
     const report = analyzeGrowth({
       run,
       scenario: compiled,

@@ -260,6 +260,8 @@ export function snapshotFromSession<N, U extends string, Vars>(args: {
       `session growth needs the whole session trace; the session dropped ${droppedPoints} trace points under trace.maxPoints`,
     );
   }
+  // Legacy speed buckets. Shape and speed stay on fitGrowth and are not copied here,
+  // so experience and KPI output keep the existing report.
   const growth = analyzeGrowth({
     run: args.session.run,
     scenario: growthScenario(args.scenario, args.session),

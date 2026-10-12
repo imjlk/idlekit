@@ -64,11 +64,16 @@ function sampleStatesByWindow<N, U extends string, Vars>(
   return sampled;
 }
 
-function classify(slope: number): GrowthSegment["regime"] {
+/** Legacy speed bucket. Shape is classified by `fitGrowth`, not by this threshold. */
+export function legacyGrowthSpeedBucket(slope: number): GrowthSegment["regime"] {
   if (slope < 1e-6) return "stall";
   if (slope < 0.01) return "softcap";
   if (slope < 0.1) return "exp";
   return "super-exp";
+}
+
+function classify(slope: number): GrowthSegment["regime"] {
+  return legacyGrowthSpeedBucket(slope);
 }
 
 export function analyzeGrowth<N, U extends string, Vars>(args: {

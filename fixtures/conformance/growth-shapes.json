@@ -1,0 +1,25 @@
+{
+  "id": "growth-shapes",
+  "generatorVersion": 1,
+  "slopeTolerance": 0.0001,
+  "windowSec": 80,
+  "samplingBudget": 256,
+  "cases": [
+    { "id": "slow-exp", "kind": "exponential", "k": 0.001, "t0": 0, "t1": 80, "step": 1, "simulate": true },
+    { "id": "fast-exp", "kind": "exponential", "k": 0.2, "t0": 0, "t1": 80, "step": 1, "simulate": true },
+    { "id": "polynomial-power", "kind": "power", "power": 2, "t0": 0, "t1": 60, "step": 1 },
+    { "id": "polynomial-linear", "kind": "linear", "intercept": 10, "slope": 3, "t0": 0, "t1": 60, "step": 1, "simulate": true },
+    { "id": "accelerating", "kind": "exp-quadratic", "c": 0.002, "t0": 0, "t1": 40, "step": 1 },
+    { "id": "saturating", "kind": "saturating", "limit": 100, "k": 0.08, "t0": 1, "t1": 80, "step": 1 },
+    { "id": "constant", "kind": "constant", "value": 25, "t0": 0, "t1": 60, "step": 1 },
+    { "id": "short-exp", "kind": "exponential", "k": 0.2, "t0": 0, "t1": 6, "step": 1 },
+    { "id": "large-exp", "kind": "exponential", "k": 0.2, "scaleLog10": 400, "engine": "breakInfinity", "t0": 0, "t1": 40, "step": 1 },
+    { "id": "large-exp-rescaled", "kind": "exponential", "k": 0.2, "scaleLog10": 406, "engine": "breakInfinity", "t0": 0, "t1": 40, "step": 1 },
+    { "id": "coarse-exp", "kind": "exponential", "k": 0.2, "t0": 0, "t1": 80, "step": 2 },
+    { "id": "zero", "kind": "constant", "value": 0, "t0": 0, "t1": 60, "step": 1 },
+    { "id": "negative", "kind": "constant", "value": -5, "t0": 0, "t1": 60, "step": 1 },
+    { "id": "single", "kind": "exponential", "k": 0.2, "t0": 0, "t1": 0, "step": 1 },
+    { "id": "irregular-exp", "kind": "exponential", "k": 0.2, "times": [0, 1, 2, 5, 6, 20, 21, 22, 50, 51, 52, 80] },
+    { "id": "reset-drop", "kind": "reset-drop", "k": 0.05, "split": 40, "scale": 0.01, "t0": 0, "t1": 80, "step": 1, "simulate": true }
+  ]
+}
