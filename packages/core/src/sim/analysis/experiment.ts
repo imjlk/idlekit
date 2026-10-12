@@ -8,7 +8,7 @@ import { canonicalJson, sha256Text } from "../../scenario/scenarioContract";
 import { createRunFactory, type ExecutionPlan } from "../runFactory";
 import { runScenario } from "../simulator";
 import type { StrategyRegistry } from "../strategy/registry";
-import type { CompiledScenario, SimRunOptions, SimState } from "../types";
+import { runElapsedSec, type CompiledScenario, type SimRunOptions, type SimState } from "../types";
 import {
   assignmentFitsParamSpace,
   elasticityFromChange,
@@ -37,7 +37,7 @@ export const experimentSeparateSpec = "experiment-spec-not-tunespec" as const;
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter Assignment uses a registered identifier path and the model or strategy schema. JSONPath, prototype, and eval paths are refused before a run.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #01cbc40 Re-read the section: a prototype path, an out-of-range integer, a non-finite choice value, a non-finite space bound, a schema-invalid rate, a stripped path, overlapping paths, a session dimension, a repeated seed, a non-finite limit, and a repeated constraint id throw before model create.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #dc4466b Re-read the section: a prototype path, an out-of-range integer, a non-finite choice value, a non-finite space bound, a schema-invalid rate, a stripped path, overlapping paths, a session dimension, a repeated seed, a non-finite limit, and a repeated constraint id throw before model create.
  */
 export const experimentRegisteredSetter = "registered-key-not-jsonpath" as const;
 
@@ -55,7 +55,7 @@ export const experimentCandidateOrder = "sorted-candidates-unmutated-scenario" a
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-censored-horizon A goal missed inside the horizon stays censored. That time is not the horizon and is not differentiated.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-censored-horizon #c62f60b Re-read the section: horizon 9 with target 10 leaves the reach time null, not 9, the reach time is read on the way while the run continues to the horizon, and no scenario stop condition or step budget ends it early.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-censored-horizon #befcebb Re-read the section: horizon 9 with target 10 leaves the reach time null, not 9, the reach time is read on the way while the run continues to the horizon, and no scenario stop condition or step budget ends it early.
  */
 export const experimentCensoredHorizon = "censored-time-not-horizon" as const;
 
@@ -525,19 +525,13 @@ function isJsonData(value: unknown, seen: Set<object> = new Set()): boolean {
   if (Array.isArray(value)) {
     // Only a plain array of index slots: no subclass prototype, no named or symbol own property, no holes or accessors.
     if (Object.getPrototypeOf(value) !== Array.prototype) return false;
-    const keys = Reflect.ownKeys(value);
-    if (keys.length !== value.length + 1) return false;
-    return keys.every((key) => {
-      if (key === "length") return true;
-      const descriptor = Object.getOwnPropertyDescriptor(value, key)!;
-      return (
-        typeof key === "string" &&
-        String(Number(key)) === key &&
-        descriptor.enumerable === true &&
-        "value" in descriptor &&
-        isJsonData(descriptor.value, seen)
-      );
-    });
+    // Every slot 0..length-1 is an own enumerable data property, and there is no other own key but length.
+    if (Reflect.ownKeys(value).length !== value.length + 1) return false;
+    for (let index = 0; index < value.length; index += 1) {
+      const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
+      if (!descriptor || descriptor.enumerable !== true || !("value" in descriptor) || !isJsonData(descriptor.value, seen)) return false;
+    }
+    return true;
   }
   const prototype = Object.getPrototypeOf(value);
   if (prototype !== Object.prototype && prototype !== null) return false;
@@ -555,6 +549,8 @@ function isJsonData(value: unknown, seen: Set<object> = new Set()): boolean {
 
 /** One visited set spans the model and strategy params, so an object shared between them is refused too. */
 function requireJsonParams(params: unknown, label: string, seen: Set<object>): void {
+  // Task descriptors write absent params as null, so an explicit null root would share that record.
+  if (params === null) reject(`${label} params must be an object or omitted, not null`);
   if (params !== undefined && !isJsonData(params, seen)) reject(`${label} params must be JSON data, because task descriptors and hashes record them as JSON`);
 }
 
@@ -651,13 +647,15 @@ function observeMetrics<N>(
   end: SimState<N, string, Record<string, unknown>>,
   startT: number,
   reachedAt: number | undefined,
+  /** The runner elapsed clock. A censored reach time is later than it. */
+  elapsedSec: number,
 ): Reading<N>[] {
   const amount = end.wallet.money.amount;
   const benefit = readBenefit(end.vars);
   return metricIds(spec).map((metricId): Reading<N> => {
     if (metricId === "timeToMoney") {
       if (reachedAt === undefined) {
-        return { metricId, status: "censored", value: null, lowerBound: { sec: end.t - startT, strict: true } };
+        return { metricId, status: "censored", value: null, lowerBound: { sec: elapsedSec, strict: true } };
       }
       const elapsed = reachedAt - startT;
       return { metricId, status: "observed", value: String(elapsed), num: elapsed };
@@ -785,7 +783,7 @@ function readingElasticity<N>(
  * would keep every state of every candidate and seed while the experiment reads only the end state.
  *
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-censored-horizon Removes the scenario stop condition, step budget, and trace, so each candidate runs to the horizon without retaining states.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-censored-horizon #c62f60b Re-read the section: until, maxSteps, and trace are removed and the rest of the run options stay.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-censored-horizon #befcebb Re-read the section: until, maxSteps, and trace are removed and the rest of the run options stay.
  */
 export function experimentRunBase(run: SimRunOptions): SimRunOptions {
   const { until: _until, maxSteps: _maxSteps, trace: _trace, ...horizonRun } = run;
@@ -814,7 +812,7 @@ function prepareExperiment(request: ExperimentCheckRequest) {
  * A caller that compiles or opens a run first calls this, so a rejected spec never reaches a factory.
  *
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter Throws the same rejections as runExperiment before any model create.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #01cbc40 Re-read the section: the hash, spec, path, and schema checks run and no factory create is called.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #dc4466b Re-read the section: the hash, spec, path, and schema checks run and no factory create is called.
  */
 export function checkExperimentSpec(request: ExperimentCheckRequest): void {
   prepareExperiment(request);
@@ -880,7 +878,7 @@ export function runExperiment<N>(request: ExperimentRunRequest<N>): ExperimentAr
               : {}),
           },
         });
-        readings = observeMetrics(E, spec, result.end, result.start.t, reachedAt);
+        readings = observeMetrics(E, spec, result.end, result.start.t, reachedAt, runElapsedSec(result));
       } catch {
         readings = failedMetrics(spec);
       }
