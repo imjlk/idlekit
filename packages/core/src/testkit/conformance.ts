@@ -7,9 +7,12 @@
 import { createNumberEngine } from "../engine/breakInfinity";
 import type { GrowthFitArtifactV1 } from "../sim/analysis/growthFit";
 import type { MilestoneReport } from "../sim/analysis/milestones";
+import { executeResetCycles } from "../sim/analysis/resetCycle";
+import type { ResetCycleExecution, ResetCyclePolicy } from "../sim/analysis/resetCycle";
 import { stepOnce } from "../sim/step";
 import type { Action, CompiledScenario, Model, SimState } from "../sim/types";
-import { checkResumeFromJson, checkSnapshots } from "./conformanceRun";
+import { deepClonePreservingPrototype } from "../utils/deepClone";
+import { checkResumeFromJson, checkSnapshots, snapshotEconomy } from "./conformanceRun";
 import type { RelationCheck } from "./conformanceRun";
 
 type FlatUnit = "COIN";
@@ -121,6 +124,53 @@ export function checkGrowthShapes(declared: boolean, base: GrowthFitArtifactV1, 
   const shapes = (artifact: GrowthFitArtifactV1) =>
     JSON.stringify(artifact.windows.map((window) => ({ shape: window.shape, status: window.status })));
   return checkSnapshots(shapes(base), shapes(other), "same");
+}
+
+/**
+ * A declared reset-cycle fixture reaches the same economy, reward total, elapsed seconds, and completed cycle rows when
+ * the run is split into a checkpoint and a resume, either between cycles or inside one through a step budget.
+ * @evidence docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness Checks the declared reset-cycle resume relation on executed cycles; undeclared fixtures do not apply.
+ * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #bbb39a2 Read the declared relation clause and ran the short and extended corpus: split and continuous executions agree on the economy, the reward total, the elapsed seconds, and every completed row.
+ */
+export function checkResetCycleResume<N, U extends string, Vars>(
+  declared: boolean,
+  scenario: CompiledScenario<N, U, Vars>,
+  policy: Extract<ResetCyclePolicy, { kind: "fixed-interval" }>,
+  split: Readonly<{ cycles: number }> | Readonly<{ budgetSteps: number }>,
+): RelationCheck {
+  if (!declared) return { ok: true, applicable: false, summary: "reset-cycle resume equivalence is not declared" };
+  const { E } = scenario.ctx;
+  // Both branches start from the strategy's initial state. The continuous run would otherwise advance it first.
+  const strategy = scenario.strategy;
+  const restorable = !!(strategy?.snapshotState && strategy.restoreState);
+  if (strategy?.snapshotState && !restorable) {
+    return { ok: true, applicable: false, summary: "reset-cycle resume needs a strategy whose state can be restored" };
+  }
+  const opening = restorable ? deepClonePreservingPrototype(strategy?.snapshotState?.()) : undefined;
+  const rewind = () => {
+    if (restorable) strategy?.restoreState?.call(strategy, deepClonePreservingPrototype(opening));
+  };
+  const continuous = executeResetCycles({ scenario, policy });
+  rewind();
+  const first =
+    "cycles" in split
+      ? executeResetCycles({ scenario, policy: { ...policy, cycles: split.cycles } })
+      : executeResetCycles({ scenario, policy, budgetSteps: split.budgetSteps });
+  const remaining = policy.cycles - first.checkpoint.nextIndex;
+  const parts = [first];
+  if (remaining > 0) {
+    parts.push(executeResetCycles({ scenario, policy: { ...policy, cycles: remaining }, resume: first.checkpoint }));
+  }
+  const last = parts[parts.length - 1]!;
+  const view = (runs: readonly ResetCycleExecution<N, U, Vars>[], end: ResetCycleExecution<N, U, Vars>) =>
+    JSON.stringify({
+      economy: snapshotEconomy(E, end.state),
+      accumulatedReward: E.toString(end.checkpoint.accumulatedReward),
+      elapsedSec: end.checkpoint.elapsedSec,
+      nextIndex: end.checkpoint.nextIndex,
+      completed: runs.flatMap((run) => run.artifact.cycles.filter((row) => row.resetAtSec !== null)),
+    });
+  return checkSnapshots(view([continuous], continuous), view(parts, last), "same");
 }
 
 export {

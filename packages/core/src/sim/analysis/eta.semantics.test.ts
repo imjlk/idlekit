@@ -66,7 +66,7 @@ function modelOf<N>(
  * @evidence ./eta.ts#etaEstimateJsonSchema Reads the generated OpenAPI 3.1 schema object.
  * @evidenceReview ./eta.ts#etaEstimateJsonSchema #2f0bdab The function memoizes typia.json.schema of EtaEstimateV1.
  * @evidence ./eta.ts#etaSecondsFromEngineRatio Divides 1e402 by 1e400 in the engine and rejects a 1e400 second ratio.
- * @evidenceReview ./eta.ts#etaSecondsFromEngineRatio #7d15305 The function checks finiteness, divides the gap by the rate with divN, narrows only a finite ratio within 1e308, and rejects a zero result when the ratio or the gap is nonzero.
+ * @evidenceReview ./eta.ts#etaSecondsFromEngineRatio #a54dc12 Re-read the merged function: it checks finiteness, divides the gap by the rate with divN before narrowing, narrows only a finite ratio within 1e308, returns invalid without a decimal when engine division loses a known positive gap, and rejects a zero result when the ratio or the gap is nonzero.
  * @evidence ./eta.ts#etaAnalytic Runs the analytic estimate on the break_infinity fixture and the suffix goal.
  * @evidenceReview ./eta.ts#etaAnalytic #17a1808 The function wraps analyticEstimate, which reports income in another unit as invalid and whose exact label also needs no maxLogGap tick policy or pending bucket, and adds a fixed-step compare only when a fallback is requested.
  * @evidence ./eta.ts#etaSimulate Runs the fixed-step estimate on the same fixtures and compares goal ids.
@@ -143,13 +143,13 @@ export function keepsEngineRatioBeforeNarrowing(): void {
 
 /**
  * @evidence docs/requirements/active/eta-numeric-and-goal-semantics.md#req-pr09-exact-local Purchases and asset net worth are not exact. A requested fallback records both methods.
- * @evidenceReview docs/requirements/active/eta-numeric-and-goal-semantics.md#req-pr09-exact-local #4433726 Re-read the section: constant income alone is not enough when an action or a net-worth value exists.
+ * @evidenceReview docs/requirements/active/eta-numeric-and-goal-semantics.md#req-pr09-exact-local #f2b843f Re-read the section: exact also needs comparisonIsExact true, the strict fixture has epsilon 0, and tolerant comparisons retain a local ratio.
  * @evidence ./eta.ts#etaExactOrLocal Reads the exact-or-local contract id.
  * @evidenceReview ./eta.ts#etaExactOrLocal #92a4940 The declaration is exact-or-analytic-local.
  */
 export function separatesExactAndLocalEta(): void {
   expect(etaExactOrLocal).toBe("exact-or-analytic-local");
-  const engine = createNumberEngine();
+  const engine = createNumberEngine({ epsilon: 0 });
   const exact = etaAnalytic({
     scenario: modelOf(engine, 1),
     target: { kind: "money", value: "3" },
@@ -183,7 +183,7 @@ export function separatesExactAndLocalEta(): void {
   expect(blocked.reached).toBe(false);
   expect(blocked.estimate.status).toBe("invalid");
   expect(blocked.estimate.method).toBeUndefined();
-  expect(blocked.estimate.assumptions.join(" ")).toContain("does not match wallet unit");
+  expect(blocked.estimate.assumptions.join(" ")).toContain("income unit differs from the wallet or target unit");
   // A constant non-positive income estimate passes its own semantic validator.
   const stalled = etaAnalytic({ scenario: modelOf(engine, 0), target: { kind: "money", value: "3" } });
   expect(stalled.estimate.status).toBe("unsupported");
@@ -269,7 +269,7 @@ export function separatesExactAndLocalEta(): void {
  */
 export function censorsUnreachedHorizon(): void {
   expect(etaCensoredObservation).toBe("censored-fixed-step");
-  const engine = createNumberEngine();
+  const engine = createNumberEngine({ epsilon: 0 });
   const scenario = modelOf(engine, 1);
   const already = {
     ...scenario,

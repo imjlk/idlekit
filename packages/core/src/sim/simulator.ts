@@ -114,8 +114,6 @@ export function runScenario<N, U extends string, Vars>(
     });
     assertTickAdvanced("runScenario", actionStartT, step.next.t, decision.dt, stepSec, start.t);
     constraints = recordPrestigeReset(constraints, step.prestigeResetT, sc.run.onPrestigeReset);
-    // A run with observation off notifies no observer, resets included, as the recorder does for the rest.
-    if (sc.run.observation?.enabled !== false) emitCommittedResets(sc.run.observer, step.committedResets ?? []);
 
     state = step.next;
     recorder.recordStep({
@@ -127,6 +125,9 @@ export function runScenario<N, U extends string, Vars>(
       prestigeApplied: step.prestigeResetT !== undefined,
       state,
     });
+    // The reset fact follows the action fact the recorder sent, as at a reset-cycle boundary. A run with observation
+    // off notifies no observer, resets included, as the recorder does for the rest.
+    if (sc.run.observation?.enabled !== false) emitCommittedResets(sc.run.observer, step.committedResets ?? []);
     eventBuffer.pushTimed(timeStepEvents(step.events, actionStartT, state.t));
 
     if (sc.run.trace?.keepActionsLog && step.actionsApplied?.length) {

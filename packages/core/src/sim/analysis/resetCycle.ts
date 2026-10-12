@@ -28,6 +28,8 @@ const RESET_CYCLE_ALGORITHM_VERSION = "reset-cycle-v1" as const;
  * far larger.
  */
 const HORIZON_ULPS = 64;
+/** The largest share of an interval the horizon slack may cover. A visible overshoot is never rounding. */
+const HORIZON_SHARE = 1e-6;
 const RESET_CYCLE_SCHEMA_ID = "https://idlekit.dev/schemas/reset.cycle.v1.schema.json" as const;
 
 /**
@@ -149,6 +151,10 @@ export type ResetCyclePolicy =
   | Readonly<{ kind: "explicit"; steps: readonly Readonly<{ durationSec: number }>[] }>;
 
 export type ResetCycleRng = Readonly<{
+  /** Names the generator. A checkpoint records it, and a resume with another generator is rejected. */
+  id: string;
+  /** The version of the snapshot format. A checkpoint records it, and a resume with another version is rejected. */
+  stateVersion: number;
   snapshot: () => unknown;
   restore: (state: unknown) => void;
 }>;
@@ -171,6 +177,8 @@ export type ResetCycleCheckpoint<N, U extends string, Vars> = Readonly<{
   pendingSec?: number;
   /** The planned duration of that cut cycle. A resume must plan the same duration for it. */
   pendingDurationSec?: number;
+  /** The t at which that cut cycle started. The resumed row keeps it, so its span matches its duration. */
+  pendingStartSec?: number;
   /** The model the state belongs to. A resume checks it. */
   modelId?: string;
   modelVersion?: number;
@@ -178,6 +186,9 @@ export type ResetCycleCheckpoint<N, U extends string, Vars> = Readonly<{
   strategyId?: string;
   strategyStateVersion?: number;
   rngState?: unknown;
+  /** The id and state version of the generator that wrote rngState. A resume checks them. */
+  rngId?: string;
+  rngStateVersion?: number;
 }>;
 
 export type ResetCycleExecution<N, U extends string, Vars> = Readonly<{
@@ -426,45 +437,93 @@ export function executeResetCycles<N, U extends string, Vars>(args: {
   let constraints = args.resume?.constraints
     ? deepClonePreservingPrototype(args.resume.constraints)
     : scenario.constraints;
+  // An RNG snapshot is opaque, so it is only checkpointed and restored under a named, versioned generator.
+  // The id must be nonempty and the version finite, or the recorded identity could not match itself on resume.
+  if (
+    args.rng &&
+    (typeof args.rng.id !== "string" ||
+      args.rng.id.length === 0 ||
+      typeof args.rng.stateVersion !== "number" ||
+      !Number.isFinite(args.rng.stateVersion))
+  ) {
+    throw new ResetCycleRejected("reset cycle rng needs an id and a stateVersion");
+  }
   let accumulated = args.resume?.accumulatedReward ?? E.zero();
   let nextIndex = args.resume?.nextIndex ?? 0;
-  // Restore from a copy, so a restore that keeps or edits its argument cannot change the checkpoint.
-  // Presence is the key, not the value: an undefined snapshot is still restored.
+  // Every checkpoint field is checked before any restore hook runs, so a rejected resume leaves the caller's strategy
+  // and RNG where they were.
+  if (typeof nextIndex !== "number" || !Number.isInteger(nextIndex) || nextIndex < 0) {
+    throw new ResetCycleRejected("reset cycle checkpoint nextIndex must be an integer >= 0");
+  }
+  // Elapsed seconds are summed from runner results. Absolute t can round away from simulated time.
+  let elapsed = args.resume?.elapsedSec ?? state.t - originSec;
+  // Elapsed seconds count forward from the origin. A negative count would let a resume pass the horizon.
+  if (elapsed < 0) throw new ResetCycleRejected("reset cycle checkpoint elapsedSec must be >= 0");
+  if (!E.isFinite(accumulated)) throw new ResetCycleRejected("reset cycle checkpoint accumulatedReward is not finite");
+  // Seconds a budget already played of the next cycle. That cycle keeps its index and plays only the rest.
+  let pending = args.resume?.pendingSec ?? 0;
+  if (typeof pending !== "number" || !Number.isFinite(pending) || pending < 0) {
+    throw new ResetCycleRejected("reset cycle checkpoint pendingSec must be a finite number >= 0");
+  }
+  // A resumed cut cycle starts where it started before the cut. Older checkpoints place it pendingSec before t.
+  const resumedStart = args.resume?.pendingStartSec;
+  if (pending > 0 && resumedStart !== undefined && (typeof resumedStart !== "number" || !Number.isFinite(resumedStart))) {
+    throw new ResetCycleRejected("reset cycle checkpoint pendingStartSec must be a finite number");
+  }
+  const resumedDuration = args.resume?.pendingDurationSec;
+  if (
+    pending > 0 &&
+    resumedDuration !== undefined &&
+    (typeof resumedDuration !== "number" || !Number.isFinite(resumedDuration) || !(resumedDuration > 0))
+  ) {
+    throw new ResetCycleRejected("reset cycle checkpoint pendingDurationSec must be a finite number > 0");
+  }
+  // A cut cycle has played less than its planned duration, or it would have reset before the cut.
+  if (pending > 0 && resumedDuration !== undefined && pending >= resumedDuration) {
+    throw new ResetCycleRejected("reset cycle checkpoint pendingSec must be less than pendingDurationSec");
+  }
+  // A checkpoint that runs no cycle is written again with the same cut-cycle metadata.
+  let pendingDuration: number | undefined = pending > 0 ? resumedDuration : undefined;
+  let pendingStart: number | undefined = pending > 0 ? (resumedStart ?? state.t - pending) : undefined;
   // A saved snapshot needs something to restore it into. Dropping it would resume on a different stream.
   if (args.resume && "strategyState" in args.resume) {
-    const restore = scenario.strategy?.restoreState;
-    if (!restore) {
+    if (!scenario.strategy?.restoreState) {
       throw new ResetCycleRejected("reset cycle checkpoint has strategyState, but the strategy has no restoreState");
     }
     // An opaque snapshot belongs to the strategy, and the state version, that wrote it.
     if (
-      args.resume.strategyId !== scenario.strategy?.id ||
-      args.resume.strategyStateVersion !== scenario.strategy?.stateVersion
+      args.resume.strategyId !== scenario.strategy.id ||
+      args.resume.strategyStateVersion !== scenario.strategy.stateVersion
     ) {
       throw new ResetCycleRejected(
-        `reset cycle checkpoint strategyState was written by ${String(args.resume.strategyId)}@${String(args.resume.strategyStateVersion)}, not ${String(scenario.strategy?.id)}@${String(scenario.strategy?.stateVersion)}`,
+        `reset cycle checkpoint strategyState was written by ${String(args.resume.strategyId)}@${String(args.resume.strategyStateVersion)}, not ${String(scenario.strategy.id)}@${String(scenario.strategy.stateVersion)}`,
       );
     }
-    restore.call(scenario.strategy, deepClonePreservingPrototype(args.resume.strategyState));
   } else if (args.resume && scenario.strategy?.snapshotState && scenario.strategy.restoreState) {
     // A restorable strategy resumed without its snapshot would start from its initial state.
     throw new ResetCycleRejected("reset cycle checkpoint has no strategyState for a strategy that restores one");
   }
   if (args.resume && "rngState" in args.resume) {
     if (!args.rng) throw new ResetCycleRejected("reset cycle checkpoint has rngState, but no rng was passed");
-    args.rng.restore(deepClonePreservingPrototype(args.resume.rngState));
+    // An opaque RNG snapshot belongs to the generator, and the state version, that wrote it. A snapshot without them
+    // is ambiguous and is rejected.
+    if (args.resume.rngId !== args.rng.id || args.resume.rngStateVersion !== args.rng.stateVersion) {
+      throw new ResetCycleRejected(
+        `reset cycle checkpoint rngState was written by ${String(args.resume.rngId)}@${String(args.resume.rngStateVersion)}, not ${String(args.rng.id)}@${String(args.rng.stateVersion)}`,
+      );
+    }
+  }
+  // Restore from copies, so a restore that keeps or edits its argument cannot change the checkpoint.
+  // Presence is the key, not the value: an undefined snapshot is still restored.
+  if (args.resume && "strategyState" in args.resume) {
+    scenario.strategy?.restoreState?.call(scenario.strategy, deepClonePreservingPrototype(args.resume.strategyState));
+  }
+  if (args.resume && "rngState" in args.resume) {
+    args.rng?.restore(deepClonePreservingPrototype(args.resume.rngState));
   }
   // The context the runner and the boundary action see: the scenario context with the live constraints.
   const liveCtx = (): SimContext<N, U, Vars> => ({ ...scenario.ctx, ...(constraints ? { constraints } : {}) });
   const startAdapter = resetAdapterFor(scenario, args.adapter, state, liveCtx());
-  // Elapsed seconds are summed from runner results. Absolute t can round away from simulated time.
-  let elapsed = args.resume?.elapsedSec ?? state.t - originSec;
-  // Seconds a budget already played of the next cycle. That cycle keeps its index and plays only the rest.
-  let pending = args.resume?.pendingSec ?? 0;
-  let pendingDuration: number | undefined;
-  if (typeof pending !== "number" || !Number.isFinite(pending) || pending < 0) {
-    throw new ResetCycleRejected("reset cycle checkpoint pendingSec must be a finite number >= 0");
-  }
 
   const warnings: string[] = ["legacy interval scan fields are not reset evidence"];
   if (scenario.strategy?.snapshotState && !scenario.strategy.restoreState) {
@@ -488,13 +547,14 @@ export function executeResetCycles<N, U extends string, Vars>(args: {
     // horizonSec is elapsed time from the study origin, not an absolute t.
     // The slack covers the rounding of this addition only: a few ULPs of the magnitudes involved, so a zero horizon
     // admits no positive interval and a long horizon admits no real overshoot.
-    // It also stays below half the interval, so even a very short interval at a reached horizon cannot pass.
+    // It also stays below a millionth of the interval, so at a large horizon, where the ULP-based bound grows to
+    // seconds, a real overshoot of the interval is still censored.
     const slack =
       args.horizonSec === undefined
         ? 0
         : Math.min(
             HORIZON_ULPS * Number.EPSILON * Math.max(Math.abs(elapsed) + Math.abs(duration), Math.abs(args.horizonSec)),
-            duration / 2,
+            duration * HORIZON_SHARE,
           );
     // A cut cycle resumes under the duration it was planned with. Another duration would change where it resets.
     if (pending > 0 && args.resume?.pendingDurationSec !== undefined && duration !== args.resume.pendingDurationSec) {
@@ -502,14 +562,18 @@ export function executeResetCycles<N, U extends string, Vars>(args: {
         `reset cycle checkpoint cut a ${args.resume.pendingDurationSec}-second cycle, not a ${duration}-second one`,
       );
     }
-    const remainingSec = Math.max(0, duration - pending);
+    // An older checkpoint without pendingDurationSec is checked against the planned duration here.
+    if (pending > 0 && pending >= duration) {
+      throw new ResetCycleRejected(`reset cycle checkpoint played ${pending} seconds of a ${duration}-second cycle`);
+    }
+    const remainingSec = duration - pending;
     if (args.horizonSec !== undefined && elapsed + remainingSec > args.horizonSec + slack) {
       guard = "censored";
       warnings.push("horizon");
       break;
     }
 
-    const startSec = state.t;
+    const startSec = pending > 0 && pendingStart !== undefined ? pendingStart : state.t;
     const intervalAdapter = args.adapter ?? resetAdapterFor(scenario, undefined, state, liveCtx()) ?? startAdapter;
     const { maxSteps: _ignoredMax, until: _ignoredUntil, trace: _ignoredTrace, ...runRest } = scenario.run;
     const run = runScenario({
@@ -548,6 +612,7 @@ export function executeResetCycles<N, U extends string, Vars>(args: {
       // The cycle is not finished. A resume continues it under the same index for the remaining seconds.
       pending = played;
       pendingDuration = duration;
+      pendingStart = startSec;
       guard = "censored";
       warnings.push("budget");
       break;
@@ -596,18 +661,30 @@ export function executeResetCycles<N, U extends string, Vars>(args: {
       constraints,
       resetKinds: kinds,
       // The boundary happens at the executor's summed elapsed seconds, not at a rounded reward timestamp.
-      ...(boundaryCtx.clocks ? { wallT: boundaryCtx.clocks.wallT + elapsed } : {}),
+      // It stays within the segment's wall end, as wallNow keeps a step's reset there.
+      ...(boundaryCtx.clocks
+        ? {
+            wallT: Number.isFinite(boundaryCtx.clocks.wallEndT)
+              ? Math.min(boundaryCtx.clocks.wallT + elapsed, boundaryCtx.clocks.wallEndT)
+              : boundaryCtx.clocks.wallT + elapsed,
+          }
+        : {}),
       // The adapter built this action for the current state. A spec or custom adapter action is not in model.actions.
       resolveAgainstModel: false,
     });
     // The boundary decision is an action fact too, applied or refused, as it would be inside runScenario, and its
-    // events reach the scenario emitter as a step's events do.
+    // events reach the scenario emitter as a step's events do. They are announced only once the boundary is valid,
+    // so a rejected reset leaves no applied action behind with observers.
     const observing = scenario.run.observation?.enabled !== false;
-    if (observing) emitActionFacts(scenario.run.observer, state.t, applied.events);
-    if (applied.events.length > 0) boundaryCtx.emit?.(applied.events);
+    const boundaryT = state.t;
+    const announce = () => {
+      if (observing) emitActionFacts(scenario.run.observer, boundaryT, applied.events);
+      if (applied.events.length > 0) boundaryCtx.emit?.(applied.events);
+    };
     const skipped = applied.events.find((event) => event.type === "action.skipped");
     const fact = applied.committedResets[0];
     if (!fact || skipped) {
+      announce();
       const reason = skipReason(fact, skipped && skipped.type === "action.skipped" ? skipped.reason : undefined);
       rows.push({
         index: nextIndex,
@@ -617,7 +694,8 @@ export function executeResetCycles<N, U extends string, Vars>(args: {
         durationSec: played,
         rewardDelta: E.toString(E.zero()),
         accumulatedReward: E.toString(accumulated),
-        resetSkippedReason: action ? reason : "missing-adapter",
+        // An adapter is present here. An action it cannot offer now is a refusal, not a missing adapter.
+        resetSkippedReason: action ? reason : "cannot-apply",
         carried: carried(E, state, beforeReward),
       });
       nextIndex += 1;
@@ -630,6 +708,14 @@ export function executeResetCycles<N, U extends string, Vars>(args: {
       throw new ResetCycleRejected(`reset action ${String(action?.id)} changed t from ${state.t} to ${applied.state.t}`);
     }
     state = applied.state;
+    // The carried prestige fields are written to the row and the checkpoint, so they must stay finite.
+    if (
+      !Number.isFinite(state.prestige.count) ||
+      !E.isFinite(state.prestige.points) ||
+      !E.isFinite(state.prestige.multiplier)
+    ) {
+      throw new ResetCycleRejected(`reset action ${String(action?.id)} left nonfinite prestige fields`);
+    }
     // stepOnce keeps maxMoneyEver at or above the wallet. The boundary action does not pass through it.
     if (E.cmp(state.wallet.money.amount, state.maxMoneyEver.amount) > 0) {
       state = { ...state, maxMoneyEver: state.wallet.money };
@@ -639,7 +725,13 @@ export function executeResetCycles<N, U extends string, Vars>(args: {
     if (!E.isFinite(afterReward) || !E.isFinite(delta)) {
       throw new ResetCycleRejected(`reset adapter ${adapter.id} reward is not finite after the reset`);
     }
-    accumulated = E.add(accumulated, delta);
+    // Finite deltas can still sum past the engine's range. The total is stored and resumed, so it must stay finite.
+    const total = E.add(accumulated, delta);
+    if (!E.isFinite(total)) {
+      throw new ResetCycleRejected(`reset adapter ${adapter.id} accumulated reward is not finite`);
+    }
+    accumulated = total;
+    announce();
     if (action?.kind === "prestige") {
       constraints = recordPrestigeReset(constraints, fact.t, scenario.run.onPrestigeReset);
     }
@@ -692,7 +784,7 @@ export function executeResetCycles<N, U extends string, Vars>(args: {
     checkpoint: {
       ...checkpointOf(scenario, args.rng, state, constraints, nextIndex, originSec, accumulated, elapsed),
       ...(args.adapter ? { adapterId: args.adapter.id, adapterKind: args.adapter.kind } : {}),
-      ...(pending > 0 ? { pendingSec: pending, pendingDurationSec: pendingDuration } : {}),
+      ...(pending > 0 ? { pendingSec: pending, pendingDurationSec: pendingDuration, pendingStartSec: pendingStart } : {}),
     },
   };
 }
@@ -730,6 +822,12 @@ function checkpointOf<N, U extends string, Vars>(
           ...(scenario.strategy?.stateVersion !== undefined ? { strategyStateVersion: scenario.strategy.stateVersion } : {}),
         }
       : {}),
-    ...(rng ? { rngState } : {}),
+    ...(rng
+      ? {
+          rngState,
+          rngId: rng.id,
+          rngStateVersion: rng.stateVersion,
+        }
+      : {}),
   };
 }
