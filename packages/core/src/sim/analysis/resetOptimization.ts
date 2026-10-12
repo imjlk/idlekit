@@ -260,12 +260,13 @@ function scanIntervals(scan: ResetPolicyRequest<never, string, never>["scan"]): 
   }
   const steps = (scan.toSec - scan.fromSec) / scan.stepSec;
   if (!Number.isFinite(steps)) throw new ResetPolicyRejected("reset policy scan range is not finite");
-  const count = Math.floor(steps + 1e-9) + 1;
-  if (!Number.isSafeInteger(count) || count < 1 || count > MAX_CANDIDATES) {
+  // A provisional count bounds the loop. The limit applies to the intervals that survive the upper-bound check.
+  const provisional = Math.floor(steps + 1e-9) + 1;
+  if (!Number.isSafeInteger(provisional) || provisional < 1 || provisional > MAX_CANDIDATES + 1) {
     throw new ResetPolicyRejected("reset policy scan candidate count must be a safe integer from 1 to 10000");
   }
   const intervals: number[] = [];
-  for (let index = 0; index < count; index += 1) {
+  for (let index = 0; index < provisional; index += 1) {
     const interval = scan.fromSec + index * scan.stepSec;
     // Rounding dust only: a share of a large step could admit an interval well past toSec.
     const dust = 8 * Number.EPSILON * Math.max(Math.abs(scan.toSec), Math.abs(interval));
@@ -273,6 +274,9 @@ function scanIntervals(scan: ResetPolicyRequest<never, string, never>["scan"]): 
     intervals.push(interval);
   }
   if (intervals.length === 0) throw new ResetPolicyRejected("reset policy scan produced no candidates");
+  if (intervals.length > MAX_CANDIDATES) {
+    throw new ResetPolicyRejected("reset policy scan candidate count must be a safe integer from 1 to 10000");
+  }
   return intervals;
 }
 
@@ -851,7 +855,8 @@ function evaluateAlwaysActive<N, U extends string, Vars>(
   let state = scenario.initial;
   let elapsed = 0;
   // The span after the last committed reset is not a completed cycle, refused intervals included.
-  let lastResetT = state.t;
+  // Reset times are elapsed seconds from the scenario origin, as horizonSec and scheduled reset walls are.
+  const resetTimes: number[] = [];
   let elapsedAtLastReset = 0;
   let refused = false;
   let unsupported = false;
@@ -879,7 +884,7 @@ function evaluateAlwaysActive<N, U extends string, Vars>(
       break;
     }
     snaps.push({ reward: row.rewardDelta, durationSec: row.durationSec, multiplier: row.carried.multiplier });
-    lastResetT = state.t;
+    resetTimes.push(elapsed);
     elapsedAtLastReset = elapsed;
   }
   metricCtx = liveCtx(scenario, constraints);
@@ -893,7 +898,7 @@ function evaluateAlwaysActive<N, U extends string, Vars>(
   }
   const openSec = elapsed - elapsedAtLastReset;
   const incomplete: ResetCandidateReport["incomplete"] =
-    openSec > Math.max(RUNNER_MIN_DURATION_SEC, horizonDust(request.horizonSec, elapsed)) ? { startSec: lastResetT, endSec: state.t, durationSec: openSec } : null;
+    openSec > Math.max(RUNNER_MIN_DURATION_SEC, horizonDust(request.horizonSec, elapsed)) ? { startSec: elapsedAtLastReset, endSec: elapsed, durationSec: openSec } : null;
   // A goal met only by the last committed reset has no later run to read it.
   // Read on a copy, as the runner reads goals, so a predicate that writes its argument cannot change the result.
   if (request.goal && reached.t === null && request.goal(metricCtx, deepClonePreservingPrototype(state))) {
@@ -920,7 +925,7 @@ function evaluateAlwaysActive<N, U extends string, Vars>(
       incomplete,
       unrealized,
       reached.t,
-      [],
+      resetTimes,
       recovery,
       metricCtx,
     ),
@@ -1006,8 +1011,11 @@ function playSchedule<N, U extends string, Vars>(
       ? { wallT: originT + wallStart, wallEndT: originT + wallEnd, rewardT: state.t, activeT: activeSec }
       : undefined;
   // The context a segment starting at this wall time would see. Watchers read the context of the running segment.
+  // Inside an active block the model sees that block's clocks, as simulateSessionPattern plays a block as one segment.
+  // A reset or a delay splits the block for this analysis only, so it does not move the clocks.
+  let blockClocks: { clocks: SimContext<N, U, Vars>["clocks"] } | null = null;
   const ctxAt = (wallEnd: number): SimContext<N, U, Vars> => {
-    const clocks = clocksFor(wall, wallEnd);
+    const clocks = blockClocks ? blockClocks.clocks : clocksFor(wall, wallEnd);
     return { ...liveCtx(scenario, constraints), ...(clocks ? { clocks } : {}) };
   };
   let segmentCtx = ctxAt(wall);
@@ -1038,7 +1046,7 @@ function playSchedule<N, U extends string, Vars>(
       adapterAt(request, scenario, state, constraints),
       durationSec,
       undefined,
-      clocksFor(wall, wall + durationSec),
+      blockClocks ? blockClocks.clocks : clocksFor(wall, wall + durationSec),
     );
     activeSec += runElapsedSec(played);
     state = played.end;
@@ -1073,6 +1081,7 @@ function playSchedule<N, U extends string, Vars>(
   for (const block of blocks) {
     runOffline(block.start);
     if (wall < block.start) wall = block.start;
+    blockClocks = { clocks: clocksFor(block.start, block.end) };
     while (resetsOpen && snaps.length < options.budget) {
       const at = Math.max(lastResetWall + intervalSec, wall);
       if (!(at < block.natural && at <= request.horizonSec)) break;
@@ -1133,6 +1142,7 @@ function playSchedule<N, U extends string, Vars>(
       wall = at + session.resetDelaySec;
     }
     if (wall < block.end) runActive(block.end - wall);
+    blockClocks = null;
   }
   const activeWallEnd = activeReach;
   // The rest of the horizon is away time and applies the offline progression.
