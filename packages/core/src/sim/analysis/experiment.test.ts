@@ -372,7 +372,7 @@ export function keepsStrategyTuneSignature(): void {
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter Unsafe paths and invalid parameters throw before the model factory runs.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #b0ceab6 Re-read the section, then ran this function: a stripped typo path, overlapping model and strategy paths, a session dimension, a repeated seed, another model version, an Infinity choice value, an Infinity space bound, an Infinity limit, an Infinity goal, a schema-less typo path, -0, a -0 seed, a __type path, a malformed untyped spec, and a repeated constraint id throw, and create count stays 0.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #9527c33 Re-read the section, then ran this function: a stripped typo path, overlapping model and strategy paths, a session dimension, a repeated seed, another model version, an Infinity choice value, an Infinity space bound, an Infinity limit, an Infinity goal, a schema-less typo path, -0, a -0 seed, a __type path, non-JSON params, a malformed untyped spec, and a repeated constraint id throw, and create count stays 0.
  * @evidence ./experiment.ts#experimentRegisteredSetter Reads the setter contract.
  * @evidenceReview ./experiment.ts#experimentRegisteredSetter #080a763 The declaration is registered-key-not-jsonpath.
  * @evidence ./experiment.ts#assertRegisteredPath Rejects prototype, bracket, and traversal paths, and session paths other than pattern or days.
@@ -534,6 +534,30 @@ export function rejectsUnsafeParametersBeforeRun(): void {
   expect(assignmentFitsParamSpace({ kind: "choice", values: [JSON.parse("1e400") as number] }, JSON.parse("1e400") as number)).toBe(false);
   for (const [message, spec] of rejected) {
     expect(() => runWith(scenario, spec, creates)).toThrow(message);
+  }
+  // Params are recorded as canonical JSON, so a Date or a class instance in them is refused before any create.
+  for (const odd of [new Date(0), new (class Curve { rate = 1 })(), undefined]) {
+    const oddScenario = incomeScenario({ model: { id: "tiny-income", version: 1, params: { amount: 1, extra: odd } }, strategy: undefined });
+    expect(() =>
+      runExperiment({
+        spec: specFor(oddScenario, {
+          model: { id: "tiny-income", version: 1 },
+          strategy: undefined,
+          metricId: "endMoney",
+          goal: undefined,
+          dimensions: [{ id: "amount", target: "model", path: "amount", space: { kind: "number", min: 0, max: 5 }, baseline: 1 }],
+          budget: { candidates: 1, seeds: 1 },
+          horizonSec: 1,
+        }),
+        scenario: oddScenario,
+        modelRegistry: createModelRegistry([tinyIncomeFactory()]),
+        strategyRegistry: createStrategyRegistry([]),
+        engine: createNumberEngine(),
+        engineId: "number",
+        engineVersion: "1",
+        effectiveRunHash: "odd-params",
+      }),
+    ).toThrow("model params must be JSON data");
   }
   // Without a params schema, a path must already be in the scenario params, so a typo is not added as an ignored key.
   const bare = incomeScenario({ model: { id: "tiny-income", version: 1, params: { amount: 1 } }, strategy: undefined });
