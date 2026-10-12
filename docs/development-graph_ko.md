@@ -207,7 +207,7 @@ RNG는 없다. growth shape 재현 fixture는 `fixtures/conformance/growth-shape
 RNG는 없다. reset policy 재현 fixture는 `fixtures/conformance/reset-policy-rate.json`이다. 기대 비율은 완료된 cycle 시간 기준 `0.1`이다. fixture 일치는 정상 상태 증명이 아니다. `provedSteadyState`는 false로 남는다. 이 변경의 gate는 pull request에 적는다.
 ## PR-13 호출자
 
-이 변경의 tree에서 macOS arm64, Bun `1.4.2`, `@ttsc/graph` `0.30.4`, protocol `2025-11-25`로 조회했다. 생성 식별자는 없다. 서버 cwd는 이 작업 트리이고 프로그램은 `tsconfig.graph.json`이다. 소스 확인상 `analyzeDistribution`은 `packages/core/src/sim/analysis/distribution.ts:367`, `firstVisibleDistributionSample`은 `distribution.ts:228`, `summarizeExperienceMonteCarlo`는 `packages/cli/src/lib/experience.ts:342`, `simulateMonteCarlo`는 `packages/core/src/sim/monteCarlo.ts:74`이다.
+커밋 `1f9d87c`, macOS arm64, Bun `1.4.2`, `@ttsc/graph` `0.30.4`, protocol `2025-11-25`로 조회했다. 생성 식별자는 없다. 서버 cwd는 이 작업 트리이고 프로그램은 `tsconfig.graph.json`이다. 아래 span은 그 커밋의 것이며 현재 트리의 것이 아니다. 소스 확인상 `analyzeDistribution`은 `packages/core/src/sim/analysis/distribution.ts:367`, `firstVisibleDistributionSample`은 `distribution.ts:228`, `summarizeExperienceMonteCarlo`는 `packages/cli/src/lib/experience.ts:342`, `simulateMonteCarlo`는 `packages/core/src/sim/monteCarlo.ts:74`이다.
 
 `analyzeDistribution`의 reverse execution trace(`maxDepth` 3, `maxNodes` 32)는 `experience.ts:342`의 `summarizeExperienceMonteCarlo`, `distribution.test.ts:63`의 `separatesCensoringFromObservedQuantiles`, `distribution.test.ts:131`의 `fixesQuantileRanksAndKeys`, `distribution.test.ts:290`의 `checksSeededDropAndZeroVariance`, `distribution.test.ts:327`의 `separatesMeansAndCensorsMissingVisibleChange`를 가리킨다.
 

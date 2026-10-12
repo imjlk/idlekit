@@ -135,7 +135,7 @@ function baseRequest(
  * @evidence ./resetOptimization.ts#validateResetPolicyArtifact The canonical artifact validates.
  * @evidenceReview ./resetOptimization.ts#validateResetPolicyArtifact #02be060 The arrow builds typia.createValidate of ResetPolicyArtifactV1 on first call and reuses it.
  * @evidence ./resetOptimization.ts#analyzeResetPolicies Runs the always-active scan against the fixture rate.
- * @evidenceReview ./resetOptimization.ts#analyzeResetPolicies #614b9c2 The function keeps scanned intervals within toSec up to rounding dust, validates the request, distinct stability windows, a goal for goal-reach-sec, and a finite nonnegative absolute tolerance, evaluates each scanned interval with or without a session, resolving the reset adapter at each boundary under the live constraints and, on a schedule, the block's clocks, hiding prestige actions and the custom reset from the strategy, committing adapter actions without re-resolving them against model.actions, refreshing maxMoneyEver, reading goals on copies of every committed state, each scheduled reset state included, under ids no caller goal uses, reading net worth and income with the live context, playing the tail from the origin-relative horizon, and on a schedule applying offline progression, session clocks, and the full schedule after the budget, measuring cycles in wall time, starting the incomplete span at the last reset, and dry-running the unrealized reset only when active play reaches the horizon, ranks with Engine.cmp, compares a known solution, keeps a refused interval in the incomplete span, reports an incomplete winner or one without stability evidence in the artifact status, and never claims a global optimum.
+ * @evidenceReview ./resetOptimization.ts#analyzeResetPolicies #614b9c2 The function keeps scanned intervals within toSec up to rounding dust, validates the request, distinct stability windows, a goal for goal-reach-sec, and a finite nonnegative absolute tolerance, evaluates each scanned interval with or without a session, resolving the reset adapter at each boundary under the live constraints and, on a schedule, the block's clocks, hiding prestige actions and the custom reset from the strategy, committing adapter actions without re-resolving them against model.actions, refreshing maxMoneyEver, reading goals on copies of every committed state, each scheduled reset state included, under ids no caller goal uses, reading net worth and income with the live context, playing the tail from the origin-relative horizon, and on a schedule applying offline progression, session clocks, and the full schedule after the budget, measuring cycles in wall time, starting the incomplete span at the last reset, and dry-running the unrealized reset only when active play reaches the horizon, ranks with Engine.cmp, compares a known solution, keeps a refused interval in the incomplete span, reports an incomplete winner or one without stability evidence in the artifact status, and never claims a global optimum. On a schedule it admits a reset at the horizon inside a block's natural span, reads the end state at the horizon after a long delay, forwards boundary action facts, and reports goal and recovery times in wall seconds.
  * @evidence ./resetOptimization.ts#resetPolicySchemaId Reads the reset policy schema id.
  * @evidenceReview ./resetOptimization.ts#resetPolicySchemaId #1dcacc7 The function returns the reset.policy.v1 schema URL constant.
  * @evidence ./resetOptimization.ts#resetPolicyAlgorithmVersion Reads the algorithm version on the artifact.
@@ -574,6 +574,24 @@ export function reportsRecoveryCrossing(): void {
     seconds: 43200,
     threshold: "43200",
   });
+  // Recovery is wall seconds: a reset delay and a capped absence count in full, not only the credited seconds.
+  const delayedRecovery = analyzeResetPolicies(
+    baseRequest(() => ({ ...windfallReset(), run: { stepSec: 1, durationSec: 1, offline: { maxSec: 100 } } }), {
+      scan: { fromSec: 2000, toSec: 2000, stepSec: 2000 },
+      horizonSec: 172800,
+      cycleBudget: 1,
+      recovery: { metric: "pre-reset-net-worth" },
+      session: { pattern: { id: "twice-daily", days: 2 }, resetDelaySec: 500 },
+      knownSolution: undefined,
+    }),
+  ).candidates[0];
+  expect(delayedRecovery?.resetWallTimes).toEqual([43200]);
+  expect(delayedRecovery?.recovery).toEqual({
+    metric: "pre-reset-net-worth",
+    status: "observed",
+    seconds: 43700,
+    threshold: "1900",
+  });
 }
 
 /**
@@ -763,6 +781,52 @@ export function keepsManualResetInsideSession(): void {
   );
   expect(backToBack?.completedCycles).toBe(2);
   expect(backToBack?.goalReachSec).toBe(100);
+
+  // A reset exactly at the horizon is still inside an always-on block, as the always-active executor commits it.
+  const atHorizon = shortOn({ horizonSec: 40 });
+  expect(atHorizon?.resetWallTimes).toEqual([10, 20, 30, 40]);
+  expect(atHorizon?.completedCycles).toBe(4);
+
+  // A reset delay that runs past the horizon does not move the final reads past it.
+  const clockedWorth = shortOn(
+    {
+      scan: { fromSec: 400, toSec: 400, stepSec: 400 },
+      horizonSec: 1000,
+      session: { pattern: { id: "always-on", days: 1 }, resetDelaySec: 500 },
+    },
+    () =>
+      withModel(scenario(), {
+        clocks: { respondsTo: ["wall"] },
+        netWorth: (ctx) => coin(ctx.clocks?.wallT ?? -1),
+      }),
+  );
+  expect(clockedWorth?.resetWallTimes).toEqual([400, 900]);
+  expect(clockedWorth?.finalNetWorth).toBe("1000");
+
+  // Scheduled boundary decisions reach onAction, as the executor's do.
+  const actionFacts: string[] = [];
+  shortOn({}, () => {
+    const base = scenario();
+    return {
+      ...base,
+      run: { ...base.run, observer: { onAction: (fact) => void actionFacts.push(`${fact.actionId}:${fact.outcome}@${fact.t}`) } },
+    };
+  });
+  expect(actionFacts).toEqual(["prestige:applied@10", "prestige:applied@20", "prestige:applied@30", "prestige:applied@40"]);
+
+  // Goal times are wall seconds. A capped absence credits 100 reward seconds for a 41400-second gap.
+  const cappedGoal = analyzeResetPolicies(
+    baseRequest(() => ({ ...scenario(), run: { stepSec: 1, durationSec: 1, offline: { maxSec: 100 } } }), {
+      scan: { fromSec: 400, toSec: 400, stepSec: 400 },
+      horizonSec: 86400,
+      cycleBudget: 3,
+      session: twiceDaily,
+      objective: "goal-reach-sec",
+      goal: (_ctx, current) => current.wallet.money.amount >= 2000,
+      knownSolution: undefined,
+    }),
+  ).candidates[0];
+  expect(cappedGoal?.goalReachSec).toBe(43300);
   expect(anchored.candidates[0]?.goalReachSec).toBe(400);
 
   expect(() => sessionActiveBlocks({ id: "twice-daily", days: 0 })).toThrow("session days must be a positive integer");

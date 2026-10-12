@@ -85,9 +85,13 @@ function quantile(values: number[], q: number): number | undefined {
 }
 
 function quantileKey(quantiles: readonly number[], q: number): string {
-  const legacy = `q${Math.round(q * 100)}`;
+  const percent = Math.round(q * 100);
+  const legacy = `q${percent}`;
   const collided = quantiles.some((other) => other !== q && `q${Math.round(other * 100)}` === legacy);
-  return collided ? canonicalQuantileKey(q) : legacy;
+  if (!collided) return legacy;
+  // The quantile that is exactly that percent keeps the legacy key, so q50 stays the median that design comparisons
+  // read. Only the neighbour that merely rounds to it moves to its canonical key.
+  return Math.abs(q * 100 - percent) < 1e-9 ? legacy : canonicalQuantileKey(q);
 }
 
 function summarizeNumeric(values: number[], quantiles: readonly number[]): ExperienceNumericSummary | null {
