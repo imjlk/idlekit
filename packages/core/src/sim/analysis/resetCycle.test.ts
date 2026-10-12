@@ -161,7 +161,7 @@ function makeRng(seed: number): ResetCycleRng & { next: () => number } {
  * @evidence ./resetCycle.ts#resetCycleJsonSchema The schema is 3.1.
  * @evidenceReview ./resetCycle.ts#resetCycleJsonSchema #c6690d5 The function memoizes typia.json.schema of ResetCycleArtifactV1.
  * @evidence ./resetCycle.ts#executeResetCycles Runs three fixed intervals, an explicit list, a resume, and the horizon and budget guards.
- * @evidenceReview ./resetCycle.ts#executeResetCycles #dd4407c The function accepts a maxCycles cap of 0, rejects a checkpoint of another contract or version, copies the resumed state and constraints, rejects a strategyState with no restoreState and an rngState with no rng, discovers adapters under the live constraints, runs each interval with runScenario on a model that delegates every member to the original receiver and hides prestige actions under any adapter and the custom reset, resolved per state and removed by identity when listed, measures the horizon on summed runner seconds with relative slack capped by a share of the interval, censors any budget stop, resolves the adapter at the boundary, commits one reset through applyDecisions with live constraints and forwards its action facts to onAction, refreshes maxMoneyEver, records a refusal instead of forcing it, and records copies of the state, a strategy snapshot only when restoreState exists, and the RNG snapshot.
+ * @evidenceReview ./resetCycle.ts#executeResetCycles #e5ac1f2 The function accepts a maxCycles cap of 0, rejects a checkpoint of another contract or version, copies the resumed state and constraints, rejects a strategyState with no restoreState and an rngState with no rng, discovers adapters under the live constraints, runs each interval with runScenario on a model that delegates every member to the original receiver and hides prestige actions under any adapter and the custom reset, resolved per state and removed by identity when listed, measures the horizon on summed runner seconds with relative slack capped by a share of the interval, censors any budget stop, resolves the adapter at the boundary, commits one reset through applyDecisions with live constraints and forwards its action facts to onAction, refreshes maxMoneyEver, records a refusal instead of forcing it, and records copies of the state, a strategy snapshot only when restoreState exists, and the RNG snapshot. It binds a strategy snapshot to the writing strategy's id and state version and requires one for a restorable strategy, bounds the horizon slack to rounding ULPs, emits boundary events through ctx.emit, and recognizes its own spec and action adapters by identity.
  * @evidence ../observation.ts#emitActionFacts Forwards a boundary decision to onAction.
  * @evidenceReview ../observation.ts#emitActionFacts #be50111 The function returns without onAction, and forwards each applied or skipped action event with its time, id, outcome, and reason.
  * @evidence ./resetCycle.ts#resetAdapterFor Picks the prestige action and returns nothing for a model with neither an action nor a spec.
@@ -865,6 +865,102 @@ export function runsThreeCommittedResets(): void {
   );
   expect(directFacts).toEqual(["a:applied:@7", "b:skipped:cooldown@7"]);
   emitActionFacts(undefined, 7, [{ type: "action.applied", actionId: "a" }]);
+
+  // A strategy snapshot belongs to the strategy that wrote it.
+  const buyAction: Action<number, "COIN", Vars> = {
+    id: "buy",
+    kind: "buy",
+    canApply: () => true,
+    cost: () => null,
+    apply: (_ctx, current) => ({ ...current, vars: { ...current.vars, bought: current.vars.bought + 1 } }),
+  };
+  const writerRng = makeRng(5);
+  const written = executeResetCycles({
+    scenario: scenario({ income: 0, actions: [buyAction, prestigeAction()], strategy: cursorStrategy(writerRng, "buy") }),
+    policy: { kind: "fixed-interval", intervalSec: 2, cycles: 1 },
+    rng: writerRng,
+  });
+  expect(written.checkpoint.strategyId).toBe("cursor");
+  expect(written.checkpoint.strategyStateVersion).toBe(1);
+  const otherRng = makeRng(5);
+  const other: Strategy<number, "COIN", Vars> = { ...cursorStrategy(otherRng, "buy"), id: "other-cursor" };
+  expect(() =>
+    executeResetCycles({
+      scenario: scenario({ income: 0, actions: [buyAction, prestigeAction()], strategy: other }),
+      policy: { kind: "fixed-interval", intervalSec: 2, cycles: 1 },
+      resume: written.checkpoint,
+      rng: otherRng,
+    }),
+  ).toThrow("was written by cursor@1");
+  const bumpedRng = makeRng(5);
+  const bumped: Strategy<number, "COIN", Vars> = { ...cursorStrategy(bumpedRng, "buy"), stateVersion: 2 };
+  expect(() =>
+    executeResetCycles({
+      scenario: scenario({ income: 0, actions: [buyAction, prestigeAction()], strategy: bumped }),
+      policy: { kind: "fixed-interval", intervalSec: 2, cycles: 1 },
+      resume: written.checkpoint,
+      rng: bumpedRng,
+    }),
+  ).toThrow("was written by cursor@1");
+  // A restorable strategy resumed from a checkpoint without its snapshot would silently start over.
+  const freshRng = makeRng(5);
+  expect(() =>
+    executeResetCycles({
+      scenario: scenario({ strategy: cursorStrategy(freshRng, "buy") }),
+      policy: { kind: "fixed-interval", intervalSec: 2, cycles: 1 },
+      resume: none.checkpoint,
+    }),
+  ).toThrow("no strategyState for a strategy that restores one");
+
+  // The horizon slack is rounding only: 995 then 5.0000005 seconds overshoots a 1000-second horizon.
+  const overshoot = executeResetCycles({
+    scenario: scenario(),
+    policy: { kind: "explicit", steps: [{ durationSec: 995 }, { durationSec: 5.0000005 }] },
+    horizonSec: 1000,
+  });
+  expect(overshoot.artifact.appliedResets).toBe(1);
+  expect(overshoot.artifact.status).toBe("censored");
+
+  // Boundary events reach the scenario emitter, as a step's events do.
+  const emitted: string[] = [];
+  const emitting = scenario();
+  executeResetCycles({
+    scenario: {
+      ...emitting,
+      ctx: {
+        ...emitting.ctx,
+        emit: (events) => {
+          for (const event of events) if (event.type === "action.applied") emitted.push(event.actionId);
+        },
+      },
+    },
+    policy: { kind: "fixed-interval", intervalSec: 2, cycles: 2 },
+  });
+  expect(emitted).toEqual(["prestige", "prestige"]);
+
+  // A caller's adapter named prestige.spec is not the spec adapter, so the model's multiplierFrom is not called.
+  const namedLikeSpec: ResetAdapter<number, "COIN", Vars> = {
+    id: "prestige.spec",
+    kind: "prestige",
+    preserved: ["points", "multiplier", "count"],
+    action: () => prestigeAction(),
+    reward: (_ctx, current) => current.prestige.points,
+  };
+  const impostor = executeResetCycles({
+    scenario: scenario({
+      actions: [],
+      prestige: {
+        pointsFrom: () => 1,
+        multiplierFrom: () => {
+          throw new Error("multiplierFrom must not run");
+        },
+        resetState: (_ctx, current) => current,
+      },
+    }),
+    policy: { kind: "fixed-interval", intervalSec: 2, cycles: 1 },
+    adapter: namedLikeSpec,
+  });
+  expect(impostor.artifact.appliedResets).toBe(1);
 }
 
 /**
