@@ -127,7 +127,7 @@ type ConstantIncomeExperimentCase = Readonly<{
  * The relation runs `runExperiment` on a scenario with rate `p`, one probe `p'`, step `1`, and a horizon past both reach times.
  *
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-local-elasticity Runs the constant-income experiment and compares reach times T/p and T/p' and elasticity -p/p'.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-local-elasticity #8e1bfdc Re-read the section: the conformance relation runs divisor rates through runExperiment and an undeclared case does not apply.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-local-elasticity #bd1aa44 Re-read the section: the conformance relation runs divisor rates through runExperiment and an undeclared case does not apply.
  */
 export function checkConstantIncomeExperiment(declared: boolean, value: ConstantIncomeExperimentCase): RelationCheck {
   if (!declared) return { ok: true, applicable: false, summary: "constant-income experiment relation is not declared" };
