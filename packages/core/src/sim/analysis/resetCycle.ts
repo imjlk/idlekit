@@ -23,10 +23,12 @@ import { withoutResetActions } from "./resetActions";
  */
 
 const RESET_CYCLE_ALGORITHM_VERSION = "reset-cycle-v1" as const;
-/** Relative slack for summed fractional intervals, such as 0.1 three times against a 0.3 horizon. */
-const HORIZON_TOLERANCE = 1e-9;
-/** The slack is also capped by this share of the next interval, so a long horizon cannot admit a whole extra interval. */
-const INTERVAL_TOLERANCE = 1e-6;
+/**
+ * Rounding slack for the horizon check, in units of the magnitudes being added. Summed runner seconds carry a few
+ * ULPs of error, such as 0.1 three times against a 0.3 horizon. A real overshoot, even 5e-7 seconds past 1000, is
+ * far larger.
+ */
+const HORIZON_ULPS = 64;
 const RESET_CYCLE_SCHEMA_ID = "https://idlekit.dev/schemas/reset.cycle.v1.schema.json" as const;
 
 /**
@@ -163,6 +165,9 @@ export type ResetCycleCheckpoint<N, U extends string, Vars> = Readonly<{
   elapsedSec?: number;
   accumulatedReward: N;
   strategyState?: unknown;
+  /** The id and state version of the strategy that wrote strategyState. A resume checks them. */
+  strategyId?: string;
+  strategyStateVersion?: number;
   rngState?: unknown;
 }>;
 
@@ -191,11 +196,15 @@ function assertPositiveTime(label: string, value: number): void {
   }
 }
 
+/** Adapters this module built from the model. A caller's adapter may reuse their ids, so identity decides. */
+const builtinActionAdapters = new WeakSet<object>();
+const builtinSpecAdapters = new WeakSet<object>();
+
 function actionAdapter<N, U extends string, Vars>(
   model: Model<N, U, Vars>,
   kind: "prestige" | "custom",
 ): ResetAdapter<N, U, Vars> {
-  return {
+  const adapter: ResetAdapter<N, U, Vars> = {
     id: kind === "prestige" ? "prestige.action" : "custom.action",
     kind,
     preserved: ["points", "multiplier", "count"],
@@ -206,12 +215,14 @@ function actionAdapter<N, U extends string, Vars>(
       return state.prestige.points;
     },
   };
+  builtinActionAdapters.add(adapter);
+  return adapter;
 }
 
 function specAdapter<N, U extends string, Vars>(model: Model<N, U, Vars>): ResetAdapter<N, U, Vars> | undefined {
   const spec = model.prestige;
   if (!spec) return undefined;
-  return {
+  const adapter: ResetAdapter<N, U, Vars> = {
     id: "prestige.spec",
     kind: "prestige",
     preserved: ["points", "multiplier", "count"],
@@ -231,6 +242,8 @@ function specAdapter<N, U extends string, Vars>(model: Model<N, U, Vars>): Reset
       return state.prestige.points;
     },
   };
+  builtinSpecAdapters.add(adapter);
+  return adapter;
 }
 
 /**
@@ -339,7 +352,19 @@ export function executeResetCycles<N, U extends string, Vars>(args: {
     if (!restore) {
       throw new ResetCycleRejected("reset cycle checkpoint has strategyState, but the strategy has no restoreState");
     }
+    // An opaque snapshot belongs to the strategy, and the state version, that wrote it.
+    if (
+      args.resume.strategyId !== scenario.strategy?.id ||
+      args.resume.strategyStateVersion !== scenario.strategy?.stateVersion
+    ) {
+      throw new ResetCycleRejected(
+        `reset cycle checkpoint strategyState was written by ${String(args.resume.strategyId)}@${String(args.resume.strategyStateVersion)}, not ${String(scenario.strategy?.id)}@${String(scenario.strategy?.stateVersion)}`,
+      );
+    }
     restore.call(scenario.strategy, deepClonePreservingPrototype(args.resume.strategyState));
+  } else if (args.resume && scenario.strategy?.snapshotState && scenario.strategy.restoreState) {
+    // A restorable strategy resumed without its snapshot would start from its initial state.
+    throw new ResetCycleRejected("reset cycle checkpoint has no strategyState for a strategy that restores one");
   }
   if (args.resume && "rngState" in args.resume) {
     if (!args.rng) throw new ResetCycleRejected("reset cycle checkpoint has rngState, but no rng was passed");
@@ -371,10 +396,12 @@ export function executeResetCycles<N, U extends string, Vars>(args: {
     const duration =
       args.policy.kind === "fixed-interval" ? args.policy.intervalSec : args.policy.steps[rows.length]!.durationSec;
     // horizonSec is elapsed time from the study origin, not an absolute t.
-    // The slack is relative only, so a zero horizon admits no positive interval, and it is capped by a share of
-    // the interval, so a horizon of 1e9 seconds does not admit a 0.5-second interval past it.
+    // The slack covers the rounding of this addition only: a few ULPs of the magnitudes involved, so a zero horizon
+    // admits no positive interval and a long horizon admits no real overshoot.
     const slack =
-      args.horizonSec === undefined ? 0 : Math.min(args.horizonSec * HORIZON_TOLERANCE, duration * INTERVAL_TOLERANCE);
+      args.horizonSec === undefined
+        ? 0
+        : HORIZON_ULPS * Number.EPSILON * Math.max(Math.abs(elapsed) + Math.abs(duration), Math.abs(args.horizonSec));
     if (args.horizonSec !== undefined && elapsed + duration > args.horizonSec + slack) {
       guard = "censored";
       warnings.push("horizon");
@@ -442,7 +469,7 @@ export function executeResetCycles<N, U extends string, Vars>(args: {
       break;
     }
     const specNote = "prestige spec was not applied because a prestige action commits the reset";
-    if (adapter.id === "prestige.action" && scenario.model.prestige && !warnings.includes(specNote)) {
+    if (builtinActionAdapters.has(adapter) && adapter.kind === "prestige" && scenario.model.prestige && !warnings.includes(specNote)) {
       warnings.push(specNote);
     }
 
@@ -460,8 +487,10 @@ export function executeResetCycles<N, U extends string, Vars>(args: {
       // The adapter built this action for the current state. A spec or custom adapter action is not in model.actions.
       resolveAgainstModel: false,
     });
-    // The boundary decision is an action fact too, applied or refused, as it would be inside runScenario.
+    // The boundary decision is an action fact too, applied or refused, as it would be inside runScenario, and its
+    // events reach the scenario emitter as a step's events do.
     emitActionFacts(scenario.run.observer, state.t, applied.events);
+    if (applied.events.length > 0) boundaryCtx.emit?.(applied.events);
     const skipped = applied.events.find((event) => event.type === "action.skipped");
     const fact = applied.committedResets[0];
     if (!fact || skipped) {
@@ -495,7 +524,8 @@ export function executeResetCycles<N, U extends string, Vars>(args: {
     }
     const rewardFact: CommittedResetFact = { ...fact, rewardDelta: E.toString(delta) };
     emitCommittedResets(scenario.run.observer, [rewardFact]);
-    if (adapter.id === "prestige.spec" && scenario.model.prestige) {
+    // Only the spec adapter built here applied the spec. A caller's adapter with the same id did not.
+    if (builtinSpecAdapters.has(adapter) && scenario.model.prestige) {
       const declared = scenario.model.prestige.multiplierFrom(boundaryCtx, state.prestige.points);
       const multiplierNote = "multiplierFrom was not applied; resetState owns the multiplier";
       if (E.cmp(declared, state.prestige.multiplier) !== 0 && !warnings.includes(multiplierNote)) {
@@ -566,7 +596,13 @@ function checkpointOf<N, U extends string, Vars>(
     originSec,
     elapsedSec,
     accumulatedReward,
-    ...(restorable ? { strategyState } : {}),
+    ...(restorable
+      ? {
+          strategyState,
+          ...(scenario.strategy?.id !== undefined ? { strategyId: scenario.strategy.id } : {}),
+          ...(scenario.strategy?.stateVersion !== undefined ? { strategyStateVersion: scenario.strategy.stateVersion } : {}),
+        }
+      : {}),
     ...(rng ? { rngState } : {}),
   };
 }
