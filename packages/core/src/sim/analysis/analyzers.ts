@@ -28,7 +28,7 @@ const GROWTH_OUTPUT_CONTRACT = "idlekit.growth-report.v1" as const;
 
 /**
  * @evidence docs/requirements/active/analyzer-registry.md#req-dx02-registry-conflicts Duplicate ids, cycles, missing dependencies, and bad params fail before a body runs.
- * @evidenceReview docs/requirements/active/analyzer-registry.md#req-dx02-registry-conflicts #315b573 Re-read the section: a cycle, a duplicate, a missing dependency, bad params, an incomplete definition, a fresh-run cost above one, a version with @, and a malformed resolved demand do not call the body, an implied dependency takes its parent's semantics, and a dependent of a failed dependency does not run.
+ * @evidenceReview docs/requirements/active/analyzer-registry.md#req-dx02-registry-conflicts #5c64299 Re-read the section: a malformed validateParams result, bad semantics, a cycle, a duplicate, a missing dependency, bad params, an incomplete definition, a fresh-run cost above one, a version with @, and a malformed resolved demand do not call the body, an implied dependency takes its parent's semantics, and a dependent of a failed dependency does not run.
  */
 export const analyzerRegistryConflicts = "fail-before-run" as const;
 
@@ -40,13 +40,13 @@ export const analyzerCustomRegistration = "caller-metric-and-analyzer" as const;
 
 /**
  * @evidence docs/requirements/active/analyzer-registry.md#req-dx02-insufficient-observation A short observation returns insufficient-data and a rerun plan. The growth body is not called.
- * @evidenceReview docs/requirements/active/analyzer-registry.md#req-dx02-insufficient-observation #3499285 Re-read the section: summary coverage does not satisfy a trace demand.
+ * @evidenceReview docs/requirements/active/analyzer-registry.md#req-dx02-insufficient-observation #1c620f3 Re-read the section: summary coverage does not satisfy a trace demand, and the registry checks every postprocess demand before the body.
  */
 export const analyzerInsufficientObservation = "insufficient-observation-rerun-plan" as const;
 
 /**
  * @evidence docs/requirements/active/analyzer-registry.md#req-dx02-execution-budget An execution analyzer receives a RunFactory and a budget. A short budget does not start the body.
- * @evidenceReview docs/requirements/active/analyzer-registry.md#req-dx02-execution-budget #d0e5349 Re-read the section: horizon past the budget is refused, a zero run budget does not call execute, samples are reserved across the batch, blocked groups and groups skipped for a failed dependency reserve nothing, a NaN budget throws, missing-scenario is kept, analytic ETA costs no run, and simulated ETA is checked on maxDurationSec.
+ * @evidenceReview docs/requirements/active/analyzer-registry.md#req-dx02-execution-budget #3641e07 Re-read the section: each member reserves its own cost in dependency order, horizon past the budget is refused, a zero run budget does not call execute, samples are reserved across the batch, blocked groups and groups skipped for a failed dependency reserve nothing, a NaN budget throws, missing-scenario is kept, analytic ETA costs no run, and simulated ETA is checked on maxDurationSec.
  */
 export const analyzerExecutionBudget = "explicit-budget-not-silent-run" as const;
 
@@ -58,7 +58,7 @@ export const analyzerSameAlgorithm = "adapter-keeps-algorithm-version" as const;
 
 /**
  * @evidence docs/requirements/active/analyzer-registry.md#req-dx02-observation-plan The same session, strategy, horizon, and observation semantics share one fresh run. A different horizon does not.
- * @evidenceReview docs/requirements/active/analyzer-registry.md#req-dx02-observation-plan #c77935d Re-read the section: cadence rounds down onto the execution plan and is on provenance, a cadence without a trace is refused, a different horizon or a sharesRun false definition is a separate group, the key is JSON, group members get one shared RunResult, and blocked peers are not in sharedWith.
+ * @evidenceReview docs/requirements/active/analyzer-registry.md#req-dx02-observation-plan #ea66c04 Re-read the section: sharedWith lists only members whose body ran, cadence rounds down onto the execution plan and is on provenance, a cadence without a trace is refused, a different horizon or a sharesRun false definition is a separate group, the key is JSON, group members get one shared RunResult, and blocked peers are not in sharedWith.
  */
 export const analyzerObservationPlan = "demand-on-plan-and-provenance" as const;
 
@@ -628,10 +628,60 @@ export function createAnalyzerRegistry(): AnalyzerRegistry {
   };
 }
 
+/** validateParams is plugin code, so its result is checked before `ok` or `params` is read. */
+function parseParams(definition: AnalyzerDefinition<any>, input: unknown, key: string): unknown {
+  const parsed: unknown = definition.validateParams(input);
+  if (!parsed || typeof parsed !== "object" || typeof (parsed as { ok?: unknown }).ok !== "boolean") {
+    throw new AnalyzerRegistryError(`bad params result for ${key}: validateParams must return { ok }`);
+  }
+  const result = parsed as Record<string, unknown>;
+  if (result.ok === false) {
+    const issues = isStringList(result.issues) ? result.issues : ["validateParams returned no issue list"];
+    throw new AnalyzerRegistryError(`bad params for ${key}`, issues);
+  }
+  if (!("params" in result)) {
+    throw new AnalyzerRegistryError(`bad params result for ${key}: an ok result must carry params`);
+  }
+  return result.params;
+}
+
+function semanticsIssues(value: unknown): readonly string[] {
+  if (!value || typeof value !== "object") return ["semantics must be an object"];
+  const semantics = value as Record<string, unknown>;
+  const issues: string[] = [];
+  if (typeof semantics.sessionKey !== "string") issues.push("sessionKey must be a string");
+  if (typeof semantics.strategyKey !== "string") issues.push("strategyKey must be a string");
+  const positive = (field: unknown) => typeof field === "number" && Number.isFinite(field) && field > 0;
+  if (!positive(semantics.horizonSec)) issues.push("horizonSec must be a finite number > 0");
+  if (!positive(semantics.stepSec)) issues.push("stepSec must be a finite number > 0");
+  if (semantics.seed !== null && !(typeof semantics.seed === "number" && Number.isFinite(semantics.seed))) {
+    issues.push("seed must be null or a finite number");
+  }
+  return issues;
+}
+
+/** NaN passes no comparison and JSON writes it as null, so it would slip past budgets and merge group keys. */
+function checkedSemantics(value: RunSemantics, label: string): RunSemantics {
+  const issues = semanticsIssues(value);
+  if (issues.length > 0) throw new AnalyzerRegistryError(`bad semantics for ${label}`, issues);
+  return value;
+}
+
+/** A demand that asks for nothing observed is met without a supply. */
+function demandIsEmpty(demand: ObservationDemand): boolean {
+  return (
+    demand.coverage === "summary" &&
+    demand.windowSec === null &&
+    demand.sampleCadenceSec === null &&
+    demand.metricIds.length === 0
+  );
+}
+
 function runRegistered(
   map: ReadonlyMap<string, AnalyzerDefinition<any>>,
   request: AnalyzerRunRequest,
 ): AnalyzerBatchResult {
+  checkedSemantics(request.semantics, "the request");
   // NaN fails every comparison, so an unchecked budget would admit every run.
   const requestBudget = request.budget ?? null;
   if (
@@ -650,13 +700,10 @@ function runRegistered(
     seen.add(key);
     const definition = isVersion(entry.version) ? map.get(key) : undefined;
     if (!definition) throw new AnalyzerRegistryError(`missing analyzer ${key}`);
-    const parsed = definition.validateParams(entry.params);
-    if (!parsed.ok) {
-      throw new AnalyzerRegistryError(`bad params for ${key}`, parsed.issues);
-    }
+    const entryParams = parseParams(definition, entry.params, key);
     requested.push(definition);
-    params.set(key, parsed.params);
-    semanticsByKey.set(key, entry.semantics ?? request.semantics);
+    params.set(key, entryParams);
+    semanticsByKey.set(key, entry.semantics ? checkedSemantics(entry.semantics, key) : request.semantics);
   }
 
   // An unrequested dependency runs under the semantics of the analyzer that pulled it in.
@@ -676,9 +723,7 @@ function runRegistered(
       const next = map.get(dependencyKey);
       if (!next) throw new AnalyzerRegistryError(`missing dependency ${dependencyKey}`);
       if (!params.has(dependencyKey)) {
-        const parsed = next.validateParams({});
-        if (!parsed.ok) throw new AnalyzerRegistryError(`bad params for ${dependencyKey}`, parsed.issues);
-        params.set(dependencyKey, parsed.params);
+        params.set(dependencyKey, parseParams(next, {}, dependencyKey));
         semanticsByKey.set(dependencyKey, parentSemantics);
         implicit.add(dependencyKey);
       } else if (implicit.has(dependencyKey)) {
@@ -730,57 +775,55 @@ function runRegistered(
     };
   });
 
-  // Only analyzers that can run are members of a group, so a blocked peer is never in sharedWith.
-  const members = new Map<string, string[]>();
-  for (const item of prepared) {
-    if (item.block) continue;
-    const key = analyzerKey(item.definition.id, item.definition.version);
-    const list = members.get(item.key) ?? [];
-    list.push(key);
-    members.set(item.key, list);
-  }
-  for (const list of members.values()) list.sort();
-
-  // Each runnable group reserves one fresh run and its sample cost against the whole batch.
-  // The decision is made when the group's first member is reached in dependency order, after its
-  // dependencies finished, so a member skipped for a failed dependency reserves nothing.
-  // Blocked items reserve nothing either, so neither can take a slot from a later group.
+  // Budget is reserved per member, when that member is reached in dependency order after its
+  // dependencies finished. A group holds at most one fresh run and its largest sample cost, so a
+  // member tops up the group's reservation by the difference. Blocked members and members skipped
+  // for a failed dependency are never admitted, so they reserve nothing for themselves or a peer.
   const budget = request.budget ?? null;
   const allowExecution = request.allowExecution === true;
-  const groupDecision = new Map<string, "run" | AnalyzerRerunPlan["reason"]>();
+  const groupRefusal = new Map<string, AnalyzerRerunPlan["reason"] | null>();
+  const groupReserved = new Map<string, AnalyzerCost>();
   let reservedRuns = 0;
   let reservedSamples = 0;
   const runGroups = new Set<string>();
   const groupKeys = [...new Set(prepared.map((item) => item.key))].sort();
-  const decideGroup = (key: string): "run" | AnalyzerRerunPlan["reason"] => {
-    const existing = groupDecision.get(key);
-    if (existing) return existing;
-    const decision = ((): "run" | AnalyzerRerunPlan["reason"] => {
-      const runnable = prepared.filter(
-        (item) => item.key === key && item.definition.kind === "execution" && item.block === null,
-      );
-      const sample = runnable[0];
-      if (!sample || !allowExecution || !budget) return "execution-not-requested";
-      if (!planMeetsDemand(executionPlanForDemand(sample.semantics, sample.demand), sample.demand)) {
-        return "insufficient-data";
-      }
-      // Costs are 0 or 1 fresh runs (checked at register and on resolveCost): a group holds at most one.
-      const runs = Math.max(...runnable.map((item) => item.cost.freshRuns));
-      const sampleCost = Math.max(...runnable.map((item) => item.cost.samples));
-      if (
-        (runs > 0 && sample.semantics.horizonSec > budget.maxDurationSec) ||
-        reservedRuns + runs > budget.maxFreshRuns ||
-        reservedSamples + sampleCost > budget.maxSamples
-      ) {
-        return "budget";
-      }
-      reservedRuns += runs;
-      reservedSamples += sampleCost;
-      if (runs > 0) runGroups.add(key);
-      return "run";
-    })();
-    groupDecision.set(key, decision);
-    return decision;
+  const refusalForGroup = (item: Prepared): AnalyzerRerunPlan["reason"] | null => {
+    if (groupRefusal.has(item.key)) return groupRefusal.get(item.key) ?? null;
+    const refusal = !allowExecution || !budget
+      ? "execution-not-requested"
+      : planMeetsDemand(executionPlanForDemand(item.semantics, item.demand), item.demand)
+        ? null
+        : "insufficient-data";
+    groupRefusal.set(item.key, refusal);
+    return refusal;
+  };
+  const admit = (item: Prepared): "run" | AnalyzerRerunPlan["reason"] => {
+    const refusal = refusalForGroup(item);
+    if (refusal || !budget) return refusal ?? "execution-not-requested";
+    // Costs are 0 or 1 fresh runs (checked at register and on resolveCost): a group holds at most one.
+    const held = groupReserved.get(item.key) ?? { freshRuns: 0, samples: 0 };
+    const runs = Math.max(0, item.cost.freshRuns - held.freshRuns);
+    const samples = Math.max(0, item.cost.samples - held.samples);
+    if (
+      (item.cost.freshRuns > 0 && item.semantics.horizonSec > budget.maxDurationSec) ||
+      reservedRuns + runs > budget.maxFreshRuns ||
+      reservedSamples + samples > budget.maxSamples
+    ) {
+      return "budget";
+    }
+    reservedRuns += runs;
+    reservedSamples += samples;
+    groupReserved.set(item.key, { freshRuns: held.freshRuns + runs, samples: held.samples + samples });
+    if (item.cost.freshRuns > 0) runGroups.add(item.key);
+    return "run";
+  };
+
+  // sharedWith is filled in after the loop from the members whose body was actually called.
+  const participants = new Map<string, string[]>();
+  const participate = (item: Prepared, identity: string): void => {
+    const list = participants.get(item.key) ?? [];
+    list.push(identity);
+    participants.set(item.key, list);
   };
 
   const sharedRuns = new Map<string, SharedRun | null>();
@@ -834,7 +877,6 @@ function runRegistered(
   };
   for (const item of prepared) {
     const identity = analyzerKey(item.definition.id, item.definition.version);
-    const sharedWith = (members.get(item.key) ?? []).filter((member) => member !== identity);
     const plan = executionPlanForDemand(item.semantics, item.demand);
     const baseProvenance = {
       demand: item.demand,
@@ -842,7 +884,7 @@ function runRegistered(
       semantics: item.semantics,
       executionPlan: item.definition.kind === "execution" ? plan : null,
       groupKey: item.key,
-      sharedWith,
+      sharedWith: [] as readonly string[],
       budget,
     };
 
@@ -878,6 +920,18 @@ function runRegistered(
     }
 
     if (item.definition.kind === "postprocess") {
+      // The registry checks the observation before the body, so a body cannot trust a short supply.
+      if (!demandIsEmpty(item.demand) && !observationMeets(item.demand, request.supply ?? null)) {
+        record(
+          envelope(item.definition, "insufficient-data", null, ["insufficient observation"], {
+            ...baseProvenance,
+            freshRuns: 0,
+            rerun: rerunPlan("insufficient-data", item.demand, item.semantics, budget),
+          }),
+        );
+        continue;
+      }
+      participate(item, identity);
       const body = item.definition.postprocess?.(item.params, {
         demand: item.demand,
         supply: request.supply ?? null,
@@ -897,7 +951,7 @@ function runRegistered(
       continue;
     }
 
-    const decision = decideGroup(item.key);
+    const decision = admit(item);
     if (decision !== "run") {
       record(
         envelope(item.definition, "insufficient-data", null, [decision], {
@@ -909,6 +963,7 @@ function runRegistered(
       continue;
     }
 
+    participate(item, identity);
     const body = item.definition.execute?.(item.params, {
       runFactory: request.runFactory ?? null,
       budget: budget as AnalyzerBudget,
@@ -931,8 +986,15 @@ function runRegistered(
     );
   }
 
-  results.sort((left, right) => compareIdentity(left, right));
-  return { results, freshRuns, groupKeys };
+  // A result shares with the other members of its group whose body was called, and only if its own was.
+  const shared = results.map((result) => {
+    const identity = analyzerKey(result.id, result.version);
+    const group = participants.get(result.provenance.groupKey) ?? [];
+    const sharedWith = group.includes(identity) ? group.filter((member) => member !== identity).sort() : [];
+    return { ...result, provenance: { ...result.provenance, sharedWith } };
+  });
+  shared.sort((left, right) => compareIdentity(left, right));
+  return { results: shared, freshRuns, groupKeys };
 }
 
 function capabilityStatus(
