@@ -6,6 +6,7 @@ export type CliErrorCode =
   | "SCENARIO_INVALID"
   | "SCENARIO_READ_FAILED"
   | "TUNE_SPEC_INVALID"
+  | "EXPERIMENT_SPEC_INVALID"
   | "UNKNOWN_STRATEGY"
   | "UNSUPPORTED_ENGINE"
   | "PLUGIN_DISABLED"
@@ -189,6 +190,10 @@ export function toCliError(error: unknown): CliError {
 
   if (message.startsWith("Tune spec invalid")) {
     return cliError("TUNE_SPEC_INVALID", message, { cause: error });
+  }
+
+  if (name === "ExperimentRejected" || message.startsWith("Experiment ")) {
+    return cliError("EXPERIMENT_SPEC_INVALID", message, { cause: error });
   }
 
   if (message.startsWith("Usage:")) {

@@ -19,14 +19,14 @@ export나 명령이 있다는 것은 분석이 끝났다는 뜻이 아니다.
 | Growth | `packages/core/src/sim/analysis/growth.ts`, `growthFit.ts`, `idk growth` | legacy log-slope 버킷은 남는다. `fitGrowth`는 형태와 속도를 따로 보고한다. |
 | Session | `packages/core/src/sim/session.ts`, `idk experience` | preset block, 오프라인 간격, seeded session 실행. |
 | Monte Carlo | `packages/core/src/sim/monteCarlo.ts` | seeded draw. draw마다 `initial`만 clone하고 `model`과 `strategy`는 공유한다. |
-| Tuner | `packages/core/src/sim/strategy/opt/tuneSpec.ts`, `idk tune` | strategy `baseParams`와 `space`. |
+| Tuner | `packages/core/src/sim/strategy/opt/tuneSpec.ts`, `idk tune` | strategy `baseParams`와 `space`. model과 정책 sweep은 이 tuner가 아니라 `idk experiment`다. |
 | Evaluate | `packages/cli/src/commands/evaluate.ts` | 프로세스 안에서 validate, simulate, experience, ltv를 호출한다. |
 | Review | `packages/cli/src/commands/groups/review.ts`와 `review*.ts` 명령 | 기존 doctor, evaluate, compare 흐름. |
 | KPI / replay | `idk kpi`, `packages/cli/src/commands/kpiRegress.ts`, `idk replay` | 기존 회귀와 replay gate. |
 | Doctor | `packages/cli/src/commands/doctor.ts` | 환경과 설정 진단. 경제 판단은 이후 judge이며 이 명령이 아니다. |
 | 큰 수 | `createBreakInfinityEngine` | 실제 adapter. `createBreakEternityEngine`은 모든 메서드에서 throw한다. |
 
-`packages/cli/src/main.ts`에 등록된 명령은 `validate`, `simulate`, `eta`, `prestige-cycle`, `growth`, `experience`, `evaluate`, `tune`, `compare`, `ltv`, `report`, `calibrate`, `doctor`, `setup`과 `models`, `strategies`, `objectives`, `init`, `replay`, `kpi`, `review` 그룹이다.
+`packages/cli/src/main.ts`에 등록된 명령은 `validate`, `simulate`, `eta`, `experiment`, `prestige-cycle`, `growth`, `experience`, `evaluate`, `tune`, `compare`, `ltv`, `report`, `calibrate`, `doctor`, `setup`과 `models`, `strategies`, `objectives`, `init`, `replay`, `kpi`, `review` 그룹이다.
 
 재사용할 것도 있다. `stepOnce`, `Engine`의 `divN` / `cmp` / `absLog10`, strategy snapshot/restore, `deepClonePreservingPrototype`, `eventBuffer`, `OUTPUT_CONTRACT_VERSION`, Sampo, compat, replay, KPI gate.
 
@@ -48,7 +48,7 @@ export나 명령이 있다는 것은 분석이 끝났다는 뜻이 아니다.
 10. **`evaluate`는 하나의 resolved plan에서 각 단계를 연다.** `PR-07`은 `prepareResolvedRun`에서 한 번 컴파일한다. simulate, experience, ltv는 각각 `createRunFactory`의 `fresh`를 호출한다. `--strategy`는 등록된 id이며 세 단계에 닿는다. `--step`과 `--fast`는 `--consistent-overrides`가 없으면 simulate와 ltv에 남는다. `scenario.engine`은 metadata다. 기본 엔진은 `number`다. `breakInfinity`는 명시 선택이다. `breakEternity`는 throw한다. 금액 `until` 경로는 `parseMoney`를 쓰고 숫자의 `Number(rawRight)` 분기로 가지 않는다. `scenarioHash`는 원래 시나리오 객체다. `effectiveRunHash`는 `generatedAt`과 절대 경로를 빼 둔다. `TC-05`는 `ScenarioV1`만 generator에 등록한다. `idlekit.resolved-run-configuration`은 CLI plan id이며 생성 schema가 아니다. Fixture: `packages/cli/src/lib/runConfiguration.test.ts`. 재현 라벨은 `0x7107`이다. 실행 seed는 `1`이다.
 11. **첫 가시 변화가 없으면 검열로 남는다.** `PR-13`은 `analyzeDistribution`을 더한다. observed 90과 censored 10의 완료율은 `0.9`이고, 전체 p95는 완료 표본만의 분위수가 아니다. 관측이 비면 unavailable이며 평균 `0`이 아니다. `summarizeExperienceMonteCarlo`는 빠진 `firstVisibleChangeSec`를 `firstVisibleDistributionSample`로 보내고 `totalActiveSec`나 `0`으로 바꾸지 않는다. 분위수는 `inclusive-floor-index` 버전 1이다. 논리 시드는 worker 수와 무관하다. Fixture: `packages/core/src/sim/analysis/distribution.test.ts`, `fixtures/conformance/independent-drop.json`. drop seed는 `28947`이다.
 12. **KPI 회귀는 빠진 일부 guardrail 숫자를 0으로 채운다.** horizon은 `at7d`, `at30d`, `at90d`로 고정된다. `stallRatio`, `droppedRate`, `visibleChangesPerMinute`, `maxNoRewardGapSec`는 `Number(value ?? 0)`을 쓴다. 후속: `PR-17`.
-13. **Tuner spec은 strategy 파라미터다.** `TuneSpec`은 `strategy.baseParams`와 `strategy.space`를 가진다. 후속: `PR-14`. 기존 tuner를 교체하는 대신 별도 실험 spec으로 확장한다.
+13. **Tuner spec은 strategy 파라미터다.** `TuneSpec`은 `strategy.baseParams`와 `strategy.space`를 가진다. `PR-14`는 그 tuner를 바꾸지 않고 `ExperimentSpecV1`과 `idk experiment`를 따로 둔다. Fixture: `packages/core/src/sim/analysis/experiment.test.ts`, `fixtures/conformance/parameter-experiment.json`. seed는 `28948`이다.
 
 이 커밋의 `packages/core/src/scenario/compile.ts`는 `t`, `prestige.count`, 그리고 모르는 숫자 경로에 `Number(rawRight)`를 남긴다. 금액 경로는 그렇게 하지 않는다. 왼쪽이 숫자여도 `money`와 다른 금액 경로는 그 `Number` 분기로 옮기지 않는다.
 

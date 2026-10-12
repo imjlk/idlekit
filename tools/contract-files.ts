@@ -18,6 +18,11 @@ import {
   growthFitSchemaId,
 } from "../packages/core/src/sim/analysis/growthFit";
 import {
+  experimentAlgorithmVersion,
+  experimentJsonSchema,
+  experimentSchemaId,
+} from "../packages/core/src/sim/analysis/experiment";
+import {
   distributionAlgorithmVersion,
   distributionJsonSchema,
   distributionSchemaId,
@@ -55,6 +60,8 @@ export const resetSchemaName = "reset.cycle.v1.schema.json";
 export const resetFieldsName = "reset.cycle.v1.fields.json";
 export const growthSchemaName = "growth.fit.v1.schema.json";
 export const growthFieldsName = "growth.fit.v1.fields.json";
+export const experimentSchemaName = "experiment.v1.schema.json";
+export const experimentFieldsName = "experiment.v1.fields.json";
 export const distributionSchemaName = "distribution.v1.schema.json";
 export const distributionFieldsName = "distribution.v1.fields.json";
 export const policySchemaName = "reset.policy.v1.schema.json";
@@ -77,6 +84,8 @@ const etaInputs = ["packages/core/src/sim/analysis/contracts.ts", "packages/core
 const resetInputs = ["packages/core/src/sim/analysis/resetCycle.ts"];
 // GrowthFitArtifactV1 embeds AnalysisStatus from contracts.ts.
 const growthInputs = ["packages/core/src/sim/analysis/contracts.ts", "packages/core/src/sim/analysis/growthFit.ts"];
+// The artifact values come from the sweep in experiment.ts and the elasticity and Pareto rules in sensitivity.ts.
+const experimentInputs = ["packages/core/src/sim/analysis/experiment.ts", "packages/core/src/sim/analysis/sensitivity.ts"];
 const distributionInputs = ["packages/core/src/sim/analysis/distribution.ts"];
 const policyInputs = ["packages/core/src/sim/analysis/resetOptimization.ts"];
 
@@ -106,6 +115,10 @@ export function resetSourceDigests(base = root): SourceDigest[] {
 
 export function growthSourceDigests(base = root): SourceDigest[] {
   return digestSources(growthInputs, base);
+}
+
+export function experimentSourceDigests(base = root): SourceDigest[] {
+  return digestSources(experimentInputs, base);
 }
 
 export function distributionSourceDigests(base = root): SourceDigest[] {
@@ -198,6 +211,35 @@ export function buildGrowthContractDocument(sources: readonly SourceDigest[]) {
     schemaId: growthFitSchemaId(),
     contractId: "idlekit.growth-fit.v1",
     algorithmVersion: growthFitAlgorithmVersion(),
+    sourceHash,
+    sources: ordered,
+  });
+}
+
+export function buildExperimentContractDocument(sources: readonly SourceDigest[]) {
+  const ordered = [...sources].sort((left, right) => (left.path < right.path ? -1 : left.path > right.path ? 1 : 0));
+  const sourceHash = sha256Text(
+    canonicalJson({
+      algorithmVersion: experimentAlgorithmVersion(),
+      contractId: "idlekit.experiment.v1",
+      dialect: "openapi-3.1",
+      exportApi: "typia.json.schema",
+      generator: "idlekit.contract-generator",
+      generatorVersion: 1,
+      schemaId: experimentSchemaId(),
+      sources: ordered,
+      typia: "14.0.6",
+    }),
+  );
+  return rootSchemaDocument(experimentSchemaId(), experimentJsonSchema(), {
+    generator: "idlekit.contract-generator" as const,
+    generatorVersion: 1 as const,
+    exportApi: "typia.json.schema" as const,
+    dialect: "openapi-3.1" as const,
+    typia: "14.0.6" as const,
+    schemaId: experimentSchemaId(),
+    contractId: "idlekit.experiment.v1",
+    algorithmVersion: experimentAlgorithmVersion(),
     sourceHash,
     sources: ordered,
   });
@@ -301,6 +343,8 @@ export function renderedContracts(base = root): {
   resetFields: string;
   growthSchema: string;
   growthFields: string;
+  experimentSchema: string;
+  experimentFields: string;
   distributionSchema: string;
   distributionFields: string;
   policySchema: string;
@@ -311,18 +355,21 @@ export function renderedContracts(base = root): {
   const etaSources = etaSourceDigests(base);
   const resetSources = resetSourceDigests(base);
   const growthSources = growthSourceDigests(base);
+  const experimentSources = experimentSourceDigests(base);
   const distributionSources = distributionSourceDigests(base);
   const policySources = policySourceDigests(base);
   const analysisDocument = buildAnalysisContractDocument(analysisSources);
   const etaDocument = buildEtaContractDocument(etaSources);
   const resetDocument = buildResetContractDocument(resetSources);
   const growthDocument = buildGrowthContractDocument(growthSources);
+  const experimentDocument = buildExperimentContractDocument(experimentSources);
   const distributionDocument = buildDistributionContractDocument(distributionSources);
   const policyDocument = buildPolicyContractDocument(policySources);
   const analysisFields = structuralFieldMetadata(analysisArtifactJsonSchema());
   const etaFields = structuralFieldMetadata(etaEstimateJsonSchema());
   const resetFields = structuralFieldMetadata(resetCycleJsonSchema());
   const growthFields = structuralFieldMetadata(growthFitJsonSchema());
+  const experimentFields = structuralFieldMetadata(experimentJsonSchema());
   const distributionFields = structuralFieldMetadata(distributionJsonSchema());
   const policyFields = structuralFieldMetadata(resetPolicyJsonSchema());
   return {
@@ -376,6 +423,18 @@ export function renderedContracts(base = root): {
       enums: growthFields.enums,
       comments: growthFields.comments,
     })}\n`,
+    experimentSchema: `${analysisCanonicalJson(experimentDocument)}\n`,
+    experimentFields: `${analysisCanonicalJson({
+      idlekitContract: {
+        kind: "structural-metadata",
+        schemaId: experimentSchemaId(),
+        sourceHash: experimentDocument.idlekitContract.sourceHash,
+        note: "Names, enum values, and schema descriptions only. No design intent, example balances, or translations.",
+      },
+      properties: experimentFields.properties,
+      enums: experimentFields.enums,
+      comments: experimentFields.comments,
+    })}\n`,
     distributionSchema: `${analysisCanonicalJson(distributionDocument)}\n`,
     distributionFields: `${analysisCanonicalJson({
       idlekitContract: {
@@ -416,6 +475,8 @@ export function writeContracts(dir: string, base = root): void {
   writeFileSync(join(dir, resetFieldsName), rendered.resetFields);
   writeFileSync(join(dir, growthSchemaName), rendered.growthSchema);
   writeFileSync(join(dir, growthFieldsName), rendered.growthFields);
+  writeFileSync(join(dir, experimentSchemaName), rendered.experimentSchema);
+  writeFileSync(join(dir, experimentFieldsName), rendered.experimentFields);
   writeFileSync(join(dir, distributionSchemaName), rendered.distributionSchema);
   writeFileSync(join(dir, distributionFieldsName), rendered.distributionFields);
   writeFileSync(join(dir, policySchemaName), rendered.policySchema);
@@ -436,6 +497,8 @@ export function compareContracts(dir: string, base = root): string[] {
     [resetFieldsName, rendered.resetFields],
     [growthSchemaName, rendered.growthSchema],
     [growthFieldsName, rendered.growthFields],
+    [experimentSchemaName, rendered.experimentSchema],
+    [experimentFieldsName, rendered.experimentFields],
     [distributionSchemaName, rendered.distributionSchema],
     [distributionFieldsName, rendered.distributionFields],
     [policySchemaName, rendered.policySchema],

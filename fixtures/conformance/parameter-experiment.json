@@ -1,0 +1,17 @@
+{
+  "id": "parameter-experiment",
+  "seed": 28948,
+  "goalTarget": 10,
+  "horizonSec": 40,
+  "censoredHorizonSec": 9,
+  "stepSec": 1,
+  "incomeBaseline": 1,
+  "incomeProbes": [2, 0.5],
+  "policyBaseline": 1,
+  "policyProbe": 2,
+  "sessionPattern": "always-active",
+  "sessionDays": 1,
+  "modelId": "constant-income",
+  "modelVersion": 1,
+  "strategyId": "pick-cap"
+}

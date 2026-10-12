@@ -746,6 +746,139 @@
           "args": ["test", "--timeout", "120000", "src/sim/analysis/distribution.test.ts"]
         }
       ]
+    },
+    {
+      "id": "REQ-PR14-LOCAL-ELASTICITY",
+      "pr": "PR-14",
+      "anchor": "req-pr14-local-elasticity",
+      "doc": "docs/requirements/active/parameter-experiments.md",
+      "production": ["packages/core/src/sim/analysis/experiment.ts", "packages/core/src/testkit/conformance.ts"],
+      "tests": [
+        {
+          "file": "packages/core/src/sim/analysis/experiment.test.ts",
+          "exportName": "checksLocalElasticityDirection",
+          "registeredAs": "parameter experiments > checks local elasticity direction",
+          "cwd": "packages/core",
+          "args": ["test", "--timeout", "120000", "src/sim/analysis/experiment.test.ts"]
+        },
+        {
+          "file": "packages/core/src/testkit/conformance.test.ts",
+          "exportName": "replaysConstantIncomeExperimentAcrossTheSeedCorpus",
+          "registeredAs": "PR-14 experiment relation > replays constant-income reach and elasticity across the seed corpus",
+          "cwd": "packages/core",
+          "args": ["test", "src/testkit/conformance.test.ts"]
+        }
+      ]
+    },
+    {
+      "id": "REQ-PR14-TASK-DESCRIPTOR",
+      "pr": "PR-14",
+      "anchor": "req-pr14-task-descriptor",
+      "doc": "docs/requirements/active/parameter-experiments.md",
+      "production": ["packages/core/src/sim/analysis/experiment.ts"],
+      "tests": [
+        {
+          "file": "packages/core/src/sim/analysis/experiment.test.ts",
+          "exportName": "checksLocalElasticityDirection",
+          "registeredAs": "parameter experiments > checks local elasticity direction",
+          "cwd": "packages/core",
+          "args": ["test", "--timeout", "120000", "src/sim/analysis/experiment.test.ts"]
+        },
+        {
+          "file": "packages/core/src/sim/analysis/experiment.test.ts",
+          "exportName": "startsCandidatesFromScenario",
+          "registeredAs": "parameter experiments > starts candidates from the scenario",
+          "cwd": "packages/core",
+          "args": ["test", "--timeout", "120000", "src/sim/analysis/experiment.test.ts"]
+        }
+      ]
+    },
+    {
+      "id": "REQ-PR14-TUNE-SIGNATURE",
+      "pr": "PR-14",
+      "anchor": "req-pr14-tune-signature",
+      "doc": "docs/requirements/active/parameter-experiments.md",
+      "production": ["packages/core/src/sim/analysis/experiment.ts"],
+      "tests": [
+        {
+          "file": "packages/core/src/sim/analysis/experiment.test.ts",
+          "exportName": "keepsStrategyTuneSignature",
+          "registeredAs": "parameter experiments > keeps the strategy tune signature",
+          "cwd": "packages/core",
+          "args": ["test", "--timeout", "120000", "src/sim/analysis/experiment.test.ts"]
+        }
+      ]
+    },
+    {
+      "id": "REQ-PR14-REGISTERED-SETTER",
+      "pr": "PR-14",
+      "anchor": "req-pr14-registered-setter",
+      "doc": "docs/requirements/active/parameter-experiments.md",
+      "production": ["packages/core/src/sim/analysis/experiment.ts"],
+      "tests": [
+        {
+          "file": "packages/core/src/sim/analysis/experiment.test.ts",
+          "exportName": "rejectsUnsafeParametersBeforeRun",
+          "registeredAs": "parameter experiments > rejects unsafe parameters before a run",
+          "cwd": "packages/core",
+          "args": ["test", "--timeout", "120000", "src/sim/analysis/experiment.test.ts"]
+        }
+      ]
+    },
+    {
+      "id": "REQ-PR14-CANDIDATE-ORDER",
+      "pr": "PR-14",
+      "anchor": "req-pr14-candidate-order",
+      "doc": "docs/requirements/active/parameter-experiments.md",
+      "production": ["packages/core/src/sim/analysis/experiment.ts"],
+      "tests": [
+        {
+          "file": "packages/core/src/sim/analysis/experiment.test.ts",
+          "exportName": "keepsCandidateOrderAndScenario",
+          "registeredAs": "parameter experiments > keeps candidate order and the input scenario",
+          "cwd": "packages/core",
+          "args": ["test", "--timeout", "120000", "src/sim/analysis/experiment.test.ts"]
+        }
+      ]
+    },
+    {
+      "id": "REQ-PR14-CENSORED-HORIZON",
+      "pr": "PR-14",
+      "anchor": "req-pr14-censored-horizon",
+      "doc": "docs/requirements/active/parameter-experiments.md",
+      "production": ["packages/core/src/sim/analysis/experiment.ts"],
+      "tests": [
+        {
+          "file": "packages/core/src/sim/analysis/experiment.test.ts",
+          "exportName": "skipsCensoredHorizonForSensitivity",
+          "registeredAs": "parameter experiments > skips a censored horizon for sensitivity",
+          "cwd": "packages/core",
+          "args": ["test", "--timeout", "120000", "src/sim/analysis/experiment.test.ts"]
+        }
+      ]
+    },
+    {
+      "id": "REQ-PR14-PARETO-UNKNOWN",
+      "pr": "PR-14",
+      "anchor": "req-pr14-pareto-unknown",
+      "doc": "docs/requirements/active/parameter-experiments.md",
+      "production": ["packages/core/src/sim/analysis/experiment.ts"],
+      "tests": [
+        {
+          "file": "packages/core/src/sim/analysis/experiment.test.ts",
+          "exportName": "matchesHandPareto",
+          "registeredAs": "parameter experiments > matches the hand Pareto front",
+          "cwd": "packages/core",
+          "args": ["test", "--timeout", "120000", "src/sim/analysis/experiment.test.ts"]
+        },
+        {
+          "file": "packages/core/src/sim/analysis/experiment.test.ts",
+          "exportName": "keepsLargeEngineAmounts",
+          "registeredAs": "parameter experiments > keeps large engine amounts",
+          "cwd": "packages/core",
+          "args": ["test", "--timeout", "120000", "src/sim/analysis/experiment.test.ts"]
+        }
+      ]
     }
   ]
 }
