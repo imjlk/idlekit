@@ -90,6 +90,8 @@ export type InspectStageInput = Readonly<{
   fast?: Readonly<{ enabled: boolean; source: "scenario" | "command" }>;
   /** Whether the stage keeps every applied action, and the cap on that log. No cap keeps all of them. */
   actionsLog?: Readonly<{ kept: boolean; maxActions?: number }>;
+  /** Whether the stage keeps a periodic state trace, its cadence in steps, and the cap on its points. */
+  stateTrace?: Readonly<{ kept: boolean; everySteps?: number; maxPoints?: number }>;
 }>;
 
 export type InspectAnalyzerInput = Readonly<{
@@ -158,6 +160,12 @@ export type ScenarioInspectReport = Readonly<{
     session: InspectStageInput["session"] | null;
     fast: NonNullable<InspectStageInput["fast"]> | null;
     actionsLog: Readonly<{ kept: boolean; maxActions: number | null; unlimited: boolean }> | null;
+    stateTrace: Readonly<{
+      kept: boolean;
+      everySteps: number | null;
+      maxPoints: number | null;
+      unlimited: boolean;
+    }> | null;
     stepCount: number | "unknown";
     lastDt: number | null;
     partialTick: boolean;
@@ -257,13 +265,26 @@ function engineReason(engine: ScenarioInspectRequest["engine"]): string {
   return `The engine flag selected ${engine.effectiveId}.`;
 }
 
+/**
+ * Steps between the runner's trace samples. The runner samples when `steps % everySteps === 0`, so a negative
+ * integer samples as its magnitude does, and a fraction samples at the first whole step it divides. A cadence that
+ * divides no step up to the counting cap, such as 0, retains no periodic samples.
+ */
+export function traceSampleSteps(everySteps: number): number | null {
+  if (Number.isInteger(everySteps) && everySteps !== 0) return Math.abs(everySteps);
+  if (!Number.isFinite(everySteps) || everySteps === 0) return null;
+  for (let steps = 1; steps <= 1_000_000; steps += 1) {
+    if (steps % everySteps === 0) return steps;
+  }
+  return null;
+}
+
 function observationSupply(request: ScenarioInspectRequest, stepSec: number): ObservationSupply {
   const untilOnly = request.clock.durationSec === undefined && Boolean(request.clock.untilExpr?.trim());
   const coverage = request.trace.include ? "trace" : request.clock.durationSec !== undefined ? "summary" : "missing";
-  // compileScenario traces every step when the scenario includes a trace without a cadence. A cadence that is not a
-  // positive integer retains no periodic samples in the runner, so it supplies no cadence or window.
-  const every = request.trace.everySteps ?? 1;
-  const cadence = request.trace.include && Number.isInteger(every) && every > 0 ? every * stepSec : null;
+  // compileScenario traces every step when the scenario includes a trace without a cadence.
+  const sampleSteps = request.trace.include ? traceSampleSteps(request.trace.everySteps ?? 1) : null;
+  const cadence = sampleSteps === null ? null : sampleSteps * stepSec;
   return {
     schema: observationContract,
     // The finest window the samples supply is the trace cadence. A summary supplies no finite window.
@@ -425,6 +446,14 @@ export function buildScenarioInspect(request: ScenarioInspectRequest): ScenarioI
           unlimited: stage.actionsLog.kept && stage.actionsLog.maxActions === undefined,
         }
       : null;
+    const stateTrace = stage.stateTrace
+      ? {
+          kept: stage.stateTrace.kept,
+          everySteps: stage.stateTrace.kept ? stage.stateTrace.everySteps ?? 1 : null,
+          maxPoints: stage.stateTrace.maxPoints ?? null,
+          unlimited: stage.stateTrace.kept && stage.stateTrace.maxPoints === undefined,
+        }
+      : null;
     // A session stage runs its schedule, and ltv runs the command's horizon, not the scenario duration, so the
     // duration does not count their ticks.
     if (request.clock.durationSec === undefined || stage.applies.session || stage.name === "ltv") {
@@ -437,6 +466,7 @@ export function buildScenarioInspect(request: ScenarioInspectRequest): ScenarioI
         session: stage.applies.session ? stage.session ?? null : null,
         fast,
         actionsLog,
+        stateTrace,
         stepCount: "unknown" as const,
         lastDt: null,
         partialTick: false,
@@ -452,6 +482,7 @@ export function buildScenarioInspect(request: ScenarioInspectRequest): ScenarioI
       session: stage.applies.session ? stage.session ?? null : null,
       fast,
       actionsLog,
+      stateTrace,
       stepCount: counted.steps ?? ("unknown" as const),
       lastDt: counted.lastDt,
       partialTick: counted.partial,

@@ -268,6 +268,10 @@ export const models = [{ id: "noted", version: 1, create() { throw new Error("cr
     expect(stageNamed("ltv").actionsLog).toEqual({ kept: true, maxActions: null, unlimited: true });
     expect(stageNamed("experience").actionsLog).toEqual({ kept: true, maxActions: null, unlimited: true });
     expect(stageNamed("simulate").actionsLog).toEqual({ kept: false, maxActions: null, unlimited: false });
+    // A session forces an uncapped trace of every step even when the scenario has no trace.
+    expect(stageNamed("experience").stateTrace).toEqual({ kept: true, everySteps: 1, maxPoints: null, unlimited: true });
+    expect(stageNamed("simulate").stateTrace.kept).toBe(false);
+    expect(stageNamed("ltv").stateTrace.kept).toBe(false);
     // Only the typed unknown-strategy error marks a skipped plugin strategy. Other errors still fail.
     const blocked = resolve(dir, "blocked.ts");
     await writeText(blocked, `throw new Error("PLUGIN_LOADED_SENTINEL");\n`);

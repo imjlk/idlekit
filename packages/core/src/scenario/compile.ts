@@ -432,8 +432,18 @@ export function assertScenarioPlanInputs<N>(args: {
   stepSecs?: readonly number[];
 }): void {
   // validateScenarioV1 accepts an infinite step or duration, and runScenario does not.
+  const startT = args.scenario.initial.t ?? 0;
+  const durationSec = args.scenario.clock.durationSec;
   for (const stepSec of args.stepSecs ?? [args.scenario.clock.stepSec]) {
-    assertSimulationClock("scenario clock", { stepSec, durationSec: args.scenario.clock.durationSec });
+    assertSimulationClock("scenario clock", { stepSec, durationSec, startT });
+    // runScenario rejects a first tick that leaves state.t unchanged, which a large initial t rounds away. The first
+    // tick is a whole step, or the whole duration when that is shorter.
+    const firstDt = durationSec !== undefined ? Math.min(stepSec, durationSec) : stepSec;
+    if (firstDt > 0 && !(startT + firstDt > startT)) {
+      throw new Error(
+        `scenario clock tick did not advance state.t (start t: ${startT}, step: ${firstDt}); state.t is too large for stepSec ${stepSec}`,
+      );
+    }
   }
   buildInitialState({
     E: args.E,

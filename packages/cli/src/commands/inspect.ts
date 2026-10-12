@@ -93,6 +93,15 @@ function stageInput(plan: ResolvedRunPlan, scenario: ScenarioV1) {
     // A traced simulate run keeps its actions. A session keeps every action, and ltv forces an action log on its
     // segments. No stage caps that log.
     actionsLog: { kept: plan.stage.name === "simulate" ? scenario.outputs?.report?.includeTrace === true : true },
+    // A traced simulate run samples at the scenario cadence. A session forces a trace of every step with no point
+    // cap. ltv samples every Number.MAX_SAFE_INTEGER steps and does not read its trace, so it keeps none.
+    stateTrace:
+      plan.stage.name === "simulate"
+        ? {
+            kept: scenario.outputs?.report?.includeTrace === true,
+            everySteps: scenario.outputs?.report?.traceEverySteps ?? 1,
+          }
+        : { kept: plan.stage.name === "experience", everySteps: 1 },
   };
 }
 
