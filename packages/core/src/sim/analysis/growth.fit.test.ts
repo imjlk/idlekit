@@ -192,9 +192,9 @@ function simulate(spec: CaseSpec): RunResult<number, UnitCode, Vars> {
  * @evidence ./growthFit.ts#growthFitJsonSchema Reads the generated schema.
  * @evidenceReview ./growthFit.ts#growthFitJsonSchema #ff8650e The function memoizes typia.json.schema of GrowthFitArtifactV1.
  * @evidence ./growthFit.ts#fitGrowth Fits slow, fast, and softcap-configured literal series.
- * @evidenceReview ./growthFit.ts#fitGrowth #8c9010e The function fits log values relative to the first one, reads log extrema in a loop, keeps a moving exact value fit out of constant, keeps one break per time by precedence, supplied ones included, finds sign and drop breaks, an exact tenfold drop included, on every prepared point, keeps both sides of each break through the sampling budget, reads irregular cadence from the input in one loop, handles a one-point budget, keeps a non-positive domain invalid under coarse cadence, fits on time since the window start, scaled by its largest magnitude so the regression moments stay finite, fits value space in units of the series magnitude, reads saturation from gap-normalized rates, lets an exact value fit win only when it beats the log fit's relative error, and withholds shape claims when the action history is incomplete. Saturation midpoints add half a gap to the earlier time, so they stay finite near the number limit. An exact log-linear fit with a real slope is not constant either. It keeps samples per fit window under the budget, judges acceleration by the quadratic term against its residual, judges saturation without the retained gap, and reports a doubling time for any positive slope.
+ * @evidenceReview ./growthFit.ts#fitGrowth #8c9010e The function fits log values relative to the first one, reads log extrema in a loop, keeps a moving exact value fit out of constant, keeps one break per time by precedence, supplied ones included, finds sign and drop breaks, an exact tenfold drop included, on every prepared point, keeps both sides of each break through the sampling budget, reads irregular cadence from the input in one loop, handles a one-point budget, keeps a non-positive domain invalid under coarse cadence, fits on time since the window start, scaled by its largest magnitude so the regression moments stay finite, fits value space in units of the series magnitude, reads saturation from gap-normalized rates, lets an exact value fit win only when it beats the log fit's relative error, and withholds shape claims when the action history is incomplete. Saturation midpoints add half a gap to the earlier time, so they stay finite near the number limit. An exact log-linear fit with a real slope is not constant either. It keeps samples per fit window under the budget, judges acceleration by the quadratic term against its residual, judges saturation without the retained gap, and reports a doubling time for any positive slope. Saturation allows a flat plateau tail and reports its own log-rate residual.
  * @evidence ./growthFit.ts#fitGrowthFromRun Fits executed runs of the slow and fast models.
- * @evidenceReview ./growthFit.ts#fitGrowthFromRun #44923e5 The function keeps a present but empty trace empty, maps each action row by binary search to the first trace state after it, takes its break kind from the model's Action.kind before falling back to the id, reads the softcap hint at the run's start, marks prestige count changes as breaks, reports the action history complete only for a full action log or an observed zero action count, uses netWorthFallback without a model netWorth, and calls fitGrowth.
+ * @evidenceReview ./growthFit.ts#fitGrowthFromRun #44923e5 The function keeps a present but empty trace empty, maps each action row by binary search to the first trace state after it, takes its break kind from the model's Action.kind before falling back to the id, reads the softcap hint at the run's start, marks prestige count changes as breaks, reports the action history complete only for a full action log or an observed zero action count, uses netWorthFallback without a model netWorth, and calls fitGrowth. An action the model did not list at the traced state is a purchase unless a prestige count change confirms a reset.
  * @evidence ./growthFit.ts#growthFitSchemaId Reads the growth fit schema id.
  * @evidenceReview ./growthFit.ts#growthFitSchemaId #5247d65 The function returns the growth.fit.v1 schema URL constant.
  * @evidence ./growthFit.ts#growthFitAlgorithmVersion Reads the algorithm version on the artifact.
@@ -611,6 +611,14 @@ export function refusesDisguisedDomains(): void {
     sampling: sampling(),
   });
   expect(namedFit.windows[1]?.discontinuity).toBe("purchase");
+  // An action the model did not list at the traced state is a purchase, whatever its id says.
+  const unlistedFit = fitGrowthFromRun({
+    run: withActionRows([{ t: 40, actionId: "prestige-generator" }], true),
+    series: "money",
+    scenario: scenarioFor(1, 80, model(0)),
+    sampling: sampling(),
+  });
+  expect(unlistedFit.windows[1]?.discontinuity).toBe("purchase");
 
   // The softcap hint is read at the analyzed run's start.
   const softcapped = fitGrowthFromRun({
@@ -670,6 +678,18 @@ export function refusesDisguisedDomains(): void {
   });
   expect(onlyWindow(fullSaturation).shape).toBe("saturating");
   expect(onlyWindow(thinSaturation).shape).toBe("saturating");
+  // The saturating residual is the saturation fit's own, in log-rate space.
+  expect(onlyWindow(fullSaturation).residual.space).toBe("log-rate");
+  expect(onlyWindow(fullSaturation).residual.rmse).toBeLessThan(1e-6);
+  // A plateau that rounds to equal values does not hide saturation.
+  const plateau = fitGrowth({
+    E: createNumberEngine(),
+    samples: Array.from({ length: 500 }, (_, index) => ({ t: index + 1, amount: 100 * (1 - Math.exp(-0.08 * (index + 1))) })),
+    seriesRequested: "money",
+    valueSource: "money",
+    sampling: { ...sampling(500), samplingBudget: 500 },
+  });
+  expect(onlyWindow(plateau).shape).toBe("saturating");
   // A very slow exponential still has a finite doubling time.
   const verySlow = fitGrowth({
     E: createNumberEngine(),

@@ -102,7 +102,8 @@ export type GrowthFitWindowV1 = Readonly<{
   }>;
   legacySpeedBucket: GrowthLegacyBucket | null;
   residual: Readonly<{
-    space: "log10" | "value" | "none";
+    /** "log-rate" is the natural log of the per-second growth rate, the space the saturation fit runs in. */
+    space: "log10" | "value" | "log-rate" | "none";
     rmse: number | null;
   }>;
   quality: string;
@@ -440,27 +441,34 @@ function seriesScale(values: readonly number[]): number {
  * Saturation: the growth rate per second decays geometrically. Rates are normalized by each gap, so an
  * evenly downsampled trace with gaps of 11 and 12 is read the same as the full-resolution trace.
  */
-function saturating(ts: readonly number[], values: readonly number[]): boolean {
-  if (values.length < MIN_SAMPLES) return false;
+/**
+ * The saturation fit's residual in log-rate space, or null when the series is not saturating. A flat tail, where the
+ * series has reached its plateau to the number's precision, is allowed: zero steps are skipped, decreases reject.
+ */
+function saturating(ts: readonly number[], values: readonly number[]): number | null {
+  if (values.length < MIN_SAMPLES) return null;
   const mids: number[] = [];
   const logRates: number[] = [];
-  let gapSum = 0;
+  let flat = false;
   for (let index = 1; index < values.length; index += 1) {
     const gap = ts[index]! - ts[index - 1]!;
     const step = values[index]! - values[index - 1]!;
-    if (!(gap > 0) || !(step > 0)) return false;
-    gapSum += gap;
+    if (!(gap > 0) || step < 0 || Number.isNaN(step)) return null;
+    if (step === 0) {
+      flat = true;
+      continue;
+    }
+    // After the plateau, increments are rounding at the series' precision. They are skipped, not fitted.
+    if (flat) continue;
     // previous + gap / 2, not (previous + next) / 2: two finite times near the number limit can sum to Infinity.
     mids.push(ts[index - 1]! + gap / 2);
     logRates.push(Math.log(step / gap));
   }
-  if (logRates.length < 4) return false;
+  if (logRates.length < 4) return null;
   const fit = fitLinear(mids, logRates);
-  if (!fit || !(fit.b < 0) || fit.rmse > 0.1) return false;
-  // The decay is judged per second and over the whole span, not per retained gap, so downsampling cannot change
-  // the verdict.
-  void gapSum;
-  return Math.exp(logRates[logRates.length - 1]! - logRates[0]!) < 0.25;
+  if (!fit || !(fit.b < 0) || fit.rmse > 0.1) return null;
+  // The decay is judged over the whole span, not per retained gap, so downsampling cannot change the verdict.
+  return Math.exp(logRates[logRates.length - 1]! - logRates[0]!) < 0.25 ? fit.rmse : null;
 }
 
 function irregularSpacing(points: readonly Point<unknown>[]): boolean {
@@ -566,7 +574,8 @@ function classifyPositive(
   const powerOk =
     power !== null && linear !== null && power.rmse <= 1e-3 && power.rmse * 4 < linear.rmse;
   const valuePolyOk = valueRmse !== null && valueRmse <= VALUE_REL_OK;
-  const satOk = valueReady && saturating(ts, numericValues);
+  const satRmse = valueReady ? saturating(ts, numericValues) : null;
+  const satOk = satRmse !== null;
   let shape: GrowthShape = "unknown";
   let residual: GrowthFitWindowV1["residual"] = {
     space: "log10",
@@ -607,7 +616,8 @@ function classifyPositive(
     residual = { space: "log10", rmse: power.rmse };
   } else if (satOk) {
     shape = "saturating";
-    residual = { space: "value", rmse: valueRmse };
+    // The saturation fit's own error, not the unrelated value-space line or parabola.
+    residual = { space: "log-rate", rmse: satRmse };
   } else if (valuePolyOk) {
     shape = "polynomial";
     residual = { space: "value", rmse: valueRmse };
@@ -936,9 +946,14 @@ function actionBreakKind<N, U extends string, Vars>(
 ): GrowthDiscontinuity["kind"] {
   const listed = before ? scenario.model.actions(scenario.ctx, before).find((action) => action.id === actionId) : undefined;
   if (listed?.kind === "prestige") return "reset";
-  if (listed && listed.kind !== "custom") return "purchase";
-  const id = actionId.toLowerCase();
-  return id.includes("prestige") || id.includes("reset") ? "reset" : "purchase";
+  // A custom action the model lists is named by the model, so its id is the only hint. An action the model did not
+  // list at the traced state, such as one unlocked between trace points, is a purchase unless a prestige count
+  // change confirms a reset; the count loop below adds those.
+  if (listed?.kind === "custom") {
+    const id = actionId.toLowerCase();
+    return id.includes("prestige") || id.includes("reset") ? "reset" : "purchase";
+  }
+  return "purchase";
 }
 
 /**
