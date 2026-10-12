@@ -1,7 +1,7 @@
 import typia, { type IValidation } from "typia";
 import type { Engine } from "../../engine/types";
 import { recordPrestigeReset } from "../constraints";
-import { emitCommittedResets } from "../observation";
+import { emitActionFacts, emitCommittedResets } from "../observation";
 import { runScenario } from "../simulator";
 import { applyDecisions, type CommittedResetFact } from "../step";
 import {
@@ -266,8 +266,9 @@ function withoutResetActions<N, U extends string, Vars>(
 ): Model<N, U, Vars> {
   const kind = adapter?.kind ?? "prestige";
   const actions = (actionCtx: SimContext<N, U, Vars>, actionState: SimState<N, U, Vars>) => {
-    const listed = model.actions(actionCtx, actionState);
-    if (kind === "prestige") return listed.filter((candidate) => candidate.kind !== "prestige");
+    // Prestige actions are resets under any adapter. A custom adapter does not make them ordinary interval actions.
+    const listed = model.actions(actionCtx, actionState).filter((candidate) => candidate.kind !== "prestige");
+    if (kind === "prestige") return listed;
     // Resolve the custom reset for this state. Its id can change, or appear, as the interval earns resources.
     const reset = adapter?.action(actionCtx, actionState);
     if (!reset) return listed;
@@ -503,6 +504,8 @@ export function executeResetCycles<N, U extends string, Vars>(args: {
       // The adapter built this action for the current state. A spec or custom adapter action is not in model.actions.
       resolveAgainstModel: false,
     });
+    // The boundary decision is an action fact too, applied or refused, as it would be inside runScenario.
+    emitActionFacts(scenario.run.observer, state.t, applied.events);
     const skipped = applied.events.find((event) => event.type === "action.skipped");
     const fact = applied.committedResets[0];
     if (!fact || skipped) {

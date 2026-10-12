@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { createNumberEngine } from "../../engine/breakInfinity";
-import { emitCommittedResets } from "../observation";
+import { emitActionFacts, emitCommittedResets } from "../observation";
 import { applyDecisions, type CommittedResetFact } from "../step";
 import type { Strategy } from "../strategy/types";
 import type { Action, CompiledScenario, Model, SimState } from "../types";
@@ -161,7 +161,9 @@ function makeRng(seed: number): ResetCycleRng & { next: () => number } {
  * @evidence ./resetCycle.ts#resetCycleJsonSchema The schema is 3.1.
  * @evidenceReview ./resetCycle.ts#resetCycleJsonSchema #c6690d5 The function memoizes typia.json.schema of ResetCycleArtifactV1.
  * @evidence ./resetCycle.ts#executeResetCycles Runs three fixed intervals, an explicit list, a resume, and the horizon and budget guards.
- * @evidenceReview ./resetCycle.ts#executeResetCycles #2b819fb The function accepts a maxCycles cap of 0, rejects a checkpoint of another contract or version, copies the resumed state and constraints, rejects a strategyState with no restoreState and an rngState with no rng, discovers adapters under the live constraints, runs each interval with runScenario on a model that delegates every member to the original receiver and hides the reset action, resolved per state and removed by identity when listed, measures the horizon on summed runner seconds with relative slack capped by a share of the interval, censors any budget stop, resolves the adapter at the boundary, commits one reset through applyDecisions with live constraints, refreshes maxMoneyEver, records a refusal instead of forcing it, and records copies of the state, a strategy snapshot only when restoreState exists, and the RNG snapshot.
+ * @evidenceReview ./resetCycle.ts#executeResetCycles #dd4407c The function accepts a maxCycles cap of 0, rejects a checkpoint of another contract or version, copies the resumed state and constraints, rejects a strategyState with no restoreState and an rngState with no rng, discovers adapters under the live constraints, runs each interval with runScenario on a model that delegates every member to the original receiver and hides prestige actions under any adapter and the custom reset, resolved per state and removed by identity when listed, measures the horizon on summed runner seconds with relative slack capped by a share of the interval, censors any budget stop, resolves the adapter at the boundary, commits one reset through applyDecisions with live constraints and forwards its action facts to onAction, refreshes maxMoneyEver, records a refusal instead of forcing it, and records copies of the state, a strategy snapshot only when restoreState exists, and the RNG snapshot.
+ * @evidence ../observation.ts#emitActionFacts Forwards a boundary decision to onAction.
+ * @evidenceReview ../observation.ts#emitActionFacts #be50111 The function returns without onAction, and forwards each applied or skipped action event with its time, id, outcome, and reason.
  * @evidence ./resetCycle.ts#resetAdapterFor Picks the prestige action and returns nothing for a model with neither an action nor a spec.
  * @evidenceReview ./resetCycle.ts#resetAdapterFor #de4bddc The function returns an explicit adapter first, then the prestige action adapter when the given state and context list one, then the spec adapter, and undefined when the model has no spec.
  * @evidence ./resetCycle.ts#resetCycleSchemaId Reads the reset cycle schema id.
@@ -812,6 +814,57 @@ export function runsThreeCommittedResets(): void {
   });
   expect(constrainedSpec.artifact.appliedResets).toBe(1);
   expect(constrainedSpec.artifact.warnings.some((warning) => warning.includes("multiplierFrom was not applied"))).toBe(false);
+
+  // A custom adapter still hides prestige actions from the interval strategy.
+  const prestigeTaker: Strategy<number, "COIN", Vars> = {
+    id: "prestige-taker",
+    decide(ctx, model, current) {
+      const action = model.actions(ctx, current).find((candidate) => candidate.kind === "prestige");
+      return action ? [{ action }] : [];
+    },
+  };
+  const rebirth: Action<number, "COIN", Vars> = {
+    id: "rebirth",
+    kind: "custom",
+    canApply: () => true,
+    cost: () => null,
+    apply: (_ctx, current) => ({ ...current, vars: { ...current.vars, score: current.vars.score + 1 } }),
+  };
+  const rebirthAdapter: ResetAdapter<number, "COIN", Vars> = {
+    id: "rebirth",
+    kind: "custom",
+    preserved: ["vars"],
+    action: () => rebirth,
+    reward: (_ctx, current) => current.vars.score,
+  };
+  const customOnly = executeResetCycles({
+    scenario: scenario({ actions: [prestigeAction(), rebirth], strategy: prestigeTaker }),
+    policy: { kind: "fixed-interval", intervalSec: 2, cycles: 2 },
+    adapter: rebirthAdapter,
+  });
+  expect(customOnly.artifact.appliedResets).toBe(2);
+  expect(customOnly.state.prestige.count).toBe(0);
+  expect(customOnly.state.vars.score).toBe(2);
+
+  // The boundary decision reaches onAction, as an action decided inside a step does.
+  const actionFacts: string[] = [];
+  const observerFor = { onAction: (fact: { t: number; actionId: string; outcome: string }) => void actionFacts.push(`${fact.actionId}:${fact.outcome}@${fact.t}`) };
+  executeResetCycles({
+    scenario: scenario({ observer: observerFor }),
+    policy: { kind: "fixed-interval", intervalSec: 2, cycles: 2 },
+  });
+  expect(actionFacts).toEqual(["prestige:applied@2", "prestige:applied@4"]);
+  const directFacts: string[] = [];
+  emitActionFacts(
+    { onAction: (fact) => void directFacts.push(`${fact.actionId}:${fact.outcome}:${fact.reason ?? ""}@${fact.t}`) },
+    7,
+    [
+      { type: "action.applied", actionId: "a" },
+      { type: "action.skipped", actionId: "b", reason: "cooldown" },
+    ],
+  );
+  expect(directFacts).toEqual(["a:applied:@7", "b:skipped:cooldown@7"]);
+  emitActionFacts(undefined, 7, [{ type: "action.applied", actionId: "a" }]);
 }
 
 /**
