@@ -504,44 +504,53 @@ type Watcher<N, U extends string, Vars> = Readonly<{
  * ledger, so caps cover the whole candidate and a milestone key is heard once, and the caller goals already reached,
  * so a later run does not report them again.
  */
-type ObservationShare = Readonly<{
+type ObservationShare<N, U extends string, Vars> = Readonly<{
   observation: NonNullable<SimRunOptions["observation"]>;
   reachedGoals: Set<string>;
+  /** Watchers whose first crossing is recorded. Their predicate is not read again. */
+  reachedWatchers: Set<Watcher<N, U, Vars>>;
 }>;
 
-function observationShare<N, U extends string, Vars>(scenario: CompiledScenario<N, U, Vars>): ObservationShare {
+function observationShare<N, U extends string, Vars>(scenario: CompiledScenario<N, U, Vars>): ObservationShare<N, U, Vars> {
   return {
     observation: shareObservation({ ...scenario.run.observation, enabled: true }).observation,
     reachedGoals: new Set(),
+    reachedWatchers: new Set(),
   };
 }
 
 /**
- * The scenario a policy run plays: the caller's open goals plus this analysis' watchers, read by the runner on every
- * committed state, and an observer that routes a watcher's first crossing back here. Recording is on, since the
- * runner reads goals only while it records.
+ * The scenario a policy run plays: the caller's open goals plus this analysis' open watchers, read by the runner on
+ * every committed state, and an observer that routes a watcher's first crossing back here. Recording is on while a
+ * watcher is open, since the runner reads goals only while it records. A caller that disabled observation keeps it
+ * disabled when no watcher is open, and hears no fact while a watcher forces recording on.
  */
 function watched<N, U extends string, Vars>(
   scenario: CompiledScenario<N, U, Vars>,
   watchers: readonly Watcher<N, U, Vars>[],
-  share: ObservationShare,
+  share: ObservationShare<N, U, Vars>,
 ): CompiledScenario<N, U, Vars> {
-  const callerGoals = (scenario.run.goals ?? []).filter((goal) => !share.reachedGoals.has(goal.id));
+  const open = watchers.filter((watcher) => !share.reachedWatchers.has(watcher));
+  const callerDisabled = scenario.run.observation?.enabled === false;
+  if (callerDisabled && open.length === 0) return scenario;
+  // A disabled caller has no goal the runner would read and no observer that hears facts.
+  const callerGoals = callerDisabled ? [] : (scenario.run.goals ?? []).filter((goal) => !share.reachedGoals.has(goal.id));
+  const observer = callerDisabled ? undefined : scenario.run.observer;
   // A caller goal can use any id. Each watcher takes an id no caller goal uses, so a caller goal is never
   // routed to a watcher and a watcher is never marked reached by a caller goal.
   const taken = new Set((scenario.run.goals ?? []).map((goal) => goal.id));
   const byId = new Map<string, Watcher<N, U, Vars>>();
-  for (const watcher of watchers) {
+  for (const watcher of open) {
     let id = watcher.id;
     for (let suffix = 1; taken.has(id); suffix += 1) id = `${watcher.id}#${suffix}`;
     taken.add(id);
     byId.set(id, watcher);
   }
-  const observer = scenario.run.observer;
+  const { observer: _callerObserver, ...run } = scenario.run;
   return {
     ...scenario,
     run: {
-      ...scenario.run,
+      ...run,
       observation: share.observation,
       goals: [...callerGoals, ...[...byId].map(([id, watcher]) => ({ id, met: watcher.met }))],
       observer: {
@@ -549,6 +558,8 @@ function watched<N, U extends string, Vars>(
         onGoal: (fact) => {
           const watcher = byId.get(fact.goalId);
           if (watcher) {
+            // The first crossing is the answer. Later runs of this candidate do not read the predicate again.
+            share.reachedWatchers.add(watcher);
             watcher.onMet(fact.t);
             return;
           }

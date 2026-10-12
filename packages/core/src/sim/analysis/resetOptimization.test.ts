@@ -135,7 +135,7 @@ function baseRequest(
  * @evidence ./resetOptimization.ts#validateResetPolicyArtifact The canonical artifact validates.
  * @evidenceReview ./resetOptimization.ts#validateResetPolicyArtifact #02be060 The arrow builds typia.createValidate of ResetPolicyArtifactV1 on first call and reuses it.
  * @evidence ./resetOptimization.ts#analyzeResetPolicies Runs the always-active scan against the fixture rate.
- * @evidenceReview ./resetOptimization.ts#analyzeResetPolicies #614b9c2 The function keeps scanned intervals within toSec up to rounding dust, validates the request, distinct stability windows, a goal for goal-reach-sec, and a finite nonnegative absolute tolerance, evaluates each scanned interval with or without a session, resolving the reset adapter at each boundary under the live constraints and, on a schedule, the block's clocks, hiding prestige actions and the custom reset from the strategy, committing adapter actions without re-resolving them against model.actions, refreshing maxMoneyEver, reading goals on copies of every committed state, each scheduled reset state included, under ids no caller goal uses, reading net worth and income with the live context, playing the tail from the origin-relative horizon, and on a schedule applying offline progression, session clocks, and the full schedule after the budget, measuring cycles in wall time, starting the incomplete span at the last reset, and dry-running the unrealized reset only when active play reaches the horizon, ranks with Engine.cmp, compares a known solution, keeps a refused interval in the incomplete span, reports an incomplete winner or one without stability evidence in the artifact status, and never claims a global optimum. On a schedule it admits a reset at the horizon inside a block's natural span, reads the end state at the horizon after a long delay, forwards boundary action facts, and reports goal and recovery times in wall seconds. A block that starts exactly at the horizon is kept for that reset. It rejects a scanned interval at or below the runner resolution, plays any remainder above rounding dust of the elapsed sum, reports recovery as the simulated duration, keeps recovery probes off the caller observer and caller goals, and dry-runs no reset after one committed at the horizon. It rejects an unknown objective or recovery metric, shares one observation ledger and the reached caller goals across every run of a candidate, reads a scheduled goal on the boundary state before each reset, and checks activity at the horizon within rounding dust.
+ * @evidenceReview ./resetOptimization.ts#analyzeResetPolicies #614b9c2 The function keeps scanned intervals within toSec up to rounding dust, validates the request, distinct stability windows, a goal for goal-reach-sec, and a finite nonnegative absolute tolerance, evaluates each scanned interval with or without a session, resolving the reset adapter at each boundary under the live constraints and, on a schedule, the block's clocks, hiding prestige actions and the custom reset from the strategy, committing adapter actions without re-resolving them against model.actions, refreshing maxMoneyEver, reading goals on copies of every committed state, each scheduled reset state included, under ids no caller goal uses, reading net worth and income with the live context, playing the tail from the origin-relative horizon, and on a schedule applying offline progression, session clocks, and the full schedule after the budget, measuring cycles in wall time, starting the incomplete span at the last reset, and dry-running the unrealized reset only when active play reaches the horizon, ranks with Engine.cmp, compares a known solution, keeps a refused interval in the incomplete span, reports an incomplete winner or one without stability evidence in the artifact status, and never claims a global optimum. On a schedule it admits a reset at the horizon inside a block's natural span, reads the end state at the horizon after a long delay, forwards boundary action facts, and reports goal and recovery times in wall seconds. A block that starts exactly at the horizon is kept for that reset. It rejects a scanned interval at or below the runner resolution, plays any remainder above rounding dust of the elapsed sum, reports recovery as the simulated duration, keeps recovery probes off the caller observer and caller goals, and dry-runs no reset after one committed at the horizon. It rejects an unknown objective or recovery metric, shares one observation ledger and the reached caller goals and watchers across every run of a candidate, keeps observation a caller disabled off, reads a scheduled goal on the boundary state before each reset, and checks activity at the horizon within rounding dust.
  * @evidence ./resetOptimization.ts#resetPolicySchemaId Reads the reset policy schema id.
  * @evidenceReview ./resetOptimization.ts#resetPolicySchemaId #1dcacc7 The function returns the reset.policy.v1 schema URL constant.
  * @evidence ./resetOptimization.ts#resetPolicyAlgorithmVersion Reads the algorithm version on the artifact.
@@ -947,6 +947,47 @@ export function keepsManualResetInsideSession(): void {
       ),
     );
     expect(heard.sort()).toEqual(["goal:caller", "milestone:five"]);
+  }
+  // Observation the caller disabled stays disabled, and the policy goal is read only until its first crossing.
+  for (const session of [undefined, twiceDaily]) {
+    for (const goalRequested of [false, true]) {
+      const heard: number[] = [];
+      let readsAfterMet = 0;
+      let met = false;
+      const outcome = analyzeResetPolicies(
+        baseRequest(
+          () => {
+            const base = scenario();
+            return {
+              ...base,
+              run: { ...base.run, observation: { enabled: false }, observer: { onStep: (fact) => void heard.push(fact.t0) } },
+            };
+          },
+          {
+            scan: { fromSec: 400, toSec: 400, stepSec: 400 },
+            horizonSec: 86400,
+            cycleBudget: 3,
+            session,
+            knownSolution: undefined,
+            ...(goalRequested
+              ? {
+                  objective: "goal-reach-sec" as const,
+                  goal: (_ctx: unknown, current: SimState<number, "COIN", Vars>) => {
+                    if (met) readsAfterMet += 1;
+                    met ||= current.wallet.money.amount >= 5;
+                    return met;
+                  },
+                }
+              : {}),
+          },
+        ),
+      ).candidates[0];
+      expect(heard).toEqual([]);
+      if (goalRequested) {
+        expect(outcome?.goalReachSec).toBe(5);
+        expect(readsAfterMet).toBe(0);
+      }
+    }
   }
 
   // Goal times are wall seconds. A capped absence credits 100 reward seconds for a 41400-second gap.
