@@ -37,7 +37,7 @@ export const experimentSeparateSpec = "experiment-spec-not-tunespec" as const;
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter Assignment uses a registered identifier path and the model or strategy schema. JSONPath, prototype, and eval paths are refused before a run.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #b990f16 Re-read the section: a prototype path, an out-of-range integer, a non-finite choice value, a non-finite space bound, a schema-invalid rate, a stripped path, overlapping paths, a session dimension, a repeated seed, a non-finite limit, and a repeated constraint id throw before model create.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #b313204 Re-read the section: a prototype path, an out-of-range integer, a non-finite choice value, a non-finite space bound, a schema-invalid rate, a stripped path, overlapping paths, a session dimension, a repeated seed, a non-finite limit, and a repeated constraint id throw before model create.
  */
 export const experimentRegisteredSetter = "registered-key-not-jsonpath" as const;
 
@@ -380,7 +380,8 @@ function requireSpec(input: ExperimentSpecV1): ExperimentSpecV1 {
   const spec = parsed.data;
   if (!Number.isFinite(spec.horizonSec) || spec.horizonSec <= 0) reject("horizon must be a positive finite number");
   // A JSON literal such as 1e400 parses to Infinity, which the artifact and canonical JSON cannot carry.
-  if (!Number.isFinite(spec.model.version)) reject("model version must be finite");
+  if (!Number.isFinite(spec.model.version) || Object.is(spec.model.version, -0)) reject("model version must be finite and not -0");
+  if (spec.strategy !== undefined && spec.strategy.id.length === 0) reject("strategy id must not be empty");
   if (!Number.isFinite(spec.stepSec) || spec.stepSec <= 0) reject("step must be a positive finite number");
   if (!Number.isInteger(spec.budget.candidates) || spec.budget.candidates < 1) reject("candidate budget must be a positive integer");
   if (!Number.isInteger(spec.budget.seeds) || spec.budget.seeds < 1) reject("seed budget must be a positive integer");
@@ -566,12 +567,21 @@ function requireJsonParams(params: unknown, label: string, seen: Set<object>): v
   if (params !== undefined && !isJsonData(params, seen)) reject(`${label} params must be JSON data, because task descriptors and hashes record them as JSON`);
 }
 
-function candidateBase(spec: ExperimentSpecV1, scenario: ScenarioV1, registries: Pick<ExperimentRunRequest, "strategyRegistry">): CandidateBase {
+/** Execution state from the scenario: params and the initial state, vars included. Checked before the scenario is hashed. */
+function requireScenarioData(scenario: ScenarioV1): void {
   const seen = new Set<object>();
   requireJsonParams(scenario.model.params, "model", seen);
   requireJsonParams(scenario.strategy?.params, "strategy", seen);
   // The initial state, vars included, reaches every run and the scenario hash. It must be JSON data too.
   if (!isJsonData(scenario.initial, seen)) reject("scenario initial state must be JSON data, because the scenario hash records it as JSON");
+}
+
+/** A private copy of JSON data, so a factory that mutates its params cannot reach another run or the caller. */
+function cloneJsonData<T>(value: T): T {
+  return value === undefined ? value : (JSON.parse(JSON.stringify(value)) as T);
+}
+
+function candidateBase(spec: ExperimentSpecV1, scenario: ScenarioV1, registries: Pick<ExperimentRunRequest, "strategyRegistry">): CandidateBase {
   if (scenario.model.id !== spec.model.id || scenario.model.version !== spec.model.version) {
     reject(`model ${spec.model.id}@${spec.model.version} does not match the scenario model ${scenario.model.id}@${scenario.model.version}`);
   }
@@ -580,6 +590,8 @@ function candidateBase(spec: ExperimentSpecV1, scenario: ScenarioV1, registries:
     reject(`strategy ${spec.strategy.id} does not match the scenario strategy ${scenarioStrategy.id}`);
   }
   const strategyId = spec.strategy?.id ?? scenarioStrategy?.id ?? null;
+  // An empty id is falsy, so the run plan would build no strategy while the task names one.
+  if (strategyId === "") reject("strategy id must not be empty");
   if (strategyId === null) {
     if (spec.dimensions.some((dimension) => dimension.target === "strategy")) reject("strategy id is required");
     return { modelParams: scenario.model.params, strategyId: null, strategyParams: {} };
@@ -588,7 +600,7 @@ function candidateBase(spec: ExperimentSpecV1, scenario: ScenarioV1, registries:
   if (!strategyFactory) reject(`strategy not found: ${strategyId}`);
   const strategyParams = scenarioStrategy?.params ?? strategyFactory.defaultParams ?? {};
   // Factory defaults are checked on their own: they are not part of the scenario object.
-  if (scenarioStrategy?.params === undefined) requireJsonParams(strategyParams, "strategy", seen);
+  if (scenarioStrategy?.params === undefined) requireJsonParams(strategyParams, "strategy", new Set());
   return { modelParams: scenario.model.params, strategyId, strategyParams };
 }
 
@@ -638,7 +650,14 @@ function prepareCandidate(
     strategyParams = assign(base.strategyParams, strategyAssigned, "strategy");
     checkCandidateParams(strategyFactory.paramsSchema, base.strategyParams, strategyParams, strategyAssigned, "strategy");
   }
-  return { id: candidate.id, modelParams, strategyParams, sessionPattern: spec.session.pattern, sessionDays: spec.session.days };
+  // Private snapshots: the task records exactly these, and every run gets its own copy of them.
+  return {
+    id: candidate.id,
+    modelParams: cloneJsonData(modelParams),
+    strategyParams: cloneJsonData(strategyParams),
+    sessionPattern: spec.session.pattern,
+    sessionDays: spec.session.days,
+  };
 }
 
 function metricIds(spec: ExperimentSpecV1): ExperimentMetricId[] {
@@ -808,9 +827,16 @@ type ExperimentCheckRequest = Pick<ExperimentRunRequest, "spec" | "scenario" | "
 
 /** Every rejection that does not need a model instance. No factory `create` runs here. */
 function prepareExperiment(request: ExperimentCheckRequest) {
-  // Validate the spec shape first, so an untyped caller gets ExperimentRejected rather than a TypeError.
+  // Validate the spec shape and the execution state first, so an untyped caller gets ExperimentRejected
+  // rather than a TypeError from hashing, for example on a bigint.
   const spec = requireSpec(request.spec);
-  const scenarioHash = sha256Text(canonicalJson(request.scenario));
+  requireScenarioData(request.scenario);
+  let scenarioHash: string;
+  try {
+    scenarioHash = sha256Text(canonicalJson(request.scenario));
+  } catch {
+    reject("scenario cannot be written as canonical JSON");
+  }
   if (scenarioHash !== spec.scenario.hash) reject("scenario hash does not match the experiment spec");
   const metrics = metricIds(spec);
   // A JSON literal such as 1e400 parses to Infinity, and canonical JSON would hash it as null.
@@ -826,7 +852,7 @@ function prepareExperiment(request: ExperimentCheckRequest) {
  * A caller that compiles or opens a run first calls this, so a rejected spec never reaches a factory.
  *
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter Throws the same rejections as runExperiment before any model create.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #b990f16 Re-read the section: the hash, spec, path, and schema checks run and no factory create is called.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #b313204 Re-read the section: the hash, spec, path, and schema checks run and no factory create is called.
  */
 export function checkExperimentSpec(request: ExperimentCheckRequest): void {
   prepareExperiment(request);
@@ -838,9 +864,14 @@ export function runExperiment<N>(request: ExperimentRunRequest<N>): ExperimentAr
   const E = request.engine;
   // The plan builds the strategy, so compile does not build the scenario one.
   const { strategy: _scenarioStrategy, ...withoutStrategy } = request.scenario;
+  // Compile reads copies, so its model create cannot write the caller's params or initial state.
   const compiled = compileScenario<N, string, Record<string, unknown>>({
     E,
-    scenario: withoutStrategy,
+    scenario: {
+      ...withoutStrategy,
+      model: { ...withoutStrategy.model, params: cloneJsonData(withoutStrategy.model.params) },
+      initial: cloneJsonData(withoutStrategy.initial),
+    },
     registry: request.modelRegistry,
     strategyRegistry: request.strategyRegistry,
     opts: { allowSuffixNotation: true },
@@ -857,12 +888,13 @@ export function runExperiment<N>(request: ExperimentRunRequest<N>): ExperimentAr
   const perCandidate: { id: string; rows: { seed: number; metrics: Reading<N>[] }[] }[] = [];
 
   for (const candidate of prepared) {
-    const binding = bindingFor.bind(shared, {
-      statefulModel: true,
-      model: { id: spec.model.id, version: spec.model.version, params: candidate.modelParams },
-    });
     const rows: { seed: number; metrics: Reading<N>[] }[] = [];
     for (const seed of spec.seeds) {
+      // Each seed binds its own copy of the params, so a factory that mutates them cannot change a later seed.
+      const binding = bindingFor.bind(shared, {
+        statefulModel: true,
+        model: { id: spec.model.id, version: spec.model.version, params: cloneJsonData(candidate.modelParams) },
+      });
       const taskId = `${candidate.id}#${seed}`;
       const plan: ExecutionPlan = {
         contract: "idlekit.execution-plan",
@@ -870,7 +902,7 @@ export function runExperiment<N>(request: ExperimentRunRequest<N>): ExperimentAr
         stepSec: spec.stepSec,
         durationSec: spec.horizonSec,
         seed,
-        ...(base.strategyId !== null ? { strategyId: base.strategyId, strategyParams: candidate.strategyParams } : {}),
+        ...(base.strategyId !== null ? { strategyId: base.strategyId, strategyParams: cloneJsonData(candidate.strategyParams) } : {}),
         eventLog: { enabled: false, maxEvents: 0 },
       };
       let readings: Reading<N>[];

@@ -182,7 +182,7 @@ function runWith(scenario: ScenarioV1, spec: ExperimentSpecV1, creates: { count:
  * @evidence ./experiment.ts#experimentTaskDescriptor Reads the task descriptor contract.
  * @evidenceReview ./experiment.ts#experimentTaskDescriptor #03898ac The declaration is task-id-params-seed-version.
  * @evidence ./experiment.ts#runExperiment Runs the sweep and local sensitivity on a fixed spec.
- * @evidenceReview ./experiment.ts#runExperiment #6e839ca The function checks the scenario hash against the spec, rejects a timeToMoney metric without a finite goal, compiles the scenario once as the candidate base, runs each planned candidate per seed through a fresh binding to the horizon while reading the reach time, averages every seed, and reports local sensitivity only for completed horizons.
+ * @evidenceReview ./experiment.ts#runExperiment #d010bfd The function checks the scenario hash against the spec, rejects a timeToMoney metric without a finite goal, compiles the scenario once as the candidate base, runs each planned candidate per seed through a fresh binding to the horizon while reading the reach time, averages every seed, and reports local sensitivity only for completed horizons.
  * @evidence ./experiment.ts#experimentSchemaId Reads the experiment schema id.
  * @evidenceReview ./experiment.ts#experimentSchemaId #637335e The function returns the experiment.v1 schema URL constant.
  * @evidence ./experiment.ts#experimentAlgorithmVersion Reads the algorithm version.
@@ -372,7 +372,7 @@ export function keepsStrategyTuneSignature(): void {
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter Unsafe paths and invalid parameters throw before the model factory runs.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #b990f16 Re-read the section, then ran this function: a stripped typo path, overlapping model and strategy paths, a session dimension, a repeated seed, another model version, an Infinity choice value, an Infinity space bound, an Infinity limit, an Infinity goal, a schema-less typo path, -0, a -0 seed, a __type path, non-JSON params, a malformed untyped spec, and a repeated constraint id throw, and create count stays 0.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #b313204 Re-read the section, then ran this function: a stripped typo path, overlapping model and strategy paths, a session dimension, a repeated seed, another model version, an Infinity choice value, an Infinity space bound, an Infinity limit, an Infinity goal, a schema-less typo path, -0, a -0 seed, a __type path, non-JSON params, a malformed untyped spec, and a repeated constraint id throw, and create count stays 0.
  * @evidence ./experiment.ts#experimentRegisteredSetter Reads the setter contract.
  * @evidenceReview ./experiment.ts#experimentRegisteredSetter #080a763 The declaration is registered-key-not-jsonpath.
  * @evidence ./experiment.ts#assertRegisteredPath Rejects prototype, bracket, and traversal paths, and session paths other than pattern or days.
@@ -497,6 +497,7 @@ export function rejectsUnsafeParametersBeforeRun(): void {
     ["seeds must be unique", specFor(scenario, { seeds: [fixture.seed, fixture.seed] })],
     ["seeds must not be -0", specFor(scenario, { seeds: [-0] })],
     ["model version must be finite", specFor(scenario, { model: { id: fixture.modelId, version: JSON.parse("1e400") as number } })],
+    ["model version must be finite and not -0", specFor(scenario, { model: { id: fixture.modelId, version: -0 } })],
     [
       "space bounds for incomeRate must be finite",
       specFor(scenario, { dimensions: [{ ...incomeDimension, space: { kind: "number", min: 0.1, max: JSON.parse("1e400") as number } }] }),
@@ -585,6 +586,13 @@ export function rejectsUnsafeParametersBeforeRun(): void {
     const varsScenario = incomeScenario({ initial: { wallet: { unit: "COIN", amount: "0" }, vars } });
     expect(() => runWith(varsScenario, specFor(varsScenario), creates)).toThrow("initial state must be JSON data");
   }
+  // A bigint cannot be written as canonical JSON. It is an ExperimentRejected, not a TypeError from hashing.
+  const bigScenario = incomeScenario({ model: { id: fixture.modelId, version: fixture.modelVersion, params: { incomeRate: 1, big: 1n } } });
+  expect(() => runWith(bigScenario, { ...specFor(scenario), scenario: { ref: "big", hash: "unknown" } }, creates)).toThrow(ExperimentRejected);
+  // An empty strategy id would build no strategy while the task names one.
+  const emptyStrategy = incomeScenario({ strategy: { id: "", params: { maxPicks: 1 } } });
+  expect(() => runWith(emptyStrategy, specFor(emptyStrategy, { strategy: undefined }), creates)).toThrow("strategy id must not be empty");
+  expect(() => runWith(scenario, specFor(scenario, { strategy: { id: "" } }), creates)).toThrow("strategy id must not be empty");
   // Explicit null params would share the record of omitted params.
   const nullScenario = incomeScenario({ model: { id: fixture.modelId, version: fixture.modelVersion, params: null } });
   expect(() => runWith(nullScenario, specFor(nullScenario), creates)).toThrow("must be an object or omitted, not null");
@@ -939,7 +947,7 @@ export function matchesHandPareto(): void {
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-task-descriptor Candidates start from the referenced scenario and the candidate metric is the mean over every seed.
  * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-task-descriptor #10a3f42 Re-read the section, then ran this function: the GEM wallet starts at 100, maxPicks stays 3, the stripped note reaches create as kept, seeds 1 and 3 average to reach time 20 and end money 160, and probes 1 and "1" get distinct ids.
  * @evidence ./experiment.ts#runExperiment Runs every candidate from the compiled scenario and averages the seeds.
- * @evidenceReview ./experiment.ts#runExperiment #6e839ca The function compiles the request scenario once as the base, keeps its raw model and strategy params, and aggregates every seed row by its mean.
+ * @evidenceReview ./experiment.ts#runExperiment #d010bfd The function compiles the request scenario once as the base, keeps its raw model and strategy params with a private copy per seed, and aggregates every seed row by its mean.
  */
 export function startsCandidatesFromScenario(): void {
   const creates = { count: 0 };
@@ -1004,6 +1012,45 @@ export function startsCandidatesFromScenario(): void {
   ]);
   expect(creates.count).toBe(3);
   expect(received.every((params) => (params as { note?: string }).note === "kept")).toBe(true);
+  // A factory that mutates its params on create cannot change a later seed, another candidate, or the caller's scenario.
+  const mutating = defineModelFactory({
+    id: "mutating-income",
+    version: 1,
+    create(params: { incomeRate: number; nested: { bonus: number } }) {
+      const rate = params.incomeRate + params.nested.bonus;
+      params.incomeRate *= 10;
+      params.nested.bonus += 5;
+      return { id: "mutating-income", version: 1, income: (ctx: { unit: { code: string } }) => ({ unit: ctx.unit, amount: rate }), actions: () => [] };
+    },
+  });
+  const mutatingScenario = incomeScenario({
+    model: { id: "mutating-income", version: 1, params: { incomeRate: 1, nested: { bonus: 0 } } },
+    strategy: undefined,
+  });
+  const mutated = runExperiment({
+    spec: specFor(mutatingScenario, {
+      model: { id: "mutating-income", version: 1 },
+      strategy: undefined,
+      metricId: "endMoney",
+      goal: undefined,
+      dimensions: [],
+      seeds: [1, 2],
+      budget: { candidates: 1, seeds: 2 },
+      horizonSec: 10,
+    }),
+    scenario: mutatingScenario,
+    modelRegistry: createModelRegistry([mutating]),
+    strategyRegistry: createStrategyRegistry([]),
+    engine: createNumberEngine(),
+    engineId: "number",
+    engineVersion: "1",
+    effectiveRunHash: "mutating",
+  });
+  expect(mutated.tasks.map((task) => [task.value, task.modelParams])).toEqual([
+    ["10", "{\"incomeRate\":1,\"nested\":{\"bonus\":0}}"],
+    ["10", "{\"incomeRate\":1,\"nested\":{\"bonus\":0}}"],
+  ]);
+  expect(mutatingScenario.model.params).toEqual({ incomeRate: 1, nested: { bonus: 0 } });
   // Choice probes 1 and "1" are distinct values, so their generated ids are distinct too.
   const tagged = runExperiment({
     spec: specFor(scenario, {
@@ -1030,7 +1077,7 @@ export function startsCandidatesFromScenario(): void {
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown An amount past the double range stays an observed engine value for constraints, Pareto, and sensitivity.
  * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown #1e93b71 Re-read the section, then ran this function: 1e400 and 1e401 are observed, both violate the cap, only the probe is non-dominated, 1e-10 to 1e400 keeps an engine elasticity near 2.44e409, and two seeds of benefit 1e308 or of the smallest subnormal, and a subnormal wallet, average to that value, and end money 1e308 to -1e308 keeps elasticity 1, and three seeds of the largest double average to it.
  * @evidence ./experiment.ts#runExperiment Compares engine amounts for constraints, Pareto, and elasticity.
- * @evidenceReview ./experiment.ts#runExperiment #6e839ca The function keeps money as engine amounts, checks constraints with the engine order, ranks each Pareto objective by that order, and divides money changes in the engine.
+ * @evidenceReview ./experiment.ts#runExperiment #d010bfd The function keeps money as engine amounts, checks constraints with the engine order, ranks each Pareto objective by that order, and divides money changes in the engine.
  */
 export function keepsLargeEngineAmounts(): void {
   const engine = createBreakInfinityEngine();
