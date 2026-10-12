@@ -831,7 +831,7 @@ export function matchesExistingAlgorithmVersions(): void {
 
 /**
  * @evidence docs/requirements/active/analyzer-registry.md#req-dx02-observation-plan Shared semantics use one fresh run. A different horizon is a separate plan, and cadence is recorded.
- * @evidenceReview docs/requirements/active/analyzer-registry.md#req-dx02-observation-plan #140ac0a Re-read the section, then ran this function: a 5 second window at step 10 is refused, everySteps is 2, the longer horizon is not in the shared group, cadence 1 at step 2 and cadence 2 with summary coverage are refused, one and two get the same RunResult from one fresh run, delimiter and sharesRun false pairs take two runs, and a blocked peer is not in sharedWith.
+ * @evidenceReview docs/requirements/active/analyzer-registry.md#req-dx02-observation-plan #2fa0460 Re-read the section, then ran this function: a throwing fresh run is attempted once, two groups make two compiles, a 5 second window at step 10 is refused, everySteps is 2, the longer horizon is not in the shared group, cadence 1 at step 2 and cadence 2 with summary coverage are refused, one and two get the same RunResult from one fresh run, delimiter and sharesRun false pairs take two runs, and a blocked peer is not in sharedWith.
  * @evidence ./analyzers.ts#analyzerObservationPlan Reads the plan contract.
  * @evidenceReview ./analyzers.ts#analyzerObservationPlan #e5b0d7f The declaration is demand-on-plan-and-provenance.
  * @evidence ./analyzers.ts#executionPlanForDemand Builds the execution plan a demand needs.
@@ -1018,6 +1018,66 @@ export function recordsObservationDemandOnThePlan(): void {
   expect(sharedRun?.end.t).toBe(4);
   expect(sharedRun?.trace?.map((state) => state.t)).toEqual([0, 2, 4]);
   expect(sharedBatch.results[1]?.value).toBe(sharedRun);
+
+  // A failed shared run is attempted once: the peer gets null instead of opening a second run.
+  let attempts = 0;
+  const failing: RunFactory = {
+    bind: (scenario, options) => {
+      const binding = base.bind(scenario, options);
+      return {
+        ...binding,
+        fresh: () => {
+          attempts += 1;
+          throw new Error("model failed");
+        },
+      };
+    },
+  };
+  const failedBatch = shared.run({
+    requests: [
+      { id: "one", version: "1", params: {} },
+      { id: "two", version: "1", params: {} },
+    ],
+    semantics: analyzerSemantics({ horizonSec: 4, stepSec: 1 }),
+    scenario: makeScenario(),
+    allowExecution: true,
+    budget,
+    runFactory: failing,
+  });
+  expect(attempts).toBe(1);
+  expect(failedBatch.results.map((result) => result.status)).toEqual(["error", "ok"]);
+  expect(failedBatch.results[1]?.value).toBeNull();
+
+  // freshScenario gives each group's run its own compile, so no run starts from another's closures.
+  const compiles: CompiledScenario<number, string, Record<string, unknown>>[] = [];
+  const perGroup = createAnalyzerRegistry();
+  for (const [id, metric] of [["one", "a"], ["two", "b"]] as const) {
+    perGroup.register(probe({
+      id,
+      kind: "execution",
+      observation: observationDemand({ metricIds: [metric] }),
+      onExecute: (ctx) => ctx.requestRun(id).run(),
+    }));
+  }
+  const perGroupBatch = perGroup.run({
+    requests: [
+      { id: "one", version: "1", params: {} },
+      { id: "two", version: "1", params: {} },
+    ],
+    semantics: analyzerSemantics({ horizonSec: 4, stepSec: 1 }),
+    scenario: makeScenario(),
+    freshScenario: () => {
+      const compiled = makeScenario();
+      compiles.push(compiled);
+      return compiled;
+    },
+    allowExecution: true,
+    budget: { maxFreshRuns: 2, maxDurationSec: 4, maxSamples: 10 },
+    runFactory: createRunFactory(),
+  });
+  expect(compiles).toHaveLength(2);
+  expect(perGroupBatch.freshRuns).toBe(2);
+  expect(perGroupBatch.results.every((result) => result.status === "ok")).toBe(true);
 
   const twoRuns = { maxFreshRuns: 2, maxDurationSec: 10, maxSamples: 10 };
   const pair = (registry: ReturnType<typeof createAnalyzerRegistry>, left: RunSemantics, right: RunSemantics) =>

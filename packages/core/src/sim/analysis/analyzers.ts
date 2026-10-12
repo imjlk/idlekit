@@ -58,7 +58,7 @@ export const analyzerSameAlgorithm = "adapter-keeps-algorithm-version" as const;
 
 /**
  * @evidence docs/requirements/active/analyzer-registry.md#req-dx02-observation-plan The same session, strategy, horizon, and observation semantics share one fresh run. A different horizon does not.
- * @evidenceReview docs/requirements/active/analyzer-registry.md#req-dx02-observation-plan #140ac0a Re-read the section: a traced window finer than the trace spacing is refused, sharedWith lists only members whose body ran, cadence rounds down onto the execution plan and is on provenance, a cadence without a trace is refused, a different horizon or a sharesRun false definition is a separate group, the key is JSON, group members get one shared RunResult, and blocked peers are not in sharedWith.
+ * @evidenceReview docs/requirements/active/analyzer-registry.md#req-dx02-observation-plan #2fa0460 Re-read the section: a failed shared run is attempted once, freshScenario gives each group run its own compile, a traced window finer than the trace spacing is refused, sharedWith lists only members whose body ran, cadence rounds down onto the execution plan and is on provenance, a cadence without a trace is refused, a different horizon or a sharesRun false definition is a separate group, the key is JSON, group members get one shared RunResult, and blocked peers are not in sharedWith.
  */
 export const analyzerObservationPlan = "demand-on-plan-and-provenance" as const;
 
@@ -224,6 +224,12 @@ export type AnalyzerRunRequest = Readonly<{
   supply?: ObservationSupply | null;
   input?: unknown;
   scenario?: CompiledScenario<number, string, Record<string, unknown>> | null;
+  /**
+   * Compiles `scenario` again, with new model and strategy instances, for each group's fresh run.
+   * Without it, every group run binds `scenario`, whose model and strategy must then be stateless
+   * or snapshot-backed.
+   */
+  freshScenario?: (() => CompiledScenario<number, string, Record<string, unknown>>) | null;
   runFactory?: RunFactory | null;
   budget?: AnalyzerBudget | null;
   capabilities?: Partial<Record<AnalysisCapabilityName, CapabilityKnowledge>> | null;
@@ -914,8 +920,12 @@ function runRegistered(
     const scenario = request.scenario ?? null;
     const factory = request.runFactory ?? null;
     let result: SharedRun | null = null;
+    // The attempt is the group's one counted run: if it throws, peers get null instead of a second run.
+    sharedRuns.set(item.key, null);
     if (scenario && factory) {
-      const binding = factory.bind(scenario);
+      // A fresh compile per group run gives new model and strategy instances, so one group's run
+      // cannot start from closure state another run advanced.
+      const binding = factory.bind(request.freshScenario ? request.freshScenario() : scenario);
       try {
         // strategyKey groups runs. The strategy that runs is the one compiled into the scenario.
         const { strategyId: _strategyKey, ...runPlan } = plan;
