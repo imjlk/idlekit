@@ -66,7 +66,7 @@ function request(overrides: Partial<ScenarioInspectRequest> = {}): ScenarioInspe
  * @evidence ./inspect.ts#fixedDurationStepCount Counts whole and partial ticks with nextBoundary.
  * @evidenceReview ./inspect.ts#fixedDurationStepCount #94e929a The function steps nextBoundary without until until it stops, and reports the step count, the last dt, and whether that tick was partial. Past one million ticks it returns a null count.
  * @evidence ./inspect.ts#buildScenarioInspect Builds the report from a fixed-duration request.
- * @evidenceReview ./inspect.ts#buildScenarioInspect #1b602fb The function derives horizon kind, observation supply, stage plans, engine and plugin notes, the planner bound, and diagnostics without running the scenario. It treats an omitted event log as enabled, traces every step without a cadence, leaves session stages and capped counts unknown, reports each stage's fast mode, and names an unresolved model in plugin-skipped. A traced run's window is its cadence, and plugin-skipped names an unresolved strategy too. A custom engine's domain is unknown and still warns, and an ltv stage's count is unknown.
+ * @evidenceReview ./inspect.ts#buildScenarioInspect #1b602fb The function derives horizon kind, observation supply, stage plans, engine and plugin notes, the planner bound, and diagnostics without running the scenario. It treats an omitted event log as enabled, traces every step without a cadence, leaves session stages and capped counts unknown, reports each stage's fast mode, and names an unresolved model in plugin-skipped. A traced run's window is its cadence, and plugin-skipped names an unresolved strategy too. A custom engine's domain is unknown and still warns, and an ltv stage's count is unknown. A trace cadence that is not a positive integer supplies no cadence.
  */
 export function countsFixedDurationSteps(): void {
   expect(inspectPartialTick).toBe("partial-tick-included");
@@ -135,6 +135,16 @@ export function countsFixedDurationSteps(): void {
     }),
   );
   expect(longTrace.analyzers[0]?.met).toBe(true);
+  // A cadence of 0 retains no periodic samples, so it supplies no cadence.
+  const zeroCadence = buildScenarioInspect(
+    request({
+      trace: { include: true, everySteps: 0 },
+      analyzers: [
+        { id: "cadence", version: "1", kind: "postprocess", observation: observationDemand({ coverage: "trace", sampleCadenceSec: 1 }) },
+      ],
+    }),
+  );
+  expect(zeroCadence.analyzers[0]?.met).toBe(false);
   // A strategy that only a skipped plugin provides is named in plugin-skipped.
   const skippedStrategy = buildScenarioInspect(
     request({

@@ -387,14 +387,20 @@ export function modelCreateParams(args: {
 }
 
 /**
- * Throw when a scenario's untilExpr does not compile for this engine, as compileScenario would. Nothing is
- * evaluated and no model is created, so a plan-only caller can reject the same scenario.
+ * Throw when the scenario's initial money or untilExpr does not compile for this engine, as compileScenario would.
+ * Nothing is evaluated and no model is created, so a plan-only caller can reject the same scenario.
  */
-export function assertScenarioUntilExpr<N>(args: {
+export function assertScenarioPlanInputs<N>(args: {
   scenario: ScenarioV1;
   E: Engine<N>;
   allowSuffixNotation?: boolean;
 }): void {
+  buildInitialState({
+    E: args.E,
+    scenario: args.scenario,
+    unit: buildUnit({ scenario: args.scenario }),
+    allowSuffixNotation: args.allowSuffixNotation ?? true,
+  });
   compileUntilExpr({
     expr: args.scenario.clock.untilExpr,
     E: args.E,

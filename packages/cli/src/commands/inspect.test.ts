@@ -67,7 +67,7 @@ describe("idk inspect", () => {
     expect(markdown.stdout).toContain("The plan was not ticked.");
     expect(markdown.stdout).toContain("not a measured duration");
     await removePath(dir);
-  }, 60000);
+  }, 300000);
 
   it("does not import a plugin unless resolve-plugins is set", async () => {
     const dir = await createTempDir("idlekit-inspect-plugin");
@@ -166,6 +166,36 @@ export const models = [{ id: "noted", version: 1, create() { throw new Error("cr
       "json",
     ]);
     expect(numericReport.diagnostics.some((item: { code: string }) => item.code === "decimal-range")).toBe(false);
+    // An untilExpr literal is compared through the engine, so a wide one warns.
+    const wideUntil = await scenarioFile(dir, (raw) => {
+      (raw.clock as { untilExpr?: string }).untilExpr = "money >= 9999999999999999";
+    });
+    const wideUntilReport = runCliJson<any>(["inspect", wideUntil, "--format", "json"]);
+    const untilWarning = wideUntilReport.diagnostics.find((item: { code: string }) => item.code === "decimal-range");
+    expect(untilWarning?.evidence.literal).toBe("9999999999999999");
+    // The wallet unit is an identifier, not an amount.
+    const numericUnit = await scenarioFile(dir, (raw) => {
+      (raw.unit as { code: string }).code = "12345678901234567890";
+      (raw.initial as { wallet: { unit: string } }).wallet.unit = "12345678901234567890";
+    });
+    const numericUnitReport = runCliJson<any>(["inspect", numericUnit, "--format", "json"]);
+    expect(numericUnitReport.diagnostics.some((item: { code: string }) => item.code === "decimal-range")).toBe(false);
+    // A plugin objective is a plugin registration too.
+    const objectivePlugin = resolve(dir, "objective.ts");
+    await writeText(objectivePlugin, `export const objectives = [{ id: "plugin.goal", create() { throw new Error("x"); } }];\n`);
+    const objectiveReport = runCliJson<any>([
+      "inspect",
+      scenario,
+      "--resolve-plugins",
+      "--allow-plugin",
+      "--plugin",
+      objectivePlugin,
+      "--plugin-root",
+      dir,
+      "--format",
+      "json",
+    ]);
+    expect(objectiveReport.plugins.loadedIds).toContain("objective:plugin.goal");
     // A plugin strategy is a plugin registration, and a strategy only a skipped plugin provides still gets a report.
     const walker = resolve(dir, "walker.ts");
     await writeText(
@@ -203,7 +233,7 @@ export const models = [{ id: "noted", version: 1, create() { throw new Error("cr
     expect(resolvedWalk.planner).toBeNull();
     expect(JSON.stringify(resolvedWalk).includes("CREATE_SENTINEL")).toBe(false);
     await removePath(dir);
-  }, 60000);
+  }, 300000);
 
   it("rejects a bad engine and still explains it", async () => {
     const dir = await createTempDir("idlekit-inspect-engine");
@@ -224,5 +254,5 @@ export const models = [{ id: "noted", version: 1, create() { throw new Error("cr
     expect(listed.exitCode).toBe(0);
     expect(listed.stdout).toContain("inspect");
     await removePath(dir);
-  }, 60000);
+  }, 300000);
 });

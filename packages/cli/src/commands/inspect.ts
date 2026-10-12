@@ -21,15 +21,32 @@ function requestedPluginPaths(input: string): string[] {
     .filter((item) => item.length > 0);
 }
 
+/** Right-hand literals of an untilExpr. They are compared through the engine, so they can exceed its range. */
+function untilLiterals(expr: string | undefined): string[] {
+  if (!expr) return [];
+  const literals: string[] = [];
+  for (const match of expr.matchAll(/(?:<=|>=|==|!=|<|>)\s*([^\s&|]+)/g)) {
+    if (match[1] !== undefined) literals.push(match[1]);
+  }
+  return literals;
+}
+
 /**
  * Scenario values whose literals can enter the engine. Identifiers and descriptive fields, such as model and
  * strategy ids or meta, are not numbers, so only model and strategy params are read from those sections.
  */
 function numericInputs(scenario: ScenarioV1): unknown[] {
+  const initial = scenario.initial;
   return [
     scenario.model.params,
-    scenario.initial,
+    // Only the initial amounts are parsed by the engine. The wallet unit and the model's vars are not.
+    initial.wallet.amount,
+    initial.wallet.bucket,
+    initial.maxMoneyEver,
+    initial.prestige?.points,
+    initial.prestige?.multiplier,
     scenario.strategy?.params,
+    untilLiterals(scenario.clock.untilExpr),
     scenario.analysis,
     scenario.monetization,
     scenario.design,
@@ -155,6 +172,7 @@ export default defineCommand({
             ...(loaded.pluginModelIds ?? []),
             ...pluginStrategyIds.map((id) => `strategy:${id}`),
             ...(loaded.pluginAnalyzerKeys ?? []).map((key) => `analyzer:${key}`),
+            ...(loaded.pluginObjectiveIds ?? []).map((id) => `objective:${id}`),
           ]),
         ]
       : [];

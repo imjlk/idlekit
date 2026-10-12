@@ -241,13 +241,15 @@ function engineReason(engine: ScenarioInspectRequest["engine"]): string {
 function observationSupply(request: ScenarioInspectRequest, stepSec: number): ObservationSupply {
   const untilOnly = request.clock.durationSec === undefined && Boolean(request.clock.untilExpr?.trim());
   const coverage = request.trace.include ? "trace" : request.clock.durationSec !== undefined ? "summary" : "missing";
-  // compileScenario traces every step when the scenario includes a trace without a cadence.
+  // compileScenario traces every step when the scenario includes a trace without a cadence. A cadence that is not a
+  // positive integer retains no periodic samples in the runner, so it supplies no cadence or window.
   const every = request.trace.everySteps ?? 1;
+  const cadence = request.trace.include && Number.isInteger(every) && every > 0 ? every * stepSec : null;
   return {
     schema: observationContract,
     // The finest window the samples supply is the trace cadence. A summary supplies no finite window.
-    windowSec: request.trace.include ? every * stepSec : null,
-    sampleCadenceSec: request.trace.include ? every * stepSec : null,
+    windowSec: cadence,
+    sampleCadenceSec: cadence,
     coverage: untilOnly && !request.trace.include ? "missing" : coverage,
     metricIds: ["money", "netWorth"],
   };
