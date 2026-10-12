@@ -1,13 +1,21 @@
 import typia, { type IValidation } from "typia";
 import type { Engine } from "../../engine/types";
 import { recordPrestigeReset } from "../constraints";
+import { shareObservation } from "../goalRead";
 import { emitActionFacts, emitCommittedResets } from "../observation";
 import { offlineAbsenceForCredit } from "../offlineCredit";
 import { applyOfflineSeconds } from "../offline";
 import { sessionActiveBlocks, type SessionPatternSpec } from "../session";
 import { runScenario } from "../simulator";
 import { applyDecisions } from "../step";
-import { runElapsedSec, type CompiledScenario, type ScenarioConstraints, type SimContext, type SimState } from "../types";
+import {
+  runElapsedSec,
+  type CompiledScenario,
+  type ScenarioConstraints,
+  type SimContext,
+  type SimRunOptions,
+  type SimState,
+} from "../types";
 import {
   executeResetCycles,
   resetAdapterFor,
@@ -27,6 +35,15 @@ import { deepClonePreservingPrototype } from "../../utils/deepClone";
 const RESET_POLICY_ALGORITHM_VERSION = "reset-policy-v1" as const;
 const RESET_POLICY_SCHEMA_ID = "https://idlekit.dev/schemas/reset.policy.v1.schema.json" as const;
 const MAX_CANDIDATES = 10000;
+/** The runner treats a duration at or below this as already complete, as `executeResetCycles` rejects it. */
+const RUNNER_MIN_DURATION_SEC = 1e-12;
+/** Rounding slack in ULPs of the magnitudes involved, as `executeResetCycles` admits an interval at the horizon. */
+const HORIZON_ULPS = 64;
+
+/** Rounding dust of a wall or elapsed sum near the horizon: a few ULPs, never a share of the horizon. */
+function horizonDust(horizonSec: number, reached: number): number {
+  return HORIZON_ULPS * Number.EPSILON * Math.max(Math.abs(horizonSec), Math.abs(reached));
+}
 
 /**
  * @evidence docs/requirements/active/reset-cycle-analysis.md#req-pr11-reward-rate Realized reward is the committed deltas. The rate uses completed cycle time.
@@ -235,31 +252,61 @@ function scanIntervals(scan: ResetPolicyRequest<never, string, never>["scan"]): 
   if (!(scan.fromSec > 0) || scan.toSec < scan.fromSec) {
     throw new ResetPolicyRejected("reset policy scan range must be finite and fromSec > 0");
   }
+  // Intervals ascend from fromSec. One at or below the runner resolution would commit resets without playing time.
+  if (scan.fromSec <= RUNNER_MIN_DURATION_SEC) {
+    throw new ResetPolicyRejected(
+      `reset policy scan.fromSec must be greater than the runner's ${RUNNER_MIN_DURATION_SEC} second resolution`,
+    );
+  }
   const steps = (scan.toSec - scan.fromSec) / scan.stepSec;
   if (!Number.isFinite(steps)) throw new ResetPolicyRejected("reset policy scan range is not finite");
-  const count = Math.floor(steps + 1e-9) + 1;
-  if (!Number.isSafeInteger(count) || count < 1 || count > MAX_CANDIDATES) {
+  // A provisional count bounds the loop. The limit applies to the intervals that survive the upper-bound check.
+  const provisional = Math.floor(steps + 1e-9) + 1;
+  if (!Number.isSafeInteger(provisional) || provisional < 1 || provisional > MAX_CANDIDATES + 1) {
     throw new ResetPolicyRejected("reset policy scan candidate count must be a safe integer from 1 to 10000");
   }
   const intervals: number[] = [];
-  for (let index = 0; index < count; index += 1) {
+  for (let index = 0; index < provisional; index += 1) {
     const interval = scan.fromSec + index * scan.stepSec;
     // Rounding dust only: a share of a large step could admit an interval well past toSec.
     const dust = 8 * Number.EPSILON * Math.max(Math.abs(scan.toSec), Math.abs(interval));
     if (interval > scan.toSec + dust) break;
+    // A step below the spacing of floats at this interval repeats a candidate instead of scanning a new one.
+    const previous = intervals[intervals.length - 1];
+    if (previous !== undefined && !(interval > previous)) {
+      throw new ResetPolicyRejected("reset policy scan.stepSec must advance every scanned interval");
+    }
     intervals.push(interval);
   }
   if (intervals.length === 0) throw new ResetPolicyRejected("reset policy scan produced no candidates");
+  if (intervals.length > MAX_CANDIDATES) {
+    throw new ResetPolicyRejected("reset policy scan candidate count must be a safe integer from 1 to 10000");
+  }
   return intervals;
 }
+
+const OBJECTIVE_KINDS: readonly ResetObjectiveKind[] = ["cumulative-reset-reward", "final-net-worth", "goal-reach-sec"];
+const RECOVERY_METRICS: readonly RecoveryMetricKind[] = ["pre-reset-income", "pre-reset-net-worth"];
 
 function assertRequest<N, U extends string, Vars>(request: ResetPolicyRequest<N, U, Vars>): void {
   if (typeof request.createScenario !== "function") {
     throw new ResetPolicyRejected("reset policy createScenario must be a function");
   }
+  // An unchecked caller can pass any string. An unknown kind would fall back to another ranking or metric.
+  if (!OBJECTIVE_KINDS.includes(request.objective)) {
+    throw new ResetPolicyRejected(`reset policy objective must be one of ${OBJECTIVE_KINDS.join(", ")}`);
+  }
+  if (!RECOVERY_METRICS.includes(request.recovery?.metric)) {
+    throw new ResetPolicyRejected(`reset policy recovery.metric must be one of ${RECOVERY_METRICS.join(", ")}`);
+  }
   scanIntervals(request.scan);
   assertFinite("horizonSec", request.horizonSec);
   if (!(request.horizonSec > 0)) throw new ResetPolicyRejected("reset policy horizonSec must be a finite number > 0");
+  // Every wall or elapsed time is at most the horizon. When the shortest interval still advances the horizon, it
+  // advances every earlier time too, so no two resets share an instant.
+  if (!(request.horizonSec + request.scan.fromSec > request.horizonSec)) {
+    throw new ResetPolicyRejected("reset policy scan.fromSec must advance a time at horizonSec");
+  }
   if (!Number.isInteger(request.cycleBudget) || request.cycleBudget < 1) {
     throw new ResetPolicyRejected("reset policy cycleBudget must be a positive integer");
   }
@@ -291,10 +338,47 @@ function assertRequest<N, U extends string, Vars>(request: ResetPolicyRequest<N,
   }
   if (request.session) {
     assertFinite("resetDelaySec", request.session.resetDelaySec);
+    // An unknown preset id from an unchecked caller builds no block. That is not an all-offline schedule.
+    if (sessionActiveBlocks(horizonPattern(request)).length === 0) {
+      throw new ResetPolicyRejected(`reset policy session pattern ${String(request.session.pattern.id)} has no active block`);
+    }
     if (request.session.resetDelaySec < 0) {
       throw new ResetPolicyRejected("reset policy resetDelaySec must be a finite number >= 0");
     }
   }
+}
+
+type ScheduleBlock = Readonly<{ start: number; natural: number; end: number }>;
+type ScheduleInput = Readonly<{ horizonSec: number; session?: Readonly<{ pattern: SessionPatternSpec; resetDelaySec: number }> }>;
+
+/**
+ * The pattern's days that can reach the horizon. Every preset has a block on each day, and days past the horizon
+ * play nothing, so a long day count does not expand blocks the analysis never reaches. A schedule is used as given.
+ */
+function horizonPattern(request: ScheduleInput): SessionPatternSpec {
+  const pattern = request.session?.pattern;
+  if (!pattern) throw new ResetPolicyRejected("reset policy session is missing");
+  if (pattern.schedule || !Number.isInteger(pattern.days) || pattern.days <= 0) return pattern;
+  return { ...pattern, days: Math.min(pattern.days, Math.floor(request.horizonSec / 86400) + 1) };
+}
+
+/** Blocks inside the horizon, built once per request and shared by every candidate and probe. */
+const horizonBlockCache = new WeakMap<object, readonly ScheduleBlock[]>();
+
+function horizonBlocks(request: ScheduleInput): readonly ScheduleBlock[] {
+  const cached = horizonBlockCache.get(request);
+  if (cached) return cached;
+  const blocks = sessionActiveBlocks(horizonPattern(request))
+    .map((block) => {
+      const start = block.day * 86400 + block.startOffsetSec;
+      // Playback stops at the horizon, but a reset at the horizon is still inside the block's natural span.
+      const natural = start + block.durationSec;
+      return { start, natural, end: Math.min(natural, request.horizonSec) };
+    })
+    // A block that starts exactly at the horizon still admits a reset at the horizon, inside its natural span.
+    .filter((block) => block.end > block.start || (block.start === request.horizonSec && block.natural > block.start));
+  horizonBlockCache.set(request, blocks);
+  return blocks;
 }
 
 /** The absolute tolerance in the scenario's engine. It must be a finite amount >= 0. */
@@ -412,6 +496,16 @@ function liveCtx<N, U extends string, Vars>(
   return { ...scenario.ctx, ...(constraints ? { constraints } : {}) };
 }
 
+/**
+ * A measurement-only copy: no observer, reset hook, event emitter, or caller goal. A probe run is not the candidate
+ * run, so none of its steps, actions, goals, milestones, or resets reach the caller, and no caller predicate runs.
+ */
+function silent<N, U extends string, Vars>(scenario: CompiledScenario<N, U, Vars>): CompiledScenario<N, U, Vars> {
+  const { observer: _observer, onPrestigeReset: _onPrestigeReset, goals: _goals, ...run } = scenario.run;
+  const { emit: _emit, ...ctx } = scenario.ctx;
+  return { ...scenario, ctx, run };
+}
+
 /** Net worth read with the context the simulation used: live constraints, and clocks on a schedule. */
 function netWorth<N, U extends string, Vars>(
   scenario: CompiledScenario<N, U, Vars>,
@@ -457,42 +551,93 @@ type Watcher<N, U extends string, Vars> = Readonly<{
 }>;
 
 /**
- * The scenario a policy run plays: the caller's goals plus this analysis' watchers, read by the runner on every
- * committed state, and an observer that routes a watcher's first crossing back here. Recording is on, since the
- * runner reads goals only while it records.
+ * Observation shared by every run of one candidate, as `simulateSessionPattern` shares it across segments: one
+ * ledger, so caps cover the whole candidate and a milestone key is heard once, and the caller goals already reached,
+ * so a later run does not report them again.
+ */
+type ObservationShare<N, U extends string, Vars> = Readonly<{
+  observation: NonNullable<SimRunOptions["observation"]>;
+  reachedGoals: Set<string>;
+  /** Watchers whose first crossing is recorded. Their predicate is not read again. */
+  reachedWatchers: Set<Watcher<N, U, Vars>>;
+}>;
+
+function observationShare<N, U extends string, Vars>(scenario: CompiledScenario<N, U, Vars>): ObservationShare<N, U, Vars> {
+  return {
+    observation: shareObservation({ ...scenario.run.observation, enabled: true }).observation,
+    reachedGoals: new Set(),
+    reachedWatchers: new Set(),
+  };
+}
+
+/**
+ * The scenario a policy run plays: the caller's open goals plus this analysis' open watchers, read by the runner on
+ * every committed state, and an observer that routes a watcher's first crossing back here. Recording is on while a
+ * watcher is open, since the runner reads goals only while it records. A caller that disabled observation keeps it
+ * disabled when no watcher is open, and hears no fact while a watcher forces recording on.
  */
 function watched<N, U extends string, Vars>(
   scenario: CompiledScenario<N, U, Vars>,
   watchers: readonly Watcher<N, U, Vars>[],
+  share: ObservationShare<N, U, Vars>,
 ): CompiledScenario<N, U, Vars> {
-  if (watchers.length === 0) return scenario;
+  const open = watchers.filter((watcher) => !share.reachedWatchers.has(watcher));
+  const callerDisabled = scenario.run.observation?.enabled === false;
+  if (callerDisabled && open.length === 0) return scenario;
+  // A disabled caller has no goal the runner would read and no observer that hears facts.
+  const callerGoals = callerDisabled ? [] : (scenario.run.goals ?? []).filter((goal) => !share.reachedGoals.has(goal.id));
+  const observer = callerDisabled ? undefined : scenario.run.observer;
   // A caller goal can use any id. Each watcher takes an id no caller goal uses, so a caller goal is never
   // routed to a watcher and a watcher is never marked reached by a caller goal.
   const taken = new Set((scenario.run.goals ?? []).map((goal) => goal.id));
   const byId = new Map<string, Watcher<N, U, Vars>>();
-  for (const watcher of watchers) {
+  for (const watcher of open) {
     let id = watcher.id;
     for (let suffix = 1; taken.has(id); suffix += 1) id = `${watcher.id}#${suffix}`;
     taken.add(id);
     byId.set(id, watcher);
   }
-  const observer = scenario.run.observer;
+  const { observer: _callerObserver, ...run } = scenario.run;
   return {
     ...scenario,
     run: {
-      ...scenario.run,
-      observation: { ...scenario.run.observation, enabled: true },
-      goals: [...(scenario.run.goals ?? []), ...[...byId].map(([id, watcher]) => ({ id, met: watcher.met }))],
+      ...run,
+      observation: share.observation,
+      goals: [...callerGoals, ...[...byId].map(([id, watcher]) => ({ id, met: watcher.met }))],
       observer: {
         ...observer,
         onGoal: (fact) => {
           const watcher = byId.get(fact.goalId);
-          if (watcher) watcher.onMet(fact.t);
-          else observer?.onGoal?.(fact);
+          if (watcher) {
+            // The first crossing is the answer. Later runs of this candidate do not read the predicate again.
+            share.reachedWatchers.add(watcher);
+            watcher.onMet(fact.t);
+            return;
+          }
+          share.reachedGoals.add(fact.goalId);
+          observer?.onGoal?.(fact);
         },
       },
     },
   };
+}
+
+/**
+ * Read the caller's open goals on a committed boundary reset state, which no runner records, and tell the observer
+ * about each first crossing once. A caller that disabled observation reads no goal.
+ */
+function readCallerGoals<N, U extends string, Vars>(
+  scenario: CompiledScenario<N, U, Vars>,
+  state: SimState<N, U, Vars>,
+  share: ObservationShare<N, U, Vars>,
+): void {
+  if (scenario.run.observation?.enabled === false) return;
+  for (const goal of scenario.run.goals ?? []) {
+    if (share.reachedGoals.has(goal.id)) continue;
+    if (!goal.met(deepClonePreservingPrototype(state))) continue;
+    share.reachedGoals.add(goal.id);
+    scenario.run.observer?.onGoal?.({ t: state.t, goalId: goal.id });
+  }
 }
 
 /**
@@ -608,7 +753,8 @@ function recover<N, U extends string, Vars>(
   request: ResetPolicyRequest<N, U, Vars>,
   intervalSec: number,
 ): ResetRecoveryReport {
-  const scenario = request.createScenario();
+  // A probe: its runs are measurement only and emit nothing to the caller's observer.
+  const scenario = silent(request.createScenario());
   const { E } = scenario.ctx;
   const blank = E.toString(E.zero());
   // horizonSec is elapsed time from the scenario origin, as executeResetCycles reads it.
@@ -642,7 +788,8 @@ function recover<N, U extends string, Vars>(
   return {
     metric: request.recovery.metric,
     status: "observed",
-    seconds: search.end.t - committed.state.t,
+    // The runner's accumulated duration. Absolute clocks round each addition at a large origin.
+    seconds: runElapsedSec(search),
     threshold: E.toString(threshold),
   };
 }
@@ -753,22 +900,23 @@ function evaluateAlwaysActive<N, U extends string, Vars>(
   // Constraints change only at a boundary, so the context of the next interval is known before it runs.
   let metricCtx = liveCtx(scenario, constraints);
   // The runner reads the goal on every committed state, so a crossing between resets keeps its own time.
-  const observed = watched(
-    scenario,
-    goalWatcher(
-      request,
-      () => metricCtx,
-      (t) => {
-        if (reached.t === null) reached.t = t - originT;
-      },
-    ),
+  const watchers = goalWatcher(
+    request,
+    () => metricCtx,
+    (t) => {
+      if (reached.t === null) reached.t = Math.min(t - originT, request.horizonSec);
+    },
   );
+  // Every run of this candidate shares one ledger and the caller goals already reached.
+  const share = observationShare(scenario);
+  const observed = () => watched(scenario, watchers, share);
   const snaps: Snap[] = [];
   let resume: ResetCycleCheckpoint<N, U, Vars> | undefined;
   let state = scenario.initial;
   let elapsed = 0;
   // The span after the last committed reset is not a completed cycle, refused intervals included.
-  let lastResetT = state.t;
+  // Reset times are elapsed seconds from the scenario origin, as horizonSec and scheduled reset walls are.
+  const resetTimes: number[] = [];
   let elapsedAtLastReset = 0;
   let refused = false;
   let unsupported = false;
@@ -776,7 +924,7 @@ function evaluateAlwaysActive<N, U extends string, Vars>(
     metricCtx = liveCtx(scenario, constraints);
     // The executor resolves the adapter at each boundary, so a prestige action unlocked during the interval counts.
     const step = executeResetCycles({
-      scenario: observed,
+      scenario: observed(),
       policy: { kind: "fixed-interval", intervalSec, cycles: 1 },
       horizonSec: request.horizonSec,
       ...(request.adapter ? { adapter: request.adapter } : {}),
@@ -796,24 +944,28 @@ function evaluateAlwaysActive<N, U extends string, Vars>(
       break;
     }
     snaps.push({ reward: row.rewardDelta, durationSec: row.durationSec, multiplier: row.carried.multiplier });
-    lastResetT = state.t;
-    elapsedAtLastReset = elapsed;
+    // The executor admits a boundary a few ULPs past the horizon. Its position is the horizon.
+    elapsedAtLastReset = Math.min(elapsed, request.horizonSec);
+    resetTimes.push(elapsedAtLastReset);
+    // The executor's interval run recorded the state before the reset. The reset state can meet a caller goal first.
+    readCallerGoals(scenario, state, share);
   }
   metricCtx = liveCtx(scenario, constraints);
   // horizonSec is elapsed time from the scenario origin. The tail is what the cycles did not play.
+  // Only rounding dust of the elapsed sum is skipped, so a long horizon still plays a real remainder.
   const tail = request.horizonSec - elapsed;
-  if (tail > 1e-9 * Math.max(1, request.horizonSec)) {
-    const played = play(observed, state, constraints, adapterAt(request, scenario, state, constraints), tail);
+  if (tail > Math.max(RUNNER_MIN_DURATION_SEC, horizonDust(request.horizonSec, elapsed))) {
+    const played = play(observed(), state, constraints, adapterAt(request, scenario, state, constraints), tail);
     state = played.end;
     elapsed += runElapsedSec(played);
   }
   const openSec = elapsed - elapsedAtLastReset;
   const incomplete: ResetCandidateReport["incomplete"] =
-    openSec > 1e-9 * Math.max(1, request.horizonSec) ? { startSec: lastResetT, endSec: state.t, durationSec: openSec } : null;
+    openSec > Math.max(RUNNER_MIN_DURATION_SEC, horizonDust(request.horizonSec, elapsed)) ? { startSec: elapsedAtLastReset, endSec: elapsed, durationSec: openSec } : null;
   // A goal met only by the last committed reset has no later run to read it.
   // Read on a copy, as the runner reads goals, so a predicate that writes its argument cannot change the result.
   if (request.goal && reached.t === null && request.goal(metricCtx, deepClonePreservingPrototype(state))) {
-    reached.t = state.t - originT;
+    reached.t = Math.min(state.t - originT, request.horizonSec);
   }
   const unrealized = incomplete ? unrealizedAt(request, scenario, state, constraints) : E.zero();
   const status: ResetCandidateReport["status"] =
@@ -836,7 +988,7 @@ function evaluateAlwaysActive<N, U extends string, Vars>(
       incomplete,
       unrealized,
       reached.t,
-      [],
+      resetTimes,
       recovery,
       metricCtx,
     ),
@@ -878,14 +1030,7 @@ function playSchedule<N, U extends string, Vars>(
   if (!session) throw new ResetPolicyRejected("reset policy session is missing");
   const { E } = scenario.ctx;
   const originT = scenario.initial.t;
-  const blocks = sessionActiveBlocks(session.pattern)
-    .map((block) => {
-      const start = block.day * 86400 + block.startOffsetSec;
-      // Playback stops at the horizon, but a reset at the horizon is still inside the block's natural span.
-      const natural = start + block.durationSec;
-      return { start, natural, end: Math.min(natural, request.horizonSec) };
-    })
-    .filter((block) => block.end > block.start);
+  const blocks = horizonBlocks(request);
   let state = scenario.initial;
   let constraints = scenario.constraints;
   let wall = 0;
@@ -921,12 +1066,17 @@ function playSchedule<N, U extends string, Vars>(
       ? { wallT: originT + wallStart, wallEndT: originT + wallEnd, rewardT: state.t, activeT: activeSec }
       : undefined;
   // The context a segment starting at this wall time would see. Watchers read the context of the running segment.
+  // Inside an active block the model sees that block's clocks, as simulateSessionPattern plays a block as one segment.
+  // A reset or a delay splits the block for this analysis only, so it does not move the clocks.
+  let blockClocks: { clocks: SimContext<N, U, Vars>["clocks"] } | null = null;
   const ctxAt = (wallEnd: number): SimContext<N, U, Vars> => {
-    const clocks = clocksFor(wall, wallEnd);
+    const clocks = blockClocks ? blockClocks.clocks : clocksFor(wall, wallEnd);
     return { ...liveCtx(scenario, constraints), ...(clocks ? { clocks } : {}) };
   };
   let segmentCtx = ctxAt(wall);
-  const watchers: Watcher<N, U, Vars>[] = options.watchGoal
+  // Segments share one ledger and the caller goals already reached, as simulateSessionPattern's segments do.
+  const share = observationShare(scenario);
+  const goalWatchers: Watcher<N, U, Vars>[] = options.watchGoal
     ? goalWatcher(
         request,
         () => segmentCtx,
@@ -935,17 +1085,23 @@ function playSchedule<N, U extends string, Vars>(
         },
       )
     : [];
+  const watchers: Watcher<N, U, Vars>[] = [...goalWatchers];
+  // A goal first met on a boundary read closes its watcher too, so later runs do not read the predicate again.
+  const reachGoalAt = (wallAt: number): void => {
+    reached.t = wallAt;
+    for (const watcher of goalWatchers) share.reachedWatchers.add(watcher);
+  };
   const runActive = (durationSec: number) => {
     segmentCtx = ctxAt(wall + durationSec);
     segment = { wallStart: wall, rewardStart: state.t, offlineRequested: null };
     const played = play(
-      watched(scenario, watchers),
+      watched(scenario, watchers, share),
       state,
       constraints,
       adapterAt(request, scenario, state, constraints),
       durationSec,
       undefined,
-      clocksFor(wall, wall + durationSec),
+      blockClocks ? blockClocks.clocks : clocksFor(wall, wall + durationSec),
     );
     activeSec += runElapsedSec(played);
     state = played.end;
@@ -957,7 +1113,7 @@ function playSchedule<N, U extends string, Vars>(
     segmentCtx = ctxAt(toWall);
     segment = { wallStart: wall, rewardStart: state.t, offlineRequested: toWall - wall };
     const clocks = clocksFor(wall, toWall);
-    const base = watched(scenario, watchers);
+    const base = watched(scenario, watchers, share);
     const offline = applyOfflineSeconds({
       scenario: {
         ...base,
@@ -980,9 +1136,12 @@ function playSchedule<N, U extends string, Vars>(
   for (const block of blocks) {
     runOffline(block.start);
     if (wall < block.start) wall = block.start;
+    blockClocks = { clocks: clocksFor(block.start, block.end) };
     while (resetsOpen && snaps.length < options.budget) {
-      const at = Math.max(lastResetWall + intervalSec, wall);
-      if (!(at < block.natural && at <= request.horizonSec)) break;
+      const next = Math.max(lastResetWall + intervalSec, wall);
+      // A sum of intervals can round a few ULPs past the horizon. That boundary is the horizon, as the executor admits it.
+      if (!(next < block.natural && next <= request.horizonSec + horizonDust(request.horizonSec, next))) break;
+      const at = Math.min(next, request.horizonSec);
       if (at > wall) runActive(at - wall);
       const boundaryCtx = ctxAt(block.end);
       const adapter = adapterAt(request, scenario, state, constraints, boundaryCtx.clocks);
@@ -992,6 +1151,12 @@ function playSchedule<N, U extends string, Vars>(
         break;
       }
       const threshold = recoveryMetric(request, scenario, state, boundaryCtx);
+      // With no runner since the previous reset, as after a delay that covers the interval, the boundary state has
+      // not been read at this wall time. A clock-aware goal can first hold here, before the reset changes the state.
+      const boundaryGoal = request.goal;
+      if (options.watchGoal && boundaryGoal && reached.t === null && boundaryGoal(boundaryCtx, deepClonePreservingPrototype(state))) {
+        reachGoalAt(at);
+      }
       const committed = commitReset(scenario, state, constraints, adapter, options.emit, boundaryCtx.clocks);
       if (!committed.ok) {
         refused = true;
@@ -1009,11 +1174,16 @@ function playSchedule<N, U extends string, Vars>(
       constraints = committed.constraints;
       walls.push(at);
       activeReach = at;
+      // The reset is the latest segment of the block. With no runner after it, as at a horizon-start block, the final
+      // reads keep the block's clocks.
+      segmentCtx = ctxAt(block.end);
+      // The reset state can be the first to meet a caller goal. A reset at the horizon has no later run to read it.
+      if (options.emit) readCallerGoals(scenario, state, share);
       // Two resets can follow each other with no runner in between when the delay covers the interval, so the
       // goal is read on the committed reset state too, on a copy as the runner reads it.
       const goal = request.goal;
       if (options.watchGoal && goal && reached.t === null && goal(ctxAt(block.end), deepClonePreservingPrototype(state))) {
-        reached.t = at;
+        reachGoalAt(at);
       }
       if (options.watchRecovery && recovery === null) {
         const found = { threshold, resetWall: at, crossedWall: null as number | null };
@@ -1034,16 +1204,29 @@ function playSchedule<N, U extends string, Vars>(
       wall = at + session.resetDelaySec;
     }
     if (wall < block.end) runActive(block.end - wall);
+    blockClocks = null;
   }
   const activeWallEnd = activeReach;
   // The rest of the horizon is away time and applies the offline progression.
   runOffline(request.horizonSec);
   // A reset delay can carry the wall cursor past the horizon. The final reads happen at the horizon.
   if (wall > request.horizonSec) wall = request.horizonSec;
-  const endCtx = ctxAt(wall);
+  // The final reads see the clocks of the last segment played, the active block's when the horizon falls inside one,
+  // with the constraints the resets left.
+  const endClocks = segmentCtx.clocks;
+  const endCtx: SimContext<N, U, Vars> = { ...liveCtx(scenario, constraints), ...(endClocks ? { clocks: endClocks } : {}) };
   const goal = request.goal;
   if (options.watchGoal && goal && reached.t === null && goal(endCtx, deepClonePreservingPrototype(state))) {
-    reached.t = wall;
+    reachGoalAt(wall);
+  }
+  // A delay past the horizon leaves no runner after the reset, so an open recovery crossing is read here too.
+  const openRecovery = recovery as { threshold: N; resetWall: number; crossedWall: number | null } | null;
+  if (
+    openRecovery &&
+    openRecovery.crossedWall === null &&
+    E.cmp(recoveryMetric(request, scenario, state, endCtx), openRecovery.threshold) >= 0
+  ) {
+    openRecovery.crossedWall = wall;
   }
   return {
     snaps,
@@ -1068,7 +1251,8 @@ function evaluateSession<N, U extends string, Vars>(
   const { E } = scenario.ctx;
   absoluteToleranceOf(E, request.stability.absoluteTolerance);
   // Recovery is measured on this candidate's own schedule: its first committed reset, then no further resets.
-  const probe = playSchedule(request, request.createScenario(), intervalSec, {
+  // The probe is measurement only: its runs emit nothing to the caller's observer.
+  const probe = playSchedule(request, silent(request.createScenario()), intervalSec, {
     budget: 1,
     emit: false,
     watchRecovery: true,
@@ -1097,12 +1281,13 @@ function evaluateSession<N, U extends string, Vars>(
   });
   // The span after the last committed reset is not a completed cycle, as on the always-active path.
   const incomplete =
-    outcome.lastResetWall + 1e-9 < request.horizonSec
+    outcome.lastResetWall + horizonDust(request.horizonSec, outcome.lastResetWall) < request.horizonSec
       ? { startSec: outcome.lastResetWall, endSec: request.horizonSec, durationSec: request.horizonSec - outcome.lastResetWall }
       : null;
-  // A manual reset needs active play at the horizon. An offline span or a reset delay there has nothing to realize.
-  const activeAtHorizon = outcome.activeWallEnd + 1e-9 >= request.horizonSec;
-  const unrealized = activeAtHorizon
+  // A manual reset needs active play at the horizon. An offline span or a reset delay there has nothing to realize,
+  // and a reset committed at the horizon leaves no incomplete span to realize after.
+  const activeAtHorizon = outcome.activeWallEnd + horizonDust(request.horizonSec, outcome.activeWallEnd) >= request.horizonSec;
+  const unrealized = incomplete && activeAtHorizon
     ? unrealizedAt(request, scenario, outcome.state, outcome.constraints, outcome.endCtx.clocks)
     : E.zero();
   const status: ResetCandidateReport["status"] =

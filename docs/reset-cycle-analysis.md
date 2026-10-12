@@ -25,7 +25,7 @@ During playback the reset action is hidden from the strategy, so only the policy
 
 ## Canonical example
 
-There is no RNG. The engine is the number engine. Opening points are 100 and opening money is 50. Income is 1 coin per second. Each reset grants 1 point, leaves the multiplier at 1, and does not clear money. The scan is 10..10 step 10. The horizon is 45 seconds. The cycle budget is 8. Stability asks for 4 cycles, windows 2 and 4, absolute tolerance `0`, and relative tolerance 0. Recovery reads pre-reset income. The known rate is [reset-policy-rate.json](../fixtures/conformance/reset-policy-rate.json).
+There is no RNG. The engine is the number engine. Opening points are 100 and opening money is 50. Income is 1 coin per second. Each reset grants 1 point, leaves the multiplier at 1, and does not clear money. The scan is 10..10 step 10. The horizon is 45 seconds. The cycle budget is 8. Stability asks for 4 cycles, windows 2 and 4, absolute tolerance `0`, and relative tolerance 0. Recovery reads pre-reset income. The known rate is [reset-policy-rate.json](../fixtures/conformance/reset-policy-rate.json). `bun run test:conformance` replays that fixture through `checkResetPolicyRate` in `packages/core/src/testkit/conformance.ts`, with constant-reward cases from the seed corpus. `test:conformance:extended` runs 200 cases.
 
 Expected result:
 

@@ -58,7 +58,7 @@ function sample(
  * @evidence ./distribution.ts#distributionSampleAccounting Reads the sample accounting contract.
  * @evidenceReview ./distribution.ts#distributionSampleAccounting #b204d5a The declaration is observed-censored-failed-unsupported.
  * @evidence ./distribution.ts#analyzeDistribution Analyzes observed, censored, failed, and unsupported samples.
- * @evidenceReview ./distribution.ts#analyzeDistribution #7489a4c The function orders samples by draw index, rejects duplicate or invalid draws, an unknown status or source, an observed value the number does not hold exactly, and a completion past the common horizon, counts each status apart, keeps censored draws out of the conditional quantiles, and keeps the mean finite inside the sample range and the variance finite or absent. The mean is a compensated sum over a power-of-two scale, so cancelling extremes keep a small residual. The unscaled compensated sum keeps subnormal terms, the mean of log10 is compensated too, and zeroVariance holds only for identical draws.
+ * @evidenceReview ./distribution.ts#analyzeDistribution #7489a4c The function orders samples by draw index, rejects duplicate or invalid draws, an unknown status or source, an observed value the number does not hold exactly, and a completion past the common horizon, counts each status apart, keeps censored draws out of the conditional quantiles, and keeps the mean finite inside the sample range and the variance finite or absent. The mean is a compensated sum over a power-of-two scale, so cancelling extremes keep a small residual. The unscaled compensated sum keeps subnormal terms, the mean of log10 is compensated too, and zeroVariance holds only for identical draws. After an overflow only terms of at least 1 are scaled, so a subnormal residual survives.
  */
 export function separatesCensoringFromObservedQuantiles(): void {
   expect(distributionSampleAccounting).toBe("observed-censored-failed-unsupported");
@@ -158,6 +158,18 @@ export function separatesCensoringFromObservedQuantiles(): void {
     quantiles: [0.5],
   });
   expect(cancelling.means.arithmetic.value).toBe(String(1e-100 / 5));
+  // A subnormal residual survives extremes that overflow the unscaled sum.
+  const subnormalResidual = analyzeDistribution({
+    samples: [
+      sample(0, "observed", limit),
+      sample(1, "observed", limit),
+      sample(2, "observed", negativeLimit),
+      sample(3, "observed", negativeLimit),
+      sample(4, "observed", "1.5e-323"),
+    ],
+    quantiles: [0.5],
+  });
+  expect(subnormalResidual.means.arithmetic.value).toBe("5e-324");
   // Subnormal terms are not scaled away: the mean of 5e-324 and 1e-323 rounds to 1e-323.
   const subnormal = analyzeDistribution({
     samples: [sample(0, "observed", "5e-324"), sample(1, "observed", "1e-323")],
