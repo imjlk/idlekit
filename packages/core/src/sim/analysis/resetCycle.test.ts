@@ -161,7 +161,7 @@ function makeRng(seed: number): ResetCycleRng & { next: () => number } {
  * @evidence ./resetCycle.ts#resetCycleJsonSchema The schema is 3.1.
  * @evidenceReview ./resetCycle.ts#resetCycleJsonSchema #c6690d5 The function memoizes typia.json.schema of ResetCycleArtifactV1.
  * @evidence ./resetCycle.ts#executeResetCycles Runs three fixed intervals, an explicit list, a resume, and the horizon and budget guards.
- * @evidenceReview ./resetCycle.ts#executeResetCycles #64e9c8d The function accepts a maxCycles cap of 0, rejects a checkpoint of another contract or version, copies the resumed state and constraints, rejects a strategyState with no restoreState and an rngState with no rng, discovers adapters under the live constraints, runs each interval with runScenario on a model that delegates every member to the original receiver and hides prestige actions under any adapter and the custom reset, resolved per state and removed by identity when listed, measures the horizon on summed runner seconds with relative slack capped by a share of the interval, censors any budget stop, resolves the adapter at the boundary, commits one reset through applyDecisions with live constraints and forwards its action facts to onAction, refreshes maxMoneyEver, records a refusal instead of forcing it, and records copies of the state, a strategy snapshot only when restoreState exists, and the RNG snapshot. It binds a strategy snapshot to the writing strategy's id and state version and requires one for a restorable strategy, bounds the horizon slack to rounding ULPs, emits boundary events through ctx.emit, and recognizes its own spec and action adapters by identity. Intervals at or below the runner's 1e-12 second resolution are rejected. It binds a checkpoint to its model, rejects nonfinite clock fields before any guard, and keeps the horizon slack below half the interval.
+ * @evidenceReview ./resetCycle.ts#executeResetCycles #c45df4e The function accepts a maxCycles cap of 0, rejects a checkpoint of another contract or version, copies the resumed state and constraints, rejects a strategyState with no restoreState and an rngState with no rng, discovers adapters under the live constraints, runs each interval with runScenario on a model that delegates every member to the original receiver and hides prestige actions under any adapter and the custom reset, resolved per state and removed by identity when listed, measures the horizon on summed runner seconds with relative slack capped by a share of the interval, censors any budget stop, resolves the adapter at the boundary, commits one reset through applyDecisions with live constraints and forwards its action facts to onAction, refreshes maxMoneyEver, records a refusal instead of forcing it, and records copies of the state, a strategy snapshot only when restoreState exists, and the RNG snapshot. It binds a strategy snapshot to the writing strategy's id and state version and requires one for a restorable strategy, bounds the horizon slack to rounding ULPs, emits boundary events through ctx.emit, and recognizes its own spec and action adapters by identity. Intervals at or below the runner's 1e-12 second resolution are rejected. It binds a checkpoint to its model, rejects nonfinite clock fields before any guard, and keeps the horizon slack below half the interval. It binds a checkpoint to its explicit adapter, carries a budget-cut cycle's played seconds into the resume, hides an adapter's reset whatever its declared kind, and notifies no observer when observation is off.
  * @evidence ../observation.ts#emitActionFacts Forwards a boundary decision to onAction.
  * @evidenceReview ../observation.ts#emitActionFacts #be50111 The function returns without onAction, and forwards each applied or skipped action event with its time, id, outcome, and reason.
  * @evidence ./resetCycle.ts#resetAdapterFor Picks the prestige action and returns nothing for a model with neither an action nor a spec.
@@ -171,7 +171,7 @@ function makeRng(seed: number): ResetCycleRng & { next: () => number } {
  * @evidence ./resetCycle.ts#resetCycleAlgorithmVersion Reads the algorithm version on the artifact.
  * @evidenceReview ./resetCycle.ts#resetCycleAlgorithmVersion #7b0fecb The function returns the reset-cycle-v1 constant.
  * @evidence ../step.ts#applyDecisions Commits one prestige action directly and checks that no income tick or t advance follows.
- * @evidenceReview ../step.ts#applyDecisions #d70fdee The function pays and applies the decisions, snapshots and records a committed reset only for the requested kinds, and leaves income, evolve, and t to stepOnce. A committed reset's wallT is the segment's wall start plus the reward seconds since the segment began, capped at the segment's wall end.
+ * @evidenceReview ../step.ts#applyDecisions #3afa38a The function pays and applies the decisions, snapshots and records a committed reset only for the requested kinds, and leaves income, evolve, and t to stepOnce. A committed reset's wallT is the segment's wall start plus the reward seconds since the segment began, capped at the segment's wall end. A caller's wallT, from its elapsed clock, takes precedence.
  * @evidence ../observation.ts#emitCommittedResets Sends the reset facts to onReset and skips an observer without one.
  * @evidenceReview ../observation.ts#emitCommittedResets #05b889d The function returns early without onReset or facts and notifies each fact in order otherwise.
  */
@@ -1008,6 +1008,94 @@ export function runsThreeCommittedResets(): void {
     resolveAgainstModel: false,
   });
   expect(clockedApply.committedResets[0]?.wallT).toBe(105);
+  // A caller's elapsed wall clock wins over the reward offset.
+  const elapsedApply = applyDecisions({
+    ctx: { ...clockedBase.ctx, clocks: { wallT: 100, wallEndT: 200, rewardT: 10, activeT: 0 } },
+    model: clockedBase.model,
+    state: state({ t: 15 }),
+    decisions: [{ action: prestigeAction() }],
+    resetKinds: new Set(["prestige"]),
+    resolveAgainstModel: false,
+    wallT: 104.9,
+  });
+  expect(elapsedApply.committedResets[0]?.wallT).toBe(104.9);
+
+  // A budget-cut cycle resumes for its remaining seconds under the same index, as an uninterrupted run resets.
+  const uninterrupted = executeResetCycles({ scenario: scenario(), policy: { kind: "fixed-interval", intervalSec: 10, cycles: 1 } });
+  const cut = executeResetCycles({
+    scenario: scenario(),
+    policy: { kind: "fixed-interval", intervalSec: 10, cycles: 1 },
+    budgetSteps: 5,
+  });
+  expect(cut.checkpoint.pendingSec).toBe(5);
+  const finished = executeResetCycles({
+    scenario: scenario(),
+    policy: { kind: "fixed-interval", intervalSec: 10, cycles: 1 },
+    resume: cut.checkpoint,
+  });
+  expect(finished.artifact.cycles[0]?.resetAtSec).toBe(uninterrupted.artifact.cycles[0]?.resetAtSec);
+  expect(finished.artifact.cycles[0]?.index).toBe(0);
+  expect(finished.artifact.cycles[0]?.durationSec).toBe(10);
+
+  // A checkpoint accumulates one explicit adapter's reward, so another adapter is rejected on resume.
+  const scoreAdapter: ResetAdapter<number, "COIN", Vars> = {
+    id: "score",
+    kind: "prestige",
+    preserved: ["points", "multiplier", "count"],
+    action: () => prestigeAction(),
+    reward: (_ctx, current) => current.vars.score,
+  };
+  const pointsAdapter: ResetAdapter<number, "COIN", Vars> = { ...scoreAdapter, id: "points" };
+  const scored = executeResetCycles({
+    scenario: scenario(),
+    policy: { kind: "fixed-interval", intervalSec: 2, cycles: 1 },
+    adapter: scoreAdapter,
+  });
+  expect(scored.checkpoint.adapterId).toBe("score");
+  expect(() =>
+    executeResetCycles({
+      scenario: scenario(),
+      policy: { kind: "fixed-interval", intervalSec: 2, cycles: 1 },
+      adapter: pointsAdapter,
+      resume: scored.checkpoint,
+    }),
+  ).toThrow("accumulates adapter score");
+
+  // A prestige-declared adapter that returns a custom action still hides that action from the interval strategy.
+  const sneaky: Action<number, "COIN", Vars> = {
+    id: "sneaky-reset",
+    kind: "custom",
+    canApply: () => true,
+    cost: () => null,
+    apply: (_ctx, current) => ({ ...current, vars: { ...current.vars, score: current.vars.score + 1 } }),
+  };
+  const customTaker: Strategy<number, "COIN", Vars> = {
+    id: "custom-taker",
+    decide(ctx, model, current) {
+      const action = model.actions(ctx, current).find((candidate) => candidate.id === "sneaky-reset");
+      return action ? [{ action }] : [];
+    },
+  };
+  const mislabeled = executeResetCycles({
+    scenario: scenario({ actions: [sneaky], strategy: customTaker }),
+    policy: { kind: "fixed-interval", intervalSec: 3, cycles: 1 },
+    adapter: { ...scoreAdapter, action: () => sneaky },
+  });
+  expect(mislabeled.state.vars.score).toBe(1);
+
+  // Observation off notifies no reset observer, at the boundary or in the runner.
+  const silenced: string[] = [];
+  const unobserved = scenario({
+    observer: {
+      onReset: () => void silenced.push("reset"),
+      onAction: () => void silenced.push("action"),
+    },
+  });
+  executeResetCycles({
+    scenario: { ...unobserved, run: { ...unobserved.run, observation: { enabled: false } } },
+    policy: { kind: "fixed-interval", intervalSec: 2, cycles: 1 },
+  });
+  expect(silenced).toEqual([]);
 }
 
 /**

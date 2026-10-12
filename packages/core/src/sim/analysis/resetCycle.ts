@@ -164,6 +164,11 @@ export type ResetCycleCheckpoint<N, U extends string, Vars> = Readonly<{
   elapsedSec?: number;
   accumulatedReward: N;
   strategyState?: unknown;
+  /** The explicit reset adapter whose reward accumulatedReward sums. A resume checks it. */
+  adapterId?: string;
+  adapterKind?: "prestige" | "custom";
+  /** Seconds already played of a cycle a budget cut. A resume plays only the rest of that cycle. */
+  pendingSec?: number;
   /** The model the state belongs to. A resume checks it. */
   modelId?: string;
   modelVersion?: number;
@@ -286,14 +291,14 @@ function withoutResetActions<N, U extends string, Vars>(
   model: Model<N, U, Vars>,
   adapter: ResetAdapter<N, U, Vars> | undefined,
 ): Model<N, U, Vars> {
-  const kind = adapter?.kind ?? "prestige";
   const actions = (actionCtx: SimContext<N, U, Vars>, actionState: SimState<N, U, Vars>) => {
     // Prestige actions are resets under any adapter. A custom adapter does not make them ordinary interval actions.
     const listed = model.actions(actionCtx, actionState).filter((candidate) => candidate.kind !== "prestige");
-    if (kind === "prestige") return listed;
-    // Resolve the custom reset for this state. Its id can change, or appear, as the interval earns resources.
-    const reset = adapter?.action(actionCtx, actionState);
-    if (!reset) return listed;
+    if (!adapter) return listed;
+    // Resolve the adapter's reset for this state, whatever kind the adapter declares. A prestige-declared adapter can
+    // still return a custom action, and the strategy must not commit it during the interval.
+    const reset = adapter.action(actionCtx, actionState);
+    if (!reset || reset.kind === "prestige") return listed;
     // A listed reset is removed by identity, so an ordinary custom action sharing its id stays available.
     if (listed.includes(reset)) return listed.filter((candidate) => candidate !== reset);
     return listed.filter((candidate) => !(candidate.kind === "custom" && candidate.id === reset.id));
@@ -399,6 +404,15 @@ export function executeResetCycles<N, U extends string, Vars>(args: {
       `reset cycle checkpoint belongs to model ${String(args.resume.modelId)}@${String(args.resume.modelVersion)}, not ${scenario.model.id}@${scenario.model.version}`,
     );
   }
+  // accumulatedReward sums one adapter's reward. Another adapter would add a different metric to it.
+  if (
+    args.resume &&
+    (args.resume.adapterId !== args.adapter?.id || args.resume.adapterKind !== args.adapter?.kind)
+  ) {
+    throw new ResetCycleRejected(
+      `reset cycle checkpoint accumulates adapter ${String(args.resume.adapterId)}, not ${String(args.adapter?.id)}`,
+    );
+  }
   const originSec = args.resume?.originSec ?? args.resume?.state.t ?? scenario.initial.t;
   // A guard can stop before the runner validates the clock, so the clock fields are checked here.
   const clockFields = [originSec, args.resume?.state.t ?? scenario.initial.t, args.resume?.elapsedSec ?? 0];
@@ -443,6 +457,11 @@ export function executeResetCycles<N, U extends string, Vars>(args: {
   const startAdapter = resetAdapterFor(scenario, args.adapter, state, liveCtx());
   // Elapsed seconds are summed from runner results. Absolute t can round away from simulated time.
   let elapsed = args.resume?.elapsedSec ?? state.t - originSec;
+  // Seconds a budget already played of the next cycle. That cycle keeps its index and plays only the rest.
+  let pending = args.resume?.pendingSec ?? 0;
+  if (typeof pending !== "number" || !Number.isFinite(pending) || pending < 0) {
+    throw new ResetCycleRejected("reset cycle checkpoint pendingSec must be a finite number >= 0");
+  }
 
   const warnings: string[] = ["legacy interval scan fields are not reset evidence"];
   if (scenario.strategy?.snapshotState && !scenario.strategy.restoreState) {
@@ -474,7 +493,8 @@ export function executeResetCycles<N, U extends string, Vars>(args: {
             HORIZON_ULPS * Number.EPSILON * Math.max(Math.abs(elapsed) + Math.abs(duration), Math.abs(args.horizonSec)),
             duration / 2,
           );
-    if (args.horizonSec !== undefined && elapsed + duration > args.horizonSec + slack) {
+    const remainingSec = Math.max(0, duration - pending);
+    if (args.horizonSec !== undefined && elapsed + remainingSec > args.horizonSec + slack) {
       guard = "censored";
       warnings.push("horizon");
       break;
@@ -490,14 +510,17 @@ export function executeResetCycles<N, U extends string, Vars>(args: {
       ...(constraints ? { constraints } : {}),
       run: {
         ...runRest,
-        durationSec: duration,
+        durationSec: remainingSec,
         ...(remainingBudget !== undefined ? { maxSteps: remainingBudget } : {}),
       },
     });
     if (remainingBudget !== undefined) remainingBudget = Math.max(0, remainingBudget - (run.stop?.steps ?? 0));
     // The runner's elapsed seconds, not an end.t difference that rounds at a large t.
-    const played = runElapsedSec(run);
-    elapsed += played;
+    const playedNow = runElapsedSec(run);
+    elapsed += playedNow;
+    // The whole cycle's seconds, including what an earlier budget-cut call played.
+    const played = pending + playedNow;
+    pending = 0;
     state = run.end;
     // nextBoundary checks the duration before the budget, so a budget stop never completed the interval.
     const shortBudget = run.stop?.reason === "budget";
@@ -513,7 +536,8 @@ export function executeResetCycles<N, U extends string, Vars>(args: {
         resetSkippedReason: "budget",
         carried: carried(E, state, rewardOf(intervalAdapter, state)),
       });
-      nextIndex += 1;
+      // The cycle is not finished. A resume continues it under the same index for the remaining seconds.
+      pending = played;
       guard = "censored";
       warnings.push("budget");
       break;
@@ -561,7 +585,8 @@ export function executeResetCycles<N, U extends string, Vars>(args: {
     });
     // The boundary decision is an action fact too, applied or refused, as it would be inside runScenario, and its
     // events reach the scenario emitter as a step's events do.
-    emitActionFacts(scenario.run.observer, state.t, applied.events);
+    const observing = scenario.run.observation?.enabled !== false;
+    if (observing) emitActionFacts(scenario.run.observer, state.t, applied.events);
     if (applied.events.length > 0) boundaryCtx.emit?.(applied.events);
     const skipped = applied.events.find((event) => event.type === "action.skipped");
     const fact = applied.committedResets[0];
@@ -595,7 +620,7 @@ export function executeResetCycles<N, U extends string, Vars>(args: {
       constraints = recordPrestigeReset(constraints, fact.t, scenario.run.onPrestigeReset);
     }
     const rewardFact: CommittedResetFact = { ...fact, rewardDelta: E.toString(delta) };
-    emitCommittedResets(scenario.run.observer, [rewardFact]);
+    if (observing) emitCommittedResets(scenario.run.observer, [rewardFact]);
     // Only the spec adapter built here applied the spec. A caller's adapter with the same id did not.
     if (builtinSpecAdapters.has(adapter) && scenario.model.prestige) {
       const declared = scenario.model.prestige.multiplierFrom(boundaryCtx, state.prestige.points);
@@ -640,7 +665,11 @@ export function executeResetCycles<N, U extends string, Vars>(args: {
     artifact,
     state,
     ...(constraints ? { constraints } : {}),
-    checkpoint: checkpointOf(scenario, args.rng, state, constraints, nextIndex, originSec, accumulated, elapsed),
+    checkpoint: {
+      ...checkpointOf(scenario, args.rng, state, constraints, nextIndex, originSec, accumulated, elapsed),
+      ...(args.adapter ? { adapterId: args.adapter.id, adapterKind: args.adapter.kind } : {}),
+      ...(pending > 0 ? { pendingSec: pending } : {}),
+    },
   };
 }
 
