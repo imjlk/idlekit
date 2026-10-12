@@ -12,7 +12,7 @@
 
 모든 실행은 `horizonSec`까지 이어진다. 도달 시간은 도중에 읽으므로 `timeToMoney`를 함께 요청해도 end money와 `vars.benefit`은 horizon 값이다. 후보 지표는 모든 seed의 산술 평균이다. 실패한 seed가 하나면 실패이고 censored seed가 하나면 censored다. 돈은 effective engine의 금액으로 남는다. constraint, Pareto 순서, elasticity는 그 engine 안에서 비교하므로 double 범위를 넘는 `breakInfinity` 금액도 관측값이다.
 
-상대 elasticity는 baseline `p`와 `y`가 유한하고 0보다 크며 `p`가 바뀔 때만 보고한다. 그 밖에는 절대 변화와 방향만 남기거나 unavailable이다. 목표에 닿지 못하면 censored다. 시간은 null이다. horizon으로 바꾸지 않고, 그 값으로 미분하지 않는다.
+상대 elasticity는 baseline `p`와 `y`가 유한하고 0보다 크며 `p`가 바뀔 때만 보고한다. 그 밖에는 절대 변화와 방향만 남기거나 unavailable이다. 목표에 닿지 못하면 censored다. 시간은 null이다. horizon으로 바꾸지 않고, 그 값으로 미분하지 않는다. 그 하한인 시뮬레이션 horizon은 `lte` 시간 constraint 위반을 증명할 때만 쓴다.
 
 기본 보고는 지표별 변화와 constraint violation id다. 가중 종합점수는 없다. 선택적 Pareto는 관측이 끝난 objective만 비교한다. censored이거나 실패한 objective는 `uncompared`이며 우월한 결과가 될 수 없다.
 

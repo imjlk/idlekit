@@ -409,7 +409,8 @@ function saturating(ts: readonly number[], values: readonly number[]): boolean {
     const step = values[index]! - values[index - 1]!;
     if (!(gap > 0) || !(step > 0)) return false;
     gapSum += gap;
-    mids.push((ts[index]! + ts[index - 1]!) / 2);
+    // previous + gap / 2, not (previous + next) / 2: two finite times near the number limit can sum to Infinity.
+    mids.push(ts[index - 1]! + gap / 2);
     logRates.push(Math.log(step / gap));
   }
   if (logRates.length < 4) return false;
