@@ -154,6 +154,15 @@ export function paretoFrontBy<T>(
   points: readonly Readonly<{ id: string; objectives: readonly Readonly<{ sense: ParetoSense; value: T | null }>[] }>[],
   compare: (left: T, right: T) => number,
 ): ParetoFront {
+  // The front lists ids, so two points with one id would be ambiguous and would never compare against each other.
+  if (new Set(points.map((point) => point.id)).size !== points.length) throw new Error("Pareto point ids must be unique");
+  // Dominance reads each position with one sense, so every point must list the same objective count and senses.
+  const shape = points[0]?.objectives.map((item) => item.sense) ?? [];
+  for (const point of points) {
+    if (point.objectives.length !== shape.length || point.objectives.some((item, index) => item.sense !== shape[index])) {
+      throw new Error(`Pareto point ${point.id} does not share the objective count and senses of the other points`);
+    }
+  }
   const comparable: ComparablePoint<T>[] = [];
   const uncompared: string[] = [];
   for (const point of points) {
@@ -175,16 +184,29 @@ export function paretoFrontBy<T>(
   return { sense: "per-metric", nonDominated, uncompared };
 }
 
-/** Fully observed points only. A null objective cannot dominate and is not dominated into a win. */
+/**
+ * Fully observed points only. A null objective cannot dominate and is not dominated into a win.
+ * Objectives are matched by id, so two points may list them in different orders. Points must share one id set.
+ */
 export function paretoFront(points: readonly ParetoPoint[]): ParetoFront {
+  const first = points[0]?.objectives ?? [];
+  const ids = first.map((item) => item.id).sort();
+  const senses = new Map(first.map((item) => [item.id, item.sense]));
   return paretoFrontBy(
-    points.map((point) => ({
-      id: point.id,
-      objectives: point.objectives.map((item) => ({
-        sense: item.sense,
-        value: item.value === null || !Number.isFinite(item.value) ? null : item.value,
-      })),
-    })),
+    points.map((point) => {
+      const byId = new Map(point.objectives.map((item) => [item.id, item]));
+      if (byId.size !== point.objectives.length || byId.size !== ids.length || ids.some((id) => !byId.has(id))) {
+        throw new Error(`Pareto point ${point.id} does not list the same objective ids as the other points`);
+      }
+      return {
+        id: point.id,
+        objectives: ids.map((id) => {
+          const item = byId.get(id)!;
+          if (item.sense !== senses.get(id)) throw new Error(`Pareto point ${point.id} gives objective ${id} another sense`);
+          return { sense: item.sense, value: item.value === null || !Number.isFinite(item.value) ? null : item.value };
+        }),
+      };
+    }),
     (left: number, right: number) => (left < right ? -1 : left > right ? 1 : 0),
   );
 }

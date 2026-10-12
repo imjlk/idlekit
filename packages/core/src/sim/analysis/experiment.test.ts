@@ -35,7 +35,7 @@ import {
   type ExperimentArtifactV1,
   type ExperimentSpecV1,
 } from "./experiment";
-import { assignmentFitsParamSpace, localElasticity } from "./sensitivity";
+import { assignmentFitsParamSpace, localElasticity, paretoFront, paretoFrontBy } from "./sensitivity";
 
 const fixture = JSON.parse(
   readFileSync(resolve(import.meta.dir, "../../../../../fixtures/conformance/parameter-experiment.json"), "utf8"),
@@ -182,7 +182,7 @@ function runWith(scenario: ScenarioV1, spec: ExperimentSpecV1, creates: { count:
  * @evidence ./experiment.ts#experimentTaskDescriptor Reads the task descriptor contract.
  * @evidenceReview ./experiment.ts#experimentTaskDescriptor #03898ac The declaration is task-id-params-seed-version.
  * @evidence ./experiment.ts#runExperiment Runs the sweep and local sensitivity on a fixed spec.
- * @evidenceReview ./experiment.ts#runExperiment #2214af6 The function checks the scenario hash against the spec, rejects a timeToMoney metric without a finite goal, compiles the scenario once as the candidate base, runs each planned candidate per seed through a fresh binding to the horizon while reading the reach time, averages every seed, and reports local sensitivity only for completed horizons.
+ * @evidenceReview ./experiment.ts#runExperiment #0c68906 The function checks the scenario hash against the spec, rejects a timeToMoney metric without a finite goal, compiles the scenario once as the candidate base, runs each planned candidate per seed through a fresh binding to the horizon while reading the reach time, averages every seed, and reports local sensitivity only for completed horizons.
  * @evidence ./experiment.ts#experimentSchemaId Reads the experiment schema id.
  * @evidenceReview ./experiment.ts#experimentSchemaId #637335e The function returns the experiment.v1 schema URL constant.
  * @evidence ./experiment.ts#experimentAlgorithmVersion Reads the algorithm version.
@@ -202,6 +202,50 @@ export function checksLocalElasticityDirection(): void {
     elasticity: null,
     absoluteChange: "1",
   });
+  // Pareto objectives are matched by id, so a point that lists them in another order is still dominated.
+  expect(
+    paretoFront([
+      { id: "A", objectives: [{ id: "cost", sense: "lower", value: 1 }, { id: "benefit", sense: "higher", value: 5 }] },
+      { id: "B", objectives: [{ id: "benefit", sense: "higher", value: 4 }, { id: "cost", sense: "lower", value: 2 }] },
+    ]),
+  ).toEqual({ sense: "per-metric", nonDominated: ["A"], uncompared: [] });
+  expect(() =>
+    paretoFront([
+      { id: "A", objectives: [{ id: "cost", sense: "lower", value: 1 }] },
+      { id: "B", objectives: [{ id: "benefit", sense: "higher", value: 4 }] },
+    ]),
+  ).toThrow("same objective ids");
+  expect(() =>
+    paretoFront([
+      { id: "A", objectives: [{ id: "x", sense: "higher", value: 2 }] },
+      { id: "B", objectives: [{ id: "x", sense: "lower", value: 1 }] },
+    ]),
+  ).toThrow("another sense");
+  expect(() =>
+    paretoFront([
+      { id: "A", objectives: [{ id: "x", sense: "higher", value: 2 }] },
+      { id: "A", objectives: [{ id: "x", sense: "higher", value: 1 }] },
+    ]),
+  ).toThrow("ids must be unique");
+  const byNumber = (left: number, right: number) => left - right;
+  expect(() =>
+    paretoFrontBy(
+      [
+        { id: "A", objectives: [{ sense: "higher", value: 2 }] },
+        { id: "B", objectives: [{ sense: "lower", value: 1 }] },
+      ],
+      byNumber,
+    ),
+  ).toThrow("objective count and senses");
+  expect(() =>
+    paretoFrontBy(
+      [
+        { id: "A", objectives: [{ sense: "higher", value: 2 }] },
+        { id: "B", objectives: [{ sense: "higher", value: 1 }, { sense: "lower", value: 1 }] },
+      ],
+      byNumber,
+    ),
+  ).toThrow("objective count and senses");
   // Opposite-sign parameters near the double limit: the parameter change overflows, the ratio -2 does not, so the elasticity is 1.
   expect(localElasticity({ baselineP: 1e308, probeP: -1e308, baselineY: 1, probeY: -1 })).toMatchObject({ status: "observed", elasticity: "1" });
   // Opposite-sign values near the double limit: the difference overflows, the ratio -2 does not.
@@ -328,7 +372,7 @@ export function keepsStrategyTuneSignature(): void {
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter Unsafe paths and invalid parameters throw before the model factory runs.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #365ac87 Re-read the section, then ran this function: a stripped typo path, overlapping model and strategy paths, a session dimension, a repeated seed, another model version, an Infinity choice value, an Infinity space bound, an Infinity limit, an Infinity goal, a schema-less typo path, -0, a malformed untyped spec, and a repeated constraint id throw, and create count stays 0.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #01cbc40 Re-read the section, then ran this function: a stripped typo path, overlapping model and strategy paths, a session dimension, a repeated seed, another model version, an Infinity choice value, an Infinity space bound, an Infinity limit, an Infinity goal, a schema-less typo path, -0, a -0 seed, a __type path, non-JSON params, a malformed untyped spec, and a repeated constraint id throw, and create count stays 0.
  * @evidence ./experiment.ts#experimentRegisteredSetter Reads the setter contract.
  * @evidenceReview ./experiment.ts#experimentRegisteredSetter #080a763 The declaration is registered-key-not-jsonpath.
  * @evidence ./experiment.ts#assertRegisteredPath Rejects prototype, bracket, and traversal paths, and session paths other than pattern or days.
@@ -336,12 +380,12 @@ export function keepsStrategyTuneSignature(): void {
  * @evidence ./experiment.ts#checkExperimentSpec Runs the rejections alone, before any compile or create.
  * @evidenceReview ./experiment.ts#checkExperimentSpec #5a81db2 The function runs the hash, spec, path, and parameter checks of runExperiment and returns without creating a model.
  * @evidence ./experiment.ts#setRegisteredParam Sets a nested model parameter on a copy.
- * @evidenceReview ./experiment.ts#setRegisteredParam #58296bb The function validates the path, copies only the objects on that path, refuses a prototype key at each segment, creates missing own objects, and sets the leaf without changing the input or any value off the path.
+ * @evidenceReview ./experiment.ts#setRegisteredParam #6f47f14 The function validates the path, copies only the objects on that path, root included, with their prototype and configurable descriptors, defines each path key and the leaf as an own data property, refuses a prototype key at each segment, creates missing own objects, and sets the leaf without changing the input or any value off the path.
  */
 export function rejectsUnsafeParametersBeforeRun(): void {
   const safePath = "income.rate";
   expect(assertRegisteredPath(safePath, "model")).toEqual(["income", "rate"]);
-  for (const path of ["__proto__.x", "a..b", "a[0]", "a/b", " a"]) {
+  for (const path of ["__proto__.x", "a..b", "a[0]", "a/b", " a", "__type", "a.__type"]) {
     expect(() => assertRegisteredPath(path, "model")).toThrow();
   }
   const sessionPath = "speed";
@@ -358,6 +402,22 @@ export function rejectsUnsafeParametersBeforeRun(): void {
   expect(Object.is(assigned.neg, -0)).toBe(true);
   expect(assigned.income).toEqual({ rate: 2 });
   expect(exotic.income).toEqual({ rate: 1 });
+  // An object on the path keeps its prototype, so a class instance still has its methods.
+  class Curve {
+    rate = 1;
+    double(): number {
+      return this.rate * 2;
+    }
+  }
+  const curved = setRegisteredParam({ curve: new Curve() }, "curve.rate", 3);
+  expect(curved.curve).toBeInstanceOf(Curve);
+  expect((curved.curve as Curve).double()).toBe(6);
+  // The root keeps its prototype too, and a frozen object on the path still takes the assigned value.
+  const rootCurve = setRegisteredParam(new Curve() as unknown as Record<string, unknown>, "rate", 4);
+  expect((rootCurve as unknown as Curve).double()).toBe(8);
+  const frozen = Object.freeze({ curve: Object.freeze({ rate: 1, keep: true }) });
+  expect(setRegisteredParam(frozen, "curve.rate", 5)).toEqual({ curve: { rate: 5, keep: true } });
+  expect(frozen.curve.rate).toBe(1);
   // -0 would share every descriptor and hash with 0, so it is not a parameter value.
   expect(assignmentFitsParamSpace({ kind: "number", min: -1, max: 1 }, -0)).toBe(false);
   expect(assignmentFitsParamSpace({ kind: "choice", values: [0] }, -0)).toBe(false);
@@ -435,6 +495,8 @@ export function rejectsUnsafeParametersBeforeRun(): void {
       }),
     ],
     ["seeds must be unique", specFor(scenario, { seeds: [fixture.seed, fixture.seed] })],
+    ["seeds must not be -0", specFor(scenario, { seeds: [-0] })],
+    ["model version must be finite", specFor(scenario, { model: { id: fixture.modelId, version: JSON.parse("1e400") as number } })],
     [
       "space bounds for incomeRate must be finite",
       specFor(scenario, { dimensions: [{ ...incomeDimension, space: { kind: "number", min: 0.1, max: JSON.parse("1e400") as number } }] }),
@@ -473,6 +535,40 @@ export function rejectsUnsafeParametersBeforeRun(): void {
   for (const [message, spec] of rejected) {
     expect(() => runWith(scenario, spec, creates)).toThrow(message);
   }
+  // Params are recorded as canonical JSON, so a Date or a class instance in them is refused before any create.
+  const shared = { rate: 1 };
+  const named = Object.assign([1, 2], { mode: "fast" });
+  class Steps extends Array<number> {}
+  for (const odd of [new Date(0), new (class Curve { rate = 1 })(), undefined, { __type: "curve" }, { a: shared, b: shared }, named, Steps.from([1, 2]), [1, , 3]]) {
+    const oddScenario = incomeScenario({ model: { id: "tiny-income", version: 1, params: { amount: 1, extra: odd } }, strategy: undefined });
+    expect(() =>
+      runExperiment({
+        spec: specFor(oddScenario, {
+          model: { id: "tiny-income", version: 1 },
+          strategy: undefined,
+          metricId: "endMoney",
+          goal: undefined,
+          dimensions: [{ id: "amount", target: "model", path: "amount", space: { kind: "number", min: 0, max: 5 }, baseline: 1 }],
+          budget: { candidates: 1, seeds: 1 },
+          horizonSec: 1,
+        }),
+        scenario: oddScenario,
+        modelRegistry: createModelRegistry([tinyIncomeFactory()]),
+        strategyRegistry: createStrategyRegistry([]),
+        engine: createNumberEngine(),
+        engineId: "number",
+        engineVersion: "1",
+        effectiveRunHash: "odd-params",
+      }),
+    ).toThrow("model params must be JSON data");
+  }
+  // One object shared by the model and strategy params is refused as well.
+  const sharedRoot = { maxPicks: 1 };
+  const crossScenario = incomeScenario({
+    model: { id: fixture.modelId, version: fixture.modelVersion, params: { incomeRate: 1, shape: sharedRoot } },
+    strategy: { id: fixture.strategyId, params: sharedRoot },
+  });
+  expect(() => runWith(crossScenario, specFor(crossScenario), creates)).toThrow("strategy params must be JSON data");
   // Without a params schema, a path must already be in the scenario params, so a typo is not added as an ignored key.
   const bare = incomeScenario({ model: { id: "tiny-income", version: 1, params: { amount: 1 } }, strategy: undefined });
   const bareRun = (path: string) =>
@@ -613,7 +709,7 @@ export function keepsCandidateOrderAndScenario(): void {
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-censored-horizon Horizon 9 does not become the reach time of an unmet target 10.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-censored-horizon #0d042e7 Re-read the section, then ran this function: the censored value is null and elasticity is unavailable, and with an end money constraint rates 1 and 2 reach in 10 and 5 and end with 40 and 80.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-censored-horizon #c62f60b Re-read the section, then ran this function: the censored value is null and elasticity is unavailable, and with an end money constraint rates 1 and 2 reach in 10 and 5 and end with 40 and 80, and the censored bound proves lte 8 and lte 9 but not lte 12.
  * @evidence ./experiment.ts#experimentCensoredHorizon Reads the censor contract.
  * @evidenceReview ./experiment.ts#experimentCensoredHorizon #81f017f The declaration is censored-time-not-horizon.
  * @evidence ./experiment.ts#experimentRunBase Removes the inherited stop condition, step budget, and trace.
@@ -657,6 +753,28 @@ export function skipsCensoredHorizonForSensitivity(): void {
     direction: "unavailable",
   });
   expect(JSON.stringify(artifact.elasticities)).not.toContain("\"9\"");
+  // The censored reach time is later than 9. That proves lte 8 and lte 9 violated, while lte 12 stays unproven.
+  const deadlines = runWith(
+    scenario,
+    specFor(scenario, {
+      horizonSec: fixture.censoredHorizonSec,
+      constraints: [
+        { id: "by8", metricId: "timeToMoney", op: "lte", limit: 8 },
+        { id: "by9", metricId: "timeToMoney", op: "lte", limit: 9 },
+        { id: "by12", metricId: "timeToMoney", op: "lte", limit: 12 },
+        { id: "after3", metricId: "timeToMoney", op: "gte", limit: 3 },
+      ],
+      dimensions: [
+        { id: "incomeRate", target: "model", path: "incomeRate", space: { kind: "number", min: 0.1, max: 5 }, baseline: 1, probes: [2] },
+      ],
+      strategy: undefined,
+      budget: { candidates: 2, seeds: 1 },
+    }),
+  );
+  const missed = deadlines.candidates.find((candidate) => candidate.id === "baseline");
+  expect(missed?.constraintViolations).toEqual(["by8", "by9"]);
+  expect(missed?.metrics[0]).toEqual({ metricId: "timeToMoney", status: "censored", value: null });
+  expect(deadlines.candidates.find((candidate) => candidate.id === "oat:incomeRate:2")?.constraintViolations).toEqual([]);
   // A reach time and end money in one spec: the run continues past the goal, so end money is read at the horizon.
   const both = runWith(
     scenario,
@@ -680,7 +798,7 @@ export function skipsCensoredHorizonForSensitivity(): void {
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown The hand tradeoff keeps A, B, and C, drops D, and leaves E uncompared.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown #0c1079a Re-read the section, then ran this function: nonDominated is A, B, C and E is uncompared, and end money 0, 0.75e-12, and 1.5e-12 give the front B and C.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown #1e93b71 Re-read the section, then ran this function: nonDominated is A, B, C and E is uncompared, and end money 0, 0.75e-12, and 1.5e-12 give the front B and C.
  * @evidence ./experiment.ts#experimentParetoUnknown Reads the Pareto contract.
  * @evidenceReview ./experiment.ts#experimentParetoUnknown #4c62a0c The declaration is unknown-is-not-superior.
  */
@@ -795,7 +913,7 @@ export function matchesHandPareto(): void {
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-task-descriptor Candidates start from the referenced scenario and the candidate metric is the mean over every seed.
  * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-task-descriptor #10a3f42 Re-read the section, then ran this function: the GEM wallet starts at 100, maxPicks stays 3, the stripped note reaches create as kept, seeds 1 and 3 average to reach time 20 and end money 160, and probes 1 and "1" get distinct ids.
  * @evidence ./experiment.ts#runExperiment Runs every candidate from the compiled scenario and averages the seeds.
- * @evidenceReview ./experiment.ts#runExperiment #2214af6 The function compiles the request scenario once as the base, keeps its raw model and strategy params, and aggregates every seed row by its mean.
+ * @evidenceReview ./experiment.ts#runExperiment #0c68906 The function compiles the request scenario once as the base, keeps its raw model and strategy params, and aggregates every seed row by its mean.
  */
 export function startsCandidatesFromScenario(): void {
   const creates = { count: 0 };
@@ -884,9 +1002,9 @@ export function startsCandidatesFromScenario(): void {
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown An amount past the double range stays an observed engine value for constraints, Pareto, and sensitivity.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown #0c1079a Re-read the section, then ran this function: 1e400 and 1e401 are observed, both violate the cap, only the probe is non-dominated, 1e-10 to 1e400 keeps an engine elasticity near 2.44e409, and two seeds of benefit 1e308 or of the smallest subnormal, and a subnormal wallet, average to that value, and end money 1e308 to -1e308 keeps elasticity 1, and three seeds of the largest double average to it.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown #1e93b71 Re-read the section, then ran this function: 1e400 and 1e401 are observed, both violate the cap, only the probe is non-dominated, 1e-10 to 1e400 keeps an engine elasticity near 2.44e409, and two seeds of benefit 1e308 or of the smallest subnormal, and a subnormal wallet, average to that value, and end money 1e308 to -1e308 keeps elasticity 1, and three seeds of the largest double average to it.
  * @evidence ./experiment.ts#runExperiment Compares engine amounts for constraints, Pareto, and elasticity.
- * @evidenceReview ./experiment.ts#runExperiment #2214af6 The function keeps money as engine amounts, checks constraints with the engine order, ranks each Pareto objective by that order, and divides money changes in the engine.
+ * @evidenceReview ./experiment.ts#runExperiment #0c68906 The function keeps money as engine amounts, checks constraints with the engine order, ranks each Pareto objective by that order, and divides money changes in the engine.
  */
 export function keepsLargeEngineAmounts(): void {
   const engine = createBreakInfinityEngine();
