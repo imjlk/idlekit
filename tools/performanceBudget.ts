@@ -43,7 +43,7 @@ export const budgetHashMismatch = "baseline-hash-rejected" as const;
 
 /**
  * @evidence docs/requirements/active/performance-budget.md#req-dx04-same-config Only matching engine, seed, model, step, trace, observer, worker, and planner configs are compared.
- * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-same-config #3c5907d Re-read the section: a small absolute change can pass, and a different observer, engine, or trace cannot be compared.
+ * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-same-config #c63dd18 Re-read the section: a small absolute change can pass, and a different observer, engine, or trace cannot be compared.
  */
 export const budgetSameConfig = "same-config-only" as const;
 
@@ -130,7 +130,7 @@ export type BudgetComparison =
   | Readonly<{ status: "fail"; reason: "regression" | "too-few-repeats" | "unmeasured" }>
   | Readonly<{
     status: "rejected";
-    reason: "baseline-hash-mismatch" | "config-mismatch" | "workload-mismatch" | "host-mismatch";
+    reason: "baseline-hash-mismatch" | "config-mismatch" | "workload-mismatch" | "warmup-mismatch" | "host-mismatch";
   }>;
 
 export type ArtifactInput = Readonly<{
@@ -542,8 +542,17 @@ export function comparePerformanceBudgets(
   if (!sameBenchConfig(baseline.config, current.config)) {
     return { status: "rejected", reason: "config-mismatch" };
   }
-  if (baseline.scenarioHash !== current.scenarioHash || baseline.workloadCount !== current.workloadCount) {
+  // Without a scenario hash (bench-planner and bench-monte-carlo input) the workload has no identity to match.
+  if (
+    baseline.scenarioHash === null ||
+    baseline.scenarioHash !== current.scenarioHash ||
+    baseline.workloadCount !== current.workloadCount
+  ) {
     return { status: "rejected", reason: "workload-mismatch" };
+  }
+  // Discarded warmup runs prime the bundle load and OS caches, so they shape the measured samples.
+  if (baseline.warmup !== current.warmup) {
+    return { status: "rejected", reason: "warmup-mismatch" };
   }
   if (!sameHost(baseline.host, current.host)) {
     return { status: "rejected", reason: "host-mismatch" };

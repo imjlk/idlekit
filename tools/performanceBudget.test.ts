@@ -40,6 +40,7 @@ function input(overrides: Partial<ArtifactInput> = {}): ArtifactInput {
   return {
     corpus: "representative",
     scenario: "examples/bench/representative.json",
+    scenarioHash: "0".repeat(64),
     config: representativeConfig(),
     host,
     iterations: 7,
@@ -170,7 +171,7 @@ export function keepsUnknownMetricsUnmeasured(): void {
  * @evidence ./performanceBudget.ts#budgetGateFailure Reads the gate failure contract.
  * @evidenceReview ./performanceBudget.ts#budgetGateFailure #38dd0b8 The declaration is unfavorable-fails.
  * @evidence ./performanceBudget.ts#comparePerformanceBudgets Fails a slower median only past both the relative and absolute limits.
- * @evidenceReview ./performanceBudget.ts#comparePerformanceBudgets #153f927 The function rejects a recomputed hash mismatch, a different config, a different scenario hash or workload count, or a different Bun, OS, or arch, fails too few repeats or an unmeasured median, fails when both limits are exceeded, and never calls the baseline writer.
+ * @evidenceReview ./performanceBudget.ts#comparePerformanceBudgets #be0037b The function rejects a recomputed hash mismatch, a different config, a missing or different scenario hash or workload count, a different warmup, or a different Bun, OS, or arch, fails too few repeats or an unmeasured median, fails when both limits are exceeded, and never calls the baseline writer.
  */
 export function failsUnfavorableBudget(): void {
   expect(budgetGateFailure).toBe("unfavorable-fails");
@@ -219,7 +220,7 @@ export function rejectsBaselineHashMismatch(): void {
 
 /**
  * @evidence docs/requirements/active/performance-budget.md#req-dx04-same-config 4ms to 9ms passes the absolute floor. Observer, engine, and trace mismatches are rejected.
- * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-same-config #3c5907d Re-read the section, then ran this function: the small pair passes and the other configs are rejected.
+ * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-same-config #c63dd18 Re-read the section, then ran this function: the small pair passes and the other configs are rejected.
  * @evidence ./performanceBudget.ts#budgetSameConfig Reads the same-config contract.
  * @evidenceReview ./performanceBudget.ts#budgetSameConfig #0d25c6b The declaration is same-config-only.
  * @evidence ./performanceBudget.ts#sameBenchConfig Treats configs with the same fields in another key order as the same.
@@ -328,13 +329,13 @@ function scenarioArtifact(scenario: unknown, runtimeMs: readonly number[]): Perf
 
 /**
  * @evidence docs/requirements/active/performance-budget.md#req-dx04-same-config A 30-step and a 1800-step scenario share a config and are still rejected.
- * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-same-config #3c5907d Re-read the section, then ran this function: a different scenario hash or workload count is workload-mismatch.
+ * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-same-config #c63dd18 Re-read the section, then ran this function: a different scenario hash or workload count is workload-mismatch.
  * @evidence ./performanceBudget.ts#scenarioHash Hashes the canonical scenario, independent of key order.
  * @evidenceReview ./performanceBudget.ts#scenarioHash #021fb0f The function returns the sha256 hex digest of the canonical scenario JSON.
  * @evidence ./performanceBudget.ts#scenarioWorkload Counts the scenario clock and leaves an until expression unknown.
  * @evidenceReview ./performanceBudget.ts#scenarioWorkload #6337812 The function returns workloadStepCount of the clock, or null without a numeric duration and step or with a nonblank untilExpr.
  * @evidence ./performanceBudget.ts#comparePerformanceBudgets Rejects a baseline from another workload before any timing check.
- * @evidenceReview ./performanceBudget.ts#comparePerformanceBudgets #153f927 The function rejects a scenario hash or workload count that differs after the config matches, then a host that differs.
+ * @evidenceReview ./performanceBudget.ts#comparePerformanceBudgets #be0037b The function rejects a missing or differing scenario hash or workload count after the config matches, then a different warmup, then a host that differs.
  */
 export function rejectsDifferentWorkload(): void {
   const policy = { minIterations: 4, relativeSlowdown: 0.25, absoluteMedianMs: 50 };
@@ -356,6 +357,13 @@ export function rejectsDifferentWorkload(): void {
     status: "pass",
     reason: "within-budget",
   });
+  const synthetic = { ...short, scenarioHash: null };
+  expect(comparePerformanceBudgets(synthetic, synthetic, policy)).toEqual({
+    status: "rejected",
+    reason: "workload-mismatch",
+  });
+  const coldWarmup = { ...short, warmup: 0 };
+  expect(comparePerformanceBudgets(short, coldWarmup, policy)).toEqual({ status: "rejected", reason: "warmup-mismatch" });
   const until = { ...representativeScenario, clock: { stepSec: 1, durationSec: 30, untilExpr: "money >= 10" } };
   expect(scenarioWorkload(until)).toBeNull();
   const blank = { ...representativeScenario, clock: { stepSec: 1, durationSec: 30, untilExpr: "  " } };
@@ -364,7 +372,7 @@ export function rejectsDifferentWorkload(): void {
 
 /**
  * @evidence docs/requirements/active/performance-budget.md#req-dx04-same-config The trace mode follows outputs.report.traceEverySteps, and the engine is the run's.
- * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-same-config #3c5907d Re-read the section, then ran this function: a sampled trace is bounded and an every-step trace is unbounded.
+ * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-same-config #c63dd18 Re-read the section, then ran this function: a sampled trace is bounded and an every-step trace is unbounded.
  * @evidence ./performanceBudget.ts#benchConfigFromScenario Reads engine, seed, model, step, trace cadence, observer, and planner from a scenario.
  * @evidenceReview ./performanceBudget.ts#benchConfigFromScenario #6b5d81e The function reads outputs.report.traceEverySteps, as the scenario compiler does, treats a cadence of 1 or none as every step, takes the engine and seed from the run, and reports the observer on.
  */
@@ -509,7 +517,7 @@ export function rejectsNegativeSamples(): void {
 
 /**
  * @evidence docs/requirements/active/performance-budget.md#req-dx04-same-config A baseline from another Bun, OS, or arch is not compared.
- * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-same-config #3c5907d Re-read the section, then ran this function: a Linux baseline is host-mismatch on darwin, and a CPU brand change alone still compares.
+ * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-same-config #c63dd18 Re-read the section, then ran this function: a Linux baseline is host-mismatch on darwin, and a CPU brand change alone still compares.
  * @evidence ./performanceBudget.ts#sameHost Compares Bun, OS, and arch, not CPU brand.
  * @evidence ./performanceBudget.ts#mergeBaselines Replaces this host's entry for an edited scenario and keeps other hosts.
  * @evidenceReview ./performanceBudget.ts#mergeBaselines #6e7054e The function drops existing entries on the same host with the same scenario path or hash, then appends the fresh ones.
