@@ -41,6 +41,8 @@ export function runsNegativeEvidenceChecks(): void {
 /**
  * @evidence docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness The positive graph finds its host and the empty graph returns no requested declaration.
  * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #bbb39a2 Re-read the negative graph check: this registration runs both Graph controls and keeps a missing host distinct from a failed lookup.
+ * @evidence ./conformance.ts#runNegativeConformanceChecks Executes the Graph group and rejects a failed lookup separately from a successful lookup with no requested declaration.
+ * @evidenceReview ./conformance.ts#runNegativeConformanceChecks #817b9ab Re-read the group selector and ran the protected Graph registration: it passes graph to the negative harness, whose positive control finds quotaHost and whose empty project successfully returns no quoteBudget declaration.
  */
 export function runsNegativeGraphChecks(): void {
   expect(() => runNegativeConformanceChecks("graph")).not.toThrow();

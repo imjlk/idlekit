@@ -362,6 +362,8 @@ export function runsPublishedScenarioValidator(): void {
 /**
  * @evidence docs/requirements/active/typed-contract-generation.md#req-tc05-typed-contract-single-source Independent CLI generations produce identical canonical files without volatile metadata.
  * @evidenceReview docs/requirements/active/typed-contract-generation.md#req-tc05-typed-contract-single-source #4326433 Re-read the section: both CLI generations are compared for every generated contract; the scenario JSON is canonical and contains no generation time or absolute directory.
+ * @evidence ./scenarioContract.ts#canonicalJson Canonicalizes the independently generated scenario document for a byte-stable round-trip comparison.
+ * @evidenceReview ./scenarioContract.ts#canonicalJson #c5c90d7 Re-read canonicalJson and ran both independent CLI generations: it delegates to renderCanonical with a fresh set, and this registration compares its output to the generated scenario JSON as well as every file from the two generations.
  */
 export function keepsGeneratedContractsStable(): void {
   const left = join(tmpdir(), `idlekit-tc05-gen-a-${crypto.randomUUID()}`);
@@ -389,6 +391,8 @@ export function keepsGeneratedContractsStable(): void {
 /**
  * @evidence docs/requirements/active/typed-contract-generation.md#req-tc05-published-validator-transformed The check CLI rejects a stale scenario file, accepts a full CRLF checkout, and accepts the tracked contracts.
  * @evidenceReview docs/requirements/active/typed-contract-generation.md#req-tc05-published-validator-transformed #fafe1c5 Re-read the section: editing schemaVersion makes the CLI exit 1. The CRLF and tracked checks exit 0 without invoking the writer.
+ * @evidence ./scenarioContract.ts#buildContractDocument The check CLI rebuilds the scenario document, rejects a changed schemaVersion key, and accepts canonical tracked content with LF or CRLF.
+ * @evidenceReview ./scenarioContract.ts#buildContractDocument #975f383 Re-read buildContractDocument and its renderedContracts caller, then ran the protected CLI checks: the builder orders source digests, obtains the memoized typia scenario schema and returns rootSchemaDocument with its generator annotation. The CLI compares the canonical rebuild to complete stale, CRLF, and tracked corpora, producing exits 1, 0, and 0 respectively.
  */
 export function checksTrackedContractCli(): void {
   const tracked = join(repoRoot, "docs/schemas/generated");
