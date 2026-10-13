@@ -175,6 +175,13 @@ jobs:
       - name: Windows CLI tests
         run: bun run --cwd packages/cli test
 
+      - name: Windows contract CLI regressions
+        working-directory: packages/core
+        run: bun test src/scenario/scenarioContract.test.ts
+
+      - name: Windows negative conformance regressions
+        run: bun test tools/conformance.negative.test.ts
+
       - name: Session clock regression tests
         working-directory: packages/core
         run: bun test src/sim/session.test.ts
