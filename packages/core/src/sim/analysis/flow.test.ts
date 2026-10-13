@@ -45,7 +45,7 @@ function expectValid(report: FlowReportV1): void {
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-flow-adapter The observer hook is optional and three fixtures share it.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-flow-adapter #1bf549f Re-read the section, then ran this function: onFlow records one sample, the three skins agree, and exponent spellings parse while unreadable amounts are rejected.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-flow-adapter #a340fde Re-read the section, then ran this function: onFlow records one sample, the three skins agree, and exponent spellings parse while unreadable amounts are rejected.
  * @evidence ./flow.ts#flowOptionalAdapter Reads the optional-adapter marker.
  * @evidenceReview ./flow.ts#flowOptionalAdapter #d29de61 The declaration is observer-not-required-model.
  * @evidence ./flow.ts#validateFlowReport Reads the published validator.
@@ -57,7 +57,7 @@ function expectValid(report: FlowReportV1): void {
  * @evidence ./flow.ts#flowAlgorithmVersion Reads the algorithm version.
  * @evidenceReview ./flow.ts#flowAlgorithmVersion #7cd8b0b Every fixture report carries flow-observation-1.
  * @evidence ./flow.ts#parseFlowObservation Validates a fixture case as data.
- * @evidenceReview ./flow.ts#parseFlowObservation #8e51a17 Fixture cases parse, 1e2 and +2.0E1 parse and still bind, a case with the wrong contract is rejected, an amount such as -5, 1e400, or twenty is rejected with its path, and a reversed window is rejected and yields no fact when diagnosed directly.
+ * @evidenceReview ./flow.ts#parseFlowObservation #8e51a17 Fixture cases parse, 1e2 and +2.0E1 parse and still bind, a case with the wrong contract is rejected, an amount such as -5, 1e400, or twenty is rejected with its path, a reversed window is rejected and yields no fact when diagnosed directly, and a duplicate sample key, a zero denominator, and a loss above 1 are rejected with their paths.
  * @evidence ../observation.ts#recordFlowSample Forwards one sample to the optional observer hook.
  * @evidenceReview ../observation.ts#recordFlowSample #eab5d36 onFlow receives the sample once, and an absent observer or hook is a no-op.
  */
@@ -106,6 +106,20 @@ export function declaresFlowAdapter(): void {
   const reversedReport = diagnoseFlow({ ...load("steady"), samples: reversed });
   expect(reversedReport.facts.some((item) => item.kind === "saturation-time")).toBe(false);
   expect(reversedReport.facts).toEqual([]);
+  // A second sample with the same process, resource, kind, and window is rejected instead of read by order.
+  const duplicated = parseFlowObservation({
+    ...steadyCase,
+    samples: [...steadyCase.samples, { ...(steadyCase.samples[2] as FlowObservationV1["samples"][number]), amount: "10" }],
+  });
+  expect(duplicated.ok).toBe(false);
+  if (!duplicated.ok) expect(duplicated.issues).toEqual(["$input.samples[6] duplicates samples[2]"]);
+  // An edge ratio the diagnosis cannot convert is rejected while parsing.
+  const zeroDenominator = parseFlowObservation({ ...steadyCase, edges: steadyCase.edges.map((edge, index) => (index === 0 ? { ...edge, denominator: "0" } : edge)) });
+  expect(zeroDenominator.ok).toBe(false);
+  if (!zeroDenominator.ok) expect(zeroDenominator.issues).toEqual(["$input.edges[0].denominator > 0"]);
+  const overLoss = parseFlowObservation({ ...steadyCase, edges: steadyCase.edges.map((edge, index) => (index === 1 ? { ...edge, loss: "1.5" } : edge)) });
+  expect(overLoss.ok).toBe(false);
+  if (!overLoss.ok) expect(overLoss.issues).toEqual(["$input.edges[1].loss <= 1"]);
   const source = readFileSync(new URL("./flow.ts", import.meta.url), "utf8");
   for (const word of ["mine", "smelt", "ore", "haul", "crate", "expedition", "scout"]) {
     expect(new RegExp(`\\b${word}\\b`).test(source)).toBe(false);
@@ -143,11 +157,11 @@ export function declaresFlowAdapter(): void {
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-pipeline A 100 to 20 to 30 chain binds at the middle stage.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-pipeline #3c14165 Re-read the section, then ran this function: final throughput stays 20 when inflow doubles, another resource or window does not bind, the causally named bind is confirmed first beside a suspected one, and a cycle has no final throughput.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-pipeline #9447d9a Re-read the section, then ran this function: final throughput stays 20 when inflow doubles, another resource or window does not bind, the causally named bind is confirmed first beside a suspected one, a cycle has no final throughput, and two terminals each report one in edge order.
  * @evidence ./flow.ts#flowPipelineConstraint Reads the pipeline marker.
  * @evidenceReview ./flow.ts#flowPipelineConstraint #6971fde The declaration is process-throughput-20.
  * @evidence ./flow.ts#diagnoseFlow Diagnoses throughput, capacity, and the binding stage.
- * @evidenceReview ./flow.ts#diagnoseFlow #70057a4 The middle stage binds at 20, doubling inflow keeps 20 and grows the queue, without a causal model the cause is suspected, another resource or window does not bind, every saturated process is a candidate with the causal one confirmed first, a bind does not hide another process's wait, a cycle reports no final throughput, and a 1e300 window formats as a finite saturation time.
+ * @evidenceReview ./flow.ts#diagnoseFlow #dcfee14 The middle stage binds at 20, doubling inflow keeps 20 and grows the queue, without a causal model the cause is suspected, another resource or window does not bind, every saturated process is a candidate with the causal one confirmed first, a bind does not hide another process's wait, a cycle reports no final throughput, each terminal reports its own final throughput, and a 1e300 window formats as a finite saturation time.
  */
 export function diagnosesSteadyPipeline(): void {
   expect(flowPipelineConstraint).toBe("process-throughput-20");
@@ -250,11 +264,33 @@ export function diagnosesSteadyPipeline(): void {
   });
   expect(fact(huge, "saturation-time", "process")?.amount).toBe("1e+300");
   expectValid(huge);
+  // Every terminal process reports its own final throughput, whatever the edge order.
+  const forked: FlowObservationV1 = {
+    ...steadyCase,
+    samples: [
+      ...steadyCase.samples,
+      { processId: "store", resourceId: "ore", kind: "throughput", amount: "7", unit: "ore/min", startSec: 0, endSec: 60 },
+    ],
+    edges: [
+      ...steadyCase.edges,
+      { fromProcessId: "process", toProcessId: "store", fromResourceId: "ore", toResourceId: "ore", numerator: "1", denominator: "1", loss: "0" },
+    ],
+  };
+  const finalsOf = (report: FlowReportV1) =>
+    report.facts.filter((item) => item.kind === "final-throughput").map((item) => [item.processId, item.amount]);
+  expect(finalsOf(diagnoseFlow(forked))).toEqual([
+    ["sell", "20"],
+    ["store", "7"],
+  ]);
+  expect(finalsOf(diagnoseFlow({ ...forked, edges: [...forked.edges].reverse() }))).toEqual([
+    ["store", "7"],
+    ["sell", "20"],
+  ]);
 }
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-conservation Conversion keeps the destination unit.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-conservation #8c249f5 Re-read the section, then ran this function: 100 becomes 45, the units are not added, a queue, unretained, or source sample of another resource or window does not conserve, a later conserving window is found, and an overflowed conversion does not match.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-conservation #d7e8176 Re-read the section, then ran this function: 100 becomes 45, the units are not added, a queue, unretained, or source sample of another resource or window does not conserve, a later conserving window is found, an overflowed conversion does not match, a 1e-7 conversion is not equal to an empty stock, and two edges into one stock are summed to 90.
  * @evidence ./flow.ts#flowConservation Reads the conservation marker.
  * @evidenceReview ./flow.ts#flowConservation #ca6486f The declaration is converted-units-stay-apart.
  */
@@ -306,6 +342,33 @@ export function checksFlowConservation(): void {
     edges: conversionCase.edges.map((edge) => ({ ...edge, numerator: "10", denominator: "1", loss: "0" })),
   });
   expect(overflow.facts.some((item) => item.kind === "conservation")).toBe(false);
+  // A sub-unit conversion is not equal to an empty destination.
+  const tiny = diagnoseFlow({
+    ...conversionCase,
+    samples: conversionCase.samples.map((sample) =>
+      sample.kind === "inflow" ? { ...sample, amount: "2e-7" } : { ...sample, amount: "0" },
+    ),
+  });
+  expect(tiny.facts.some((item) => item.kind === "conservation")).toBe(false);
+  // Two edges into one destination resource are summed against its stock.
+  const fanIn = (queue: string, unretained: string) =>
+    diagnoseFlow({
+      ...conversionCase,
+      samples: [
+        { processId: "source", resourceId: "ore", kind: "inflow", amount: "100", unit: "ore/min", startSec: 0, endSec: 60 },
+        { processId: "second", resourceId: "ore", kind: "inflow", amount: "100", unit: "ore/min", startSec: 0, endSec: 60 },
+        { processId: "dest", resourceId: "ingot", kind: "queue", amount: queue, unit: "ingot/min", startSec: 0, endSec: 60 },
+        { processId: "dest", resourceId: "ingot", kind: "unretained", amount: unretained, unit: "ingot/min", startSec: 0, endSec: 60 },
+      ],
+      edges: [
+        ...conversionCase.edges,
+        { fromProcessId: "second", toProcessId: "dest", fromResourceId: "ore", toResourceId: "ingot", numerator: "1", denominator: "2", loss: "0.1" },
+      ],
+    });
+  const summed = fanIn("80", "10").facts.filter((item) => item.kind === "conservation");
+  expect(summed.map((item) => item.amount)).toEqual(["90"]);
+  expect(summed[0]?.evidenceRefs).toEqual(["sample:0", "sample:1", "sample:2", "sample:3", "edge:0", "edge:1"]);
+  expect(fanIn("40", "5").facts.some((item) => item.kind === "conservation")).toBe(false);
 }
 
 /**

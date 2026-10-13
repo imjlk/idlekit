@@ -10,7 +10,7 @@ const FLOW_ALGORITHM_VERSION = "flow-observation-1" as const;
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-flow-adapter The published schema id is the flow report.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-flow-adapter #1bf549f Re-read the section: the id is the flow v1 schema.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-flow-adapter #a340fde Re-read the section: the id is the flow v1 schema.
  */
 export function flowSchemaId(): typeof FLOW_SCHEMA_ID {
   return FLOW_SCHEMA_ID;
@@ -18,7 +18,7 @@ export function flowSchemaId(): typeof FLOW_SCHEMA_ID {
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-flow-adapter The algorithm version is flow-observation-1.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-flow-adapter #1bf549f Re-read the section: the version string is flow-observation-1.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-flow-adapter #a340fde Re-read the section: the version string is flow-observation-1.
  */
 export function flowAlgorithmVersion(): typeof FLOW_ALGORITHM_VERSION {
   return FLOW_ALGORITHM_VERSION;
@@ -123,19 +123,19 @@ export type FlowReportV1 = Readonly<{
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-flow-adapter Flow samples are optional. Model gains no required method.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-flow-adapter #1bf549f Re-read the section: the observer hook is optional and resource names stay in the fixture.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-flow-adapter #a340fde Re-read the section: the observer hook is optional and resource names stay in the fixture.
  */
 export const flowOptionalAdapter = "observer-not-required-model" as const;
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-pipeline A steady 100 to 20 to 30 chain binds at the middle stage.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-pipeline #3c14165 Re-read the section: final throughput stays 20 when inflow doubles, a bind reads one resource and one window, and the causally named bind is confirmed among several.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-pipeline #9447d9a Re-read the section: final throughput stays 20 when inflow doubles, a bind reads one resource and one window, the causally named bind is confirmed among several, and each terminal process reports its own final throughput.
  */
 export const flowPipelineConstraint = "process-throughput-20" as const;
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-conservation Conversion, loss, and inventory stay in their own units.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-conservation #8c249f5 Re-read the section: the source unit and the destination unit are not added, queue and unretained are read for the destination resource in the source window, and every source window is tried.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-conservation #d7e8176 Re-read the section: the source unit and the destination unit are not added, queue and unretained are read for the destination resource in the source window, every source window is tried, and edges into one stock are summed.
  */
 export const flowConservation = "converted-units-stay-apart" as const;
 
@@ -160,7 +160,7 @@ let validateObservationValidator: ((input: unknown) => IValidation<FlowObservati
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-flow-adapter The published validator is createValidate of the flow report.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-flow-adapter #1bf549f Re-read the section: the structural document is FlowReportV1.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-flow-adapter #a340fde Re-read the section: the structural document is FlowReportV1.
  */
 export const validateFlowReport = (input: unknown): IValidation<FlowReportV1> =>
   (validateFlowReportValidator ??= typia.createValidate<FlowReportV1>())(input);
@@ -173,7 +173,7 @@ let flowJsonSchemaUnit: ReturnType<typeof buildFlowJsonSchema> | undefined;
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-flow-adapter The structural schema is OpenAPI 3.1 from typia.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-flow-adapter #1bf549f Re-read the section: schema version is 3.1 and the contract id is idlekit.flow.v1.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-flow-adapter #a340fde Re-read the section: schema version is 3.1 and the contract id is idlekit.flow.v1.
  */
 export function flowJsonSchema(): ReturnType<typeof buildFlowJsonSchema> {
   flowJsonSchemaUnit ??= buildFlowJsonSchema();
@@ -185,7 +185,7 @@ const validateObservation = (input: unknown): IValidation<FlowObservationV1> =>
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-flow-adapter A flow observation is validated as data.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-flow-adapter #1bf549f Re-read the section: the observation contract is idlekit.flow.observation.v1, and an amount outside the finite non-negative decimal wire spelling is rejected while parsing.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-flow-adapter #a340fde Re-read the section: the observation contract is idlekit.flow.observation.v1, and an amount outside the finite non-negative decimal wire spelling, a duplicate sample key, a zero denominator, and a loss above 1 are rejected while parsing.
  */
 export function parseFlowObservation(
   input: unknown,
@@ -215,14 +215,23 @@ function decimalIssues(observation: FlowObservationV1): string[] {
   const check = (path: string, text: string): void => {
     if (parseDecimal(text) === null) issues.push(`${path} finite non-negative decimal`);
   };
+  // One process, resource, kind, and window names one sample. A second one would make the reading order-dependent.
+  const keys = new Map<string, number>();
   observation.samples.forEach((sample, index) => {
     check(`$input.samples[${index}].amount`, sample.amount);
     if (!(sample.endSec >= sample.startSec)) issues.push(`$input.samples[${index}].endSec >= startSec`);
+    const key = JSON.stringify([sample.processId, sample.resourceId, sample.kind, sample.startSec, sample.endSec]);
+    const first = keys.get(key);
+    if (first !== undefined) issues.push(`$input.samples[${index}] duplicates samples[${first}]`);
+    else keys.set(key, index);
   });
   observation.edges.forEach((edge, index) => {
     check(`$input.edges[${index}].numerator`, edge.numerator);
     check(`$input.edges[${index}].denominator`, edge.denominator);
     check(`$input.edges[${index}].loss`, edge.loss);
+    if (parseDecimal(edge.denominator) === 0) issues.push(`$input.edges[${index}].denominator > 0`);
+    const loss = parseDecimal(edge.loss);
+    if (loss !== null && loss > 1) issues.push(`$input.edges[${index}].loss <= 1`);
   });
   if (observation.littles) {
     check("$input.littles.inventory", observation.littles.inventory);
@@ -239,11 +248,14 @@ function formatDecimal(value: number): string {
   return String(Math.round(scaled) / 1_000_000_000);
 }
 
-/** Relative closeness. A non-finite operand, such as an overflowed product, is never close. */
+/**
+ * Relative closeness with a tiny absolute floor, so a sub-unit flow is not equal to zero.
+ * A non-finite operand, such as an overflowed product, is never close.
+ */
 function nearly(left: number, right: number): boolean {
   if (!Number.isFinite(left) || !Number.isFinite(right)) return false;
-  const scale = Math.max(1, Math.abs(left), Math.abs(right));
-  return Math.abs(left - right) <= 1e-6 * scale;
+  const scale = Math.max(Math.abs(left), Math.abs(right));
+  return Math.abs(left - right) <= Math.max(1e-6 * scale, 1e-12);
 }
 
 function hypothesis(
@@ -337,7 +349,7 @@ function convert(amount: number, edge: FlowEdgeV1): number | null {
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-pipeline Diagnosis reads throughput, capacity, and the evidence window.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-pipeline #3c14165 Re-read the section: the middle stage binds and doubling inflow leaves throughput at 20; capacity and upstream samples match the edge resource and the throughput window, and every saturated process is a candidate.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-pipeline #9447d9a Re-read the section: the middle stage binds and doubling inflow leaves throughput at 20; capacity and upstream samples match the edge resource and the throughput window, and every saturated process is a candidate.
  */
 export function diagnoseFlow(observation: FlowObservationV1): FlowReportV1 {
   const littlesLaw = littlesOf(observation.littles, observation.capability);
@@ -376,29 +388,34 @@ export function diagnoseFlow(observation: FlowObservationV1): FlowReportV1 {
     sinks.add(edge.toProcessId);
   }
   for (const source of sources) sinks.delete(source);
-  const sinkId = [...sinks][0];
-  // The sink's throughput is read for the resource its incoming edge delivers. A graph with edges but no
-  // terminal process, such as a cycle, has no final throughput. Only an edgeless observation falls back.
-  const sinkEdge = sinkId ? observation.edges.find((edge) => edge.toProcessId === sinkId) : undefined;
-  const sinkThroughput = sinkEdge
-    ? rows.find(
-        (row) =>
-          row.sample.processId === sinkEdge.toProcessId &&
-          row.sample.resourceId === sinkEdge.toResourceId &&
-          row.sample.kind === "throughput",
-      )
-    : observation.edges.length === 0
-      ? rows.find((row) => row.sample.kind === "throughput")
+  // Each terminal process reports the throughput of the resource its incoming edge delivers. A graph with
+  // edges but no terminal process, such as a cycle, has no final throughput. Only an edgeless observation falls back.
+  const finals: Rated[] = [];
+  for (const sinkId of sinks) {
+    const sinkEdge = observation.edges.find((edge) => edge.toProcessId === sinkId);
+    const found = sinkEdge
+      ? rows.find(
+          (row) =>
+            row.sample.processId === sinkId &&
+            row.sample.resourceId === sinkEdge.toResourceId &&
+            row.sample.kind === "throughput",
+        )
       : undefined;
-  if (sinkThroughput) {
+    if (found) finals.push(found);
+  }
+  if (observation.edges.length === 0) {
+    const lone = rows.find((row) => row.sample.kind === "throughput");
+    if (lone) finals.push(lone);
+  }
+  for (const final of finals) {
     facts.push({
-      id: "fact:final-throughput",
-      processId: sinkThroughput.sample.processId,
+      id: `fact:final-throughput:${final.sample.processId}`,
+      processId: final.sample.processId,
       kind: "final-throughput",
-      amount: sinkThroughput.sample.amount,
-      unit: sinkThroughput.sample.unit,
-      window: { startSec: sinkThroughput.sample.startSec, endSec: sinkThroughput.sample.endSec },
-      evidenceRefs: [`sample:${sinkThroughput.index}`],
+      amount: final.sample.amount,
+      unit: final.sample.unit,
+      window: { startSec: final.sample.startSec, endSec: final.sample.endSec },
+      evidenceRefs: [`sample:${final.index}`],
     });
   }
   // Every saturated process is a candidate, one per process, so a later causally named bind is not missed.
@@ -444,41 +461,70 @@ export function diagnoseFlow(observation: FlowObservationV1): FlowReportV1 {
       evidenceRefs: [`sample:${row.index}`, `sample:${capacity.index}`],
     });
   }
+  // Edges that deliver one destination process and resource are checked together, so fan-in is summed.
+  // Every source window is tried, throughput before inflow, so sample order does not hide a conserving window.
+  const groups = new Map<string, number[]>();
   observation.edges.forEach((edge, edgeIndex) => {
-    // Source and destination samples are read for the edge's own resources, in one window. Every source
-    // window is tried, throughput before inflow, so sample order does not hide a conserving window.
+    const key = JSON.stringify([edge.toProcessId, edge.toResourceId]);
+    groups.set(key, [...(groups.get(key) ?? []), edgeIndex]);
+  });
+  const sourcesOf = (edge: FlowEdgeV1): Rated[] => {
     const sourced = rows.filter(
       (row) =>
         row.sample.processId === edge.fromProcessId &&
         row.sample.resourceId === edge.fromResourceId &&
         (row.sample.kind === "throughput" || row.sample.kind === "inflow"),
     );
-    const ordered = [
-      ...sourced.filter((row) => row.sample.kind === "throughput"),
-      ...sourced.filter((row) => row.sample.kind === "inflow"),
-    ];
-    for (const inflow of ordered) {
-      const theoretical = convert(inflow.value, edge);
-      if (theoretical === null) continue;
-      const window: Window = { startSec: inflow.sample.startSec, endSec: inflow.sample.endSec };
-      const queue = sampleAt(rows, edge.toProcessId, edge.toResourceId, "queue", window);
-      const unretained = sampleAt(rows, edge.toProcessId, edge.toResourceId, "unretained", window);
+    return [...sourced.filter((row) => row.sample.kind === "throughput"), ...sourced.filter((row) => row.sample.kind === "inflow")];
+  };
+  for (const edgeIndexes of groups.values()) {
+    const grouped = edgeIndexes.map((edgeIndex) => ({ edge: observation.edges[edgeIndex] as FlowEdgeV1, edgeIndex, sources: [] as Rated[] }));
+    for (const item of grouped) item.sources = sourcesOf(item.edge);
+    const destination = grouped[0]?.edge;
+    if (!destination) continue;
+    const windows: Window[] = [];
+    for (const item of grouped) {
+      for (const row of item.sources) {
+        if (!windows.some((window) => window.startSec === row.sample.startSec && window.endSec === row.sample.endSec)) {
+          windows.push({ startSec: row.sample.startSec, endSec: row.sample.endSec });
+        }
+      }
+    }
+    for (const window of windows) {
+      const inputs = grouped.map((item) =>
+        item.sources.find((row) => row.sample.startSec === window.startSec && row.sample.endSec === window.endSec),
+      );
+      if (inputs.some((input) => input === undefined)) continue;
+      const present = inputs as Rated[];
+      let theoretical = 0;
+      for (const [k, input] of present.entries()) {
+        const converted = convert(input.value, (grouped[k] as (typeof grouped)[number]).edge);
+        theoretical = converted === null ? Number.NaN : theoretical + converted;
+      }
+      if (!Number.isFinite(theoretical)) continue;
+      const queue = sampleAt(rows, destination.toProcessId, destination.toResourceId, "queue", window);
+      const unretained = sampleAt(rows, destination.toProcessId, destination.toResourceId, "unretained", window);
       if (!queue || !unretained || queue.sample.unit !== unretained.sample.unit) continue;
-      if (queue.sample.unit === inflow.sample.unit) continue;
+      if (present.some((input) => input.sample.unit === queue.sample.unit)) continue;
       const held = queue.value + unretained.value;
       if (!nearly(held, theoretical)) continue;
       facts.push({
-        id: `fact:conservation:${edgeIndex}`,
-        processId: edge.toProcessId,
+        id: `fact:conservation:${edgeIndexes[0]}`,
+        processId: destination.toProcessId,
         kind: "conservation",
         amount: formatDecimal(theoretical),
         unit: queue.sample.unit,
         window,
-        evidenceRefs: [`sample:${inflow.index}`, `sample:${queue.index}`, `sample:${unretained.index}`, `edge:${edgeIndex}`],
+        evidenceRefs: [
+          ...present.map((input) => `sample:${input.index}`),
+          `sample:${queue.index}`,
+          `sample:${unretained.index}`,
+          ...edgeIndexes.map((edgeIndex) => `edge:${edgeIndex}`),
+        ],
       });
-      return;
+      break;
     }
-  });
+  }
   const hypotheses: FlowHypothesisV1[] = [];
   // The bind a causal model or experiment names is confirmed and comes first. Other binds stay suspected.
   const causalId = observation.causal?.processId;
