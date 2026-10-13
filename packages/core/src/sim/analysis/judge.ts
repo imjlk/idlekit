@@ -1,5 +1,10 @@
 import typia, { type IValidation } from "typia";
-import { analysisAlgorithmVersion, type AnalysisArtifactV1, type MetricReadingV1 } from "./contracts";
+import {
+  analysisAlgorithmVersion,
+  validateAnalysisSemantics,
+  type AnalysisArtifactV1,
+  type MetricReadingV1,
+} from "./contracts";
 import {
   evaluateBalanceChecks,
   type BalanceCheckReportV1,
@@ -156,8 +161,9 @@ export function judgeJsonSchema(): ReturnType<typeof buildJudgeJsonSchema> {
   return judgeJsonSchemaUnit;
 }
 
+// Equals validation: an unknown rubric field is rejected, not ignored.
 const validateRubric = (input: unknown): IValidation<JudgeRubricV1> =>
-  (validateRubricValidator ??= typia.createValidate<JudgeRubricV1>())(input);
+  (validateRubricValidator ??= typia.createValidateEquals<JudgeRubricV1>())(input);
 
 const TEMPLATES: Readonly<Record<RecommendationId, Readonly<{ en: string; ko: string }>>> = {
   "rec.metric.within-threshold": {
@@ -277,15 +283,29 @@ function fillTemplate(id: RecommendationId, metricId: string): Readonly<{ en: st
   };
 }
 
+type BalanceResult = BalanceCheckReportV1["results"][number];
+
 function outcomeFor(
-  verdict: BalanceCheckReportV1["results"][number]["verdict"],
+  result: BalanceResult | undefined,
   estimated: boolean,
+  rule: JudgeRuleV1,
 ): { recommendationId: RecommendationId; status: DiagnosticStatus; category: JudgeLayer; severity: "error" | "warn" | "info" } {
+  const verdict = result?.verdict ?? "inconclusive";
+  // A missing or absent reading is insufficient whatever its missing policy makes the numerical verdict.
+  const noReading = !result || result.evidence.status === "missing" || result.evidence.status === "absent";
   if (estimated) {
     return {
       recommendationId: "rec.metric.estimate-not-measured",
       status: "insufficient",
       category: "estimate",
+      severity: "info",
+    };
+  }
+  if (noReading) {
+    return {
+      recommendationId: "rec.metric.insufficient",
+      status: "insufficient",
+      category: "semantic",
       severity: "info",
     };
   }
@@ -298,8 +318,9 @@ function outcomeFor(
     };
   }
   if (verdict === "fail") {
+    // The rubric rule selects the recommendation for its own violation.
     return {
-      recommendationId: "rec.metric.outside-threshold",
+      recommendationId: rule.recommendationId,
       status: "conflict",
       category: "semantic",
       severity: "warn",
@@ -330,7 +351,13 @@ export function judgeArtifact(
     return { ok: false, issues: ["artifact algorithmVersion"] };
   }
   if (rubric.rules.length === 0) return { ok: false, issues: ["rubric has no rules"] };
+  // A structurally valid artifact can still break its cross-field contract; that artifact is not judged.
+  const semantic = validateAnalysisSemantics(artifact);
+  if (semantic.length > 0) {
+    return { ok: false, issues: semantic.map((issue) => `artifact ${issue.path} ${issue.message}`) };
+  }
   const issues: string[] = [];
+  const observed = new Set<string>();
   const observations: BalanceObservationV1[] = [];
   const estimatedObservations: EstimatedObservationV1[] = [];
   const prepared: Array<{ rule: JudgeRuleV1; estimated: EstimatedObservationV1 | null; ref: string }> = [];
@@ -341,8 +368,12 @@ export function judgeArtifact(
       continue;
     }
     const mapped = toObservation(artifact, reading);
-    observations.push(mapped.observation);
-    if (mapped.estimated) estimatedObservations.push(mapped.estimated);
+    // One observation per metric, so two rules on the same metric judge the same reading.
+    if (!observed.has(reading.metricId)) {
+      observed.add(reading.metricId);
+      observations.push(mapped.observation);
+      if (mapped.estimated) estimatedObservations.push(mapped.estimated);
+    }
     prepared.push({ rule, estimated: mapped.estimated, ref: `metric:${rule.metricId}` });
   }
   if (issues.length > 0) return { ok: false, issues };
@@ -374,8 +405,7 @@ export function judgeArtifact(
   });
   const assumptionRefs = artifact.assumptions.filter((item) => item.length > 0);
   const diagnostics: JudgeDiagnosticV1[] = prepared.map((item, index) => {
-    const result = numerical.results[index];
-    const outcome = outcomeFor(result?.verdict ?? "inconclusive", item.estimated !== null);
+    const outcome = outcomeFor(numerical.results[index], item.estimated !== null, item.rule);
     return {
       id: item.rule.id,
       category: outcome.category,

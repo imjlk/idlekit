@@ -10,11 +10,11 @@ The rubric is data: schema version 1, contract `idlekit.judge.rubric.v1`, a rubr
 
 Numeric pass and fail come from the balance-check engine. A measured 1.5h first reset passes `lte` 2. A measured 3h fails inside `numerical` and is also a semantic `conflict`. The numerical object is not rewritten. `baselineRewrite` stays false. An amount decimal is not narrowed to a JavaScript number.
 
-A rubric metric id that is not on the artifact is rejected. An artifact algorithm version other than `analysis-artifact-v1` is rejected. An estimate is listed under `estimatedObservations` and is not a measured pass. An unavailable reading stays `insufficient`.
+A rubric metric id that is not on the artifact is rejected. An artifact algorithm version other than `analysis-artifact-v1` is rejected. An estimate is listed under `estimatedObservations` and is not a measured pass. An unavailable reading stays `insufficient`, also when its rule uses `missingPolicy: "fail"` and the numerical verdict fails. An artifact that fails the semantic contract (for example a numeric reading that also carries an amount) is rejected before judging.
 
-English and Korean sentences are templates selected by `recommendationId`. The advisory digest is `rules:<rubricVersion>:<recommendation ids>`. The same inputs produce the same digest. The path does not fetch.
+English and Korean sentences are templates selected by `recommendationId`. A rule's `recommendationId` selects the template for its own measured conflict. Pass, estimate, insufficient, and unsupported outcomes use their fixed templates. The advisory digest is `rules:<rubricVersion>:<recommendation ids>`. The same inputs produce the same digest. The path does not fetch.
 
-The structural contract is `idlekit.judge.v1` at [docs/schemas/judge.output.schema.json](./schemas/judge.output.schema.json). The generator also writes [docs/schemas/generated/judge.v1.schema.json](./schemas/generated/judge.v1.schema.json). This does not replace `ScenarioV1` or the balance-check document.
+The structural contract is `idlekit.judge.v1` at [docs/schemas/judge.output.schema.json](./schemas/judge.output.schema.json). The generator also writes [docs/schemas/generated/judge.v1.schema.json](./schemas/generated/judge.v1.schema.json). This does not replace `ScenarioV1` or the balance-check document. JSON output is exactly that document and carries no `_meta` envelope. `--out` writes JSON, Markdown, and CSV alike.
 
 Reproduction label for the hour examples is `18`.
 

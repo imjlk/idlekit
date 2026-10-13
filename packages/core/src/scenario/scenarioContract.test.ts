@@ -1,4 +1,4 @@
-import { cpSync, readdirSync, readFileSync, rmSync, writeFileSync } from "fs";
+import { cpSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join, resolve } from "path";
 import typia from "typia";
@@ -371,10 +371,14 @@ export function keepsGeneratedContractsStable(): void {
   const left = join(tmpdir(), `idlekit-tc05-gen-a-${crypto.randomUUID()}`);
   const right = join(tmpdir(), `idlekit-tc05-gen-b-${crypto.randomUUID()}`);
   try {
+    // A --dest generation must not touch the tracked public judge schema.
+    const publicJudge = join(repoRoot, "docs/schemas/judge.output.schema.json");
+    const publicJudgeBefore = statSync(publicJudge).mtimeMs;
     const wroteLeft = spawnContract(["tools/generate-contracts.ts", "--dest", left]);
     const wroteRight = spawnContract(["tools/generate-contracts.ts", "--dest", right]);
     expect(wroteLeft.exitCode).toBe(0);
     expect(wroteRight.exitCode).toBe(0);
+    expect(statSync(publicJudge).mtimeMs).toBe(publicJudgeBefore);
     const names = readdirSync(left).sort();
     expect(names).toEqual(readdirSync(right).sort());
     for (const name of names) {

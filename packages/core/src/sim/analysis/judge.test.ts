@@ -143,7 +143,7 @@ export function acceptsRulesProvider(): void {
  * @evidence ./judge.ts#judgeCheckReuse Reads the check-reuse marker.
  * @evidenceReview ./judge.ts#judgeCheckReuse #6aa2e90 The declaration is checks-not-recomputed.
  * @evidence ./judge.ts#judgeArtifact Maps artifact readings into balance checks and builds the report.
- * @evidenceReview ./judge.ts#judgeArtifact #2aafd76 The numerical block equals a direct evaluateBalanceChecks call for 3h, and an amount reading is unsupported with no value.
+ * @evidenceReview ./judge.ts#judgeArtifact #1378974 Re-read the function: it rejects a semantically invalid artifact, maps each metric to one observation, the numerical block equals a direct evaluateBalanceChecks call for 3h, an amount reading is unsupported with no value, and two rules on one metric both pass.
  */
 export function reusesBalanceChecks(): void {
   expect(judgeCheckReuse).toBe("checks-not-recomputed");
@@ -218,6 +218,14 @@ export function reusesBalanceChecks(): void {
   if (!amount.ok) return;
   expect(amount.report.numerical.results[0]?.verdict).toBe("unsupported");
   expect(amount.report.numerical.results[0]?.evidence.value).toBeNull();
+  // Two rules on one metric judge the same reading once each, not an ambiguous pair.
+  const twice = judgeArtifact(
+    artifact([reading({ reading: "observed", status: "ok", value: 1.5 })]),
+    rubric([rule(), rule({ id: "first-reset-floor", operator: "gte", threshold: 1 })]),
+  );
+  expect(twice.ok).toBe(true);
+  if (!twice.ok) return;
+  expect(twice.report.numerical.results.map((result) => result.verdict)).toEqual(["pass", "pass"]);
 }
 
 /**
@@ -236,6 +244,22 @@ export function rejectsBadRefs(): void {
   const empty = parseJudgeRubric(rubric([]));
   expect(empty.ok).toBe(false);
   if (!empty.ok) expect(empty.issues).toEqual(["rubric has no rules"]);
+  // Unknown fields are rejected at the rubric root and inside a rule.
+  const extraRoot = parseJudgeRubric({ ...rubric(), notes: "typo" });
+  expect(extraRoot.ok).toBe(false);
+  if (!extraRoot.ok) expect(extraRoot.issues.join(" ")).toContain("notes");
+  const extraRule = parseJudgeRubric(rubric([{ ...rule(), thresold: 3 } as JudgeRuleV1]));
+  expect(extraRule.ok).toBe(false);
+  if (!extraRule.ok) expect(extraRule.issues.join(" ")).toContain("thresold");
+  // A structurally valid artifact that breaks its semantic contract is not judged.
+  const twoRepresentations = judgeArtifact(
+    artifact([reading({ reading: "observed", status: "ok", value: 1, amount: { unit: "coin", decimal: "1" } })]),
+    rubric(),
+  );
+  expect(twoRepresentations.ok).toBe(false);
+  if (!twoRepresentations.ok) {
+    expect(twoRepresentations.issues).toContain("artifact metrics.0 numeric reading carries an amount");
+  }
   const badAlgorithm = judgeArtifact(
     artifact([reading({ reading: "observed", status: "ok", value: 1.5 })], { algorithmVersion: "other" }),
     rubric(),
@@ -272,6 +296,18 @@ export function separatesReportLayers(): void {
   expect(judged.report.diagnostics[0]?.text.ko).toContain("first-reset");
   expect(judged.report.diagnostics[0]?.assumptionRefs).toEqual([`seed-${SEED}`]);
   expect(judged.report.advisoryDigest).toBe("rules:rubric-18:rec.metric.outside-threshold");
+  // The rubric rule's recommendationId selects the template for its own violation.
+  const chosen = judgeArtifact(
+    artifact([reading({ reading: "observed", status: "ok", value: 3 })]),
+    rubric([rule({ recommendationId: "rec.metric.unsupported" })]),
+  );
+  expect(chosen.ok).toBe(true);
+  if (!chosen.ok) return;
+  expect(chosen.report.diagnostics[0]?.status).toBe("conflict");
+  expect(chosen.report.diagnostics[0]?.recommendationId).toBe("rec.metric.unsupported");
+  expect(chosen.report.diagnostics[0]?.text.en).toBe("Metric first-reset cannot be compared by the rules provider.");
+  expect(chosen.report.advisoryDigest).toBe("rules:rubric-18:rec.metric.unsupported");
+  expect(chosen.report.numerical).toEqual(judged.report.numerical);
 }
 
 /**
@@ -311,6 +347,17 @@ export function withholdsHealthLabels(): void {
   expect(estimated.report.estimatedObservations).toEqual([{ metricId: "first-reset", value: 1.5, reason: null }]);
   expect(estimated.report.diagnostics[0]?.category).toBe("estimate");
   expect(estimated.report.diagnostics[0]?.status).toBe("insufficient");
+  // missingPolicy fail fails the numerical gate, but a missing reading is still insufficient, not a conflict.
+  const failMissing = judgeArtifact(
+    artifact([reading({ reading: "unavailable", status: "insufficient-data" })], { observationCoverage: "incomplete" }),
+    rubric([rule({ missingPolicy: "fail" })]),
+  );
+  expect(failMissing.ok).toBe(true);
+  if (!failMissing.ok) return;
+  expect(failMissing.report.numerical.results[0]?.verdict).toBe("fail");
+  expect(failMissing.report.numerical.pass).toBe(false);
+  expect(failMissing.report.diagnostics[0]?.status).toBe("insufficient");
+  expect(failMissing.report.diagnostics[0]?.recommendationId).toBe("rec.metric.insufficient");
 }
 
 describe("optional analysis judge", () => {

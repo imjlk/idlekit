@@ -602,7 +602,11 @@ export function writeContracts(dir: string, base = root): void {
   writeFileSync(join(base, balancePublicSchema), rendered.balanceSchema);
   writeFileSync(join(dir, judgeSchemaName), rendered.judgeSchema);
   writeFileSync(join(dir, judgeFieldsName), rendered.judgeFields);
-  writeFileSync(join(base, judgePublicSchema), rendered.judgeSchema);
+  // Only a generation into the tracked directory refreshes the tracked public copy.
+  // A --dest generation stays inside its own directory.
+  if (resolve(dir) === resolve(base, "docs/schemas/generated")) {
+    writeFileSync(join(base, judgePublicSchema), rendered.judgeSchema);
+  }
 }
 
 export function compareContracts(dir: string, base = root): string[] {

@@ -2,7 +2,6 @@ import { defineCommand, option } from "../runtime/command";
 import type { JudgeReportV1 } from "@idlekit/core";
 import { z } from "zod";
 import { usageError } from "../errors";
-import { buildOutputMeta } from "../io/outputMeta";
 import { writeOutput } from "../io/writeOutput";
 import { readJsonFile } from "../runtime/bun";
 import { readJudgeInputs } from "../lib/evaluation/input";
@@ -58,15 +57,12 @@ export async function runJudge(flags: {
     const message = error instanceof Error ? error.message : String(error);
     throw usageError(`Invalid judge input: ${message}`);
   }
-  if (flags.format === "md") {
-    console.log(renderJudgeMarkdown(report));
-    return report;
-  }
+  // JSON output is exactly idlekit.judge.v1, whose root rejects extra keys, so no `_meta` is attached.
+  // Markdown goes through writeOutput too, so --out applies to every format.
   await writeOutput({
     format: flags.format,
     outPath: flags.out,
-    data: report,
-    meta: buildOutputMeta({ command: "judge", pluginDigest: {} }),
+    data: flags.format === "md" ? renderJudgeMarkdown(report) : report,
   });
   return report;
 }
