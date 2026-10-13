@@ -702,11 +702,38 @@ async function verifyCalibrationExamples(): Promise<void> {
   }
 }
 
+async function verifyResetCycleExample(): Promise<void> {
+  const command = "bun examples/reset-cycle/save-resume.ts";
+  for (const doc of ["examples/reset-cycle/README.md", "examples/reset-cycle/README_ko.md"]) {
+    const text = await readText(resolve(ROOT, doc));
+    assert(text.split(/\r?\n/).filter((line) => line === command).length === 1, `${doc} must document the reset-cycle command`);
+  }
+  const checkpointPath = resolve(tmpDir, "reset-cycle-checkpoint.json");
+  const result = asRecord(JSON.parse(runText(["bun", "examples/reset-cycle/save-resume.ts", checkpointPath])) as JSONValue);
+  assert(result.matchesContinuous === true, "saved reset-cycle execution must match the continuous execution");
+  const cut = asRecord(result.cut as JSONValue);
+  assert(
+    cut.elapsedSec === 3 && cut.nextIndex === 0 && cut.pendingSec === 3 && cut.pendingDurationSec === 10,
+    "reset-cycle example must stop three steps into the first ten-second cycle",
+  );
+  const final = asRecord(result.final as JSONValue);
+  assert(
+    final.elapsedSec === 30 && final.nextIndex === 3 && final.coins === 30 && final.points === 3 && final.accumulatedReward === 3,
+    "reset-cycle example must finish thirty seconds with three resets",
+  );
+  const saved = asRecord(JSON.parse(await readText(checkpointPath)) as JSONValue);
+  assert(
+    saved.contract === "idlekit.reset-cycle-checkpoint" && saved.version === 1 && saved.pendingSec === 3,
+    "reset-cycle example must persist the pending checkpoint as JSON",
+  );
+}
+
 async function main(): Promise<void> {
   await removePath(tmpDir);
   await ensureDir(tmpDir);
   await verifyCalibrationExamples();
   await verifyExperienceExamples();
+  await verifyResetCycleExample();
   await verifyIntroTrack();
   if (!isQuick) await verifyPluginTrack();
   console.log(`docs verification passed (${isQuick ? "quick" : "full"})`);
