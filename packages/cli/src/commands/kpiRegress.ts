@@ -1,3 +1,4 @@
+import { adaptKpiRegression } from "@idlekit/core";
 import { defineCommand, option } from "../runtime/command";
 import { resolve } from "path";
 import { z } from "zod";
@@ -5,43 +6,40 @@ import { buildOutputMeta } from "../io/outputMeta";
 import { writeOutput } from "../io/writeOutput";
 import { readJsonFile } from "../runtime/bun";
 
-type Side = "a" | "b";
-type Horizon = "at7d" | "at30d" | "at90d";
-
-function toLog10(value: unknown): number {
-  if (typeof value === "number") {
-    if (value <= 0) return Number.NEGATIVE_INFINITY;
-    return Math.log10(value);
-  }
-  if (typeof value !== "string") {
-    throw new Error(`Expected numeric string, got ${typeof value}`);
-  }
-
-  const s = value.trim().toLowerCase();
-  if (!s || s === "0") return Number.NEGATIVE_INFINITY;
-
-  const asNum = Number(s);
-  if (Number.isFinite(asNum) && asNum > 0) return Math.log10(asNum);
-
-  const sci = s.match(/^([+-]?\d+(?:\.\d+)?)e([+-]?\d+)$/);
-  if (sci) {
-    const m = Number(sci[1] ?? "");
-    const e = Number(sci[2] ?? "");
-    if (!Number.isFinite(m) || !Number.isFinite(e) || m <= 0) {
-      throw new Error(`Invalid numeric string: ${value}`);
-    }
-    return Math.log10(m) + e;
-  }
-
-  throw new Error(`Unsupported numeric string: ${value}`);
-}
-
-function readHorizon(report: any, side: Side, horizon: Horizon): any {
-  const row = report?.ltv?.[side]?.summary?.[horizon];
-  if (!row || typeof row !== "object") {
-    throw new Error(`Missing horizon '${horizon}' for side '${side}'`);
-  }
-  return row;
+export async function runKpiRegression(flags: {
+  baseline: string;
+  current: string;
+  "min-worth-ratio": number;
+  "max-stall-delta": number;
+  "max-dropped-delta": number;
+  "min-visible-progress-ratio": number;
+  "max-no-reward-gap-delta": number;
+  out?: string;
+  format: "json" | "md" | "csv";
+}) {
+  const baselinePath = resolve(flags.baseline);
+  const currentPath = resolve(flags.current);
+  const baseline = await readJsonFile<unknown>(baselinePath);
+  const current = await readJsonFile<unknown>(currentPath);
+  const output = adaptKpiRegression({
+    baseline,
+    current,
+    baselinePath,
+    currentPath,
+    generatedAt: new Date().toISOString(),
+    minWorthRatio: flags["min-worth-ratio"],
+    maxStallDelta: flags["max-stall-delta"],
+    maxDroppedDelta: flags["max-dropped-delta"],
+    minVisibleProgressRatio: flags["min-visible-progress-ratio"],
+    maxNoRewardGapDelta: flags["max-no-reward-gap-delta"],
+  });
+  await writeOutput({
+    format: flags.format,
+    outPath: flags.out,
+    data: output,
+    meta: buildOutputMeta({ command: "kpi.regress" }),
+  });
+  return output;
 }
 
 export default defineCommand({
@@ -73,165 +71,7 @@ export default defineCommand({
     format: option(z.enum(["json", "md", "csv"]).default("json"), { description: "Output format" }),
   },
   async handler({ flags }) {
-    const baselinePath = resolve(flags.baseline);
-    const currentPath = resolve(flags.current);
-    const baseline = await readJsonFile<any>(baselinePath);
-    const current = await readJsonFile<any>(currentPath);
-
-    const horizons: Horizon[] = ["at7d", "at30d", "at90d"];
-    const sides: Side[] = ["a", "b"];
-    const checks: Array<{
-      side: Side;
-      horizon: Horizon;
-      baseline: {
-        endNetWorth: string;
-        stallRatio: number;
-        droppedRate: number;
-      };
-      current: {
-        endNetWorth: string;
-        stallRatio: number;
-        droppedRate: number;
-      };
-      deltas: {
-        endWorthLog10: number;
-        stallRatio: number;
-        droppedRate: number;
-      };
-      thresholds: {
-        minWorthLog10Delta: number;
-        maxStallDelta: number;
-        maxDroppedDelta: number;
-      };
-      pass: {
-        worth: boolean;
-        stallRatio: boolean;
-        droppedRate: boolean;
-        overall: boolean;
-      };
-    }> = [];
-
-    const minWorthLog10Delta = Math.log10(flags["min-worth-ratio"]);
-    for (const side of sides) {
-      for (const horizon of horizons) {
-        const b = readHorizon(baseline, side, horizon);
-        const c = readHorizon(current, side, horizon);
-        const bWorth = String(b.endNetWorth ?? "");
-        const cWorth = String(c.endNetWorth ?? "");
-        const bStall = Number(b.guardrails?.stallRatio ?? 0);
-        const cStall = Number(c.guardrails?.stallRatio ?? 0);
-        const bDropped = Number(b.guardrails?.droppedRate ?? 0);
-        const cDropped = Number(c.guardrails?.droppedRate ?? 0);
-
-        const worthDeltaLog10 = toLog10(cWorth) - toLog10(bWorth);
-        const stallDelta = cStall - bStall;
-        const droppedDelta = cDropped - bDropped;
-
-        const worthPass = worthDeltaLog10 >= minWorthLog10Delta;
-        const stallPass = stallDelta <= flags["max-stall-delta"];
-        const droppedPass = droppedDelta <= flags["max-dropped-delta"];
-
-        checks.push({
-          side,
-          horizon,
-          baseline: {
-            endNetWorth: bWorth,
-            stallRatio: bStall,
-            droppedRate: bDropped,
-          },
-          current: {
-            endNetWorth: cWorth,
-            stallRatio: cStall,
-            droppedRate: cDropped,
-          },
-          deltas: {
-            endWorthLog10: worthDeltaLog10,
-            stallRatio: stallDelta,
-            droppedRate: droppedDelta,
-          },
-          thresholds: {
-            minWorthLog10Delta,
-            maxStallDelta: flags["max-stall-delta"],
-            maxDroppedDelta: flags["max-dropped-delta"],
-          },
-          pass: {
-            worth: worthPass,
-            stallRatio: stallPass,
-            droppedRate: droppedPass,
-            overall: worthPass && stallPass && droppedPass,
-          },
-        });
-      }
-    }
-
-    const pass = checks.every((x) => x.pass.overall);
-    const experienceChecks = sides.map((side) => {
-      const baselinePerceived = baseline?.experience?.[side]?.perceived ?? {};
-      const currentPerceived = current?.experience?.[side]?.perceived ?? {};
-
-      const baselineVisible = Number(baselinePerceived.visibleChangesPerMinute ?? 0);
-      const currentVisible = Number(currentPerceived.visibleChangesPerMinute ?? 0);
-      const baselineNoReward = Number(baselinePerceived.maxNoRewardGapSec ?? 0);
-      const currentNoReward = Number(currentPerceived.maxNoRewardGapSec ?? 0);
-
-      const visibleRatio =
-        baselineVisible <= 0 ? (currentVisible > 0 ? Number.POSITIVE_INFINITY : 1) : currentVisible / baselineVisible;
-      const noRewardDelta = currentNoReward - baselineNoReward;
-
-      const visiblePass = visibleRatio >= flags["min-visible-progress-ratio"];
-      const noRewardPass = noRewardDelta <= flags["max-no-reward-gap-delta"];
-
-      return {
-        side,
-        baseline: {
-          visibleChangesPerMinute: baselineVisible,
-          maxNoRewardGapSec: baselineNoReward,
-        },
-        current: {
-          visibleChangesPerMinute: currentVisible,
-          maxNoRewardGapSec: currentNoReward,
-        },
-        deltas: {
-          visibleRatio,
-          noRewardGapSec: noRewardDelta,
-        },
-        thresholds: {
-          minVisibleProgressRatio: flags["min-visible-progress-ratio"],
-          maxNoRewardGapDelta: flags["max-no-reward-gap-delta"],
-        },
-        pass: {
-          visibleProgress: visiblePass,
-          noRewardGap: noRewardPass,
-          overall: visiblePass && noRewardPass,
-        },
-      };
-    });
-    const overallPass = pass && experienceChecks.every((x) => x.pass.overall);
-    const output = {
-      baselinePath,
-      currentPath,
-      generatedAt: new Date().toISOString(),
-      thresholds: {
-        minWorthRatio: flags["min-worth-ratio"],
-        maxStallDelta: flags["max-stall-delta"],
-        maxDroppedDelta: flags["max-dropped-delta"],
-        minVisibleProgressRatio: flags["min-visible-progress-ratio"],
-        maxNoRewardGapDelta: flags["max-no-reward-gap-delta"],
-      },
-      pass: overallPass,
-      checks,
-      experienceChecks,
-    };
-
-    await writeOutput({
-      format: flags.format,
-      outPath: flags.out,
-      data: output,
-      meta: buildOutputMeta({ command: "kpi.regress" }),
-    });
-
-    if (!overallPass) {
-      process.exit(2);
-    }
+    const output = await runKpiRegression(flags);
+    if (!output.pass) process.exit(2);
   },
 });

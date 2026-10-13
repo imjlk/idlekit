@@ -28,6 +28,11 @@ import {
   distributionSchemaId,
 } from "../packages/core/src/sim/analysis/distribution";
 import {
+  balanceChecksAlgorithmVersion,
+  balanceChecksJsonSchema,
+  balanceChecksSchemaId,
+} from "../packages/core/src/sim/analysis/checks";
+import {
   resetPolicyAlgorithmVersion,
   resetPolicyJsonSchema,
   resetPolicySchemaId,
@@ -66,6 +71,9 @@ export const distributionSchemaName = "distribution.v1.schema.json";
 export const distributionFieldsName = "distribution.v1.fields.json";
 export const policySchemaName = "reset.policy.v1.schema.json";
 export const policyFieldsName = "reset.policy.v1.fields.json";
+export const balanceSchemaName = "balance-checks.v1.schema.json";
+export const balanceFieldsName = "balance-checks.v1.fields.json";
+export const balancePublicSchema = "docs/schemas/balance-checks.v1.schema.json";
 
 const inputs = [
   "packages/core/src/scenario/offlinePolicy.ts",
@@ -88,6 +96,7 @@ const growthInputs = ["packages/core/src/sim/analysis/contracts.ts", "packages/c
 const experimentInputs = ["packages/core/src/sim/analysis/experiment.ts", "packages/core/src/sim/analysis/sensitivity.ts"];
 const distributionInputs = ["packages/core/src/sim/analysis/distribution.ts"];
 const policyInputs = ["packages/core/src/sim/analysis/resetOptimization.ts"];
+const balanceInputs = ["packages/core/src/sim/analysis/checks.ts"];
 
 /** Digest each source with LF line endings, so a CRLF checkout matches the tracked contract. */
 export function digestSources(paths: readonly string[], base = root): SourceDigest[] {
@@ -127,6 +136,10 @@ export function distributionSourceDigests(base = root): SourceDigest[] {
 
 export function policySourceDigests(base = root): SourceDigest[] {
   return digestSources(policyInputs, base);
+}
+
+export function balanceSourceDigests(base = root): SourceDigest[] {
+  return digestSources(balanceInputs, base);
 }
 
 export function buildEtaContractDocument(sources: readonly SourceDigest[]) {
@@ -303,6 +316,35 @@ export function buildPolicyContractDocument(sources: readonly SourceDigest[]) {
   });
 }
 
+export function buildBalanceContractDocument(sources: readonly SourceDigest[]) {
+  const ordered = [...sources].sort((left, right) => (left.path < right.path ? -1 : left.path > right.path ? 1 : 0));
+  const sourceHash = sha256Text(
+    canonicalJson({
+      algorithmVersion: balanceChecksAlgorithmVersion(),
+      contractId: "idlekit.balance-checks.v1",
+      dialect: "openapi-3.1",
+      exportApi: "typia.json.schema",
+      generator: "idlekit.contract-generator",
+      generatorVersion: 1,
+      schemaId: balanceChecksSchemaId(),
+      sources: ordered,
+      typia: "14.0.6",
+    }),
+  );
+  return rootSchemaDocument(balanceChecksSchemaId(), balanceChecksJsonSchema(), {
+    generator: "idlekit.contract-generator" as const,
+    generatorVersion: 1 as const,
+    exportApi: "typia.json.schema" as const,
+    dialect: "openapi-3.1" as const,
+    typia: "14.0.6" as const,
+    schemaId: balanceChecksSchemaId(),
+    contractId: "idlekit.balance-checks.v1",
+    algorithmVersion: balanceChecksAlgorithmVersion(),
+    sourceHash,
+    sources: ordered,
+  });
+}
+
 export function buildAnalysisContractDocument(sources: readonly SourceDigest[]) {
   const ordered = [...sources].sort((left, right) => (left.path < right.path ? -1 : left.path > right.path ? 1 : 0));
   const sourceHash = sha256Text(
@@ -349,6 +391,8 @@ export function renderedContracts(base = root): {
   distributionFields: string;
   policySchema: string;
   policyFields: string;
+  balanceSchema: string;
+  balanceFields: string;
 } {
   const sources = sourceDigests(base);
   const analysisSources = analysisSourceDigests(base);
@@ -358,6 +402,7 @@ export function renderedContracts(base = root): {
   const experimentSources = experimentSourceDigests(base);
   const distributionSources = distributionSourceDigests(base);
   const policySources = policySourceDigests(base);
+  const balanceSources = balanceSourceDigests(base);
   const analysisDocument = buildAnalysisContractDocument(analysisSources);
   const etaDocument = buildEtaContractDocument(etaSources);
   const resetDocument = buildResetContractDocument(resetSources);
@@ -365,6 +410,7 @@ export function renderedContracts(base = root): {
   const experimentDocument = buildExperimentContractDocument(experimentSources);
   const distributionDocument = buildDistributionContractDocument(distributionSources);
   const policyDocument = buildPolicyContractDocument(policySources);
+  const balanceDocument = buildBalanceContractDocument(balanceSources);
   const analysisFields = structuralFieldMetadata(analysisArtifactJsonSchema());
   const etaFields = structuralFieldMetadata(etaEstimateJsonSchema());
   const resetFields = structuralFieldMetadata(resetCycleJsonSchema());
@@ -372,6 +418,7 @@ export function renderedContracts(base = root): {
   const experimentFields = structuralFieldMetadata(experimentJsonSchema());
   const distributionFields = structuralFieldMetadata(distributionJsonSchema());
   const policyFields = structuralFieldMetadata(resetPolicyJsonSchema());
+  const balanceFields = structuralFieldMetadata(balanceChecksJsonSchema());
   return {
     schema: `${canonicalJson(buildContractDocument(sources))}\n`,
     fields: `${canonicalJson(buildFieldMetadata(sources))}\n`,
@@ -459,6 +506,18 @@ export function renderedContracts(base = root): {
       enums: policyFields.enums,
       comments: policyFields.comments,
     })}\n`,
+    balanceSchema: `${analysisCanonicalJson(balanceDocument)}\n`,
+    balanceFields: `${analysisCanonicalJson({
+      idlekitContract: {
+        kind: "structural-metadata",
+        schemaId: balanceChecksSchemaId(),
+        sourceHash: balanceDocument.idlekitContract.sourceHash,
+        note: "Names, enum values, and schema descriptions only. No design intent, example balances, or translations.",
+      },
+      properties: balanceFields.properties,
+      enums: balanceFields.enums,
+      comments: balanceFields.comments,
+    })}\n`,
   };
 }
 
@@ -481,6 +540,13 @@ export function writeContracts(dir: string, base = root): void {
   writeFileSync(join(dir, distributionFieldsName), rendered.distributionFields);
   writeFileSync(join(dir, policySchemaName), rendered.policySchema);
   writeFileSync(join(dir, policyFieldsName), rendered.policyFields);
+  writeFileSync(join(dir, balanceSchemaName), rendered.balanceSchema);
+  writeFileSync(join(dir, balanceFieldsName), rendered.balanceFields);
+  // Only a generation into the tracked directory refreshes the tracked public copy.
+  // A --dest generation stays inside its own directory.
+  if (resolve(dir) === resolve(base, "docs/schemas/generated")) {
+    writeFileSync(join(base, balancePublicSchema), rendered.balanceSchema);
+  }
 }
 
 export function compareContracts(dir: string, base = root): string[] {
@@ -503,6 +569,8 @@ export function compareContracts(dir: string, base = root): string[] {
     [distributionFieldsName, rendered.distributionFields],
     [policySchemaName, rendered.policySchema],
     [policyFieldsName, rendered.policyFields],
+    [balanceSchemaName, rendered.balanceSchema],
+    [balanceFieldsName, rendered.balanceFields],
   ] as const) {
     const path = join(dir, name);
     let current = "";
@@ -515,5 +583,14 @@ export function compareContracts(dir: string, base = root): string[] {
     }
     if (current !== next) failures.push(`drift ${name}`);
   }
+  // The public balance check schema is a copy of the generated one, so editors can reference a stable path.
+  // A read failure is "missing"; any file that was read, including an empty one, is compared.
+  let publicCurrent: string | null = null;
+  try {
+    publicCurrent = readFileSync(join(base, balancePublicSchema), "utf8").replace(/\r\n/g, "\n");
+  } catch {
+    failures.push(`missing ${balancePublicSchema}`);
+  }
+  if (publicCurrent !== null && publicCurrent !== rendered.balanceSchema) failures.push(`drift ${balancePublicSchema}`);
   return failures;
 }

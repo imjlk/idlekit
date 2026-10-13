@@ -62,6 +62,8 @@ function relativizeRepoPaths(value: unknown): unknown {
   return value;
 }
 
+// Balance pass/fail is idk kpi regress and idk evaluate --checks.
+// This builder records a report. It does not judge metrics or rewrite a baseline.
 async function main(): Promise<void> {
   const args = parseArgs(process.argv);
   const scenarioAAbs = resolve(args.scenarioA);

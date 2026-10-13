@@ -154,6 +154,8 @@ export type ScenarioV1 = Readonly<{
       includeGrowth?: boolean;
       includeUX?: boolean;
     }>;
+    // Declaration only. simulate and evaluate do not execute these expressions.
+    // Supported grammar, when classified, is path operator value joined by && and ||.
     assertions?: ReadonlyArray<{
       expr: string;
       severity?: "error" | "warn";
