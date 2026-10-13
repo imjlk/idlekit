@@ -1,5 +1,12 @@
 # @idlekit/cli
 
+## 0.3.1 — 2026-10-13
+
+### Patch changes
+
+- [1199851](https://github.com/imjlk/idlekit/commit/1199851de5d9ab38600ecbc0cb3bb1b7431535a6) Add measured-condition follow-up checks to experience and comparison Markdown reports. Label the recorded session separately from Monte Carlo draw accounting, preserve unresolved population timings, and guide metric tradeoffs without changing JSON decisions. — Thanks @imjlk!
+- Updated dependencies: core@0.3.1
+
 ## 0.3.0 — 2026-10-12
 
 ### Minor changes
