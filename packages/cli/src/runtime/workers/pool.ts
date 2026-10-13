@@ -39,7 +39,13 @@ function failed(task: AnalysisTrialTaskV1, reason: string, attempts: number): An
     taskId: task.taskId,
     logicalIndex: task.logicalIndex,
     seed: task.seed,
-    status: reason === "abort" ? "cancelled" : reason === "timeout" || reason === "not-started" ? "incomplete" : "failed",
+    // Same classes as the local backend: queue-bound is incomplete there too.
+    status:
+      reason === "abort"
+        ? "cancelled"
+        : reason === "timeout" || reason === "not-started" || reason === "queue-bound"
+          ? "incomplete"
+          : "failed",
     reason,
     attempts,
     semanticDigest: null,
@@ -192,7 +198,15 @@ export async function runWorkerPool(args: Readonly<{
         retire(worker);
         feed();
       };
-      worker.postMessage({ type: "run", task });
+      try {
+        worker.postMessage({ type: "run", task });
+      } catch {
+        // A message the worker cannot receive fails this task alone. The slot stays usable.
+        if (!settle()) return;
+        results[index] = failed(task, "not serializable", attempt + 1);
+        dispatch(worker);
+        feed();
+      }
     };
 
     // Spawn cost covers every slot the batch opens, replacements included.

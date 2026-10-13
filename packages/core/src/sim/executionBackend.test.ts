@@ -78,7 +78,7 @@ export function keepsLocalDefault(): void {
 
 /**
  * @evidence docs/requirements/active/worker-execution-backend.md#req-dx05-serializable-task A function payload is refused. The seed follows the logical index.
- * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-serializable-task #d9d466b Re-read the section, then ran this function: reversing the input kept the same seed, a function payload failed, a cyclic payload and a bigint step budget each failed alone while the sibling ran, a shared reference passed, and the cost counted UTF-8 bytes of the valid task.
+ * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-serializable-task #6102bda Re-read the section, then ran this function: reversing the input kept the same seed, a function payload failed, a cyclic payload and a bigint step budget each failed alone while the sibling ran, a shared reference passed, and the cost counted UTF-8 bytes of the valid task.
  * @evidence ./executionBackend.ts#serializedTaskBytes Measures one task as UTF-8 bytes of its JSON.
  * @evidenceReview ./executionBackend.ts#serializedTaskBytes #06012ad A Hangul task id counts more bytes than UTF-16 units, and the batch cost equals the measured bytes.
  * @evidence ./executionBackend.ts#taskRefusals Checks every task before the batch measures or runs any.
@@ -88,7 +88,7 @@ export function keepsLocalDefault(): void {
  * @evidence ./executionBackend.ts#analysisTaskSeed Derives the seed from the logical index.
  * @evidenceReview ./executionBackend.ts#analysisTaskSeed #2b85c09 The seed is logicalDrawSeed of the base seed and index, so input order does not move it.
  * @evidence ./executionBackend.ts#assertSerializableTask Refuses a task that is not plain JSON.
- * @evidenceReview ./executionBackend.ts#assertSerializableTask #93ca5a6 Re-read the path-only cycle check and the step budget check: a function payload, a class instance, a non-finite number, a negative index, and a bigint step budget throw; a plain task and a shared acyclic reference pass.
+ * @evidenceReview ./executionBackend.ts#assertSerializableTask #c524db2 Re-read the path-only cycle check, the step budget check, and the whole-descriptor check: an extra own function on the task, a function payload, a class instance, a non-finite number, a negative index, and a bigint step budget throw; a plain task and a shared acyclic reference pass.
  */
 export function keepsSerializableTasks(): void {
   expect(executionSerializableTask).toBe("json-descriptor");
@@ -127,6 +127,9 @@ export function keepsSerializableTasks(): void {
   ]);
   expect(mixed.cost.serializedBytes).toBe(serializedTaskBytes(task(1)));
   expect(taskRefusals([task(0, { payload: cyclic }), task(1)])).toEqual(["cycle", null]);
+  // An extra own function on the descriptor is refused: JSON drops it, but posting it to a worker throws.
+  const decorated = { ...task(0), extra: () => 1 } as unknown as AnalysisTrialTaskV1;
+  expect(() => assertSerializableTask(decorated)).toThrow("not serializable");
   // A shared, acyclic reference is not a cycle. JSON and structured clone both carry it.
   const shared = { amount: "1" };
   expect(() => assertSerializableTask(task(0, { payload: { a: shared, b: shared, list: [shared, shared] } }))).not.toThrow();

@@ -15,7 +15,7 @@ export const executionLocalDefault = "local-default" as const;
 
 /**
  * @evidence docs/requirements/active/worker-execution-backend.md#req-dx05-serializable-task A task is a plain JSON descriptor. The seed is the logical draw seed.
- * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-serializable-task #d9d466b Re-read the section: functions, class instances, cyclic payloads, and a bad step budget are refused before cost is measured, a shared reference is allowed, and the seed does not read a worker slot.
+ * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-serializable-task #6102bda Re-read the section: functions, class instances, cyclic payloads, and a bad step budget are refused before cost is measured, a shared reference is allowed, and the seed does not read a worker slot.
  */
 export const executionSerializableTask = "json-descriptor" as const;
 
@@ -151,6 +151,8 @@ export function assertSerializableTask(task: AnalysisTrialTaskV1): void {
   assertPlain([...task.pluginPaths], new WeakSet());
   assertPlain([...task.pluginRoots], new WeakSet());
   assertPlain({ ...task.pluginDigests }, new WeakSet());
+  // The descriptor itself is posted, so an extra own property such as a function is refused here too.
+  assertPlain(task, new WeakSet());
 }
 
 /** Logical draw seed. Worker count and completion order are not arguments. */
