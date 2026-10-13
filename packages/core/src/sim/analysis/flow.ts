@@ -129,7 +129,7 @@ export const flowOptionalAdapter = "observer-not-required-model" as const;
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-pipeline A steady 100 to 20 to 30 chain binds at the middle stage.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-pipeline #2e39621 Re-read the section: final throughput stays 20 when inflow doubles, a bind reads one resource and one window, the causally named bind is confirmed among several, each terminal process reports a final throughput per delivered resource from its latest window, an inflow source offers work, a process binds on its latest saturated window, downstream slack counts every feed into that stage, a confirmed bind cites the causal record, and the bind cites its edges and requires a downstream capacity in the destination unit, citing the throughput that named it.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-pipeline #bed62f3 Re-read the section: final throughput stays 20 when inflow doubles, a bind reads one resource and one window, the causally named bind is confirmed among several, each terminal process reports a final throughput per delivered resource from its latest window, an inflow source offers work, a process binds on its latest saturated window, downstream slack counts every feed into that stage, a confirmed bind cites the causal record, and the bind cites its edges and requires a downstream capacity, upstream offer, and side feed in the unit an identity edge keeps, citing the throughput that named it.
  */
 export const flowPipelineConstraint = "process-throughput-20" as const;
 
@@ -387,7 +387,7 @@ function convert(amount: number, edge: FlowEdgeV1): number | null {
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-pipeline Diagnosis reads throughput, capacity, and the evidence window.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-pipeline #2e39621 Re-read the section: the middle stage binds and doubling inflow leaves throughput at 20; capacity and upstream samples match the edge resource and the throughput window, and every saturated process is a candidate.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-pipeline #bed62f3 Re-read the section: the middle stage binds and doubling inflow leaves throughput at 20; capacity and upstream samples match the edge resource and the throughput window, and every saturated process is a candidate.
  */
 export function diagnoseFlow(observation: FlowObservationV1): FlowReportV1 {
   const littlesLaw = littlesOf(observation.littles, observation.capability, observation.steady);
@@ -484,7 +484,9 @@ export function diagnoseFlow(observation: FlowObservationV1): FlowReportV1 {
         sampleAt(rows, edge.fromProcessId, edge.fromResourceId, "throughput", window) ??
         sampleAt(rows, edge.fromProcessId, edge.fromResourceId, "inflow", window);
       const converted = source ? convert(source.value, edge) : null;
-      if (!source || converted === null || offered === null) {
+      // An edge that keeps the resource keeps its rate unit, so its source must be in this process's unit.
+      const unitMismatch = source !== undefined && edge.fromResourceId === edge.toResourceId && source.sample.unit !== row.sample.unit;
+      if (!source || converted === null || offered === null || unitMismatch) {
         offered = null;
         break;
       }
@@ -518,6 +520,8 @@ export function diagnoseFlow(observation: FlowObservationV1): FlowReportV1 {
           sampleAt(rows, feed.fromProcessId, feed.fromResourceId, "throughput", window) ??
           sampleAt(rows, feed.fromProcessId, feed.fromResourceId, "inflow", window);
         if (!other) return false;
+        // A feed that keeps the resource must already be in the destination unit to be added to the load.
+        if (feed.fromResourceId === feed.toResourceId && other.sample.unit !== destinationUnit) return false;
         load += convert(other.value, feed) ?? Number.NaN;
         feedRefs.push(`sample:${other.index}`);
       }
