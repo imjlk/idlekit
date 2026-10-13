@@ -30,7 +30,7 @@ English version: [roadmap.md](./roadmap.md)
 7. `PR-17`과 `PR-18`: 결정적 밸런스 check, 그다음 선택적 rule judge.
 8. `PR-20`: 선택한 범위의 통합 fixture, 문서, 패키징, consumer gate.
 
-`PR-15`(흐름 관측), `PR-16`(가드된 시간 건너뛰기), `PR-19`(Jev provider), `DX-05`(worker backend)는 이 트리에 선택 기능으로 포함된다. 흐름은 사실을 기록하고 건강 판정을 하지 않는다. 가드된 advance는 analytic income이 fixed-step과 같을 때만 구간을 건너뛴다. Jev는 `idk judge --provider jev`일 때만 답하고, 그 답은 수치 판정이 아니다. worker pool은 명시적이다. 기본 backend는 local이고 logical index로 정렬한다. 이들은 publish gate가 아니다. `createBreakEternityEngine`은 지원하지 않는다. 이 통합은 npm에 publish하지 않는다. 손으로 맞춘 fixture는 [examples/analysis/integration-matrix.json](../examples/analysis/integration-matrix.json)이다.
+`PR-15`(흐름 관측), `PR-16`(가드된 시간 건너뛰기), `PR-19`(Jev provider), `DX-05`(worker backend)는 이 트리에 선택 기능으로 포함된다. 흐름은 사실을 기록하고 건강 판정을 하지 않는다. 가드된 advance는 analytic income이 fixed-step과 같을 때만 구간을 건너뛴다. Jev는 `idk judge --provider jev`일 때만 답하고, 그 답은 수치 판정이 아니다. worker pool은 명시적이다. 기본 backend는 local이고 logical index로 정렬한다. 실행 시에는 선택이지만 릴리스 검사에서는 선택이 아니다. `tools/publish-gate.ts`가 저장소 전체 `typecheck`, `test`, `build`를 실행하고 그 안에 이들의 소스와 테스트가 들어 있으므로, 어느 하나가 실패해도 게시가 막힌다. `createBreakEternityEngine`은 지원하지 않는다. 이 통합은 npm에 publish하지 않는다. 손으로 맞춘 fixture는 [examples/analysis/integration-matrix.json](../examples/analysis/integration-matrix.json)이다.
 
 `265c6ed`에서 root `packageManager`는 `bun@1.3.10`이었고 CI는 Bun `1.3.9`를 pin했다. `TC-01`이 CI를 Bun `1.3.10`으로 맞추고 ttsc를 pin한다. `TC-02`는 그 pin 위에서 check와 money/core emit을 `ttsc`로 실행한다. 그 compiler가 필요로 하는 개발용 Node나 Go는 host 세부사항이다. 제품 런타임은 Bun-first를 유지한다. [툴체인 pin](./toolchain_ko.md)을 본다.
 

@@ -102,7 +102,7 @@ function compile<N>(engine: Engine<N>, input: ScenarioV1, model: ModelFactory) {
 
 /**
  * @evidence docs/requirements/active/analysis-integration-release-gates.md#req-pr20-integration-matrix The matrix matches the hand formulas and leaves breakEternity unsupported.
- * @evidenceReview docs/requirements/active/analysis-integration-release-gates.md#req-pr20-integration-matrix #12c99a1 Re-read the section, then ran this function: linear, budget, goal, bulk, reset, logs, offline, and fresh cursors matched, and breakEternity threw.
+ * @evidenceReview docs/requirements/active/analysis-integration-release-gates.md#req-pr20-integration-matrix #e4b72ba Re-read the section, then ran this function: linear, budget, goal, bulk, reset, logs, offline, and fresh cursors matched, a shorter final tick matched its hand answer, equal reset wallets spelled differently were refused, and breakEternity threw.
  * @evidence ./integrationMatrix.ts#integrationReleaseScope Reads the scope marker.
  * @evidenceReview ./integrationMatrix.ts#integrationReleaseScope #01b8e4c The declaration is selected-optional-tracks.
  * @evidence ./integrationMatrix.ts#integrationUnsupportedEngine Reads the unsupported engine marker.
@@ -110,13 +110,13 @@ function compile<N>(engine: Engine<N>, input: ScenarioV1, model: ModelFactory) {
  * @evidence ./integrationMatrix.ts#integrationHandAnswer Reads the hand-answer marker.
  * @evidenceReview ./integrationMatrix.ts#integrationHandAnswer #3b85260 The declaration is integer-income-times-duration.
  * @evidence ./integrationMatrix.ts#expectedLinearEnd Computes the constant-income end wallet with integers.
- * @evidenceReview ./integrationMatrix.ts#expectedLinearEnd #2d7236d 0 plus 2 per second for 5 seconds is 10, a duration off the step grid throws, and the run ends there too.
+ * @evidenceReview ./integrationMatrix.ts#expectedLinearEnd #7379d25 Re-read the helper without the step-grid check: 0 plus 2 per second for 5 seconds is 10, a fractional duration throws, and 6-second steps over 10 seconds end at income times 10 seconds, as the run does.
  * @evidence ./integrationMatrix.ts#expectedBudgetEnd Computes the end wallet when maxSteps stops first.
  * @evidenceReview ./integrationMatrix.ts#expectedBudgetEnd #6d3152f Three steps of 2 per second end at 6, not the 100-second answer.
  * @evidence ./integrationMatrix.ts#expectedQuotedWallet Subtracts one quoted bulk total.
  * @evidenceReview ./integrationMatrix.ts#expectedQuotedWallet #ffd7c24 50 minus the quote 20 is 30, not 50 minus 3 times 10.
  * @evidence ./integrationMatrix.ts#expectedResetCarry Returns the declared gain and carry wallet.
- * @evidenceReview ./integrationMatrix.ts#expectedResetCarry #c9d6130 Gain 4 and carry 1 come back as declared, and a carry equal to the pre-reset wallet throws.
+ * @evidenceReview ./integrationMatrix.ts#expectedResetCarry #144d2d5 Gain 4 and carry 1 come back as declared, and a carry equal in value to the pre-reset wallet throws, including 01 against 1 and -0 against 0.
  */
 export function checksIntegrationMatrix(): void {
   const spec = matrix();
@@ -130,6 +130,9 @@ export function checksIntegrationMatrix(): void {
   const linearAnswer = expectedLinearEnd(spec.linear);
   expect(() => expectedLinearEnd({ ...spec.linear, durationSec: spec.linear.stepSec * 3 + 0.5 })).toThrow();
   expect(() => expectedResetCarry({ ...spec.reset, carryWallet: spec.reset.initialWallet })).toThrow("carry wallet must differ");
+  // Equal wallets spelled differently are still equal.
+  expect(() => expectedResetCarry({ ...spec.reset, initialWallet: "1", carryWallet: "01" })).toThrow("carry wallet must differ");
+  expect(() => expectedResetCarry({ ...spec.reset, initialWallet: "0", carryWallet: "-0" })).toThrow("carry wallet must differ");
   expect(linearAnswer).toBe(spec.linear.expectedEnd);
   const engine = createNumberEngine();
   const linear = compile(engine, scenario(spec.linear), factoryFor({ incomePerSec: spec.linear.incomePerSec }));
@@ -137,6 +140,13 @@ export function checksIntegrationMatrix(): void {
   expect(engine.toString(linearRun.end.wallet.money.amount)).toBe(linearAnswer);
   expect(spec.linear.expectedStop).toBe("duration");
   expect(linearRun.stop?.reason).toBe("duration");
+  // A duration off the step grid ends on a shorter final tick. The hand answer still covers every second.
+  const partial = { ...spec.linear, stepSec: 6, durationSec: 10 };
+  const partialAnswer = expectedLinearEnd(partial);
+  expect(partialAnswer).toBe((BigInt(partial.initial) + BigInt(partial.incomePerSec) * 10n).toString());
+  const partialRun = runScenario(compile(engine, scenario(partial), factoryFor({ incomePerSec: partial.incomePerSec })));
+  expect(engine.toString(partialRun.end.wallet.money.amount)).toBe(partialAnswer);
+  expect(partialRun.stop?.reason).toBe("duration");
 
   const budgetAnswer = expectedBudgetEnd(spec.budget);
   expect(budgetAnswer).toBe(spec.budget.expectedEnd);

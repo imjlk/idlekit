@@ -1,5 +1,5 @@
 import { existsSync, readdirSync, statSync } from "fs";
-import { dirname, isAbsolute, resolve } from "path";
+import { dirname, isAbsolute, relative, resolve } from "path";
 import { ROOT, ensureDir, runJson } from "./_bun";
 import {
   buildPerformanceArtifact,
@@ -14,6 +14,32 @@ import {
 
 const REPO_ROOT = resolve(import.meta.dir, "..");
 const CLI_ROOT = resolve(REPO_ROOT, "packages/cli");
+
+/** Recorded end money for each bench scenario, keyed by repo-relative path. */
+export const BENCH_END_MONEY_PATH = "examples/bench/end-money.json";
+
+export type EndMoneyCheck = "match" | "mismatch" | "unrecorded";
+
+/** Reads the recorded map. Anything but string values under `endMoney` is refused. */
+export function readBenchEndMoney(raw: unknown): Readonly<Record<string, string>> {
+  const record = raw && typeof raw === "object" ? (raw as { endMoney?: unknown }).endMoney : undefined;
+  if (!record || typeof record !== "object" || Array.isArray(record)) throw new Error(`${BENCH_END_MONEY_PATH} has no endMoney map`);
+  const out: Record<string, string> = {};
+  for (const [path, value] of Object.entries(record)) {
+    if (typeof value !== "string") throw new Error(`${BENCH_END_MONEY_PATH} ${path} is not a string`);
+    out[path] = value;
+  }
+  return out;
+}
+
+/**
+ * Every run of a scenario must return the recorded end money, compared as the exact string.
+ * A fast run with another total is a mismatch, and a scenario with no recorded value is unrecorded.
+ */
+export function endMoneyCheck(expected: string | undefined, observed: readonly unknown[]): EndMoneyCheck {
+  if (expected === undefined) return "unrecorded";
+  return observed.length > 0 && observed.every((value) => value === expected) ? "match" : "mismatch";
+}
 
 type Args = Readonly<{
   scenarios: string[];
@@ -239,6 +265,7 @@ type ScenarioBenchResult = {
     meanMs: boolean;
     p95Ms: boolean;
     baseline: boolean;
+    endMoney: EndMoneyCheck;
   };
   budget: PerformanceArtifact;
   comparison: ReturnType<typeof comparePerformanceBudgets> | null;
@@ -248,6 +275,7 @@ async function main(): Promise<void> {
   const args = parseArgs(process.argv);
   const host = currentHost();
   const bundled = ensureFreshBundle();
+  const recordedEndMoney = readBenchEndMoney(await Bun.file(resolve(REPO_ROOT, BENCH_END_MONEY_PATH)).json());
   const scenarioResults: ScenarioBenchResult[] = [];
   let baseline: PerformanceArtifact | null = null;
   if (args.baseline) {
@@ -263,6 +291,7 @@ async function main(): Promise<void> {
     const prepareWarm: number[] = [];
     const runtime: number[] = [];
     const retained: number[] = [];
+    const endMoney: unknown[] = [];
     let prepareCold: number | undefined;
     let beforeRuntime = { rss: 0, heap: 0 };
     let afterRuntime = { rss: 0, heap: 0 };
@@ -275,6 +304,7 @@ async function main(): Promise<void> {
       const start = performance.now();
       const output = runSimulateOnce(bundled, scenarioPath);
       const elapsed = performance.now() - start;
+      endMoney.push((output as { endMoney?: unknown }).endMoney);
       if (i === 0) prepareCold = elapsed;
       else if (i <= args.warmup) prepareWarm.push(elapsed);
       else {
@@ -320,6 +350,10 @@ async function main(): Promise<void> {
       });
       baselinePass = comparison.status === "pass";
     }
+    const scenarioKey = relative(REPO_ROOT, scenarioPath).split("\\").join("/");
+    const endMoneyResult = endMoneyCheck(recordedEndMoney[scenarioKey], endMoney);
+    // A wrong total never passes. Under --assert an unrecorded scenario does not pass either.
+    const endMoneyPass = endMoneyResult === "match" || (endMoneyResult === "unrecorded" && !args.assert);
     scenarioResults.push({
       scenario: scenarioPath,
       stats: {
@@ -328,8 +362,8 @@ async function main(): Promise<void> {
         maxMs: runtime.length ? Math.max(...runtime) : null,
         p95Ms,
       },
-      pass: passMean && passP95 && baselinePass,
-      checks: { meanMs: passMean, p95Ms: passP95, baseline: baselinePass },
+      pass: passMean && passP95 && baselinePass && endMoneyPass,
+      checks: { meanMs: passMean, p95Ms: passP95, baseline: baselinePass, endMoney: endMoneyResult },
       budget,
       comparison,
     });
