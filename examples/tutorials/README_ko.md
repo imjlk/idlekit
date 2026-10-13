@@ -22,6 +22,12 @@
 
 ## Learn Commands
 
+Reset cycle checkpoint를 저장하고 재개하여 연속 실행과 비교하려면
+[저장·재개 예제](../reset-cycle/README_ko.md)를 실행한다.
+
+linear 기본형은 결정론적이다. seed에 따른 변화, 검열 표본, 전체 p95 미확정 결과는
+[피드백 예제](../experience/README_ko.md)에서 실행해볼 수 있다.
+
 - `01-cafe-baseline.json`
   - `validate`, `simulate`, `eta`, `report` 체험용
 - `02-cafe-fast.json`

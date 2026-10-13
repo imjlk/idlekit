@@ -5,6 +5,10 @@
     "lib": [
       "ES2022"
     ],
+    "paths": {
+      "@idlekit/core": ["./packages/core/src/index.ts"],
+      "@idlekit/money": ["./packages/money/src/index.ts"]
+    },
     "plugins": [
       {
         "transform": "@ttsc/lint",
@@ -17,6 +21,8 @@
     "packages/core/src/**/*.ts",
     "packages/cli/src/**/*.ts",
     "packages/cli/scripts/**/*.ts",
+    "examples/**/*.ts",
+    "snippets/**/*.ts",
     "tools/*.ts"
   ]
 }

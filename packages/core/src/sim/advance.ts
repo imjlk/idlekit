@@ -1,5 +1,6 @@
 import typia, { type IValidation } from "typia";
 import type { Engine } from "../engine/types";
+import type { Money } from "../money/types";
 import { exactAmountSign } from "./step";
 import { nextBoundary, stepContext } from "./timeBoundary";
 import type { Model, SimContext, SimState } from "./types";
@@ -15,7 +16,7 @@ const ADVANCE_ALGORITHM_VERSION = "guarded-advance-1" as const;
 
 /**
  * @evidence docs/requirements/active/guarded-analytic-advance.md#req-pr16-guarded-fallback The published schema id is the advance report.
- * @evidenceReview docs/requirements/active/guarded-analytic-advance.md#req-pr16-guarded-fallback #2aa29e1 Re-read the section: the id is the advance v1 schema.
+ * @evidenceReview docs/requirements/active/guarded-analytic-advance.md#req-pr16-guarded-fallback #5b4bffc Re-read the section: the id is the advance v1 schema.
  */
 export function advanceSchemaId(): typeof ADVANCE_SCHEMA_ID {
   return ADVANCE_SCHEMA_ID;
@@ -23,7 +24,7 @@ export function advanceSchemaId(): typeof ADVANCE_SCHEMA_ID {
 
 /**
  * @evidence docs/requirements/active/guarded-analytic-advance.md#req-pr16-guarded-fallback The algorithm version is guarded-advance-1.
- * @evidenceReview docs/requirements/active/guarded-analytic-advance.md#req-pr16-guarded-fallback #2aa29e1 Re-read the section: the version string is guarded-advance-1.
+ * @evidenceReview docs/requirements/active/guarded-analytic-advance.md#req-pr16-guarded-fallback #5b4bffc Re-read the section: the version string is guarded-advance-1.
  */
 export function advanceAlgorithmVersion(): typeof ADVANCE_ALGORITHM_VERSION {
   return ADVANCE_ALGORITHM_VERSION;
@@ -48,13 +49,13 @@ export type AdvanceReportV1 = Readonly<{
 
 /**
  * @evidence docs/requirements/active/guarded-analytic-advance.md#req-pr16-guarded-fallback An unclear boundary stays on fixed-step.
- * @evidenceReview docs/requirements/active/guarded-analytic-advance.md#req-pr16-guarded-fallback #2aa29e1 Re-read the section: evolve, purchase, strategy, reset, milestone, capacity, session clock, emit, and a non-empty bucket refuse the chunk.
+ * @evidenceReview docs/requirements/active/guarded-analytic-advance.md#req-pr16-guarded-fallback #5b4bffc Re-read the section: evolve, purchase, strategy, reset, milestone, capacity, session clock, emit, and a non-empty bucket refuse the chunk.
  */
 export const advanceGuardedFallback = "unclear-boundary-uses-fixed-step" as const;
 
 /**
  * @evidence docs/requirements/active/guarded-analytic-advance.md#req-pr16-exact-match Constant income matches the reference wallet, goal time, and counters.
- * @evidenceReview docs/requirements/active/guarded-analytic-advance.md#req-pr16-exact-match #4a3881f Re-read the section: chunk size does not change the reference result.
+ * @evidenceReview docs/requirements/active/guarded-analytic-advance.md#req-pr16-exact-match #eaace6d Re-read the section: chunk size does not change the reference result.
  */
 export const advanceExactMatch = "constant-income-matches-reference" as const;
 
@@ -90,7 +91,7 @@ let validateAdvanceReportValidator: ((input: unknown) => IValidation<AdvanceRepo
 
 /**
  * @evidence docs/requirements/active/guarded-analytic-advance.md#req-pr16-guarded-fallback The published validator is createValidate of the advance report.
- * @evidenceReview docs/requirements/active/guarded-analytic-advance.md#req-pr16-guarded-fallback #2aa29e1 Re-read the section: the structural document is AdvanceReportV1.
+ * @evidenceReview docs/requirements/active/guarded-analytic-advance.md#req-pr16-guarded-fallback #5b4bffc Re-read the section: the structural document is AdvanceReportV1.
  */
 export const validateAdvanceReport = (input: unknown): IValidation<AdvanceReportV1> =>
   (validateAdvanceReportValidator ??= typia.createValidate<AdvanceReportV1>())(input);
@@ -103,7 +104,7 @@ let advanceJsonSchemaUnit: ReturnType<typeof buildAdvanceJsonSchema> | undefined
 
 /**
  * @evidence docs/requirements/active/guarded-analytic-advance.md#req-pr16-guarded-fallback The structural schema is OpenAPI 3.1 from typia.
- * @evidenceReview docs/requirements/active/guarded-analytic-advance.md#req-pr16-guarded-fallback #2aa29e1 Re-read the section: schema version is 3.1 and the contract id is idlekit.advance.v1.
+ * @evidenceReview docs/requirements/active/guarded-analytic-advance.md#req-pr16-guarded-fallback #5b4bffc Re-read the section: schema version is 3.1 and the contract id is idlekit.advance.v1.
  */
 export function advanceJsonSchema(): ReturnType<typeof buildAdvanceJsonSchema> {
   advanceJsonSchemaUnit ??= buildAdvanceJsonSchema();
@@ -121,7 +122,7 @@ type AdvanceLedger = {
 
 /**
  * @evidence docs/requirements/active/guarded-analytic-advance.md#req-pr16-guarded-fallback The ledger counts exact steps and fallback steps separately.
- * @evidenceReview docs/requirements/active/guarded-analytic-advance.md#req-pr16-guarded-fallback #2aa29e1 Re-read the section: an approximation request is not applied.
+ * @evidenceReview docs/requirements/active/guarded-analytic-advance.md#req-pr16-guarded-fallback #5b4bffc Re-read the section: an approximation request is not applied.
  */
 export function createAdvanceLedger(requested: AdvanceLedger["requested"], tolerance: string | null): AdvanceLedger {
   return { requested, tolerance, exactSteps: 0, fallbackSteps: 0, chunks: 0, reasons: [] };
@@ -129,7 +130,7 @@ export function createAdvanceLedger(requested: AdvanceLedger["requested"], toler
 
 /**
  * @evidence docs/requirements/active/guarded-analytic-advance.md#req-pr16-guarded-fallback The report separates an exact chunk from a fixed-step fallback.
- * @evidenceReview docs/requirements/active/guarded-analytic-advance.md#req-pr16-guarded-fallback #2aa29e1 Re-read the section: a fallback reason is kept, and the seed schedule is unchanged.
+ * @evidenceReview docs/requirements/active/guarded-analytic-advance.md#req-pr16-guarded-fallback #5b4bffc Re-read the section: a fallback reason is kept, and the seed schedule is unchanged.
  */
 export function finishAdvanceReport(ledger: AdvanceLedger, capability: AdvanceReportV1["capability"]): AdvanceReportV1 {
   const unique = [...new Set(ledger.reasons)];
@@ -156,7 +157,7 @@ export function finishAdvanceReport(ledger: AdvanceLedger, capability: AdvanceRe
  * What the report says the model can do, read once from the start state.
  *
  * @evidence docs/requirements/active/guarded-analytic-advance.md#req-pr16-guarded-fallback The report names the advance capability next to the fallback reason.
- * @evidenceReview docs/requirements/active/guarded-analytic-advance.md#req-pr16-guarded-fallback #2aa29e1 Re-read the section: the report contract is idlekit.advance.v1, and it carries this capability beside the fallback reason.
+ * @evidenceReview docs/requirements/active/guarded-analytic-advance.md#req-pr16-guarded-fallback #5b4bffc Re-read the section: the report contract is idlekit.advance.v1, and it carries this capability beside the fallback reason.
  */
 export function advanceCapabilityOf<N, U extends string, Vars>(
   model: Model<N, U, Vars>,
@@ -178,42 +179,49 @@ export type AdvanceGateArgs<N, U extends string, Vars> = Readonly<{
   strategy?: Strategy<N, U, Vars>;
 }>;
 
-function incomeAmount<N, U extends string, Vars>(
-  model: Model<N, U, Vars>,
-  ctx: SimContext<N, U, Vars>,
-  state: SimState<N, U, Vars>,
-): N {
-  return model.income(ctx, state).amount;
-}
-
 /**
  * @evidence docs/requirements/active/guarded-analytic-advance.md#req-pr16-policy-boundary Refusal names the boundary that fixed-step must keep.
  * @evidenceReview docs/requirements/active/guarded-analytic-advance.md#req-pr16-policy-boundary #fe9aa0a Re-read the section: a threshold, a seed, or a session clock refuses the chunk.
  */
 export function refusalForAdvance<N, U extends string, Vars>(args: AdvanceGateArgs<N, U, Vars>): string | null {
-  if (args.requested === "approximation") return "approximation is not applied";
-  if (args.ctx.seed !== undefined) return "seeded model has no advance capability";
-  if (args.ctx.clocks !== undefined) return "scheduled session boundary";
-  if (args.ctx.tickPolicy.maxLogGap !== undefined) return "tick policy threshold is not compositionally equivalent";
-  if (args.ctx.emit) return "event emitter receives each tick";
-  if (args.model.evolve) return "evolve is not in the exact interval";
-  if (args.model.prestige) return "reset is not in the exact interval";
-  if (args.model.milestones) return "milestone boundary is not in the exact interval";
-  if (args.strategy) return "purchase strategy is not in the exact interval";
-  if (!args.model.analytic) return "advance capability is unsupported";
+  return certifyAdvance(args).reason;
+}
+
+/**
+ * A certified step keeps the income the guard read and the state it projected, so applying the step does not
+ * call `model.income` again. Nothing is carried to the next step: its income is read after the runner's
+ * callbacks for this step, as fixed-step reads it.
+ */
+type Certified<N, U extends string, Vars> =
+  | Readonly<{ reason: string }>
+  | Readonly<{ reason: null; income: Money<N, U>; next: SimState<N, U, Vars> }>;
+
+/** The guard behind `refusalForAdvance`. */
+function certifyAdvance<N, U extends string, Vars>(args: AdvanceGateArgs<N, U, Vars>): Certified<N, U, Vars> {
+  const reason = (text: string): Certified<N, U, Vars> => ({ reason: text });
+  if (args.requested === "approximation") return reason("approximation is not applied");
+  if (args.ctx.seed !== undefined) return reason("seeded model has no advance capability");
+  if (args.ctx.clocks !== undefined) return reason("scheduled session boundary");
+  if (args.ctx.tickPolicy.maxLogGap !== undefined) return reason("tick policy threshold is not compositionally equivalent");
+  if (args.ctx.emit) return reason("event emitter receives each tick");
+  if (args.model.evolve) return reason("evolve is not in the exact interval");
+  if (args.model.prestige) return reason("reset is not in the exact interval");
+  if (args.model.milestones) return reason("milestone boundary is not in the exact interval");
+  if (args.strategy) return reason("purchase strategy is not in the exact interval");
+  if (!args.model.analytic) return reason("advance capability is unsupported");
   const hint = args.model.analytic(args.ctx, args.state);
-  if (!hint) return "advance capability is unknown";
-  if (hint.incomeKind !== "constant") return "income kind is not constant";
-  if (hint.softcap) return "capacity boundary is not in the exact interval";
-  if (args.model.actions(args.ctx, args.state).length > 0) return "purchase is available";
+  if (!hint) return reason("advance capability is unknown");
+  if (hint.incomeKind !== "constant") return reason("income kind is not constant");
+  if (hint.softcap) return reason("capacity boundary is not in the exact interval");
+  if (args.model.actions(args.ctx, args.state).length > 0) return reason("purchase is available");
   // `cmp` calls an epsilon-sized bucket empty. A fixed-step tick would still flush it.
-  if (exactAmountSign(args.ctx.E, args.state.wallet.bucket) !== 0) return "money bucket is not empty";
+  if (exactAmountSign(args.ctx.E, args.state.wallet.bucket) !== 0) return reason("money bucket is not empty");
   const income = args.model.income(args.ctx, args.state);
-  if (income.unit.code !== args.state.wallet.money.unit.code) return "income unit does not match the wallet";
-  const projected = applyExactIncome(args.ctx.E, args.state, income.amount, args.dt, args.ctx.tickPolicy.mode);
-  const after = incomeAmount(args.model, args.ctx, projected);
-  if (args.ctx.E.cmp(after, income.amount) !== 0) return "income changed inside the interval";
-  return null;
+  if (income.unit.code !== args.state.wallet.money.unit.code) return reason("income unit does not match the wallet");
+  const next = applyExactIncome(args.ctx.E, args.state, income.amount, args.dt, args.ctx.tickPolicy.mode);
+  const nextIncome = args.model.income(args.ctx, next);
+  if (args.ctx.E.cmp(nextIncome.amount, income.amount) !== 0) return reason("income changed inside the interval");
+  return { reason: null, income, next };
 }
 
 /**
@@ -227,7 +235,7 @@ function appliedDelta<N>(E: Engine<N>, bucket: N, incomePerSec: N, dt: number, m
 
 /**
  * @evidence docs/requirements/active/guarded-analytic-advance.md#req-pr16-exact-match Constant income is added with the engine, not a narrowed number.
- * @evidenceReview docs/requirements/active/guarded-analytic-advance.md#req-pr16-exact-match #4a3881f Re-read the section: wallet and max money use the engine add.
+ * @evidenceReview docs/requirements/active/guarded-analytic-advance.md#req-pr16-exact-match #eaace6d Re-read the section: wallet and max money use the engine add.
  */
 export function applyExactIncome<N, U extends string, Vars>(
   E: Engine<N>,
@@ -259,7 +267,7 @@ export type ExactSample<N, U extends string, Vars> = Readonly<{
 }>;
 
 export type ExactChunk<N, U extends string, Vars> =
-  | Readonly<{ ok: true; state: SimState<N, U, Vars>; samples: readonly ExactSample<N, U, Vars>[] }>
+  | Readonly<{ ok: true; state: SimState<N, U, Vars>; steps: number }>
   | Readonly<{ ok: false; reason: string }>;
 
 /**
@@ -267,9 +275,11 @@ export type ExactChunk<N, U extends string, Vars> =
  * Each step comes from `nextBoundary` on the runner's summed clock, so the dt grid, the horizon epsilon, the goal,
  * and the step budget are the fixed-step ones. A chunk always takes its first step, so a `chunkSec` below one step
  * is one step. The runner's own boundary check stops or throws after the chunk, as it would after that step.
+ * Each step is handed to `onStep` as it is taken and is not retained, so chunk memory does not grow with `chunkSec`.
+ * Each step applies the income its own guard read, after the callbacks for the previous step have run.
  *
  * @evidence docs/requirements/active/guarded-analytic-advance.md#req-pr16-exact-match An exact chunk uses the reference step grid.
- * @evidenceReview docs/requirements/active/guarded-analytic-advance.md#req-pr16-exact-match #4a3881f Re-read the section: the chunk takes whole reference steps from nextBoundary on the summed clock and stops on until, the horizon, and the step budget.
+ * @evidenceReview docs/requirements/active/guarded-analytic-advance.md#req-pr16-exact-match #eaace6d Re-read the section: the chunk takes whole reference steps from nextBoundary on the summed clock, stops on until, the horizon, and the step budget, hands each step to onStep without holding it, and applies the income its own guard read without carrying it to the next step.
  */
 export function consumeExactChunk<N, U extends string, Vars>(args: Readonly<{
   /** The runner context for this tick, before `stepContext` sets `stepSec`. */
@@ -289,19 +299,21 @@ export function consumeExactChunk<N, U extends string, Vars>(args: Readonly<{
   until?: (state: SimState<N, U, Vars>) => boolean;
   requested: "exact" | "approximation";
   strategy?: Strategy<N, U, Vars>;
+  /** Receives each certified step in order. Nothing is called for a chunk refused at its first step. */
+  onStep: (sample: ExactSample<N, U, Vars>) => void;
 }>): ExactChunk<N, U, Vars> {
   if (!(args.chunkSec > 0) || !Number.isFinite(args.chunkSec)) {
     return { ok: false, reason: "chunkSec must be a finite number > 0" };
   }
   const { E } = args.ctx;
-  const samples: ExactSample<N, U, Vars>[] = [];
+  let taken = 0;
   let cursor = args.state;
   let elapsedSec = args.elapsedSec;
   let steps = args.steps;
   let consumedSec = 0;
   let dt = args.firstDt;
   for (;;) {
-    if (samples.length > 0) {
+    if (taken > 0) {
       const decision = nextBoundary({
         elapsedSec,
         steps,
@@ -316,7 +328,7 @@ export function consumeExactChunk<N, U extends string, Vars>(args: Readonly<{
       if (consumedSec + dt > args.chunkSec) break;
     }
     const ctx = stepContext(args.ctx, dt);
-    const reason = refusalForAdvance({
+    const certified = certifyAdvance({
       ctx,
       model: args.model,
       state: cursor,
@@ -324,14 +336,13 @@ export function consumeExactChunk<N, U extends string, Vars>(args: Readonly<{
       requested: args.requested,
       strategy: args.strategy,
     });
-    if (reason) {
-      if (samples.length === 0) return { ok: false, reason };
+    if (certified.reason !== null) {
+      if (taken === 0) return { ok: false, reason: certified.reason };
       break;
     }
-    const income = incomeAmount(args.model, ctx, cursor);
-    const delta = appliedDelta(E, cursor.wallet.bucket, income, dt, ctx.tickPolicy.mode);
-    const next = applyExactIncome(E, cursor, income, dt, ctx.tickPolicy.mode);
-    samples.push({
+    const { next } = certified;
+    const delta = appliedDelta(E, cursor.wallet.bucket, certified.income.amount, dt, ctx.tickPolicy.mode);
+    args.onStep({
       t0: cursor.t,
       t1: next.t,
       dt,
@@ -339,12 +350,13 @@ export function consumeExactChunk<N, U extends string, Vars>(args: Readonly<{
       // The fixed-step reward test: an exactly positive applied amount.
       rewarded: exactAmountSign(E, delta) === 1,
     });
+    taken += 1;
     cursor = next;
     elapsedSec += dt;
     steps += 1;
     consumedSec += dt;
   }
-  return { ok: true, state: cursor, samples };
+  return { ok: true, state: cursor, steps: taken };
 }
 
 export type AdvanceBenchRow = Readonly<{

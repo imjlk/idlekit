@@ -3,6 +3,10 @@
   "compilerOptions": {
     "noEmit": true,
     "types": ["node", "bun"],
+    "paths": {
+      "@idlekit/core": ["./packages/core/src/index.ts"],
+      "@idlekit/money": ["./packages/money/src/index.ts"]
+    },
     "plugins": [{ "transform": "@ttsc/lint", "enabled": false }]
   },
   "include": ["examples/**/*.ts", "snippets/**/*.ts"]

@@ -73,6 +73,27 @@ export type JevJudgeBundle = Readonly<{
   advisory: JevAdvisoryV1;
 }>;
 
+/** One CSV row per rubric rule: the numerical result beside its semantic diagnostic. */
+function judgeCsvRows(report: JudgeReportV1): Array<Record<string, string | number | null>> {
+  return report.numerical.results.map((result, index) => {
+    const diagnostic = report.diagnostics[index];
+    return {
+      id: result.id,
+      metricId: result.metricId,
+      verdict: result.verdict,
+      severity: result.severity,
+      evidenceStatus: result.evidence.status,
+      value: result.evidence.value,
+      unit: result.evidence.unit,
+      operator: result.evidence.operator,
+      threshold: result.evidence.threshold,
+      upperThreshold: result.evidence.upperThreshold,
+      diagnosticStatus: diagnostic?.status ?? null,
+      recommendationId: diagnostic?.recommendationId ?? null,
+    };
+  });
+}
+
 export async function runJudge(flags: {
   rubric: string;
   provider: "rules" | "jev";
@@ -101,8 +122,15 @@ export async function runJudge(flags: {
       throw usageError("--cache names an input file. Give the Jev cache its own path.");
     }
   }
-  const artifactRaw = await readJsonFile<unknown>(analysisPath);
-  const rubricRaw = await readJsonFile<unknown>(flags.rubric);
+  // An unreadable or non-JSON input is a usage error, like a structurally invalid one.
+  let artifactRaw: unknown;
+  let rubricRaw: unknown;
+  try {
+    artifactRaw = await readJsonFile<unknown>(analysisPath);
+    rubricRaw = await readJsonFile<unknown>(flags.rubric);
+  } catch (error) {
+    throw usageError(`Invalid judge input: ${error instanceof Error ? error.message : String(error)}`);
+  }
   const parsed = readJudgeInputs(artifactRaw, rubricRaw);
   if (!parsed.ok) {
     throw usageError(`Invalid judge input: ${parsed.issues.join("; ")}`);
@@ -115,15 +143,14 @@ export async function runJudge(flags: {
     throw usageError(`Invalid judge input: ${message}`);
   }
   if (flags.provider === "rules") {
-    if (flags.format === "md") {
-      console.log(renderJudgeMarkdown(report));
-      return report;
-    }
+    // JSON output is exactly idlekit.judge.v1, whose root rejects extra keys, so no `_meta` is attached.
+    // Markdown and CSV go through writeOutput too, so --out applies to every format.
+    // CSV is one row per rule, not the nested report squeezed into one cell.
     await writeOutput({
       format: flags.format,
       outPath: flags.out,
-      data: report,
-      meta: buildOutputMeta({ command: "judge", pluginDigest: {} }),
+      data:
+        flags.format === "md" ? renderJudgeMarkdown(report) : flags.format === "csv" ? judgeCsvRows(report) : report,
     });
     return report;
   }

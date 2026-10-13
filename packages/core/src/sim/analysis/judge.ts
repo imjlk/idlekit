@@ -1,5 +1,10 @@
 import typia, { type IValidation } from "typia";
-import { analysisAlgorithmVersion, type AnalysisArtifactV1, type MetricReadingV1 } from "./contracts";
+import {
+  analysisAlgorithmVersion,
+  validateAnalysisSemantics,
+  type AnalysisArtifactV1,
+  type MetricReadingV1,
+} from "./contracts";
 import {
   evaluateBalanceChecks,
   type BalanceCheckReportV1,
@@ -33,7 +38,8 @@ export type RecommendationId =
   | "rec.metric.outside-threshold"
   | "rec.metric.insufficient"
   | "rec.metric.estimate-not-measured"
-  | "rec.metric.unsupported";
+  | "rec.metric.unsupported"
+  | "rec.metric.identity-mismatch";
 
 export type JudgeLayer = "rule" | "estimate" | "semantic";
 export type DiagnosticStatus = "conflict" | "insufficient" | "unsupported" | "noted" | "indeterminate";
@@ -156,8 +162,9 @@ export function judgeJsonSchema(): ReturnType<typeof buildJudgeJsonSchema> {
   return judgeJsonSchemaUnit;
 }
 
+// Equals validation: an unknown rubric field is rejected, not ignored.
 const validateRubric = (input: unknown): IValidation<JudgeRubricV1> =>
-  (validateRubricValidator ??= typia.createValidate<JudgeRubricV1>())(input);
+  (validateRubricValidator ??= typia.createValidateEquals<JudgeRubricV1>())(input);
 
 const TEMPLATES: Readonly<Record<RecommendationId, Readonly<{ en: string; ko: string }>>> = {
   "rec.metric.within-threshold": {
@@ -180,6 +187,10 @@ const TEMPLATES: Readonly<Record<RecommendationId, Readonly<{ en: string; ko: st
     en: "Metric {metricId} cannot be compared by the rules provider.",
     ko: "지표 {metricId}는 rules provider가 비교할 수 없다.",
   },
+  "rec.metric.identity-mismatch": {
+    en: "Metric {metricId} was measured under a different identity than the rubric rule names. It is not compared.",
+    ko: "지표 {metricId}는 rubric rule이 적은 것과 다른 동일성으로 측정되었다. 비교하지 않는다.",
+  },
 };
 
 export function parseJudgeRubric(
@@ -190,34 +201,109 @@ export function parseJudgeRubric(
     return { ok: false, issues: validated.errors.map((error) => `${error.path} ${error.expected}`) };
   }
   if (validated.data.rules.length === 0) return { ok: false, issues: ["rubric has no rules"] };
+  const nonfinite = nonfiniteThresholds(validated.data);
+  if (nonfinite.length > 0) return { ok: false, issues: nonfinite };
   return { ok: true, rubric: validated.data };
 }
 
-function readingUnit(reading: MetricReadingV1): string {
-  if (reading.domain === "amount") return reading.amount?.unit ?? "amount";
-  return reading.domain;
+/** JSON parses 1e400 as Infinity. A nonfinite threshold cannot be compared and would serialize as null. */
+function nonfiniteThresholds(rubric: JudgeRubricV1): string[] {
+  const issues: string[] = [];
+  rubric.rules.forEach((rule, index) => {
+    if (!Number.isFinite(rule.threshold)) issues.push(`$input.rules[${index}].threshold finite number`);
+    if (rule.upperThreshold !== null && !Number.isFinite(rule.upperThreshold)) {
+      issues.push(`$input.rules[${index}].upperThreshold finite number or null`);
+    }
+  });
+  return issues;
 }
 
-function findReading(artifact: AnalysisArtifactV1, metricId: string): MetricReadingV1 | undefined {
-  return artifact.metrics.find((reading) => reading.metricId === metricId);
+/**
+ * Judge each group of rules against only its own synthesized observation, so a rule that matches no
+ * observation reports its mismatch against the observation built for it, never against another rule's.
+ * Pass is the conjunction of the groups' passes; a single group is exactly one engine call.
+ */
+function evaluateGroups(
+  failOn: JudgeRubricV1["failOn"],
+  groups: ReadonlyMap<string, { observation: BalanceObservationV1; indices: number[] }>,
+  checks: readonly BalanceCheckV1[],
+): BalanceCheckReportV1 {
+  const results: BalanceCheckReportV1["results"][number][] = new Array(checks.length);
+  const reports = [...groups.values()].map((group) => {
+    const report = evaluateBalanceChecks({
+      schemaVersion: 1,
+      contract: "idlekit.balance-checks.v1",
+      failOn,
+      checks: group.indices.map((index) => checks[index] as BalanceCheckV1),
+      observations: [group.observation],
+      advisory: null,
+    });
+    group.indices.forEach((index, position) => {
+      results[index] = report.results[position] as BalanceCheckReportV1["results"][number];
+    });
+    return report;
+  });
+  const first = reports[0] as BalanceCheckReportV1;
+  if (reports.length === 1) return first;
+  const pass = reports.every((report) => report.pass);
+  return { ...first, results, pass, exitCode: pass ? 0 : 2 };
 }
 
+function findReadings(artifact: AnalysisArtifactV1, metricId: string): readonly MetricReadingV1[] {
+  return artifact.metrics.filter((reading) => reading.metricId === metricId);
+}
+
+function isUnavailable(reading: MetricReadingV1): boolean {
+  return reading.reading === "unavailable" || reading.status !== "ok";
+}
+
+/**
+ * Coverage the artifact itself cannot vouch for. A value observed under an unknown metrics
+ * capability or incomplete coverage is not a measured fact; it stays insufficient.
+ */
+function coverageWithheld(artifact: AnalysisArtifactV1): boolean {
+  const coverage = artifact.observationCoverage;
+  const metrics = artifact.capabilities.metrics;
+  return coverage === "incomplete" || coverage === "unknown" || coverage === "disabled" || metrics !== "statically-known";
+}
+
+/**
+ * readMetric records a method only on an estimate, so observed and unavailable readings carry none.
+ * A numeric reading records a domain but no unit, and an unavailable amount carries no unit either.
+ * A field the reading does not record cannot disagree with the rule, so the rule's value stands in;
+ * a field the reading records (a method, an amount unit) is compared as is.
+ */
 function toObservation(
   artifact: AnalysisArtifactV1,
   reading: MetricReadingV1,
+  rule: JudgeRuleV1,
 ): { observation: BalanceObservationV1; estimated: EstimatedObservationV1 | null } {
+  const unavailable = isUnavailable(reading);
+  const unit = reading.amount?.unit ?? rule.unit;
   const identity = {
     metricId: reading.metricId,
     definition: reading.meaning,
-    method: reading.method ?? "unspecified",
+    method: reading.method ?? rule.method,
     scenarioVersion: "unspecified",
     specVersion: "unspecified",
     engineId: "unspecified",
     pluginVersion: "unspecified",
     seed: "unspecified",
-    unit: readingUnit(reading),
+    unit,
     algorithmVersion: artifact.algorithmVersion,
   };
+  // Availability first: an unavailable reading has no value or bound, so it is missing evidence whatever
+  // its domain or status (a censored status without bounds included). The missing policy decides it.
+  if (unavailable) {
+    return { observation: { identity, status: "missing", value: null, lower: null, upper: null }, estimated: null };
+  }
+  // An available amount, observed or estimated, is not narrowed to a number.
+  if (reading.domain === "amount") {
+    return {
+      observation: { identity, status: "unsupported", value: null, lower: null, upper: null },
+      estimated: null,
+    };
+  }
   if (reading.reading === "estimated") {
     return {
       observation: { identity, status: "missing", value: null, lower: null, upper: null },
@@ -228,11 +314,8 @@ function toObservation(
       },
     };
   }
-  if (reading.domain === "amount") {
-    return {
-      observation: { identity, status: "unsupported", value: null, lower: null, upper: null },
-      estimated: null,
-    };
+  if (coverageWithheld(artifact)) {
+    return { observation: { identity, status: "unknown", value: null, lower: null, upper: null }, estimated: null };
   }
   if (
     reading.reading === "observed" &&
@@ -251,18 +334,6 @@ function toObservation(
       estimated: null,
     };
   }
-  if (reading.status === "unsupported") {
-    return {
-      observation: { identity, status: "unsupported", value: null, lower: null, upper: null },
-      estimated: null,
-    };
-  }
-  if (reading.status === "censored") {
-    return {
-      observation: { identity, status: "censored", value: null, lower: null, upper: null },
-      estimated: null,
-    };
-  }
   return {
     observation: { identity, status: "missing", value: null, lower: null, upper: null },
     estimated: null,
@@ -277,15 +348,43 @@ function fillTemplate(id: RecommendationId, metricId: string): Readonly<{ en: st
   };
 }
 
+type BalanceResult = BalanceCheckReportV1["results"][number];
+
 function outcomeFor(
-  verdict: BalanceCheckReportV1["results"][number]["verdict"],
+  result: BalanceResult | undefined,
   estimated: boolean,
+  rule: JudgeRuleV1,
 ): { recommendationId: RecommendationId; status: DiagnosticStatus; category: JudgeLayer; severity: "error" | "warn" | "info" } {
+  const verdict = result?.verdict ?? "inconclusive";
+  // A missing, absent, or withheld (unknown) reading is insufficient whatever its missing policy makes
+  // the numerical verdict, and before any identity mismatch is considered.
+  const noReading =
+    !result ||
+    result.evidence.status === "missing" ||
+    result.evidence.status === "absent" ||
+    result.evidence.status === "unknown";
   if (estimated) {
     return {
       recommendationId: "rec.metric.estimate-not-measured",
       status: "insufficient",
       category: "estimate",
+      severity: "info",
+    };
+  }
+  if (noReading) {
+    return {
+      recommendationId: "rec.metric.insufficient",
+      status: "insufficient",
+      category: "semantic",
+      severity: "info",
+    };
+  }
+  // A reading taken under another identity is not missing data; it is not comparable.
+  if (result.mismatches.length > 0) {
+    return {
+      recommendationId: "rec.metric.identity-mismatch",
+      status: "indeterminate",
+      category: "semantic",
       severity: "info",
     };
   }
@@ -298,8 +397,9 @@ function outcomeFor(
     };
   }
   if (verdict === "fail") {
+    // The rubric rule selects the recommendation for its own violation.
     return {
-      recommendationId: "rec.metric.outside-threshold",
+      recommendationId: rule.recommendationId,
       status: "conflict",
       category: "semantic",
       severity: "warn",
@@ -321,32 +421,8 @@ function outcomeFor(
   };
 }
 
-export function judgeArtifact(
-  artifact: AnalysisArtifactV1,
-  rubric: JudgeRubricV1,
-): { ok: true; report: JudgeReportV1 } | { ok: false; issues: readonly string[] } {
-  if (artifact.schemaVersion !== 1) return { ok: false, issues: ["artifact schemaVersion"] };
-  if (artifact.algorithmVersion !== analysisAlgorithmVersion()) {
-    return { ok: false, issues: ["artifact algorithmVersion"] };
-  }
-  if (rubric.rules.length === 0) return { ok: false, issues: ["rubric has no rules"] };
-  const issues: string[] = [];
-  const observations: BalanceObservationV1[] = [];
-  const estimatedObservations: EstimatedObservationV1[] = [];
-  const prepared: Array<{ rule: JudgeRuleV1; estimated: EstimatedObservationV1 | null; ref: string }> = [];
-  for (const rule of rubric.rules) {
-    const reading = findReading(artifact, rule.metricId);
-    if (!reading) {
-      issues.push(`missing evidenceRef metric:${rule.metricId}`);
-      continue;
-    }
-    const mapped = toObservation(artifact, reading);
-    observations.push(mapped.observation);
-    if (mapped.estimated) estimatedObservations.push(mapped.estimated);
-    prepared.push({ rule, estimated: mapped.estimated, ref: `metric:${rule.metricId}` });
-  }
-  if (issues.length > 0) return { ok: false, issues };
-  const checks: BalanceCheckV1[] = rubric.rules.map((rule) => ({
+function checkFor(rule: JudgeRuleV1): BalanceCheckV1 {
+  return {
     id: rule.id,
     metricId: rule.metricId,
     operator: rule.operator,
@@ -363,19 +439,60 @@ export function judgeArtifact(
     pluginVersion: rule.pluginVersion,
     seed: rule.seed,
     algorithmVersion: rule.algorithmVersion,
-  }));
-  const numerical = evaluateBalanceChecks({
-    schemaVersion: 1,
-    contract: "idlekit.balance-checks.v1",
-    failOn: rubric.failOn,
-    checks,
-    observations,
-    advisory: null,
-  });
+  };
+}
+
+export function judgeArtifact(
+  artifact: AnalysisArtifactV1,
+  rubric: JudgeRubricV1,
+): { ok: true; report: JudgeReportV1 } | { ok: false; issues: readonly string[] } {
+  if (artifact.schemaVersion !== 1) return { ok: false, issues: ["artifact schemaVersion"] };
+  if (artifact.algorithmVersion !== analysisAlgorithmVersion()) {
+    return { ok: false, issues: ["artifact algorithmVersion"] };
+  }
+  if (rubric.rules.length === 0) return { ok: false, issues: ["rubric has no rules"] };
+  // A direct caller can pass Infinity in a typed rubric; it is rejected here as in parseJudgeRubric.
+  const nonfinite = nonfiniteThresholds(rubric);
+  if (nonfinite.length > 0) return { ok: false, issues: nonfinite };
+  // A structurally valid artifact can still break its cross-field contract; that artifact is not judged.
+  const semantic = validateAnalysisSemantics(artifact);
+  if (semantic.length > 0) {
+    return { ok: false, issues: semantic.map((issue) => `artifact ${issue.path} ${issue.message}`) };
+  }
+  const issues: string[] = [];
+  const groups = new Map<string, { observation: BalanceObservationV1; indices: number[] }>();
+  const estimatedObservations: EstimatedObservationV1[] = [];
+  const prepared: Array<{ rule: JudgeRuleV1; estimated: EstimatedObservationV1 | null; ref: string }> = [];
+  for (const rule of rubric.rules) {
+    const readings = findReadings(artifact, rule.metricId);
+    const reading = readings[0];
+    if (!reading) {
+      issues.push(`missing evidenceRef metric:${rule.metricId}`);
+      continue;
+    }
+    // An evidence ref must name exactly one reading, so reading order cannot change a verdict.
+    if (readings.length > 1) {
+      issues.push(`ambiguous evidenceRef metric:${rule.metricId} matches ${readings.length} readings`);
+      continue;
+    }
+    const mapped = toObservation(artifact, reading, rule);
+    // One observation per distinct identity. Rules whose stand-in method and unit agree share it and
+    // are judged together; rules that differ get their own observation and their own group.
+    const key = JSON.stringify([reading.metricId, mapped.observation.identity.method, mapped.observation.identity.unit]);
+    const group = groups.get(key) ?? { observation: mapped.observation, indices: [] };
+    group.indices.push(prepared.length);
+    groups.set(key, group);
+    if (mapped.estimated && !estimatedObservations.some((item) => item.metricId === reading.metricId)) {
+      estimatedObservations.push(mapped.estimated);
+    }
+    prepared.push({ rule, estimated: mapped.estimated, ref: `metric:${rule.metricId}` });
+  }
+  if (issues.length > 0) return { ok: false, issues };
+  const checks: BalanceCheckV1[] = prepared.map(({ rule }) => checkFor(rule));
+  const numerical = evaluateGroups(rubric.failOn, groups, checks);
   const assumptionRefs = artifact.assumptions.filter((item) => item.length > 0);
   const diagnostics: JudgeDiagnosticV1[] = prepared.map((item, index) => {
-    const result = numerical.results[index];
-    const outcome = outcomeFor(result?.verdict ?? "inconclusive", item.estimated !== null);
+    const outcome = outcomeFor(numerical.results[index], item.estimated !== null, item.rule);
     return {
       id: item.rule.id,
       category: outcome.category,
