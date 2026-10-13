@@ -50,6 +50,7 @@ const DOCS_WITH_KO = [
 ] as const;
 const PUBLIC_JSON_FILES = [
   "examples/bench/kpi-baseline.json",
+  "examples/bench/perf-baseline.json",
   "fixtures/compat/v1/state/sim-state.v1.json",
   "fixtures/compat/v1/artifacts/simulate.artifact.v1.json",
   "fixtures/compat/v1/artifacts/experience.artifact.v1.json",

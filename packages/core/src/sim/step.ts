@@ -254,7 +254,7 @@ function exactAmountOrder<N>(engine: ExactEngine<N>, left: N, right: N): -1 | 0 
  * A tick's reward test is this sign, so a caller that reproduces a tick reads the same reward.
  *
  * @evidence docs/requirements/active/guarded-analytic-advance.md#req-pr16-exact-match A reward is an exactly positive applied amount, as in stepOnce.
- * @evidenceReview docs/requirements/active/guarded-analytic-advance.md#req-pr16-exact-match #4a3881f Re-read the section: the exact chunk reads the reward with this sign.
+ * @evidenceReview docs/requirements/active/guarded-analytic-advance.md#req-pr16-exact-match #eaace6d Re-read the section: the exact chunk reads the reward with this sign.
  */
 export function exactAmountSign<N>(engine: ExactEngine<N> & { zero(): N }, amount: N): -1 | 0 | 1 | undefined {
   return exactAmountOrder(engine, amount, engine.zero());

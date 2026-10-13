@@ -84,7 +84,7 @@ const growth = analyzeGrowth({ run, series: "money", windowSec: 10 });
 console.log(
   JSON.stringify({
     endMoney: E.toString(run.end.wallet.money.amount),
-    growthSlopePerHourLog10: growth.slopePerHourLog10,
+    growthSegments: growth.segments,
   }),
 );
 ```

@@ -287,10 +287,10 @@ bun run --cwd packages/cli dev -- ltv ../../examples/tutorials/05-idle-design-v1
 텔레메트리 CSV/JSON에서 `monetization` 블록을 추정할 수 있습니다.
 
 ```bash
-bun run --cwd packages/cli dev -- calibrate ./tmp/telemetry.csv \
+bun run --cwd packages/cli dev -- calibrate ../../tmp/telemetry.csv \
   --input-format csv \
   --format json \
-  --out ./tmp/calibrated-monetization.json
+  --out ../../tmp/calibrated-monetization.json
 ```
 
 출력의 `scenarioPatch.monetization`을 시나리오에 붙인 뒤 `idk ltv`를 재실행하면

@@ -8,14 +8,28 @@ import {
   budgetSameConfig,
   budgetSchema,
   budgetUnknownMetric,
+  benchConfigFromScenario,
   buildPerformanceArtifact,
   comparePerformanceBudgets,
   configHash,
   currentHost,
   median,
+  percentile,
+  readBaselineArtifacts,
+  readCount,
+  readSamples,
   readPerformanceArtifact,
   representativeConfig,
   sameBenchConfig,
+  sameHost,
+  scenarioHash,
+  scenarioWorkload,
+  selectBaseline,
+  mergeBaselines,
+  readChoice,
+  readPositive,
+  readSample,
+  readText,
   workloadStepCount,
   type ArtifactInput,
   type PerformanceArtifact,
@@ -27,6 +41,7 @@ function input(overrides: Partial<ArtifactInput> = {}): ArtifactInput {
   return {
     corpus: "representative",
     scenario: "examples/bench/representative.json",
+    scenarioHash: "0".repeat(64),
     config: representativeConfig(),
     host,
     iterations: 7,
@@ -43,13 +58,13 @@ function built(overrides: Partial<ArtifactInput> = {}): PerformanceArtifact {
 
 /**
  * @evidence docs/requirements/active/performance-budget.md#req-dx04-bench-schema A built artifact round-trips the contract, version, host, and unsupported alloc/step.
- * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-bench-schema #b85a868 Re-read the section, then ran this function: contract is idlekit.performance-budget and alloc/step is unsupported.
+ * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-bench-schema #bdfbaf6 Re-read the section, then ran this function: contract is idlekit.performance-budget and alloc/step is unsupported.
  * @evidence ./performanceBudget.ts#budgetSchema Reads the bench output schema contract.
  * @evidenceReview ./performanceBudget.ts#budgetSchema #59b4f49 The declaration is bench-output-schema.
  * @evidence ./performanceBudget.ts#buildPerformanceArtifact Builds the artifact from phases, config, host, and counters.
- * @evidenceReview ./performanceBudget.ts#buildPerformanceArtifact #529165e The function hashes the config, labels phases, derives median, p95, and rates from runtime samples only, and fixes alloc/step as unsupported and worker timings as absent.
+ * @evidenceReview ./performanceBudget.ts#buildPerformanceArtifact #f1c9513 The function hashes the config, keeps the scenario hash, labels phases, derives median, p95, and rates from runtime samples only, records a supplied peak RSS, and fixes alloc/step as unsupported and worker timings as absent.
  * @evidence ./performanceBudget.ts#readPerformanceArtifact Accepts a round-tripped artifact and rejects a forged alloc/step.
- * @evidenceReview ./performanceBudget.ts#readPerformanceArtifact #c92efd8 The function checks contract, version, corpus, config, hash type, and each metric status, and returns null for an alloc/step other than unsupported.
+ * @evidenceReview ./performanceBudget.ts#readPerformanceArtifact #ba1bac2 The function checks contract, version, corpus, config, hash type, host fields, scenario fields, iteration metadata, well-formed phases whose runtime count equals iterations, a median and p95 that match those samples, and each metric status, and returns null for an alloc/step other than unsupported.
  * @evidence ./performanceBudget.ts#currentHost Reports the running Bun, platform, and architecture.
  * @evidenceReview ./performanceBudget.ts#currentHost #45ed392 The function reads Bun.version, process.platform, and process.arch, and on darwin reads the CPU brand, otherwise unsupported.
  */
@@ -61,12 +76,13 @@ export function acceptsPerformanceBudgetSchema(): void {
   expect(running.cpu.length).toBeGreaterThan(0);
   expect(budgetSchema).toBe("bench-output-schema");
   const artifact = built({
+    iterations: 1,
     phases: { installMs: 1, prepareColdMs: 2, prepareWarmMs: [3], checkMs: 4, buildMs: 5, runtimeMs: [100] },
   });
   expect(artifact.contract).toBe("idlekit.performance-budget");
   expect(artifact.schemaVersion).toBe(1);
   expect(artifact.host).toEqual(host);
-  expect(artifact.iterations).toBe(7);
+  expect(artifact.iterations).toBe(1);
   expect(artifact.warmup).toBe(2);
   expect(artifact.corpus).toBe("representative");
   expect(artifact.metrics.allocPerStep).toEqual({ status: "unsupported" });
@@ -82,13 +98,13 @@ export function acceptsPerformanceBudgetSchema(): void {
 
 /**
  * @evidence docs/requirements/active/performance-budget.md#req-dx04-workload-denominator 100 steps at runtime 100ms and 200ms ignore prepare of 5000ms and 900ms.
- * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-workload-denominator #11a4355 Re-read the section, then ran this function: the rate uses 150ms.
+ * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-workload-denominator #4eb5d17 Re-read the section, then ran this function: the rate uses 150ms.
  * @evidence ./performanceBudget.ts#budgetDenominator Reads the runtime denominator contract.
  * @evidenceReview ./performanceBudget.ts#budgetDenominator #1306650 The declaration is runtime-denominator.
  * @evidence ./performanceBudget.ts#median Takes the middle runtime sample, or the mean of the middle pair.
  * @evidenceReview ./performanceBudget.ts#median #0f23953 The function sorts a copy, returns null for no samples, the middle value for an odd count, and the mean of the middle pair for an even count.
  * @evidence ./performanceBudget.ts#workloadStepCount Counts duration steps with a shorter last tick.
- * @evidenceReview ./performanceBudget.ts#workloadStepCount #9e2c19a The function steps min(stepSec, remaining) until the duration is reached and returns null for a non-finite or non-positive step or a negative duration.
+ * @evidenceReview ./performanceBudget.ts#workloadStepCount #ea53e64 The function steps min(stepSec, remaining) until the duration is reached, returns null for a non-finite or non-positive step or a negative duration, and returns null instead of a truncated count past 100,000,000 steps.
  */
 export function keepsRuntimeWorkloadDenominator(): void {
   expect(median([])).toBeNull();
@@ -99,6 +115,8 @@ export function keepsRuntimeWorkloadDenominator(): void {
   expect(workloadStepCount(0, 1)).toBe(0);
   expect(workloadStepCount(10, 0)).toBeNull();
   expect(workloadStepCount(Number.NaN, 1)).toBeNull();
+  expect(workloadStepCount(1_000_001, 1)).toBe(1_000_001);
+  expect(workloadStepCount(1e12, 1)).toBeNull();
   expect(budgetDenominator).toBe("runtime-denominator");
   const artifact = built({
     workloadCount: 100,
@@ -129,7 +147,7 @@ export function keepsEmptyDurationAbsent(): void {
 
 /**
  * @evidence docs/requirements/active/performance-budget.md#req-dx04-unknown-metric Omitted counters stay absent and a supplied 0 stays measured.
- * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-unknown-metric #f80c38b Re-read the section, then ran this function: missing nodes are absent and a zero draw count is measured.
+ * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-unknown-metric #4278c4c Re-read the section, then ran this function: missing nodes are absent and a zero draw count is measured.
  * @evidence ./performanceBudget.ts#budgetUnknownMetric Reads the unknown metric contract.
  * @evidenceReview ./performanceBudget.ts#budgetUnknownMetric #8f3c3f8 The declaration is unknown-is-not-zero.
  */
@@ -150,11 +168,11 @@ export function keepsUnknownMetricsUnmeasured(): void {
 
 /**
  * @evidence docs/requirements/active/performance-budget.md#req-dx04-gate-failure 100ms to 180ms fails when relative 0.25 and absolute 50 are both set. Two repeats do not pass.
- * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-gate-failure #c1a6c6b Re-read the section, then ran this function: the unfavorable pair fails and the writer is not called.
+ * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-gate-failure #dd9316c Re-read the section, then ran this function: the unfavorable pair fails and the writer is not called.
  * @evidence ./performanceBudget.ts#budgetGateFailure Reads the gate failure contract.
  * @evidenceReview ./performanceBudget.ts#budgetGateFailure #38dd0b8 The declaration is unfavorable-fails.
  * @evidence ./performanceBudget.ts#comparePerformanceBudgets Fails a slower median only past both the relative and absolute limits.
- * @evidenceReview ./performanceBudget.ts#comparePerformanceBudgets #0e41023 The function rejects a recomputed hash mismatch or a different config, fails too few repeats or an unmeasured median, fails when both limits are exceeded, and never calls the baseline writer.
+ * @evidenceReview ./performanceBudget.ts#comparePerformanceBudgets #be0037b The function rejects a recomputed hash mismatch, a different config, a missing or different scenario hash or workload count, a different warmup, or a different Bun, OS, or arch, fails too few repeats or an unmeasured median, fails when both limits are exceeded, and never calls the baseline writer.
  */
 export function failsUnfavorableBudget(): void {
   expect(budgetGateFailure).toBe("unfavorable-fails");
@@ -180,7 +198,7 @@ export function failsUnfavorableBudget(): void {
 
 /**
  * @evidence docs/requirements/active/performance-budget.md#req-dx04-baseline-hash A replaced config hash is rejected and the writer is not called.
- * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-baseline-hash #654f6b5 Re-read the section, then ran this function: the mismatched hash is rejected.
+ * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-baseline-hash #d4cb210 Re-read the section, then ran this function: the mismatched hash is rejected.
  * @evidence ./performanceBudget.ts#budgetHashMismatch Reads the baseline hash contract.
  * @evidenceReview ./performanceBudget.ts#budgetHashMismatch #c3d9a80 The declaration is baseline-hash-rejected.
  */
@@ -203,7 +221,7 @@ export function rejectsBaselineHashMismatch(): void {
 
 /**
  * @evidence docs/requirements/active/performance-budget.md#req-dx04-same-config 4ms to 9ms passes the absolute floor. Observer, engine, and trace mismatches are rejected.
- * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-same-config #2373b21 Re-read the section, then ran this function: the small pair passes and the other configs are rejected.
+ * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-same-config #95c7dcd Re-read the section, then ran this function: the small pair passes and the other configs are rejected.
  * @evidence ./performanceBudget.ts#budgetSameConfig Reads the same-config contract.
  * @evidenceReview ./performanceBudget.ts#budgetSameConfig #0d25c6b The declaration is same-config-only.
  * @evidence ./performanceBudget.ts#sameBenchConfig Treats configs with the same fields in another key order as the same.
@@ -257,7 +275,7 @@ export function comparesOnlyTheSameConfig(): void {
 
 /**
  * @evidence docs/requirements/active/performance-budget.md#req-dx04-phase-labels prepare-cold is cold, prepare-warm is warm, and the runtime median is 150ms.
- * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-phase-labels #9da1e03 Re-read the section, then ran this function: cold and warm labels stay off the runtime median.
+ * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-phase-labels #4e1a2c4 Re-read the section, then ran this function: cold and warm labels stay off the runtime median.
  * @evidence ./performanceBudget.ts#budgetPhaseLabels Reads the phase label contract.
  * @evidenceReview ./performanceBudget.ts#budgetPhaseLabels #3555de8 The declaration is cold-warm-labels.
  */
@@ -289,6 +307,250 @@ export function keepsColdAndWarmLabels(): void {
   expect(artifact.metrics.stepsPerSec).toEqual({ status: "measured", value: 100 / 0.15 });
 }
 
+const representativeScenario = {
+  model: { id: "linear", version: 1, params: { incomePerSec: "1.2" } },
+  clock: { stepSec: 1, durationSec: 30 },
+  strategy: { id: "greedy" },
+};
+const longScenario = { ...representativeScenario, clock: { stepSec: 1, durationSec: 1800 } };
+const run = { engine: "number", seed: 7 } as const;
+
+function sevenSamples(ms: number): number[] {
+  return Array.from({ length: 7 }, () => ms);
+}
+
+function scenarioArtifact(scenario: unknown, runtimeMs: readonly number[]): PerformanceArtifact {
+  return built({
+    config: benchConfigFromScenario(scenario, run),
+    scenarioHash: scenarioHash(scenario),
+    workloadCount: scenarioWorkload(scenario),
+    phases: { runtimeMs },
+  });
+}
+
+/**
+ * @evidence docs/requirements/active/performance-budget.md#req-dx04-same-config A 30-step and a 1800-step scenario share a config and are still rejected.
+ * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-same-config #95c7dcd Re-read the section, then ran this function: a different scenario hash or workload count is workload-mismatch.
+ * @evidence ./performanceBudget.ts#scenarioHash Hashes the canonical scenario, independent of key order.
+ * @evidenceReview ./performanceBudget.ts#scenarioHash #021fb0f The function returns the sha256 hex digest of the canonical scenario JSON.
+ * @evidence ./performanceBudget.ts#scenarioWorkload Counts the scenario clock and leaves an until expression unknown.
+ * @evidenceReview ./performanceBudget.ts#scenarioWorkload #6337812 The function returns workloadStepCount of the clock, or null without a numeric duration and step or with a nonblank untilExpr.
+ * @evidence ./performanceBudget.ts#comparePerformanceBudgets Rejects a baseline from another workload before any timing check.
+ * @evidenceReview ./performanceBudget.ts#comparePerformanceBudgets #be0037b The function rejects a missing or differing scenario hash or workload count after the config matches, then a different warmup, then a host that differs.
+ */
+export function rejectsDifferentWorkload(): void {
+  const policy = { minIterations: 4, relativeSlowdown: 0.25, absoluteMedianMs: 50 };
+  const short = scenarioArtifact(representativeScenario, [10]);
+  const long = scenarioArtifact(longScenario, [10]);
+  expect(short.config).toEqual(long.config);
+  expect(short.configHash).toBe(long.configHash);
+  expect(short.workloadCount).toBe(30);
+  expect(long.workloadCount).toBe(1800);
+  expect(comparePerformanceBudgets(short, long, policy)).toEqual({ status: "rejected", reason: "workload-mismatch" });
+  const reordered = Object.fromEntries(Object.entries(representativeScenario).reverse());
+  expect(scenarioHash(reordered)).toBe(scenarioHash(representativeScenario));
+  const sameHashOtherCount = { ...short, workloadCount: 31 };
+  expect(comparePerformanceBudgets(short, sameHashOtherCount, policy)).toEqual({
+    status: "rejected",
+    reason: "workload-mismatch",
+  });
+  expect(comparePerformanceBudgets(short, scenarioArtifact(representativeScenario, [11]), policy)).toEqual({
+    status: "pass",
+    reason: "within-budget",
+  });
+  const synthetic = { ...short, scenarioHash: null };
+  expect(comparePerformanceBudgets(synthetic, synthetic, policy)).toEqual({
+    status: "rejected",
+    reason: "workload-mismatch",
+  });
+  const coldWarmup = { ...short, warmup: 0 };
+  expect(comparePerformanceBudgets(short, coldWarmup, policy)).toEqual({ status: "rejected", reason: "warmup-mismatch" });
+  const until = { ...representativeScenario, clock: { stepSec: 1, durationSec: 30, untilExpr: "money >= 10" } };
+  expect(scenarioWorkload(until)).toBeNull();
+  const blank = { ...representativeScenario, clock: { stepSec: 1, durationSec: 30, untilExpr: "  " } };
+  expect(scenarioWorkload(blank)).toBe(30);
+}
+
+/**
+ * @evidence docs/requirements/active/performance-budget.md#req-dx04-same-config The trace mode follows outputs.report.traceEverySteps, and the engine is the run's.
+ * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-same-config #95c7dcd Re-read the section, then ran this function: a sampled trace is bounded and an every-step trace is unbounded.
+ * @evidence ./performanceBudget.ts#benchConfigFromScenario Reads engine, seed, model, step, trace cadence, observer, and planner from a scenario.
+ * @evidenceReview ./performanceBudget.ts#benchConfigFromScenario #6b5d81e The function reads outputs.report.traceEverySteps, as the scenario compiler does, treats a cadence of 1 or none as every step, takes the engine and seed from the run, and reports the observer on.
+ */
+export function readsTraceCadence(): void {
+  const withTrace = (report: Record<string, unknown>) => ({ ...representativeScenario, outputs: { report } });
+  expect(benchConfigFromScenario(representativeScenario, run).trace).toBe("off");
+  expect(benchConfigFromScenario(withTrace({ includeTrace: true, traceEverySteps: 10 }), run).trace).toBe("bounded");
+  expect(benchConfigFromScenario(withTrace({ includeTrace: true, traceEverySteps: 1 }), run).trace).toBe("unbounded");
+  expect(benchConfigFromScenario(withTrace({ includeTrace: true }), run).trace).toBe("unbounded");
+  expect(benchConfigFromScenario(withTrace({ includeTrace: true, everySteps: 10 }), run).trace).toBe("unbounded");
+  const labelled = { ...representativeScenario, engine: { name: "breakInfinity" }, seed: 99 };
+  expect(benchConfigFromScenario(labelled, run).engineId).toBe("number");
+  expect(benchConfigFromScenario(labelled, run).seed).toBe(7);
+  expect(benchConfigFromScenario(labelled, { engine: "number", seed: null }).seed).toBeNull();
+  expect(benchConfigFromScenario(representativeScenario, run).observer).toBe("on");
+}
+
+/**
+ * @evidence docs/requirements/active/performance-budget.md#req-dx04-baseline-hash A bench-sim --out file is a baseline, and each scenario takes its own entry.
+ * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-baseline-hash #d4cb210 Re-read the section, then ran this function: the run output round-trips and selects by scenario hash.
+ * @evidence ./performanceBudget.ts#readBaselineArtifacts Accepts one artifact or the perScenario budgets of a bench-sim result.
+ * @evidenceReview ./performanceBudget.ts#readBaselineArtifacts #6d7d2c8 The function returns the direct artifact, or every perScenario budget, and null when any entry is invalid.
+ * @evidence ./performanceBudget.ts#selectBaseline Picks the baseline with the same scenario hash, or the only one.
+ * @evidenceReview ./performanceBudget.ts#selectBaseline #737fee5 The function prefers the same non-null scenario hash on the same host, then the same scenario hash, then a single baseline, and returns null otherwise.
+ */
+export function readsBenchOutputAsBaseline(): void {
+  const short = scenarioArtifact(representativeScenario, sevenSamples(10));
+  const long = scenarioArtifact(longScenario, sevenSamples(20));
+  const runOutput = JSON.parse(JSON.stringify({
+    contract: "idlekit.performance-budget",
+    schemaVersion: 1,
+    perScenario: [{ scenario: "a", budget: short }, { scenario: "b", budget: long }],
+  })) as unknown;
+  const baselines = readBaselineArtifacts(runOutput);
+  expect(baselines?.length).toBe(2);
+  expect(selectBaseline(baselines ?? [], long)?.scenarioHash).toBe(long.scenarioHash);
+  expect(selectBaseline(baselines ?? [], short)?.scenarioHash).toBe(short.scenarioHash);
+  const other = scenarioArtifact({ ...representativeScenario, strategy: { id: "planner" } }, sevenSamples(10));
+  expect(selectBaseline(baselines ?? [], other)).toBeNull();
+  expect(readBaselineArtifacts(JSON.parse(JSON.stringify(short)))).toHaveLength(1);
+  expect(selectBaseline([short], other)).toBe(short);
+  const broken = JSON.parse(JSON.stringify(runOutput)) as { perScenario: Array<{ budget: unknown }> };
+  broken.perScenario[1] = { budget: { contract: "idlekit.performance-budget" } };
+  expect(readBaselineArtifacts(broken)).toBeNull();
+  expect(readBaselineArtifacts({ perScenario: [] })).toBeNull();
+}
+
+/**
+ * @evidence docs/requirements/active/performance-budget.md#req-dx04-gate-failure A baseline without a valid repeat count cannot reach the repeat check.
+ * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-gate-failure #dd9316c Re-read the section, then ran this function: missing or invalid iterations, warmup, and workload are rejected.
+ * @evidence ./performanceBudget.ts#readPerformanceArtifact Rejects missing or invalid iteration metadata.
+ * @evidenceReview ./performanceBudget.ts#readPerformanceArtifact #ba1bac2 The function requires integer iterations >= 1 equal to the runtime phase count, integer warmup >= 0, a null or integer workload >= 0, labeled phases with finite durations >= 0, a median and p95 recomputed from the runtime phases, and string or null scenario fields.
+ */
+export function rejectsBaselineWithoutIterations(): void {
+  const artifact = JSON.parse(JSON.stringify(built({ peakRssBytes: 1024, phases: { prepareColdMs: 5, runtimeMs: sevenSamples(100) } }))) as Record<string, unknown>;
+  expect(readPerformanceArtifact(artifact)).not.toBeNull();
+  expect(readPerformanceArtifact(artifact)?.metrics.peakRssBytes).toEqual({ status: "measured", value: 1024 });
+  const without = (key: string) => {
+    const copy = { ...artifact };
+    delete copy[key];
+    return copy;
+  };
+  expect(readPerformanceArtifact(without("iterations"))).toBeNull();
+  expect(readPerformanceArtifact(without("warmup"))).toBeNull();
+  expect(readPerformanceArtifact(without("workloadCount"))).toBeNull();
+  expect(readPerformanceArtifact(without("scenarioHash"))).toBeNull();
+  expect(readPerformanceArtifact({ ...artifact, iterations: 0 })).toBeNull();
+  expect(readPerformanceArtifact({ ...artifact, iterations: 6.5 })).toBeNull();
+  expect(readPerformanceArtifact({ ...artifact, iterations: "7" })).toBeNull();
+  expect(readPerformanceArtifact({ ...artifact, warmup: -1 })).toBeNull();
+  expect(readPerformanceArtifact({ ...artifact, workloadCount: 1.5 })).toBeNull();
+  expect(readPerformanceArtifact({ ...artifact, workloadCount: null })).not.toBeNull();
+  const phases = artifact.phases as Array<Record<string, unknown>>;
+  expect(readPerformanceArtifact({ ...artifact, phases: phases.slice(0, 2) })).toBeNull();
+  expect(readPerformanceArtifact({ ...artifact, phases: [] })).toBeNull();
+  expect(readPerformanceArtifact({ ...artifact, phases: phases.map((p) => ({ ...p, label: "runtime" })) })).toBeNull();
+  expect(readPerformanceArtifact({ ...artifact, phases: [...phases, { phase: "runtime", label: "runtime", durationMs: -1 }] }))
+    .toBeNull();
+  const metrics = artifact.metrics as Record<string, unknown>;
+  const fasterMedian = { ...metrics, totalTimeMedianMs: { status: "measured", value: 1 } };
+  expect(readPerformanceArtifact({ ...artifact, metrics: fasterMedian })).toBeNull();
+  const fasterP95 = { ...metrics, totalTimeP95Ms: { status: "measured", value: 1 } };
+  expect(readPerformanceArtifact({ ...artifact, metrics: fasterP95 })).toBeNull();
+}
+
+/**
+ * @evidence docs/requirements/active/performance-budget.md#req-dx04-bench-schema p95 is nearest-rank, so seven samples report the slowest one.
+ * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-bench-schema #bdfbaf6 Re-read the section, then ran this function: one slow sample in seven is the p95.
+ * @evidence ./performanceBudget.ts#percentile Takes the nearest-rank percentile.
+ * @evidenceReview ./performanceBudget.ts#percentile #b76d423 The function sorts a copy and returns the sample at ceil(n * p) - 1, clamped, or null for no samples.
+ */
+export function takesNearestRankP95(): void {
+  const samples = [100, 100, 100, 100, 100, 100, 1000];
+  expect(percentile(samples, 0.95)).toBe(1000);
+  expect(percentile([], 0.95)).toBeNull();
+  expect(percentile([5], 0.95)).toBe(5);
+  expect(percentile(Array.from({ length: 20 }, (_, i) => i + 1), 0.95)).toBe(19);
+  expect(built({ phases: { runtimeMs: samples } }).metrics.totalTimeP95Ms).toEqual({ status: "measured", value: 1000 });
+}
+
+/**
+ * @evidence docs/requirements/active/performance-budget.md#req-dx04-bench-schema Caller-supplied samples and counters cannot be negative.
+ * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-bench-schema #bdfbaf6 Re-read the section, then ran this function: negative, blank, and fractional counter input throws.
+ * @evidence ./performanceBudget.ts#readSamples Parses duration samples and rejects a negative or non-finite one.
+ * @evidenceReview ./performanceBudget.ts#readSamples #51c54d8 The function splits on commas and throws for a blank list, a blank item, a non-finite item, or a negative item.
+ * @evidence ./performanceBudget.ts#readSample Parses exactly one duration sample.
+ * @evidenceReview ./performanceBudget.ts#readSample #959d158 The function reads the samples and throws unless there is exactly one.
+ * @evidence ./performanceBudget.ts#readCount Parses a counter and rejects anything but an integer >= 0.
+ * @evidence ./performanceBudget.ts#readPositive Parses a step and rejects anything but a finite number > 0.
+ * @evidenceReview ./performanceBudget.ts#readPositive #acb81e9 The function throws for a missing, blank, non-finite, zero, or negative value.
+ * @evidence ./performanceBudget.ts#readText Rejects a missing or blank text value.
+ * @evidenceReview ./performanceBudget.ts#readText #8541b7e The function returns a nonblank value and throws otherwise.
+ * @evidence ./performanceBudget.ts#readChoice Rejects a value outside the listed choices.
+ * @evidenceReview ./performanceBudget.ts#readChoice #400a73b The function returns the matching choice and throws for any other value.
+ * @evidenceReview ./performanceBudget.ts#readCount #cb7d7e6 The function throws for a missing, blank, fractional, non-finite, or negative value.
+ */
+export function rejectsNegativeSamples(): void {
+  // Flags are bound first: a string literal as the first call argument reads as a test title to the inventory scanner.
+  const [runtime, nodes, workload, draws] = ["--runtime-ms", "--nodes", "--workload", "--draws"] as const;
+  expect(readSamples(runtime, "100, 200,0")).toEqual([100, 200, 0]);
+  expect(() => readSamples(runtime, "-1")).toThrow();
+  expect(() => readSamples(runtime, "100,,200")).toThrow();
+  expect(() => readSamples(runtime, "abc")).toThrow();
+  expect(() => readSamples(runtime, undefined)).toThrow();
+  const cold = "--prepare-cold-ms";
+  expect(readSample(cold, "100")).toBe(100);
+  expect(() => readSample(cold, "100,200")).toThrow();
+  expect(() => readSample(cold, "-1")).toThrow();
+  expect(readCount(nodes, "0")).toBe(0);
+  expect(readCount(nodes, "32")).toBe(32);
+  expect(() => readCount(nodes, "-5")).toThrow();
+  expect(() => readCount(workload, "1.5")).toThrow();
+  expect(() => readCount(draws, "")).toThrow();
+  expect(() => readCount(draws, undefined)).toThrow();
+  const [step, version, seed, model, trace] = ["--step", "--model-version", "--seed", "--model", "--trace"] as const;
+  expect(readPositive(step, "0.5")).toBe(0.5);
+  expect(() => readPositive(step, "abc")).toThrow();
+  expect(() => readPositive(step, "-1")).toThrow();
+  expect(() => readPositive(step, "0")).toThrow();
+  expect(() => readCount(version, "1.5")).toThrow();
+  expect(() => readCount(seed, "abc")).toThrow();
+  expect(readText(model, "linear")).toBe("linear");
+  expect(() => readText(model, " ")).toThrow();
+  expect(() => readText(model, undefined)).toThrow();
+  expect(readChoice(trace, "bounded", ["off", "bounded", "unbounded"] as const)).toBe("bounded");
+  expect(() => readChoice(trace, "full", ["off", "bounded", "unbounded"] as const)).toThrow();
+}
+
+/**
+ * @evidence docs/requirements/active/performance-budget.md#req-dx04-same-config A baseline from another Bun, OS, or arch is not compared.
+ * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-same-config #95c7dcd Re-read the section, then ran this function: a Linux baseline is host-mismatch on darwin, and a CPU brand change alone still compares.
+ * @evidence ./performanceBudget.ts#sameHost Compares Bun, OS, and arch, not CPU brand.
+ * @evidence ./performanceBudget.ts#mergeBaselines Replaces this host's entry for an edited scenario and keeps other hosts.
+ * @evidenceReview ./performanceBudget.ts#mergeBaselines #6e7054e The function drops existing entries on the same host with the same scenario path or hash, then appends the fresh ones.
+ * @evidenceReview ./performanceBudget.ts#sameHost #1bda6e8 The function returns true only when bun, os, and arch are equal.
+ */
+export function rejectsBaselineFromAnotherHost(): void {
+  const policy = { minIterations: 4, relativeSlowdown: 0.25, absoluteMedianMs: 50 };
+  const darwin = scenarioArtifact(representativeScenario, [10]);
+  const linux = { ...darwin, host: { bun: "1.4.2", cpu: "unsupported", os: "linux", arch: "x64" } };
+  const otherCpu = { ...darwin, host: { ...darwin.host, cpu: "other-cpu" } };
+  expect(sameHost(darwin.host, otherCpu.host)).toBe(true);
+  expect(sameHost(darwin.host, linux.host)).toBe(false);
+  expect(sameHost(darwin.host, { ...darwin.host, bun: "1.4.3" })).toBe(false);
+  expect(comparePerformanceBudgets(linux, darwin, policy)).toEqual({ status: "rejected", reason: "host-mismatch" });
+  expect(comparePerformanceBudgets(otherCpu, darwin, policy)).toEqual({ status: "pass", reason: "within-budget" });
+  expect(selectBaseline([linux, otherCpu], darwin)).toBe(otherCpu);
+  expect(selectBaseline([linux], darwin)).toBe(linux);
+  const edited = scenarioArtifact({ ...representativeScenario, strategy: { id: "planner" } }, [12]);
+  expect(edited.scenario).toBe(darwin.scenario);
+  expect(edited.scenarioHash).not.toBe(darwin.scenarioHash);
+  const merged = mergeBaselines([darwin, linux], [edited]);
+  expect(merged).toEqual([linux, edited]);
+  const otherPath = { ...edited, scenario: "examples/bench/other.json", scenarioHash: "f".repeat(64) };
+  expect(mergeBaselines([darwin], [otherPath])).toEqual([darwin, otherPath]);
+}
+
 describe("performance budget", () => {
   it("accepts the performance budget schema", acceptsPerformanceBudgetSchema);
   it("uses workload count over runtime only", keepsRuntimeWorkloadDenominator);
@@ -298,4 +560,11 @@ describe("performance budget", () => {
   it("rejects a baseline hash mismatch", rejectsBaselineHashMismatch);
   it("compares only the same config", comparesOnlyTheSameConfig);
   it("keeps cold and warm labels", keepsColdAndWarmLabels);
+  it("rejects a baseline from another workload", rejectsDifferentWorkload);
+  it("reads the trace cadence field", readsTraceCadence);
+  it("reads bench-sim output as a baseline", readsBenchOutputAsBaseline);
+  it("rejects a baseline without iteration metadata", rejectsBaselineWithoutIterations);
+  it("takes a nearest-rank p95", takesNearestRankP95);
+  it("rejects negative samples and counters", rejectsNegativeSamples);
+  it("rejects a baseline from another host", rejectsBaselineFromAnotherHost);
 });

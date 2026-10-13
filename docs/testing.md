@@ -38,7 +38,7 @@ bun tools/analysis-baseline-check.ts
 
 ## Performance budgets
 
-`bench:sim:check` scores the short representative scenario with trace off. The mean and p95 are runtime samples. Compiler prepare is a separate phase and is not steps/sec. A gate failure needs enough repeats, a relative slowdown, and an absolute median floor. A failure does not rewrite the baseline. The long corpus is `bench:sim:suite:check` on the scheduled workflow `.github/workflows/performance-corpus.yml`. `kpi:report` and `kpi:regress` stay the economic gate. See [Performance budgets](./performance-budget.md).
+`bench:sim:check` scores the short representative scenario with trace off. The mean and p95 are runtime samples. Compiler prepare is a separate phase and is not steps/sec. A gate failure needs enough repeats, a relative slowdown, and an absolute median floor. The comparison baseline is `examples/bench/perf-baseline.json`. A failure does not rewrite the baseline. The long corpus is `bench:sim:suite:check` on the scheduled workflow `.github/workflows/performance-corpus.yml`. `kpi:report` and `kpi:regress` stay the economic gate. See [Performance budgets](./performance-budget.md).
 
 ## Test runtime rules
 
