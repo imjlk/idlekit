@@ -1452,6 +1452,86 @@
           "args": ["test", "--timeout", "120000", "src/sim/analysis/checks.test.ts"]
         }
       ]
+    },
+    {
+      "id": "REQ-PR18-RULES-PROVIDER",
+      "pr": "PR-18",
+      "anchor": "req-pr18-rules-provider",
+      "doc": "docs/requirements/active/optional-analysis-judge.md",
+      "production": ["packages/core/src/sim/analysis/judge.ts"],
+      "tests": [
+        {
+          "file": "packages/core/src/sim/analysis/judge.test.ts",
+          "exportName": "acceptsRulesProvider",
+          "registeredAs": "optional analysis judge > accepts a rules provider",
+          "cwd": "packages/core",
+          "args": ["test", "--timeout", "120000", "src/sim/analysis/judge.test.ts"]
+        }
+      ]
+    },
+    {
+      "id": "REQ-PR18-CHECK-REUSE",
+      "pr": "PR-18",
+      "anchor": "req-pr18-check-reuse",
+      "doc": "docs/requirements/active/optional-analysis-judge.md",
+      "production": ["packages/core/src/sim/analysis/judge.ts"],
+      "tests": [
+        {
+          "file": "packages/core/src/sim/analysis/judge.test.ts",
+          "exportName": "reusesBalanceChecks",
+          "registeredAs": "optional analysis judge > reuses balance checks",
+          "cwd": "packages/core",
+          "args": ["test", "--timeout", "120000", "src/sim/analysis/judge.test.ts"]
+        }
+      ]
+    },
+    {
+      "id": "REQ-PR18-EVIDENCE-REFS",
+      "pr": "PR-18",
+      "anchor": "req-pr18-evidence-refs",
+      "doc": "docs/requirements/active/optional-analysis-judge.md",
+      "production": ["packages/core/src/sim/analysis/judge.ts"],
+      "tests": [
+        {
+          "file": "packages/core/src/sim/analysis/judge.test.ts",
+          "exportName": "rejectsBadRefs",
+          "registeredAs": "optional analysis judge > rejects a missing evidence ref",
+          "cwd": "packages/core",
+          "args": ["test", "--timeout", "120000", "src/sim/analysis/judge.test.ts"]
+        }
+      ]
+    },
+    {
+      "id": "REQ-PR18-SEPARATED-REPORT",
+      "pr": "PR-18",
+      "anchor": "req-pr18-separated-report",
+      "doc": "docs/requirements/active/optional-analysis-judge.md",
+      "production": ["packages/core/src/sim/analysis/judge.ts"],
+      "tests": [
+        {
+          "file": "packages/core/src/sim/analysis/judge.test.ts",
+          "exportName": "separatesReportLayers",
+          "registeredAs": "optional analysis judge > separates report layers",
+          "cwd": "packages/core",
+          "args": ["test", "--timeout", "120000", "src/sim/analysis/judge.test.ts"]
+        }
+      ]
+    },
+    {
+      "id": "REQ-PR18-INSUFFICIENT",
+      "pr": "PR-18",
+      "anchor": "req-pr18-insufficient",
+      "doc": "docs/requirements/active/optional-analysis-judge.md",
+      "production": ["packages/core/src/sim/analysis/judge.ts"],
+      "tests": [
+        {
+          "file": "packages/core/src/sim/analysis/judge.test.ts",
+          "exportName": "withholdsHealthLabels",
+          "registeredAs": "optional analysis judge > withholds a health label",
+          "cwd": "packages/core",
+          "args": ["test", "--timeout", "120000", "src/sim/analysis/judge.test.ts"]
+        }
+      ]
     }
   ]
 }

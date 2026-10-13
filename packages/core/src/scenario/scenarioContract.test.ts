@@ -122,6 +122,7 @@ export function keepsTypedContractSingleSource(): void {
     "idlekit.distribution.v1",
     "idlekit.experiment.v1",
     "idlekit.balance-checks.v1",
+    "idlekit.judge.v1",
   ]);
   // Each registry entry names a type its source declares. The balance entry names the
   // document union the schema publishes, so the error variant is part of the registered type.
@@ -379,14 +380,17 @@ export function keepsGeneratedContractsStable(): void {
   const left = join(tmpdir(), `idlekit-tc05-gen-a-${crypto.randomUUID()}`);
   const right = join(tmpdir(), `idlekit-tc05-gen-b-${crypto.randomUUID()}`);
   try {
-    // A --dest generation must not touch the tracked public balance schema.
+    // A --dest generation must not touch the tracked public balance or judge schema.
     const publicSchema = join(repoRoot, "docs/schemas/balance-checks.v1.schema.json");
     const publicBefore = statSync(publicSchema).mtimeMs;
+    const publicJudge = join(repoRoot, "docs/schemas/judge.output.schema.json");
+    const publicJudgeBefore = statSync(publicJudge).mtimeMs;
     const wroteLeft = spawnContract(["tools/generate-contracts.ts", "--dest", left]);
     const wroteRight = spawnContract(["tools/generate-contracts.ts", "--dest", right]);
     expect(wroteLeft.exitCode).toBe(0);
     expect(wroteRight.exitCode).toBe(0);
     expect(statSync(publicSchema).mtimeMs).toBe(publicBefore);
+    expect(statSync(publicJudge).mtimeMs).toBe(publicJudgeBefore);
     const names = readdirSync(left).sort();
     expect(names).toEqual(readdirSync(right).sort());
     for (const name of names) {

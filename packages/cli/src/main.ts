@@ -2,6 +2,7 @@
 import { createCLI } from "./runtime/command";
 import analyzeCommand from "./commands/analyze";
 import inspectCommand from "./commands/inspect";
+import judgeCommand from "./commands/judge";
 import calibrateCommand from "./commands/calibrate";
 import balanceCommand from "./commands/balance";
 import compareCommand from "./commands/compare";
@@ -39,6 +40,7 @@ const cli = await createCLI({
 cli.command(validateCommand);
 cli.command(analyzeCommand);
 cli.command(inspectCommand);
+cli.command(judgeCommand);
 cli.command(modelsGroup);
 cli.command(strategiesGroup);
 cli.command(objectivesGroup);
