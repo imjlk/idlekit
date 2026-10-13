@@ -1,5 +1,6 @@
 import { $ } from "bun";
-import { delimiter, resolve } from "path";
+import { existsSync } from "fs";
+import { delimiter, dirname, resolve } from "path";
 import { ROOT, readText, sha256Hex, withFileLock, writeText } from "./_bun";
 import { parseNpmPackEntries } from "./npm-pack";
 
@@ -107,11 +108,22 @@ async function runCliSnippet(consumerDir: string, path: string): Promise<void> {
   const scriptBody = await readText(resolve(ROOT, path));
   const scriptPath = resolve(consumerDir, "cli-quick-start.sh");
   await writeText(scriptPath, `${scriptBody}\n`);
-  const gitRoot = resolve(process.env.ProgramFiles ?? "C:/Program Files", "Git");
-  const bash = process.platform === "win32" ? resolve(gitRoot, "bin", "bash.exe") : "bash";
+  let bash = "bash";
   const shellPath = [resolve(consumerDir, "node_modules", ".bin")];
-  // npm's POSIX shim uses sed, dirname and uname, even when Git Bash starts without a login profile.
-  if (process.platform === "win32") shellPath.push(resolve(gitRoot, "usr", "bin"));
+  if (process.platform === "win32") {
+    const roots = [resolve(process.env.ProgramFiles ?? "C:/Program Files", "Git")];
+    if (process.env.LOCALAPPDATA) roots.push(resolve(process.env.LOCALAPPDATA, "Programs", "Git"));
+    for (const executable of [Bun.which("git"), Bun.which("bash")]) {
+      if (executable) roots.push(resolve(dirname(executable), ".."), resolve(dirname(executable), "../.."));
+    }
+    // npm's POSIX shim needs these tools. Requiring them also excludes the Windows WSL bash stub.
+    const gitRoot = roots.find((root) =>
+      ["bash", "sed", "dirname", "uname"].every((name) => existsSync(resolve(root, "usr", "bin", `${name}.exe`))),
+    );
+    if (!gitRoot) throw new Error("README smoke requires Git Bash on Windows; install Git for Windows or add it to PATH");
+    bash = resolve(gitRoot, "usr", "bin", "bash.exe");
+    shellPath.push(resolve(gitRoot, "usr", "bin"));
+  }
   shellPath.push(process.env.PATH ?? "");
   const proc = Bun.spawnSync([bash, scriptPath], {
     cwd: consumerDir,
