@@ -63,19 +63,19 @@ type JevProjection = Readonly<{
 
 /**
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-opt-in-live The default transport is fetch. Tests inject a mock.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-opt-in-live #14d20f3 Re-read the section: the ordinary test does not call the live API.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-opt-in-live #cb60b1b Re-read the section: the ordinary test does not call the live API.
  */
 export const jevLiveTransport = "injected-or-fetch" as const;
 
 /*
  * A local path can sit anywhere in a string and can come from any host layout:
- * a `file:` URI, a `~/` home path, a POSIX absolute path with two or more segments,
+ * a `file:` URI, a `~/` home path, a POSIX absolute path of any depth, including a root-level one,
  * a Windows drive path with either separator, or a UNC share. This pattern finds
  * where a path starts and its first space-free run. A web URL is not a local path
  * and stays.
  */
 const LOCAL_PATH_START =
-  /file:\/\/[^\s"'`()<>[\]{},;|]*|(?<=^|[\s"'`(=,:;[{<])(?:~\/[^\s"'`()<>[\]{},;|]*|\/(?:[^\s"'`()<>[\]{},;|/]+\/)+[^\s"'`()<>[\]{},;|]*|[A-Za-z]:[\\/][^\s"'`()<>[\]{},;|]*|\\\\[^\s\\]+\\[^\s"'`()<>[\]{},;|]*)/g;
+  /file:\/\/[^\s"'`()<>[\]{},;|]*|(?<=^|[\s"'`(=,:;[{<])(?:~\/[^\s"'`()<>[\]{},;|]*|\/[^\s"'`()<>[\]{},;|/][^\s"'`()<>[\]{},;|]*|[A-Za-z]:[\\/][^\s"'`()<>[\]{},;|]*|\\\\[^\s\\]+\\[^\s"'`()<>[\]{},;|]*)/g;
 /** A last path component that names a file, such as `save.json`. */
 const FILE_COMPONENT = /(?:^|[\\/])[^\\/]*\.[A-Za-z0-9]{1,8}$/;
 /** A quote, bracket, or pipe closes the text a path can run through. */
@@ -134,7 +134,7 @@ function redact(value: unknown, keyMaterial: string): unknown {
 
 /**
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-secret-boundary The projection keeps metrics, assumptions, and rubric intent.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-secret-boundary #520b751 Re-read the section: raw source and secrets are dropped, and a local path in any host layout is replaced in place.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-secret-boundary #9d93d43 Re-read the section: raw source and secrets are dropped, and a local path in any host layout is replaced in place.
  */
 export function projectJevState(
   artifact: AnalysisArtifactV1,
@@ -143,9 +143,12 @@ export function projectJevState(
 ): JevProjection {
   // The numerical judge compares the recorded meaning, method, and unit with the rule. Jev sees the same identity.
   // The numerical judge reads the first reading of each metric id. Jev sees that reading and no other.
-  const firstReadings = artifact.metrics.filter(
-    (metric, index) => artifact.metrics.findIndex((other) => other.metricId === metric.metricId) === index,
-  );
+  const seenMetricIds = new Set<string>();
+  const firstReadings = artifact.metrics.filter((metric) => {
+    if (seenMetricIds.has(metric.metricId)) return false;
+    seenMetricIds.add(metric.metricId);
+    return true;
+  });
   const metrics = firstReadings.map((metric) => ({
     // An amount reading is stored as a decimal string, not as `value`.
     amount: metric.amount ? { decimal: metric.amount.decimal, unit: metric.amount.unit } : null,
@@ -216,7 +219,7 @@ type JevFetch = (
 
 /**
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-opt-in-live The fetch transport posts only the body the caller already built.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-opt-in-live #14d20f3 Re-read the section: the URL is the documented System One endpoint.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-opt-in-live #cb60b1b Re-read the section: the URL is the documented System One endpoint.
  */
 export function createFetchTransport(fetchImpl: JevFetch = (input, init) => globalThis.fetch(input, init)): JevTransport {
   return async (request) => {
@@ -328,10 +331,12 @@ function summarize(
  * One rubric rule is one Jev question. A repeated id would merge two questions, and the
  * wire parser drops an own __proto__ key, so either one would lose an answer.
  */
-function questionIdIssue(rubric: JudgeRubricV1): string | null {
+function questionIdIssue(rubric: JudgeRubricV1, keyMaterial: string): string | null {
   const seen = new Set<string>();
   for (const rule of rubric.rules) {
     if (rule.id === "__proto__") return "unsafe-question-id";
+    // A question id is a property name in the request and is not redacted there, so an id that redaction would change is refused.
+    if (redactString(rule.id, keyMaterial) !== rule.id) return "unsafe-question-id";
     if (seen.has(rule.id)) return "duplicate-question-id";
     seen.add(rule.id);
   }
@@ -374,7 +379,7 @@ function retryable(status: number): boolean {
 
 /**
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-opt-in-live The live transport runs only when the caller asks for Jev.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-opt-in-live #14d20f3 Re-read the section: dry-run and a missing key do not send the request.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-opt-in-live #cb60b1b Re-read the section: dry-run and a missing key do not send the request.
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-http-budget Retry stays inside the attempt budget.
  * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-http-budget #84d6272 Re-read the section: timeout becomes unavailable and authentication is not retried.
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-numerical-unchanged The numerical digest is copied, not recomputed by the model.
@@ -418,7 +423,7 @@ export async function adviseWithJev(args: Readonly<{
     dryRun: args.dryRun,
     plannedRequests,
   };
-  const idIssue = questionIdIssue(args.rubric);
+  const idIssue = questionIdIssue(args.rubric, key);
   if (idIssue) {
     return blank({ ...base, plannedRequests: 0, status: "failed", reason: idIssue, cache: "bypass", attempts: 0 });
   }

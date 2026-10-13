@@ -104,6 +104,9 @@ export async function runJudge(flags: {
   if (flags.format === "md") {
     console.log(renderJudgeMarkdown(report));
     console.log(`- Jev: ${advisory.status} ${advisory.reason}`);
+    // The plan is what a dry run is for, so md shows it as json does.
+    console.log(`- Endpoint: ${advisory.endpoint}`);
+    console.log(`- Planned requests: ${advisory.plannedRequests}`);
     return bundle;
   }
   await writeOutput({

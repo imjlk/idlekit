@@ -56,7 +56,7 @@ export function jevCacheHit(
 
 /**
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-secret-boundary The cache file is a digest record, not a copy of the request key.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-secret-boundary #520b751 Re-read the section: the stored JSON is the advisory, not the API key.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-secret-boundary #9d93d43 Re-read the section: the stored JSON is the advisory, not the API key.
  */
 export function serializeJevCache(entries: readonly JevCacheEntry[]): string {
   return `${stableStringify({ entries })}\n`;

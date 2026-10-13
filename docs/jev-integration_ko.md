@@ -8,7 +8,7 @@
 
 2026-10-02에 TypeSafe System One 문서를 다시 확인했다. 호출은 POST `https://api.typesafe.ai/v1/systemone`이고 헤더는 `Authorization: Bearer`와 `Content-Type: application/json`이다. 환경 변수 이름은 `TYPESAFE_API_KEY`다. 요청의 model 필드는 필수다. 문서 예시 요청 모델은 `jev-latest`이고, 문서 예시로 확인된 응답 모델은 `jev-1.13.0`이다. Choice와 Score 답은 `probabilities`와 `confidence`를 가진다. Noul 답은 `noul`만 가진다. 이 모양을 하나의 confidence 필드로 합치지 않는다. `confidence`는 확률 분포의 통계이고 0에서 1 사이다. 게임 밸런스가 맞을 보정된 확률이 아니다. Noul에는 confidence 필드가 없다. 확인한 페이지에 단가가 없어서 이 provider는 가격을 만들지 않는다. 응답이 오면 `usage.input_tokens`와 `usage.output_tokens`를 보고한다.
 
-projection은 metric id, version, meaning, domain, unit, method, reading, status, value, assumptions, 그리고 rubric rule의 operator, threshold, upper threshold, unit, method, definition, recommendation id를 남긴다. 원본 소스, plugin 코드, artifact 전체, secret처럼 보이는 키는 뺀다. amount 읽기는 decimal과 sign을 가진다. 문자열 어디에 있든 로컬 경로는 바꾼다. POSIX 절대 경로, `~/`, Windows 드라이브, UNC, `file:` 형태가 그렇고, 공백이 든 이름은 그 경로가 가리키는 파일까지 바꾼다. 웹 URL은 남는다. 키는 요청 헤더를 위해 프로세스 환경에서만 읽고 cache, 보고서, 오류 문장에는 쓰지 않는다.
+projection은 metric id, version, meaning, domain, unit, method, reading, status, value, assumptions, 그리고 rubric rule의 operator, threshold, upper threshold, unit, method, definition, recommendation id를 남긴다. 원본 소스, plugin 코드, artifact 전체, secret처럼 보이는 키는 뺀다. amount 읽기는 decimal과 sign을 가진다. 문자열 어디에 있든 로컬 경로는 바꾼다. 깊이와 상관없는 POSIX 절대 경로, `~/`, Windows 드라이브, UNC, `file:` 형태가 그렇고, 공백이 든 이름은 그 경로가 가리키는 파일까지 바꾼다. 웹 URL은 남는다. rule id는 질문 이름으로 보내지므로 경로나 키가 든 id는 요청 전에 거부한다. 키는 요청 헤더를 위해 프로세스 환경에서만 읽고 cache, 보고서, 오류 문장에는 쓰지 않는다.
 
 `401`과 `403`은 인증 실패이고 재시도하지 않는다. `429`, `529`, 그 밖의 `5xx`는 최대 두 번 재시도한 뒤 advisory 상태가 `unavailable`이다. timeout은 중단하고 `unavailable`이다. 수치 보고서는 그대로 남는다. `numerical.pass`는 뒤집히지 않는다. 낮은 confidence와 절반 근처의 Noul은 `abstain`이다. 질문은 기록된 읽기가 자기 rule을 통과하지 못하는지 묻는다. 자기 rule의 verdict와 어긋나는 Noul은 `advisory-warning`이고, 그 경고는 다른 rule의 abstain보다 보고서 상태에서 앞선다. inconclusive나 unsupported rule에는 어긋날 verdict가 없다. 0에서 1 밖의 Noul이나 Score confidence는 잘못된 응답이고, abstain 구간은 0.4부터 0.6까지 양끝을 포함한다. rule id가 겹치거나 `__proto__`인 rubric은 요청 전에 실패한다. rule마다 질문이 하나여야 하기 때문이다.
 
@@ -48,7 +48,7 @@ idk judge analysis.json --rubric rubric.json --provider jev --model jev-1.13.0
 
 첫 `evidence:check`는 placeholder review 때문에 2로 끝났다. 다음은 inventory가 `export function`을 찾는데 호스트가 `export async function`이라 1로 끝났다. 다시 실행한 값은 0이다. review를 반영한 뒤 `contracts:generate`를 다시 실행했고 `contracts:check`는 0이다. `graph:check`는 `createPlannerStrategy`에서 `stepOnce`까지 hops 0으로 관측하지 않았다.
 
-PR #221 review 수정으로 요구 파일 sha256은 `29011fed7d6dad5bd6ee7153b8a575fdc7ef65dc2fdbd62929932595cc158c38`이 됐다. 그 수정에서 `bun run typecheck`, `bun run test:conformance`, `bun run contracts:check`, 그리고 `packages/cli`의 `jev.test.ts`, `judge.test.ts`, `output-schema.test.ts`를 실행했다.
+PR #221 review 수정으로 요구 파일 sha256은 `ad53629ce152002dab624f4f0e0adf1985e16ce1de9679b3fd8df4527da9395a`이 됐다. 그 수정에서 `bun run typecheck`, `bun run test:conformance`, `bun run contracts:check`, 그리고 `packages/cli`의 `jev.test.ts`, `judge.test.ts`, `output-schema.test.ts`를 실행했다.
 
 ## Graph
 
