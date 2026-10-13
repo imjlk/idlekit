@@ -62,9 +62,16 @@ export async function runJudge(flags: {
   if (flags.provider === "jev" && flags.format === "csv") {
     throw usageError("--provider jev writes json or md. csv cannot hold the rules report and the advisory together.");
   }
-  // The output write would replace the cache it just stored, and the next run would pay for the request again.
-  if (flags.provider === "jev" && flags.cache && flags.out && resolve(flags.cache) === resolve(flags.out)) {
-    throw usageError("--cache and --out name the same file. Give the Jev cache its own path.");
+  // The cache is written after the inputs are read. Pointing it at an input would overwrite that input, and pointing
+  // it at the output would let the bundle replace it, so the next run would pay for the request again.
+  if (flags.provider === "jev" && flags.cache) {
+    const cachePath = resolve(flags.cache);
+    if (flags.out && cachePath === resolve(flags.out)) {
+      throw usageError("--cache and --out name the same file. Give the Jev cache its own path.");
+    }
+    if (cachePath === resolve(analysisPath) || cachePath === resolve(flags.rubric)) {
+      throw usageError("--cache names an input file. Give the Jev cache its own path.");
+    }
   }
   const artifactRaw = await readJsonFile<unknown>(analysisPath);
   const rubricRaw = await readJsonFile<unknown>(flags.rubric);

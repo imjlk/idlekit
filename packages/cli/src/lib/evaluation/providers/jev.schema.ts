@@ -14,7 +14,7 @@ export const jevNoDefaultFetch = "rules-stay-local" as const;
 
 /**
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-wire-shapes Choice, Score, and Noul stay distinct wire shapes.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-wire-shapes #cdacf48 Re-read the section: Noul has noul, and Choice or Score confidence is not copied onto it.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-wire-shapes #bbab1e0 Re-read the section: Noul has noul, and Choice or Score confidence is not copied onto it.
  */
 export const jevWireShapes = "distinct-answer-types" as const;
 
@@ -26,13 +26,13 @@ export const jevHttpBudget = "bounded-retry" as const;
 
 /**
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity A pinned model can hit. An alias is not a permanent id.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity #08c1c96 Re-read the section: jev-latest is revalidated and a rubric change misses.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity #9a0037c Re-read the section: jev-latest is revalidated and a rubric change misses.
  */
 export const jevCacheIdentity = "alias-is-not-pinned" as const;
 
 /**
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-secret-boundary The key and the raw state stay out of the cache and the report.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-secret-boundary #3b797e8 Re-read the section: secrets and full state are not stored.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-secret-boundary #ddb0013 Re-read the section: secrets and full state are not stored.
  */
 export const jevSecretBoundary = "redacted-projection" as const;
 
@@ -74,8 +74,8 @@ const wireResponse = z.object({
   model: z.string().min(1),
   answers: z.record(z.string(), wireAnswer),
   usage: z.object({
-    input_tokens: z.number().int(),
-    output_tokens: z.number().int(),
+    input_tokens: z.number().int().nonnegative(),
+    output_tokens: z.number().int().nonnegative(),
   }).strict(),
 }).strict();
 
@@ -101,7 +101,7 @@ function probabilityShape(value: Record<string, number>, expectedKeys: readonly 
 
 /**
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-wire-shapes A response is accepted only when each answer matches its question type.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-wire-shapes #cdacf48 Re-read the section: unknown ids, malformed JSON, a bad probability shape, and a Noul outside 0 to 1 are rejected.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-wire-shapes #bbab1e0 Re-read the section: unknown ids, malformed JSON, a bad probability shape, and a Noul outside 0 to 1 are rejected.
  */
 export function readJevWire(
   body: string,

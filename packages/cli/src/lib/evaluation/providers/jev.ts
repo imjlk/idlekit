@@ -134,7 +134,7 @@ function redact(value: unknown, keyMaterial: string): unknown {
 
 /**
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-secret-boundary The projection keeps metrics, assumptions, and rubric intent.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-secret-boundary #3b797e8 Re-read the section: raw source and secrets are dropped, and a local path in any host layout is replaced in place.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-secret-boundary #ddb0013 Re-read the section: raw source and secrets are dropped, and a local path in any host layout is replaced in place.
  */
 export function projectJevState(
   artifact: AnalysisArtifactV1,
@@ -389,7 +389,7 @@ function retryable(status: number): boolean {
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-no-default-fetch Only judge with provider jev reaches this transport. The rules provider returns before it.
  * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-no-default-fetch #e8a02f1 Re-read the section: provider rules does not call the Jev transport, even with TYPESAFE_API_KEY set.
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity The cache key is built from the projection here, and a cache that cannot be written fails open.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity #08c1c96 Re-read the section: the key takes the projection with the upper bound, and a failed write keeps the advisory without resending.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity #9a0037c Re-read the section: the key takes the projection with the upper bound, and a failed write keeps the advisory without resending.
  */
 export async function adviseWithJev(args: Readonly<{
   artifact: AnalysisArtifactV1;
@@ -425,6 +425,19 @@ export async function adviseWithJev(args: Readonly<{
     dryRun: args.dryRun,
     plannedRequests,
   };
+  // The requested model is copied into the report and the cache. One that carries the key or a path is refused,
+  // and the report names it only as redacted, so even a dry run does not echo it.
+  if (redactString(args.requestedModel, key) !== args.requestedModel) {
+    return blank({
+      ...base,
+      requestedModel: "[redacted]",
+      plannedRequests: 0,
+      status: "failed",
+      reason: "unsafe-model",
+      cache: "bypass",
+      attempts: 0,
+    });
+  }
   const idIssue = questionIdIssue(args.rubric, key);
   if (idIssue) {
     return blank({ ...base, plannedRequests: 0, status: "failed", reason: idIssue, cache: "bypass", attempts: 0 });
@@ -498,6 +511,14 @@ export async function adviseWithJev(args: Readonly<{
       // The provider chooses the model string. One that carries the key or a local path is refused, not copied or cached.
       if (redactString(wire.response.model, key) !== wire.response.model) {
         return blank({ ...base, status: "failed", reason: "unsafe-model", cache: "miss", attempts: attempt + 1 });
+      }
+      // A pinned request accepts only that model. An alias must come back resolved to a concrete id.
+      const answeredModel = wire.response.model;
+      const modelOk = aliasPolicy(args.requestedModel) === "pinned"
+        ? answeredModel === args.requestedModel
+        : aliasPolicy(answeredModel) === "pinned";
+      if (!modelOk) {
+        return blank({ ...base, status: "failed", reason: "model-mismatch", cache: "miss", attempts: attempt + 1 });
       }
       const answers = summarize(wire.response, args.rubric, args.numerical);
       const status = reportStatus(answers);

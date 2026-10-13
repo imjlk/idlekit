@@ -1,4 +1,4 @@
-import typia, { type IValidation } from "typia";
+import typia, { type IValidation, type tags } from "typia";
 
 /**
  * Structural advisory report for an opt-in Jev call.
@@ -37,7 +37,8 @@ export type JevAdvisoryV1 = Readonly<{
   numericalDigest: string;
   numericalUnchanged: true;
   endpoint: string;
-  usage: Readonly<{ inputTokens: number; outputTokens: number }> | null;
+  /** Token counts are whole and never negative. */
+  usage: Readonly<{ inputTokens: number & tags.Type<"uint32">; outputTokens: number & tags.Type<"uint32"> }> | null;
   cache: "hit" | "miss" | "bypass";
   attempts: number;
   plannedRequests: number;
@@ -64,7 +65,7 @@ let validateJevAdvisoryValidator: ((input: unknown) => IValidation<JevAdvisoryV1
 
 /**
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-wire-shapes The published validator is createValidate of the advisory report.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-wire-shapes #cdacf48 Re-read the section: the structural document is JevAdvisoryV1.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-wire-shapes #bbab1e0 Re-read the section: the structural document is JevAdvisoryV1.
  */
 export const validateJevAdvisory = (input: unknown): IValidation<JevAdvisoryV1> =>
   (validateJevAdvisoryValidator ??= typia.createValidate<JevAdvisoryV1>())(input);
@@ -77,7 +78,7 @@ let jevJsonSchemaUnit: ReturnType<typeof buildJevJsonSchema> | undefined;
 
 /**
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-wire-shapes The structural schema is OpenAPI 3.1 from typia.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-wire-shapes #cdacf48 Re-read the section: schema version is 3.1 and the contract id is idlekit.jev.advisory.v1.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-wire-shapes #bbab1e0 Re-read the section: schema version is 3.1 and the contract id is idlekit.jev.advisory.v1.
  */
 export function jevJsonSchema(): ReturnType<typeof buildJevJsonSchema> {
   jevJsonSchemaUnit ??= buildJevJsonSchema();
