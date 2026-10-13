@@ -69,19 +69,54 @@ export const jevLiveTransport = "injected-or-fetch" as const;
 /*
  * A local path can sit anywhere in a string and can come from any host layout:
  * a `file:` URI, a `~/` home path, a POSIX absolute path with two or more segments,
- * a Windows drive path with either separator, or a UNC share. A following
- * space-separated token that still holds a separator is taken as the same path,
- * so a directory name with a space does not leak its tail. Each match is replaced
- * in place and the rest of the string still reaches the provider. A web URL is not
- * a local path and stays.
+ * a Windows drive path with either separator, or a UNC share. This pattern finds
+ * where a path starts and its first space-free run. A web URL is not a local path
+ * and stays.
  */
-const LOCAL_PATH_PATTERN =
-  /(?:file:\/\/[^\s"'`()<>[\]{},;|]*|(?<=^|[\s"'`(=,:;[{<])(?:~\/[^\s"'`()<>[\]{},;|]*|\/(?:[^\s"'`()<>[\]{},;|/]+\/)+[^\s"'`()<>[\]{},;|]*|[A-Za-z]:[\\/][^\s"'`()<>[\]{},;|]*|\\\\[^\s\\]+\\[^\s"'`()<>[\]{},;|]*))(?: [^\s"'`()<>|]*[\\/][^\s"'`()<>|]*)*/g;
+const LOCAL_PATH_START =
+  /file:\/\/[^\s"'`()<>[\]{},;|]*|(?<=^|[\s"'`(=,:;[{<])(?:~\/[^\s"'`()<>[\]{},;|]*|\/(?:[^\s"'`()<>[\]{},;|/]+\/)+[^\s"'`()<>[\]{},;|]*|[A-Za-z]:[\\/][^\s"'`()<>[\]{},;|]*|\\\\[^\s\\]+\\[^\s"'`()<>[\]{},;|]*)/g;
+/** A last path component that names a file, such as `save.json`. */
+const FILE_COMPONENT = /(?:^|[\\/])[^\\/]*\.[A-Za-z0-9]{1,8}$/;
+/** A quote, bracket, or pipe closes the text a path can run through. */
+const PATH_CLOSE = /["'`()<>[\]{}|]/;
+
+/*
+ * A path ends at its first run when that run already names a file. Otherwise a name
+ * with spaces may continue: the path runs through the next space-separated token that
+ * names a file, and with no such token it runs to the closing delimiter or the end of
+ * the string. Taking too much is the safe side, since every taken character is replaced.
+ */
+function pathEnd(value: string, start: number, run: string): number {
+  const end = start + run.length;
+  if (FILE_COMPONENT.test(run)) return end;
+  const rest = value.slice(end);
+  const close = rest.search(PATH_CLOSE);
+  const span = close < 0 ? rest : rest.slice(0, close);
+  let offset = 0;
+  for (const token of span.split(" ")) {
+    offset += token.length;
+    if (token.length > 0 && FILE_COMPONENT.test(token)) return end + offset;
+    offset += 1;
+  }
+  return end + span.replace(/\s+$/, "").length;
+}
+
+function redactPaths(value: string): string {
+  let out = "";
+  let cursor = 0;
+  for (const match of value.matchAll(LOCAL_PATH_START)) {
+    const start = match.index ?? 0;
+    if (start < cursor) continue;
+    out += `${value.slice(cursor, start)}[redacted]`;
+    cursor = pathEnd(value, start, match[0]);
+  }
+  return out + value.slice(cursor);
+}
 
 function redactString(value: string, keyMaterial: string): string {
   if (keyMaterial.length > 0 && value.includes(keyMaterial)) return "[redacted]";
   if (value.includes("TYPESAFE_API_KEY")) return "[redacted]";
-  return value.replace(LOCAL_PATH_PATTERN, "[redacted]");
+  return redactPaths(value);
 }
 
 function redact(value: unknown, keyMaterial: string): unknown {
@@ -98,7 +133,7 @@ function redact(value: unknown, keyMaterial: string): unknown {
 
 /**
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-secret-boundary The projection keeps metrics, assumptions, and rubric intent.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-secret-boundary #d26dcf6 Re-read the section: raw source and secrets are dropped, and a local path in any host layout is replaced in place.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-secret-boundary #51c2518 Re-read the section: raw source and secrets are dropped, and a local path in any host layout is replaced in place.
  */
 export function projectJevState(
   artifact: AnalysisArtifactV1,
@@ -107,12 +142,15 @@ export function projectJevState(
 ): JevProjection {
   // The numerical judge compares the recorded meaning, method, and unit with the rule. Jev sees the same identity.
   const metrics = artifact.metrics.map((metric) => ({
+    // An amount reading is stored as a decimal string, not as `value`.
+    amount: metric.amount ? { decimal: metric.amount.decimal, unit: metric.amount.unit } : null,
     domain: metric.domain,
     meaning: metric.meaning,
     method: metric.method ?? null,
     metricId: metric.metricId,
     metricVersion: metric.metricVersion,
     reading: metric.reading,
+    sign: metric.sign ?? null,
     status: metric.status,
     unit: metric.domain === "amount" ? (metric.amount?.unit ?? "amount") : metric.domain,
     value: "value" in metric ? metric.value : null,
@@ -128,17 +166,21 @@ export function projectJevState(
     unit: rule.unit,
     upperThreshold: rule.upperThreshold,
   }));
-  // Object.fromEntries defines own properties, so an id such as __proto__ does not touch the prototype.
+  /*
+   * The question is the numerical predicate itself: does the recorded reading fail its rule.
+   * A Noul answer is then comparable with that rule's verdict, and disagreement means the same thing on both sides.
+   * Object.fromEntries defines own properties, so an id such as __proto__ does not touch the prototype.
+   */
   const questions: Record<string, JevQuestion> = Object.fromEntries(
     rubric.rules.map((rule): [string, JevQuestion] => [
       rule.id,
       {
         type: "noul",
         instructions:
-          "Does the recorded reading conflict with the rubric definition for this metric? Do not compute a new ETA, growth rate, or steady state.",
+          "Take the rubric rule whose id is this question's id and the recorded reading of its metric. Does that reading fail the rule, judged by its operator, threshold, upper threshold, unit, and definition? Use the recorded reading as given. Do not compute a new ETA, growth rate, or steady state.",
         criteria: {
-          true: "The recorded reading conflicts with the stated definition",
-          false: "The recorded reading does not conflict with the stated definition",
+          true: "The recorded reading fails the rule",
+          false: "The recorded reading satisfies the rule",
         },
       },
     ]),
@@ -227,7 +269,7 @@ function blank(args: {
 
 /**
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-numerical-unchanged Low confidence abstains. A conflict is a warning, not a new verdict.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-numerical-unchanged #edaa1fe Re-read the section: confidence is not a game-correctness probability.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-numerical-unchanged #83c1349 Re-read the section: confidence is not a game-correctness probability.
  */
 export function jevAnswerDisposition(
   answer: JevWireAnswer,
@@ -289,9 +331,10 @@ function questionIdIssue(rubric: JudgeRubricV1): string | null {
   return null;
 }
 
+/** A definite disagreement on any rule outranks an uncertain answer on another, so the warning is never masked. */
 function reportStatus(answers: JevAdvisoryV1["answers"]): JevAdvisoryV1["status"] {
-  if (answers.some((item) => item.disposition === "abstain")) return "abstain";
   if (answers.some((item) => item.disposition === "advisory-warning")) return "advisory-warning";
+  if (answers.some((item) => item.disposition === "abstain")) return "abstain";
   return "ok";
 }
 
@@ -319,9 +362,11 @@ function retryable(status: number): boolean {
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-http-budget Retry stays inside the attempt budget.
  * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-http-budget #84d6272 Re-read the section: timeout becomes unavailable and authentication is not retried.
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-numerical-unchanged The numerical digest is copied, not recomputed by the model.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-numerical-unchanged #edaa1fe Re-read the section: the advisory cannot change the recorded verdict.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-numerical-unchanged #83c1349 Re-read the section: the advisory cannot change the recorded verdict.
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-no-default-fetch Only judge with provider jev reaches this transport. The rules provider returns before it.
  * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-no-default-fetch #e8a02f1 Re-read the section: provider rules does not call the Jev transport, even with TYPESAFE_API_KEY set.
+ * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity The cache key is built from the projection here, and a cache that cannot be written fails open.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity #9eb76ef Re-read the section: the key takes the projection with the upper bound, and a failed write keeps the advisory without resending.
  */
 export async function adviseWithJev(args: Readonly<{
   artifact: AnalysisArtifactV1;
@@ -450,7 +495,12 @@ export async function adviseWithJev(args: Readonly<{
           storedAtMs: nowMs,
           advisoryJson: JSON.stringify(advisory),
         });
-        writeCache(args.cachePath, next);
+        // A cache that cannot be written fails open. It is not an upstream failure and does not resend the paid request.
+        try {
+          writeCache(args.cachePath, next);
+        } catch {
+          // The advisory still stands. The next run misses and asks again.
+        }
       }
       return advisory;
     } catch (error) {

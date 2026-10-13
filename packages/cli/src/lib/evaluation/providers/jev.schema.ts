@@ -26,19 +26,19 @@ export const jevHttpBudget = "bounded-retry" as const;
 
 /**
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity A pinned model can hit. An alias is not a permanent id.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity #7bed51c Re-read the section: jev-latest is revalidated and a rubric change misses.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity #9eb76ef Re-read the section: jev-latest is revalidated and a rubric change misses.
  */
 export const jevCacheIdentity = "alias-is-not-pinned" as const;
 
 /**
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-secret-boundary The key and the raw state stay out of the cache and the report.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-secret-boundary #d26dcf6 Re-read the section: secrets and full state are not stored.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-secret-boundary #51c2518 Re-read the section: secrets and full state are not stored.
  */
 export const jevSecretBoundary = "redacted-projection" as const;
 
 /**
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-numerical-unchanged A model disagreement does not flip the numerical verdict.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-numerical-unchanged #edaa1fe Re-read the section: low confidence is abstain, not a passing diagnosis.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-numerical-unchanged #83c1349 Re-read the section: low confidence is abstain, not a passing diagnosis.
  */
 export const jevNumericalUnchanged = "verdict-stays" as const;
 

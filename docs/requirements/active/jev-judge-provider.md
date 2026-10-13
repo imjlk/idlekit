@@ -28,7 +28,7 @@ The executed test is `boundsHttpFailures` in `packages/cli/src/lib/evaluation/pr
 
 Requirement `REQ-PR19-CACHE-IDENTITY`. `PR-19` owns it.
 
-`jevCacheIdentity` is `alias-is-not-pinned`. The projection carries each rule's operator, threshold, upper threshold, unit, method, and definition, so changing only the upper bound of a `between` rule misses. The key binds the projection, the numerical digest, the rubric version, the schema version, the adapter version, and the requested model. The same pinned model hits. A rubric change misses. `jev-latest` stores the resolved model and expires after 24 hours. The alias is not a permanent id.
+`jevCacheIdentity` is `alias-is-not-pinned`. The projection carries each rule's operator, threshold, upper threshold, unit, method, and definition, so changing only the upper bound of a `between` rule misses. The key binds the projection, the numerical digest, the rubric version, the schema version, the adapter version, and the requested model. The same pinned model hits. A rubric change misses. `jev-latest` stores the resolved model and expires after 24 hours. A cache that cannot be written fails open: the advisory stands and the request is not sent again. The alias is not a permanent id.
 
 The executed test is `separatesCacheIdentity` in `packages/cli/src/lib/evaluation/providers/jev.test.ts`.
 
@@ -36,7 +36,7 @@ The executed test is `separatesCacheIdentity` in `packages/cli/src/lib/evaluatio
 
 Requirement `REQ-PR19-SECRET-BOUNDARY`. `PR-19` owns it.
 
-`jevSecretBoundary` is `redacted-projection`. The state sent to Jev is an allowlist of metrics, assumptions, and rubric intent. A metric carries its recorded meaning, version, method, and unit, which the numerical judge compares with the rule. The API key, a local path, plugin source, and the raw artifact marker are not written to the request, the cache, or the report. A local path is a POSIX absolute path, a `~/` path, a Windows drive or UNC path, or a `file:` URI, anywhere in a string. Only the path is replaced. A web URL stays.
+`jevSecretBoundary` is `redacted-projection`. The state sent to Jev is an allowlist of metrics, assumptions, and rubric intent. A metric carries its recorded meaning, version, method, and unit, which the numerical judge compares with the rule, and an amount reading carries its decimal and sign. The API key, a local path, plugin source, and the raw artifact marker are not written to the request, the cache, or the report. A local path is a POSIX absolute path, a `~/` path, a Windows drive or UNC path, or a `file:` URI, anywhere in a string. Only the path is replaced. A path whose name holds a space runs through the next token that names a file, or to the closing delimiter or the end of the string. A web URL stays.
 
 The executed test is `keepsSecretsOutOfRecords` in `packages/cli/src/lib/evaluation/providers/jev.test.ts`.
 
@@ -44,7 +44,7 @@ The executed test is `keepsSecretsOutOfRecords` in `packages/cli/src/lib/evaluat
 
 Requirement `REQ-PR19-NUMERICAL-UNCHANGED`. `PR-19` owns it.
 
-`jevNumericalUnchanged` is `verdict-stays`. A Jev answer that disagrees with the numerical check of its own rule is `advisory-warning`. The comparison uses that rule's verdict, not the report-wide pass bit. An inconclusive or unsupported rule has no verdict to disagree with. Each rule is one question, so a rubric with a repeated rule id or the id `__proto__` fails before any send. Confidence below one half, and a Noul value near one half, is `abstain`. Neither one turns the numerical pass bit into a success. Confidence is not a calibrated game-correctness probability.
+`jevNumericalUnchanged` is `verdict-stays`. Each question asks whether the recorded reading fails its rule, the same predicate as the numerical check. A Jev answer that disagrees with the numerical check of its own rule is `advisory-warning`. The comparison uses that rule's verdict, not the report-wide pass bit. An inconclusive or unsupported rule has no verdict to disagree with. Each rule is one question, so a rubric with a repeated rule id or the id `__proto__` fails before any send. Confidence below one half, and a Noul value near one half, is `abstain`. Neither one turns the numerical pass bit into a success. A warning on any rule outranks an abstention on another in the report status. Confidence is not a calibrated game-correctness probability.
 
 The executed test is `keepsNumericalVerdicts` in `packages/cli/src/lib/evaluation/providers/jev.test.ts`.
 
