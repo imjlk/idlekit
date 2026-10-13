@@ -5,7 +5,7 @@ import { usageError } from "../errors";
 import { buildOutputMeta, outputSchemaRefForCommand } from "../io/outputMeta";
 import { writeOutput } from "../io/writeOutput";
 import { realpathSync, statSync } from "fs";
-import { resolve } from "path";
+import { basename, dirname, resolve } from "path";
 import { readJsonFile, writeTextFile } from "../runtime/bun";
 import { readJudgeInputs } from "../lib/evaluation/input";
 import { evaluateRules } from "../lib/evaluation/rules";
@@ -16,8 +16,20 @@ import type { JevTransport } from "../lib/evaluation/providers/jev";
  * Two paths name the same file when their text resolves alike, or when both exist and share a realpath or a
  * device and inode, so a symlink or a hard link to an input counts too.
  */
+function canonical(path: string): string {
+  const absolute = resolve(path);
+  try {
+    return realpathSync(absolute);
+  } catch {
+    // A file that does not exist yet is named by its nearest existing parent's realpath, so a symlinked
+    // directory still resolves to the place the file will be written.
+    const parent = dirname(absolute);
+    return parent === absolute ? absolute : resolve(canonical(parent), basename(absolute));
+  }
+}
+
 function sameFile(left: string, right: string): boolean {
-  if (resolve(left) === resolve(right)) return true;
+  if (resolve(left) === resolve(right) || canonical(left) === canonical(right)) return true;
   try {
     if (realpathSync(left) === realpathSync(right)) return true;
     const a = statSync(left);

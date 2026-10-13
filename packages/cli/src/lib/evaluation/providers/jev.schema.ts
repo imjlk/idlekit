@@ -26,13 +26,13 @@ export const jevHttpBudget = "bounded-retry" as const;
 
 /**
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity A pinned model can hit. An alias is not a permanent id.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity #e80c800 Re-read the section: jev-latest is revalidated and a rubric change misses.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity #e1c4ba6 Re-read the section: jev-latest is revalidated and a rubric change misses.
  */
 export const jevCacheIdentity = "alias-is-not-pinned" as const;
 
 /**
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-secret-boundary The key and the raw state stay out of the cache and the report.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-secret-boundary #5086478 Re-read the section: secrets and full state are not stored.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-secret-boundary #e64d47d Re-read the section: secrets and full state are not stored.
  */
 export const jevSecretBoundary = "redacted-projection" as const;
 

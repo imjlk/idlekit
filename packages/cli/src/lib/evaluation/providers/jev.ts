@@ -134,7 +134,7 @@ function redact(value: unknown, keyMaterial: string): unknown {
 
 /**
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-secret-boundary The projection keeps metrics, assumptions, and rubric intent.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-secret-boundary #5086478 Re-read the section: raw source and secrets are dropped, and a local path in any host layout is replaced in place.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-secret-boundary #e64d47d Re-read the section: raw source and secrets are dropped, and a local path in any host layout is replaced in place.
  */
 export function projectJevState(
   artifact: AnalysisArtifactV1,
@@ -143,9 +143,11 @@ export function projectJevState(
 ): JevProjection {
   // The numerical judge compares the recorded meaning, method, and unit with the rule. Jev sees the same identity.
   // The numerical judge reads the first reading of each metric id. Jev sees that reading and no other.
+  // Only metrics a rule names are projected, so readings no question asks about do not count against the size limit.
+  const referenced = new Set(rubric.rules.map((rule) => rule.metricId));
   const seenMetricIds = new Set<string>();
   const firstReadings = artifact.metrics.filter((metric) => {
-    if (seenMetricIds.has(metric.metricId)) return false;
+    if (!referenced.has(metric.metricId) || seenMetricIds.has(metric.metricId)) return false;
     seenMetricIds.add(metric.metricId);
     return true;
   });
@@ -396,7 +398,7 @@ function retryable(status: number): boolean {
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-no-default-fetch Only judge with provider jev reaches this transport. The rules provider returns before it.
  * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-no-default-fetch #e8a02f1 Re-read the section: provider rules does not call the Jev transport, even with TYPESAFE_API_KEY set.
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity The cache key is built from the projection here, and a cache that cannot be written fails open.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity #e80c800 Re-read the section: the key takes the projection with the upper bound, and a failed write keeps the advisory without resending.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity #e1c4ba6 Re-read the section: the key takes the projection with the upper bound, and a failed write keeps the advisory without resending.
  */
 export async function adviseWithJev(args: Readonly<{
   artifact: AnalysisArtifactV1;
@@ -432,6 +434,20 @@ export async function adviseWithJev(args: Readonly<{
     dryRun: args.dryRun,
     plannedRequests,
   };
+  // The rubric version is copied into the report, the numerical digest, and the cache. One that carries the key or a
+  // path is refused, and the report shows both only as redacted.
+  if (redactString(args.rubric.rubricVersion, key) !== args.rubric.rubricVersion) {
+    return blank({
+      ...base,
+      rubricVersion: "[redacted]",
+      numericalDigest: "[redacted]",
+      plannedRequests: 0,
+      status: "failed",
+      reason: "unsafe-rubric-version",
+      cache: "bypass",
+      attempts: 0,
+    });
+  }
   // The requested model is copied into the report and the cache. One that carries the key or a path is refused,
   // and the report names it only as redacted, so even a dry run does not echo it.
   if (redactString(args.requestedModel, key) !== args.requestedModel) {
