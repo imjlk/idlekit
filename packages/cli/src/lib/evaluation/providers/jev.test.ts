@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { existsSync, readFileSync } from "fs";
 import { dirname, resolve } from "path";
-import { createTempDir, readText, removePath, runCli } from "../../../testkit/bun";
+import { createTempDir, readText, removePath } from "../../../testkit/bun";
 import { readJudgeInputs } from "../input";
 import { evaluateRules } from "../rules";
 import { JEV_ALIAS_TTL_MS, jevCacheHit, jevCacheKey, parseJevCache, serializeJevCache, type JevCacheEntry } from "../cache";
@@ -796,11 +796,15 @@ export function staysOptIn(): Promise<void> {
   const rubricPath = resolve(dir, "rubric.json");
   await Bun.write(analysis, artifact(3));
   await Bun.write(rubricPath, rubric());
-  const cli = runCli(
-    ["judge", analysis, "--rubric", rubricPath, "--provider", "jev", "--dry-run", "--format", "json"],
-    { env: { ...process.env, TYPESAFE_API_KEY: "" } },
+  // In process, through the same writer as the CLI. The sealed evidence sandbox has no `bun` on PATH to spawn.
+  const outPath = resolve(dir, "planned.json");
+  await runJudge(
+    { rubric: rubricPath, provider: "jev", format: "json", "dry-run": true, out: outPath },
+    analysis,
+    { env: { TYPESAFE_API_KEY: "" } },
   );
-  const json = JSON.parse(cli.stdout) as {
+  const written = await readText(outPath);
+  const json = JSON.parse(written) as {
     numericalReport: { provider: string; numerical: { pass: boolean } };
     advisory: { status: string; dryRun: boolean; endpoint: string };
   };
@@ -809,7 +813,7 @@ export function staysOptIn(): Promise<void> {
   expect(json.advisory.status).toBe("skipped");
   expect(json.advisory.dryRun).toBe(true);
   expect(json.advisory.endpoint).toBe(JEV_ENDPOINT);
-  expect(cli.stdout.includes(SECRET)).toBe(false);
+  expect(written.includes(SECRET)).toBe(false);
   // The advertised schemaRef names the bundle schema, not the advisory alone. output-schema.test.ts validates against it.
   const meta = (json as unknown as { _meta: { schemaRef: string } })._meta;
   expect(meta.schemaRef).toBe("docs/schemas/jev.judge.output.schema.json");
