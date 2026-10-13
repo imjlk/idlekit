@@ -201,6 +201,15 @@ export function parseJudgeRubric(
     return { ok: false, issues: validated.errors.map((error) => `${error.path} ${error.expected}`) };
   }
   if (validated.data.rules.length === 0) return { ok: false, issues: ["rubric has no rules"] };
+  // JSON parses 1e400 as Infinity. A nonfinite threshold cannot be compared and would serialize as null.
+  const nonfinite: string[] = [];
+  validated.data.rules.forEach((rule, index) => {
+    if (!Number.isFinite(rule.threshold)) nonfinite.push(`$input.rules[${index}].threshold finite number`);
+    if (rule.upperThreshold !== null && !Number.isFinite(rule.upperThreshold)) {
+      nonfinite.push(`$input.rules[${index}].upperThreshold finite number or null`);
+    }
+  });
+  if (nonfinite.length > 0) return { ok: false, issues: nonfinite };
   return { ok: true, rubric: validated.data };
 }
 
@@ -223,10 +232,10 @@ function coverageWithheld(artifact: AnalysisArtifactV1): boolean {
 }
 
 /**
- * readMetric records a method only on an estimate, so observed and unavailable readings carry none,
- * and an unavailable amount carries no unit. A field the reading does not record cannot disagree
- * with the rule, so the rule's value stands in; a field the reading records is compared as is.
- * The rubric unit therefore stays in the numerical evidence.
+ * readMetric records a method only on an estimate, so observed and unavailable readings carry none.
+ * A numeric reading records a domain but no unit, and an unavailable amount carries no unit either.
+ * A field the reading does not record cannot disagree with the rule, so the rule's value stands in;
+ * a field the reading records (a method, an amount unit) is compared as is.
  */
 function toObservation(
   artifact: AnalysisArtifactV1,
@@ -234,7 +243,7 @@ function toObservation(
   rule: JudgeRuleV1,
 ): { observation: BalanceObservationV1; estimated: EstimatedObservationV1 | null } {
   const unavailable = isUnavailable(reading);
-  const unit = reading.domain !== "amount" ? reading.domain : (reading.amount?.unit ?? rule.unit);
+  const unit = reading.amount?.unit ?? rule.unit;
   const identity = {
     metricId: reading.metricId,
     definition: reading.meaning,
@@ -247,11 +256,10 @@ function toObservation(
     unit,
     algorithmVersion: artifact.algorithmVersion,
   };
-  // Availability first: an unavailable reading has no value, so it is missing evidence (censored when it
-  // says so) whatever its domain or status. The rule's missing policy decides its numerical verdict.
+  // Availability first: an unavailable reading has no value or bound, so it is missing evidence whatever
+  // its domain or status (a censored status without bounds included). The missing policy decides it.
   if (unavailable) {
-    const status = reading.status === "censored" ? "censored" : "missing";
-    return { observation: { identity, status, value: null, lower: null, upper: null }, estimated: null };
+    return { observation: { identity, status: "missing", value: null, lower: null, upper: null }, estimated: null };
   }
   // An available amount, observed or estimated, is not narrowed to a number.
   if (reading.domain === "amount") {

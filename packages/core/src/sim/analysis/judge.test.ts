@@ -252,7 +252,7 @@ export function reusesBalanceChecks(): void {
  * @evidence ./judge.ts#judgeEvidenceRefs Reads the evidence-ref marker.
  * @evidenceReview ./judge.ts#judgeEvidenceRefs #ad623a2 The declaration is existing-refs-only.
  * @evidence ./judge.ts#parseJudgeRubric Validates a rubric before it is used.
- * @evidenceReview ./judge.ts#parseJudgeRubric #b0cc620 A complete rubric is accepted, a bad version is rejected, and an empty rule list is rejected.
+ * @evidenceReview ./judge.ts#parseJudgeRubric #7a5491c Re-read the function: a complete rubric is accepted, a bad version, an unknown root or rule field, an empty rule list, and a nonfinite threshold or upper threshold are rejected.
  */
 export function rejectsBadRefs(): void {
   expect(judgeEvidenceRefs).toBe("existing-refs-only");
@@ -269,6 +269,12 @@ export function rejectsBadRefs(): void {
   const extraRule = parseJudgeRubric(rubric([{ ...rule(), thresold: 3 } as JudgeRuleV1]));
   expect(extraRule.ok).toBe(false);
   if (!extraRule.ok) expect(extraRule.issues.join(" ")).toContain("thresold");
+  // A nonfinite threshold (JSON 1e400 parses as Infinity) is rejected, not compared or serialized as null.
+  const infinite = parseJudgeRubric(JSON.parse(JSON.stringify(rubric()).replace('"threshold":2', '"threshold":1e400')));
+  expect(infinite.ok).toBe(false);
+  if (!infinite.ok) expect(infinite.issues).toEqual(["$input.rules[0].threshold finite number"]);
+  const infiniteUpper = parseJudgeRubric(rubric([rule({ operator: "between", threshold: 1, upperThreshold: Infinity })]));
+  expect(infiniteUpper.ok).toBe(false);
   // A structurally valid artifact that breaks its semantic contract is not judged.
   const twoRepresentations = judgeArtifact(
     artifact([reading({ reading: "observed", status: "ok", value: 1, amount: { unit: "coin", decimal: "1" } })]),
@@ -477,6 +483,23 @@ export function withholdsHealthLabels(): void {
   expect(unsupportedUnavailable.report.numerical.results[0]?.verdict).toBe("fail");
   expect(unsupportedUnavailable.report.numerical.results[0]?.evidence.status).toBe("missing");
   expect(unsupportedUnavailable.report.diagnostics[0]?.status).toBe("insufficient");
+  // A censored unavailable reading has no bounds either, so its missing policy applies.
+  const censoredUnavailable = judgeArtifact(
+    artifact([reading({ reading: "unavailable", status: "censored", method: undefined })], {
+      observationCoverage: "incomplete",
+    }),
+    rubric([rule({ missingPolicy: "fail" })]),
+  );
+  expect(censoredUnavailable.ok && censoredUnavailable.report.numerical.results[0]?.verdict).toBe("fail");
+  // A numeric reading records no unit, so a rule in hours compares the measured value.
+  const hours = judgeArtifact(
+    artifact([reading({ reading: "observed", status: "ok", value: 1.5, method: undefined })]),
+    rubric([rule({ unit: "h" })]),
+  );
+  expect(hours.ok).toBe(true);
+  if (!hours.ok) return;
+  expect(hours.report.numerical.results[0]?.verdict).toBe("pass");
+  expect(hours.report.numerical.results[0]?.evidence.unit).toBe("h");
   // An observed value under an unknown metrics capability or incomplete coverage is not measured.
   const unknownCapability = judgeArtifact(
     artifact([reading({ reading: "observed", status: "ok", value: 1.5 })], {
