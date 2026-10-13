@@ -56,7 +56,15 @@
     "REQ-DX03-PLUGINS-DEFAULT",
     "REQ-DX03-PLUGIN-METADATA",
     "REQ-DX03-CAPABILITY-SPLIT",
-    "REQ-DX03-NO-RUN"
+    "REQ-DX03-NO-RUN",
+    "REQ-DX04-BENCH-SCHEMA",
+    "REQ-DX04-WORKLOAD-DENOMINATOR",
+    "REQ-DX04-EMPTY-DURATION",
+    "REQ-DX04-UNKNOWN-METRIC",
+    "REQ-DX04-GATE-FAILURE",
+    "REQ-DX04-BASELINE-HASH",
+    "REQ-DX04-SAME-CONFIG",
+    "REQ-DX04-PHASE-LABELS"
   ],
   "protectedFiles": [
     "docs/requirements/active/typia-transform.md",
@@ -136,6 +144,9 @@
     "packages/core/src/sim/analysis/analyzers.test.ts",
     "docs/requirements/active/scenario-inspect.md",
     "packages/core/src/sim/analysis/inspect.ts",
-    "packages/core/src/sim/analysis/inspect.test.ts"
+    "packages/core/src/sim/analysis/inspect.test.ts",
+    "docs/requirements/active/performance-budget.md",
+    "tools/performanceBudget.ts",
+    "tools/performanceBudget.test.ts"
   ]
 }

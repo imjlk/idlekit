@@ -25,6 +25,8 @@ bun run bench:sim
 bun run bench:sim:suite
 bun run bench:sim:check
 bun run bench:sim:suite:check
+bun run bench:planner -- --runtime-ms 100,200 --workload 30
+bun run bench:monte-carlo -- --runtime-ms 100,200 --draws 1000 --workload 30
 bun run kpi:report
 bun run kpi:regress
 bun run tune:regress --baseline ./tmp/tune-baseline.json --current ./tmp/tune-latest.json --tolerance 0.05
@@ -119,11 +121,7 @@ PR/커밋 전에:
 CI(`.github/workflows/ci.yml`)는 typecheck/runtime import check/test/build + replay verify gate + 성능 체크 + KPI A/B 리포트 + KPI 리그레션 게이트를 실행합니다. 문서 검증은 `.github/workflows/docs-verify.yml`의 `docs:verify` 한 번으로 돌고, quick 모드는 그 안에 포함됩니다.
 패키지 배포 스모크는 `bun run install:smoke`로 tarball 설치 + Bun import + `idk validate`까지 함께 확인합니다.
 
-성능 리그레션은 `bench:sim:check`에서 평균/`p95` 실행시간 임계값으로 추가 검증합니다.
-`tools/bench-sim.ts`는 시나리오 경로를 저장소 루트 기준 절대경로로 정규화해 cwd 차이로 인한 오탐을 줄입니다.
-다중 시나리오 성능 스모크는 `bench:sim:suite`로 수행하며,
-`bench:sim:suite:check`는 평균/p95 + RSS delta 임계값까지 게이트합니다.
-suite는 `30m/2h/24h/7d/30d/90d` 장기 구간 시나리오를 포함합니다.
+성능 리그레션은 compiler prepare와 runtime을 구분합니다. `bench:sim:check`는 trace를 끈 짧은 representative corpus를 커밋된 baseline(`examples/bench/perf-baseline.json`)과 비교합니다. 평균과 `p95`만으로 통과를 선언하지 않습니다. 반복 횟수, 상대 변화, 절대 한도가 함께 넘을 때 gate가 실패합니다. 실패는 baseline을 다시 쓰지 않습니다. `tools/bench-sim.ts`는 시나리오 경로를 저장소 루트 기준으로 해석하고, 출력에는 저장소 기준 상대 경로를 기록합니다. 장기 corpus는 `bench:sim:suite:check`이며 `.github/workflows/performance-corpus.yml`가 실행합니다. `30m/2h/24h/7d/30d/90d` linear 시나리오를 포함합니다. `kpi:report`와 `kpi:regress`는 경제 gate이며 성능 gate와 별개입니다. [성능 예산](./performance-budget_ko.md)을 봅니다.
 
 ## 5. 권장 커밋 단위
 

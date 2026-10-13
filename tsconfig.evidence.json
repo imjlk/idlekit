@@ -33,6 +33,8 @@
     "packages/core/src/sim/analysis/analyzers.test.ts",
     "packages/core/src/sim/analysis/inspect.ts",
     "packages/core/src/sim/analysis/inspect.test.ts",
+    "tools/performanceBudget.ts",
+    "tools/performanceBudget.test.ts",
     "packages/core/src/sim/monteCarlo.ts",
     "packages/core/src/sim/step.ts",
     "packages/core/src/sim/step.bulk.test.ts",

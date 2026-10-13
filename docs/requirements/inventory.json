@@ -1163,6 +1163,183 @@
           "args": ["test", "--timeout", "120000", "src/sim/analysis/inspect.test.ts"]
         }
       ]
+    },
+    {
+      "id": "REQ-DX04-BENCH-SCHEMA",
+      "pr": "DX-04",
+      "anchor": "req-dx04-bench-schema",
+      "doc": "docs/requirements/active/performance-budget.md",
+      "production": ["tools/performanceBudget.ts"],
+      "tests": [
+        {
+          "file": "tools/performanceBudget.test.ts",
+          "exportName": "acceptsPerformanceBudgetSchema",
+          "registeredAs": "performance budget > accepts the performance budget schema",
+          "cwd": ".",
+          "args": ["test", "--timeout", "120000", "tools/performanceBudget.test.ts"]
+        },
+        {
+          "file": "tools/performanceBudget.test.ts",
+          "exportName": "takesNearestRankP95",
+          "registeredAs": "performance budget > takes a nearest-rank p95",
+          "cwd": ".",
+          "args": ["test", "--timeout", "120000", "tools/performanceBudget.test.ts"]
+        },
+        {
+          "file": "tools/performanceBudget.test.ts",
+          "exportName": "rejectsNegativeSamples",
+          "registeredAs": "performance budget > rejects negative samples and counters",
+          "cwd": ".",
+          "args": ["test", "--timeout", "120000", "tools/performanceBudget.test.ts"]
+        }
+      ]
+    },
+    {
+      "id": "REQ-DX04-WORKLOAD-DENOMINATOR",
+      "pr": "DX-04",
+      "anchor": "req-dx04-workload-denominator",
+      "doc": "docs/requirements/active/performance-budget.md",
+      "production": ["tools/performanceBudget.ts"],
+      "tests": [
+        {
+          "file": "tools/performanceBudget.test.ts",
+          "exportName": "keepsRuntimeWorkloadDenominator",
+          "registeredAs": "performance budget > uses workload count over runtime only",
+          "cwd": ".",
+          "args": ["test", "--timeout", "120000", "tools/performanceBudget.test.ts"]
+        }
+      ]
+    },
+    {
+      "id": "REQ-DX04-EMPTY-DURATION",
+      "pr": "DX-04",
+      "anchor": "req-dx04-empty-duration",
+      "doc": "docs/requirements/active/performance-budget.md",
+      "production": ["tools/performanceBudget.ts"],
+      "tests": [
+        {
+          "file": "tools/performanceBudget.test.ts",
+          "exportName": "keepsEmptyDurationAbsent",
+          "registeredAs": "performance budget > keeps an empty duration absent",
+          "cwd": ".",
+          "args": ["test", "--timeout", "120000", "tools/performanceBudget.test.ts"]
+        }
+      ]
+    },
+    {
+      "id": "REQ-DX04-UNKNOWN-METRIC",
+      "pr": "DX-04",
+      "anchor": "req-dx04-unknown-metric",
+      "doc": "docs/requirements/active/performance-budget.md",
+      "production": ["tools/performanceBudget.ts"],
+      "tests": [
+        {
+          "file": "tools/performanceBudget.test.ts",
+          "exportName": "keepsUnknownMetricsUnmeasured",
+          "registeredAs": "performance budget > keeps unknown metrics unmeasured",
+          "cwd": ".",
+          "args": ["test", "--timeout", "120000", "tools/performanceBudget.test.ts"]
+        }
+      ]
+    },
+    {
+      "id": "REQ-DX04-GATE-FAILURE",
+      "pr": "DX-04",
+      "anchor": "req-dx04-gate-failure",
+      "doc": "docs/requirements/active/performance-budget.md",
+      "production": ["tools/performanceBudget.ts"],
+      "tests": [
+        {
+          "file": "tools/performanceBudget.test.ts",
+          "exportName": "failsUnfavorableBudget",
+          "registeredAs": "performance budget > fails an unfavorable budget",
+          "cwd": ".",
+          "args": ["test", "--timeout", "120000", "tools/performanceBudget.test.ts"]
+        },
+        {
+          "file": "tools/performanceBudget.test.ts",
+          "exportName": "rejectsBaselineWithoutIterations",
+          "registeredAs": "performance budget > rejects a baseline without iteration metadata",
+          "cwd": ".",
+          "args": ["test", "--timeout", "120000", "tools/performanceBudget.test.ts"]
+        }
+      ]
+    },
+    {
+      "id": "REQ-DX04-BASELINE-HASH",
+      "pr": "DX-04",
+      "anchor": "req-dx04-baseline-hash",
+      "doc": "docs/requirements/active/performance-budget.md",
+      "production": ["tools/performanceBudget.ts"],
+      "tests": [
+        {
+          "file": "tools/performanceBudget.test.ts",
+          "exportName": "rejectsBaselineHashMismatch",
+          "registeredAs": "performance budget > rejects a baseline hash mismatch",
+          "cwd": ".",
+          "args": ["test", "--timeout", "120000", "tools/performanceBudget.test.ts"]
+        },
+        {
+          "file": "tools/performanceBudget.test.ts",
+          "exportName": "readsBenchOutputAsBaseline",
+          "registeredAs": "performance budget > reads bench-sim output as a baseline",
+          "cwd": ".",
+          "args": ["test", "--timeout", "120000", "tools/performanceBudget.test.ts"]
+        }
+      ]
+    },
+    {
+      "id": "REQ-DX04-SAME-CONFIG",
+      "pr": "DX-04",
+      "anchor": "req-dx04-same-config",
+      "doc": "docs/requirements/active/performance-budget.md",
+      "production": ["tools/performanceBudget.ts"],
+      "tests": [
+        {
+          "file": "tools/performanceBudget.test.ts",
+          "exportName": "comparesOnlyTheSameConfig",
+          "registeredAs": "performance budget > compares only the same config",
+          "cwd": ".",
+          "args": ["test", "--timeout", "120000", "tools/performanceBudget.test.ts"]
+        },
+        {
+          "file": "tools/performanceBudget.test.ts",
+          "exportName": "rejectsDifferentWorkload",
+          "registeredAs": "performance budget > rejects a baseline from another workload",
+          "cwd": ".",
+          "args": ["test", "--timeout", "120000", "tools/performanceBudget.test.ts"]
+        },
+        {
+          "file": "tools/performanceBudget.test.ts",
+          "exportName": "readsTraceCadence",
+          "registeredAs": "performance budget > reads the trace cadence field",
+          "cwd": ".",
+          "args": ["test", "--timeout", "120000", "tools/performanceBudget.test.ts"]
+        },
+        {
+          "file": "tools/performanceBudget.test.ts",
+          "exportName": "rejectsBaselineFromAnotherHost",
+          "registeredAs": "performance budget > rejects a baseline from another host",
+          "cwd": ".",
+          "args": ["test", "--timeout", "120000", "tools/performanceBudget.test.ts"]
+        }
+      ]
+    },
+    {
+      "id": "REQ-DX04-PHASE-LABELS",
+      "pr": "DX-04",
+      "anchor": "req-dx04-phase-labels",
+      "doc": "docs/requirements/active/performance-budget.md",
+      "production": ["tools/performanceBudget.ts"],
+      "tests": [
+        {
+          "file": "tools/performanceBudget.test.ts",
+          "exportName": "keepsColdAndWarmLabels",
+          "registeredAs": "performance budget > keeps cold and warm labels",
+          "cwd": ".",
+          "args": ["test", "--timeout", "120000", "tools/performanceBudget.test.ts"]
+        }
+      ]
     }
   ]
 }
