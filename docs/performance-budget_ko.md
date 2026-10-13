@@ -10,7 +10,7 @@ artifact 계약은 `idlekit.performance-budget`, schemaVersion 1이다. tools �
 
 지표는 total time median과 nearest-rank p95, steps/sec, planner expanded nodes와 nodes/sec, draws/sec, RSS와 heap delta, peak RSS, observation retained samples다. `allocPerStep`은 `unsupported`다. 없는 counter는 `absent`다. 측정된 0은 `measured` 0으로 남는다. planner node 수와 Monte Carlo draw 수는 호출자가 넘길 때만 기록한다. `tools/bench-planner.ts`와 `tools/bench-monte-carlo.ts`는 rollout이나 draw loop에 들어가지 않는다. 음수 sample이나 counter, 잘못된 step, seed, model version, 목록에 없는 값, 모르는 flag는 거절하고 `warmup`은 0으로 기록한다. worker `startupMs`와 `serializationMs`는 `absent`로 남는다. `tools/bench-sim.ts`는 측정한 simulate 자식 프로세스의 가장 큰 `maxRSS`를 `peakRssBytes`로 기록한다. harness 프로세스는 simulation을 실행하지 않으므로 RSS와 heap delta는 `absent`로 둔다. simulate 출력에 observation retention 수가 없으므로 observation retained samples도 `absent`로 둔다.
 
-hard gate는 최소 반복 수, 상대 느려짐, 절대 median 한도를 함께 쓴다. 반복이 충분하고 현재 median이 두 한도를 모두 넘을 때만 실패한다. 작은 절대 흔들림은 통과할 수 있다. 반복이 적으면 실패이며 통과가 아니다. config hash가 어긋나면 거절한다. 정수 `iterations`가 1 이상이고 정수 `warmup`이 0 이상이 아닌 baseline은 읽지 않는다. gate는 새 baseline을 쓰지 않는다.
+hard gate는 최소 반복 수, 상대 느려짐, 절대 median 한도를 함께 쓴다. 반복이 충분하고 현재 median이 두 한도를 모두 넘을 때만 실패한다. 작은 절대 흔들림은 통과할 수 있다. 반복이 적으면 실패이며 통과가 아니다. config hash가 어긋나면 거절한다. 정수 `iterations`가 1 이상이고 정수 `warmup`이 0 이상이 아닌 baseline, 그리고 runtime sample 수, median, p95가 runtime phase와 맞지 않는 baseline은 읽지 않는다. `tools/bench-sim.ts`는 모르는 flag를 거절한다. gate는 새 baseline을 쓰지 않는다.
 
 pull request CI는 representative 시나리오에 `bench:sim:check`를 실행한다. [examples/bench/perf-baseline.json](../examples/bench/perf-baseline.json)과 상대 느려짐 0.25, 절대 median 한도 250ms로 비교하고, 평균 500ms와 p95 900ms 한도도 함께 본다. baseline 파일은 시나리오와 host마다 항목 하나를 둔다. 각 실행은 자기 Bun, OS, arch의 항목을 고른다. `bun run bench:sim:baseline`은 같은 시나리오 경로나 hash를 가진 이 host의 항목만 바꾸고 나머지는 남긴다. gate는 쓰지 않는다. `bench:sim:suite:check`는 `--threshold-peak-rss-bytes`로 simulate 자식 프로세스마다 peak RSS도 제한한다. 긴 linear corpus는 [.github/workflows/performance-corpus.yml](../.github/workflows/performance-corpus.yml)의 `bench:sim:suite:check`가 실행한다. `kpi:report`와 `kpi:regress`는 경제 gate로 남는다.
 
@@ -32,7 +32,7 @@ bun run bench:sim:suite:check
 
 ## 검증
 
-아래 명령은 이 worktree에서 macOS arm64, Bun 1.4.2, ttsc 0.30.4로 실행했다. requirement 파일 sha256은 `6bdcf6e03fb573acbdc54dbd2970ad76c5e771db3f1135c04762962d5edb920c`이다. `contracts:check`는 미실행이다. `bench:sim:check`와 `bench:sim:suite:check`는 CI runner가 아닌 이 macOS host에서 실행했다.
+아래 명령은 이 worktree에서 macOS arm64, Bun 1.4.2, ttsc 0.30.4로 실행했다. requirement 파일 sha256은 `50040b76676db4895ce40b12a9fa9ff3b6c83031d56fb2ee49ee0ae8e47da96e`이다. `contracts:check`는 미실행이다. `bench:sim:check`와 `bench:sim:suite:check`는 CI runner가 아닌 이 macOS host에서 실행했다.
 
 | 명령 | 종료 |
 |---|---|

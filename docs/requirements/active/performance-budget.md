@@ -36,7 +36,7 @@ The executed test is `keepsUnknownMetricsUnmeasured` in `tools/performanceBudget
 
 Requirement `REQ-DX04-GATE-FAILURE`. `DX-04` owns it.
 
-`budgetGateFailure` is `unfavorable-fails`. The gate fails when the current median exceeds both the relative slowdown and the absolute median floor, and the repeat count is at least the minimum. Fewer repeats fail as `too-few-repeats` and do not pass. A baseline without an integer `iterations` of at least 1, an integer `warmup` of at least 0, and a `null` or integer `workloadCount` is not read. The compare function does not call the baseline writer. A 100ms median moving to 180ms fails a relative slowdown of 0.25 with an absolute floor of 50ms.
+`budgetGateFailure` is `unfavorable-fails`. The gate fails when the current median exceeds both the relative slowdown and the absolute median floor, and the repeat count is at least the minimum. Fewer repeats fail as `too-few-repeats` and do not pass. A baseline without an integer `iterations` of at least 1, an integer `warmup` of at least 0, and a `null` or integer `workloadCount` is not read. Its runtime phase count must equal `iterations`, each phase must carry its own label and a finite duration of at least 0, and the stored median and p95 must equal those of the runtime samples. `tools/bench-sim.ts` rejects an unknown flag and a value flag without a value, so a misspelled `--baseline` cannot skip the comparison. The compare function does not call the baseline writer. A 100ms median moving to 180ms fails a relative slowdown of 0.25 with an absolute floor of 50ms.
 
 The executed tests are `failsUnfavorableBudget` and `rejectsBaselineWithoutIterations` in `tools/performanceBudget.test.ts`.
 

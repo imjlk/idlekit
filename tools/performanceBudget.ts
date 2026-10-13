@@ -31,7 +31,7 @@ export const budgetUnknownMetric = "unknown-is-not-zero" as const;
 
 /**
  * @evidence docs/requirements/active/performance-budget.md#req-dx04-gate-failure A regression fails only when the relative slowdown and the absolute floor are both exceeded.
- * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-gate-failure #9bd2c8d Re-read the section: too few repeats fail closed and the baseline writer is not called.
+ * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-gate-failure #dd9316c Re-read the section: too few repeats fail closed and the baseline writer is not called.
  */
 export const budgetGateFailure = "unfavorable-fails" as const;
 
@@ -411,6 +411,32 @@ function isNullableString(value: unknown): value is string | null {
   return value === null || typeof value === "string";
 }
 
+const PHASE_LABELS: Readonly<Record<PhaseName, PhaseLabel>> = {
+  install: "other",
+  "prepare-cold": "cold",
+  "prepare-warm": "warm",
+  check: "other",
+  build: "other",
+  runtime: "runtime",
+};
+
+/** Runtime samples of well-formed phases, or null when any phase is malformed. */
+function runtimeSamples(phases: readonly unknown[]): number[] | null {
+  const runtime: number[] = [];
+  for (const phase of phases) {
+    if (!isRecord(phase) || typeof phase.phase !== "string" || !Object.hasOwn(PHASE_LABELS, phase.phase)) return null;
+    if (phase.label !== PHASE_LABELS[phase.phase as PhaseName]) return null;
+    if (typeof phase.durationMs !== "number" || !Number.isFinite(phase.durationMs) || phase.durationMs < 0) return null;
+    if (phase.phase === "runtime") runtime.push(phase.durationMs);
+  }
+  return runtime;
+}
+
+function metricEquals(metric: unknown, expected: number | null): boolean {
+  if (!isRecord(metric)) return false;
+  return expected === null ? metric.status === "absent" : metric.status === "measured" && metric.value === expected;
+}
+
 export function readPerformanceArtifact(value: unknown): PerformanceArtifact | null {
   if (!isRecord(value)) return null;
   if (value.contract !== "idlekit.performance-budget" || value.schemaVersion !== 1) return null;
@@ -422,7 +448,12 @@ export function readPerformanceArtifact(value: unknown): PerformanceArtifact | n
   if (!isCount(value.iterations, 1) || !isCount(value.warmup, 0)) return null;
   if (value.workloadCount !== null && !isCount(value.workloadCount, 0)) return null;
   if (!Array.isArray(value.phases)) return null;
+  // The repeat count and the timing metrics must follow from the recorded runtime samples.
+  const runtime = runtimeSamples(value.phases);
+  if (!runtime || runtime.length !== value.iterations) return null;
   if (!isRecord(value.metrics) || !isRecord(value.worker)) return null;
+  if (!metricEquals(value.metrics.totalTimeMedianMs, median(runtime))) return null;
+  if (!metricEquals(value.metrics.totalTimeP95Ms, percentile(runtime, 0.95))) return null;
   if (!isMetric(value.metrics.allocPerStep, new Set(["unsupported"]))) return null;
   if (!isMetric(value.worker.startupMs, new Set(["absent"]))) return null;
   if (!isMetric(value.worker.serializationMs, new Set(["absent"]))) return null;

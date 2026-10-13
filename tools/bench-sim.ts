@@ -56,32 +56,39 @@ function parseArgs(argv: string[]): Args {
   let absoluteSet = false;
   let minSet = false;
 
-  for (let i = 2; i < argv.length; i++) {
+  let i = 2;
+  // A flag that takes a value fails without one. A misspelled flag fails, so it cannot drop a gate input.
+  const take = (flag: string): string => {
+    const value = argv[++i];
+    if (value === undefined || value.startsWith("--")) throw new Error(`${flag} needs a value`);
+    return value;
+  };
+  for (; i < argv.length; i++) {
     const a = argv[i];
-    if (a === "--scenario") scenarios = [argv[++i] ?? scenarios[0]!];
-    else if (a === "--scenarios") scenarios = (argv[++i] ?? scenarios.join(",")).split(",").map((x) => x.trim()).filter(Boolean);
-    else if (a === "--iterations") iterations = Number(argv[++i] ?? iterations);
-    else if (a === "--warmup") warmup = Number(argv[++i] ?? warmup);
-    else if (a === "--threshold-ms") thresholdMs = Number(argv[++i] ?? thresholdMs);
-    else if (a === "--threshold-p95-ms") thresholdP95Ms = Number(argv[++i] ?? thresholdP95Ms);
-    else if (a === "--threshold-peak-rss-bytes") thresholdPeakRssBytes = Number(argv[++i] ?? thresholdPeakRssBytes);
-    else if (a === "--prepare-warm") prepareWarm = Number(argv[++i] ?? prepareWarm);
+    if (a === "--scenario") scenarios = [take(a)];
+    else if (a === "--scenarios") scenarios = take(a).split(",").map((x) => x.trim()).filter(Boolean);
+    else if (a === "--iterations") iterations = Number(take(a));
+    else if (a === "--warmup") warmup = Number(take(a));
+    else if (a === "--threshold-ms") thresholdMs = Number(take(a));
+    else if (a === "--threshold-p95-ms") thresholdP95Ms = Number(take(a));
+    else if (a === "--threshold-peak-rss-bytes") thresholdPeakRssBytes = Number(take(a));
+    else if (a === "--prepare-warm") prepareWarm = Number(take(a));
     else if (a === "--assert") assert = true;
-    else if (a === "--out") out = argv[++i];
-    else if (a === "--write-baseline") writeBaseline = argv[++i];
-    else if (a === "--baseline") baseline = argv[++i];
+    else if (a === "--out") out = take(a);
+    else if (a === "--write-baseline") writeBaseline = take(a);
+    else if (a === "--baseline") baseline = take(a);
     else if (a === "--corpus") {
-      const value = argv[++i];
+      const value = take(a);
       if (value !== "representative" && value !== "long") throw new Error("--corpus must be representative or long");
       corpus = value;
-    } else if (a === "--relative") relativeSlowdown = Number(argv[++i] ?? relativeSlowdown);
+    } else if (a === "--relative") relativeSlowdown = Number(take(a));
     else if (a === "--absolute-median-ms") {
-      absoluteMedianMs = Number(argv[++i] ?? absoluteMedianMs);
+      absoluteMedianMs = Number(take(a));
       absoluteSet = true;
     } else if (a === "--min-iterations") {
-      minIterations = Number(argv[++i] ?? minIterations);
+      minIterations = Number(take(a));
       minSet = true;
-    }
+    } else throw new Error(`unknown flag: ${a}`);
   }
 
   if (!absoluteSet) absoluteMedianMs = thresholdMs;

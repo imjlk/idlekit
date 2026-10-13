@@ -62,7 +62,7 @@ function built(overrides: Partial<ArtifactInput> = {}): PerformanceArtifact {
  * @evidence ./performanceBudget.ts#buildPerformanceArtifact Builds the artifact from phases, config, host, and counters.
  * @evidenceReview ./performanceBudget.ts#buildPerformanceArtifact #f1c9513 The function hashes the config, keeps the scenario hash, labels phases, derives median, p95, and rates from runtime samples only, records a supplied peak RSS, and fixes alloc/step as unsupported and worker timings as absent.
  * @evidence ./performanceBudget.ts#readPerformanceArtifact Accepts a round-tripped artifact and rejects a forged alloc/step.
- * @evidenceReview ./performanceBudget.ts#readPerformanceArtifact #b7c89fc The function checks contract, version, corpus, config, hash type, host fields, scenario fields, iteration metadata, and each metric status, and returns null for an alloc/step other than unsupported.
+ * @evidenceReview ./performanceBudget.ts#readPerformanceArtifact #ba1bac2 The function checks contract, version, corpus, config, hash type, host fields, scenario fields, iteration metadata, well-formed phases whose runtime count equals iterations, a median and p95 that match those samples, and each metric status, and returns null for an alloc/step other than unsupported.
  * @evidence ./performanceBudget.ts#currentHost Reports the running Bun, platform, and architecture.
  * @evidenceReview ./performanceBudget.ts#currentHost #45ed392 The function reads Bun.version, process.platform, and process.arch, and on darwin reads the CPU brand, otherwise unsupported.
  */
@@ -74,12 +74,13 @@ export function acceptsPerformanceBudgetSchema(): void {
   expect(running.cpu.length).toBeGreaterThan(0);
   expect(budgetSchema).toBe("bench-output-schema");
   const artifact = built({
+    iterations: 1,
     phases: { installMs: 1, prepareColdMs: 2, prepareWarmMs: [3], checkMs: 4, buildMs: 5, runtimeMs: [100] },
   });
   expect(artifact.contract).toBe("idlekit.performance-budget");
   expect(artifact.schemaVersion).toBe(1);
   expect(artifact.host).toEqual(host);
-  expect(artifact.iterations).toBe(7);
+  expect(artifact.iterations).toBe(1);
   expect(artifact.warmup).toBe(2);
   expect(artifact.corpus).toBe("representative");
   expect(artifact.metrics.allocPerStep).toEqual({ status: "unsupported" });
@@ -165,7 +166,7 @@ export function keepsUnknownMetricsUnmeasured(): void {
 
 /**
  * @evidence docs/requirements/active/performance-budget.md#req-dx04-gate-failure 100ms to 180ms fails when relative 0.25 and absolute 50 are both set. Two repeats do not pass.
- * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-gate-failure #9bd2c8d Re-read the section, then ran this function: the unfavorable pair fails and the writer is not called.
+ * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-gate-failure #dd9316c Re-read the section, then ran this function: the unfavorable pair fails and the writer is not called.
  * @evidence ./performanceBudget.ts#budgetGateFailure Reads the gate failure contract.
  * @evidenceReview ./performanceBudget.ts#budgetGateFailure #38dd0b8 The declaration is unfavorable-fails.
  * @evidence ./performanceBudget.ts#comparePerformanceBudgets Fails a slower median only past both the relative and absolute limits.
@@ -312,6 +313,10 @@ const representativeScenario = {
 const longScenario = { ...representativeScenario, clock: { stepSec: 1, durationSec: 1800 } };
 const run = { engine: "number", seed: 7 } as const;
 
+function sevenSamples(ms: number): number[] {
+  return Array.from({ length: 7 }, () => ms);
+}
+
 function scenarioArtifact(scenario: unknown, runtimeMs: readonly number[]): PerformanceArtifact {
   return built({
     config: benchConfigFromScenario(scenario, run),
@@ -386,8 +391,8 @@ export function readsTraceCadence(): void {
  * @evidenceReview ./performanceBudget.ts#selectBaseline #737fee5 The function prefers the same non-null scenario hash on the same host, then the same scenario hash, then a single baseline, and returns null otherwise.
  */
 export function readsBenchOutputAsBaseline(): void {
-  const short = scenarioArtifact(representativeScenario, [10]);
-  const long = scenarioArtifact(longScenario, [20]);
+  const short = scenarioArtifact(representativeScenario, sevenSamples(10));
+  const long = scenarioArtifact(longScenario, sevenSamples(20));
   const runOutput = JSON.parse(JSON.stringify({
     contract: "idlekit.performance-budget",
     schemaVersion: 1,
@@ -397,7 +402,7 @@ export function readsBenchOutputAsBaseline(): void {
   expect(baselines?.length).toBe(2);
   expect(selectBaseline(baselines ?? [], long)?.scenarioHash).toBe(long.scenarioHash);
   expect(selectBaseline(baselines ?? [], short)?.scenarioHash).toBe(short.scenarioHash);
-  const other = scenarioArtifact({ ...representativeScenario, strategy: { id: "planner" } }, [10]);
+  const other = scenarioArtifact({ ...representativeScenario, strategy: { id: "planner" } }, sevenSamples(10));
   expect(selectBaseline(baselines ?? [], other)).toBeNull();
   expect(readBaselineArtifacts(JSON.parse(JSON.stringify(short)))).toHaveLength(1);
   expect(selectBaseline([short], other)).toBe(short);
@@ -409,12 +414,12 @@ export function readsBenchOutputAsBaseline(): void {
 
 /**
  * @evidence docs/requirements/active/performance-budget.md#req-dx04-gate-failure A baseline without a valid repeat count cannot reach the repeat check.
- * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-gate-failure #9bd2c8d Re-read the section, then ran this function: missing or invalid iterations, warmup, and workload are rejected.
+ * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-gate-failure #dd9316c Re-read the section, then ran this function: missing or invalid iterations, warmup, and workload are rejected.
  * @evidence ./performanceBudget.ts#readPerformanceArtifact Rejects missing or invalid iteration metadata.
- * @evidenceReview ./performanceBudget.ts#readPerformanceArtifact #b7c89fc The function requires integer iterations >= 1, integer warmup >= 0, a null or integer workload >= 0, a phases array, and string or null scenario fields.
+ * @evidenceReview ./performanceBudget.ts#readPerformanceArtifact #ba1bac2 The function requires integer iterations >= 1 equal to the runtime phase count, integer warmup >= 0, a null or integer workload >= 0, labeled phases with finite durations >= 0, a median and p95 recomputed from the runtime phases, and string or null scenario fields.
  */
 export function rejectsBaselineWithoutIterations(): void {
-  const artifact = JSON.parse(JSON.stringify(built({ peakRssBytes: 1024 }))) as Record<string, unknown>;
+  const artifact = JSON.parse(JSON.stringify(built({ peakRssBytes: 1024, phases: { prepareColdMs: 5, runtimeMs: sevenSamples(100) } }))) as Record<string, unknown>;
   expect(readPerformanceArtifact(artifact)).not.toBeNull();
   expect(readPerformanceArtifact(artifact)?.metrics.peakRssBytes).toEqual({ status: "measured", value: 1024 });
   const without = (key: string) => {
@@ -432,6 +437,17 @@ export function rejectsBaselineWithoutIterations(): void {
   expect(readPerformanceArtifact({ ...artifact, warmup: -1 })).toBeNull();
   expect(readPerformanceArtifact({ ...artifact, workloadCount: 1.5 })).toBeNull();
   expect(readPerformanceArtifact({ ...artifact, workloadCount: null })).not.toBeNull();
+  const phases = artifact.phases as Array<Record<string, unknown>>;
+  expect(readPerformanceArtifact({ ...artifact, phases: phases.slice(0, 2) })).toBeNull();
+  expect(readPerformanceArtifact({ ...artifact, phases: [] })).toBeNull();
+  expect(readPerformanceArtifact({ ...artifact, phases: phases.map((p) => ({ ...p, label: "runtime" })) })).toBeNull();
+  expect(readPerformanceArtifact({ ...artifact, phases: [...phases, { phase: "runtime", label: "runtime", durationMs: -1 }] }))
+    .toBeNull();
+  const metrics = artifact.metrics as Record<string, unknown>;
+  const fasterMedian = { ...metrics, totalTimeMedianMs: { status: "measured", value: 1 } };
+  expect(readPerformanceArtifact({ ...artifact, metrics: fasterMedian })).toBeNull();
+  const fasterP95 = { ...metrics, totalTimeP95Ms: { status: "measured", value: 1 } };
+  expect(readPerformanceArtifact({ ...artifact, metrics: fasterP95 })).toBeNull();
 }
 
 /**
