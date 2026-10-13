@@ -1,6 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { mkdtempSync, readFileSync, rmdirSync, unlinkSync, writeFileSync } from "fs";
-import { tmpdir } from "os";
+import { readFileSync } from "fs";
 import { join } from "path";
 import { pathToFileURL } from "url";
 import { type Decimal, createBreakInfinityEngine, createNumberEngine } from "../../engine/breakInfinity";
@@ -120,23 +119,19 @@ describe("shared goal input validity", () => {
   });
 
   it("preserves invalid status across independently loaded module copies", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "idlekit-goal-copy-"));
-    const modulePath = join(dir, "metrics.ts");
-    try {
-      const contractsUrl = pathToFileURL(join(import.meta.dir, "contracts.ts")).href;
-      const source = readFileSync(join(import.meta.dir, "metrics.ts"), "utf8").replace('"./contracts"', JSON.stringify(contractsUrl));
-      writeFileSync(modulePath, source);
-      const copy = await import(pathToFileURL(modulePath).href) as typeof import("./metrics");
-      expect(copy.moneyAtLeast).not.toBe(moneyAtLeast);
-      const current = fixture(createNumberEngine(), Number.NaN);
-      const goal = copy.moneyAtLeast<number, "COIN", {}>("3");
-      const result = evaluateGoalForCheck(goal, current.state, current.ctx);
-      expect(result.status).toBe("invalid");
-      expect(result.reached).toBeUndefined();
-      expect(result.method).toBeUndefined();
-    } finally {
-      unlinkSync(modulePath);
-      rmdirSync(dir);
-    }
+    const contractsUrl = pathToFileURL(join(import.meta.dir, "contracts.ts")).href;
+    const source = readFileSync(join(import.meta.dir, "metrics.ts"), "utf8").replace('"./contracts"', JSON.stringify(contractsUrl));
+    // This module has no compiler macros. Strip its types and load a separate JS
+    // module, so the identity check does not start ttsc for a temporary TS file
+    // outside the project while the ordinary assertion deadline is ticking.
+    const javascript = new Bun.Transpiler({ loader: "ts" }).transformSync(source);
+    const copy = await import(`data:text/javascript;base64,${Buffer.from(javascript).toString("base64")}`) as typeof import("./metrics");
+    expect(copy.moneyAtLeast).not.toBe(moneyAtLeast);
+    const current = fixture(createNumberEngine(), Number.NaN);
+    const goal = copy.moneyAtLeast<number, "COIN", {}>("3");
+    const result = evaluateGoalForCheck(goal, current.state, current.ctx);
+    expect(result.status).toBe("invalid");
+    expect(result.reached).toBeUndefined();
+    expect(result.method).toBeUndefined();
   });
 });

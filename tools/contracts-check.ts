@@ -1,4 +1,4 @@
-import { compareContracts, trackedDir } from "./contract-files";
+export {};
 
 if (process.argv.includes("--write") || process.argv.includes("--dest")) {
   console.error("contracts:check does not write tracked schemas");
@@ -6,12 +6,17 @@ if (process.argv.includes("--write") || process.argv.includes("--dest")) {
 }
 
 const expectedFlag = process.argv.indexOf("--expected");
-const dir = expectedFlag >= 0 ? process.argv[expectedFlag + 1] : trackedDir;
-if (!dir) {
-  console.error("missing --expected directory");
+const expectedDir = expectedFlag >= 0 ? process.argv[expectedFlag + 1] : undefined;
+if (expectedFlag >= 0 && (!expectedDir || expectedDir.startsWith("-"))) {
+  console.error(
+    expectedDir ? "invalid --expected directory: expected a path, received a flag" : "missing --expected directory",
+  );
   process.exit(2);
 }
 
+// Reject invalid arguments before loading the transformed schema generators.
+const { compareContracts, trackedDir } = await import("./contract-files");
+const dir = expectedDir ?? trackedDir;
 const failures = compareContracts(dir);
 if (failures.length > 0) {
   for (const failure of failures) console.error(failure);

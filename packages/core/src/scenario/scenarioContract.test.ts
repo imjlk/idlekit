@@ -1,4 +1,4 @@
-import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "fs";
+import { cpSync, readdirSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join, resolve } from "path";
 import typia from "typia";
@@ -70,11 +70,15 @@ function minimal(): ScenarioV1 {
   };
 }
 
-function spawnContract(args: string[], cwd = repoRoot): { exitCode: number; stdout: string; stderr: string } {
+function spawnContract(args: string[], preload = true): { exitCode: number; stdout: string; stderr: string } {
+  const started = performance.now();
+  const label = args.join(" ");
+  console.error(`[TC-05] start ${label}`);
   const proc = Bun.spawnSync(
-    [process.execPath, "--preload", "@ttsc/unplugin/bun-register", ...args],
-    { cwd, stdout: "pipe", stderr: "pipe" },
+    [process.execPath, ...(preload ? ["--preload", "@ttsc/unplugin/bun-register"] : []), ...args],
+    { cwd: repoRoot, stdout: "pipe", stderr: "pipe" },
   );
+  console.error(`[TC-05] ${label}: exit=${proc.exitCode} ${(performance.now() - started).toFixed(0)}ms`);
   return {
     exitCode: proc.exitCode ?? 1,
     stdout: proc.stdout.toString(),
@@ -337,57 +341,91 @@ export function keepsSemanticValidation(): void {
  * @evidenceReview ./scenarioContract.ts#publishedValidatorTransformed #1c7fe35 The declaration is typia.createValidate of ScenarioV1.
  */
 export function runsPublishedScenarioValidator(): void {
-  const source = spawnContract(["tools/contract-smoke.ts", "source"]);
+  // The smoke script activates its own source preload / build plugin. Preloading
+  // its orchestration process starts an additional, unused compiler service.
+  const source = spawnContract(["tools/contract-smoke.ts", "source"], false);
   expect(source.exitCode).toBe(0);
   expect(source.stdout).toContain("contract-ok");
 
-  const bundled = spawnContract(["tools/contract-smoke.ts", "bundle"]);
+  const bundled = spawnContract(["tools/contract-smoke.ts", "bundle"], false);
   expect(bundled.exitCode).toBe(0);
   expect(bundled.stdout).toContain("contract-ok");
 
+  const refused = spawnContract(["tools/contracts-check.ts", "--write"], false);
+  expect(refused.exitCode).toBe(2);
+  expect(refused.stderr).toContain("does not write");
+  const invalidOperand = spawnContract(["tools/contracts-check.ts", "--expected", "--unknown"], false);
+  expect(invalidOperand.exitCode).toBe(2);
+  expect(invalidOperand.stderr).toContain("invalid --expected directory");
+}
+
+/**
+ * @evidence docs/requirements/active/typed-contract-generation.md#req-tc05-typed-contract-single-source Independent CLI generations produce identical canonical files without volatile metadata.
+ * @evidenceReview docs/requirements/active/typed-contract-generation.md#req-tc05-typed-contract-single-source #4326433 Re-read the section: both CLI generations are compared for every generated contract; the scenario JSON is canonical and contains no generation time or absolute directory.
+ * @evidence ./scenarioContract.ts#canonicalJson Canonicalizes the independently generated scenario document for a byte-stable round-trip comparison.
+ * @evidenceReview ./scenarioContract.ts#canonicalJson #c5c90d7 Re-read canonicalJson and ran both independent CLI generations: it delegates to renderCanonical with a fresh set, and this registration compares its output to the generated scenario JSON as well as every file from the two generations.
+ */
+export function keepsGeneratedContractsStable(): void {
   const left = join(tmpdir(), `idlekit-tc05-gen-a-${crypto.randomUUID()}`);
   const right = join(tmpdir(), `idlekit-tc05-gen-b-${crypto.randomUUID()}`);
-  const wroteLeft = spawnContract(["tools/generate-contracts.ts", "--dest", left]);
-  const wroteRight = spawnContract(["tools/generate-contracts.ts", "--dest", right]);
-  expect(wroteLeft.exitCode).toBe(0);
-  expect(wroteRight.exitCode).toBe(0);
-  const schemaLeft = readFileSync(join(left, "scenario.v1.schema.json"), "utf8");
-  const schemaRight = readFileSync(join(right, "scenario.v1.schema.json"), "utf8");
-  const fieldsLeft = readFileSync(join(left, "scenario.v1.fields.json"), "utf8");
-  const fieldsRight = readFileSync(join(right, "scenario.v1.fields.json"), "utf8");
-  expect(schemaLeft).toBe(schemaRight);
-  expect(fieldsLeft).toBe(fieldsRight);
-  expect(schemaLeft.endsWith("\n")).toBeTrue();
-  expect(canonicalJson(JSON.parse(schemaLeft))).toBe(schemaLeft.trim());
-  expect(schemaLeft).not.toContain("/Users/");
-  expect(schemaLeft).not.toContain("generatedAt");
-
-  const stale = join(tmpdir(), `idlekit-tc05-stale-${crypto.randomUUID()}`);
-  mkdirSync(stale, { recursive: true });
-  writeFileSync(join(stale, "scenario.v1.schema.json"), schemaLeft.replace('"schemaVersion"', '"schemaVersionRemoved"'));
-  writeFileSync(join(stale, "scenario.v1.fields.json"), fieldsLeft);
-  const drifted = spawnContract(["tools/contracts-check.ts", "--expected", stale]);
-  expect(drifted.exitCode).toBe(1);
-  expect(drifted.stderr).toContain("drift");
-
-  // A CRLF checkout of the tracked files is the same contract.
-  const crlf = join(tmpdir(), `idlekit-tc05-crlf-${crypto.randomUUID()}`);
-  mkdirSync(crlf, { recursive: true });
-  for (const name of readdirSync(left)) {
-    writeFileSync(join(crlf, name), readFileSync(join(left, name), "utf8").replace(/\n/g, "\r\n"));
+  try {
+    const wroteLeft = spawnContract(["tools/generate-contracts.ts", "--dest", left]);
+    const wroteRight = spawnContract(["tools/generate-contracts.ts", "--dest", right]);
+    expect(wroteLeft.exitCode).toBe(0);
+    expect(wroteRight.exitCode).toBe(0);
+    const names = readdirSync(left).sort();
+    expect(names).toEqual(readdirSync(right).sort());
+    for (const name of names) {
+      expect(readFileSync(join(left, name), "utf8")).toBe(readFileSync(join(right, name), "utf8"));
+    }
+    const schemaLeft = readFileSync(join(left, "scenario.v1.schema.json"), "utf8");
+    expect(schemaLeft.endsWith("\n")).toBeTrue();
+    expect(canonicalJson(JSON.parse(schemaLeft))).toBe(schemaLeft.trim());
+    expect(schemaLeft).not.toContain("/Users/");
+    expect(schemaLeft).not.toContain("generatedAt");
+  } finally {
+    for (const dir of [left, right]) rmSync(dir, { recursive: true, force: true });
   }
-  const crlfChecked = spawnContract(["tools/contracts-check.ts", "--expected", crlf]);
-  expect(crlfChecked.exitCode).toBe(0);
+}
 
-  const refused = spawnContract(["tools/contracts-check.ts", "--write"]);
-  expect(refused.exitCode).toBe(2);
+/**
+ * @evidence docs/requirements/active/typed-contract-generation.md#req-tc05-published-validator-transformed The check CLI rejects a stale scenario file, accepts a full CRLF checkout, and accepts the tracked contracts.
+ * @evidenceReview docs/requirements/active/typed-contract-generation.md#req-tc05-published-validator-transformed #fafe1c5 Re-read the section: editing schemaVersion makes the CLI exit 1. The CRLF and tracked checks exit 0 without invoking the writer.
+ * @evidence ./scenarioContract.ts#buildContractDocument The check CLI rebuilds the scenario document, rejects a changed schemaVersion key, and accepts canonical tracked content with LF or CRLF.
+ * @evidenceReview ./scenarioContract.ts#buildContractDocument #975f383 Re-read buildContractDocument and its renderedContracts caller, then ran the protected CLI checks: the builder orders source digests, obtains the memoized typia scenario schema and returns rootSchemaDocument with its generator annotation. The CLI compares the canonical rebuild to complete stale, CRLF, and tracked corpora, producing exits 1, 0, and 0 respectively.
+ */
+export function checksTrackedContractCli(): void {
+  const tracked = join(repoRoot, "docs/schemas/generated");
+  const stale = join(tmpdir(), `idlekit-tc05-stale-${crypto.randomUUID()}`);
+  const crlf = join(tmpdir(), `idlekit-tc05-crlf-${crypto.randomUUID()}`);
+  try {
+    cpSync(tracked, stale, { recursive: true });
+    const schemaLeft = readFileSync(join(stale, "scenario.v1.schema.json"), "utf8");
+    writeFileSync(join(stale, "scenario.v1.schema.json"), schemaLeft.replace('"schemaVersion"', '"schemaVersionRemoved"'));
+    const drifted = spawnContract(["tools/contracts-check.ts", "--expected", stale]);
+    expect(drifted.exitCode).toBe(1);
+    expect(drifted.stderr).toContain("drift scenario.v1.schema.json");
+    expect(drifted.stderr).not.toContain("missing ");
 
-  const checked = spawnContract(["tools/contracts-check.ts"]);
-  expect(checked.exitCode).toBe(0);
+    // A CRLF checkout of the tracked files is the same contract.
+    cpSync(tracked, crlf, { recursive: true });
+    for (const name of readdirSync(crlf)) {
+      writeFileSync(join(crlf, name), readFileSync(join(crlf, name), "utf8").replace(/\r?\n/g, "\r\n"));
+    }
+    const crlfChecked = spawnContract(["tools/contracts-check.ts", "--expected", crlf]);
+    expect(crlfChecked.exitCode).toBe(0);
+
+    const checked = spawnContract(["tools/contracts-check.ts"]);
+    expect(checked.exitCode).toBe(0);
+  } finally {
+    for (const dir of [stale, crlf]) rmSync(dir, { recursive: true, force: true });
+  }
 }
 
 describe("TC-05 typed contract", () => {
   it("keeps one scenario schema", keepsTypedContractSingleSource);
   it("keeps semantic validation", keepsSemanticValidation);
   it("runs the published scenario validator", runsPublishedScenarioValidator, 180000);
+  it("keeps independent CLI contract generations stable", keepsGeneratedContractsStable, 180000);
+  it("checks stale, CRLF, and tracked contracts through the CLI", checksTrackedContractCli, 180000);
 });
