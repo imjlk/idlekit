@@ -1,6 +1,6 @@
 import type { OfflineActionPolicy, OfflinePolicy } from "../scenario/offlinePolicy";
 import { deepClonePreservingPrototype } from "../utils/deepClone";
-import { advanceCapabilityOf, consumeExactChunk, createAdvanceLedger, finishAdvanceReport } from "./advance";
+import { advanceCapabilityOf, consumeExactChunk, createAdvanceLedger, finishAdvanceReport, type AdvanceReportV1 } from "./advance";
 import { analyzeUX } from "./analysis/ux";
 import { recordPrestigeReset } from "./constraints";
 import { createBoundedLog, createEventBuffer } from "./eventBuffer";
@@ -85,7 +85,7 @@ function allowsOfflineAction(
  * @evidence docs/requirements/active/session-clock.md#req-pr06-session-clock Steps reward time only. `requestedSec` stays the caller absence, and `useStrategy: false` or policy `none` does not call `decide`.
  * @evidenceReview docs/requirements/active/session-clock.md#req-pr06-session-clock #6fee79f Re-read the section: state.t moves by simulated reward seconds, and a direct call does not turn the requested absence into state.t. The gap-end rule for a stop inside an offline gap belongs to the session, not to this direct call, and so does reading until on a copy: this call hands options.until the state.
  * @evidence docs/requirements/active/guarded-analytic-advance.md#req-pr16-exact-match Without a strategy call, run.advance takes exact chunks on the simulated-seconds clock, and any refused step runs stepOnce.
- * @evidenceReview docs/requirements/active/guarded-analytic-advance.md#req-pr16-exact-match #4a3881f Re-read the section: the chunk takes the dt nextBoundary chose, adds each sample's dt to simulatedSec, and a strategy call keeps every step on fixed-step.
+ * @evidenceReview docs/requirements/active/guarded-analytic-advance.md#req-pr16-exact-match #e92627f Re-read the section: the chunk takes the dt nextBoundary chose, onStep adds each sample's dt to simulatedSec as the chunk takes it, and a strategy call keeps every step on fixed-step.
  */
 export function applyOfflineSeconds<N, U extends string, Vars>(args: {
   scenario: CompiledScenario<N, U, Vars>;
@@ -157,7 +157,8 @@ export function applyOfflineSeconds<N, U extends string, Vars>(args: {
   const advanceLedger = advance?.enabled
     ? createAdvanceLedger(advance.tolerance !== undefined ? "approximation" : "exact", advance.tolerance ?? null)
     : undefined;
-  const advanceCapability = advanceLedger ? advanceCapabilityOf(scenario.model, scenario.ctx, start) : undefined;
+  // Read once, from the start state, with the context the gate sees on the first tick.
+  let advanceCapability: AdvanceReportV1["capability"] | undefined;
 
   while (stop === undefined) {
     const decision = nextBoundary({
@@ -180,6 +181,7 @@ export function applyOfflineSeconds<N, U extends string, Vars>(args: {
     const tickCtx = { ...scenario.ctx, ...(constraints ? { constraints } : {}) };
     const strategyReason = "purchase strategy is not in the exact interval";
     if (advanceLedger && useStrategy && !advanceLedger.reasons.includes(strategyReason)) advanceLedger.reasons.push(strategyReason);
+    if (advanceLedger) advanceCapability ??= advanceCapabilityOf(scenario.model, stepContext(tickCtx, decision.dt), state);
     if (advanceLedger && !useStrategy) {
       const consumed = consumeExactChunk({
         ctx: tickCtx,
@@ -194,10 +196,9 @@ export function applyOfflineSeconds<N, U extends string, Vars>(args: {
         maxSteps,
         until: untilFn,
         requested: advanceLedger.requested,
-      });
-      if (consumed.ok) {
-        // One observation sample per reference step. The chunk adds no events, so the event log is not a per-tick transcript.
-        for (const sample of consumed.samples) {
+        // One observation sample per reference step, recorded as the chunk takes it. The chunk adds no events,
+        // so the event log is not a per-tick transcript.
+        onStep: (sample) => {
           assertTickAdvanced("offline", sample.t0, sample.t1, sample.dt, stepSec, start.t);
           state = sample.state;
           simulatedSec += sample.dt;
@@ -211,8 +212,10 @@ export function applyOfflineSeconds<N, U extends string, Vars>(args: {
             prestigeApplied: false,
             state,
           });
-        }
-        advanceLedger.exactSteps += consumed.samples.length;
+        },
+      });
+      if (consumed.ok) {
+        advanceLedger.exactSteps += consumed.steps;
         advanceLedger.chunks += 1;
         continue;
       }
@@ -319,7 +322,19 @@ export function applyOfflineSeconds<N, U extends string, Vars>(args: {
     uxFlags,
     eventLog: retained.eventLog,
     stop,
-    ...(advanceLedger && advanceCapability ? { advance: finishAdvanceReport(advanceLedger, advanceCapability) } : {}),
+    ...(advanceLedger
+      ? {
+          advance: finishAdvanceReport(
+            advanceLedger,
+            advanceCapability ??
+              advanceCapabilityOf(
+                scenario.model,
+                stepContext({ ...scenario.ctx, ...(scenario.constraints ? { constraints: scenario.constraints } : {}) }, stepSec),
+                start,
+              ),
+          ),
+        }
+      : {}),
     offline: {
       requestedSec: seconds,
       preDecaySec: resolved.preDecaySec,

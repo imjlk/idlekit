@@ -393,7 +393,7 @@ type GuardedAdvanceCase = Readonly<{
  * economy, every traced state, stats, the observation, and the stop. The advanced run must take no fallback step.
  *
  * @evidence docs/requirements/active/guarded-analytic-advance.md#req-pr16-exact-match Runs fixed-step and exact chunks on the same constant-income case and compares wallet, trace, counters, goals, and stop.
- * @evidenceReview docs/requirements/active/guarded-analytic-advance.md#req-pr16-exact-match #4a3881f Re-read the section: the relation compares the reference and the chunked run online and offline, and an undeclared case does not apply.
+ * @evidenceReview docs/requirements/active/guarded-analytic-advance.md#req-pr16-exact-match #e92627f Re-read the section: the relation compares the reference and the chunked run online and offline, and an undeclared case does not apply.
  */
 export function checkGuardedAdvance(declared: boolean, value: GuardedAdvanceCase): RelationCheck {
   if (!declared) return { ok: true, applicable: false, summary: "guarded advance relation is not declared" };

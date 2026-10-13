@@ -16,6 +16,7 @@ import {
   applyExactIncome,
   consumeExactChunk,
   createAdvanceLedger,
+  type ExactSample,
   finishAdvanceReport,
   measureAdvanceRow,
   refusalForAdvance,
@@ -140,19 +141,19 @@ function walletOf(amount: number): number {
 
 /**
  * @evidence docs/requirements/active/guarded-analytic-advance.md#req-pr16-exact-match Constant income matches the reference run.
- * @evidenceReview docs/requirements/active/guarded-analytic-advance.md#req-pr16-exact-match #4a3881f Re-read the section, then ran this function: wallet, goal time, and counters match for both chunk sizes, and a chunk takes whole reference steps.
+ * @evidenceReview docs/requirements/active/guarded-analytic-advance.md#req-pr16-exact-match #e92627f Re-read the section, then ran this function: wallet, goal time, and counters match for both chunk sizes, a chunk takes whole reference steps and streams them, and the exact path reads income at most once more than fixed-step.
  * @evidence ./advance.ts#advanceExactMatch Reads the exact-match marker.
  * @evidenceReview ./advance.ts#advanceExactMatch #1e96b8b The declaration is constant-income-matches-reference.
  * @evidence ./advance.ts#consumeExactChunk Takes whole reference steps from nextBoundary.
- * @evidenceReview ./advance.ts#consumeExactChunk #636ec60 A chunk below one step takes one whole step, a 2.5-step chunk takes two, and a near-epsilon horizon tail is not ticked.
+ * @evidenceReview ./advance.ts#consumeExactChunk #22e5ba5 A chunk below one step takes one whole step, a 2.5-step chunk takes two, a near-epsilon horizon tail is not ticked, onStep sees each step as it is taken, a throwing onStep stops the chunk there, and the result carries a step count, not the steps.
  * @evidence ./advance.ts#applyExactIncome Adds the scaled income as the tick policy applies it.
  * @evidenceReview ./advance.ts#applyExactIncome #63aaf66 Drop adds the scaled income, accumulate adds the bucket too, the bucket ends empty, and max money follows.
  * @evidence ./step.ts#exactAmountSign Gives the exact sign the fixed-step reward test uses.
  * @evidenceReview ./step.ts#exactAmountSign #c8eab59 Positive, zero, and negative amounts give 1, 0, and -1.
  * @evidence ./simulator.ts#runScenario Runs the scenario with run.advance omitted and enabled.
- * @evidenceReview ./simulator.ts#runScenario #7ee1218 Exact chunks record one observation sample per reference step on the summed clock, and the wallet, goals, stats, and reward gap equal fixed-step.
+ * @evidenceReview ./simulator.ts#runScenario #6a28430 Exact chunks record one observation sample per reference step on the summed clock through onStep, the wallet, goals, stats, and reward gap equal fixed-step, and the reported capability reads the constraints the gate reads.
  * @evidence ./offline.ts#applyOfflineSeconds Runs the offline credit with run.advance omitted and enabled.
- * @evidenceReview ./offline.ts#applyOfflineSeconds #ca66240 Without a strategy the offline credit takes exact chunks, and its wallet and stats equal fixed-step.
+ * @evidenceReview ./offline.ts#applyOfflineSeconds #e3f6599 Without a strategy the offline credit takes exact chunks, its wallet and stats equal fixed-step, and its reported capability reads the scenario constraints.
  */
 export function matchesReferenceWalletAndGoal(): void {
   expect(fixture.seed).toBe("16");
@@ -190,8 +191,9 @@ export function matchesReferenceWalletAndGoal(): void {
   expect(offlineExact.stats).toEqual(offline.stats);
   // Whole reference steps only: a chunk below one step is one step, and 2.5 steps is two.
   const compiled = scenario({ until: false });
-  const chunk = (chunkSec: number, durationSec = fixture.durationSec) =>
-    consumeExactChunk({
+  const chunk = (chunkSec: number, durationSec = fixture.durationSec) => {
+    const samples: ExactSample<number, UnitCode, Vars>[] = [];
+    const result = consumeExactChunk({
       ctx: compiled.ctx,
       model: compiled.model,
       state: compiled.initial,
@@ -202,7 +204,10 @@ export function matchesReferenceWalletAndGoal(): void {
       steps: 0,
       durationSec,
       requested: "exact",
+      onStep: (sample) => samples.push(sample),
     });
+    return result.ok ? { ...result, samples } : result;
+  };
   const half = chunk(0.5);
   expect(half.ok && half.samples.map((sample) => sample.dt)).toEqual([1]);
   const twoAndHalf = chunk(2.5);
@@ -217,11 +222,59 @@ export function matchesReferenceWalletAndGoal(): void {
   expect(applyExactIncome(createNumberEngine(), state(1), 2, 1).wallet.money.amount).toBe(3);
   const E = createNumberEngine();
   expect([exactAmountSign(E, 2), exactAmountSign(E, 0), exactAmountSign(E, -2)]).toEqual([1, 0, -1]);
+  // Steps stream to onStep as they are taken. The chunk retains none, so a throwing callback stops it at that step.
+  const streamArgs = {
+    ctx: compiled.ctx,
+    model: compiled.model,
+    state: compiled.initial,
+    firstDt: 1,
+    stepSec: 1,
+    chunkSec: 1000,
+    elapsedSec: 0,
+    steps: 0,
+    durationSec: 1000,
+    requested: "exact" as const,
+  };
+  const streamed: number[] = [];
+  expect(() =>
+    consumeExactChunk({
+      ...streamArgs,
+      onStep: (sample) => {
+        streamed.push(sample.t1);
+        if (streamed.length === 3) throw new Error("stop at three");
+      },
+    }),
+  ).toThrow("stop at three");
+  expect(streamed).toEqual([1, 2, 3]);
+  let seen = 0;
+  const long = consumeExactChunk({ ...streamArgs, onStep: () => (seen += 1) });
+  expect(long.ok && long.steps).toBe(1000);
+  expect(seen).toBe(1000);
+  expect(Object.keys(long).sort()).toEqual(["ok", "state", "steps"]);
+  // The exact path reads income about once per step, as fixed-step does, not once for the guard and again to apply.
+  let incomeCalls = 0;
+  const counted = (base: CompiledScenario<number, UnitCode, Vars>): CompiledScenario<number, UnitCode, Vars> => ({
+    ...base,
+    model: {
+      ...base.model,
+      income: (ctx, current) => {
+        incomeCalls += 1;
+        return base.model.income(ctx, current);
+      },
+    },
+  });
+  runScenario(counted(scenario({ advance: false, until: false, durationSec: 100 })));
+  const fixedCalls = incomeCalls;
+  incomeCalls = 0;
+  const countedExact = runScenario(counted(scenario({ until: false, durationSec: 100, chunkSec: 100 })));
+  expect(countedExact.advance?.exactSteps).toBe(100);
+  expect(fixedCalls).toBeGreaterThanOrEqual(100);
+  expect(incomeCalls).toBeLessThanOrEqual(fixedCalls + 1);
 }
 
 /**
  * @evidence docs/requirements/active/guarded-analytic-advance.md#req-pr16-guarded-fallback Unclear boundaries stay on fixed-step.
- * @evidenceReview docs/requirements/active/guarded-analytic-advance.md#req-pr16-guarded-fallback #2aa29e1 Re-read the section, then ran this function: purchase, evolve, capacity, session clocks, an emitter, and a non-empty bucket fall back.
+ * @evidenceReview docs/requirements/active/guarded-analytic-advance.md#req-pr16-guarded-fallback #5b4bffc Re-read the section, then ran this function: purchase, evolve, capacity, session clocks, an emitter, and a non-empty bucket fall back, and a constraint-gated hint is statically known online and offline.
  * @evidence ./advance.ts#advanceGuardedFallback Reads the fallback marker.
  * @evidenceReview ./advance.ts#advanceGuardedFallback #8f900a5 The declaration is unclear-boundary-uses-fixed-step.
  * @evidence ./advance.ts#validateAdvanceReport Reads the published validator.
@@ -233,7 +286,7 @@ export function matchesReferenceWalletAndGoal(): void {
  * @evidence ./advance.ts#advanceAlgorithmVersion Reads the algorithm version.
  * @evidenceReview ./advance.ts#advanceAlgorithmVersion #9fd45c6 The version is guarded-advance-1.
  * @evidence ./advance.ts#refusalForAdvance Names the boundary that keeps a step on fixed-step.
- * @evidenceReview ./advance.ts#refusalForAdvance #3011a0e Purchase, evolve, milestone, soft cap, session clock, strategy, emit, a non-empty bucket, and approximation each refuse.
+ * @evidenceReview ./advance.ts#refusalForAdvance #abf01ef Purchase, evolve, milestone, soft cap, session clock, strategy, emit, a non-empty bucket, and approximation each refuse, through the same guard the chunk uses.
  * @evidence ./advance.ts#advanceCapabilityOf Reads the capability the report names.
  * @evidenceReview ./advance.ts#advanceCapabilityOf #1709430 No hint is unsupported, a null hint is unknown, constant is statically known, and linear is unsupported.
  * @evidence ./advance.ts#createAdvanceLedger Starts the exact and fallback counters.
@@ -296,6 +349,22 @@ export function fallsBackOnUnclearBoundaries(): void {
   expect(advanceCapabilityOf({ ...scenario({}).model, analytic: () => null }, scenario({}).ctx, state())).toBe("unknown");
   expect(advanceCapabilityOf(scenario({}).model, { ...scenario({}).ctx, E: engine }, state())).toBe("statically-known");
   expect(advanceCapabilityOf(scenario({ incomeKind: "linear" }).model, scenario({}).ctx, state())).toBe("unsupported");
+  // The report reads the capability with the context the gate uses, scenario constraints included.
+  const unconstrained = scenario({ until: false, durationSec: 4 });
+  const gated: CompiledScenario<number, UnitCode, Vars> = {
+    ...unconstrained,
+    constraints: { maxActionsPerStep: 1 },
+    model: { ...unconstrained.model, analytic: (ctx) => (ctx.constraints ? { incomeKind: "constant" } : null) },
+  };
+  const gatedRun = runScenario(gated);
+  expect(gatedRun.advance?.status).toBe("exact");
+  expect(gatedRun.advance?.capability).toBe("statically-known");
+  const gatedOffline = applyOfflineSeconds({ scenario: gated, seconds: 4, options: { useStrategy: false } });
+  expect(gatedOffline.advance?.status).toBe("exact");
+  expect(gatedOffline.advance?.capability).toBe("statically-known");
+  const ungated = runScenario({ ...gated, constraints: undefined });
+  expect(ungated.advance?.status).toBe("fallback");
+  expect(ungated.advance?.capability).toBe("unknown");
   const exactRequest = "exact" as const;
   const ledger = createAdvanceLedger(exactRequest, null);
   expect(ledger).toEqual({ requested: "exact", tolerance: null, exactSteps: 0, fallbackSteps: 0, chunks: 0, reasons: [] });
