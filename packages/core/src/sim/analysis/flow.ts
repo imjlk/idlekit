@@ -86,6 +86,8 @@ export type FlowFactKind =
 export type FlowFactV1 = Readonly<{
   id: string;
   processId: string;
+  /** The resource the fact describes, so one process's resources stay apart. */
+  resourceId: string;
   kind: FlowFactKind;
   amount: string;
   unit: string;
@@ -135,7 +137,7 @@ export const flowPipelineConstraint = "process-throughput-20" as const;
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-conservation Conversion, loss, and inventory stay in their own units.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-conservation #36612a7 Re-read the section: the source unit and the destination unit are not added, queue and unretained are read for the destination resource in the source window, every source window is tried with the latest conserving one kept, the stock must match an observed destination throughput unit and the fact cites it, edges into one stock are summed, and zero matches only zero.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-conservation #5cc4b0e Re-read the section: the source unit and the destination unit are not added, queue and unretained are read for the destination resource in the source window, every source window is tried with the latest conserving one kept, the stock must match an observed destination throughput unit and the fact cites it, conservation compares per-window rates, edges into one stock are summed, and zero matches only zero.
  */
 export const flowConservation = "converted-units-stay-apart" as const;
 
@@ -147,7 +149,7 @@ export const flowUnsupportedModel = "no-invented-stall" as const;
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-suspected Missing demand and capacity observations stay unresolved.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-suspected #ee9a657 Re-read the section: facts and hypotheses are separate, starved and blocked time in seconds are judged per process from their latest window, where every resource in that window counts and a latest zero clears an older wait, with mixed waits unresolved, and a ramp-up observation or window skips Little's law.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-suspected #883c943 Re-read the section: facts and hypotheses are separate, starved and blocked time in seconds are judged per process from their latest window, where every resource in that window counts and a latest zero clears an older wait and is cited, with mixed waits unresolved, and a ramp-up observation or window skips Little's law.
  */
 export const flowSuspectedCause = "facts-apart-from-cause" as const;
 
@@ -416,6 +418,7 @@ export function diagnoseFlow(observation: FlowObservationV1): FlowReportV1 {
   const facts: FlowFactV1[] = rows.map((row) => ({
     id: `fact:${row.index}:${row.sample.kind}`,
     processId: row.sample.processId,
+    resourceId: row.sample.resourceId,
     kind: row.sample.kind,
     amount: row.sample.amount,
     unit: row.sample.unit,
@@ -461,6 +464,7 @@ export function diagnoseFlow(observation: FlowObservationV1): FlowReportV1 {
       // The pair is encoded structurally, so two different pairs never share an id and no string makes it throw.
       id: `fact:final-throughput:${JSON.stringify([final.sample.processId, final.sample.resourceId])}`,
       processId: final.sample.processId,
+      resourceId: final.sample.resourceId,
       kind: "final-throughput",
       amount: final.sample.amount,
       unit: final.sample.unit,
@@ -525,6 +529,8 @@ export function diagnoseFlow(observation: FlowObservationV1): FlowReportV1 {
         if (feed.toProcessId !== edge.toProcessId || feed.toResourceId !== edge.toResourceId) continue;
         feedRefs.push(`edge:${feedIndex}`);
         if (feed === edge) {
+          // This process's own feed is held to the same unit rule as every other feed.
+          if (feed.fromResourceId === feed.toResourceId && row.sample.unit !== destinationUnit) return false;
           load += convert(row.value, feed) ?? Number.NaN;
           continue;
         }
@@ -561,6 +567,7 @@ export function diagnoseFlow(observation: FlowObservationV1): FlowReportV1 {
     facts.push({
       id: `fact:saturation:${row.sample.processId}`,
       processId: row.sample.processId,
+      resourceId: row.sample.resourceId,
       kind: "saturation-time",
       amount: formatDecimal(row.sample.endSec - row.sample.startSec),
       unit: "s",
@@ -623,6 +630,7 @@ export function diagnoseFlow(observation: FlowObservationV1): FlowReportV1 {
       facts.push({
         id: `fact:conservation:${edgeIndexes[0]}`,
         processId: destination.toProcessId,
+        resourceId: destination.toResourceId,
         kind: "conservation",
         amount: formatDecimal(theoretical),
         unit: queue.sample.unit,
@@ -681,10 +689,22 @@ export function diagnoseFlow(observation: FlowObservationV1): FlowReportV1 {
     );
   };
   const refsOf = (samples: readonly Rated[]): string[] => samples.map((row) => `sample:${row.index}`);
+  const inLatest = (samples: readonly Rated[]): Rated[] => {
+    const newest = latest(samples);
+    if (!newest) return [];
+    return samples.filter((row) => row.sample.startSec === newest.sample.startSec && row.sample.endSec === newest.sample.endSec);
+  };
   for (const [processId, kinds] of waits) {
     const starved = positiveInLatest(kinds.starved);
     const blocked = positiveInLatest(kinds.blocked);
-    if (starved.length > 0 && blocked.length === 0) {
+    const olderPositive = [...kinds.starved, ...kinds.blocked].some((row) => row.value > 0);
+    if (starved.length === 0 && blocked.length === 0 && olderPositive) {
+      // The latest windows show no wait. They cleared an older one, so they are cited as the deciding evidence.
+      const clearing = [...inLatest(kinds.starved), ...inLatest(kinds.blocked)].sort((left, right) => left.index - right.index);
+      hypotheses.push(
+        hypothesis(processId, "insufficient-data", "none", refsOf(clearing), "the latest wait windows show no starved or blocked time"),
+      );
+    } else if (starved.length > 0 && blocked.length === 0) {
       hypotheses.push(hypothesis(processId, "suspected", "material-shortage", refsOf(starved), "starved time was observed without a capacity bind"));
     } else if (blocked.length > 0 && starved.length === 0) {
       hypotheses.push(hypothesis(processId, "suspected", "demand-shortage", refsOf(blocked), "blocked time was observed without a capacity bind"));
