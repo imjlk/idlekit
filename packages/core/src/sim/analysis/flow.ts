@@ -129,7 +129,7 @@ export const flowOptionalAdapter = "observer-not-required-model" as const;
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-pipeline A steady 100 to 20 to 30 chain binds at the middle stage.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-pipeline #e02b28d Re-read the section: final throughput stays 20 when inflow doubles, a bind reads one resource and one window, the causally named bind is confirmed among several, each terminal process reports a final throughput per delivered resource from its latest window, an inflow source offers work, a process binds on its latest saturated window, and downstream slack counts every feed into that stage.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-pipeline #c944f17 Re-read the section: final throughput stays 20 when inflow doubles, a bind reads one resource and one window, the causally named bind is confirmed among several, each terminal process reports a final throughput per delivered resource from its latest window, an inflow source offers work, a process binds on its latest saturated window, downstream slack counts every feed into that stage, and a confirmed bind cites the causal record.
  */
 export const flowPipelineConstraint = "process-throughput-20" as const;
 
@@ -382,7 +382,7 @@ function convert(amount: number, edge: FlowEdgeV1): number | null {
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-pipeline Diagnosis reads throughput, capacity, and the evidence window.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-pipeline #e02b28d Re-read the section: the middle stage binds and doubling inflow leaves throughput at 20; capacity and upstream samples match the edge resource and the throughput window, and every saturated process is a candidate.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-pipeline #c944f17 Re-read the section: the middle stage binds and doubling inflow leaves throughput at 20; capacity and upstream samples match the edge resource and the throughput window, and every saturated process is a candidate.
  */
 export function diagnoseFlow(observation: FlowObservationV1): FlowReportV1 {
   const littlesLaw = littlesOf(observation.littles, observation.capability);
@@ -615,7 +615,8 @@ export function diagnoseFlow(observation: FlowObservationV1): FlowReportV1 {
         row.sample.processId,
         confirmed ? "confirmed" : "suspected",
         "capacity-constraint",
-        refs,
+        // A confirmation cites the causal record it rests on, next to the samples.
+        confirmed ? [...refs, "causal"] : refs,
         confirmed ? "a causal model or experiment names this saturated process" : "the process is saturated, without a causal model or experiment",
       ),
     );

@@ -161,11 +161,11 @@ export function declaresFlowAdapter(): void {
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-pipeline A 100 to 20 to 30 chain binds at the middle stage.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-pipeline #e02b28d Re-read the section, then ran this function: final throughput stays 20 when inflow doubles, another resource or window does not bind, the causally named bind is confirmed first beside a suspected one, a cycle has no final throughput, two terminals each report one, a terminal reports its latest window in either sample order, an inflow source offers work to the bind, a terminal fed two resources reports both, a process saturated in two windows binds on the latest in either order, a side feed that fills or is missing from the downstream stage removes the bind, the bind cites the downstream capacity and feed, every edgeless series reports a final, and colliding ids stay distinct.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-pipeline #c944f17 Re-read the section, then ran this function: final throughput stays 20 when inflow doubles, another resource or window does not bind, the causally named bind is confirmed first beside a suspected one, a cycle has no final throughput, two terminals each report one, a terminal reports its latest window in either sample order, an inflow source offers work to the bind, a terminal fed two resources reports both, a process saturated in two windows binds on the latest in either order, a side feed that fills or is missing from the downstream stage removes the bind, the bind cites the downstream capacity and feed, every edgeless series reports a final, colliding ids stay distinct, and only a confirmed bind cites causal.
  * @evidence ./flow.ts#flowPipelineConstraint Reads the pipeline marker.
  * @evidenceReview ./flow.ts#flowPipelineConstraint #6971fde The declaration is process-throughput-20.
  * @evidence ./flow.ts#diagnoseFlow Diagnoses throughput, capacity, and the binding stage.
- * @evidenceReview ./flow.ts#diagnoseFlow #b20e302 The middle stage binds at 20, doubling inflow keeps 20 and grows the queue, without a causal model the cause is suspected, another resource or window does not bind, every saturated process is a candidate with the causal one confirmed first, a bind does not hide another process's wait, a cycle reports no final throughput, each terminal reports a final throughput per delivered resource from its latest window, an inflow source offers work, a process binds on its latest saturated window, downstream slack counts every feed and is cited, edgeless series each report a final with escaped ids, and a 1e300 window formats as a finite saturation time.
+ * @evidenceReview ./flow.ts#diagnoseFlow #a9e6b11 The middle stage binds at 20, doubling inflow keeps 20 and grows the queue, without a causal model the cause is suspected, another resource or window does not bind, every saturated process is a candidate with the causal one confirmed first, a bind does not hide another process's wait, a cycle reports no final throughput, each terminal reports a final throughput per delivered resource from its latest window, an inflow source offers work, a process binds on its latest saturated window, downstream slack counts every feed and is cited, edgeless series each report a final with escaped ids, a confirmed bind cites causal while a suspected one does not, and a 1e300 window formats as a finite saturation time.
  */
 export function diagnosesSteadyPipeline(): void {
   expect(flowPipelineConstraint).toBe("process-throughput-20");
@@ -189,6 +189,9 @@ export function diagnosesSteadyPipeline(): void {
   expect(suspected.hypotheses[0]?.status).toBe("suspected");
   expect(suspected.hypotheses[0]?.claim).toBe("capacity-constraint");
   expect(suspected.hypotheses[0]?.evidenceRefs.length).toBeGreaterThan(0);
+  // Only a confirmation cites the causal record it rests on.
+  expect(suspected.hypotheses[0]?.evidenceRefs).not.toContain("causal");
+  expect(steady.hypotheses[0]?.evidenceRefs.at(-1)).toBe("causal");
   expect(suspected.facts.some((item) => item.id === suspected.hypotheses[0]?.id)).toBe(false);
   // Samples of another resource or another window do not combine into a bind.
   const steadyCase = load("steady");
@@ -217,7 +220,7 @@ export function diagnosesSteadyPipeline(): void {
   });
   expect(twoResources.hypotheses[0]?.processId).toBe("process");
   // The refs cite the downstream capacity that proved the slack (sample 7), not only the local and upstream samples.
-  expect(twoResources.hypotheses[0]?.evidenceRefs).toEqual(["sample:3", "sample:4", "sample:2", "sample:7"]);
+  expect(twoResources.hypotheses[0]?.evidenceRefs).toEqual(["sample:3", "sample:4", "sample:2", "sample:7", "causal"]);
   // Downstream slack counts every feed into that destination in the window.
   const sideFeed = (amount: string | null) =>
     diagnoseFlow({
@@ -237,7 +240,7 @@ export function diagnosesSteadyPipeline(): void {
   expect(sideFeed(null).hypotheses.some((item) => item.claim === "capacity-constraint")).toBe(false);
   const roomy = sideFeed("5");
   expect(roomy.hypotheses[0]?.processId).toBe("process");
-  expect(roomy.hypotheses[0]?.evidenceRefs).toEqual(["sample:1", "sample:2", "sample:0", "sample:5", "sample:6"]);
+  expect(roomy.hypotheses[0]?.evidenceRefs).toEqual(["sample:1", "sample:2", "sample:0", "sample:5", "sample:6", "causal"]);
   // Two saturated processes: the causally named one is confirmed even when it appears later.
   const parallel: FlowObservationV1 = {
     ...steadyCase,

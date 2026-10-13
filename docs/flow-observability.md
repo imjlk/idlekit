@@ -12,7 +12,7 @@ Little's law runs only when the capability is statically known, the window is st
 
 An edge with a different destination unit uses `inflow * numerator / denominator * (1 - loss)`. Queue plus unretained must match that amount in the destination unit. The source unit is not added to the destination unit. Queue and unretained are read for the edge's destination resource in the source sample's window. Every source window is tried, and edges into the same destination resource are summed. An amount or product that overflows a finite number is never a match, and zero matches only zero. When several windows conserve, the latest one is reported. The same document shape covers logistics, crafting, and expedition-slot fixtures. Resource names stay in `examples/analysis/flow-pipeline.json`. Seed `15` labels that file.
 
-Facts and hypotheses are separate. A hypothesis links to samples through `evidenceRefs`.
+Facts and hypotheses are separate. A hypothesis links to samples through `evidenceRefs`. A confirmed capacity constraint also cites `causal`, the record it rests on.
 
 Amounts use the decimal wire spelling with an optional sign and exponent, such as `1e2`. `parseFlowObservation` rejects an amount, edge ratio, or Little's law input that is not a finite non-negative decimal, a sample whose `endSec` is before its `startSec`, a duplicate sample key, a duplicate edge, a zero denominator, and a loss above 1.
 
@@ -22,7 +22,7 @@ Node.js and browser runtimes are not part of the v1 compatibility contract.
 
 ## Verification
 
-Commands below were run from this worktree on macOS arm64 with Bun 1.4.2 and ttsc 0.30.4. Requirement file sha256 `e40f2b0dd94f8f4f8c435905cfe8947cff49b6b91f601ba89b968cd3adef83c1`. `typecheck`, `test`, `build`, `compat:check`, `replay:verify`, and `docs:verify` are unrun.
+Commands below were run from this worktree on macOS arm64 with Bun 1.4.2 and ttsc 0.30.4. Requirement file sha256 `7b9b6ae8795e1a1cf31c99e8a1d6928adf4ff84767e78f36d9472f3b9c7e8c4a`. `typecheck`, `test`, `build`, `compat:check`, `replay:verify`, and `docs:verify` are unrun.
 
 | Command | Exit |
 |---|---|
