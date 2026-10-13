@@ -45,7 +45,7 @@ function expectValid(report: FlowReportV1): void {
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-flow-adapter The observer hook is optional and three fixtures share it.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-flow-adapter #a340fde Re-read the section, then ran this function: onFlow records one sample, the three skins agree, and exponent spellings parse while unreadable amounts are rejected.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-flow-adapter #0e3f60a Re-read the section, then ran this function: onFlow records one sample, the three skins agree, and exponent spellings parse while unreadable amounts are rejected.
  * @evidence ./flow.ts#flowOptionalAdapter Reads the optional-adapter marker.
  * @evidenceReview ./flow.ts#flowOptionalAdapter #d29de61 The declaration is observer-not-required-model.
  * @evidence ./flow.ts#validateFlowReport Reads the published validator.
@@ -57,7 +57,7 @@ function expectValid(report: FlowReportV1): void {
  * @evidence ./flow.ts#flowAlgorithmVersion Reads the algorithm version.
  * @evidenceReview ./flow.ts#flowAlgorithmVersion #7cd8b0b Every fixture report carries flow-observation-1.
  * @evidence ./flow.ts#parseFlowObservation Validates a fixture case as data.
- * @evidenceReview ./flow.ts#parseFlowObservation #8e51a17 Fixture cases parse, 1e2 and +2.0E1 parse and still bind, a case with the wrong contract is rejected, an amount such as -5, 1e400, or twenty is rejected with its path, a reversed window is rejected and yields no fact when diagnosed directly, and a duplicate sample key, a zero denominator, and a loss above 1 are rejected with their paths.
+ * @evidenceReview ./flow.ts#parseFlowObservation #8e51a17 Fixture cases parse, 1e2 and +2.0E1 parse and still bind, a case with the wrong contract is rejected, an amount such as -5, 1e400, or twenty is rejected with its path, a reversed window is rejected and yields no fact when diagnosed directly, and a duplicate sample key, a duplicate edge, a zero denominator, and a loss above 1 are rejected with their paths.
  * @evidence ../observation.ts#recordFlowSample Forwards one sample to the optional observer hook.
  * @evidenceReview ../observation.ts#recordFlowSample #eab5d36 onFlow receives the sample once, and an absent observer or hook is a no-op.
  */
@@ -120,6 +120,10 @@ export function declaresFlowAdapter(): void {
   const overLoss = parseFlowObservation({ ...steadyCase, edges: steadyCase.edges.map((edge, index) => (index === 1 ? { ...edge, loss: "1.5" } : edge)) });
   expect(overLoss.ok).toBe(false);
   if (!overLoss.ok) expect(overLoss.issues).toEqual(["$input.edges[1].loss <= 1"]);
+  // A copied edge would count the same flow twice, so it is rejected.
+  const copiedEdge = parseFlowObservation({ ...steadyCase, edges: [...steadyCase.edges, steadyCase.edges[0]] });
+  expect(copiedEdge.ok).toBe(false);
+  if (!copiedEdge.ok) expect(copiedEdge.issues).toEqual(["$input.edges[2] duplicates edges[0]"]);
   const source = readFileSync(new URL("./flow.ts", import.meta.url), "utf8");
   for (const word of ["mine", "smelt", "ore", "haul", "crate", "expedition", "scout"]) {
     expect(new RegExp(`\\b${word}\\b`).test(source)).toBe(false);
@@ -157,11 +161,11 @@ export function declaresFlowAdapter(): void {
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-pipeline A 100 to 20 to 30 chain binds at the middle stage.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-pipeline #9447d9a Re-read the section, then ran this function: final throughput stays 20 when inflow doubles, another resource or window does not bind, the causally named bind is confirmed first beside a suspected one, a cycle has no final throughput, and two terminals each report one in edge order.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-pipeline #364a5de Re-read the section, then ran this function: final throughput stays 20 when inflow doubles, another resource or window does not bind, the causally named bind is confirmed first beside a suspected one, a cycle has no final throughput, two terminals each report one, a terminal reports its latest window in either sample order, and an inflow source offers work to the bind.
  * @evidence ./flow.ts#flowPipelineConstraint Reads the pipeline marker.
  * @evidenceReview ./flow.ts#flowPipelineConstraint #6971fde The declaration is process-throughput-20.
  * @evidence ./flow.ts#diagnoseFlow Diagnoses throughput, capacity, and the binding stage.
- * @evidenceReview ./flow.ts#diagnoseFlow #dcfee14 The middle stage binds at 20, doubling inflow keeps 20 and grows the queue, without a causal model the cause is suspected, another resource or window does not bind, every saturated process is a candidate with the causal one confirmed first, a bind does not hide another process's wait, a cycle reports no final throughput, each terminal reports its own final throughput, and a 1e300 window formats as a finite saturation time.
+ * @evidenceReview ./flow.ts#diagnoseFlow #4a304b5 The middle stage binds at 20, doubling inflow keeps 20 and grows the queue, without a causal model the cause is suspected, another resource or window does not bind, every saturated process is a candidate with the causal one confirmed first, a bind does not hide another process's wait, a cycle reports no final throughput, each terminal reports its own final throughput from its latest window, an inflow source offers work, and a 1e300 window formats as a finite saturation time.
  */
 export function diagnosesSteadyPipeline(): void {
   expect(flowPipelineConstraint).toBe("process-throughput-20");
@@ -286,6 +290,17 @@ export function diagnosesSteadyPipeline(): void {
     ["store", "7"],
     ["sell", "20"],
   ]);
+  // A terminal with two windows reports the latest one, whatever the sample order.
+  const laterSell = { processId: "sell", resourceId: "ore", kind: "throughput", amount: "25", unit: "ore/min", startSec: 60, endSec: 120 } as const;
+  expect(finalsOf(diagnoseFlow({ ...steadyCase, samples: [...steadyCase.samples, laterSell] }))).toEqual([["sell", "25"]]);
+  expect(finalsOf(diagnoseFlow({ ...steadyCase, samples: [laterSell, ...steadyCase.samples] }))).toEqual([["sell", "25"]]);
+  // A source that reports its offer as inflow still offers work to the bind.
+  const inflowSource = diagnoseFlow({
+    ...steadyCase,
+    samples: steadyCase.samples.map((sample) => (sample.processId === "mine" ? { ...sample, kind: "inflow" as const } : sample)),
+  });
+  expect(inflowSource.hypotheses[0]?.claim).toBe("capacity-constraint");
+  expect(inflowSource.hypotheses[0]?.processId).toBe("process");
 }
 
 /**

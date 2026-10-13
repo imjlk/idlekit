@@ -10,7 +10,7 @@ const FLOW_ALGORITHM_VERSION = "flow-observation-1" as const;
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-flow-adapter The published schema id is the flow report.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-flow-adapter #a340fde Re-read the section: the id is the flow v1 schema.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-flow-adapter #0e3f60a Re-read the section: the id is the flow v1 schema.
  */
 export function flowSchemaId(): typeof FLOW_SCHEMA_ID {
   return FLOW_SCHEMA_ID;
@@ -18,7 +18,7 @@ export function flowSchemaId(): typeof FLOW_SCHEMA_ID {
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-flow-adapter The algorithm version is flow-observation-1.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-flow-adapter #a340fde Re-read the section: the version string is flow-observation-1.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-flow-adapter #0e3f60a Re-read the section: the version string is flow-observation-1.
  */
 export function flowAlgorithmVersion(): typeof FLOW_ALGORITHM_VERSION {
   return FLOW_ALGORITHM_VERSION;
@@ -123,13 +123,13 @@ export type FlowReportV1 = Readonly<{
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-flow-adapter Flow samples are optional. Model gains no required method.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-flow-adapter #a340fde Re-read the section: the observer hook is optional and resource names stay in the fixture.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-flow-adapter #0e3f60a Re-read the section: the observer hook is optional and resource names stay in the fixture.
  */
 export const flowOptionalAdapter = "observer-not-required-model" as const;
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-pipeline A steady 100 to 20 to 30 chain binds at the middle stage.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-pipeline #9447d9a Re-read the section: final throughput stays 20 when inflow doubles, a bind reads one resource and one window, the causally named bind is confirmed among several, and each terminal process reports its own final throughput.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-pipeline #364a5de Re-read the section: final throughput stays 20 when inflow doubles, a bind reads one resource and one window, the causally named bind is confirmed among several, each terminal process reports its own final throughput from its latest window, and an inflow source offers work.
  */
 export const flowPipelineConstraint = "process-throughput-20" as const;
 
@@ -160,7 +160,7 @@ let validateObservationValidator: ((input: unknown) => IValidation<FlowObservati
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-flow-adapter The published validator is createValidate of the flow report.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-flow-adapter #a340fde Re-read the section: the structural document is FlowReportV1.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-flow-adapter #0e3f60a Re-read the section: the structural document is FlowReportV1.
  */
 export const validateFlowReport = (input: unknown): IValidation<FlowReportV1> =>
   (validateFlowReportValidator ??= typia.createValidate<FlowReportV1>())(input);
@@ -173,7 +173,7 @@ let flowJsonSchemaUnit: ReturnType<typeof buildFlowJsonSchema> | undefined;
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-flow-adapter The structural schema is OpenAPI 3.1 from typia.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-flow-adapter #a340fde Re-read the section: schema version is 3.1 and the contract id is idlekit.flow.v1.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-flow-adapter #0e3f60a Re-read the section: schema version is 3.1 and the contract id is idlekit.flow.v1.
  */
 export function flowJsonSchema(): ReturnType<typeof buildFlowJsonSchema> {
   flowJsonSchemaUnit ??= buildFlowJsonSchema();
@@ -185,7 +185,7 @@ const validateObservation = (input: unknown): IValidation<FlowObservationV1> =>
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-flow-adapter A flow observation is validated as data.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-flow-adapter #a340fde Re-read the section: the observation contract is idlekit.flow.observation.v1, and an amount outside the finite non-negative decimal wire spelling, a duplicate sample key, a zero denominator, and a loss above 1 are rejected while parsing.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-flow-adapter #0e3f60a Re-read the section: the observation contract is idlekit.flow.observation.v1, and an amount outside the finite non-negative decimal wire spelling, a duplicate sample key, a duplicate edge, a zero denominator, and a loss above 1 are rejected while parsing.
  */
 export function parseFlowObservation(
   input: unknown,
@@ -225,7 +225,13 @@ function decimalIssues(observation: FlowObservationV1): string[] {
     if (first !== undefined) issues.push(`$input.samples[${index}] duplicates samples[${first}]`);
     else keys.set(key, index);
   });
+  // One source and destination pair names one edge. A copy would count the same flow twice.
+  const edgeKeys = new Map<string, number>();
   observation.edges.forEach((edge, index) => {
+    const key = JSON.stringify([edge.fromProcessId, edge.fromResourceId, edge.toProcessId, edge.toResourceId]);
+    const first = edgeKeys.get(key);
+    if (first !== undefined) issues.push(`$input.edges[${index}] duplicates edges[${first}]`);
+    else edgeKeys.set(key, index);
     check(`$input.edges[${index}].numerator`, edge.numerator);
     check(`$input.edges[${index}].denominator`, edge.denominator);
     check(`$input.edges[${index}].loss`, edge.loss);
@@ -338,6 +344,21 @@ function sampleAt(
   );
 }
 
+/** The sample with the latest window: the greatest end, then the greatest start. Order in the input does not matter. */
+function latest(candidates: readonly Rated[]): Rated | undefined {
+  let best: Rated | undefined;
+  for (const row of candidates) {
+    if (
+      !best ||
+      row.sample.endSec > best.sample.endSec ||
+      (row.sample.endSec === best.sample.endSec && row.sample.startSec > best.sample.startSec)
+    ) {
+      best = row;
+    }
+  }
+  return best;
+}
+
 function convert(amount: number, edge: FlowEdgeV1): number | null {
   const numerator = parseDecimal(edge.numerator);
   const denominator = parseDecimal(edge.denominator);
@@ -349,7 +370,7 @@ function convert(amount: number, edge: FlowEdgeV1): number | null {
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-pipeline Diagnosis reads throughput, capacity, and the evidence window.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-pipeline #9447d9a Re-read the section: the middle stage binds and doubling inflow leaves throughput at 20; capacity and upstream samples match the edge resource and the throughput window, and every saturated process is a candidate.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-pipeline #364a5de Re-read the section: the middle stage binds and doubling inflow leaves throughput at 20; capacity and upstream samples match the edge resource and the throughput window, and every saturated process is a candidate.
  */
 export function diagnoseFlow(observation: FlowObservationV1): FlowReportV1 {
   const littlesLaw = littlesOf(observation.littles, observation.capability);
@@ -394,18 +415,27 @@ export function diagnoseFlow(observation: FlowObservationV1): FlowReportV1 {
   for (const sinkId of sinks) {
     const sinkEdge = observation.edges.find((edge) => edge.toProcessId === sinkId);
     const found = sinkEdge
-      ? rows.find(
-          (row) =>
-            row.sample.processId === sinkId &&
-            row.sample.resourceId === sinkEdge.toResourceId &&
-            row.sample.kind === "throughput",
+      ? latest(
+          rows.filter(
+            (row) =>
+              row.sample.processId === sinkId &&
+              row.sample.resourceId === sinkEdge.toResourceId &&
+              row.sample.kind === "throughput",
+          ),
         )
       : undefined;
     if (found) finals.push(found);
   }
   if (observation.edges.length === 0) {
     const lone = rows.find((row) => row.sample.kind === "throughput");
-    if (lone) finals.push(lone);
+    const sameSeries = rows.filter(
+      (row) =>
+        row.sample.kind === "throughput" &&
+        row.sample.processId === lone?.sample.processId &&
+        row.sample.resourceId === lone?.sample.resourceId,
+    );
+    const chosen = latest(sameSeries);
+    if (chosen) finals.push(chosen);
   }
   for (const final of finals) {
     facts.push({
@@ -432,7 +462,10 @@ export function diagnoseFlow(observation: FlowObservationV1): FlowReportV1 {
     const upstreamRefs: string[] = [];
     let offered: number | null = upstream.length > 0 ? 0 : null;
     for (const edge of upstream) {
-      const source = sampleAt(rows, edge.fromProcessId, edge.fromResourceId, "throughput", window);
+      // A source may report its offer as throughput or, failing that, as inflow, as conservation reads it.
+      const source =
+        sampleAt(rows, edge.fromProcessId, edge.fromResourceId, "throughput", window) ??
+        sampleAt(rows, edge.fromProcessId, edge.fromResourceId, "inflow", window);
       const converted = source ? convert(source.value, edge) : null;
       if (!source || converted === null || offered === null) {
         offered = null;
