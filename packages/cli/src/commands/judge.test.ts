@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { validateJudgeReport } from "@idlekit/core";
 import { resolve } from "path";
 import { createTempDir, readText, removePath, runCli, writeText } from "../testkit/bun";
 
@@ -81,8 +82,9 @@ describe("judge command", () => {
     expect(json.numerical.results[0].verdict).toBe("fail");
     expect(json.numerical.results[0].evidence.value).toBe(3);
     expect(json.diagnostics[0].status).toBe("conflict");
-    expect(json._meta.command).toBe("judge");
-    expect(json._meta.schemaRef).toBe("docs/schemas/judge.output.schema.json");
+    // The JSON document is exactly idlekit.judge.v1, whose root rejects extra keys.
+    expect(json._meta).toBeUndefined();
+    expect(validateJudgeReport(json).success).toBe(true);
     const again = runCli(["judge", analysis, "--rubric", rubricPath, "--provider", "rules", "--format", "json"]);
     const second = JSON.parse(again.stdout);
     expect(second.advisoryDigest).toBe(json.advisoryDigest);
@@ -104,6 +106,30 @@ describe("judge command", () => {
     expect(doctorJson.contract).toBeUndefined();
     const markdown = runCli(["judge", analysis, "--rubric", rubricPath, "--format", "md"]);
     expect(markdown.stdout).toContain("This is not doctor");
+    const csv = runCli(["judge", analysis, "--rubric", rubricPath, "--format", "csv"]);
+    const csvLines = csv.stdout.trim().split("\n");
+    expect(csvLines[0]).toBe(
+      "id,metricId,verdict,severity,evidenceStatus,value,unit,operator,threshold,upperThreshold,diagnosticStatus,recommendationId",
+    );
+    expect(csvLines).toHaveLength(2);
+    expect(csvLines[1]?.split(",")).toHaveLength(12);
+    expect(csvLines[1]).toContain("first-reset,first-reset,");
+    const malformed = resolve(dir, "malformed.json");
+    await writeText(malformed, "{ not json");
+    for (const args of [
+      ["judge", malformed, "--rubric", rubricPath],
+      ["judge", analysis, "--rubric", malformed],
+      ["judge", resolve(dir, "absent.json"), "--rubric", rubricPath],
+    ]) {
+      const rejected = runCli(args, { check: false });
+      expect(rejected.exitCode).toBe(1);
+      expect(rejected.stderr).toContain("[CLI_USAGE] Invalid judge input");
+    }
+    const markdownOut = resolve(dir, "judge.md");
+    runCli(["judge", analysis, "--rubric", rubricPath, "--format", "md", "--out", markdownOut]);
+    const written = await readText(markdownOut);
+    expect(written).toContain("# Rules judge");
+    expect(written).toContain("This is not doctor");
     expect((await readText(resolve(dir, "analysis.json"))).length).toBeGreaterThan(0);
     await removePath(dir);
   });

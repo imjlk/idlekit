@@ -1,4 +1,4 @@
-import { resolve } from "path";
+import { relative, resolve } from "path";
 import {
   ROOT,
   cliCommand,
@@ -42,6 +42,12 @@ function asRecord(x: JSONValue): Record<string, JSONValue> {
 
 function has(obj: Record<string, JSONValue>, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(obj, key);
+}
+
+async function developmentExamples(doc: string, command: "calibrate" | "experience"): Promise<string[][]> {
+  const text = (await readText(resolve(ROOT, doc))).replace(/\\\r?\n\s*/g, " ");
+  const pattern = new RegExp(`^bun run --cwd packages/cli dev -- (${command} .+)$`, "gm");
+  return [...text.matchAll(pattern)].map((match) => match[1]!.trim().split(/\s+/));
 }
 
 async function verifyIntroTrack(): Promise<void> {
@@ -588,7 +594,63 @@ async function verifyPluginTrack(): Promise<void> {
     runCliJson(["tune", prestigeV1, "--tune", prestigeTune, ...pluginFlags, "--format", "json"]),
   );
   assert(prestigeTuneOut.ok === true, "prestige tune result must be ok=true");
+}
 
+async function verifyExperienceExamples(): Promise<void> {
+  const commands = await developmentExamples("examples/experience/README.md", "experience");
+  const korean = await developmentExamples("examples/experience/README_ko.md", "experience");
+  assert(commands.length === 3, "experience README must provide three runnable examples");
+  assert(JSON.stringify(commands) === JSON.stringify(korean), "English and Korean experience commands must match");
+  const mixedArgs = commands.find((args) => args[1] === "../../examples/experience/mixed-feedback.json");
+  const censoredArgs = commands.find((args) => args[1] === "../../examples/experience/censored-feedback.json");
+  const controlArgs = commands.find((args) => args[1] === "../../examples/tutorials/11-my-game-v1.json");
+  assert(mixedArgs && censoredArgs && controlArgs, "experience README must cover mixed, censored and control scenarios");
+
+  const mixed = asRecord(asRecord(runCliJson(mixedArgs)).monteCarlo as JSONValue);
+  const repeat = asRecord(asRecord(runCliJson(mixedArgs)).monteCarlo as JSONValue);
+  assert(JSON.stringify(mixed) === JSON.stringify(repeat), "seeded feedback must reproduce its Monte Carlo summary");
+  const first = asRecord(mixed.firstVisible as JSONValue);
+  const accounting = asRecord(first.accounting as JSONValue);
+  assert(mixed.draws === 16 && mixed.seed === 7, "mixed example must use 16 draws and seed 7");
+  assert(accounting.observed === 9 && accounting.rightCensored === 7, "mixed example must observe 9 and censor 7 draws");
+  assert(accounting.failed === 0 && accounting.unsupported === 0, "mixed example must have no failed or unsupported draws");
+  assert(asRecord(first.uncertainty as JSONValue).zeroVariance === false, "seeded feedback must vary across draws");
+  const population = asRecord(first.population as JSONValue);
+  assert(
+    population.status === "outside-observed-range" && population.value === null,
+    "mixed example population p95 must remain unresolved",
+  );
+  assert(first.horizonSec === 51900, "mixed example must observe through the last short-bursts active block");
+  const conditional = first.conditional;
+  assert(Array.isArray(conditional) && conditional.length === 3, "mixed example must provide three conditional quantiles");
+  for (const [index, q, value] of [[0, 0.1, "20"], [1, 0.5, "30"], [2, 0.9, "50"]] as const) {
+    const point = asRecord(conditional[index]!);
+    assert(
+      point.q === q && point.value === value && point.conditioning === "completed-only" && point.status === "observed",
+      `mixed example conditional q${q} must match the documented completed-only value`,
+    );
+  }
+
+  const censored = asRecord(asRecord(runCliJson(censoredArgs)).monteCarlo as JSONValue);
+  const unavailable = asRecord(censored.firstVisible as JSONValue);
+  const counts = asRecord(unavailable.accounting as JSONValue);
+  assert(counts.observed === 0 && counts.rightCensored === 16, "no-payout example must censor all 16 draws");
+  assert(counts.failed === 0 && counts.unsupported === 0, "no-payout draws must remain eligible");
+  assert(unavailable.status === "unavailable", "no-payout example has no observed first visible change");
+  assert(unavailable.horizonSec === 51900, "no-payout example must retain the short-bursts observation horizon");
+  const unavailableP95 = asRecord(unavailable.population as JSONValue);
+  assert(
+    unavailableP95.status === "unavailable" && unavailableP95.value === null,
+    "no-payout example must leave population p95 unavailable",
+  );
+  assert(censored.firstVisibleChangeSec === null, "no-payout example must leave the legacy completion summary null");
+
+  const control = asRecord(asRecord(runCliJson(controlArgs)).monteCarlo as JSONValue);
+  const uncertainty = asRecord(asRecord(control.firstVisible as JSONValue).uncertainty as JSONValue);
+  assert(uncertainty.zeroVariance === true && uncertainty.variance === 0, "linear starter must remain deterministic");
+}
+
+async function verifyCalibrationExamples(): Promise<void> {
   const telemetryCsv = resolve(tmpDir, "calibration-telemetry.csv");
   await writeText(
     telemetryCsv,
@@ -600,19 +662,78 @@ async function verifyPluginTrack(): Promise<void> {
       "u3,1,0.0,0.01,1.1,true",
     ].join("\n"),
   );
-  const calibrated = asRecord(runCliJson(["calibrate", telemetryCsv, "--input-format", "csv", "--format", "json"]));
-  assert(calibrated.ok === true, "calibrate output must be ok=true");
-  const calibMonetization = asRecord(calibrated.monetization as JSONValue);
-  assert(has(calibMonetization, "retention"), "calibrate must include monetization.retention");
-  const calibUncertainty = asRecord(calibMonetization.uncertainty as JSONValue);
-  const calibCorrelation = asRecord(calibUncertainty.correlation as JSONValue);
-  assert(has(calibCorrelation, "retentionConversion"), "calibrate must include uncertainty.correlation.retentionConversion");
-  assert(asRecord(calibrated._meta as JSONValue).command === "calibrate", "calibrate _meta.command must be calibrate");
+  const cliDir = resolve(ROOT, "packages/cli");
+  const calibratedPath = resolve(tmpDir, "calibrated-monetization.json");
+  for (const doc of [
+    "docs/tutorial-step-by-step_ko.md",
+    "docs/usage-guide_ko.md",
+    "docs/virtual-scenario-design_ko.md",
+  ]) {
+    const commands = await developmentExamples(doc, "calibrate");
+    assert(commands.length === 1, `${doc} must contain one development calibrate example`);
+    const args = commands[0]!;
+    assert(args[1], `${doc} must provide a telemetry path`);
+    assert(
+      resolve(cliDir, args[1]) === resolve(ROOT, "tmp/telemetry.csv"),
+      `${doc} calibrate input must resolve to the repository's tmp/telemetry.csv`,
+    );
+    const outIndex = args.indexOf("--out");
+    if (outIndex !== -1) {
+      const out = args[outIndex + 1];
+      assert(out, `${doc} must provide a path after --out`);
+      assert(
+        resolve(cliDir, out) === resolve(ROOT, "tmp/calibrated-monetization.json"),
+        `${doc} calibrate output must resolve to the repository's tmp/calibrated-monetization.json`,
+      );
+      args[outIndex + 1] = relative(cliDir, calibratedPath);
+    }
+    // Check the documented paths first, then keep fixtures in our own directory.
+    args[1] = relative(cliDir, telemetryCsv);
+    const stdout = runCli(args);
+    const jsonText = outIndex === -1 ? stdout : await readText(calibratedPath);
+    const calibrated = asRecord(JSON.parse(jsonText) as JSONValue);
+    assert(calibrated.ok === true, `${doc} calibrate output must be ok=true`);
+    const monetization = asRecord(calibrated.monetization as JSONValue);
+    assert(has(monetization, "retention"), `${doc} calibrate must include monetization.retention`);
+    const uncertainty = asRecord(monetization.uncertainty as JSONValue);
+    const correlation = asRecord(uncertainty.correlation as JSONValue);
+    assert(has(correlation, "retentionConversion"), `${doc} calibrate must include retentionConversion`);
+    assert(asRecord(calibrated._meta as JSONValue).command === "calibrate", `${doc} _meta.command must be calibrate`);
+  }
+}
+
+async function verifyResetCycleExample(): Promise<void> {
+  const command = "bun examples/reset-cycle/save-resume.ts";
+  for (const doc of ["examples/reset-cycle/README.md", "examples/reset-cycle/README_ko.md"]) {
+    const text = await readText(resolve(ROOT, doc));
+    assert(text.split(/\r?\n/).filter((line) => line === command).length === 1, `${doc} must document the reset-cycle command`);
+  }
+  const checkpointPath = resolve(tmpDir, "reset-cycle-checkpoint.json");
+  const result = asRecord(JSON.parse(runText(["bun", "examples/reset-cycle/save-resume.ts", checkpointPath])) as JSONValue);
+  assert(result.matchesContinuous === true, "saved reset-cycle execution must match the continuous execution");
+  const cut = asRecord(result.cut as JSONValue);
+  assert(
+    cut.elapsedSec === 3 && cut.nextIndex === 0 && cut.pendingSec === 3 && cut.pendingDurationSec === 10,
+    "reset-cycle example must stop three steps into the first ten-second cycle",
+  );
+  const final = asRecord(result.final as JSONValue);
+  assert(
+    final.elapsedSec === 30 && final.nextIndex === 3 && final.coins === 30 && final.points === 3 && final.accumulatedReward === 3,
+    "reset-cycle example must finish thirty seconds with three resets",
+  );
+  const saved = asRecord(JSON.parse(await readText(checkpointPath)) as JSONValue);
+  assert(
+    saved.contract === "idlekit.reset-cycle-checkpoint" && saved.version === 1 && saved.pendingSec === 3,
+    "reset-cycle example must persist the pending checkpoint as JSON",
+  );
 }
 
 async function main(): Promise<void> {
   await removePath(tmpDir);
   await ensureDir(tmpDir);
+  await verifyCalibrationExamples();
+  await verifyExperienceExamples();
+  await verifyResetCycleExample();
   await verifyIntroTrack();
   if (!isQuick) await verifyPluginTrack();
   console.log(`docs verification passed (${isQuick ? "quick" : "full"})`);

@@ -159,19 +159,51 @@ async function plan(): Promise<void> {
   writeOutputs({ publish: String(result.publish), verify: String(result.verify) });
 }
 
+/**
+ * npm resolves a version from the package document, which the registry's cache can serve stale for minutes after the
+ * version's own document appears. An install that fails only because a just-published version is not listed yet is
+ * worth retrying; any other failure is not.
+ */
+export function isRegistryLag(npmOutput: string): boolean {
+  return /\bETARGET\b|No matching version found|\bE404\b/.test(npmOutput);
+}
+
+/**
+ * Polls `probe` every `intervalMs` until it returns a value or the deadline passes. A thrown probe, such as a 5xx from the
+ * registry, is retried like a miss; only when the deadline passes with the last attempt failing is that error rethrown.
+ */
+export async function pollUntil<T>(
+  probe: () => Promise<T | null>,
+  deadline: number,
+  intervalMs = 20_000,
+): Promise<T | null> {
+  for (;;) {
+    let failure: { error: unknown } | undefined;
+    try {
+      const value = await probe();
+      if (value !== null) return value;
+    } catch (error) {
+      failure = { error };
+    }
+    if (Date.now() >= deadline) {
+      if (failure) throw failure.error;
+      return null;
+    }
+    await Bun.sleep(intervalMs);
+  }
+}
+
 async function verify(): Promise<void> {
   const deadline = Date.now() + Number(process.env.REGISTRY_WAIT_SEC ?? 900) * 1000;
   const manifests = await releaseManifests();
   const problems: string[] = [];
   for (const { name, version } of manifests) {
     const id = `${name}@${version}`;
-    let manifest = await fetchVersion(name, version);
     // A new version can take minutes to appear in the registry's read path.
-    while (!manifest && Date.now() < deadline) {
-      await Bun.sleep(20_000);
-      manifest = await fetchVersion(name, version);
-    }
+    const manifest = await pollUntil(() => fetchVersion(name, version), deadline);
     if (!manifest) throw new Error(`${id} did not appear on the npm registry`);
+    // The install below reads the package document, not the version document checked above.
+    await pollUntil(async () => ((await fetchPackage(name))?.versions.includes(version) ? true : null), deadline);
     // Every current version is checked, so a retry also covers uploads from a failed earlier attempt.
     problems.push(...checkRegistryManifest(id, manifest, !PROVENANCE_EXEMPT.has(id)));
   }
@@ -181,11 +213,18 @@ async function verify(): Promise<void> {
   try {
     await Bun.write(resolve(project, "package.json"), `${JSON.stringify({ name: "registry-smoke", private: true })}\n`);
     const npm = process.platform === "win32" ? "npm.cmd" : "npm";
-    const install = Bun.spawnSync(
-      [npm, "install", "--no-audit", "--no-fund", "--prefer-online", ...manifests.map(({ name, version }) => `${name}@${version}`)],
-      { cwd: project, stdout: "inherit", stderr: "inherit" },
-    );
-    if (install.exitCode !== 0) throw new Error(`npm install of the published versions failed (exit ${install.exitCode})`);
+    const args = [npm, "install", "--no-audit", "--no-fund", "--prefer-online", ...manifests.map(({ name, version }) => `${name}@${version}`)];
+    for (let attempt = 1; ; attempt++) {
+      const install = Bun.spawnSync(args, { cwd: project, stdout: "pipe", stderr: "pipe" });
+      const output = `${install.stdout.toString()}${install.stderr.toString()}`;
+      process.stdout.write(output);
+      if (install.exitCode === 0) break;
+      if (!isRegistryLag(output) || Date.now() >= deadline) {
+        throw new Error(`npm install of the published versions failed (exit ${install.exitCode}, attempt ${attempt})`);
+      }
+      console.log(`npm does not list a published version yet; retrying in 30s (attempt ${attempt})`);
+      await Bun.sleep(30_000);
+    }
     const cli = manifests.find(({ name }) => name === "@idlekit/cli");
     if (cli) {
       const cliDir = resolve(project, "node_modules/@idlekit/cli");
