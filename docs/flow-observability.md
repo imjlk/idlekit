@@ -10,7 +10,7 @@ A confirmed capacity constraint needs a saturated process, a strictly greater up
 
 Little's law runs only when the capability is statically known, the window is steady, and the work flow is defined. Ramp-up is `not-applicable`. A consistent result does not itself confirm a cause.
 
-An edge with a different destination unit uses `inflow * numerator / denominator * (1 - loss)`. Queue plus unretained must match that amount in the destination unit. The source unit is not added to the destination unit. Queue and unretained are read for the edge's destination resource in the source sample's window. Every source window is tried, and edges into the same destination resource are summed. An amount or product that overflows a finite number is never a match, and a sub-unit amount is not equal to zero. The same document shape covers logistics, crafting, and expedition-slot fixtures. Resource names stay in `examples/analysis/flow-pipeline.json`. Seed `15` labels that file.
+An edge with a different destination unit uses `inflow * numerator / denominator * (1 - loss)`. Queue plus unretained must match that amount in the destination unit. The source unit is not added to the destination unit. Queue and unretained are read for the edge's destination resource in the source sample's window. Every source window is tried, and edges into the same destination resource are summed. An amount or product that overflows a finite number is never a match, and zero matches only zero. When several windows conserve, the latest one is reported. The same document shape covers logistics, crafting, and expedition-slot fixtures. Resource names stay in `examples/analysis/flow-pipeline.json`. Seed `15` labels that file.
 
 Facts and hypotheses are separate. A hypothesis links to samples through `evidenceRefs`.
 
@@ -22,7 +22,7 @@ Node.js and browser runtimes are not part of the v1 compatibility contract.
 
 ## Verification
 
-Commands below were run from this worktree on macOS arm64 with Bun 1.4.2 and ttsc 0.30.4. Requirement file sha256 `7c167956ee65d2d47b957841121b300319b7fcc311d51788fc48950e1227bb65`. `typecheck`, `test`, `build`, `compat:check`, `replay:verify`, and `docs:verify` are unrun.
+Commands below were run from this worktree on macOS arm64 with Bun 1.4.2 and ttsc 0.30.4. Requirement file sha256 `2460e404a63ea48217ea7f64355d7896b746f9336f29f1ffda7da027a4eeda3d`. `typecheck`, `test`, `build`, `compat:check`, `replay:verify`, and `docs:verify` are unrun.
 
 | Command | Exit |
 |---|---|
@@ -41,4 +41,4 @@ The first two `evidence:check` runs exited 2 on placeholder reviews. The rerun a
 
 ## Graph
 
-Queried with `ttsc-graph` 0.30.4 on `tsconfig.graph.json`, protocol `2025-11-25`, no generation identifier, shutdown 0. `diagnoseFlow` is declared at `packages/core/src/sim/analysis/flow.ts:386`. `recordFlowSample` is declared at `packages/core/src/sim/observation.ts:132`. An impact trace of `diagnoseFlow` names tests `declaresFlowAdapter`, `diagnosesSteadyPipeline`, `checksFlowConservation`, `leavesUnknownModelsUnsupported`, and `separatesFactsFromCauses`. An impact trace of `recordFlowSample` names `declaresFlowAdapter`. Those tests are the callers the graph sees. The JSON fixture `examples/analysis/flow-pipeline.json` is outside the graph.
+Queried with `ttsc-graph` 0.30.4 on `tsconfig.graph.json`, protocol `2025-11-25`, no generation identifier, shutdown 0. `diagnoseFlow` is declared at `packages/core/src/sim/analysis/flow.ts:387`. `recordFlowSample` is declared at `packages/core/src/sim/observation.ts:132`. An impact trace of `diagnoseFlow` names tests `declaresFlowAdapter`, `diagnosesSteadyPipeline`, `checksFlowConservation`, `leavesUnknownModelsUnsupported`, and `separatesFactsFromCauses`. An impact trace of `recordFlowSample` names `declaresFlowAdapter`. Those tests are the callers the graph sees. The JSON fixture `examples/analysis/flow-pipeline.json` is outside the graph.

@@ -135,7 +135,7 @@ export const flowPipelineConstraint = "process-throughput-20" as const;
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-conservation Conversion, loss, and inventory stay in their own units.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-conservation #d7e8176 Re-read the section: the source unit and the destination unit are not added, queue and unretained are read for the destination resource in the source window, every source window is tried, and edges into one stock are summed.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-conservation #cb49aad Re-read the section: the source unit and the destination unit are not added, queue and unretained are read for the destination resource in the source window, every source window is tried with the latest conserving one kept, edges into one stock are summed, and zero matches only zero.
  */
 export const flowConservation = "converted-units-stay-apart" as const;
 
@@ -259,13 +259,14 @@ function formatDecimal(value: number): string {
 }
 
 /**
- * Relative closeness with a tiny absolute floor, so a sub-unit flow is not equal to zero.
+ * Relative closeness. Zero is close only to zero, so a positive flow of any size is not equal to an empty stock.
  * A non-finite operand, such as an overflowed product, is never close.
  */
 function nearly(left: number, right: number): boolean {
   if (!Number.isFinite(left) || !Number.isFinite(right)) return false;
+  if (left === 0 || right === 0) return left === right;
   const scale = Math.max(Math.abs(left), Math.abs(right));
-  return Math.abs(left - right) <= Math.max(1e-6 * scale, 1e-12);
+  return Math.abs(left - right) <= 1e-6 * scale;
 }
 
 function hypothesis(
@@ -537,6 +538,8 @@ export function diagnoseFlow(observation: FlowObservationV1): FlowReportV1 {
         }
       }
     }
+    // The latest conserving window is the fact, whatever the sample order.
+    windows.sort((left, right) => right.endSec - left.endSec || right.startSec - left.startSec);
     for (const window of windows) {
       const inputs = grouped.map((item) =>
         item.sources.find((row) => row.sample.startSec === window.startSec && row.sample.endSec === window.endSec),

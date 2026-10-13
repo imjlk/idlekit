@@ -165,7 +165,7 @@ export function declaresFlowAdapter(): void {
  * @evidence ./flow.ts#flowPipelineConstraint Reads the pipeline marker.
  * @evidenceReview ./flow.ts#flowPipelineConstraint #6971fde The declaration is process-throughput-20.
  * @evidence ./flow.ts#diagnoseFlow Diagnoses throughput, capacity, and the binding stage.
- * @evidenceReview ./flow.ts#diagnoseFlow #914cc72 The middle stage binds at 20, doubling inflow keeps 20 and grows the queue, without a causal model the cause is suspected, another resource or window does not bind, every saturated process is a candidate with the causal one confirmed first, a bind does not hide another process's wait, a cycle reports no final throughput, each terminal reports a final throughput per delivered resource from its latest window, an inflow source offers work, a process binds on its latest saturated window, and a 1e300 window formats as a finite saturation time.
+ * @evidenceReview ./flow.ts#diagnoseFlow #57f84e1 The middle stage binds at 20, doubling inflow keeps 20 and grows the queue, without a causal model the cause is suspected, another resource or window does not bind, every saturated process is a candidate with the causal one confirmed first, a bind does not hide another process's wait, a cycle reports no final throughput, each terminal reports a final throughput per delivered resource from its latest window, an inflow source offers work, a process binds on its latest saturated window, and a 1e300 window formats as a finite saturation time.
  */
 export function diagnosesSteadyPipeline(): void {
   expect(flowPipelineConstraint).toBe("process-throughput-20");
@@ -331,7 +331,7 @@ export function diagnosesSteadyPipeline(): void {
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-conservation Conversion keeps the destination unit.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-conservation #d7e8176 Re-read the section, then ran this function: 100 becomes 45, the units are not added, a queue, unretained, or source sample of another resource or window does not conserve, a later conserving window is found, an overflowed conversion does not match, a 1e-7 conversion is not equal to an empty stock, two edges into one stock are summed to 90, and a conserved 1e-10 keeps its spelling instead of rounding to 0.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-conservation #cb49aad Re-read the section, then ran this function: 100 becomes 45, the units are not added, a queue, unretained, or source sample of another resource or window does not conserve, a later conserving window is found, an overflowed conversion does not match, a 1e-7, 4.5e-13, or 4.5e-25 conversion is not equal to an empty stock, two conserving windows publish the latest in either order, two edges into one stock are summed to 90, and a conserved 1e-10 keeps its spelling instead of rounding to 0.
  * @evidence ./flow.ts#flowConservation Reads the conservation marker.
  * @evidenceReview ./flow.ts#flowConservation #ca6486f The declaration is converted-units-stay-apart.
  */
@@ -391,6 +391,26 @@ export function checksFlowConservation(): void {
     ),
   });
   expect(tiny.facts.some((item) => item.kind === "conservation")).toBe(false);
+  // However small, a positive conversion is not equal to an empty destination.
+  for (const amount of ["1e-12", "1e-24"]) {
+    const smaller = diagnoseFlow({
+      ...conversionCase,
+      samples: conversionCase.samples.map((sample) => (sample.kind === "inflow" ? { ...sample, amount } : { ...sample, amount: "0" })),
+    });
+    expect(smaller.facts.some((item) => item.kind === "conservation")).toBe(false);
+  }
+  // Two conserving windows publish the latest one, whatever the sample order.
+  const secondWindow = conversionCase.samples.map((sample) => ({
+    ...sample,
+    amount: sample.kind === "inflow" ? "200" : sample.kind === "queue" ? "80" : "10",
+    startSec: 60,
+    endSec: 120,
+  }));
+  for (const samples of [[...conversionCase.samples, ...secondWindow], [...secondWindow, ...conversionCase.samples]]) {
+    const latestFact = fact(diagnoseFlow({ ...conversionCase, samples }), "conservation", "dest");
+    expect(latestFact?.window).toEqual({ startSec: 60, endSec: 120 });
+    expect(latestFact?.amount).toBe("90");
+  }
   // A conserved amount below the rounding step keeps its own nonzero spelling.
   const small = diagnoseFlow({
     ...conversionCase,
