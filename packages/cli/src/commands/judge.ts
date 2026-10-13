@@ -35,6 +35,26 @@ function renderJudgeMarkdown(report: JudgeReportV1): string {
   return lines.join("\n");
 }
 
+/** One CSV row per rubric rule: the numerical result beside its semantic diagnostic. */
+function judgeCsvRows(report: JudgeReportV1): Array<Record<string, string | number | null>> {
+  return report.numerical.results.map((result, index) => {
+    const diagnostic = report.diagnostics[index];
+    return {
+      id: result.id,
+      metricId: result.metricId,
+      verdict: result.verdict,
+      severity: result.severity,
+      evidenceStatus: result.evidence.status,
+      value: result.evidence.value,
+      unit: result.evidence.unit,
+      operator: result.evidence.operator,
+      threshold: result.evidence.threshold,
+      diagnosticStatus: diagnostic?.status ?? null,
+      recommendationId: diagnostic?.recommendationId ?? null,
+    };
+  });
+}
+
 export async function runJudge(flags: {
   rubric: string;
   provider: "rules";
@@ -58,11 +78,13 @@ export async function runJudge(flags: {
     throw usageError(`Invalid judge input: ${message}`);
   }
   // JSON output is exactly idlekit.judge.v1, whose root rejects extra keys, so no `_meta` is attached.
-  // Markdown goes through writeOutput too, so --out applies to every format.
+  // Markdown and CSV go through writeOutput too, so --out applies to every format.
+  // CSV is one row per rule, not the nested report squeezed into one cell.
   await writeOutput({
     format: flags.format,
     outPath: flags.out,
-    data: flags.format === "md" ? renderJudgeMarkdown(report) : report,
+    data:
+      flags.format === "md" ? renderJudgeMarkdown(report) : flags.format === "csv" ? judgeCsvRows(report) : report,
   });
   return report;
 }

@@ -143,7 +143,7 @@ export function acceptsRulesProvider(): void {
  * @evidence ./judge.ts#judgeCheckReuse Reads the check-reuse marker.
  * @evidenceReview ./judge.ts#judgeCheckReuse #6aa2e90 The declaration is checks-not-recomputed.
  * @evidence ./judge.ts#judgeArtifact Maps artifact readings into balance checks and builds the report.
- * @evidenceReview ./judge.ts#judgeArtifact #1378974 Re-read the function: it rejects a semantically invalid artifact, maps each metric to one observation, the numerical block equals a direct evaluateBalanceChecks call for 3h, an amount reading is unsupported with no value, and two rules on one metric both pass.
+ * @evidenceReview ./judge.ts#judgeArtifact #ba3c3e2 Re-read the function: it rejects a semantically invalid artifact and a metric id that matches two readings, maps each metric to one observation, the numerical block equals a direct evaluateBalanceChecks call for 3h, an observed or estimated amount reading is unsupported with no value and no estimate entry, and two rules on one metric both pass.
  */
 export function reusesBalanceChecks(): void {
   expect(judgeCheckReuse).toBe("checks-not-recomputed");
@@ -226,6 +226,24 @@ export function reusesBalanceChecks(): void {
   expect(twice.ok).toBe(true);
   if (!twice.ok) return;
   expect(twice.report.numerical.results.map((result) => result.verdict)).toEqual(["pass", "pass"]);
+  // An estimated amount is an amount first: unsupported, not an estimate with a null value.
+  const estimatedAmount = judgeArtifact(
+    artifact([
+      reading({
+        reading: "estimated",
+        status: "ok",
+        domain: "amount",
+        value: undefined,
+        amount: { unit: "coin", decimal: "5" },
+      }),
+    ]),
+    rubric([rule({ unit: "coin" })]),
+  );
+  expect(estimatedAmount.ok).toBe(true);
+  if (!estimatedAmount.ok) return;
+  expect(estimatedAmount.report.numerical.results[0]?.verdict).toBe("unsupported");
+  expect(estimatedAmount.report.estimatedObservations).toEqual([]);
+  expect(estimatedAmount.report.diagnostics[0]?.recommendationId).toBe("rec.metric.unsupported");
 }
 
 /**
@@ -272,6 +290,16 @@ export function rejectsBadRefs(): void {
   expect(missing.ok).toBe(false);
   if (missing.ok) return;
   expect(missing.issues.join(" ")).toContain("missing evidenceRef metric:absent-metric");
+  // Two readings with one metric id make the evidence ref ambiguous, whatever their order.
+  const duplicate = judgeArtifact(
+    artifact([
+      reading({ reading: "observed", status: "ok", value: 1.5 }),
+      reading({ reading: "observed", status: "ok", value: 3 }),
+    ]),
+    rubric(),
+  );
+  expect(duplicate.ok).toBe(false);
+  if (!duplicate.ok) expect(duplicate.issues).toEqual(["ambiguous evidenceRef metric:first-reset matches 2 readings"]);
 }
 
 /**
@@ -308,6 +336,19 @@ export function separatesReportLayers(): void {
   expect(chosen.report.diagnostics[0]?.text.en).toBe("Metric first-reset cannot be compared by the rules provider.");
   expect(chosen.report.advisoryDigest).toBe("rules:rubric-18:rec.metric.unsupported");
   expect(chosen.report.numerical).toEqual(judged.report.numerical);
+  // A measured reading under another method is indeterminate, not "no measured value".
+  const otherMethod = judgeArtifact(
+    artifact([reading({ reading: "observed", status: "ok", value: 1.5, method: "monte-carlo" })]),
+    rubric(),
+  );
+  expect(otherMethod.ok).toBe(true);
+  if (!otherMethod.ok) return;
+  expect(otherMethod.report.numerical.results[0]?.verdict).toBe("inconclusive");
+  expect(otherMethod.report.numerical.results[0]?.mismatches).toEqual(["method"]);
+  expect(otherMethod.report.diagnostics[0]?.status).toBe("indeterminate");
+  expect(otherMethod.report.diagnostics[0]?.recommendationId).toBe("rec.metric.identity-mismatch");
+  expect(otherMethod.report.diagnostics[0]?.text.en).not.toContain("no measured value");
+  expect(validateJudgeReport(otherMethod.report).success).toBe(true);
 }
 
 /**
@@ -358,6 +399,32 @@ export function withholdsHealthLabels(): void {
   expect(failMissing.report.numerical.pass).toBe(false);
   expect(failMissing.report.diagnostics[0]?.status).toBe("insufficient");
   expect(failMissing.report.diagnostics[0]?.recommendationId).toBe("rec.metric.insufficient");
+  // A generated unavailable reading omits method (and an amount omits its unit). The missing policy
+  // still decides the numerical verdict instead of an identity mismatch.
+  const generated = judgeArtifact(
+    artifact([reading({ reading: "unavailable", status: "insufficient-data", method: undefined })], {
+      observationCoverage: "incomplete",
+    }),
+    rubric([rule({ missingPolicy: "fail" })]),
+  );
+  expect(generated.ok).toBe(true);
+  if (!generated.ok) return;
+  expect(generated.report.numerical.results[0]?.verdict).toBe("fail");
+  expect(generated.report.numerical.results[0]?.mismatches).toEqual([]);
+  expect(generated.report.diagnostics[0]?.status).toBe("insufficient");
+  const unavailableAmount = judgeArtifact(
+    artifact(
+      [reading({ reading: "unavailable", status: "unknown", domain: "amount", method: undefined, value: undefined })],
+      { observationCoverage: "incomplete" },
+    ),
+    rubric([rule({ unit: "coin", missingPolicy: "fail" })]),
+  );
+  expect(unavailableAmount.ok).toBe(true);
+  if (!unavailableAmount.ok) return;
+  expect(unavailableAmount.report.numerical.results[0]?.verdict).toBe("fail");
+  expect(unavailableAmount.report.numerical.results[0]?.evidence.status).toBe("missing");
+  expect(unavailableAmount.report.diagnostics[0]?.status).toBe("insufficient");
+  expect(unavailableAmount.report.diagnostics[0]?.recommendationId).toBe("rec.metric.insufficient");
 }
 
 describe("optional analysis judge", () => {

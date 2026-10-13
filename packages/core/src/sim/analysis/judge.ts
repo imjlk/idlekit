@@ -38,7 +38,8 @@ export type RecommendationId =
   | "rec.metric.outside-threshold"
   | "rec.metric.insufficient"
   | "rec.metric.estimate-not-measured"
-  | "rec.metric.unsupported";
+  | "rec.metric.unsupported"
+  | "rec.metric.identity-mismatch";
 
 export type JudgeLayer = "rule" | "estimate" | "semantic";
 export type DiagnosticStatus = "conflict" | "insufficient" | "unsupported" | "noted" | "indeterminate";
@@ -186,6 +187,10 @@ const TEMPLATES: Readonly<Record<RecommendationId, Readonly<{ en: string; ko: st
     en: "Metric {metricId} cannot be compared by the rules provider.",
     ko: "지표 {metricId}는 rules provider가 비교할 수 없다.",
   },
+  "rec.metric.identity-mismatch": {
+    en: "Metric {metricId} was measured under a different identity than the rubric rule names. It is not compared.",
+    ko: "지표 {metricId}는 rubric rule이 적은 것과 다른 동일성으로 측정되었다. 비교하지 않는다.",
+  },
 };
 
 export function parseJudgeRubric(
@@ -199,31 +204,46 @@ export function parseJudgeRubric(
   return { ok: true, rubric: validated.data };
 }
 
-function readingUnit(reading: MetricReadingV1): string {
-  if (reading.domain === "amount") return reading.amount?.unit ?? "amount";
-  return reading.domain;
+function findReadings(artifact: AnalysisArtifactV1, metricId: string): readonly MetricReadingV1[] {
+  return artifact.metrics.filter((reading) => reading.metricId === metricId);
 }
 
-function findReading(artifact: AnalysisArtifactV1, metricId: string): MetricReadingV1 | undefined {
-  return artifact.metrics.find((reading) => reading.metricId === metricId);
-}
-
+/**
+ * An unavailable reading carries no method and, for an amount, no unit. Those fields cannot
+ * disagree with the rule, so the rule's values stand in and the missing policy decides the verdict.
+ */
 function toObservation(
   artifact: AnalysisArtifactV1,
   reading: MetricReadingV1,
+  rule: JudgeRuleV1,
 ): { observation: BalanceObservationV1; estimated: EstimatedObservationV1 | null } {
+  const unavailable = reading.reading === "unavailable";
+  const unit =
+    reading.domain !== "amount" ? reading.domain : (reading.amount?.unit ?? (unavailable ? rule.unit : "amount"));
   const identity = {
     metricId: reading.metricId,
     definition: reading.meaning,
-    method: reading.method ?? "unspecified",
+    method: reading.method ?? (unavailable ? rule.method : "unspecified"),
     scenarioVersion: "unspecified",
     specVersion: "unspecified",
     engineId: "unspecified",
     pluginVersion: "unspecified",
     seed: "unspecified",
-    unit: readingUnit(reading),
+    unit,
     algorithmVersion: artifact.algorithmVersion,
   };
+  // Availability first: an unavailable reading is missing, censored, or unsupported by its status, whatever its domain.
+  if (unavailable || reading.status !== "ok") {
+    const status = reading.status === "unsupported" ? "unsupported" : reading.status === "censored" ? "censored" : "missing";
+    return { observation: { identity, status, value: null, lower: null, upper: null }, estimated: null };
+  }
+  // An available amount, observed or estimated, is not narrowed to a number.
+  if (reading.domain === "amount") {
+    return {
+      observation: { identity, status: "unsupported", value: null, lower: null, upper: null },
+      estimated: null,
+    };
+  }
   if (reading.reading === "estimated") {
     return {
       observation: { identity, status: "missing", value: null, lower: null, upper: null },
@@ -232,12 +252,6 @@ function toObservation(
         value: typeof reading.value === "number" && Number.isFinite(reading.value) ? reading.value : null,
         reason: reading.reason ?? null,
       },
-    };
-  }
-  if (reading.domain === "amount") {
-    return {
-      observation: { identity, status: "unsupported", value: null, lower: null, upper: null },
-      estimated: null,
     };
   }
   if (
@@ -254,18 +268,6 @@ function toObservation(
         lower: reading.value,
         upper: reading.value,
       },
-      estimated: null,
-    };
-  }
-  if (reading.status === "unsupported") {
-    return {
-      observation: { identity, status: "unsupported", value: null, lower: null, upper: null },
-      estimated: null,
-    };
-  }
-  if (reading.status === "censored") {
-    return {
-      observation: { identity, status: "censored", value: null, lower: null, upper: null },
       estimated: null,
     };
   }
@@ -305,6 +307,15 @@ function outcomeFor(
     return {
       recommendationId: "rec.metric.insufficient",
       status: "insufficient",
+      category: "semantic",
+      severity: "info",
+    };
+  }
+  // A reading taken under another identity is not missing data; it is not comparable.
+  if (result.mismatches.length > 0) {
+    return {
+      recommendationId: "rec.metric.identity-mismatch",
+      status: "indeterminate",
       category: "semantic",
       severity: "info",
     };
@@ -362,12 +373,18 @@ export function judgeArtifact(
   const estimatedObservations: EstimatedObservationV1[] = [];
   const prepared: Array<{ rule: JudgeRuleV1; estimated: EstimatedObservationV1 | null; ref: string }> = [];
   for (const rule of rubric.rules) {
-    const reading = findReading(artifact, rule.metricId);
+    const readings = findReadings(artifact, rule.metricId);
+    const reading = readings[0];
     if (!reading) {
       issues.push(`missing evidenceRef metric:${rule.metricId}`);
       continue;
     }
-    const mapped = toObservation(artifact, reading);
+    // An evidence ref must name exactly one reading, so reading order cannot change a verdict.
+    if (readings.length > 1) {
+      issues.push(`ambiguous evidenceRef metric:${rule.metricId} matches ${readings.length} readings`);
+      continue;
+    }
+    const mapped = toObservation(artifact, reading, rule);
     // One observation per metric, so two rules on the same metric judge the same reading.
     if (!observed.has(reading.metricId)) {
       observed.add(reading.metricId);

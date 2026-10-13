@@ -106,6 +106,14 @@ describe("judge command", () => {
     expect(doctorJson.contract).toBeUndefined();
     const markdown = runCli(["judge", analysis, "--rubric", rubricPath, "--format", "md"]);
     expect(markdown.stdout).toContain("This is not doctor");
+    const csv = runCli(["judge", analysis, "--rubric", rubricPath, "--format", "csv"]);
+    const csvLines = csv.stdout.trim().split("\n");
+    expect(csvLines[0]).toBe(
+      "id,metricId,verdict,severity,evidenceStatus,value,unit,operator,threshold,diagnosticStatus,recommendationId",
+    );
+    expect(csvLines).toHaveLength(2);
+    expect(csvLines[1]?.split(",")).toHaveLength(11);
+    expect(csvLines[1]).toContain("first-reset,first-reset,");
     const markdownOut = resolve(dir, "judge.md");
     runCli(["judge", analysis, "--rubric", rubricPath, "--format", "md", "--out", markdownOut]);
     const written = await readText(markdownOut);
