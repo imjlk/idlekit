@@ -22,7 +22,7 @@ Node.js and browser runtimes are not part of the v1 compatibility contract.
 
 ## Verification
 
-Commands below were run from this worktree on macOS arm64 with Bun 1.4.2 and ttsc 0.30.4. Requirement file sha256 `b251c61ad5032082d9c42bc33da49d034b7efcde86d1ecc59ed775c9ac1deec5`. `typecheck`, `test`, `build`, `compat:check`, `replay:verify`, and `docs:verify` are unrun.
+Commands below were run from this worktree on macOS arm64 with Bun 1.4.2 and ttsc 0.30.4. Requirement file sha256 `a6b14b5ac2ddb1027fbd66f0d0971c5186caf2fa13950b401d7f5e48ed9f7609`. `typecheck`, `test`, `build`, `compat:check`, `replay:verify`, and `docs:verify` are unrun.
 
 | Command | Exit |
 |---|---|

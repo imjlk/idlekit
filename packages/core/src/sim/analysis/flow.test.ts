@@ -161,11 +161,11 @@ export function declaresFlowAdapter(): void {
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-pipeline A 100 to 20 to 30 chain binds at the middle stage.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-pipeline #1578ed6 Re-read the section, then ran this function: final throughput stays 20 when inflow doubles, another resource or window does not bind, the causally named bind is confirmed first beside a suspected one, a cycle has no final throughput, two terminals each report one, a terminal reports its latest window in either sample order, an inflow source offers work to the bind, a terminal fed two resources reports both, a process saturated in two windows binds on the latest in either order, a side feed that fills or is missing from the downstream stage removes the bind, the bind cites the downstream capacity and feed, every edgeless series reports a final, colliding ids stay distinct, a lone-surrogate id still reports, a downstream capacity in another unit proves no slack, the bind cites its edges, and only a confirmed bind cites causal.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-pipeline #2e39621 Re-read the section, then ran this function: final throughput stays 20 when inflow doubles, another resource or window does not bind, the causally named bind is confirmed first beside a suspected one, a cycle has no final throughput, two terminals each report one, a terminal reports its latest window in either sample order, an inflow source offers work to the bind, a terminal fed two resources reports both, a process saturated in two windows binds on the latest in either order, a side feed that fills or is missing from the downstream stage removes the bind, the bind cites the downstream capacity and feed, every edgeless series reports a final, colliding ids stay distinct, a lone-surrogate id still reports, a downstream capacity in another unit proves no slack, the bind cites its edges and the throughput that named the downstream unit, and only a confirmed bind cites causal.
  * @evidence ./flow.ts#flowPipelineConstraint Reads the pipeline marker.
  * @evidenceReview ./flow.ts#flowPipelineConstraint #6971fde The declaration is process-throughput-20.
  * @evidence ./flow.ts#diagnoseFlow Diagnoses throughput, capacity, and the binding stage.
- * @evidenceReview ./flow.ts#diagnoseFlow #089ec98 The middle stage binds at 20, doubling inflow keeps 20 and grows the queue, without a causal model the cause is suspected, another resource or window does not bind, every saturated process is a candidate with the causal one confirmed first, a bind does not hide another process's wait, a cycle reports no final throughput, each terminal reports a final throughput per delivered resource from its latest window, an inflow source offers work, a process binds on its latest saturated window, downstream slack counts every feed and is cited, edgeless series each report a final with escaped ids, a confirmed bind cites causal and its edges while a suspected one cites no causal record, another-unit downstream capacity proves no slack, and a 1e300 window formats as a finite saturation time.
+ * @evidenceReview ./flow.ts#diagnoseFlow #d4887f5 The middle stage binds at 20, doubling inflow keeps 20 and grows the queue, without a causal model the cause is suspected, another resource or window does not bind, every saturated process is a candidate with the causal one confirmed first, a bind does not hide another process's wait, a cycle reports no final throughput, each terminal reports a final throughput per delivered resource from its latest window, an inflow source offers work, a process binds on its latest saturated window, downstream slack counts every feed and is cited, edgeless series each report a final with escaped ids, a confirmed bind cites causal and its edges while a suspected one cites no causal record, another-unit downstream capacity proves no slack, and a 1e300 window formats as a finite saturation time.
  */
 export function diagnosesSteadyPipeline(): void {
   expect(flowPipelineConstraint).toBe("process-throughput-20");
@@ -219,8 +219,8 @@ export function diagnosesSteadyPipeline(): void {
     ],
   });
   expect(twoResources.hypotheses[0]?.processId).toBe("process");
-  // The refs cite the edges and the downstream capacity that proved the slack (sample 7), not only the local and upstream samples.
-  expect(twoResources.hypotheses[0]?.evidenceRefs).toEqual(["sample:3", "sample:4", "sample:2", "edge:0", "sample:7", "edge:1", "causal"]);
+  // The refs cite the edges, the downstream capacity that proved the slack (sample 7), and the throughput that named its unit (sample 6), not only the local and upstream samples.
+  expect(twoResources.hypotheses[0]?.evidenceRefs).toEqual(["sample:3", "sample:4", "sample:2", "edge:0", "sample:7", "sample:6", "edge:1", "causal"]);
   // A downstream capacity in another unit proves no slack.
   const otherUnit = diagnoseFlow({
     ...steadyCase,
@@ -246,7 +246,7 @@ export function diagnosesSteadyPipeline(): void {
   expect(sideFeed(null).hypotheses.some((item) => item.claim === "capacity-constraint")).toBe(false);
   const roomy = sideFeed("5");
   expect(roomy.hypotheses[0]?.processId).toBe("process");
-  expect(roomy.hypotheses[0]?.evidenceRefs).toEqual(["sample:1", "sample:2", "sample:0", "edge:0", "sample:5", "edge:1", "edge:2", "sample:6", "causal"]);
+  expect(roomy.hypotheses[0]?.evidenceRefs).toEqual(["sample:1", "sample:2", "sample:0", "edge:0", "sample:5", "sample:4", "edge:1", "edge:2", "sample:6", "causal"]);
   // Two saturated processes: the causally named one is confirmed even when it appears later.
   const parallel: FlowObservationV1 = {
     ...steadyCase,
@@ -391,7 +391,7 @@ export function diagnosesSteadyPipeline(): void {
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-conservation Conversion keeps the destination unit.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-conservation #d1f25b2 Re-read the section, then ran this function: 100 becomes 45, the units are not added, a queue, unretained, or source sample of another resource or window does not conserve, a later conserving window is found, an overflowed conversion does not match, a 1e-7, 4.5e-13, or 4.5e-25 conversion is not equal to an empty stock, two conserving windows publish the latest in either order, a stock in another unit than the destination throughput does not conserve, two edges into one stock are summed to 90, and a conserved 1e-10 keeps its spelling instead of rounding to 0.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-conservation #36612a7 Re-read the section, then ran this function: 100 becomes 45, the units are not added, a queue, unretained, or source sample of another resource or window does not conserve, a later conserving window is found, an overflowed conversion does not match, a 1e-7, 4.5e-13, or 4.5e-25 conversion is not equal to an empty stock, two conserving windows publish the latest in either order, a stock in another unit than the destination throughput does not conserve and a matching one cites that throughput, two edges into one stock are summed to 90, and a conserved 1e-10 keeps its spelling instead of rounding to 0.
  * @evidence ./flow.ts#flowConservation Reads the conservation marker.
  * @evidenceReview ./flow.ts#flowConservation #ca6486f The declaration is converted-units-stay-apart.
  */
@@ -455,6 +455,8 @@ export function checksFlowConservation(): void {
   expect(relabeled.facts.some((item) => item.kind === "conservation")).toBe(false);
   const matching = diagnoseFlow({ ...conversionCase, samples: [...conversionCase.samples, destinationRate] });
   expect(fact(matching, "conservation", "dest")?.amount).toBe("45");
+  // The destination throughput that named the stock unit is cited with the fact.
+  expect(fact(matching, "conservation", "dest")?.evidenceRefs).toEqual(["sample:0", "sample:1", "sample:2", "sample:3", "edge:0"]);
   // A sub-unit conversion is not equal to an empty destination.
   const tiny = diagnoseFlow({
     ...conversionCase,

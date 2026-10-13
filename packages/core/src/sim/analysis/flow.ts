@@ -129,13 +129,13 @@ export const flowOptionalAdapter = "observer-not-required-model" as const;
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-pipeline A steady 100 to 20 to 30 chain binds at the middle stage.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-pipeline #1578ed6 Re-read the section: final throughput stays 20 when inflow doubles, a bind reads one resource and one window, the causally named bind is confirmed among several, each terminal process reports a final throughput per delivered resource from its latest window, an inflow source offers work, a process binds on its latest saturated window, downstream slack counts every feed into that stage, a confirmed bind cites the causal record, and the bind cites its edges and requires a downstream capacity in the destination unit.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-pipeline #2e39621 Re-read the section: final throughput stays 20 when inflow doubles, a bind reads one resource and one window, the causally named bind is confirmed among several, each terminal process reports a final throughput per delivered resource from its latest window, an inflow source offers work, a process binds on its latest saturated window, downstream slack counts every feed into that stage, a confirmed bind cites the causal record, and the bind cites its edges and requires a downstream capacity in the destination unit, citing the throughput that named it.
  */
 export const flowPipelineConstraint = "process-throughput-20" as const;
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-conservation Conversion, loss, and inventory stay in their own units.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-conservation #d1f25b2 Re-read the section: the source unit and the destination unit are not added, queue and unretained are read for the destination resource in the source window, every source window is tried with the latest conserving one kept, the stock must match an observed destination throughput unit, edges into one stock are summed, and zero matches only zero.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-conservation #36612a7 Re-read the section: the source unit and the destination unit are not added, queue and unretained are read for the destination resource in the source window, every source window is tried with the latest conserving one kept, the stock must match an observed destination throughput unit and the fact cites it, edges into one stock are summed, and zero matches only zero.
  */
 export const flowConservation = "converted-units-stay-apart" as const;
 
@@ -387,7 +387,7 @@ function convert(amount: number, edge: FlowEdgeV1): number | null {
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-pipeline Diagnosis reads throughput, capacity, and the evidence window.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-pipeline #1578ed6 Re-read the section: the middle stage binds and doubling inflow leaves throughput at 20; capacity and upstream samples match the edge resource and the throughput window, and every saturated process is a candidate.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-pipeline #2e39621 Re-read the section: the middle stage binds and doubling inflow leaves throughput at 20; capacity and upstream samples match the edge resource and the throughput window, and every saturated process is a candidate.
  */
 export function diagnoseFlow(observation: FlowObservationV1): FlowReportV1 {
   const littlesLaw = littlesOf(observation.littles, observation.capability, observation.steady);
@@ -501,9 +501,9 @@ export function diagnoseFlow(observation: FlowObservationV1): FlowReportV1 {
       if (!downstreamCapacity) return true;
       // The capacity must be in the destination's rate unit: its own throughput unit, or this process's unit
       // when the edge keeps the resource. Without either, the comparison has no common unit.
+      const destinationRate = sampleAt(rows, edge.toProcessId, edge.toResourceId, "throughput", window);
       const destinationUnit =
-        sampleAt(rows, edge.toProcessId, edge.toResourceId, "throughput", window)?.sample.unit ??
-        (edge.fromResourceId === edge.toResourceId ? row.sample.unit : undefined);
+        destinationRate?.sample.unit ?? (edge.fromResourceId === edge.toResourceId ? row.sample.unit : undefined);
       if (downstreamCapacity.sample.unit !== destinationUnit) return false;
       let load = 0;
       const feedRefs: string[] = [];
@@ -522,7 +522,12 @@ export function diagnoseFlow(observation: FlowObservationV1): FlowReportV1 {
         feedRefs.push(`sample:${other.index}`);
       }
       if (!Number.isFinite(load) || !(downstreamCapacity.value > load && !nearly(downstreamCapacity.value, load))) return false;
-      downstreamRefs.push(`sample:${downstreamCapacity.index}`, ...feedRefs);
+      // The throughput that named the destination unit is cited with the capacity it checked.
+      downstreamRefs.push(
+        `sample:${downstreamCapacity.index}`,
+        ...(destinationRate ? [`sample:${destinationRate.index}`] : []),
+        ...feedRefs,
+      );
       return true;
     });
     if (!slack) continue;
@@ -594,8 +599,8 @@ export function diagnoseFlow(observation: FlowObservationV1): FlowReportV1 {
       const unretained = sampleAt(rows, destination.toProcessId, destination.toResourceId, "unretained", window);
       if (!queue || !unretained || queue.sample.unit !== unretained.sample.unit) continue;
       // When the destination's throughput names its unit in this window, the stock must be in that unit.
-      const destinationUnit = sampleAt(rows, destination.toProcessId, destination.toResourceId, "throughput", window)?.sample.unit;
-      if (destinationUnit !== undefined && queue.sample.unit !== destinationUnit) continue;
+      const destinationRate = sampleAt(rows, destination.toProcessId, destination.toResourceId, "throughput", window);
+      if (destinationRate !== undefined && queue.sample.unit !== destinationRate.sample.unit) continue;
       if (present.some((input) => input.sample.unit === queue.sample.unit)) continue;
       const held = queue.value + unretained.value;
       if (!nearly(held, theoretical)) continue;
@@ -610,6 +615,8 @@ export function diagnoseFlow(observation: FlowObservationV1): FlowReportV1 {
           ...present.map((input) => `sample:${input.index}`),
           `sample:${queue.index}`,
           `sample:${unretained.index}`,
+          // The destination throughput that named the stock's unit is cited too.
+          ...(destinationRate ? [`sample:${destinationRate.index}`] : []),
           ...edgeIndexes.map((edgeIndex) => `edge:${edgeIndex}`),
         ],
       });
