@@ -143,7 +143,7 @@ export function acceptsRulesProvider(): void {
  * @evidence ./judge.ts#judgeCheckReuse Reads the check-reuse marker.
  * @evidenceReview ./judge.ts#judgeCheckReuse #6aa2e90 The declaration is checks-not-recomputed.
  * @evidence ./judge.ts#judgeArtifact Maps artifact readings into balance checks and builds the report.
- * @evidenceReview ./judge.ts#judgeArtifact #ba3c3e2 Re-read the function: it rejects a semantically invalid artifact and a metric id that matches two readings, maps each metric to one observation, the numerical block equals a direct evaluateBalanceChecks call for 3h, an observed or estimated amount reading is unsupported with no value and no estimate entry, and two rules on one metric both pass.
+ * @evidenceReview ./judge.ts#judgeArtifact #66c0e9d Re-read the function and checkFor: each rule check takes the method and amount unit an unavailable reading omits from the shared observation, and it rejects a semantically invalid artifact and a metric id that matches two readings, maps each metric to one observation, the numerical block equals a direct evaluateBalanceChecks call for 3h, an observed or estimated amount reading is unsupported with no value and no estimate entry, and two rules on one metric both pass.
  */
 export function reusesBalanceChecks(): void {
   expect(judgeCheckReuse).toBe("checks-not-recomputed");
@@ -425,6 +425,66 @@ export function withholdsHealthLabels(): void {
   expect(unavailableAmount.report.numerical.results[0]?.evidence.status).toBe("missing");
   expect(unavailableAmount.report.diagnostics[0]?.status).toBe("insufficient");
   expect(unavailableAmount.report.diagnostics[0]?.recommendationId).toBe("rec.metric.insufficient");
+  // Rules that share one unavailable reading each apply their own missing policy, whatever method
+  // or amount unit they name.
+  const shared = judgeArtifact(
+    artifact([reading({ reading: "unavailable", status: "insufficient-data", method: undefined })], {
+      observationCoverage: "incomplete",
+    }),
+    rubric([
+      rule({ missingPolicy: "fail" }),
+      rule({ id: "first-reset-mc", method: "monte-carlo", missingPolicy: "fail" }),
+    ]),
+  );
+  expect(shared.ok).toBe(true);
+  if (!shared.ok) return;
+  expect(shared.report.numerical.results.map((result) => result.verdict)).toEqual(["fail", "fail"]);
+  expect(shared.report.numerical.results.map((result) => result.mismatches)).toEqual([[], []]);
+  const sharedAmount = judgeArtifact(
+    artifact(
+      [reading({ reading: "unavailable", status: "unknown", domain: "amount", method: undefined, value: undefined })],
+      { observationCoverage: "incomplete" },
+    ),
+    rubric([
+      rule({ unit: "coin", missingPolicy: "fail" }),
+      rule({ id: "first-reset-gem", unit: "gem", missingPolicy: "fail" }),
+    ]),
+  );
+  expect(sharedAmount.ok).toBe(true);
+  if (!sharedAmount.ok) return;
+  expect(sharedAmount.report.numerical.results.map((result) => result.verdict)).toEqual(["fail", "fail"]);
+  // An observed value under an unknown metrics capability or incomplete coverage is not measured.
+  const unknownCapability = judgeArtifact(
+    artifact([reading({ reading: "observed", status: "ok", value: 1.5 })], {
+      capabilities: {
+        metrics: "unknown",
+        goals: "statically-known",
+        reset: "statically-known",
+        flow: "statically-known",
+        advance: "statically-known",
+      },
+    }),
+    rubric(),
+  );
+  expect(unknownCapability.ok).toBe(true);
+  if (!unknownCapability.ok) return;
+  expect(unknownCapability.report.numerical.results[0]?.verdict).toBe("inconclusive");
+  expect(unknownCapability.report.numerical.results[0]?.evidence.status).toBe("unknown");
+  expect(unknownCapability.report.numerical.pass).toBe(false);
+  expect(unknownCapability.report.diagnostics[0]?.status).toBe("insufficient");
+  const incomplete = judgeArtifact(
+    artifact([reading({ reading: "observed", status: "ok", value: 1.5 })], { observationCoverage: "incomplete" }),
+    rubric(),
+  );
+  expect(incomplete.ok).toBe(true);
+  if (!incomplete.ok) return;
+  expect(incomplete.report.numerical.results[0]?.verdict).toBe("inconclusive");
+  expect(incomplete.report.diagnostics[0]?.status).toBe("insufficient");
+  const partial = judgeArtifact(
+    artifact([reading({ reading: "observed", status: "ok", value: 1.5 })], { observationCoverage: "partial" }),
+    rubric(),
+  );
+  expect(partial.ok && partial.report.numerical.results[0]?.verdict).toBe("pass");
 }
 
 describe("optional analysis judge", () => {

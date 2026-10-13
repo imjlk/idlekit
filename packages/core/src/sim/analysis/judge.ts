@@ -208,22 +208,31 @@ function findReadings(artifact: AnalysisArtifactV1, metricId: string): readonly 
   return artifact.metrics.filter((reading) => reading.metricId === metricId);
 }
 
+function isUnavailable(reading: MetricReadingV1): boolean {
+  return reading.reading === "unavailable" || reading.status !== "ok";
+}
+
 /**
- * An unavailable reading carries no method and, for an amount, no unit. Those fields cannot
- * disagree with the rule, so the rule's values stand in and the missing policy decides the verdict.
+ * Coverage the artifact itself cannot vouch for. A value observed under an unknown metrics
+ * capability or incomplete coverage is not a measured fact; it stays insufficient.
  */
+function coverageWithheld(artifact: AnalysisArtifactV1): boolean {
+  const coverage = artifact.observationCoverage;
+  const metrics = artifact.capabilities.metrics;
+  return coverage === "incomplete" || coverage === "unknown" || coverage === "disabled" || metrics !== "statically-known";
+}
+
+/** The observation depends only on the reading, so rules that share a metric share it unchanged. */
 function toObservation(
   artifact: AnalysisArtifactV1,
   reading: MetricReadingV1,
-  rule: JudgeRuleV1,
 ): { observation: BalanceObservationV1; estimated: EstimatedObservationV1 | null } {
-  const unavailable = reading.reading === "unavailable";
-  const unit =
-    reading.domain !== "amount" ? reading.domain : (reading.amount?.unit ?? (unavailable ? rule.unit : "amount"));
+  const unavailable = isUnavailable(reading);
+  const unit = reading.domain !== "amount" ? reading.domain : (reading.amount?.unit ?? "amount");
   const identity = {
     metricId: reading.metricId,
     definition: reading.meaning,
-    method: reading.method ?? (unavailable ? rule.method : "unspecified"),
+    method: reading.method ?? "unspecified",
     scenarioVersion: "unspecified",
     specVersion: "unspecified",
     engineId: "unspecified",
@@ -233,7 +242,7 @@ function toObservation(
     algorithmVersion: artifact.algorithmVersion,
   };
   // Availability first: an unavailable reading is missing, censored, or unsupported by its status, whatever its domain.
-  if (unavailable || reading.status !== "ok") {
+  if (unavailable) {
     const status = reading.status === "unsupported" ? "unsupported" : reading.status === "censored" ? "censored" : "missing";
     return { observation: { identity, status, value: null, lower: null, upper: null }, estimated: null };
   }
@@ -253,6 +262,9 @@ function toObservation(
         reason: reading.reason ?? null,
       },
     };
+  }
+  if (coverageWithheld(artifact)) {
+    return { observation: { identity, status: "unknown", value: null, lower: null, upper: null }, estimated: null };
   }
   if (
     reading.reading === "observed" &&
@@ -353,6 +365,27 @@ function outcomeFor(
   };
 }
 
+function checkFor(rule: JudgeRuleV1, method: string, unit: string): BalanceCheckV1 {
+  return {
+    id: rule.id,
+    metricId: rule.metricId,
+    operator: rule.operator,
+    threshold: rule.threshold,
+    upperThreshold: rule.upperThreshold,
+    unit,
+    severity: rule.severity,
+    missingPolicy: rule.missingPolicy,
+    definition: rule.definition,
+    method,
+    scenarioVersion: rule.scenarioVersion,
+    specVersion: rule.specVersion,
+    engineId: rule.engineId,
+    pluginVersion: rule.pluginVersion,
+    seed: rule.seed,
+    algorithmVersion: rule.algorithmVersion,
+  };
+}
+
 export function judgeArtifact(
   artifact: AnalysisArtifactV1,
   rubric: JudgeRubricV1,
@@ -371,7 +404,13 @@ export function judgeArtifact(
   const observed = new Set<string>();
   const observations: BalanceObservationV1[] = [];
   const estimatedObservations: EstimatedObservationV1[] = [];
-  const prepared: Array<{ rule: JudgeRuleV1; estimated: EstimatedObservationV1 | null; ref: string }> = [];
+  const prepared: Array<{
+    rule: JudgeRuleV1;
+    reading: MetricReadingV1;
+    observation: BalanceObservationV1;
+    estimated: EstimatedObservationV1 | null;
+    ref: string;
+  }> = [];
   for (const rule of rubric.rules) {
     const readings = findReadings(artifact, rule.metricId);
     const reading = readings[0];
@@ -384,34 +423,34 @@ export function judgeArtifact(
       issues.push(`ambiguous evidenceRef metric:${rule.metricId} matches ${readings.length} readings`);
       continue;
     }
-    const mapped = toObservation(artifact, reading, rule);
+    const mapped = toObservation(artifact, reading);
     // One observation per metric, so two rules on the same metric judge the same reading.
     if (!observed.has(reading.metricId)) {
       observed.add(reading.metricId);
       observations.push(mapped.observation);
       if (mapped.estimated) estimatedObservations.push(mapped.estimated);
     }
-    prepared.push({ rule, estimated: mapped.estimated, ref: `metric:${rule.metricId}` });
+    prepared.push({
+      rule,
+      reading,
+      observation: mapped.observation,
+      estimated: mapped.estimated,
+      ref: `metric:${rule.metricId}`,
+    });
   }
   if (issues.length > 0) return { ok: false, issues };
-  const checks: BalanceCheckV1[] = rubric.rules.map((rule) => ({
-    id: rule.id,
-    metricId: rule.metricId,
-    operator: rule.operator,
-    threshold: rule.threshold,
-    upperThreshold: rule.upperThreshold,
-    unit: rule.unit,
-    severity: rule.severity,
-    missingPolicy: rule.missingPolicy,
-    definition: rule.definition,
-    method: rule.method,
-    scenarioVersion: rule.scenarioVersion,
-    specVersion: rule.specVersion,
-    engineId: rule.engineId,
-    pluginVersion: rule.pluginVersion,
-    seed: rule.seed,
-    algorithmVersion: rule.algorithmVersion,
-  }));
+  /*
+   * An unavailable reading carries no method and, for an amount, no unit. Those fields cannot
+   * disagree with a rule, so each rule's own check takes them from the shared observation and its
+   * missing policy decides the verdict. The observation is never rewritten per rule.
+   */
+  const checks: BalanceCheckV1[] = prepared.map(({ rule, reading, observation }) => {
+    const unavailable = isUnavailable(reading);
+    const method = unavailable && reading.method === undefined ? observation.identity.method : rule.method;
+    const unit =
+      unavailable && reading.domain === "amount" && reading.amount === undefined ? observation.identity.unit : rule.unit;
+    return checkFor(rule, method, unit);
+  });
   const numerical = evaluateBalanceChecks({
     schemaVersion: 1,
     contract: "idlekit.balance-checks.v1",
