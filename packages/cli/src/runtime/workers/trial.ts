@@ -35,7 +35,7 @@ function builtinRegistries(): TrialRegistries {
 
 /**
  * @evidence docs/requirements/active/worker-execution-backend.md#req-dx05-worker-parity Plugin roots and digests are the parent policy. An empty root list does not allow every file.
- * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-worker-parity #f28c027 Re-read the section: a path outside the parent roots fails closed, and the worker does not add a root.
+ * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-worker-parity #3e2d53a Re-read the section: a path outside the parent roots fails closed, the worker does not add a root, plugin-trust is a loader refusal, and a step-budget stop is incomplete.
  */
 export const trialPluginBoundary = "plugin-policy-not-widened" as const;
 
@@ -108,14 +108,24 @@ export async function runAnalysisTrial(
   if (task.pluginPaths.length > 0 && task.pluginRoots.length === 0) return failed(task, "plugin-trust");
   // Plugin paths without a loader fail closed. They are never skipped onto the built-ins.
   if (task.pluginPaths.length > 0 && !loadPlugins) return failed(task, "plugin-trust");
+  /*
+   * The trust decision is where the plugins load, not what an error message says. A loader
+   * refusal is plugin-trust and is not retried. Anything thrown after the plugins are admitted
+   * is an ordinary trial failure and may retry, whatever its message mentions.
+   */
+  let loaded: TrialRegistries;
   try {
-    const loaded =
+    loaded =
       task.pluginPaths.length > 0 && loadPlugins
         ? await loadPlugins([...task.pluginPaths], {
             allowedRoots: [...task.pluginRoots],
             requiredSha256: { ...task.pluginDigests },
           })
         : builtinRegistries();
+  } catch {
+    return failed(task, "plugin-trust");
+  }
+  try {
     const resolved = resolveEffectiveEngine({ requested: payload.engineId ?? "number" });
     const scenario = analysisTrialScenario(task);
     const engine = resolved.engine as Engine<number>;
@@ -141,6 +151,10 @@ export async function runAnalysisTrial(
         ...opened.scenario,
         run: { ...opened.scenario.run, maxSteps: task.stepBudget },
       });
+      // The step budget stopped the run before the requested horizon. That state is not the trial's end.
+      if (executed.stop?.reason === "budget") {
+        return { ...failed(task, "step-budget"), status: "incomplete" };
+      }
       const end = serializeSimState(engine, executed.end, {
         engineName: resolved.effectiveId,
         seed: task.seed,
@@ -164,9 +178,7 @@ export async function runAnalysisTrial(
     } finally {
       binding.release();
     }
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "trial-failed";
-    const trust = /plugin|sha256|allowed roots|Untrusted/i.test(message);
-    return failed(task, trust ? "plugin-trust" : "trial-failed");
+  } catch {
+    return failed(task, "trial-failed");
   }
 }

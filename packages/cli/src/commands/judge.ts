@@ -2,12 +2,14 @@ import { defineCommand, option } from "../runtime/command";
 import type { JevAdvisoryV1, JudgeReportV1 } from "@idlekit/core";
 import { z } from "zod";
 import { usageError } from "../errors";
-import { buildOutputMeta } from "../io/outputMeta";
+import { buildOutputMeta, outputSchemaRefForCommand } from "../io/outputMeta";
 import { writeOutput } from "../io/writeOutput";
+import { resolve } from "path";
 import { readJsonFile } from "../runtime/bun";
 import { readJudgeInputs } from "../lib/evaluation/input";
 import { evaluateRules } from "../lib/evaluation/rules";
-import { adviseWithJev, type JevTransport } from "../lib/evaluation/providers/jev";
+// Type only. main.ts registers this command for every invocation, so the opt-in provider loads after --provider jev.
+import type { JevTransport } from "../lib/evaluation/providers/jev";
 
 function renderJudgeMarkdown(report: JudgeReportV1): string {
   const lines = [
@@ -56,6 +58,21 @@ export async function runJudge(flags: {
   nowMs?: number;
   sleep?: (ms: number) => Promise<void>;
 }): Promise<JudgeReportV1 | JevJudgeBundle> {
+  // The Jev bundle is two nested reports. A one-column CSV cannot hold it, so the format is refused up front.
+  if (flags.provider === "jev" && flags.format === "csv") {
+    throw usageError("--provider jev writes json or md. csv cannot hold the rules report and the advisory together.");
+  }
+  // The cache is written after the inputs are read. Pointing it at an input would overwrite that input, and pointing
+  // it at the output would let the bundle replace it, so the next run would pay for the request again.
+  if (flags.provider === "jev" && flags.cache) {
+    const cachePath = resolve(flags.cache);
+    if (flags.out && cachePath === resolve(flags.out)) {
+      throw usageError("--cache and --out name the same file. Give the Jev cache its own path.");
+    }
+    if (cachePath === resolve(analysisPath) || cachePath === resolve(flags.rubric)) {
+      throw usageError("--cache names an input file. Give the Jev cache its own path.");
+    }
+  }
   const artifactRaw = await readJsonFile<unknown>(analysisPath);
   const rubricRaw = await readJsonFile<unknown>(flags.rubric);
   const parsed = readJudgeInputs(artifactRaw, rubricRaw);
@@ -82,6 +99,7 @@ export async function runJudge(flags: {
     });
     return report;
   }
+  const { adviseWithJev } = await import("../lib/evaluation/providers/jev");
   const advisory = await adviseWithJev({
     artifact: parsed.artifact,
     rubric: parsed.rubric,
@@ -98,6 +116,9 @@ export async function runJudge(flags: {
   if (flags.format === "md") {
     console.log(renderJudgeMarkdown(report));
     console.log(`- Jev: ${advisory.status} ${advisory.reason}`);
+    // The plan is what a dry run is for, so md shows it as json does.
+    console.log(`- Endpoint: ${advisory.endpoint}`);
+    console.log(`- Planned requests: ${advisory.plannedRequests}`);
     return bundle;
   }
   await writeOutput({
@@ -107,7 +128,8 @@ export async function runJudge(flags: {
     meta: buildOutputMeta({
       command: "judge",
       pluginDigest: {},
-      schemaRef: "docs/schemas/jev.advisory.v1.schema.json",
+      // The bundle carries the rules report and the advisory side by side, so it has its own schema.
+      schemaRef: outputSchemaRefForCommand("judge.jev"),
     }),
   });
   return bundle;

@@ -2,7 +2,7 @@ import { hashContent, stableStringify } from "../../io/outputMeta";
 
 /**
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity An alias entry expires after one day.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity #c388239 Re-read the section: the TTL is 24 hours.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity #9a0037c Re-read the section: the TTL is 24 hours.
  */
 export const JEV_ALIAS_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -17,7 +17,7 @@ export type JevCacheEntry = Readonly<{
 
 /**
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity The cache key binds the projection, the rubric, and the requested model.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity #c388239 Re-read the section: a different rubric or requested model misses.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity #9a0037c Re-read the section: a different rubric or requested model misses.
  */
 export function jevCacheKey(parts: Readonly<{
   projection: unknown;
@@ -38,7 +38,7 @@ export function jevCacheKey(parts: Readonly<{
 
 /**
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity An alias is revalidated after one day. A pinned id must match the stored model.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity #c388239 Re-read the section: jev-latest is not treated as a permanent response.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity #9a0037c Re-read the section: jev-latest is not treated as a permanent response.
  */
 export function jevCacheHit(
   entry: JevCacheEntry | undefined,
@@ -56,7 +56,7 @@ export function jevCacheHit(
 
 /**
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-secret-boundary The cache file is a digest record, not a copy of the request key.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-secret-boundary #29ebf2c Re-read the section: the stored JSON is the advisory, not the API key.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-secret-boundary #ddb0013 Re-read the section: the stored JSON is the advisory, not the API key.
  */
 export function serializeJevCache(entries: readonly JevCacheEntry[]): string {
   return `${stableStringify({ entries })}\n`;
@@ -64,10 +64,23 @@ export function serializeJevCache(entries: readonly JevCacheEntry[]): string {
 
 /**
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity A cache file is read back only as stored entries.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity #c388239 Re-read the section: a miss falls through when the entry is absent.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity #9a0037c Re-read the section: a miss falls through when the entry is absent.
  */
 export function parseJevCache(text: string): JevCacheEntry[] {
-  const parsed = JSON.parse(text) as { entries?: JevCacheEntry[] };
+  const parsed = JSON.parse(text) as { entries?: unknown[] };
   if (!parsed || !Array.isArray(parsed.entries)) return [];
-  return parsed.entries.filter((entry) => typeof entry?.key === "string" && typeof entry.advisoryJson === "string");
+  // Every field is checked, so a corrupt entry is dropped as a miss instead of failing a later lookup.
+  return parsed.entries.filter((entry): entry is JevCacheEntry => {
+    if (!entry || typeof entry !== "object") return false;
+    const record = entry as Record<string, unknown>;
+    return (
+      typeof record.key === "string" &&
+      typeof record.requestedModel === "string" &&
+      typeof record.resolvedModel === "string" &&
+      typeof record.rubricVersion === "string" &&
+      typeof record.storedAtMs === "number" &&
+      Number.isFinite(record.storedAtMs) &&
+      typeof record.advisoryJson === "string"
+    );
+  });
 }

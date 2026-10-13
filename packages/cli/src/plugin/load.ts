@@ -309,6 +309,14 @@ export async function loadRegistries(
   };
 }
 
+function existingRealpath(pathAbs: string): string {
+  try {
+    return realpathSync(pathAbs);
+  } catch {
+    return pathAbs;
+  }
+}
+
 function isPathInsideRoot(pathAbs: string, rootAbs: string): boolean {
   const rel = relative(rootAbs, pathAbs);
   return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
@@ -387,7 +395,12 @@ async function resolveAndValidatePluginPath(input: string, allowedRoots: readonl
   }
 
   if (allowedRoots.length > 0) {
-    const allowed = allowedRoots.some((root) => isPathInsideRoot(abs, root));
+    // The module is imported through its realpath, so the realpath must stay inside a root's realpath too.
+    // A symlink inside a root that points outside it does not pass.
+    const real = realpathSync(abs);
+    const allowed = allowedRoots.some(
+      (root) => isPathInsideRoot(abs, root) && isPathInsideRoot(real, existingRealpath(root)),
+    );
     if (!allowed) {
       throw new Error(`Plugin path is outside allowed roots: ${input}`);
     }
