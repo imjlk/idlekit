@@ -269,6 +269,9 @@ export function warnsOnDecimalRange(): void {
   expect(decimalExceedsNumberDomain("1aa")).toBe(false);
   expect(decimalExceedsNumberDomain("1ae")).toBe(true);
   expect(decimalExceedsNumberDomain("1e10ab")).toBe(true);
+  // parseMoney combines the exponent and suffix before conversion, so these finite results need no range warning.
+  expect(decimalExceedsNumberDomain("1e-2028zz")).toBe(false);
+  expect(decimalExceedsNumberDomain("-2.5e-2028zz")).toBe(false);
   expect(decimalExceedsNumberDomain("3d")).toBe(false);
   const numberReport = buildScenarioInspect(
     request({ decimals: ["1e400"], engine: { effectiveId: "number", source: "flag", accepted: true } }),

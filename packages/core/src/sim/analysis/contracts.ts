@@ -218,6 +218,9 @@ export function classifyAmount<N>(engine: Engine<N>, amount: N, unit: string): P
     };
   }
   const decimal = engine.toString(amount);
+  // The wire decimal denotes an exact sign. Engine comparison tolerance must not label a nonzero decimal zero.
+  const sign = decimalSign(decimal);
+  if (sign !== null) return { status: "ok", sign, amount: { unit, decimal } };
   const cmp = engine.cmp(amount, engine.zero());
   if (cmp < 0) return { status: "ok", sign: "negative", amount: { unit, decimal } };
   if (cmp === 0) return { status: "ok", sign: "zero", amount: { unit, decimal } };

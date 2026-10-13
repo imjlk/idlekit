@@ -229,7 +229,7 @@ export function registersCustomMetric(): void {
  * @evidence ./contracts.ts#artifactProvenance Changes provenance with assumptions, algorithm, and schema, and not with the run hash.
  * @evidenceReview ./contracts.ts#artifactProvenance #4aa6614 The function hashes the algorithm version, the schema hash, and the top-level and goal-level assumptions; the run hash does not enter it.
  * @evidence ./contracts.ts#classifyAmount Classifies negative, zero, and nonfinite amounts directly and through readMetric.
- * @evidenceReview ./contracts.ts#classifyAmount #3f6b4bb The function returns invalid nonfinite for a nonfinite amount and a signed decimal otherwise.
+ * @evidenceReview ./contracts.ts#classifyAmount #d6f68b7 Re-read and ran the amount tests: nonfinite amounts stay invalid; finite decimal spellings supply their exact sign before the engine comparison fallback, so default comparison epsilon cannot label a nonzero decimal zero.
  * @evidence ./contracts.ts#classifyFinite Classifies NaN, negative, and positive numbers.
  * @evidenceReview ./contracts.ts#classifyFinite #ed723f0 The function returns invalid nonfinite with a nan or infinity reason, and a signed value otherwise.
  * @evidence ./contracts.ts#unavailableReading Builds unknown and censored readings without a value.
