@@ -15,7 +15,7 @@ export const executionLocalDefault = "local-default" as const;
 
 /**
  * @evidence docs/requirements/active/worker-execution-backend.md#req-dx05-serializable-task A task is a plain JSON descriptor. The seed is the logical draw seed.
- * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-serializable-task #aabd062 Re-read the section: functions, class instances, cyclic payloads, and a bad step budget are refused before cost is measured, a shared reference is allowed, and the seed does not read a worker slot.
+ * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-serializable-task #a0e348b Re-read the section: functions, class instances, cyclic payloads, and a bad step budget are refused before cost is measured, a shared reference is allowed, and the seed does not read a worker slot.
  */
 export const executionSerializableTask = "json-descriptor" as const;
 
@@ -158,6 +158,10 @@ function assertPlain(value: unknown, seen: WeakSet<object>): void {
   seen.add(value);
   try {
     if (Array.isArray(value)) {
+      // An array carries indexed items only. A named property such as an own toJSON is refused.
+      for (const key of Object.keys(value)) {
+        if (!/^(0|[1-9]\d*)$/.test(key)) throw new Error("not serializable");
+      }
       for (const item of value) assertPlain(item, seen);
       return;
     }
@@ -291,16 +295,49 @@ export function taskRefusals(
   });
 }
 
+function ownData(value: object, key: string): unknown {
+  const descriptor = Object.getOwnPropertyDescriptor(value, key);
+  return descriptor && "value" in descriptor ? descriptor.value : undefined;
+}
+
+/**
+ * The identity an outcome reports, read from own data properties only. A refused descriptor may carry getters;
+ * reading them again could throw, so a field that is not plain data falls back to "", -1, or 0.
+ *
+ * @evidence docs/requirements/active/worker-execution-backend.md#req-dx05-serializable-task A refused task is reported without invoking its accessors.
+ * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-serializable-task #a0e348b Re-read the section: a refused task fails alone and its siblings still run.
+ */
+export function taskIdentity(task: AnalysisTrialTaskV1): Readonly<{ taskId: string; logicalIndex: number; seed: number }> {
+  if (task === null || typeof task !== "object") return { taskId: "", logicalIndex: -1, seed: 0 };
+  const taskId = ownData(task, "taskId");
+  const logicalIndex = ownData(task, "logicalIndex");
+  const seed = ownData(task, "seed");
+  return {
+    taskId: typeof taskId === "string" ? taskId : "",
+    logicalIndex: typeof logicalIndex === "number" ? logicalIndex : -1,
+    seed: typeof seed === "number" ? seed : 0,
+  };
+}
+
+function deepFreeze<T>(value: T): T {
+  if (value !== null && typeof value === "object" && !Object.isFrozen(value)) {
+    Object.freeze(value);
+    for (const item of Object.values(value)) deepFreeze(item);
+  }
+  return value;
+}
+
 function outcomeOf(
   task: AnalysisTrialTaskV1,
   status: AnalysisTrialStatus,
   reason: string,
   attempts: number,
 ): AnalysisTrialOutcomeV1 {
+  const identity = taskIdentity(task);
   return {
-    taskId: task.taskId,
-    logicalIndex: task.logicalIndex,
-    seed: task.seed,
+    taskId: identity.taskId,
+    logicalIndex: identity.logicalIndex,
+    seed: identity.seed,
     status,
     reason,
     attempts,
@@ -310,9 +347,11 @@ function outcomeOf(
 }
 
 function orderedTasks(tasks: readonly AnalysisTrialTaskV1[]): AnalysisTrialTaskV1[] {
-  return [...tasks].sort(
-    (left, right) => left.logicalIndex - right.logicalIndex || (left.taskId < right.taskId ? -1 : left.taskId > right.taskId ? 1 : 0),
-  );
+  return [...tasks].sort((leftTask, rightTask) => {
+    const left = taskIdentity(leftTask);
+    const right = taskIdentity(rightTask);
+    return left.logicalIndex - right.logicalIndex || (left.taskId < right.taskId ? -1 : left.taskId > right.taskId ? 1 : 0);
+  });
 }
 
 export function finalizeBatch(
@@ -390,11 +429,16 @@ export function runLocalBatch(
   }
   // Validate before measuring, so a cyclic payload fails its own task instead of throwing out of the batch.
   const reasons = taskRefusals(tasks, budget);
-  const refusals = new Map(tasks.map((task, index) => [task, reasons[index] ?? null] as const));
-  header.serializedBytes = tasks.reduce((sum, task) => (refusals.get(task) === null ? sum + serializedTaskBytes(task) : sum), 0);
+  // A valid task runs from a frozen snapshot, so a runner cannot change its id, seed, or budget for a retry,
+  // and a later change to the caller's object cannot reach it.
+  const prepared = tasks.map((task, index) =>
+    reasons[index] === null ? deepFreeze(JSON.parse(JSON.stringify(task)) as AnalysisTrialTaskV1) : task,
+  );
+  const refusals = new Map(prepared.map((task, index) => [task, reasons[index] ?? null] as const));
+  header.serializedBytes = prepared.reduce((sum, task) => (refusals.get(task) === null ? sum + serializedTaskBytes(task) : sum), 0);
   // taskTimeoutMs bounds each task on its own, as in the worker pool. There is no batch-wide window.
   const outcomes: AnalysisTrialOutcomeV1[] = [];
-  for (const task of orderedTasks(tasks)) {
+  for (const task of orderedTasks(prepared)) {
     if (options?.signal?.aborted) {
       outcomes.push(outcomeOf(task, "cancelled", "abort", 0));
       continue;

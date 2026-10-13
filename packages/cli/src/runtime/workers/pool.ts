@@ -3,6 +3,7 @@ import {
   defaultExecutionBudget,
   finalizeBatch,
   serializedTaskBytes,
+  taskIdentity,
   taskRefusals,
   type AnalysisTrialOutcomeV1,
   type AnalysisTrialTaskV1,
@@ -39,10 +40,12 @@ function defaultSpawn(): WorkerLike {
 }
 
 function failed(task: AnalysisTrialTaskV1, reason: string, attempts: number): AnalysisTrialOutcomeV1 {
+  // Read without invoking accessors: a refused descriptor may carry getters.
+  const identity = taskIdentity(task);
   return {
-    taskId: task.taskId,
-    logicalIndex: task.logicalIndex,
-    seed: task.seed,
+    taskId: identity.taskId,
+    logicalIndex: identity.logicalIndex,
+    seed: identity.seed,
     // Same classes as the local backend: queue-bound is incomplete there too.
     status:
       reason === "abort"
@@ -231,11 +234,19 @@ export async function runWorkerPool(args: Readonly<{
       inFlight.add(index);
       try {
         worker.postMessage({ type: "run", task });
-      } catch {
-        // A message the worker cannot receive fails this task alone. The slot stays usable.
+      } catch (error) {
         if (!settle()) return;
-        results[index] = failed(task, "not serializable", attempt + 1);
-        dispatch(worker);
+        if ((error as { name?: unknown } | null)?.name === "DataCloneError") {
+          // A message the worker cannot receive fails this task alone. The slot stays usable.
+          results[index] = failed(task, "not serializable", attempt + 1);
+          dispatch(worker);
+          feed();
+          return;
+        }
+        // Any other post failure means the slot is gone, such as a worker that already closed. It is a crash of
+        // this task, retried within the budget, and the slot is retired before anything else is sent to it.
+        if (!requeue(index, attempt)) results[index] = failed(task, "worker-crash", attempt + 1);
+        retire(worker);
         feed();
       }
     };

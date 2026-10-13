@@ -109,7 +109,7 @@ class FakeWorker implements WorkerLike {
  * @evidence ./entry.ts#workerEntryMarker Reads the packed entry marker.
  * @evidenceReview ./entry.ts#workerEntryMarker #f670bfc The declaration is idlekit-worker-entry.
  * @evidence ./pool.ts#runWorkerPool Runs the tasks on an explicit number of workers.
- * @evidenceReview ./pool.ts#runWorkerPool #9039cb8 Re-read the event-driven pool: one, two, and four real workers return the local digests, end money, and seeds in logical order.
+ * @evidenceReview ./pool.ts#runWorkerPool #0b2b45f Re-read the event-driven pool: one, two, and four real workers return the local digests, end money, and seeds in logical order.
  * @evidence ./pool.ts#workerEntryUrl Names the worker module the pool spawns.
  * @evidenceReview ./pool.ts#workerEntryUrl #62d3255 The URL is entry.ts next to the pool module.
  * @evidence ./trial.ts#runAnalysisTrial Runs one trial and returns its digest and end money.
@@ -208,11 +208,11 @@ export function reversesCompletionOrder(): Promise<void> {
 
 /**
  * @evidence docs/requirements/active/worker-execution-backend.md#req-dx05-worker-parity Crash, timeout, abort, and shutdown do not become a full distribution.
- * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-worker-parity #60a7be1 Re-read the section, then ran this function: the crashed and timed-out batches were not full, six queued tasks on one worker all finished in their own windows, a posted failure retried, an abort left no timer or spawn behind, twin ids reported separately, a count above maxWorkers was refused, cost counted UTF-8 bytes, an infinite budget field was refused before any spawn, an oversized batch reported no bytes, a budget raised after submit did not reach the batch, a mid-flight abort counted the running attempt, a step budget above the execution budget was refused, a pre-aborted batch cancelled a refused task and one over the queue bound, unmarked messages were ignored, a mutated caller array changed nothing, each plugin trial took a fresh slot while built-in trials shared one, queue-bound was incomplete, a decorated task and a throwing post each failed alone, an exit without an error event was a retried crash, a throwing spawn settled as worker-spawn, a plugin error after loading was trial-failed while a loader refusal was plugin-trust, and a step-budget stop was incomplete.
+ * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-worker-parity #60a7be1 Re-read the section, then ran this function: the crashed and timed-out batches were not full, six queued tasks on one worker all finished in their own windows, a posted failure retried, an abort left no timer or spawn behind, twin ids reported separately, a count above maxWorkers was refused, cost counted UTF-8 bytes, an infinite budget field was refused before any spawn, an oversized batch reported no bytes, a budget raised after submit did not reach the batch, a mid-flight abort counted the running attempt, a post to a closed slot retried on a fresh one, a refused getter task was reported without the getter, a step budget above the execution budget was refused, a pre-aborted batch cancelled a refused task and one over the queue bound, unmarked messages were ignored, a mutated caller array changed nothing, each plugin trial took a fresh slot while built-in trials shared one, queue-bound was incomplete, a decorated task and a throwing post each failed alone, an exit without an error event was a retried crash, a throwing spawn settled as worker-spawn, a plugin error after loading was trial-failed while a loader refusal was plugin-trust, and a step-budget stop was incomplete.
  * @evidence ./pool.ts#WorkerLike.addEventListener The pool hears a worker that exits on its own through the close event.
  * @evidenceReview ./pool.ts#WorkerLike.addEventListener #e8b001c A fake worker that only fires close made its task a worker-crash and was retried once.
  * @evidence ./pool.ts#runWorkerPool Bounds each task by its own timer, retries posted failures, and shuts down without leftovers.
- * @evidenceReview ./pool.ts#runWorkerPool #9039cb8 Re-read start, dispatch, feed, and finish: state is keyed by position, the count is checked against maxWorkers, close routes to the crash path, a throwing spawn stops spawning, a throwing post fails only its task, queue-bound is incomplete, the batch runs a JSON snapshot, a plugin trial retires its slot, the budget is a frozen copy checked before any spawn, an abort counts the in-flight attempt, admission precedes the snapshot, a pre-abort cancels every task before the queue bound, only a marked outcome envelope settles a task, and finish clears timers and detaches handlers.
+ * @evidenceReview ./pool.ts#runWorkerPool #0b2b45f Re-read start, dispatch, feed, and finish: state is keyed by position, the count is checked against maxWorkers, close routes to the crash path, a throwing spawn stops spawning, a clone error on post fails only its task, any other post failure is a crash on a retired slot, queue-bound is incomplete, the batch runs a JSON snapshot, a plugin trial retires its slot, the budget is a frozen copy checked before any spawn, an abort counts the in-flight attempt, admission precedes the snapshot, a pre-abort cancels every task before the queue bound, only a marked outcome envelope settles a task, and finish clears timers and detaches handlers.
  * @evidence ./trial.ts#runAnalysisTrial Reports a step-budget stop as incomplete.
  * @evidenceReview ./trial.ts#runAnalysisTrial #9fe8a84 A budget of two steps on a three-second horizon is incomplete step-budget with no end money, three steps is ok, a throwing trusted model is trial-failed, and a refusing loader is plugin-trust.
  * @evidence ./pool.ts#workerPoolParity Reads the parity marker.
@@ -470,7 +470,11 @@ export function boundsPoolFailures(): Promise<void> {
         const post = worker.postMessage.bind(worker);
         worker.postMessage = (message: unknown) => {
           posts += 1;
-          if ((message as { task: AnalysisTrialTaskV1 }).task.logicalIndex === 1) throw new Error("DataCloneError");
+          if ((message as { task: AnalysisTrialTaskV1 }).task.logicalIndex === 1) {
+            const cloneError = new Error("could not clone");
+            cloneError.name = "DataCloneError";
+            throw cloneError;
+          }
           post(message);
         };
         return worker;
@@ -482,6 +486,47 @@ export function boundsPoolFailures(): Promise<void> {
       ["ok", "ok"],
     ]);
     expect(posts).toBe(2);
+
+    // A post that fails because the slot is gone is a crash: the task retries on a fresh slot.
+    let closedSpawns = 0;
+    const closedPost = await runWorkerPool({
+      tasks: [trial(0)],
+      workers: 1,
+      budget: { ...defaultExecutionBudget, maxWorkers: 1, taskTimeoutMs: 1_000, maxRetries: 1 },
+      spawn: () => {
+        closedSpawns += 1;
+        const worker = new FakeWorker("slow", [], 1);
+        if (closedSpawns === 1) {
+          worker.postMessage = () => {
+            const stateError = new Error("worker is closed");
+            stateError.name = "InvalidStateError";
+            throw stateError;
+          };
+        }
+        return worker;
+      },
+    });
+    expect(closedPost.outcomes[0]).toMatchObject({ status: "ok", attempts: 2 });
+    expect(closedSpawns).toBe(2);
+
+    // A refused descriptor with a throwing getter is reported without invoking it again.
+    const trap = { ...trial(1) } as Record<string, unknown>;
+    Object.defineProperty(trap, "taskId", {
+      get: () => {
+        throw new Error("getter");
+      },
+      enumerable: true,
+    });
+    const trapped = await runWorkerPool({
+      tasks: [trial(0), trap as unknown as AnalysisTrialTaskV1],
+      workers: 1,
+      budget: { ...defaultExecutionBudget, maxWorkers: 1, taskTimeoutMs: 1_000 },
+      spawn: () => new FakeWorker("slow", [], 1),
+    });
+    expect(trapped.outcomes.map((outcome) => [outcome.taskId, outcome.status])).toEqual([
+      ["trial-0", "ok"],
+      ["", "failed"],
+    ]);
 
     // An exit without an error event is a crash of the task in flight, retried within the budget, not a timeout.
     let exits = 0;
