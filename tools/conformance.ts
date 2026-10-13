@@ -103,8 +103,8 @@ function graphLookup(dir: string, query: string): { exitCode: number; text: stri
  * @evidence docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness The negative runner checks a missing transform, a deleted citation, and an empty graph.
  * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #bbb39a2 Re-read the section: those three checks belong to the harness.
  */
-export function runNegativeConformanceChecks(): void {
-  negative();
+export function runNegativeConformanceChecks(group?: "transform" | "evidence" | "graph"): void {
+  negative(group);
 }
 
 export function createNegativeWorkspace(base: string): string {
@@ -143,101 +143,113 @@ export function removeNegativeWorkspace(
   }
 }
 
-function negative(): void {
+/** Remove the pinned acknowledgment text without depending on the checkout's line endings. */
+export function withoutNegativeEvidenceCitation(host: string): string | undefined {
+  const citation = " * @evidence docs/spec.md#quota Returns the quota this section states, which is 3.";
+  return host.includes(citation) ? host.replace(citation, "") : undefined;
+}
+
+function negative(group?: "transform" | "evidence" | "graph"): void {
   // macOS /tmp is a symlink of /private/tmp. ttsc rejects a project seen through both.
   const base = realpathSync(root);
   const work = createNegativeWorkspace(base);
   lastStepAt = performance.now();
   try {
-    const preload = join(work, "bun-preload");
-    // Copy the package boundary too: this probe needs typia, not the parent
-    // repository's lint/evidence plugins and their unrelated host-input proofs.
-    copyFixture("fixtures/toolchain/bun-preload", preload);
-    const preloadEnv = fixtureEnv();
-    // Keep the standalone runtime probe independent of bun test's NODE_ENV.
-    delete preloadEnv.NODE_ENV;
-    preloadEnv.TTSC_TTSX_BINARY = ttsxLauncherPath(base);
-    // Preserve the bounded retry for an unstable upstream host generation.
-    // A missing transform fails with a different error and is never retried.
-    // Bun's directory-mismatch warning alone is not a failed transform verdict.
-    let preloaded = spawn([process.execPath, "src/entry.ts"], preload, preloadEnv);
-    let attempts = 1;
-    while (
-      attempts < 3 &&
-      preloaded.exitCode !== 0 &&
-      preloaded.text.includes("TtscUnstableGenerationError")
-    ) {
-      attempts += 1;
-      preloaded = spawn([process.execPath, "src/entry.ts"], preload, preloadEnv);
-    }
-    record(
-      "transform-present",
-      preloaded.exitCode === 0 && preloaded.text.includes("preload-ok"),
-      `attempts=${attempts}\n${preloaded.text.slice(0, 1500)}`,
-    );
-
-    const nopreload = join(work, "bun-nopreload");
-    copyFixture("fixtures/toolchain/bun-nopreload", nopreload);
-    const missingTransform = spawn(
-      [process.execPath, join(nopreload, "src/entry.ts")],
-      nopreload,
-      fixtureEnv(),
-    );
-    record(
-      "transform-missing",
-      missingTransform.exitCode !== 0 && /transform|typia/i.test(missingTransform.text),
-      missingTransform.text.slice(0, 1500),
-    );
-
-    const evidence = join(work, "evidence");
-    copyFixture("fixtures/evidence/base", evidence);
-    const evidenceOk = runTtsc(["-p", "tsconfig.json", "--noEmit", "--cwd", evidence], evidence);
-    record("evidence-present", evidenceOk.exitCode === 0, commandText(evidenceOk).slice(0, 1500));
-
-    const hostPath = join(evidence, "src/host.ts");
-    const host = readFileSync(hostPath, "utf8");
-    const citation = " * @evidence docs/spec.md#quota Returns the quota this section states, which is 3.\n";
-    if (!host.includes(citation)) {
-      record("evidence-missing", false, "citation text was not in the copied host");
-    } else {
-      writeFileSync(hostPath, host.replace(citation, ""));
-      const evidenceBad = runTtsc(["-p", "tsconfig.json", "--noEmit", "--cwd", evidence], evidence);
-      const body = commandText(evidenceBad);
+    if (group === undefined || group === "transform") {
+      const preload = join(work, "bun-preload");
+      // Copy the package boundary too: this probe needs typia, not the parent
+      // repository's lint/evidence plugins and their unrelated host-input proofs.
+      copyFixture("fixtures/toolchain/bun-preload", preload);
+      const preloadEnv = fixtureEnv();
+      // Keep the standalone runtime probe independent of bun test's NODE_ENV.
+      delete preloadEnv.NODE_ENV;
+      preloadEnv.TTSC_TTSX_BINARY = ttsxLauncherPath(base);
+      // Preserve the bounded retry for an unstable upstream host generation.
+      // A missing transform fails with a different error and is never retried.
+      // Bun's directory-mismatch warning alone is not a failed transform verdict.
+      let preloaded = spawn([process.execPath, "src/entry.ts"], preload, preloadEnv);
+      let attempts = 1;
+      while (
+        attempts < 3 &&
+        preloaded.exitCode !== 0 &&
+        preloaded.text.includes("TtscUnstableGenerationError")
+      ) {
+        attempts += 1;
+        preloaded = spawn([process.execPath, "src/entry.ts"], preload, preloadEnv);
+      }
       record(
-        "evidence-missing",
-        evidenceBad.exitCode !== 0 && /Missing acknowledgement/.test(body),
-        body.slice(0, 1500),
+        "transform-present",
+        preloaded.exitCode === 0 && preloaded.text.includes("preload-ok"),
+        `attempts=${attempts}\n${preloaded.text.slice(0, 1500)}`,
+      );
+
+      const nopreload = join(work, "bun-nopreload");
+      copyFixture("fixtures/toolchain/bun-nopreload", nopreload);
+      const missingTransform = spawn(
+        [process.execPath, join(nopreload, "src/entry.ts")],
+        nopreload,
+        fixtureEnv(),
+      );
+      record(
+        "transform-missing",
+        missingTransform.exitCode !== 0 && /transform|typia/i.test(missingTransform.text),
+        missingTransform.text.slice(0, 1500),
       );
     }
 
-    const graphBase = join(work, "graph-base");
-    copyFixture("fixtures/graph/base", graphBase);
-    const found = graphLookup(graphBase, "quotaHost");
-    record(
-      "graph-present",
-      found.exitCode === 0 && found.text.includes("quotaHost") && found.text.includes("src/host.ts"),
-      found.text.slice(0, 1500),
-    );
+    if (group === undefined || group === "evidence") {
+      const evidence = join(work, "evidence");
+      copyFixture("fixtures/evidence/base", evidence);
+      const evidenceOk = runTtsc(["-p", "tsconfig.json", "--noEmit", "--cwd", evidence], evidence);
+      record("evidence-present", evidenceOk.exitCode === 0, commandText(evidenceOk).slice(0, 1500));
 
-    const graphEmpty = join(work, "graph-empty");
-    // The fixture's own package.json stops plugin discovery. Without it, ttsc-graph
-    // reads the repository manifest and loads, or on a cold cache builds, the
-    // @ttsc/lint and typia plugins for a project that configures neither.
-    copyFixture("fixtures/toolchain/graph-empty", graphEmpty);
-    // The shared fixture matches no TypeScript inputs, so ttscgraph exits before lookup.
-    // An unrelated source lets this query finish without declaring quoteBudget.
-    mkdirSync(join(graphEmpty, "src"), { recursive: true });
-    writeFileSync(
-      join(graphEmpty, "src", "unrelated.ts"),
-      "export function unrelatedHost(): 1 {\n  return 1;\n}\n",
-    );
-    const missed = graphLookup(graphEmpty, "quoteBudget");
-    const declared = /quoteBudget\s+\S+:\d+/.test(missed.text);
-    record(
-      "graph-missing",
-      missed.exitCode === 0 && !declared,
-      missed.exitCode === 0 && !declared ? `exit=${missed.exitCode}` : missed.text.slice(0, 1500),
-    );
+      const hostPath = join(evidence, "src/host.ts");
+      const host = readFileSync(hostPath, "utf8");
+      const withoutCitation = withoutNegativeEvidenceCitation(host);
+      if (withoutCitation === undefined) {
+        record("evidence-missing", false, "citation text was not in the copied host");
+      } else {
+        writeFileSync(hostPath, withoutCitation);
+        const evidenceBad = runTtsc(["-p", "tsconfig.json", "--noEmit", "--cwd", evidence], evidence);
+        const body = commandText(evidenceBad);
+        record(
+          "evidence-missing",
+          evidenceBad.exitCode !== 0 && /Missing acknowledgement/.test(body),
+          body.slice(0, 1500),
+        );
+      }
+    }
+
+    if (group === undefined || group === "graph") {
+      const graphBase = join(work, "graph-base");
+      copyFixture("fixtures/graph/base", graphBase);
+      const found = graphLookup(graphBase, "quotaHost");
+      record(
+        "graph-present",
+        found.exitCode === 0 && found.text.includes("quotaHost") && found.text.includes("src/host.ts"),
+        found.text.slice(0, 1500),
+      );
+
+      const graphEmpty = join(work, "graph-empty");
+      // The fixture's own package.json stops plugin discovery. Without it, ttsc-graph
+      // reads the repository manifest and loads, or on a cold cache builds, the
+      // @ttsc/lint and typia plugins for a project that configures neither.
+      copyFixture("fixtures/toolchain/graph-empty", graphEmpty);
+      // The shared fixture matches no TypeScript inputs, so ttscgraph exits before lookup.
+      // An unrelated source lets this query finish without declaring quoteBudget.
+      mkdirSync(join(graphEmpty, "src"), { recursive: true });
+      writeFileSync(
+        join(graphEmpty, "src", "unrelated.ts"),
+        "export function unrelatedHost(): 1 {\n  return 1;\n}\n",
+      );
+      const missed = graphLookup(graphEmpty, "quoteBudget");
+      const declared = /quoteBudget\s+\S+:\d+/.test(missed.text);
+      record(
+        "graph-missing",
+        missed.exitCode === 0 && !declared,
+        missed.exitCode === 0 && !declared ? `exit=${missed.exitCode}` : missed.text.slice(0, 1500),
+      );
+    }
   } finally {
     const leftover = removeNegativeWorkspace(work);
     if (leftover) record("workspace-cleanup", false, leftover);

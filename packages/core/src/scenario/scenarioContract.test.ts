@@ -354,6 +354,9 @@ export function runsPublishedScenarioValidator(): void {
   const refused = spawnContract(["tools/contracts-check.ts", "--write"], false);
   expect(refused.exitCode).toBe(2);
   expect(refused.stderr).toContain("does not write");
+  const invalidOperand = spawnContract(["tools/contracts-check.ts", "--expected", "--unknown"], false);
+  expect(invalidOperand.exitCode).toBe(2);
+  expect(invalidOperand.stderr).toContain("invalid --expected directory");
 }
 
 /**

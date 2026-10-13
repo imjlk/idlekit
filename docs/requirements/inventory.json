@@ -167,6 +167,20 @@
           "args": ["test", "tools/conformance.negative.test.ts"]
         },
         {
+          "file": "tools/conformance.negative.test.ts",
+          "exportName": "runsNegativeEvidenceChecks",
+          "registeredAs": "DX-01 conformance harness > checks both Evidence controls within their own deadline",
+          "cwd": ".",
+          "args": ["test", "tools/conformance.negative.test.ts"]
+        },
+        {
+          "file": "tools/conformance.negative.test.ts",
+          "exportName": "runsNegativeGraphChecks",
+          "registeredAs": "DX-01 conformance harness > checks both Graph controls within their own deadline",
+          "cwd": ".",
+          "args": ["test", "tools/conformance.negative.test.ts"]
+        },
+        {
           "file": "packages/money/src/testkit/compareAmounts.test.ts",
           "exportName": "matchesFiniteAmountsAndRefusesInfinityCollapse",
           "registeredAs": "money conformance comparator > matches finite amounts by log distance and refuses Infinity collapse",
@@ -356,6 +370,13 @@
           "registeredAs": "TC-05 typed contract > keeps one scenario schema",
           "cwd": "packages/core",
           "args": ["test", "--timeout", "180000", "src/scenario/scenarioContract.test.ts"]
+        },
+        {
+          "file": "packages/core/src/scenario/scenarioContract.test.ts",
+          "exportName": "keepsGeneratedContractsStable",
+          "registeredAs": "TC-05 typed contract > keeps independent CLI contract generations stable",
+          "cwd": "packages/core",
+          "args": ["test", "--timeout", "180000", "src/scenario/scenarioContract.test.ts"]
         }
       ]
     },
@@ -386,6 +407,13 @@
           "file": "packages/core/src/scenario/scenarioContract.test.ts",
           "exportName": "runsPublishedScenarioValidator",
           "registeredAs": "TC-05 typed contract > runs the published scenario validator",
+          "cwd": "packages/core",
+          "args": ["test", "--timeout", "180000", "src/scenario/scenarioContract.test.ts"]
+        },
+        {
+          "file": "packages/core/src/scenario/scenarioContract.test.ts",
+          "exportName": "checksTrackedContractCli",
+          "registeredAs": "TC-05 typed contract > checks stale, CRLF, and tracked contracts through the CLI",
           "cwd": "packages/core",
           "args": ["test", "--timeout", "180000", "src/scenario/scenarioContract.test.ts"]
         }

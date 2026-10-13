@@ -7,8 +7,10 @@ if (process.argv.includes("--write") || process.argv.includes("--dest")) {
 
 const expectedFlag = process.argv.indexOf("--expected");
 const expectedDir = expectedFlag >= 0 ? process.argv[expectedFlag + 1] : undefined;
-if (expectedFlag >= 0 && !expectedDir) {
-  console.error("missing --expected directory");
+if (expectedFlag >= 0 && (!expectedDir || expectedDir.startsWith("-"))) {
+  console.error(
+    expectedDir ? "invalid --expected directory: expected a path, received a flag" : "missing --expected directory",
+  );
   process.exit(2);
 }
 
