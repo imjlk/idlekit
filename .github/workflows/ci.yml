@@ -182,9 +182,9 @@ jobs:
       - name: Windows negative conformance regressions
         run: bun test tools/conformance.negative.test.ts
 
-      - name: Session clock regression tests
+      - name: Windows session clock and independent module regressions
         working-directory: packages/core
-        run: bun test src/sim/session.test.ts
+        run: bun test src/sim/session.test.ts src/sim/analysis/goalValidation.test.ts
 
       - name: Install smoke
         run: bun run install:smoke
