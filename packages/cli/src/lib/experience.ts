@@ -638,6 +638,7 @@ export function renderExperienceMarkdown(args: {
     `- Scenario: \`${args.scenarioPath}\``,
     `- Intent: ${args.intent ?? "unspecified"}`,
     `- Mode: ${args.mode}`,
+    ...(args.mode === "monte-carlo" ? ["- Snapshot scope: one recorded session (end state, growth, milestones, and perceived progression)"] : []),
     `- Session pattern: \`${snapshot.session.pattern.id}\` for ${snapshot.session.pattern.days} day(s)`,
     `- Active blocks: ${snapshot.session.activeBlocks}${snapshot.session.budgetStops > 0 ? ` (${snapshot.session.budgetStops} cut short by maxSteps)` : ""}`,
     `- Active / offline: ${formatMetric(snapshot.session.totalActiveSec, 0)}s / ${formatMetric(snapshot.session.totalOfflineSec, 0)}s`,
@@ -703,6 +704,7 @@ export function renderExperienceMarkdown(args: {
       `- Visible changes / minute mean: ${formatMetric(monteCarlo.visibleChangesPerMinute.mean, 3)}`,
       `- No-reward gap mean: ${formatMetric(monteCarlo.maxNoRewardGapSec.mean, 2)}s`,
       `- First visible completion: ${monteCarlo.firstVisible.accounting.completionRate ?? "unavailable"}`,
+      `- First visible observed / right-censored / failed / unsupported: ${monteCarlo.firstVisible.accounting.observed} / ${monteCarlo.firstVisible.accounting.rightCensored} / ${monteCarlo.firstVisible.accounting.failed} / ${monteCarlo.firstVisible.accounting.unsupported}`,
       `- First visible population p95: ${
         monteCarlo.firstVisible.population.status === "observed"
           ? `${monteCarlo.firstVisible.population.value}s`
@@ -710,6 +712,46 @@ export function renderExperienceMarkdown(args: {
       }`,
     );
   }
+
+  const checks = [
+    "- Compare the same initial state, horizon, session pattern, and seed policy when attributing a change to a strategy.",
+  ];
+  if (args.mode === "monte-carlo") {
+    checks.push("- The snapshot checks concern the recorded session. Use completion and population summaries when deciding about the draw population.");
+  }
+  if (snapshot.session.budgetStops > 0) {
+    checks.push("- Increase the step budget and rerun the same horizon and session pattern before treating cut active blocks as complete play.");
+  }
+  if (coverage !== "complete") {
+    checks.push("- Rerun with complete milestone observation before comparing exact milestone keys. Read any retained first-time summary separately from key coverage.");
+  }
+  if (snapshot.perceived.activeSeconds <= 0) {
+    checks.push("- Collect an active-play observation window before judging visible progress or purchase feedback.");
+  } else if (snapshot.perceived.visibleChangeCount === 0) {
+    checks.push("- No visible change was observed in the active window. Check the feedback rules and rerun a matched longer window before interpreting the pace.");
+  }
+  if (snapshot.session.lostRewardSec > 0) {
+    checks.push("- Compare matched offline runs with the cap or decay changed to measure the effect of lost reward credit.");
+  }
+  if (slowWindows.length > 0) {
+    checks.push("- Inspect actions and income around the sampled stall or softcap windows, then compare a matched counterfactual to test the suspected cause.");
+  }
+  if (firstPrestige !== undefined) {
+    checks.push("- Compare prestige with a matched run without that reset to estimate its net benefit.");
+  }
+  if (monteCarlo) {
+    checks.push("- Check first-visible completion and right-censored, failed, and unsupported counts before reading conditional timing statistics.");
+    if (monteCarlo.firstVisible.accounting.rightCensored > 0) {
+      checks.push(`- ${monteCarlo.firstVisible.accounting.rightCensored} draw(s) had no visible change through the last active observation on the reward-time clock. This can differ from the wall horizon. Extend matched active observation to investigate those censored observations.`);
+    }
+    if (monteCarlo.firstVisible.population.status !== "observed") {
+      checks.push("- The population p95 is unresolved. Conditional observed-change timings describe only the observations that completed.");
+    }
+    if (monteCarlo.firstVisible.accounting.failed > 0 || monteCarlo.firstVisible.accounting.unsupported > 0) {
+      checks.push("- Resolve failed or unsupported draws before relying on timing statistics for the full cohort.");
+    }
+  }
+  lines.push("", "## Next checks", "", ...checks);
 
   return `${lines.join("\n")}\n`;
 }

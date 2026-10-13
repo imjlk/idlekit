@@ -154,6 +154,8 @@ describe("compare run isolation", () => {
     const report = runCli(["compare", scriptedPath, longerPath, "--bundle", "economy", "--format", "md"]).stdout;
     expect(report).toContain("different elapsed durations");
     expect(report).toContain("A: 10s, B: 20s");
+    expect(report).toContain("## Choosing between scenarios");
+    expect(report).toContain("matching horizons, initial states, session patterns, and seed policies");
   });
 
   it("does not warn about floating-point duration dust", async () => {

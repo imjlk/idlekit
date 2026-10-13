@@ -178,3 +178,16 @@ That bundle is the repo's main publish-facing worked example for:
 - session-pattern based `experience`
 - milestone timing comparisons
 - design-oriented tuning
+
+## Read the next checks before choosing a strategy
+
+```bash
+bun run --cwd packages/cli dev -- experience ../../examples/tutorials/11-my-game-v1.json --session-pattern short-bursts --days 1 --draws 3 --seed 1 --format md
+bun run --cwd packages/cli dev -- compare ../../examples/tutorials/11-my-game-v1.json ../../examples/tutorials/12-my-game-compare-b.json --bundle economy --seed 1 --format md
+```
+
+The experience report's **Next checks** follows the measured conditions. A cut active block calls for a larger step budget under the same horizon and session pattern. Partial or incomplete milestone coverage calls for complete observation before comparing exact keys; retained first-time summaries are shown separately. Lost offline reward credit and sampled stall windows suggest matched counterfactual runs. An observed prestige reset can be compared with a matched run without that reset; an accumulated prestige count alone does not establish a reset in this session.
+
+In Monte Carlo mode, the end state, growth, milestones, and perceived progression describe one recorded session. Read first-visible completion and the observed, right-censored, failed, and unsupported counts before interpreting conditional timings. An unresolved population p95 stays unresolved; completed-only timings describe the observations that completed. First-visible censoring ends at the last active observation on the reward-time clock, which can differ from the wall horizon shown above. Extend matched active observation to investigate censored observations, and investigate failed or unsupported draws separately.
+
+The comparison report's **Choosing between scenarios** uses the existing per-metric decisions. When metrics prefer different scenarios, choose the metric that matches the design intent and inspect the opposing cost. Tied metrics need another relevant measurement; undetermined metrics need their measurements or decisions resolved. Match the horizon, initial state, session pattern, and seed policy when attributing a difference to strategy. JSON values and decisions remain available with `--format json`.
