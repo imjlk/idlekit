@@ -129,7 +129,7 @@ export const flowOptionalAdapter = "observer-not-required-model" as const;
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-pipeline A steady 100 to 20 to 30 chain binds at the middle stage.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-pipeline #bed62f3 Re-read the section: final throughput stays 20 when inflow doubles, a bind reads one resource and one window, the causally named bind is confirmed among several, each terminal process reports a final throughput per delivered resource from its latest window, an inflow source offers work, a process binds on its latest saturated window, downstream slack counts every feed into that stage, a confirmed bind cites the causal record, and the bind cites its edges and requires a downstream capacity, upstream offer, and side feed in the unit an identity edge keeps, citing the throughput that named it.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-pipeline #7299aac Re-read the section: final throughput stays 20 when inflow doubles, a bind reads one resource and one window, the causally named bind is confirmed among several, each terminal process reports a final throughput per delivered resource from its latest window, an inflow source offers work, a process series is judged only on its latest saturated window, downstream slack counts every feed into that stage, a confirmed bind cites the causal record, and the bind cites its edges and requires a downstream capacity, upstream offer, and side feed in the unit an identity edge keeps, citing the throughput that named it.
  */
 export const flowPipelineConstraint = "process-throughput-20" as const;
 
@@ -147,7 +147,7 @@ export const flowUnsupportedModel = "no-invented-stall" as const;
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-suspected Missing demand and capacity observations stay unresolved.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-suspected #277b0a9 Re-read the section: facts and hypotheses are separate, starved and blocked time are judged per process from their latest window, where every resource in that window counts and a latest zero clears an older wait, with mixed waits unresolved, and a ramp-up observation or window skips Little's law.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-suspected #ee9a657 Re-read the section: facts and hypotheses are separate, starved and blocked time in seconds are judged per process from their latest window, where every resource in that window counts and a latest zero clears an older wait, with mixed waits unresolved, and a ramp-up observation or window skips Little's law.
  */
 export const flowSuspectedCause = "facts-apart-from-cause" as const;
 
@@ -220,6 +220,9 @@ function decimalIssues(observation: FlowObservationV1): string[] {
   observation.samples.forEach((sample, index) => {
     check(`$input.samples[${index}].amount`, sample.amount);
     if (!(sample.endSec >= sample.startSec)) issues.push(`$input.samples[${index}].endSec >= startSec`);
+    if ((sample.kind === "starved-time" || sample.kind === "blocked-time") && sample.unit !== "s") {
+      issues.push(`$input.samples[${index}].unit "s" for a wait`);
+    }
     const key = JSON.stringify([sample.processId, sample.resourceId, sample.kind, sample.startSec, sample.endSec]);
     const first = keys.get(key);
     if (first !== undefined) issues.push(`$input.samples[${index}] duplicates samples[${first}]`);
@@ -387,7 +390,7 @@ function convert(amount: number, edge: FlowEdgeV1): number | null {
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-pipeline Diagnosis reads throughput, capacity, and the evidence window.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-pipeline #bed62f3 Re-read the section: the middle stage binds and doubling inflow leaves throughput at 20; capacity and upstream samples match the edge resource and the throughput window, and every saturated process is a candidate.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-pipeline #7299aac Re-read the section: the middle stage binds and doubling inflow leaves throughput at 20; capacity and upstream samples match the edge resource and the throughput window, and every saturated process is a candidate.
  */
 export function diagnoseFlow(observation: FlowObservationV1): FlowReportV1 {
   const littlesLaw = littlesOf(observation.littles, observation.capability, observation.steady);
@@ -465,15 +468,24 @@ export function diagnoseFlow(observation: FlowObservationV1): FlowReportV1 {
       evidenceRefs: [`sample:${final.index}`],
     });
   }
-  // Every saturated process is a candidate, so a later causally named bind is not missed. A process saturated
-  // in several windows or resources keeps one defined bind: the latest window, then the first resource id.
-  const byProcess = new Map<string, { row: Rated; capacity: Rated; refs: string[] }>();
+  // Every saturated process is a candidate, so a later causally named bind is not missed. Each process and
+  // resource series is judged on its latest saturated window, chosen before its evidence is read, so an older
+  // window never stands in for a newer unproven one. A process with binds on several resources keeps one:
+  // the latest window, then the smaller resource id.
+  const saturated = new Map<string, { row: Rated; capacity: Rated }>();
   for (const row of rows) {
     if (row.sample.kind !== "throughput") continue;
+    const window: Window = { startSec: row.sample.startSec, endSec: row.sample.endSec };
+    const capacity = sampleAt(rows, row.sample.processId, row.sample.resourceId, "capacity", window);
+    if (!capacity || capacity.sample.unit !== row.sample.unit || !nearly(row.value, capacity.value)) continue;
+    const key = JSON.stringify([row.sample.processId, row.sample.resourceId]);
+    const held = saturated.get(key);
+    if (!held || preferredBind(row, held.row)) saturated.set(key, { row, capacity });
+  }
+  const byProcess = new Map<string, { row: Rated; capacity: Rated; refs: string[] }>();
+  for (const { row, capacity } of saturated.values()) {
     const { processId, resourceId } = row.sample;
     const window: Window = { startSec: row.sample.startSec, endSec: row.sample.endSec };
-    const capacity = sampleAt(rows, processId, resourceId, "capacity", window);
-    if (!capacity || capacity.sample.unit !== row.sample.unit || !nearly(row.value, capacity.value)) continue;
     // Every edge into this process and resource offers work, each read in the same window.
     const upstream = observation.edges.filter((edge) => edge.toProcessId === processId && edge.toResourceId === resourceId);
     const upstreamRefs: string[] = [];
@@ -653,6 +665,8 @@ export function diagnoseFlow(observation: FlowObservationV1): FlowReportV1 {
   for (const row of rows) {
     if (bound.has(row.sample.processId)) continue;
     if (row.sample.kind !== "starved-time" && row.sample.kind !== "blocked-time") continue;
+    // A wait is a duration in seconds. A sample in another unit is not wait evidence.
+    if (row.sample.unit !== "s") continue;
     const entry = waits.get(row.sample.processId) ?? { starved: [], blocked: [] };
     (row.sample.kind === "starved-time" ? entry.starved : entry.blocked).push(row);
     waits.set(row.sample.processId, entry);
