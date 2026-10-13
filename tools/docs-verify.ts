@@ -621,6 +621,15 @@ async function verifyExperienceExamples(): Promise<void> {
     "mixed example population p95 must remain unresolved",
   );
   assert(first.horizonSec === 51900, "mixed example must observe through the last short-bursts active block");
+  const conditional = first.conditional;
+  assert(Array.isArray(conditional) && conditional.length === 3, "mixed example must provide three conditional quantiles");
+  for (const [index, q, value] of [[0, 0.1, "20"], [1, 0.5, "30"], [2, 0.9, "50"]] as const) {
+    const point = asRecord(conditional[index]!);
+    assert(
+      point.q === q && point.value === value && point.conditioning === "completed-only" && point.status === "observed",
+      `mixed example conditional q${q} must match the documented completed-only value`,
+    );
+  }
 
   const censored = asRecord(asRecord(runCliJson(censoredArgs)).monteCarlo as JSONValue);
   const unavailable = asRecord(censored.firstVisible as JSONValue);
@@ -628,6 +637,7 @@ async function verifyExperienceExamples(): Promise<void> {
   assert(counts.observed === 0 && counts.rightCensored === 16, "no-payout example must censor all 16 draws");
   assert(counts.failed === 0 && counts.unsupported === 0, "no-payout draws must remain eligible");
   assert(unavailable.status === "unavailable", "no-payout example has no observed first visible change");
+  assert(unavailable.horizonSec === 51900, "no-payout example must retain the short-bursts observation horizon");
   const unavailableP95 = asRecord(unavailable.population as JSONValue);
   assert(
     unavailableP95.status === "unavailable" && unavailableP95.value === null,

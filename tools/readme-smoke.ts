@@ -1,5 +1,5 @@
 import { $ } from "bun";
-import { resolve } from "path";
+import { delimiter, resolve } from "path";
 import { ROOT, readText, sha256Hex, withFileLock, writeText } from "./_bun";
 import { parseNpmPackEntries } from "./npm-pack";
 
@@ -107,11 +107,17 @@ async function runCliSnippet(consumerDir: string, path: string): Promise<void> {
   const scriptBody = await readText(resolve(ROOT, path));
   const scriptPath = resolve(consumerDir, "cli-quick-start.sh");
   await writeText(scriptPath, `${scriptBody}\n`);
-  const proc = Bun.spawnSync(["bash", scriptPath], {
+  const gitRoot = resolve(process.env.ProgramFiles ?? "C:/Program Files", "Git");
+  const bash = process.platform === "win32" ? resolve(gitRoot, "bin", "bash.exe") : "bash";
+  const shellPath = [resolve(consumerDir, "node_modules", ".bin")];
+  // npm's POSIX shim uses sed, dirname and uname, even when Git Bash starts without a login profile.
+  if (process.platform === "win32") shellPath.push(resolve(gitRoot, "usr", "bin"));
+  shellPath.push(process.env.PATH ?? "");
+  const proc = Bun.spawnSync([bash, scriptPath], {
     cwd: consumerDir,
     env: {
       ...process.env,
-      PATH: `${resolve(consumerDir, "node_modules", ".bin")}:${process.env.PATH ?? ""}`,
+      PATH: shellPath.join(delimiter),
     },
     stdout: "pipe",
     stderr: "pipe",
