@@ -1,6 +1,6 @@
 import {
   BREAK_ETERNITY_EXPERIMENTAL_MESSAGE,
-  assertScenarioUntilExpr,
+  assertScenarioPlanInputs,
   compileScenario,
   createBreakInfinityEngine,
   createNumberEngine,
@@ -40,6 +40,8 @@ export const resolvedRunContract = "idlekit.resolved-run-configuration" as const
 export const sessionCaseSeed = 0x7107;
 
 export type StageName = "simulate" | "experience" | "ltv";
+
+const stageNames: readonly StageName[] = ["simulate", "experience", "ltv"];
 
 export type ValueSource = "scenario" | "command" | "stage";
 
@@ -434,6 +436,24 @@ export function openResolvedStage(args: {
 }
 
 /**
+ * Throw for initial money or an untilExpr the engine cannot compile, as compileScenario would, and for a clock the
+ * runner rejects, checked with the step each stage runs. The strategy is not resolved here.
+ */
+export function assertResolvedPlanInputs(args: PrepareArgs, engine: ResolvedEngine): void {
+  const stepSecs = stageNames.map((stage) =>
+    stageApply(stage, args.consistentOverrides === true).step && args.stepSec !== undefined
+      ? args.stepSec
+      : args.scenario.clock.stepSec,
+  );
+  assertScenarioPlanInputs({
+    scenario: args.scenario,
+    E: engine.engine as Engine<number>,
+    allowSuffixNotation: true,
+    stepSecs,
+  });
+}
+
+/**
  * The engine and stage plans of a run, without compiling the scenario. No model or strategy factory is created,
  * so a caller that only explains the plan runs no factory code.
  *
@@ -448,8 +468,9 @@ export function planResolvedRun(
     scenarioEngine: args.scenario.engine,
     customEngines: args.customEngines,
   });
-  // Reject an invalid untilExpr and an unknown strategy, as prepareResolvedRun does, without building either.
-  assertScenarioUntilExpr({ scenario: args.scenario, E: engine.engine as Engine<number>, allowSuffixNotation: true });
+  // Reject invalid plan inputs and an unknown strategy, as prepareResolvedRun does, without building a model or
+  // strategy.
+  assertResolvedPlanInputs(args, engine);
   resolveStrategySelection({
     scenario: args.scenario,
     strategyRegistry: args.strategyRegistry,

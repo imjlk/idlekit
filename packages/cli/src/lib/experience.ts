@@ -85,9 +85,13 @@ function quantile(values: number[], q: number): number | undefined {
 }
 
 function quantileKey(quantiles: readonly number[], q: number): string {
-  const legacy = `q${Math.round(q * 100)}`;
+  const percent = Math.round(q * 100);
+  const legacy = `q${percent}`;
   const collided = quantiles.some((other) => other !== q && `q${Math.round(other * 100)}` === legacy);
-  return collided ? canonicalQuantileKey(q) : legacy;
+  if (!collided) return legacy;
+  // The quantile spelled exactly as that percent keeps the legacy key, so q50 stays the median that design
+  // comparisons read. A neighbour that only rounds to it, however close, moves to its canonical key.
+  return String(percent / 100) === String(q) ? legacy : canonicalQuantileKey(q);
 }
 
 function summarizeNumeric(values: number[], quantiles: readonly number[]): ExperienceNumericSummary | null {
@@ -187,6 +191,16 @@ export function analyzePerceivedProgression<N, U extends string, Vars>(args: {
 
   const startT = session.start.t;
   const changeTimes: number[] = [];
+  // Reward seconds before each segment, summed from tick durations, so the first visible change is on the same
+  // clock as the censoring horizon. Timestamps round away at a large start t.
+  const offsets = new Map<SessionSegment<N, U, Vars>, number>();
+  let elapsedBefore = 0;
+  for (const segment of session.segments) {
+    offsets.set(segment, elapsedBefore);
+    elapsedBefore += segment.durationSec;
+  }
+  const stepSec = scenario.run.stepSec;
+  let firstVisibleTickSec: number | undefined;
   const feedbackDelays: number[] = [];
   let totalActiveSec = 0;
   let maxNoRewardGapSec = 0;
@@ -210,13 +224,17 @@ export function analyzePerceivedProgression<N, U extends string, Vars>(args: {
     tracker.reset();
 
     const visibleTimestamps: number[] = [];
-    for (const state of trace) {
+    // An active block traces every step, so the point at index i is i ticks in, short of a partial last tick.
+    const tickElapsed = (index: number) =>
+      segment.run.trace ? Math.min(index * stepSec, segment.durationSec) : index === 0 ? 0 : segment.durationSec;
+    trace.forEach((state, index) => {
       const change = tracker.observe(moneyAtState(view, state, series));
       if (change.changed) {
         visibleTimestamps.push(state.t);
         changeTimes.push(state.t);
+        if (firstVisibleTickSec === undefined) firstVisibleTickSec = (offsets.get(segment) ?? 0) + tickElapsed(index);
       }
-    }
+    });
 
     if (visibleTimestamps.length === 0) {
       maxNoRewardGapSec = Math.max(maxNoRewardGapSec, segment.durationSec);
@@ -235,7 +253,7 @@ export function analyzePerceivedProgression<N, U extends string, Vars>(args: {
     }
   }
 
-  const firstVisibleChangeSec = changeTimes.length > 0 ? Math.max(0, changeTimes[0]! - startT) : undefined;
+  const firstVisibleChangeSec = firstVisibleTickSec;
   const visibleChangesPerMinute = totalActiveSec > 0 ? changeTimes.length / (totalActiveSec / 60) : 0;
   const avgPostPurchaseFeedbackSec =
     feedbackDelays.length > 0 ? feedbackDelays.reduce((sum, value) => sum + value, 0) / feedbackDelays.length : undefined;
@@ -353,11 +371,15 @@ function distinctQuantiles(quantiles: readonly number[]): number[] {
  * active blocks, so a draw without one is censored here.
  */
 function observedUntilSec<N, U extends string, Vars>(session: SessionRunResult<N, U, Vars>): number {
-  let end = session.start.t;
+  // Sum the segments' tick-derived reward seconds through the last active block. A difference of timestamps rounds
+  // away at a large start t.
+  let elapsed = 0;
+  let observed = 0;
   for (const segment of session.segments) {
-    if (segment.kind === "active") end = Math.max(end, segment.endT);
+    elapsed += segment.durationSec;
+    if (segment.kind === "active") observed = elapsed;
   }
-  return Math.max(0, end - session.start.t);
+  return observed;
 }
 
 /**
@@ -616,6 +638,7 @@ export function renderExperienceMarkdown(args: {
     `- Scenario: \`${args.scenarioPath}\``,
     `- Intent: ${args.intent ?? "unspecified"}`,
     `- Mode: ${args.mode}`,
+    ...(args.mode === "monte-carlo" ? ["- Snapshot scope: one recorded session (end state, growth, milestones, and perceived progression)"] : []),
     `- Session pattern: \`${snapshot.session.pattern.id}\` for ${snapshot.session.pattern.days} day(s)`,
     `- Active blocks: ${snapshot.session.activeBlocks}${snapshot.session.budgetStops > 0 ? ` (${snapshot.session.budgetStops} cut short by maxSteps)` : ""}`,
     `- Active / offline: ${formatMetric(snapshot.session.totalActiveSec, 0)}s / ${formatMetric(snapshot.session.totalOfflineSec, 0)}s`,
@@ -681,6 +704,7 @@ export function renderExperienceMarkdown(args: {
       `- Visible changes / minute mean: ${formatMetric(monteCarlo.visibleChangesPerMinute.mean, 3)}`,
       `- No-reward gap mean: ${formatMetric(monteCarlo.maxNoRewardGapSec.mean, 2)}s`,
       `- First visible completion: ${monteCarlo.firstVisible.accounting.completionRate ?? "unavailable"}`,
+      `- First visible observed / right-censored / failed / unsupported: ${monteCarlo.firstVisible.accounting.observed} / ${monteCarlo.firstVisible.accounting.rightCensored} / ${monteCarlo.firstVisible.accounting.failed} / ${monteCarlo.firstVisible.accounting.unsupported}`,
       `- First visible population p95: ${
         monteCarlo.firstVisible.population.status === "observed"
           ? `${monteCarlo.firstVisible.population.value}s`
@@ -688,6 +712,46 @@ export function renderExperienceMarkdown(args: {
       }`,
     );
   }
+
+  const checks = [
+    "- Compare the same initial state, horizon, session pattern, and seed policy when attributing a change to a strategy.",
+  ];
+  if (args.mode === "monte-carlo") {
+    checks.push("- The snapshot checks concern the recorded session. Use completion and population summaries when deciding about the draw population.");
+  }
+  if (snapshot.session.budgetStops > 0) {
+    checks.push("- Increase the step budget and rerun the same horizon and session pattern before treating cut active blocks as complete play.");
+  }
+  if (coverage !== "complete") {
+    checks.push("- Rerun with complete milestone observation before comparing exact milestone keys. Read any retained first-time summary separately from key coverage.");
+  }
+  if (snapshot.perceived.activeSeconds <= 0) {
+    checks.push("- Collect an active-play observation window before judging visible progress or purchase feedback.");
+  } else if (snapshot.perceived.visibleChangeCount === 0) {
+    checks.push("- No visible change was observed in the active window. Check the feedback rules and rerun a matched longer window before interpreting the pace.");
+  }
+  if (snapshot.session.lostRewardSec > 0) {
+    checks.push("- Compare matched offline runs with the cap or decay changed to measure the effect of lost reward credit.");
+  }
+  if (slowWindows.length > 0) {
+    checks.push("- Inspect actions and income around the sampled stall or softcap windows, then compare a matched counterfactual to test the suspected cause.");
+  }
+  if (firstPrestige !== undefined) {
+    checks.push("- Compare prestige with a matched run without that reset to estimate its net benefit.");
+  }
+  if (monteCarlo) {
+    checks.push("- Check first-visible completion and right-censored, failed, and unsupported counts before reading conditional timing statistics.");
+    if (monteCarlo.firstVisible.accounting.rightCensored > 0) {
+      checks.push(`- ${monteCarlo.firstVisible.accounting.rightCensored} draw(s) had no visible change through the last active observation on the reward-time clock. This can differ from the wall horizon. Extend matched active observation to investigate those censored observations.`);
+    }
+    if (monteCarlo.firstVisible.population.status !== "observed") {
+      checks.push("- The population p95 is unresolved. Conditional observed-change timings describe only the observations that completed.");
+    }
+    if (monteCarlo.firstVisible.accounting.failed > 0 || monteCarlo.firstVisible.accounting.unsupported > 0) {
+      checks.push("- Resolve failed or unsupported draws before relying on timing statistics for the full cohort.");
+    }
+  }
+  lines.push("", "## Next checks", "", ...checks);
 
   return `${lines.join("\n")}\n`;
 }

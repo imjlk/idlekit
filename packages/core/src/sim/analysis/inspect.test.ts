@@ -16,6 +16,7 @@ import {
   inspectPluginsDefault,
   inspectStageOverride,
   inspectUntilUnknown,
+  traceSampleSteps,
   type ScenarioInspectRequest,
 } from "./inspect";
 
@@ -64,9 +65,11 @@ function request(overrides: Partial<ScenarioInspectRequest> = {}): ScenarioInspe
  * @evidence ./inspect.ts#inspectPartialTick Reads the partial-tick contract.
  * @evidenceReview ./inspect.ts#inspectPartialTick #fbcbcf5 The declaration is partial-tick-included.
  * @evidence ./inspect.ts#fixedDurationStepCount Counts whole and partial ticks with nextBoundary.
- * @evidenceReview ./inspect.ts#fixedDurationStepCount #94e929a The function steps nextBoundary without until until it stops, and reports the step count, the last dt, and whether that tick was partial. Past one million ticks it returns a null count.
+ * @evidenceReview ./inspect.ts#fixedDurationStepCount #aabb71b The function steps nextBoundary without until until it stops, and reports the step count, the last dt, and whether that tick was partial. Past one million ticks it returns a null count, and a horizon of exactly one million keeps its count because the cap is checked only when another tick is due.
  * @evidence ./inspect.ts#buildScenarioInspect Builds the report from a fixed-duration request.
- * @evidenceReview ./inspect.ts#buildScenarioInspect #1b602fb The function derives horizon kind, observation supply, stage plans, engine and plugin notes, the planner bound, and diagnostics without running the scenario. It treats an omitted event log as enabled, traces every step without a cadence, leaves session stages and capped counts unknown, reports each stage's fast mode, and names an unresolved model in plugin-skipped. A traced run's window is its cadence, and plugin-skipped names an unresolved strategy too. A custom engine's domain is unknown and still warns, and an ltv stage's count is unknown.
+ * @evidenceReview ./inspect.ts#buildScenarioInspect #f025f45 The function derives horizon kind, observation supply, stage plans, engine and plugin notes, the planner bound, and diagnostics without running the scenario. It treats an omitted event log as enabled, traces every step without a cadence, leaves session stages and capped counts unknown, reports each stage's fast mode, and names an unresolved model in plugin-skipped. A traced run's window is its cadence, and plugin-skipped names an unresolved strategy too. A custom engine's domain is unknown and still warns, and an ltv stage's count is unknown. A trace cadence that is not a positive integer supplies no cadence. It reads untilExpr literals itself: amount literals use the engine domain, while t, prestige.count, and the numericUntilPaths the caller names always warn, since they go through Number. Another path has a run-time parser and does not warn. Each stage reports the action log it keeps, and an uncapped kept log is unlimited. A stage reports the fast mode its input carries, including one inherited from the scenario where the override does not apply. An included trace has no point cap, so its budget is unlimited and warns for a finite duration too. The supplied cadence comes from traceSampleSteps, and each stage reports the state trace its input carries.
+ * @evidence ./inspect.ts#traceSampleSteps Maps a trace cadence to the steps between the runner samples.
+ * @evidenceReview ./inspect.ts#traceSampleSteps #91fb7c1 Re-read traceSampleSteps: a nonzero integer returns its magnitude, 0 and a non-finite cadence return null, and a fraction returns the first whole step up to one million that it divides with %, as the runner tests steps % everySteps. Ran this function: -1 is 1, -3 is 3, 0.5 is 1, 1.5 is 3, and 0 and NaN are null.
  */
 export function countsFixedDurationSteps(): void {
   expect(inspectPartialTick).toBe("partial-tick-included");
@@ -96,6 +99,8 @@ export function countsFixedDurationSteps(): void {
   expect(report.simulated).toBe(false);
   // Past the counting cap the count is unknown, not the cap with a partial tick.
   expect(fixedDurationStepCount(1_000_001, 1)).toEqual({ steps: null, lastDt: null, partial: false });
+  // A horizon of exactly the cap keeps its count.
+  expect(fixedDurationStepCount(1_000_000, 1)).toEqual({ steps: 1_000_000, lastDt: 1, partial: false });
   expect(buildScenarioInspect(request({ clock: { stepSec: 1, durationSec: 1_000_001 } })).stages[0]?.stepCount).toBe(
     "unknown",
   );
@@ -123,6 +128,10 @@ export function countsFixedDurationSteps(): void {
     }),
   );
   expect(traced.budgets.trace.everySteps).toBe(1);
+  // compileScenario sets no maxPoints, so a trace keeps every periodic state even over a finite duration.
+  expect(traced.budgets.trace.unlimited).toBe(true);
+  const tracedBounded = buildScenarioInspect(request({ trace: { include: true }, eventLog: { maxEvents: 100 } }));
+  expect(tracedBounded.diagnostics.some((item) => item.code === "unlimited-trace")).toBe(true);
   expect(traced.analyzers[0]?.met).toBe(true);
   // A traced run supplies windows as fine as its cadence, whatever its total duration.
   const longTrace = buildScenarioInspect(
@@ -135,6 +144,33 @@ export function countsFixedDurationSteps(): void {
     }),
   );
   expect(longTrace.analyzers[0]?.met).toBe(true);
+  // A cadence of 0 retains no periodic samples, so it supplies no cadence.
+  const zeroCadence = buildScenarioInspect(
+    request({
+      trace: { include: true, everySteps: 0 },
+      analyzers: [
+        { id: "cadence", version: "1", kind: "postprocess", observation: observationDemand({ coverage: "trace", sampleCadenceSec: 1 }) },
+      ],
+    }),
+  );
+  expect(zeroCadence.analyzers[0]?.met).toBe(false);
+  // runScenario samples when steps % everySteps is 0, so a negative cadence samples as its magnitude does and a
+  // fraction samples at the first whole step it divides.
+  expect(traceSampleSteps(-1)).toBe(1);
+  expect(traceSampleSteps(-3)).toBe(3);
+  expect(traceSampleSteps(0.5)).toBe(1);
+  expect(traceSampleSteps(1.5)).toBe(3);
+  expect(traceSampleSteps(0)).toBeNull();
+  expect(traceSampleSteps(Number.NaN)).toBeNull();
+  const negativeCadence = buildScenarioInspect(
+    request({
+      trace: { include: true, everySteps: -1 },
+      analyzers: [
+        { id: "cadence", version: "1", kind: "postprocess", observation: observationDemand({ coverage: "trace", sampleCadenceSec: 1 }) },
+      ],
+    }),
+  );
+  expect(negativeCadence.analyzers[0]?.met).toBe(true);
   // A strategy that only a skipped plugin provides is named in plugin-skipped.
   const skippedStrategy = buildScenarioInspect(
     request({
@@ -145,6 +181,55 @@ export function countsFixedDurationSteps(): void {
   const skippedNote = skippedStrategy.diagnostics.find((item) => item.code === "plugin-skipped");
   expect(skippedNote?.evidence.strategy).toBe("plugin.walk");
   expect(skippedStrategy.invalid).toBe(false);
+  // A stage that keeps every action without a cap reports an unlimited action log, as ltv does.
+  const ltvStage = buildScenarioInspect(
+    request({
+      eventLog: { enabled: false },
+      stages: [
+        {
+          name: "ltv",
+          applies: { strategy: true, step: true, fast: true, session: false },
+          stepSec: { value: 1, source: "scenario" },
+          strategySource: "scenario",
+          actionsLog: { kept: true },
+        },
+        {
+          name: "simulate",
+          applies: { strategy: true, step: true, fast: true, session: false },
+          stepSec: { value: 1, source: "scenario" },
+          strategySource: "scenario",
+          actionsLog: { kept: false },
+        },
+      ],
+    }),
+  );
+  expect(ltvStage.stages[0]?.actionsLog).toEqual({ kept: true, maxActions: null, unlimited: true });
+  expect(ltvStage.stages[1]?.actionsLog).toEqual({ kept: false, maxActions: null, unlimited: false });
+  // A session forces a trace of every step with no point cap, whatever the scenario trace says.
+  const sessionTrace = buildScenarioInspect(
+    request({
+      stages: [
+        {
+          name: "experience",
+          applies: { strategy: true, step: false, fast: false, session: true },
+          stepSec: { value: 1, source: "scenario" },
+          strategySource: "scenario",
+          stateTrace: { kept: true, everySteps: 1 },
+        },
+        {
+          name: "ltv",
+          applies: { strategy: true, step: true, fast: true, session: false },
+          stepSec: { value: 1, source: "scenario" },
+          strategySource: "scenario",
+          stateTrace: { kept: false },
+        },
+      ],
+    }),
+  );
+  expect(sessionTrace.budgets.trace.include).toBe(false);
+  expect(sessionTrace.stages[0]?.stateTrace).toEqual({ kept: true, everySteps: 1, maxPoints: null, unlimited: true });
+  expect(sessionTrace.stages[1]?.stateTrace).toEqual({ kept: false, everySteps: null, maxPoints: null, unlimited: false });
+  expect(defaults.stages[0]?.actionsLog).toBeNull();
 }
 
 /**
@@ -169,7 +254,7 @@ export function marksUntilOnlyUnknown(): void {
  * @evidence ./inspect.ts#inspectDecimalRange Reads the decimal-range contract.
  * @evidenceReview ./inspect.ts#inspectDecimalRange #f9b5c90 The declaration is decimal-range-is-advisory.
  * @evidence ./inspect.ts#decimalExceedsNumberDomain Flags decimals with more than 15 integer digits or exponent magnitude.
- * @evidenceReview ./inspect.ts#decimalExceedsNumberDomain #5161515 The function reads a scientific exponent or the integer digits and reports a magnitude of 15 or more. A sign and a leading-dot mantissa are read too.
+ * @evidenceReview ./inspect.ts#decimalExceedsNumberDomain #0930a6d The function reads a scientific exponent or the integer digits and reports a magnitude of 15 or more. A sign and a leading-dot mantissa are read too. An alpha suffix adds 3 to the exponent per alphaInfiniteIndex step, as parseMoney scales it.
  */
 export function warnsOnDecimalRange(): void {
   expect(inspectDecimalRange).toBe("decimal-range-is-advisory");
@@ -179,6 +264,15 @@ export function warnsOnDecimalRange(): void {
   expect(decimalExceedsNumberDomain("+1e400")).toBe(true);
   expect(decimalExceedsNumberDomain(".1e400")).toBe(true);
   expect(decimalExceedsNumberDomain("1.e400")).toBe(true);
+  // An alpha suffix scales by 1e3 per index, as the money parser reads it: aa is 1e3 and zz is 1e2028.
+  expect(decimalExceedsNumberDomain("1zz")).toBe(true);
+  expect(decimalExceedsNumberDomain("1aa")).toBe(false);
+  expect(decimalExceedsNumberDomain("1ae")).toBe(true);
+  expect(decimalExceedsNumberDomain("1e10ab")).toBe(true);
+  // parseMoney combines the exponent and suffix before conversion, so these finite results need no range warning.
+  expect(decimalExceedsNumberDomain("1e-2028zz")).toBe(false);
+  expect(decimalExceedsNumberDomain("-2.5e-2028zz")).toBe(false);
+  expect(decimalExceedsNumberDomain("3d")).toBe(false);
   const numberReport = buildScenarioInspect(
     request({ decimals: ["1e400"], engine: { effectiveId: "number", source: "flag", accepted: true } }),
   );
@@ -200,7 +294,44 @@ export function warnsOnDecimalRange(): void {
   );
   expect(customReport.numericDomain.exact).toBe("unknown");
   expect(customReport.diagnostics.find((item) => item.code === "decimal-range")?.evidence.engineId).toBe("plugin.decimal");
-  const source = readFileSync(join(import.meta.dir, "inspect.ts"), "utf8");
+  // An untilExpr amount literal goes through the engine, so breakInfinity keeps it exact.
+  const breakInfinity = { effectiveId: "breakInfinity", source: "flag", accepted: true } as const;
+  const amountUntil = buildScenarioInspect(
+    request({ clock: { stepSec: 1, untilExpr: "money >= 9999999999999999" }, engine: breakInfinity }),
+  );
+  expect(amountUntil.diagnostics.some((item) => item.code === "decimal-range")).toBe(false);
+  const amountUntilNumber = buildScenarioInspect(request({ clock: { stepSec: 1, untilExpr: "money >= 9999999999999999" } }));
+  expect(amountUntilNumber.diagnostics.find((item) => item.code === "decimal-range")?.evidence.literal).toBe(
+    "9999999999999999",
+  );
+  // t and prestige.count go through Number whatever the engine, so they still warn under breakInfinity.
+  const timeUntil = buildScenarioInspect(
+    request({ clock: { stepSec: 1, untilExpr: "money >= 1e400 || t >= 9999999999999999" }, engine: breakInfinity }),
+  );
+  const timeWarning = timeUntil.diagnostics.find((item) => item.code === "decimal-range");
+  expect(timeWarning?.evidence.literal).toBe("9999999999999999");
+  expect(timeWarning?.evidence.count).toBe(1);
+  expect(timeWarning?.evidence.numberParsed).toBe(1);
+  const countUntil = buildScenarioInspect(
+    request({ clock: { stepSec: 1, untilExpr: "prestige.count >= 1e20" }, engine: breakInfinity }),
+  );
+  expect(countUntil.diagnostics.some((item) => item.code === "decimal-range")).toBe(true);
+  // Another path picks its parser from the run-time value. A string var is compared as text, so it does not warn
+  // unless the caller knows the value is a number.
+  const dynamicUntil = { stepSec: 1, untilExpr: "vars.code == 9999999999999999" };
+  expect(
+    buildScenarioInspect(request({ clock: dynamicUntil, engine: breakInfinity })).diagnostics.some(
+      (item) => item.code === "decimal-range",
+    ),
+  ).toBe(false);
+  expect(
+    buildScenarioInspect(request({ clock: dynamicUntil })).diagnostics.some((item) => item.code === "decimal-range"),
+  ).toBe(false);
+  const numericVar = buildScenarioInspect(
+    request({ clock: dynamicUntil, engine: breakInfinity, numericUntilPaths: ["vars.code"] }),
+  );
+  expect(numericVar.diagnostics.find((item) => item.code === "decimal-range")?.evidence.numberParsed).toBe(1);
+  const source =readFileSync(join(import.meta.dir, "inspect.ts"), "utf8");
   expect(source.includes("Number(")).toBe(false);
 }
 
@@ -268,9 +399,24 @@ export function explainsStageOverrides(): void {
   );
   expect(ltvReport.stages[0]?.stepCount).toBe("unknown");
   expect(simulate?.stepCount).toBe(5);
-  // The stage reports the fast mode it runs. A stage the fast flag does not apply to has none.
+  // The stage reports the fast mode it runs. A stage given no fast mode reports none.
   expect(simulate?.fast).toBeNull();
   expect(experience?.fast).toBeNull();
+  // A stage the fast flag does not apply to still runs the scenario's fast mode, so that mode is reported.
+  const inherited = buildScenarioInspect(
+    request({
+      stages: [
+        {
+          name: "experience",
+          applies: { strategy: true, step: false, fast: false, session: true },
+          stepSec: { value: 1, source: "scenario" },
+          strategySource: "scenario",
+          fast: { enabled: true, source: "scenario" },
+        },
+      ],
+    }),
+  );
+  expect(inherited.stages[0]?.fast).toEqual({ enabled: true, source: "scenario" });
   const fastReport = buildScenarioInspect(
     request({
       stages: [

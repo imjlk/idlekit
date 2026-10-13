@@ -61,24 +61,15 @@ async function writeConsumerPackageJson(): Promise<void> {
   );
 }
 
-async function runLibrarySmoke(): Promise<Readonly<{ money: string; core: string }>> {
-  const script = `
-    import { createBreakInfinityEngine } from "@idlekit/money";
-    import { createNumberEngine } from "@idlekit/core";
-
-    const moneyEngine = createBreakInfinityEngine();
-    const coreEngine = createNumberEngine();
-
-    const out = {
-      money: moneyEngine.toString(moneyEngine.from("1e6")),
-      core: coreEngine.toString(coreEngine.add(2, 3)),
-    };
-
-    console.log(JSON.stringify(out));
-  `;
-
-  const raw = await $`bun -e ${script}`.cwd(CONSUMER_DIR).text();
-  return JSON.parse(raw.trim()) as { money: string; core: string };
+async function runLibrarySmoke(): Promise<Readonly<{ money: string; core: string; boundaryChecks: number }>> {
+  const script = resolve(CONSUMER_DIR, "time-boundaries-smoke.mjs");
+  await Bun.write(script, Bun.file(resolve(ROOT, "fixtures/regressions/time-boundaries-smoke.mjs")));
+  await Bun.write(
+    resolve(CONSUMER_DIR, "time-boundaries.json"),
+    Bun.file(resolve(ROOT, "fixtures/regressions/time-boundaries.json")),
+  );
+  const raw = await $`bun --config=${resolve(ROOT, "tools/bundled-cli-bunfig.toml")} ${script}`.cwd(CONSUMER_DIR).text();
+  return JSON.parse(raw.trim()) as { money: string; core: string; boundaryChecks: number };
 }
 
 async function runCliSmoke(): Promise<Readonly<{ helpHasIdk: boolean; validateOk: boolean }>> {

@@ -302,7 +302,7 @@ function measureDesignMetric(args: {
   });
 
   return {
-    value: summary.quantiles.q50 ?? summary.mean,
+    value: summary.quantiles.q50 ?? summary.quantiles["q0.5"] ?? summary.mean,
     sessions: summary.sessions,
   };
 }

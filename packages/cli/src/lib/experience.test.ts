@@ -191,4 +191,48 @@ describe("experience Monte Carlo first visible change", () => {
     });
     expect(summary.firstVisible.conditional.map((point) => point.key)).toEqual(["q0.5"]);
   });
+
+  it("keeps the q50 median key when a neighbour rounds to it", () => {
+    const summary = summarizeExperienceMonteCarlo({
+      scenario: scenario(),
+      sessionPattern: { id: "twice-daily", days: 1 },
+      draws: 2,
+      seed: 1,
+      quantiles: [0.5, 0.504],
+    });
+    expect(Object.keys(summary.endNetWorthLog10.quantiles).sort()).toEqual(["q0.504", "q50"]);
+    // A neighbour within any epsilon of 50% is still its own quantile.
+    const close = summarizeExperienceMonteCarlo({
+      scenario: scenario(),
+      sessionPattern: { id: "twice-daily", days: 1 },
+      draws: 2,
+      seed: 1,
+      quantiles: [0.5, 0.500000000001],
+    });
+    expect(Object.keys(close.endNetWorthLog10.quantiles).sort()).toEqual(["q0.500000000001", "q50"]);
+  });
+
+  it("measures the censoring horizon in tick seconds at a large start time", () => {
+    // At t = 2^51 a 0.3-second tick rounds to 0.5 seconds of timestamp, so timestamps overstate reward time.
+    const base = scenario();
+    const late = { ...base, initial: { ...base.initial, t: 2 ** 51 }, run: { ...base.run, stepSec: 0.3 } };
+    const summary = summarizeExperienceMonteCarlo({
+      scenario: late,
+      sessionPattern: { id: "twice-daily", days: 1 },
+      draws: 2,
+      seed: 1,
+      quantiles: [0.5],
+    });
+    expect(summary.firstVisible.horizonSec).toBeCloseTo(45000, 3);
+    // The first visible change is on the same tick clock, so a one-tick block does not overshoot its horizon.
+    const oneTick = { ...late, run: { ...late.run, maxSteps: 1 } };
+    const capped = summarizeExperienceMonteCarlo({
+      scenario: oneTick,
+      sessionPattern: { id: "twice-daily", days: 1 },
+      draws: 2,
+      seed: 1,
+      quantiles: [0.5],
+    });
+    expect(capped.firstVisible.status).not.toBe("unsupported");
+  });
 });

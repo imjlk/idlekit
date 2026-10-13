@@ -8,7 +8,7 @@ import { canonicalJson, sha256Text } from "../../scenario/scenarioContract";
 import { createRunFactory, type ExecutionPlan } from "../runFactory";
 import { runScenario } from "../simulator";
 import type { StrategyRegistry } from "../strategy/registry";
-import type { CompiledScenario, SimRunOptions, SimState } from "../types";
+import { runElapsedSec, type CompiledScenario, type SimRunOptions, type SimState } from "../types";
 import {
   assignmentFitsParamSpace,
   elasticityFromChange,
@@ -37,7 +37,7 @@ export const experimentSeparateSpec = "experiment-spec-not-tunespec" as const;
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter Assignment uses a registered identifier path and the model or strategy schema. JSONPath, prototype, and eval paths are refused before a run.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #365ac87 Re-read the section: a prototype path, an out-of-range integer, a non-finite choice value, a non-finite space bound, a schema-invalid rate, a stripped path, overlapping paths, a session dimension, a repeated seed, a non-finite limit, and a repeated constraint id throw before model create.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #847f7d0 Re-read the section: a prototype path, an out-of-range integer, a non-finite choice value, a non-finite space bound, a schema-invalid rate, a stripped path, overlapping paths, a session dimension, a repeated seed, a non-finite limit, and a repeated constraint id throw before model create.
  */
 export const experimentRegisteredSetter = "registered-key-not-jsonpath" as const;
 
@@ -55,13 +55,13 @@ export const experimentCandidateOrder = "sorted-candidates-unmutated-scenario" a
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-censored-horizon A goal missed inside the horizon stays censored. That time is not the horizon and is not differentiated.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-censored-horizon #0d042e7 Re-read the section: horizon 9 with target 10 leaves the reach time null, not 9, the reach time is read on the way while the run continues to the horizon, and no scenario stop condition or step budget ends it early.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-censored-horizon #befcebb Re-read the section: horizon 9 with target 10 leaves the reach time null, not 9, the reach time is read on the way while the run continues to the horizon, and no scenario stop condition or step budget ends it early.
  */
 export const experimentCensoredHorizon = "censored-time-not-horizon" as const;
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown Pareto keeps per-metric tradeoffs. An unknown objective is uncompared, not a win.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown #0c1079a Re-read the section: A, B, and C are non-dominated, D is dominated, E is uncompared, money is compared pairwise in the effective engine, and the elasticity stays in that engine until it is text.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown #440698a Re-read the section: A, B, and C are non-dominated, D is dominated, E is uncompared, money is compared pairwise in the effective engine, and the elasticity stays in that engine until it is text.
  */
 export const experimentParetoUnknown = "unknown-is-not-superior" as const;
 
@@ -282,10 +282,20 @@ type CandidateBase = Readonly<{
 type MetricReading = Readonly<{ metricId: ExperimentMetricId; status: ExperimentMetricStatus; value: string | null }>;
 
 /** An observed money reading keeps its engine amount. Time and benefit keep a number. */
-type Reading<N> = MetricReading & Readonly<{ amount?: N; num?: number }>;
+type Reading<N> = MetricReading &
+  Readonly<{
+    amount?: N;
+    num?: number;
+    /**
+     * A censored reach time is later than this simulated time. It is never written as the value.
+     * It only proves an `lte` constraint violation. `strict` marks that the reach time is strictly later.
+     */
+    lowerBound?: Readonly<{ sec: number; strict: boolean }>;
+  }>;
 
 const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
-const BANNED_SEGMENT = new Set(["__proto__", "prototype", "constructor", "eval"]);
+// Canonical JSON drops `__type`, so a parameter with that name would vanish from task descriptors and hashes.
+const BANNED_SEGMENT = new Set(["__proto__", "prototype", "constructor", "eval", "__type"]);
 
 function reject(message: string): never {
   throw new ExperimentRejected(`Experiment ${message}`);
@@ -308,22 +318,31 @@ export function assertRegisteredPath(path: string, target: ExperimentDimensionV1
 
 export function setRegisteredParam(root: Readonly<Record<string, unknown>>, path: string, value: ExperimentScalar): Record<string, unknown> {
   const parts = assertRegisteredPath(path, "model");
-  // Copy only the objects on the assigned path. Every other value keeps its identity, prototype, and exact number.
-  const clone: Record<string, unknown> = { ...root };
+  // Copy only the objects on the assigned path, with their prototype and property descriptors.
+  // Every other value keeps its identity and exact number. A copied property is configurable, so a frozen
+  // or read-only source can still take the assigned value as a new own data property.
+  const copy = (source: object): Record<string, unknown> => {
+    const descriptors = Object.getOwnPropertyDescriptors(source);
+    for (const descriptor of Object.values(descriptors)) descriptor.configurable = true;
+    return Object.create(Object.getPrototypeOf(source), descriptors) as Record<string, unknown>;
+  };
+  const put = (target: Record<string, unknown>, key: string, entry: unknown): void => {
+    Object.defineProperty(target, key, { value: entry, writable: true, enumerable: true, configurable: true });
+  };
+  const clone = copy(root);
   let cursor = clone;
   for (let index = 0; index < parts.length - 1; index += 1) {
     const key = parts[index]!;
     // assertRegisteredPath already bans these. The inline guard keeps the write visibly safe at the assignment.
     if (key === "__proto__" || key === "constructor" || key === "prototype") reject("parameter path is not a registered identifier");
     const next = Object.prototype.hasOwnProperty.call(cursor, key) ? cursor[key] : undefined;
-    const copied: Record<string, unknown> =
-      next === null || typeof next !== "object" || Array.isArray(next) ? {} : { ...(next as Record<string, unknown>) };
-    cursor[key] = copied;
+    const copied: Record<string, unknown> = next === null || typeof next !== "object" || Array.isArray(next) ? {} : copy(next);
+    put(cursor, key, copied);
     cursor = copied;
   }
   const leaf = parts[parts.length - 1]!;
   if (leaf === "__proto__" || leaf === "constructor" || leaf === "prototype") reject("parameter path is not a registered identifier");
-  cursor[leaf] = value;
+  put(cursor, leaf, value);
   return clone;
 }
 
@@ -360,11 +379,16 @@ function requireSpec(input: ExperimentSpecV1): ExperimentSpecV1 {
   }
   const spec = parsed.data;
   if (!Number.isFinite(spec.horizonSec) || spec.horizonSec <= 0) reject("horizon must be a positive finite number");
+  // A JSON literal such as 1e400 parses to Infinity, which the artifact and canonical JSON cannot carry.
+  if (!Number.isFinite(spec.model.version) || Object.is(spec.model.version, -0)) reject("model version must be finite and not -0");
+  if (spec.strategy !== undefined && spec.strategy.id.length === 0) reject("strategy id must not be empty");
   if (!Number.isFinite(spec.stepSec) || spec.stepSec <= 0) reject("step must be a positive finite number");
   if (!Number.isInteger(spec.budget.candidates) || spec.budget.candidates < 1) reject("candidate budget must be a positive integer");
   if (!Number.isInteger(spec.budget.seeds) || spec.budget.seeds < 1) reject("seed budget must be a positive integer");
   if (spec.seeds.length === 0 || spec.seeds.some((seed) => !Number.isFinite(seed))) reject("seeds must be finite");
   if (new Set(spec.seeds).size !== spec.seeds.length) reject("seeds must be unique logical seeds");
+  // Task ids, logical seeds, and canonical JSON write -0 as 0, while ctx.seed would still carry -0.
+  if (spec.seeds.some((seed) => Object.is(seed, -0))) reject("seeds must not be -0");
   if (spec.seeds.length > spec.budget.seeds) reject("seed budget exceeded");
   if (!Number.isFinite(spec.session.days) || spec.session.days <= 0) reject("session days must be positive");
   const ids = new Set<string>();
@@ -389,6 +413,12 @@ function requireSpec(input: ExperimentSpecV1): ExperimentSpecV1 {
     for (const probe of dimension.probes ?? []) {
       if (!assignmentFitsParamSpace(dimension.space, probe)) reject(`probe for ${dimension.id} is outside its parameter space`);
     }
+  }
+  // An objective id names one Pareto objective. A repeated id would be compared as two independent positions.
+  const objectiveIds = new Set<string>();
+  for (const objective of spec.objectives ?? []) {
+    if (objectiveIds.has(objective.id)) reject(`duplicate objective ${objective.id}`);
+    objectiveIds.add(objective.id);
   }
   // A violation lists only the constraint id, so the id must name one constraint. A JSON literal such as 1e400 parses to Infinity.
   const constraintIds = new Set<string>();
@@ -469,7 +499,8 @@ function checkCandidateParams(
     }
     return;
   }
-  const result = schema["~standard"].validate(params);
+  // A detached copy: a schema that writes its input cannot reach the candidate, the base, or the caller.
+  const result = schema["~standard"].validate(cloneJsonData(params));
   if (!result.success) {
     reject(`${label} params rejected: ${result.issues.map((issue) => issue.message).join("; ")}`);
   }
@@ -486,6 +517,90 @@ function asParamRecord(params: unknown, label: string): Readonly<Record<string, 
   return params as Readonly<Record<string, unknown>>;
 }
 
+/**
+ * Task descriptors and hashes write params as canonical JSON, so the params must be JSON data: null, booleans,
+ * strings, finite numbers other than -0, arrays, and plain objects. A Date, a class instance, a function, or an
+ * undefined field would run as one value and be recorded as another, and could not be copied faithfully.
+ * An object reached twice (a shared reference or a cycle) and a `__type` key, which canonical JSON drops,
+ * are refused too.
+ */
+/** An enumerable, writable, configurable data property: the only kind JSON.parse creates. */
+function isOrdinaryData(descriptor: PropertyDescriptor | undefined): boolean {
+  return (
+    descriptor !== undefined &&
+    "value" in descriptor &&
+    descriptor.enumerable === true &&
+    descriptor.writable === true &&
+    descriptor.configurable === true
+  );
+}
+
+/**
+ * `allowUndefined` lets an object field hold undefined. Canonical JSON drops that field and spec and scenario
+ * readers treat it as absent. Params do not get this allowance, because a factory can see the key.
+ */
+function isJsonData(value: unknown, seen: Set<object> = new Set(), allowUndefined = false): boolean {
+  if (value === null || typeof value === "boolean" || typeof value === "string") return true;
+  if (typeof value === "number") return Number.isFinite(value) && !Object.is(value, -0);
+  if (typeof value !== "object" || seen.has(value)) return false;
+  // Visited objects stay recorded, so a shared reference fails like a cycle.
+  seen.add(value);
+  // A frozen, sealed, or non-extensible object is observable but writes the same JSON as an ordinary one.
+  if (!Object.isExtensible(value)) return false;
+  if (Array.isArray(value)) {
+    // Only a plain array of index slots: no subclass prototype, no named or symbol own property, no holes or accessors.
+    if (Object.getPrototypeOf(value) !== Array.prototype) return false;
+    // Every slot 0..length-1 is an own enumerable data property, and there is no other own key but length.
+    if (Reflect.ownKeys(value).length !== value.length + 1) return false;
+    for (let index = 0; index < value.length; index += 1) {
+      const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
+      if (!isOrdinaryData(descriptor) || !isJsonData(descriptor!.value, seen, allowUndefined)) return false;
+    }
+    return true;
+  }
+  const prototype = Object.getPrototypeOf(value);
+  if (prototype !== Object.prototype && prototype !== null) return false;
+  return Reflect.ownKeys(value).every((key) => {
+    const descriptor = Object.getOwnPropertyDescriptor(value, key)!;
+    return (
+      typeof key === "string" &&
+      key !== "__type" &&
+      isOrdinaryData(descriptor) &&
+      ((allowUndefined && descriptor.value === undefined) || isJsonData(descriptor.value, seen, allowUndefined))
+    );
+  });
+}
+
+/** One visited set spans the model and strategy params, so an object shared between them is refused too. */
+function requireJsonParams(params: unknown, label: string, seen: Set<object>): void {
+  // Task descriptors write absent params as null, so an explicit null root would share that record.
+  if (params === null) reject(`${label} params must be an object or omitted, not null`);
+  if (params !== undefined && !isJsonData(params, seen)) reject(`${label} params must be JSON data, because task descriptors and hashes record them as JSON`);
+}
+
+/**
+ * The whole scenario is checked before it is hashed: every field the run reads must be one canonical JSON records.
+ * Canonical JSON writes Infinity as null and -0 as 0 and skips non-enumerable fields, so a constraint such as
+ * maxActionsPerStep or a hidden policy.mode could change the run but not the hash. Params and the initial state
+ * then get the stricter params rule.
+ */
+function requireScenarioData(scenario: ScenarioV1): void {
+  const seen = new Set<object>();
+  requireJsonParams(scenario.model.params, "model", seen);
+  requireJsonParams(scenario.strategy?.params, "strategy", seen);
+  // The initial state, vars included, reaches every run and the scenario hash. It must be JSON data too.
+  if (!isJsonData(scenario.initial, seen)) reject("scenario initial state must be JSON data, because the scenario hash records it as JSON");
+  if (!isJsonData(scenario, new Set(), true)) reject("scenario must be JSON data, because the scenario hash records it as JSON");
+}
+
+/**
+ * A private copy of JSON data with object keys in canonical order. A factory that mutates its params cannot reach
+ * another run or the caller, and two params with one canonical JSON reach a factory with one key order.
+ */
+function cloneJsonData<T>(value: T): T {
+  return value === undefined ? value : (JSON.parse(canonicalJson(value)) as T);
+}
+
 function candidateBase(spec: ExperimentSpecV1, scenario: ScenarioV1, registries: Pick<ExperimentRunRequest, "strategyRegistry">): CandidateBase {
   if (scenario.model.id !== spec.model.id || scenario.model.version !== spec.model.version) {
     reject(`model ${spec.model.id}@${spec.model.version} does not match the scenario model ${scenario.model.id}@${scenario.model.version}`);
@@ -495,17 +610,18 @@ function candidateBase(spec: ExperimentSpecV1, scenario: ScenarioV1, registries:
     reject(`strategy ${spec.strategy.id} does not match the scenario strategy ${scenarioStrategy.id}`);
   }
   const strategyId = spec.strategy?.id ?? scenarioStrategy?.id ?? null;
+  // An empty id is falsy, so the run plan would build no strategy while the task names one.
+  if (strategyId === "") reject("strategy id must not be empty");
   if (strategyId === null) {
     if (spec.dimensions.some((dimension) => dimension.target === "strategy")) reject("strategy id is required");
     return { modelParams: scenario.model.params, strategyId: null, strategyParams: {} };
   }
   const strategyFactory = registries.strategyRegistry.get(strategyId);
   if (!strategyFactory) reject(`strategy not found: ${strategyId}`);
-  return {
-    modelParams: scenario.model.params,
-    strategyId,
-    strategyParams: scenarioStrategy?.params ?? strategyFactory.defaultParams ?? {},
-  };
+  const strategyParams = scenarioStrategy?.params ?? strategyFactory.defaultParams ?? {};
+  // Factory defaults are checked on their own: they are not part of the scenario object.
+  if (scenarioStrategy?.params === undefined) requireJsonParams(strategyParams, "strategy", new Set());
+  return { modelParams: scenario.model.params, strategyId, strategyParams };
 }
 
 function prepareCandidate(
@@ -540,7 +656,8 @@ function prepareCandidate(
       ? params
       : [...assigned].sort((left, right) => byText(left.dimension.id, right.dimension.id)).reduce<Record<string, unknown>>(
           (acc, { dimension, value }) => setRegisteredParam(acc, dimension.path, value),
-          { ...asParamRecord(params, label) },
+          // setRegisteredParam copies the root with its prototype, so the scenario object is not spread here.
+          asParamRecord(params, label) as Record<string, unknown>,
         );
   const modelFactory = registries.modelRegistry.get(spec.model.id, spec.model.version);
   if (!modelFactory) reject(`model not found: ${spec.model.id}@${spec.model.version}`);
@@ -553,7 +670,14 @@ function prepareCandidate(
     strategyParams = assign(base.strategyParams, strategyAssigned, "strategy");
     checkCandidateParams(strategyFactory.paramsSchema, base.strategyParams, strategyParams, strategyAssigned, "strategy");
   }
-  return { id: candidate.id, modelParams, strategyParams, sessionPattern: spec.session.pattern, sessionDays: spec.session.days };
+  // Private snapshots: the task records exactly these, and every run gets its own copy of them.
+  return {
+    id: candidate.id,
+    modelParams: cloneJsonData(modelParams),
+    strategyParams: cloneJsonData(strategyParams),
+    sessionPattern: spec.session.pattern,
+    sessionDays: spec.session.days,
+  };
 }
 
 function metricIds(spec: ExperimentSpecV1): ExperimentMetricId[] {
@@ -576,12 +700,16 @@ function observeMetrics<N>(
   end: SimState<N, string, Record<string, unknown>>,
   startT: number,
   reachedAt: number | undefined,
+  /** The runner elapsed clock. A censored reach time is later than it. */
+  elapsedSec: number,
 ): Reading<N>[] {
   const amount = end.wallet.money.amount;
   const benefit = readBenefit(end.vars);
   return metricIds(spec).map((metricId): Reading<N> => {
     if (metricId === "timeToMoney") {
-      if (reachedAt === undefined) return { metricId, status: "censored", value: null };
+      if (reachedAt === undefined) {
+        return { metricId, status: "censored", value: null, lowerBound: { sec: elapsedSec, strict: true } };
+      }
       const elapsed = reachedAt - startT;
       return { metricId, status: "observed", value: String(elapsed), num: elapsed };
     }
@@ -608,7 +736,14 @@ function aggregate<N>(E: Engine<N>, rows: readonly { seed: number; metrics: read
     return { metricId, status: "failed", value: null };
   }
   if (picked.some((metric) => metric!.status !== "observed" || metric!.value === null)) {
-    return { metricId, status: "censored", value: null };
+    // Every seed is either observed or censored with a known lower bound, so the mean has a lower bound too.
+    const bounded = picked.every((metric) => metric!.num !== undefined || metric!.lowerBound !== undefined);
+    if (metricId !== "timeToMoney" || !bounded) return { metricId, status: "censored", value: null };
+    const bounds = picked.map((metric) => metric!.num ?? metric!.lowerBound!.sec);
+    const total = bounds.reduce((sum, bound) => sum + bound, 0);
+    const sec = Number.isFinite(total) ? total / bounds.length : scaledMean(bounds);
+    const strict = picked.some((metric) => metric!.lowerBound?.strict === true);
+    return { metricId, status: "censored", value: null, lowerBound: { sec, strict } };
   }
   const observed = picked as Reading<N>[];
   const count = observed.length;
@@ -703,7 +838,7 @@ function readingElasticity<N>(
  * would keep every state of every candidate and seed while the experiment reads only the end state.
  *
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-censored-horizon Removes the scenario stop condition, step budget, and trace, so each candidate runs to the horizon without retaining states.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-censored-horizon #0d042e7 Re-read the section: until, maxSteps, and trace are removed and the rest of the run options stay.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-censored-horizon #befcebb Re-read the section: until, maxSteps, and trace are removed and the rest of the run options stay.
  */
 export function experimentRunBase(run: SimRunOptions): SimRunOptions {
   const { until: _until, maxSteps: _maxSteps, trace: _trace, ...horizonRun } = run;
@@ -714,17 +849,33 @@ type ExperimentCheckRequest = Pick<ExperimentRunRequest, "spec" | "scenario" | "
 
 /** Every rejection that does not need a model instance. No factory `create` runs here. */
 function prepareExperiment(request: ExperimentCheckRequest) {
-  // Validate the spec shape first, so an untyped caller gets ExperimentRejected rather than a TypeError.
+  // Validate the spec shape and the execution state first, so an untyped caller gets ExperimentRejected
+  // rather than a TypeError from hashing, for example on a bigint.
   const spec = requireSpec(request.spec);
-  const scenarioHash = sha256Text(canonicalJson(request.scenario));
-  if (scenarioHash !== spec.scenario.hash) reject("scenario hash does not match the experiment spec");
   const metrics = metricIds(spec);
   // A JSON literal such as 1e400 parses to Infinity, and canonical JSON would hash it as null.
   if (spec.goal !== undefined && !Number.isFinite(spec.goal.target)) reject("goal target must be finite");
   if (metrics.includes("timeToMoney") && spec.goal === undefined) reject("timeToMoney requires a finite goal target");
+  // Every spec field the run reads must be one both spec hashes record.
+  if (!isJsonData(request.spec, new Set(), true)) reject("spec must be JSON data, because the spec hashes record it as JSON");
+  requireScenarioData(request.scenario);
+  let scenarioHash: string;
+  try {
+    scenarioHash = sha256Text(canonicalJson(request.scenario));
+  } catch {
+    reject("scenario cannot be written as canonical JSON");
+  }
+  if (scenarioHash !== spec.scenario.hash) reject("scenario hash does not match the experiment spec");
+  // Both spec hashes are taken now, so a field canonical JSON cannot write fails before any model is created.
+  let specHashes: Readonly<{ original: string; effective: string }>;
+  try {
+    specHashes = { original: sha256Text(canonicalJson(request.spec)), effective: sha256Text(canonicalJson(normalizeSpec(spec))) };
+  } catch {
+    reject("spec cannot be written as canonical JSON");
+  }
   const base = candidateBase(spec, request.scenario, request);
   const prepared = plannedCandidates(spec).map((candidate) => prepareCandidate(spec, base, candidate, request));
-  return { spec, metrics, base, prepared };
+  return { spec, metrics, base, prepared, specHashes };
 }
 
 /**
@@ -732,21 +883,26 @@ function prepareExperiment(request: ExperimentCheckRequest) {
  * A caller that compiles or opens a run first calls this, so a rejected spec never reaches a factory.
  *
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter Throws the same rejections as runExperiment before any model create.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #365ac87 Re-read the section: the hash, spec, path, and schema checks run and no factory create is called.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-registered-setter #847f7d0 Re-read the section: the hash, spec, path, and schema checks run and no factory create is called.
  */
 export function checkExperimentSpec(request: ExperimentCheckRequest): void {
   prepareExperiment(request);
 }
 
 export function runExperiment<N>(request: ExperimentRunRequest<N>): ExperimentArtifactV1 {
-  const { spec, metrics, base, prepared } = prepareExperiment(request);
+  const { spec, metrics, base, prepared, specHashes } = prepareExperiment(request);
   const measuresReach = metrics.includes("timeToMoney");
   const E = request.engine;
   // The plan builds the strategy, so compile does not build the scenario one.
   const { strategy: _scenarioStrategy, ...withoutStrategy } = request.scenario;
+  // Compile reads copies, so its model create cannot write the caller's params or initial state.
   const compiled = compileScenario<N, string, Record<string, unknown>>({
     E,
-    scenario: withoutStrategy,
+    scenario: {
+      ...withoutStrategy,
+      model: { ...withoutStrategy.model, params: cloneJsonData(withoutStrategy.model.params) },
+      initial: cloneJsonData(withoutStrategy.initial),
+    },
     registry: request.modelRegistry,
     strategyRegistry: request.strategyRegistry,
     opts: { allowSuffixNotation: true },
@@ -763,12 +919,13 @@ export function runExperiment<N>(request: ExperimentRunRequest<N>): ExperimentAr
   const perCandidate: { id: string; rows: { seed: number; metrics: Reading<N>[] }[] }[] = [];
 
   for (const candidate of prepared) {
-    const binding = bindingFor.bind(shared, {
-      statefulModel: true,
-      model: { id: spec.model.id, version: spec.model.version, params: candidate.modelParams },
-    });
     const rows: { seed: number; metrics: Reading<N>[] }[] = [];
     for (const seed of spec.seeds) {
+      // Each seed binds its own copy of the params, so a factory that mutates them cannot change a later seed.
+      const binding = bindingFor.bind(shared, {
+        statefulModel: true,
+        model: { id: spec.model.id, version: spec.model.version, params: cloneJsonData(candidate.modelParams) },
+      });
       const taskId = `${candidate.id}#${seed}`;
       const plan: ExecutionPlan = {
         contract: "idlekit.execution-plan",
@@ -776,7 +933,7 @@ export function runExperiment<N>(request: ExperimentRunRequest<N>): ExperimentAr
         stepSec: spec.stepSec,
         durationSec: spec.horizonSec,
         seed,
-        ...(base.strategyId !== null ? { strategyId: base.strategyId, strategyParams: candidate.strategyParams } : {}),
+        ...(base.strategyId !== null ? { strategyId: base.strategyId, strategyParams: cloneJsonData(candidate.strategyParams) } : {}),
         eventLog: { enabled: false, maxEvents: 0 },
       };
       let readings: Reading<N>[];
@@ -798,7 +955,7 @@ export function runExperiment<N>(request: ExperimentRunRequest<N>): ExperimentAr
               : {}),
           },
         });
-        readings = observeMetrics(E, spec, result.end, result.start.t, reachedAt);
+        readings = observeMetrics(E, spec, result.end, result.start.t, reachedAt, runElapsedSec(result));
       } catch {
         readings = failedMetrics(spec);
       }
@@ -832,7 +989,10 @@ export function runExperiment<N>(request: ExperimentRunRequest<N>): ExperimentAr
     const constraintViolations = (spec.constraints ?? [])
       .filter((constraint) => {
         const reading = readings.find((metric) => metric.metricId === constraint.metricId);
-        return isObserved(reading) && violates(E, reading, constraint);
+        // A censored reach time is later than its lower bound. That proves an lte violation once the bound passes the limit.
+        const bound = reading !== undefined && reading.status === "censored" ? reading.lowerBound : undefined;
+        if (isObserved(reading)) return violates(E, reading, constraint);
+        return constraint.op === "lte" && bound !== undefined && (bound.sec > constraint.limit || (bound.strict && bound.sec >= constraint.limit));
       })
       .map((constraint) => constraint.id);
     return { id: candidate.id, readings, constraintViolations };
@@ -903,8 +1063,8 @@ export function runExperiment<N>(request: ExperimentRunRequest<N>): ExperimentAr
     globalSensitivity: false,
     sobol: false,
     scenario: spec.scenario,
-    originalSpecHash: sha256Text(canonicalJson(request.spec)),
-    effectiveSpecHash: sha256Text(canonicalJson(normalizeSpec(spec))),
+    originalSpecHash: specHashes.original,
+    effectiveSpecHash: specHashes.effective,
     effectiveRunHash: request.effectiveRunHash,
     budget: {
       candidates: spec.budget.candidates,

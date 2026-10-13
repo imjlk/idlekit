@@ -72,5 +72,20 @@ export function renderCompareMarkdown(args: {
   if (args.results.some((result) => result.metric === "timeToMilestone")) {
     lines.push("- Time-to-milestone scores can include an unreached penalty beyond the session horizon; that penalty is not an observed milestone time.");
   }
+  lines.push("", "## Choosing between scenarios", "");
+  if (preferences.a.length && preferences.b.length) {
+    lines.push("- The selected metrics prefer different scenarios. Choose the metric that matches the design intent and inspect the opposing cost before deciding.");
+  } else if (preferences.a.length || preferences.b.length) {
+    const side = preferences.a.length ? "A" : "B";
+    lines.push(`- ${side} is preferred on the selected decisive metrics. Check unselected costs and benefits before choosing the full strategy.`);
+  } else if (args.results.length && args.results.every((result) => result.better === "tie")) {
+    lines.push("- All selected metrics tie. Use another intent-relevant measurement to distinguish the scenarios.");
+  } else {
+    lines.push("- Select intent-relevant metrics with available measurements and decisions before choosing a scenario.");
+  }
+  if (args.results.some((result) => result.better !== "a" && result.better !== "b" && result.better !== "tie")) {
+    lines.push("- Resolve undetermined measurements or decisions before relying on those metrics.");
+  }
+  lines.push("- For a strategy comparison, use matching horizons, initial states, session patterns, and seed policies to interpret the measured differences.");
   return `${lines.join("\n")}\n`;
 }

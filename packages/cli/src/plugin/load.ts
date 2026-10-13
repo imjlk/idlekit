@@ -428,6 +428,8 @@ export type LoadedRegistries = Readonly<{
   pluginStrategyIds?: readonly string[];
   /** Analyzer keys (id@version) a plugin registered, in load order. */
   pluginAnalyzerKeys?: readonly string[];
+  /** Objective ids a plugin registered, in load order. */
+  pluginObjectiveIds?: readonly string[];
 }>;
 
 export async function loadRegistries(
@@ -450,6 +452,7 @@ export async function loadRegistries(
   const pluginModelIds: string[] = [];
   const pluginStrategyIds: string[] = [];
   const pluginAnalyzerKeys: string[] = [];
+  const pluginObjectiveIds: string[] = [];
 
   for (const p of pluginPaths) {
     const abs = await resolveAndValidatePluginPath(p, allowedRoots);
@@ -481,8 +484,14 @@ export async function loadRegistries(
       strategyFactories.push(...parsed.strategies);
       for (const factory of parsed.strategies) pluginStrategyIds.push(factory.id);
     }
-    if (parsed.objectives) objectiveFactories.push(...parsed.objectives);
-    if (parsed.analyzers) {
+    if (parsed.objectives) {
+      objectiveFactories.push(...parsed.objectives);
+      for (const factory of parsed.objectives) pluginObjectiveIds.push(factory.id);
+    }
+    // A plugin export is a runtime value: a non-array is one isolated failure, not a crash.
+    if (parsed.analyzers !== undefined && parsed.analyzers !== null && !Array.isArray(parsed.analyzers)) {
+      analyzerFailures.push({ path: abs, message: "plugin analyzers export must be an array" });
+    } else if (parsed.analyzers) {
       for (const analyzer of parsed.analyzers) {
         const message = registerAnalyzerIsolated(analyzerRegistry, analyzer);
         if (message) analyzerFailures.push({ path: abs, message });
@@ -501,6 +510,7 @@ export async function loadRegistries(
     pluginModelIds,
     pluginStrategyIds,
     pluginAnalyzerKeys,
+    pluginObjectiveIds,
   };
 }
 

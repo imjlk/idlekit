@@ -17,6 +17,7 @@ import {
 import { describe, expect, it } from "bun:test";
 import { deriveDeterministicSeed } from "../io/outputMeta";
 import {
+  assertResolvedPlanInputs,
   defaultRunSeed,
   effectiveRunHash,
   planResolvedRun,
@@ -105,7 +106,9 @@ function registries() {
  * @evidence ./runConfiguration.ts#openResolvedStage Each stage opens a fresh compiled scenario with its own strategy, simulate on step 5 and experience on step 1.
  * @evidenceReview ./runConfiguration.ts#openResolvedStage #79dfd66 Re-read openResolvedStage: it binds a new createRunFactory with stageBindOptions, the scenario model and the plan strategy, and opens a fresh trial with the plan seed and an execution plan built from the stage plan. Ran this function: the opened simulate scenario is not the prepared definition, the two stages hold different strategies, and simulate runs on step 5 while experience runs on step 1.
  * @evidence ./runConfiguration.ts#planResolvedRun Plans the same stages as prepareResolvedRun without compiling the scenario.
- * @evidenceReview ./runConfiguration.ts#planResolvedRun #b418b79 Re-read planResolvedRun: it resolves the engine, rejects an invalid untilExpr and an unknown strategy, and returns stagePlan for each stage without calling compileScenario. Ran this function: its simulate and experience plans equal prepareResolvedRun's, a model whose create throws still plans, and an unknown override throws.
+ * @evidenceReview ./runConfiguration.ts#planResolvedRun #bf642d2 Re-read planResolvedRun: it resolves the engine, rejects an invalid untilExpr and an unknown strategy, and returns stagePlan for each stage without calling compileScenario. Ran this function: its simulate and experience plans equal prepareResolvedRun's, a model whose create throws still plans, and an unknown override throws. It also rejects initial money the engine cannot parse, and a clock the runner rejects for the step each stage runs: an infinite scenario step or duration throws, while consistent overrides replace the scenario step on every stage. The plan-input checks live in assertResolvedPlanInputs, which planResolvedRun calls before resolving the strategy.
+ * @evidence ./runConfiguration.ts#assertResolvedPlanInputs Rejects an infinite scenario step before any strategy is resolved.
+ * @evidenceReview ./runConfiguration.ts#assertResolvedPlanInputs #dd021d5 Re-read assertResolvedPlanInputs: it derives the step each stage runs from stageApply, the step override, and consistent overrides, and passes those steps with the engine to assertScenarioPlanInputs, which checks initial money, untilExpr, and the runner clock. It does not resolve the strategy. Ran this function: an infinite scenario step throws even with an unloaded strategy override, and valid inputs with that override pass.
  * @evidence ./runConfiguration.ts#prepareResolvedRun One prepared run opens simulate and experience stages that each buy once and match a standalone simulate open.
  * @evidenceReview ./runConfiguration.ts#prepareResolvedRun #9dbe932 Re-read prepareResolvedRun, whose planFor returns a stage plan without opening the stage: it resolves the engine, rejects an unknown strategy before any stage opens, compiles once without the scenario strategy when an override or validated params replace it, and open builds a stage plan, its stage hash from stageIdentity with the compiled scenario fast mode and any output inputs, a fresh stage scenario, and the registries and bind options that rebuild that stage's model and strategy. Ran this function: simulate and experience each end with bought 1, the standalone simulate matches, and an unknown override throws at prepare.
  */
@@ -154,6 +157,33 @@ export function keepsResolvedRunConfiguration(): void {
   // An untilExpr that compileScenario rejects is rejected while planning too.
   const badUntil = { ...input, clock: { ...input.clock, untilExpr: "s.t >= 1 ? true : false" } };
   expect(() => planResolvedRun({ ...planArgs, scenario: badUntil })).toThrow("Invalid untilExpr");
+  // Initial money that compileScenario cannot parse is rejected while planning too.
+  const badMoney = { ...input, initial: { ...input.initial, wallet: { ...input.initial.wallet, amount: "1.2.3" } } };
+  expect(() => planResolvedRun({ ...planArgs, scenario: badMoney })).toThrow();
+  expect(() => prepareResolvedRun({ ...planArgs, scenario: badMoney })).toThrow();
+  // A clock the runner rejects is rejected while planning, even though validateScenarioV1 accepts it.
+  const infiniteStep = { ...input, clock: { ...input.clock, stepSec: Number.POSITIVE_INFINITY } };
+  expect(() => planResolvedRun({ ...planArgs, scenario: infiniteStep })).toThrow("stepSec must be a finite number");
+  // The input checks run alone too, so a caller can check them before it resolves the strategy.
+  expect(() =>
+    assertResolvedPlanInputs({ ...planArgs, scenario: infiniteStep, strategyOverride: "plugin.not-loaded" }, planned.engine),
+  ).toThrow("stepSec must be a finite number");
+  assertResolvedPlanInputs({ ...planArgs, strategyOverride: "plugin.not-loaded" }, planned.engine);
+  const infiniteDuration = { ...input, clock: { ...input.clock, durationSec: Number.POSITIVE_INFINITY } };
+  expect(() => planResolvedRun({ ...planArgs, scenario: infiniteDuration })).toThrow(
+    "durationSec must be a finite number",
+  );
+  // An already true until stops before ticking, even when a tick at the initial t would round away.
+  const roundedStart = { ...input, initial: { ...input.initial, t: 1e20 } };
+  expect(() => planResolvedRun({ ...planArgs, scenario: roundedStart })).not.toThrow();
+  // When until is false, the runner must take a tick and rejects the same nonadvancing clock.
+  const roundedFirstTick = { ...roundedStart, clock: { ...roundedStart.clock, untilExpr: "t >= 1e21" } };
+  expect(() => planResolvedRun({ ...planArgs, scenario: roundedFirstTick })).toThrow("did not advance state.t");
+  // A stage that runs the command step does not run the scenario step, so consistent overrides cover every stage.
+  expect(
+    planResolvedRun({ ...planArgs, scenario: infiniteStep, consistentOverrides: true }).planFor("experience").stepSec
+      .value,
+  ).toBe(5);
   const swapped = prepareResolvedRun({
     scenario: input,
     ...loaded,

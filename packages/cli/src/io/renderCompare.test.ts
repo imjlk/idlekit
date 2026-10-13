@@ -19,11 +19,15 @@ describe("comparison Markdown", () => {
     expect(report).toContain("a|scenario.json");
     expect(report).not.toContain("a\\|scenario.json");
     expect(JSON.stringify(rows)).toBe(before);
+    expect(report).toContain("## Choosing between scenarios");
+    expect(report).toContain("selected metrics prefer different scenarios");
+    expect(report).toContain("metric that matches the design intent");
   });
 
   it("renders missing measurements and decisions as unavailable", () => {
     const report = renderCompareMarkdown({ aPath: "a.json", bPath: "b.json", results: [{ metric: "endMoney" }] });
     expect(report).toContain("| endMoney | n/a | n/a | higher | undetermined |");
+    expect(report).toContain("Resolve undetermined measurements or decisions");
   });
 
   it("labels reached ETA strings with seconds while retaining unreachable labels", () => {
@@ -41,5 +45,21 @@ describe("comparison Markdown", () => {
     ] });
     expect(report.match(/A has lower droppedRate/g)).toHaveLength(1);
     expect(report).not.toContain("endMoney / improved");
+  });
+
+  it("distinguishes tied, decisive, undetermined, and empty selections without recalculating money", () => {
+    const report = (rows: Record<string, unknown>[]) => renderCompareMarkdown({ aPath: "a.json", bPath: "b.json", results: rows });
+    const tie = { metric: "endMoney", better: "tie", measured: { a: { endMoney: "1e400" }, b: { endMoney: "1e400" } } };
+    expect(report([tie])).toContain("All selected metrics tie");
+    expect(report([tie])).not.toContain("Resolve undetermined");
+    const decisive = { ...tie, better: "b", measured: { a: { endMoney: "1e400" }, b: { endMoney: "2e400" } } };
+    const before = JSON.stringify(decisive);
+    expect(report([decisive])).toContain("B is preferred on the selected decisive metrics");
+    expect(report([decisive])).toContain("1e400 | 2e400");
+    expect(report([decisive, { metric: "unknown", better: "unsupported" }])).toContain("Resolve undetermined measurements or decisions");
+    expect(report([{ metric: "endMoney", better: { toString: "a" } }])).toContain("Resolve undetermined measurements or decisions");
+    expect(JSON.stringify(decisive)).toBe(before);
+    expect(report([])).toContain("Select intent-relevant metrics with available measurements and decisions");
+    expect(report([])).not.toContain("All selected metrics tie");
   });
 });

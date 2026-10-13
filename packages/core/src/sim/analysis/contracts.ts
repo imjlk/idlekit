@@ -164,8 +164,8 @@ function renderCanonical(value: unknown, seen: Set<object>): string {
   seen.add(value);
   try {
     if (Array.isArray(value)) {
-      // Array.from visits holes, so a sparse slot renders as null like JSON.stringify.
-      return `[${Array.from(value, (entry) => renderCanonical(entry ?? null, seen)).join(",")}]`;
+      const entries = Array.from({ length: value.length }, (_, index) => renderCanonical(value[index] ?? null, seen));
+      return `[${entries.join(",")}]`;
     }
     const entries = Object.entries(value).filter(([, entry]) => entry !== undefined);
     entries.sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0));
@@ -218,6 +218,9 @@ export function classifyAmount<N>(engine: Engine<N>, amount: N, unit: string): P
     };
   }
   const decimal = engine.toString(amount);
+  // The wire decimal denotes an exact sign. Engine comparison tolerance must not label a nonzero decimal zero.
+  const sign = decimalSign(decimal);
+  if (sign !== null) return { status: "ok", sign, amount: { unit, decimal } };
   const cmp = engine.cmp(amount, engine.zero());
   if (cmp < 0) return { status: "ok", sign: "negative", amount: { unit, decimal } };
   if (cmp === 0) return { status: "ok", sign: "zero", amount: { unit, decimal } };
@@ -283,19 +286,19 @@ export function validateAnalysisSemantics(artifact: AnalysisArtifactV1): readonl
     if (reading.value !== undefined && !Number.isFinite(reading.value)) {
       issues.push({ path, message: "numeric value is nonfinite" });
     }
+    if (reading.amount !== undefined && NONFINITE_DECIMAL.test(reading.amount.decimal.trim())) {
+      issues.push({ path, message: "amount decimal is nonfinite" });
+    }
+    if (reading.value !== undefined && Number.isFinite(reading.value) && reading.sign !== undefined) {
+      const sign = reading.value < 0 ? "negative" : reading.value === 0 ? "zero" : "positive";
+      if (reading.sign !== sign) issues.push({ path, message: "numeric sign contradicts its value" });
+    }
     // One representation per domain: an amount reading has no number, and a numeric reading has no amount.
     if (reading.domain === "amount" && reading.value !== undefined) {
       issues.push({ path, message: "amount reading carries a numeric value" });
     }
     if (reading.domain !== "amount" && reading.amount !== undefined) {
       issues.push({ path, message: "numeric reading carries an amount" });
-    }
-    if (reading.value !== undefined && Number.isFinite(reading.value) && reading.sign !== undefined) {
-      const expected = reading.value < 0 ? "negative" : reading.value === 0 ? "zero" : "positive";
-      if (reading.sign !== expected) issues.push({ path, message: "sign does not match the value" });
-    }
-    if (reading.amount !== undefined && NONFINITE_DECIMAL.test(reading.amount.decimal.trim())) {
-      issues.push({ path, message: "amount decimal is a nonfinite spelling" });
     }
     if (reading.amount !== undefined && reading.sign !== undefined) {
       const expected = decimalSign(reading.amount.decimal);

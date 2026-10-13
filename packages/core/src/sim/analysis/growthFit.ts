@@ -102,7 +102,8 @@ export type GrowthFitWindowV1 = Readonly<{
   }>;
   legacySpeedBucket: GrowthLegacyBucket | null;
   residual: Readonly<{
-    space: "log10" | "value" | "none";
+    /** "log-rate" is the natural log of the per-second growth rate, the space the saturation fit runs in. */
+    space: "log10" | "value" | "log-rate" | "none";
     rmse: number | null;
   }>;
   quality: string;
@@ -174,6 +175,8 @@ type QuadFit = Readonly<{ a: number; b: number; c: number; rmse: number }>;
 type Slice = Readonly<{
   points: readonly Point<unknown>[];
   discontinuity: GrowthDiscontinuityKind;
+  /** The first time of the break segment this window belongs to. Power fits also try it as their origin. */
+  originSec: number;
 }>;
 
 const ASSUMPTIONS = [
@@ -244,6 +247,95 @@ function evenKeep<T>(items: readonly T[], budget: number): T[] {
     if (item !== undefined && kept[kept.length - 1] !== item) kept.push(item);
   }
   return kept;
+}
+
+/**
+ * Keep samples per fit window, so the budget leaves analyzable windows rather than one point per window. Windows
+ * split the same way slicesOf splits them. When the budget cannot give every window MIN_SAMPLES points, an evenly
+ * spaced subset of windows keeps MIN_SAMPLES each and the rest are left unfitted.
+ */
+/** Two samples hold the same value to within a few ULPs. */
+function sameValue(a: Point<unknown>, b: Point<unknown>): boolean {
+  if (a.sign !== b.sign) return false;
+  if (a.numeric !== null && b.numeric !== null) {
+    return Math.abs(b.numeric - a.numeric) <= 4 * Number.EPSILON * Math.max(Math.abs(a.numeric), Math.abs(b.numeric));
+  }
+  return a.log10 !== null && a.log10 === b.log10;
+}
+
+/**
+ * Thin one window to the budget. A window that settles on its final value keeps its samples for the part before it
+ * settles, plus the settled point and the last one, so a long plateau does not take the samples a saturation fit needs.
+ */
+function thinWindow<T extends Point<unknown>>(window: readonly T[], budget: number): T[] {
+  if (window.length <= budget) return [...window];
+  const last = window[window.length - 1]!;
+  let settled = window.length - 1;
+  while (settled > 0 && sameValue(window[settled - 1]!, last)) settled -= 1;
+  // No interior settled samples, or a window that never moves: thin evenly.
+  if (window.length - 1 - settled < 2 || settled === 0) return evenKeep(window, budget);
+  const before = window.slice(0, settled + 1);
+  if (before.length >= budget - 1) return [...evenKeep(before, budget - 1), last];
+  return [...before, ...evenKeep(window.slice(settled + 1), budget - before.length)];
+}
+
+function windowKeep<T extends Point<unknown>>(
+  items: readonly T[],
+  budget: number,
+  windowSec: number,
+  breakTimes: readonly number[],
+): { kept: T[]; windows: number; fittedWindows: number } {
+  // Split at breaks first, as slicesOf does, so each side of a break gets its own share of the budget.
+  const opens = new Set<number>();
+  for (const t of breakTimes) {
+    const index = firstIndexAtOrAfter(items, t, false);
+    if (index > 0) opens.add(index);
+  }
+  const segments: T[][] = [];
+  let segmentStart = 0;
+  for (let index = 1; index <= items.length; index += 1) {
+    if (index === items.length || opens.has(index)) {
+      segments.push(items.slice(segmentStart, index));
+      segmentStart = index;
+    }
+  }
+  const windows: T[][] = [];
+  for (const segment of segments) {
+    let start = 0;
+    while (start < segment.length) {
+      const endTime = segment[start]!.t + windowSec;
+      let end = start + 1;
+      while (end < segment.length && segment[end]!.t <= endTime + 1e-9) end += 1;
+      windows.push(segment.slice(start, end));
+      start = end;
+    }
+  }
+  if (items.length <= budget) return { kept: [...items], windows: windows.length, fittedWindows: windows.length };
+  const perWindow = Math.floor(budget / windows.length);
+  if (perWindow >= MIN_SAMPLES) {
+    return {
+      kept: windows.flatMap((window) => thinWindow(window, perWindow)),
+      windows: windows.length,
+      fittedWindows: windows.length,
+    };
+  }
+  const count = Math.max(1, Math.floor(budget / MIN_SAMPLES));
+  const each = Math.max(1, Math.floor(budget / count));
+  // Spend the budget on windows that can be fitted: enough samples and span. Only when none can is any window used.
+  const fittable = windows
+    .map((window, index) => ({ window, index }))
+    .filter(
+      ({ window }) =>
+        window.length >= MIN_SAMPLES && window[window.length - 1]!.t - window[0]!.t >= MIN_SPAN_SEC,
+    )
+    .map(({ index }) => index);
+  const pool = fittable.length > 0 ? fittable : windows.map((_, index) => index);
+  const chosen = evenKeep(pool, count);
+  return {
+    kept: chosen.flatMap((index) => thinWindow(windows[index]!, each)),
+    windows: windows.length,
+    fittedWindows: chosen.length,
+  };
 }
 
 function domainOf(points: readonly Point<unknown>[]): GrowthDomain {
@@ -399,25 +491,37 @@ function seriesScale(values: readonly number[]): number {
  * Saturation: the growth rate per second decays geometrically. Rates are normalized by each gap, so an
  * evenly downsampled trace with gaps of 11 and 12 is read the same as the full-resolution trace.
  */
-function saturating(ts: readonly number[], values: readonly number[]): boolean {
-  if (values.length < MIN_SAMPLES) return false;
+/**
+ * The saturation fit's residual in log-rate space, or null when the series is not saturating. A flat tail, where the
+ * series has reached its plateau to the number's precision, is allowed: zero steps are skipped, decreases reject.
+ */
+function saturating(ts: readonly number[], values: readonly number[]): number | null {
+  if (values.length < MIN_SAMPLES) return null;
   const mids: number[] = [];
   const logRates: number[] = [];
-  let gapSum = 0;
+  let flat = false;
   for (let index = 1; index < values.length; index += 1) {
     const gap = ts[index]! - ts[index - 1]!;
     const step = values[index]! - values[index - 1]!;
-    if (!(gap > 0) || !(step > 0)) return false;
-    gapSum += gap;
-    mids.push((ts[index]! + ts[index - 1]!) / 2);
-    logRates.push(Math.log(step / gap));
+    if (!(gap > 0) || step < 0 || Number.isNaN(step)) return null;
+    // A step within a few ULPs of the values is rounding at the plateau, not growth.
+    const rounding = 4 * Number.EPSILON * Math.max(Math.abs(values[index]!), Math.abs(values[index - 1]!));
+    if (step <= rounding) {
+      flat = true;
+      continue;
+    }
+    // Real growth after the plateau means the series did not saturate there.
+    if (flat) return null;
+    // previous + gap / 2, not (previous + next) / 2: two finite times near the number limit can sum to Infinity.
+    mids.push(ts[index - 1]! + gap / 2);
+    // log(step) - log(gap): the quotient of finite operands can underflow even when its log is representable.
+    logRates.push(Math.log(step) - Math.log(gap));
   }
-  if (logRates.length < 4) return false;
+  if (logRates.length < 4) return null;
   const fit = fitLinear(mids, logRates);
-  if (!fit || !(fit.b < 0) || fit.rmse > 0.1) return false;
-  const perGap = Math.exp(fit.b * (gapSum / logRates.length));
-  if (!(perGap > 0.05 && perGap < 0.95)) return false;
-  return Math.exp(logRates[logRates.length - 1]! - logRates[0]!) < 0.25;
+  if (!fit || !(fit.b < 0) || fit.rmse > 0.1) return null;
+  // The decay is judged over the whole span, not per retained gap, so downsampling cannot change the verdict.
+  return Math.exp(logRates[logRates.length - 1]! - logRates[0]!) < 0.25 ? fit.rmse : null;
 }
 
 function irregularSpacing(points: readonly Point<unknown>[]): boolean {
@@ -466,6 +570,7 @@ function blankWindow(
 function classifyPositive(
   points: readonly Point<unknown>[],
   discontinuity: GrowthDiscontinuityKind,
+  originSec: number = points[0]?.t ?? 0,
 ): GrowthFitWindowV1 {
   const first = points[0]!;
   const last = points[points.length - 1]!;
@@ -490,11 +595,28 @@ function classifyPositive(
   const logSpan = logHigh - logLow;
   const linear = fitLinear(ts, ys);
   const quadratic = fitQuadratic(ts, ys);
-  // ts is already measured from the window start.
-  const powerX = ts.map((t) => Math.log10(t + 1));
-  const power = fitLinear(powerX, ys);
-  const numbers = points.map((point) => point.numeric);
-  const valueReady = numbers.every((value): value is number => value !== null);
+  // A power law is fitted from the window start and from the start of its break segment, and the closer fit is kept.
+  // Window partitioning alone then does not change a power law's shape.
+  const localPower = fitLinear(
+    ts.map((t) => Math.log10(t + 1)),
+    ys,
+  );
+  const segmentPower =
+    originSec < first.t ? fitLinear(points.map((point) => Math.log10(point.t - originSec + 1)), ys) : null;
+  // The absolute time origin too, when every time is past it, so a trace that starts late keeps the law's basis.
+  const absolutePower =
+    first.t > 0 && Number.isFinite(last.t + 1) ? fitLinear(points.map((point) => Math.log10(point.t + 1)), ys) : null;
+  let power = localPower;
+  for (const candidate of [segmentPower, absolutePower]) {
+    if (candidate !== null && (power === null || candidate.rmse < power.rmse)) power = candidate;
+  }
+  // Value-space fits read each amount relative to the window's largest, through its log, when the amount itself is
+  // outside the Number range. A unit change, such as a factor of 1e400, does not switch value-space shapes off.
+  const direct = points.map((point) => point.numeric);
+  const numbers = direct.every((value): value is number => value !== null)
+    ? direct
+    : ys.map((y) => 10 ** (y - logHigh));
+  const valueReady = numbers.every((value): value is number => value !== null && Number.isFinite(value));
   // Value-space fits run in units of the series scale, so a large series cannot overflow the squared error.
   const valueScale = valueReady ? seriesScale(numbers) : 1;
   const scaled = valueReady ? numbers.map((value) => value / valueScale) : [];
@@ -510,17 +632,20 @@ function classifyPositive(
         : Math.min(valueLinearRel, valueQuadraticRel);
   const numericValues = valueReady ? numbers.map((value) => value ?? 0) : [];
   const expOk = linear !== null && linear.rmse <= LOG_RMSE_OK;
+  // Acceleration is the quadratic term standing well above its residual across the window, with the quadratic fit a
+  // clear improvement on the line. A fixed minimum line residual would make the shape depend on acceleration strength.
   const accelOk =
     quadratic !== null &&
     linear !== null &&
-    quadratic.c > 1e-6 &&
+    quadratic.c > 0 &&
+    quadratic.c * span * span > 1e3 * Math.max(quadratic.rmse, Number.EPSILON) &&
     quadratic.rmse <= LOG_RMSE_OK &&
-    linear.rmse > 1e-3 &&
     linear.rmse > quadratic.rmse * 4;
   const powerOk =
     power !== null && linear !== null && power.rmse <= 1e-3 && power.rmse * 4 < linear.rmse;
   const valuePolyOk = valueRmse !== null && valueRmse <= VALUE_REL_OK;
-  const satOk = valueReady && saturating(ts, numericValues);
+  const satRmse = valueReady ? saturating(ts, numericValues) : null;
+  const satOk = satRmse !== null;
   let shape: GrowthShape = "unknown";
   let residual: GrowthFitWindowV1["residual"] = {
     space: "log10",
@@ -533,7 +658,9 @@ function classifyPositive(
   const valueExact =
     valueRmse !== null &&
     valueRmse <= VALUE_EXACT &&
-    !(linear !== null && linear.rmse * Math.LN10 < valueRmse);
+    !(linear !== null && linear.rmse * Math.LN10 < valueRmse) &&
+    !(accelOk && quadratic !== null && quadratic.rmse * Math.LN10 < valueRmse) &&
+    !(powerOk && power !== null && power.rmse * Math.LN10 < valueRmse);
   // An exact value fit whose change across the window stands well above its residual is a moving series, even
   // when a large intercept leaves almost no log span. A constant series fits exactly too, but does not move.
   const valueMoves =
@@ -541,13 +668,24 @@ function classifyPositive(
     ((valueLinear !== null && Math.abs(valueLinear.b * span) > 1e3 * Math.max(valueLinear.rmse, Number.EPSILON)) ||
       (valueQuadratic !== null &&
         Math.abs(valueQuadratic.c * span * span) > 1e3 * Math.max(valueQuadratic.rmse, Number.EPSILON)));
-  if (logSpan < 1e-6 && !valueMoves) {
+  // The same holds in log space: an exact log-linear fit with a real slope is a slow exponential, not a constant.
+  const logMoves =
+    linear !== null && Math.abs(linear.b * span) > 1e3 * Math.max(linear.rmse, Number.EPSILON);
+  // Detected saturation is not constant, and its decaying rates rule out exponential, accelerating, and power
+  // growth. A value fit exact only against the series scale, not against its movement, does not outrank it either,
+  // so a large baseline under the same curve keeps the shape.
+  if (logSpan < 1e-6 && !valueMoves && !logMoves && !satOk) {
     shape = "constant";
     residual = { space: "log10", rmse: rmseAround(ys.map(() => mean(ys)), ys) };
-  } else if (valueExact) {
+  } else if (valueExact && (valueMoves || !satOk)) {
     shape = "polynomial";
     residual = { space: "value", rmse: valueRmse };
-  } else if (expOk && !accelOk) {
+  } else if (satOk) {
+    shape = "saturating";
+    // The saturation fit's own error, not the unrelated value-space line or parabola.
+    residual = { space: "log-rate", rmse: satRmse };
+  } else if (expOk && !accelOk && !(powerOk && power !== null && power.rmse * 100 < linear.rmse)) {
+    // A power fit far closer than the log-linear one is a power law that only looks exponential over this window.
     shape = "exponential";
     residual = { space: "log10", rmse: linear.rmse };
   } else if (accelOk && quadratic) {
@@ -556,9 +694,6 @@ function classifyPositive(
   } else if (powerOk && power) {
     shape = "polynomial";
     residual = { space: "log10", rmse: power.rmse };
-  } else if (satOk) {
-    shape = "saturating";
-    residual = { space: "value", rmse: valueRmse };
   } else if (valuePolyOk) {
     shape = "polynomial";
     residual = { space: "value", rmse: valueRmse };
@@ -576,7 +711,8 @@ function classifyPositive(
     discontinuity,
     speed: {
       logSlopePerSec: slope,
-      doublingTimeSec: slope !== null && slope > 1e-12 ? Math.log10(2) / slope : null,
+      // Any positive slope has a doubling time while the quotient is finite.
+      doublingTimeSec: slope !== null && slope > 0 && Number.isFinite(Math.log10(2) / slope) ? Math.log10(2) / slope : null,
     },
     legacySpeedBucket: legacy,
     residual,
@@ -590,7 +726,7 @@ function classifySlice(slice: Slice): GrowthFitWindowV1 {
     const status: AnalysisStatus = domain === "empty" ? "insufficient-data" : "invalid";
     return blankWindow(slice.points, slice.discontinuity, status, `domain ${domain}`);
   }
-  return classifyPositive(slice.points, slice.discontinuity);
+  return classifyPositive(slice.points, slice.discontinuity, slice.originSec);
 }
 
 const BREAK_RANK: Record<GrowthDiscontinuity["kind"], number> = { reset: 4, drop: 3, sign: 2, purchase: 1 };
@@ -649,6 +785,7 @@ function slicesOf(points: readonly Point<unknown>[], breaks: readonly GrowthDisc
       slices.push({
         points: points.slice(cursor, next),
         discontinuity: first ? segment.discontinuity : "none",
+        originSec: points[segment.start]!.t,
       });
       first = false;
       cursor = next;
@@ -768,8 +905,9 @@ export function fitGrowth<N>(args: {
       if (index > 0) boundary.add(index - 1);
     }
   }
-  const evenly = evenKeep(prepared, args.sampling.samplingBudget);
-  const keptSet = new Set<Point<N>>(evenly);
+  const breakTimes = [...breakMap.values()].map((item) => item.t);
+  const windowed = windowKeep(prepared, args.sampling.samplingBudget, args.sampling.windowSec, breakTimes);
+  const keptSet = new Set<Point<N>>(windowed.kept);
   for (const index of boundary) keptSet.add(prepared[index]!);
   const kept = prepared.filter((point) => keptSet.has(point));
   const downsampled =
@@ -783,6 +921,11 @@ export function fitGrowth<N>(args: {
   }
   if (downsampled) {
     warnings.push("Samples were evenly reduced to the sampling budget. windowSec is still the time window.");
+  }
+  if (windowed.fittedWindows < windowed.windows) {
+    warnings.push(
+      `The sampling budget fits ${windowed.fittedWindows} of ${windowed.windows} windows with enough samples. The rest are not fitted.`,
+    );
   }
   if (args.retention && args.retention.dropped > 0) {
     warnings.push("The fit sees the retained trace only.");
@@ -830,13 +973,17 @@ export function fitGrowth<N>(args: {
   }
   const windows = incomplete
     ? fitted.map((window): GrowthFitWindowV1 =>
-        window.status === "ok"
+        // A fitted window, classified or not, read samples a missing purchase break may have split.
+        window.status === "ok" || window.status === "unknown"
           ? {
               ...window,
               status: "insufficient-data",
               shape: "unknown",
+              // The fitted shape's residual, speed, and diagnostics would restate the withheld claim.
+              speed: { logSlopePerSec: null, doublingTimeSec: null },
               legacySpeedBucket: null,
-              quality: `${window.quality}; action history incomplete`,
+              residual: { space: "none", rmse: null },
+              quality: `action history incomplete; samples ${window.sampleCount}`,
             }
           : window,
       )
@@ -871,19 +1018,24 @@ function softcapOf<N, U extends string, Vars>(
 }
 
 /**
- * The break an action row opens. Action.kind is the source of truth: a prestige action is a reset and a buy is a
- * purchase whatever its id says. Only a custom action, or one the model no longer lists, falls back to its id.
+ * The break an action row opens. Action.kind is the source of truth: a prestige action is a reset, and every other
+ * action is a purchase whatever its id says, unless a prestige count change confirms a reset.
  */
 function actionBreakKind<N, U extends string, Vars>(
   scenario: CompiledScenario<N, U, Vars>,
   before: SimState<N, U, Vars> | undefined,
   actionId: string,
 ): GrowthDiscontinuity["kind"] {
-  const listed = before ? scenario.model.actions(scenario.ctx, before).find((action) => action.id === actionId) : undefined;
+  const matches = before ? scenario.model.actions(scenario.ctx, before).filter((action) => action.id === actionId) : [];
+  // The log keeps only the id. When actions of different kinds share it, the applied kind is unknown, so the row is
+  // a purchase unless a prestige count change confirms a reset.
+  if (new Set(matches.map((action) => action.kind)).size > 1) return "purchase";
+  const listed = matches[0];
   if (listed?.kind === "prestige") return "reset";
-  if (listed && listed.kind !== "custom") return "purchase";
-  const id = actionId.toLowerCase();
-  return id.includes("prestige") || id.includes("reset") ? "reset" : "purchase";
+  // A custom action, or one the model did not list at the traced state, such as one unlocked between trace points, is
+  // a purchase unless a prestige count change confirms a reset; the count loop below adds those. An id is not
+  // evidence of what the action does.
+  return "purchase";
 }
 
 /**

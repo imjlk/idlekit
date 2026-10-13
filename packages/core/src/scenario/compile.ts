@@ -2,6 +2,7 @@ import type { Engine } from "../engine/types";
 import type { Unit } from "../money/types";
 import { parseMoney } from "../notation/parseMoney";
 import { cloneRunState } from "../sim/runFactory";
+import { assertSimulationClock, assertTickAdvanced, nextBoundary } from "../sim/timeBoundary";
 import type { CompiledScenario, Model } from "../sim/types";
 import type { StrategyRegistry } from "../sim/strategy/registry";
 import type { ModelRegistry } from "./registry";
@@ -79,6 +80,38 @@ function parseUntilTerms(expr: string): ExprTerm[][] {
   }
 
   return allTerms;
+}
+
+export type UntilLiteral = Readonly<{
+  path: string;
+  literal: string;
+  /** engine: an amount path the engine parses. number: parsed with Number. runtime: chosen by the state value. */
+  parse: "engine" | "number" | "runtime";
+}>;
+
+/**
+ * The right-hand literals of an untilExpr and the parser the runner uses for each. Amount paths go through the
+ * engine, and `t` and `prestige.count` go through Number whatever the engine. Any other path picks its parser from
+ * the state value at run time, and a number there is read through Number too. An expression that does not parse
+ * has no literals.
+ */
+export function untilExprLiterals(expr: string | undefined): readonly UntilLiteral[] {
+  if (!expr || expr.trim().length === 0) return [];
+  let parsed: ExprTerm[][];
+  try {
+    parsed = parseUntilTerms(expr);
+  } catch {
+    return [];
+  }
+  return parsed.flat().map((term) => ({
+    path: term.path,
+    literal: term.rawRight,
+    parse: UNTIL_AMOUNT_PATHS.has(term.path)
+      ? ("engine" as const)
+      : UNTIL_NUMBER_PATHS.has(term.path)
+        ? ("number" as const)
+        : ("runtime" as const),
+  }));
 }
 
 function readPath(obj: unknown, path: string): unknown {
@@ -387,21 +420,46 @@ export function modelCreateParams(args: {
 }
 
 /**
- * Throw when a scenario's untilExpr does not compile for this engine, as compileScenario would. Nothing is
- * evaluated and no model is created, so a plan-only caller can reject the same scenario.
+ * Throw when the scenario's initial money or untilExpr does not compile for this engine, as compileScenario would,
+ * or when a clock a stage runs is one the runner rejects. `stepSecs` are the steps the stages run. Without them the
+ * scenario step is checked. Only the safe until expression is evaluated against the compiled initial state;
+ * no model or strategy is created or called.
  */
-export function assertScenarioUntilExpr<N>(args: {
+export function assertScenarioPlanInputs<N>(args: {
   scenario: ScenarioV1;
   E: Engine<N>;
   allowSuffixNotation?: boolean;
+  stepSecs?: readonly number[];
 }): void {
-  compileUntilExpr({
+  // validateScenarioV1 accepts an infinite step or duration, and runScenario does not.
+  const startT = args.scenario.initial.t ?? 0;
+  const durationSec = args.scenario.clock.durationSec;
+  const stepSecs = args.stepSecs ?? [args.scenario.clock.stepSec];
+  for (const stepSec of stepSecs) {
+    assertSimulationClock("scenario clock", { stepSec, durationSec, startT });
+  }
+  const unit = buildUnit({ scenario: args.scenario });
+  const initial = buildInitialState({
+    E: args.E,
+    scenario: args.scenario,
+    unit,
+    allowSuffixNotation: args.allowSuffixNotation ?? true,
+  });
+  const until = compileUntilExpr({
     expr: args.scenario.clock.untilExpr,
     E: args.E,
-    unit: buildUnit({ scenario: args.scenario }),
+    unit,
     allowSuffixNotation: args.allowSuffixNotation ?? true,
     allowUnsafe: false,
   });
+  const untilMet = until?.(initial) ?? false;
+  for (const stepSec of stepSecs) {
+    const first = nextBoundary({ elapsedSec: 0, steps: 0, stepSec, durationSec, untilMet, hasUntil: !!until });
+    // A duration or until stop never commits a tick. Validate advancement only when the runner would take one.
+    if (first.kind === "step") {
+      assertTickAdvanced("scenario clock", startT, startT + first.dt, first.dt, stepSec, startT);
+    }
+  }
 }
 
 function buildUnit<U extends string>(args: {

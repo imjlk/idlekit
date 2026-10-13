@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { createNumberEngine } from "../engine/breakInfinity";
+import { createBreakInfinityEngine, createNumberEngine } from "../engine/breakInfinity";
 import { formatMoney } from "./formatMoney";
 import { parseMoney } from "./parseMoney";
 
@@ -18,6 +18,18 @@ describe("formatMoney/parseMoney", () => {
     const b = parseMoney(E, "1aa", { unit, suffix: { kind: "alphaInfinite", minLen: 2 } });
     expect(a.amount).toBe(1000);
     expect(b.amount).toBe(1000);
+  });
+
+  it("combines scientific exponents and suffixes before converting to the engine", () => {
+    const decimal = createBreakInfinityEngine();
+    for (const [literal, expected] of [["1e-2028zz", 1], ["-2.5e-2028zz", -2.5], [".5e-2027zz", 5], ["0zz", 0]] as const) {
+      expect(parseMoney(E, literal, { unit }).amount).toBe(expected);
+      expect(decimal.toNumber(parseMoney(decimal, literal, { unit }).amount)).toBe(expected);
+    }
+    expect(parseMoney(E, "1e-600 K", { unit: { code: "K" }, allowUnitInString: true }).amount).toBe(0);
+    expect(parseMoney(E, "1e-600K", { unit, suffix: { kind: "table", table: ["", "K"] } }).amount).toBe(0);
+    expect(parseMoney(E, "1e-3aa", { unit }).amount).toBe(1);
+    expect(parseMoney(E, "1e-324aa", { unit }).amount).toBe(1e-321);
   });
 
   it("parses with inline unit when allowed", () => {

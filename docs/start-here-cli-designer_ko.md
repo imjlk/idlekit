@@ -327,3 +327,16 @@ bun run --cwd packages/cli dev -- replay verify ../../tmp/my-game-v1.artifact.js
 실패 대응:
 
 - artifact 재실행이 어긋나면 먼저 시나리오 파일 변경 여부와 `seed/run-id` 고정 여부를 확인합니다.
+
+## 전략을 선택하기 전에 다음 확인 항목 읽기
+
+```bash
+bun run --cwd packages/cli dev -- experience ../../examples/tutorials/11-my-game-v1.json --session-pattern short-bursts --days 1 --draws 3 --seed 1 --format md
+bun run --cwd packages/cli dev -- compare ../../examples/tutorials/11-my-game-v1.json ../../examples/tutorials/12-my-game-compare-b.json --bundle economy --seed 1 --format md
+```
+
+Experience 보고서의 **Next checks**는 측정된 조건에 따라 다음 확인 항목을 제시합니다. 활성 구간이 예산 때문에 중단됐다면 같은 기간과 세션 패턴에서 스텝 예산을 늘려 다시 실행합니다. 마일스톤 커버리지가 partial 또는 incomplete라면 정확한 키를 비교하기 전에 완전한 관측을 확보합니다. 유지된 첫 발생 시각 요약은 키 커버리지와 따로 표시됩니다. 오프라인 보상 시간 손실과 샘플링된 정체 구간은 조건을 맞춘 대조 실행으로 살펴봅니다. 실제 관측된 프레스티지 리셋은 해당 리셋이 없는 실행과 조건을 맞춰 비교할 수 있습니다. 누적 프레스티지 횟수만으로 이번 세션에서 리셋했다고 판단하지 않습니다.
+
+Monte Carlo 모드의 종료 상태·성장·마일스톤·체감 진행은 기록된 세션 하나를 설명합니다. 조건부 시각 통계를 읽기 전에 첫 가시 변화 완료율과 관측·우측 검열·실패·미지원 횟수를 확인합니다. 모집단 p95가 미확정이면 그대로 유지하며, 완료 관측만의 시각을 모집단 시각으로 해석하지 않습니다. 첫 가시 변화의 검열 범위는 보상 시간 기준 마지막 활성 관측까지이므로 상단의 실제 시간 기간과 다를 수 있습니다. 검열된 관측은 조건을 맞춰 활성 관측을 늘려 확인하고, 실패 또는 미지원 실행은 별도로 조사합니다.
+
+Compare 보고서의 **Choosing between scenarios**는 기존 지표별 판정을 사용합니다. 서로 다른 시나리오를 선호하는 지표가 함께 있다면 설계 의도에 맞는 지표를 고르고 반대편 비용도 확인합니다. 동률은 다른 관련 측정으로 구분하고, 미정 판정은 측정 또는 판정 조건을 해결한 뒤 활용합니다. 전략 차이를 설명할 때는 기간·초기 상태·세션 패턴·시드 정책을 맞춥니다. 구조화된 값과 판정은 `--format json`으로 확인할 수 있습니다.

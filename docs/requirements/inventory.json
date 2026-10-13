@@ -56,6 +56,13 @@
         },
         {
           "file": "packages/core/src/testkit/conformance.test.ts",
+          "exportName": "keepsTheDeclaredSeededDropAcrossTheSeedCorpus",
+          "registeredAs": "PR-13 seeded drop > keeps the declared seeded drop across the seed corpus",
+          "cwd": "packages/core",
+          "args": ["test", "src/testkit/conformance.test.ts"]
+        },
+        {
+          "file": "packages/core/src/testkit/conformance.test.ts",
           "exportName": "checksBulkEqualityOnlyWhenTheFixtureDeclaresIt",
           "registeredAs": "PR-01 bulk equivalence > checks bulk equality only when the fixture declares it",
           "cwd": "packages/core",
@@ -146,9 +153,30 @@
           "args": ["test", "src/testkit/conformance.test.ts"]
         },
         {
+          "file": "packages/core/src/testkit/conformance.test.ts",
+          "exportName": "keepsTheDeclaredResetPolicyRateAcrossTheSeedCorpus",
+          "registeredAs": "PR-11 reset policy rate > keeps the declared reset policy rate across the seed corpus",
+          "cwd": "packages/core",
+          "args": ["test", "src/testkit/conformance.test.ts"]
+        },
+        {
           "file": "tools/conformance.negative.test.ts",
           "exportName": "runsTheNegativeConformanceRunner",
           "registeredAs": "DX-01 conformance harness > runs the negative conformance runner",
+          "cwd": ".",
+          "args": ["test", "tools/conformance.negative.test.ts"]
+        },
+        {
+          "file": "tools/conformance.negative.test.ts",
+          "exportName": "runsNegativeEvidenceChecks",
+          "registeredAs": "DX-01 conformance harness > checks both Evidence controls within their own deadline",
+          "cwd": ".",
+          "args": ["test", "tools/conformance.negative.test.ts"]
+        },
+        {
+          "file": "tools/conformance.negative.test.ts",
+          "exportName": "runsNegativeGraphChecks",
+          "registeredAs": "DX-01 conformance harness > checks both Graph controls within their own deadline",
           "cwd": ".",
           "args": ["test", "tools/conformance.negative.test.ts"]
         },
@@ -158,6 +186,20 @@
           "registeredAs": "money conformance comparator > matches finite amounts by log distance and refuses Infinity collapse",
           "cwd": "packages/money",
           "args": ["test", "src/testkit/compareAmounts.test.ts"]
+        },
+        {
+          "file": "packages/core/src/testkit/conformance.test.ts",
+          "exportName": "keepsGrowthShapesAcrossScaleAndSampling",
+          "registeredAs": "keeps growth shapes across scale and sampling",
+          "cwd": "packages/core",
+          "args": ["test", "src/testkit/conformance.test.ts"]
+        },
+        {
+          "file": "packages/core/src/testkit/conformance.test.ts",
+          "exportName": "resumesDeclaredResetCyclesAcrossTheSeedCorpus",
+          "registeredAs": "resumes declared reset cycles across the seed corpus",
+          "cwd": "packages/core",
+          "args": ["test", "src/testkit/conformance.test.ts"]
         }
       ]
     },
@@ -328,6 +370,13 @@
           "registeredAs": "TC-05 typed contract > keeps one scenario schema",
           "cwd": "packages/core",
           "args": ["test", "--timeout", "180000", "src/scenario/scenarioContract.test.ts"]
+        },
+        {
+          "file": "packages/core/src/scenario/scenarioContract.test.ts",
+          "exportName": "keepsGeneratedContractsStable",
+          "registeredAs": "TC-05 typed contract > keeps independent CLI contract generations stable",
+          "cwd": "packages/core",
+          "args": ["test", "--timeout", "180000", "src/scenario/scenarioContract.test.ts"]
         }
       ]
     },
@@ -358,6 +407,13 @@
           "file": "packages/core/src/scenario/scenarioContract.test.ts",
           "exportName": "runsPublishedScenarioValidator",
           "registeredAs": "TC-05 typed contract > runs the published scenario validator",
+          "cwd": "packages/core",
+          "args": ["test", "--timeout", "180000", "src/scenario/scenarioContract.test.ts"]
+        },
+        {
+          "file": "packages/core/src/scenario/scenarioContract.test.ts",
+          "exportName": "checksTrackedContractCli",
+          "registeredAs": "TC-05 typed contract > checks stale, CRLF, and tracked contracts through the CLI",
           "cwd": "packages/core",
           "args": ["test", "--timeout", "180000", "src/scenario/scenarioContract.test.ts"]
         }

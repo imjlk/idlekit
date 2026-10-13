@@ -87,6 +87,14 @@ describe("experience Monte Carlo", () => {
     expectMonteCarloMatchesDeterministic(await readJson<any>(resolve(outDir, "experience.json")));
   });
 
+  it("prints recorded-session scope, draw accounting, and next checks in the real Markdown command", () => {
+    const report = runCli(["experience", scenarioPath, "--session-pattern", "short-bursts", "--days", "1", "--draws", "3", "--seed", "1", "--format", "md"]).stdout;
+    expect(report).toContain("Snapshot scope: one recorded session");
+    expect(report).toContain("First visible observed / right-censored / failed / unsupported:");
+    expect(report).toContain("## Next checks");
+    expect(report).toContain("Check first-visible completion");
+  });
+
   it("builds a new closure-stateful plugin strategy for every draw", async () => {
     const outPath = resolve(dir, "first-call-experience.json");
     runCli([

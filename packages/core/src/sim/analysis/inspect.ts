@@ -5,6 +5,8 @@ import { observationContract } from "../observation";
 import { nextBoundary } from "../timeBoundary";
 import { plannerExpansionBound } from "../strategy/planner";
 import type { OfflinePolicy } from "../../scenario/offlinePolicy";
+import { untilExprLiterals } from "../../scenario/compile";
+import { alphaInfiniteIndex } from "../../notation/suffixer";
 
 /**
  * Inspect explains a resolved plan. It does not tick, import plugins, or call the network.
@@ -86,6 +88,10 @@ export type InspectStageInput = Readonly<{
   session?: Readonly<{ id?: string; days?: number; source: "scenario" | "command" }>;
   /** The fast mode the stage runs: the command override, or the scenario setting it inherits. */
   fast?: Readonly<{ enabled: boolean; source: "scenario" | "command" }>;
+  /** Whether the stage keeps every applied action, and the cap on that log. No cap keeps all of them. */
+  actionsLog?: Readonly<{ kept: boolean; maxActions?: number }>;
+  /** Whether the stage keeps a periodic state trace, its cadence in steps, and the cap on its points. */
+  stateTrace?: Readonly<{ kept: boolean; everySteps?: number; maxPoints?: number }>;
 }>;
 
 export type InspectAnalyzerInput = Readonly<{
@@ -115,6 +121,11 @@ export type ScenarioInspectRequest = Readonly<{
   analyzers: readonly InspectAnalyzerInput[];
   planner?: Readonly<{ horizonSteps: number; beamWidth?: number; maxBranchingActions?: number }> | null;
   decimals: readonly string[];
+  /**
+   * untilExpr paths outside the fixed amount and number sets whose state value is known to be a number, such as a
+   * numeric initial var. The runner reads their literals with Number. Other such paths have an unknown parser.
+   */
+  numericUntilPaths?: readonly string[];
   prestigeRequested: boolean;
   plugins: Readonly<{
     resolve: boolean;
@@ -148,6 +159,13 @@ export type ScenarioInspectReport = Readonly<{
     strategySource: InspectStageInput["strategySource"];
     session: InspectStageInput["session"] | null;
     fast: NonNullable<InspectStageInput["fast"]> | null;
+    actionsLog: Readonly<{ kept: boolean; maxActions: number | null; unlimited: boolean }> | null;
+    stateTrace: Readonly<{
+      kept: boolean;
+      everySteps: number | null;
+      maxPoints: number | null;
+      unlimited: boolean;
+    }> | null;
     stepCount: number | "unknown";
     lastDt: number | null;
     partialTick: boolean;
@@ -182,7 +200,7 @@ export function fixedDurationStepCount(
   let steps = 0;
   let lastDt: number | null = null;
   const limit = 1_000_000;
-  while (steps < limit) {
+  while (true) {
     const decision = nextBoundary({
       elapsedSec: elapsed,
       steps,
@@ -194,11 +212,12 @@ export function fixedDurationStepCount(
     if (decision.kind !== "step") {
       return { steps, lastDt, partial: lastDt !== null && lastDt + 1e-12 < stepSec };
     }
+    // The cap is checked only when another tick is due, so a horizon of exactly the cap keeps its count.
+    if (steps >= limit) return { steps: null, lastDt: null, partial: false };
     lastDt = decision.dt;
     elapsed += decision.dt;
     steps += 1;
   }
-  return { steps: null, lastDt: null, partial: false };
 }
 
 function exponentMagnitude(text: string): number {
@@ -220,7 +239,15 @@ export function decimalExceedsNumberDomain(literal: string): boolean {
   const scientific = /^[-+]?(?:\d+(?:\.\d*)?|\.\d+)[eE]([+-]?\d+)$/.exec(trimmed);
   if (scientific?.[1] !== undefined) return Math.abs(exponentMagnitude(scientific[1])) >= 15;
   const digits = trimmed.replace(/^[+-]/, "").split(".")[0] ?? "";
-  return /^\d+$/.test(digits) && digits.length > 15;
+  if (/^\d+$/.test(digits) && digits.length > 15) return true;
+  // An alpha suffix scales the mantissa by 1e3 per index, as the money parser reads it: 1aa is 1e3 and 1zz is 1e2028.
+  const suffixed = /^[-+]?(\d+(?:\.\d+)?|\.\d+)(?:[eE]([+-]?\d+))?([A-Za-z]+)$/.exec(trimmed);
+  if (suffixed?.[1] === undefined || suffixed[3] === undefined) return false;
+  const index = alphaInfiniteIndex(suffixed[3], 2);
+  if (index < 0) return false;
+  const whole = (suffixed[1].split(".")[0] ?? "").replace(/^0+/, "");
+  const exponent = (suffixed[2] !== undefined ? exponentMagnitude(suffixed[2]) : 0) + Math.max(whole.length - 1, 0);
+  return Math.abs(exponent + index * 3) >= 15;
 }
 
 function numericDomainOf(engine: ScenarioInspectRequest["engine"]): "safe-integer" | "decimal-string" | "unknown" {
@@ -238,16 +265,31 @@ function engineReason(engine: ScenarioInspectRequest["engine"]): string {
   return `The engine flag selected ${engine.effectiveId}.`;
 }
 
+/**
+ * Steps between the runner's trace samples. The runner samples when `steps % everySteps === 0`, so a negative
+ * integer samples as its magnitude does, and a fraction samples at the first whole step it divides. A cadence that
+ * divides no step up to the counting cap, such as 0, retains no periodic samples.
+ */
+export function traceSampleSteps(everySteps: number): number | null {
+  if (Number.isInteger(everySteps) && everySteps !== 0) return Math.abs(everySteps);
+  if (!Number.isFinite(everySteps) || everySteps === 0) return null;
+  for (let steps = 1; steps <= 1_000_000; steps += 1) {
+    if (steps % everySteps === 0) return steps;
+  }
+  return null;
+}
+
 function observationSupply(request: ScenarioInspectRequest, stepSec: number): ObservationSupply {
   const untilOnly = request.clock.durationSec === undefined && Boolean(request.clock.untilExpr?.trim());
   const coverage = request.trace.include ? "trace" : request.clock.durationSec !== undefined ? "summary" : "missing";
   // compileScenario traces every step when the scenario includes a trace without a cadence.
-  const every = request.trace.everySteps ?? 1;
+  const sampleSteps = request.trace.include ? traceSampleSteps(request.trace.everySteps ?? 1) : null;
+  const cadence = sampleSteps === null ? null : sampleSteps * stepSec;
   return {
     schema: observationContract,
     // The finest window the samples supply is the trace cadence. A summary supplies no finite window.
-    windowSec: request.trace.include ? every * stepSec : null,
-    sampleCadenceSec: request.trace.include ? every * stepSec : null,
+    windowSec: cadence,
+    sampleCadenceSec: cadence,
     coverage: untilOnly && !request.trace.include ? "missing" : coverage,
     metricIds: ["money", "netWorth"],
   };
@@ -272,15 +314,35 @@ export function buildScenarioInspect(request: ScenarioInspectRequest): ScenarioI
   }
 
   // A custom engine declares no numeric domain. Its id does not say whether it narrows literals through Number,
-  // so wide literals warn for it as for the number engine.
+  // so wide literals warn for it as for the number engine. An untilExpr amount literal goes through the engine. A
+  // `t`, `prestige.count`, or known numeric state comparison goes through Number whatever the engine, so it always
+  // warns. Any other path picks its parser from the run-time value, which may be a string, so it does not warn.
   const exact = numericDomainOf(request.engine);
-  if (request.engine.accepted && exact !== "decimal-string") {
-    const wide = request.decimals.filter(decimalExceedsNumberDomain);
+  if (request.engine.accepted) {
+    const until = untilExprLiterals(request.clock.untilExpr);
+    const engineLiterals = [
+      ...request.decimals,
+      ...until.filter((term) => term.parse === "engine").map((term) => term.literal),
+    ];
+    const numericPaths = new Set(request.numericUntilPaths ?? []);
+    const numberLiterals = until
+      .filter((term) => term.parse === "number" || (term.parse === "runtime" && numericPaths.has(term.path)))
+      .map((term) => term.literal);
+    const numberWide = numberLiterals.filter(decimalExceedsNumberDomain);
+    const wide = [
+      ...(exact !== "decimal-string" ? engineLiterals.filter(decimalExceedsNumberDomain) : []),
+      ...numberWide,
+    ];
     if (wide.length > 0) {
       diagnostics.push({
         severity: "warning",
         code: "decimal-range",
-        evidence: { engineId: request.engine.effectiveId, literal: wide[0] ?? null, count: wide.length },
+        evidence: {
+          engineId: request.engine.effectiveId,
+          literal: wide[0] ?? null,
+          count: wide.length,
+          numberParsed: numberWide.length,
+        },
       });
     }
   }
@@ -311,7 +373,9 @@ export function buildScenarioInspect(request: ScenarioInspectRequest): ScenarioI
   // The runner keeps the event log unless the scenario turns it off, so an omitted eventLog is enabled.
   const eventsEnabled = request.eventLog?.enabled !== false;
   const eventsUnlimited = eventsEnabled && request.eventLog?.maxEvents === undefined;
-  const traceUnlimited = (request.trace.include && request.clock.durationSec === undefined) || eventsUnlimited;
+  // compileScenario sets no maxPoints, so an included trace keeps every periodic state, however long the duration.
+  const traceUncapped = request.trace.include;
+  const traceUnlimited = traceUncapped || eventsUnlimited;
   if (traceUnlimited) {
     diagnostics.push({
       severity: "warning",
@@ -373,7 +437,23 @@ export function buildScenarioInspect(request: ScenarioInspectRequest): ScenarioI
   });
 
   const stages = request.stages.map((stage) => {
-    const fast = stage.applies.fast ? stage.fast ?? null : null;
+    // A stage the fast override does not apply to still runs the scenario's fast mode, which the input carries.
+    const fast = stage.fast ?? null;
+    const actionsLog = stage.actionsLog
+      ? {
+          kept: stage.actionsLog.kept,
+          maxActions: stage.actionsLog.maxActions ?? null,
+          unlimited: stage.actionsLog.kept && stage.actionsLog.maxActions === undefined,
+        }
+      : null;
+    const stateTrace = stage.stateTrace
+      ? {
+          kept: stage.stateTrace.kept,
+          everySteps: stage.stateTrace.kept ? stage.stateTrace.everySteps ?? 1 : null,
+          maxPoints: stage.stateTrace.maxPoints ?? null,
+          unlimited: stage.stateTrace.kept && stage.stateTrace.maxPoints === undefined,
+        }
+      : null;
     // A session stage runs its schedule, and ltv runs the command's horizon, not the scenario duration, so the
     // duration does not count their ticks.
     if (request.clock.durationSec === undefined || stage.applies.session || stage.name === "ltv") {
@@ -385,6 +465,8 @@ export function buildScenarioInspect(request: ScenarioInspectRequest): ScenarioI
         strategySource: stage.strategySource,
         session: stage.applies.session ? stage.session ?? null : null,
         fast,
+        actionsLog,
+        stateTrace,
         stepCount: "unknown" as const,
         lastDt: null,
         partialTick: false,
@@ -399,6 +481,8 @@ export function buildScenarioInspect(request: ScenarioInspectRequest): ScenarioI
       strategySource: stage.strategySource,
       session: stage.applies.session ? stage.session ?? null : null,
       fast,
+      actionsLog,
+      stateTrace,
       stepCount: counted.steps ?? ("unknown" as const),
       lastDt: counted.lastDt,
       partialTick: counted.partial,
@@ -429,7 +513,7 @@ export function buildScenarioInspect(request: ScenarioInspectRequest): ScenarioI
       trace: {
         include: request.trace.include,
         everySteps: request.trace.include ? request.trace.everySteps ?? 1 : request.trace.everySteps ?? null,
-        unlimited: request.trace.include && request.clock.durationSec === undefined,
+        unlimited: traceUncapped,
       },
     },
     numericDomain: {
