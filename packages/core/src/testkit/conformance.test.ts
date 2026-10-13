@@ -2348,7 +2348,7 @@ describe("PR-13 seeded drop", () => {
  * @evidence docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness Executes the declared reset-cycle resume relation over the short and extended seed corpus.
  * @evidenceReview docs/requirements/active/simulation-conformance.md#req-dx01-conformance-harness #bbb39a2 Read the declared relation and ran both corpora. Splits between cycles and budget cuts inside a cycle resume to the continuous economy, reward total, elapsed seconds, and completed rows; an undeclared relation stays unchecked.
  * @evidence ./conformance.ts#checkResetCycleResume Runs a continuous and a split reset-cycle execution and compares their economy, reward total, elapsed seconds, and completed rows.
- * @evidenceReview ./conformance.ts#checkResetCycleResume #f32f133 The function returns inapplicable when undeclared, splits by cycles or by a step budget, resumes the remaining cycles from the checkpoint, and compares one snapshot. It rewinds a restorable strategy to its opening state before the split run and does not apply to a strategy whose state cannot be restored.
+ * @evidenceReview ./conformance.ts#checkResetCycleResume #b628032 Re-read the helper and its callers. It returns inapplicable for an undeclared relation or either unpaired strategy state hook, rewinds a paired strategy before the split, resumes the remaining cycles, and compares economy, reward, elapsed seconds, and completed rows. The declared short and extended seed corpora still cover cycle splits and budget cuts.
  */
 export function resumesDeclaredResetCyclesAcrossTheSeedCorpus(): void {
   const testSeed = 0xc0de;
