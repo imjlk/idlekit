@@ -1,5 +1,14 @@
 # @idlekit/core
 
+## 0.3.1 — 2026-10-13
+
+### Patch changes
+
+- [fdf62ce](https://github.com/imjlk/idlekit/commit/fdf62cee4ec8c91ff84d4c8ac0f3188de230121a) Reject nonfinite reset-cycle checkpoint fields and unmatched RNG resumes before restore hooks run, and skip resume conformance for either unpaired strategy state hook. — Thanks @imjlk!
+- [3f2c4b9](https://github.com/imjlk/idlekit/commit/3f2c4b97ab295375cd1798ac69f01240d0526501) Keep online and offline reset wall timestamps inside their segment and align scenario preflight with the runner's zero-tick stops and finite first-tick checks. — Thanks @imjlk!
+- [fc3fc9b](https://github.com/imjlk/idlekit/commit/fc3fc9b1a75ce3c00260c87dccf3e73a252148b9) Parse scientific money suffixes without intermediate overflow and keep small finite amount signs consistent with analysis artifact validation. — Thanks @imjlk!
+- Updated dependencies: money@0.3.1
+
 ## 0.3.0 — 2026-10-12
 
 ### Minor changes

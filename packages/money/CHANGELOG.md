@@ -1,5 +1,11 @@
 # @idlekit/money
 
+## 0.3.1 — 2026-10-13
+
+### Patch changes
+
+- [fc3fc9b](https://github.com/imjlk/idlekit/commit/fc3fc9b1a75ce3c00260c87dccf3e73a252148b9) Parse scientific money suffixes without intermediate overflow and keep small finite amount signs consistent with analysis artifact validation. — Thanks @imjlk!
+
 ## 0.3.0 — 2026-10-12
 
 ### Minor changes
