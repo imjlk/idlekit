@@ -168,23 +168,42 @@ export function isRegistryLag(npmOutput: string): boolean {
   return /\bETARGET\b|No matching version found|\bE404\b/.test(npmOutput);
 }
 
+/**
+ * Polls `probe` every `intervalMs` until it returns a value or the deadline passes. A thrown probe, such as a 5xx from the
+ * registry, is retried like a miss; only when the deadline passes with the last attempt failing is that error rethrown.
+ */
+export async function pollUntil<T>(
+  probe: () => Promise<T | null>,
+  deadline: number,
+  intervalMs = 20_000,
+): Promise<T | null> {
+  for (;;) {
+    let failure: { error: unknown } | undefined;
+    try {
+      const value = await probe();
+      if (value !== null) return value;
+    } catch (error) {
+      failure = { error };
+    }
+    if (Date.now() >= deadline) {
+      if (failure) throw failure.error;
+      return null;
+    }
+    await Bun.sleep(intervalMs);
+  }
+}
+
 async function verify(): Promise<void> {
   const deadline = Date.now() + Number(process.env.REGISTRY_WAIT_SEC ?? 900) * 1000;
   const manifests = await releaseManifests();
   const problems: string[] = [];
   for (const { name, version } of manifests) {
     const id = `${name}@${version}`;
-    let manifest = await fetchVersion(name, version);
     // A new version can take minutes to appear in the registry's read path.
-    while (!manifest && Date.now() < deadline) {
-      await Bun.sleep(20_000);
-      manifest = await fetchVersion(name, version);
-    }
+    const manifest = await pollUntil(() => fetchVersion(name, version), deadline);
     if (!manifest) throw new Error(`${id} did not appear on the npm registry`);
     // The install below reads the package document, not the version document checked above.
-    while (!(await fetchPackage(name))?.versions.includes(version) && Date.now() < deadline) {
-      await Bun.sleep(20_000);
-    }
+    await pollUntil(async () => ((await fetchPackage(name))?.versions.includes(version) ? true : null), deadline);
     // Every current version is checked, so a retry also covers uploads from a failed earlier attempt.
     problems.push(...checkRegistryManifest(id, manifest, !PROVENANCE_EXEMPT.has(id)));
   }
