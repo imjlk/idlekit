@@ -4,7 +4,7 @@ import type { AnalysisTrialTaskV1 } from "@idlekit/core";
 
 /**
  * @evidence docs/requirements/active/worker-execution-backend.md#req-dx05-worker-parity The packed worker entry is this module. It does not read a preload switch.
- * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-worker-parity #e65d732 Re-read the section: the marker is idlekit-worker-entry and the handler does not branch on a preload variable.
+ * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-worker-parity #60a7be1 Re-read the section: the marker is idlekit-worker-entry and the handler does not branch on a preload variable.
  */
 export const workerEntryMarker = "idlekit-worker-entry" as const;
 

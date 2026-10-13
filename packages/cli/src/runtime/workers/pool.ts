@@ -12,7 +12,7 @@ import {
 
 /**
  * @evidence docs/requirements/active/worker-execution-backend.md#req-dx05-worker-parity Explicit worker counts share one logical digest. The pool does not choose itself.
- * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-worker-parity #e65d732 Re-read the section: selection stays explicit-worker, the count stays within maxWorkers, an exit is a crash, and shutdown terminates every slot and clears every timer.
+ * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-worker-parity #60a7be1 Re-read the section: selection stays explicit-worker, the count stays within maxWorkers, an exit is a crash, and shutdown terminates every slot and clears every timer.
  */
 export const workerPoolParity = "same-logical-digest" as const;
 
@@ -111,13 +111,19 @@ export async function runWorkerPool(args: Readonly<{
     return refusal ? failed(task, refusal, 1) : undefined;
   });
   const attempts = tasks.map(() => 0);
+  // Tasks posted and not yet settled. An abort counts their running attempt.
+  const inFlight = new Set<number>();
   const queue = tasks.flatMap((_task, index) => (refusals[index] === null ? [index] : []));
   const finalize = (): ExecutionBatchV1 =>
     finalizeBatch(
       tasks.map(
         (task, index) =>
           results[index] ??
-          failed(task, args.signal?.aborted ? "abort" : spawnFailed ? "worker-spawn" : "not-started", attempts[index] ?? 0),
+          failed(
+            task,
+            args.signal?.aborted ? "abort" : spawnFailed ? "worker-spawn" : "not-started",
+            (attempts[index] ?? 0) + (inFlight.has(index) ? 1 : 0),
+          ),
       ),
       header,
     );
@@ -175,6 +181,7 @@ export async function runWorkerPool(args: Readonly<{
       const settle = (): boolean => {
         if (settled || closed) return false;
         settled = true;
+        inFlight.delete(index);
         clearTimeout(timer);
         timers.delete(timer);
         return true;
@@ -221,6 +228,7 @@ export async function runWorkerPool(args: Readonly<{
         retire(worker);
         feed();
       };
+      inFlight.add(index);
       try {
         worker.postMessage({ type: "run", task });
       } catch {

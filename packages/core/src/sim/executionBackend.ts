@@ -15,7 +15,7 @@ export const executionLocalDefault = "local-default" as const;
 
 /**
  * @evidence docs/requirements/active/worker-execution-backend.md#req-dx05-serializable-task A task is a plain JSON descriptor. The seed is the logical draw seed.
- * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-serializable-task #88751b7 Re-read the section: functions, class instances, cyclic payloads, and a bad step budget are refused before cost is measured, a shared reference is allowed, and the seed does not read a worker slot.
+ * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-serializable-task #aabd062 Re-read the section: functions, class instances, cyclic payloads, and a bad step budget are refused before cost is measured, a shared reference is allowed, and the seed does not read a worker slot.
  */
 export const executionSerializableTask = "json-descriptor" as const;
 
@@ -27,7 +27,7 @@ export const executionStableReduction = "logical-index" as const;
 
 /**
  * @evidence docs/requirements/active/worker-execution-backend.md#req-dx05-failure-boundary Failure, cancellation, and incomplete stays are distinct. A partial batch is not a full distribution.
- * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-failure-boundary #a46fa56 Re-read the section: timeout and abort do not become a successful distribution, a retry keeps the same id and seed, the timeout is per task and per attempt, and a thrown runner is a failed task.
+ * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-failure-boundary #2262fcb Re-read the section: timeout and abort do not become a successful distribution, a retry keeps the same id and seed, the timeout is per task and per attempt, and a thrown runner is a failed task.
  */
 export const executionFailureBoundary = "not-a-partial-distribution" as const;
 
@@ -115,7 +115,8 @@ const MAX_EXPONENT_SPAN = 100_000;
 const MAX_TIMER_MS = 2_147_483_647;
 
 function budgetOf(budget: ExecutionBudgetV1 | undefined): ExecutionBudgetV1 {
-  const chosen = budget ?? defaultExecutionBudget;
+  // A frozen copy: a runner receives it as ctx.budget and cannot raise maxRetries after the check.
+  const chosen: ExecutionBudgetV1 = Object.freeze({ ...(budget ?? defaultExecutionBudget) });
   assertExecutionBudget(chosen);
   return chosen;
 }
@@ -125,7 +126,7 @@ function budgetOf(budget: ExecutionBudgetV1 | undefined): ExecutionBudgetV1 {
  * made endless or skipped by NaN or Infinity. Both backends check it before running anything.
  *
  * @evidence docs/requirements/active/worker-execution-backend.md#req-dx05-failure-boundary A budget with a non-finite or negative field is refused before any task runs.
- * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-failure-boundary #a46fa56 Re-read the section: retries stop at maxRetries, which must therefore be finite.
+ * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-failure-boundary #2262fcb Re-read the section: retries stop at maxRetries, which must therefore be finite.
  */
 export function assertExecutionBudget(budget: ExecutionBudgetV1): void {
   for (const field of ["maxWorkers", "queueBound", "taskTimeoutMs", "stepBudget", "maxRetries"] as const) {
@@ -145,6 +146,15 @@ function assertPlain(value: unknown, seen: WeakSet<object>): void {
   if (typeof value !== "object") throw new Error("not serializable");
   // `seen` holds only the objects on the current path. A shared, acyclic reference serializes fine.
   if (seen.has(value)) throw new Error("cycle");
+  // Every own property must be plain data. A hidden toJSON, a getter, or a symbol key would let serialization
+  // differ from what was checked, so any of them is refused.
+  for (const key of Reflect.ownKeys(value)) {
+    if (Array.isArray(value) && key === "length") continue;
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (typeof key !== "string" || !descriptor || !("value" in descriptor) || !descriptor.enumerable) {
+      throw new Error("not serializable");
+    }
+  }
   seen.add(value);
   try {
     if (Array.isArray(value)) {
