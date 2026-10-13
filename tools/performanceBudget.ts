@@ -7,7 +7,7 @@
 
 /**
  * @evidence docs/requirements/active/performance-budget.md#req-dx04-bench-schema The artifact names idlekit.performance-budget at schemaVersion 1 and keeps alloc/step unsupported.
- * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-bench-schema #26f2a73 Re-read the section: worker startup and serialization stay absent, and alloc/step is unsupported.
+ * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-bench-schema #bdfbaf6 Re-read the section: worker startup and serialization stay absent, and alloc/step is unsupported.
  */
 export const budgetSchema = "bench-output-schema" as const;
 
@@ -43,7 +43,7 @@ export const budgetHashMismatch = "baseline-hash-rejected" as const;
 
 /**
  * @evidence docs/requirements/active/performance-budget.md#req-dx04-same-config Only matching engine, seed, model, step, trace, observer, worker, and planner configs are compared.
- * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-same-config #c63dd18 Re-read the section: a small absolute change can pass, and a different observer, engine, or trace cannot be compared.
+ * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-same-config #95c7dcd Re-read the section: a small absolute change can pass, and a different observer, engine, or trace cannot be compared.
  */
 export const budgetSameConfig = "same-config-only" as const;
 
@@ -247,6 +247,13 @@ export function readChoice<T extends string>(flag: string, value: string | undef
   const match = choices.find((choice) => choice === value);
   if (match === undefined) throw new Error(`${flag} must be one of ${choices.join(", ")} (received: ${value})`);
   return match;
+}
+
+/** Exactly one duration sample, or the flag is rejected. */
+export function readSample(flag: string, value: string | undefined): number {
+  const samples = readSamples(flag, value);
+  if (samples.length !== 1) throw new Error(`${flag} takes exactly one sample (received: ${value})`);
+  return samples[0] as number;
 }
 
 /** A counter: an integer >= 0, or the flag is rejected. */

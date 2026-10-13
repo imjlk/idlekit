@@ -28,6 +28,7 @@ import {
   mergeBaselines,
   readChoice,
   readPositive,
+  readSample,
   readText,
   workloadStepCount,
   type ArtifactInput,
@@ -57,7 +58,7 @@ function built(overrides: Partial<ArtifactInput> = {}): PerformanceArtifact {
 
 /**
  * @evidence docs/requirements/active/performance-budget.md#req-dx04-bench-schema A built artifact round-trips the contract, version, host, and unsupported alloc/step.
- * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-bench-schema #26f2a73 Re-read the section, then ran this function: contract is idlekit.performance-budget and alloc/step is unsupported.
+ * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-bench-schema #bdfbaf6 Re-read the section, then ran this function: contract is idlekit.performance-budget and alloc/step is unsupported.
  * @evidence ./performanceBudget.ts#budgetSchema Reads the bench output schema contract.
  * @evidenceReview ./performanceBudget.ts#budgetSchema #59b4f49 The declaration is bench-output-schema.
  * @evidence ./performanceBudget.ts#buildPerformanceArtifact Builds the artifact from phases, config, host, and counters.
@@ -220,7 +221,7 @@ export function rejectsBaselineHashMismatch(): void {
 
 /**
  * @evidence docs/requirements/active/performance-budget.md#req-dx04-same-config 4ms to 9ms passes the absolute floor. Observer, engine, and trace mismatches are rejected.
- * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-same-config #c63dd18 Re-read the section, then ran this function: the small pair passes and the other configs are rejected.
+ * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-same-config #95c7dcd Re-read the section, then ran this function: the small pair passes and the other configs are rejected.
  * @evidence ./performanceBudget.ts#budgetSameConfig Reads the same-config contract.
  * @evidenceReview ./performanceBudget.ts#budgetSameConfig #0d25c6b The declaration is same-config-only.
  * @evidence ./performanceBudget.ts#sameBenchConfig Treats configs with the same fields in another key order as the same.
@@ -329,7 +330,7 @@ function scenarioArtifact(scenario: unknown, runtimeMs: readonly number[]): Perf
 
 /**
  * @evidence docs/requirements/active/performance-budget.md#req-dx04-same-config A 30-step and a 1800-step scenario share a config and are still rejected.
- * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-same-config #c63dd18 Re-read the section, then ran this function: a different scenario hash or workload count is workload-mismatch.
+ * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-same-config #95c7dcd Re-read the section, then ran this function: a different scenario hash or workload count is workload-mismatch.
  * @evidence ./performanceBudget.ts#scenarioHash Hashes the canonical scenario, independent of key order.
  * @evidenceReview ./performanceBudget.ts#scenarioHash #021fb0f The function returns the sha256 hex digest of the canonical scenario JSON.
  * @evidence ./performanceBudget.ts#scenarioWorkload Counts the scenario clock and leaves an until expression unknown.
@@ -372,7 +373,7 @@ export function rejectsDifferentWorkload(): void {
 
 /**
  * @evidence docs/requirements/active/performance-budget.md#req-dx04-same-config The trace mode follows outputs.report.traceEverySteps, and the engine is the run's.
- * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-same-config #c63dd18 Re-read the section, then ran this function: a sampled trace is bounded and an every-step trace is unbounded.
+ * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-same-config #95c7dcd Re-read the section, then ran this function: a sampled trace is bounded and an every-step trace is unbounded.
  * @evidence ./performanceBudget.ts#benchConfigFromScenario Reads engine, seed, model, step, trace cadence, observer, and planner from a scenario.
  * @evidenceReview ./performanceBudget.ts#benchConfigFromScenario #6b5d81e The function reads outputs.report.traceEverySteps, as the scenario compiler does, treats a cadence of 1 or none as every step, takes the engine and seed from the run, and reports the observer on.
  */
@@ -460,7 +461,7 @@ export function rejectsBaselineWithoutIterations(): void {
 
 /**
  * @evidence docs/requirements/active/performance-budget.md#req-dx04-bench-schema p95 is nearest-rank, so seven samples report the slowest one.
- * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-bench-schema #26f2a73 Re-read the section, then ran this function: one slow sample in seven is the p95.
+ * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-bench-schema #bdfbaf6 Re-read the section, then ran this function: one slow sample in seven is the p95.
  * @evidence ./performanceBudget.ts#percentile Takes the nearest-rank percentile.
  * @evidenceReview ./performanceBudget.ts#percentile #b76d423 The function sorts a copy and returns the sample at ceil(n * p) - 1, clamped, or null for no samples.
  */
@@ -475,9 +476,11 @@ export function takesNearestRankP95(): void {
 
 /**
  * @evidence docs/requirements/active/performance-budget.md#req-dx04-bench-schema Caller-supplied samples and counters cannot be negative.
- * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-bench-schema #26f2a73 Re-read the section, then ran this function: negative, blank, and fractional counter input throws.
+ * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-bench-schema #bdfbaf6 Re-read the section, then ran this function: negative, blank, and fractional counter input throws.
  * @evidence ./performanceBudget.ts#readSamples Parses duration samples and rejects a negative or non-finite one.
  * @evidenceReview ./performanceBudget.ts#readSamples #51c54d8 The function splits on commas and throws for a blank list, a blank item, a non-finite item, or a negative item.
+ * @evidence ./performanceBudget.ts#readSample Parses exactly one duration sample.
+ * @evidenceReview ./performanceBudget.ts#readSample #959d158 The function reads the samples and throws unless there is exactly one.
  * @evidence ./performanceBudget.ts#readCount Parses a counter and rejects anything but an integer >= 0.
  * @evidence ./performanceBudget.ts#readPositive Parses a step and rejects anything but a finite number > 0.
  * @evidenceReview ./performanceBudget.ts#readPositive #acb81e9 The function throws for a missing, blank, non-finite, zero, or negative value.
@@ -495,6 +498,10 @@ export function rejectsNegativeSamples(): void {
   expect(() => readSamples(runtime, "100,,200")).toThrow();
   expect(() => readSamples(runtime, "abc")).toThrow();
   expect(() => readSamples(runtime, undefined)).toThrow();
+  const cold = "--prepare-cold-ms";
+  expect(readSample(cold, "100")).toBe(100);
+  expect(() => readSample(cold, "100,200")).toThrow();
+  expect(() => readSample(cold, "-1")).toThrow();
   expect(readCount(nodes, "0")).toBe(0);
   expect(readCount(nodes, "32")).toBe(32);
   expect(() => readCount(nodes, "-5")).toThrow();
@@ -517,7 +524,7 @@ export function rejectsNegativeSamples(): void {
 
 /**
  * @evidence docs/requirements/active/performance-budget.md#req-dx04-same-config A baseline from another Bun, OS, or arch is not compared.
- * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-same-config #c63dd18 Re-read the section, then ran this function: a Linux baseline is host-mismatch on darwin, and a CPU brand change alone still compares.
+ * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-same-config #95c7dcd Re-read the section, then ran this function: a Linux baseline is host-mismatch on darwin, and a CPU brand change alone still compares.
  * @evidence ./performanceBudget.ts#sameHost Compares Bun, OS, and arch, not CPU brand.
  * @evidence ./performanceBudget.ts#mergeBaselines Replaces this host's entry for an edited scenario and keeps other hosts.
  * @evidenceReview ./performanceBudget.ts#mergeBaselines #6e7054e The function drops existing entries on the same host with the same scenario path or hash, then appends the fresh ones.

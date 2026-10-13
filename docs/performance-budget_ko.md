@@ -12,7 +12,7 @@ artifact 계약은 `idlekit.performance-budget`, schemaVersion 1이다. tools �
 
 hard gate는 최소 반복 수, 상대 느려짐, 절대 median 한도를 함께 쓴다. 반복이 충분하고 현재 median이 두 한도를 모두 넘을 때만 실패한다. 작은 절대 흔들림은 통과할 수 있다. 반복이 적으면 실패이며 통과가 아니다. config hash가 어긋나면 거절한다. 정수 `iterations`가 1 이상이고 정수 `warmup`이 0 이상이 아닌 baseline, 그리고 runtime sample 수, median, p95가 runtime phase와 맞지 않는 baseline은 읽지 않는다. `tools/bench-sim.ts`는 모르는 flag를 거절한다. gate는 새 baseline을 쓰지 않는다.
 
-pull request CI는 representative 시나리오에 `bench:sim:check`를 실행한다. [examples/bench/perf-baseline.json](../examples/bench/perf-baseline.json)과 상대 느려짐 0.25, 절대 median 한도 250ms로 비교하고, 평균 500ms와 p95 900ms 한도도 함께 본다. baseline 파일은 시나리오와 host마다 항목 하나를 둔다. 각 실행은 자기 Bun, OS, arch의 항목을 고른다. `bun run bench:sim:baseline`은 같은 시나리오 경로나 hash를 가진 이 host의 항목만 바꾸고 나머지는 남긴다. gate는 쓰지 않는다. `bench:sim:suite:check`는 `--threshold-peak-rss-bytes`로 simulate 자식 프로세스마다 peak RSS도 제한한다. 긴 linear corpus는 [.github/workflows/performance-corpus.yml](../.github/workflows/performance-corpus.yml)의 `bench:sim:suite:check`가 실행한다. `kpi:report`와 `kpi:regress`는 경제 gate로 남는다.
+pull request CI는 representative 시나리오에 `bench:sim:check`를 실행한다. [examples/bench/perf-baseline.json](../examples/bench/perf-baseline.json)과 상대 느려짐 0.25, 절대 median 한도 250ms로 비교하고, 평균 500ms와 p95 900ms 한도도 함께 본다. baseline 파일은 시나리오와 host마다 항목 하나를 둔다. 각 실행은 자기 Bun, OS, arch의 항목을 고른다. `bun run bench:sim:baseline`은 실행이 검사에 실패하면 아무것도 쓰지 않는다. 아니면 같은 시나리오 경로나 hash를 가진 이 host의 항목만 바꾸고 나머지는 남긴다. gate는 쓰지 않는다. `bench:sim:suite:check`는 `--threshold-peak-rss-bytes`로 simulate 자식 프로세스마다 peak RSS도 제한한다. 긴 linear corpus는 [.github/workflows/performance-corpus.yml](../.github/workflows/performance-corpus.yml)의 `bench:sim:suite:check`가 실행한다. `kpi:report`와 `kpi:regress`는 경제 gate로 남는다.
 
 Node.js와 browser 런타임은 v1 호환 계약에 포함되지 않는다.
 
@@ -32,7 +32,7 @@ bun run bench:sim:suite:check
 
 ## 검증
 
-아래 명령은 이 worktree에서 macOS arm64, Bun 1.4.2, ttsc 0.30.4로 실행했다. requirement 파일 sha256은 `0acfd2590d109d288c68ba9684b27c5fa782b6f2dd3c175a37873fcc6f697ab6`이다. `contracts:check`는 미실행이다. `bench:sim:check`와 `bench:sim:suite:check`는 CI runner가 아닌 이 macOS host에서 실행했다.
+아래 명령은 이 worktree에서 macOS arm64, Bun 1.4.2, ttsc 0.30.4로 실행했다. requirement 파일 sha256은 `80b0a2d2607501ccb9543783297409274bf80e68b12b2a77a71926ea2291f3b7`이다. `contracts:check`는 미실행이다. `bench:sim:check`와 `bench:sim:suite:check`는 CI runner가 아닌 이 macOS host에서 실행했다.
 
 | 명령 | 종료 |
 |---|---|

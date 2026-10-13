@@ -342,7 +342,14 @@ async function main(): Promise<void> {
     await ensureDir(dirname(outPath));
     await Bun.write(outPath, json);
   }
-  if (args.writeBaseline) await writeBaselineFile(resolve(ROOT, args.writeBaseline), scenarioResults);
+  if (args.writeBaseline) {
+    // A failing run is not blessed as the next baseline.
+    if (!overallPass) {
+      process.stderr.write("--write-baseline skipped: the run failed a threshold or baseline check\n");
+      process.exit(2);
+    }
+    await writeBaselineFile(resolve(ROOT, args.writeBaseline), scenarioResults);
+  }
   if (args.assert && !overallPass) process.exit(2);
 }
 

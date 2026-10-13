@@ -4,6 +4,7 @@ import {
   readChoice,
   readCount,
   readPositive,
+  readSample,
   readSamples,
   readText,
   representativeConfig,
@@ -51,7 +52,7 @@ function parseConfig(argv: string[]): {
     else if (flag === "--runtime-ms") runtimeMs = readSamples(flag, value);
     else if (flag === "--draws") draws = readCount(flag, value);
     else if (flag === "--workload") workload = readCount(flag, value);
-    else if (flag === "--prepare-cold-ms") prepareCold = readSamples(flag, value)[0];
+    else if (flag === "--prepare-cold-ms") prepareCold = readSample(flag, value);
     else if (flag === "--prepare-warm-ms") prepareWarm = readSamples(flag, value);
     else throw new Error(`unknown flag: ${flag}`);
   }

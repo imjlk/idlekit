@@ -12,7 +12,7 @@ Metrics are total time median and nearest-rank p95, steps/sec, planner expanded 
 
 The hard gate needs a minimum repeat count, a relative slowdown, and an absolute median floor. It fails only when the repeat count is sufficient and the current median exceeds both limits. A small absolute jitter can pass. Too few repeats fail and do not pass. A config hash mismatch is rejected. A baseline without an integer `iterations` of at least 1 and an integer `warmup` of at least 0 is not read, nor one whose runtime sample count, median, or p95 disagrees with its runtime phases. `tools/bench-sim.ts` rejects an unknown flag. The gate does not write a new baseline.
 
-Pull request CI runs `bench:sim:check` on the representative scenario. It compares against [examples/bench/perf-baseline.json](../examples/bench/perf-baseline.json) with a relative slowdown of 0.25 and an absolute median floor of 250ms, on top of the 500ms mean and 900ms p95 limits. The baseline file keeps one entry per scenario and host. Each run selects the entry for its own Bun, OS, and arch. `bun run bench:sim:baseline` replaces this host's entry for the same scenario path or hash and keeps the others. The gate never writes it. `bench:sim:suite:check` also limits each simulate child's peak RSS with `--threshold-peak-rss-bytes`. The long linear corpus runs from [.github/workflows/performance-corpus.yml](../.github/workflows/performance-corpus.yml) via `bench:sim:suite:check`. `kpi:report` and `kpi:regress` stay the economic gate.
+Pull request CI runs `bench:sim:check` on the representative scenario. It compares against [examples/bench/perf-baseline.json](../examples/bench/perf-baseline.json) with a relative slowdown of 0.25 and an absolute median floor of 250ms, on top of the 500ms mean and 900ms p95 limits. The baseline file keeps one entry per scenario and host. Each run selects the entry for its own Bun, OS, and arch. `bun run bench:sim:baseline` writes nothing when the run fails a check. Otherwise it replaces this host's entry for the same scenario path or hash and keeps the others. The gate never writes it. `bench:sim:suite:check` also limits each simulate child's peak RSS with `--threshold-peak-rss-bytes`. The long linear corpus runs from [.github/workflows/performance-corpus.yml](../.github/workflows/performance-corpus.yml) via `bench:sim:suite:check`. `kpi:report` and `kpi:regress` stay the economic gate.
 
 Node.js and browser runtimes are not part of the v1 compatibility contract.
 
@@ -32,7 +32,7 @@ bun run bench:sim:suite:check
 
 ## Verification
 
-Commands below were run from this worktree on macOS arm64 with Bun 1.4.2 and ttsc 0.30.4. Requirement file sha256 `0acfd2590d109d288c68ba9684b27c5fa782b6f2dd3c175a37873fcc6f697ab6`. `contracts:check` is unrun. `bench:sim:check` and `bench:sim:suite:check` ran on this macOS host, not on the CI runner.
+Commands below were run from this worktree on macOS arm64 with Bun 1.4.2 and ttsc 0.30.4. Requirement file sha256 `80b0a2d2607501ccb9543783297409274bf80e68b12b2a77a71926ea2291f3b7`. `contracts:check` is unrun. `bench:sim:check` and `bench:sim:suite:check` ran on this macOS host, not on the CI runner.
 
 | Command | Exit |
 |---|---|
