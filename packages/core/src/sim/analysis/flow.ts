@@ -131,7 +131,7 @@ export const flowOptionalAdapter = "observer-not-required-model" as const;
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-pipeline A steady 100 to 20 to 30 chain binds at the middle stage.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-pipeline #7299aac Re-read the section: final throughput stays 20 when inflow doubles, a bind reads one resource and one window, the causally named bind is confirmed among several, each terminal process reports a final throughput per delivered resource from its latest window, an inflow source offers work, a process series is judged only on its latest saturated window, downstream slack counts every feed into that stage, a confirmed bind cites the causal record, and the bind cites its edges and requires a downstream capacity, upstream offer, and side feed in the unit an identity edge keeps, citing the throughput that named it.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-pipeline #597bca1 Re-read the section: final throughput stays 20 when inflow doubles, a bind reads one resource and one window, the causally named bind is confirmed among several, each terminal process reports a final throughput per delivered resource from its latest window and cites the delivering edges, an inflow source offers work, a process series is judged only on its latest saturated window, downstream slack counts every feed into that stage, a confirmed bind cites the causal record, and the bind cites its edges and requires a downstream capacity, upstream offer, and side feed in the unit an identity edge keeps, citing the throughput that named it.
  */
 export const flowPipelineConstraint = "process-throughput-20" as const;
 
@@ -392,7 +392,7 @@ function convert(amount: number, edge: FlowEdgeV1): number | null {
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-pipeline Diagnosis reads throughput, capacity, and the evidence window.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-pipeline #7299aac Re-read the section: the middle stage binds and doubling inflow leaves throughput at 20; capacity and upstream samples match the edge resource and the throughput window, and every saturated process is a candidate.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-pipeline #597bca1 Re-read the section: the middle stage binds and doubling inflow leaves throughput at 20; capacity and upstream samples match the edge resource and the throughput window, and every saturated process is a candidate.
  */
 export function diagnoseFlow(observation: FlowObservationV1): FlowReportV1 {
   const littlesLaw = littlesOf(observation.littles, observation.capability, observation.steady);
@@ -434,7 +434,8 @@ export function diagnoseFlow(observation: FlowObservationV1): FlowReportV1 {
   for (const source of sources) sinks.delete(source);
   // Each terminal process reports the throughput of every resource its incoming edges deliver. A graph with
   // edges but no terminal process, such as a cycle, has no final throughput. Only an edgeless observation falls back.
-  const finals: Rated[] = [];
+  // A graph-derived final cites the incoming edges that deliver its resource, the topology that made it final.
+  const finals: { row: Rated; edgeRefs: string[] }[] = [];
   for (const sinkId of sinks) {
     const delivered = new Set(observation.edges.filter((edge) => edge.toProcessId === sinkId).map((edge) => edge.toResourceId));
     for (const resourceId of delivered) {
@@ -443,7 +444,10 @@ export function diagnoseFlow(observation: FlowObservationV1): FlowReportV1 {
           (row) => row.sample.processId === sinkId && row.sample.resourceId === resourceId && row.sample.kind === "throughput",
         ),
       );
-      if (found) finals.push(found);
+      const edgeRefs = [...observation.edges.entries()]
+        .filter(([, edge]) => edge.toProcessId === sinkId && edge.toResourceId === resourceId)
+        .map(([edgeIndex]) => `edge:${edgeIndex}`);
+      if (found) finals.push({ row: found, edgeRefs });
     }
   }
   if (observation.edges.length === 0) {
@@ -456,10 +460,10 @@ export function diagnoseFlow(observation: FlowObservationV1): FlowReportV1 {
     }
     for (const members of series.values()) {
       const chosen = latest(members);
-      if (chosen) finals.push(chosen);
+      if (chosen) finals.push({ row: chosen, edgeRefs: [] });
     }
   }
-  for (const final of finals) {
+  for (const { row: final, edgeRefs } of finals) {
     facts.push({
       // The pair is encoded structurally, so two different pairs never share an id and no string makes it throw.
       id: `fact:final-throughput:${JSON.stringify([final.sample.processId, final.sample.resourceId])}`,
@@ -469,7 +473,7 @@ export function diagnoseFlow(observation: FlowObservationV1): FlowReportV1 {
       amount: final.sample.amount,
       unit: final.sample.unit,
       window: { startSec: final.sample.startSec, endSec: final.sample.endSec },
-      evidenceRefs: [`sample:${final.index}`],
+      evidenceRefs: [`sample:${final.index}`, ...edgeRefs],
     });
   }
   // Every saturated process is a candidate, so a later causally named bind is not missed. Each process and
