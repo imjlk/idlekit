@@ -124,6 +124,15 @@ export function keepsTypedContractSingleSource(): void {
     "idlekit.balance-checks.v1",
     "idlekit.judge.v1",
   ]);
+  // Each registry entry names a type its source declares. The balance entry names the
+  // document union the schema publishes, so the error variant is part of the registered type.
+  for (const entry of registeredContracts()) {
+    const source = readFileSync(join(repoRoot, entry.source), "utf8");
+    expect(source).toContain(`export type ${entry.typeName} =`);
+  }
+  expect(registeredContracts().find((entry) => entry.id === "idlekit.balance-checks.v1")?.typeName).toBe(
+    "BalanceCheckDocumentV1",
+  );
   const text = canonicalJson(buildContractDocument(sources));
   expect(canonicalJson(buildContractDocument(sources))).toBe(text);
   expect(text).not.toContain("/tmp/");
@@ -371,13 +380,16 @@ export function keepsGeneratedContractsStable(): void {
   const left = join(tmpdir(), `idlekit-tc05-gen-a-${crypto.randomUUID()}`);
   const right = join(tmpdir(), `idlekit-tc05-gen-b-${crypto.randomUUID()}`);
   try {
-    // A --dest generation must not touch the tracked public judge schema.
+    // A --dest generation must not touch the tracked public balance or judge schema.
+    const publicSchema = join(repoRoot, "docs/schemas/balance-checks.v1.schema.json");
+    const publicBefore = statSync(publicSchema).mtimeMs;
     const publicJudge = join(repoRoot, "docs/schemas/judge.output.schema.json");
     const publicJudgeBefore = statSync(publicJudge).mtimeMs;
     const wroteLeft = spawnContract(["tools/generate-contracts.ts", "--dest", left]);
     const wroteRight = spawnContract(["tools/generate-contracts.ts", "--dest", right]);
     expect(wroteLeft.exitCode).toBe(0);
     expect(wroteRight.exitCode).toBe(0);
+    expect(statSync(publicSchema).mtimeMs).toBe(publicBefore);
     expect(statSync(publicJudge).mtimeMs).toBe(publicJudgeBefore);
     const names = readdirSync(left).sort();
     expect(names).toEqual(readdirSync(right).sort());
@@ -423,6 +435,18 @@ export function checksTrackedContractCli(): void {
 
     const checked = spawnContract(["tools/contracts-check.ts"]);
     expect(checked.exitCode).toBe(0);
+
+    // An empty public balance schema is drift, not a pass. The tracked copy is restored afterwards.
+    const publicSchema = join(repoRoot, "docs/schemas/balance-checks.v1.schema.json");
+    const publicText = readFileSync(publicSchema, "utf8");
+    try {
+      writeFileSync(publicSchema, "");
+      const truncated = spawnContract(["tools/contracts-check.ts"]);
+      expect(truncated.exitCode).toBe(1);
+      expect(truncated.stderr).toContain("drift docs/schemas/balance-checks.v1.schema.json");
+    } finally {
+      writeFileSync(publicSchema, publicText);
+    }
   } finally {
     for (const dir of [stale, crlf]) rmSync(dir, { recursive: true, force: true });
   }
