@@ -27,7 +27,7 @@ export const executionStableReduction = "logical-index" as const;
 
 /**
  * @evidence docs/requirements/active/worker-execution-backend.md#req-dx05-failure-boundary Failure, cancellation, and incomplete stays are distinct. A partial batch is not a full distribution.
- * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-failure-boundary #974b725 Re-read the section: timeout and abort do not become a successful distribution, a retry keeps the same id and seed, the timeout is per task and per attempt, and a thrown runner is a failed task.
+ * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-failure-boundary #afd48b8 Re-read the section: timeout and abort do not become a successful distribution, a retry keeps the same id and seed, the timeout is per task and per attempt, and a thrown runner is a failed task.
  */
 export const executionFailureBoundary = "not-a-partial-distribution" as const;
 
@@ -336,6 +336,8 @@ export function runLocalBatch(
     serializedBytes,
   };
   if (tasks.length === 0) return finalizeBatch([], header);
+  // An abort before submit outranks every other outcome, the queue bound included.
+  if (options?.signal?.aborted) return finalizeBatch(tasks.map((task) => outcomeOf(task, "cancelled", "abort", 0)), header);
   if (tasks.length > budget.queueBound) {
     return finalizeBatch(
       tasks.map((task) => outcomeOf(task, "incomplete", "queue-bound", 0)),

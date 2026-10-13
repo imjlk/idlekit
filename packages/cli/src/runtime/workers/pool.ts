@@ -11,7 +11,7 @@ import {
 
 /**
  * @evidence docs/requirements/active/worker-execution-backend.md#req-dx05-worker-parity Explicit worker counts share one logical digest. The pool does not choose itself.
- * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-worker-parity #ee2513d Re-read the section: selection stays explicit-worker, the count stays within maxWorkers, an exit is a crash, and shutdown terminates every slot and clears every timer.
+ * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-worker-parity #57fec63 Re-read the section: selection stays explicit-worker, the count stays within maxWorkers, an exit is a crash, and shutdown terminates every slot and clears every timer.
  */
 export const workerPoolParity = "same-logical-digest" as const;
 
@@ -29,6 +29,9 @@ export function workerEntryUrl(): URL {
 }
 
 const workerDevPreload = ["@ttsc/unplugin/bun-register"] as const;
+
+/** `workerEntryMarker` in entry.ts. Read here as a string so the pool does not import the entry and its plugin loader. */
+const WORKER_OUTCOME_MARKER = "idlekit-worker-entry";
 
 function defaultSpawn(): WorkerLike {
   return new Worker(workerEntryUrl(), { preload: [...workerDevPreload] }) as unknown as WorkerLike;
@@ -91,14 +94,14 @@ export async function runWorkerPool(args: Readonly<{
     serializedBytes,
   };
   if (tasks.length === 0) return finalizeBatch([], header);
+  // An abort before submit cancels every task, refused or over the queue bound, as the local backend does.
+  if (args.signal?.aborted) return finalizeBatch(tasks.map((task) => failed(task, "abort", 0)), header);
   if (tasks.length > budget.queueBound) {
     return finalizeBatch(
       tasks.map((task) => failed(task, "queue-bound", 0)),
       header,
     );
   }
-  // An abort before submit cancels every task, refused or not, as the local backend does.
-  if (args.signal?.aborted) return finalizeBatch(tasks.map((task) => failed(task, "abort", 0)), header);
   const results: (AnalysisTrialOutcomeV1 | undefined)[] = tasks.map((task, index) => {
     const refusal = refusals[index];
     return refusal ? failed(task, refusal, 1) : undefined;
@@ -180,8 +183,11 @@ export async function runWorkerPool(args: Readonly<{
       }, budget.taskTimeoutMs);
       timers.add(timer);
       worker.onmessage = (event) => {
+        const envelope = event.data as { type?: unknown; marker?: unknown; outcome?: AnalysisTrialOutcomeV1 } | null;
+        // Only the entry's marked outcome envelope ends a task. A plugin may post its own messages from the worker.
+        if (envelope?.type !== "outcome" || envelope.marker !== WORKER_OUTCOME_MARKER) return;
         if (!settle()) return;
-        const outcome = (event.data as { outcome?: AnalysisTrialOutcomeV1 } | null)?.outcome;
+        const outcome = envelope.outcome;
         if (!outcome || outcome.taskId !== task.taskId) {
           results[index] = failed(task, "worker-crash", attempt + 1);
         } else if (outcome.status === "failed" && outcome.reason !== "plugin-trust" && requeue(index, attempt)) {

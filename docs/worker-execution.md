@@ -2,7 +2,7 @@
 
 Korean version: [worker-execution_ko.md](./worker-execution_ko.md)
 
-`DX-05` adds an optional Bun worker pool for independent analysis trials. The core contract submits, cancels, and bounds a batch. It does not construct `Bun.Worker`, read files, or call the network. The CLI adapter owns the pool. The default selection is `local-default`. A caller that wants workers passes an explicit count. DX-04 has no measurement that a small analysis batch is cheaper on workers, so nothing in this change auto-selects a pool.
+`DX-05` adds an optional Bun worker pool for independent analysis trials. The core contract submits, cancels, and bounds a batch. It does not construct `Bun.Worker`, read files, or call the network. The CLI adapter owns the pool. The default selection is `local-default`. A caller that wants workers passes an explicit count. No `idk` command selects the pool in this release: it is an internal adapter in the CLI package, and wiring a command to it is later work. DX-04 has no measurement that a small analysis batch is cheaper on workers, so nothing in this change auto-selects a pool.
 
 A task is a versioned JSON descriptor: scenario parameters, logical index, seed, step budget, engine id, and plugin path, root, and digest lists. The worker rebuilds a fresh run from the trusted linear factory and the existing serde. A trial without plugin paths runs on the built-in registries. The worker entry hands the trial the CLI plugin loader, and a trial with plugin paths but no loader fails closed as `plugin-trust`. It does not receive a compiled closure, a function, or a native decimal instance. The draw seed is `logicalDrawSeed(base, logicalIndex)`. Worker count and completion order are not seed inputs. Reproduction label is `19`.
 
@@ -32,7 +32,7 @@ Commands below were run from this worktree on macOS arm64 with Bun 1.4.2 and tts
 
 The first `evidence:check` exited 2 on placeholder reviews and two missing handler citations. The next exited 2 on those handler reviews. The rerun exited 0. `graph:check` left `createPlannerStrategy` to `stepOnce` unobserved at hops 0.
 
-The PR #223 review fixes changed the requirement file to sha256 `b5fea39ccf5560c1ae4ae476832f73cb438bfde3061c498ae748a5f5d65621ef`. That revision ran `bun run typecheck`, `bun run test:conformance`, `bun run contracts:check`, `executionBackend.test.ts` from `packages/core`, and `pool.test.ts` from `packages/cli`.
+The PR #223 review fixes changed the requirement file to sha256 `a3ec097d9064581c0651834eebcd3e46845f5a3559d90a8be07722704df13d1c`. That revision ran `bun run typecheck`, `bun run test:conformance`, `bun run contracts:check`, `executionBackend.test.ts` from `packages/core`, and `pool.test.ts` from `packages/cli`.
 
 ## Graph
 

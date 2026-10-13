@@ -2,7 +2,7 @@
 
 영문 원문: [worker-execution.md](./worker-execution.md)
 
-`DX-05`는 독립 분석 trial을 위한 선택적 Bun worker pool을 더한다. core 계약은 batch 제출, 취소, 예산만 가진다. `Bun.Worker`, 파일, 네트워크는 CLI adapter에 있다. 기본 선택은 `local-default`다. worker를 쓰려면 호출자가 개수를 명시한다. DX-04에 작은 분석 batch가 worker에서 더 싸다는 실측이 없으므로 이 변경은 pool을 자동 선택하지 않는다.
+`DX-05`는 독립 분석 trial을 위한 선택적 Bun worker pool을 더한다. core 계약은 batch 제출, 취소, 예산만 가진다. `Bun.Worker`, 파일, 네트워크는 CLI adapter에 있다. 기본 선택은 `local-default`다. worker를 쓰려면 호출자가 개수를 명시한다. 이번 릴리스의 `idk` 명령은 pool을 선택하지 않는다. pool은 CLI 패키지 안의 내부 adapter이고, 명령에 연결하는 일은 이후 작업이다. DX-04에 작은 분석 batch가 worker에서 더 싸다는 실측이 없으므로 이 변경은 pool을 자동 선택하지 않는다.
 
 task는 버전 있는 JSON descriptor다. 시나리오 매개변수, logical index, seed, step budget, engine id, plugin 경로, root, digest 목록을 담는다. worker는 신뢰된 linear factory와 기존 serde로 fresh run을 다시 만든다. plugin 경로가 없는 trial은 내장 registry로 실행된다. worker entry가 CLI plugin loader를 trial에 넘기고, plugin 경로가 있는데 loader가 없으면 `plugin-trust`로 닫힌 채 실패한다. compiled closure, 함수, native decimal 인스턴스는 받지 않는다. draw seed는 `logicalDrawSeed(base, logicalIndex)`다. worker 수와 완료 순서는 seed 입력이 아니다. 재현 라벨은 `19`다.
 
@@ -32,7 +32,7 @@ Node.js와 browser 런타임은 v1 호환 계약에 포함되지 않는다.
 
 첫 `evidence:check`는 placeholder review와 handler citation 두 건으로 2였다. 다음은 그 handler review로 2였다. 재실행은 0이었다. `graph:check`는 `createPlannerStrategy`에서 `stepOnce`를 hops 0의 unobserved로 남겼다.
 
-PR #223 review 수정으로 요구 파일 sha256은 `b5fea39ccf5560c1ae4ae476832f73cb438bfde3061c498ae748a5f5d65621ef`이 됐다. 그 수정에서 `bun run typecheck`, `bun run test:conformance`, `bun run contracts:check`, `packages/core`의 `executionBackend.test.ts`, `packages/cli`의 `pool.test.ts`를 실행했다.
+PR #223 review 수정으로 요구 파일 sha256은 `a3ec097d9064581c0651834eebcd3e46845f5a3559d90a8be07722704df13d1c`이 됐다. 그 수정에서 `bun run typecheck`, `bun run test:conformance`, `bun run contracts:check`, `packages/core`의 `executionBackend.test.ts`, `packages/cli`의 `pool.test.ts`를 실행했다.
 
 ## Graph
 

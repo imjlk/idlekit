@@ -58,7 +58,7 @@ function echo(value: AnalysisTrialTaskV1, endMoney: string): AnalysisTrialOutcom
  * @evidence ./executionBackend.ts#defaultExecutionBudget Reads the budget.
  * @evidenceReview ./executionBackend.ts#defaultExecutionBudget #4df9ea6 maxWorkers is 0.
  * @evidence ./executionBackend.ts#runLocalBatch Runs the batch in this process.
- * @evidenceReview ./executionBackend.ts#runLocalBatch #6dced7a Re-read runLocalBatch after the per-task window and the validate-first cost: two tasks run locally with no spawn cost, record UTF-8 serialized bytes, and form a full distribution.
+ * @evidenceReview ./executionBackend.ts#runLocalBatch #7c29e34 Re-read runLocalBatch after the per-task window and the validate-first cost: two tasks run locally with no spawn cost, record UTF-8 serialized bytes, and form a full distribution.
  */
 export function keepsLocalDefault(): void {
   expect(executionLocalDefault).toBe("local-default");
@@ -222,9 +222,9 @@ export function reducesInLogicalOrder(): void {
 
 /**
  * @evidence docs/requirements/active/worker-execution-backend.md#req-dx05-failure-boundary Abort, timeout, retry, and the queue bound stay distinct from a full distribution.
- * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-failure-boundary #974b725 Re-read the section, then ran this function: the retry kept the same seed, the aborted batch was not full, three tasks each inside their own window all finished, a thrown trial retried and failed alone, and a failed attempt past the window was a timeout with no retry.
+ * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-failure-boundary #afd48b8 Re-read the section, then ran this function: the retry kept the same seed, the aborted batch was not full, three tasks each inside their own window all finished, a thrown trial retried and failed alone, a failed attempt past the window was a timeout with no retry, and a pre-aborted batch over the queue bound was cancelled.
  * @evidence ./executionBackend.ts#runLocalBatch Bounds each task by its own window and turns a thrown runner into a failed outcome.
- * @evidenceReview ./executionBackend.ts#runLocalBatch #6dced7a Re-read the loop: no batch deadline remains, the window applies to every attempt before its status, a 2 ms task under a 5 ms budget is ok in third place, a throw is trial-failed with attempts counted, and a slow failure stops at one attempt.
+ * @evidenceReview ./executionBackend.ts#runLocalBatch #7c29e34 Re-read the pre-abort check ahead of the queue bound and the loop: no batch deadline remains, the window applies to every attempt before its status, a 2 ms task under a 5 ms budget is ok in third place, a throw is trial-failed with attempts counted, and a slow failure stops at one attempt.
  * @evidence ./executionBackend.ts#executionFailureBoundary Reads the boundary marker.
  * @evidenceReview ./executionBackend.ts#executionFailureBoundary #5e9d9f9 The declaration is not-a-partial-distribution.
  * @evidence ./executionBackend.ts#createLocalExecutionBackend Submits a batch that cancel or an aborted signal stops.
@@ -370,6 +370,13 @@ export function boundsFailures(): void {
   ]);
   expect(thrown.fullDistribution).toBe(false);
 
+  const abortedQueue = new AbortController();
+  abortedQueue.abort();
+  const abortedOverBound = runLocalBatch([task(0), task(1)], (item) => echo(item, "1"), {
+    budget: { ...defaultExecutionBudget, queueBound: 1 },
+    signal: abortedQueue.signal,
+  });
+  expect(abortedOverBound.outcomes.map((outcome) => outcome.status)).toEqual(["cancelled", "cancelled"]);
   const queued = runLocalBatch([task(0), task(1)], () => {
     throw new Error("queue bound must not run");
   }, { budget: { ...defaultExecutionBudget, queueBound: 1 } });
