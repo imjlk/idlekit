@@ -201,16 +201,52 @@ export function parseJudgeRubric(
     return { ok: false, issues: validated.errors.map((error) => `${error.path} ${error.expected}`) };
   }
   if (validated.data.rules.length === 0) return { ok: false, issues: ["rubric has no rules"] };
-  // JSON parses 1e400 as Infinity. A nonfinite threshold cannot be compared and would serialize as null.
-  const nonfinite: string[] = [];
-  validated.data.rules.forEach((rule, index) => {
-    if (!Number.isFinite(rule.threshold)) nonfinite.push(`$input.rules[${index}].threshold finite number`);
-    if (rule.upperThreshold !== null && !Number.isFinite(rule.upperThreshold)) {
-      nonfinite.push(`$input.rules[${index}].upperThreshold finite number or null`);
-    }
-  });
+  const nonfinite = nonfiniteThresholds(validated.data);
   if (nonfinite.length > 0) return { ok: false, issues: nonfinite };
   return { ok: true, rubric: validated.data };
+}
+
+/** JSON parses 1e400 as Infinity. A nonfinite threshold cannot be compared and would serialize as null. */
+function nonfiniteThresholds(rubric: JudgeRubricV1): string[] {
+  const issues: string[] = [];
+  rubric.rules.forEach((rule, index) => {
+    if (!Number.isFinite(rule.threshold)) issues.push(`$input.rules[${index}].threshold finite number`);
+    if (rule.upperThreshold !== null && !Number.isFinite(rule.upperThreshold)) {
+      issues.push(`$input.rules[${index}].upperThreshold finite number or null`);
+    }
+  });
+  return issues;
+}
+
+/**
+ * Judge each group of rules against only its own synthesized observation, so a rule that matches no
+ * observation reports its mismatch against the observation built for it, never against another rule's.
+ * Pass is the conjunction of the groups' passes; a single group is exactly one engine call.
+ */
+function evaluateGroups(
+  failOn: JudgeRubricV1["failOn"],
+  groups: ReadonlyMap<string, { observation: BalanceObservationV1; indices: number[] }>,
+  checks: readonly BalanceCheckV1[],
+): BalanceCheckReportV1 {
+  const results: BalanceCheckReportV1["results"][number][] = new Array(checks.length);
+  const reports = [...groups.values()].map((group) => {
+    const report = evaluateBalanceChecks({
+      schemaVersion: 1,
+      contract: "idlekit.balance-checks.v1",
+      failOn,
+      checks: group.indices.map((index) => checks[index] as BalanceCheckV1),
+      observations: [group.observation],
+      advisory: null,
+    });
+    group.indices.forEach((index, position) => {
+      results[index] = report.results[position] as BalanceCheckReportV1["results"][number];
+    });
+    return report;
+  });
+  const first = reports[0] as BalanceCheckReportV1;
+  if (reports.length === 1) return first;
+  const pass = reports.every((report) => report.pass);
+  return { ...first, results, pass, exitCode: pass ? 0 : 2 };
 }
 
 function findReadings(artifact: AnalysisArtifactV1, metricId: string): readonly MetricReadingV1[] {
@@ -415,14 +451,16 @@ export function judgeArtifact(
     return { ok: false, issues: ["artifact algorithmVersion"] };
   }
   if (rubric.rules.length === 0) return { ok: false, issues: ["rubric has no rules"] };
+  // A direct caller can pass Infinity in a typed rubric; it is rejected here as in parseJudgeRubric.
+  const nonfinite = nonfiniteThresholds(rubric);
+  if (nonfinite.length > 0) return { ok: false, issues: nonfinite };
   // A structurally valid artifact can still break its cross-field contract; that artifact is not judged.
   const semantic = validateAnalysisSemantics(artifact);
   if (semantic.length > 0) {
     return { ok: false, issues: semantic.map((issue) => `artifact ${issue.path} ${issue.message}`) };
   }
   const issues: string[] = [];
-  const observed = new Set<string>();
-  const observations: BalanceObservationV1[] = [];
+  const groups = new Map<string, { observation: BalanceObservationV1; indices: number[] }>();
   const estimatedObservations: EstimatedObservationV1[] = [];
   const prepared: Array<{ rule: JudgeRuleV1; estimated: EstimatedObservationV1 | null; ref: string }> = [];
   for (const rule of rubric.rules) {
@@ -438,13 +476,12 @@ export function judgeArtifact(
       continue;
     }
     const mapped = toObservation(artifact, reading, rule);
-    // One observation per distinct identity. Rules whose stand-in method and unit agree share it; rules
-    // that differ get their own, and each is still the only full match for its rule, never ambiguous.
+    // One observation per distinct identity. Rules whose stand-in method and unit agree share it and
+    // are judged together; rules that differ get their own observation and their own group.
     const key = JSON.stringify([reading.metricId, mapped.observation.identity.method, mapped.observation.identity.unit]);
-    if (!observed.has(key)) {
-      observed.add(key);
-      observations.push(mapped.observation);
-    }
+    const group = groups.get(key) ?? { observation: mapped.observation, indices: [] };
+    group.indices.push(prepared.length);
+    groups.set(key, group);
     if (mapped.estimated && !estimatedObservations.some((item) => item.metricId === reading.metricId)) {
       estimatedObservations.push(mapped.estimated);
     }
@@ -452,14 +489,7 @@ export function judgeArtifact(
   }
   if (issues.length > 0) return { ok: false, issues };
   const checks: BalanceCheckV1[] = prepared.map(({ rule }) => checkFor(rule));
-  const numerical = evaluateBalanceChecks({
-    schemaVersion: 1,
-    contract: "idlekit.balance-checks.v1",
-    failOn: rubric.failOn,
-    checks,
-    observations,
-    advisory: null,
-  });
+  const numerical = evaluateGroups(rubric.failOn, groups, checks);
   const assumptionRefs = artifact.assumptions.filter((item) => item.length > 0);
   const diagnostics: JudgeDiagnosticV1[] = prepared.map((item, index) => {
     const outcome = outcomeFor(numerical.results[index], item.estimated !== null, item.rule);

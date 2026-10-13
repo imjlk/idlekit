@@ -143,7 +143,7 @@ export function acceptsRulesProvider(): void {
  * @evidence ./judge.ts#judgeCheckReuse Reads the check-reuse marker.
  * @evidenceReview ./judge.ts#judgeCheckReuse #6aa2e90 The declaration is checks-not-recomputed.
  * @evidence ./judge.ts#judgeArtifact Maps artifact readings into balance checks and builds the report.
- * @evidenceReview ./judge.ts#judgeArtifact #df87b76 Re-read the function, toObservation, and checkFor: checks keep the rubric method and unit, the observation takes the rule's method when the reading records none and its unit when an unavailable amount records none, observations are shared per distinct identity, and it rejects a semantically invalid artifact and a metric id that matches two readings, maps each metric to one observation, the numerical block equals a direct evaluateBalanceChecks call for 3h, an observed or estimated amount reading is unsupported with no value and no estimate entry, and two rules on one metric both pass.
+ * @evidenceReview ./judge.ts#judgeArtifact #c85ec46 Re-read the function, toObservation, checkFor, and evaluateGroups: it rejects a nonfinite threshold in a typed rubric, judges each observation group separately so a rule mismatches only against its own stand-ins in either rule order, and checks keep the rubric method and unit, the observation takes the rule's method when the reading records none and its unit when an unavailable amount records none, observations are shared per distinct identity, and it rejects a semantically invalid artifact and a metric id that matches two readings, maps each metric to one observation, the numerical block equals a direct evaluateBalanceChecks call for 3h, an observed or estimated amount reading is unsupported with no value and no estimate entry, and two rules on one metric both pass.
  */
 export function reusesBalanceChecks(): void {
   expect(judgeCheckReuse).toBe("checks-not-recomputed");
@@ -252,7 +252,7 @@ export function reusesBalanceChecks(): void {
  * @evidence ./judge.ts#judgeEvidenceRefs Reads the evidence-ref marker.
  * @evidenceReview ./judge.ts#judgeEvidenceRefs #ad623a2 The declaration is existing-refs-only.
  * @evidence ./judge.ts#parseJudgeRubric Validates a rubric before it is used.
- * @evidenceReview ./judge.ts#parseJudgeRubric #7a5491c Re-read the function: a complete rubric is accepted, a bad version, an unknown root or rule field, an empty rule list, and a nonfinite threshold or upper threshold are rejected.
+ * @evidenceReview ./judge.ts#parseJudgeRubric #4eeb18f Re-read the function and nonfiniteThresholds: a complete rubric is accepted, a bad version, an unknown root or rule field, an empty rule list, and a nonfinite threshold or upper threshold are rejected.
  */
 export function rejectsBadRefs(): void {
   expect(judgeEvidenceRefs).toBe("existing-refs-only");
@@ -275,6 +275,13 @@ export function rejectsBadRefs(): void {
   if (!infinite.ok) expect(infinite.issues).toEqual(["$input.rules[0].threshold finite number"]);
   const infiniteUpper = parseJudgeRubric(rubric([rule({ operator: "between", threshold: 1, upperThreshold: Infinity })]));
   expect(infiniteUpper.ok).toBe(false);
+  // The public judgeArtifact applies the same check to a typed rubric that skipped the parser.
+  const directInfinite = judgeArtifact(
+    artifact([reading({ reading: "observed", status: "ok", value: 1.5 })]),
+    rubric([rule({ threshold: Infinity })]),
+  );
+  expect(directInfinite.ok).toBe(false);
+  if (!directInfinite.ok) expect(directInfinite.issues).toEqual(["$input.rules[0].threshold finite number"]);
   // A structurally valid artifact that breaks its semantic contract is not judged.
   const twoRepresentations = judgeArtifact(
     artifact([reading({ reading: "observed", status: "ok", value: 1, amount: { unit: "coin", decimal: "1" } })]),
@@ -500,6 +507,24 @@ export function withholdsHealthLabels(): void {
   if (!hours.ok) return;
   expect(hours.report.numerical.results[0]?.verdict).toBe("pass");
   expect(hours.report.numerical.results[0]?.evidence.unit).toBe("h");
+  // A rule that matches no observation reports its mismatch against its own stand-ins, whatever the
+  // rule order: a later monte-carlo/s rule mismatches on method only, never on a unit the reading lacks.
+  const exactHours = rule({ id: "exact-h", unit: "h" });
+  const carloSeconds = rule({ id: "carlo-s", unit: "s", method: "monte-carlo" });
+  for (const rules of [
+    [exactHours, carloSeconds],
+    [carloSeconds, exactHours],
+  ]) {
+    const judged = judgeArtifact(artifact([reading({ reading: "observed", status: "ok", value: 1.5 })]), rubric(rules));
+    expect(judged.ok).toBe(true);
+    if (!judged.ok) return;
+    const byId = new Map(judged.report.numerical.results.map((result) => [result.id, result]));
+    expect(byId.get("exact-h")?.verdict).toBe("pass");
+    expect(byId.get("carlo-s")?.mismatches).toEqual(["method"]);
+    expect(judged.report.numerical.pass).toBe(false);
+    expect(judged.report.numerical.exitCode).toBe(2);
+    expect(judged.report.numerical.results.map((result) => result.id)).toEqual(rules.map((item) => item.id));
+  }
   // An observed value under an unknown metrics capability or incomplete coverage is not measured.
   const unknownCapability = judgeArtifact(
     artifact([reading({ reading: "observed", status: "ok", value: 1.5 })], {
