@@ -109,10 +109,10 @@ describe("judge command", () => {
     const csv = runCli(["judge", analysis, "--rubric", rubricPath, "--format", "csv"]);
     const csvLines = csv.stdout.trim().split("\n");
     expect(csvLines[0]).toBe(
-      "id,metricId,verdict,severity,evidenceStatus,value,unit,operator,threshold,diagnosticStatus,recommendationId",
+      "id,metricId,verdict,severity,evidenceStatus,value,unit,operator,threshold,upperThreshold,diagnosticStatus,recommendationId",
     );
     expect(csvLines).toHaveLength(2);
-    expect(csvLines[1]?.split(",")).toHaveLength(11);
+    expect(csvLines[1]?.split(",")).toHaveLength(12);
     expect(csvLines[1]).toContain("first-reset,first-reset,");
     const markdownOut = resolve(dir, "judge.md");
     runCli(["judge", analysis, "--rubric", rubricPath, "--format", "md", "--out", markdownOut]);

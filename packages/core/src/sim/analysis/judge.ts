@@ -305,8 +305,13 @@ function outcomeFor(
   rule: JudgeRuleV1,
 ): { recommendationId: RecommendationId; status: DiagnosticStatus; category: JudgeLayer; severity: "error" | "warn" | "info" } {
   const verdict = result?.verdict ?? "inconclusive";
-  // A missing or absent reading is insufficient whatever its missing policy makes the numerical verdict.
-  const noReading = !result || result.evidence.status === "missing" || result.evidence.status === "absent";
+  // A missing, absent, or withheld (unknown) reading is insufficient whatever its missing policy makes
+  // the numerical verdict, and before any identity mismatch is considered.
+  const noReading =
+    !result ||
+    result.evidence.status === "missing" ||
+    result.evidence.status === "absent" ||
+    result.evidence.status === "unknown";
   if (estimated) {
     return {
       recommendationId: "rec.metric.estimate-not-measured",
@@ -440,13 +445,14 @@ export function judgeArtifact(
   }
   if (issues.length > 0) return { ok: false, issues };
   /*
-   * An unavailable reading carries no method and, for an amount, no unit. Those fields cannot
-   * disagree with a rule, so each rule's own check takes them from the shared observation and its
-   * missing policy decides the verdict. The observation is never rewritten per rule.
+   * readMetric records a method only on an estimate, so observed and unavailable readings carry none,
+   * and an unavailable amount carries no unit. Fields a reading does not record cannot disagree with
+   * a rule, so each rule's own check takes them from the shared observation. A method the reading
+   * does record must match. The observation is never rewritten per rule.
    */
   const checks: BalanceCheckV1[] = prepared.map(({ rule, reading, observation }) => {
     const unavailable = isUnavailable(reading);
-    const method = unavailable && reading.method === undefined ? observation.identity.method : rule.method;
+    const method = reading.method === undefined ? observation.identity.method : rule.method;
     const unit =
       unavailable && reading.domain === "amount" && reading.amount === undefined ? observation.identity.unit : rule.unit;
     return checkFor(rule, method, unit);

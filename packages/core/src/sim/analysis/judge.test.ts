@@ -143,7 +143,7 @@ export function acceptsRulesProvider(): void {
  * @evidence ./judge.ts#judgeCheckReuse Reads the check-reuse marker.
  * @evidenceReview ./judge.ts#judgeCheckReuse #6aa2e90 The declaration is checks-not-recomputed.
  * @evidence ./judge.ts#judgeArtifact Maps artifact readings into balance checks and builds the report.
- * @evidenceReview ./judge.ts#judgeArtifact #66c0e9d Re-read the function and checkFor: each rule check takes the method and amount unit an unavailable reading omits from the shared observation, and it rejects a semantically invalid artifact and a metric id that matches two readings, maps each metric to one observation, the numerical block equals a direct evaluateBalanceChecks call for 3h, an observed or estimated amount reading is unsupported with no value and no estimate entry, and two rules on one metric both pass.
+ * @evidenceReview ./judge.ts#judgeArtifact #5d54e76 Re-read the function and checkFor: each rule check takes the method any reading omits, and the amount unit an unavailable reading omits, from the shared observation, and it rejects a semantically invalid artifact and a metric id that matches two readings, maps each metric to one observation, the numerical block equals a direct evaluateBalanceChecks call for 3h, an observed or estimated amount reading is unsupported with no value and no estimate entry, and two rules on one metric both pass.
  */
 export function reusesBalanceChecks(): void {
   expect(judgeCheckReuse).toBe("checks-not-recomputed");
@@ -349,6 +349,15 @@ export function separatesReportLayers(): void {
   expect(otherMethod.report.diagnostics[0]?.recommendationId).toBe("rec.metric.identity-mismatch");
   expect(otherMethod.report.diagnostics[0]?.text.en).not.toContain("no measured value");
   expect(validateJudgeReport(otherMethod.report).success).toBe(true);
+  // readMetric omits method on an observed reading; the rule's method does not turn it into a mismatch.
+  const generatedObserved = judgeArtifact(
+    artifact([reading({ reading: "observed", status: "ok", value: 1.5, method: undefined })]),
+    rubric(),
+  );
+  expect(generatedObserved.ok).toBe(true);
+  if (!generatedObserved.ok) return;
+  expect(generatedObserved.report.numerical.results[0]?.verdict).toBe("pass");
+  expect(generatedObserved.report.numerical.results[0]?.mismatches).toEqual([]);
 }
 
 /**
@@ -480,6 +489,18 @@ export function withholdsHealthLabels(): void {
   if (!incomplete.ok) return;
   expect(incomplete.report.numerical.results[0]?.verdict).toBe("inconclusive");
   expect(incomplete.report.diagnostics[0]?.status).toBe("insufficient");
+  // Withheld coverage is insufficient even when the reading also differs from the rule's identity.
+  const withheldMismatch = judgeArtifact(
+    artifact([reading({ reading: "observed", status: "ok", value: 1.5, meaning: "other-meaning" })], {
+      observationCoverage: "unknown",
+    }),
+    rubric(),
+  );
+  expect(withheldMismatch.ok).toBe(true);
+  if (!withheldMismatch.ok) return;
+  expect(withheldMismatch.report.numerical.results[0]?.mismatches).toEqual(["definition"]);
+  expect(withheldMismatch.report.diagnostics[0]?.status).toBe("insufficient");
+  expect(withheldMismatch.report.diagnostics[0]?.recommendationId).toBe("rec.metric.insufficient");
   const partial = judgeArtifact(
     artifact([reading({ reading: "observed", status: "ok", value: 1.5 })], { observationCoverage: "partial" }),
     rubric(),

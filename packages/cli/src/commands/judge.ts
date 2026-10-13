@@ -49,6 +49,7 @@ function judgeCsvRows(report: JudgeReportV1): Array<Record<string, string | numb
       unit: result.evidence.unit,
       operator: result.evidence.operator,
       threshold: result.evidence.threshold,
+      upperThreshold: result.evidence.upperThreshold,
       diagnosticStatus: diagnostic?.status ?? null,
       recommendationId: diagnostic?.recommendationId ?? null,
     };
