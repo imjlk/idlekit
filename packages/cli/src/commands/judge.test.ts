@@ -114,6 +114,17 @@ describe("judge command", () => {
     expect(csvLines).toHaveLength(2);
     expect(csvLines[1]?.split(",")).toHaveLength(12);
     expect(csvLines[1]).toContain("first-reset,first-reset,");
+    const malformed = resolve(dir, "malformed.json");
+    await writeText(malformed, "{ not json");
+    for (const args of [
+      ["judge", malformed, "--rubric", rubricPath],
+      ["judge", analysis, "--rubric", malformed],
+      ["judge", resolve(dir, "absent.json"), "--rubric", rubricPath],
+    ]) {
+      const rejected = runCli(args, { check: false });
+      expect(rejected.exitCode).toBe(1);
+      expect(rejected.stderr).toContain("[CLI_USAGE] Invalid judge input");
+    }
     const markdownOut = resolve(dir, "judge.md");
     runCli(["judge", analysis, "--rubric", rubricPath, "--format", "md", "--out", markdownOut]);
     const written = await readText(markdownOut);

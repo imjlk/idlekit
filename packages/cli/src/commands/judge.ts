@@ -65,8 +65,15 @@ export async function runJudge(flags: {
   if (flags.provider !== "rules") {
     throw usageError("--provider must be rules");
   }
-  const artifactRaw = await readJsonFile<unknown>(analysisPath);
-  const rubricRaw = await readJsonFile<unknown>(flags.rubric);
+  // An unreadable or non-JSON input is a usage error, like a structurally invalid one.
+  let artifactRaw: unknown;
+  let rubricRaw: unknown;
+  try {
+    artifactRaw = await readJsonFile<unknown>(analysisPath);
+    rubricRaw = await readJsonFile<unknown>(flags.rubric);
+  } catch (error) {
+    throw usageError(`Invalid judge input: ${error instanceof Error ? error.message : String(error)}`);
+  }
   const parsed = readJudgeInputs(artifactRaw, rubricRaw);
   if (!parsed.ok) {
     throw usageError(`Invalid judge input: ${parsed.issues.join("; ")}`);
