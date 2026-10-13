@@ -1,6 +1,8 @@
 import {
   buildPerformanceArtifact,
   currentHost,
+  readCount,
+  readSamples,
   representativeConfig,
   type BenchConfig,
 } from "./performanceBudget";
@@ -11,11 +13,6 @@ import {
  * Worker startup and serialization stay absent.
  * This file does not enter the draw loop.
  */
-
-function numberList(value: string | undefined): number[] {
-  if (!value) return [];
-  return value.split(",").map((item) => Number(item.trim())).filter((item) => Number.isFinite(item));
-}
 
 function optionalNumber(value: string | undefined): number | null {
   if (value === undefined) return null;
@@ -54,11 +51,11 @@ function parseConfig(argv: string[]): {
     else if (flag === "--step") stepSec = optionalNumber(value) ?? stepSec;
     else if (flag === "--trace" && (value === "off" || value === "bounded" || value === "unbounded")) trace = value;
     else if (flag === "--observer" && (value === "off" || value === "on")) observer = value;
-    else if (flag === "--runtime-ms") runtimeMs = numberList(value);
-    else if (flag === "--draws") draws = optionalNumber(value);
-    else if (flag === "--workload") workload = optionalNumber(value);
-    else if (flag === "--prepare-cold-ms") prepareCold = optionalNumber(value) ?? undefined;
-    else if (flag === "--prepare-warm-ms") prepareWarm = numberList(value);
+    else if (flag === "--runtime-ms") runtimeMs = readSamples(flag, value);
+    else if (flag === "--draws") draws = readCount(flag, value);
+    else if (flag === "--workload") workload = readCount(flag, value);
+    else if (flag === "--prepare-cold-ms") prepareCold = readSamples(flag, value)[0];
+    else if (flag === "--prepare-warm-ms") prepareWarm = readSamples(flag, value);
   }
 
   return {
@@ -89,7 +86,8 @@ async function main(): Promise<void> {
     config: parsed.config,
     host: currentHost(),
     iterations: parsed.runtimeMs.length,
-    warmup: parsed.prepareWarm.length,
+    // Prepare samples are compiler phases. No runtime sample was discarded as warmup.
+    warmup: 0,
     workloadCount: parsed.workload,
     phases: {
       prepareColdMs: parsed.prepareCold,

@@ -1,6 +1,8 @@
 import {
   buildPerformanceArtifact,
   currentHost,
+  readCount,
+  readSamples,
   representativeConfig,
   type BenchConfig,
 } from "./performanceBudget";
@@ -10,11 +12,6 @@ import {
  * Expanded node counts stay absent unless the caller passes them.
  * This file does not enter the planner rollout.
  */
-
-function numberList(value: string | undefined): number[] {
-  if (!value) return [];
-  return value.split(",").map((item) => Number(item.trim())).filter((item) => Number.isFinite(item));
-}
 
 function optionalNumber(value: string | undefined): number | null {
   if (value === undefined) return null;
@@ -48,11 +45,11 @@ function parseConfig(argv: string[]): { config: BenchConfig; runtimeMs: number[]
     else if (flag === "--trace" && (value === "off" || value === "bounded" || value === "unbounded")) trace = value;
     else if (flag === "--observer" && (value === "off" || value === "on")) observer = value;
     else if (flag === "--planner" && (value === "off" || value === "on")) planner = value;
-    else if (flag === "--runtime-ms") runtimeMs = numberList(value);
-    else if (flag === "--nodes") nodes = optionalNumber(value);
-    else if (flag === "--workload") workload = optionalNumber(value);
-    else if (flag === "--prepare-cold-ms") prepareCold = optionalNumber(value) ?? undefined;
-    else if (flag === "--prepare-warm-ms") prepareWarm = numberList(value);
+    else if (flag === "--runtime-ms") runtimeMs = readSamples(flag, value);
+    else if (flag === "--nodes") nodes = readCount(flag, value);
+    else if (flag === "--workload") workload = readCount(flag, value);
+    else if (flag === "--prepare-cold-ms") prepareCold = readSamples(flag, value)[0];
+    else if (flag === "--prepare-warm-ms") prepareWarm = readSamples(flag, value);
   }
 
   return {
@@ -74,7 +71,8 @@ async function main(): Promise<void> {
     config: parsed.config,
     host: currentHost(),
     iterations: parsed.runtimeMs.length,
-    warmup: parsed.prepareWarm.length,
+    // Prepare samples are compiler phases. No runtime sample was discarded as warmup.
+    warmup: 0,
     workloadCount: parsed.workload,
     phases: {
       prepareColdMs: parsed.prepareCold,

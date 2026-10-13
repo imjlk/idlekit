@@ -4,9 +4,9 @@
 
 Requirement `REQ-DX04-BENCH-SCHEMA`. `DX-04` owns it.
 
-`budgetSchema` in `tools/performanceBudget.ts` is `bench-output-schema`. The artifact contract is `idlekit.performance-budget` and `schemaVersion` is 1. It records corpus, scenario, scenario hash, config, config hash, Bun, CPU, OS, arch, iterations, and warmup. `allocPerStep` is `unsupported`. Worker `startupMs` and `serializationMs` are `absent`. This requirement does not implement worker execution.
+`budgetSchema` in `tools/performanceBudget.ts` is `bench-output-schema`. The artifact contract is `idlekit.performance-budget` and `schemaVersion` is 1. It records corpus, scenario, scenario hash, config, config hash, Bun, CPU, OS, arch, iterations, and warmup. `allocPerStep` is `unsupported`. Worker `startupMs` and `serializationMs` are `absent`. This requirement does not implement worker execution. `totalTimeP95Ms` is the nearest-rank p95, so with seven samples it is the slowest one. `tools/bench-planner.ts` and `tools/bench-monte-carlo.ts` reject a negative or non-finite sample and a counter that is not an integer of at least 0. They record `warmup` 0, because prepare samples are not discarded runtime samples.
 
-The executed test is `acceptsPerformanceBudgetSchema` in `tools/performanceBudget.test.ts`.
+The executed tests are `acceptsPerformanceBudgetSchema`, `takesNearestRankP95`, and `rejectsNegativeSamples` in `tools/performanceBudget.test.ts`.
 
 ## Steps per second use the runtime workload only {#req-dx04-workload-denominator}
 
@@ -52,9 +52,9 @@ The executed tests are `rejectsBaselineHashMismatch` and `readsBenchOutputAsBase
 
 Requirement `REQ-DX04-SAME-CONFIG`. `DX-04` owns it.
 
-`budgetSameConfig` is `same-config-only`. The same engine, seed, model, step, trace, observer, worker, and planner are comparable. A 4ms to 9ms change with relative slowdown 0.25 and absolute floor 50ms passes. A different observer, engine, or trace is `config-mismatch`. The scenario hash and workload count must also match, or the comparison is `workload-mismatch`. A 30-step and a 1800-step scenario with the same config are rejected. The trace mode reads `outputs.report.traceEverySteps`, as the scenario compiler does. A cadence above 1 is `bounded`. A cadence of 1 or none traces every step and is `unbounded`. A pass does not call the baseline writer.
+`budgetSameConfig` is `same-config-only`. The same engine, seed, model, step, trace, observer, worker, and planner are comparable. A 4ms to 9ms change with relative slowdown 0.25 and absolute floor 50ms passes. A different observer, engine, or trace is `config-mismatch`. The scenario hash and workload count must also match, or the comparison is `workload-mismatch`. A 30-step and a 1800-step scenario with the same config are rejected. A blank `untilExpr` is ignored, as the scenario compiler does. Bun, OS, and arch must match, or the comparison is `host-mismatch`. CPU brand is recorded and not compared. The engine is the run's effective engine from simulate `_meta.effectiveEngine`, not `scenario.engine`, which simulate records as metadata. The trace mode reads `outputs.report.traceEverySteps`, as the scenario compiler does. A cadence above 1 is `bounded`. A cadence of 1 or none traces every step and is `unbounded`. A pass does not call the baseline writer.
 
-The executed tests are `comparesOnlyTheSameConfig`, `rejectsDifferentWorkload`, and `readsTraceCadence` in `tools/performanceBudget.test.ts`.
+The executed tests are `comparesOnlyTheSameConfig`, `rejectsDifferentWorkload`, `readsTraceCadence`, and `rejectsBaselineFromAnotherHost` in `tools/performanceBudget.test.ts`.
 
 ## Cold and warm labels stay on prepare {#req-dx04-phase-labels}
 

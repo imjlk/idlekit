@@ -1,46 +1,9 @@
 {
   "contract": "idlekit.performance-budget",
   "schemaVersion": 1,
-  "corpus": "representative",
-  "host": {
-    "bun": "1.4.2",
-    "cpu": "Apple M3 Max",
-    "os": "darwin",
-    "arch": "arm64"
-  },
-  "scenarios": [
-    "examples/bench/representative.json"
-  ],
-  "iterations": 7,
-  "warmup": 2,
-  "threshold": {
-    "meanMs": 500,
-    "relativeSlowdown": 0.25,
-    "absoluteMedianMs": 500,
-    "minIterations": 7
-  },
-  "prepare": {
-    "coldMs": 7484.5965830000005,
-    "warmMs": [
-      7517.705708
-    ]
-  },
   "perScenario": [
     {
       "scenario": "examples/bench/representative.json",
-      "stats": {
-        "meanMs": 125.3425834285707,
-        "minMs": 112.81095799999821,
-        "maxMs": 178.8062090000003,
-        "p95Ms": 118.87333299999955
-      },
-      "pass": true,
-      "checks": {
-        "meanMs": true,
-        "p95Ms": true,
-        "peakRssBytes": true,
-        "baseline": true
-      },
       "budget": {
         "contract": "idlekit.performance-budget",
         "schemaVersion": 1,
@@ -72,61 +35,61 @@
           {
             "phase": "prepare-cold",
             "label": "cold",
-            "durationMs": 7484.5965830000005
+            "durationMs": 9246.405125
           },
           {
             "phase": "prepare-warm",
             "label": "warm",
-            "durationMs": 7517.705708
+            "durationMs": 8460.868375
           },
           {
             "phase": "runtime",
             "label": "runtime",
-            "durationMs": 118.27362499999981
+            "durationMs": 121.55349999999817
           },
           {
             "phase": "runtime",
             "label": "runtime",
-            "durationMs": 112.81095799999821
+            "durationMs": 121.60545899999852
           },
           {
             "phase": "runtime",
             "label": "runtime",
-            "durationMs": 118.87333299999955
+            "durationMs": 123.05458299999736
           },
           {
             "phase": "runtime",
             "label": "runtime",
-            "durationMs": 116.054791999999
+            "durationMs": 119.84570800000074
           },
           {
             "phase": "runtime",
             "label": "runtime",
-            "durationMs": 116.21666699999878
+            "durationMs": 122.81295800000225
           },
           {
             "phase": "runtime",
             "label": "runtime",
-            "durationMs": 178.8062090000003
+            "durationMs": 118.71420900000157
           },
           {
             "phase": "runtime",
             "label": "runtime",
-            "durationMs": 116.36249999999927
+            "durationMs": 119.98574999999983
           }
         ],
         "metrics": {
           "totalTimeMedianMs": {
             "status": "measured",
-            "value": 116.36249999999927
+            "value": 121.55349999999817
           },
           "totalTimeP95Ms": {
             "status": "measured",
-            "value": 118.87333299999955
+            "value": 123.05458299999736
           },
           "stepsPerSec": {
             "status": "measured",
-            "value": 257.81501772478407
+            "value": 246.80490483614585
           },
           "plannerExpandedNodes": {
             "status": "absent"
@@ -145,7 +108,7 @@
           },
           "peakRssBytes": {
             "status": "measured",
-            "value": 50184192
+            "value": 50151424
           },
           "observationRetainedSamples": {
             "status": "absent"
@@ -162,9 +125,132 @@
             "status": "absent"
           }
         }
-      },
-      "comparison": null
+      }
+    },
+    {
+      "scenario": "examples/bench/representative.json",
+      "budget": {
+        "contract": "idlekit.performance-budget",
+        "schemaVersion": 1,
+        "corpus": "representative",
+        "scenario": "examples/bench/representative.json",
+        "scenarioHash": "9937ce005fae4050e8f5a72ef58bfb3cbe01a1921b89ed6c4a1f54b81471b626",
+        "config": {
+          "engineId": "number",
+          "seed": null,
+          "modelId": "linear",
+          "modelVersion": 1,
+          "stepSec": 1,
+          "trace": "off",
+          "observer": "off",
+          "worker": "none",
+          "planner": "off"
+        },
+        "configHash": "0ddf27bd55d4e8873e19d9d7b1b5899fc449937c72ca7d9d6984caf3e9fa4032",
+        "host": {
+          "bun": "1.4.2",
+          "cpu": "unsupported",
+          "os": "linux",
+          "arch": "x64"
+        },
+        "iterations": 7,
+        "warmup": 2,
+        "workloadCount": 30,
+        "phases": [
+          {
+            "phase": "prepare-cold",
+            "label": "cold",
+            "durationMs": 7924.879975
+          },
+          {
+            "phase": "prepare-warm",
+            "label": "warm",
+            "durationMs": 7888.532357000001
+          },
+          {
+            "phase": "runtime",
+            "label": "runtime",
+            "durationMs": 123.62194499999896
+          },
+          {
+            "phase": "runtime",
+            "label": "runtime",
+            "durationMs": 121.34241199999997
+          },
+          {
+            "phase": "runtime",
+            "label": "runtime",
+            "durationMs": 124.52129000000241
+          },
+          {
+            "phase": "runtime",
+            "label": "runtime",
+            "durationMs": 123.25085300000137
+          },
+          {
+            "phase": "runtime",
+            "label": "runtime",
+            "durationMs": 126.39057800000228
+          },
+          {
+            "phase": "runtime",
+            "label": "runtime",
+            "durationMs": 121.62878500000079
+          },
+          {
+            "phase": "runtime",
+            "label": "runtime",
+            "durationMs": 124.85329800000181
+          }
+        ],
+        "metrics": {
+          "totalTimeMedianMs": {
+            "status": "measured",
+            "value": 123.62194499999896
+          },
+          "totalTimeP95Ms": {
+            "status": "measured",
+            "value": 126.39057800000228
+          },
+          "stepsPerSec": {
+            "status": "measured",
+            "value": 242.67535994519625
+          },
+          "plannerExpandedNodes": {
+            "status": "absent"
+          },
+          "plannerNodesPerSec": {
+            "status": "absent"
+          },
+          "drawsPerSec": {
+            "status": "absent"
+          },
+          "rssDeltaBytes": {
+            "status": "absent"
+          },
+          "heapDeltaBytes": {
+            "status": "absent"
+          },
+          "peakRssBytes": {
+            "status": "measured",
+            "value": 59572224
+          },
+          "observationRetainedSamples": {
+            "status": "absent"
+          },
+          "allocPerStep": {
+            "status": "unsupported"
+          }
+        },
+        "worker": {
+          "startupMs": {
+            "status": "absent"
+          },
+          "serializationMs": {
+            "status": "absent"
+          }
+        }
+      }
     }
-  ],
-  "pass": true
+  ]
 }

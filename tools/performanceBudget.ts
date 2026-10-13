@@ -7,7 +7,7 @@
 
 /**
  * @evidence docs/requirements/active/performance-budget.md#req-dx04-bench-schema The artifact names idlekit.performance-budget at schemaVersion 1 and keeps alloc/step unsupported.
- * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-bench-schema #cf41995 Re-read the section: worker startup and serialization stay absent, and alloc/step is unsupported.
+ * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-bench-schema #da75f4f Re-read the section: worker startup and serialization stay absent, and alloc/step is unsupported.
  */
 export const budgetSchema = "bench-output-schema" as const;
 
@@ -43,7 +43,7 @@ export const budgetHashMismatch = "baseline-hash-rejected" as const;
 
 /**
  * @evidence docs/requirements/active/performance-budget.md#req-dx04-same-config Only matching engine, seed, model, step, trace, observer, worker, and planner configs are compared.
- * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-same-config #2c13682 Re-read the section: a small absolute change can pass, and a different observer, engine, or trace cannot be compared.
+ * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-same-config #25793f8 Re-read the section: a small absolute change can pass, and a different observer, engine, or trace cannot be compared.
  */
 export const budgetSameConfig = "same-config-only" as const;
 
@@ -128,7 +128,10 @@ export type BudgetPolicy = Readonly<{
 export type BudgetComparison =
   | Readonly<{ status: "pass"; reason: "within-budget" }>
   | Readonly<{ status: "fail"; reason: "regression" | "too-few-repeats" | "unmeasured" }>
-  | Readonly<{ status: "rejected"; reason: "baseline-hash-mismatch" | "config-mismatch" | "workload-mismatch" }>;
+  | Readonly<{
+    status: "rejected";
+    reason: "baseline-hash-mismatch" | "config-mismatch" | "workload-mismatch" | "host-mismatch";
+  }>;
 
 export type ArtifactInput = Readonly<{
   corpus: "representative" | "long";
@@ -182,6 +185,11 @@ export function sameBenchConfig(left: BenchConfig, right: BenchConfig): boolean 
   return canonicalJson(left) === canonicalJson(right);
 }
 
+/** Bun, OS, and arch must match. CPU brand is recorded but not compared, since CI runner CPUs vary. */
+export function sameHost(left: HostInfo, right: HostInfo): boolean {
+  return left.bun === right.bun && left.os === right.os && left.arch === right.arch;
+}
+
 function finiteMetric(value: number | null | undefined): Metric {
   if (value === null || value === undefined || !Number.isFinite(value)) return ABSENT;
   return { status: "measured", value };
@@ -200,11 +208,32 @@ export function median(values: readonly number[]): number | null {
   return sorted[mid] ?? null;
 }
 
-function percentile(values: readonly number[], p: number): number | null {
+/** Nearest-rank percentile: the smallest sample with at least p of the samples at or below it. */
+export function percentile(values: readonly number[], p: number): number | null {
   if (values.length === 0) return null;
   const sorted = [...values].sort((a, b) => a - b);
-  const idx = Math.min(sorted.length - 1, Math.max(0, Math.floor((sorted.length - 1) * p)));
+  const idx = Math.min(sorted.length - 1, Math.max(0, Math.ceil(sorted.length * p) - 1));
   return sorted[idx] ?? null;
+}
+
+/** Comma-separated duration samples. Each must be a finite number >= 0, or the flag is rejected. */
+export function readSamples(flag: string, value: string | undefined): number[] {
+  if (value === undefined || value.trim().length === 0) throw new Error(`${flag} needs at least one sample`);
+  return value.split(",").map((item) => {
+    const text = item.trim();
+    const parsed = Number(text);
+    if (text.length === 0 || !Number.isFinite(parsed) || parsed < 0) {
+      throw new Error(`${flag} samples must be finite numbers >= 0 (received: ${item})`);
+    }
+    return parsed;
+  });
+}
+
+/** A counter: an integer >= 0, or the flag is rejected. */
+export function readCount(flag: string, value: string | undefined): number {
+  const parsed = value === undefined || value.trim().length === 0 ? Number.NaN : Number(value);
+  if (!Number.isInteger(parsed) || parsed < 0) throw new Error(`${flag} must be an integer >= 0 (received: ${value})`);
+  return parsed;
 }
 
 function rate(count: number | null | undefined, runtimeMs: readonly number[]): Metric {
@@ -241,11 +270,13 @@ export function workloadStepCount(durationSec: number, stepSec: number): number 
   return steps;
 }
 
-/** The comparable config of a scenario file. Workload size and params are in scenarioHash. */
-export function benchConfigFromScenario(raw: unknown): BenchConfig {
+/**
+ * The comparable config of a scenario file. Workload size and params are in scenarioHash.
+ * The engine is the one the run used. `scenario.engine` is metadata and does not select it.
+ */
+export function benchConfigFromScenario(raw: unknown, effectiveEngine: string): BenchConfig {
   const scenario = raw && typeof raw === "object" ? raw as {
     seed?: unknown;
-    engine?: { name?: unknown };
     model?: { id?: unknown; version?: unknown };
     clock?: { stepSec?: unknown; durationSec?: unknown };
     strategy?: { id?: unknown };
@@ -257,7 +288,7 @@ export function benchConfigFromScenario(raw: unknown): BenchConfig {
   const every = scenario.outputs?.report?.traceEverySteps;
   const trace = !includeTrace ? "off" : typeof every === "number" && every > 1 ? "bounded" : "unbounded";
   return {
-    engineId: typeof scenario.engine?.name === "string" ? scenario.engine.name : "number",
+    engineId: effectiveEngine,
     seed: typeof scenario.seed === "number" ? scenario.seed : null,
     modelId: typeof scenario.model?.id === "string" ? scenario.model.id : "unknown",
     modelVersion: typeof scenario.model?.version === "number" ? scenario.model.version : 0,
@@ -274,8 +305,10 @@ export function scenarioWorkload(raw: unknown): number | null {
   if (!raw || typeof raw !== "object") return null;
   const clock = (raw as { clock?: { durationSec?: unknown; stepSec?: unknown; untilExpr?: unknown } }).clock;
   if (typeof clock?.durationSec !== "number" || typeof clock.stepSec !== "number") return null;
-  // An until expression can stop before the duration, so the step count is unknown.
-  if (clock.untilExpr !== undefined) return null;
+  // A nonblank until expression can stop before the duration, so the step count is unknown.
+  // The compiler ignores a blank one.
+  if (typeof clock.untilExpr === "string" && clock.untilExpr.trim().length > 0) return null;
+  if (clock.untilExpr !== undefined && typeof clock.untilExpr !== "string") return null;
   return workloadStepCount(clock.durationSec, clock.stepSec);
 }
 
@@ -360,6 +393,8 @@ export function readPerformanceArtifact(value: unknown): PerformanceArtifact | n
   if (value.contract !== "idlekit.performance-budget" || value.schemaVersion !== 1) return null;
   if (value.corpus !== "representative" && value.corpus !== "long") return null;
   if (!isRecord(value.config) || typeof value.configHash !== "string") return null;
+  if (!isRecord(value.host) || typeof value.host.bun !== "string" || typeof value.host.os !== "string") return null;
+  if (typeof value.host.arch !== "string" || typeof value.host.cpu !== "string") return null;
   if (!isNullableString(value.scenario) || !isNullableString(value.scenarioHash)) return null;
   if (!isCount(value.iterations, 1) || !isCount(value.warmup, 0)) return null;
   if (value.workloadCount !== null && !isCount(value.workloadCount, 0)) return null;
@@ -403,13 +438,18 @@ export function readBaselineArtifacts(value: unknown): PerformanceArtifact[] | n
   return artifacts;
 }
 
-/** The baseline for the same scenario content, or the only baseline when the file has one. */
+/**
+ * The baseline for the same scenario content on the same host, then for the same scenario on any
+ * host, then the only baseline when the file has one.
+ */
 export function selectBaseline(
   baselines: readonly PerformanceArtifact[],
   current: PerformanceArtifact,
 ): PerformanceArtifact | null {
-  const same = baselines.find((item) => item.scenarioHash !== null && item.scenarioHash === current.scenarioHash);
-  if (same) return same;
+  const sameScenario = baselines.filter((item) => item.scenarioHash !== null && item.scenarioHash === current.scenarioHash);
+  const sameHostToo = sameScenario.find((item) => sameHost(item.host, current.host));
+  if (sameHostToo) return sameHostToo;
+  if (sameScenario[0]) return sameScenario[0];
   return baselines.length === 1 ? baselines[0] ?? null : null;
 }
 
@@ -432,6 +472,9 @@ export function comparePerformanceBudgets(
   }
   if (baseline.scenarioHash !== current.scenarioHash || baseline.workloadCount !== current.workloadCount) {
     return { status: "rejected", reason: "workload-mismatch" };
+  }
+  if (!sameHost(baseline.host, current.host)) {
+    return { status: "rejected", reason: "host-mismatch" };
   }
   if (current.iterations < policy.minIterations || baseline.iterations < policy.minIterations) {
     return { status: "fail", reason: "too-few-repeats" };

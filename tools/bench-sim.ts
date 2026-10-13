@@ -6,7 +6,9 @@ import {
   comparePerformanceBudgets,
   currentHost,
   benchConfigFromScenario,
+  percentile,
   readBaselineArtifacts,
+  sameHost,
   scenarioHash,
   scenarioWorkload,
   selectBaseline,
@@ -26,6 +28,7 @@ type Args = Readonly<{
   prepareWarm: number;
   assert: boolean;
   out?: string;
+  writeBaseline?: string;
   baseline?: string;
   corpus: "representative" | "long";
   relativeSlowdown: number;
@@ -43,6 +46,7 @@ function parseArgs(argv: string[]): Args {
   let prepareWarm = 1;
   let assert = false;
   let out: string | undefined;
+  let writeBaseline: string | undefined;
   let baseline: string | undefined;
   let corpus: "representative" | "long" = "representative";
   let relativeSlowdown = 0.25;
@@ -63,6 +67,7 @@ function parseArgs(argv: string[]): Args {
     else if (a === "--prepare-warm") prepareWarm = Number(argv[++i] ?? prepareWarm);
     else if (a === "--assert") assert = true;
     else if (a === "--out") out = argv[++i];
+    else if (a === "--write-baseline") writeBaseline = argv[++i];
     else if (a === "--baseline") baseline = argv[++i];
     else if (a === "--corpus") {
       const value = argv[++i];
@@ -111,19 +116,13 @@ function parseArgs(argv: string[]): Args {
     prepareWarm,
     assert,
     out,
+    writeBaseline,
     baseline,
     corpus,
     relativeSlowdown,
     absoluteMedianMs,
     minIterations,
   };
-}
-
-function percentile(values: number[], p: number): number | null {
-  if (values.length === 0) return null;
-  const sorted = [...values].sort((a, b) => a - b);
-  const idx = Math.min(sorted.length - 1, Math.max(0, Math.floor((sorted.length - 1) * p)));
-  return sorted[idx] ?? null;
 }
 
 function resolveScenarioPath(input: string): string {
@@ -154,7 +153,10 @@ function prepareBundle(): { bundled: string; durationMs: number } {
 const MAX_CAPTURE_BYTES = 8 * 1024 * 1024;
 
 /** One simulate child. Peak RSS is the child's own, not the bench harness. */
-function runSimulateOnce(bundled: string, scenarioPath: string): { output: unknown; peakRssBytes: number | null } {
+function runSimulateOnce(
+  bundled: string,
+  scenarioPath: string,
+): { engine: string | null; peakRssBytes: number | null } {
   // --config skips the CLI bunfig preload, which would rebuild the ttsc
   // program in every child. Compiler prepare is measured by prepareBundle.
   const proc = Bun.spawnSync(
@@ -168,7 +170,11 @@ function runSimulateOnce(bundled: string, scenarioPath: string): { output: unkno
   const output: unknown = JSON.parse(proc.stdout.toString());
   if (!output || typeof output !== "object") throw new Error("simulate benchmark returned non-object output");
   const maxRss = proc.resourceUsage?.maxRSS;
-  return { output, peakRssBytes: typeof maxRss === "number" && Number.isFinite(maxRss) && maxRss > 0 ? maxRss : null };
+  const engine = (output as { _meta?: { effectiveEngine?: unknown } })._meta?.effectiveEngine;
+  return {
+    engine: typeof engine === "string" ? engine : null,
+    peakRssBytes: typeof maxRss === "number" && Number.isFinite(maxRss) && maxRss > 0 ? maxRss : null,
+  };
 }
 
 function scenarioLabel(scenarioPath: string): string {
@@ -195,6 +201,23 @@ type ScenarioBenchResult = {
   comparison: ReturnType<typeof comparePerformanceBudgets> | null;
 };
 
+/**
+ * Replace this host's entries for the measured scenarios and keep the other hosts' entries.
+ * Only this explicit flag writes a baseline. A comparison never does.
+ */
+async function writeBaselineFile(path: string, results: readonly ScenarioBenchResult[]): Promise<void> {
+  const file = Bun.file(path);
+  const existing = (await file.exists()) ? readBaselineArtifacts(await file.json()) : [];
+  if (!existing) throw new Error(`--write-baseline ${path} is not a baseline file`);
+  const fresh = results.map((item) => item.budget);
+  const kept = existing.filter((old) =>
+    !fresh.some((next) => next.scenarioHash === old.scenarioHash && sameHost(next.host, old.host))
+  );
+  const perScenario = [...kept, ...fresh].map((budget) => ({ scenario: budget.scenario, budget }));
+  await ensureDir(dirname(path));
+  await Bun.write(path, `${JSON.stringify({ contract: "idlekit.performance-budget", schemaVersion: 1, perScenario }, null, 2)}\n`);
+}
+
 async function main(): Promise<void> {
   const args = parseArgs(process.argv);
   const host = currentHost();
@@ -212,20 +235,24 @@ async function main(): Promise<void> {
   for (const scenario of args.scenarios) {
     const scenarioPath = resolveScenarioPath(scenario);
     const scenarioJson: unknown = await Bun.file(scenarioPath).json();
-    const config = benchConfigFromScenario(scenarioJson);
     const runtime: number[] = [];
     const peakRss: number[] = [];
+    const engines = new Set<string>();
 
     // Warmup children are discarded. They are simulate runs, not compiler prepare.
     for (let i = 0; i < args.warmup + args.iterations; i++) {
       const start = performance.now();
       const run = runSimulateOnce(bundled, scenarioPath);
       const elapsed = performance.now() - start;
+      engines.add(run.engine ?? "unknown");
       if (i < args.warmup) continue;
       runtime.push(elapsed);
       if (run.peakRssBytes !== null) peakRss.push(run.peakRssBytes);
     }
 
+    // The run's effective engine, not scenario.engine, which simulate records as metadata only.
+    if (engines.size !== 1) throw new Error(`simulate reported more than one engine: ${[...engines].join(", ")}`);
+    const config = benchConfigFromScenario(scenarioJson, [...engines][0] ?? "unknown");
     const meanMs = runtime.length ? runtime.reduce((a, b) => a + b, 0) / runtime.length : null;
     const p95Ms = percentile(runtime, 0.95);
     const passMean = meanMs !== null && meanMs <= args.thresholdMs;
@@ -309,6 +336,7 @@ async function main(): Promise<void> {
     await ensureDir(dirname(outPath));
     await Bun.write(outPath, json);
   }
+  if (args.writeBaseline) await writeBaselineFile(resolve(ROOT, args.writeBaseline), scenarioResults);
   if (args.assert && !overallPass) process.exit(2);
 }
 
