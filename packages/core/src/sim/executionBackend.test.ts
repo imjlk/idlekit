@@ -3,6 +3,7 @@ import { readFileSync } from "fs";
 import {
   addDecimalStrings,
   analysisTaskSeed,
+  assertExecutionBudget,
   assertSerializableTask,
   createLocalExecutionBackend,
   defaultExecutionBudget,
@@ -78,7 +79,7 @@ export function keepsLocalDefault(): void {
 
 /**
  * @evidence docs/requirements/active/worker-execution-backend.md#req-dx05-serializable-task A function payload is refused. The seed follows the logical index.
- * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-serializable-task #e5643c0 Re-read the section, then ran this function: reversing the input kept the same seed, a function payload failed, a cyclic payload, a bigint step budget, and a step budget above the execution budget each failed alone while the sibling ran, a shared reference passed, and the cost counted UTF-8 bytes of the valid task.
+ * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-serializable-task #88751b7 Re-read the section, then ran this function: reversing the input kept the same seed, a function payload failed, a cyclic payload, a bigint step budget, and a step budget above the execution budget each failed alone while the sibling ran, a shared reference passed, and the cost counted UTF-8 bytes of the valid task.
  * @evidence ./executionBackend.ts#serializedTaskBytes Measures one task as UTF-8 bytes of its JSON.
  * @evidenceReview ./executionBackend.ts#serializedTaskBytes #06012ad A Hangul task id counts more bytes than UTF-16 units, and the batch cost equals the measured bytes.
  * @evidence ./executionBackend.ts#taskRefusals Checks every task before the batch measures or runs any.
@@ -88,7 +89,7 @@ export function keepsLocalDefault(): void {
  * @evidence ./executionBackend.ts#analysisTaskSeed Derives the seed from the logical index.
  * @evidenceReview ./executionBackend.ts#analysisTaskSeed #2b85c09 The seed is logicalDrawSeed of the base seed and index, so input order does not move it.
  * @evidence ./executionBackend.ts#assertSerializableTask Refuses a task that is not plain JSON.
- * @evidenceReview ./executionBackend.ts#assertSerializableTask #c524db2 Re-read the path-only cycle check, the step budget check, and the whole-descriptor check: an extra own function on the task, a function payload, a class instance, a non-finite number, a negative index, and a bigint step budget throw; a plain task and a shared acyclic reference pass.
+ * @evidenceReview ./executionBackend.ts#assertSerializableTask #094620f Re-read the path-only cycle check, the step budget check, the plugin container shapes, and the whole-descriptor check: a string path list, a non-string root, an array or non-string digest record, an extra own function on the task, a function payload, a class instance, a non-finite number, a negative index, and a bigint step budget throw; a plain task and a shared acyclic reference pass.
  */
 export function keepsSerializableTasks(): void {
   expect(executionSerializableTask).toBe("json-descriptor");
@@ -138,6 +139,11 @@ export function keepsSerializableTasks(): void {
   ]);
   const capped = runLocalBatch([greedy], (item) => echo(item, "1"), { budget: { ...defaultExecutionBudget, stepBudget: 1_000 } });
   expect(capped.outcomes[0]).toMatchObject({ status: "failed", reason: "step budget exceeds the execution budget" });
+  // Plugin containers keep their shapes: a string is not a path list and an array is not a digest record.
+  expect(() => assertSerializableTask(task(0, { pluginPaths: "/tmp/plugin.ts" as unknown as string[] }))).toThrow("plugin paths");
+  expect(() => assertSerializableTask(task(0, { pluginRoots: [1] as unknown as string[] }))).toThrow("plugin roots");
+  expect(() => assertSerializableTask(task(0, { pluginDigests: ["x"] as unknown as Record<string, string> }))).toThrow("plugin digests");
+  expect(() => assertSerializableTask(task(0, { pluginDigests: { a: 1 } as unknown as Record<string, string> }))).toThrow("plugin digests");
   // A shared, acyclic reference is not a cycle. JSON and structured clone both carry it.
   const shared = { amount: "1" };
   expect(() => assertSerializableTask(task(0, { payload: { a: shared, b: shared, list: [shared, shared] } }))).not.toThrow();
@@ -222,7 +228,9 @@ export function reducesInLogicalOrder(): void {
 
 /**
  * @evidence docs/requirements/active/worker-execution-backend.md#req-dx05-failure-boundary Abort, timeout, retry, and the queue bound stay distinct from a full distribution.
- * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-failure-boundary #afd48b8 Re-read the section, then ran this function: the retry kept the same seed, the aborted batch was not full, three tasks each inside their own window all finished, a thrown trial retried and failed alone, a failed attempt past the window was a timeout with no retry, and a pre-aborted batch over the queue bound was cancelled.
+ * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-failure-boundary #9ffafcb Re-read the section, then ran this function: the retry kept the same seed, the aborted batch was not full, three tasks each inside their own window all finished, a thrown trial retried and failed alone, a failed attempt past the window was a timeout with no retry, a pre-aborted batch over the queue bound was cancelled, and an infinite, NaN, or negative budget field threw before any task ran.
+ * @evidence ./executionBackend.ts#assertExecutionBudget Refuses a budget field that is not a finite non-negative integer.
+ * @evidenceReview ./executionBackend.ts#assertExecutionBudget #9f908ba Infinite maxRetries, NaN stepBudget, and a negative queueBound throw, and the default budget passes.
  * @evidence ./executionBackend.ts#runLocalBatch Bounds each task by its own window and turns a thrown runner into a failed outcome.
  * @evidenceReview ./executionBackend.ts#runLocalBatch #7c29e34 Re-read the pre-abort check ahead of the queue bound and the loop: no batch deadline remains, the window applies to every attempt before its status, a 2 ms task under a 5 ms budget is ok in third place, a throw is trial-failed with attempts counted, and a slow failure stops at one attempt.
  * @evidence ./executionBackend.ts#executionFailureBoundary Reads the boundary marker.
@@ -370,6 +378,18 @@ export function boundsFailures(): void {
   ]);
   expect(thrown.fullDistribution).toBe(false);
 
+  // A budget that could make a loop endless or skip a ceiling is refused before anything runs.
+  for (const bad of [{ maxRetries: Number.POSITIVE_INFINITY }, { stepBudget: Number.NaN }, { queueBound: -1 }]) {
+    let ran = 0;
+    expect(() =>
+      runLocalBatch([task(0)], (item) => {
+        ran += 1;
+        return { ...echo(item, "1"), status: "failed", reason: "trial-failed" };
+      }, { budget: { ...defaultExecutionBudget, ...bad } }),
+    ).toThrow("execution budget");
+    expect(ran).toBe(0);
+  }
+  expect(() => assertExecutionBudget(defaultExecutionBudget)).not.toThrow();
   const abortedQueue = new AbortController();
   abortedQueue.abort();
   const abortedOverBound = runLocalBatch([task(0), task(1)], (item) => echo(item, "1"), {

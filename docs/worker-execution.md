@@ -32,7 +32,7 @@ Commands below were run from this worktree on macOS arm64 with Bun 1.4.2 and tts
 
 The first `evidence:check` exited 2 on placeholder reviews and two missing handler citations. The next exited 2 on those handler reviews. The rerun exited 0. `graph:check` left `createPlannerStrategy` to `stepOnce` unobserved at hops 0.
 
-The PR #223 review fixes changed the requirement file to sha256 `a3ec097d9064581c0651834eebcd3e46845f5a3559d90a8be07722704df13d1c`. That revision ran `bun run typecheck`, `bun run test:conformance`, `bun run contracts:check`, `executionBackend.test.ts` from `packages/core`, and `pool.test.ts` from `packages/cli`.
+The PR #223 review fixes changed the requirement file to sha256 `909a0e4db19751590f569eda007b18fbf2e3834cab020cf037579d2cf724a8ce`. That revision ran `bun run typecheck`, `bun run test:conformance`, `bun run contracts:check`, `executionBackend.test.ts` from `packages/core`, and `pool.test.ts` from `packages/cli`.
 
 ## Graph
 

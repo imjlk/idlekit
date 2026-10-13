@@ -1,4 +1,5 @@
 import {
+  assertExecutionBudget,
   defaultExecutionBudget,
   finalizeBatch,
   serializedTaskBytes,
@@ -11,7 +12,7 @@ import {
 
 /**
  * @evidence docs/requirements/active/worker-execution-backend.md#req-dx05-worker-parity Explicit worker counts share one logical digest. The pool does not choose itself.
- * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-worker-parity #57fec63 Re-read the section: selection stays explicit-worker, the count stays within maxWorkers, an exit is a crash, and shutdown terminates every slot and clears every timer.
+ * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-worker-parity #3e2d53a Re-read the section: selection stays explicit-worker, the count stays within maxWorkers, an exit is a crash, and shutdown terminates every slot and clears every timer.
  */
 export const workerPoolParity = "same-logical-digest" as const;
 
@@ -74,6 +75,7 @@ export async function runWorkerPool(args: Readonly<{
     throw new Error("worker pool requires an explicit worker count >= 1");
   }
   const budget = args.budget ?? { ...defaultExecutionBudget, maxWorkers: args.workers };
+  assertExecutionBudget(budget);
   if (args.workers > budget.maxWorkers) {
     throw new Error(`worker pool count ${args.workers} exceeds budget maxWorkers ${budget.maxWorkers}`);
   }

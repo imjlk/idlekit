@@ -15,7 +15,7 @@ export const executionLocalDefault = "local-default" as const;
 
 /**
  * @evidence docs/requirements/active/worker-execution-backend.md#req-dx05-serializable-task A task is a plain JSON descriptor. The seed is the logical draw seed.
- * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-serializable-task #e5643c0 Re-read the section: functions, class instances, cyclic payloads, and a bad step budget are refused before cost is measured, a shared reference is allowed, and the seed does not read a worker slot.
+ * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-serializable-task #88751b7 Re-read the section: functions, class instances, cyclic payloads, and a bad step budget are refused before cost is measured, a shared reference is allowed, and the seed does not read a worker slot.
  */
 export const executionSerializableTask = "json-descriptor" as const;
 
@@ -27,7 +27,7 @@ export const executionStableReduction = "logical-index" as const;
 
 /**
  * @evidence docs/requirements/active/worker-execution-backend.md#req-dx05-failure-boundary Failure, cancellation, and incomplete stays are distinct. A partial batch is not a full distribution.
- * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-failure-boundary #afd48b8 Re-read the section: timeout and abort do not become a successful distribution, a retry keeps the same id and seed, the timeout is per task and per attempt, and a thrown runner is a failed task.
+ * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-failure-boundary #9ffafcb Re-read the section: timeout and abort do not become a successful distribution, a retry keeps the same id and seed, the timeout is per task and per attempt, and a thrown runner is a failed task.
  */
 export const executionFailureBoundary = "not-a-partial-distribution" as const;
 
@@ -113,7 +113,23 @@ const DECIMAL = /^(-?)(\d+)(?:\.(\d+))?(?:[eE]([+-]?\d+))?$/;
 const MAX_EXPONENT_SPAN = 100_000;
 
 function budgetOf(budget: ExecutionBudgetV1 | undefined): ExecutionBudgetV1 {
-  return budget ?? defaultExecutionBudget;
+  const chosen = budget ?? defaultExecutionBudget;
+  assertExecutionBudget(chosen);
+  return chosen;
+}
+
+/**
+ * Every budget field is a finite, non-negative integer, so a retry loop, a queue bound, or a step ceiling cannot be
+ * made endless or skipped by NaN or Infinity. Both backends check it before running anything.
+ *
+ * @evidence docs/requirements/active/worker-execution-backend.md#req-dx05-failure-boundary A budget with a non-finite or negative field is refused before any task runs.
+ * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-failure-boundary #9ffafcb Re-read the section: retries stop at maxRetries, which must therefore be finite.
+ */
+export function assertExecutionBudget(budget: ExecutionBudgetV1): void {
+  for (const field of ["maxWorkers", "queueBound", "taskTimeoutMs", "stepBudget", "maxRetries"] as const) {
+    const value = budget[field];
+    if (!Number.isSafeInteger(value) || value < 0) throw new Error(`execution budget ${field} must be a finite integer >= 0`);
+  }
 }
 
 function assertPlain(value: unknown, seen: WeakSet<object>): void {
@@ -148,9 +164,23 @@ export function assertSerializableTask(task: AnalysisTrialTaskV1): void {
   if (typeof task.taskId !== "string" || task.taskId.length === 0) throw new Error("task id");
   if (!Number.isSafeInteger(task.stepBudget) || task.stepBudget < 0) throw new Error("step budget");
   assertPlain(task.payload, new WeakSet());
-  assertPlain([...task.pluginPaths], new WeakSet());
-  assertPlain([...task.pluginRoots], new WeakSet());
-  assertPlain({ ...task.pluginDigests }, new WeakSet());
+  // The plugin containers keep their declared shapes. A string spread into characters is not a path list.
+  if (!Array.isArray(task.pluginPaths) || !task.pluginPaths.every((item) => typeof item === "string")) {
+    throw new Error("plugin paths");
+  }
+  if (!Array.isArray(task.pluginRoots) || !task.pluginRoots.every((item) => typeof item === "string")) {
+    throw new Error("plugin roots");
+  }
+  const digests: unknown = task.pluginDigests;
+  if (
+    digests === null ||
+    typeof digests !== "object" ||
+    Array.isArray(digests) ||
+    Object.getPrototypeOf(digests) !== Object.prototype ||
+    !Object.values(digests).every((item) => typeof item === "string")
+  ) {
+    throw new Error("plugin digests");
+  }
   // The descriptor itself is posted, so an extra own property such as a function is refused here too.
   assertPlain(task, new WeakSet());
 }
