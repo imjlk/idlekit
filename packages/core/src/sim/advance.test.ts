@@ -141,11 +141,11 @@ function walletOf(amount: number): number {
 
 /**
  * @evidence docs/requirements/active/guarded-analytic-advance.md#req-pr16-exact-match Constant income matches the reference run.
- * @evidenceReview docs/requirements/active/guarded-analytic-advance.md#req-pr16-exact-match #e92627f Re-read the section, then ran this function: wallet, goal time, and counters match for both chunk sizes, a chunk takes whole reference steps and streams them, and the exact path reads income at most once more than fixed-step.
+ * @evidenceReview docs/requirements/active/guarded-analytic-advance.md#req-pr16-exact-match #eaace6d Re-read the section, then ran this function: wallet, goal time, and counters match for both chunk sizes, a chunk takes whole reference steps and streams them, the exact path reads income at most twice per fixed-step read, and an income an observer changes between steps is read fresh, as fixed-step reads it.
  * @evidence ./advance.ts#advanceExactMatch Reads the exact-match marker.
  * @evidenceReview ./advance.ts#advanceExactMatch #1e96b8b The declaration is constant-income-matches-reference.
  * @evidence ./advance.ts#consumeExactChunk Takes whole reference steps from nextBoundary.
- * @evidenceReview ./advance.ts#consumeExactChunk #22e5ba5 A chunk below one step takes one whole step, a 2.5-step chunk takes two, a near-epsilon horizon tail is not ticked, onStep sees each step as it is taken, a throwing onStep stops the chunk there, and the result carries a step count, not the steps.
+ * @evidenceReview ./advance.ts#consumeExactChunk #7e449ba A chunk below one step takes one whole step, a 2.5-step chunk takes two, a near-epsilon horizon tail is not ticked, onStep sees each step as it is taken, a throwing onStep stops the chunk there, and the result carries a step count, not the steps; each step reads its own income, so an observer change between steps is applied as fixed-step applies it.
  * @evidence ./advance.ts#applyExactIncome Adds the scaled income as the tick policy applies it.
  * @evidenceReview ./advance.ts#applyExactIncome #63aaf66 Drop adds the scaled income, accumulate adds the bucket too, the bucket ends empty, and max money follows.
  * @evidence ./step.ts#exactAmountSign Gives the exact sign the fixed-step reward test uses.
@@ -251,7 +251,7 @@ export function matchesReferenceWalletAndGoal(): void {
   expect(long.ok && long.steps).toBe(1000);
   expect(seen).toBe(1000);
   expect(Object.keys(long).sort()).toEqual(["ok", "state", "steps"]);
-  // The exact path reads income about once per step, as fixed-step does, not once for the guard and again to apply.
+  // Applying a certified step reuses the income its guard read: two reads per step, not a third to apply.
   let incomeCalls = 0;
   const counted = (base: CompiledScenario<number, UnitCode, Vars>): CompiledScenario<number, UnitCode, Vars> => ({
     ...base,
@@ -269,7 +269,28 @@ export function matchesReferenceWalletAndGoal(): void {
   const countedExact = runScenario(counted(scenario({ until: false, durationSec: 100, chunkSec: 100 })));
   expect(countedExact.advance?.exactSteps).toBe(100);
   expect(fixedCalls).toBeGreaterThanOrEqual(100);
-  expect(incomeCalls).toBeLessThanOrEqual(fixedCalls + 1);
+  expect(incomeCalls).toBeLessThanOrEqual(2 * fixedCalls);
+  // An observer that changes the income between steps is read fresh on the next step, as fixed-step reads it.
+  const drifting = (advance: boolean) => {
+    let rate = 1;
+    const base = scenario({ until: false, durationSec: 5, chunkSec: 5, advance });
+    return runScenario({
+      ...base,
+      model: { ...base.model, income: (ctx) => ({ unit: ctx.unit, amount: rate }) },
+      run: {
+        ...base.run,
+        observer: {
+          onStep: () => {
+            rate += 5e-13;
+          },
+        },
+      },
+    });
+  };
+  const driftFixed = drifting(false);
+  const driftExact = drifting(true);
+  expect(driftExact.advance?.exactSteps).toBe(5);
+  expect(driftExact.end.wallet.money.amount).toBe(driftFixed.end.wallet.money.amount);
 }
 
 /**

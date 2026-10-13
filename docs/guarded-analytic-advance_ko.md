@@ -4,7 +4,7 @@
 
 `PR-16`은 수입 적분이 fixed-step과 맞는 구간에만 선택적 advance를 둔다. fixed-step이 기준 실행기다. `run.advance`를 빼면 기존 fast 플래그는 그대로다. 그 플래그는 화폐 이벤트를 생략할 수 있다. 그것이 이 해석적 건너뛰기는 아니다.
 
-첫 exact 구간은 상수 수입이고 evolve, 구매, strategy, reset, milestone, soft cap, 예약된 세션, 시드, tick threshold, 컨텍스트 `emit` 콜백, 비어 있지 않은 화폐 bucket이 없다. chunk는 목표, horizon, step 예산, 또는 다음 거절 경계에서 멈춘다. chunk의 step은 fixed-step과 같은 `nextBoundary`가 합산 시계로 정하고, chunk는 기준 step을 통째로, 최소 하나 탄다. duration 끝으로 건너뛴 뒤 목표만 확인하지 않는다. 각 step은 취하는 즉시 실행기로 넘어가므로 긴 chunk도 step을 쌓아 두지 않고, 인증된 step은 guard가 읽은 수입을 다시 쓴다. 보고하는 capability는 시나리오 constraints를 포함해 guard와 같은 컨텍스트로 읽는다. approximation 요청은 적용하지 않는다. 그 보고는 `fallback`이고 관측 주장은 `degraded`이며, 실행 자체는 fixed-step이다.
+첫 exact 구간은 상수 수입이고 evolve, 구매, strategy, reset, milestone, soft cap, 예약된 세션, 시드, tick threshold, 컨텍스트 `emit` 콜백, 비어 있지 않은 화폐 bucket이 없다. chunk는 목표, horizon, step 예산, 또는 다음 거절 경계에서 멈춘다. chunk의 step은 fixed-step과 같은 `nextBoundary`가 합산 시계로 정하고, chunk는 기준 step을 통째로, 최소 하나 탄다. duration 끝으로 건너뛴 뒤 목표만 확인하지 않는다. 각 step은 취하는 즉시 실행기로 넘어가므로 긴 chunk도 step을 쌓아 두지 않고, 인증된 step은 guard가 읽은 수입을 다시 읽지 않고 적용하며, 실행기 콜백 너머로 들고 가지 않는다. 보고하는 capability는 시나리오 constraints를 포함해 guard와 같은 컨텍스트로 읽는다. approximation 요청은 적용하지 않는다. 그 보고는 `fallback`이고 관측 주장은 `degraded`이며, 실행 자체는 fixed-step이다.
 
 `maxLogGap`이 있는 drop과 accumulate는 fixed-step에 남는다. 작은 tick의 합을 큰 delta 하나로 다루지 않는다. 컨텍스트 시드는 analytic chunk를 타지 않고, 시드 일정은 다시 쓰지 않는다. 실행이 없는 `advanceResult("statically-known")`는 `insufficient-data`이고 이유는 `advance observations were not supplied`다. `advanceResult("unsupported")`는 `unsupported`다.
 

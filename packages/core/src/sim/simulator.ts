@@ -26,7 +26,7 @@ function finishTrace<N, U extends string, Vars>(
  * @evidence docs/requirements/active/simulation-time-boundaries.md#req-pr02-simulation-time-boundaries Stops on the economic horizon, including a shorter last tick, and checks that horizon before maxSteps.
  * @evidenceReview docs/requirements/active/simulation-time-boundaries.md#req-pr02-simulation-time-boundaries #c6da01b Re-read the section: a duration or until that is already met stops before maxSteps, the last tick stays inside the horizon, and a committed tick that does not move state.t throws through assertTickAdvanced, including a sub-ulp partial tick before any tick moved t.
  * @evidence docs/requirements/active/guarded-analytic-advance.md#req-pr16-exact-match With run.advance enabled, an exact chunk records one sample per reference step on the summed clock, and any refused step runs stepOnce.
- * @evidenceReview docs/requirements/active/guarded-analytic-advance.md#req-pr16-exact-match #e92627f Re-read the section: the chunk takes the dt nextBoundary chose, and onStep adds each sample's dt to elapsedSec and records the sample with no events as the chunk takes it.
+ * @evidenceReview docs/requirements/active/guarded-analytic-advance.md#req-pr16-exact-match #eaace6d Re-read the section: the chunk takes the dt nextBoundary chose, and onStep adds each sample's dt to elapsedSec and records the sample with no events as the chunk takes it.
  */
 export function runScenario<N, U extends string, Vars>(
   sc: CompiledScenario<N, U, Vars>,

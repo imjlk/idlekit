@@ -2249,7 +2249,7 @@ const advanceSteps = [0.1, 0.25, 1, 3, 3600] as const;
 
 /**
  * @evidence docs/requirements/active/guarded-analytic-advance.md#req-pr16-exact-match Runs the guarded-advance relation over the seed corpus: fractional steps, a near-epsilon or partial last tick, chunks off the step grid, goals, budgets, and both tick policies.
- * @evidenceReview docs/requirements/active/guarded-analytic-advance.md#req-pr16-exact-match #e92627f Re-read the section, then ran this function on the short and extended corpus: every case ends, traces, counts, and stops as fixed-step, online and offline, and an undeclared case does not apply.
+ * @evidenceReview docs/requirements/active/guarded-analytic-advance.md#req-pr16-exact-match #eaace6d Re-read the section, then ran this function on the short and extended corpus: every case ends, traces, counts, and stops as fixed-step, online and offline, and an undeclared case does not apply.
  * @evidence ./conformance.ts#checkGuardedAdvance The seed corpus asks the harness to run each guarded-advance case.
  * @evidenceReview ./conformance.ts#checkGuardedAdvance #c83d980 Re-read checkGuardedAdvance: it runs the case with advance omitted and enabled, online and offline, compares economy, trace, stats, observation, and stop, and requires no fallback step.
  */

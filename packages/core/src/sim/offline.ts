@@ -85,7 +85,7 @@ function allowsOfflineAction(
  * @evidence docs/requirements/active/session-clock.md#req-pr06-session-clock Steps reward time only. `requestedSec` stays the caller absence, and `useStrategy: false` or policy `none` does not call `decide`.
  * @evidenceReview docs/requirements/active/session-clock.md#req-pr06-session-clock #6fee79f Re-read the section: state.t moves by simulated reward seconds, and a direct call does not turn the requested absence into state.t. The gap-end rule for a stop inside an offline gap belongs to the session, not to this direct call, and so does reading until on a copy: this call hands options.until the state.
  * @evidence docs/requirements/active/guarded-analytic-advance.md#req-pr16-exact-match Without a strategy call, run.advance takes exact chunks on the simulated-seconds clock, and any refused step runs stepOnce.
- * @evidenceReview docs/requirements/active/guarded-analytic-advance.md#req-pr16-exact-match #e92627f Re-read the section: the chunk takes the dt nextBoundary chose, onStep adds each sample's dt to simulatedSec as the chunk takes it, and a strategy call keeps every step on fixed-step.
+ * @evidenceReview docs/requirements/active/guarded-analytic-advance.md#req-pr16-exact-match #eaace6d Re-read the section: the chunk takes the dt nextBoundary chose, onStep adds each sample's dt to simulatedSec as the chunk takes it, and a strategy call keeps every step on fixed-step.
  */
 export function applyOfflineSeconds<N, U extends string, Vars>(args: {
   scenario: CompiledScenario<N, U, Vars>;

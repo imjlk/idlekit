@@ -55,7 +55,7 @@ export const advanceGuardedFallback = "unclear-boundary-uses-fixed-step" as cons
 
 /**
  * @evidence docs/requirements/active/guarded-analytic-advance.md#req-pr16-exact-match Constant income matches the reference wallet, goal time, and counters.
- * @evidenceReview docs/requirements/active/guarded-analytic-advance.md#req-pr16-exact-match #e92627f Re-read the section: chunk size does not change the reference result.
+ * @evidenceReview docs/requirements/active/guarded-analytic-advance.md#req-pr16-exact-match #eaace6d Re-read the section: chunk size does not change the reference result.
  */
 export const advanceExactMatch = "constant-income-matches-reference" as const;
 
@@ -188,21 +188,16 @@ export function refusalForAdvance<N, U extends string, Vars>(args: AdvanceGateAr
 }
 
 /**
- * A certified step keeps the income the guard read, the state it projected, and the income at that state,
- * so applying the step calls `model.income` no more than the guard did.
+ * A certified step keeps the income the guard read and the state it projected, so applying the step does not
+ * call `model.income` again. Nothing is carried to the next step: its income is read after the runner's
+ * callbacks for this step, as fixed-step reads it.
  */
 type Certified<N, U extends string, Vars> =
   | Readonly<{ reason: string }>
-  | Readonly<{ reason: null; income: Money<N, U>; next: SimState<N, U, Vars>; nextIncome: Money<N, U> }>;
+  | Readonly<{ reason: null; income: Money<N, U>; next: SimState<N, U, Vars> }>;
 
-/**
- * The guard behind `refusalForAdvance`. `current` is the income already read for this state and context,
- * which a chunk carries from the previous step's projection.
- */
-function certifyAdvance<N, U extends string, Vars>(
-  args: AdvanceGateArgs<N, U, Vars>,
-  current?: Money<N, U>,
-): Certified<N, U, Vars> {
+/** The guard behind `refusalForAdvance`. */
+function certifyAdvance<N, U extends string, Vars>(args: AdvanceGateArgs<N, U, Vars>): Certified<N, U, Vars> {
   const reason = (text: string): Certified<N, U, Vars> => ({ reason: text });
   if (args.requested === "approximation") return reason("approximation is not applied");
   if (args.ctx.seed !== undefined) return reason("seeded model has no advance capability");
@@ -221,12 +216,12 @@ function certifyAdvance<N, U extends string, Vars>(
   if (args.model.actions(args.ctx, args.state).length > 0) return reason("purchase is available");
   // `cmp` calls an epsilon-sized bucket empty. A fixed-step tick would still flush it.
   if (exactAmountSign(args.ctx.E, args.state.wallet.bucket) !== 0) return reason("money bucket is not empty");
-  const income = current ?? args.model.income(args.ctx, args.state);
+  const income = args.model.income(args.ctx, args.state);
   if (income.unit.code !== args.state.wallet.money.unit.code) return reason("income unit does not match the wallet");
   const next = applyExactIncome(args.ctx.E, args.state, income.amount, args.dt, args.ctx.tickPolicy.mode);
   const nextIncome = args.model.income(args.ctx, next);
   if (args.ctx.E.cmp(nextIncome.amount, income.amount) !== 0) return reason("income changed inside the interval");
-  return { reason: null, income, next, nextIncome };
+  return { reason: null, income, next };
 }
 
 /**
@@ -240,7 +235,7 @@ function appliedDelta<N>(E: Engine<N>, bucket: N, incomePerSec: N, dt: number, m
 
 /**
  * @evidence docs/requirements/active/guarded-analytic-advance.md#req-pr16-exact-match Constant income is added with the engine, not a narrowed number.
- * @evidenceReview docs/requirements/active/guarded-analytic-advance.md#req-pr16-exact-match #e92627f Re-read the section: wallet and max money use the engine add.
+ * @evidenceReview docs/requirements/active/guarded-analytic-advance.md#req-pr16-exact-match #eaace6d Re-read the section: wallet and max money use the engine add.
  */
 export function applyExactIncome<N, U extends string, Vars>(
   E: Engine<N>,
@@ -281,10 +276,10 @@ export type ExactChunk<N, U extends string, Vars> =
  * and the step budget are the fixed-step ones. A chunk always takes its first step, so a `chunkSec` below one step
  * is one step. The runner's own boundary check stops or throws after the chunk, as it would after that step.
  * Each step is handed to `onStep` as it is taken and is not retained, so chunk memory does not grow with `chunkSec`.
- * A step whose context matches the previous one reuses the income the guard projected for it.
+ * Each step applies the income its own guard read, after the callbacks for the previous step have run.
  *
  * @evidence docs/requirements/active/guarded-analytic-advance.md#req-pr16-exact-match An exact chunk uses the reference step grid.
- * @evidenceReview docs/requirements/active/guarded-analytic-advance.md#req-pr16-exact-match #e92627f Re-read the section: the chunk takes whole reference steps from nextBoundary on the summed clock, stops on until, the horizon, and the step budget, hands each step to onStep without holding it, and reuses the income the guard read.
+ * @evidenceReview docs/requirements/active/guarded-analytic-advance.md#req-pr16-exact-match #eaace6d Re-read the section: the chunk takes whole reference steps from nextBoundary on the summed clock, stops on until, the horizon, and the step budget, hands each step to onStep without holding it, and applies the income its own guard read without carrying it to the next step.
  */
 export function consumeExactChunk<N, U extends string, Vars>(args: Readonly<{
   /** The runner context for this tick, before `stepContext` sets `stepSec`. */
@@ -312,7 +307,6 @@ export function consumeExactChunk<N, U extends string, Vars>(args: Readonly<{
   }
   const { E } = args.ctx;
   let taken = 0;
-  let carried: Readonly<{ dt: number; income: Money<N, U> }> | undefined;
   let cursor = args.state;
   let elapsedSec = args.elapsedSec;
   let steps = args.steps;
@@ -334,18 +328,14 @@ export function consumeExactChunk<N, U extends string, Vars>(args: Readonly<{
       if (consumedSec + dt > args.chunkSec) break;
     }
     const ctx = stepContext(args.ctx, dt);
-    const certified = certifyAdvance(
-      {
-        ctx,
-        model: args.model,
-        state: cursor,
-        dt,
-        requested: args.requested,
-        strategy: args.strategy,
-      },
-      // The previous step projected this state's income with the same context when dt is unchanged.
-      carried?.dt === dt ? carried.income : undefined,
-    );
+    const certified = certifyAdvance({
+      ctx,
+      model: args.model,
+      state: cursor,
+      dt,
+      requested: args.requested,
+      strategy: args.strategy,
+    });
     if (certified.reason !== null) {
       if (taken === 0) return { ok: false, reason: certified.reason };
       break;
@@ -360,7 +350,6 @@ export function consumeExactChunk<N, U extends string, Vars>(args: Readonly<{
       // The fixed-step reward test: an exactly positive applied amount.
       rewarded: exactAmountSign(E, delta) === 1,
     });
-    carried = { dt, income: certified.nextIncome };
     taken += 1;
     cursor = next;
     elapsedSec += dt;
