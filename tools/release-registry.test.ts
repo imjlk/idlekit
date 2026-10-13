@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { checkRegistryManifest, compareSemver, planPublication, PROVENANCE_EXEMPT, type ReleaseVersion } from "./release-registry";
+import { checkRegistryManifest, compareSemver, isRegistryLag, planPublication, pollUntil, PROVENANCE_EXEMPT, type ReleaseVersion } from "./release-registry";
 
 const versions: ReleaseVersion[] = [
   { name: "@idlekit/money", version: "0.2.0", published: true, latest: "0.2.0" },
@@ -89,5 +89,35 @@ describe("registry manifest check", () => {
     expect([...PROVENANCE_EXEMPT]).toEqual(["@idlekit/money@0.2.0"]);
     expect(checkRegistryManifest("@idlekit/money@0.2.0", {}, false)).toEqual([]);
     expect(checkRegistryManifest("@idlekit/money@0.2.1", {}, true)).toEqual(["@idlekit/money@0.2.1 has no provenance attestation"]);
+  });
+});
+
+describe("registry lag", () => {
+  it("retries an install only when npm has not listed a published version yet", () => {
+    // The 0.3.1 release failed here: the version document existed, the package document did not list it yet.
+    expect(isRegistryLag("npm error code ETARGET\nnpm error notarget No matching version found for @idlekit/cli@0.3.1.")).toBeTrue();
+    expect(isRegistryLag("npm error code E404\nnpm error 404 Not Found - GET https://registry.npmjs.org/@idlekit%2fnew")).toBeTrue();
+    expect(isRegistryLag("npm error code EUNSUPPORTEDPROTOCOL\nnpm error Unsupported URL Type \"workspace:\": workspace:*")).toBeFalse();
+    expect(isRegistryLag("npm error code ERESOLVE\nnpm error ERESOLVE unable to resolve dependency tree")).toBeFalse();
+  });
+});
+
+describe("registry polling", () => {
+  it("retries a transient registry error and returns once the value appears", async () => {
+    const answers: Array<() => Promise<string | null>> = [
+      async () => { throw new Error("npm registry returned 503 for @idlekit/cli"); },
+      async () => null,
+      async () => "listed",
+    ];
+    let calls = 0;
+    const found = await pollUntil(() => answers[calls++]!(), Date.now() + 60_000, 1);
+    expect(found).toBe("listed");
+    expect(calls).toBe(3);
+  });
+
+  it("rethrows the last error at the deadline and returns null after a plain miss", async () => {
+    const past = Date.now() - 1;
+    await expect(pollUntil(async () => { throw new Error("npm registry returned 502"); }, past, 1)).rejects.toThrow("502");
+    expect(await pollUntil(async () => null, past, 1)).toBeNull();
   });
 });
