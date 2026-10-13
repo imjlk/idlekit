@@ -8,14 +8,19 @@ import {
   budgetSameConfig,
   budgetSchema,
   budgetUnknownMetric,
+  benchConfigFromScenario,
   buildPerformanceArtifact,
   comparePerformanceBudgets,
   configHash,
   currentHost,
   median,
+  readBaselineArtifacts,
   readPerformanceArtifact,
   representativeConfig,
   sameBenchConfig,
+  scenarioHash,
+  scenarioWorkload,
+  selectBaseline,
   workloadStepCount,
   type ArtifactInput,
   type PerformanceArtifact,
@@ -43,13 +48,13 @@ function built(overrides: Partial<ArtifactInput> = {}): PerformanceArtifact {
 
 /**
  * @evidence docs/requirements/active/performance-budget.md#req-dx04-bench-schema A built artifact round-trips the contract, version, host, and unsupported alloc/step.
- * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-bench-schema #b85a868 Re-read the section, then ran this function: contract is idlekit.performance-budget and alloc/step is unsupported.
+ * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-bench-schema #cf41995 Re-read the section, then ran this function: contract is idlekit.performance-budget and alloc/step is unsupported.
  * @evidence ./performanceBudget.ts#budgetSchema Reads the bench output schema contract.
  * @evidenceReview ./performanceBudget.ts#budgetSchema #59b4f49 The declaration is bench-output-schema.
  * @evidence ./performanceBudget.ts#buildPerformanceArtifact Builds the artifact from phases, config, host, and counters.
- * @evidenceReview ./performanceBudget.ts#buildPerformanceArtifact #529165e The function hashes the config, labels phases, derives median, p95, and rates from runtime samples only, and fixes alloc/step as unsupported and worker timings as absent.
+ * @evidenceReview ./performanceBudget.ts#buildPerformanceArtifact #f1c9513 The function hashes the config, keeps the scenario hash, labels phases, derives median, p95, and rates from runtime samples only, records a supplied peak RSS, and fixes alloc/step as unsupported and worker timings as absent.
  * @evidence ./performanceBudget.ts#readPerformanceArtifact Accepts a round-tripped artifact and rejects a forged alloc/step.
- * @evidenceReview ./performanceBudget.ts#readPerformanceArtifact #c92efd8 The function checks contract, version, corpus, config, hash type, and each metric status, and returns null for an alloc/step other than unsupported.
+ * @evidenceReview ./performanceBudget.ts#readPerformanceArtifact #1c37ebe The function checks contract, version, corpus, config, hash type, scenario fields, iteration metadata, and each metric status, and returns null for an alloc/step other than unsupported.
  * @evidence ./performanceBudget.ts#currentHost Reports the running Bun, platform, and architecture.
  * @evidenceReview ./performanceBudget.ts#currentHost #45ed392 The function reads Bun.version, process.platform, and process.arch, and on darwin reads the CPU brand, otherwise unsupported.
  */
@@ -82,13 +87,13 @@ export function acceptsPerformanceBudgetSchema(): void {
 
 /**
  * @evidence docs/requirements/active/performance-budget.md#req-dx04-workload-denominator 100 steps at runtime 100ms and 200ms ignore prepare of 5000ms and 900ms.
- * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-workload-denominator #11a4355 Re-read the section, then ran this function: the rate uses 150ms.
+ * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-workload-denominator #4eb5d17 Re-read the section, then ran this function: the rate uses 150ms.
  * @evidence ./performanceBudget.ts#budgetDenominator Reads the runtime denominator contract.
  * @evidenceReview ./performanceBudget.ts#budgetDenominator #1306650 The declaration is runtime-denominator.
  * @evidence ./performanceBudget.ts#median Takes the middle runtime sample, or the mean of the middle pair.
  * @evidenceReview ./performanceBudget.ts#median #0f23953 The function sorts a copy, returns null for no samples, the middle value for an odd count, and the mean of the middle pair for an even count.
  * @evidence ./performanceBudget.ts#workloadStepCount Counts duration steps with a shorter last tick.
- * @evidenceReview ./performanceBudget.ts#workloadStepCount #9e2c19a The function steps min(stepSec, remaining) until the duration is reached and returns null for a non-finite or non-positive step or a negative duration.
+ * @evidenceReview ./performanceBudget.ts#workloadStepCount #ea53e64 The function steps min(stepSec, remaining) until the duration is reached, returns null for a non-finite or non-positive step or a negative duration, and returns null instead of a truncated count past 100,000,000 steps.
  */
 export function keepsRuntimeWorkloadDenominator(): void {
   expect(median([])).toBeNull();
@@ -99,6 +104,8 @@ export function keepsRuntimeWorkloadDenominator(): void {
   expect(workloadStepCount(0, 1)).toBe(0);
   expect(workloadStepCount(10, 0)).toBeNull();
   expect(workloadStepCount(Number.NaN, 1)).toBeNull();
+  expect(workloadStepCount(1_000_001, 1)).toBe(1_000_001);
+  expect(workloadStepCount(1e12, 1)).toBeNull();
   expect(budgetDenominator).toBe("runtime-denominator");
   const artifact = built({
     workloadCount: 100,
@@ -129,7 +136,7 @@ export function keepsEmptyDurationAbsent(): void {
 
 /**
  * @evidence docs/requirements/active/performance-budget.md#req-dx04-unknown-metric Omitted counters stay absent and a supplied 0 stays measured.
- * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-unknown-metric #f80c38b Re-read the section, then ran this function: missing nodes are absent and a zero draw count is measured.
+ * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-unknown-metric #4278c4c Re-read the section, then ran this function: missing nodes are absent and a zero draw count is measured.
  * @evidence ./performanceBudget.ts#budgetUnknownMetric Reads the unknown metric contract.
  * @evidenceReview ./performanceBudget.ts#budgetUnknownMetric #8f3c3f8 The declaration is unknown-is-not-zero.
  */
@@ -150,11 +157,11 @@ export function keepsUnknownMetricsUnmeasured(): void {
 
 /**
  * @evidence docs/requirements/active/performance-budget.md#req-dx04-gate-failure 100ms to 180ms fails when relative 0.25 and absolute 50 are both set. Two repeats do not pass.
- * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-gate-failure #c1a6c6b Re-read the section, then ran this function: the unfavorable pair fails and the writer is not called.
+ * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-gate-failure #9bd2c8d Re-read the section, then ran this function: the unfavorable pair fails and the writer is not called.
  * @evidence ./performanceBudget.ts#budgetGateFailure Reads the gate failure contract.
  * @evidenceReview ./performanceBudget.ts#budgetGateFailure #38dd0b8 The declaration is unfavorable-fails.
  * @evidence ./performanceBudget.ts#comparePerformanceBudgets Fails a slower median only past both the relative and absolute limits.
- * @evidenceReview ./performanceBudget.ts#comparePerformanceBudgets #0e41023 The function rejects a recomputed hash mismatch or a different config, fails too few repeats or an unmeasured median, fails when both limits are exceeded, and never calls the baseline writer.
+ * @evidenceReview ./performanceBudget.ts#comparePerformanceBudgets #765aa00 The function rejects a recomputed hash mismatch, a different config, or a different scenario hash or workload count, fails too few repeats or an unmeasured median, fails when both limits are exceeded, and never calls the baseline writer.
  */
 export function failsUnfavorableBudget(): void {
   expect(budgetGateFailure).toBe("unfavorable-fails");
@@ -180,7 +187,7 @@ export function failsUnfavorableBudget(): void {
 
 /**
  * @evidence docs/requirements/active/performance-budget.md#req-dx04-baseline-hash A replaced config hash is rejected and the writer is not called.
- * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-baseline-hash #654f6b5 Re-read the section, then ran this function: the mismatched hash is rejected.
+ * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-baseline-hash #d4cb210 Re-read the section, then ran this function: the mismatched hash is rejected.
  * @evidence ./performanceBudget.ts#budgetHashMismatch Reads the baseline hash contract.
  * @evidenceReview ./performanceBudget.ts#budgetHashMismatch #c3d9a80 The declaration is baseline-hash-rejected.
  */
@@ -203,7 +210,7 @@ export function rejectsBaselineHashMismatch(): void {
 
 /**
  * @evidence docs/requirements/active/performance-budget.md#req-dx04-same-config 4ms to 9ms passes the absolute floor. Observer, engine, and trace mismatches are rejected.
- * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-same-config #2373b21 Re-read the section, then ran this function: the small pair passes and the other configs are rejected.
+ * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-same-config #2c13682 Re-read the section, then ran this function: the small pair passes and the other configs are rejected.
  * @evidence ./performanceBudget.ts#budgetSameConfig Reads the same-config contract.
  * @evidenceReview ./performanceBudget.ts#budgetSameConfig #0d25c6b The declaration is same-config-only.
  * @evidence ./performanceBudget.ts#sameBenchConfig Treats configs with the same fields in another key order as the same.
@@ -257,7 +264,7 @@ export function comparesOnlyTheSameConfig(): void {
 
 /**
  * @evidence docs/requirements/active/performance-budget.md#req-dx04-phase-labels prepare-cold is cold, prepare-warm is warm, and the runtime median is 150ms.
- * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-phase-labels #9da1e03 Re-read the section, then ran this function: cold and warm labels stay off the runtime median.
+ * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-phase-labels #4e1a2c4 Re-read the section, then ran this function: cold and warm labels stay off the runtime median.
  * @evidence ./performanceBudget.ts#budgetPhaseLabels Reads the phase label contract.
  * @evidenceReview ./performanceBudget.ts#budgetPhaseLabels #3555de8 The declaration is cold-warm-labels.
  */
@@ -289,6 +296,128 @@ export function keepsColdAndWarmLabels(): void {
   expect(artifact.metrics.stepsPerSec).toEqual({ status: "measured", value: 100 / 0.15 });
 }
 
+const representativeScenario = {
+  model: { id: "linear", version: 1, params: { incomePerSec: "1.2" } },
+  clock: { stepSec: 1, durationSec: 30 },
+  strategy: { id: "greedy" },
+};
+const longScenario = { ...representativeScenario, clock: { stepSec: 1, durationSec: 1800 } };
+
+function scenarioArtifact(scenario: unknown, runtimeMs: readonly number[]): PerformanceArtifact {
+  return built({
+    config: benchConfigFromScenario(scenario),
+    scenarioHash: scenarioHash(scenario),
+    workloadCount: scenarioWorkload(scenario),
+    phases: { runtimeMs },
+  });
+}
+
+/**
+ * @evidence docs/requirements/active/performance-budget.md#req-dx04-same-config A 30-step and a 1800-step scenario share a config and are still rejected.
+ * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-same-config #2c13682 Re-read the section, then ran this function: a different scenario hash or workload count is workload-mismatch.
+ * @evidence ./performanceBudget.ts#scenarioHash Hashes the canonical scenario, independent of key order.
+ * @evidenceReview ./performanceBudget.ts#scenarioHash #021fb0f The function returns the sha256 hex digest of the canonical scenario JSON.
+ * @evidence ./performanceBudget.ts#scenarioWorkload Counts the scenario clock and leaves an until expression unknown.
+ * @evidenceReview ./performanceBudget.ts#scenarioWorkload #2a3b6e8 The function returns workloadStepCount of the clock, or null without a numeric duration and step or with untilExpr.
+ * @evidence ./performanceBudget.ts#comparePerformanceBudgets Rejects a baseline from another workload before any timing check.
+ * @evidenceReview ./performanceBudget.ts#comparePerformanceBudgets #765aa00 The function rejects a scenario hash or workload count that differs after the config matches.
+ */
+export function rejectsDifferentWorkload(): void {
+  const policy = { minIterations: 4, relativeSlowdown: 0.25, absoluteMedianMs: 50 };
+  const short = scenarioArtifact(representativeScenario, [10]);
+  const long = scenarioArtifact(longScenario, [10]);
+  expect(short.config).toEqual(long.config);
+  expect(short.configHash).toBe(long.configHash);
+  expect(short.workloadCount).toBe(30);
+  expect(long.workloadCount).toBe(1800);
+  expect(comparePerformanceBudgets(short, long, policy)).toEqual({ status: "rejected", reason: "workload-mismatch" });
+  const reordered = Object.fromEntries(Object.entries(representativeScenario).reverse());
+  expect(scenarioHash(reordered)).toBe(scenarioHash(representativeScenario));
+  const sameHashOtherCount = { ...short, workloadCount: 31 };
+  expect(comparePerformanceBudgets(short, sameHashOtherCount, policy)).toEqual({
+    status: "rejected",
+    reason: "workload-mismatch",
+  });
+  expect(comparePerformanceBudgets(short, scenarioArtifact(representativeScenario, [11]), policy)).toEqual({
+    status: "pass",
+    reason: "within-budget",
+  });
+  const until = { ...representativeScenario, clock: { stepSec: 1, durationSec: 30, untilExpr: "money >= 10" } };
+  expect(scenarioWorkload(until)).toBeNull();
+}
+
+/**
+ * @evidence docs/requirements/active/performance-budget.md#req-dx04-same-config The trace mode follows outputs.report.traceEverySteps.
+ * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-same-config #2c13682 Re-read the section, then ran this function: a sampled trace is bounded and an every-step trace is unbounded.
+ * @evidence ./performanceBudget.ts#benchConfigFromScenario Reads engine, seed, model, step, trace cadence, observer, and planner from a scenario.
+ * @evidenceReview ./performanceBudget.ts#benchConfigFromScenario #6a09954 The function reads outputs.report.traceEverySteps, as the scenario compiler does, and treats a cadence of 1 or none as every step.
+ */
+export function readsTraceCadence(): void {
+  const withTrace = (report: Record<string, unknown>) => ({ ...representativeScenario, outputs: { report } });
+  expect(benchConfigFromScenario(representativeScenario).trace).toBe("off");
+  expect(benchConfigFromScenario(withTrace({ includeTrace: true, traceEverySteps: 10 })).trace).toBe("bounded");
+  expect(benchConfigFromScenario(withTrace({ includeTrace: true, traceEverySteps: 1 })).trace).toBe("unbounded");
+  expect(benchConfigFromScenario(withTrace({ includeTrace: true })).trace).toBe("unbounded");
+  expect(benchConfigFromScenario(withTrace({ includeTrace: true, everySteps: 10 })).trace).toBe("unbounded");
+}
+
+/**
+ * @evidence docs/requirements/active/performance-budget.md#req-dx04-baseline-hash A bench-sim --out file is a baseline, and each scenario takes its own entry.
+ * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-baseline-hash #d4cb210 Re-read the section, then ran this function: the run output round-trips and selects by scenario hash.
+ * @evidence ./performanceBudget.ts#readBaselineArtifacts Accepts one artifact or the perScenario budgets of a bench-sim result.
+ * @evidenceReview ./performanceBudget.ts#readBaselineArtifacts #6d7d2c8 The function returns the direct artifact, or every perScenario budget, and null when any entry is invalid.
+ * @evidence ./performanceBudget.ts#selectBaseline Picks the baseline with the same scenario hash, or the only one.
+ * @evidenceReview ./performanceBudget.ts#selectBaseline #01da1d1 The function matches a non-null scenario hash, falls back to a single baseline, and returns null otherwise.
+ */
+export function readsBenchOutputAsBaseline(): void {
+  const short = scenarioArtifact(representativeScenario, [10]);
+  const long = scenarioArtifact(longScenario, [20]);
+  const runOutput = JSON.parse(JSON.stringify({
+    contract: "idlekit.performance-budget",
+    schemaVersion: 1,
+    perScenario: [{ scenario: "a", budget: short }, { scenario: "b", budget: long }],
+  })) as unknown;
+  const baselines = readBaselineArtifacts(runOutput);
+  expect(baselines?.length).toBe(2);
+  expect(selectBaseline(baselines ?? [], long)?.scenarioHash).toBe(long.scenarioHash);
+  expect(selectBaseline(baselines ?? [], short)?.scenarioHash).toBe(short.scenarioHash);
+  const other = scenarioArtifact({ ...representativeScenario, strategy: { id: "planner" } }, [10]);
+  expect(selectBaseline(baselines ?? [], other)).toBeNull();
+  expect(readBaselineArtifacts(JSON.parse(JSON.stringify(short)))).toHaveLength(1);
+  expect(selectBaseline([short], other)).toBe(short);
+  const broken = JSON.parse(JSON.stringify(runOutput)) as { perScenario: Array<{ budget: unknown }> };
+  broken.perScenario[1] = { budget: { contract: "idlekit.performance-budget" } };
+  expect(readBaselineArtifacts(broken)).toBeNull();
+  expect(readBaselineArtifacts({ perScenario: [] })).toBeNull();
+}
+
+/**
+ * @evidence docs/requirements/active/performance-budget.md#req-dx04-gate-failure A baseline without a valid repeat count cannot reach the repeat check.
+ * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-gate-failure #9bd2c8d Re-read the section, then ran this function: missing or invalid iterations, warmup, and workload are rejected.
+ * @evidence ./performanceBudget.ts#readPerformanceArtifact Rejects missing or invalid iteration metadata.
+ * @evidenceReview ./performanceBudget.ts#readPerformanceArtifact #1c37ebe The function requires integer iterations >= 1, integer warmup >= 0, a null or integer workload >= 0, a phases array, and string or null scenario fields.
+ */
+export function rejectsBaselineWithoutIterations(): void {
+  const artifact = JSON.parse(JSON.stringify(built({ peakRssBytes: 1024 }))) as Record<string, unknown>;
+  expect(readPerformanceArtifact(artifact)).not.toBeNull();
+  expect(readPerformanceArtifact(artifact)?.metrics.peakRssBytes).toEqual({ status: "measured", value: 1024 });
+  const without = (key: string) => {
+    const copy = { ...artifact };
+    delete copy[key];
+    return copy;
+  };
+  expect(readPerformanceArtifact(without("iterations"))).toBeNull();
+  expect(readPerformanceArtifact(without("warmup"))).toBeNull();
+  expect(readPerformanceArtifact(without("workloadCount"))).toBeNull();
+  expect(readPerformanceArtifact(without("scenarioHash"))).toBeNull();
+  expect(readPerformanceArtifact({ ...artifact, iterations: 0 })).toBeNull();
+  expect(readPerformanceArtifact({ ...artifact, iterations: 6.5 })).toBeNull();
+  expect(readPerformanceArtifact({ ...artifact, iterations: "7" })).toBeNull();
+  expect(readPerformanceArtifact({ ...artifact, warmup: -1 })).toBeNull();
+  expect(readPerformanceArtifact({ ...artifact, workloadCount: 1.5 })).toBeNull();
+  expect(readPerformanceArtifact({ ...artifact, workloadCount: null })).not.toBeNull();
+}
+
 describe("performance budget", () => {
   it("accepts the performance budget schema", acceptsPerformanceBudgetSchema);
   it("uses workload count over runtime only", keepsRuntimeWorkloadDenominator);
@@ -298,4 +427,8 @@ describe("performance budget", () => {
   it("rejects a baseline hash mismatch", rejectsBaselineHashMismatch);
   it("compares only the same config", comparesOnlyTheSameConfig);
   it("keeps cold and warm labels", keepsColdAndWarmLabels);
+  it("rejects a baseline from another workload", rejectsDifferentWorkload);
+  it("reads the trace cadence field", readsTraceCadence);
+  it("reads bench-sim output as a baseline", readsBenchOutputAsBaseline);
+  it("rejects a baseline without iteration metadata", rejectsBaselineWithoutIterations);
 });

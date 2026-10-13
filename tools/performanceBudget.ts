@@ -7,13 +7,13 @@
 
 /**
  * @evidence docs/requirements/active/performance-budget.md#req-dx04-bench-schema The artifact names idlekit.performance-budget at schemaVersion 1 and keeps alloc/step unsupported.
- * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-bench-schema #b85a868 Re-read the section: worker startup and serialization stay absent, and alloc/step is unsupported.
+ * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-bench-schema #cf41995 Re-read the section: worker startup and serialization stay absent, and alloc/step is unsupported.
  */
 export const budgetSchema = "bench-output-schema" as const;
 
 /**
  * @evidence docs/requirements/active/performance-budget.md#req-dx04-workload-denominator Steps per second divide workload count by runtime seconds only.
- * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-workload-denominator #11a4355 Re-read the section: prepare-cold and prepare-warm stay out of the quotient.
+ * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-workload-denominator #4eb5d17 Re-read the section: prepare-cold and prepare-warm stay out of the quotient.
  */
 export const budgetDenominator = "runtime-denominator" as const;
 
@@ -25,31 +25,31 @@ export const budgetEmptyDuration = "empty-duration-absent" as const;
 
 /**
  * @evidence docs/requirements/active/performance-budget.md#req-dx04-unknown-metric Missing planner, draw, and retention counters are absent. A real 0 stays measured.
- * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-unknown-metric #f80c38b Re-read the section: omitted counters are absent and alloc/step stays unsupported.
+ * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-unknown-metric #4278c4c Re-read the section: omitted counters are absent and alloc/step stays unsupported.
  */
 export const budgetUnknownMetric = "unknown-is-not-zero" as const;
 
 /**
  * @evidence docs/requirements/active/performance-budget.md#req-dx04-gate-failure A regression fails only when the relative slowdown and the absolute floor are both exceeded.
- * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-gate-failure #c1a6c6b Re-read the section: too few repeats fail closed and the baseline writer is not called.
+ * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-gate-failure #9bd2c8d Re-read the section: too few repeats fail closed and the baseline writer is not called.
  */
 export const budgetGateFailure = "unfavorable-fails" as const;
 
 /**
  * @evidence docs/requirements/active/performance-budget.md#req-dx04-baseline-hash A config hash that does not match its config rejects the comparison.
- * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-baseline-hash #654f6b5 Re-read the section: mismatch does not write a new baseline.
+ * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-baseline-hash #d4cb210 Re-read the section: mismatch does not write a new baseline.
  */
 export const budgetHashMismatch = "baseline-hash-rejected" as const;
 
 /**
  * @evidence docs/requirements/active/performance-budget.md#req-dx04-same-config Only matching engine, seed, model, step, trace, observer, worker, and planner configs are compared.
- * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-same-config #2373b21 Re-read the section: a small absolute change can pass, and a different observer, engine, or trace cannot be compared.
+ * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-same-config #2c13682 Re-read the section: a small absolute change can pass, and a different observer, engine, or trace cannot be compared.
  */
 export const budgetSameConfig = "same-config-only" as const;
 
 /**
  * @evidence docs/requirements/active/performance-budget.md#req-dx04-phase-labels prepare-cold stays cold and prepare-warm stays warm.
- * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-phase-labels #9da1e03 Re-read the section: runtime median ignores prepare samples.
+ * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-phase-labels #4e1a2c4 Re-read the section: runtime median ignores prepare samples.
  */
 export const budgetPhaseLabels = "cold-warm-labels" as const;
 
@@ -91,6 +91,8 @@ export type PerformanceArtifact = Readonly<{
   schemaVersion: 1;
   corpus: "representative" | "long";
   scenario: string | null;
+  /** sha256 of the canonical scenario JSON. Duration, params, and strategy inputs live here, not in config. */
+  scenarioHash: string | null;
   config: BenchConfig;
   configHash: string;
   host: HostInfo;
@@ -107,6 +109,7 @@ export type PerformanceArtifact = Readonly<{
     drawsPerSec: Metric;
     rssDeltaBytes: Metric;
     heapDeltaBytes: Metric;
+    peakRssBytes: Metric;
     observationRetainedSamples: Metric;
     allocPerStep: Metric;
   }>;
@@ -125,11 +128,12 @@ export type BudgetPolicy = Readonly<{
 export type BudgetComparison =
   | Readonly<{ status: "pass"; reason: "within-budget" }>
   | Readonly<{ status: "fail"; reason: "regression" | "too-few-repeats" | "unmeasured" }>
-  | Readonly<{ status: "rejected"; reason: "baseline-hash-mismatch" | "config-mismatch" }>;
+  | Readonly<{ status: "rejected"; reason: "baseline-hash-mismatch" | "config-mismatch" | "workload-mismatch" }>;
 
 export type ArtifactInput = Readonly<{
   corpus: "representative" | "long";
   scenario?: string | null;
+  scenarioHash?: string | null;
   config: BenchConfig;
   host: HostInfo;
   iterations: number;
@@ -148,6 +152,7 @@ export type ArtifactInput = Readonly<{
   retainedSamples?: number | null;
   rssDeltaBytes?: number | null;
   heapDeltaBytes?: number | null;
+  peakRssBytes?: number | null;
 }>;
 
 const ABSENT: Metric = { status: "absent" };
@@ -164,6 +169,12 @@ function canonicalJson(value: unknown): string {
 export function configHash(config: BenchConfig): string {
   const hasher = new Bun.CryptoHasher("sha256");
   hasher.update(canonicalJson(config));
+  return hasher.digest("hex");
+}
+
+export function scenarioHash(scenario: unknown): string {
+  const hasher = new Bun.CryptoHasher("sha256");
+  hasher.update(canonicalJson(scenario));
   return hasher.digest("hex");
 }
 
@@ -209,19 +220,63 @@ function timeEpsilon(limitSec: number): number {
   return Math.max(1e-12, scaled);
 }
 
-/** Duration steps, including a shorter last tick. A missing duration is null. */
+const MAX_COUNTED_STEPS = 100_000_000;
+
+/**
+ * Duration steps, including a shorter last tick. A missing duration is null.
+ * A duration past the counting limit is null, never a truncated count.
+ */
 export function workloadStepCount(durationSec: number, stepSec: number): number | null {
   if (!Number.isFinite(durationSec) || !Number.isFinite(stepSec) || stepSec <= 0 || durationSec < 0) return null;
+  if (durationSec / stepSec > MAX_COUNTED_STEPS) return null;
   let elapsed = 0;
   let steps = 0;
-  while (steps < 1_000_000) {
-    if (elapsed >= durationSec - timeEpsilon(durationSec)) break;
+  while (elapsed < durationSec - timeEpsilon(durationSec)) {
     const dt = Math.min(stepSec, durationSec - elapsed);
     if (!(dt > 0)) break;
     elapsed += dt;
     steps += 1;
+    if (steps > MAX_COUNTED_STEPS) return null;
   }
   return steps;
+}
+
+/** The comparable config of a scenario file. Workload size and params are in scenarioHash. */
+export function benchConfigFromScenario(raw: unknown): BenchConfig {
+  const scenario = raw && typeof raw === "object" ? raw as {
+    seed?: unknown;
+    engine?: { name?: unknown };
+    model?: { id?: unknown; version?: unknown };
+    clock?: { stepSec?: unknown; durationSec?: unknown };
+    strategy?: { id?: unknown };
+    outputs?: { report?: { includeTrace?: unknown; traceEverySteps?: unknown } };
+    observation?: { enabled?: unknown };
+  } : {};
+  const includeTrace = scenario.outputs?.report?.includeTrace === true;
+  // The compiler defaults traceEverySteps to 1, which traces every step.
+  const every = scenario.outputs?.report?.traceEverySteps;
+  const trace = !includeTrace ? "off" : typeof every === "number" && every > 1 ? "bounded" : "unbounded";
+  return {
+    engineId: typeof scenario.engine?.name === "string" ? scenario.engine.name : "number",
+    seed: typeof scenario.seed === "number" ? scenario.seed : null,
+    modelId: typeof scenario.model?.id === "string" ? scenario.model.id : "unknown",
+    modelVersion: typeof scenario.model?.version === "number" ? scenario.model.version : 0,
+    stepSec: typeof scenario.clock?.stepSec === "number" ? scenario.clock.stepSec : 1,
+    trace,
+    observer: scenario.observation?.enabled === true ? "on" : "off",
+    worker: "none",
+    planner: scenario.strategy?.id === "planner" ? "on" : "off",
+  };
+}
+
+/** Steps the scenario clock runs, or null when an until expression or a missing duration leaves it unknown. */
+export function scenarioWorkload(raw: unknown): number | null {
+  if (!raw || typeof raw !== "object") return null;
+  const clock = (raw as { clock?: { durationSec?: unknown; stepSec?: unknown; untilExpr?: unknown } }).clock;
+  if (typeof clock?.durationSec !== "number" || typeof clock.stepSec !== "number") return null;
+  // An until expression can stop before the duration, so the step count is unknown.
+  if (clock.untilExpr !== undefined) return null;
+  return workloadStepCount(clock.durationSec, clock.stepSec);
 }
 
 function phasesFrom(input: ArtifactInput["phases"]): PhaseSample[] {
@@ -250,6 +305,7 @@ export function buildPerformanceArtifact(input: ArtifactInput): PerformanceArtif
     schemaVersion: 1,
     corpus: input.corpus,
     scenario: input.scenario ?? null,
+    scenarioHash: input.scenarioHash ?? null,
     config: input.config,
     configHash: configHash(input.config),
     host: input.host,
@@ -266,6 +322,7 @@ export function buildPerformanceArtifact(input: ArtifactInput): PerformanceArtif
       drawsPerSec: rate(input.draws, runtimeMs),
       rssDeltaBytes: finiteMetric(input.rssDeltaBytes),
       heapDeltaBytes: finiteMetric(input.heapDeltaBytes),
+      peakRssBytes: finiteMetric(input.peakRssBytes),
       observationRetainedSamples: finiteMetric(input.retainedSamples),
       allocPerStep: UNSUPPORTED,
     },
@@ -290,11 +347,23 @@ function isMetric(value: unknown, allowed: ReadonlySet<Metric["status"]>): value
 
 const MEASURED_OR_ABSENT = new Set<Metric["status"]>(["measured", "absent"]);
 
+function isCount(value: unknown, min: number): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value >= min;
+}
+
+function isNullableString(value: unknown): value is string | null {
+  return value === null || typeof value === "string";
+}
+
 export function readPerformanceArtifact(value: unknown): PerformanceArtifact | null {
   if (!isRecord(value)) return null;
   if (value.contract !== "idlekit.performance-budget" || value.schemaVersion !== 1) return null;
   if (value.corpus !== "representative" && value.corpus !== "long") return null;
   if (!isRecord(value.config) || typeof value.configHash !== "string") return null;
+  if (!isNullableString(value.scenario) || !isNullableString(value.scenarioHash)) return null;
+  if (!isCount(value.iterations, 1) || !isCount(value.warmup, 0)) return null;
+  if (value.workloadCount !== null && !isCount(value.workloadCount, 0)) return null;
+  if (!Array.isArray(value.phases)) return null;
   if (!isRecord(value.metrics) || !isRecord(value.worker)) return null;
   if (!isMetric(value.metrics.allocPerStep, new Set(["unsupported"]))) return null;
   if (!isMetric(value.worker.startupMs, new Set(["absent"]))) return null;
@@ -308,12 +377,40 @@ export function readPerformanceArtifact(value: unknown): PerformanceArtifact | n
     "drawsPerSec",
     "rssDeltaBytes",
     "heapDeltaBytes",
+    "peakRssBytes",
     "observationRetainedSamples",
   ] as const;
   for (const name of metricNames) {
     if (!isMetric(value.metrics[name], MEASURED_OR_ABSENT)) return null;
   }
   return value as unknown as PerformanceArtifact;
+}
+
+/**
+ * Read a baseline file: one artifact, or the bench-sim `--out` result whose
+ * `perScenario[].budget` entries are artifacts. Any invalid entry rejects the file.
+ */
+export function readBaselineArtifacts(value: unknown): PerformanceArtifact[] | null {
+  const direct = readPerformanceArtifact(value);
+  if (direct) return [direct];
+  if (!isRecord(value) || !Array.isArray(value.perScenario) || value.perScenario.length === 0) return null;
+  const artifacts: PerformanceArtifact[] = [];
+  for (const entry of value.perScenario) {
+    const artifact = isRecord(entry) ? readPerformanceArtifact(entry.budget) : null;
+    if (!artifact) return null;
+    artifacts.push(artifact);
+  }
+  return artifacts;
+}
+
+/** The baseline for the same scenario content, or the only baseline when the file has one. */
+export function selectBaseline(
+  baselines: readonly PerformanceArtifact[],
+  current: PerformanceArtifact,
+): PerformanceArtifact | null {
+  const same = baselines.find((item) => item.scenarioHash !== null && item.scenarioHash === current.scenarioHash);
+  if (same) return same;
+  return baselines.length === 1 ? baselines[0] ?? null : null;
 }
 
 /**
@@ -332,6 +429,9 @@ export function comparePerformanceBudgets(
   }
   if (!sameBenchConfig(baseline.config, current.config)) {
     return { status: "rejected", reason: "config-mismatch" };
+  }
+  if (baseline.scenarioHash !== current.scenarioHash || baseline.workloadCount !== current.workloadCount) {
+    return { status: "rejected", reason: "workload-mismatch" };
   }
   if (current.iterations < policy.minIterations || baseline.iterations < policy.minIterations) {
     return { status: "fail", reason: "too-few-repeats" };

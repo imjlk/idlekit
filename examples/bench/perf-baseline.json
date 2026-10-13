@@ -1,0 +1,170 @@
+{
+  "contract": "idlekit.performance-budget",
+  "schemaVersion": 1,
+  "corpus": "representative",
+  "host": {
+    "bun": "1.4.2",
+    "cpu": "Apple M3 Max",
+    "os": "darwin",
+    "arch": "arm64"
+  },
+  "scenarios": [
+    "examples/bench/representative.json"
+  ],
+  "iterations": 7,
+  "warmup": 2,
+  "threshold": {
+    "meanMs": 500,
+    "relativeSlowdown": 0.25,
+    "absoluteMedianMs": 500,
+    "minIterations": 7
+  },
+  "prepare": {
+    "coldMs": 7484.5965830000005,
+    "warmMs": [
+      7517.705708
+    ]
+  },
+  "perScenario": [
+    {
+      "scenario": "examples/bench/representative.json",
+      "stats": {
+        "meanMs": 125.3425834285707,
+        "minMs": 112.81095799999821,
+        "maxMs": 178.8062090000003,
+        "p95Ms": 118.87333299999955
+      },
+      "pass": true,
+      "checks": {
+        "meanMs": true,
+        "p95Ms": true,
+        "peakRssBytes": true,
+        "baseline": true
+      },
+      "budget": {
+        "contract": "idlekit.performance-budget",
+        "schemaVersion": 1,
+        "corpus": "representative",
+        "scenario": "examples/bench/representative.json",
+        "scenarioHash": "9937ce005fae4050e8f5a72ef58bfb3cbe01a1921b89ed6c4a1f54b81471b626",
+        "config": {
+          "engineId": "number",
+          "seed": null,
+          "modelId": "linear",
+          "modelVersion": 1,
+          "stepSec": 1,
+          "trace": "off",
+          "observer": "off",
+          "worker": "none",
+          "planner": "off"
+        },
+        "configHash": "0ddf27bd55d4e8873e19d9d7b1b5899fc449937c72ca7d9d6984caf3e9fa4032",
+        "host": {
+          "bun": "1.4.2",
+          "cpu": "Apple M3 Max",
+          "os": "darwin",
+          "arch": "arm64"
+        },
+        "iterations": 7,
+        "warmup": 2,
+        "workloadCount": 30,
+        "phases": [
+          {
+            "phase": "prepare-cold",
+            "label": "cold",
+            "durationMs": 7484.5965830000005
+          },
+          {
+            "phase": "prepare-warm",
+            "label": "warm",
+            "durationMs": 7517.705708
+          },
+          {
+            "phase": "runtime",
+            "label": "runtime",
+            "durationMs": 118.27362499999981
+          },
+          {
+            "phase": "runtime",
+            "label": "runtime",
+            "durationMs": 112.81095799999821
+          },
+          {
+            "phase": "runtime",
+            "label": "runtime",
+            "durationMs": 118.87333299999955
+          },
+          {
+            "phase": "runtime",
+            "label": "runtime",
+            "durationMs": 116.054791999999
+          },
+          {
+            "phase": "runtime",
+            "label": "runtime",
+            "durationMs": 116.21666699999878
+          },
+          {
+            "phase": "runtime",
+            "label": "runtime",
+            "durationMs": 178.8062090000003
+          },
+          {
+            "phase": "runtime",
+            "label": "runtime",
+            "durationMs": 116.36249999999927
+          }
+        ],
+        "metrics": {
+          "totalTimeMedianMs": {
+            "status": "measured",
+            "value": 116.36249999999927
+          },
+          "totalTimeP95Ms": {
+            "status": "measured",
+            "value": 118.87333299999955
+          },
+          "stepsPerSec": {
+            "status": "measured",
+            "value": 257.81501772478407
+          },
+          "plannerExpandedNodes": {
+            "status": "absent"
+          },
+          "plannerNodesPerSec": {
+            "status": "absent"
+          },
+          "drawsPerSec": {
+            "status": "absent"
+          },
+          "rssDeltaBytes": {
+            "status": "absent"
+          },
+          "heapDeltaBytes": {
+            "status": "absent"
+          },
+          "peakRssBytes": {
+            "status": "measured",
+            "value": 50184192
+          },
+          "observationRetainedSamples": {
+            "status": "absent"
+          },
+          "allocPerStep": {
+            "status": "unsupported"
+          }
+        },
+        "worker": {
+          "startupMs": {
+            "status": "absent"
+          },
+          "serializationMs": {
+            "status": "absent"
+          }
+        }
+      },
+      "comparison": null
+    }
+  ],
+  "pass": true
+}

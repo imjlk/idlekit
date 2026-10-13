@@ -4,7 +4,7 @@
 
 Requirement `REQ-DX04-BENCH-SCHEMA`. `DX-04` owns it.
 
-`budgetSchema` in `tools/performanceBudget.ts` is `bench-output-schema`. The artifact contract is `idlekit.performance-budget` and `schemaVersion` is 1. It records corpus, config, config hash, Bun, CPU, OS, arch, iterations, and warmup. `allocPerStep` is `unsupported`. Worker `startupMs` and `serializationMs` are `absent`. This requirement does not implement worker execution.
+`budgetSchema` in `tools/performanceBudget.ts` is `bench-output-schema`. The artifact contract is `idlekit.performance-budget` and `schemaVersion` is 1. It records corpus, scenario, scenario hash, config, config hash, Bun, CPU, OS, arch, iterations, and warmup. `allocPerStep` is `unsupported`. Worker `startupMs` and `serializationMs` are `absent`. This requirement does not implement worker execution.
 
 The executed test is `acceptsPerformanceBudgetSchema` in `tools/performanceBudget.test.ts`.
 
@@ -12,7 +12,7 @@ The executed test is `acceptsPerformanceBudgetSchema` in `tools/performanceBudge
 
 Requirement `REQ-DX04-WORKLOAD-DENOMINATOR`. `DX-04` owns it.
 
-`budgetDenominator` is `runtime-denominator`. `stepsPerSec` is the workload count divided by the median runtime seconds. prepare-cold and prepare-warm durations are not in that quotient. A 100-step workload with runtime samples of 100ms and 200ms, and prepare samples of 5000ms and 900ms, uses 150ms.
+`budgetDenominator` is `runtime-denominator`. `stepsPerSec` is the workload count divided by the median runtime seconds. prepare-cold and prepare-warm durations are not in that quotient. A 100-step workload with runtime samples of 100ms and 200ms, and prepare samples of 5000ms and 900ms, uses 150ms. A duration of 1,000,001 one-second steps counts 1,000,001. A duration past 100,000,000 steps is `null`, not a truncated count.
 
 The executed test is `keepsRuntimeWorkloadDenominator` in `tools/performanceBudget.test.ts`.
 
@@ -28,7 +28,7 @@ The executed test is `keepsEmptyDurationAbsent` in `tools/performanceBudget.test
 
 Requirement `REQ-DX04-UNKNOWN-METRIC`. `DX-04` owns it.
 
-`budgetUnknownMetric` is `unknown-is-not-zero`. Omitted planner nodes, draws, and retained samples are `absent`. A supplied 0 is `measured` 0. `allocPerStep` stays `unsupported`.
+`budgetUnknownMetric` is `unknown-is-not-zero`. Omitted planner nodes, draws, and retained samples are `absent`. A supplied 0 is `measured` 0. `allocPerStep` stays `unsupported`. `tools/bench-sim.ts` leaves observation retained samples `absent` because simulate output has no observation retention count, and an event-log count is not one. It records `peakRssBytes` from the simulate child process and leaves RSS and heap delta `absent`.
 
 The executed test is `keepsUnknownMetricsUnmeasured` in `tools/performanceBudget.test.ts`.
 
@@ -36,30 +36,30 @@ The executed test is `keepsUnknownMetricsUnmeasured` in `tools/performanceBudget
 
 Requirement `REQ-DX04-GATE-FAILURE`. `DX-04` owns it.
 
-`budgetGateFailure` is `unfavorable-fails`. The gate fails when the current median exceeds both the relative slowdown and the absolute median floor, and the repeat count is at least the minimum. Fewer repeats fail as `too-few-repeats` and do not pass. The compare function does not call the baseline writer. A 100ms median moving to 180ms fails a relative slowdown of 0.25 with an absolute floor of 50ms.
+`budgetGateFailure` is `unfavorable-fails`. The gate fails when the current median exceeds both the relative slowdown and the absolute median floor, and the repeat count is at least the minimum. Fewer repeats fail as `too-few-repeats` and do not pass. A baseline without an integer `iterations` of at least 1, an integer `warmup` of at least 0, and a `null` or integer `workloadCount` is not read. The compare function does not call the baseline writer. A 100ms median moving to 180ms fails a relative slowdown of 0.25 with an absolute floor of 50ms.
 
-The executed test is `failsUnfavorableBudget` in `tools/performanceBudget.test.ts`.
+The executed tests are `failsUnfavorableBudget` and `rejectsBaselineWithoutIterations` in `tools/performanceBudget.test.ts`.
 
 ## A baseline hash mismatch is rejected {#req-dx04-baseline-hash}
 
 Requirement `REQ-DX04-BASELINE-HASH`. `DX-04` owns it.
 
-`budgetHashMismatch` is `baseline-hash-rejected`. A config hash that does not match its config is `baseline-hash-mismatch`. The baseline writer is not called.
+`budgetHashMismatch` is `baseline-hash-rejected`. A config hash that does not match its config is `baseline-hash-mismatch`. The baseline writer is not called. A baseline file is one artifact or a `bench-sim --out` result. From a result, each scenario takes the `perScenario[].budget` with its scenario hash.
 
-The executed test is `rejectsBaselineHashMismatch` in `tools/performanceBudget.test.ts`.
+The executed tests are `rejectsBaselineHashMismatch` and `readsBenchOutputAsBaseline` in `tools/performanceBudget.test.ts`.
 
 ## Only the same config is compared {#req-dx04-same-config}
 
 Requirement `REQ-DX04-SAME-CONFIG`. `DX-04` owns it.
 
-`budgetSameConfig` is `same-config-only`. The same engine, seed, model, step, trace, observer, worker, and planner are comparable. A 4ms to 9ms change with relative slowdown 0.25 and absolute floor 50ms passes. A different observer, engine, or trace is `config-mismatch`. A pass does not call the baseline writer.
+`budgetSameConfig` is `same-config-only`. The same engine, seed, model, step, trace, observer, worker, and planner are comparable. A 4ms to 9ms change with relative slowdown 0.25 and absolute floor 50ms passes. A different observer, engine, or trace is `config-mismatch`. The scenario hash and workload count must also match, or the comparison is `workload-mismatch`. A 30-step and a 1800-step scenario with the same config are rejected. The trace mode reads `outputs.report.traceEverySteps`, as the scenario compiler does. A cadence above 1 is `bounded`. A cadence of 1 or none traces every step and is `unbounded`. A pass does not call the baseline writer.
 
-The executed test is `comparesOnlyTheSameConfig` in `tools/performanceBudget.test.ts`.
+The executed tests are `comparesOnlyTheSameConfig`, `rejectsDifferentWorkload`, and `readsTraceCadence` in `tools/performanceBudget.test.ts`.
 
 ## Cold and warm labels stay on prepare {#req-dx04-phase-labels}
 
 Requirement `REQ-DX04-PHASE-LABELS`. `DX-04` owns it.
 
-`budgetPhaseLabels` is `cold-warm-labels`. prepare-cold is labeled `cold`. prepare-warm is labeled `warm`. The runtime median uses runtime samples only. install, check, and build stay labeled `other`. Full trace is not the default scoring mode.
+`budgetPhaseLabels` is `cold-warm-labels`. prepare-cold is labeled `cold`. prepare-warm is labeled `warm`. The runtime median uses runtime samples only. install, check, and build stay labeled `other`. Full trace is not the default scoring mode. In `tools/bench-sim.ts`, prepare-cold is the first ttsc bundle build of the CLI in the bench process and prepare-warm repeats that build. Warmup simulate runs are discarded and are not prepare samples.
 
 The executed test is `keepsColdAndWarmLabels` in `tools/performanceBudget.test.ts`.
