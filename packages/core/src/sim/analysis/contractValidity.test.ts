@@ -1,11 +1,13 @@
 import { describe, expect, it } from "bun:test";
 import {
   analysisCanonicalJson,
+  classifyAmount,
   validateAnalysisSemantics,
   type MetricReadingV1,
 } from "./contracts";
 import { buildAnalysisArtifact } from "./metrics";
 import { createModelAnalysisRegistry } from "./registry";
+import { createBreakInfinityEngine, createNumberEngine } from "@idlekit/money";
 
 function amount(decimal: string): MetricReadingV1 {
   return {
@@ -21,6 +23,18 @@ function numeric(value: number, sign: MetricReadingV1["sign"]): MetricReadingV1 
 }
 
 describe("analysis contract validity", () => {
+  it("accepts tiny signed amounts produced by default engines despite comparison epsilon", () => {
+    const number = createNumberEngine();
+    const decimal = createBreakInfinityEngine();
+    for (const value of [0, -0, 5e-13, -5e-13]) {
+      const expectedSign = value === 0 ? "zero" : value < 0 ? "negative" : "positive";
+      for (const classified of [classifyAmount(number, value, "COIN"), classifyAmount(decimal, decimal.from(value), "COIN")]) {
+        const reading: MetricReadingV1 = { ...amount("1"), ...classified };
+        expect(reading.sign).toBe(expectedSign);
+        expect(validateAnalysisSemantics(buildAnalysisArtifact({ metrics: [reading] }))).toEqual([]);
+      }
+    }
+  });
   it("rejects nonfinite engine amount strings without narrowing large finite amounts", () => {
     for (const decimal of ["NaN", "+NaN", "Infinity", "+Infinity", "-Infinity", " infinity "]) {
       expect(validateAnalysisSemantics(buildAnalysisArtifact({ metrics: [amount(decimal)] })).length).toBeGreaterThan(0);

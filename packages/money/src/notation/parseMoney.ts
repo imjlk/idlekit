@@ -54,7 +54,10 @@ export function parseMoney<N, U extends string>(
   }
 
   const exp3 = suffixIndex * 3;
-  const scaled = exp3 > 0 ? E.mulN(E.from(numeric), E.from(`1e${exp3}`)) : E.from(numeric);
+  // Convert only after combining exponents: separately converting a tiny mantissa and a huge suffix
+  // can turn a finite result into 0 * Infinity. BigInt preserves long exponent spellings during addition.
+  const [mantissa, exponent = "0"] = numeric.split(/e/i);
+  const scaled = E.from(exp3 > 0 ? `${mantissa}e${BigInt(exponent) + BigInt(exp3)}` : numeric);
 
   const unit = opts.unit ?? (inlineUnit ? ({ code: inlineUnit } as Unit<U>) : undefined);
   if (!unit) {
