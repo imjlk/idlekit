@@ -35,7 +35,7 @@ function builtinRegistries(): TrialRegistries {
 
 /**
  * @evidence docs/requirements/active/worker-execution-backend.md#req-dx05-worker-parity Plugin roots and digests are the parent policy. An empty root list does not allow every file.
- * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-worker-parity #f28c027 Re-read the section: a path outside the parent roots fails closed, and the worker does not add a root.
+ * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-worker-parity #bbc9681 Re-read the section: a path outside the parent roots fails closed, the worker does not add a root, and a step-budget stop is incomplete.
  */
 export const trialPluginBoundary = "plugin-policy-not-widened" as const;
 
@@ -141,6 +141,10 @@ export async function runAnalysisTrial(
         ...opened.scenario,
         run: { ...opened.scenario.run, maxSteps: task.stepBudget },
       });
+      // The step budget stopped the run before the requested horizon. That state is not the trial's end.
+      if (executed.stop?.reason === "budget") {
+        return { ...failed(task, "step-budget"), status: "incomplete" };
+      }
       const end = serializeSimState(engine, executed.end, {
         engineName: resolved.effectiveId,
         seed: task.seed,

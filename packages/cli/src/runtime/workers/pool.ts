@@ -1,6 +1,8 @@
 import {
   defaultExecutionBudget,
   finalizeBatch,
+  serializedTaskBytes,
+  taskRefusals,
   type AnalysisTrialOutcomeV1,
   type AnalysisTrialTaskV1,
   type ExecutionBatchV1,
@@ -9,7 +11,7 @@ import {
 
 /**
  * @evidence docs/requirements/active/worker-execution-backend.md#req-dx05-worker-parity Explicit worker counts share one logical digest. The pool does not choose itself.
- * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-worker-parity #f28c027 Re-read the section: selection stays explicit-worker and shutdown terminates every slot.
+ * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-worker-parity #bbc9681 Re-read the section: selection stays explicit-worker, the count stays within maxWorkers, and shutdown terminates every slot and clears every timer.
  */
 export const workerPoolParity = "same-logical-digest" as const;
 
@@ -43,6 +45,13 @@ function failed(task: AnalysisTrialTaskV1, reason: string, attempts: number): An
   };
 }
 
+/*
+ * Internal state is keyed by the position of a task in `args.tasks`, not by its taskId, so two
+ * tasks that share an id still run and report separately. Each dispatched task has its own
+ * timer of `taskTimeoutMs`; there is no batch-wide deadline, so a long queue on few workers
+ * is not cut short. Every timer is cleared and every handler detached before the batch
+ * resolves, so nothing fires or respawns after shutdown.
+ */
 export async function runWorkerPool(args: Readonly<{
   tasks: readonly AnalysisTrialTaskV1[];
   workers: number;
@@ -54,8 +63,14 @@ export async function runWorkerPool(args: Readonly<{
     throw new Error("worker pool requires an explicit worker count >= 1");
   }
   const budget = args.budget ?? { ...defaultExecutionBudget, maxWorkers: args.workers };
-  const batchId = `worker-${args.workers}-${args.tasks.length}`;
-  const serializedBytes = JSON.stringify(args.tasks).length;
+  if (args.workers > budget.maxWorkers) {
+    throw new Error(`worker pool count ${args.workers} exceeds budget maxWorkers ${budget.maxWorkers}`);
+  }
+  const tasks = args.tasks;
+  const batchId = `worker-${args.workers}-${tasks.length}`;
+  // Validate before measuring, as the local backend does. A refused task fails alone and posts nothing.
+  const refusals = taskRefusals(tasks);
+  const serializedBytes = tasks.reduce((sum, task, index) => (refusals[index] === null ? sum + serializedTaskBytes(task) : sum), 0);
   const header = {
     batchId,
     backend: "worker" as const,
@@ -63,94 +78,141 @@ export async function runWorkerPool(args: Readonly<{
     workerSpawnMs: 0,
     serializedBytes,
   };
-  if (args.tasks.length === 0) return finalizeBatch([], header);
-  if (args.tasks.length > budget.queueBound) {
+  if (tasks.length === 0) return finalizeBatch([], header);
+  if (tasks.length > budget.queueBound) {
     return finalizeBatch(
-      args.tasks.map((task) => failed(task, "queue-bound", 0)),
+      tasks.map((task) => failed(task, "queue-bound", 0)),
       header,
     );
   }
+  const results: (AnalysisTrialOutcomeV1 | undefined)[] = tasks.map((task, index) => {
+    const refusal = refusals[index];
+    return refusal ? failed(task, refusal, 1) : undefined;
+  });
+  const attempts = tasks.map(() => 0);
+  const queue = tasks.flatMap((_task, index) => (refusals[index] === null ? [index] : []));
+  const finalize = (): ExecutionBatchV1 =>
+    finalizeBatch(
+      tasks.map(
+        (task, index) => results[index] ?? failed(task, args.signal?.aborted ? "abort" : "not-started", attempts[index] ?? 0),
+      ),
+      header,
+    );
+  if (args.signal?.aborted || queue.length === 0) return finalize();
+
   const spawn = args.spawn ?? defaultSpawn;
-  const started = performance.now();
-  const live: WorkerLike[] = [];
-  const make = (): WorkerLike | null => {
-    if (live.length >= args.workers) return null;
-    const worker = spawn(live.length);
-    live.push(worker);
-    return worker;
-  };
-  for (let slot = 0; slot < Math.min(args.workers, args.tasks.length); slot += 1) make();
-  header.workerSpawnMs = performance.now() - started;
-  const queue = [...args.tasks];
-  const attempts = new Map<string, number>();
-  const finished = new Map<string, AnalysisTrialOutcomeV1>();
+  // A replacement follows a crash or a timeout. Each task can cost at most maxRetries + 1 of them.
+  const spawnLimit = args.workers + queue.length * (budget.maxRetries + 1);
+  const live = new Set<WorkerLike>();
+  const idle = new Set<WorkerLike>();
+  const timers = new Set<ReturnType<typeof setTimeout>>();
+  let spawned = 0;
+  let closed = false;
 
-  const pump = (worker: WorkerLike): void => {
-    if (args.signal?.aborted) return;
-    const task = queue.shift();
-    if (!task) return;
-    const attempt = attempts.get(task.taskId) ?? 0;
-    let settled = false;
-    const timer = setTimeout(() => {
-      if (settled) return;
-      settled = true;
+  return await new Promise<ExecutionBatchV1>((resolveBatch) => {
+    const detach = (worker: WorkerLike): void => {
+      worker.onmessage = null;
+      worker.onerror = null;
+    };
+    const retire = (worker: WorkerLike): void => {
+      detach(worker);
       worker.terminate();
-      finished.set(task.taskId, failed(task, "timeout", attempt + 1));
-      const replacement = live.length < args.workers + args.tasks.length ? spawn(live.length) : null;
-      if (replacement) {
-        live.push(replacement);
-        pump(replacement);
-      }
-    }, budget.taskTimeoutMs);
-    worker.onmessage = (event) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      const outcome = (event.data as { outcome?: AnalysisTrialOutcomeV1 } | null)?.outcome;
-      if (!outcome || outcome.taskId !== task.taskId) {
-        finished.set(task.taskId, failed(task, "worker-crash", attempt + 1));
-      } else {
-        finished.set(task.taskId, {
-          ...outcome,
-          taskId: task.taskId,
-          logicalIndex: task.logicalIndex,
-          seed: task.seed,
-          attempts: attempt + 1,
-        });
-      }
-      pump(worker);
+      live.delete(worker);
+      idle.delete(worker);
     };
-    worker.onerror = () => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      if (attempt < budget.maxRetries) {
-        attempts.set(task.taskId, attempt + 1);
-        queue.unshift(task);
-      } else {
-        finished.set(task.taskId, failed(task, "worker-crash", attempt + 1));
-      }
-      const replacement = spawn(live.length);
-      live.push(replacement);
-      pump(replacement);
+    const finish = (): void => {
+      if (closed) return;
+      closed = true;
+      for (const timer of timers) clearTimeout(timer);
+      timers.clear();
+      for (const worker of [...live]) retire(worker);
+      args.signal?.removeEventListener("abort", finish);
+      resolveBatch(finalize());
     };
-    worker.postMessage({ type: "run", task });
-  };
+    const done = (): boolean => results.every((outcome) => outcome !== undefined);
+    const requeue = (index: number, attempt: number): boolean => {
+      if (attempt >= budget.maxRetries) return false;
+      attempts[index] = attempt + 1;
+      queue.unshift(index);
+      return true;
+    };
 
-  try {
-    for (const worker of [...live]) pump(worker);
-    const pending = () => args.tasks.some((task) => !finished.has(task.taskId));
-    const idleAt = performance.now() + budget.taskTimeoutMs * (budget.maxRetries + 2) + 1_000;
-    while (pending() && !args.signal?.aborted && performance.now() < idleAt) {
-      await new Promise((resolve) => setTimeout(resolve, 5));
-    }
-    const outcomes = args.tasks.map((task) => {
-      const outcome = finished.get(task.taskId);
-      if (outcome) return outcome;
-      return failed(task, args.signal?.aborted ? "abort" : "not-started", attempts.get(task.taskId) ?? 0);
-    });
-    return finalizeBatch(outcomes, header);
-  } finally {
-    for (const worker of live) worker.terminate();
-  }
+    const dispatch = (worker: WorkerLike): void => {
+      if (closed) return;
+      const index = queue.shift();
+      if (index === undefined) {
+        detach(worker);
+        idle.add(worker);
+        return;
+      }
+      const task = tasks[index]!;
+      const attempt = attempts[index] ?? 0;
+      let settled = false;
+      const settle = (): boolean => {
+        if (settled || closed) return false;
+        settled = true;
+        clearTimeout(timer);
+        timers.delete(timer);
+        return true;
+      };
+      const timer = setTimeout(() => {
+        if (!settle()) return;
+        results[index] = failed(task, "timeout", attempt + 1);
+        retire(worker);
+        feed();
+      }, budget.taskTimeoutMs);
+      timers.add(timer);
+      worker.onmessage = (event) => {
+        if (!settle()) return;
+        const outcome = (event.data as { outcome?: AnalysisTrialOutcomeV1 } | null)?.outcome;
+        if (!outcome || outcome.taskId !== task.taskId) {
+          results[index] = failed(task, "worker-crash", attempt + 1);
+        } else if (outcome.status === "failed" && outcome.reason !== "plugin-trust" && requeue(index, attempt)) {
+          // A posted failure retries like a crash and like the local backend. plugin-trust does not.
+        } else {
+          results[index] = {
+            ...outcome,
+            taskId: task.taskId,
+            logicalIndex: task.logicalIndex,
+            seed: task.seed,
+            attempts: attempt + 1,
+          };
+        }
+        dispatch(worker);
+        feed();
+      };
+      worker.onerror = () => {
+        if (!settle()) return;
+        if (!requeue(index, attempt)) results[index] = failed(task, "worker-crash", attempt + 1);
+        retire(worker);
+        feed();
+      };
+      worker.postMessage({ type: "run", task });
+    };
+
+    // Spawn cost covers every slot the batch opens, replacements included.
+    const start = (): void => {
+      const before = performance.now();
+      const worker = spawn(spawned);
+      header.workerSpawnMs += performance.now() - before;
+      spawned += 1;
+      live.add(worker);
+      dispatch(worker);
+    };
+
+    // Hand queued work to idle slots, replace a lost slot while the spawn limit allows, and finish when nothing can run.
+    const feed = (): void => {
+      if (closed) return;
+      for (const worker of [...idle]) {
+        if (queue.length === 0) break;
+        idle.delete(worker);
+        dispatch(worker);
+      }
+      while (queue.length > 0 && live.size < args.workers && spawned < spawnLimit && !closed) start();
+      if (done() || (queue.length > 0 && live.size === 0) || (queue.length === 0 && idle.size === live.size)) finish();
+    };
+
+    args.signal?.addEventListener("abort", finish, { once: true });
+    feed();
+  });
 }

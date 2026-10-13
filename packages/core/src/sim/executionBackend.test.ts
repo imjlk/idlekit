@@ -13,6 +13,8 @@ import {
   finalizeBatch,
   runLocalBatch,
   semanticDigest,
+  serializedTaskBytes,
+  taskRefusals,
   type AnalysisTrialOutcomeV1,
   type AnalysisTrialTaskV1,
 } from "./executionBackend";
@@ -56,7 +58,7 @@ function echo(value: AnalysisTrialTaskV1, endMoney: string): AnalysisTrialOutcom
  * @evidence ./executionBackend.ts#defaultExecutionBudget Reads the budget.
  * @evidenceReview ./executionBackend.ts#defaultExecutionBudget #4df9ea6 maxWorkers is 0.
  * @evidence ./executionBackend.ts#runLocalBatch Runs the batch in this process.
- * @evidenceReview ./executionBackend.ts#runLocalBatch #541c0be Two tasks run locally with no spawn cost, record serialized bytes, and form a full distribution.
+ * @evidenceReview ./executionBackend.ts#runLocalBatch #78f9f6a Re-read runLocalBatch after the per-task window and the validate-first cost: two tasks run locally with no spawn cost, record UTF-8 serialized bytes, and form a full distribution.
  */
 export function keepsLocalDefault(): void {
   expect(executionLocalDefault).toBe("local-default");
@@ -76,7 +78,11 @@ export function keepsLocalDefault(): void {
 
 /**
  * @evidence docs/requirements/active/worker-execution-backend.md#req-dx05-serializable-task A function payload is refused. The seed follows the logical index.
- * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-serializable-task #c885dec Re-read the section, then ran this function: reversing the input kept the same seed and a function payload failed.
+ * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-serializable-task #9e012b4 Re-read the section, then ran this function: reversing the input kept the same seed, a function payload failed, a cyclic payload failed alone while its sibling ran, and the cost counted UTF-8 bytes of the valid task.
+ * @evidence ./executionBackend.ts#serializedTaskBytes Measures one task as UTF-8 bytes of its JSON.
+ * @evidenceReview ./executionBackend.ts#serializedTaskBytes #06012ad A Hangul task id counts more bytes than UTF-16 units, and the batch cost equals the measured bytes.
+ * @evidence ./executionBackend.ts#taskRefusals Checks every task before the batch measures or runs any.
+ * @evidenceReview ./executionBackend.ts#taskRefusals #ed6127d A cyclic payload is refused as cycle and a plain task is null.
  * @evidence ./executionBackend.ts#executionSerializableTask Reads the descriptor marker.
  * @evidenceReview ./executionBackend.ts#executionSerializableTask #c7343dd The declaration is json-descriptor.
  * @evidence ./executionBackend.ts#analysisTaskSeed Derives the seed from the logical index.
@@ -111,15 +117,30 @@ export function keepsSerializableTasks(): void {
   expect(() => assertSerializableTask(task(0, { payload: { run: () => 1 } }))).toThrow("not serializable");
   expect(() => assertSerializableTask(task(0, { payload: { value: Number.NaN } }))).toThrow("non-finite number");
   expect(() => assertSerializableTask(task(0, { logicalIndex: -1 }))).toThrow("logical index");
+  // A cyclic payload fails its own task before any cost is measured. Its sibling still runs.
+  const cyclic: Record<string, unknown> = { incomePerSec: "1" };
+  cyclic.self = cyclic;
+  const mixed = runLocalBatch([task(0, { payload: cyclic }), task(1)], (item) => echo(item, "1"));
+  expect(mixed.outcomes.map((outcome) => [outcome.status, outcome.reason])).toEqual([
+    ["failed", "cycle"],
+    ["ok", "ok"],
+  ]);
+  expect(mixed.cost.serializedBytes).toBe(serializedTaskBytes(task(1)));
+  expect(taskRefusals([task(0, { payload: cyclic }), task(1)])).toEqual(["cycle", null]);
+  // Bytes are UTF-8 bytes of the JSON, not UTF-16 code units.
+  const wide = task(0, { taskId: "트라이얼-0" });
+  expect(serializedTaskBytes(wide)).toBe(new TextEncoder().encode(JSON.stringify(wide)).byteLength);
+  expect(serializedTaskBytes(wide)).toBeGreaterThan(JSON.stringify(wide).length);
+  expect(runLocalBatch([wide], (item) => echo(item, "1")).cost.serializedBytes).toBe(serializedTaskBytes(wide));
 }
 
 /**
  * @evidence docs/requirements/active/worker-execution-backend.md#req-dx05-stable-reduction The total follows logical index, including a reversed completion list.
- * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-stable-reduction #dad1b6e Re-read the section, then ran this function: 0.1 then 0.2 summed to 0.3 in logical order.
+ * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-stable-reduction #8cb1440 Re-read the section, then ran this function: 0.1 then 0.2 summed to 0.3 in logical order, and 1e+400 with 1.5e+400 summed to 2.5e+400 in a full batch.
  * @evidence ./executionBackend.ts#executionStableReduction Reads the reduction marker.
  * @evidenceReview ./executionBackend.ts#executionStableReduction #d1a7722 The declaration is logical-index.
  * @evidence ./executionBackend.ts#addDecimalStrings Adds plain decimal strings without Number().
- * @evidenceReview ./executionBackend.ts#addDecimalStrings #48222ac 0.1 plus 0.2 is 0.3, a negative sum keeps its sign, and an exponent string throws.
+ * @evidenceReview ./executionBackend.ts#addDecimalStrings #3092629 Re-read the exact scientific sum: 0.1 plus 0.2 is 0.3, a negative sum keeps its sign, 1e3 plus 1 is 1.001e+3, 1e+400 plus 1 keeps every digit, and Infinity and a 200000-digit span throw.
  * @evidence ./executionBackend.ts#finalizeBatch Sorts outcomes by logical index and sums only a full batch.
  * @evidenceReview ./executionBackend.ts#finalizeBatch #4c64d96 A reversed outcome list is sorted, the total is 0.3, and a batch with a failed outcome has no total.
  * @evidence ./executionBackend.ts#semanticDigest Hashes canonical JSON.
@@ -130,7 +151,33 @@ export function reducesInLogicalOrder(): void {
   const [tenth, fifth, negative, quarter, exponent, one] = ["0.1", "0.2", "-1.5", "0.25", "1e3", "1"] as const;
   expect(addDecimalStrings(tenth, fifth)).toBe("0.3");
   expect(addDecimalStrings(negative, quarter)).toBe("-1.25");
-  expect(() => addDecimalStrings(exponent, one)).toThrow("plain decimal required");
+  // Break-infinity end money is a scientific serde string. It is summed exactly, not dropped.
+  expect(addDecimalStrings(exponent, one)).toBe("1.001e+3");
+  // Operands are bound first: a call whose first argument is a string literal reads as a test registration.
+  const [big, bigAndHalf, zero, milli, negativeMilli, infinite, tooFar] = [
+    "1e+400",
+    "1.5e+400",
+    "0",
+    "2.5e-3",
+    "-2.5e-3",
+    "Infinity",
+    "1e+200000",
+  ] as const;
+  expect(addDecimalStrings(big, big)).toBe("2e+400");
+  expect(addDecimalStrings(zero, bigAndHalf)).toBe("1.5e+400");
+  expect(addDecimalStrings(milli, negativeMilli)).toBe("0");
+  expect(addDecimalStrings(big, one)).toBe(`1.${"0".repeat(399)}1e+400`);
+  expect(() => addDecimalStrings(infinite, one)).toThrow("decimal required");
+  expect(() => addDecimalStrings(tooFar, one)).toThrow("exponent span");
+  const huge = finalizeBatch([echo(task(1), "1e+400"), echo(task(0), "1.5e+400")], {
+    batchId: "huge",
+    backend: "local",
+    selection: "local-default",
+    workerSpawnMs: 0,
+    serializedBytes: 0,
+  });
+  expect(huge.fullDistribution).toBe(true);
+  expect(huge.reduction.endMoney).toBe("2.5e+400");
   const header = { batchId: "direct", backend: "local" as const, selection: "local-default" as const, workerSpawnMs: 0, serializedBytes: 0 };
   const finalized = finalizeBatch([echo(task(1), "0.2"), echo(task(0), "0.1")], header);
   expect(finalized.outcomes.map((outcome) => outcome.logicalIndex)).toEqual([0, 1]);
@@ -154,7 +201,9 @@ export function reducesInLogicalOrder(): void {
 
 /**
  * @evidence docs/requirements/active/worker-execution-backend.md#req-dx05-failure-boundary Abort, timeout, retry, and the queue bound stay distinct from a full distribution.
- * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-failure-boundary #7435a5c Re-read the section, then ran this function: the retry kept the same seed, and the aborted batch was not full.
+ * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-failure-boundary #b752e32 Re-read the section, then ran this function: the retry kept the same seed, the aborted batch was not full, three tasks each inside their own window all finished, and a thrown trial retried and failed alone.
+ * @evidence ./executionBackend.ts#runLocalBatch Bounds each task by its own window and turns a thrown runner into a failed outcome.
+ * @evidenceReview ./executionBackend.ts#runLocalBatch #78f9f6a Re-read the loop: no batch deadline remains, a 2 ms task under a 5 ms budget is ok in third place, and a throw is trial-failed with attempts counted.
  * @evidence ./executionBackend.ts#executionFailureBoundary Reads the boundary marker.
  * @evidenceReview ./executionBackend.ts#executionFailureBoundary #5e9d9f9 The declaration is not-a-partial-distribution.
  * @evidence ./executionBackend.ts#createLocalExecutionBackend Submits a batch that cancel or an aborted signal stops.
@@ -245,6 +294,39 @@ export function boundsFailures(): void {
   expect(timed.outcomes[0]!.reason).toBe("timeout");
   expect(timed.outcomes[1]!.status).toBe("incomplete");
   expect(timed.fullDistribution).toBe(false);
+  // Each task gets its own window. Three tasks of 2 ms under a 5 ms budget all finish, though together they take longer.
+  let tick = 0;
+  const windows = runLocalBatch([task(0), task(1), task(2)], (item) => echo(item, "1"), {
+    budget: { ...defaultExecutionBudget, taskTimeoutMs: 5 },
+    clock: {
+      now: () => {
+        tick += 2;
+        return tick;
+      },
+    },
+  });
+  expect(windows.outcomes.map((outcome) => outcome.status)).toEqual(["ok", "ok", "ok"]);
+  expect(windows.fullDistribution).toBe(true);
+
+  // A thrown trial is a failed outcome of that task. It retries within maxRetries and the batch keeps going.
+  let throws = 0;
+  const thrown = runLocalBatch(
+    [task(0), task(1)],
+    (item) => {
+      if (item.logicalIndex === 0) {
+        throws += 1;
+        throw new Error("trial blew up");
+      }
+      return echo(item, "1");
+    },
+    { budget: { ...defaultExecutionBudget, maxRetries: 1 } },
+  );
+  expect(throws).toBe(2);
+  expect(thrown.outcomes.map((outcome) => [outcome.status, outcome.reason, outcome.attempts])).toEqual([
+    ["failed", "trial-failed", 2],
+    ["ok", "ok", 1],
+  ]);
+  expect(thrown.fullDistribution).toBe(false);
 
   const queued = runLocalBatch([task(0), task(1)], () => {
     throw new Error("queue bound must not run");
