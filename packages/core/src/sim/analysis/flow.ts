@@ -10,7 +10,7 @@ const FLOW_ALGORITHM_VERSION = "flow-observation-1" as const;
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-flow-adapter The published schema id is the flow report.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-flow-adapter #84c33b7 Re-read the section: the id is the flow v1 schema.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-flow-adapter #d66ba39 Re-read the section: the id is the flow v1 schema.
  */
 export function flowSchemaId(): typeof FLOW_SCHEMA_ID {
   return FLOW_SCHEMA_ID;
@@ -18,7 +18,7 @@ export function flowSchemaId(): typeof FLOW_SCHEMA_ID {
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-flow-adapter The algorithm version is flow-observation-1.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-flow-adapter #84c33b7 Re-read the section: the version string is flow-observation-1.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-flow-adapter #d66ba39 Re-read the section: the version string is flow-observation-1.
  */
 export function flowAlgorithmVersion(): typeof FLOW_ALGORITHM_VERSION {
   return FLOW_ALGORITHM_VERSION;
@@ -123,19 +123,19 @@ export type FlowReportV1 = Readonly<{
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-flow-adapter Flow samples are optional. Model gains no required method.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-flow-adapter #84c33b7 Re-read the section: the observer hook is optional and resource names stay in the fixture.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-flow-adapter #d66ba39 Re-read the section: the observer hook is optional and resource names stay in the fixture.
  */
 export const flowOptionalAdapter = "observer-not-required-model" as const;
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-pipeline A steady 100 to 20 to 30 chain binds at the middle stage.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-pipeline #2bb5853 Re-read the section: final throughput stays 20 when inflow doubles.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-pipeline #ce02423 Re-read the section: final throughput stays 20 when inflow doubles, and a bind reads one resource and one window.
  */
 export const flowPipelineConstraint = "process-throughput-20" as const;
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-conservation Conversion, loss, and inventory stay in their own units.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-conservation #792fb51 Re-read the section: the source unit and the destination unit are not added.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-conservation #ccddd0b Re-read the section: the source unit and the destination unit are not added, and queue and unretained are read for the destination resource in the source window.
  */
 export const flowConservation = "converted-units-stay-apart" as const;
 
@@ -147,7 +147,7 @@ export const flowUnsupportedModel = "no-invented-stall" as const;
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-suspected Missing demand and capacity observations stay unresolved.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-suspected #17bae0a Re-read the section: facts and hypotheses are separate, and ramp-up skips Little's law.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-suspected #115e179 Re-read the section: facts and hypotheses are separate, starved and blocked time are judged per process, and ramp-up skips Little's law.
  */
 export const flowSuspectedCause = "facts-apart-from-cause" as const;
 
@@ -160,7 +160,7 @@ let validateObservationValidator: ((input: unknown) => IValidation<FlowObservati
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-flow-adapter The published validator is createValidate of the flow report.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-flow-adapter #84c33b7 Re-read the section: the structural document is FlowReportV1.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-flow-adapter #d66ba39 Re-read the section: the structural document is FlowReportV1.
  */
 export const validateFlowReport = (input: unknown): IValidation<FlowReportV1> =>
   (validateFlowReportValidator ??= typia.createValidate<FlowReportV1>())(input);
@@ -173,7 +173,7 @@ let flowJsonSchemaUnit: ReturnType<typeof buildFlowJsonSchema> | undefined;
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-flow-adapter The structural schema is OpenAPI 3.1 from typia.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-flow-adapter #84c33b7 Re-read the section: schema version is 3.1 and the contract id is idlekit.flow.v1.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-flow-adapter #d66ba39 Re-read the section: schema version is 3.1 and the contract id is idlekit.flow.v1.
  */
 export function flowJsonSchema(): ReturnType<typeof buildFlowJsonSchema> {
   flowJsonSchemaUnit ??= buildFlowJsonSchema();
@@ -185,20 +185,48 @@ const validateObservation = (input: unknown): IValidation<FlowObservationV1> =>
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-flow-adapter A flow observation is validated as data.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-flow-adapter #84c33b7 Re-read the section: the observation contract is idlekit.flow.observation.v1.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-flow-adapter #d66ba39 Re-read the section: the observation contract is idlekit.flow.observation.v1, and an amount outside the finite non-negative decimal wire spelling is rejected while parsing.
  */
 export function parseFlowObservation(
   input: unknown,
 ): { ok: true; observation: FlowObservationV1 } | { ok: false; issues: readonly string[] } {
   const validated = validateObservation(input);
-  if (validated.success) return { ok: true, observation: validated.data };
-  return { ok: false, issues: validated.errors.map((error) => `${error.path} ${error.expected}`) };
+  if (!validated.success) {
+    return { ok: false, issues: validated.errors.map((error) => `${error.path} ${error.expected}`) };
+  }
+  const issues = decimalIssues(validated.data);
+  return issues.length === 0 ? { ok: true, observation: validated.data } : { ok: false, issues };
 }
 
+/** The decimal wire spelling engines print: optional sign, fraction, and exponent. */
+const DECIMAL_WIRE = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?$/i;
+
+/** A finite, non-negative amount in the decimal wire spelling. Anything else is null. */
 function parseDecimal(text: string): number | null {
-  if (!/^\d+(\.\d+)?$/.test(text)) return null;
+  if (!DECIMAL_WIRE.test(text)) return null;
   const value = Number(text);
-  return Number.isFinite(value) ? value : null;
+  if (!Number.isFinite(value) || value < 0) return null;
+  return value === 0 ? 0 : value;
+}
+
+/** An amount the diagnosis could not read is rejected here, not dropped later. */
+function decimalIssues(observation: FlowObservationV1): string[] {
+  const issues: string[] = [];
+  const check = (path: string, text: string): void => {
+    if (parseDecimal(text) === null) issues.push(`${path} finite non-negative decimal`);
+  };
+  observation.samples.forEach((sample, index) => check(`$input.samples[${index}].amount`, sample.amount));
+  observation.edges.forEach((edge, index) => {
+    check(`$input.edges[${index}].numerator`, edge.numerator);
+    check(`$input.edges[${index}].denominator`, edge.denominator);
+    check(`$input.edges[${index}].loss`, edge.loss);
+  });
+  if (observation.littles) {
+    check("$input.littles.inventory", observation.littles.inventory);
+    check("$input.littles.arrivalPerSec", observation.littles.arrivalPerSec);
+    check("$input.littles.waitSec", observation.littles.waitSec);
+  }
+  return issues;
 }
 
 function formatDecimal(value: number): string {
@@ -268,8 +296,24 @@ function rated(samples: readonly FlowSampleV1[]): Rated[] {
   return found;
 }
 
-function firstRated(rows: readonly Rated[], processId: string, kind: FlowSampleKind): Rated | undefined {
-  return rows.find((row) => row.sample.processId === processId && row.sample.kind === kind);
+type Window = Readonly<{ startSec: number; endSec: number }>;
+
+/** The sample of one process, resource, and kind inside exactly this evidence window. */
+function sampleAt(
+  rows: readonly Rated[],
+  processId: string,
+  resourceId: string,
+  kind: FlowSampleKind,
+  window: Window,
+): Rated | undefined {
+  return rows.find(
+    (row) =>
+      row.sample.processId === processId &&
+      row.sample.resourceId === resourceId &&
+      row.sample.kind === kind &&
+      row.sample.startSec === window.startSec &&
+      row.sample.endSec === window.endSec,
+  );
 }
 
 function convert(amount: number, edge: FlowEdgeV1): number | null {
@@ -282,7 +326,7 @@ function convert(amount: number, edge: FlowEdgeV1): number | null {
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-pipeline Diagnosis reads throughput, capacity, and the evidence window.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-pipeline #2bb5853 Re-read the section: the middle stage binds and doubling inflow leaves throughput at 20.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-pipeline #ce02423 Re-read the section: the middle stage binds and doubling inflow leaves throughput at 20; capacity and upstream samples match the edge resource and the throughput window.
  */
 export function diagnoseFlow(observation: FlowObservationV1): FlowReportV1 {
   const littlesLaw = littlesOf(observation.littles, observation.capability);
@@ -322,7 +366,16 @@ export function diagnoseFlow(observation: FlowObservationV1): FlowReportV1 {
   }
   for (const source of sources) sinks.delete(source);
   const sinkId = [...sinks][0];
-  const sinkThroughput = sinkId ? firstRated(rows, sinkId, "throughput") : rows.find((row) => row.sample.kind === "throughput");
+  // The sink's throughput is read for the resource its incoming edge delivers.
+  const sinkEdge = sinkId ? observation.edges.find((edge) => edge.toProcessId === sinkId) : undefined;
+  const sinkThroughput = sinkEdge
+    ? rows.find(
+        (row) =>
+          row.sample.processId === sinkEdge.toProcessId &&
+          row.sample.resourceId === sinkEdge.toResourceId &&
+          row.sample.kind === "throughput",
+      )
+    : rows.find((row) => row.sample.kind === "throughput");
   if (sinkThroughput) {
     facts.push({
       id: "fact:final-throughput",
@@ -338,21 +391,35 @@ export function diagnoseFlow(observation: FlowObservationV1): FlowReportV1 {
   let bindingRefs: string[] = [];
   for (const row of rows) {
     if (row.sample.kind !== "throughput") continue;
-    const capacity = firstRated(rows, row.sample.processId, "capacity");
+    const { processId, resourceId } = row.sample;
+    const window: Window = { startSec: row.sample.startSec, endSec: row.sample.endSec };
+    const capacity = sampleAt(rows, processId, resourceId, "capacity", window);
     if (!capacity || capacity.sample.unit !== row.sample.unit || !nearly(row.value, capacity.value)) continue;
-    const upstream = observation.edges.find((edge) => edge.toProcessId === row.sample.processId);
-    const upstreamThroughput = upstream ? firstRated(rows, upstream.fromProcessId, "throughput") : undefined;
-    const offered = upstream && upstreamThroughput ? convert(upstreamThroughput.value, upstream) : null;
-    if (offered === null || !(offered > row.value && !nearly(offered, row.value))) continue;
-    const downstream = observation.edges.find((edge) => edge.fromProcessId === row.sample.processId);
-    const downstreamCapacity = downstream ? firstRated(rows, downstream.toProcessId, "capacity") : undefined;
-    if (downstream && downstreamCapacity) {
-      const forwarded = convert(row.value, downstream);
-      if (forwarded === null || !(downstreamCapacity.value > forwarded && !nearly(downstreamCapacity.value, forwarded))) continue;
+    // Every edge into this process and resource offers work, each read in the same window.
+    const upstream = observation.edges.filter((edge) => edge.toProcessId === processId && edge.toResourceId === resourceId);
+    const upstreamRefs: string[] = [];
+    let offered: number | null = upstream.length > 0 ? 0 : null;
+    for (const edge of upstream) {
+      const source = sampleAt(rows, edge.fromProcessId, edge.fromResourceId, "throughput", window);
+      const converted = source ? convert(source.value, edge) : null;
+      if (!source || converted === null || offered === null) {
+        offered = null;
+        break;
+      }
+      offered += converted;
+      upstreamRefs.push(`sample:${source.index}`);
     }
+    if (offered === null || !(offered > row.value && !nearly(offered, row.value))) continue;
+    const downstream = observation.edges.filter((edge) => edge.fromProcessId === processId && edge.fromResourceId === resourceId);
+    const slack = downstream.every((edge) => {
+      const downstreamCapacity = sampleAt(rows, edge.toProcessId, edge.toResourceId, "capacity", window);
+      if (!downstreamCapacity) return true;
+      const forwarded = convert(row.value, edge);
+      return forwarded !== null && downstreamCapacity.value > forwarded && !nearly(downstreamCapacity.value, forwarded);
+    });
+    if (!slack) continue;
     binding = row;
-    bindingRefs = [`sample:${row.index}`, `sample:${capacity.index}`];
-    if (upstreamThroughput) bindingRefs.push(`sample:${upstreamThroughput.index}`);
+    bindingRefs = [`sample:${row.index}`, `sample:${capacity.index}`, ...upstreamRefs];
     facts.push({
       id: `fact:saturation:${row.sample.processId}`,
       processId: row.sample.processId,
@@ -365,12 +432,20 @@ export function diagnoseFlow(observation: FlowObservationV1): FlowReportV1 {
     break;
   }
   observation.edges.forEach((edge, edgeIndex) => {
-    const inflow = firstRated(rows, edge.fromProcessId, "throughput") ?? firstRated(rows, edge.fromProcessId, "inflow");
+    // Source and destination samples are read for the edge's own resources, in one window.
+    const sourced = rows.filter(
+      (row) =>
+        row.sample.processId === edge.fromProcessId &&
+        row.sample.resourceId === edge.fromResourceId &&
+        (row.sample.kind === "throughput" || row.sample.kind === "inflow"),
+    );
+    const inflow = sourced.find((row) => row.sample.kind === "throughput") ?? sourced.find((row) => row.sample.kind === "inflow");
     if (!inflow) return;
     const theoretical = convert(inflow.value, edge);
     if (theoretical === null) return;
-    const queue = firstRated(rows, edge.toProcessId, "queue");
-    const unretained = firstRated(rows, edge.toProcessId, "unretained");
+    const window: Window = { startSec: inflow.sample.startSec, endSec: inflow.sample.endSec };
+    const queue = sampleAt(rows, edge.toProcessId, edge.toResourceId, "queue", window);
+    const unretained = sampleAt(rows, edge.toProcessId, edge.toResourceId, "unretained", window);
     if (!queue || !unretained || queue.sample.unit !== unretained.sample.unit) return;
     if (queue.sample.unit === inflow.sample.unit) return;
     const held = queue.value + unretained.value;
@@ -385,25 +460,41 @@ export function diagnoseFlow(observation: FlowObservationV1): FlowReportV1 {
       evidenceRefs: [`sample:${inflow.index}`, `sample:${queue.index}`, `sample:${unretained.index}`, `edge:${edgeIndex}`],
     });
   });
-  const starved = rows.find((row) => row.sample.kind === "starved-time" && row.value > 0);
-  const blocked = rows.find((row) => row.sample.kind === "blocked-time" && row.value > 0);
-  let cause: FlowHypothesisV1;
+  const hypotheses: FlowHypothesisV1[] = [];
   if (binding) {
     const confirmed = observation.causal?.processId === binding.sample.processId;
-    cause = hypothesis(
-      binding.sample.processId,
-      confirmed ? "confirmed" : "suspected",
-      "capacity-constraint",
-      bindingRefs,
-      confirmed ? "a causal model or experiment names this saturated process" : "the process is saturated, without a causal model or experiment",
+    hypotheses.push(
+      hypothesis(
+        binding.sample.processId,
+        confirmed ? "confirmed" : "suspected",
+        "capacity-constraint",
+        bindingRefs,
+        confirmed ? "a causal model or experiment names this saturated process" : "the process is saturated, without a causal model or experiment",
+      ),
     );
-  } else if (starved && !blocked) {
-    cause = hypothesis(starved.sample.processId, "suspected", "material-shortage", [`sample:${starved.index}`], "starved time was observed without a capacity bind");
-  } else if (blocked && !starved) {
-    cause = hypothesis(blocked.sample.processId, "suspected", "demand-shortage", [`sample:${blocked.index}`], "blocked time was observed without a capacity bind");
   } else {
-    cause = hypothesis(null, "insufficient-data", "none", [], "demand and capacity were not both observed");
+    // Starved and blocked time are judged per process. One process's wait does not mask another's.
+    const waits = new Map<string, { starved?: Rated; blocked?: Rated }>();
+    for (const row of rows) {
+      if (row.value <= 0) continue;
+      if (row.sample.kind !== "starved-time" && row.sample.kind !== "blocked-time") continue;
+      const entry = waits.get(row.sample.processId) ?? {};
+      if (row.sample.kind === "starved-time") entry.starved ??= row;
+      else entry.blocked ??= row;
+      waits.set(row.sample.processId, entry);
+    }
+    for (const [processId, { starved, blocked }] of waits) {
+      if (starved && !blocked) {
+        hypotheses.push(hypothesis(processId, "suspected", "material-shortage", [`sample:${starved.index}`], "starved time was observed without a capacity bind"));
+      } else if (blocked && !starved) {
+        hypotheses.push(hypothesis(processId, "suspected", "demand-shortage", [`sample:${blocked.index}`], "blocked time was observed without a capacity bind"));
+      }
+    }
   }
+  if (hypotheses.length === 0) {
+    hypotheses.push(hypothesis(null, "insufficient-data", "none", [], "demand and capacity were not both observed"));
+  }
+  const cause = hypotheses[0] as FlowHypothesisV1;
   const conserved = facts.some((fact) => fact.kind === "conservation");
   const status: FlowReportV1["status"] =
     cause.status === "confirmed" || cause.status === "suspected" || conserved || sinkThroughput !== undefined
@@ -416,7 +507,7 @@ export function diagnoseFlow(observation: FlowObservationV1): FlowReportV1 {
     capability: observation.capability,
     status: sinkThroughput && cause.status === "insufficient-data" && !conserved ? "insufficient-data" : status,
     facts,
-    hypotheses: [cause],
+    hypotheses,
     littlesLaw,
     stallMapped: false,
     externalProvider: false,
