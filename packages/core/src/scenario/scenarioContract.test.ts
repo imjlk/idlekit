@@ -431,6 +431,18 @@ export function checksTrackedContractCli(): void {
 
     const checked = spawnContract(["tools/contracts-check.ts"]);
     expect(checked.exitCode).toBe(0);
+
+    // An empty public balance schema is drift, not a pass. The tracked copy is restored afterwards.
+    const publicSchema = join(repoRoot, "docs/schemas/balance-checks.v1.schema.json");
+    const publicText = readFileSync(publicSchema, "utf8");
+    try {
+      writeFileSync(publicSchema, "");
+      const truncated = spawnContract(["tools/contracts-check.ts"]);
+      expect(truncated.exitCode).toBe(1);
+      expect(truncated.stderr).toContain("drift docs/schemas/balance-checks.v1.schema.json");
+    } finally {
+      writeFileSync(publicSchema, publicText);
+    }
   } finally {
     for (const dir of [stale, crlf]) rmSync(dir, { recursive: true, force: true });
   }

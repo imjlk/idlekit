@@ -1,6 +1,7 @@
 import typia, { type IValidation } from "typia";
 
-/**
+/*
+ * Module note, not JSDoc, so the generated schema does not attach it to CheckOperator.
  * Game-scenario balance gate. This is not a ttsc, Evidence, or Graph quality gate.
  * ScenarioV1.outputs.assertions stay declaration-only; this module does not execute them.
  * A numeric verdict never reads the advisory string and never calls a network service.
@@ -599,14 +600,23 @@ function kpiCheck(id: string, metricId: string, operator: CheckOperator, thresho
   };
 }
 
+/**
+ * A KPI delta or ratio can be infinite (a zero baseline) or NaN. JSON cannot carry either, so a
+ * measured point would publish a null value beside a decided verdict. An infinite value becomes a
+ * censored observation bounded by the largest finite number, and NaN becomes unknown.
+ */
 function measured(metricId: string, unit: string, value: number): BalanceObservationV1 {
-  return {
-    identity: kpiIdentity(metricId, unit),
-    status: "measured",
-    value,
-    lower: value,
-    upper: value,
-  };
+  const identity = kpiIdentity(metricId, unit);
+  if (value === Number.POSITIVE_INFINITY) {
+    return { identity, status: "censored", value: null, lower: Number.MAX_VALUE, upper: null };
+  }
+  if (value === Number.NEGATIVE_INFINITY) {
+    return { identity, status: "censored", value: null, lower: null, upper: -Number.MAX_VALUE };
+  }
+  if (Number.isNaN(value)) {
+    return { identity, status: "unknown", value: null, lower: null, upper: null };
+  }
+  return { identity, status: "measured", value, lower: value, upper: value };
 }
 
 export type KpiRegressionInput = Readonly<{

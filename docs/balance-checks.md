@@ -6,9 +6,9 @@ Korean version: [balance-checks_ko.md](./balance-checks_ko.md)
 
 A check file names a metric id, an operator (`lt`, `lte`, `gt`, `gte`, `eq`, `between`), a threshold, a unit, a severity (`error` or `warn`), and a missing policy (`inconclusive`, `fail`, `unsupported`). The default path does not evaluate arbitrary JavaScript. Pass and fail are produced only when a measured point or a lower/upper bound decides the comparison. A missing or unknown value is not treated as 0. A censored lower bound can fail when the whole remaining interval misses the threshold. An unknown p95 with no bounds is inconclusive.
 
-`idk evaluate --checks <file>` reads that file. `--fail-on` lists `error`, `warn`, `inconclusive`, and `unsupported`. The default is `error`. A blocking result exits 2. A usage error stays on the CLI usage path. Omitting `--checks` keeps the existing evaluate workflow.
+`idk evaluate --checks <file>` reads that file. `--fail-on` lists `error`, `warn`, `inconclusive`, and `unsupported`. The default is `error`. A blocking result exits 2. With a scenario, a blocking result also sets the workflow `ok` to false. A usage error stays on the CLI usage path. Omitting `--checks` keeps the existing evaluate workflow.
 
-`idk kpi regress` is the compatibility adapter. Its flags and fixture shape stay. It maps the current horizon rows into the same engine. It does not rewrite a baseline.
+`idk kpi regress` is the compatibility adapter. Its flags and fixture shape stay. It maps the current horizon rows into the same engine. It does not rewrite a baseline. An infinite delta or ratio from a zero baseline is a censored observation bounded by the largest finite number, so the evidence stays serializable. An undefined delta (both sides zero) is unknown.
 
 Compared identities are definition, method, scenario version, spec version, engine id, plugin version, seed, algorithm version, and unit. A mismatch is inconclusive. The report sets `baselineRewrite` to false.
 

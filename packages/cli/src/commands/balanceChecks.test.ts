@@ -113,6 +113,25 @@ describe("balance check command", () => {
     await removePath(dir);
   });
 
+  it("marks the scenario workflow unsuccessful when the balance gate blocks", async () => {
+    const dir = await createTempDir("idlekit-balance-workflow");
+    const passPath = resolve(dir, "pass.json");
+    const failPath = resolve(dir, "fail.json");
+    await writeText(passPath, checkFile(1.5));
+    await writeText(failPath, checkFile(3));
+    const scenario = "../../examples/tutorials/11-my-game-v1.json";
+    const fastFlags = ["--session-pattern", "short-bursts", "--days", "1", "--step", "600", "--fast", "true", "--horizons", "30m,2h"];
+    const passed = runCli(["evaluate", scenario, ...fastFlags, "--checks", passPath, "--format", "json"]);
+    expect(passed.exitCode).toBe(0);
+    expect(JSON.parse(passed.stdout).ok).toBe(true);
+    const failed = runCli(["evaluate", scenario, ...fastFlags, "--checks", failPath, "--format", "json"], { check: false });
+    expect(failed.exitCode).toBe(2);
+    const failJson = JSON.parse(failed.stdout);
+    expect(failJson.ok).toBe(false);
+    expect(failJson.balanceChecks.kind).toBe("balance-check-error");
+    await removePath(dir);
+  }, 180000);
+
   it("keeps the kpi regress fixture exit codes", async () => {
     const same = runCli([
       "kpi",

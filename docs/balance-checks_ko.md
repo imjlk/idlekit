@@ -6,9 +6,9 @@
 
 check 파일은 metric id, 연산자(`lt`, `lte`, `gt`, `gte`, `eq`, `between`), threshold, 단위, severity(`error` 또는 `warn`), missing policy(`inconclusive`, `fail`, `unsupported`)를 적는다. 기본 경로는 임의의 JavaScript를 평가하지 않는다. pass와 fail은 측정된 점 또는 lower/upper bound가 비교를 결정할 때만 나온다. missing이나 unknown 값을 0으로 보지 않는다. 남은 구간 전체가 threshold를 벗어나면 검열된 lower bound로 fail할 수 있다. bound가 없는 unknown p95는 inconclusive이다.
 
-`idk evaluate --checks <file>`이 그 파일을 읽는다. `--fail-on`은 `error`, `warn`, `inconclusive`, `unsupported`를 나열한다. 기본값은 `error`다. 막는 결과는 exit 2다. 사용 오류는 CLI 사용 경로에 남는다. `--checks`를 빼면 기존 evaluate 흐름이 유지된다.
+`idk evaluate --checks <file>`이 그 파일을 읽는다. `--fail-on`은 `error`, `warn`, `inconclusive`, `unsupported`를 나열한다. 기본값은 `error`다. 막는 결과는 exit 2다. 시나리오와 함께 실행하면 막는 결과는 workflow `ok`도 false로 둔다. 사용 오류는 CLI 사용 경로에 남는다. `--checks`를 빼면 기존 evaluate 흐름이 유지된다.
 
-`idk kpi regress`는 호환 adapter다. flag와 fixture 형태는 유지된다. 현재 horizon 행을 같은 engine에 매핑한다. baseline을 다시 쓰지 않는다.
+`idk kpi regress`는 호환 adapter다. flag와 fixture 형태는 유지된다. 현재 horizon 행을 같은 engine에 매핑한다. baseline을 다시 쓰지 않는다. baseline이 0이라 delta나 ratio가 무한대이면 가장 큰 유한수로 bound를 둔 censored observation으로 적어 evidence가 직렬화되게 한다. 양쪽이 모두 0이라 정의되지 않는 delta는 unknown이다.
 
 비교하는 동일성은 definition, method, scenario version, spec version, engine id, plugin version, seed, algorithm version, unit이다. mismatch는 inconclusive이다. 보고서는 `baselineRewrite`를 false로 둔다.
 

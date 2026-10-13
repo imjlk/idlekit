@@ -584,12 +584,13 @@ export function compareContracts(dir: string, base = root): string[] {
     if (current !== next) failures.push(`drift ${name}`);
   }
   // The public balance check schema is a copy of the generated one, so editors can reference a stable path.
-  let publicCurrent = "";
+  // A read failure is "missing"; any file that was read, including an empty one, is compared.
+  let publicCurrent: string | null = null;
   try {
     publicCurrent = readFileSync(join(base, balancePublicSchema), "utf8").replace(/\r\n/g, "\n");
   } catch {
     failures.push(`missing ${balancePublicSchema}`);
   }
-  if (publicCurrent && publicCurrent !== rendered.balanceSchema) failures.push(`drift ${balancePublicSchema}`);
+  if (publicCurrent !== null && publicCurrent !== rendered.balanceSchema) failures.push(`drift ${balancePublicSchema}`);
   return failures;
 }

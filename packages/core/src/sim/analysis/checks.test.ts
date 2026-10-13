@@ -271,6 +271,59 @@ export function adaptsKpiRegression(): void {
     maxNoRewardGapDelta: 60,
   });
   expect(legacy.experienceChecks[0]?.pass.visibleProgress).toBe(true);
+  // A zero baseline gives an infinite ratio or delta. The published evidence keeps a finite bound
+  // that substantiates the verdict instead of a null measured value.
+  const zeroVisible = kpiReport("100");
+  (zeroVisible.experience.a.perceived as { visibleChangesPerMinute: number }).visibleChangesPerMinute = 0;
+  const improved = adaptKpiRegression({
+    baseline: zeroVisible,
+    current: kpiReport("100"),
+    baselinePath: "baseline.json",
+    currentPath: "current.json",
+    generatedAt: "2026-10-02T00:00:00.000Z",
+    minWorthRatio: 0.97,
+    maxStallDelta: 0.03,
+    maxDroppedDelta: 0.03,
+    minVisibleProgressRatio: 0.9,
+    maxNoRewardGapDelta: 60,
+  });
+  expect(improved.experienceChecks[0]?.pass.visibleProgress).toBe(true);
+  const visible = improved.balanceChecks.results.find((result) => result.id === "a:visible");
+  expect(visible?.verdict).toBe("pass");
+  expect(visible?.evidence.status).toBe("censored");
+  expect(visible?.evidence.lower).toBe(Number.MAX_VALUE);
+  expect(JSON.parse(JSON.stringify(visible?.evidence)).lower).toBe(Number.MAX_VALUE);
+  const zeroWorth = adaptKpiRegression({
+    baseline: kpiReport("100"),
+    current: kpiReport("0"),
+    baselinePath: "baseline.json",
+    currentPath: "current.json",
+    generatedAt: "2026-10-02T00:00:00.000Z",
+    minWorthRatio: 0.97,
+    maxStallDelta: 0.03,
+    maxDroppedDelta: 0.03,
+    minVisibleProgressRatio: 0.9,
+    maxNoRewardGapDelta: 60,
+  });
+  const worth = zeroWorth.balanceChecks.results.find((result) => result.id === "a:at7d:worth");
+  expect(worth?.verdict).toBe("fail");
+  expect(worth?.evidence.upper).toBe(-Number.MAX_VALUE);
+  expect(zeroWorth.pass).toBe(false);
+  const bothZero = adaptKpiRegression({
+    baseline: kpiReport("0"),
+    current: kpiReport("0"),
+    baselinePath: "baseline.json",
+    currentPath: "current.json",
+    generatedAt: "2026-10-02T00:00:00.000Z",
+    minWorthRatio: 0.97,
+    maxStallDelta: 0.03,
+    maxDroppedDelta: 0.03,
+    minVisibleProgressRatio: 0.9,
+    maxNoRewardGapDelta: 60,
+  });
+  const undefinedDelta = bothZero.balanceChecks.results.find((result) => result.id === "a:at7d:worth");
+  expect(undefinedDelta?.verdict).toBe("inconclusive");
+  expect(undefinedDelta?.evidence.status).toBe("unknown");
 }
 
 /**

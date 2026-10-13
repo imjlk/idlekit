@@ -393,8 +393,9 @@ export default defineCommand({
       ltv: resolve(process.cwd(), flags["out-dir"] ?? ".", "ltv.json"),
     };
 
+    // A blocking balance gate makes the workflow unsuccessful, matching the exit code 2 below.
     const output = {
-      ok: true,
+      ok: balance?.exitCode !== 2,
       scenario: scenarioAbs,
       run: {
         id: runId,
