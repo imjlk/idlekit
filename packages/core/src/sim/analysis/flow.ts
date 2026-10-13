@@ -129,7 +129,7 @@ export const flowOptionalAdapter = "observer-not-required-model" as const;
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-pipeline A steady 100 to 20 to 30 chain binds at the middle stage.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-pipeline #364a5de Re-read the section: final throughput stays 20 when inflow doubles, a bind reads one resource and one window, the causally named bind is confirmed among several, each terminal process reports its own final throughput from its latest window, and an inflow source offers work.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-pipeline #4441a2c Re-read the section: final throughput stays 20 when inflow doubles, a bind reads one resource and one window, the causally named bind is confirmed among several, each terminal process reports a final throughput per delivered resource from its latest window, an inflow source offers work, and a process binds on its latest saturated window.
  */
 export const flowPipelineConstraint = "process-throughput-20" as const;
 
@@ -247,11 +247,15 @@ function decimalIssues(observation: FlowObservationV1): string[] {
   return issues;
 }
 
-/** Rounds to nine fraction digits. A value too large to scale has no fraction digits to round. */
+/**
+ * Rounds to nine fraction digits. A value too large to scale has no fraction digits to round, and a nonzero
+ * value that would round to zero keeps its own spelling.
+ */
 function formatDecimal(value: number): string {
   const scaled = value * 1_000_000_000;
   if (!Number.isFinite(scaled) || Math.abs(scaled) >= Number.MAX_SAFE_INTEGER) return String(value);
-  return String(Math.round(scaled) / 1_000_000_000);
+  const rounded = Math.round(scaled) / 1_000_000_000;
+  return rounded === 0 && value !== 0 ? String(value) : String(rounded);
 }
 
 /**
@@ -359,6 +363,13 @@ function latest(candidates: readonly Rated[]): Rated | undefined {
   return best;
 }
 
+/** True when `candidate` is the defined bind over `held`: a later window, then a smaller resource id. */
+function preferredBind(candidate: Rated, held: Rated): boolean {
+  if (candidate.sample.endSec !== held.sample.endSec) return candidate.sample.endSec > held.sample.endSec;
+  if (candidate.sample.startSec !== held.sample.startSec) return candidate.sample.startSec > held.sample.startSec;
+  return candidate.sample.resourceId < held.sample.resourceId;
+}
+
 function convert(amount: number, edge: FlowEdgeV1): number | null {
   const numerator = parseDecimal(edge.numerator);
   const denominator = parseDecimal(edge.denominator);
@@ -370,7 +381,7 @@ function convert(amount: number, edge: FlowEdgeV1): number | null {
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-pipeline Diagnosis reads throughput, capacity, and the evidence window.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-pipeline #364a5de Re-read the section: the middle stage binds and doubling inflow leaves throughput at 20; capacity and upstream samples match the edge resource and the throughput window, and every saturated process is a candidate.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-pipeline #4441a2c Re-read the section: the middle stage binds and doubling inflow leaves throughput at 20; capacity and upstream samples match the edge resource and the throughput window, and every saturated process is a candidate.
  */
 export function diagnoseFlow(observation: FlowObservationV1): FlowReportV1 {
   const littlesLaw = littlesOf(observation.littles, observation.capability);
@@ -409,22 +420,19 @@ export function diagnoseFlow(observation: FlowObservationV1): FlowReportV1 {
     sinks.add(edge.toProcessId);
   }
   for (const source of sources) sinks.delete(source);
-  // Each terminal process reports the throughput of the resource its incoming edge delivers. A graph with
+  // Each terminal process reports the throughput of every resource its incoming edges deliver. A graph with
   // edges but no terminal process, such as a cycle, has no final throughput. Only an edgeless observation falls back.
   const finals: Rated[] = [];
   for (const sinkId of sinks) {
-    const sinkEdge = observation.edges.find((edge) => edge.toProcessId === sinkId);
-    const found = sinkEdge
-      ? latest(
-          rows.filter(
-            (row) =>
-              row.sample.processId === sinkId &&
-              row.sample.resourceId === sinkEdge.toResourceId &&
-              row.sample.kind === "throughput",
-          ),
-        )
-      : undefined;
-    if (found) finals.push(found);
+    const delivered = new Set(observation.edges.filter((edge) => edge.toProcessId === sinkId).map((edge) => edge.toResourceId));
+    for (const resourceId of delivered) {
+      const found = latest(
+        rows.filter(
+          (row) => row.sample.processId === sinkId && row.sample.resourceId === resourceId && row.sample.kind === "throughput",
+        ),
+      );
+      if (found) finals.push(found);
+    }
   }
   if (observation.edges.length === 0) {
     const lone = rows.find((row) => row.sample.kind === "throughput");
@@ -439,7 +447,7 @@ export function diagnoseFlow(observation: FlowObservationV1): FlowReportV1 {
   }
   for (const final of finals) {
     facts.push({
-      id: `fact:final-throughput:${final.sample.processId}`,
+      id: `fact:final-throughput:${final.sample.processId}:${final.sample.resourceId}`,
       processId: final.sample.processId,
       kind: "final-throughput",
       amount: final.sample.amount,
@@ -448,12 +456,12 @@ export function diagnoseFlow(observation: FlowObservationV1): FlowReportV1 {
       evidenceRefs: [`sample:${final.index}`],
     });
   }
-  // Every saturated process is a candidate, one per process, so a later causally named bind is not missed.
-  const bindings: { row: Rated; refs: string[] }[] = [];
+  // Every saturated process is a candidate, so a later causally named bind is not missed. A process saturated
+  // in several windows or resources keeps one defined bind: the latest window, then the first resource id.
+  const byProcess = new Map<string, { row: Rated; capacity: Rated; refs: string[] }>();
   for (const row of rows) {
     if (row.sample.kind !== "throughput") continue;
     const { processId, resourceId } = row.sample;
-    if (bindings.some((bound) => bound.row.sample.processId === processId)) continue;
     const window: Window = { startSec: row.sample.startSec, endSec: row.sample.endSec };
     const capacity = sampleAt(rows, processId, resourceId, "capacity", window);
     if (!capacity || capacity.sample.unit !== row.sample.unit || !nearly(row.value, capacity.value)) continue;
@@ -483,14 +491,20 @@ export function diagnoseFlow(observation: FlowObservationV1): FlowReportV1 {
       return forwarded !== null && downstreamCapacity.value > forwarded && !nearly(downstreamCapacity.value, forwarded);
     });
     if (!slack) continue;
-    bindings.push({ row, refs: [`sample:${row.index}`, `sample:${capacity.index}`, ...upstreamRefs] });
+    const held = byProcess.get(processId);
+    if (!held || preferredBind(row, held.row)) {
+      byProcess.set(processId, { row, capacity, refs: [`sample:${row.index}`, `sample:${capacity.index}`, ...upstreamRefs] });
+    }
+  }
+  const bindings = [...byProcess.values()];
+  for (const { row, capacity } of bindings) {
     facts.push({
-      id: `fact:saturation:${processId}`,
-      processId,
+      id: `fact:saturation:${row.sample.processId}`,
+      processId: row.sample.processId,
       kind: "saturation-time",
       amount: formatDecimal(row.sample.endSec - row.sample.startSec),
       unit: "s",
-      window,
+      window: { startSec: row.sample.startSec, endSec: row.sample.endSec },
       evidenceRefs: [`sample:${row.index}`, `sample:${capacity.index}`],
     });
   }

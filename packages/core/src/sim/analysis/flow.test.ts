@@ -161,11 +161,11 @@ export function declaresFlowAdapter(): void {
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-pipeline A 100 to 20 to 30 chain binds at the middle stage.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-pipeline #364a5de Re-read the section, then ran this function: final throughput stays 20 when inflow doubles, another resource or window does not bind, the causally named bind is confirmed first beside a suspected one, a cycle has no final throughput, two terminals each report one, a terminal reports its latest window in either sample order, and an inflow source offers work to the bind.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-pipeline #4441a2c Re-read the section, then ran this function: final throughput stays 20 when inflow doubles, another resource or window does not bind, the causally named bind is confirmed first beside a suspected one, a cycle has no final throughput, two terminals each report one, a terminal reports its latest window in either sample order, an inflow source offers work to the bind, a terminal fed two resources reports both, and a process saturated in two windows binds on the latest in either order.
  * @evidence ./flow.ts#flowPipelineConstraint Reads the pipeline marker.
  * @evidenceReview ./flow.ts#flowPipelineConstraint #6971fde The declaration is process-throughput-20.
  * @evidence ./flow.ts#diagnoseFlow Diagnoses throughput, capacity, and the binding stage.
- * @evidenceReview ./flow.ts#diagnoseFlow #4a304b5 The middle stage binds at 20, doubling inflow keeps 20 and grows the queue, without a causal model the cause is suspected, another resource or window does not bind, every saturated process is a candidate with the causal one confirmed first, a bind does not hide another process's wait, a cycle reports no final throughput, each terminal reports its own final throughput from its latest window, an inflow source offers work, and a 1e300 window formats as a finite saturation time.
+ * @evidenceReview ./flow.ts#diagnoseFlow #914cc72 The middle stage binds at 20, doubling inflow keeps 20 and grows the queue, without a causal model the cause is suspected, another resource or window does not bind, every saturated process is a candidate with the causal one confirmed first, a bind does not hide another process's wait, a cycle reports no final throughput, each terminal reports a final throughput per delivered resource from its latest window, an inflow source offers work, a process binds on its latest saturated window, and a 1e300 window formats as a finite saturation time.
  */
 export function diagnosesSteadyPipeline(): void {
   expect(flowPipelineConstraint).toBe("process-throughput-20");
@@ -301,11 +301,37 @@ export function diagnosesSteadyPipeline(): void {
   });
   expect(inflowSource.hypotheses[0]?.claim).toBe("capacity-constraint");
   expect(inflowSource.hypotheses[0]?.processId).toBe("process");
+  // A terminal fed two resources reports both, whatever the edge order.
+  const twoDelivered: FlowObservationV1 = {
+    ...steadyCase,
+    samples: [
+      ...steadyCase.samples,
+      { processId: "sell", resourceId: "gem", kind: "throughput", amount: "3", unit: "gem/min", startSec: 0, endSec: 60 },
+    ],
+    edges: [
+      ...steadyCase.edges,
+      { fromProcessId: "process", toProcessId: "sell", fromResourceId: "ore", toResourceId: "gem", numerator: "1", denominator: "1", loss: "0" },
+    ],
+  };
+  const deliveredFinals = (observation: FlowObservationV1) =>
+    diagnoseFlow(observation)
+      .facts.filter((item) => item.kind === "final-throughput")
+      .map((item) => item.unit)
+      .sort();
+  expect(deliveredFinals(twoDelivered)).toEqual(["gem/min", "ore/min"]);
+  expect(deliveredFinals({ ...twoDelivered, edges: [...twoDelivered.edges].reverse() })).toEqual(["gem/min", "ore/min"]);
+  // A process saturated in two windows binds on the latest, whatever the sample order.
+  const nextWindow = steadyCase.samples.map((sample) => ({ ...sample, startSec: 60, endSec: 120 }));
+  for (const samples of [[...steadyCase.samples, ...nextWindow], [...nextWindow, ...steadyCase.samples]]) {
+    const twice = diagnoseFlow({ ...steadyCase, samples });
+    expect(fact(twice, "saturation-time", "process")?.window).toEqual({ startSec: 60, endSec: 120 });
+    expect(twice.facts.filter((item) => item.kind === "saturation-time")).toHaveLength(1);
+  }
 }
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-conservation Conversion keeps the destination unit.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-conservation #d7e8176 Re-read the section, then ran this function: 100 becomes 45, the units are not added, a queue, unretained, or source sample of another resource or window does not conserve, a later conserving window is found, an overflowed conversion does not match, a 1e-7 conversion is not equal to an empty stock, and two edges into one stock are summed to 90.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-conservation #d7e8176 Re-read the section, then ran this function: 100 becomes 45, the units are not added, a queue, unretained, or source sample of another resource or window does not conserve, a later conserving window is found, an overflowed conversion does not match, a 1e-7 conversion is not equal to an empty stock, two edges into one stock are summed to 90, and a conserved 1e-10 keeps its spelling instead of rounding to 0.
  * @evidence ./flow.ts#flowConservation Reads the conservation marker.
  * @evidenceReview ./flow.ts#flowConservation #ca6486f The declaration is converted-units-stay-apart.
  */
@@ -365,6 +391,15 @@ export function checksFlowConservation(): void {
     ),
   });
   expect(tiny.facts.some((item) => item.kind === "conservation")).toBe(false);
+  // A conserved amount below the rounding step keeps its own nonzero spelling.
+  const small = diagnoseFlow({
+    ...conversionCase,
+    samples: conversionCase.samples.map((sample) =>
+      sample.kind === "inflow" ? { ...sample, amount: "2e-10" } : sample.kind === "queue" ? { ...sample, amount: "1e-10" } : { ...sample, amount: "0" },
+    ),
+    edges: conversionCase.edges.map((edge) => ({ ...edge, loss: "0" })),
+  });
+  expect(fact(small, "conservation", "dest")?.amount).toBe("1e-10");
   // Two edges into one destination resource are summed against its stock.
   const fanIn = (queue: string, unretained: string) =>
     diagnoseFlow({
