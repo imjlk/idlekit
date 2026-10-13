@@ -21,13 +21,13 @@ export const executionSerializableTask = "json-descriptor" as const;
 
 /**
  * @evidence docs/requirements/active/worker-execution-backend.md#req-dx05-stable-reduction Outcomes are ordered by logical index. The money total is a decimal-string sum.
- * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-stable-reduction #8cb1440 Re-read the section: completion order is not the addition order, Number() is not the sum, and a scientific amount is summed exactly.
+ * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-stable-reduction #855174a Re-read the section: completion order is not the addition order, Number() is not the sum, and a scientific amount is summed exactly.
  */
 export const executionStableReduction = "logical-index" as const;
 
 /**
  * @evidence docs/requirements/active/worker-execution-backend.md#req-dx05-failure-boundary Failure, cancellation, and incomplete stays are distinct. A partial batch is not a full distribution.
- * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-failure-boundary #9ffafcb Re-read the section: timeout and abort do not become a successful distribution, a retry keeps the same id and seed, the timeout is per task and per attempt, and a thrown runner is a failed task.
+ * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-failure-boundary #a46fa56 Re-read the section: timeout and abort do not become a successful distribution, a retry keeps the same id and seed, the timeout is per task and per attempt, and a thrown runner is a failed task.
  */
 export const executionFailureBoundary = "not-a-partial-distribution" as const;
 
@@ -111,6 +111,8 @@ const DECIMAL = /^(-?)(\d+)(?:\.(\d+))?(?:[eE]([+-]?\d+))?$/;
  * Break-infinity end money such as 1e+400 sits well inside it.
  */
 const MAX_EXPONENT_SPAN = 100_000;
+/** The largest delay a setTimeout honors. */
+const MAX_TIMER_MS = 2_147_483_647;
 
 function budgetOf(budget: ExecutionBudgetV1 | undefined): ExecutionBudgetV1 {
   const chosen = budget ?? defaultExecutionBudget;
@@ -123,13 +125,15 @@ function budgetOf(budget: ExecutionBudgetV1 | undefined): ExecutionBudgetV1 {
  * made endless or skipped by NaN or Infinity. Both backends check it before running anything.
  *
  * @evidence docs/requirements/active/worker-execution-backend.md#req-dx05-failure-boundary A budget with a non-finite or negative field is refused before any task runs.
- * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-failure-boundary #9ffafcb Re-read the section: retries stop at maxRetries, which must therefore be finite.
+ * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-failure-boundary #a46fa56 Re-read the section: retries stop at maxRetries, which must therefore be finite.
  */
 export function assertExecutionBudget(budget: ExecutionBudgetV1): void {
   for (const field of ["maxWorkers", "queueBound", "taskTimeoutMs", "stepBudget", "maxRetries"] as const) {
     const value = budget[field];
     if (!Number.isSafeInteger(value) || value < 0) throw new Error(`execution budget ${field} must be a finite integer >= 0`);
   }
+  // A worker timer past this range fires after 1 ms instead, so a longer window is refused in both backends.
+  if (budget.taskTimeoutMs > MAX_TIMER_MS) throw new Error(`execution budget taskTimeoutMs must be <= ${MAX_TIMER_MS}`);
 }
 
 function assertPlain(value: unknown, seen: WeakSet<object>): void {
@@ -190,19 +194,21 @@ export function analysisTaskSeed(baseSeed: number, logicalIndex: number): number
   return logicalDrawSeed(baseSeed, logicalIndex);
 }
 
-/** value = digits * 10^exponent. `scientific` records that the input carried an exponent. */
-type ScaledDecimal = Readonly<{ digits: bigint; exponent: number; scientific: boolean }>;
+/**
+ * value = digits * 10^exponent. `scientific` records that the input carried an exponent.
+ * The exponent is a bigint: break-infinity can serialize an exponent past Number's safe range.
+ */
+type ScaledDecimal = Readonly<{ digits: bigint; exponent: bigint; scientific: boolean }>;
 
 function parseDecimal(value: string): ScaledDecimal {
   const match = DECIMAL.exec(value);
   if (!match) throw new Error("decimal required");
   const [, sign = "", whole = "0", frac = "", exponentText] = match;
-  const exponent = exponentText === undefined ? 0 : Number(exponentText);
-  if (!Number.isSafeInteger(exponent)) throw new Error("exponent out of range");
+  const exponent = exponentText === undefined ? 0n : BigInt(exponentText);
   const magnitude = BigInt(`${whole}${frac}`);
   return {
     digits: sign === "-" ? -magnitude : magnitude,
-    exponent: exponent - frac.length,
+    exponent: exponent - BigInt(frac.length),
     scientific: exponentText !== undefined,
   };
 }
@@ -218,19 +224,19 @@ function renderPlain(sum: bigint, scale: number): string {
 }
 
 /** Exact scientific form: every significant digit stays, so no rounding happens here. */
-function renderScientific(sum: bigint, exponent: number): string {
+function renderScientific(sum: bigint, exponent: bigint): string {
   if (sum === 0n) return "0";
   const negative = sum < 0n;
   let digits = negative ? -sum : sum;
   let power = exponent;
   while (digits % 10n === 0n) {
     digits /= 10n;
-    power += 1;
+    power += 1n;
   }
   const text = digits.toString();
-  const scientificExponent = power + text.length - 1;
+  const scientificExponent = power + BigInt(text.length - 1);
   const mantissa = text.length > 1 ? `${text[0]}.${text.slice(1)}` : text;
-  return `${negative ? "-" : ""}${mantissa}e${scientificExponent >= 0 ? "+" : ""}${scientificExponent}`;
+  return `${negative ? "-" : ""}${mantissa}e${scientificExponent >= 0n ? "+" : ""}${scientificExponent}`;
 }
 
 export function addDecimalStrings(left: string, right: string): string {
@@ -241,15 +247,16 @@ export function addDecimalStrings(left: string, right: string): string {
   if (a.digits === 0n || b.digits === 0n) {
     const only = a.digits === 0n ? b : a;
     if (scientific) return renderScientific(only.digits, only.exponent);
-    return renderPlain(only.digits, -Math.min(0, only.exponent));
+    return renderPlain(only.digits, Number(only.exponent < 0n ? -only.exponent : 0n));
   }
-  const low = Math.min(a.exponent, b.exponent);
-  const high = Math.max(a.exponent, b.exponent);
-  if (high - low > MAX_EXPONENT_SPAN) throw new Error("exponent span too wide for an exact sum");
-  const sum = a.digits * 10n ** BigInt(a.exponent - low) + b.digits * 10n ** BigInt(b.exponent - low);
+  const low = a.exponent < b.exponent ? a.exponent : b.exponent;
+  const high = a.exponent < b.exponent ? b.exponent : a.exponent;
+  // Only the gap between the two exponents is expanded, so a huge exponent on both sides is still exact.
+  if (high - low > BigInt(MAX_EXPONENT_SPAN)) throw new Error("exponent span too wide for an exact sum");
+  const sum = a.digits * 10n ** (a.exponent - low) + b.digits * 10n ** (b.exponent - low);
   // Plain inputs have exponent <= 0, so the plain form keeps the earlier output exactly.
   if (scientific) return renderScientific(sum, low);
-  return renderPlain(sum, -low);
+  return renderPlain(sum, Number(-low));
 }
 
 /** UTF-8 bytes of the JSON message that carries one task. JSON.stringify().length counts UTF-16 units instead. */
@@ -354,17 +361,14 @@ export function runLocalBatch(
   const budget = budgetOf(options?.budget);
   const batchId = options?.batchId ?? `local-${tasks.length}`;
   const clock = options?.clock ?? { now: () => Date.now() };
-  // Validate before measuring, so a cyclic payload fails its own task instead of throwing out of the batch.
-  const reasons = taskRefusals(tasks, budget);
-  const refusals = new Map(tasks.map((task, index) => [task, reasons[index] ?? null] as const));
-  const serializedBytes = tasks.reduce((sum, task) => (refusals.get(task) === null ? sum + serializedTaskBytes(task) : sum), 0);
   const header = {
     batchId,
     backend: "local" as const,
     selection: "local-default" as const,
     workerSpawnMs: 0,
-    serializedBytes,
+    serializedBytes: 0,
   };
+  // Admission comes first, as in the worker pool: an aborted or oversized batch is answered before any measuring.
   if (tasks.length === 0) return finalizeBatch([], header);
   // An abort before submit outranks every other outcome, the queue bound included.
   if (options?.signal?.aborted) return finalizeBatch(tasks.map((task) => outcomeOf(task, "cancelled", "abort", 0)), header);
@@ -374,6 +378,10 @@ export function runLocalBatch(
       header,
     );
   }
+  // Validate before measuring, so a cyclic payload fails its own task instead of throwing out of the batch.
+  const reasons = taskRefusals(tasks, budget);
+  const refusals = new Map(tasks.map((task, index) => [task, reasons[index] ?? null] as const));
+  header.serializedBytes = tasks.reduce((sum, task) => (refusals.get(task) === null ? sum + serializedTaskBytes(task) : sum), 0);
   // taskTimeoutMs bounds each task on its own, as in the worker pool. There is no batch-wide window.
   const outcomes: AnalysisTrialOutcomeV1[] = [];
   for (const task of orderedTasks(tasks)) {

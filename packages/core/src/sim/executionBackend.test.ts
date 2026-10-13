@@ -59,7 +59,7 @@ function echo(value: AnalysisTrialTaskV1, endMoney: string): AnalysisTrialOutcom
  * @evidence ./executionBackend.ts#defaultExecutionBudget Reads the budget.
  * @evidenceReview ./executionBackend.ts#defaultExecutionBudget #4df9ea6 maxWorkers is 0.
  * @evidence ./executionBackend.ts#runLocalBatch Runs the batch in this process.
- * @evidenceReview ./executionBackend.ts#runLocalBatch #7c29e34 Re-read runLocalBatch after the per-task window and the validate-first cost: two tasks run locally with no spawn cost, record UTF-8 serialized bytes, and form a full distribution.
+ * @evidenceReview ./executionBackend.ts#runLocalBatch #57255c0 Re-read runLocalBatch after the per-task window and the validate-first cost: two tasks run locally with no spawn cost, record UTF-8 serialized bytes, and form a full distribution.
  */
 export function keepsLocalDefault(): void {
   expect(executionLocalDefault).toBe("local-default");
@@ -163,11 +163,11 @@ export function keepsSerializableTasks(): void {
 
 /**
  * @evidence docs/requirements/active/worker-execution-backend.md#req-dx05-stable-reduction The total follows logical index, including a reversed completion list.
- * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-stable-reduction #8cb1440 Re-read the section, then ran this function: 0.1 then 0.2 summed to 0.3 in logical order, and 1e+400 with 1.5e+400 summed to 2.5e+400 in a full batch.
+ * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-stable-reduction #855174a Re-read the section, then ran this function: 0.1 then 0.2 summed to 0.3 in logical order, and 1e+400 with 1.5e+400 summed to 2.5e+400 in a full batch.
  * @evidence ./executionBackend.ts#executionStableReduction Reads the reduction marker.
  * @evidenceReview ./executionBackend.ts#executionStableReduction #d1a7722 The declaration is logical-index.
  * @evidence ./executionBackend.ts#addDecimalStrings Adds plain decimal strings without Number().
- * @evidenceReview ./executionBackend.ts#addDecimalStrings #3092629 Re-read the exact scientific sum: 0.1 plus 0.2 is 0.3, a negative sum keeps its sign, 1e3 plus 1 is 1.001e+3, 1e+400 plus 1 keeps every digit, and Infinity and a 200000-digit span throw.
+ * @evidenceReview ./executionBackend.ts#addDecimalStrings #d0516cb Re-read the exact scientific sum with bigint exponents: 1e1000000000000000000000 plus 2.5e+1000000000000000000000 is 3.5e+1000000000000000000000, 0.1 plus 0.2 is 0.3, a negative sum keeps its sign, 1e3 plus 1 is 1.001e+3, 1e+400 plus 1 keeps every digit, and Infinity and a 200000-digit span throw.
  * @evidence ./executionBackend.ts#finalizeBatch Sorts outcomes by logical index and sums only a full batch.
  * @evidenceReview ./executionBackend.ts#finalizeBatch #4c64d96 A reversed outcome list is sorted, the total is 0.3, and a batch with a failed outcome has no total.
  * @evidence ./executionBackend.ts#semanticDigest Hashes canonical JSON.
@@ -196,6 +196,10 @@ export function reducesInLogicalOrder(): void {
   expect(addDecimalStrings(big, one)).toBe(`1.${"0".repeat(399)}1e+400`);
   expect(() => addDecimalStrings(infinite, one)).toThrow("decimal required");
   expect(() => addDecimalStrings(tooFar, one)).toThrow("exponent span");
+  // An exponent past Number's safe range is still exact: only the gap between the two exponents is expanded.
+  const [vast, vaster] = ["1e1000000000000000000000", "2.5e+1000000000000000000000"] as const;
+  expect(addDecimalStrings(vast, vaster)).toBe("3.5e+1000000000000000000000");
+  expect(addDecimalStrings(zero, vast)).toBe("1e+1000000000000000000000");
   const huge = finalizeBatch([echo(task(1), "1e+400"), echo(task(0), "1.5e+400")], {
     batchId: "huge",
     backend: "local",
@@ -228,11 +232,11 @@ export function reducesInLogicalOrder(): void {
 
 /**
  * @evidence docs/requirements/active/worker-execution-backend.md#req-dx05-failure-boundary Abort, timeout, retry, and the queue bound stay distinct from a full distribution.
- * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-failure-boundary #9ffafcb Re-read the section, then ran this function: the retry kept the same seed, the aborted batch was not full, three tasks each inside their own window all finished, a thrown trial retried and failed alone, a failed attempt past the window was a timeout with no retry, a pre-aborted batch over the queue bound was cancelled, and an infinite, NaN, or negative budget field threw before any task ran.
+ * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-failure-boundary #a46fa56 Re-read the section, then ran this function: the retry kept the same seed, the aborted batch was not full, three tasks each inside their own window all finished, a thrown trial retried and failed alone, a failed attempt past the window was a timeout with no retry, a pre-aborted batch over the queue bound was cancelled, and an infinite, NaN, or negative budget field threw before any task ran.
  * @evidence ./executionBackend.ts#assertExecutionBudget Refuses a budget field that is not a finite non-negative integer.
- * @evidenceReview ./executionBackend.ts#assertExecutionBudget #9f908ba Infinite maxRetries, NaN stepBudget, and a negative queueBound throw, and the default budget passes.
+ * @evidenceReview ./executionBackend.ts#assertExecutionBudget #4672303 Infinite maxRetries, NaN stepBudget, a negative queueBound, and a 3000000000 ms timeout throw, and the default budget passes.
  * @evidence ./executionBackend.ts#runLocalBatch Bounds each task by its own window and turns a thrown runner into a failed outcome.
- * @evidenceReview ./executionBackend.ts#runLocalBatch #7c29e34 Re-read the pre-abort check ahead of the queue bound and the loop: no batch deadline remains, the window applies to every attempt before its status, a 2 ms task under a 5 ms budget is ok in third place, a throw is trial-failed with attempts counted, and a slow failure stops at one attempt.
+ * @evidenceReview ./executionBackend.ts#runLocalBatch #57255c0 Re-read admission ahead of measuring, the pre-abort check ahead of the queue bound, and the loop: an oversized batch reports no bytes, no batch deadline remains, the window applies to every attempt before its status, a 2 ms task under a 5 ms budget is ok in third place, a throw is trial-failed with attempts counted, and a slow failure stops at one attempt.
  * @evidence ./executionBackend.ts#executionFailureBoundary Reads the boundary marker.
  * @evidenceReview ./executionBackend.ts#executionFailureBoundary #5e9d9f9 The declaration is not-a-partial-distribution.
  * @evidence ./executionBackend.ts#createLocalExecutionBackend Submits a batch that cancel or an aborted signal stops.
@@ -379,7 +383,13 @@ export function boundsFailures(): void {
   expect(thrown.fullDistribution).toBe(false);
 
   // A budget that could make a loop endless or skip a ceiling is refused before anything runs.
-  for (const bad of [{ maxRetries: Number.POSITIVE_INFINITY }, { stepBudget: Number.NaN }, { queueBound: -1 }]) {
+  for (const bad of [
+    { maxRetries: Number.POSITIVE_INFINITY },
+    { stepBudget: Number.NaN },
+    { queueBound: -1 },
+    // A worker timer past 2^31 - 1 ms fires after 1 ms, so such a window is refused in both backends.
+    { taskTimeoutMs: 3_000_000_000 },
+  ]) {
     let ran = 0;
     expect(() =>
       runLocalBatch([task(0)], (item) => {
@@ -397,6 +407,11 @@ export function boundsFailures(): void {
     signal: abortedQueue.signal,
   });
   expect(abortedOverBound.outcomes.map((outcome) => outcome.status)).toEqual(["cancelled", "cancelled"]);
+  // An oversized batch is answered before any descriptor is measured, so it reports no bytes.
+  const overBoundBytes = runLocalBatch([task(0), task(1)], (item) => echo(item, "1"), {
+    budget: { ...defaultExecutionBudget, queueBound: 1 },
+  });
+  expect(overBoundBytes.cost.serializedBytes).toBe(0);
   const queued = runLocalBatch([task(0), task(1)], () => {
     throw new Error("queue bound must not run");
   }, { budget: { ...defaultExecutionBudget, queueBound: 1 } });

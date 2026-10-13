@@ -12,7 +12,7 @@ import {
 
 /**
  * @evidence docs/requirements/active/worker-execution-backend.md#req-dx05-worker-parity Explicit worker counts share one logical digest. The pool does not choose itself.
- * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-worker-parity #3e2d53a Re-read the section: selection stays explicit-worker, the count stays within maxWorkers, an exit is a crash, and shutdown terminates every slot and clears every timer.
+ * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-worker-parity #e65d732 Re-read the section: selection stays explicit-worker, the count stays within maxWorkers, an exit is a crash, and shutdown terminates every slot and clears every timer.
  */
 export const workerPoolParity = "same-logical-digest" as const;
 
@@ -74,12 +74,30 @@ export async function runWorkerPool(args: Readonly<{
   if (!Number.isInteger(args.workers) || args.workers < 1) {
     throw new Error("worker pool requires an explicit worker count >= 1");
   }
-  const budget = args.budget ?? { ...defaultExecutionBudget, maxWorkers: args.workers };
+  // A frozen copy: the pool runs after this call returns, so a later change to the caller's budget cannot reach it.
+  const budget: ExecutionBudgetV1 = Object.freeze({ ...(args.budget ?? { ...defaultExecutionBudget, maxWorkers: args.workers }) });
   assertExecutionBudget(budget);
   if (args.workers > budget.maxWorkers) {
     throw new Error(`worker pool count ${args.workers} exceeds budget maxWorkers ${budget.maxWorkers}`);
   }
   const batchId = `worker-${args.workers}-${args.tasks.length}`;
+  const header = {
+    batchId,
+    backend: "worker" as const,
+    selection: "explicit-worker" as const,
+    workerSpawnMs: 0,
+    serializedBytes: 0,
+  };
+  // Admission comes first: an aborted or oversized batch is answered before any descriptor is copied or measured.
+  if (args.tasks.length === 0) return finalizeBatch([], header);
+  // An abort before submit cancels every task, refused or over the queue bound, as the local backend does.
+  if (args.signal?.aborted) return finalizeBatch(args.tasks.map((task) => failed(task, "abort", 0)), header);
+  if (args.tasks.length > budget.queueBound) {
+    return finalizeBatch(
+      args.tasks.map((task) => failed(task, "queue-bound", 0)),
+      header,
+    );
+  }
   // Validate before measuring, as the local backend does. A refused task fails alone and posts nothing.
   const refusals = taskRefusals(args.tasks, budget);
   // Dispatch is asynchronous, so the pool works on a snapshot: a later change to the caller's array or
@@ -87,23 +105,7 @@ export async function runWorkerPool(args: Readonly<{
   const tasks: readonly AnalysisTrialTaskV1[] = args.tasks.map((task, index) =>
     refusals[index] === null ? (JSON.parse(JSON.stringify(task)) as AnalysisTrialTaskV1) : task,
   );
-  const serializedBytes = tasks.reduce((sum, task, index) => (refusals[index] === null ? sum + serializedTaskBytes(task) : sum), 0);
-  const header = {
-    batchId,
-    backend: "worker" as const,
-    selection: "explicit-worker" as const,
-    workerSpawnMs: 0,
-    serializedBytes,
-  };
-  if (tasks.length === 0) return finalizeBatch([], header);
-  // An abort before submit cancels every task, refused or over the queue bound, as the local backend does.
-  if (args.signal?.aborted) return finalizeBatch(tasks.map((task) => failed(task, "abort", 0)), header);
-  if (tasks.length > budget.queueBound) {
-    return finalizeBatch(
-      tasks.map((task) => failed(task, "queue-bound", 0)),
-      header,
-    );
-  }
+  header.serializedBytes = tasks.reduce((sum, task, index) => (refusals[index] === null ? sum + serializedTaskBytes(task) : sum), 0);
   const results: (AnalysisTrialOutcomeV1 | undefined)[] = tasks.map((task, index) => {
     const refusal = refusals[index];
     return refusal ? failed(task, refusal, 1) : undefined;

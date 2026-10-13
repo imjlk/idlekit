@@ -32,7 +32,7 @@ Node.js와 browser 런타임은 v1 호환 계약에 포함되지 않는다.
 
 첫 `evidence:check`는 placeholder review와 handler citation 두 건으로 2였다. 다음은 그 handler review로 2였다. 재실행은 0이었다. `graph:check`는 `createPlannerStrategy`에서 `stepOnce`를 hops 0의 unobserved로 남겼다.
 
-PR #223 review 수정으로 요구 파일 sha256은 `909a0e4db19751590f569eda007b18fbf2e3834cab020cf037579d2cf724a8ce`이 됐다. 그 수정에서 `bun run typecheck`, `bun run test:conformance`, `bun run contracts:check`, `packages/core`의 `executionBackend.test.ts`, `packages/cli`의 `pool.test.ts`를 실행했다.
+PR #223 review 수정으로 요구 파일 sha256은 `c6035913e60ecf3ba997aff98d40dbf6e15024536a502b2ce8b25ca11e0e258d`이 됐다. 그 수정에서 `bun run typecheck`, `bun run test:conformance`, `bun run contracts:check`, `packages/core`의 `executionBackend.test.ts`, `packages/cli`의 `pool.test.ts`를 실행했다.
 
 ## Graph
 
