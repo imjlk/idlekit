@@ -222,17 +222,23 @@ function coverageWithheld(artifact: AnalysisArtifactV1): boolean {
   return coverage === "incomplete" || coverage === "unknown" || coverage === "disabled" || metrics !== "statically-known";
 }
 
-/** The observation depends only on the reading, so rules that share a metric share it unchanged. */
+/**
+ * readMetric records a method only on an estimate, so observed and unavailable readings carry none,
+ * and an unavailable amount carries no unit. A field the reading does not record cannot disagree
+ * with the rule, so the rule's value stands in; a field the reading records is compared as is.
+ * The rubric unit therefore stays in the numerical evidence.
+ */
 function toObservation(
   artifact: AnalysisArtifactV1,
   reading: MetricReadingV1,
+  rule: JudgeRuleV1,
 ): { observation: BalanceObservationV1; estimated: EstimatedObservationV1 | null } {
   const unavailable = isUnavailable(reading);
-  const unit = reading.domain !== "amount" ? reading.domain : (reading.amount?.unit ?? "amount");
+  const unit = reading.domain !== "amount" ? reading.domain : (reading.amount?.unit ?? rule.unit);
   const identity = {
     metricId: reading.metricId,
     definition: reading.meaning,
-    method: reading.method ?? "unspecified",
+    method: reading.method ?? rule.method,
     scenarioVersion: "unspecified",
     specVersion: "unspecified",
     engineId: "unspecified",
@@ -241,9 +247,10 @@ function toObservation(
     unit,
     algorithmVersion: artifact.algorithmVersion,
   };
-  // Availability first: an unavailable reading is missing, censored, or unsupported by its status, whatever its domain.
+  // Availability first: an unavailable reading has no value, so it is missing evidence (censored when it
+  // says so) whatever its domain or status. The rule's missing policy decides its numerical verdict.
   if (unavailable) {
-    const status = reading.status === "unsupported" ? "unsupported" : reading.status === "censored" ? "censored" : "missing";
+    const status = reading.status === "censored" ? "censored" : "missing";
     return { observation: { identity, status, value: null, lower: null, upper: null }, estimated: null };
   }
   // An available amount, observed or estimated, is not narrowed to a number.
@@ -370,18 +377,18 @@ function outcomeFor(
   };
 }
 
-function checkFor(rule: JudgeRuleV1, method: string, unit: string): BalanceCheckV1 {
+function checkFor(rule: JudgeRuleV1): BalanceCheckV1 {
   return {
     id: rule.id,
     metricId: rule.metricId,
     operator: rule.operator,
     threshold: rule.threshold,
     upperThreshold: rule.upperThreshold,
-    unit,
+    unit: rule.unit,
     severity: rule.severity,
     missingPolicy: rule.missingPolicy,
     definition: rule.definition,
-    method,
+    method: rule.method,
     scenarioVersion: rule.scenarioVersion,
     specVersion: rule.specVersion,
     engineId: rule.engineId,
@@ -409,13 +416,7 @@ export function judgeArtifact(
   const observed = new Set<string>();
   const observations: BalanceObservationV1[] = [];
   const estimatedObservations: EstimatedObservationV1[] = [];
-  const prepared: Array<{
-    rule: JudgeRuleV1;
-    reading: MetricReadingV1;
-    observation: BalanceObservationV1;
-    estimated: EstimatedObservationV1 | null;
-    ref: string;
-  }> = [];
+  const prepared: Array<{ rule: JudgeRuleV1; estimated: EstimatedObservationV1 | null; ref: string }> = [];
   for (const rule of rubric.rules) {
     const readings = findReadings(artifact, rule.metricId);
     const reading = readings[0];
@@ -428,35 +429,21 @@ export function judgeArtifact(
       issues.push(`ambiguous evidenceRef metric:${rule.metricId} matches ${readings.length} readings`);
       continue;
     }
-    const mapped = toObservation(artifact, reading);
-    // One observation per metric, so two rules on the same metric judge the same reading.
-    if (!observed.has(reading.metricId)) {
-      observed.add(reading.metricId);
+    const mapped = toObservation(artifact, reading, rule);
+    // One observation per distinct identity. Rules whose stand-in method and unit agree share it; rules
+    // that differ get their own, and each is still the only full match for its rule, never ambiguous.
+    const key = JSON.stringify([reading.metricId, mapped.observation.identity.method, mapped.observation.identity.unit]);
+    if (!observed.has(key)) {
+      observed.add(key);
       observations.push(mapped.observation);
-      if (mapped.estimated) estimatedObservations.push(mapped.estimated);
     }
-    prepared.push({
-      rule,
-      reading,
-      observation: mapped.observation,
-      estimated: mapped.estimated,
-      ref: `metric:${rule.metricId}`,
-    });
+    if (mapped.estimated && !estimatedObservations.some((item) => item.metricId === reading.metricId)) {
+      estimatedObservations.push(mapped.estimated);
+    }
+    prepared.push({ rule, estimated: mapped.estimated, ref: `metric:${rule.metricId}` });
   }
   if (issues.length > 0) return { ok: false, issues };
-  /*
-   * readMetric records a method only on an estimate, so observed and unavailable readings carry none,
-   * and an unavailable amount carries no unit. Fields a reading does not record cannot disagree with
-   * a rule, so each rule's own check takes them from the shared observation. A method the reading
-   * does record must match. The observation is never rewritten per rule.
-   */
-  const checks: BalanceCheckV1[] = prepared.map(({ rule, reading, observation }) => {
-    const unavailable = isUnavailable(reading);
-    const method = reading.method === undefined ? observation.identity.method : rule.method;
-    const unit =
-      unavailable && reading.domain === "amount" && reading.amount === undefined ? observation.identity.unit : rule.unit;
-    return checkFor(rule, method, unit);
-  });
+  const checks: BalanceCheckV1[] = prepared.map(({ rule }) => checkFor(rule));
   const numerical = evaluateBalanceChecks({
     schemaVersion: 1,
     contract: "idlekit.balance-checks.v1",

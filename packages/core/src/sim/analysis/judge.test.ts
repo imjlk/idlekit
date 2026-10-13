@@ -143,7 +143,7 @@ export function acceptsRulesProvider(): void {
  * @evidence ./judge.ts#judgeCheckReuse Reads the check-reuse marker.
  * @evidenceReview ./judge.ts#judgeCheckReuse #6aa2e90 The declaration is checks-not-recomputed.
  * @evidence ./judge.ts#judgeArtifact Maps artifact readings into balance checks and builds the report.
- * @evidenceReview ./judge.ts#judgeArtifact #5d54e76 Re-read the function and checkFor: each rule check takes the method any reading omits, and the amount unit an unavailable reading omits, from the shared observation, and it rejects a semantically invalid artifact and a metric id that matches two readings, maps each metric to one observation, the numerical block equals a direct evaluateBalanceChecks call for 3h, an observed or estimated amount reading is unsupported with no value and no estimate entry, and two rules on one metric both pass.
+ * @evidenceReview ./judge.ts#judgeArtifact #df87b76 Re-read the function, toObservation, and checkFor: checks keep the rubric method and unit, the observation takes the rule's method when the reading records none and its unit when an unavailable amount records none, observations are shared per distinct identity, and it rejects a semantically invalid artifact and a metric id that matches two readings, maps each metric to one observation, the numerical block equals a direct evaluateBalanceChecks call for 3h, an observed or estimated amount reading is unsupported with no value and no estimate entry, and two rules on one metric both pass.
  */
 export function reusesBalanceChecks(): void {
   expect(judgeCheckReuse).toBe("checks-not-recomputed");
@@ -462,6 +462,21 @@ export function withholdsHealthLabels(): void {
   expect(sharedAmount.ok).toBe(true);
   if (!sharedAmount.ok) return;
   expect(sharedAmount.report.numerical.results.map((result) => result.verdict)).toEqual(["fail", "fail"]);
+  // The rubric unit stays in the numerical evidence, so coin and gem rules stay distinguishable.
+  expect(sharedAmount.report.numerical.results.map((result) => result.evidence.unit)).toEqual(["coin", "gem"]);
+  // An unavailable reading whose status is unsupported has no value: missing evidence, decided by the
+  // missing policy and advised as insufficient.
+  const unsupportedUnavailable = judgeArtifact(
+    artifact([reading({ reading: "unavailable", status: "unsupported", method: undefined })], {
+      observationCoverage: "incomplete",
+    }),
+    rubric([rule({ missingPolicy: "fail" })]),
+  );
+  expect(unsupportedUnavailable.ok).toBe(true);
+  if (!unsupportedUnavailable.ok) return;
+  expect(unsupportedUnavailable.report.numerical.results[0]?.verdict).toBe("fail");
+  expect(unsupportedUnavailable.report.numerical.results[0]?.evidence.status).toBe("missing");
+  expect(unsupportedUnavailable.report.diagnostics[0]?.status).toBe("insufficient");
   // An observed value under an unknown metrics capability or incomplete coverage is not measured.
   const unknownCapability = judgeArtifact(
     artifact([reading({ reading: "observed", status: "ok", value: 1.5 })], {
