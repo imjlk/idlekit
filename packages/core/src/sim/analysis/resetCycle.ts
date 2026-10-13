@@ -305,11 +305,38 @@ function skipReason(fact: CommittedResetFact | undefined, eventReason: string | 
   return "rejected";
 }
 
+function assertFinitePrestige<N, U extends string, Vars>(
+  E: Engine<N>,
+  state: SimState<N, U, Vars>,
+  message = "reset cycle state has nonfinite prestige fields",
+): void {
+  if (
+    !Number.isFinite(state.prestige.count) ||
+    !E.isFinite(state.prestige.points) ||
+    !E.isFinite(state.prestige.multiplier)
+  ) {
+    throw new ResetCycleRejected(message);
+  }
+}
+
+function assertStrategyStateVersion<N, U extends string, Vars>(scenario: CompiledScenario<N, U, Vars>): void {
+  const strategy = scenario.strategy;
+  if (
+    strategy?.restoreState &&
+    strategy.stateVersion !== undefined &&
+    (typeof strategy.stateVersion !== "number" || !Number.isFinite(strategy.stateVersion))
+  ) {
+    throw new ResetCycleRejected("reset cycle strategy stateVersion must be a finite number");
+  }
+}
+
 function carried<N, U extends string, Vars>(
   E: Engine<N>,
   state: SimState<N, U, Vars>,
   reward: N,
 ): ResetCycleRowV1["carried"] {
+  assertFinitePrestige(E, state);
+  if (!E.isFinite(reward)) throw new ResetCycleRejected("reset cycle carried reward is not finite");
   return {
     points: E.toString(state.prestige.points),
     multiplier: E.toString(state.prestige.multiplier),
@@ -393,6 +420,9 @@ export function executeResetCycles<N, U extends string, Vars>(args: {
   let constraints = args.resume?.constraints
     ? deepClonePreservingPrototype(args.resume.constraints)
     : scenario.constraints;
+  // Validate every persisted field before an early exit or any strategy/RNG restore hook.
+  assertFinitePrestige(E, state);
+  assertStrategyStateVersion(scenario);
   // An RNG snapshot is opaque, so it is only checkpointed and restored under a named, versioned generator.
   // The id must be nonempty and the version finite, or the recorded identity could not match itself on resume.
   if (
@@ -468,6 +498,8 @@ export function executeResetCycles<N, U extends string, Vars>(args: {
         `reset cycle checkpoint rngState was written by ${String(args.resume.rngId)}@${String(args.resume.rngStateVersion)}, not ${String(args.rng.id)}@${String(args.rng.stateVersion)}`,
       );
     }
+  } else if (args.resume && args.rng) {
+    throw new ResetCycleRejected("reset cycle checkpoint has no rngState for an rng that restores one");
   }
   // Restore from copies, so a restore that keeps or edits its argument cannot change the checkpoint.
   // Presence is the key, not the value: an undefined snapshot is still restored.
@@ -551,6 +583,7 @@ export function executeResetCycles<N, U extends string, Vars>(args: {
     const played = pending + playedNow;
     pending = 0;
     state = run.end;
+    assertFinitePrestige(E, state);
     // nextBoundary checks the duration before the budget, so a budget stop never completed the interval.
     const shortBudget = run.stop?.reason === "budget";
     if (shortBudget) {
@@ -640,6 +673,7 @@ export function executeResetCycles<N, U extends string, Vars>(args: {
     const skipped = applied.events.find((event) => event.type === "action.skipped");
     const fact = applied.committedResets[0];
     if (!fact || skipped) {
+      const carriedState = carried(E, state, beforeReward);
       announce();
       const reason = skipReason(fact, skipped && skipped.type === "action.skipped" ? skipped.reason : undefined);
       rows.push({
@@ -652,7 +686,7 @@ export function executeResetCycles<N, U extends string, Vars>(args: {
         accumulatedReward: E.toString(accumulated),
         // An adapter is present here. An action it cannot offer now is a refusal, not a missing adapter.
         resetSkippedReason: action ? reason : "cannot-apply",
-        carried: carried(E, state, beforeReward),
+        carried: carriedState,
       });
       nextIndex += 1;
       guard = "incomplete";
@@ -665,13 +699,7 @@ export function executeResetCycles<N, U extends string, Vars>(args: {
     }
     state = applied.state;
     // The carried prestige fields are written to the row and the checkpoint, so they must stay finite.
-    if (
-      !Number.isFinite(state.prestige.count) ||
-      !E.isFinite(state.prestige.points) ||
-      !E.isFinite(state.prestige.multiplier)
-    ) {
-      throw new ResetCycleRejected(`reset action ${String(action?.id)} left nonfinite prestige fields`);
-    }
+    assertFinitePrestige(E, state, `reset action ${String(action?.id)} left nonfinite prestige fields`);
     // stepOnce keeps maxMoneyEver at or above the wallet. The boundary action does not pass through it.
     if (E.cmp(state.wallet.money.amount, state.maxMoneyEver.amount) > 0) {
       state = { ...state, maxMoneyEver: state.wallet.money };
@@ -755,6 +783,8 @@ function checkpointOf<N, U extends string, Vars>(
   accumulatedReward: N,
   elapsedSec: number,
 ): ResetCycleCheckpoint<N, U, Vars> {
+  assertFinitePrestige(scenario.ctx.E, state);
+  assertStrategyStateVersion(scenario);
   // Copy live snapshot objects, so later strategy or RNG use cannot rewrite a returned checkpoint.
   // A strategy snapshot is kept only when the strategy can restore it.
   const restorable = !!(scenario.strategy?.snapshotState && scenario.strategy.restoreState);
