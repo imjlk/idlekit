@@ -1,4 +1,4 @@
-import { resolve } from "path";
+import { relative, resolve } from "path";
 import {
   ROOT,
   cliCommand,
@@ -588,7 +588,9 @@ async function verifyPluginTrack(): Promise<void> {
     runCliJson(["tune", prestigeV1, "--tune", prestigeTune, ...pluginFlags, "--format", "json"]),
   );
   assert(prestigeTuneOut.ok === true, "prestige tune result must be ok=true");
+}
 
+async function verifyCalibrationExamples(): Promise<void> {
   const telemetryCsv = resolve(tmpDir, "calibration-telemetry.csv");
   await writeText(
     telemetryCsv,
@@ -600,19 +602,51 @@ async function verifyPluginTrack(): Promise<void> {
       "u3,1,0.0,0.01,1.1,true",
     ].join("\n"),
   );
-  const calibrated = asRecord(runCliJson(["calibrate", telemetryCsv, "--input-format", "csv", "--format", "json"]));
-  assert(calibrated.ok === true, "calibrate output must be ok=true");
-  const calibMonetization = asRecord(calibrated.monetization as JSONValue);
-  assert(has(calibMonetization, "retention"), "calibrate must include monetization.retention");
-  const calibUncertainty = asRecord(calibMonetization.uncertainty as JSONValue);
-  const calibCorrelation = asRecord(calibUncertainty.correlation as JSONValue);
-  assert(has(calibCorrelation, "retentionConversion"), "calibrate must include uncertainty.correlation.retentionConversion");
-  assert(asRecord(calibrated._meta as JSONValue).command === "calibrate", "calibrate _meta.command must be calibrate");
+  const cliDir = resolve(ROOT, "packages/cli");
+  const calibratedPath = resolve(tmpDir, "calibrated-monetization.json");
+  for (const doc of [
+    "docs/tutorial-step-by-step_ko.md",
+    "docs/usage-guide_ko.md",
+    "docs/virtual-scenario-design_ko.md",
+  ]) {
+    const text = (await readText(resolve(ROOT, doc))).replace(/\\\r?\n\s*/g, " ");
+    const commands = [...text.matchAll(/^bun run --cwd packages\/cli dev -- (calibrate .+)$/gm)];
+    assert(commands.length === 1, `${doc} must contain one development calibrate example`);
+    const args = commands[0]![1]!.trim().split(/\s+/);
+    assert(args[1], `${doc} must provide a telemetry path`);
+    assert(
+      resolve(cliDir, args[1]) === resolve(ROOT, "tmp/telemetry.csv"),
+      `${doc} calibrate input must resolve to the repository's tmp/telemetry.csv`,
+    );
+    const outIndex = args.indexOf("--out");
+    if (outIndex !== -1) {
+      const out = args[outIndex + 1];
+      assert(out, `${doc} must provide a path after --out`);
+      assert(
+        resolve(cliDir, out) === resolve(ROOT, "tmp/calibrated-monetization.json"),
+        `${doc} calibrate output must resolve to the repository's tmp/calibrated-monetization.json`,
+      );
+      args[outIndex + 1] = relative(cliDir, calibratedPath);
+    }
+    // Check the documented paths first, then keep fixtures in our own directory.
+    args[1] = relative(cliDir, telemetryCsv);
+    const stdout = runCli(args);
+    const jsonText = outIndex === -1 ? stdout : await readText(calibratedPath);
+    const calibrated = asRecord(JSON.parse(jsonText) as JSONValue);
+    assert(calibrated.ok === true, `${doc} calibrate output must be ok=true`);
+    const monetization = asRecord(calibrated.monetization as JSONValue);
+    assert(has(monetization, "retention"), `${doc} calibrate must include monetization.retention`);
+    const uncertainty = asRecord(monetization.uncertainty as JSONValue);
+    const correlation = asRecord(uncertainty.correlation as JSONValue);
+    assert(has(correlation, "retentionConversion"), `${doc} calibrate must include retentionConversion`);
+    assert(asRecord(calibrated._meta as JSONValue).command === "calibrate", `${doc} _meta.command must be calibrate`);
+  }
 }
 
 async function main(): Promise<void> {
   await removePath(tmpDir);
   await ensureDir(tmpDir);
+  await verifyCalibrationExamples();
   await verifyIntroTrack();
   if (!isQuick) await verifyPluginTrack();
   console.log(`docs verification passed (${isQuick ? "quick" : "full"})`);
