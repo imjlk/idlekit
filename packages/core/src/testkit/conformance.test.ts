@@ -18,6 +18,7 @@ import {
   checkDurationBoundary,
   checkGrowthShapes,
   checkGuardedAdvance,
+  checkPartialFinalTick,
   checkJsonRoundTrip,
   checkMilestoneRetention,
   checkNonNegative,
@@ -2309,6 +2310,54 @@ export function replaysGuardedAdvanceAcrossTheSeedCorpus(): void {
     }),
   });
 }
+
+const partialFixture = (
+  JSON.parse(readFileSync(join(import.meta.dir, "../../../../examples/analysis/integration-matrix.json"), "utf8")) as {
+    partial: { initial: string; incomePerSec: string; stepSec: number; durationSec: number };
+  }
+).partial;
+
+/**
+ * @evidence docs/requirements/active/analysis-integration-release-gates.md#req-pr20-integration-matrix Runs the partial-final-tick relation over the seed corpus: integer income, steps, and horizons on and off the step grid.
+ * @evidenceReview docs/requirements/active/analysis-integration-release-gates.md#req-pr20-integration-matrix #d001f4e Re-read the section, then ran this function on the short and extended corpus: every case ended at the hand answer after ceil(duration / step) ticks, and an undeclared case does not apply.
+ * @evidence ./conformance.ts#checkPartialFinalTick The seed corpus asks the harness to run each partial-final-tick case.
+ * @evidenceReview ./conformance.ts#checkPartialFinalTick #8c554e0 Re-read checkPartialFinalTick: it runs a constant-income model to the horizon and compares the end wallet, the stop, the end time, and the tick count with the hand answer.
+ */
+export function replaysPartialFinalTickAcrossTheSeedCorpus(): void {
+  expectProperty({
+    predicateId: "declared-partial-final-tick",
+    testSeed: 0x2020,
+    cases: conformanceCaseCount(),
+    generate: (index, rng) => {
+      // The fixture case: 2 coin per second, step 6, horizon 10, so the second tick is 4 seconds.
+      if (index === 0) return partialFixture;
+      const stepSec = rng.int(1, 9);
+      return {
+        initial: String(rng.int(0, 1_000)),
+        incomePerSec: String(rng.int(-5, 50)),
+        stepSec,
+        durationSec: stepSec * rng.int(0, 20) + rng.int(0, stepSec - 1),
+      };
+    },
+    shrink: (value) => (value.durationSec > 0 ? [{ ...value, durationSec: value.durationSec - 1 }] : []),
+    predicate: (value) => {
+      expectApplicable(checkPartialFinalTick(true, value));
+      expect(checkPartialFinalTick(false, value).applicable).toBe(false);
+      return true;
+    },
+    describeCase: (value) => ({
+      gameSeed: null,
+      engineId: "number",
+      modelId: "conformance-partial-final-tick",
+      strategyId: null,
+      tickSchedule: { stepSec: value.stepSec, durationSec: value.durationSec },
+    }),
+  });
+}
+
+describe("PR-20 partial final tick relation", () => {
+  it("replays the partial final tick against the hand answer across the seed corpus", replaysPartialFinalTickAcrossTheSeedCorpus);
+});
 
 describe("PR-16 guarded advance relation", () => {
   it("replays guarded advance against fixed-step across the seed corpus", replaysGuardedAdvanceAcrossTheSeedCorpus);

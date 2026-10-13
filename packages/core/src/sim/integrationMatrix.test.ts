@@ -7,6 +7,7 @@ import { compileScenario } from "../scenario/compile";
 import { createModelRegistry, type ModelFactory } from "../scenario/registry";
 import type { ScenarioV1 } from "../scenario/types";
 import { executeResetCycles } from "./analysis/resetCycle";
+import { checkPartialFinalTick } from "../testkit/conformance";
 import { runScenario } from "./simulator";
 import {
   expectedBudgetEnd,
@@ -28,6 +29,7 @@ type Matrix = {
   schemaVersion: number;
   seed: number;
   linear: { initial: string; incomePerSec: string; stepSec: number; durationSec: number; expectedEnd: string; expectedStop: string };
+  partial: { initial: string; incomePerSec: string; stepSec: number; durationSec: number; expectedEnd: string; expectedStop: string };
   budget: { initial: string; incomePerSec: string; stepSec: number; durationSec: number; maxSteps: number; expectedEnd: string; expectedStop: string };
   goal: { initial: string; incomePerSec: string; stepSec: number; durationSec: number; target: string; expectedEnd: string; expectedStatus: string };
   bulk: { start: string; unitCost: string; quoteSize: number; quoteCost: string; expectedWallet: string; expectedOwned: number };
@@ -102,7 +104,7 @@ function compile<N>(engine: Engine<N>, input: ScenarioV1, model: ModelFactory) {
 
 /**
  * @evidence docs/requirements/active/analysis-integration-release-gates.md#req-pr20-integration-matrix The matrix matches the hand formulas and leaves breakEternity unsupported.
- * @evidenceReview docs/requirements/active/analysis-integration-release-gates.md#req-pr20-integration-matrix #e4b72ba Re-read the section, then ran this function: linear, budget, goal, bulk, reset, logs, offline, and fresh cursors matched, a shorter final tick matched its hand answer, equal reset wallets spelled differently were refused, and breakEternity threw.
+ * @evidenceReview docs/requirements/active/analysis-integration-release-gates.md#req-pr20-integration-matrix #d001f4e Re-read the section, then ran this function: linear, budget, goal, bulk, reset, logs, offline, and fresh cursors matched, the declared partial-final-tick relation held on the fixture case, equal reset wallets spelled differently were refused, and breakEternity threw.
  * @evidence ./integrationMatrix.ts#integrationReleaseScope Reads the scope marker.
  * @evidenceReview ./integrationMatrix.ts#integrationReleaseScope #01b8e4c The declaration is selected-optional-tracks.
  * @evidence ./integrationMatrix.ts#integrationUnsupportedEngine Reads the unsupported engine marker.
@@ -140,13 +142,13 @@ export function checksIntegrationMatrix(): void {
   expect(engine.toString(linearRun.end.wallet.money.amount)).toBe(linearAnswer);
   expect(spec.linear.expectedStop).toBe("duration");
   expect(linearRun.stop?.reason).toBe("duration");
-  // A duration off the step grid ends on a shorter final tick. The hand answer still covers every second.
-  const partial = { ...spec.linear, stepSec: 6, durationSec: 10 };
-  const partialAnswer = expectedLinearEnd(partial);
-  expect(partialAnswer).toBe((BigInt(partial.initial) + BigInt(partial.incomePerSec) * 10n).toString());
-  const partialRun = runScenario(compile(engine, scenario(partial), factoryFor({ incomePerSec: partial.incomePerSec })));
-  expect(engine.toString(partialRun.end.wallet.money.amount)).toBe(partialAnswer);
-  expect(partialRun.stop?.reason).toBe("duration");
+  // A duration off the step grid ends on a shorter final tick. The relation lives in the conformance harness,
+  // which also runs it across the seed corpus; this matrix row invokes it on the fixture case.
+  expect(expectedLinearEnd(spec.partial)).toBe(spec.partial.expectedEnd);
+  expect(spec.partial.expectedStop).toBe("duration");
+  const partialCheck = checkPartialFinalTick(true, spec.partial);
+  expect(partialCheck.applicable).toBe(true);
+  expect(partialCheck.ok).toBe(true);
 
   const budgetAnswer = expectedBudgetEnd(spec.budget);
   expect(budgetAnswer).toBe(spec.budget.expectedEnd);

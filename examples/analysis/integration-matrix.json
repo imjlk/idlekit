@@ -9,6 +9,14 @@
     "expectedEnd": "10",
     "expectedStop": "duration"
   },
+  "partial": {
+    "initial": "0",
+    "incomePerSec": "2",
+    "stepSec": 6,
+    "durationSec": 10,
+    "expectedEnd": "20",
+    "expectedStop": "duration"
+  },
   "budget": {
     "initial": "0",
     "incomePerSec": "2",
