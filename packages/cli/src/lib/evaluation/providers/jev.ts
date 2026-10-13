@@ -63,7 +63,7 @@ type JevProjection = Readonly<{
 
 /**
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-opt-in-live The default transport is fetch. Tests inject a mock.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-opt-in-live #f797c9d Re-read the section: the ordinary test does not call the live API.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-opt-in-live #7fc28bd Re-read the section: the ordinary test does not call the live API.
  */
 export const jevLiveTransport = "injected-or-fetch" as const;
 
@@ -230,7 +230,7 @@ type JevFetch = (
 
 /**
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-opt-in-live The fetch transport posts only the body the caller already built.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-opt-in-live #f797c9d Re-read the section: the URL is the documented System One endpoint.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-opt-in-live #7fc28bd Re-read the section: the URL is the documented System One endpoint.
  */
 export function createFetchTransport(fetchImpl: JevFetch = (input, init) => globalThis.fetch(input, init)): JevTransport {
   return async (request) => {
@@ -326,15 +326,14 @@ function summarize(
   return rubric.rules.flatMap((rule) => {
     const answer = response.answers[rule.id];
     if (!answer) return [];
-    return [{
-      id: rule.id,
-      type: answer.type,
-      confidence: answer.type === "noul" ? null : answer.confidence,
-      noul: answer.type === "noul" ? answer.noul : null,
-      choice: answer.type === "choice" ? answer.choice : null,
-      score: answer.type === "score" ? answer.score : null,
-      disposition: jevAnswerDisposition(answer, stances.get(rule.id) ?? null),
-    }];
+    const disposition = jevAnswerDisposition(answer, stances.get(rule.id) ?? null);
+    const summary: JevAdvisoryV1["answers"][number] =
+      answer.type === "noul"
+        ? { id: rule.id, type: "noul", confidence: null, noul: answer.noul, choice: null, score: null, disposition }
+        : answer.type === "choice"
+          ? { id: rule.id, type: "choice", confidence: answer.confidence, noul: null, choice: answer.choice, score: null, disposition }
+          : { id: rule.id, type: "score", confidence: answer.confidence, noul: null, choice: null, score: answer.score, disposition };
+    return [summary];
   });
 }
 
@@ -390,7 +389,7 @@ function retryable(status: number): boolean {
 
 /**
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-opt-in-live The live transport runs only when the caller asks for Jev.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-opt-in-live #f797c9d Re-read the section: dry-run and a missing key do not send the request.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-opt-in-live #7fc28bd Re-read the section: dry-run and a missing key do not send the request.
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-http-budget Retry stays inside the attempt budget.
  * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-http-budget #84d6272 Re-read the section: timeout becomes unavailable and authentication is not retried.
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-numerical-unchanged The numerical digest is copied, not recomputed by the model.
@@ -398,7 +397,7 @@ function retryable(status: number): boolean {
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-no-default-fetch Only judge with provider jev reaches this transport. The rules provider returns before it.
  * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-no-default-fetch #e8a02f1 Re-read the section: provider rules does not call the Jev transport, even with TYPESAFE_API_KEY set.
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity The cache key is built from the projection here, and a cache that cannot be written fails open.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity #e1c4ba6 Re-read the section: the key takes the projection with the upper bound, and a failed write keeps the advisory without resending.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity #e9a0d70 Re-read the section: the key takes the projection with the upper bound, and a failed write keeps the advisory without resending.
  */
 export async function adviseWithJev(args: Readonly<{
   artifact: AnalysisArtifactV1;
@@ -501,9 +500,10 @@ export async function adviseWithJev(args: Readonly<{
       attempts: 0,
     });
   }
-  if (cached) return { ...cached, cache: "hit", attempts: 0, dryRun: false };
+  // A hit and a missing key both end here without a request, so neither plans one.
+  if (cached) return { ...cached, cache: "hit", attempts: 0, plannedRequests: 0, dryRun: false };
   if (key.length === 0) {
-    return blank({ ...base, status: "unavailable", reason: "missing-api-key", cache: "miss", attempts: 0 });
+    return blank({ ...base, plannedRequests: 0, status: "unavailable", reason: "missing-api-key", cache: "miss", attempts: 0 });
   }
   const transport = args.transport ?? createFetchTransport();
   const sleep = args.sleep ?? ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)));

@@ -2,7 +2,7 @@ import { z } from "zod";
 
 /**
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-opt-in-live The wire endpoint is the System One URL rechecked for this change.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-opt-in-live #f797c9d Re-read the section: the URL is https://api.typesafe.ai/v1/systemone.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-opt-in-live #7fc28bd Re-read the section: the URL is https://api.typesafe.ai/v1/systemone.
  */
 export const JEV_ENDPOINT = "https://api.typesafe.ai/v1/systemone" as const;
 
@@ -14,7 +14,7 @@ export const jevNoDefaultFetch = "rules-stay-local" as const;
 
 /**
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-wire-shapes Choice, Score, and Noul stay distinct wire shapes.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-wire-shapes #bbab1e0 Re-read the section: Noul has noul, and Choice or Score confidence is not copied onto it.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-wire-shapes #a924cbf Re-read the section: Noul has noul, and Choice or Score confidence is not copied onto it.
  */
 export const jevWireShapes = "distinct-answer-types" as const;
 
@@ -26,7 +26,7 @@ export const jevHttpBudget = "bounded-retry" as const;
 
 /**
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity A pinned model can hit. An alias is not a permanent id.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity #e1c4ba6 Re-read the section: jev-latest is revalidated and a rubric change misses.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity #e9a0d70 Re-read the section: jev-latest is revalidated and a rubric change misses.
  */
 export const jevCacheIdentity = "alias-is-not-pinned" as const;
 
@@ -44,7 +44,7 @@ export const jevNumericalUnchanged = "verdict-stays" as const;
 
 /**
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-opt-in-live A live call is opt-in. CI uses a mock transport.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-opt-in-live #f797c9d Re-read the section: the live smoke is not the default test.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-opt-in-live #7fc28bd Re-read the section: the live smoke is not the default test.
  */
 export const jevOptInLive = "mock-unless-opt-in" as const;
 
@@ -101,7 +101,7 @@ function probabilityShape(value: Record<string, number>, expectedKeys: readonly 
 
 /**
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-wire-shapes A response is accepted only when each answer matches its question type.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-wire-shapes #bbab1e0 Re-read the section: unknown ids, malformed JSON, a bad probability shape, and a Noul outside 0 to 1 are rejected.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-wire-shapes #a924cbf Re-read the section: unknown ids, malformed JSON, a bad probability shape, and a Noul outside 0 to 1 are rejected.
  */
 export function readJevWire(
   body: string,

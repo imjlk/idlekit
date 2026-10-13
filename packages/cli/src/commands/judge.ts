@@ -4,7 +4,7 @@ import { z } from "zod";
 import { usageError } from "../errors";
 import { buildOutputMeta, outputSchemaRefForCommand } from "../io/outputMeta";
 import { writeOutput } from "../io/writeOutput";
-import { realpathSync, statSync } from "fs";
+import { lstatSync, readlinkSync, realpathSync, statSync } from "fs";
 import { basename, dirname, resolve } from "path";
 import { readJsonFile, writeTextFile } from "../runtime/bun";
 import { readJudgeInputs } from "../lib/evaluation/input";
@@ -16,15 +16,23 @@ import type { JevTransport } from "../lib/evaluation/providers/jev";
  * Two paths name the same file when their text resolves alike, or when both exist and share a realpath or a
  * device and inode, so a symlink or a hard link to an input counts too.
  */
-function canonical(path: string): string {
+function canonical(path: string, depth = 0): string {
   const absolute = resolve(path);
   try {
     return realpathSync(absolute);
   } catch {
+    // A dangling symlink names the place its target will be written, so follow it before falling back.
+    try {
+      if (depth < 32 && lstatSync(absolute).isSymbolicLink()) {
+        return canonical(resolve(dirname(absolute), readlinkSync(absolute)), depth + 1);
+      }
+    } catch {
+      // Not a link. Fall through to the parent.
+    }
     // A file that does not exist yet is named by its nearest existing parent's realpath, so a symlinked
     // directory still resolves to the place the file will be written.
     const parent = dirname(absolute);
-    return parent === absolute ? absolute : resolve(canonical(parent), basename(absolute));
+    return parent === absolute ? absolute : resolve(canonical(parent, depth + 1), basename(absolute));
   }
 }
 

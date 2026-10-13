@@ -10,7 +10,7 @@ const JEV_ALGORITHM_VERSION = "jev-advisory-1" as const;
 
 /**
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-opt-in-live The published schema id is the Jev advisory report.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-opt-in-live #f797c9d Re-read the section: the id is the advisory schema, not a numeric contract.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-opt-in-live #7fc28bd Re-read the section: the id is the advisory schema, not a numeric contract.
  */
 export function jevSchemaId(): typeof JEV_SCHEMA_ID {
   return JEV_SCHEMA_ID;
@@ -18,7 +18,7 @@ export function jevSchemaId(): typeof JEV_SCHEMA_ID {
 
 /**
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-opt-in-live The algorithm version is jev-advisory-1.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-opt-in-live #f797c9d Re-read the section: the version string is jev-advisory-1.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-opt-in-live #7fc28bd Re-read the section: the version string is jev-advisory-1.
  */
 export function jevAlgorithmVersion(): typeof JEV_ALGORITHM_VERSION {
   return JEV_ALGORITHM_VERSION;
@@ -40,22 +40,26 @@ export type JevAdvisoryV1 = Readonly<{
   /** Token counts are whole and never negative. */
   usage: Readonly<{ inputTokens: number & tags.Type<"uint32">; outputTokens: number & tags.Type<"uint32"> }> | null;
   cache: "hit" | "miss" | "bypass";
-  attempts: number;
-  plannedRequests: number;
+  attempts: number & tags.Type<"uint32">;
+  plannedRequests: number & tags.Type<"uint32">;
   dryRun: boolean;
   aliasPolicy: "ttl-24h" | "pinned";
   confidencePolicy: "not-game-correctness";
   externalProvider: true;
-  answers: readonly Readonly<{
-    id: string;
-    type: "noul" | "choice" | "score";
-    confidence: number | null;
-    noul: number | null;
-    choice: string | null;
-    score: number | null;
-    disposition: "ok" | "abstain" | "advisory-warning";
-  }>[];
+  answers: readonly JevAdvisoryAnswerV1[];
 }>;
+
+type JevProbability = number & tags.Minimum<0> & tags.Maximum<1>;
+type JevDisposition = "ok" | "abstain" | "advisory-warning";
+
+/**
+ * One answer per rubric rule. Each wire type keeps its own fields: Noul carries `noul` and no confidence,
+ * Choice and Score carry a confidence. Probabilities and confidences are on 0..1.
+ */
+export type JevAdvisoryAnswerV1 =
+  | Readonly<{ id: string; type: "noul"; confidence: null; noul: JevProbability; choice: null; score: null; disposition: JevDisposition }>
+  | Readonly<{ id: string; type: "choice"; confidence: JevProbability; noul: null; choice: string; score: null; disposition: JevDisposition }>
+  | Readonly<{ id: string; type: "score"; confidence: JevProbability; noul: null; choice: null; score: number; disposition: JevDisposition }>;
 
 /*
  * typia runs on first call, not at module load. A plugin that the bundled CLI loads
@@ -65,7 +69,7 @@ let validateJevAdvisoryValidator: ((input: unknown) => IValidation<JevAdvisoryV1
 
 /**
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-wire-shapes The published validator is createValidate of the advisory report.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-wire-shapes #bbab1e0 Re-read the section: the structural document is JevAdvisoryV1.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-wire-shapes #a924cbf Re-read the section: the structural document is JevAdvisoryV1.
  */
 export const validateJevAdvisory = (input: unknown): IValidation<JevAdvisoryV1> =>
   (validateJevAdvisoryValidator ??= typia.createValidate<JevAdvisoryV1>())(input);
@@ -78,7 +82,7 @@ let jevJsonSchemaUnit: ReturnType<typeof buildJevJsonSchema> | undefined;
 
 /**
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-wire-shapes The structural schema is OpenAPI 3.1 from typia.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-wire-shapes #bbab1e0 Re-read the section: schema version is 3.1 and the contract id is idlekit.jev.advisory.v1.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-wire-shapes #a924cbf Re-read the section: schema version is 3.1 and the contract id is idlekit.jev.advisory.v1.
  */
 export function jevJsonSchema(): ReturnType<typeof buildJevJsonSchema> {
   jevJsonSchemaUnit ??= buildJevJsonSchema();

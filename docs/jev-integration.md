@@ -48,7 +48,7 @@ Commands below were run from this worktree on macOS arm64 with Bun 1.4.2 and tts
 
 The first `evidence:check` exited 2 on placeholder reviews. The next exited 1 because the inventory looks for `export function` and the hosts were still `export async function`. The rerun exited 0. `contracts:generate` ran again after those reviews, then `contracts:check` exited 0. `graph:check` left `createPlannerStrategy` to `stepOnce` unobserved at hops 0.
 
-The PR #221 review fixes changed the requirement file to sha256 `95fee24c4dffeb3985ce2e2b1d3414d18d26a29fc101ee1910aa75d7341617ff`. That revision ran `bun run typecheck`, `bun run test:conformance`, `bun run contracts:check`, and `jev.test.ts`, `judge.test.ts`, and `output-schema.test.ts` from `packages/cli`.
+The PR #221 review fixes changed the requirement file to sha256 `7ca16ab408f048a0b17e84072aae5e74afc5b3a7430bbcf79d483f011269a806`. That revision ran `bun run typecheck`, `bun run test:conformance`, `bun run contracts:check`, and `jev.test.ts`, `judge.test.ts`, and `output-schema.test.ts` from `packages/cli`.
 
 ## Graph
 
