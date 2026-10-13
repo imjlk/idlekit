@@ -147,7 +147,7 @@ export const flowUnsupportedModel = "no-invented-stall" as const;
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-suspected Missing demand and capacity observations stay unresolved.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-suspected #3682ddb Re-read the section: facts and hypotheses are separate, starved and blocked time are judged per process from their latest window with mixed waits unresolved, and a ramp-up observation or window skips Little's law.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-suspected #bcf34c1 Re-read the section: facts and hypotheses are separate, starved and blocked time are judged per process from their latest window, where a latest zero clears an older wait, with mixed waits unresolved, and a ramp-up observation or window skips Little's law.
  */
 export const flowSuspectedCause = "facts-apart-from-cause" as const;
 
@@ -637,15 +637,18 @@ export function diagnoseFlow(observation: FlowObservationV1): FlowReportV1 {
   const bound = new Set(bindings.map((item) => item.row.sample.processId));
   const waits = new Map<string, { starved?: Rated; blocked?: Rated }>();
   for (const row of rows) {
-    if (row.value <= 0 || bound.has(row.sample.processId)) continue;
+    if (bound.has(row.sample.processId)) continue;
     if (row.sample.kind !== "starved-time" && row.sample.kind !== "blocked-time") continue;
-    // The latest window of each wait kind is the evidence, whatever the sample order.
+    // The latest window of each wait kind is the evidence, whatever the sample order. A latest zero clears an
+    // older positive wait, so the latest sample is chosen before its amount is tested.
     const entry = waits.get(row.sample.processId) ?? {};
     if (row.sample.kind === "starved-time") entry.starved = latest(entry.starved ? [entry.starved, row] : [row]);
     else entry.blocked = latest(entry.blocked ? [entry.blocked, row] : [row]);
     waits.set(row.sample.processId, entry);
   }
-  for (const [processId, { starved, blocked }] of waits) {
+  for (const [processId, latestWaits] of waits) {
+    const starved = latestWaits.starved && latestWaits.starved.value > 0 ? latestWaits.starved : undefined;
+    const blocked = latestWaits.blocked && latestWaits.blocked.value > 0 ? latestWaits.blocked : undefined;
     if (starved && !blocked) {
       hypotheses.push(hypothesis(processId, "suspected", "material-shortage", [`sample:${starved.index}`], "starved time was observed without a capacity bind"));
     } else if (blocked && !starved) {

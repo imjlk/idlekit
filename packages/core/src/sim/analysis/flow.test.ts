@@ -165,7 +165,7 @@ export function declaresFlowAdapter(): void {
  * @evidence ./flow.ts#flowPipelineConstraint Reads the pipeline marker.
  * @evidenceReview ./flow.ts#flowPipelineConstraint #6971fde The declaration is process-throughput-20.
  * @evidence ./flow.ts#diagnoseFlow Diagnoses throughput, capacity, and the binding stage.
- * @evidenceReview ./flow.ts#diagnoseFlow #92f8d6e The middle stage binds at 20, doubling inflow keeps 20 and grows the queue, without a causal model the cause is suspected, another resource or window does not bind, every saturated process is a candidate with the causal one confirmed first, a bind does not hide another process's wait, a cycle reports no final throughput, each terminal reports a final throughput per delivered resource from its latest window, an inflow source offers work, a process binds on its latest saturated window, downstream slack counts every feed and is cited, edgeless series each report a final with escaped ids, a confirmed bind cites causal and its edges while a suspected one cites no causal record, another-unit downstream capacity proves no slack, and a 1e300 window formats as a finite saturation time.
+ * @evidenceReview ./flow.ts#diagnoseFlow #6f649a5 The middle stage binds at 20, doubling inflow keeps 20 and grows the queue, without a causal model the cause is suspected, another resource or window does not bind, every saturated process is a candidate with the causal one confirmed first, a bind does not hide another process's wait, a cycle reports no final throughput, each terminal reports a final throughput per delivered resource from its latest window, an inflow source offers work, a process binds on its latest saturated window, downstream slack counts every feed and is cited, edgeless series each report a final with escaped ids, a confirmed bind cites causal and its edges while a suspected one cites no causal record, another-unit downstream capacity proves no slack, and a 1e300 window formats as a finite saturation time.
  */
 export function diagnosesSteadyPipeline(): void {
   expect(flowPipelineConstraint).toBe("process-throughput-20");
@@ -532,7 +532,7 @@ export function leavesUnknownModelsUnsupported(): void {
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-suspected Unresolved demand and capacity stay insufficient, and ramp-up skips Little's law.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-suspected #3682ddb Re-read the section, then ran this function: a lone throughput confirms nothing, starved and blocked time on two processes give two hypotheses, both on one process stay unresolved with that process's own hypothesis, an overflowing Little's law product is insufficient-data, a ramp-up observation keeps the law off, and the latest wait window is cited in either sample order.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-suspected #bcf34c1 Re-read the section, then ran this function: a lone throughput confirms nothing, starved and blocked time on two processes give two hypotheses, both on one process stay unresolved with that process's own hypothesis, an overflowing Little's law product is insufficient-data, a ramp-up observation keeps the law off, the latest wait window is cited in either sample order, and a latest zero wait clears an older positive one.
  * @evidence ./flow.ts#flowSuspectedCause Reads the suspected-cause marker.
  * @evidenceReview ./flow.ts#flowSuspectedCause #0bfa7f8 The declaration is facts-apart-from-cause.
  */
@@ -606,6 +606,13 @@ export function separatesFactsFromCauses(): void {
     const report = diagnoseFlow({ ...starvedCase, samples });
     const latestIndex = samples.findIndex((sample) => sample.startSec === 0);
     expect(report.hypotheses[0]?.evidenceRefs).toEqual([`sample:${latestIndex}`]);
+  }
+  // A latest zero wait clears an older positive one.
+  const clearedWait = { processId: "stage", resourceId: "item", kind: "starved-time" as const, amount: "0", unit: "s", startSec: 60, endSec: 120 };
+  for (const samples of [[clearedWait, ...starvedCase.samples], [...starvedCase.samples, clearedWait]]) {
+    const report = diagnoseFlow({ ...starvedCase, samples });
+    expect(report.hypotheses.map((item) => item.claim)).toEqual(["none"]);
+    expect(report.status).toBe("insufficient-data");
   }
   const ramp = diagnoseFlow(load("ramp"));
   expect(ramp.littlesLaw.status).toBe("not-applicable");
