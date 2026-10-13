@@ -129,7 +129,7 @@ export const flowOptionalAdapter = "observer-not-required-model" as const;
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-pipeline A steady 100 to 20 to 30 chain binds at the middle stage.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-pipeline #4441a2c Re-read the section: final throughput stays 20 when inflow doubles, a bind reads one resource and one window, the causally named bind is confirmed among several, each terminal process reports a final throughput per delivered resource from its latest window, an inflow source offers work, and a process binds on its latest saturated window.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-pipeline #e02b28d Re-read the section: final throughput stays 20 when inflow doubles, a bind reads one resource and one window, the causally named bind is confirmed among several, each terminal process reports a final throughput per delivered resource from its latest window, an inflow source offers work, a process binds on its latest saturated window, and downstream slack counts every feed into that stage.
  */
 export const flowPipelineConstraint = "process-throughput-20" as const;
 
@@ -382,7 +382,7 @@ function convert(amount: number, edge: FlowEdgeV1): number | null {
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-pipeline Diagnosis reads throughput, capacity, and the evidence window.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-pipeline #4441a2c Re-read the section: the middle stage binds and doubling inflow leaves throughput at 20; capacity and upstream samples match the edge resource and the throughput window, and every saturated process is a candidate.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-pipeline #e02b28d Re-read the section: the middle stage binds and doubling inflow leaves throughput at 20; capacity and upstream samples match the edge resource and the throughput window, and every saturated process is a candidate.
  */
 export function diagnoseFlow(observation: FlowObservationV1): FlowReportV1 {
   const littlesLaw = littlesOf(observation.littles, observation.capability);
@@ -436,19 +436,22 @@ export function diagnoseFlow(observation: FlowObservationV1): FlowReportV1 {
     }
   }
   if (observation.edges.length === 0) {
-    const lone = rows.find((row) => row.sample.kind === "throughput");
-    const sameSeries = rows.filter(
-      (row) =>
-        row.sample.kind === "throughput" &&
-        row.sample.processId === lone?.sample.processId &&
-        row.sample.resourceId === lone?.sample.resourceId,
-    );
-    const chosen = latest(sameSeries);
-    if (chosen) finals.push(chosen);
+    // Without edges no series is the terminal one, so every throughput series reports its latest window.
+    const series = new Map<string, Rated[]>();
+    for (const row of rows) {
+      if (row.sample.kind !== "throughput") continue;
+      const key = JSON.stringify([row.sample.processId, row.sample.resourceId]);
+      series.set(key, [...(series.get(key) ?? []), row]);
+    }
+    for (const members of series.values()) {
+      const chosen = latest(members);
+      if (chosen) finals.push(chosen);
+    }
   }
   for (const final of finals) {
     facts.push({
-      id: `fact:final-throughput:${final.sample.processId}:${final.sample.resourceId}`,
+      // Each component is escaped, so two different process and resource pairs never share an id.
+      id: `fact:final-throughput:${encodeURIComponent(final.sample.processId)}:${encodeURIComponent(final.sample.resourceId)}`,
       processId: final.sample.processId,
       kind: "final-throughput",
       amount: final.sample.amount,
@@ -484,17 +487,40 @@ export function diagnoseFlow(observation: FlowObservationV1): FlowReportV1 {
       upstreamRefs.push(`sample:${source.index}`);
     }
     if (offered === null || !Number.isFinite(offered) || !(offered > row.value && !nearly(offered, row.value))) continue;
+    // An observed downstream capacity must exceed everything that reaches it in this window: this process's
+    // forwarded amount plus every other incoming edge. An unobserved other feed leaves the slack unproven.
     const downstream = observation.edges.filter((edge) => edge.fromProcessId === processId && edge.fromResourceId === resourceId);
+    const downstreamRefs: string[] = [];
     const slack = downstream.every((edge) => {
       const downstreamCapacity = sampleAt(rows, edge.toProcessId, edge.toResourceId, "capacity", window);
       if (!downstreamCapacity) return true;
-      const forwarded = convert(row.value, edge);
-      return forwarded !== null && downstreamCapacity.value > forwarded && !nearly(downstreamCapacity.value, forwarded);
+      let load = 0;
+      const feedRefs: string[] = [];
+      for (const feed of observation.edges) {
+        if (feed.toProcessId !== edge.toProcessId || feed.toResourceId !== edge.toResourceId) continue;
+        if (feed === edge) {
+          load += convert(row.value, feed) ?? Number.NaN;
+          continue;
+        }
+        const other =
+          sampleAt(rows, feed.fromProcessId, feed.fromResourceId, "throughput", window) ??
+          sampleAt(rows, feed.fromProcessId, feed.fromResourceId, "inflow", window);
+        if (!other) return false;
+        load += convert(other.value, feed) ?? Number.NaN;
+        feedRefs.push(`sample:${other.index}`);
+      }
+      if (!Number.isFinite(load) || !(downstreamCapacity.value > load && !nearly(downstreamCapacity.value, load))) return false;
+      downstreamRefs.push(`sample:${downstreamCapacity.index}`, ...feedRefs);
+      return true;
     });
     if (!slack) continue;
     const held = byProcess.get(processId);
     if (!held || preferredBind(row, held.row)) {
-      byProcess.set(processId, { row, capacity, refs: [`sample:${row.index}`, `sample:${capacity.index}`, ...upstreamRefs] });
+      byProcess.set(processId, {
+        row,
+        capacity,
+        refs: [`sample:${row.index}`, `sample:${capacity.index}`, ...upstreamRefs, ...downstreamRefs],
+      });
     }
   }
   const bindings = [...byProcess.values()];
