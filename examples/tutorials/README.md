@@ -13,6 +13,9 @@ This directory contains the example scenarios used throughout the public docs.
 The linear starters are deterministic. For seeded variation, censored draws,
 and an unresolved population p95, run the [feedback examples](../experience/README.md).
 
+For checkpoint persistence and resume equivalence across reset cycles, run the
+[save/resume example](../reset-cycle/README.md).
+
 ## Learn commands
 
 - `01-cafe-baseline.json`: validate / simulate / eta / report
