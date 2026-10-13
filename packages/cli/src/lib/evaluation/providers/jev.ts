@@ -62,15 +62,26 @@ type JevProjection = Readonly<{
 
 /**
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-opt-in-live The default transport is fetch. Tests inject a mock.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-opt-in-live #ffc5c8b Re-read the section: the ordinary test does not call the live API.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-opt-in-live #c295136 Re-read the section: the ordinary test does not call the live API.
  */
 export const jevLiveTransport = "injected-or-fetch" as const;
+
+/*
+ * A local path can sit anywhere in a string and can come from any host layout:
+ * a `file:` URI, a `~/` home path, a POSIX absolute path with two or more segments,
+ * a Windows drive path with either separator, or a UNC share. A following
+ * space-separated token that still holds a separator is taken as the same path,
+ * so a directory name with a space does not leak its tail. Each match is replaced
+ * in place and the rest of the string still reaches the provider. A web URL is not
+ * a local path and stays.
+ */
+const LOCAL_PATH_PATTERN =
+  /(?:file:\/\/[^\s"'`()<>[\]{},;|]*|(?<=^|[\s"'`(=,:;[{<])(?:~\/[^\s"'`()<>[\]{},;|]*|\/(?:[^\s"'`()<>[\]{},;|/]+\/)+[^\s"'`()<>[\]{},;|]*|[A-Za-z]:[\\/][^\s"'`()<>[\]{},;|]*|\\\\[^\s\\]+\\[^\s"'`()<>[\]{},;|]*))(?: [^\s"'`()<>|]*[\\/][^\s"'`()<>|]*)*/g;
 
 function redactString(value: string, keyMaterial: string): string {
   if (keyMaterial.length > 0 && value.includes(keyMaterial)) return "[redacted]";
   if (value.includes("TYPESAFE_API_KEY")) return "[redacted]";
-  if (value.startsWith("/Users/") || value.startsWith("/private/") || value.startsWith("/tmp/")) return "[redacted]";
-  return value;
+  return value.replace(LOCAL_PATH_PATTERN, "[redacted]");
 }
 
 function redact(value: unknown, keyMaterial: string): unknown {
@@ -87,40 +98,51 @@ function redact(value: unknown, keyMaterial: string): unknown {
 
 /**
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-secret-boundary The projection keeps metrics, assumptions, and rubric intent.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-secret-boundary #29ebf2c Re-read the section: raw source, secrets, and local paths are dropped.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-secret-boundary #d26dcf6 Re-read the section: raw source and secrets are dropped, and a local path in any host layout is replaced in place.
  */
 export function projectJevState(
   artifact: AnalysisArtifactV1,
   rubric: JudgeRubricV1,
   keyMaterial: string,
 ): JevProjection {
+  // The numerical judge compares the recorded meaning, method, and unit with the rule. Jev sees the same identity.
   const metrics = artifact.metrics.map((metric) => ({
     domain: metric.domain,
+    meaning: metric.meaning,
+    method: metric.method ?? null,
     metricId: metric.metricId,
+    metricVersion: metric.metricVersion,
     reading: metric.reading,
     status: metric.status,
+    unit: metric.domain === "amount" ? (metric.amount?.unit ?? "amount") : metric.domain,
     value: "value" in metric ? metric.value : null,
   }));
   const rules = rubric.rules.map((rule) => ({
     definition: rule.definition,
     id: rule.id,
+    method: rule.method,
     metricId: rule.metricId,
     operator: rule.operator,
     recommendationId: rule.recommendationId,
     threshold: rule.threshold,
+    unit: rule.unit,
+    upperThreshold: rule.upperThreshold,
   }));
-  const questions: Record<string, JevQuestion> = {};
-  for (const rule of rubric.rules) {
-    questions[rule.id] = {
-      type: "noul",
-      instructions:
-        "Does the recorded reading conflict with the rubric definition for this metric? Do not compute a new ETA, growth rate, or steady state.",
-      criteria: {
-        true: "The recorded reading conflicts with the stated definition",
-        false: "The recorded reading does not conflict with the stated definition",
+  // Object.fromEntries defines own properties, so an id such as __proto__ does not touch the prototype.
+  const questions: Record<string, JevQuestion> = Object.fromEntries(
+    rubric.rules.map((rule): [string, JevQuestion] => [
+      rule.id,
+      {
+        type: "noul",
+        instructions:
+          "Does the recorded reading conflict with the rubric definition for this metric? Do not compute a new ETA, growth rate, or steady state.",
+        criteria: {
+          true: "The recorded reading conflicts with the stated definition",
+          false: "The recorded reading does not conflict with the stated definition",
+        },
       },
-    };
-  }
+    ]),
+  );
   return {
     state: redact(
       {
@@ -146,7 +168,7 @@ type JevFetch = (
 
 /**
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-opt-in-live The fetch transport posts only the body the caller already built.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-opt-in-live #ffc5c8b Re-read the section: the URL is the documented System One endpoint.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-opt-in-live #c295136 Re-read the section: the URL is the documented System One endpoint.
  */
 export function createFetchTransport(fetchImpl: JevFetch = (input, init) => globalThis.fetch(input, init)): JevTransport {
   return async (request) => {
@@ -205,14 +227,16 @@ function blank(args: {
 
 /**
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-numerical-unchanged Low confidence abstains. A conflict is a warning, not a new verdict.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-numerical-unchanged #d9f48ac Re-read the section: confidence is not a game-correctness probability.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-numerical-unchanged #edaa1fe Re-read the section: confidence is not a game-correctness probability.
  */
 export function jevAnswerDisposition(
   answer: JevWireAnswer,
-  numericalFail: boolean,
+  numericalFail: boolean | null,
 ): JevAnswerDisposition {
   if (answer.type === "noul") {
     if (answer.noul > 0.4 && answer.noul < 0.6) return "abstain";
+    // An inconclusive or unsupported rule has no pass or fail for the answer to disagree with.
+    if (numericalFail === null) return "ok";
     if (numericalFail && answer.noul < 0.4) return "advisory-warning";
     if (!numericalFail && answer.noul > 0.6) return "advisory-warning";
     return "ok";
@@ -221,19 +245,48 @@ export function jevAnswerDisposition(
   return "ok";
 }
 
+/** The numerical stance of each rule: true for fail, false for pass, null when the check decided neither. */
+function numericalStances(numerical: JudgeReportV1): ReadonlyMap<string, boolean | null> {
+  const stances = new Map<string, boolean | null>();
+  for (const result of numerical.numerical.results) {
+    stances.set(result.id, result.verdict === "fail" ? true : result.verdict === "pass" ? false : null);
+  }
+  return stances;
+}
+
 function summarize(
   response: JevWireResponse,
-  numericalFail: boolean,
+  rubric: JudgeRubricV1,
+  numerical: JudgeReportV1,
 ): JevAdvisoryV1["answers"] {
-  return Object.entries(response.answers).map(([id, answer]) => ({
-    id,
-    type: answer.type,
-    confidence: answer.type === "noul" ? null : answer.confidence,
-    noul: answer.type === "noul" ? answer.noul : null,
-    choice: answer.type === "choice" ? answer.choice : null,
-    score: answer.type === "score" ? answer.score : null,
-    disposition: jevAnswerDisposition(answer, numericalFail),
-  }));
+  const stances = numericalStances(numerical);
+  return rubric.rules.flatMap((rule) => {
+    const answer = response.answers[rule.id];
+    if (!answer) return [];
+    return [{
+      id: rule.id,
+      type: answer.type,
+      confidence: answer.type === "noul" ? null : answer.confidence,
+      noul: answer.type === "noul" ? answer.noul : null,
+      choice: answer.type === "choice" ? answer.choice : null,
+      score: answer.type === "score" ? answer.score : null,
+      disposition: jevAnswerDisposition(answer, stances.get(rule.id) ?? null),
+    }];
+  });
+}
+
+/*
+ * One rubric rule is one Jev question. A repeated id would merge two questions, and the
+ * wire parser drops an own __proto__ key, so either one would lose an answer.
+ */
+function questionIdIssue(rubric: JudgeRubricV1): string | null {
+  const seen = new Set<string>();
+  for (const rule of rubric.rules) {
+    if (rule.id === "__proto__") return "unsafe-question-id";
+    if (seen.has(rule.id)) return "duplicate-question-id";
+    seen.add(rule.id);
+  }
+  return null;
 }
 
 function reportStatus(answers: JevAdvisoryV1["answers"]): JevAdvisoryV1["status"] {
@@ -262,13 +315,13 @@ function retryable(status: number): boolean {
 
 /**
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-opt-in-live The live transport runs only when the caller asks for Jev.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-opt-in-live #ffc5c8b Re-read the section: dry-run and a missing key do not send the request.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-opt-in-live #c295136 Re-read the section: dry-run and a missing key do not send the request.
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-http-budget Retry stays inside the attempt budget.
  * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-http-budget #84d6272 Re-read the section: timeout becomes unavailable and authentication is not retried.
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-numerical-unchanged The numerical digest is copied, not recomputed by the model.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-numerical-unchanged #d9f48ac Re-read the section: the advisory cannot change the recorded verdict.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-numerical-unchanged #edaa1fe Re-read the section: the advisory cannot change the recorded verdict.
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-no-default-fetch Only judge with provider jev reaches this transport. The rules provider returns before it.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-no-default-fetch #33e4c02 Re-read the section: provider rules does not call the Jev transport, even with TYPESAFE_API_KEY set.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-no-default-fetch #e8a02f1 Re-read the section: provider rules does not call the Jev transport, even with TYPESAFE_API_KEY set.
  */
 export async function adviseWithJev(args: Readonly<{
   artifact: AnalysisArtifactV1;
@@ -304,6 +357,10 @@ export async function adviseWithJev(args: Readonly<{
     dryRun: args.dryRun,
     plannedRequests,
   };
+  const idIssue = questionIdIssue(args.rubric);
+  if (idIssue) {
+    return blank({ ...base, plannedRequests: 0, status: "failed", reason: idIssue, cache: "bypass", attempts: 0 });
+  }
   if (args.dryRun) {
     return blank({
       ...base,
@@ -368,8 +425,7 @@ export async function adviseWithJev(args: Readonly<{
       if (!wire.ok) {
         return blank({ ...base, status: "failed", reason: wire.reason, cache: "miss", attempts: attempt + 1 });
       }
-      const numericalFail = args.numerical.numerical.pass === false;
-      const answers = summarize(wire.response, numericalFail);
+      const answers = summarize(wire.response, args.rubric, args.numerical);
       const status = reportStatus(answers);
       const advisory = blank({
         ...base,

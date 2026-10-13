@@ -2,12 +2,13 @@ import { defineCommand, option } from "../runtime/command";
 import type { JevAdvisoryV1, JudgeReportV1 } from "@idlekit/core";
 import { z } from "zod";
 import { usageError } from "../errors";
-import { buildOutputMeta } from "../io/outputMeta";
+import { buildOutputMeta, outputSchemaRefForCommand } from "../io/outputMeta";
 import { writeOutput } from "../io/writeOutput";
 import { readJsonFile } from "../runtime/bun";
 import { readJudgeInputs } from "../lib/evaluation/input";
 import { evaluateRules } from "../lib/evaluation/rules";
-import { adviseWithJev, type JevTransport } from "../lib/evaluation/providers/jev";
+// Type only. main.ts registers this command for every invocation, so the opt-in provider loads after --provider jev.
+import type { JevTransport } from "../lib/evaluation/providers/jev";
 
 function renderJudgeMarkdown(report: JudgeReportV1): string {
   const lines = [
@@ -82,6 +83,7 @@ export async function runJudge(flags: {
     });
     return report;
   }
+  const { adviseWithJev } = await import("../lib/evaluation/providers/jev");
   const advisory = await adviseWithJev({
     artifact: parsed.artifact,
     rubric: parsed.rubric,
@@ -107,7 +109,8 @@ export async function runJudge(flags: {
     meta: buildOutputMeta({
       command: "judge",
       pluginDigest: {},
-      schemaRef: "docs/schemas/jev.advisory.v1.schema.json",
+      // The bundle carries the rules report and the advisory side by side, so it has its own schema.
+      schemaRef: outputSchemaRefForCommand("judge.jev"),
     }),
   });
   return bundle;
