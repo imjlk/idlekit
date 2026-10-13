@@ -86,6 +86,8 @@ export type FlowFactKind =
 export type FlowFactV1 = Readonly<{
   id: string;
   processId: string;
+  /** The resource the fact describes, so one process's resources stay apart. */
+  resourceId: string;
   kind: FlowFactKind;
   amount: string;
   unit: string;
@@ -129,13 +131,13 @@ export const flowOptionalAdapter = "observer-not-required-model" as const;
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-pipeline A steady 100 to 20 to 30 chain binds at the middle stage.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-pipeline #bed62f3 Re-read the section: final throughput stays 20 when inflow doubles, a bind reads one resource and one window, the causally named bind is confirmed among several, each terminal process reports a final throughput per delivered resource from its latest window, an inflow source offers work, a process binds on its latest saturated window, downstream slack counts every feed into that stage, a confirmed bind cites the causal record, and the bind cites its edges and requires a downstream capacity, upstream offer, and side feed in the unit an identity edge keeps, citing the throughput that named it.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-pipeline #597bca1 Re-read the section: final throughput stays 20 when inflow doubles, a bind reads one resource and one window, the causally named bind is confirmed among several, each terminal process reports a final throughput per delivered resource from its latest window and cites the delivering edges, an inflow source offers work, a process series is judged only on its latest saturated window, downstream slack counts every feed into that stage, a confirmed bind cites the causal record, and the bind cites its edges and requires a downstream capacity, upstream offer, and side feed in the unit an identity edge keeps, citing the throughput that named it.
  */
 export const flowPipelineConstraint = "process-throughput-20" as const;
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-conservation Conversion, loss, and inventory stay in their own units.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-conservation #36612a7 Re-read the section: the source unit and the destination unit are not added, queue and unretained are read for the destination resource in the source window, every source window is tried with the latest conserving one kept, the stock must match an observed destination throughput unit and the fact cites it, edges into one stock are summed, and zero matches only zero.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-conservation #5cc4b0e Re-read the section: the source unit and the destination unit are not added, queue and unretained are read for the destination resource in the source window, every source window is tried with the latest conserving one kept, the stock must match an observed destination throughput unit and the fact cites it, conservation compares per-window rates, edges into one stock are summed, and zero matches only zero.
  */
 export const flowConservation = "converted-units-stay-apart" as const;
 
@@ -147,7 +149,7 @@ export const flowUnsupportedModel = "no-invented-stall" as const;
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-suspected Missing demand and capacity observations stay unresolved.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-suspected #277b0a9 Re-read the section: facts and hypotheses are separate, starved and blocked time are judged per process from their latest window, where every resource in that window counts and a latest zero clears an older wait, with mixed waits unresolved, and a ramp-up observation or window skips Little's law.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-suspected #883c943 Re-read the section: facts and hypotheses are separate, starved and blocked time in seconds are judged per process from their latest window, where every resource in that window counts and a latest zero clears an older wait and is cited, with mixed waits unresolved, and a ramp-up observation or window skips Little's law.
  */
 export const flowSuspectedCause = "facts-apart-from-cause" as const;
 
@@ -220,6 +222,9 @@ function decimalIssues(observation: FlowObservationV1): string[] {
   observation.samples.forEach((sample, index) => {
     check(`$input.samples[${index}].amount`, sample.amount);
     if (!(sample.endSec >= sample.startSec)) issues.push(`$input.samples[${index}].endSec >= startSec`);
+    if ((sample.kind === "starved-time" || sample.kind === "blocked-time") && sample.unit !== "s") {
+      issues.push(`$input.samples[${index}].unit "s" for a wait`);
+    }
     const key = JSON.stringify([sample.processId, sample.resourceId, sample.kind, sample.startSec, sample.endSec]);
     const first = keys.get(key);
     if (first !== undefined) issues.push(`$input.samples[${index}] duplicates samples[${first}]`);
@@ -387,7 +392,7 @@ function convert(amount: number, edge: FlowEdgeV1): number | null {
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-pipeline Diagnosis reads throughput, capacity, and the evidence window.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-pipeline #bed62f3 Re-read the section: the middle stage binds and doubling inflow leaves throughput at 20; capacity and upstream samples match the edge resource and the throughput window, and every saturated process is a candidate.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-pipeline #597bca1 Re-read the section: the middle stage binds and doubling inflow leaves throughput at 20; capacity and upstream samples match the edge resource and the throughput window, and every saturated process is a candidate.
  */
 export function diagnoseFlow(observation: FlowObservationV1): FlowReportV1 {
   const littlesLaw = littlesOf(observation.littles, observation.capability, observation.steady);
@@ -413,6 +418,7 @@ export function diagnoseFlow(observation: FlowObservationV1): FlowReportV1 {
   const facts: FlowFactV1[] = rows.map((row) => ({
     id: `fact:${row.index}:${row.sample.kind}`,
     processId: row.sample.processId,
+    resourceId: row.sample.resourceId,
     kind: row.sample.kind,
     amount: row.sample.amount,
     unit: row.sample.unit,
@@ -428,7 +434,8 @@ export function diagnoseFlow(observation: FlowObservationV1): FlowReportV1 {
   for (const source of sources) sinks.delete(source);
   // Each terminal process reports the throughput of every resource its incoming edges deliver. A graph with
   // edges but no terminal process, such as a cycle, has no final throughput. Only an edgeless observation falls back.
-  const finals: Rated[] = [];
+  // A graph-derived final cites the incoming edges that deliver its resource, the topology that made it final.
+  const finals: { row: Rated; edgeRefs: string[] }[] = [];
   for (const sinkId of sinks) {
     const delivered = new Set(observation.edges.filter((edge) => edge.toProcessId === sinkId).map((edge) => edge.toResourceId));
     for (const resourceId of delivered) {
@@ -437,7 +444,10 @@ export function diagnoseFlow(observation: FlowObservationV1): FlowReportV1 {
           (row) => row.sample.processId === sinkId && row.sample.resourceId === resourceId && row.sample.kind === "throughput",
         ),
       );
-      if (found) finals.push(found);
+      const edgeRefs = [...observation.edges.entries()]
+        .filter(([, edge]) => edge.toProcessId === sinkId && edge.toResourceId === resourceId)
+        .map(([edgeIndex]) => `edge:${edgeIndex}`);
+      if (found) finals.push({ row: found, edgeRefs });
     }
   }
   if (observation.edges.length === 0) {
@@ -450,30 +460,40 @@ export function diagnoseFlow(observation: FlowObservationV1): FlowReportV1 {
     }
     for (const members of series.values()) {
       const chosen = latest(members);
-      if (chosen) finals.push(chosen);
+      if (chosen) finals.push({ row: chosen, edgeRefs: [] });
     }
   }
-  for (const final of finals) {
+  for (const { row: final, edgeRefs } of finals) {
     facts.push({
       // The pair is encoded structurally, so two different pairs never share an id and no string makes it throw.
       id: `fact:final-throughput:${JSON.stringify([final.sample.processId, final.sample.resourceId])}`,
       processId: final.sample.processId,
+      resourceId: final.sample.resourceId,
       kind: "final-throughput",
       amount: final.sample.amount,
       unit: final.sample.unit,
       window: { startSec: final.sample.startSec, endSec: final.sample.endSec },
-      evidenceRefs: [`sample:${final.index}`],
+      evidenceRefs: [`sample:${final.index}`, ...edgeRefs],
     });
   }
-  // Every saturated process is a candidate, so a later causally named bind is not missed. A process saturated
-  // in several windows or resources keeps one defined bind: the latest window, then the first resource id.
-  const byProcess = new Map<string, { row: Rated; capacity: Rated; refs: string[] }>();
+  // Every saturated process is a candidate, so a later causally named bind is not missed. Each process and
+  // resource series is judged on its latest saturated window, chosen before its evidence is read, so an older
+  // window never stands in for a newer unproven one. A process with binds on several resources keeps one:
+  // the latest window, then the smaller resource id.
+  const saturated = new Map<string, { row: Rated; capacity: Rated }>();
   for (const row of rows) {
     if (row.sample.kind !== "throughput") continue;
+    const window: Window = { startSec: row.sample.startSec, endSec: row.sample.endSec };
+    const capacity = sampleAt(rows, row.sample.processId, row.sample.resourceId, "capacity", window);
+    if (!capacity || capacity.sample.unit !== row.sample.unit || !nearly(row.value, capacity.value)) continue;
+    const key = JSON.stringify([row.sample.processId, row.sample.resourceId]);
+    const held = saturated.get(key);
+    if (!held || preferredBind(row, held.row)) saturated.set(key, { row, capacity });
+  }
+  const byProcess = new Map<string, { row: Rated; capacity: Rated; refs: string[] }>();
+  for (const { row, capacity } of saturated.values()) {
     const { processId, resourceId } = row.sample;
     const window: Window = { startSec: row.sample.startSec, endSec: row.sample.endSec };
-    const capacity = sampleAt(rows, processId, resourceId, "capacity", window);
-    if (!capacity || capacity.sample.unit !== row.sample.unit || !nearly(row.value, capacity.value)) continue;
     // Every edge into this process and resource offers work, each read in the same window.
     const upstream = observation.edges.filter((edge) => edge.toProcessId === processId && edge.toResourceId === resourceId);
     const upstreamRefs: string[] = [];
@@ -513,6 +533,8 @@ export function diagnoseFlow(observation: FlowObservationV1): FlowReportV1 {
         if (feed.toProcessId !== edge.toProcessId || feed.toResourceId !== edge.toResourceId) continue;
         feedRefs.push(`edge:${feedIndex}`);
         if (feed === edge) {
+          // This process's own feed is held to the same unit rule as every other feed.
+          if (feed.fromResourceId === feed.toResourceId && row.sample.unit !== destinationUnit) return false;
           load += convert(row.value, feed) ?? Number.NaN;
           continue;
         }
@@ -549,6 +571,7 @@ export function diagnoseFlow(observation: FlowObservationV1): FlowReportV1 {
     facts.push({
       id: `fact:saturation:${row.sample.processId}`,
       processId: row.sample.processId,
+      resourceId: row.sample.resourceId,
       kind: "saturation-time",
       amount: formatDecimal(row.sample.endSec - row.sample.startSec),
       unit: "s",
@@ -611,6 +634,7 @@ export function diagnoseFlow(observation: FlowObservationV1): FlowReportV1 {
       facts.push({
         id: `fact:conservation:${edgeIndexes[0]}`,
         processId: destination.toProcessId,
+        resourceId: destination.toResourceId,
         kind: "conservation",
         amount: formatDecimal(theoretical),
         unit: queue.sample.unit,
@@ -653,6 +677,8 @@ export function diagnoseFlow(observation: FlowObservationV1): FlowReportV1 {
   for (const row of rows) {
     if (bound.has(row.sample.processId)) continue;
     if (row.sample.kind !== "starved-time" && row.sample.kind !== "blocked-time") continue;
+    // A wait is a duration in seconds. A sample in another unit is not wait evidence.
+    if (row.sample.unit !== "s") continue;
     const entry = waits.get(row.sample.processId) ?? { starved: [], blocked: [] };
     (row.sample.kind === "starved-time" ? entry.starved : entry.blocked).push(row);
     waits.set(row.sample.processId, entry);
@@ -667,10 +693,22 @@ export function diagnoseFlow(observation: FlowObservationV1): FlowReportV1 {
     );
   };
   const refsOf = (samples: readonly Rated[]): string[] => samples.map((row) => `sample:${row.index}`);
+  const inLatest = (samples: readonly Rated[]): Rated[] => {
+    const newest = latest(samples);
+    if (!newest) return [];
+    return samples.filter((row) => row.sample.startSec === newest.sample.startSec && row.sample.endSec === newest.sample.endSec);
+  };
   for (const [processId, kinds] of waits) {
     const starved = positiveInLatest(kinds.starved);
     const blocked = positiveInLatest(kinds.blocked);
-    if (starved.length > 0 && blocked.length === 0) {
+    const olderPositive = [...kinds.starved, ...kinds.blocked].some((row) => row.value > 0);
+    if (starved.length === 0 && blocked.length === 0 && olderPositive) {
+      // The latest windows show no wait. They cleared an older one, so they are cited as the deciding evidence.
+      const clearing = [...inLatest(kinds.starved), ...inLatest(kinds.blocked)].sort((left, right) => left.index - right.index);
+      hypotheses.push(
+        hypothesis(processId, "insufficient-data", "none", refsOf(clearing), "the latest wait windows show no starved or blocked time"),
+      );
+    } else if (starved.length > 0 && blocked.length === 0) {
       hypotheses.push(hypothesis(processId, "suspected", "material-shortage", refsOf(starved), "starved time was observed without a capacity bind"));
     } else if (blocked.length > 0 && starved.length === 0) {
       hypotheses.push(hypothesis(processId, "suspected", "demand-shortage", refsOf(blocked), "blocked time was observed without a capacity bind"));
