@@ -1,0 +1,85 @@
+{
+  "schemaVersion": 1,
+  "meta": {
+    "id": "seeded-feedback",
+    "title": "Seeded feedback with censored draws",
+    "description": "A seeded payout and delay are drawn once and stored in simulation state.",
+    "tags": [
+      "example",
+      "experience",
+      "monte-carlo"
+    ]
+  },
+  "unit": {
+    "code": "TOKEN",
+    "symbol": "T"
+  },
+  "policy": {
+    "mode": "accumulate",
+    "maxLogGap": 14
+  },
+  "model": {
+    "version": 1,
+    "params": {
+      "payoutProbability": 0.5
+    },
+    "id": "seeded-feedback"
+  },
+  "initial": {
+    "t": 0,
+    "wallet": {
+      "unit": "TOKEN",
+      "amount": "10",
+      "bucket": "0"
+    },
+    "vars": {
+      "payout": false,
+      "delaySec": 0,
+      "sampled": false
+    },
+    "prestige": {
+      "count": 0,
+      "points": "0",
+      "multiplier": "1"
+    }
+  },
+  "clock": {
+    "stepSec": 10,
+    "durationSec": 60
+  },
+  "strategy": {
+    "id": "greedy",
+    "params": {
+      "maxPicksPerStep": 1,
+      "objective": "maximizeIncome",
+      "schemaVersion": 1
+    }
+  },
+  "design": {
+    "sessionPattern": {
+      "days": 1,
+      "id": "short-bursts"
+    }
+  },
+  "analysis": {
+    "growth": {
+      "windowSec": 60
+    },
+    "experience": {
+      "series": "netWorth",
+      "draws": 16,
+      "quantiles": [
+        0.1,
+        0.5,
+        0.9
+      ]
+    }
+  },
+  "sim": {
+    "fast": false,
+    "eventLog": {
+      "enabled": false,
+      "maxEvents": 0
+    }
+  }
+}

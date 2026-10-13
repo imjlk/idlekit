@@ -1177,6 +1177,20 @@
           "registeredAs": "performance budget > accepts the performance budget schema",
           "cwd": ".",
           "args": ["test", "--timeout", "120000", "tools/performanceBudget.test.ts"]
+        },
+        {
+          "file": "tools/performanceBudget.test.ts",
+          "exportName": "takesNearestRankP95",
+          "registeredAs": "performance budget > takes a nearest-rank p95",
+          "cwd": ".",
+          "args": ["test", "--timeout", "120000", "tools/performanceBudget.test.ts"]
+        },
+        {
+          "file": "tools/performanceBudget.test.ts",
+          "exportName": "rejectsNegativeSamples",
+          "registeredAs": "performance budget > rejects negative samples and counters",
+          "cwd": ".",
+          "args": ["test", "--timeout", "120000", "tools/performanceBudget.test.ts"]
         }
       ]
     },
@@ -1241,6 +1255,13 @@
           "registeredAs": "performance budget > fails an unfavorable budget",
           "cwd": ".",
           "args": ["test", "--timeout", "120000", "tools/performanceBudget.test.ts"]
+        },
+        {
+          "file": "tools/performanceBudget.test.ts",
+          "exportName": "rejectsBaselineWithoutIterations",
+          "registeredAs": "performance budget > rejects a baseline without iteration metadata",
+          "cwd": ".",
+          "args": ["test", "--timeout", "120000", "tools/performanceBudget.test.ts"]
         }
       ]
     },
@@ -1257,6 +1278,13 @@
           "registeredAs": "performance budget > rejects a baseline hash mismatch",
           "cwd": ".",
           "args": ["test", "--timeout", "120000", "tools/performanceBudget.test.ts"]
+        },
+        {
+          "file": "tools/performanceBudget.test.ts",
+          "exportName": "readsBenchOutputAsBaseline",
+          "registeredAs": "performance budget > reads bench-sim output as a baseline",
+          "cwd": ".",
+          "args": ["test", "--timeout", "120000", "tools/performanceBudget.test.ts"]
         }
       ]
     },
@@ -1271,6 +1299,27 @@
           "file": "tools/performanceBudget.test.ts",
           "exportName": "comparesOnlyTheSameConfig",
           "registeredAs": "performance budget > compares only the same config",
+          "cwd": ".",
+          "args": ["test", "--timeout", "120000", "tools/performanceBudget.test.ts"]
+        },
+        {
+          "file": "tools/performanceBudget.test.ts",
+          "exportName": "rejectsDifferentWorkload",
+          "registeredAs": "performance budget > rejects a baseline from another workload",
+          "cwd": ".",
+          "args": ["test", "--timeout", "120000", "tools/performanceBudget.test.ts"]
+        },
+        {
+          "file": "tools/performanceBudget.test.ts",
+          "exportName": "readsTraceCadence",
+          "registeredAs": "performance budget > reads the trace cadence field",
+          "cwd": ".",
+          "args": ["test", "--timeout", "120000", "tools/performanceBudget.test.ts"]
+        },
+        {
+          "file": "tools/performanceBudget.test.ts",
+          "exportName": "rejectsBaselineFromAnotherHost",
+          "registeredAs": "performance budget > rejects a baseline from another host",
           "cwd": ".",
           "args": ["test", "--timeout", "120000", "tools/performanceBudget.test.ts"]
         }
@@ -1880,9 +1929,17 @@
       "production": [
         "packages/cli/src/runtime/workers/pool.ts",
         "packages/cli/src/runtime/workers/trial.ts",
-        "packages/cli/src/runtime/workers/entry.ts"
+        "packages/cli/src/runtime/workers/entry.ts",
+        "packages/core/src/testkit/conformance.ts"
       ],
       "tests": [
+        {
+          "file": "packages/core/src/testkit/conformance.test.ts",
+          "exportName": "keepsTrialParityAcrossTheSeedCorpus",
+          "registeredAs": "DX-05 trial parity relation > keeps trial parity across the seed corpus",
+          "cwd": "packages/core",
+          "args": ["test", "src/testkit/conformance.test.ts"]
+        },
         {
           "file": "packages/cli/src/runtime/workers/pool.test.ts",
           "exportName": "matchesWorkerDigests",

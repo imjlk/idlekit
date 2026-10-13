@@ -1,14 +1,18 @@
-import { existsSync, readdirSync, statSync } from "fs";
+import { existsSync } from "fs";
 import { dirname, isAbsolute, relative, resolve } from "path";
-import { ROOT, ensureDir, runJson } from "./_bun";
+import { ROOT, ensureDir } from "./_bun";
 import {
   buildPerformanceArtifact,
   comparePerformanceBudgets,
   currentHost,
-  median,
-  readPerformanceArtifact,
-  workloadStepCount,
-  type BenchConfig,
+  benchConfigFromScenario,
+  percentile,
+  mergeBaselines,
+  readBaselineArtifacts,
+  scenarioHash,
+  scenarioWorkload,
+  selectBaseline,
+  type EffectiveRun,
   type PerformanceArtifact,
 } from "./performanceBudget";
 
@@ -47,9 +51,11 @@ type Args = Readonly<{
   warmup: number;
   thresholdMs: number;
   thresholdP95Ms?: number;
-  thresholdRssDeltaBytes?: number;
+  thresholdPeakRssBytes?: number;
+  prepareWarm: number;
   assert: boolean;
   out?: string;
+  writeBaseline?: string;
   baseline?: string;
   corpus: "representative" | "long";
   relativeSlowdown: number;
@@ -63,9 +69,11 @@ function parseArgs(argv: string[]): Args {
   let warmup = 2;
   let thresholdMs = 500;
   let thresholdP95Ms: number | undefined;
-  let thresholdRssDeltaBytes: number | undefined;
+  let thresholdPeakRssBytes: number | undefined;
+  let prepareWarm = 1;
   let assert = false;
   let out: string | undefined;
+  let writeBaseline: string | undefined;
   let baseline: string | undefined;
   let corpus: "representative" | "long" = "representative";
   let relativeSlowdown = 0.25;
@@ -74,30 +82,39 @@ function parseArgs(argv: string[]): Args {
   let absoluteSet = false;
   let minSet = false;
 
-  for (let i = 2; i < argv.length; i++) {
+  let i = 2;
+  // A flag that takes a value fails without one. A misspelled flag fails, so it cannot drop a gate input.
+  const take = (flag: string): string => {
+    const value = argv[++i];
+    if (value === undefined || value.startsWith("--")) throw new Error(`${flag} needs a value`);
+    return value;
+  };
+  for (; i < argv.length; i++) {
     const a = argv[i];
-    if (a === "--scenario") scenarios = [argv[++i] ?? scenarios[0]!];
-    else if (a === "--scenarios") scenarios = (argv[++i] ?? scenarios.join(",")).split(",").map((x) => x.trim()).filter(Boolean);
-    else if (a === "--iterations") iterations = Number(argv[++i] ?? iterations);
-    else if (a === "--warmup") warmup = Number(argv[++i] ?? warmup);
-    else if (a === "--threshold-ms") thresholdMs = Number(argv[++i] ?? thresholdMs);
-    else if (a === "--threshold-p95-ms") thresholdP95Ms = Number(argv[++i] ?? thresholdP95Ms);
-    else if (a === "--threshold-rss-delta-bytes") thresholdRssDeltaBytes = Number(argv[++i] ?? thresholdRssDeltaBytes);
+    if (a === "--scenario") scenarios = [take(a)];
+    else if (a === "--scenarios") scenarios = take(a).split(",").map((x) => x.trim()).filter(Boolean);
+    else if (a === "--iterations") iterations = Number(take(a));
+    else if (a === "--warmup") warmup = Number(take(a));
+    else if (a === "--threshold-ms") thresholdMs = Number(take(a));
+    else if (a === "--threshold-p95-ms") thresholdP95Ms = Number(take(a));
+    else if (a === "--threshold-peak-rss-bytes") thresholdPeakRssBytes = Number(take(a));
+    else if (a === "--prepare-warm") prepareWarm = Number(take(a));
     else if (a === "--assert") assert = true;
-    else if (a === "--out") out = argv[++i];
-    else if (a === "--baseline") baseline = argv[++i];
+    else if (a === "--out") out = take(a);
+    else if (a === "--write-baseline") writeBaseline = take(a);
+    else if (a === "--baseline") baseline = take(a);
     else if (a === "--corpus") {
-      const value = argv[++i];
+      const value = take(a);
       if (value !== "representative" && value !== "long") throw new Error("--corpus must be representative or long");
       corpus = value;
-    } else if (a === "--relative") relativeSlowdown = Number(argv[++i] ?? relativeSlowdown);
+    } else if (a === "--relative") relativeSlowdown = Number(take(a));
     else if (a === "--absolute-median-ms") {
-      absoluteMedianMs = Number(argv[++i] ?? absoluteMedianMs);
+      absoluteMedianMs = Number(take(a));
       absoluteSet = true;
     } else if (a === "--min-iterations") {
-      minIterations = Number(argv[++i] ?? minIterations);
+      minIterations = Number(take(a));
       minSet = true;
-    }
+    } else throw new Error(`unknown flag: ${a}`);
   }
 
   if (!absoluteSet) absoluteMedianMs = thresholdMs;
@@ -110,11 +127,12 @@ function parseArgs(argv: string[]): Args {
     throw new Error("--threshold-p95-ms must be a finite number > 0");
   }
   if (
-    thresholdRssDeltaBytes !== undefined &&
-    (!Number.isFinite(thresholdRssDeltaBytes) || thresholdRssDeltaBytes < 0)
+    thresholdPeakRssBytes !== undefined &&
+    (!Number.isFinite(thresholdPeakRssBytes) || thresholdPeakRssBytes <= 0)
   ) {
-    throw new Error("--threshold-rss-delta-bytes must be a finite number >= 0");
+    throw new Error("--threshold-peak-rss-bytes must be a finite number > 0");
   }
+  if (!Number.isInteger(prepareWarm) || prepareWarm < 0) throw new Error("--prepare-warm must be an integer >= 0");
   if (!Number.isFinite(relativeSlowdown) || relativeSlowdown < 0) throw new Error("--relative must be a finite number >= 0");
   if (!Number.isFinite(absoluteMedianMs) || absoluteMedianMs <= 0) {
     throw new Error("--absolute-median-ms must be a finite number > 0");
@@ -128,9 +146,11 @@ function parseArgs(argv: string[]): Args {
     warmup,
     thresholdMs,
     thresholdP95Ms,
-    thresholdRssDeltaBytes,
+    thresholdPeakRssBytes,
+    prepareWarm,
     assert,
     out,
+    writeBaseline,
     baseline,
     corpus,
     relativeSlowdown,
@@ -139,117 +159,65 @@ function parseArgs(argv: string[]): Args {
   };
 }
 
-function percentile(values: number[], p: number): number | null {
-  if (values.length === 0) return null;
-  const sorted = [...values].sort((a, b) => a - b);
-  const idx = Math.min(sorted.length - 1, Math.max(0, Math.floor((sorted.length - 1) * p)));
-  return sorted[idx] ?? null;
-}
-
 function resolveScenarioPath(input: string): string {
   return isAbsolute(input) ? input : resolve(REPO_ROOT, input);
 }
 
-const BUNDLE_INPUTS = [
-  "package.json",
-  "bun.lock",
-  "packages/cli/package.json",
-  "packages/cli/src",
-  "packages/cli/scripts",
-  "packages/core/package.json",
-  "packages/core/src",
-  "packages/money/package.json",
-  "packages/money/src",
-];
-
-function newestMtime(path: string): number {
-  const stat = statSync(path);
-  if (!stat.isDirectory()) return stat.mtimeMs;
-  let newest = stat.mtimeMs;
-  for (const name of readdirSync(path)) {
-    newest = Math.max(newest, newestMtime(resolve(path, name)));
-  }
-  return newest;
-}
-
-/** Rebuild when the shipped bundle is missing or older than a bundled source. */
-function ensureFreshBundle(): string {
+/**
+ * Compiler prepare: the ttsc bundle build of the CLI. The runtime samples then
+ * run that bundle. Caches left by earlier commands are not cleared, so cold is
+ * the first prepare in this bench process.
+ */
+function prepareBundle(): { bundled: string; durationMs: number } {
   const bundled = resolve(CLI_ROOT, "dist/main.js");
-  const fresh =
-    existsSync(bundled) &&
-    BUNDLE_INPUTS.every((rel) => {
-      const input = resolve(REPO_ROOT, rel);
-      return !existsSync(input) || newestMtime(input) <= statSync(bundled).mtimeMs;
-    });
-  if (!fresh) {
-    const proc = Bun.spawnSync(["bun", "run", "build"], {
-      cwd: CLI_ROOT,
-      stdout: "inherit",
-      stderr: "inherit",
-      env: process.env,
-    });
-    if ((proc.exitCode ?? 1) !== 0 || !existsSync(bundled)) {
-      throw new Error("simulate benchmark could not refresh packages/cli/dist/main.js");
-    }
+  const start = performance.now();
+  const proc = Bun.spawnSync(["bun", "scripts/cli-bundle.ts", "--outdir", "dist", "--sourcemap"], {
+    cwd: CLI_ROOT,
+    stdout: "ignore",
+    stderr: "inherit",
+    env: process.env,
+  });
+  const durationMs = performance.now() - start;
+  if ((proc.exitCode ?? 1) !== 0 || !existsSync(bundled)) {
+    throw new Error("simulate benchmark could not build packages/cli/dist/main.js");
   }
-  return bundled;
+  return { bundled, durationMs };
 }
 
-function runSimulateOnce(bundled: string, scenarioPath: string): unknown {
-  // --config skips the CLI bunfig preload. Timing `bun src/main.ts` measures
-  // ttsc program setup (several seconds) instead of simulate.
-  const parsed = runJson(
+const MAX_CAPTURE_BYTES = 8 * 1024 * 1024;
+
+/** One simulate child. Peak RSS is the child's own, not the bench harness. */
+function runSimulateOnce(
+  bundled: string,
+  scenarioPath: string,
+): { engine: string | null; seed: number | null; peakRssBytes: number | null; endMoney: string } {
+  // --config skips the CLI bunfig preload, which would rebuild the ttsc
+  // program in every child. Compiler prepare is measured by prepareBundle.
+  const proc = Bun.spawnSync(
     ["bun", `--config=${resolve(REPO_ROOT, "tools/bench-bunfig.toml")}`, bundled, "simulate", scenarioPath, "--format", "json"],
-    { cwd: CLI_ROOT, env: process.env },
+    { cwd: CLI_ROOT, env: process.env, stdout: "pipe", stderr: "pipe", maxBuffer: MAX_CAPTURE_BYTES },
   );
-  if (!parsed || typeof parsed !== "object") throw new Error("simulate benchmark returned non-object output");
-  if (typeof (parsed as { endMoney?: unknown }).endMoney !== "string") {
-    throw new Error("simulate benchmark returned no endMoney string");
+  if (proc.exitCode !== 0) {
+    const detail = proc.stderr.toString().trim() || proc.stdout.toString().trim();
+    throw new Error(detail || `simulate benchmark failed with exit code ${proc.exitCode}`);
   }
-  return parsed;
-}
-
-function retainedOf(output: unknown): number | null {
-  if (!output || typeof output !== "object") return null;
-  const record = output as { eventLog?: { retained?: unknown }; summaries?: { eventLog?: { retained?: unknown } } };
-  const direct = record.eventLog?.retained;
-  if (typeof direct === "number" && Number.isFinite(direct)) return direct;
-  const nested = record.summaries?.eventLog?.retained;
-  if (typeof nested === "number" && Number.isFinite(nested)) return nested;
-  return null;
-}
-
-function configFromScenario(raw: unknown): BenchConfig {
-  const scenario = raw && typeof raw === "object" ? raw as {
-    seed?: unknown;
-    engine?: { name?: unknown };
-    model?: { id?: unknown; version?: unknown };
-    clock?: { stepSec?: unknown; durationSec?: unknown };
-    strategy?: { id?: unknown };
-    outputs?: { report?: { includeTrace?: unknown; everySteps?: unknown } };
-    observation?: { enabled?: unknown };
-  } : {};
-  const includeTrace = scenario.outputs?.report?.includeTrace === true;
-  const every = scenario.outputs?.report?.everySteps;
-  const trace = !includeTrace ? "off" : typeof every === "number" && every > 0 ? "bounded" : "unbounded";
+  const output: unknown = JSON.parse(proc.stdout.toString());
+  if (!output || typeof output !== "object") throw new Error("simulate benchmark returned non-object output");
+  const endMoney = (output as { endMoney?: unknown }).endMoney;
+  if (typeof endMoney !== "string") throw new Error("simulate benchmark returned no endMoney string");
+  const maxRss = proc.resourceUsage?.maxRSS;
+  const meta = (output as { _meta?: { effectiveEngine?: unknown; seed?: unknown } })._meta;
   return {
-    engineId: typeof scenario.engine?.name === "string" ? scenario.engine.name : "number",
-    seed: typeof scenario.seed === "number" ? scenario.seed : null,
-    modelId: typeof scenario.model?.id === "string" ? scenario.model.id : "unknown",
-    modelVersion: typeof scenario.model?.version === "number" ? scenario.model.version : 0,
-    stepSec: typeof scenario.clock?.stepSec === "number" ? scenario.clock.stepSec : 1,
-    trace,
-    observer: scenario.observation?.enabled === true ? "on" : "off",
-    worker: "none",
-    planner: scenario.strategy?.id === "planner" ? "on" : "off",
+    engine: typeof meta?.effectiveEngine === "string" ? meta.effectiveEngine : null,
+    seed: typeof meta?.seed === "number" && Number.isFinite(meta.seed) ? meta.seed : null,
+    peakRssBytes: typeof maxRss === "number" && Number.isFinite(maxRss) && maxRss > 0 ? maxRss : null,
+    endMoney,
   };
 }
 
-function workloadOf(raw: unknown): number | null {
-  if (!raw || typeof raw !== "object") return null;
-  const clock = (raw as { clock?: { durationSec?: unknown; stepSec?: unknown } }).clock;
-  if (typeof clock?.durationSec !== "number" || typeof clock.stepSec !== "number") return null;
-  return workloadStepCount(clock.durationSec, clock.stepSec);
+function scenarioLabel(scenarioPath: string): string {
+  const rel = relative(REPO_ROOT, scenarioPath);
+  return rel.startsWith("..") || isAbsolute(rel) ? scenarioPath : rel;
 }
 
 type ScenarioBenchResult = {
@@ -264,6 +232,7 @@ type ScenarioBenchResult = {
   checks: {
     meanMs: boolean;
     p95Ms: boolean;
+    peakRssBytes: boolean;
     baseline: boolean;
     endMoney: EndMoneyCheck;
   };
@@ -271,83 +240,96 @@ type ScenarioBenchResult = {
   comparison: ReturnType<typeof comparePerformanceBudgets> | null;
 };
 
+/**
+ * Replace this host's entries for the measured scenarios and keep the other hosts' entries.
+ * Only this explicit flag writes a baseline. A comparison never does.
+ */
+async function writeBaselineFile(path: string, results: readonly ScenarioBenchResult[]): Promise<void> {
+  const file = Bun.file(path);
+  const existing = (await file.exists()) ? readBaselineArtifacts(await file.json()) : [];
+  if (!existing) throw new Error(`--write-baseline ${path} is not a baseline file`);
+  const merged = mergeBaselines(existing, results.map((item) => item.budget));
+  const perScenario = merged.map((budget) => ({ scenario: budget.scenario, budget }));
+  await ensureDir(dirname(path));
+  await Bun.write(path, `${JSON.stringify({ contract: "idlekit.performance-budget", schemaVersion: 1, perScenario }, null, 2)}\n`);
+}
+
 async function main(): Promise<void> {
   const args = parseArgs(process.argv);
   const host = currentHost();
-  const bundled = ensureFreshBundle();
+  let baselines: PerformanceArtifact[] | null = null;
+  if (args.baseline) {
+    baselines = readBaselineArtifacts(await Bun.file(resolve(ROOT, args.baseline)).json());
+    if (!baselines) throw new Error("--baseline is not an idlekit.performance-budget artifact or bench-sim output");
+  }
+  const cold = prepareBundle();
+  const prepareWarm: number[] = [];
+  for (let i = 0; i < args.prepareWarm; i++) prepareWarm.push(prepareBundle().durationMs);
+  const bundled = cold.bundled;
   const recordedEndMoney = readBenchEndMoney(await Bun.file(resolve(REPO_ROOT, BENCH_END_MONEY_PATH)).json());
   const scenarioResults: ScenarioBenchResult[] = [];
-  let baseline: PerformanceArtifact | null = null;
-  if (args.baseline) {
-    const parsed = readPerformanceArtifact(await Bun.file(resolve(ROOT, args.baseline)).json());
-    if (!parsed) throw new Error("--baseline is not an idlekit.performance-budget artifact");
-    baseline = parsed;
-  }
 
   for (const scenario of args.scenarios) {
     const scenarioPath = resolveScenarioPath(scenario);
-    const scenarioJson = await Bun.file(scenarioPath).json();
-    const config = configFromScenario(scenarioJson);
-    const prepareWarm: number[] = [];
+    const scenarioJson: unknown = await Bun.file(scenarioPath).json();
     const runtime: number[] = [];
-    const retained: number[] = [];
-    const endMoney: unknown[] = [];
-    let prepareCold: number | undefined;
-    let beforeRuntime = { rss: 0, heap: 0 };
-    let afterRuntime = { rss: 0, heap: 0 };
+    const peakRss: number[] = [];
+    const effective = new Set<string>();
+    const endMoney: string[] = [];
 
-    for (let i = 0; i < 1 + args.warmup + args.iterations; i++) {
-      if (i === 1 + args.warmup) {
-        const usage = process.memoryUsage();
-        beforeRuntime = { rss: usage.rss, heap: usage.heapUsed };
-      }
+    // Warmup children are discarded. They are simulate runs, not compiler prepare.
+    for (let i = 0; i < args.warmup + args.iterations; i++) {
       const start = performance.now();
-      const output = runSimulateOnce(bundled, scenarioPath);
+      const run = runSimulateOnce(bundled, scenarioPath);
       const elapsed = performance.now() - start;
-      endMoney.push((output as { endMoney?: unknown }).endMoney);
-      if (i === 0) prepareCold = elapsed;
-      else if (i <= args.warmup) prepareWarm.push(elapsed);
-      else {
-        runtime.push(elapsed);
-        const samples = retainedOf(output);
-        if (samples !== null) retained.push(samples);
-      }
+      effective.add(JSON.stringify({ engine: run.engine ?? "unknown", seed: run.seed }));
+      // Warmup runs count too: every run of the scenario must reach the recorded total.
+      endMoney.push(run.endMoney);
+      if (i < args.warmup) continue;
+      runtime.push(elapsed);
+      if (run.peakRssBytes !== null) peakRss.push(run.peakRssBytes);
     }
-    const usage = process.memoryUsage();
-    afterRuntime = { rss: usage.rss, heap: usage.heapUsed };
 
+    // The run's effective engine and seed, not scenario.engine, which simulate records as metadata only.
+    if (effective.size !== 1) throw new Error(`simulate reported more than one engine or seed: ${[...effective].join(", ")}`);
+    const config = benchConfigFromScenario(scenarioJson, JSON.parse([...effective][0] ?? "{}") as EffectiveRun);
     const meanMs = runtime.length ? runtime.reduce((a, b) => a + b, 0) / runtime.length : null;
     const p95Ms = percentile(runtime, 0.95);
     const passMean = meanMs !== null && meanMs <= args.thresholdMs;
     const passP95 = args.thresholdP95Ms === undefined ? true : p95Ms !== null && p95Ms <= args.thresholdP95Ms;
-    const retainedMedian = median(retained);
+    const peakRssBytes = peakRss.length === runtime.length && peakRss.length > 0 ? Math.max(...peakRss) : null;
+    const passPeakRss = args.thresholdPeakRssBytes === undefined
+      ? true
+      : peakRssBytes !== null && peakRssBytes <= args.thresholdPeakRssBytes;
     const budget = buildPerformanceArtifact({
       corpus: args.corpus,
-      scenario: scenarioPath,
+      scenario: scenarioLabel(scenarioPath),
+      scenarioHash: scenarioHash(scenarioJson),
       config,
       host,
       iterations: args.iterations,
       warmup: args.warmup,
-      workloadCount: workloadOf(scenarioJson),
+      workloadCount: scenarioWorkload(scenarioJson),
       phases: {
-        prepareColdMs: prepareCold,
+        prepareColdMs: cold.durationMs,
         prepareWarmMs: prepareWarm,
         runtimeMs: runtime,
       },
-      retainedSamples: retainedMedian,
-      rssDeltaBytes: afterRuntime.rss - beforeRuntime.rss,
-      heapDeltaBytes: afterRuntime.heap - beforeRuntime.heap,
+      peakRssBytes,
     });
     let comparison: ScenarioBenchResult["comparison"] = null;
     let baselinePass = true;
-    if (baseline) {
-      comparison = comparePerformanceBudgets(baseline, budget, {
-        minIterations: args.minIterations,
-        relativeSlowdown: args.relativeSlowdown,
-        absoluteMedianMs: args.absoluteMedianMs,
-      }, () => {
-        throw new Error("performance baseline rewrite is disabled");
-      });
+    if (baselines) {
+      const baseline = selectBaseline(baselines, budget);
+      comparison = baseline
+        ? comparePerformanceBudgets(baseline, budget, {
+          minIterations: args.minIterations,
+          relativeSlowdown: args.relativeSlowdown,
+          absoluteMedianMs: args.absoluteMedianMs,
+        }, () => {
+          throw new Error("performance baseline rewrite is disabled");
+        })
+        : { status: "rejected", reason: "workload-mismatch" };
       baselinePass = comparison.status === "pass";
     }
     const scenarioKey = relative(REPO_ROOT, scenarioPath).split("\\").join("/");
@@ -355,50 +337,40 @@ async function main(): Promise<void> {
     // A wrong total never passes. Under --assert an unrecorded scenario does not pass either.
     const endMoneyPass = endMoneyResult === "match" || (endMoneyResult === "unrecorded" && !args.assert);
     scenarioResults.push({
-      scenario: scenarioPath,
+      scenario: scenarioLabel(scenarioPath),
       stats: {
         meanMs,
         minMs: runtime.length ? Math.min(...runtime) : null,
         maxMs: runtime.length ? Math.max(...runtime) : null,
         p95Ms,
       },
-      pass: passMean && passP95 && baselinePass && endMoneyPass,
-      checks: { meanMs: passMean, p95Ms: passP95, baseline: baselinePass, endMoney: endMoneyResult },
+      pass: passMean && passP95 && passPeakRss && baselinePass && endMoneyPass,
+      checks: { meanMs: passMean, p95Ms: passP95, peakRssBytes: passPeakRss, baseline: baselinePass, endMoney: endMoneyResult },
       budget,
       comparison,
     });
   }
 
-  const rssValues = scenarioResults.map((result) => result.budget.metrics.rssDeltaBytes);
-  const rssDelta = rssValues.every((metric) => metric.status === "measured")
-    ? rssValues.reduce((sum, metric) => sum + (metric.status === "measured" ? metric.value : 0), 0)
-    : null;
-  const memoryPass = args.thresholdRssDeltaBytes === undefined
-    ? true
-    : rssDelta !== null && rssDelta <= args.thresholdRssDeltaBytes;
   const overallPass = scenarioResults.every((item) => item.pass);
   const result = {
     contract: "idlekit.performance-budget",
     schemaVersion: 1,
     corpus: args.corpus,
     host,
-    scenarios: args.scenarios.map(resolveScenarioPath),
+    scenarios: args.scenarios.map((item) => scenarioLabel(resolveScenarioPath(item))),
     iterations: args.iterations,
     warmup: args.warmup,
     threshold: {
       meanMs: args.thresholdMs,
       p95Ms: args.thresholdP95Ms,
-      rssDeltaBytes: args.thresholdRssDeltaBytes,
+      peakRssBytes: args.thresholdPeakRssBytes,
       relativeSlowdown: args.relativeSlowdown,
       absoluteMedianMs: args.absoluteMedianMs,
       minIterations: args.minIterations,
     },
+    prepare: { coldMs: cold.durationMs, warmMs: prepareWarm },
     perScenario: scenarioResults,
-    memory: {
-      rssDelta,
-      pass: memoryPass,
-    },
-    pass: overallPass && memoryPass,
+    pass: overallPass,
   };
 
   const json = `${JSON.stringify(result, null, 2)}\n`;
@@ -408,7 +380,15 @@ async function main(): Promise<void> {
     await ensureDir(dirname(outPath));
     await Bun.write(outPath, json);
   }
-  if (args.assert && !(overallPass && memoryPass)) process.exit(2);
+  if (args.writeBaseline) {
+    // A failing run is not blessed as the next baseline.
+    if (!overallPass) {
+      process.stderr.write("--write-baseline skipped: the run failed a threshold or baseline check\n");
+      process.exit(2);
+    }
+    await writeBaselineFile(resolve(ROOT, args.writeBaseline), scenarioResults);
+  }
+  if (args.assert && !overallPass) process.exit(2);
 }
 
 if (import.meta.main) await main();

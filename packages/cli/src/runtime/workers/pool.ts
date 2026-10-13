@@ -3,6 +3,7 @@ import {
   defaultExecutionBudget,
   finalizeBatch,
   serializedTaskBytes,
+  taskIdentity,
   taskRefusals,
   type AnalysisTrialOutcomeV1,
   type AnalysisTrialTaskV1,
@@ -12,7 +13,7 @@ import {
 
 /**
  * @evidence docs/requirements/active/worker-execution-backend.md#req-dx05-worker-parity Explicit worker counts share one logical digest. The pool does not choose itself.
- * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-worker-parity #3e2d53a Re-read the section: selection stays explicit-worker, the count stays within maxWorkers, an exit is a crash, and shutdown terminates every slot and clears every timer.
+ * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-worker-parity #60a7be1 Re-read the section: selection stays explicit-worker, the count stays within maxWorkers, an exit is a crash, and shutdown terminates every slot and clears every timer.
  */
 export const workerPoolParity = "same-logical-digest" as const;
 
@@ -39,10 +40,12 @@ function defaultSpawn(): WorkerLike {
 }
 
 function failed(task: AnalysisTrialTaskV1, reason: string, attempts: number): AnalysisTrialOutcomeV1 {
+  // Read without invoking accessors: a refused descriptor may carry getters.
+  const identity = taskIdentity(task);
   return {
-    taskId: task.taskId,
-    logicalIndex: task.logicalIndex,
-    seed: task.seed,
+    taskId: identity.taskId,
+    logicalIndex: identity.logicalIndex,
+    seed: identity.seed,
     // Same classes as the local backend: queue-bound is incomplete there too.
     status:
       reason === "abort"
@@ -74,12 +77,30 @@ export async function runWorkerPool(args: Readonly<{
   if (!Number.isInteger(args.workers) || args.workers < 1) {
     throw new Error("worker pool requires an explicit worker count >= 1");
   }
-  const budget = args.budget ?? { ...defaultExecutionBudget, maxWorkers: args.workers };
+  // A frozen copy: the pool runs after this call returns, so a later change to the caller's budget cannot reach it.
+  const budget: ExecutionBudgetV1 = Object.freeze({ ...(args.budget ?? { ...defaultExecutionBudget, maxWorkers: args.workers }) });
   assertExecutionBudget(budget);
   if (args.workers > budget.maxWorkers) {
     throw new Error(`worker pool count ${args.workers} exceeds budget maxWorkers ${budget.maxWorkers}`);
   }
   const batchId = `worker-${args.workers}-${args.tasks.length}`;
+  const header = {
+    batchId,
+    backend: "worker" as const,
+    selection: "explicit-worker" as const,
+    workerSpawnMs: 0,
+    serializedBytes: 0,
+  };
+  // Admission comes first: an aborted or oversized batch is answered before any descriptor is copied or measured.
+  if (args.tasks.length === 0) return finalizeBatch([], header);
+  // An abort before submit cancels every task, refused or over the queue bound, as the local backend does.
+  if (args.signal?.aborted) return finalizeBatch(args.tasks.map((task) => failed(task, "abort", 0)), header);
+  if (args.tasks.length > budget.queueBound) {
+    return finalizeBatch(
+      args.tasks.map((task) => failed(task, "queue-bound", 0)),
+      header,
+    );
+  }
   // Validate before measuring, as the local backend does. A refused task fails alone and posts nothing.
   const refusals = taskRefusals(args.tasks, budget);
   // Dispatch is asynchronous, so the pool works on a snapshot: a later change to the caller's array or
@@ -87,35 +108,25 @@ export async function runWorkerPool(args: Readonly<{
   const tasks: readonly AnalysisTrialTaskV1[] = args.tasks.map((task, index) =>
     refusals[index] === null ? (JSON.parse(JSON.stringify(task)) as AnalysisTrialTaskV1) : task,
   );
-  const serializedBytes = tasks.reduce((sum, task, index) => (refusals[index] === null ? sum + serializedTaskBytes(task) : sum), 0);
-  const header = {
-    batchId,
-    backend: "worker" as const,
-    selection: "explicit-worker" as const,
-    workerSpawnMs: 0,
-    serializedBytes,
-  };
-  if (tasks.length === 0) return finalizeBatch([], header);
-  // An abort before submit cancels every task, refused or over the queue bound, as the local backend does.
-  if (args.signal?.aborted) return finalizeBatch(tasks.map((task) => failed(task, "abort", 0)), header);
-  if (tasks.length > budget.queueBound) {
-    return finalizeBatch(
-      tasks.map((task) => failed(task, "queue-bound", 0)),
-      header,
-    );
-  }
+  header.serializedBytes = tasks.reduce((sum, task, index) => (refusals[index] === null ? sum + serializedTaskBytes(task) : sum), 0);
   const results: (AnalysisTrialOutcomeV1 | undefined)[] = tasks.map((task, index) => {
     const refusal = refusals[index];
     return refusal ? failed(task, refusal, 1) : undefined;
   });
   const attempts = tasks.map(() => 0);
+  // Tasks posted and not yet settled. An abort counts their running attempt.
+  const inFlight = new Set<number>();
   const queue = tasks.flatMap((_task, index) => (refusals[index] === null ? [index] : []));
   const finalize = (): ExecutionBatchV1 =>
     finalizeBatch(
       tasks.map(
         (task, index) =>
           results[index] ??
-          failed(task, args.signal?.aborted ? "abort" : spawnFailed ? "worker-spawn" : "not-started", attempts[index] ?? 0),
+          failed(
+            task,
+            args.signal?.aborted ? "abort" : spawnFailed ? "worker-spawn" : "not-started",
+            (attempts[index] ?? 0) + (inFlight.has(index) ? 1 : 0),
+          ),
       ),
       header,
     );
@@ -173,6 +184,7 @@ export async function runWorkerPool(args: Readonly<{
       const settle = (): boolean => {
         if (settled || closed) return false;
         settled = true;
+        inFlight.delete(index);
         clearTimeout(timer);
         timers.delete(timer);
         return true;
@@ -219,13 +231,22 @@ export async function runWorkerPool(args: Readonly<{
         retire(worker);
         feed();
       };
+      inFlight.add(index);
       try {
         worker.postMessage({ type: "run", task });
-      } catch {
-        // A message the worker cannot receive fails this task alone. The slot stays usable.
+      } catch (error) {
         if (!settle()) return;
-        results[index] = failed(task, "not serializable", attempt + 1);
-        dispatch(worker);
+        if ((error as { name?: unknown } | null)?.name === "DataCloneError") {
+          // A message the worker cannot receive fails this task alone. The slot stays usable.
+          results[index] = failed(task, "not serializable", attempt + 1);
+          dispatch(worker);
+          feed();
+          return;
+        }
+        // Any other post failure means the slot is gone, such as a worker that already closed. It is a crash of
+        // this task, retried within the budget, and the slot is retired before anything else is sent to it.
+        if (!requeue(index, attempt)) results[index] = failed(task, "worker-crash", attempt + 1);
+        retire(worker);
         feed();
       }
     };

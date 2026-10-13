@@ -6,6 +6,7 @@ import type { Engine } from "../engine/types";
 import { etaAnalytic, etaSimulate } from "../sim/analysis/eta";
 import { fitGrowth } from "../sim/analysis/growthFit";
 import { analyzeMilestones } from "../sim/analysis/milestones";
+import { analysisTaskSeed, runLocalBatch, type AnalysisTrialOutcomeV1, type AnalysisTrialTaskV1 } from "../sim/executionBackend";
 import { runScenario } from "../sim/simulator";
 import { createScriptedStrategy } from "../sim/strategy/scripted";
 import type { Action, CompiledScenario, Model, SimState } from "../sim/types";
@@ -19,6 +20,7 @@ import {
   checkGrowthShapes,
   checkGuardedAdvance,
   checkPartialFinalTick,
+  checkTrialParity,
   checkJsonRoundTrip,
   checkMilestoneRetention,
   checkNonNegative,
@@ -2250,7 +2252,7 @@ const advanceSteps = [0.1, 0.25, 1, 3, 3600] as const;
 
 /**
  * @evidence docs/requirements/active/guarded-analytic-advance.md#req-pr16-exact-match Runs the guarded-advance relation over the seed corpus: fractional steps, a near-epsilon or partial last tick, chunks off the step grid, goals, budgets, and both tick policies.
- * @evidenceReview docs/requirements/active/guarded-analytic-advance.md#req-pr16-exact-match #4a3881f Re-read the section, then ran this function on the short and extended corpus: every case ends, traces, counts, and stops as fixed-step, online and offline, and an undeclared case does not apply.
+ * @evidenceReview docs/requirements/active/guarded-analytic-advance.md#req-pr16-exact-match #eaace6d Re-read the section, then ran this function on the short and extended corpus: every case ends, traces, counts, and stops as fixed-step, online and offline, and an undeclared case does not apply.
  * @evidence ./conformance.ts#checkGuardedAdvance The seed corpus asks the harness to run each guarded-advance case.
  * @evidenceReview ./conformance.ts#checkGuardedAdvance #c83d980 Re-read checkGuardedAdvance: it runs the case with advance omitted and enabled, online and offline, compares economy, trace, stats, observation, and stop, and requires no fallback step.
  */
@@ -2355,8 +2357,79 @@ export function replaysPartialFinalTickAcrossTheSeedCorpus(): void {
   });
 }
 
+/**
+ * @evidence docs/requirements/active/worker-execution-backend.md#req-dx05-worker-parity Runs the trial-parity relation over the seed corpus: the same logical trials submitted in another order agree per logical index.
+ * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-worker-parity #60a7be1 Re-read the section, then ran this function on the short and extended corpus: every shuffled submission agreed with the ordered one, a changed digest did not, and an undeclared case does not apply.
+ * @evidence ./conformance.ts#checkTrialParity The seed corpus asks the harness to compare each pair of batches.
+ * @evidenceReview ./conformance.ts#checkTrialParity #d6b01f7 Re-read checkTrialParity: it compares the full-distribution flag, the reduction, and each outcome's index, seed, status, digest, and end money.
+ */
+export function keepsTrialParityAcrossTheSeedCorpus(): void {
+  expectProperty({
+    predicateId: "declared-trial-parity",
+    testSeed: 0xd0c5,
+    cases: conformanceCaseCount(),
+    generate: (_index, rng) => {
+      const count = rng.int(1, 8);
+      const order = Array.from({ length: count }, (_, logicalIndex) => logicalIndex);
+      for (let i = order.length - 1; i > 0; i -= 1) {
+        const j = rng.int(0, i);
+        [order[i], order[j]] = [order[j]!, order[i]!];
+      }
+      return { baseSeed: rng.int(1, 1_000), order };
+    },
+    shrink: (value) => (value.order.length > 1 ? [{ ...value, order: value.order.filter((index) => index !== Math.max(...value.order)) }] : []),
+    predicate: (value) => {
+      const trial = (logicalIndex: number): AnalysisTrialTaskV1 => ({
+        schemaVersion: 1,
+        contract: "idlekit.execution-task.v1",
+        taskId: `trial-${logicalIndex}`,
+        logicalIndex,
+        seed: analysisTaskSeed(value.baseSeed, logicalIndex),
+        stepBudget: 1,
+        kind: "analysis-trial",
+        payload: {},
+        pluginPaths: [],
+        pluginRoots: [],
+        pluginDigests: {},
+      });
+      // A deterministic trial: its digest and end money depend on the logical index and the seed only.
+      const runner = (task: AnalysisTrialTaskV1): AnalysisTrialOutcomeV1 => ({
+        taskId: task.taskId,
+        logicalIndex: task.logicalIndex,
+        seed: task.seed,
+        status: "ok",
+        reason: "ok",
+        attempts: 1,
+        semanticDigest: `${task.logicalIndex}:${task.seed}`,
+        endMoney: String(task.seed % 97),
+      });
+      const ordered = runLocalBatch([...value.order].sort((a, b) => a - b).map(trial), runner);
+      const shuffled = runLocalBatch(value.order.map(trial), runner);
+      expectApplicable(checkTrialParity(true, ordered, shuffled));
+      expect(checkTrialParity(false, ordered, shuffled).applicable).toBe(false);
+      const tampered = {
+        ...shuffled,
+        outcomes: shuffled.outcomes.map((outcome, index) => (index === 0 ? { ...outcome, semanticDigest: "other" } : outcome)),
+      };
+      expect(checkTrialParity(true, ordered, tampered).ok).toBe(false);
+      return true;
+    },
+    describeCase: (value) => ({
+      gameSeed: value.baseSeed,
+      engineId: null,
+      modelId: null,
+      strategyId: null,
+      tickSchedule: null,
+    }),
+  });
+}
+
 describe("PR-20 partial final tick relation", () => {
   it("replays the partial final tick against the hand answer across the seed corpus", replaysPartialFinalTickAcrossTheSeedCorpus);
+});
+
+describe("DX-05 trial parity relation", () => {
+  it("keeps trial parity across the seed corpus", keepsTrialParityAcrossTheSeedCorpus);
 });
 
 describe("PR-16 guarded advance relation", () => {

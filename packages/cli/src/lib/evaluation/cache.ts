@@ -2,7 +2,7 @@ import { hashContent, stableStringify } from "../../io/outputMeta";
 
 /**
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity An alias entry expires after one day.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity #9a0037c Re-read the section: the TTL is 24 hours.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity #e9a0d70 Re-read the section: the TTL is 24 hours.
  */
 export const JEV_ALIAS_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -17,7 +17,7 @@ export type JevCacheEntry = Readonly<{
 
 /**
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity The cache key binds the projection, the rubric, and the requested model.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity #9a0037c Re-read the section: a different rubric or requested model misses.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity #e9a0d70 Re-read the section: a different rubric or requested model misses.
  */
 export function jevCacheKey(parts: Readonly<{
   projection: unknown;
@@ -38,7 +38,7 @@ export function jevCacheKey(parts: Readonly<{
 
 /**
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity An alias is revalidated after one day. A pinned id must match the stored model.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity #9a0037c Re-read the section: jev-latest is not treated as a permanent response.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity #e9a0d70 Re-read the section: jev-latest is not treated as a permanent response.
  */
 export function jevCacheHit(
   entry: JevCacheEntry | undefined,
@@ -49,14 +49,16 @@ export function jevCacheHit(
   const alias = requestedModel === "jev-latest" || requestedModel.endsWith("-latest");
   if (alias) {
     if (entry.resolvedModel === requestedModel || entry.resolvedModel.endsWith("-latest")) return false;
-    return nowMs - entry.storedAtMs < JEV_ALIAS_TTL_MS;
+    // A stored time in the future is not fresh: the age must be known and inside the TTL.
+    const age = nowMs - entry.storedAtMs;
+    return age >= 0 && age < JEV_ALIAS_TTL_MS;
   }
   return entry.resolvedModel === requestedModel;
 }
 
 /**
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-secret-boundary The cache file is a digest record, not a copy of the request key.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-secret-boundary #ddb0013 Re-read the section: the stored JSON is the advisory, not the API key.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-secret-boundary #e64d47d Re-read the section: the stored JSON is the advisory, not the API key.
  */
 export function serializeJevCache(entries: readonly JevCacheEntry[]): string {
   return `${stableStringify({ entries })}\n`;
@@ -64,7 +66,7 @@ export function serializeJevCache(entries: readonly JevCacheEntry[]): string {
 
 /**
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity A cache file is read back only as stored entries.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity #9a0037c Re-read the section: a miss falls through when the entry is absent.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity #e9a0d70 Re-read the section: a miss falls through when the entry is absent.
  */
 export function parseJevCache(text: string): JevCacheEntry[] {
   const parsed = JSON.parse(text) as { entries?: unknown[] };

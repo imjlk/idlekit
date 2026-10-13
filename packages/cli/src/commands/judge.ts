@@ -4,12 +4,49 @@ import { z } from "zod";
 import { usageError } from "../errors";
 import { buildOutputMeta, outputSchemaRefForCommand } from "../io/outputMeta";
 import { writeOutput } from "../io/writeOutput";
-import { resolve } from "path";
-import { readJsonFile } from "../runtime/bun";
+import { lstatSync, readlinkSync, realpathSync, statSync } from "fs";
+import { basename, dirname, resolve } from "path";
+import { readJsonFile, writeTextFile } from "../runtime/bun";
 import { readJudgeInputs } from "../lib/evaluation/input";
 import { evaluateRules } from "../lib/evaluation/rules";
 // Type only. main.ts registers this command for every invocation, so the opt-in provider loads after --provider jev.
 import type { JevTransport } from "../lib/evaluation/providers/jev";
+
+/**
+ * Two paths name the same file when their text resolves alike, or when both exist and share a realpath or a
+ * device and inode, so a symlink or a hard link to an input counts too.
+ */
+function canonical(path: string, depth = 0): string {
+  const absolute = resolve(path);
+  try {
+    return realpathSync(absolute);
+  } catch {
+    // A dangling symlink names the place its target will be written, so follow it before falling back.
+    try {
+      if (depth < 32 && lstatSync(absolute).isSymbolicLink()) {
+        return canonical(resolve(dirname(absolute), readlinkSync(absolute)), depth + 1);
+      }
+    } catch {
+      // Not a link. Fall through to the parent.
+    }
+    // A file that does not exist yet is named by its nearest existing parent's realpath, so a symlinked
+    // directory still resolves to the place the file will be written.
+    const parent = dirname(absolute);
+    return parent === absolute ? absolute : resolve(canonical(parent, depth + 1), basename(absolute));
+  }
+}
+
+function sameFile(left: string, right: string): boolean {
+  if (resolve(left) === resolve(right) || canonical(left) === canonical(right)) return true;
+  try {
+    if (realpathSync(left) === realpathSync(right)) return true;
+    const a = statSync(left);
+    const b = statSync(right);
+    return a.dev === b.dev && a.ino === b.ino;
+  } catch {
+    return false;
+  }
+}
 
 function renderJudgeMarkdown(report: JudgeReportV1): string {
   const lines = [
@@ -44,6 +81,27 @@ export type JevJudgeBundle = Readonly<{
   advisory: JevAdvisoryV1;
 }>;
 
+/** One CSV row per rubric rule: the numerical result beside its semantic diagnostic. */
+function judgeCsvRows(report: JudgeReportV1): Array<Record<string, string | number | null>> {
+  return report.numerical.results.map((result, index) => {
+    const diagnostic = report.diagnostics[index];
+    return {
+      id: result.id,
+      metricId: result.metricId,
+      verdict: result.verdict,
+      severity: result.severity,
+      evidenceStatus: result.evidence.status,
+      value: result.evidence.value,
+      unit: result.evidence.unit,
+      operator: result.evidence.operator,
+      threshold: result.evidence.threshold,
+      upperThreshold: result.evidence.upperThreshold,
+      diagnosticStatus: diagnostic?.status ?? null,
+      recommendationId: diagnostic?.recommendationId ?? null,
+    };
+  });
+}
+
 export async function runJudge(flags: {
   rubric: string;
   provider: "rules" | "jev";
@@ -65,16 +123,22 @@ export async function runJudge(flags: {
   // The cache is written after the inputs are read. Pointing it at an input would overwrite that input, and pointing
   // it at the output would let the bundle replace it, so the next run would pay for the request again.
   if (flags.provider === "jev" && flags.cache) {
-    const cachePath = resolve(flags.cache);
-    if (flags.out && cachePath === resolve(flags.out)) {
+    if (flags.out && sameFile(flags.cache, flags.out)) {
       throw usageError("--cache and --out name the same file. Give the Jev cache its own path.");
     }
-    if (cachePath === resolve(analysisPath) || cachePath === resolve(flags.rubric)) {
+    if (sameFile(flags.cache, analysisPath) || sameFile(flags.cache, flags.rubric)) {
       throw usageError("--cache names an input file. Give the Jev cache its own path.");
     }
   }
-  const artifactRaw = await readJsonFile<unknown>(analysisPath);
-  const rubricRaw = await readJsonFile<unknown>(flags.rubric);
+  // An unreadable or non-JSON input is a usage error, like a structurally invalid one.
+  let artifactRaw: unknown;
+  let rubricRaw: unknown;
+  try {
+    artifactRaw = await readJsonFile<unknown>(analysisPath);
+    rubricRaw = await readJsonFile<unknown>(flags.rubric);
+  } catch (error) {
+    throw usageError(`Invalid judge input: ${error instanceof Error ? error.message : String(error)}`);
+  }
   const parsed = readJudgeInputs(artifactRaw, rubricRaw);
   if (!parsed.ok) {
     throw usageError(`Invalid judge input: ${parsed.issues.join("; ")}`);
@@ -87,15 +151,14 @@ export async function runJudge(flags: {
     throw usageError(`Invalid judge input: ${message}`);
   }
   if (flags.provider === "rules") {
-    if (flags.format === "md") {
-      console.log(renderJudgeMarkdown(report));
-      return report;
-    }
+    // JSON output is exactly idlekit.judge.v1, whose root rejects extra keys, so no `_meta` is attached.
+    // Markdown and CSV go through writeOutput too, so --out applies to every format.
+    // CSV is one row per rule, not the nested report squeezed into one cell.
     await writeOutput({
       format: flags.format,
       outPath: flags.out,
-      data: report,
-      meta: buildOutputMeta({ command: "judge", pluginDigest: {} }),
+      data:
+        flags.format === "md" ? renderJudgeMarkdown(report) : flags.format === "csv" ? judgeCsvRows(report) : report,
     });
     return report;
   }
@@ -114,11 +177,20 @@ export async function runJudge(flags: {
   });
   const bundle: JevJudgeBundle = { numericalReport: report, advisory };
   if (flags.format === "md") {
-    console.log(renderJudgeMarkdown(report));
-    console.log(`- Jev: ${advisory.status} ${advisory.reason}`);
     // The plan is what a dry run is for, so md shows it as json does.
-    console.log(`- Endpoint: ${advisory.endpoint}`);
-    console.log(`- Planned requests: ${advisory.plannedRequests}`);
+    const markdown = [
+      renderJudgeMarkdown(report),
+      `- Jev: ${advisory.status} ${advisory.reason}`,
+      `- Endpoint: ${advisory.endpoint}`,
+      `- Planned requests: ${advisory.plannedRequests}`,
+    ].join("\n");
+    if (flags.out) {
+      const outPath = resolve(flags.out);
+      await writeTextFile(outPath, `${markdown}\n`);
+      console.log(`Wrote md output to ${outPath}`);
+    } else {
+      console.log(markdown);
+    }
     return bundle;
   }
   await writeOutput({

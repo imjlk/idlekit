@@ -11,6 +11,7 @@ import type { ScenarioV1 } from "../scenario/types";
 import { independentBernoulli } from "../sim/analysis/distribution";
 import { runExperiment } from "../sim/analysis/experiment";
 import { expectedLinearEnd } from "../sim/integrationMatrix";
+import type { ExecutionBatchV1 } from "../sim/executionBackend";
 import type { GrowthFitArtifactV1 } from "../sim/analysis/growthFit";
 import type { MilestoneReport } from "../sim/analysis/milestones";
 import { executeResetCycles } from "../sim/analysis/resetCycle";
@@ -394,7 +395,7 @@ type GuardedAdvanceCase = Readonly<{
  * economy, every traced state, stats, the observation, and the stop. The advanced run must take no fallback step.
  *
  * @evidence docs/requirements/active/guarded-analytic-advance.md#req-pr16-exact-match Runs fixed-step and exact chunks on the same constant-income case and compares wallet, trace, counters, goals, and stop.
- * @evidenceReview docs/requirements/active/guarded-analytic-advance.md#req-pr16-exact-match #4a3881f Re-read the section: the relation compares the reference and the chunked run online and offline, and an undeclared case does not apply.
+ * @evidenceReview docs/requirements/active/guarded-analytic-advance.md#req-pr16-exact-match #eaace6d Re-read the section: the relation compares the reference and the chunked run online and offline, and an undeclared case does not apply.
  */
 export function checkGuardedAdvance(declared: boolean, value: GuardedAdvanceCase): RelationCheck {
   if (!declared) return { ok: true, applicable: false, summary: "guarded advance relation is not declared" };
@@ -512,6 +513,37 @@ export function checkPartialFinalTick(declared: boolean, value: PartialFinalTick
     ok,
     applicable: true,
     summary: `income ${value.incomePerSec}, step ${value.stepSec}, horizon ${value.durationSec}: end ${actual} against ${expected}, ${run.stop?.steps} ticks for ${ticks}, stop ${run.stop?.reason} at t=${run.end.t}`,
+  };
+}
+
+/**
+ * Two batches of the same logical trials agree when every logical index keeps its seed, status, semantic digest,
+ * and end money, and the batches agree on the full-distribution flag and the reduction. Backend, worker count,
+ * submission order, and completion order are not inputs.
+ *
+ * @evidence docs/requirements/active/worker-execution-backend.md#req-dx05-worker-parity Local and worker batches of the same trials are compared through this declared relation.
+ * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-worker-parity #60a7be1 Re-read the section: one, two, and four workers keep the local per-trial digest and end money, and an undeclared case does not apply.
+ */
+export function checkTrialParity(declared: boolean, reference: ExecutionBatchV1, other: ExecutionBatchV1): RelationCheck {
+  if (!declared) return { ok: true, applicable: false, summary: "trial parity relation is not declared" };
+  const view = (batch: ExecutionBatchV1) =>
+    canonicalJson({
+      fullDistribution: batch.fullDistribution,
+      endMoney: batch.reduction.endMoney,
+      outcomes: batch.outcomes.map((outcome) => ({
+        logicalIndex: outcome.logicalIndex,
+        seed: outcome.seed,
+        status: outcome.status,
+        semanticDigest: outcome.semanticDigest,
+        endMoney: outcome.endMoney,
+      })),
+    });
+  const left = view(reference);
+  const right = view(other);
+  return {
+    ok: left === right,
+    applicable: true,
+    summary: `${reference.backend} ${reference.outcomes.length} against ${other.backend} ${other.outcomes.length}: ${left === right ? "same" : "different"}`,
   };
 }
 

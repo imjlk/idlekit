@@ -48,7 +48,7 @@ idk judge analysis.json --rubric rubric.json --provider jev --model jev-1.13.0
 
 첫 `evidence:check`는 placeholder review 때문에 2로 끝났다. 다음은 inventory가 `export function`을 찾는데 호스트가 `export async function`이라 1로 끝났다. 다시 실행한 값은 0이다. review를 반영한 뒤 `contracts:generate`를 다시 실행했고 `contracts:check`는 0이다. `graph:check`는 `createPlannerStrategy`에서 `stepOnce`까지 hops 0으로 관측하지 않았다.
 
-PR #221 review 수정으로 요구 파일 sha256은 `5dd24a2008d8eb8384d1885d5bf3bd78415ac5a5100604bae02e3b79228edc08`이 됐다. 그 수정에서 `bun run typecheck`, `bun run test:conformance`, `bun run contracts:check`, 그리고 `packages/cli`의 `jev.test.ts`, `judge.test.ts`, `output-schema.test.ts`를 실행했다.
+PR #221 review 수정으로 요구 파일 sha256은 `7ca16ab408f048a0b17e84072aae5e74afc5b3a7430bbcf79d483f011269a806`이 됐다. 그 수정에서 `bun run typecheck`, `bun run test:conformance`, `bun run contracts:check`, 그리고 `packages/cli`의 `jev.test.ts`, `judge.test.ts`, `output-schema.test.ts`를 실행했다.
 
 ## Graph
 
