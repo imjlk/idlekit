@@ -10,7 +10,7 @@ A confirmed capacity constraint needs a saturated process, a strictly greater up
 
 Little's law runs only when the capability is statically known, both the observation and its window are steady, and the work flow is defined. Ramp-up is `not-applicable`. A consistent result does not itself confirm a cause.
 
-An edge with a different destination unit uses `inflow * numerator / denominator * (1 - loss)`. Queue plus unretained must match that amount in the destination unit. The source unit is not added to the destination unit. Queue and unretained are read for the edge's destination resource in the source sample's window. Every source window is tried, and edges into the same destination resource are summed. An amount or product that overflows a finite number is never a match, and zero matches only zero. When several windows conserve, the latest one is reported. The same document shape covers logistics, crafting, and expedition-slot fixtures. Resource names stay in `examples/analysis/flow-pipeline.json`. Seed `15` labels that file.
+An edge with a different destination unit uses `inflow * numerator / denominator * (1 - loss)`. Queue plus unretained must match that amount in the destination unit. The source unit is not added to the destination unit. Queue and unretained are read for the edge's destination resource in the source sample's window, and in the destination throughput's unit when that is observed. Every source window is tried, and edges into the same destination resource are summed. An amount or product that overflows a finite number is never a match, and zero matches only zero. When several windows conserve, the latest one is reported. The same document shape covers logistics, crafting, and expedition-slot fixtures. Resource names stay in `examples/analysis/flow-pipeline.json`. Seed `15` labels that file.
 
 Facts and hypotheses are separate. A hypothesis links to samples through `evidenceRefs`. A confirmed capacity constraint also cites `causal`, the record it rests on.
 
@@ -22,7 +22,7 @@ Node.js and browser runtimes are not part of the v1 compatibility contract.
 
 ## Verification
 
-Commands below were run from this worktree on macOS arm64 with Bun 1.4.2 and ttsc 0.30.4. Requirement file sha256 `20a69a45d5df0e9e952d44cb5fc224bb0632c7cfbeabdc95b9d3a2c81b4e3f41`. `typecheck`, `test`, `build`, `compat:check`, `replay:verify`, and `docs:verify` are unrun.
+Commands below were run from this worktree on macOS arm64 with Bun 1.4.2 and ttsc 0.30.4. Requirement file sha256 `b251c61ad5032082d9c42bc33da49d034b7efcde86d1ecc59ed775c9ac1deec5`. `typecheck`, `test`, `build`, `compat:check`, `replay:verify`, and `docs:verify` are unrun.
 
 | Command | Exit |
 |---|---|

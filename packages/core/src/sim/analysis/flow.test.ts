@@ -165,7 +165,7 @@ export function declaresFlowAdapter(): void {
  * @evidence ./flow.ts#flowPipelineConstraint Reads the pipeline marker.
  * @evidenceReview ./flow.ts#flowPipelineConstraint #6971fde The declaration is process-throughput-20.
  * @evidence ./flow.ts#diagnoseFlow Diagnoses throughput, capacity, and the binding stage.
- * @evidenceReview ./flow.ts#diagnoseFlow #6f649a5 The middle stage binds at 20, doubling inflow keeps 20 and grows the queue, without a causal model the cause is suspected, another resource or window does not bind, every saturated process is a candidate with the causal one confirmed first, a bind does not hide another process's wait, a cycle reports no final throughput, each terminal reports a final throughput per delivered resource from its latest window, an inflow source offers work, a process binds on its latest saturated window, downstream slack counts every feed and is cited, edgeless series each report a final with escaped ids, a confirmed bind cites causal and its edges while a suspected one cites no causal record, another-unit downstream capacity proves no slack, and a 1e300 window formats as a finite saturation time.
+ * @evidenceReview ./flow.ts#diagnoseFlow #089ec98 The middle stage binds at 20, doubling inflow keeps 20 and grows the queue, without a causal model the cause is suspected, another resource or window does not bind, every saturated process is a candidate with the causal one confirmed first, a bind does not hide another process's wait, a cycle reports no final throughput, each terminal reports a final throughput per delivered resource from its latest window, an inflow source offers work, a process binds on its latest saturated window, downstream slack counts every feed and is cited, edgeless series each report a final with escaped ids, a confirmed bind cites causal and its edges while a suspected one cites no causal record, another-unit downstream capacity proves no slack, and a 1e300 window formats as a finite saturation time.
  */
 export function diagnosesSteadyPipeline(): void {
   expect(flowPipelineConstraint).toBe("process-throughput-20");
@@ -391,7 +391,7 @@ export function diagnosesSteadyPipeline(): void {
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-conservation Conversion keeps the destination unit.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-conservation #cb49aad Re-read the section, then ran this function: 100 becomes 45, the units are not added, a queue, unretained, or source sample of another resource or window does not conserve, a later conserving window is found, an overflowed conversion does not match, a 1e-7, 4.5e-13, or 4.5e-25 conversion is not equal to an empty stock, two conserving windows publish the latest in either order, two edges into one stock are summed to 90, and a conserved 1e-10 keeps its spelling instead of rounding to 0.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-conservation #d1f25b2 Re-read the section, then ran this function: 100 becomes 45, the units are not added, a queue, unretained, or source sample of another resource or window does not conserve, a later conserving window is found, an overflowed conversion does not match, a 1e-7, 4.5e-13, or 4.5e-25 conversion is not equal to an empty stock, two conserving windows publish the latest in either order, a stock in another unit than the destination throughput does not conserve, two edges into one stock are summed to 90, and a conserved 1e-10 keeps its spelling instead of rounding to 0.
  * @evidence ./flow.ts#flowConservation Reads the conservation marker.
  * @evidenceReview ./flow.ts#flowConservation #ca6486f The declaration is converted-units-stay-apart.
  */
@@ -443,6 +443,18 @@ export function checksFlowConservation(): void {
     edges: conversionCase.edges.map((edge) => ({ ...edge, numerator: "10", denominator: "1", loss: "0" })),
   });
   expect(overflow.facts.some((item) => item.kind === "conservation")).toBe(false);
+  // A stock in another unit than the destination's throughput does not conserve.
+  const destinationRate = { processId: "dest", resourceId: "ingot", kind: "throughput" as const, amount: "45", unit: "ingot/min", startSec: 0, endSec: 60 };
+  const relabeled = diagnoseFlow({
+    ...conversionCase,
+    samples: [
+      ...conversionCase.samples.map((sample) => (sample.kind === "inflow" ? sample : { ...sample, unit: "gold/min" })),
+      destinationRate,
+    ],
+  });
+  expect(relabeled.facts.some((item) => item.kind === "conservation")).toBe(false);
+  const matching = diagnoseFlow({ ...conversionCase, samples: [...conversionCase.samples, destinationRate] });
+  expect(fact(matching, "conservation", "dest")?.amount).toBe("45");
   // A sub-unit conversion is not equal to an empty destination.
   const tiny = diagnoseFlow({
     ...conversionCase,
@@ -532,7 +544,7 @@ export function leavesUnknownModelsUnsupported(): void {
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-suspected Unresolved demand and capacity stay insufficient, and ramp-up skips Little's law.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-suspected #bcf34c1 Re-read the section, then ran this function: a lone throughput confirms nothing, starved and blocked time on two processes give two hypotheses, both on one process stay unresolved with that process's own hypothesis, an overflowing Little's law product is insufficient-data, a ramp-up observation keeps the law off, the latest wait window is cited in either sample order, and a latest zero wait clears an older positive one.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-suspected #277b0a9 Re-read the section, then ran this function: a lone throughput confirms nothing, starved and blocked time on two processes give two hypotheses, both on one process stay unresolved with that process's own hypothesis, an overflowing Little's law product is insufficient-data, a ramp-up observation keeps the law off, the latest wait window is cited in either sample order, a latest zero wait clears an older positive one, and a positive and a zero wait for two resources in one window give the shortage in either order.
  * @evidence ./flow.ts#flowSuspectedCause Reads the suspected-cause marker.
  * @evidenceReview ./flow.ts#flowSuspectedCause #0bfa7f8 The declaration is facts-apart-from-cause.
  */
@@ -606,6 +618,14 @@ export function separatesFactsFromCauses(): void {
     const report = diagnoseFlow({ ...starvedCase, samples });
     const latestIndex = samples.findIndex((sample) => sample.startSec === 0);
     expect(report.hypotheses[0]?.evidenceRefs).toEqual([`sample:${latestIndex}`]);
+  }
+  // Waits for two resources in the same latest window both count, whatever the sample order.
+  const zeroOtherResource = { processId: "stage", resourceId: "part", kind: "starved-time" as const, amount: "0", unit: "s", startSec: 0, endSec: 60 };
+  for (const samples of [[zeroOtherResource, ...starvedCase.samples], [...starvedCase.samples, zeroOtherResource]]) {
+    const report = diagnoseFlow({ ...starvedCase, samples });
+    const positiveIndex = samples.findIndex((sample) => sample.resourceId === "item");
+    expect(report.hypotheses.map((item) => item.claim)).toEqual(["material-shortage"]);
+    expect(report.hypotheses[0]?.evidenceRefs).toEqual([`sample:${positiveIndex}`]);
   }
   // A latest zero wait clears an older positive one.
   const clearedWait = { processId: "stage", resourceId: "item", kind: "starved-time" as const, amount: "0", unit: "s", startSec: 60, endSec: 120 };
