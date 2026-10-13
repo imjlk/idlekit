@@ -1,0 +1,26 @@
+{
+  "scenario": {
+    "schemaVersion": 1,
+    "unit": { "code": "COIN" },
+    "policy": { "mode": "drop" },
+    "model": { "id": "linear", "version": 1, "params": { "incomePerSec": "1", "buyCostBase": "1e100", "buyCostGrowth": 1, "buyIncomeDelta": "0" } },
+    "initial": { "t": 0, "wallet": { "unit": "COIN", "amount": "0" }, "vars": { "owned": 0 }, "prestige": { "count": 0, "points": "0", "multiplier": "1" } },
+    "clock": { "stepSec": 1, "durationSec": 1 },
+    "strategy": { "id": "greedy" }
+  },
+  "cases": [
+    { "id": "positive-sub-epsilon-duration", "initialT": 0, "clock": { "stepSec": 1, "durationSec": 1e-13 }, "expected": { "elapsedSec": 0, "steps": 0, "reason": "duration", "endMoney": "0", "timestampChanged": false } },
+    { "id": "initial-time-until", "initialT": 10, "clock": { "stepSec": 1, "durationSec": 1, "untilExpr": "t >= 10" }, "expected": { "elapsedSec": 0, "steps": 0, "reason": "until", "endMoney": "0", "timestampChanged": false } },
+    { "id": "initial-money-until", "initialT": 0, "clock": { "stepSec": 1, "durationSec": 1, "untilExpr": "money >= 0" }, "expected": { "elapsedSec": 0, "steps": 0, "reason": "until", "endMoney": "0", "timestampChanged": false } },
+    { "id": "initial-prestige-until", "initialT": 0, "clock": { "stepSec": 1, "durationSec": 1, "untilExpr": "prestige.points >= 0" }, "expected": { "elapsedSec": 0, "steps": 0, "reason": "until", "endMoney": "0", "timestampChanged": false } },
+    { "id": "initial-vars-until", "initialT": 0, "clock": { "stepSec": 1, "durationSec": 1, "untilExpr": "vars.owned >= 0" }, "expected": { "elapsedSec": 0, "steps": 0, "reason": "until", "endMoney": "0", "timestampChanged": false } },
+    { "id": "large-time-until-before-first-tick", "initialT": 1e20, "clock": { "stepSec": 1, "durationSec": 1, "untilExpr": "money >= 0" }, "expected": { "elapsedSec": 0, "steps": 0, "reason": "until", "endMoney": "0", "timestampChanged": false } },
+    { "id": "rounded-time-with-independent-elapsed", "initialT": 1e20, "clock": { "stepSec": 1e4, "durationSec": 1e4 }, "expected": { "elapsedSec": 10000, "steps": 1, "reason": "duration", "endMoney": "10000", "timestampChanged": true, "timestampDelta": 16384 } },
+    { "id": "nonadvancing-last-partial-after-advancing-tick", "initialT": 1e20, "clock": { "stepSec": 16384, "durationSec": 16385 }, "expected": { "elapsedSec": 16385, "steps": 2, "reason": "duration", "endMoney": "16385", "timestampChanged": true, "timestampDelta": 16384 } },
+    { "id": "nonadvancing-first-full-tick", "initialT": 1e20, "clock": { "stepSec": 1, "durationSec": 1 }, "error": "did not advance state.t" },
+    { "id": "nonadvancing-first-partial-tick", "initialT": 1e20, "clock": { "stepSec": 1e5, "durationSec": 1 }, "error": "did not advance state.t" },
+    { "id": "finite-operands-overflow-first-time", "initialT": 1e308, "clock": { "stepSec": 1e308, "durationSec": 1e308 }, "error": "state.t must be a finite number" },
+    { "id": "invalid-step-even-when-until-is-met", "initialT": 0, "clock": { "stepSec": 0, "durationSec": 1, "untilExpr": "money >= 0" }, "error": "stepSec" },
+    { "id": "invalid-duration-even-when-until-is-met", "initialT": 0, "clock": { "stepSec": 1, "durationSec": -1, "untilExpr": "money >= 0" }, "error": "durationSec" }
+  ]
+}
