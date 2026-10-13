@@ -4,12 +4,29 @@ import { z } from "zod";
 import { usageError } from "../errors";
 import { buildOutputMeta, outputSchemaRefForCommand } from "../io/outputMeta";
 import { writeOutput } from "../io/writeOutput";
+import { realpathSync, statSync } from "fs";
 import { resolve } from "path";
-import { readJsonFile } from "../runtime/bun";
+import { readJsonFile, writeTextFile } from "../runtime/bun";
 import { readJudgeInputs } from "../lib/evaluation/input";
 import { evaluateRules } from "../lib/evaluation/rules";
 // Type only. main.ts registers this command for every invocation, so the opt-in provider loads after --provider jev.
 import type { JevTransport } from "../lib/evaluation/providers/jev";
+
+/**
+ * Two paths name the same file when their text resolves alike, or when both exist and share a realpath or a
+ * device and inode, so a symlink or a hard link to an input counts too.
+ */
+function sameFile(left: string, right: string): boolean {
+  if (resolve(left) === resolve(right)) return true;
+  try {
+    if (realpathSync(left) === realpathSync(right)) return true;
+    const a = statSync(left);
+    const b = statSync(right);
+    return a.dev === b.dev && a.ino === b.ino;
+  } catch {
+    return false;
+  }
+}
 
 function renderJudgeMarkdown(report: JudgeReportV1): string {
   const lines = [
@@ -65,11 +82,10 @@ export async function runJudge(flags: {
   // The cache is written after the inputs are read. Pointing it at an input would overwrite that input, and pointing
   // it at the output would let the bundle replace it, so the next run would pay for the request again.
   if (flags.provider === "jev" && flags.cache) {
-    const cachePath = resolve(flags.cache);
-    if (flags.out && cachePath === resolve(flags.out)) {
+    if (flags.out && sameFile(flags.cache, flags.out)) {
       throw usageError("--cache and --out name the same file. Give the Jev cache its own path.");
     }
-    if (cachePath === resolve(analysisPath) || cachePath === resolve(flags.rubric)) {
+    if (sameFile(flags.cache, analysisPath) || sameFile(flags.cache, flags.rubric)) {
       throw usageError("--cache names an input file. Give the Jev cache its own path.");
     }
   }
@@ -114,11 +130,20 @@ export async function runJudge(flags: {
   });
   const bundle: JevJudgeBundle = { numericalReport: report, advisory };
   if (flags.format === "md") {
-    console.log(renderJudgeMarkdown(report));
-    console.log(`- Jev: ${advisory.status} ${advisory.reason}`);
     // The plan is what a dry run is for, so md shows it as json does.
-    console.log(`- Endpoint: ${advisory.endpoint}`);
-    console.log(`- Planned requests: ${advisory.plannedRequests}`);
+    const markdown = [
+      renderJudgeMarkdown(report),
+      `- Jev: ${advisory.status} ${advisory.reason}`,
+      `- Endpoint: ${advisory.endpoint}`,
+      `- Planned requests: ${advisory.plannedRequests}`,
+    ].join("\n");
+    if (flags.out) {
+      const outPath = resolve(flags.out);
+      await writeTextFile(outPath, `${markdown}\n`);
+      console.log(`Wrote md output to ${outPath}`);
+    } else {
+      console.log(markdown);
+    }
     return bundle;
   }
   await writeOutput({

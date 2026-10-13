@@ -10,7 +10,7 @@ const JEV_ALGORITHM_VERSION = "jev-advisory-1" as const;
 
 /**
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-opt-in-live The published schema id is the Jev advisory report.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-opt-in-live #6484686 Re-read the section: the id is the advisory schema, not a numeric contract.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-opt-in-live #f797c9d Re-read the section: the id is the advisory schema, not a numeric contract.
  */
 export function jevSchemaId(): typeof JEV_SCHEMA_ID {
   return JEV_SCHEMA_ID;
@@ -18,7 +18,7 @@ export function jevSchemaId(): typeof JEV_SCHEMA_ID {
 
 /**
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-opt-in-live The algorithm version is jev-advisory-1.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-opt-in-live #6484686 Re-read the section: the version string is jev-advisory-1.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-opt-in-live #f797c9d Re-read the section: the version string is jev-advisory-1.
  */
 export function jevAlgorithmVersion(): typeof JEV_ALGORITHM_VERSION {
   return JEV_ALGORITHM_VERSION;

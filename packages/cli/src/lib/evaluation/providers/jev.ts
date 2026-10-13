@@ -63,7 +63,7 @@ type JevProjection = Readonly<{
 
 /**
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-opt-in-live The default transport is fetch. Tests inject a mock.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-opt-in-live #6484686 Re-read the section: the ordinary test does not call the live API.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-opt-in-live #f797c9d Re-read the section: the ordinary test does not call the live API.
  */
 export const jevLiveTransport = "injected-or-fetch" as const;
 
@@ -134,7 +134,7 @@ function redact(value: unknown, keyMaterial: string): unknown {
 
 /**
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-secret-boundary The projection keeps metrics, assumptions, and rubric intent.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-secret-boundary #ddb0013 Re-read the section: raw source and secrets are dropped, and a local path in any host layout is replaced in place.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-secret-boundary #5086478 Re-read the section: raw source and secrets are dropped, and a local path in any host layout is replaced in place.
  */
 export function projectJevState(
   artifact: AnalysisArtifactV1,
@@ -176,6 +176,13 @@ export function projectJevState(
     threshold: rule.threshold,
     unit: rule.unit,
     upperThreshold: rule.upperThreshold,
+    // Optional identity constraints the numerical judge checks. A mismatch there makes the rule inconclusive.
+    scenarioVersion: rule.scenarioVersion,
+    specVersion: rule.specVersion,
+    engineId: rule.engineId,
+    pluginVersion: rule.pluginVersion,
+    seed: rule.seed,
+    algorithmVersion: rule.algorithmVersion,
   }));
   /*
    * The question is the numerical predicate itself: does the recorded reading fail its rule.
@@ -221,7 +228,7 @@ type JevFetch = (
 
 /**
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-opt-in-live The fetch transport posts only the body the caller already built.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-opt-in-live #6484686 Re-read the section: the URL is the documented System One endpoint.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-opt-in-live #f797c9d Re-read the section: the URL is the documented System One endpoint.
  */
 export function createFetchTransport(fetchImpl: JevFetch = (input, init) => globalThis.fetch(input, init)): JevTransport {
   return async (request) => {
@@ -381,7 +388,7 @@ function retryable(status: number): boolean {
 
 /**
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-opt-in-live The live transport runs only when the caller asks for Jev.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-opt-in-live #6484686 Re-read the section: dry-run and a missing key do not send the request.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-opt-in-live #f797c9d Re-read the section: dry-run and a missing key do not send the request.
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-http-budget Retry stays inside the attempt budget.
  * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-http-budget #84d6272 Re-read the section: timeout becomes unavailable and authentication is not retried.
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-numerical-unchanged The numerical digest is copied, not recomputed by the model.
@@ -389,7 +396,7 @@ function retryable(status: number): boolean {
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-no-default-fetch Only judge with provider jev reaches this transport. The rules provider returns before it.
  * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-no-default-fetch #e8a02f1 Re-read the section: provider rules does not call the Jev transport, even with TYPESAFE_API_KEY set.
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity The cache key is built from the projection here, and a cache that cannot be written fails open.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity #9a0037c Re-read the section: the key takes the projection with the upper bound, and a failed write keeps the advisory without resending.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity #e80c800 Re-read the section: the key takes the projection with the upper bound, and a failed write keeps the advisory without resending.
  */
 export async function adviseWithJev(args: Readonly<{
   artifact: AnalysisArtifactV1;
@@ -451,23 +458,34 @@ export async function adviseWithJev(args: Readonly<{
   if (body.length > (args.maxInputChars ?? 8000)) {
     return blank({ ...base, plannedRequests: 0, status: "failed", reason: "input-too-large", cache: "bypass", attempts: 0 });
   }
+  const entries = readCache(args.cachePath);
+  const found = entries.find((entry) => entry.key === keyMaterial);
+  const nowMs = args.nowMs ?? Date.now();
+  let cached: JevAdvisoryV1 | null = null;
+  if (jevCacheHit(found, args.requestedModel, nowMs)) {
+    // A stored advisory that does not parse, does not validate, or names another request is a miss.
+    // The request runs and rewrites the entry.
+    const stored = readCachedAdvisory(found.advisoryJson);
+    const matches =
+      stored !== null &&
+      stored.numericalDigest === numericalDigest &&
+      stored.rubricVersion === args.rubric.rubricVersion &&
+      stored.requestedModel === args.requestedModel &&
+      stored.resolvedModel === found.resolvedModel;
+    cached = matches ? stored : null;
+  }
+  // A dry run plans what a live run would send: nothing when the cache already answers.
   if (args.dryRun) {
     return blank({
       ...base,
+      plannedRequests: cached ? 0 : plannedRequests,
       status: "skipped",
       reason: "dry-run",
       cache: "bypass",
       attempts: 0,
     });
   }
-  const entries = readCache(args.cachePath);
-  const found = entries.find((entry) => entry.key === keyMaterial);
-  const nowMs = args.nowMs ?? Date.now();
-  if (jevCacheHit(found, args.requestedModel, nowMs)) {
-    // A stored advisory that does not parse or validate is a miss. The request runs and rewrites the entry.
-    const cached = readCachedAdvisory(found.advisoryJson);
-    if (cached) return { ...cached, cache: "hit", attempts: 0, dryRun: false };
-  }
+  if (cached) return { ...cached, cache: "hit", attempts: 0, dryRun: false };
   if (key.length === 0) {
     return blank({ ...base, status: "unavailable", reason: "missing-api-key", cache: "miss", attempts: 0 });
   }

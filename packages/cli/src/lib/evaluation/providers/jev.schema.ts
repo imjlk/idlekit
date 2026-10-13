@@ -2,7 +2,7 @@ import { z } from "zod";
 
 /**
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-opt-in-live The wire endpoint is the System One URL rechecked for this change.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-opt-in-live #6484686 Re-read the section: the URL is https://api.typesafe.ai/v1/systemone.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-opt-in-live #f797c9d Re-read the section: the URL is https://api.typesafe.ai/v1/systemone.
  */
 export const JEV_ENDPOINT = "https://api.typesafe.ai/v1/systemone" as const;
 
@@ -26,13 +26,13 @@ export const jevHttpBudget = "bounded-retry" as const;
 
 /**
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity A pinned model can hit. An alias is not a permanent id.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity #9a0037c Re-read the section: jev-latest is revalidated and a rubric change misses.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity #e80c800 Re-read the section: jev-latest is revalidated and a rubric change misses.
  */
 export const jevCacheIdentity = "alias-is-not-pinned" as const;
 
 /**
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-secret-boundary The key and the raw state stay out of the cache and the report.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-secret-boundary #ddb0013 Re-read the section: secrets and full state are not stored.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-secret-boundary #5086478 Re-read the section: secrets and full state are not stored.
  */
 export const jevSecretBoundary = "redacted-projection" as const;
 
@@ -44,7 +44,7 @@ export const jevNumericalUnchanged = "verdict-stays" as const;
 
 /**
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-opt-in-live A live call is opt-in. CI uses a mock transport.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-opt-in-live #6484686 Re-read the section: the live smoke is not the default test.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-opt-in-live #f797c9d Re-read the section: the live smoke is not the default test.
  */
 export const jevOptInLive = "mock-unless-opt-in" as const;
 
