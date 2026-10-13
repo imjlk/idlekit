@@ -35,7 +35,7 @@ function builtinRegistries(): TrialRegistries {
 
 /**
  * @evidence docs/requirements/active/worker-execution-backend.md#req-dx05-worker-parity Plugin roots and digests are the parent policy. An empty root list does not allow every file.
- * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-worker-parity #2e1b075 Re-read the section: a path outside the parent roots fails closed, the worker does not add a root, plugin-trust is a loader refusal, and a step-budget stop is incomplete.
+ * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-worker-parity #ee2513d Re-read the section: a path outside the parent roots fails closed, the worker does not add a root, plugin-trust is a loader refusal, and a step-budget stop is incomplete.
  */
 export const trialPluginBoundary = "plugin-policy-not-widened" as const;
 

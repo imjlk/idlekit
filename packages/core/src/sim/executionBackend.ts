@@ -15,7 +15,7 @@ export const executionLocalDefault = "local-default" as const;
 
 /**
  * @evidence docs/requirements/active/worker-execution-backend.md#req-dx05-serializable-task A task is a plain JSON descriptor. The seed is the logical draw seed.
- * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-serializable-task #6102bda Re-read the section: functions, class instances, cyclic payloads, and a bad step budget are refused before cost is measured, a shared reference is allowed, and the seed does not read a worker slot.
+ * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-serializable-task #e5643c0 Re-read the section: functions, class instances, cyclic payloads, and a bad step budget are refused before cost is measured, a shared reference is allowed, and the seed does not read a worker slot.
  */
 export const executionSerializableTask = "json-descriptor" as const;
 
@@ -27,7 +27,7 @@ export const executionStableReduction = "logical-index" as const;
 
 /**
  * @evidence docs/requirements/active/worker-execution-backend.md#req-dx05-failure-boundary Failure, cancellation, and incomplete stays are distinct. A partial batch is not a full distribution.
- * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-failure-boundary #733c96f Re-read the section: timeout and abort do not become a successful distribution, a retry keeps the same id and seed, the timeout is per task and per attempt, and a thrown runner is a failed task.
+ * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-failure-boundary #974b725 Re-read the section: timeout and abort do not become a successful distribution, a retry keeps the same id and seed, the timeout is per task and per attempt, and a thrown runner is a failed task.
  */
 export const executionFailureBoundary = "not-a-partial-distribution" as const;
 
@@ -228,10 +228,15 @@ export function serializedTaskBytes(task: AnalysisTrialTaskV1): number {
 }
 
 /** The refusal reason for each task, in input order, or null for a task that may run. */
-export function taskRefusals(tasks: readonly AnalysisTrialTaskV1[]): (string | null)[] {
+export function taskRefusals(
+  tasks: readonly AnalysisTrialTaskV1[],
+  budget: ExecutionBudgetV1 = defaultExecutionBudget,
+): (string | null)[] {
   return tasks.map((task) => {
     try {
       assertSerializableTask(task);
+      // The budget's step limit is a ceiling on every task, so a larger request is refused, not run.
+      if (task.stepBudget > budget.stepBudget) return "step budget exceeds the execution budget";
       return null;
     } catch (error) {
       return error instanceof Error ? error.message : "invalid-task";
@@ -320,7 +325,7 @@ export function runLocalBatch(
   const batchId = options?.batchId ?? `local-${tasks.length}`;
   const clock = options?.clock ?? { now: () => Date.now() };
   // Validate before measuring, so a cyclic payload fails its own task instead of throwing out of the batch.
-  const reasons = taskRefusals(tasks);
+  const reasons = taskRefusals(tasks, budget);
   const refusals = new Map(tasks.map((task, index) => [task, reasons[index] ?? null] as const));
   const serializedBytes = tasks.reduce((sum, task) => (refusals.get(task) === null ? sum + serializedTaskBytes(task) : sum), 0);
   const header = {

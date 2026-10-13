@@ -11,7 +11,7 @@ import {
 
 /**
  * @evidence docs/requirements/active/worker-execution-backend.md#req-dx05-worker-parity Explicit worker counts share one logical digest. The pool does not choose itself.
- * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-worker-parity #2e1b075 Re-read the section: selection stays explicit-worker, the count stays within maxWorkers, an exit is a crash, and shutdown terminates every slot and clears every timer.
+ * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-worker-parity #ee2513d Re-read the section: selection stays explicit-worker, the count stays within maxWorkers, an exit is a crash, and shutdown terminates every slot and clears every timer.
  */
 export const workerPoolParity = "same-logical-digest" as const;
 
@@ -74,10 +74,14 @@ export async function runWorkerPool(args: Readonly<{
   if (args.workers > budget.maxWorkers) {
     throw new Error(`worker pool count ${args.workers} exceeds budget maxWorkers ${budget.maxWorkers}`);
   }
-  const tasks = args.tasks;
-  const batchId = `worker-${args.workers}-${tasks.length}`;
+  const batchId = `worker-${args.workers}-${args.tasks.length}`;
   // Validate before measuring, as the local backend does. A refused task fails alone and posts nothing.
-  const refusals = taskRefusals(tasks);
+  const refusals = taskRefusals(args.tasks, budget);
+  // Dispatch is asynchronous, so the pool works on a snapshot: a later change to the caller's array or
+  // descriptors cannot slip past the checks above. A valid descriptor is plain JSON, so the copy is exact.
+  const tasks: readonly AnalysisTrialTaskV1[] = args.tasks.map((task, index) =>
+    refusals[index] === null ? (JSON.parse(JSON.stringify(task)) as AnalysisTrialTaskV1) : task,
+  );
   const serializedBytes = tasks.reduce((sum, task, index) => (refusals[index] === null ? sum + serializedTaskBytes(task) : sum), 0);
   const header = {
     batchId,
@@ -93,6 +97,8 @@ export async function runWorkerPool(args: Readonly<{
       header,
     );
   }
+  // An abort before submit cancels every task, refused or not, as the local backend does.
+  if (args.signal?.aborted) return finalizeBatch(tasks.map((task) => failed(task, "abort", 0)), header);
   const results: (AnalysisTrialOutcomeV1 | undefined)[] = tasks.map((task, index) => {
     const refusal = refusals[index];
     return refusal ? failed(task, refusal, 1) : undefined;
@@ -111,8 +117,8 @@ export async function runWorkerPool(args: Readonly<{
   if (args.signal?.aborted || queue.length === 0) return finalize();
 
   const spawn = args.spawn ?? defaultSpawn;
-  // A replacement follows a crash or a timeout. Each task can cost at most maxRetries + 1 of them.
-  const spawnLimit = args.workers + queue.length * (budget.maxRetries + 1);
+  // A replacement follows a crash, a timeout, or a finished plugin trial. Each task can cost at most maxRetries + 2 of them.
+  const spawnLimit = args.workers + queue.length * (budget.maxRetries + 2);
   const live = new Set<WorkerLike>();
   const idle = new Set<WorkerLike>();
   const timers = new Set<ReturnType<typeof setTimeout>>();
@@ -189,7 +195,14 @@ export async function runWorkerPool(args: Readonly<{
             attempts: attempt + 1,
           };
         }
-        dispatch(worker);
+        if (task.pluginPaths.length > 0) {
+          // Plugin modules keep module state in the worker that imported them. A slot that ran a plugin trial
+          // is retired, so each plugin trial starts in a fresh worker and the result does not depend on how
+          // trials were spread over workers.
+          retire(worker);
+        } else {
+          dispatch(worker);
+        }
         feed();
       };
       worker.onerror = () => {
