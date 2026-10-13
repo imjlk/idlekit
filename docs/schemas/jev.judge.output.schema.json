@@ -4,7 +4,7 @@
   "title": "idk judge --provider jev output",
   "description": "The rules report and the Jev advisory side by side. Each part keeps its generated contract.",
   "type": "object",
-  "required": ["numericalReport", "advisory"],
+  "required": ["numericalReport", "advisory", "_meta"],
   "additionalProperties": false,
   "properties": {
     "numericalReport": { "$ref": "https://idlekit.dev/schemas/judge.output.schema.json" },

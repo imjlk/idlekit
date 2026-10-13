@@ -57,6 +57,10 @@ export async function runJudge(flags: {
   nowMs?: number;
   sleep?: (ms: number) => Promise<void>;
 }): Promise<JudgeReportV1 | JevJudgeBundle> {
+  // The Jev bundle is two nested reports. A one-column CSV cannot hold it, so the format is refused up front.
+  if (flags.provider === "jev" && flags.format === "csv") {
+    throw usageError("--provider jev writes json or md. csv cannot hold the rules report and the advisory together.");
+  }
   const artifactRaw = await readJsonFile<unknown>(analysisPath);
   const rubricRaw = await readJsonFile<unknown>(flags.rubric);
   const parsed = readJudgeInputs(artifactRaw, rubricRaw);

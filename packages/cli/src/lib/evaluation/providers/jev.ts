@@ -2,6 +2,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "fs";
 import { dirname } from "path";
 import {
   jevAlgorithmVersion,
+  validateJevAdvisory,
   type AnalysisArtifactV1,
   type JevAdvisoryV1,
   type JudgeReportV1,
@@ -62,7 +63,7 @@ type JevProjection = Readonly<{
 
 /**
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-opt-in-live The default transport is fetch. Tests inject a mock.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-opt-in-live #c295136 Re-read the section: the ordinary test does not call the live API.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-opt-in-live #14d20f3 Re-read the section: the ordinary test does not call the live API.
  */
 export const jevLiveTransport = "injected-or-fetch" as const;
 
@@ -133,7 +134,7 @@ function redact(value: unknown, keyMaterial: string): unknown {
 
 /**
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-secret-boundary The projection keeps metrics, assumptions, and rubric intent.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-secret-boundary #51c2518 Re-read the section: raw source and secrets are dropped, and a local path in any host layout is replaced in place.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-secret-boundary #520b751 Re-read the section: raw source and secrets are dropped, and a local path in any host layout is replaced in place.
  */
 export function projectJevState(
   artifact: AnalysisArtifactV1,
@@ -141,7 +142,11 @@ export function projectJevState(
   keyMaterial: string,
 ): JevProjection {
   // The numerical judge compares the recorded meaning, method, and unit with the rule. Jev sees the same identity.
-  const metrics = artifact.metrics.map((metric) => ({
+  // The numerical judge reads the first reading of each metric id. Jev sees that reading and no other.
+  const firstReadings = artifact.metrics.filter(
+    (metric, index) => artifact.metrics.findIndex((other) => other.metricId === metric.metricId) === index,
+  );
+  const metrics = firstReadings.map((metric) => ({
     // An amount reading is stored as a decimal string, not as `value`.
     amount: metric.amount ? { decimal: metric.amount.decimal, unit: metric.amount.unit } : null,
     domain: metric.domain,
@@ -160,6 +165,7 @@ export function projectJevState(
     id: rule.id,
     method: rule.method,
     metricId: rule.metricId,
+    missingPolicy: rule.missingPolicy,
     operator: rule.operator,
     recommendationId: rule.recommendationId,
     threshold: rule.threshold,
@@ -177,7 +183,7 @@ export function projectJevState(
       {
         type: "noul",
         instructions:
-          "Take the rubric rule whose id is this question's id and the recorded reading of its metric. Does that reading fail the rule, judged by its operator, threshold, upper threshold, unit, and definition? Use the recorded reading as given. Do not compute a new ETA, growth rate, or steady state.",
+          "Take the rubric rule whose id is this question's id and the recorded reading of its metric. Does that reading fail the rule, judged by its operator, threshold, upper threshold, unit, and definition? When the reading has no usable value, the rule's missingPolicy decides: fail means it fails, and anything else means it does not. Use the recorded reading as given. Do not compute a new ETA, growth rate, or steady state.",
         criteria: {
           true: "The recorded reading fails the rule",
           false: "The recorded reading satisfies the rule",
@@ -210,7 +216,7 @@ type JevFetch = (
 
 /**
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-opt-in-live The fetch transport posts only the body the caller already built.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-opt-in-live #c295136 Re-read the section: the URL is the documented System One endpoint.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-opt-in-live #14d20f3 Re-read the section: the URL is the documented System One endpoint.
  */
 export function createFetchTransport(fetchImpl: JevFetch = (input, init) => globalThis.fetch(input, init)): JevTransport {
   return async (request) => {
@@ -269,14 +275,15 @@ function blank(args: {
 
 /**
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-numerical-unchanged Low confidence abstains. A conflict is a warning, not a new verdict.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-numerical-unchanged #83c1349 Re-read the section: confidence is not a game-correctness probability.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-numerical-unchanged #5f86d87 Re-read the section: confidence is not a game-correctness probability.
  */
 export function jevAnswerDisposition(
   answer: JevWireAnswer,
   numericalFail: boolean | null,
 ): JevAnswerDisposition {
   if (answer.type === "noul") {
-    if (answer.noul > 0.4 && answer.noul < 0.6) return "abstain";
+    // The band is closed, so a rounded 0.4 or 0.6 is uncertain on both sides instead of slipping to ok.
+    if (answer.noul >= 0.4 && answer.noul <= 0.6) return "abstain";
     // An inconclusive or unsupported rule has no pass or fail for the answer to disagree with.
     if (numericalFail === null) return "ok";
     if (numericalFail && answer.noul < 0.4) return "advisory-warning";
@@ -347,6 +354,15 @@ function readCache(path: string | undefined): JevCacheEntry[] {
   }
 }
 
+function readCachedAdvisory(text: string): JevAdvisoryV1 | null {
+  try {
+    const validated = validateJevAdvisory(JSON.parse(text));
+    return validated.success ? validated.data : null;
+  } catch {
+    return null;
+  }
+}
+
 function writeCache(path: string, entries: readonly JevCacheEntry[]): void {
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, serializeJevCache(entries));
@@ -358,15 +374,15 @@ function retryable(status: number): boolean {
 
 /**
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-opt-in-live The live transport runs only when the caller asks for Jev.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-opt-in-live #c295136 Re-read the section: dry-run and a missing key do not send the request.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-opt-in-live #14d20f3 Re-read the section: dry-run and a missing key do not send the request.
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-http-budget Retry stays inside the attempt budget.
  * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-http-budget #84d6272 Re-read the section: timeout becomes unavailable and authentication is not retried.
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-numerical-unchanged The numerical digest is copied, not recomputed by the model.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-numerical-unchanged #83c1349 Re-read the section: the advisory cannot change the recorded verdict.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-numerical-unchanged #5f86d87 Re-read the section: the advisory cannot change the recorded verdict.
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-no-default-fetch Only judge with provider jev reaches this transport. The rules provider returns before it.
  * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-no-default-fetch #e8a02f1 Re-read the section: provider rules does not call the Jev transport, even with TYPESAFE_API_KEY set.
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity The cache key is built from the projection here, and a cache that cannot be written fails open.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity #9eb76ef Re-read the section: the key takes the projection with the upper bound, and a failed write keeps the advisory without resending.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity #8b47872 Re-read the section: the key takes the projection with the upper bound, and a failed write keeps the advisory without resending.
  */
 export async function adviseWithJev(args: Readonly<{
   artifact: AnalysisArtifactV1;
@@ -427,8 +443,9 @@ export async function adviseWithJev(args: Readonly<{
   const found = entries.find((entry) => entry.key === keyMaterial);
   const nowMs = args.nowMs ?? Date.now();
   if (jevCacheHit(found, args.requestedModel, nowMs)) {
-    const cached = JSON.parse(found.advisoryJson) as JevAdvisoryV1;
-    return { ...cached, cache: "hit", attempts: 0, dryRun: false };
+    // A stored advisory that does not parse or validate is a miss. The request runs and rewrites the entry.
+    const cached = readCachedAdvisory(found.advisoryJson);
+    if (cached) return { ...cached, cache: "hit", attempts: 0, dryRun: false };
   }
   if (key.length === 0) {
     return blank({ ...base, status: "unavailable", reason: "missing-api-key", cache: "miss", attempts: 0 });

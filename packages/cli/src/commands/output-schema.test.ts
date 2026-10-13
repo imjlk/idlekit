@@ -260,6 +260,9 @@ describe("output schema contracts", () => {
       expect(advised.advisory.answers.length).toBe(1);
       validate(advised, "advised");
       expect(() => validate({ ...advised, advisory: { ...advised.advisory, status: "maybe" } }, "bad status")).toThrow();
+      // Every emitted bundle carries _meta, and the schema requires it.
+      const { _meta: _dropped, ...withoutMeta } = advised;
+      expect(() => validate(withoutMeta, "no _meta")).toThrow();
     } finally {
       await removePath(dir);
     }

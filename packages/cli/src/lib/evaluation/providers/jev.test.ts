@@ -225,7 +225,7 @@ export function keepsDefaultCommandsOffNetwork(): Promise<void> {
 
 /**
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-wire-shapes Choice, Score, and Noul samples match the published wire shapes.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-wire-shapes #0654a74 Re-read the section, then ran this function: a bad shape, a Noul outside 0 to 1, and malformed JSON fail.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-wire-shapes #cdacf48 Re-read the section, then ran this function: a bad shape, a Noul or Score confidence outside 0 to 1, and malformed JSON fail.
  * @evidence ./jev.schema.ts#jevWireShapes Reads the wire marker.
  * @evidenceReview ./jev.schema.ts#jevWireShapes #b3bf0a0 The declaration is distinct-answer-types.
  * @evidence ../../../../../core/src/sim/analysis/jevAdvisory.ts#validateJevAdvisory Reads the published validator.
@@ -237,7 +237,7 @@ export function keepsDefaultCommandsOffNetwork(): Promise<void> {
  * @evidence ../../../../../core/src/sim/analysis/jevAdvisory.ts#jevAlgorithmVersion Reads the algorithm version.
  * @evidenceReview ../../../../../core/src/sim/analysis/jevAdvisory.ts#jevAlgorithmVersion #3a63e24 The version is jev-advisory-1.
  * @evidence ./jev.schema.ts#readJevWire Accepts an answer only when it matches its question type.
- * @evidenceReview ./jev.schema.ts#readJevWire #9298447 Re-read readJevWire after the Noul range check: the three fixture shapes and Noul 0 and 1 pass; a Noul with confidence, Noul -0.1 and 1.1, an unknown id, a bad probability set, and malformed JSON fail.
+ * @evidenceReview ./jev.schema.ts#readJevWire #d4aa098 Re-read readJevWire after the Noul and Score confidence range checks: the three fixture shapes and Noul 0 and 1 pass; a Noul with confidence, Noul -0.1 and 1.1, Score confidence -0.2 and 1.5, an unknown id, a bad probability set, and malformed JSON fail.
  */
 export function validatesWireShapes(): void {
   expect(jevWireShapes).toBe("distinct-answer-types");
@@ -286,6 +286,21 @@ export function validatesWireShapes(): void {
     expect(rejected.ok).toBe(false);
     if (!rejected.ok) expect(rejected.reason).toBe("shape");
   }
+  // Score confidence is on 0..1, as Choice confidence is.
+  const scoreBody = fixture.score as { answers: { frustration: Record<string, unknown> } };
+  for (const confidence of [-0.2, 1.5]) {
+    const outOfRange = readJevWire(
+      JSON.stringify({ ...scoreBody, answers: { frustration: { ...scoreBody.answers.frustration, confidence } } }),
+      {
+        frustration: {
+          type: "score",
+          instructions: "How frustrated the customer appears",
+          criteria: ["Calm, just stating facts", "Frustrated but civil", "Very angry, strong language"],
+        },
+      },
+    );
+    expect(outOfRange.ok).toBe(false);
+  }
   for (const edge of [0, 1]) {
     expect(readJevWire(JSON.stringify({
       model: "jev-1.13.0",
@@ -324,7 +339,7 @@ export function validatesWireShapes(): void {
  * @evidence ./jev.schema.ts#jevHttpBudget Reads the budget marker.
  * @evidenceReview ./jev.schema.ts#jevHttpBudget #fe6ed61 The declaration is bounded-retry.
  * @evidence ./jev.ts#adviseWithJev Runs the injected transport inside the retry budget.
- * @evidenceReview ./jev.ts#adviseWithJev #f5e0f6a Re-read adviseWithJev after the fail-open cache write: the retry loop is unchanged; 401 and 403 send once, 429 stops after three attempts, 500 twice then 200 recovers, and an abort is a timeout.
+ * @evidenceReview ./jev.ts#adviseWithJev #2909133 Re-read adviseWithJev after the fail-open cache write: the retry loop is unchanged; 401 and 403 send once, 429 stops after three attempts, 500 twice then 200 recovers, and an abort is a timeout.
  */
 export function boundsHttpFailures(): Promise<void> {
   return (async (): Promise<void> => {
@@ -414,9 +429,9 @@ export function boundsHttpFailures(): Promise<void> {
 
 /**
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity A pinned model hits. An alias expires. A rubric change misses.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity #9eb76ef Re-read the section, then ran this function: jev-latest was fetched again after the TTL, a changed between upper bound missed, and an unwritable cache path sent once and kept the advisory.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity #8b47872 Re-read the section, then ran this function: jev-latest was fetched again after the TTL, a changed between upper bound missed, a truncated stored advisory was a miss that sent again, and an unwritable cache path sent once and kept the advisory.
  * @evidence ./jev.ts#adviseWithJev Writes the cache after a valid answer and fails open when it cannot.
- * @evidenceReview ./jev.ts#adviseWithJev #f5e0f6a Re-read the cache write: a path under a regular file sent one request and returned the ok advisory.
+ * @evidenceReview ./jev.ts#adviseWithJev #2909133 Re-read the cache read and write: a truncated stored advisory fails validation and misses, and a path under a regular file sent one request and returned the ok advisory.
  * @evidence ./jev.schema.ts#jevCacheIdentity Reads the cache marker.
  * @evidenceReview ./jev.schema.ts#jevCacheIdentity #75b32a2 The declaration is alias-is-not-pinned.
  * @evidence ../cache.ts#JEV_ALIAS_TTL_MS Reads the alias TTL.
@@ -516,6 +531,36 @@ export function separatesCacheIdentity(): Promise<void> {
   }
   expect(advisedUpper).toEqual([5, 6]);
   expect(bounded.calls).toBe(2);
+  // A matching entry whose stored advisory is truncated is a miss, not a crash. The request runs and rewrites it.
+  const corruptPath = resolve(dir, "corrupt.json");
+  const warmCorrupt = transportOf(() => ({ status: 200, body: noulBody(0.9) }));
+  await adviseWithJev({
+    ...input,
+    numerical,
+    requestedModel: "jev-1.13.0",
+    dryRun: false,
+    cachePath: corruptPath,
+    nowMs: 50,
+    transport: warmCorrupt.transport,
+    env: { TYPESAFE_API_KEY: SECRET },
+    sleep: async () => {},
+  });
+  const stored = parseJevCache(await readText(corruptPath));
+  await Bun.write(corruptPath, serializeJevCache(stored.map((entry) => ({ ...entry, advisoryJson: "{\"schemaVersion\":" }))));
+  const recovered = await adviseWithJev({
+    ...input,
+    numerical,
+    requestedModel: "jev-1.13.0",
+    dryRun: false,
+    cachePath: corruptPath,
+    nowMs: 60,
+    transport: warmCorrupt.transport,
+    env: { TYPESAFE_API_KEY: SECRET },
+    sleep: async () => {},
+  });
+  expect(recovered.cache).toBe("miss");
+  expect(recovered.status).toBe("ok");
+  expect(warmCorrupt.calls).toBe(2);
   // A cache path that cannot be written fails open: one request, and the advisory stands.
   const blocker = resolve(dir, "not-a-directory");
   await Bun.write(blocker, "file");
@@ -579,11 +624,11 @@ export function separatesCacheIdentity(): Promise<void> {
 
 /**
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-secret-boundary The request, cache, and report omit the key and the raw marker.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-secret-boundary #51c2518 Re-read the section, then ran this function: the secret and each local path form were absent, including a file name with a space, and the metric meaning and an amount decimal reached the projection.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-secret-boundary #520b751 Re-read the section, then ran this function: the secret and each local path form were absent, including a file name with a space, the metric meaning and an amount decimal reached the projection, a rule carried its missing policy, and a repeated metric id projected only its first reading.
  * @evidence ./jev.schema.ts#jevSecretBoundary Reads the redaction marker.
  * @evidenceReview ./jev.schema.ts#jevSecretBoundary #fe921f9 The declaration is redacted-projection.
  * @evidence ./jev.ts#projectJevState Projects metrics, assumptions, and rules without the key or a local path.
- * @evidenceReview ./jev.ts#projectJevState #d7d766c Re-read projectJevState, redactPaths, and pathEnd: an assumption carrying the key is dropped; POSIX, home, Windows drive, UNC, file URI, embedded, and spaced paths are replaced through the file they name while a web URL stays; warnings are not sent; metrics carry meaning, version, method, unit, and an amount decimal, rules carry the upper threshold, and each question asks whether the reading fails its rule.
+ * @evidenceReview ./jev.ts#projectJevState #231b8a3 Re-read projectJevState, redactPaths, and pathEnd: an assumption carrying the key is dropped; POSIX, home, Windows drive, UNC, file URI, embedded, and spaced paths are replaced through the file they name while a web URL stays; warnings are not sent; metrics carry meaning, version, method, unit, and an amount decimal, rules carry the upper threshold and missing policy, only the first reading of a metric id is projected, and each question asks whether the reading fails its rule, with the missing policy for an absent value.
  */
 export function keepsSecretsOutOfRecords(): Promise<void> {
   return (async (): Promise<void> => {
@@ -643,6 +688,16 @@ export function keepsSecretsOutOfRecords(): Promise<void> {
   };
   expect(identity.metrics[0]).toMatchObject({ meaning: "first-reset-hours", method: "exact", unit: "time", metricVersion: 1 });
   expect(identity.rules[0]).toMatchObject({ definition: "first-reset-hours", method: "exact", unit: "time", upperThreshold: null });
+  expect(identity.rules[0]).toMatchObject({ missingPolicy: "inconclusive" });
+  const ruleQuestion = projectJevState(input.artifact, input.rubric, SECRET).questions["first-reset"];
+  expect(ruleQuestion?.instructions.includes("missingPolicy")).toBe(true);
+  // Two readings with one metric id: only the first, the one the numerical judge reads, is projected.
+  const twice = {
+    ...input.artifact,
+    metrics: [input.artifact.metrics[0]!, { ...input.artifact.metrics[0]!, value: 999 }],
+  };
+  const deduped = projectJevState(twice, input.rubric, SECRET).state as { metrics: readonly Record<string, unknown>[] };
+  expect(deduped.metrics.map((metric) => metric.value)).toEqual([3]);
   // An amount reading carries its decimal, not `value`, and the projection keeps it.
   const firstMetric = input.artifact.metrics[0]!;
   const amountArtifact = {
@@ -657,13 +712,13 @@ export function keepsSecretsOutOfRecords(): Promise<void> {
 
 /**
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-numerical-unchanged A disagreeing answer does not flip the numerical pass bit.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-numerical-unchanged #83c1349 Re-read the section, then ran this function: low confidence abstained, the fail stayed a fail, each question asked whether its reading fails the rule, a mixed rubric warned only on its failing rule, that warning outranked an abstention, and repeated or __proto__ ids failed before any send.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-numerical-unchanged #5f86d87 Re-read the section, then ran this function: low confidence abstained, the fail stayed a fail, each question asked whether its reading fails the rule, the abstain band was closed at 0.4 and 0.6, a mixed rubric warned only on its failing rule, that warning outranked an abstention, and repeated or __proto__ ids failed before any send.
  * @evidence ./jev.schema.ts#jevNumericalUnchanged Reads the verdict marker.
  * @evidenceReview ./jev.schema.ts#jevNumericalUnchanged #1105bbe The declaration is verdict-stays.
  * @evidence ./jev.ts#jevAnswerDisposition Maps one answer to ok, abstain, or an advisory warning.
- * @evidenceReview ./jev.ts#jevAnswerDisposition #86d8040 Re-read jevAnswerDisposition with the per-rule stance: Choice confidence 0.2 and Noul 0.5 abstain, a Noul of 0.05 against a failing rule is a warning, and the same Noul with no rule verdict is ok.
+ * @evidenceReview ./jev.ts#jevAnswerDisposition #0d071be Re-read jevAnswerDisposition with the closed abstain band: Choice confidence 0.2, Noul 0.5, and Noul 0.4 and 0.6 on either verdict abstain, 0.399 and 0.601 warn, a Noul of 0.05 against a failing rule is a warning, and the same Noul with no rule verdict is ok.
  * @evidence ./jev.ts#adviseWithJev Compares each answer with its own rule and refuses a rubric whose ids cannot stay separate questions.
- * @evidenceReview ./jev.ts#adviseWithJev #f5e0f6a Re-read adviseWithJev, summarize, and reportStatus: in a mixed rubric a low Noul warns only on the failing rule, the warning outranks an abstention, and a repeated id or __proto__ fails before any send.
+ * @evidenceReview ./jev.ts#adviseWithJev #2909133 Re-read adviseWithJev, summarize, and reportStatus: in a mixed rubric a low Noul warns only on the failing rule, the warning outranks an abstention, and a repeated id or __proto__ fails before any send.
  */
 export function keepsNumericalVerdicts(): Promise<void> {
   return (async (): Promise<void> => {
@@ -699,6 +754,11 @@ export function keepsNumericalVerdicts(): Promise<void> {
   expect(unsure.status === "ok").toBe(false);
   expect(numerical.numerical.pass).toBe(false);
   expect(jevAnswerDisposition({ type: "noul", noul: 0.05 }, null)).toBe("ok");
+  // The abstain band is closed: rounded boundary values are uncertain, not ok.
+  expect(jevAnswerDisposition({ type: "noul", noul: 0.4 }, true)).toBe("abstain");
+  expect(jevAnswerDisposition({ type: "noul", noul: 0.6 }, false)).toBe("abstain");
+  expect(jevAnswerDisposition({ type: "noul", noul: 0.399 }, true)).toBe("advisory-warning");
+  expect(jevAnswerDisposition({ type: "noul", noul: 0.601 }, false)).toBe("advisory-warning");
   // A failing rule makes the report fail. A passing rule's answer is still compared with that rule alone.
   const mixed = parsed(3, "rubric-19-mixed", "seed-19", [
     rule({ id: "too-slow", threshold: 2 }),
@@ -773,7 +833,7 @@ export function keepsNumericalVerdicts(): Promise<void> {
 
 /**
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-opt-in-live Dry-run and a missing key do not send. The fetch transport targets the documented endpoint.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-opt-in-live #c295136 Re-read the section, then ran this function: the mock fetch saw the official URL, the live smoke stayed off, and the dry-run bundle names jev.judge.output.schema.json, whose required parts are the rules report and the advisory.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-opt-in-live #14d20f3 Re-read the section, then ran this function: the mock fetch saw the official URL, the live smoke stayed off, and the dry-run bundle names jev.judge.output.schema.json, whose required parts are the rules report, the advisory, and _meta, and csv was refused.
  * @evidence ./jev.schema.ts#jevOptInLive Reads the opt-in marker.
  * @evidenceReview ./jev.schema.ts#jevOptInLive #25ccdf0 The declaration is mock-unless-opt-in.
  * @evidence ./jev.schema.ts#JEV_ENDPOINT Reads the documented endpoint.
@@ -872,7 +932,11 @@ export function staysOptIn(): Promise<void> {
   const bundleSchema = JSON.parse(
     readFileSync(new URL("../../../../../../docs/schemas/jev.judge.output.schema.json", import.meta.url), "utf8"),
   ) as { required: string[]; properties: Record<string, { $ref?: string }> };
-  expect(bundleSchema.required).toEqual(["numericalReport", "advisory"]);
+  expect(bundleSchema.required).toEqual(["numericalReport", "advisory", "_meta"]);
+  // csv cannot hold the two nested reports, so the Jev provider refuses it before reading any input.
+  await expect(
+    runJudge({ rubric: rubricPath, provider: "jev", format: "csv", "dry-run": true }, analysis, { env: {} }),
+  ).rejects.toThrow("csv cannot hold");
   expect(bundleSchema.properties.advisory?.$ref).toBe(jevSchemaId());
   expect(Object.keys(json).sort()).toEqual(["_meta", "advisory", "numericalReport"]);
   await removePath(dir);
