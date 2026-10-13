@@ -1737,7 +1737,8 @@
       "doc": "docs/requirements/active/jev-judge-provider.md",
       "production": [
         "packages/cli/src/lib/evaluation/cache.ts",
-        "packages/cli/src/lib/evaluation/providers/jev.schema.ts"
+        "packages/cli/src/lib/evaluation/providers/jev.schema.ts",
+        "packages/cli/src/lib/evaluation/providers/jev.ts"
       ],
       "tests": [
         {
