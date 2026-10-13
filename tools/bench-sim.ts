@@ -7,11 +7,12 @@ import {
   currentHost,
   benchConfigFromScenario,
   percentile,
+  mergeBaselines,
   readBaselineArtifacts,
-  sameHost,
   scenarioHash,
   scenarioWorkload,
   selectBaseline,
+  type EffectiveRun,
   type PerformanceArtifact,
 } from "./performanceBudget";
 
@@ -156,7 +157,7 @@ const MAX_CAPTURE_BYTES = 8 * 1024 * 1024;
 function runSimulateOnce(
   bundled: string,
   scenarioPath: string,
-): { engine: string | null; peakRssBytes: number | null } {
+): { engine: string | null; seed: number | null; peakRssBytes: number | null } {
   // --config skips the CLI bunfig preload, which would rebuild the ttsc
   // program in every child. Compiler prepare is measured by prepareBundle.
   const proc = Bun.spawnSync(
@@ -170,9 +171,10 @@ function runSimulateOnce(
   const output: unknown = JSON.parse(proc.stdout.toString());
   if (!output || typeof output !== "object") throw new Error("simulate benchmark returned non-object output");
   const maxRss = proc.resourceUsage?.maxRSS;
-  const engine = (output as { _meta?: { effectiveEngine?: unknown } })._meta?.effectiveEngine;
+  const meta = (output as { _meta?: { effectiveEngine?: unknown; seed?: unknown } })._meta;
   return {
-    engine: typeof engine === "string" ? engine : null,
+    engine: typeof meta?.effectiveEngine === "string" ? meta.effectiveEngine : null,
+    seed: typeof meta?.seed === "number" && Number.isFinite(meta.seed) ? meta.seed : null,
     peakRssBytes: typeof maxRss === "number" && Number.isFinite(maxRss) && maxRss > 0 ? maxRss : null,
   };
 }
@@ -209,11 +211,8 @@ async function writeBaselineFile(path: string, results: readonly ScenarioBenchRe
   const file = Bun.file(path);
   const existing = (await file.exists()) ? readBaselineArtifacts(await file.json()) : [];
   if (!existing) throw new Error(`--write-baseline ${path} is not a baseline file`);
-  const fresh = results.map((item) => item.budget);
-  const kept = existing.filter((old) =>
-    !fresh.some((next) => next.scenarioHash === old.scenarioHash && sameHost(next.host, old.host))
-  );
-  const perScenario = [...kept, ...fresh].map((budget) => ({ scenario: budget.scenario, budget }));
+  const merged = mergeBaselines(existing, results.map((item) => item.budget));
+  const perScenario = merged.map((budget) => ({ scenario: budget.scenario, budget }));
   await ensureDir(dirname(path));
   await Bun.write(path, `${JSON.stringify({ contract: "idlekit.performance-budget", schemaVersion: 1, perScenario }, null, 2)}\n`);
 }
@@ -237,22 +236,22 @@ async function main(): Promise<void> {
     const scenarioJson: unknown = await Bun.file(scenarioPath).json();
     const runtime: number[] = [];
     const peakRss: number[] = [];
-    const engines = new Set<string>();
+    const effective = new Set<string>();
 
     // Warmup children are discarded. They are simulate runs, not compiler prepare.
     for (let i = 0; i < args.warmup + args.iterations; i++) {
       const start = performance.now();
       const run = runSimulateOnce(bundled, scenarioPath);
       const elapsed = performance.now() - start;
-      engines.add(run.engine ?? "unknown");
+      effective.add(JSON.stringify({ engine: run.engine ?? "unknown", seed: run.seed }));
       if (i < args.warmup) continue;
       runtime.push(elapsed);
       if (run.peakRssBytes !== null) peakRss.push(run.peakRssBytes);
     }
 
-    // The run's effective engine, not scenario.engine, which simulate records as metadata only.
-    if (engines.size !== 1) throw new Error(`simulate reported more than one engine: ${[...engines].join(", ")}`);
-    const config = benchConfigFromScenario(scenarioJson, [...engines][0] ?? "unknown");
+    // The run's effective engine and seed, not scenario.engine, which simulate records as metadata only.
+    if (effective.size !== 1) throw new Error(`simulate reported more than one engine or seed: ${[...effective].join(", ")}`);
+    const config = benchConfigFromScenario(scenarioJson, JSON.parse([...effective][0] ?? "{}") as EffectiveRun);
     const meanMs = runtime.length ? runtime.reduce((a, b) => a + b, 0) / runtime.length : null;
     const p95Ms = percentile(runtime, 0.95);
     const passMean = meanMs !== null && meanMs <= args.thresholdMs;

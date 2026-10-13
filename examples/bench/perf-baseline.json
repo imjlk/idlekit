@@ -12,16 +12,16 @@
         "scenarioHash": "9937ce005fae4050e8f5a72ef58bfb3cbe01a1921b89ed6c4a1f54b81471b626",
         "config": {
           "engineId": "number",
-          "seed": null,
+          "seed": 1069430523,
           "modelId": "linear",
           "modelVersion": 1,
           "stepSec": 1,
           "trace": "off",
-          "observer": "off",
+          "observer": "on",
           "worker": "none",
           "planner": "off"
         },
-        "configHash": "0ddf27bd55d4e8873e19d9d7b1b5899fc449937c72ca7d9d6984caf3e9fa4032",
+        "configHash": "c9183205763462ded39bfbd3f49f4ce5a217adef589c48822e77f9900397907c",
         "host": {
           "bun": "1.4.2",
           "cpu": "Apple M3 Max",
@@ -35,61 +35,61 @@
           {
             "phase": "prepare-cold",
             "label": "cold",
-            "durationMs": 9246.405125
+            "durationMs": 7537.273666
           },
           {
             "phase": "prepare-warm",
             "label": "warm",
-            "durationMs": 8460.868375
+            "durationMs": 7433.031416999999
           },
           {
             "phase": "runtime",
             "label": "runtime",
-            "durationMs": 121.55349999999817
+            "durationMs": 117.88633300000038
           },
           {
             "phase": "runtime",
             "label": "runtime",
-            "durationMs": 121.60545899999852
+            "durationMs": 120.5825420000001
           },
           {
             "phase": "runtime",
             "label": "runtime",
-            "durationMs": 123.05458299999736
+            "durationMs": 116.17991600000096
           },
           {
             "phase": "runtime",
             "label": "runtime",
-            "durationMs": 119.84570800000074
+            "durationMs": 119.73891600000024
           },
           {
             "phase": "runtime",
             "label": "runtime",
-            "durationMs": 122.81295800000225
+            "durationMs": 115.19745799999873
           },
           {
             "phase": "runtime",
             "label": "runtime",
-            "durationMs": 118.71420900000157
+            "durationMs": 117.74470899999869
           },
           {
             "phase": "runtime",
             "label": "runtime",
-            "durationMs": 119.98574999999983
+            "durationMs": 116.87187499999891
           }
         ],
         "metrics": {
           "totalTimeMedianMs": {
             "status": "measured",
-            "value": 121.55349999999817
+            "value": 117.74470899999869
           },
           "totalTimeP95Ms": {
             "status": "measured",
-            "value": 123.05458299999736
+            "value": 120.5825420000001
           },
           "stepsPerSec": {
             "status": "measured",
-            "value": 246.80490483614585
+            "value": 254.78851877752172
           },
           "plannerExpandedNodes": {
             "status": "absent"
@@ -108,7 +108,7 @@
           },
           "peakRssBytes": {
             "status": "measured",
-            "value": 50151424
+            "value": 50495488
           },
           "observationRetainedSamples": {
             "status": "absent"
@@ -137,16 +137,16 @@
         "scenarioHash": "9937ce005fae4050e8f5a72ef58bfb3cbe01a1921b89ed6c4a1f54b81471b626",
         "config": {
           "engineId": "number",
-          "seed": null,
+          "seed": 1069430523,
           "modelId": "linear",
           "modelVersion": 1,
           "stepSec": 1,
           "trace": "off",
-          "observer": "off",
+          "observer": "on",
           "worker": "none",
           "planner": "off"
         },
-        "configHash": "0ddf27bd55d4e8873e19d9d7b1b5899fc449937c72ca7d9d6984caf3e9fa4032",
+        "configHash": "c9183205763462ded39bfbd3f49f4ce5a217adef589c48822e77f9900397907c",
         "host": {
           "bun": "1.4.2",
           "cpu": "unsupported",

@@ -7,7 +7,7 @@
 
 /**
  * @evidence docs/requirements/active/performance-budget.md#req-dx04-bench-schema The artifact names idlekit.performance-budget at schemaVersion 1 and keeps alloc/step unsupported.
- * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-bench-schema #da75f4f Re-read the section: worker startup and serialization stay absent, and alloc/step is unsupported.
+ * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-bench-schema #26f2a73 Re-read the section: worker startup and serialization stay absent, and alloc/step is unsupported.
  */
 export const budgetSchema = "bench-output-schema" as const;
 
@@ -43,7 +43,7 @@ export const budgetHashMismatch = "baseline-hash-rejected" as const;
 
 /**
  * @evidence docs/requirements/active/performance-budget.md#req-dx04-same-config Only matching engine, seed, model, step, trace, observer, worker, and planner configs are compared.
- * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-same-config #25793f8 Re-read the section: a small absolute change can pass, and a different observer, engine, or trace cannot be compared.
+ * @evidenceReview docs/requirements/active/performance-budget.md#req-dx04-same-config #3c5907d Re-read the section: a small absolute change can pass, and a different observer, engine, or trace cannot be compared.
  */
 export const budgetSameConfig = "same-config-only" as const;
 
@@ -229,6 +229,26 @@ export function readSamples(flag: string, value: string | undefined): number[] {
   });
 }
 
+/** A finite number > 0, or the flag is rejected. */
+export function readPositive(flag: string, value: string | undefined): number {
+  const parsed = value === undefined || value.trim().length === 0 ? Number.NaN : Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) throw new Error(`${flag} must be a finite number > 0 (received: ${value})`);
+  return parsed;
+}
+
+/** A nonblank value, or the flag is rejected. */
+export function readText(flag: string, value: string | undefined): string {
+  if (value === undefined || value.trim().length === 0) throw new Error(`${flag} needs a value`);
+  return value;
+}
+
+/** One of the listed values, or the flag is rejected. */
+export function readChoice<T extends string>(flag: string, value: string | undefined, choices: readonly T[]): T {
+  const match = choices.find((choice) => choice === value);
+  if (match === undefined) throw new Error(`${flag} must be one of ${choices.join(", ")} (received: ${value})`);
+  return match;
+}
+
 /** A counter: an integer >= 0, or the flag is rejected. */
 export function readCount(flag: string, value: string | undefined): number {
   const parsed = value === undefined || value.trim().length === 0 ? Number.NaN : Number(value);
@@ -270,31 +290,34 @@ export function workloadStepCount(durationSec: number, stepSec: number): number 
   return steps;
 }
 
+/** What simulate reported for a run: `_meta.effectiveEngine` and `_meta.seed`. */
+export type EffectiveRun = Readonly<{ engine: string; seed: number | null }>;
+
 /**
  * The comparable config of a scenario file. Workload size and params are in scenarioHash.
- * The engine is the one the run used. `scenario.engine` is metadata and does not select it.
+ * Engine and seed are the ones the run used. `scenario.engine` is metadata and does not select the
+ * engine, and a scenario file has no seed. A scenario file cannot turn off the observation recorder,
+ * which runScenario enables by default, so observer is on.
  */
-export function benchConfigFromScenario(raw: unknown, effectiveEngine: string): BenchConfig {
+export function benchConfigFromScenario(raw: unknown, run: EffectiveRun): BenchConfig {
   const scenario = raw && typeof raw === "object" ? raw as {
-    seed?: unknown;
     model?: { id?: unknown; version?: unknown };
     clock?: { stepSec?: unknown; durationSec?: unknown };
     strategy?: { id?: unknown };
     outputs?: { report?: { includeTrace?: unknown; traceEverySteps?: unknown } };
-    observation?: { enabled?: unknown };
   } : {};
   const includeTrace = scenario.outputs?.report?.includeTrace === true;
   // The compiler defaults traceEverySteps to 1, which traces every step.
   const every = scenario.outputs?.report?.traceEverySteps;
   const trace = !includeTrace ? "off" : typeof every === "number" && every > 1 ? "bounded" : "unbounded";
   return {
-    engineId: effectiveEngine,
-    seed: typeof scenario.seed === "number" ? scenario.seed : null,
+    engineId: run.engine,
+    seed: run.seed,
     modelId: typeof scenario.model?.id === "string" ? scenario.model.id : "unknown",
     modelVersion: typeof scenario.model?.version === "number" ? scenario.model.version : 0,
     stepSec: typeof scenario.clock?.stepSec === "number" ? scenario.clock.stepSec : 1,
     trace,
-    observer: scenario.observation?.enabled === true ? "on" : "off",
+    observer: "on",
     worker: "none",
     planner: scenario.strategy?.id === "planner" ? "on" : "off",
   };
@@ -436,6 +459,24 @@ export function readBaselineArtifacts(value: unknown): PerformanceArtifact[] | n
     artifacts.push(artifact);
   }
   return artifacts;
+}
+
+/**
+ * Baseline entries after a refresh: each fresh artifact replaces the entries on the same host with
+ * the same scenario path or the same scenario hash, so an edited scenario does not leave its old
+ * entry behind. Other hosts' entries stay.
+ */
+export function mergeBaselines(
+  existing: readonly PerformanceArtifact[],
+  fresh: readonly PerformanceArtifact[],
+): PerformanceArtifact[] {
+  const replaced = (old: PerformanceArtifact) =>
+    fresh.some((next) =>
+      sameHost(next.host, old.host) &&
+      ((next.scenario !== null && next.scenario === old.scenario) ||
+        (next.scenarioHash !== null && next.scenarioHash === old.scenarioHash))
+    );
+  return [...existing.filter((old) => !replaced(old)), ...fresh];
 }
 
 /**

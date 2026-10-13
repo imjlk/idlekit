@@ -1,8 +1,11 @@
 import {
   buildPerformanceArtifact,
   currentHost,
+  readChoice,
   readCount,
+  readPositive,
   readSamples,
+  readText,
   representativeConfig,
   type BenchConfig,
 } from "./performanceBudget";
@@ -13,12 +16,6 @@ import {
  * Worker startup and serialization stay absent.
  * This file does not enter the draw loop.
  */
-
-function optionalNumber(value: string | undefined): number | null {
-  if (value === undefined) return null;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : null;
-}
 
 function parseConfig(argv: string[]): {
   config: BenchConfig;
@@ -44,18 +41,19 @@ function parseConfig(argv: string[]): {
   for (let i = 2; i < argv.length; i++) {
     const flag = argv[i];
     const value = argv[++i];
-    if (flag === "--engine") engineId = value ?? engineId;
-    else if (flag === "--seed") seed = optionalNumber(value);
-    else if (flag === "--model") modelId = value ?? modelId;
-    else if (flag === "--model-version") modelVersion = optionalNumber(value) ?? modelVersion;
-    else if (flag === "--step") stepSec = optionalNumber(value) ?? stepSec;
-    else if (flag === "--trace" && (value === "off" || value === "bounded" || value === "unbounded")) trace = value;
-    else if (flag === "--observer" && (value === "off" || value === "on")) observer = value;
+    if (flag === "--engine") engineId = readText(flag, value);
+    else if (flag === "--seed") seed = readCount(flag, value);
+    else if (flag === "--model") modelId = readText(flag, value);
+    else if (flag === "--model-version") modelVersion = readCount(flag, value);
+    else if (flag === "--step") stepSec = readPositive(flag, value);
+    else if (flag === "--trace") trace = readChoice(flag, value, ["off", "bounded", "unbounded"] as const);
+    else if (flag === "--observer") observer = readChoice(flag, value, ["off", "on"] as const);
     else if (flag === "--runtime-ms") runtimeMs = readSamples(flag, value);
     else if (flag === "--draws") draws = readCount(flag, value);
     else if (flag === "--workload") workload = readCount(flag, value);
     else if (flag === "--prepare-cold-ms") prepareCold = readSamples(flag, value)[0];
     else if (flag === "--prepare-warm-ms") prepareWarm = readSamples(flag, value);
+    else throw new Error(`unknown flag: ${flag}`);
   }
 
   return {
