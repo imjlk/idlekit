@@ -4,6 +4,7 @@ import { z } from "zod";
 import { usageError } from "../errors";
 import { buildOutputMeta, outputSchemaRefForCommand } from "../io/outputMeta";
 import { writeOutput } from "../io/writeOutput";
+import { resolve } from "path";
 import { readJsonFile } from "../runtime/bun";
 import { readJudgeInputs } from "../lib/evaluation/input";
 import { evaluateRules } from "../lib/evaluation/rules";
@@ -60,6 +61,10 @@ export async function runJudge(flags: {
   // The Jev bundle is two nested reports. A one-column CSV cannot hold it, so the format is refused up front.
   if (flags.provider === "jev" && flags.format === "csv") {
     throw usageError("--provider jev writes json or md. csv cannot hold the rules report and the advisory together.");
+  }
+  // The output write would replace the cache it just stored, and the next run would pay for the request again.
+  if (flags.provider === "jev" && flags.cache && flags.out && resolve(flags.cache) === resolve(flags.out)) {
+    throw usageError("--cache and --out name the same file. Give the Jev cache its own path.");
   }
   const artifactRaw = await readJsonFile<unknown>(analysisPath);
   const rubricRaw = await readJsonFile<unknown>(flags.rubric);

@@ -134,7 +134,7 @@ function redact(value: unknown, keyMaterial: string): unknown {
 
 /**
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-secret-boundary The projection keeps metrics, assumptions, and rubric intent.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-secret-boundary #870ea17 Re-read the section: raw source and secrets are dropped, and a local path in any host layout is replaced in place.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-secret-boundary #3b797e8 Re-read the section: raw source and secrets are dropped, and a local path in any host layout is replaced in place.
  */
 export function projectJevState(
   artifact: AnalysisArtifactV1,
@@ -161,8 +161,9 @@ export function projectJevState(
     sign: metric.sign ?? null,
     status: metric.status,
     unit: metric.domain === "amount" ? (metric.amount?.unit ?? "amount") : metric.domain,
-    // Only an observed reading is a value the numerical judge measures. An estimate goes to it as missing, so Jev gets none either.
-    value: metric.reading === "observed" && "value" in metric ? metric.value : null,
+    // Only an observed reading with status ok is a value the numerical judge measures. Any other reading is missing to it,
+    // so Jev gets no value either.
+    value: metric.reading === "observed" && metric.status === "ok" && "value" in metric ? metric.value : null,
   }));
   const rules = rubric.rules.map((rule) => ({
     definition: rule.definition,
@@ -388,7 +389,7 @@ function retryable(status: number): boolean {
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-no-default-fetch Only judge with provider jev reaches this transport. The rules provider returns before it.
  * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-no-default-fetch #e8a02f1 Re-read the section: provider rules does not call the Jev transport, even with TYPESAFE_API_KEY set.
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity The cache key is built from the projection here, and a cache that cannot be written fails open.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity #d783953 Re-read the section: the key takes the projection with the upper bound, and a failed write keeps the advisory without resending.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity #08c1c96 Re-read the section: the key takes the projection with the upper bound, and a failed write keeps the advisory without resending.
  */
 export async function adviseWithJev(args: Readonly<{
   artifact: AnalysisArtifactV1;
@@ -493,6 +494,10 @@ export async function adviseWithJev(args: Readonly<{
       const wire = readJevWire(response.body, projection.questions);
       if (!wire.ok) {
         return blank({ ...base, status: "failed", reason: wire.reason, cache: "miss", attempts: attempt + 1 });
+      }
+      // The provider chooses the model string. One that carries the key or a local path is refused, not copied or cached.
+      if (redactString(wire.response.model, key) !== wire.response.model) {
+        return blank({ ...base, status: "failed", reason: "unsafe-model", cache: "miss", attempts: attempt + 1 });
       }
       const answers = summarize(wire.response, args.rubric, args.numerical);
       const status = reportStatus(answers);
