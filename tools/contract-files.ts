@@ -43,6 +43,7 @@ import {
   resetCycleSchemaId,
 } from "../packages/core/src/sim/analysis/resetCycle";
 import { judgeAlgorithmVersion, judgeJsonSchema, judgeSchemaId } from "../packages/core/src/sim/analysis/judge";
+import { flowAlgorithmVersion, flowJsonSchema, flowSchemaId } from "../packages/core/src/sim/analysis/flow";
 import {
   buildContractDocument,
   buildFieldMetadata,
@@ -78,6 +79,9 @@ export const balancePublicSchema = "docs/schemas/balance-checks.v1.schema.json";
 export const judgeSchemaName = "judge.v1.schema.json";
 export const judgeFieldsName = "judge.v1.fields.json";
 export const judgePublicSchema = "docs/schemas/judge.output.schema.json";
+export const flowSchemaName = "flow.v1.schema.json";
+export const flowFieldsName = "flow.v1.fields.json";
+export const flowPublicSchema = "docs/schemas/flow.v1.schema.json";
 
 const inputs = [
   "packages/core/src/scenario/offlinePolicy.ts",
@@ -104,6 +108,8 @@ const balanceInputs = ["packages/core/src/sim/analysis/checks.ts"];
 
 // JudgeReportV1 embeds BalanceCheckReportV1 from checks.ts.
 const judgeInputs = ["packages/core/src/sim/analysis/checks.ts", "packages/core/src/sim/analysis/judge.ts"];
+
+const flowInputs = ["packages/core/src/sim/analysis/flow.ts"];
 
 /** Digest each source with LF line endings, so a CRLF checkout matches the tracked contract. */
 export function digestSources(paths: readonly string[], base = root): SourceDigest[] {
@@ -151,6 +157,10 @@ export function balanceSourceDigests(base = root): SourceDigest[] {
 
 export function judgeSourceDigests(base = root): SourceDigest[] {
   return digestSources(judgeInputs, base);
+}
+
+export function flowSourceDigests(base = root): SourceDigest[] {
+  return digestSources(flowInputs, base);
 }
 
 export function buildEtaContractDocument(sources: readonly SourceDigest[]) {
@@ -385,6 +395,35 @@ export function buildJudgeContractDocument(sources: readonly SourceDigest[]) {
   });
 }
 
+export function buildFlowContractDocument(sources: readonly SourceDigest[]) {
+  const ordered = [...sources].sort((left, right) => (left.path < right.path ? -1 : left.path > right.path ? 1 : 0));
+  const sourceHash = sha256Text(
+    canonicalJson({
+      algorithmVersion: flowAlgorithmVersion(),
+      contractId: "idlekit.flow.v1",
+      dialect: "openapi-3.1",
+      exportApi: "typia.json.schema",
+      generator: "idlekit.contract-generator",
+      generatorVersion: 1,
+      schemaId: flowSchemaId(),
+      sources: ordered,
+      typia: "14.0.6",
+    }),
+  );
+  return rootSchemaDocument(flowSchemaId(), flowJsonSchema(), {
+    generator: "idlekit.contract-generator" as const,
+    generatorVersion: 1 as const,
+    exportApi: "typia.json.schema" as const,
+    dialect: "openapi-3.1" as const,
+    typia: "14.0.6" as const,
+    schemaId: flowSchemaId(),
+    contractId: "idlekit.flow.v1",
+    algorithmVersion: flowAlgorithmVersion(),
+    sourceHash,
+    sources: ordered,
+  });
+}
+
 export function buildAnalysisContractDocument(sources: readonly SourceDigest[]) {
   const ordered = [...sources].sort((left, right) => (left.path < right.path ? -1 : left.path > right.path ? 1 : 0));
   const sourceHash = sha256Text(
@@ -435,6 +474,8 @@ export function renderedContracts(base = root): {
   balanceFields: string;
   judgeSchema: string;
   judgeFields: string;
+  flowSchema: string;
+  flowFields: string;
 } {
   const sources = sourceDigests(base);
   const analysisSources = analysisSourceDigests(base);
@@ -446,6 +487,7 @@ export function renderedContracts(base = root): {
   const policySources = policySourceDigests(base);
   const balanceSources = balanceSourceDigests(base);
   const judgeSources = judgeSourceDigests(base);
+  const flowSources = flowSourceDigests(base);
   const analysisDocument = buildAnalysisContractDocument(analysisSources);
   const etaDocument = buildEtaContractDocument(etaSources);
   const resetDocument = buildResetContractDocument(resetSources);
@@ -456,6 +498,8 @@ export function renderedContracts(base = root): {
   const balanceDocument = buildBalanceContractDocument(balanceSources);
   const judgeDocument = buildJudgeContractDocument(judgeSources);
   const judgeFieldsMeta = structuralFieldMetadata(judgeJsonSchema());
+  const flowDocument = buildFlowContractDocument(flowSources);
+  const flowFieldsMeta = structuralFieldMetadata(flowJsonSchema());
   const analysisFields = structuralFieldMetadata(analysisArtifactJsonSchema());
   const etaFields = structuralFieldMetadata(etaEstimateJsonSchema());
   const resetFields = structuralFieldMetadata(resetCycleJsonSchema());
@@ -575,6 +619,18 @@ export function renderedContracts(base = root): {
       enums: judgeFieldsMeta.enums,
       comments: judgeFieldsMeta.comments,
     })}\n`,
+    flowSchema: `${analysisCanonicalJson(flowDocument)}\n`,
+    flowFields: `${analysisCanonicalJson({
+      idlekitContract: {
+        kind: "structural-metadata",
+        schemaId: flowSchemaId(),
+        sourceHash: flowDocument.idlekitContract.sourceHash,
+        note: "Names, enum values, and schema descriptions only. No design intent, example balances, or translations.",
+      },
+      properties: flowFieldsMeta.properties,
+      enums: flowFieldsMeta.enums,
+      comments: flowFieldsMeta.comments,
+    })}\n`,
   };
 }
 
@@ -601,11 +657,14 @@ export function writeContracts(dir: string, base = root): void {
   writeFileSync(join(dir, balanceFieldsName), rendered.balanceFields);
   writeFileSync(join(dir, judgeSchemaName), rendered.judgeSchema);
   writeFileSync(join(dir, judgeFieldsName), rendered.judgeFields);
+  writeFileSync(join(dir, flowSchemaName), rendered.flowSchema);
+  writeFileSync(join(dir, flowFieldsName), rendered.flowFields);
   // Only a generation into the tracked directory refreshes the tracked public copies.
   // A --dest generation stays inside its own directory.
   if (resolve(dir) === resolve(base, "docs/schemas/generated")) {
     writeFileSync(join(base, balancePublicSchema), rendered.balanceSchema);
     writeFileSync(join(base, judgePublicSchema), rendered.judgeSchema);
+    writeFileSync(join(base, flowPublicSchema), rendered.flowSchema);
   }
 }
 
@@ -633,6 +692,8 @@ export function compareContracts(dir: string, base = root): string[] {
     [balanceFieldsName, rendered.balanceFields],
     [judgeSchemaName, rendered.judgeSchema],
     [judgeFieldsName, rendered.judgeFields],
+    [flowSchemaName, rendered.flowSchema],
+    [flowFieldsName, rendered.flowFields],
   ] as const) {
     const path = join(dir, name);
     let current = "";
@@ -656,6 +717,16 @@ export function compareContracts(dir: string, base = root): string[] {
   if (publicCurrent !== null && publicCurrent !== rendered.balanceSchema) failures.push(`drift ${balancePublicSchema}`);
   // Each judge public copy that was read, including an empty one, is compared.
   for (const [publicName, next] of [[judgePublicSchema, rendered.judgeSchema]] as const) {
+    let current = "";
+    try {
+      current = readFileSync(join(base, publicName), "utf8").replace(/\r\n/g, "\n");
+    } catch {
+      failures.push(`missing ${publicName}`);
+      continue;
+    }
+    if (current !== next) failures.push(`drift ${publicName}`);
+  }
+  for (const [publicName, next] of [[flowPublicSchema, rendered.flowSchema]] as const) {
     let current = "";
     try {
       current = readFileSync(join(base, publicName), "utf8").replace(/\r\n/g, "\n");

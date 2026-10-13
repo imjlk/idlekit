@@ -1,3 +1,4 @@
+import type { FlowSampleV1 } from "./analysis/flow";
 import { assertLogBudget } from "./eventBuffer";
 import { createObservationLedger, readGoal, type ObservationLedger } from "./goalRead";
 import { simStatsFromCounters, type MetricStatus, type SimStats } from "./analysis/ux";
@@ -82,6 +83,8 @@ export type RunObserver = Readonly<{
    * `wallT` is the session wall clock when the model declared one. It is not an OS clock.
    */
   onReset?: (fact: CommittedResetFact) => void;
+  /** One passive flow sample. Absent means this run did not observe flow. */
+  onFlow?: (sample: FlowSampleV1) => void;
 }>;
 
 /**
@@ -117,6 +120,18 @@ export function emitActionFacts<N>(observer: RunObserver | undefined, t: number,
       notify(() => observer.onAction?.({ t, actionId: event.actionId, outcome: "skipped", reason: event.reason }));
     }
   }
+}
+
+/**
+ * Record one flow sample when the observer asked for it.
+ * A missing callback is a no-op. This does not start a simulator loop.
+ *
+ * @evidence docs/requirements/active/flow-observability.md#req-pr15-flow-adapter Flow samples use the existing observer and add no model method.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-flow-adapter #0e3f60a Re-read the section: onFlow is optional and resource names stay in the fixture.
+ */
+export function recordFlowSample(observer: RunObserver | undefined, sample: FlowSampleV1): void {
+  if (!observer?.onFlow) return;
+  notify(() => observer.onFlow?.(sample));
 }
 
 export type RunGoal<N, U extends string, Vars> = Readonly<{

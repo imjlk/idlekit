@@ -123,6 +123,7 @@ export function keepsTypedContractSingleSource(): void {
     "idlekit.experiment.v1",
     "idlekit.balance-checks.v1",
     "idlekit.judge.v1",
+    "idlekit.flow.v1",
   ]);
   // Each registry entry names a type its source declares. The balance entry names the
   // document union the schema publishes, so the error variant is part of the registered type.
