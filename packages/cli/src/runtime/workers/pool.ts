@@ -11,7 +11,7 @@ import {
 
 /**
  * @evidence docs/requirements/active/worker-execution-backend.md#req-dx05-worker-parity Explicit worker counts share one logical digest. The pool does not choose itself.
- * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-worker-parity #bbc9681 Re-read the section: selection stays explicit-worker, the count stays within maxWorkers, and shutdown terminates every slot and clears every timer.
+ * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-worker-parity #2e1b075 Re-read the section: selection stays explicit-worker, the count stays within maxWorkers, an exit is a crash, and shutdown terminates every slot and clears every timer.
  */
 export const workerPoolParity = "same-logical-digest" as const;
 
@@ -20,6 +20,8 @@ export interface WorkerLike {
   terminate(): void;
   onmessage: ((event: { data: unknown }) => void) | null;
   onerror: ((error: unknown) => void) | null;
+  /** Bun reports a worker that exits on its own, such as through process.exit, as a close event, not as an error. */
+  addEventListener?(type: "close", listener: () => void): void;
 }
 
 export function workerEntryUrl(): URL {
@@ -94,7 +96,9 @@ export async function runWorkerPool(args: Readonly<{
   const finalize = (): ExecutionBatchV1 =>
     finalizeBatch(
       tasks.map(
-        (task, index) => results[index] ?? failed(task, args.signal?.aborted ? "abort" : "not-started", attempts[index] ?? 0),
+        (task, index) =>
+          results[index] ??
+          failed(task, args.signal?.aborted ? "abort" : spawnFailed ? "worker-spawn" : "not-started", attempts[index] ?? 0),
       ),
       header,
     );
@@ -108,6 +112,7 @@ export async function runWorkerPool(args: Readonly<{
   const timers = new Set<ReturnType<typeof setTimeout>>();
   let spawned = 0;
   let closed = false;
+  let spawnFailed = false;
 
   return await new Promise<ExecutionBatchV1>((resolveBatch) => {
     const detach = (worker: WorkerLike): void => {
@@ -193,10 +198,30 @@ export async function runWorkerPool(args: Readonly<{
     // Spawn cost covers every slot the batch opens, replacements included.
     const start = (): void => {
       const before = performance.now();
-      const worker = spawn(spawned);
+      let worker: WorkerLike;
+      try {
+        worker = spawn(spawned);
+      } catch {
+        // A slot that cannot be built stops further spawns. Work still queued with no live slot is worker-spawn.
+        spawnFailed = true;
+        spawned = spawnLimit;
+        return;
+      }
       header.workerSpawnMs += performance.now() - before;
       spawned += 1;
       live.add(worker);
+      worker.addEventListener?.("close", () => {
+        // A slot the pool retired is no longer live, so its own terminate is ignored here.
+        if (closed || !live.has(worker)) return;
+        if (worker.onerror) {
+          // An exit during a task is a crash of that task: same retry and same reason.
+          worker.onerror(new Error("worker exited"));
+          return;
+        }
+        live.delete(worker);
+        idle.delete(worker);
+        feed();
+      });
       dispatch(worker);
     };
 

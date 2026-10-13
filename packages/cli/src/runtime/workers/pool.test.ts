@@ -7,6 +7,9 @@ import { fileURLToPath } from "url";
 import {
   addDecimalStrings,
   analysisTaskSeed,
+  builtinStrategyFactories,
+  createModelRegistry,
+  createStrategyRegistry,
   defaultExecutionBudget,
   finalizeBatch,
   type AnalysisTrialOutcomeV1,
@@ -52,8 +55,12 @@ class FakeWorker implements WorkerLike {
   onmessage: ((event: { data: unknown }) => void) | null = null;
   onerror: ((error: unknown) => void) | null = null;
   terminated = false;
+  private readonly closeListeners: (() => void)[] = [];
+  addEventListener(_type: "close", listener: () => void): void {
+    this.closeListeners.push(listener);
+  }
   constructor(
-    private readonly mode: "reverse" | "crash" | "hang" | "slow" | "fail-once",
+    private readonly mode: "reverse" | "crash" | "hang" | "slow" | "fail-once" | "exit",
     private readonly order: number[],
     private readonly delayMs = 1,
   ) {}
@@ -64,6 +71,13 @@ class FakeWorker implements WorkerLike {
       return;
     }
     if (this.mode === "hang") return;
+    if (this.mode === "exit") {
+      // A worker that calls process.exit: Bun fires close, not error.
+      queueMicrotask(() => {
+        for (const listener of this.closeListeners) listener();
+      });
+      return;
+    }
     const delay = this.mode === "reverse" ? (4 - task.logicalIndex) * 5 : this.delayMs;
     setTimeout(() => {
       if (this.terminated) return;
@@ -83,17 +97,17 @@ class FakeWorker implements WorkerLike {
 
 /**
  * @evidence docs/requirements/active/worker-execution-backend.md#req-dx05-worker-parity Local, one worker, two workers, and four workers share the trial digest.
- * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-worker-parity #bbc9681 Re-read the section, then ran this function: the four pool sizes returned the same semantic digest and end money.
+ * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-worker-parity #2e1b075 Re-read the section, then ran this function: the four pool sizes returned the same semantic digest and end money, and a real trial that called process.exit was a worker-crash well inside the window.
  * @evidence ./pool.ts#workerPoolParity Reads the parity marker.
  * @evidenceReview ./pool.ts#workerPoolParity #f3f1470 The declaration is same-logical-digest.
  * @evidence ./entry.ts#workerEntryMarker Reads the packed entry marker.
  * @evidenceReview ./entry.ts#workerEntryMarker #f670bfc The declaration is idlekit-worker-entry.
  * @evidence ./pool.ts#runWorkerPool Runs the tasks on an explicit number of workers.
- * @evidenceReview ./pool.ts#runWorkerPool #e0b3083 Re-read the event-driven pool: one, two, and four real workers return the local digests, end money, and seeds in logical order.
+ * @evidenceReview ./pool.ts#runWorkerPool #f795164 Re-read the event-driven pool: one, two, and four real workers return the local digests, end money, and seeds in logical order.
  * @evidence ./pool.ts#workerEntryUrl Names the worker module the pool spawns.
  * @evidenceReview ./pool.ts#workerEntryUrl #62d3255 The URL is entry.ts next to the pool module.
  * @evidence ./trial.ts#runAnalysisTrial Runs one trial and returns its digest and end money.
- * @evidenceReview ./trial.ts#runAnalysisTrial #07376a4 Re-read the trial after the step-budget check: each of the four local trials runs on the built-in registries without a loader and is ok with a digest, and the worker run matches it.
+ * @evidenceReview ./trial.ts#runAnalysisTrial #9fe8a84 Re-read the trial after the step-budget check: each of the four local trials runs on the built-in registries without a loader and is ok with a digest, and the worker run matches it.
  * @evidence ./trial.ts#analysisTrialScenario Builds the trial scenario from the payload.
  * @evidenceReview ./trial.ts#analysisTrialScenario #1eb1d48 The payload step, horizon, and income reach the scenario clock and model params.
  */
@@ -135,12 +149,24 @@ export function matchesWorkerDigests(): Promise<void> {
       expect(batch.outcomes.map((outcome) => outcome.endMoney)).toEqual(local.outcomes.map((outcome) => outcome.endMoney));
       expect(batch.outcomes.map((outcome) => outcome.seed)).toEqual(tasks.map((task) => task.seed));
     }
+    // A real worker whose trial calls process.exit is a crash at once, not a timeout after the long window.
+    const exitStarted = performance.now();
+    const exiting = await runWorkerPool({
+      tasks: [trial(0, { fault: "crash" }), trial(1)],
+      workers: 1,
+      budget: { ...defaultExecutionBudget, maxWorkers: 1, taskTimeoutMs: REAL_WORKER_TIMEOUT_MS },
+    });
+    expect(exiting.outcomes.map((outcome) => [outcome.status, outcome.reason])).toEqual([
+      ["failed", "worker-crash"],
+      ["ok", "ok"],
+    ]);
+    expect(performance.now() - exitStarted).toBeLessThan(REAL_WORKER_TIMEOUT_MS);
   })();
 }
 
 /**
  * @evidence docs/requirements/active/worker-execution-backend.md#req-dx05-worker-parity A reversed completion order still reports logical index order.
- * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-worker-parity #bbc9681 Re-read the section, then ran this function: the later index finished first and the batch stayed sorted.
+ * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-worker-parity #2e1b075 Re-read the section, then ran this function: the later index finished first and the batch stayed sorted.
  * @evidence ./pool.ts#workerPoolParity Reads the parity marker.
  * @evidenceReview ./pool.ts#workerPoolParity #f3f1470 The declaration is same-logical-digest.
  * @evidence ./pool.ts#WorkerLike.onmessage The pool reads completion from this handler.
@@ -173,11 +199,13 @@ export function reversesCompletionOrder(): Promise<void> {
 
 /**
  * @evidence docs/requirements/active/worker-execution-backend.md#req-dx05-worker-parity Crash, timeout, abort, and shutdown do not become a full distribution.
- * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-worker-parity #bbc9681 Re-read the section, then ran this function: the crashed and timed-out batches were not full, six queued tasks on one worker all finished in their own windows, a posted failure retried, an abort left no timer or spawn behind, twin ids reported separately, a count above maxWorkers was refused, cost counted UTF-8 bytes, and a step-budget stop was incomplete.
+ * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-worker-parity #2e1b075 Re-read the section, then ran this function: the crashed and timed-out batches were not full, six queued tasks on one worker all finished in their own windows, a posted failure retried, an abort left no timer or spawn behind, twin ids reported separately, a count above maxWorkers was refused, cost counted UTF-8 bytes, an exit without an error event was a retried crash, a throwing spawn settled as worker-spawn, a plugin error after loading was trial-failed while a loader refusal was plugin-trust, and a step-budget stop was incomplete.
+ * @evidence ./pool.ts#WorkerLike.addEventListener The pool hears a worker that exits on its own through the close event.
+ * @evidenceReview ./pool.ts#WorkerLike.addEventListener #e8b001c A fake worker that only fires close made its task a worker-crash and was retried once.
  * @evidence ./pool.ts#runWorkerPool Bounds each task by its own timer, retries posted failures, and shuts down without leftovers.
- * @evidenceReview ./pool.ts#runWorkerPool #e0b3083 Re-read dispatch, feed, and finish: state is keyed by position, the count is checked against maxWorkers, and finish clears timers and detaches handlers.
+ * @evidenceReview ./pool.ts#runWorkerPool #f795164 Re-read start, dispatch, feed, and finish: state is keyed by position, the count is checked against maxWorkers, close routes to the crash path, a throwing spawn stops spawning, and finish clears timers and detaches handlers.
  * @evidence ./trial.ts#runAnalysisTrial Reports a step-budget stop as incomplete.
- * @evidenceReview ./trial.ts#runAnalysisTrial #07376a4 A budget of two steps on a three-second horizon is incomplete step-budget with no end money, and three steps is ok.
+ * @evidenceReview ./trial.ts#runAnalysisTrial #9fe8a84 A budget of two steps on a three-second horizon is incomplete step-budget with no end money, three steps is ok, a throwing trusted model is trial-failed, and a refusing loader is plugin-trust.
  * @evidence ./pool.ts#workerPoolParity Reads the parity marker.
  * @evidenceReview ./pool.ts#workerPoolParity #f3f1470 The declaration is same-logical-digest.
  * @evidence ./pool.ts#WorkerLike.onerror The pool reads a worker crash from this handler.
@@ -291,6 +319,66 @@ export function boundsPoolFailures(): Promise<void> {
     expect(measured.cost.serializedBytes).toBe(new TextEncoder().encode(JSON.stringify(wide)).byteLength);
     expect(measured.cost.serializedBytes).toBeGreaterThan(JSON.stringify(wide).length);
 
+    // An exit without an error event is a crash of the task in flight, retried within the budget, not a timeout.
+    let exits = 0;
+    const exited = await runWorkerPool({
+      tasks: [trial(0)],
+      workers: 1,
+      budget: { ...defaultExecutionBudget, taskTimeoutMs: 60_000, maxWorkers: 1, maxRetries: 1 },
+      spawn: () => {
+        exits += 1;
+        return new FakeWorker("exit", []);
+      },
+    });
+    expect(exited.outcomes[0]).toMatchObject({ status: "failed", reason: "worker-crash", attempts: 2 });
+    expect(exits).toBe(2);
+
+    // A spawn that throws settles the batch. Work with no slot left is worker-spawn, and a live slot keeps draining.
+    const unbuilt = await runWorkerPool({
+      tasks: [trial(0), trial(1)],
+      workers: 1,
+      budget: { ...defaultExecutionBudget, taskTimeoutMs: 1_000, maxWorkers: 1 },
+      spawn: () => {
+        throw new Error("no worker");
+      },
+    });
+    expect(unbuilt.outcomes.map((outcome) => [outcome.status, outcome.reason])).toEqual([
+      ["failed", "worker-spawn"],
+      ["failed", "worker-spawn"],
+    ]);
+    let built = 0;
+    const halfBuilt = await runWorkerPool({
+      tasks: [trial(0), trial(1), trial(2)],
+      workers: 2,
+      budget: { ...defaultExecutionBudget, taskTimeoutMs: 1_000, maxWorkers: 2 },
+      spawn: () => {
+        built += 1;
+        if (built === 2) throw new Error("no second worker");
+        return new FakeWorker("slow", [], 1);
+      },
+    });
+    expect(halfBuilt.outcomes.map((outcome) => outcome.status)).toEqual(["ok", "ok", "ok"]);
+
+    // A trusted plugin that throws while it runs is an ordinary, retryable failure, whatever its message says.
+    const plugged = { ...trial(0), pluginPaths: ["/plugins/model.ts"], pluginRoots: ["/plugins"] };
+    const throwing = await runAnalysisTrial(plugged, async () => ({
+      modelRegistry: createModelRegistry([
+        {
+          id: "linear",
+          version: 1,
+          create: () => {
+            throw new Error("plugin temporarily unavailable");
+          },
+        },
+      ]),
+      strategyRegistry: createStrategyRegistry([...builtinStrategyFactories]),
+    }));
+    expect(throwing).toMatchObject({ status: "failed", reason: "trial-failed" });
+    const refused = await runAnalysisTrial(plugged, async () => {
+      throw new Error("loader said no");
+    });
+    expect(refused).toMatchObject({ status: "failed", reason: "plugin-trust" });
+
     // A step budget that stops the run before the horizon is incomplete, not an ok end state.
     const cut = await runAnalysisTrial({ ...trial(0, { durationSec: 3 }), stepBudget: 2 });
     expect(cut).toMatchObject({ status: "incomplete", reason: "step-budget", endMoney: null });
@@ -301,11 +389,11 @@ export function boundsPoolFailures(): Promise<void> {
 
 /**
  * @evidence docs/requirements/active/worker-execution-backend.md#req-dx05-worker-parity A plugin outside the parent roots is a trust failure.
- * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-worker-parity #bbc9681 Re-read the section, then ran this function: an empty root list and a mismatched digest both failed closed.
+ * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-worker-parity #2e1b075 Re-read the section, then ran this function: an empty root list and a mismatched digest both failed closed.
  * @evidence ./trial.ts#trialPluginBoundary Reads the trust marker.
  * @evidenceReview ./trial.ts#trialPluginBoundary #9e0eb13 The declaration is plugin-policy-not-widened.
  * @evidence ./trial.ts#runAnalysisTrial Refuses plugin paths it cannot check.
- * @evidenceReview ./trial.ts#runAnalysisTrial #07376a4 An empty root list and plugin paths without a loader fail closed, and in a worker the CLI loader refuses an outside path and a wrong digest.
+ * @evidenceReview ./trial.ts#runAnalysisTrial #9fe8a84 An empty root list and plugin paths without a loader fail closed, and in a worker the CLI loader refuses an outside path and a wrong digest.
  */
 export function refusesUntrustedPlugins(): Promise<void> {
   return (async () => {
@@ -353,7 +441,7 @@ export function refusesUntrustedPlugins(): Promise<void> {
 
 /**
  * @evidence docs/requirements/active/worker-execution-backend.md#req-dx05-worker-parity A break-infinity amount survives the worker serde.
- * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-worker-parity #bbc9681 Re-read the section, then ran this function: local and worker end money matched and were not Infinity, and the two-trial worker batch summed to 2e+400.
+ * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-worker-parity #2e1b075 Re-read the section, then ran this function: local and worker end money matched and were not Infinity, and the two-trial worker batch summed to 2e+400.
  * @evidence ./trial.ts#trialPluginBoundary Reads the trust marker.
  * @evidenceReview ./trial.ts#trialPluginBoundary #9e0eb13 The declaration is plugin-policy-not-widened.
  */
@@ -380,7 +468,7 @@ export function roundTripsBreakInfinity(): Promise<void> {
 
 /**
  * @evidence docs/requirements/active/worker-execution-backend.md#req-dx05-worker-parity The JS bundle lists the worker entry, and a packed build emits it.
- * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-worker-parity #bbc9681 Re-read the section, then ran this function: the bundle script names entry.ts and the packed file contains the marker.
+ * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-worker-parity #2e1b075 Re-read the section, then ran this function: the bundle script names entry.ts and the packed file contains the marker.
  * @evidence ./entry.ts#workerEntryMarker Reads the packed entry marker.
  * @evidenceReview ./entry.ts#workerEntryMarker #f670bfc The declaration is idlekit-worker-entry.
  */

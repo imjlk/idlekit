@@ -15,7 +15,7 @@ export const executionLocalDefault = "local-default" as const;
 
 /**
  * @evidence docs/requirements/active/worker-execution-backend.md#req-dx05-serializable-task A task is a plain JSON descriptor. The seed is the logical draw seed.
- * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-serializable-task #9e012b4 Re-read the section: functions, class instances, and cyclic payloads are refused before cost is measured, and the seed does not read a worker slot.
+ * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-serializable-task #d9d466b Re-read the section: functions, class instances, cyclic payloads, and a bad step budget are refused before cost is measured, a shared reference is allowed, and the seed does not read a worker slot.
  */
 export const executionSerializableTask = "json-descriptor" as const;
 
@@ -27,7 +27,7 @@ export const executionStableReduction = "logical-index" as const;
 
 /**
  * @evidence docs/requirements/active/worker-execution-backend.md#req-dx05-failure-boundary Failure, cancellation, and incomplete stays are distinct. A partial batch is not a full distribution.
- * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-failure-boundary #b752e32 Re-read the section: timeout and abort do not become a successful distribution, a retry keeps the same id and seed, the timeout is per task, and a thrown runner is a failed task.
+ * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-failure-boundary #733c96f Re-read the section: timeout and abort do not become a successful distribution, a retry keeps the same id and seed, the timeout is per task and per attempt, and a thrown runner is a failed task.
  */
 export const executionFailureBoundary = "not-a-partial-distribution" as const;
 
@@ -123,14 +123,19 @@ function assertPlain(value: unknown, seen: WeakSet<object>): void {
     return;
   }
   if (typeof value !== "object") throw new Error("not serializable");
+  // `seen` holds only the objects on the current path. A shared, acyclic reference serializes fine.
   if (seen.has(value)) throw new Error("cycle");
   seen.add(value);
-  if (Array.isArray(value)) {
-    for (const item of value) assertPlain(item, seen);
-    return;
+  try {
+    if (Array.isArray(value)) {
+      for (const item of value) assertPlain(item, seen);
+      return;
+    }
+    if (Object.getPrototypeOf(value) !== Object.prototype) throw new Error("not a plain object");
+    for (const entry of Object.values(value)) assertPlain(entry, seen);
+  } finally {
+    seen.delete(value);
   }
-  if (Object.getPrototypeOf(value) !== Object.prototype) throw new Error("not a plain object");
-  for (const entry of Object.values(value)) assertPlain(entry, seen);
 }
 
 export function assertSerializableTask(task: AnalysisTrialTaskV1): void {
@@ -141,6 +146,7 @@ export function assertSerializableTask(task: AnalysisTrialTaskV1): void {
   if (!Number.isInteger(task.logicalIndex) || task.logicalIndex < 0) throw new Error("logical index");
   if (typeof task.seed !== "number" || !Number.isFinite(task.seed)) throw new Error("seed");
   if (typeof task.taskId !== "string" || task.taskId.length === 0) throw new Error("task id");
+  if (!Number.isSafeInteger(task.stepBudget) || task.stepBudget < 0) throw new Error("step budget");
   assertPlain(task.payload, new WeakSet());
   assertPlain([...task.pluginPaths], new WeakSet());
   assertPlain([...task.pluginRoots], new WeakSet());
@@ -367,7 +373,8 @@ export function runLocalBatch(
         seed: task.seed,
         attempts: attempt + 1,
       };
-      if (next.status === "ok" && elapsed > budget.taskTimeoutMs) {
+      // Every attempt is bounded, whatever it returned. A worker attempt is cut at the same window.
+      if (elapsed > budget.taskTimeoutMs) {
         outcome = outcomeOf(task, "incomplete", "timeout", attempt + 1);
         break;
       }

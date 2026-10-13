@@ -58,7 +58,7 @@ function echo(value: AnalysisTrialTaskV1, endMoney: string): AnalysisTrialOutcom
  * @evidence ./executionBackend.ts#defaultExecutionBudget Reads the budget.
  * @evidenceReview ./executionBackend.ts#defaultExecutionBudget #4df9ea6 maxWorkers is 0.
  * @evidence ./executionBackend.ts#runLocalBatch Runs the batch in this process.
- * @evidenceReview ./executionBackend.ts#runLocalBatch #78f9f6a Re-read runLocalBatch after the per-task window and the validate-first cost: two tasks run locally with no spawn cost, record UTF-8 serialized bytes, and form a full distribution.
+ * @evidenceReview ./executionBackend.ts#runLocalBatch #23bc085 Re-read runLocalBatch after the per-task window and the validate-first cost: two tasks run locally with no spawn cost, record UTF-8 serialized bytes, and form a full distribution.
  */
 export function keepsLocalDefault(): void {
   expect(executionLocalDefault).toBe("local-default");
@@ -78,7 +78,7 @@ export function keepsLocalDefault(): void {
 
 /**
  * @evidence docs/requirements/active/worker-execution-backend.md#req-dx05-serializable-task A function payload is refused. The seed follows the logical index.
- * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-serializable-task #9e012b4 Re-read the section, then ran this function: reversing the input kept the same seed, a function payload failed, a cyclic payload failed alone while its sibling ran, and the cost counted UTF-8 bytes of the valid task.
+ * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-serializable-task #d9d466b Re-read the section, then ran this function: reversing the input kept the same seed, a function payload failed, a cyclic payload and a bigint step budget each failed alone while the sibling ran, a shared reference passed, and the cost counted UTF-8 bytes of the valid task.
  * @evidence ./executionBackend.ts#serializedTaskBytes Measures one task as UTF-8 bytes of its JSON.
  * @evidenceReview ./executionBackend.ts#serializedTaskBytes #06012ad A Hangul task id counts more bytes than UTF-16 units, and the batch cost equals the measured bytes.
  * @evidence ./executionBackend.ts#taskRefusals Checks every task before the batch measures or runs any.
@@ -88,7 +88,7 @@ export function keepsLocalDefault(): void {
  * @evidence ./executionBackend.ts#analysisTaskSeed Derives the seed from the logical index.
  * @evidenceReview ./executionBackend.ts#analysisTaskSeed #2b85c09 The seed is logicalDrawSeed of the base seed and index, so input order does not move it.
  * @evidence ./executionBackend.ts#assertSerializableTask Refuses a task that is not plain JSON.
- * @evidenceReview ./executionBackend.ts#assertSerializableTask #d34c038 A function payload, a class instance, a non-finite number, and a negative index throw; a plain task passes.
+ * @evidenceReview ./executionBackend.ts#assertSerializableTask #93ca5a6 Re-read the path-only cycle check and the step budget check: a function payload, a class instance, a non-finite number, a negative index, and a bigint step budget throw; a plain task and a shared acyclic reference pass.
  */
 export function keepsSerializableTasks(): void {
   expect(executionSerializableTask).toBe("json-descriptor");
@@ -127,6 +127,16 @@ export function keepsSerializableTasks(): void {
   ]);
   expect(mixed.cost.serializedBytes).toBe(serializedTaskBytes(task(1)));
   expect(taskRefusals([task(0, { payload: cyclic }), task(1)])).toEqual(["cycle", null]);
+  // A shared, acyclic reference is not a cycle. JSON and structured clone both carry it.
+  const shared = { amount: "1" };
+  expect(() => assertSerializableTask(task(0, { payload: { a: shared, b: shared, list: [shared, shared] } }))).not.toThrow();
+  // A step budget that JSON cannot carry fails its own task before any cost is measured.
+  const bigBudget = task(0, { stepBudget: 1n as unknown as number });
+  const budgeted = runLocalBatch([bigBudget, task(1)], (item) => echo(item, "1"));
+  expect(budgeted.outcomes.map((outcome) => [outcome.status, outcome.reason])).toEqual([
+    ["failed", "step budget"],
+    ["ok", "ok"],
+  ]);
   // Bytes are UTF-8 bytes of the JSON, not UTF-16 code units.
   const wide = task(0, { taskId: "트라이얼-0" });
   expect(serializedTaskBytes(wide)).toBe(new TextEncoder().encode(JSON.stringify(wide)).byteLength);
@@ -201,9 +211,9 @@ export function reducesInLogicalOrder(): void {
 
 /**
  * @evidence docs/requirements/active/worker-execution-backend.md#req-dx05-failure-boundary Abort, timeout, retry, and the queue bound stay distinct from a full distribution.
- * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-failure-boundary #b752e32 Re-read the section, then ran this function: the retry kept the same seed, the aborted batch was not full, three tasks each inside their own window all finished, and a thrown trial retried and failed alone.
+ * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-failure-boundary #733c96f Re-read the section, then ran this function: the retry kept the same seed, the aborted batch was not full, three tasks each inside their own window all finished, a thrown trial retried and failed alone, and a failed attempt past the window was a timeout with no retry.
  * @evidence ./executionBackend.ts#runLocalBatch Bounds each task by its own window and turns a thrown runner into a failed outcome.
- * @evidenceReview ./executionBackend.ts#runLocalBatch #78f9f6a Re-read the loop: no batch deadline remains, a 2 ms task under a 5 ms budget is ok in third place, and a throw is trial-failed with attempts counted.
+ * @evidenceReview ./executionBackend.ts#runLocalBatch #23bc085 Re-read the loop: no batch deadline remains, the window applies to every attempt before its status, a 2 ms task under a 5 ms budget is ok in third place, a throw is trial-failed with attempts counted, and a slow failure stops at one attempt.
  * @evidence ./executionBackend.ts#executionFailureBoundary Reads the boundary marker.
  * @evidenceReview ./executionBackend.ts#executionFailureBoundary #5e9d9f9 The declaration is not-a-partial-distribution.
  * @evidence ./executionBackend.ts#createLocalExecutionBackend Submits a batch that cancel or an aborted signal stops.
@@ -322,6 +332,27 @@ export function boundsFailures(): void {
     { budget: { ...defaultExecutionBudget, maxRetries: 1 } },
   );
   expect(throws).toBe(2);
+  // A failed attempt that ran past the window is a timeout. It is not retried, as a worker attempt would be cut there.
+  let slowCalls = 0;
+  let slowNow = 0;
+  const slowFailure = runLocalBatch(
+    [task(0)],
+    (item) => {
+      slowCalls += 1;
+      return { ...echo(item, "1"), status: "failed", reason: "trial-failed", endMoney: null };
+    },
+    {
+      budget: { ...defaultExecutionBudget, taskTimeoutMs: 5, maxRetries: 2 },
+      clock: {
+        now: () => {
+          slowNow += 10;
+          return slowNow;
+        },
+      },
+    },
+  );
+  expect(slowCalls).toBe(1);
+  expect(slowFailure.outcomes[0]).toMatchObject({ status: "incomplete", reason: "timeout", attempts: 1 });
   expect(thrown.outcomes.map((outcome) => [outcome.status, outcome.reason, outcome.attempts])).toEqual([
     ["failed", "trial-failed", 2],
     ["ok", "ok", 1],
