@@ -44,6 +44,12 @@ function has(obj: Record<string, JSONValue>, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(obj, key);
 }
 
+async function developmentExamples(doc: string, command: "calibrate" | "experience"): Promise<string[][]> {
+  const text = (await readText(resolve(ROOT, doc))).replace(/\\\r?\n\s*/g, " ");
+  const pattern = new RegExp(`^bun run --cwd packages/cli dev -- (${command} .+)$`, "gm");
+  return [...text.matchAll(pattern)].map((match) => match[1]!.trim().split(/\s+/));
+}
+
 async function verifyIntroTrack(): Promise<void> {
   const baseline = "../../examples/tutorials/01-cafe-baseline.json";
   const compareB = "../../examples/tutorials/03-cafe-compare-b.json";
@@ -590,6 +596,50 @@ async function verifyPluginTrack(): Promise<void> {
   assert(prestigeTuneOut.ok === true, "prestige tune result must be ok=true");
 }
 
+async function verifyExperienceExamples(): Promise<void> {
+  const commands = await developmentExamples("examples/experience/README.md", "experience");
+  const korean = await developmentExamples("examples/experience/README_ko.md", "experience");
+  assert(commands.length === 3, "experience README must provide three runnable examples");
+  assert(JSON.stringify(commands) === JSON.stringify(korean), "English and Korean experience commands must match");
+  const mixedArgs = commands.find((args) => args[1] === "../../examples/experience/mixed-feedback.json");
+  const censoredArgs = commands.find((args) => args[1] === "../../examples/experience/censored-feedback.json");
+  const controlArgs = commands.find((args) => args[1] === "../../examples/tutorials/11-my-game-v1.json");
+  assert(mixedArgs && censoredArgs && controlArgs, "experience README must cover mixed, censored and control scenarios");
+
+  const mixed = asRecord(asRecord(runCliJson(mixedArgs)).monteCarlo as JSONValue);
+  const repeat = asRecord(asRecord(runCliJson(mixedArgs)).monteCarlo as JSONValue);
+  assert(JSON.stringify(mixed) === JSON.stringify(repeat), "seeded feedback must reproduce its Monte Carlo summary");
+  const first = asRecord(mixed.firstVisible as JSONValue);
+  const accounting = asRecord(first.accounting as JSONValue);
+  assert(mixed.draws === 16 && mixed.seed === 7, "mixed example must use 16 draws and seed 7");
+  assert(accounting.observed === 9 && accounting.rightCensored === 7, "mixed example must observe 9 and censor 7 draws");
+  assert(accounting.failed === 0 && accounting.unsupported === 0, "mixed example must have no failed or unsupported draws");
+  assert(asRecord(first.uncertainty as JSONValue).zeroVariance === false, "seeded feedback must vary across draws");
+  const population = asRecord(first.population as JSONValue);
+  assert(
+    population.status === "outside-observed-range" && population.value === null,
+    "mixed example population p95 must remain unresolved",
+  );
+  assert(first.horizonSec === 51900, "mixed example must observe through the last short-bursts active block");
+
+  const censored = asRecord(asRecord(runCliJson(censoredArgs)).monteCarlo as JSONValue);
+  const unavailable = asRecord(censored.firstVisible as JSONValue);
+  const counts = asRecord(unavailable.accounting as JSONValue);
+  assert(counts.observed === 0 && counts.rightCensored === 16, "no-payout example must censor all 16 draws");
+  assert(counts.failed === 0 && counts.unsupported === 0, "no-payout draws must remain eligible");
+  assert(unavailable.status === "unavailable", "no-payout example has no observed first visible change");
+  const unavailableP95 = asRecord(unavailable.population as JSONValue);
+  assert(
+    unavailableP95.status === "unavailable" && unavailableP95.value === null,
+    "no-payout example must leave population p95 unavailable",
+  );
+  assert(censored.firstVisibleChangeSec === null, "no-payout example must leave the legacy completion summary null");
+
+  const control = asRecord(asRecord(runCliJson(controlArgs)).monteCarlo as JSONValue);
+  const uncertainty = asRecord(asRecord(control.firstVisible as JSONValue).uncertainty as JSONValue);
+  assert(uncertainty.zeroVariance === true && uncertainty.variance === 0, "linear starter must remain deterministic");
+}
+
 async function verifyCalibrationExamples(): Promise<void> {
   const telemetryCsv = resolve(tmpDir, "calibration-telemetry.csv");
   await writeText(
@@ -609,10 +659,9 @@ async function verifyCalibrationExamples(): Promise<void> {
     "docs/usage-guide_ko.md",
     "docs/virtual-scenario-design_ko.md",
   ]) {
-    const text = (await readText(resolve(ROOT, doc))).replace(/\\\r?\n\s*/g, " ");
-    const commands = [...text.matchAll(/^bun run --cwd packages\/cli dev -- (calibrate .+)$/gm)];
+    const commands = await developmentExamples(doc, "calibrate");
     assert(commands.length === 1, `${doc} must contain one development calibrate example`);
-    const args = commands[0]![1]!.trim().split(/\s+/);
+    const args = commands[0]!;
     assert(args[1], `${doc} must provide a telemetry path`);
     assert(
       resolve(cliDir, args[1]) === resolve(ROOT, "tmp/telemetry.csv"),
@@ -647,6 +696,7 @@ async function main(): Promise<void> {
   await removePath(tmpDir);
   await ensureDir(tmpDir);
   await verifyCalibrationExamples();
+  await verifyExperienceExamples();
   await verifyIntroTrack();
   if (!isQuick) await verifyPluginTrack();
   console.log(`docs verification passed (${isQuick ? "quick" : "full"})`);

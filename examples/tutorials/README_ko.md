@@ -22,6 +22,9 @@
 
 ## Learn Commands
 
+linear 기본형은 결정론적이다. seed에 따른 변화, 검열 표본, 전체 p95 미확정 결과는
+[피드백 예제](../experience/README_ko.md)에서 실행해볼 수 있다.
+
 - `01-cafe-baseline.json`
   - `validate`, `simulate`, `eta`, `report` 체험용
 - `02-cafe-fast.json`
