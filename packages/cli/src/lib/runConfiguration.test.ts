@@ -173,9 +173,12 @@ export function keepsResolvedRunConfiguration(): void {
   expect(() => planResolvedRun({ ...planArgs, scenario: infiniteDuration })).toThrow(
     "durationSec must be a finite number",
   );
-  // A first tick that a large initial t rounds away is rejected, as runScenario rejects it.
+  // An already true until stops before ticking, even when a tick at the initial t would round away.
   const roundedStart = { ...input, initial: { ...input.initial, t: 1e20 } };
-  expect(() => planResolvedRun({ ...planArgs, scenario: roundedStart })).toThrow("did not advance state.t");
+  expect(() => planResolvedRun({ ...planArgs, scenario: roundedStart })).not.toThrow();
+  // When until is false, the runner must take a tick and rejects the same nonadvancing clock.
+  const roundedFirstTick = { ...roundedStart, clock: { ...roundedStart.clock, untilExpr: "t >= 1e21" } };
+  expect(() => planResolvedRun({ ...planArgs, scenario: roundedFirstTick })).toThrow("did not advance state.t");
   // A stage that runs the command step does not run the scenario step, so consistent overrides cover every stage.
   expect(
     planResolvedRun({ ...planArgs, scenario: infiniteStep, consistentOverrides: true }).planFor("experience").stepSec

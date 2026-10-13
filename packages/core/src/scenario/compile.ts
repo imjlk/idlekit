@@ -2,7 +2,7 @@ import type { Engine } from "../engine/types";
 import type { Unit } from "../money/types";
 import { parseMoney } from "../notation/parseMoney";
 import { cloneRunState } from "../sim/runFactory";
-import { assertSimulationClock } from "../sim/timeBoundary";
+import { assertSimulationClock, assertTickAdvanced, nextBoundary } from "../sim/timeBoundary";
 import type { CompiledScenario, Model } from "../sim/types";
 import type { StrategyRegistry } from "../sim/strategy/registry";
 import type { ModelRegistry } from "./registry";
@@ -422,8 +422,8 @@ export function modelCreateParams(args: {
 /**
  * Throw when the scenario's initial money or untilExpr does not compile for this engine, as compileScenario would,
  * or when a clock a stage runs is one the runner rejects. `stepSecs` are the steps the stages run. Without them the
- * scenario step is checked. Nothing is evaluated and no model is created, so a plan-only caller can reject the same
- * scenario.
+ * scenario step is checked. Only the safe until expression is evaluated against the compiled initial state;
+ * no model or strategy is created or called.
  */
 export function assertScenarioPlanInputs<N>(args: {
   scenario: ScenarioV1;
@@ -434,30 +434,32 @@ export function assertScenarioPlanInputs<N>(args: {
   // validateScenarioV1 accepts an infinite step or duration, and runScenario does not.
   const startT = args.scenario.initial.t ?? 0;
   const durationSec = args.scenario.clock.durationSec;
-  for (const stepSec of args.stepSecs ?? [args.scenario.clock.stepSec]) {
+  const stepSecs = args.stepSecs ?? [args.scenario.clock.stepSec];
+  for (const stepSec of stepSecs) {
     assertSimulationClock("scenario clock", { stepSec, durationSec, startT });
-    // runScenario rejects a first tick that leaves state.t unchanged, which a large initial t rounds away. The first
-    // tick is a whole step, or the whole duration when that is shorter.
-    const firstDt = durationSec !== undefined ? Math.min(stepSec, durationSec) : stepSec;
-    if (firstDt > 0 && !(startT + firstDt > startT)) {
-      throw new Error(
-        `scenario clock tick did not advance state.t (start t: ${startT}, step: ${firstDt}); state.t is too large for stepSec ${stepSec}`,
-      );
-    }
   }
-  buildInitialState({
+  const unit = buildUnit({ scenario: args.scenario });
+  const initial = buildInitialState({
     E: args.E,
     scenario: args.scenario,
-    unit: buildUnit({ scenario: args.scenario }),
+    unit,
     allowSuffixNotation: args.allowSuffixNotation ?? true,
   });
-  compileUntilExpr({
+  const until = compileUntilExpr({
     expr: args.scenario.clock.untilExpr,
     E: args.E,
-    unit: buildUnit({ scenario: args.scenario }),
+    unit,
     allowSuffixNotation: args.allowSuffixNotation ?? true,
     allowUnsafe: false,
   });
+  const untilMet = until?.(initial) ?? false;
+  for (const stepSec of stepSecs) {
+    const first = nextBoundary({ elapsedSec: 0, steps: 0, stepSec, durationSec, untilMet, hasUntil: !!until });
+    // A duration or until stop never commits a tick. Validate advancement only when the runner would take one.
+    if (first.kind === "step") {
+      assertTickAdvanced("scenario clock", startT, startT + first.dt, first.dt, stepSec, startT);
+    }
+  }
 }
 
 function buildUnit<U extends string>(args: {
