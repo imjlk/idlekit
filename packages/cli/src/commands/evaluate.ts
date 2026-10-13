@@ -107,7 +107,14 @@ async function loadBalanceChecks(flags: Pick<EvaluateFlags, "checks" | "fail-on"
   if (!failOn) {
     throw usageError("--fail-on must list error, warn, inconclusive, or unsupported");
   }
-  const raw = await readJsonFile<unknown>(resolve(process.cwd(), flags.checks));
+  const path = resolve(process.cwd(), flags.checks);
+  let raw: unknown;
+  try {
+    raw = await readJsonFile<unknown>(path);
+  } catch (error) {
+    // An unreadable or non-JSON check file is a usage error, like a structurally invalid one.
+    throw usageError(`Invalid balance checks: cannot read ${path}: ${error instanceof Error ? error.message : String(error)}`);
+  }
   const parsed = parseBalanceCheckRequest(raw);
   if (!parsed.ok) {
     throw usageError(`Invalid balance checks: ${parsed.issues.join("; ")}`);
@@ -121,11 +128,9 @@ async function emitBalanceChecks(flags: Pick<EvaluateFlags, "format">, report: B
     console.log(renderBalanceCheckMarkdown(document));
     return;
   }
-  await writeOutput({
-    format: "json",
-    data: document,
-    meta: buildOutputMeta({ command: "evaluate.checks", pluginDigest: {} }),
-  });
+  // The standalone document is exactly idlekit.balance-checks.v1, whose root rejects extra keys,
+  // so no `_meta` envelope is attached here.
+  await writeOutput({ format: "json", data: document });
 }
 
 export default defineCommand({

@@ -12,6 +12,8 @@ check 파일은 metric id, 연산자(`lt`, `lte`, `gt`, `gte`, `eq`, `between`),
 
 비교하는 동일성은 definition, method, scenario version, spec version, engine id, plugin version, seed, algorithm version, unit이다. mismatch는 inconclusive이다. 보고서는 `baselineRewrite`를 false로 둔다.
 
+각 check는 그 check가 고정한 모든 필드와 동일성이 맞는 observation으로 판정한다. 맞는 것이 없으면 같은 metric id의 첫 observation이 mismatch를 보고한다. 완전히 맞는 observation이 둘이면 모호하므로 inconclusive이다. lower가 upper보다 큰 bound는 모순이므로 inconclusive이다. check 파일에는 check가 하나 이상 있어야 한다. 빈 `checks` 배열, 읽을 수 없는 파일, 잘못된 JSON은 사용 오류다. 단독 JSON 문서는 정확히 `idlekit.balance-checks.v1`이고 `_meta` 봉투를 붙이지 않는다.
+
 `ScenarioV1.outputs.assertions`는 선언만 한다. simulate와 evaluate는 그것을 실행하지 않는다. 분류되는 문법은 `&&`와 `||`로 잇는 `path operator value`이다. 그 외는 unsupported이다.
 
 숫자 결과와 advisory 문장은 별도 필드다. advisory 문장은 pass/fail의 근거가 아니다. check는 외부 provider를 호출하지 않는다. JSON과 markdown 보고서는 실패한 metric의 status, value, bounds, operator, threshold, unit을 보여 준다.

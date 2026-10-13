@@ -1,4 +1,4 @@
-import { cpSync, readdirSync, readFileSync, rmSync, writeFileSync } from "fs";
+import { cpSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join, resolve } from "path";
 import typia from "typia";
@@ -123,6 +123,15 @@ export function keepsTypedContractSingleSource(): void {
     "idlekit.experiment.v1",
     "idlekit.balance-checks.v1",
   ]);
+  // Each registry entry names a type its source declares. The balance entry names the
+  // document union the schema publishes, so the error variant is part of the registered type.
+  for (const entry of registeredContracts()) {
+    const source = readFileSync(join(repoRoot, entry.source), "utf8");
+    expect(source).toContain(`export type ${entry.typeName} =`);
+  }
+  expect(registeredContracts().find((entry) => entry.id === "idlekit.balance-checks.v1")?.typeName).toBe(
+    "BalanceCheckDocumentV1",
+  );
   const text = canonicalJson(buildContractDocument(sources));
   expect(canonicalJson(buildContractDocument(sources))).toBe(text);
   expect(text).not.toContain("/tmp/");
@@ -370,10 +379,14 @@ export function keepsGeneratedContractsStable(): void {
   const left = join(tmpdir(), `idlekit-tc05-gen-a-${crypto.randomUUID()}`);
   const right = join(tmpdir(), `idlekit-tc05-gen-b-${crypto.randomUUID()}`);
   try {
+    // A --dest generation must not touch the tracked public balance schema.
+    const publicSchema = join(repoRoot, "docs/schemas/balance-checks.v1.schema.json");
+    const publicBefore = statSync(publicSchema).mtimeMs;
     const wroteLeft = spawnContract(["tools/generate-contracts.ts", "--dest", left]);
     const wroteRight = spawnContract(["tools/generate-contracts.ts", "--dest", right]);
     expect(wroteLeft.exitCode).toBe(0);
     expect(wroteRight.exitCode).toBe(0);
+    expect(statSync(publicSchema).mtimeMs).toBe(publicBefore);
     const names = readdirSync(left).sort();
     expect(names).toEqual(readdirSync(right).sort());
     for (const name of names) {

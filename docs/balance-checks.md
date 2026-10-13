@@ -12,6 +12,8 @@ A check file names a metric id, an operator (`lt`, `lte`, `gt`, `gte`, `eq`, `be
 
 Compared identities are definition, method, scenario version, spec version, engine id, plugin version, seed, algorithm version, and unit. A mismatch is inconclusive. The report sets `baselineRewrite` to false.
 
+Each check is judged against the observation whose identity matches every field the check pins. When none matches, the first observation with that metric id reports the mismatch. Two full matches are ambiguous and inconclusive. Bounds with lower above upper are contradictory and inconclusive. A check file must contain at least one check. An empty `checks` array, an unreadable file, and invalid JSON are usage errors. The standalone JSON document is exactly `idlekit.balance-checks.v1` and carries no `_meta` envelope.
+
 `ScenarioV1.outputs.assertions` is declaration-only. simulate and evaluate do not execute it. The classified grammar is `path operator value` joined by `&&` and `||`. Anything else is unsupported.
 
 Numeric results and advisory text are separate fields. Advisory text is not pass/fail evidence. The check does not call an external provider. JSON and markdown reports list failed metrics with status, value, bounds, operator, threshold, and unit.

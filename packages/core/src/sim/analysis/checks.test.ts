@@ -98,7 +98,7 @@ function verdictOf(checks: readonly BalanceCheckV1[], observations: readonly Bal
  * @evidence ./checks.ts#parseFailOn Parses the fail-on list.
  * @evidenceReview ./checks.ts#parseFailOn #0fc31f0 error,warn keeps both tokens and an unknown token returns null.
  * @evidence ./checks.ts#parseBalanceCheckRequest Validates a check file before it is judged.
- * @evidenceReview ./checks.ts#parseBalanceCheckRequest #9c2e26c A complete request is accepted and a request without checks reports a path.
+ * @evidenceReview ./checks.ts#parseBalanceCheckRequest #03510aa Re-read the function: a complete request is accepted, a request without checks reports a path, and an empty checks array is rejected at $input.checks.
  */
 export function checksRegisteredMetrics(): void {
   expect(balanceCheckSpec).toBe("registered-check-spec");
@@ -115,6 +115,10 @@ export function checksRegisteredMetrics(): void {
   const rejected = parseBalanceCheckRequest({ schemaVersion: 1, contract: "idlekit.balance-checks.v1" });
   expect(rejected.ok).toBe(false);
   if (!rejected.ok) expect(rejected.issues.some((issue) => issue.includes("checks"))).toBe(true);
+  // An emptied check file is not a green gate.
+  const empty = parseBalanceCheckRequest(request([], [observation("first-reset", "measured", 1, 1, 1)]));
+  expect(empty.ok).toBe(false);
+  if (!empty.ok) expect(empty.issues).toEqual(["$input.checks at least one check"]);
 }
 
 /**
@@ -123,7 +127,7 @@ export function checksRegisteredMetrics(): void {
  * @evidence ./checks.ts#balanceVerdictBounds Reads the bound marker.
  * @evidenceReview ./checks.ts#balanceVerdictBounds #23347e0 The declaration is bounds-not-zero.
  * @evidence ./checks.ts#evaluateBalanceChecks Judges each check against its observation.
- * @evidenceReview ./checks.ts#evaluateBalanceChecks #3d9f537 A measured point, an unknown, a censored lower bound, a missing value, an absent metric, a between range, and an unsupported metric each get their own verdict.
+ * @evidenceReview ./checks.ts#evaluateBalanceChecks #eb67a88 Re-read the function and matchObservation: a measured point, an unknown, a censored lower bound, a missing value, an absent metric, a between range, and an unsupported metric each get their own verdict, inverted bounds are inconclusive, and each check is judged against the observation matching its declared identity.
  */
 export function judgesBoundedMetrics(): void {
   expect(balanceVerdictBounds).toBe("bounds-not-zero");
@@ -155,6 +159,14 @@ export function judgesBoundedMetrics(): void {
   expect(verdictOf([actions], [observation("active-actions-per-minute", "measured", 9, 9, 9, { unit: "1/min" })])?.verdict).toBe("fail");
   const unsupported = verdictOf([goal], [observation("p95-goal", "unsupported", 1, 1, 1)]);
   expect(unsupported?.verdict).toBe("unsupported");
+  // Inverted bounds describe no value: neither lte nor between may pass on them.
+  const inverted = verdictOf([goal], [observation("p95-goal", "censored", null, 9, 1)]);
+  expect(inverted?.verdict).toBe("inconclusive");
+  expect(inverted?.reason).toBe("bounds are contradictory");
+  expect(verdictOf([goal], [observation("p95-goal", "unknown", null, 20, 10)])?.verdict).toBe("inconclusive");
+  expect(
+    verdictOf([actions], [observation("active-actions-per-minute", "censored", null, 4, 2, { unit: "1/min" })])?.verdict,
+  ).toBe("inconclusive");
 }
 
 /**
@@ -178,6 +190,22 @@ export function reportsIdentityMismatch(): void {
   const report = evaluateBalanceChecks(request([spec], [observation("p95-goal", "measured", 1, 1, 1, { unit: "s" })]));
   expect(report.baselineRewrite).toBe(false);
   expect(report.pass).toBe(false);
+  // A later observation that matches the full identity is judged, not the first metric id hit.
+  const pinned = verdictOf(
+    [spec],
+    [observation("p95-goal", "measured", 99, 99, 99, { seed: "18" }), observation("p95-goal", "measured", 1, 1, 1)],
+  );
+  expect(pinned?.verdict).toBe("pass");
+  expect(pinned?.mismatches).toEqual([]);
+  expect(pinned?.evidence.value).toBe(1);
+  // Two observations that both satisfy an unpinned seed are ambiguous, not a pass.
+  const unpinned = check({ id: "goal", metricId: "p95-goal", operator: "lte", threshold: 8, seed: null });
+  const ambiguous = verdictOf(
+    [unpinned],
+    [observation("p95-goal", "measured", 1, 1, 1, { seed: "18" }), observation("p95-goal", "measured", 99, 99, 99)],
+  );
+  expect(ambiguous?.verdict).toBe("inconclusive");
+  expect(ambiguous?.reason).toBe("ambiguous 2 observations match the check identity");
 }
 
 function kpiReport(worth: string) {
@@ -251,7 +279,7 @@ export function adaptsKpiRegression(): void {
  * @evidence ./checks.ts#balanceAssertionGrammar Reads the grammar marker.
  * @evidenceReview ./checks.ts#balanceAssertionGrammar #423cfbe The declaration is declaration-only.
  * @evidence ./checks.ts#classifyAssertionExpr Classifies an assertion without executing it.
- * @evidenceReview ./checks.ts#classifyAssertionExpr #5fe7abd Two safe terms joined by && are one supported clause, and a call expression is unsupported.
+ * @evidenceReview ./checks.ts#classifyAssertionExpr #b1ca47a Re-read the function: two safe terms joined by && are one supported clause, two joined by || are two clauses, a call expression is unsupported, and an empty clause or term (a trailing ||, a doubled &&, a blank string) is unsupported instead of dropped.
  */
 export function classifiesAssertionGrammar(): void {
   expect(balanceAssertionGrammar).toBe("declaration-only");
@@ -259,6 +287,15 @@ export function classifiesAssertionGrammar(): void {
   expect(supported.status).toBe("supported");
   if (supported.status === "supported") expect(supported.terms[0]).toHaveLength(2);
   expect(classifyAssertionExpr("process.exit(1)").status).toBe("unsupported");
+  // Empty clauses and terms are outside the grammar, not silently dropped.
+  expect(classifyAssertionExpr("t <= 7200 ||").status).toBe("unsupported");
+  expect(classifyAssertionExpr("|| t <= 7200").status).toBe("unsupported");
+  expect(classifyAssertionExpr("t <= 7200 && && prestige.count >= 1").status).toBe("unsupported");
+  expect(classifyAssertionExpr("t <= 7200 &&").status).toBe("unsupported");
+  expect(classifyAssertionExpr("   ").status).toBe("unsupported");
+  const either = classifyAssertionExpr("t <= 7200 || prestige.count >= 1");
+  expect(either.status).toBe("supported");
+  if (either.status === "supported") expect(either.terms).toHaveLength(2);
   const compile = readFileSync(new URL("../../scenario/compile.ts", import.meta.url), "utf8");
   const types = readFileSync(new URL("../../scenario/types.ts", import.meta.url), "utf8");
   expect(compile.includes("classifyAssertionExpr")).toBe(false);

@@ -91,7 +91,7 @@ const contractRegistry = [
   {
     id: "idlekit.balance-checks.v1" as const,
     kind: "balance-checks" as const,
-    typeName: "BalanceCheckReportV1",
+    typeName: "BalanceCheckDocumentV1",
     source: "packages/core/src/sim/analysis/checks.ts",
   },
 ] as const;
