@@ -1,0 +1,256 @@
+{
+  "contract": "idlekit.performance-budget",
+  "schemaVersion": 1,
+  "perScenario": [
+    {
+      "scenario": "examples/bench/representative.json",
+      "budget": {
+        "contract": "idlekit.performance-budget",
+        "schemaVersion": 1,
+        "corpus": "representative",
+        "scenario": "examples/bench/representative.json",
+        "scenarioHash": "9937ce005fae4050e8f5a72ef58bfb3cbe01a1921b89ed6c4a1f54b81471b626",
+        "config": {
+          "engineId": "number",
+          "seed": 1069430523,
+          "modelId": "linear",
+          "modelVersion": 1,
+          "stepSec": 1,
+          "trace": "off",
+          "observer": "on",
+          "worker": "none",
+          "planner": "off"
+        },
+        "configHash": "c9183205763462ded39bfbd3f49f4ce5a217adef589c48822e77f9900397907c",
+        "host": {
+          "bun": "1.4.2",
+          "cpu": "Apple M3 Max",
+          "os": "darwin",
+          "arch": "arm64"
+        },
+        "iterations": 7,
+        "warmup": 2,
+        "workloadCount": 30,
+        "phases": [
+          {
+            "phase": "prepare-cold",
+            "label": "cold",
+            "durationMs": 7537.273666
+          },
+          {
+            "phase": "prepare-warm",
+            "label": "warm",
+            "durationMs": 7433.031416999999
+          },
+          {
+            "phase": "runtime",
+            "label": "runtime",
+            "durationMs": 117.88633300000038
+          },
+          {
+            "phase": "runtime",
+            "label": "runtime",
+            "durationMs": 120.5825420000001
+          },
+          {
+            "phase": "runtime",
+            "label": "runtime",
+            "durationMs": 116.17991600000096
+          },
+          {
+            "phase": "runtime",
+            "label": "runtime",
+            "durationMs": 119.73891600000024
+          },
+          {
+            "phase": "runtime",
+            "label": "runtime",
+            "durationMs": 115.19745799999873
+          },
+          {
+            "phase": "runtime",
+            "label": "runtime",
+            "durationMs": 117.74470899999869
+          },
+          {
+            "phase": "runtime",
+            "label": "runtime",
+            "durationMs": 116.87187499999891
+          }
+        ],
+        "metrics": {
+          "totalTimeMedianMs": {
+            "status": "measured",
+            "value": 117.74470899999869
+          },
+          "totalTimeP95Ms": {
+            "status": "measured",
+            "value": 120.5825420000001
+          },
+          "stepsPerSec": {
+            "status": "measured",
+            "value": 254.78851877752172
+          },
+          "plannerExpandedNodes": {
+            "status": "absent"
+          },
+          "plannerNodesPerSec": {
+            "status": "absent"
+          },
+          "drawsPerSec": {
+            "status": "absent"
+          },
+          "rssDeltaBytes": {
+            "status": "absent"
+          },
+          "heapDeltaBytes": {
+            "status": "absent"
+          },
+          "peakRssBytes": {
+            "status": "measured",
+            "value": 50495488
+          },
+          "observationRetainedSamples": {
+            "status": "absent"
+          },
+          "allocPerStep": {
+            "status": "unsupported"
+          }
+        },
+        "worker": {
+          "startupMs": {
+            "status": "absent"
+          },
+          "serializationMs": {
+            "status": "absent"
+          }
+        }
+      }
+    },
+    {
+      "scenario": "examples/bench/representative.json",
+      "budget": {
+        "contract": "idlekit.performance-budget",
+        "schemaVersion": 1,
+        "corpus": "representative",
+        "scenario": "examples/bench/representative.json",
+        "scenarioHash": "9937ce005fae4050e8f5a72ef58bfb3cbe01a1921b89ed6c4a1f54b81471b626",
+        "config": {
+          "engineId": "number",
+          "seed": 1069430523,
+          "modelId": "linear",
+          "modelVersion": 1,
+          "stepSec": 1,
+          "trace": "off",
+          "observer": "on",
+          "worker": "none",
+          "planner": "off"
+        },
+        "configHash": "c9183205763462ded39bfbd3f49f4ce5a217adef589c48822e77f9900397907c",
+        "host": {
+          "bun": "1.4.2",
+          "cpu": "unsupported",
+          "os": "linux",
+          "arch": "x64"
+        },
+        "iterations": 7,
+        "warmup": 2,
+        "workloadCount": 30,
+        "phases": [
+          {
+            "phase": "prepare-cold",
+            "label": "cold",
+            "durationMs": 7924.879975
+          },
+          {
+            "phase": "prepare-warm",
+            "label": "warm",
+            "durationMs": 7888.532357000001
+          },
+          {
+            "phase": "runtime",
+            "label": "runtime",
+            "durationMs": 123.62194499999896
+          },
+          {
+            "phase": "runtime",
+            "label": "runtime",
+            "durationMs": 121.34241199999997
+          },
+          {
+            "phase": "runtime",
+            "label": "runtime",
+            "durationMs": 124.52129000000241
+          },
+          {
+            "phase": "runtime",
+            "label": "runtime",
+            "durationMs": 123.25085300000137
+          },
+          {
+            "phase": "runtime",
+            "label": "runtime",
+            "durationMs": 126.39057800000228
+          },
+          {
+            "phase": "runtime",
+            "label": "runtime",
+            "durationMs": 121.62878500000079
+          },
+          {
+            "phase": "runtime",
+            "label": "runtime",
+            "durationMs": 124.85329800000181
+          }
+        ],
+        "metrics": {
+          "totalTimeMedianMs": {
+            "status": "measured",
+            "value": 123.62194499999896
+          },
+          "totalTimeP95Ms": {
+            "status": "measured",
+            "value": 126.39057800000228
+          },
+          "stepsPerSec": {
+            "status": "measured",
+            "value": 242.67535994519625
+          },
+          "plannerExpandedNodes": {
+            "status": "absent"
+          },
+          "plannerNodesPerSec": {
+            "status": "absent"
+          },
+          "drawsPerSec": {
+            "status": "absent"
+          },
+          "rssDeltaBytes": {
+            "status": "absent"
+          },
+          "heapDeltaBytes": {
+            "status": "absent"
+          },
+          "peakRssBytes": {
+            "status": "measured",
+            "value": 59572224
+          },
+          "observationRetainedSamples": {
+            "status": "absent"
+          },
+          "allocPerStep": {
+            "status": "unsupported"
+          }
+        },
+        "worker": {
+          "startupMs": {
+            "status": "absent"
+          },
+          "serializationMs": {
+            "status": "absent"
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,6 +1,12 @@
 import {
   buildPerformanceArtifact,
   currentHost,
+  readChoice,
+  readCount,
+  readPositive,
+  readSample,
+  readSamples,
+  readText,
   representativeConfig,
   type BenchConfig,
 } from "./performanceBudget";
@@ -10,17 +16,6 @@ import {
  * Expanded node counts stay absent unless the caller passes them.
  * This file does not enter the planner rollout.
  */
-
-function numberList(value: string | undefined): number[] {
-  if (!value) return [];
-  return value.split(",").map((item) => Number(item.trim())).filter((item) => Number.isFinite(item));
-}
-
-function optionalNumber(value: string | undefined): number | null {
-  if (value === undefined) return null;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : null;
-}
 
 function parseConfig(argv: string[]): { config: BenchConfig; runtimeMs: number[]; nodes: number | null; workload: number | null; prepareCold: number | undefined; prepareWarm: number[] } {
   let engineId = "number";
@@ -40,19 +35,20 @@ function parseConfig(argv: string[]): { config: BenchConfig; runtimeMs: number[]
   for (let i = 2; i < argv.length; i++) {
     const flag = argv[i];
     const value = argv[++i];
-    if (flag === "--engine") engineId = value ?? engineId;
-    else if (flag === "--seed") seed = optionalNumber(value);
-    else if (flag === "--model") modelId = value ?? modelId;
-    else if (flag === "--model-version") modelVersion = optionalNumber(value) ?? modelVersion;
-    else if (flag === "--step") stepSec = optionalNumber(value) ?? stepSec;
-    else if (flag === "--trace" && (value === "off" || value === "bounded" || value === "unbounded")) trace = value;
-    else if (flag === "--observer" && (value === "off" || value === "on")) observer = value;
-    else if (flag === "--planner" && (value === "off" || value === "on")) planner = value;
-    else if (flag === "--runtime-ms") runtimeMs = numberList(value);
-    else if (flag === "--nodes") nodes = optionalNumber(value);
-    else if (flag === "--workload") workload = optionalNumber(value);
-    else if (flag === "--prepare-cold-ms") prepareCold = optionalNumber(value) ?? undefined;
-    else if (flag === "--prepare-warm-ms") prepareWarm = numberList(value);
+    if (flag === "--engine") engineId = readText(flag, value);
+    else if (flag === "--seed") seed = readCount(flag, value);
+    else if (flag === "--model") modelId = readText(flag, value);
+    else if (flag === "--model-version") modelVersion = readCount(flag, value);
+    else if (flag === "--step") stepSec = readPositive(flag, value);
+    else if (flag === "--trace") trace = readChoice(flag, value, ["off", "bounded", "unbounded"] as const);
+    else if (flag === "--observer") observer = readChoice(flag, value, ["off", "on"] as const);
+    else if (flag === "--planner") planner = readChoice(flag, value, ["off", "on"] as const);
+    else if (flag === "--runtime-ms") runtimeMs = readSamples(flag, value);
+    else if (flag === "--nodes") nodes = readCount(flag, value);
+    else if (flag === "--workload") workload = readCount(flag, value);
+    else if (flag === "--prepare-cold-ms") prepareCold = readSample(flag, value);
+    else if (flag === "--prepare-warm-ms") prepareWarm = readSamples(flag, value);
+    else throw new Error(`unknown flag: ${flag}`);
   }
 
   return {
@@ -74,7 +70,8 @@ async function main(): Promise<void> {
     config: parsed.config,
     host: currentHost(),
     iterations: parsed.runtimeMs.length,
-    warmup: parsed.prepareWarm.length,
+    // Prepare samples are compiler phases. No runtime sample was discarded as warmup.
+    warmup: 0,
     workloadCount: parsed.workload,
     phases: {
       prepareColdMs: parsed.prepareCold,

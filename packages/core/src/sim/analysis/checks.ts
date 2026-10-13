@@ -1,6 +1,7 @@
 import typia, { type IValidation } from "typia";
 
-/**
+/*
+ * Module note, not JSDoc, so the generated schema does not attach it to CheckOperator.
  * Game-scenario balance gate. This is not a ttsc, Evidence, or Graph quality gate.
  * ScenarioV1.outputs.assertions stay declaration-only; this module does not execute them.
  * A numeric verdict never reads the advisory string and never calls a network service.
@@ -203,7 +204,11 @@ export function parseBalanceCheckRequest(
   input: unknown,
 ): { ok: true; request: BalanceCheckRequestV1 } | { ok: false; issues: readonly string[] } {
   const validated = validateRequest(input);
-  if (validated.success) return { ok: true, request: validated.data };
+  if (validated.success) {
+    // An empty gate is not a pass. A check file must name at least one check.
+    if (validated.data.checks.length === 0) return { ok: false, issues: ["$input.checks at least one check"] };
+    return { ok: true, request: validated.data };
+  }
   return {
     ok: false,
     issues: validated.errors.map((error) => `${error.path} ${error.expected}`),
@@ -218,12 +223,14 @@ const ASSERTION_TERM = /^([A-Za-z_][A-Za-z0-9_.]*)\s*(<=|>=|==|!=|<|>)\s*([^\s&|
 export function classifyAssertionExpr(
   expr: string,
 ): { status: "supported"; terms: readonly (readonly AssertionTerm[])[] } | { status: "unsupported"; reason: string } {
-  const disjunction = expr.split("||").map((part) => part.trim()).filter((part) => part.length > 0);
-  if (disjunction.length === 0) return { status: "unsupported", reason: "empty assertion" };
+  if (expr.trim().length === 0) return { status: "unsupported", reason: "empty assertion" };
+  // Empty clauses are kept, so `a <= 1 ||` and `a <= 1 && && b >= 2` stay outside the grammar.
+  const disjunction = expr.split("||").map((part) => part.trim());
   const terms: AssertionTerm[][] = [];
   for (const clause of disjunction) {
-    const conjunction = clause.split("&&").map((part) => part.trim()).filter((part) => part.length > 0);
-    if (conjunction.length === 0) return { status: "unsupported", reason: "empty clause" };
+    if (clause.length === 0) return { status: "unsupported", reason: "empty clause" };
+    const conjunction = clause.split("&&").map((part) => part.trim());
+    if (conjunction.some((part) => part.length === 0)) return { status: "unsupported", reason: "empty term" };
     const parsed: AssertionTerm[] = [];
     for (const raw of conjunction) {
       const match = ASSERTION_TERM.exec(raw);
@@ -283,6 +290,8 @@ function intervalVerdict(
 ): CheckVerdict {
   const low = finite(lower) ? lower : null;
   const high = finite(upper) ? upper : null;
+  // Contradictory bounds describe no value, so they cannot decide a comparison.
+  if (low !== null && high !== null && low > high) return "inconclusive";
   if (operator === "between") {
     if (!finite(upperThreshold) || !finite(threshold) || threshold > upperThreshold) return "unsupported";
     if (low !== null && high !== null && low >= threshold && high <= upperThreshold) return "pass";
@@ -347,7 +356,34 @@ function evidenceOf(check: BalanceCheckV1, observation: BalanceObservationV1 | u
   };
 }
 
-function judgeOne(check: BalanceCheckV1, observation: BalanceObservationV1 | undefined): BalanceCheckResultV1 {
+type ObservationMatch =
+  | Readonly<{ kind: "one"; observation: BalanceObservationV1 | undefined }>
+  | Readonly<{ kind: "ambiguous"; count: number }>;
+
+/**
+ * Select by the identity the check declares, not by metric id alone. A later observation
+ * that matches every pinned field wins over an earlier mismatch. Two full matches are ambiguous.
+ */
+function matchObservation(check: BalanceCheckV1, observations: readonly BalanceObservationV1[]): ObservationMatch {
+  const sameMetric = observations.filter((observation) => observation.identity.metricId === check.metricId);
+  const exact = sameMetric.filter((observation) => identityMismatches(check, observation).length === 0);
+  if (exact.length > 1) return { kind: "ambiguous", count: exact.length };
+  return { kind: "one", observation: exact[0] ?? sameMetric[0] };
+}
+
+function judgeOne(check: BalanceCheckV1, match: ObservationMatch): BalanceCheckResultV1 {
+  if (match.kind === "ambiguous") {
+    return {
+      id: check.id,
+      metricId: check.metricId,
+      severity: check.severity,
+      verdict: "inconclusive",
+      reason: `ambiguous ${match.count} observations match the check identity`,
+      mismatches: [],
+      evidence: evidenceOf(check, undefined),
+    };
+  }
+  const observation = match.observation;
   const evidence = evidenceOf(check, observation);
   if (!observation) {
     return {
@@ -418,12 +454,17 @@ function judgeOne(check: BalanceCheckV1, observation: BalanceObservationV1 | und
     };
   }
   const verdict = intervalVerdict(check.operator, check.threshold, check.upperThreshold, observation.lower, observation.upper);
+  const inverted = finite(observation.lower) && finite(observation.upper) && observation.lower > observation.upper;
   return {
     id: check.id,
     metricId: check.metricId,
     severity: check.severity,
     verdict,
-    reason: verdict === "inconclusive" ? "bounds do not decide the comparison" : "bounds decide the comparison",
+    reason: inverted
+      ? "bounds are contradictory"
+      : verdict === "inconclusive"
+        ? "bounds do not decide the comparison"
+        : "bounds decide the comparison",
     mismatches: [],
     evidence,
   };
@@ -436,12 +477,7 @@ function blocks(result: BalanceCheckResultV1, failOn: readonly FailOnToken[]): b
 }
 
 export function evaluateBalanceChecks(request: BalanceCheckRequestV1): BalanceCheckReportV1 {
-  const results = request.checks.map((check) =>
-    judgeOne(
-      check,
-      request.observations.find((observation) => observation.identity.metricId === check.metricId),
-    ),
-  );
+  const results = request.checks.map((check) => judgeOne(check, matchObservation(check, request.observations)));
   const pass = results.every((result) => !blocks(result, request.failOn));
   return {
     schemaVersion: 1,
@@ -564,14 +600,23 @@ function kpiCheck(id: string, metricId: string, operator: CheckOperator, thresho
   };
 }
 
+/**
+ * A KPI delta or ratio can be infinite (a zero baseline) or NaN. JSON cannot carry either, so a
+ * measured point would publish a null value beside a decided verdict. An infinite value becomes a
+ * censored observation bounded by the largest finite number, and NaN becomes unknown.
+ */
 function measured(metricId: string, unit: string, value: number): BalanceObservationV1 {
-  return {
-    identity: kpiIdentity(metricId, unit),
-    status: "measured",
-    value,
-    lower: value,
-    upper: value,
-  };
+  const identity = kpiIdentity(metricId, unit);
+  if (value === Number.POSITIVE_INFINITY) {
+    return { identity, status: "censored", value: null, lower: Number.MAX_VALUE, upper: null };
+  }
+  if (value === Number.NEGATIVE_INFINITY) {
+    return { identity, status: "censored", value: null, lower: null, upper: -Number.MAX_VALUE };
+  }
+  if (Number.isNaN(value)) {
+    return { identity, status: "unknown", value: null, lower: null, upper: null };
+  }
+  return { identity, status: "measured", value, lower: value, upper: value };
 }
 
 export type KpiRegressionInput = Readonly<{

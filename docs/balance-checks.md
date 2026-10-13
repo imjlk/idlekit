@@ -6,11 +6,13 @@ Korean version: [balance-checks_ko.md](./balance-checks_ko.md)
 
 A check file names a metric id, an operator (`lt`, `lte`, `gt`, `gte`, `eq`, `between`), a threshold, a unit, a severity (`error` or `warn`), and a missing policy (`inconclusive`, `fail`, `unsupported`). The default path does not evaluate arbitrary JavaScript. Pass and fail are produced only when a measured point or a lower/upper bound decides the comparison. A missing or unknown value is not treated as 0. A censored lower bound can fail when the whole remaining interval misses the threshold. An unknown p95 with no bounds is inconclusive.
 
-`idk evaluate --checks <file>` reads that file. `--fail-on` lists `error`, `warn`, `inconclusive`, and `unsupported`. The default is `error`. A blocking result exits 2. A usage error stays on the CLI usage path. Omitting `--checks` keeps the existing evaluate workflow.
+`idk evaluate --checks <file>` reads that file. `--fail-on` lists `error`, `warn`, `inconclusive`, and `unsupported`. The default is `error`. A blocking result exits 2. With a scenario, a blocking result also sets the workflow `ok` to false. A usage error stays on the CLI usage path. Omitting `--checks` keeps the existing evaluate workflow.
 
-`idk kpi regress` is the compatibility adapter. Its flags and fixture shape stay. It maps the current horizon rows into the same engine. It does not rewrite a baseline.
+`idk kpi regress` is the compatibility adapter. Its flags and fixture shape stay. It maps the current horizon rows into the same engine. It does not rewrite a baseline. An infinite delta or ratio from a zero baseline is a censored observation bounded by the largest finite number, so the evidence stays serializable. An undefined delta (both sides zero) is unknown.
 
 Compared identities are definition, method, scenario version, spec version, engine id, plugin version, seed, algorithm version, and unit. A mismatch is inconclusive. The report sets `baselineRewrite` to false.
+
+Each check is judged against the observation whose identity matches every field the check pins. When none matches, the first observation with that metric id reports the mismatch. Two full matches are ambiguous and inconclusive. Bounds with lower above upper are contradictory and inconclusive. A check file must contain at least one check. An empty `checks` array, an unreadable file, and invalid JSON are usage errors. The standalone JSON document is exactly `idlekit.balance-checks.v1` and carries no `_meta` envelope.
 
 `ScenarioV1.outputs.assertions` is declaration-only. simulate and evaluate do not execute it. The classified grammar is `path operator value` joined by `&&` and `||`. Anything else is unsupported.
 
@@ -52,4 +54,4 @@ The first `evidence:check` exited 2 on placeholder reviews and a fetch cast. The
 
 ## Graph
 
-Queried with `ttsc-graph` 0.30.4 on `tsconfig.graph.json`, protocol `2025-11-25`, no generation identifier, shutdown 0. `evaluateBalanceChecks` is declared at `packages/core/src/sim/analysis/checks.ts:438`. An impact trace names `loadBalanceChecks` at `packages/cli/src/commands/evaluate.ts:104` (call at line 115), the adapter `adaptKpiRegression` at `checks.ts:590`, `runKpiRegression` at `packages/cli/src/commands/kpiRegress.ts:9` (call at line 24), and tests `verdictOf`, `judgesBoundedMetrics`, `reportsIdentityMismatch`, `adaptsKpiRegression`, `keepsAdvisoryOffTheVerdict`, and `validatesFailureReport`. The trace is not every caller. JSON check files and package scripts are outside the graph.
+Queried at commit `e497300` with `ttsc-graph` 0.30.4 on `tsconfig.graph.json` (the aggregate project), protocol `2025-11-25`, no generation identifier, shutdown 0. `evaluateBalanceChecks` is declared at `packages/core/src/sim/analysis/checks.ts:479`. An impact trace names `loadBalanceChecks` at `packages/cli/src/commands/evaluate.ts:104` (call at line 122), the adapter `adaptKpiRegression` at `checks.ts:635`, `runKpiRegression` at `packages/cli/src/commands/kpiRegress.ts:9` (call at line 24), and tests `verdictOf`, `judgesBoundedMetrics`, `reportsIdentityMismatch`, `adaptsKpiRegression`, `keepsAdvisoryOffTheVerdict`, and `validatesFailureReport`. The trace is not every caller. JSON check files and package scripts are outside the graph.
