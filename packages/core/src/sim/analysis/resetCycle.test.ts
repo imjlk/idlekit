@@ -175,7 +175,7 @@ function makeRng(seed: number): ResetCycleRng & { next: () => number } {
  * @evidence ./resetCycle.ts#resetCycleAlgorithmVersion Reads the algorithm version on the artifact.
  * @evidenceReview ./resetCycle.ts#resetCycleAlgorithmVersion #7b0fecb The function returns the reset-cycle-v1 constant.
  * @evidence ../step.ts#applyDecisions Commits one prestige action directly and checks that no income tick or t advance follows.
- * @evidenceReview ../step.ts#applyDecisions #3afa38a The function pays and applies the decisions, snapshots and records a committed reset only for the requested kinds, and leaves income, evolve, and t to stepOnce. A committed reset's wallT is the segment's wall start plus the reward seconds since the segment began, capped at the segment's wall end. A caller's wallT, from its elapsed clock, takes precedence.
+ * @evidenceReview ../step.ts#applyDecisions #4d45289 Re-read the payment and reset-fact path and ran reset-cycle, action, online/offline, and session tests. It pays and applies decisions, snapshots and records committed resets for the requested kinds, and leaves tick income, evolve, and time advancement to stepOnce. An explicit caller wallT retains its elapsed or absence clock and is capped at a finite segment wallEndT; otherwise the segment's wall start plus reward-time offset is used with the same cap. The tests cover direct, online, offline, and decayed-absence timestamps, including callers without clocks or a finite wall end.
  * @evidence ../observation.ts#emitCommittedResets Sends the reset facts to onReset and skips an observer without one.
  * @evidenceReview ../observation.ts#emitCommittedResets #05b889d The function returns early without onReset or facts and notifies each fact in order otherwise.
  */

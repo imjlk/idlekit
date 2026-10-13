@@ -392,14 +392,18 @@ function resetSnapshot<N, U extends string, Vars>(
 
 /**
  * Wall time of a decision at reward time t. The segment clock records where the segment began on both clocks, and
- * wall time advances with reward time inside it, up to the segment's wall end.
+ * wall time advances with reward time inside it, up to the segment's wall end. An explicit caller time keeps its
+ * elapsed/absence clock and is capped at the same end.
  */
-function wallNow<N, U extends string, Vars>(ctx: SimContext<N, U, Vars>, t: number): number | null {
+function wallNow<N, U extends string, Vars>(ctx: SimContext<N, U, Vars>, t: number, explicitWallT?: number): number | null {
   const clocks = ctx.clocks;
-  if (!clocks || typeof clocks.wallT !== "number" || !Number.isFinite(clocks.wallT)) return null;
-  const offset = Number.isFinite(clocks.rewardT) ? Math.max(0, t - clocks.rewardT) : 0;
-  const wall = clocks.wallT + offset;
-  return Number.isFinite(clocks.wallEndT) ? Math.min(wall, clocks.wallEndT) : wall;
+  let wall = explicitWallT;
+  if (wall === undefined) {
+    if (!clocks || typeof clocks.wallT !== "number" || !Number.isFinite(clocks.wallT)) return null;
+    const offset = Number.isFinite(clocks.rewardT) ? Math.max(0, t - clocks.rewardT) : 0;
+    wall = clocks.wallT + offset;
+  }
+  return clocks && Number.isFinite(clocks.wallEndT) ? Math.min(wall, clocks.wallEndT) : wall;
 }
 
 /**
@@ -597,7 +601,7 @@ export function applyDecisions<N, U extends string, Vars>(args: {
         actionId: action.id,
         kind: action.kind,
         t: decisionT,
-        wallT: args.wallT ?? wallNow(ctx, decisionT),
+        wallT: wallNow(ctx, decisionT, args.wallT ?? undefined),
         cost: paid
           ? { unit: paid.unit.code, decimal: E.toString(paid.amount) }
           : null,
