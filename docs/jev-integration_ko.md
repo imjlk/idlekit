@@ -11,6 +11,7 @@
 모델명은 양끝 공백을 제거하고, 비어 있으면 요청 계획과 전송 전에 거부한다. 유한한 경계가 순서대로 주어지지 않은 `between` rule은 판단 유보를 요청한다. cache hit는 현재 질문의 id와 답변 타입이 정확히 일치하고, disposition과 보고서 요약이 기록된 수치 결과에 맞아야 한다.
 
 저장된 cache는 provider endpoint와 모델 정책이 일치하고 secret·로컬 경로 검사도 통과해야 한다. advisory 보고서에 정의되지 않은 필드가 있으면 miss로 처리한다.
+응답과 cache 재생의 resolved model id는 비어 있거나 양끝에 공백이 있으면 거부한다.
 
 2026-10-02에 TypeSafe System One 문서를 다시 확인했다. 호출은 POST `https://api.typesafe.ai/v1/systemone`이고 헤더는 `Authorization: Bearer`와 `Content-Type: application/json`이다. 환경 변수 이름은 `TYPESAFE_API_KEY`다. 요청의 model 필드는 필수다. 문서 예시 요청 모델은 `jev-latest`이고, 문서 예시로 확인된 응답 모델은 `jev-1.13.0`이다. Choice와 Score 답은 `probabilities`와 `confidence`를 가진다. Noul 답은 `noul`만 가진다. 이 모양을 하나의 confidence 필드로 합치지 않는다. `confidence`는 확률 분포의 통계이고 0에서 1 사이다. 게임 밸런스가 맞을 보정된 확률이 아니다. Noul에는 confidence 필드가 없다. 확인한 페이지에 단가가 없어서 이 provider는 가격을 만들지 않는다. 응답이 오면 `usage.input_tokens`와 `usage.output_tokens`를 보고한다.
 
