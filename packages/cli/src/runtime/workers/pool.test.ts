@@ -757,7 +757,8 @@ describe("worker execution backend", () => {
   });
   it("runs the packaged default worker without compiler dependencies", async () => {
     const output = resolve(".test-bundle/worker-probe");
-    const build = Bun.spawnSync(["bun", "scripts/cli-bundle.ts", "--entry", "src/worker-pool.fixture.ts", "--outdir", ".test-bundle/worker-probe"], { stdout: "pipe", stderr: "pipe" });
+    // The protected Evidence runner can start Bun without placing it on PATH.
+    const build = Bun.spawnSync([process.execPath, "scripts/cli-bundle.ts", "--entry", "src/worker-pool.fixture.ts", "--outdir", ".test-bundle/worker-probe"], { stdout: "pipe", stderr: "pipe" });
     if (build.exitCode !== 0) throw new Error(build.stderr.toString());
     const consumer = await import("../../testkit/bun").then(({ createTempDir }) => createTempDir("idlekit-worker-consumer"));
     try {
@@ -766,7 +767,7 @@ describe("worker execution backend", () => {
       writeFileSync(join(consumer, "runtime/workers/entry.js"), readFileSync(join(output, "runtime/workers/entry.js")));
       writeFileSync(join(consumer, "bunfig.toml"), "preload = []\n");
       const invoke = (plugins: object = {}) => {
-        const result = Bun.spawnSync(["bun", "probe.js", JSON.stringify(plugins)], { cwd: consumer, stdout: "pipe", stderr: "pipe" });
+        const result = Bun.spawnSync([process.execPath, "probe.js", JSON.stringify(plugins)], { cwd: consumer, stdout: "pipe", stderr: "pipe" });
         if (result.exitCode !== 0) throw new Error(result.stderr.toString());
         return JSON.parse(result.stdout.toString());
       };
