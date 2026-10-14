@@ -32,7 +32,7 @@ function canonical(path: string, depth = 0): string {
     // A file that does not exist yet is named by its nearest existing parent's realpath, so a symlinked
     // directory still resolves to the place the file will be written.
     const parent = dirname(absolute);
-    return parent === absolute ? absolute : resolve(canonical(parent, depth + 1), basename(absolute));
+    return parent === absolute ? absolute : resolve(canonical(parent, depth), basename(absolute));
   }
 }
 
@@ -164,6 +164,10 @@ export async function runJudge(flags: {
   nowMs?: number;
   sleep?: (ms: number) => Promise<void>;
 }): Promise<JudgeReportV1 | JevJudgeBundle> {
+  const requestedModel = (flags.model ?? "jev-latest").trim();
+  if (flags.provider === "jev" && requestedModel.length === 0) {
+    throw usageError("--model requires a nonempty model name.");
+  }
   // The Jev bundle is two nested reports. A one-column CSV cannot hold it, so the format is refused up front.
   if (flags.provider === "jev" && flags.format === "csv") {
     throw usageError("--provider jev writes json or md. csv cannot hold the rules report and the advisory together.");
@@ -222,7 +226,7 @@ export async function runJudge(flags: {
     artifact: parsed.artifact,
     rubric: parsed.rubric,
     numerical: report,
-    requestedModel: flags.model ?? "jev-latest",
+    requestedModel,
     dryRun: flags["dry-run"] === true,
     cachePath: flags.cache,
     transport: hooks?.transport,
@@ -282,7 +286,7 @@ export default defineCommand({
     "dry-run": option(z.coerce.boolean().default(false), {
       description: "Show the Jev request plan without calling the network",
     }),
-    model: option(z.string().default("jev-latest"), {
+    model: option(z.string().trim().min(1).default("jev-latest"), {
       description: "Requested Jev model. jev-latest is an alias, not a pinned id.",
     }),
     cache: option(z.string().optional(), { description: "Optional Jev advisory cache path" }),

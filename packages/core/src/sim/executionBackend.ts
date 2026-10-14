@@ -285,21 +285,33 @@ export function taskRefusals(
   budget: ExecutionBudgetV1 = defaultExecutionBudget,
 ): (string | null)[] {
   return tasks.map((task) => {
-    try {
-      assertSerializableTask(task);
-      // The budget's step limit is a ceiling on every task, so a larger request is refused, not run.
-      if (task.stepBudget > budget.stepBudget) return "step budget exceeds the execution budget";
-      return null;
-    } catch (error) {
-      // Thrown objects can have a missing, non-string, or throwing message property.
-      try {
-        const message = error instanceof Error ? error.message : undefined;
-        return typeof message === "string" && message.length > 0 ? message : "invalid-task";
-      } catch {
-        return "invalid-task";
-      }
-    }
+    const prepared = prepareTrialTask(task, budget);
+    return prepared.ok ? null : prepared.reason;
   });
+}
+
+/** Validate the actual JSON snapshot inside the per-task refusal boundary. */
+export function prepareTrialTask(
+  task: AnalysisTrialTaskV1,
+  budget: ExecutionBudgetV1 = defaultExecutionBudget,
+): { ok: true; task: AnalysisTrialTaskV1 } | { ok: false; reason: string } {
+  try {
+    assertSerializableTask(task);
+    if (task.stepBudget > budget.stepBudget) return { ok: false, reason: "step budget exceeds the execution budget" };
+    const snapshot = JSON.parse(JSON.stringify(task)) as AnalysisTrialTaskV1;
+    assertSerializableTask(snapshot);
+    // The budget's step limit is a ceiling on every task, so a larger request is refused, not run.
+    if (snapshot.stepBudget > budget.stepBudget) return { ok: false, reason: "step budget exceeds the execution budget" };
+    return { ok: true, task: deepFreeze(snapshot) };
+  } catch (error) {
+    // Thrown objects can have a missing, non-string, or throwing message property.
+    try {
+      const message = error instanceof Error ? error.message : undefined;
+      return { ok: false, reason: typeof message === "string" && message.length > 0 ? message : "invalid-task" };
+    } catch {
+      return { ok: false, reason: "invalid-task" };
+    }
+  }
 }
 
 function ownData(value: object, key: string): unknown {
@@ -309,6 +321,25 @@ function ownData(value: object, key: string): unknown {
   } catch {
     return undefined;
   }
+}
+
+/** Apply the same success contract in both backends, without invoking outcome accessors. */
+export function readTrialOutcome(value: unknown, task: AnalysisTrialTaskV1): AnalysisTrialOutcomeV1 | null {
+  // Even Array.isArray throws for a revoked proxy; malformed outcomes stay inside their trial boundary.
+  try { if (value === null || typeof value !== "object" || Array.isArray(value)) return null; } catch { return null; }
+  if (ownData(value, "taskId") !== task.taskId || ownData(value, "logicalIndex") !== task.logicalIndex || ownData(value, "seed") !== task.seed) return null;
+  const status = ownData(value, "status");
+  const reason = ownData(value, "reason");
+  const attempts = ownData(value, "attempts");
+  const semanticDigest = ownData(value, "semanticDigest");
+  const endMoney = ownData(value, "endMoney");
+  if (status !== "ok" && status !== "failed" && status !== "cancelled" && status !== "incomplete") return null;
+  if (typeof reason !== "string" || typeof attempts !== "number" || !Number.isSafeInteger(attempts) || attempts < 0) return null;
+  if (semanticDigest !== null && typeof semanticDigest !== "string") return null;
+  if (endMoney !== null && typeof endMoney !== "string") return null;
+  if (status === "ok" && (semanticDigest === null || endMoney === null)) return null;
+  try { if (endMoney !== null) addDecimalStrings("0", endMoney); } catch { return null; }
+  return { taskId: task.taskId, logicalIndex: task.logicalIndex, seed: task.seed, status, reason, attempts, semanticDigest, endMoney };
 }
 
 /**
@@ -420,7 +451,7 @@ export function runLocalBatch(
 ): ExecutionBatchV1 {
   const budget = budgetOf(options?.budget);
   const batchId = options?.batchId ?? `local-${tasks.length}`;
-  const clock = options?.clock ?? { now: () => Date.now() };
+  const clock = options?.clock ?? { now: () => performance.now() };
   const header = {
     batchId,
     backend: "local" as const,
@@ -439,12 +470,11 @@ export function runLocalBatch(
     );
   }
   // Validate before measuring, so a cyclic payload fails its own task instead of throwing out of the batch.
-  const reasons = taskRefusals(tasks, budget);
+  const snapshots = tasks.map((task) => prepareTrialTask(task, budget));
+  const reasons = snapshots.map((snapshot) => snapshot.ok ? null : snapshot.reason);
   // A valid task runs from a frozen snapshot, so a runner cannot change its id, seed, or budget for a retry,
   // and a later change to the caller's object cannot reach it.
-  const prepared = tasks.map((task, index) =>
-    reasons[index] === null ? deepFreeze(JSON.parse(JSON.stringify(task)) as AnalysisTrialTaskV1) : task,
-  );
+  const prepared = tasks.map((task, index) => { const snapshot = snapshots[index]!; return snapshot.ok ? snapshot.task : task; });
   const refusals = new Map(prepared.map((task, index) => [task, reasons[index] ?? null] as const));
   header.serializedBytes = prepared.reduce((sum, task) => (refusals.get(task) === null ? sum + serializedTaskBytes(task) : sum), 0);
   // taskTimeoutMs bounds each task on its own, as in the worker pool. There is no batch-wide window.
@@ -474,12 +504,21 @@ export function runLocalBatch(
         // A thrown trial is a retryable failure of that task, as a crashed worker is. The batch keeps going.
         raw = outcomeOf(task, "failed", "trial-failed", attempt + 1);
       }
-      if (isPromise(raw)) {
+      let asynchronous = false;
+      let checked: AnalysisTrialOutcomeV1 | null = null;
+      try {
+        asynchronous = isPromise(raw);
+        if (!asynchronous) checked = readTrialOutcome(raw, task);
+      } catch {
+        // Reflection or a throwing then getter is a malformed result of this task.
+      }
+      if (asynchronous) {
         throw new Error("local execution runner must be synchronous");
       }
+      checked ??= outcomeOf(task, "failed", "trial-failed", attempt + 1);
       const elapsed = clock.now() - started;
       const next: AnalysisTrialOutcomeV1 = {
-        ...raw,
+        ...checked,
         taskId: task.taskId,
         logicalIndex: task.logicalIndex,
         seed: task.seed,
