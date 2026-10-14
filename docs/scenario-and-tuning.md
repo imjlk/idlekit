@@ -74,3 +74,5 @@ See the tutorial examples:
 
 - [../examples/tutorials/11-my-game-v1.json](../examples/tutorials/11-my-game-v1.json)
 - [../examples/tutorials/13-my-game-tune.json](../examples/tutorials/13-my-game-tune.json)
+
+The release matrix in [../examples/analysis/integration-matrix.json](../examples/analysis/integration-matrix.json) checks small integer cases: linear income, a session step budget, an unreached goal, one quoted bulk buy, reset carry, a break-infinity magnitude, a recorded offline cap, event-log retention, and a fresh scripted cursor. `breakEternity` is named there as unsupported. Optional flow, guarded advance, Jev, and worker-pool capabilities are documented in [roadmap.md](./roadmap.md) and are not the default scenario path. Node.js and browser runtimes are not part of the v1 compatibility contract.

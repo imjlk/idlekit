@@ -19,6 +19,32 @@ import {
 const REPO_ROOT = resolve(import.meta.dir, "..");
 const CLI_ROOT = resolve(REPO_ROOT, "packages/cli");
 
+/** Recorded end money for each bench scenario, keyed by repo-relative path. */
+export const BENCH_END_MONEY_PATH = "examples/bench/end-money.json";
+
+export type EndMoneyCheck = "match" | "mismatch" | "unrecorded";
+
+/** Reads the recorded map. Anything but string values under `endMoney` is refused. */
+export function readBenchEndMoney(raw: unknown): Readonly<Record<string, string>> {
+  const record = raw && typeof raw === "object" ? (raw as { endMoney?: unknown }).endMoney : undefined;
+  if (!record || typeof record !== "object" || Array.isArray(record)) throw new Error(`${BENCH_END_MONEY_PATH} has no endMoney map`);
+  const out: Record<string, string> = {};
+  for (const [path, value] of Object.entries(record)) {
+    if (typeof value !== "string") throw new Error(`${BENCH_END_MONEY_PATH} ${path} is not a string`);
+    out[path] = value;
+  }
+  return out;
+}
+
+/**
+ * Every run of a scenario must return the recorded end money, compared as the exact string.
+ * A fast run with another total is a mismatch, and a scenario with no recorded value is unrecorded.
+ */
+export function endMoneyCheck(expected: string | undefined, observed: readonly unknown[]): EndMoneyCheck {
+  if (expected === undefined) return "unrecorded";
+  return observed.length > 0 && observed.every((value) => value === expected) ? "match" : "mismatch";
+}
+
 type Args = Readonly<{
   scenarios: string[];
   iterations: number;
@@ -164,7 +190,7 @@ const MAX_CAPTURE_BYTES = 8 * 1024 * 1024;
 function runSimulateOnce(
   bundled: string,
   scenarioPath: string,
-): { engine: string | null; seed: number | null; peakRssBytes: number | null } {
+): { engine: string | null; seed: number | null; peakRssBytes: number | null; endMoney: string } {
   // --config skips the CLI bunfig preload, which would rebuild the ttsc
   // program in every child. Compiler prepare is measured by prepareBundle.
   const proc = Bun.spawnSync(
@@ -177,12 +203,15 @@ function runSimulateOnce(
   }
   const output: unknown = JSON.parse(proc.stdout.toString());
   if (!output || typeof output !== "object") throw new Error("simulate benchmark returned non-object output");
+  const endMoney = (output as { endMoney?: unknown }).endMoney;
+  if (typeof endMoney !== "string") throw new Error("simulate benchmark returned no endMoney string");
   const maxRss = proc.resourceUsage?.maxRSS;
   const meta = (output as { _meta?: { effectiveEngine?: unknown; seed?: unknown } })._meta;
   return {
     engine: typeof meta?.effectiveEngine === "string" ? meta.effectiveEngine : null,
     seed: typeof meta?.seed === "number" && Number.isFinite(meta.seed) ? meta.seed : null,
     peakRssBytes: typeof maxRss === "number" && Number.isFinite(maxRss) && maxRss > 0 ? maxRss : null,
+    endMoney,
   };
 }
 
@@ -205,6 +234,7 @@ type ScenarioBenchResult = {
     p95Ms: boolean;
     peakRssBytes: boolean;
     baseline: boolean;
+    endMoney: EndMoneyCheck;
   };
   budget: PerformanceArtifact;
   comparison: ReturnType<typeof comparePerformanceBudgets> | null;
@@ -236,6 +266,7 @@ async function main(): Promise<void> {
   const prepareWarm: number[] = [];
   for (let i = 0; i < args.prepareWarm; i++) prepareWarm.push(prepareBundle().durationMs);
   const bundled = cold.bundled;
+  const recordedEndMoney = readBenchEndMoney(await Bun.file(resolve(REPO_ROOT, BENCH_END_MONEY_PATH)).json());
   const scenarioResults: ScenarioBenchResult[] = [];
 
   for (const scenario of args.scenarios) {
@@ -244,6 +275,7 @@ async function main(): Promise<void> {
     const runtime: number[] = [];
     const peakRss: number[] = [];
     const effective = new Set<string>();
+    const endMoney: string[] = [];
 
     // Warmup children are discarded. They are simulate runs, not compiler prepare.
     for (let i = 0; i < args.warmup + args.iterations; i++) {
@@ -251,6 +283,8 @@ async function main(): Promise<void> {
       const run = runSimulateOnce(bundled, scenarioPath);
       const elapsed = performance.now() - start;
       effective.add(JSON.stringify({ engine: run.engine ?? "unknown", seed: run.seed }));
+      // Warmup runs count too: every run of the scenario must reach the recorded total.
+      endMoney.push(run.endMoney);
       if (i < args.warmup) continue;
       runtime.push(elapsed);
       if (run.peakRssBytes !== null) peakRss.push(run.peakRssBytes);
@@ -298,6 +332,10 @@ async function main(): Promise<void> {
         : { status: "rejected", reason: "workload-mismatch" };
       baselinePass = comparison.status === "pass";
     }
+    const scenarioKey = relative(REPO_ROOT, scenarioPath).split("\\").join("/");
+    const endMoneyResult = endMoneyCheck(recordedEndMoney[scenarioKey], endMoney);
+    // A wrong total never passes. Under --assert an unrecorded scenario does not pass either.
+    const endMoneyPass = endMoneyResult === "match" || (endMoneyResult === "unrecorded" && !args.assert);
     scenarioResults.push({
       scenario: scenarioLabel(scenarioPath),
       stats: {
@@ -306,8 +344,8 @@ async function main(): Promise<void> {
         maxMs: runtime.length ? Math.max(...runtime) : null,
         p95Ms,
       },
-      pass: passMean && passP95 && passPeakRss && baselinePass,
-      checks: { meanMs: passMean, p95Ms: passP95, peakRssBytes: passPeakRss, baseline: baselinePass },
+      pass: passMean && passP95 && passPeakRss && baselinePass && endMoneyPass,
+      checks: { meanMs: passMean, p95Ms: passP95, peakRssBytes: passPeakRss, baseline: baselinePass, endMoney: endMoneyResult },
       budget,
       comparison,
     });

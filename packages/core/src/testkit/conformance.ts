@@ -10,6 +10,7 @@ import { canonicalJson, sha256Text } from "../scenario/scenarioContract";
 import type { ScenarioV1 } from "../scenario/types";
 import { independentBernoulli } from "../sim/analysis/distribution";
 import { runExperiment } from "../sim/analysis/experiment";
+import { expectedLinearEnd } from "../sim/integrationMatrix";
 import type { ExecutionBatchV1 } from "../sim/executionBackend";
 import type { GrowthFitArtifactV1 } from "../sim/analysis/growthFit";
 import type { MilestoneReport } from "../sim/analysis/milestones";
@@ -461,6 +462,67 @@ export function checkGuardedAdvance(declared: boolean, value: GuardedAdvanceCase
     ok: online && offline && exact(chunked.advance) && exact(offlineChunked.advance),
     applicable: true,
     summary: `income ${value.incomePerSec} ${value.mode}, step ${value.stepSec}, horizon ${value.durationSec}, chunk ${value.chunkSec}: online ${online ? "same" : "different"} (${chunked.advance?.status} ${chunked.advance?.exactSteps}/${chunked.advance?.fallbackSteps}), offline ${offline ? "same" : "different"} (${offlineChunked.advance?.status} ${offlineChunked.advance?.exactSteps}/${offlineChunked.advance?.fallbackSteps})`,
+  };
+}
+
+/** Inputs of the partial-final-tick relation: integer constant income, an integer step, and an integer horizon. */
+type PartialFinalTickCase = Readonly<{
+  initial: string;
+  incomePerSec: string;
+  stepSec: number;
+  durationSec: number;
+}>;
+
+/**
+ * A declared constant-income run whose horizon is off the step grid ends on a shorter final tick.
+ * The relation runs it and compares the end wallet with `expectedLinearEnd`, which never calls the simulator,
+ * and requires the run to stop on duration at the horizon after ceil(duration / step) ticks.
+ *
+ * @evidence docs/requirements/active/analysis-integration-release-gates.md#req-pr20-integration-matrix The partial final tick is a declared conformance relation against the integer hand answer.
+ * @evidenceReview docs/requirements/active/analysis-integration-release-gates.md#req-pr20-integration-matrix #91abfb0 Re-read the section: safe Number cases cover every second through a shorter final tick within 10,000 ticks; longer and undeclared cases do not apply.
+ */
+export function checkPartialFinalTick(declared: boolean, value: PartialFinalTickCase): RelationCheck {
+  if (!declared) return { ok: true, applicable: false, summary: "partial final tick relation is not declared" };
+  const unsupported = { ok: true, applicable: false, summary: "partial final tick requires safe Number integer inputs, gains, and results within 10000 ticks" };
+  if (!Number.isSafeInteger(value.stepSec) || value.stepSec <= 0 ||
+      !Number.isSafeInteger(value.durationSec) || value.durationSec < 0 ||
+      !/^-?\d+$/.test(value.initial) || !/^-?\d+$/.test(value.incomePerSec)) return unsupported;
+  const ticks = Math.ceil(value.durationSec / value.stepSec);
+  if (ticks > 10_000) return unsupported;
+  const initialInteger = BigInt(value.initial);
+  const incomeInteger = BigInt(value.incomePerSec);
+  const gainedInteger = incomeInteger * BigInt(value.durationSec);
+  const limit = BigInt(Number.MAX_SAFE_INTEGER);
+  if ([initialInteger, incomeInteger, gainedInteger, initialInteger + gainedInteger].some((amount) => amount < -limit || amount > limit)) return unsupported;
+  const engine = createNumberEngine();
+  const unit = { code: "COIN" as const };
+  const income = engine.from(value.incomePerSec);
+  const initial = engine.from(value.initial);
+  const model: Model<number, "COIN", FlatVars> = {
+    id: "conformance-partial-final-tick",
+    version: 1,
+    income: (ctx) => ({ unit: ctx.unit, amount: income }),
+    actions: () => [],
+  };
+  const run = runScenario<number, "COIN", FlatVars>({
+    ctx: { E: engine, unit, tickPolicy: { mode: "accumulate" } },
+    model,
+    initial: {
+      t: 0,
+      wallet: { money: { unit, amount: initial }, bucket: engine.zero() },
+      maxMoneyEver: { unit, amount: initial },
+      prestige: { count: 0, points: engine.zero(), multiplier: engine.from(1) },
+      vars: { buys: 0 },
+    },
+    run: { stepSec: value.stepSec, durationSec: value.durationSec },
+  });
+  const expected = expectedLinearEnd(value);
+  const actual = engine.toString(run.end.wallet.money.amount);
+  const ok = actual === expected && run.stop?.reason === "duration" && run.end.t === value.durationSec && run.stop?.steps === ticks;
+  return {
+    ok,
+    applicable: true,
+    summary: `income ${value.incomePerSec}, step ${value.stepSec}, horizon ${value.durationSec}: end ${actual} against ${expected}, ${run.stop?.steps} ticks for ${ticks}, stop ${run.stop?.reason} at t=${run.end.t}`,
   };
 }
 

@@ -111,7 +111,7 @@ jobs:
         run: bun run release:dry-run
 
       - name: Performance budget tests
-        run: bun test tools/performanceBudget.test.ts
+        run: bun test tools/performanceBudget.test.ts tools/bench-sim.test.ts
 
       - name: Perf Check (representative benchmark)
         run: bun run bench:sim:check
