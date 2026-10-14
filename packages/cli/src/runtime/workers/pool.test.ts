@@ -110,7 +110,7 @@ class FakeWorker implements WorkerLike {
  * @evidence ./entry.ts#workerEntryMarker Reads the packed entry marker.
  * @evidenceReview ./entry.ts#workerEntryMarker #f670bfc The declaration is idlekit-worker-entry.
  * @evidence ./pool.ts#runWorkerPool Runs the tasks on an explicit number of workers.
- * @evidenceReview ./pool.ts#runWorkerPool #ab395d9 Re-read the event-driven pool: one, two, and four real workers return the local digests, end money, and seeds in logical order.
+ * @evidenceReview ./pool.ts#runWorkerPool #3a0884d Re-read the event-driven pool: one, two, and four real workers return the local digests, end money, and seeds in logical order.
  * @evidence ./pool.ts#workerEntryUrl Names the worker module the pool spawns.
  * @evidenceReview ./pool.ts#workerEntryUrl #9e78f00 This host sees source entry.ts next to pool.ts; a JS bundle resolves runtime/workers/entry.js.
  * @evidence ./trial.ts#runAnalysisTrial Runs one trial and returns its digest and end money.
@@ -214,7 +214,7 @@ export function reversesCompletionOrder(): Promise<void> {
  * @evidence ./pool.ts#WorkerLike.addEventListener The pool hears a worker that exits on its own through the close event.
  * @evidenceReview ./pool.ts#WorkerLike.addEventListener #e8b001c A fake worker that only fires close made its task a worker-crash and was retried once.
  * @evidence ./pool.ts#runWorkerPool Bounds each task by its own timer, retries posted failures, and shuts down without leftovers.
- * @evidenceReview ./pool.ts#runWorkerPool #ab395d9 Re-read start, dispatch, feed, and finish: state is keyed by position, the count is checked against maxWorkers, close routes to the crash path, a throwing spawn stops spawning, a clone error on post fails only its task, any other post failure is a crash on a retired slot, queue-bound is incomplete, the batch runs a JSON snapshot, a plugin trial retires its slot, the budget is a frozen copy checked before any spawn, an abort counts the in-flight attempt, admission precedes the snapshot, a pre-abort cancels every task before the queue bound, only a marked outcome envelope settles a task, and finish clears timers and detaches handlers.
+ * @evidenceReview ./pool.ts#runWorkerPool #3a0884d Re-read start, dispatch, feed, and finish: state is keyed by position, the count is checked against maxWorkers, close routes to the crash path, a throwing spawn stops spawning, a clone error on post fails only its task, any other post failure is a crash on a retired slot, queue-bound is incomplete, the batch runs a JSON snapshot, a plugin trial retires its slot, the budget is a frozen copy checked before any spawn, an abort counts the in-flight attempt, admission precedes the snapshot, a pre-abort cancels every task before the queue bound, only a marked outcome envelope settles a task, and finish clears timers and detaches handlers.
  * @evidence ./trial.ts#runAnalysisTrial Reports a step-budget stop as incomplete.
  * @evidenceReview ./trial.ts#runAnalysisTrial #6a4f9c8 A budget of two steps on a three-second horizon is incomplete step-budget with no end money, three steps is ok, a throwing trusted model is trial-failed, and a refusing loader is plugin-trust.
  * @evidence ./pool.ts#workerPoolParity Reads the parity marker.
@@ -794,6 +794,29 @@ describe("worker execution backend", () => {
       const batch = await pending;
       expect(batch.outcomes.map((item) => item.status)).toEqual(["ok", "ok"]);
       expect(peak).toBe(1);
+      expect(spawned).toBe(2);
+    }
+  });
+  it("isolates unreadable postMessage error names without losing siblings", async () => {
+    for (const kind of ["getter", "revoked"]) {
+      let thrown: unknown;
+      if (kind === "getter") {
+        thrown = new Error("post failed");
+        Object.defineProperty(thrown, "name", { get() { throw new Error("unreadable name"); } });
+      } else {
+        const revoked = Proxy.revocable({}, {});
+        revoked.revoke();
+        thrown = revoked.proxy;
+      }
+      let spawned = 0;
+      const batch = await runWorkerPool({ tasks: [trial(0), trial(1)], workers: 1, spawn() {
+        const worker = new FakeWorker("slow", [], 1);
+        spawned += 1;
+        if (spawned === 1) worker.postMessage = () => { throw thrown; };
+        return worker;
+      } });
+      expect(batch.outcomes[0]).toMatchObject({ status: "failed", reason: "worker-crash", attempts: 1 });
+      expect(batch.outcomes[1]).toMatchObject({ status: "ok", attempts: 1 });
       expect(spawned).toBe(2);
     }
   });
