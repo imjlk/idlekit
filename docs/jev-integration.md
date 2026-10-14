@@ -11,6 +11,7 @@ Successful HTTP response bodies are read with a 1 MiB byte limit; an oversized r
 Model names are trimmed and must be nonempty before a request is planned or sent. A `between` rule without ordered finite bounds asks for abstention. Cache hits require exactly the current question IDs and answer types, with dispositions and the report summary consistent with the recorded numerical results.
 
 Cached records must preserve the provider endpoint and model policy, pass the secret and local-path checks, and contain only the advisory report fields.
+Resolved model IDs must be nonempty and have no leading or trailing whitespace, in both responses and cache replay.
 
 The wire was rechecked against the TypeSafe System One docs on 2026-10-02. The call is POST `https://api.typesafe.ai/v1/systemone` with `Authorization: Bearer` and `Content-Type: application/json`. The key name in the environment is `TYPESAFE_API_KEY`. The request model field is required. The docs example request model is `jev-latest`, and the docs example resolved model is `jev-1.13.0`. Choice and Score answers carry `probabilities` and `confidence`. A Noul answer carries `noul` only. Those shapes are not collapsed into one confidence field. `confidence` is a statistic of the probability distribution, from 0 to 1. It is not a calibrated probability that the game balance is correct. Noul has no confidence field. The fetched pages do not state a unit price, so this provider does not invent one. It reports `usage.input_tokens` and `usage.output_tokens` when a response arrives.
 
