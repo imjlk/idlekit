@@ -241,7 +241,10 @@ export async function runWorkerPool(args: Readonly<{
         worker.postMessage({ type: "run", task });
       } catch (error) {
         if (!settle()) return;
-        if ((error as { name?: unknown } | null)?.name === "DataCloneError") {
+        let isCloneError = false;
+        try { isCloneError = (error as { name?: unknown } | null)?.name === "DataCloneError"; }
+        catch { /* An unreadable error name uses the ordinary crash boundary. */ }
+        if (isCloneError) {
           // A message the worker cannot receive fails this task alone. The slot stays usable.
           results[index] = failed(task, "not serializable", attempt + 1);
           dispatch(worker);
