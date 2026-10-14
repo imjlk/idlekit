@@ -86,6 +86,16 @@ function sameFile(left: string, right: string): boolean {
   }
 }
 
+function ancestorFile(parent: string, child: string): boolean {
+  let directory = dirname(canonical(child));
+  for (;;) {
+    if (sameFile(parent, directory)) return true;
+    const next = dirname(directory);
+    if (next === directory) return false;
+    directory = next;
+  }
+}
+
 function renderJudgeMarkdown(report: JudgeReportV1): string {
   const lines = [
     "# Rules judge",
@@ -164,6 +174,9 @@ export async function runJudge(flags: {
     if (flags.out && sameFile(flags.cache, flags.out)) {
       throw usageError("--cache and --out name the same file. Give the Jev cache its own path.");
     }
+    if (flags.out && (ancestorFile(flags.cache, flags.out) || ancestorFile(flags.out, flags.cache))) {
+      throw usageError("--cache and --out cannot be ancestor paths. Give each file a separate target.");
+    }
     if (sameFile(flags.cache, analysisPath) || sameFile(flags.cache, flags.rubric)) {
       throw usageError("--cache names an input file. Give the Jev cache its own path.");
     }
@@ -200,7 +213,11 @@ export async function runJudge(flags: {
     });
     return report;
   }
-  const { adviseWithJev } = await import("../lib/evaluation/providers/jev");
+  const { adviseWithJev, isSafeJevReport } = await import("../lib/evaluation/providers/jev");
+  const key = (hooks?.env ?? process.env).TYPESAFE_API_KEY?.trim() ?? "";
+  if (!isSafeJevReport(report, key)) {
+    throw usageError("Unsafe Jev numerical report metadata. Remove secrets and local paths from the judge inputs.");
+  }
   const advisory = await adviseWithJev({
     artifact: parsed.artifact,
     rubric: parsed.rubric,
@@ -221,6 +238,15 @@ export async function runJudge(flags: {
       `- Jev: ${advisory.status} ${advisory.reason}`,
       `- Endpoint: ${advisory.endpoint}`,
       `- Planned requests: ${advisory.plannedRequests}`,
+      "",
+      "## Jev answers",
+      "",
+      ...advisory.answers.map((answer) => {
+        const value = answer.noul ?? answer.choice ?? answer.score ?? "none";
+        const confidence = answer.confidence === null ? "" : `; confidence=${answer.confidence}`;
+        return `- ${answer.id}: ${answer.type}=${value}${confidence}; ${answer.disposition}`;
+      }),
+      ...(advisory.answers.length === 0 ? ["None."] : []),
     ].join("\n");
     if (flags.out) {
       const outPath = resolve(flags.out);

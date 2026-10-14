@@ -273,7 +273,7 @@ function coverageWithheld(artifact: AnalysisArtifactV1): boolean {
  * A field the reading does not record cannot disagree with the rule, so the rule's value stands in;
  * a field the reading records (a method, an amount unit) is compared as is.
  */
-function toObservation(
+export function toObservation(
   artifact: AnalysisArtifactV1,
   reading: MetricReadingV1,
   rule: JudgeRuleV1,
