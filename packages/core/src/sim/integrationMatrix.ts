@@ -6,19 +6,19 @@
 
 /**
  * @evidence docs/requirements/active/analysis-integration-release-gates.md#req-pr20-integration-matrix The selected release includes the optional tracks without making them the default.
- * @evidenceReview docs/requirements/active/analysis-integration-release-gates.md#req-pr20-integration-matrix #84f17c2 Re-read the section: flow, guarded advance, Jev, and workers are shipped as optional capabilities, and their tests still run in the publish preflight.
+ * @evidenceReview docs/requirements/active/analysis-integration-release-gates.md#req-pr20-integration-matrix #91abfb0 Re-read the section: flow, guarded advance, Jev, and workers are shipped as optional capabilities, and their tests still run in the publish preflight.
  */
 export const integrationReleaseScope = "selected-optional-tracks" as const;
 
 /**
  * @evidence docs/requirements/active/analysis-integration-release-gates.md#req-pr20-integration-matrix breakEternity is not a supported engine in this release.
- * @evidenceReview docs/requirements/active/analysis-integration-release-gates.md#req-pr20-integration-matrix #84f17c2 Re-read the section: the placeholder engine is not advertised as ready.
+ * @evidenceReview docs/requirements/active/analysis-integration-release-gates.md#req-pr20-integration-matrix #91abfb0 Re-read the section: the placeholder engine is not advertised as ready.
  */
 export const integrationUnsupportedEngine = "breakEternity" as const;
 
 /**
  * @evidence docs/requirements/active/analysis-integration-release-gates.md#req-pr20-integration-matrix Constant income uses integer seconds, not a stored simulator snapshot.
- * @evidenceReview docs/requirements/active/analysis-integration-release-gates.md#req-pr20-integration-matrix #84f17c2 Re-read the section: end money is initial plus income per second times duration.
+ * @evidenceReview docs/requirements/active/analysis-integration-release-gates.md#req-pr20-integration-matrix #91abfb0 Re-read the section: end money is initial plus income per second times duration.
  */
 export const integrationHandAnswer = "integer-income-times-duration" as const;
 
