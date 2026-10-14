@@ -1,11 +1,11 @@
 import {
-  addDecimalStrings,
   assertExecutionBudget,
   defaultExecutionBudget,
   finalizeBatch,
   serializedTaskBytes,
   taskIdentity,
-  taskRefusals,
+  prepareTrialTask,
+  readTrialOutcome,
   type AnalysisTrialOutcomeV1,
   type AnalysisTrialTaskV1,
   type ExecutionBatchV1,
@@ -38,20 +38,6 @@ const WORKER_OUTCOME_MARKER = "idlekit-worker-entry";
 
 function defaultSpawn(): WorkerLike {
   return new Worker(workerEntryUrl(), { preload: [...workerDevPreload] }) as unknown as WorkerLike;
-}
-
-/** A marked message is still a wire boundary: a malformed result cannot become a full distribution. */
-function matchesOutcome(value: unknown, task: AnalysisTrialTaskV1): value is AnalysisTrialOutcomeV1 {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
-  const outcome = value as Partial<AnalysisTrialOutcomeV1>;
-  if (outcome.taskId !== task.taskId || outcome.logicalIndex !== task.logicalIndex || outcome.seed !== task.seed) return false;
-  if (!["ok", "failed", "cancelled", "incomplete"].includes(outcome.status ?? "")) return false;
-  if (typeof outcome.reason !== "string" || typeof outcome.attempts !== "number" || !Number.isSafeInteger(outcome.attempts) || outcome.attempts < 0) return false;
-  if (outcome.semanticDigest !== null && typeof outcome.semanticDigest !== "string") return false;
-  if (outcome.endMoney !== null && typeof outcome.endMoney !== "string") return false;
-  if (outcome.status === "ok" && (outcome.semanticDigest === null || outcome.endMoney === null)) return false;
-  try { if (outcome.endMoney !== null) addDecimalStrings("0", outcome.endMoney); } catch { return false; }
-  return true;
 }
 
 function failed(task: AnalysisTrialTaskV1, reason: string, attempts: number): AnalysisTrialOutcomeV1 {
@@ -89,16 +75,18 @@ export async function runWorkerPool(args: Readonly<{
   signal?: AbortSignal;
   spawn?: (slot: number) => WorkerLike;
 }>): Promise<ExecutionBatchV1> {
-  if (!Number.isInteger(args.workers) || args.workers < 1) {
+  const workers = args.workers;
+  const signal = args.signal;
+  if (!Number.isInteger(workers) || workers < 1) {
     throw new Error("worker pool requires an explicit worker count >= 1");
   }
   // A frozen copy: the pool runs after this call returns, so a later change to the caller's budget cannot reach it.
-  const budget: ExecutionBudgetV1 = Object.freeze({ ...(args.budget ?? { ...defaultExecutionBudget, maxWorkers: args.workers }) });
+  const budget: ExecutionBudgetV1 = Object.freeze({ ...(args.budget ?? { ...defaultExecutionBudget, maxWorkers: workers }) });
   assertExecutionBudget(budget);
-  if (args.workers > budget.maxWorkers) {
-    throw new Error(`worker pool count ${args.workers} exceeds budget maxWorkers ${budget.maxWorkers}`);
+  if (workers > budget.maxWorkers) {
+    throw new Error(`worker pool count ${workers} exceeds budget maxWorkers ${budget.maxWorkers}`);
   }
-  const batchId = `worker-${args.workers}-${args.tasks.length}`;
+  const batchId = `worker-${workers}-${args.tasks.length}`;
   const header = {
     batchId,
     backend: "worker" as const,
@@ -109,7 +97,7 @@ export async function runWorkerPool(args: Readonly<{
   // Admission comes first: an aborted or oversized batch is answered before any descriptor is copied or measured.
   if (args.tasks.length === 0) return finalizeBatch([], header);
   // An abort before submit cancels every task, refused or over the queue bound, as the local backend does.
-  if (args.signal?.aborted) return finalizeBatch(args.tasks.map((task) => failed(task, "abort", 0)), header);
+  if (signal?.aborted) return finalizeBatch(args.tasks.map((task) => failed(task, "abort", 0)), header);
   if (args.tasks.length > budget.queueBound) {
     return finalizeBatch(
       args.tasks.map((task) => failed(task, "queue-bound", 0)),
@@ -117,12 +105,11 @@ export async function runWorkerPool(args: Readonly<{
     );
   }
   // Validate before measuring, as the local backend does. A refused task fails alone and posts nothing.
-  const refusals = taskRefusals(args.tasks, budget);
+  const snapshots = args.tasks.map((task) => prepareTrialTask(task, budget));
+  const refusals = snapshots.map((snapshot) => snapshot.ok ? null : snapshot.reason);
   // Dispatch is asynchronous, so the pool works on a snapshot: a later change to the caller's array or
   // descriptors cannot slip past the checks above. A valid descriptor is plain JSON, so the copy is exact.
-  const tasks: readonly AnalysisTrialTaskV1[] = args.tasks.map((task, index) =>
-    refusals[index] === null ? (JSON.parse(JSON.stringify(task)) as AnalysisTrialTaskV1) : task,
-  );
+  const tasks: readonly AnalysisTrialTaskV1[] = args.tasks.map((task, index) => { const snapshot = snapshots[index]!; return snapshot.ok ? snapshot.task : task; });
   header.serializedBytes = tasks.reduce((sum, task, index) => (refusals[index] === null ? sum + serializedTaskBytes(task) : sum), 0);
   const results: (AnalysisTrialOutcomeV1 | undefined)[] = tasks.map((task, index) => {
     const refusal = refusals[index];
@@ -139,17 +126,17 @@ export async function runWorkerPool(args: Readonly<{
           results[index] ??
           failed(
             task,
-            args.signal?.aborted ? "abort" : spawnFailed ? "worker-spawn" : "not-started",
+            signal?.aborted ? "abort" : spawnFailed ? "worker-spawn" : "not-started",
             (attempts[index] ?? 0) + (inFlight.has(index) ? 1 : 0),
           ),
       ),
       header,
     );
-  if (args.signal?.aborted || queue.length === 0) return finalize();
+  if (signal?.aborted || queue.length === 0) return finalize();
 
   const spawn = args.spawn ?? defaultSpawn;
   // A replacement follows a crash, a timeout, or a finished plugin trial. Each task can cost at most maxRetries + 2 of them.
-  const spawnLimit = args.workers + queue.length * (budget.maxRetries + 2);
+  const spawnLimit = workers + queue.length * (budget.maxRetries + 2);
   const live = new Set<WorkerLike>();
   const idle = new Set<WorkerLike>();
   const timers = new Set<ReturnType<typeof setTimeout>>();
@@ -174,7 +161,7 @@ export async function runWorkerPool(args: Readonly<{
       for (const timer of timers) clearTimeout(timer);
       timers.clear();
       for (const worker of [...live]) retire(worker);
-      args.signal?.removeEventListener("abort", finish);
+      signal?.removeEventListener("abort", finish);
       resolveBatch(finalize());
     };
     const done = (): boolean => results.every((outcome) => outcome !== undefined);
@@ -221,8 +208,8 @@ export async function runWorkerPool(args: Readonly<{
         const envelope = event.data as { type?: unknown; marker?: unknown; outcome?: unknown } | null;
         // Only the entry's marked outcome envelope ends a task. A plugin may post its own messages from the worker.
         if (envelope?.type !== "outcome" || envelope.marker !== WORKER_OUTCOME_MARKER) return;
-        const outcome = envelope.outcome;
-        if (!matchesOutcome(outcome, task)) { crash(); return; }
+        const outcome = readTrialOutcome(envelope.outcome, task);
+        if (!outcome) { crash(); return; }
         if (!settle()) return;
         if (outcome.status === "failed" && outcome.reason !== "plugin-trust" && requeue(index, attempt)) {
           // A posted failure retries like a crash and like the local backend. plugin-trust does not.
@@ -306,11 +293,11 @@ export async function runWorkerPool(args: Readonly<{
         idle.delete(worker);
         dispatch(worker);
       }
-      while (queue.length > 0 && live.size < args.workers && spawned < spawnLimit && !closed) start();
+      while (queue.length > 0 && live.size < workers && spawned < spawnLimit && !closed) start();
       if (done() || (queue.length > 0 && live.size === 0) || (queue.length === 0 && idle.size === live.size)) finish();
     };
 
-    args.signal?.addEventListener("abort", finish, { once: true });
+    signal?.addEventListener("abort", finish, { once: true });
     feed();
   });
 }
