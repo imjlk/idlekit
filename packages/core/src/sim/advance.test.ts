@@ -145,15 +145,15 @@ function walletOf(amount: number): number {
  * @evidence ./advance.ts#advanceExactMatch Reads the exact-match marker.
  * @evidenceReview ./advance.ts#advanceExactMatch #1e96b8b The declaration is constant-income-matches-reference.
  * @evidence ./advance.ts#consumeExactChunk Takes whole reference steps from nextBoundary.
- * @evidenceReview ./advance.ts#consumeExactChunk #7e449ba A chunk below one step takes one whole step, a 2.5-step chunk takes two, a near-epsilon horizon tail is not ticked, onStep sees each step as it is taken, a throwing onStep stops the chunk there, and the result carries a step count, not the steps; each step reads its own income, so an observer change between steps is applied as fixed-step applies it.
+ * @evidenceReview ./advance.ts#consumeExactChunk #119ab23 A chunk below one step takes one whole step, a 2.5-step chunk takes two, a near-epsilon horizon tail is not ticked, onStep sees each step as it is taken, a throwing onStep stops the chunk there, and the result carries a step count, not the steps; each step reads its own income, so an observer change between steps is applied as fixed-step applies it. Re-read the changed chunk: a stop callback limits it to one tick, leaving the callback to the runner once per reference boundary.
  * @evidence ./advance.ts#applyExactIncome Adds the scaled income as the tick policy applies it.
  * @evidenceReview ./advance.ts#applyExactIncome #63aaf66 Drop adds the scaled income, accumulate adds the bucket too, the bucket ends empty, and max money follows.
  * @evidence ./step.ts#exactAmountSign Gives the exact sign the fixed-step reward test uses.
  * @evidenceReview ./step.ts#exactAmountSign #c8eab59 Positive, zero, and negative amounts give 1, 0, and -1.
  * @evidence ./simulator.ts#runScenario Runs the scenario with run.advance omitted and enabled.
- * @evidenceReview ./simulator.ts#runScenario #6a28430 Exact chunks record one observation sample per reference step on the summed clock through onStep, the wallet, goals, stats, and reward gap equal fixed-step, and the reported capability reads the constraints the gate reads.
+ * @evidenceReview ./simulator.ts#runScenario #6e1ee34 Exact chunks record one observation sample per reference step on the summed clock through onStep, the wallet, goals, stats, and reward gap equal fixed-step, and the reported capability reads the constraints the gate reads. Re-read the changed validation: an enabled non-finite or non-positive chunkSec throws before recording the start; a disabled advance does not validate chunkSec.
  * @evidence ./offline.ts#applyOfflineSeconds Runs the offline credit with run.advance omitted and enabled.
- * @evidenceReview ./offline.ts#applyOfflineSeconds #e3f6599 Without a strategy the offline credit takes exact chunks, its wallet and stats equal fixed-step, and its reported capability reads the scenario constraints.
+ * @evidenceReview ./offline.ts#applyOfflineSeconds #1cc4ba1 Without a strategy the offline credit takes exact chunks, its wallet and stats equal fixed-step, and its reported capability reads the scenario constraints. Re-read the changed validation: an enabled non-finite or non-positive chunkSec throws before creating the recorder.
  */
 export function matchesReferenceWalletAndGoal(): void {
   expect(fixture.seed).toBe("16");
