@@ -88,7 +88,7 @@ export function declaresFlowAdapter(): void {
     expect(fact(report, "final-throughput")?.amount).toBe("+2.0E1");
   }
   // A spelling the diagnosis cannot read is rejected while parsing.
-  for (const amount of ["twenty", "-5", "1e400", "0x14", ""]) {
+  for (const amount of ["twenty", "-5", "1e400", "0x14", "", "1e-400", "-1e-400", "2e-324"]) {
     const unreadable = parseFlowObservation({
       ...steadyCase,
       samples: steadyCase.samples.map((sample, index) => (index === 1 ? { ...sample, amount } : sample)),
@@ -96,6 +96,16 @@ export function declaresFlowAdapter(): void {
     expect(unreadable.ok).toBe(false);
     if (!unreadable.ok) expect(unreadable.issues).toEqual(["$input.samples[1].amount finite non-negative decimal"]);
   }
+  // True zero spellings remain zero, and a representable subnormal is not rejected as underflow.
+  for (const amount of ["0e-400", "-0e-400", "5e-324"]) {
+    expect(parseFlowObservation({ ...steadyCase,
+      samples: steadyCase.samples.map((sample, index) => index === 1 ? { ...sample, amount } : sample),
+    }).ok).toBe(true);
+  }
+  const underflowed = { ...steadyCase,
+    samples: steadyCase.samples.map((sample, index) => index === 1 ? { ...sample, amount: "1e-400" } : sample),
+  };
+  expect(diagnoseFlow(underflowed).facts.some((item) => item.evidenceRefs.includes("sample:1"))).toBe(false);
   const badEdge = parseFlowObservation({ ...steadyCase, edges: steadyCase.edges.map((edge) => ({ ...edge, loss: "10%" })) });
   expect(badEdge.ok).toBe(false);
   // A reversed evidence window is rejected while parsing and is not evidence for a direct diagnosis.
@@ -483,6 +493,12 @@ export function checksFlowConservation(): void {
     edges: conversionCase.edges.map((edge) => ({ ...edge, numerator: "10", denominator: "1", loss: "0" })),
   });
   expect(overflow.facts.some((item) => item.kind === "conservation")).toBe(false);
+  const underflow = diagnoseFlow({
+    ...conversionCase,
+    samples: conversionCase.samples.map((sample) => ({ ...sample, amount: sample.kind === "inflow" ? "1e-200" : "0" })),
+    edges: conversionCase.edges.map((edge) => ({ ...edge, numerator: "1e-200", denominator: "1", loss: "0" })),
+  });
+  expect(underflow.facts.some((item) => item.kind === "conservation")).toBe(false);
   // A stock in another unit than the destination's throughput does not conserve.
   const destinationRate = { processId: "dest", resourceId: "ingot", kind: "throughput" as const, amount: "45", unit: "ingot/min", startSec: 0, endSec: 60 };
   const relabeled = diagnoseFlow({
@@ -695,6 +711,13 @@ export function separatesFactsFromCauses(): void {
 }
 
 describe("flow observability", () => {
+  it("keeps an underflowed Little's law product inconclusive", () => {
+    const observation = load("steadyLittles");
+    const littles = { ...observation.littles!, inventory: "0", arrivalPerSec: "1e-200", waitSec: "1e-200" };
+    expect(diagnoseFlow({ ...observation, littles }).littlesLaw.status).toBe("insufficient-data");
+    expect(diagnoseFlow({ ...observation, littles: { ...littles, arrivalPerSec: "0" } }).littlesLaw.status).toBe("consistent");
+    expect(diagnoseFlow({ ...observation, littles: { ...littles, waitSec: "0" } }).littlesLaw.status).toBe("consistent");
+  });
   it("declares an optional flow adapter", declaresFlowAdapter);
   it("diagnoses a steady pipeline", diagnosesSteadyPipeline);
   it("checks flow conservation", checksFlowConservation);

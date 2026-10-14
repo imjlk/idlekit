@@ -16,6 +16,8 @@ Facts and hypotheses are separate. Every fact names its process and resource. A 
 
 Amounts use the decimal wire spelling with an optional sign and exponent, such as `1e2`. `parseFlowObservation` rejects an amount, edge ratio, or Little's law input that is not a finite non-negative decimal, a sample whose `endSec` is before its `startSec`, a duplicate sample key, a duplicate edge, a zero denominator, and a loss above 1.
 
+Flow calculations use JavaScript numbers. A nonzero wire amount that rounds to zero, such as `1e-400`, is rejected; true zero spellings and representable subnormal values remain valid. A nonzero edge conversion or Little's law product that underflows to zero cannot prove conservation or consistency.
+
 The structural contract is `idlekit.flow.v1` at [docs/schemas/flow.v1.schema.json](./schemas/flow.v1.schema.json). The generator also writes [docs/schemas/generated/flow.v1.schema.json](./schemas/generated/flow.v1.schema.json). This does not replace `ScenarioV1` or the money metrics.
 
 Node.js and browser runtimes are not part of the v1 compatibility contract.

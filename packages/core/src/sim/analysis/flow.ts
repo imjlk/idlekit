@@ -203,11 +203,12 @@ export function parseFlowObservation(
 /** The decimal wire spelling engines print: optional sign, fraction, and exponent. */
 const DECIMAL_WIRE = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?$/i;
 
-/** A finite, non-negative amount in the decimal wire spelling. Anything else is null. */
+/** A finite, non-negative amount representable without rounding a nonzero wire value to zero. */
 function parseDecimal(text: string): number | null {
   if (!DECIMAL_WIRE.test(text)) return null;
   const value = Number(text);
   if (!Number.isFinite(value) || value < 0) return null;
+  if (value === 0 && /[1-9]/.test(text.split(/[eE]/, 1)[0]!)) return null;
   return value === 0 ? 0 : value;
 }
 
@@ -321,6 +322,9 @@ function littlesOf(
   if (!Number.isFinite(expected)) {
     return { status: "insufficient-data", assumption: "Little's law inputs overflow a finite product" };
   }
+  if (expected === 0 && arrival !== 0 && wait !== 0) {
+    return { status: "insufficient-data", assumption: "Little's law inputs underflow a finite product" };
+  }
   return {
     status: nearly(inventory, expected) ? "consistent" : "inconsistent",
     assumption: "steady window and a defined work flow",
@@ -387,6 +391,7 @@ function convert(amount: number, edge: FlowEdgeV1): number | null {
   const loss = parseDecimal(edge.loss);
   if (numerator === null || denominator === null || loss === null || denominator === 0 || loss > 1) return null;
   const converted = (amount * numerator) / denominator * (1 - loss);
+  if (converted === 0 && amount !== 0 && numerator !== 0 && loss !== 1) return null;
   return Number.isFinite(converted) ? converted : null;
 }
 

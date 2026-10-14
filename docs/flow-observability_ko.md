@@ -16,6 +16,8 @@
 
 양은 부호와 지수를 허용하는 십진 와이어 표기(`1e2` 등)를 쓴다. `parseFlowObservation`은 유한한 음이 아닌 십진수가 아닌 양, 간선 비율, 리틀의 법칙 입력, `endSec`가 `startSec`보다 앞선 샘플, 중복된 샘플 키, 중복된 간선, 0인 분모, 1보다 큰 손실을 거부한다.
 
+Flow 계산은 JavaScript number를 사용한다. `1e-400`처럼 0이 아닌 와이어 값이 0으로 반올림되면 거부하며, 실제 0 표기와 표현 가능한 비정규 수는 허용한다. 0이 아닌 간선 변환이나 리틀의 법칙 곱이 언더플로로 0이 되면 보존식이나 일관성의 증거로 쓰지 않는다.
+
 구조 계약은 `idlekit.flow.v1`이고 경로는 [docs/schemas/flow.v1.schema.json](./schemas/flow.v1.schema.json)이다. 생성기는 [docs/schemas/generated/flow.v1.schema.json](./schemas/generated/flow.v1.schema.json)도 쓴다. 이것은 `ScenarioV1`이나 화폐 지표를 바꾸지 않는다.
 
 Node.js와 browser 런타임은 v1 호환 계약에 포함되지 않는다.
