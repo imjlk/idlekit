@@ -137,7 +137,7 @@ export const flowPipelineConstraint = "process-throughput-20" as const;
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-conservation Conversion, loss, and inventory stay in their own units.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-conservation #5cc4b0e Re-read the section: the source unit and the destination unit are not added, queue and unretained are read for the destination resource in the source window, every source window is tried with the latest conserving one kept, the stock must match an observed destination throughput unit and the fact cites it, conservation compares per-window rates, edges into one stock are summed, and zero matches only zero.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-conservation #514285c Re-read the section: the source unit and the destination unit are not added, queue and unretained are read for the destination resource in the source window, every source window is tried with the latest conserving one kept, the stock must match an observed destination throughput unit and the fact cites it, conservation compares per-window rates, edges into one stock are summed, a positive conversion underflowing to zero cannot establish conservation, genuine zero operands or exactly total loss retain a valid zero conversion, and zero matches only zero.
  */
 export const flowConservation = "converted-units-stay-apart" as const;
 
@@ -149,7 +149,7 @@ export const flowUnsupportedModel = "no-invented-stall" as const;
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-suspected Missing demand and capacity observations stay unresolved.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-suspected #883c943 Re-read the section: facts and hypotheses are separate, starved and blocked time in seconds are judged per process from their latest window, where every resource in that window counts and a latest zero clears an older wait and is cited, with mixed waits unresolved, and a ramp-up observation or window skips Little's law.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-suspected #f4956d5 Re-read the section: facts and hypotheses are separate, starved and blocked time in seconds are judged per process from their latest window, where every resource in that window counts and a latest zero clears an older wait and is cited, with mixed waits unresolved, a Little's law product of positive representable operands that underflows to zero is insufficient-data while a genuinely zero arrival or wait keeps a valid zero product, and a ramp-up observation or window skips Little's law.
  */
 export const flowSuspectedCause = "facts-apart-from-cause" as const;
 

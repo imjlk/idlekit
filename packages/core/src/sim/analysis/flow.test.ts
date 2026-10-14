@@ -440,7 +440,7 @@ export function diagnosesSteadyPipeline(): void {
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-conservation Conversion keeps the destination unit.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-conservation #5cc4b0e Re-read the section, then ran this function: 100 becomes 45, the units are not added, a queue, unretained, or source sample of another resource or window does not conserve, a later conserving window is found, an overflowed conversion does not match, a 1e-7, 4.5e-13, or 4.5e-25 conversion is not equal to an empty stock, two conserving windows publish the latest in either order, a stock in another unit than the destination throughput does not conserve and a matching one cites that throughput, the conservation fact names its destination resource, two edges into one stock are summed to 90, and a conserved 1e-10 keeps its spelling instead of rounding to 0.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-conservation #514285c Re-read the section, then ran this function: 100 becomes 45, the units are not added, a queue, unretained, or source sample of another resource or window does not conserve, a later conserving window is found, an overflowed conversion and a positive conversion that underflows to zero do not match, genuinely zero sources or numerators and exactly total losses conserve an empty stock, a 1e-7, 4.5e-13, or 4.5e-25 conversion is not equal to an empty stock, two conserving windows publish the latest in either order, a stock in another unit than the destination throughput does not conserve and a matching one cites that throughput, the conservation fact names its destination resource, two edges into one stock are summed to 90, and a conserved 1e-10 keeps its spelling instead of rounding to 0.
  * @evidence ./flow.ts#flowConservation Reads the conservation marker.
  * @evidenceReview ./flow.ts#flowConservation #ca6486f The declaration is converted-units-stay-apart.
  */
@@ -499,6 +499,18 @@ export function checksFlowConservation(): void {
     edges: conversionCase.edges.map((edge) => ({ ...edge, numerator: "1e-200", denominator: "1", loss: "0" })),
   });
   expect(underflow.facts.some((item) => item.kind === "conservation")).toBe(false);
+  for (const zero of ["source", "numerator", "loss"] as const) {
+    const genuineZero = diagnoseFlow({
+      ...conversionCase,
+      samples: conversionCase.samples.map((sample) => ({
+        ...sample, amount: sample.kind === "inflow" && zero !== "source" ? "1e-200" : "0",
+      })),
+      edges: conversionCase.edges.map((edge) => ({
+        ...edge, numerator: zero === "numerator" ? "0" : "1e-200", denominator: "1", loss: zero === "loss" ? "1" : "0",
+      })),
+    });
+    expect(genuineZero.facts.some((item) => item.kind === "conservation")).toBe(true);
+  }
   // A stock in another unit than the destination's throughput does not conserve.
   const destinationRate = { processId: "dest", resourceId: "ingot", kind: "throughput" as const, amount: "45", unit: "ingot/min", startSec: 0, endSec: 60 };
   const relabeled = diagnoseFlow({
@@ -602,7 +614,7 @@ export function leavesUnknownModelsUnsupported(): void {
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-suspected Unresolved demand and capacity stay insufficient, and ramp-up skips Little's law.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-suspected #883c943 Re-read the section, then ran this function: a lone throughput confirms nothing, starved and blocked time on two processes give two hypotheses, both on one process stay unresolved with that process's own hypothesis, an overflowing Little's law product is insufficient-data, a ramp-up observation keeps the law off, the latest wait window is cited in either sample order, a latest zero wait clears an older positive one, a positive and a zero wait for two resources in one window give the shortage in either order, a wait not in seconds is not evidence and is rejected while parsing, and a zero window that clears an older wait is cited by that process's insufficient-data hypothesis.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-suspected #f4956d5 Re-read the section, then ran this function: a lone throughput confirms nothing, starved and blocked time on two processes give two hypotheses, both on one process stay unresolved with that process's own hypothesis, an overflowing or positive underflowing Little's law product is insufficient-data while a genuinely zero arrival or wait matches zero inventory, a ramp-up observation keeps the law off, the latest wait window is cited in either sample order, a latest zero wait clears an older positive one, a positive and a zero wait for two resources in one window give the shortage in either order, a wait not in seconds is not evidence and is rejected while parsing, and a zero window that clears an older wait is cited by that process's insufficient-data hypothesis.
  * @evidence ./flow.ts#flowSuspectedCause Reads the suspected-cause marker.
  * @evidenceReview ./flow.ts#flowSuspectedCause #0bfa7f8 The declaration is facts-apart-from-cause.
  */
@@ -667,6 +679,10 @@ export function separatesFactsFromCauses(): void {
     littles: { inventory: "1", arrivalPerSec: "1e308", waitSec: "1e308", steady: true, workFlowDefined: true },
   });
   expect(overflowLittles.littlesLaw.status).toBe("insufficient-data");
+  const underflowLittles = { ...load("steadyLittles").littles!, inventory: "0", arrivalPerSec: "1e-200", waitSec: "1e-200" };
+  expect(diagnoseFlow({ ...load("steadyLittles"), littles: underflowLittles }).littlesLaw.status).toBe("insufficient-data");
+  expect(diagnoseFlow({ ...load("steadyLittles"), littles: { ...underflowLittles, arrivalPerSec: "0" } }).littlesLaw.status).toBe("consistent");
+  expect(diagnoseFlow({ ...load("steadyLittles"), littles: { ...underflowLittles, waitSec: "0" } }).littlesLaw.status).toBe("consistent");
   // A ramp-up observation keeps Little's law off even when its window claims to be steady.
   const rampedObservation = diagnoseFlow({ ...load("steadyLittles"), steady: false });
   expect(rampedObservation.littlesLaw.status).toBe("not-applicable");
@@ -729,13 +745,6 @@ describe("flow observability", () => {
       expect(parseFlowObservation(total).ok).toBe(true);
       expect(diagnoseFlow(total).facts.some((item) => item.kind === "conservation")).toBe(true);
     }
-  });
-  it("keeps an underflowed Little's law product inconclusive", () => {
-    const observation = load("steadyLittles");
-    const littles = { ...observation.littles!, inventory: "0", arrivalPerSec: "1e-200", waitSec: "1e-200" };
-    expect(diagnoseFlow({ ...observation, littles }).littlesLaw.status).toBe("insufficient-data");
-    expect(diagnoseFlow({ ...observation, littles: { ...littles, arrivalPerSec: "0" } }).littlesLaw.status).toBe("consistent");
-    expect(diagnoseFlow({ ...observation, littles: { ...littles, waitSec: "0" } }).littlesLaw.status).toBe("consistent");
   });
   it("declares an optional flow adapter", declaresFlowAdapter);
   it("diagnoses a steady pipeline", diagnosesSteadyPipeline);
