@@ -40,6 +40,14 @@ const fixture = JSON.parse(
 
 const SECRET = "typesafe-test-key";
 
+/** File symlinks require a privilege on some Windows hosts; hard links and junctions are still checked there. */
+function fileSymlink(target: string, link: string): boolean {
+  try { symlinkSync(target, link); return true; } catch (error) {
+    if (process.platform === "win32" && (error as NodeJS.ErrnoException).code === "EPERM") return false;
+    throw error;
+  }
+}
+
 function artifact(value: number, extraAssumption = "seed-19"): string {
   return JSON.stringify({
     schemaVersion: 1,
@@ -237,7 +245,7 @@ export function keepsDefaultCommandsOffNetwork(): Promise<void> {
  * @evidence ../../../../../core/src/sim/analysis/jevAdvisory.ts#jevAlgorithmVersion Reads the algorithm version.
  * @evidenceReview ../../../../../core/src/sim/analysis/jevAdvisory.ts#jevAlgorithmVersion #3a63e24 The version is jev-advisory-1.
  * @evidence ./jev.schema.ts#readJevWire Accepts an answer only when it matches its question type.
- * @evidenceReview ./jev.schema.ts#readJevWire #d4aa098 Re-read readJevWire after the Noul and Score confidence range checks: the three fixture shapes and Noul 0 and 1 pass; a Noul with confidence, Noul -0.1 and 1.1, Score confidence -0.2 and 1.5, an unknown id, a bad probability set, and malformed JSON fail.
+ * @evidenceReview ./jev.schema.ts#readJevWire #1d2a88e Re-read readJevWire and the wire response schema: Choice names must belong to the question and usage counts fit uint32; the existing three fixture shapes and Noul 0 and 1 pass, while invalid confidence, an unknown id, a bad probability set, and malformed JSON fail.
  */
 export function validatesWireShapes(): void {
   expect(jevWireShapes).toBe("distinct-answer-types");
@@ -346,7 +354,7 @@ export function validatesWireShapes(): void {
  * @evidence ./jev.schema.ts#jevHttpBudget Reads the budget marker.
  * @evidenceReview ./jev.schema.ts#jevHttpBudget #fe6ed61 The declaration is bounded-retry.
  * @evidence ./jev.ts#adviseWithJev Runs the injected transport inside the retry budget.
- * @evidenceReview ./jev.ts#adviseWithJev #a919be2 Re-read adviseWithJev after the fail-open cache write, the zero plan on a hit or a missing key, the per-variant answer summary, the rubric version check, and the requested, response, and pinned model checks: the retry loop is unchanged; 401 and 403 send once, 429 stops after three attempts, 500 twice then 200 recovers, and an abort is a timeout.
+ * @evidenceReview ./jev.ts#adviseWithJev #866de2a Re-read adviseWithJev with the serialized fail-open cache write and zero plan on a hit or missing key: the retry loop remains bounded; 401 and 403 send once, 429 stops after three attempts, 500 twice then 200 recovers, and an abort is a timeout.
  */
 export function boundsHttpFailures(): Promise<void> {
   return (async (): Promise<void> => {
@@ -445,7 +453,7 @@ export function boundsHttpFailures(): Promise<void> {
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity A pinned model hits. An alias expires. A rubric change misses.
  * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity #e9a0d70 Re-read the section, then ran this function: jev-latest was fetched again after the TTL, a changed between upper bound missed, a truncated stored advisory and one naming another digest were misses that sent again, a warm cache planned zero requests, and an unwritable cache path sent once and kept the advisory.
  * @evidence ./jev.ts#adviseWithJev Writes the cache after a valid answer and fails open when it cannot.
- * @evidenceReview ./jev.ts#adviseWithJev #a919be2 Re-read the cache read and write: a truncated stored advisory fails validation and misses, a stored advisory naming another request misses, a dry run plans zero requests on a hit, and a path under a regular file sent one request and returned the ok advisory.
+ * @evidenceReview ./jev.ts#adviseWithJev #866de2a Re-read adviseWithJev and writeCache: invalid or mismatched entries miss, a hit sends nothing and clears current-call usage, dry-run plans zero without a key, writes merge entries under a filesystem lock, and an unwritable path keeps the advisory without resending.
  * @evidence ./jev.schema.ts#jevCacheIdentity Reads the cache marker.
  * @evidenceReview ./jev.schema.ts#jevCacheIdentity #75b32a2 The declaration is alias-is-not-pinned.
  * @evidence ../cache.ts#JEV_ALIAS_TTL_MS Reads the alias TTL.
@@ -682,7 +690,7 @@ export function separatesCacheIdentity(): Promise<void> {
  * @evidence ./jev.schema.ts#jevSecretBoundary Reads the redaction marker.
  * @evidenceReview ./jev.schema.ts#jevSecretBoundary #fe921f9 The declaration is redacted-projection.
  * @evidence ./jev.ts#projectJevState Projects metrics, assumptions, and rules without the key or a local path.
- * @evidenceReview ./jev.ts#projectJevState #f5c8b51 Re-read projectJevState, redactPaths, and pathEnd: an assumption carrying the key is dropped; POSIX at any depth, home, Windows drive, UNC, file URI, embedded, and spaced paths are replaced through the file they name while a web URL stays; warnings are not sent; metrics carry meaning, version, method, unit, and an amount decimal, rules carry the upper threshold, missing policy, and identity constraints, only metrics a rule names are projected, only the first reading of a metric id, and only an observed ok reading carries a value, and each question asks whether the reading fails its rule, with the missing policy for an absent value.
+ * @evidenceReview ./jev.ts#projectJevState #f8388b5 Re-read projectJevState, redactPaths, and pathEnd: secrets and local paths are redacted while web URLs stay; each rule receives the first referenced reading with its ruleId and rule unit, amount readings retain decimal text without a numeric point, withheld coverage removes values, and only observed ok numerical readings carry a value. Rules retain identity constraints and each question selects its own ruleId and missing policy.
  */
 export function keepsSecretsOutOfRecords(): Promise<void> {
   return (async (): Promise<void> => {
@@ -856,6 +864,7 @@ export function keepsSecretsOutOfRecords(): Promise<void> {
   };
   const amounts = projectJevState(amountArtifact, input.rubric, SECRET).state as { metrics: readonly Record<string, unknown>[] };
   expect(amounts.metrics[0]).toMatchObject({ amount: { decimal: "12.5", unit: "COIN" }, sign: "positive", unit: "COIN" });
+  expect(amounts.metrics[0]?.value).toBeNull();
   await removePath(dir);
 })();
 }
@@ -868,7 +877,7 @@ export function keepsSecretsOutOfRecords(): Promise<void> {
  * @evidence ./jev.ts#jevAnswerDisposition Maps one answer to ok, abstain, or an advisory warning.
  * @evidenceReview ./jev.ts#jevAnswerDisposition #0d071be Re-read jevAnswerDisposition with the closed abstain band: Choice confidence 0.2, Noul 0.5, and Noul 0.4 and 0.6 on either verdict abstain, 0.399 and 0.601 warn, a Noul of 0.05 against a failing rule is a warning, and the same Noul with no rule verdict is ok.
  * @evidence ./jev.ts#adviseWithJev Compares each answer with its own rule and refuses a rubric whose ids cannot stay separate questions.
- * @evidenceReview ./jev.ts#adviseWithJev #a919be2 Re-read adviseWithJev, summarize, and reportStatus: in a mixed rubric a low Noul warns only on the failing rule, the warning outranks an abstention, and a repeated id, __proto__, or an id holding a path or the key fails before any send.
+ * @evidenceReview ./jev.ts#adviseWithJev #866de2a Re-read adviseWithJev, summarize, and reportStatus after the cache changes: in a mixed rubric a low Noul warns only on the failing rule, the warning outranks an abstention, and a repeated id, __proto__, or an id holding a path or the key fails before any send.
  */
 export function keepsNumericalVerdicts(): Promise<void> {
   return (async (): Promise<void> => {
@@ -1117,7 +1126,7 @@ export function staysOptIn(): Promise<void> {
     console.log = originalLog;
   }
   expect(printed.some((line) => line.includes(`- Endpoint: ${JEV_ENDPOINT}`))).toBe(true);
-  expect(printed.some((line) => line.includes("- Planned requests: 1"))).toBe(true);
+  expect(printed.some((line) => line.includes("- Planned requests: 0"))).toBe(true);
   // A cache that is an input file would overwrite that input after a success, so it is refused too.
   for (const input of [analysis, rubricPath]) {
     await expect(
@@ -1126,10 +1135,10 @@ export function staysOptIn(): Promise<void> {
   }
   // A symlink or a hard link to an input is the same file, so it is refused as a cache too.
   const symlinked = resolve(dir, "cache-link.json");
-  symlinkSync(analysis, symlinked);
+  const canLinkFiles = fileSymlink(analysis, symlinked);
   const hardLinked = resolve(dir, "cache-hard.json");
   linkSync(rubricPath, hardLinked);
-  for (const alias of [symlinked, hardLinked]) {
+  for (const alias of [...(canLinkFiles ? [symlinked] : []), hardLinked]) {
     await expect(
       runJudge({ rubric: rubricPath, provider: "jev", format: "json", cache: alias }, analysis, { env: {} }),
     ).rejects.toThrow("names an input file");
@@ -1138,7 +1147,7 @@ export function staysOptIn(): Promise<void> {
   const realDir = resolve(dir, "real");
   mkdirSync(realDir, { recursive: true });
   const aliasDir = resolve(dir, "alias");
-  symlinkSync(realDir, aliasDir);
+  symlinkSync(realDir, aliasDir, process.platform === "win32" ? "junction" : "dir");
   await expect(
     runJudge(
       {
@@ -1155,10 +1164,11 @@ export function staysOptIn(): Promise<void> {
   // A dangling symlink whose target is the output file is the same file too.
   const danglingTarget = resolve(realDir, "later.json");
   const dangling = resolve(dir, "dangling.json");
-  symlinkSync(danglingTarget, dangling);
-  await expect(
-    runJudge({ rubric: rubricPath, provider: "jev", format: "json", cache: dangling, out: danglingTarget }, analysis, { env: {} }),
-  ).rejects.toThrow("same file");
+  if (fileSymlink(danglingTarget, dangling)) {
+    await expect(
+      runJudge({ rubric: rubricPath, provider: "jev", format: "json", cache: dangling, out: danglingTarget }, analysis, { env: {} }),
+    ).rejects.toThrow("same file");
+  }
   // md honors --out like json does.
   const mdOut = resolve(dir, "plan.md");
   await runJudge({ rubric: rubricPath, provider: "jev", format: "md", "dry-run": true, out: mdOut }, analysis, { env: {} });
@@ -1182,6 +1192,111 @@ export function staysOptIn(): Promise<void> {
 }
 
 describe("jev judge provider", () => {
+  it("checks case aliases for missing outputs using the actual directory", async () => {
+    const dir = await createTempDir("idlekit-jev-case");
+    try {
+      const cache = resolve(dir, "new-cache.json");
+      const out = resolve(dir, "NEW-CACHE.JSON");
+      // The host filesystem determines whether these names collide. The marker is not a cache or output.
+      const marker = resolve(dir, "case-marker");
+      await Bun.write(marker, "");
+      const folded = existsSync(resolve(dir, "CASE-MARKER"));
+      const attempt = runJudge({ rubric: resolve(dir, "absent-rubric.json"), provider: "jev", format: "json", cache, out }, resolve(dir, "absent-analysis.json"));
+      await expect(attempt).rejects.toThrow(folded ? "same file" : "Invalid judge input");
+      expect(existsSync(cache)).toBe(false);
+      expect(existsSync(out)).toBe(false);
+    } finally { await removePath(dir); }
+  });
+  it("withholds a point when numerical observation coverage is unavailable", () => {
+    const input = parsed(1.5);
+    for (const observed of [
+      ...(["incomplete", "unknown", "disabled"] as const).map((observationCoverage) => ({ ...input.artifact, observationCoverage })),
+      { ...input.artifact, capabilities: { ...input.artifact.capabilities, metrics: "unsupported" as const } },
+    ]) {
+      const numerical = evaluateRules({ ...input, artifact: observed });
+      expect(numerical.numerical.results[0]?.evidence.value).toBeNull();
+      const state = projectJevState(observed, input.rubric, SECRET).state as { metrics: readonly Record<string, unknown>[] };
+      expect(state.metrics[0]?.value).toBeNull();
+    }
+  });
+  it("projects the numerical unit for each rule that shares a metric", () => {
+    const input = parsed(1.5, "shared-unit", "seed-19", [rule({ id: "hours", unit: "h" }), rule({ id: "seconds", unit: "s" })]);
+    const numerical = evaluateRules(input);
+    const state = projectJevState(input.artifact, input.rubric, SECRET).state as { metrics: readonly Record<string, unknown>[] };
+    expect(state.metrics).toHaveLength(2);
+    for (const check of numerical.numerical.results) {
+      expect(state.metrics.find((metric) => metric.ruleId === check.id)?.unit).toBe(check.evidence.unit);
+    }
+  });
+  it("rejects token counts outside the advisory uint32 contract", () => {
+    const input = parsed();
+    const questions = projectJevState(input.artifact, input.rubric, SECRET).questions;
+    for (const field of ["input_tokens", "output_tokens"] as const) {
+      const body = JSON.parse(noulBody(0.9));
+      body.usage[field] = 4294967296;
+      expect(readJevWire(JSON.stringify(body), questions).ok).toBe(false);
+      body.usage[field] = 4294967295;
+      expect(readJevWire(JSON.stringify(body), questions).ok).toBe(true);
+    }
+  });
+  it("rejects a Choice answer outside the requested choices", () => {
+    const questions = { decision: { type: "choice" as const, instructions: "Choose", criteria: { yes: "yes", no: "no" } } };
+    const body = {
+      model: "jev-1.13.0",
+      answers: { decision: { type: "choice", choice: "not-an-option", confidence: 1, probabilities: { yes: 1, no: 0 } } },
+      usage: { input_tokens: 1, output_tokens: 1 },
+    };
+    expect(readJevWire(JSON.stringify(body), questions).ok).toBe(false);
+    body.answers.decision.choice = "yes";
+    expect(readJevWire(JSON.stringify(body), questions).ok).toBe(true);
+  });
+  it("keeps both entries from concurrent advice requests", async () => {
+    const dir = await createTempDir("idlekit-jev-concurrent");
+    const cachePath = resolve(dir, "cache.json");
+    const inputs = [parsed(3, "concurrent-a"), parsed(3, "concurrent-b")];
+    const mock = transportOf(() => ({ status: 200, body: noulBody(0.9) }));
+    try {
+      const results = await Promise.all(inputs.map((input) => adviseWithJev({
+        ...input, numerical: evaluateRules(input), requestedModel: "jev-1.13.0", dryRun: false,
+        cachePath, transport: mock.transport, env: { TYPESAFE_API_KEY: SECRET },
+      })));
+      expect(results.map((result) => result.status)).toEqual(["ok", "ok"]);
+      const entries = parseJevCache(await readText(cachePath));
+      expect(entries).toHaveLength(2);
+      expect(new Set(entries.map((entry) => entry.rubricVersion))).toEqual(new Set(["concurrent-a", "concurrent-b"]));
+      expect(mock.calls).toBe(2);
+    } finally {
+      await removePath(dir);
+    }
+  });
+  it("plans no request for a keyless dry run", async () => {
+    const input = parsed();
+    const mock = transportOf(() => ({ status: 200, body: noulBody(0.9) }));
+    const result = await adviseWithJev({
+      ...input, numerical: evaluateRules(input), requestedModel: "jev-1.13.0", dryRun: true,
+      env: {}, transport: mock.transport,
+    });
+    expect(result.status).toBe("skipped");
+    expect(result.plannedRequests).toBe(0);
+    expect(mock.calls).toBe(0);
+  });
+  it("reports no current token usage when serving a cached answer", async () => {
+    const dir = await createTempDir("idlekit-jev-current-usage");
+    const input = parsed();
+    const mock = transportOf(() => ({ status: 200, body: noulBody(0.9) }));
+    const args = { ...input, numerical: evaluateRules(input), requestedModel: "jev-1.13.0", dryRun: false,
+      cachePath: resolve(dir, "cache.json"), transport: mock.transport, env: { TYPESAFE_API_KEY: SECRET } };
+    try {
+      expect((await adviseWithJev(args)).usage).toEqual({ inputTokens: 11, outputTokens: 3 });
+      const hit = await adviseWithJev(args);
+      expect(hit.cache).toBe("hit");
+      expect(hit.usage).toBeNull();
+      expect(hit.attempts).toBe(0);
+      expect(mock.calls).toBe(1);
+    } finally {
+      await removePath(dir);
+    }
+  });
   it("keeps default commands off the network", keepsDefaultCommandsOffNetwork);
   it("validates wire shapes", validatesWireShapes);
   it("bounds http failures", boundsHttpFailures);

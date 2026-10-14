@@ -4,7 +4,7 @@ import { z } from "zod";
 import { usageError } from "../errors";
 import { buildOutputMeta, outputSchemaRefForCommand } from "../io/outputMeta";
 import { writeOutput } from "../io/writeOutput";
-import { lstatSync, readlinkSync, realpathSync, statSync } from "fs";
+import { closeSync, lstatSync, openSync, readlinkSync, realpathSync, statSync, unlinkSync } from "fs";
 import { basename, dirname, resolve } from "path";
 import { readJsonFile, writeTextFile } from "../runtime/bun";
 import { readJudgeInputs } from "../lib/evaluation/input";
@@ -36,15 +36,53 @@ function canonical(path: string, depth = 0): string {
   }
 }
 
-function sameFile(left: string, right: string): boolean {
-  if (resolve(left) === resolve(right) || canonical(left) === canonical(right)) return true;
+function existingDirectory(path: string): { path: string; dev: number; ino: number } | null {
+  let directory = dirname(path);
+  for (;;) {
+    try {
+      const stat = statSync(directory);
+      return stat.isDirectory() ? { path: directory, dev: stat.dev, ino: stat.ino } : null;
+    } catch {
+      const parent = dirname(directory);
+      if (parent === directory) return null;
+      directory = parent;
+    }
+  }
+}
+
+/** Probe the actual directory, including a case-sensitive Windows directory or a case-folded mount. */
+function ignoresCase(directory: string): boolean {
+  const name = `.idlekit-case-${crypto.randomUUID()}`;
+  const path = resolve(directory, name);
+  let fd: number | undefined;
   try {
-    if (realpathSync(left) === realpathSync(right)) return true;
+    fd = openSync(path, "wx");
+    const original = statSync(path);
+    const folded = statSync(resolve(directory, name.toUpperCase()));
+    return original.dev === folded.dev && original.ino === folded.ino;
+  } catch {
+    // An unwritable directory cannot create these targets. On Windows keep the guard conservative.
+    return fd === undefined && process.platform === "win32";
+  } finally {
+    if (fd !== undefined) {
+      try { closeSync(fd); } finally { unlinkSync(path); }
+    }
+  }
+}
+
+function sameFile(left: string, right: string): boolean {
+  const aPath = canonical(left);
+  const bPath = canonical(right);
+  if (aPath === bPath) return true;
+  try {
     const a = statSync(left);
     const b = statSync(right);
     return a.dev === b.dev && a.ino === b.ino;
   } catch {
-    return false;
+    if (aPath.toLowerCase() !== bPath.toLowerCase()) return false;
+    const a = existingDirectory(aPath);
+    const b = existingDirectory(bPath);
+    return a !== null && b !== null && a.dev === b.dev && a.ino === b.ino && ignoresCase(a.path);
   }
 }
 

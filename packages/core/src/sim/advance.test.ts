@@ -145,15 +145,15 @@ function walletOf(amount: number): number {
  * @evidence ./advance.ts#advanceExactMatch Reads the exact-match marker.
  * @evidenceReview ./advance.ts#advanceExactMatch #1e96b8b The declaration is constant-income-matches-reference.
  * @evidence ./advance.ts#consumeExactChunk Takes whole reference steps from nextBoundary.
- * @evidenceReview ./advance.ts#consumeExactChunk #7e449ba A chunk below one step takes one whole step, a 2.5-step chunk takes two, a near-epsilon horizon tail is not ticked, onStep sees each step as it is taken, a throwing onStep stops the chunk there, and the result carries a step count, not the steps; each step reads its own income, so an observer change between steps is applied as fixed-step applies it.
+ * @evidenceReview ./advance.ts#consumeExactChunk #119ab23 A chunk below one step takes one whole step, a 2.5-step chunk takes two, a near-epsilon horizon tail is not ticked, onStep sees each step as it is taken, a throwing onStep stops the chunk there, and the result carries a step count, not the steps; each step reads its own income, so an observer change between steps is applied as fixed-step applies it. Re-read the changed chunk: a stop callback limits it to one tick, leaving the callback to the runner once per reference boundary.
  * @evidence ./advance.ts#applyExactIncome Adds the scaled income as the tick policy applies it.
  * @evidenceReview ./advance.ts#applyExactIncome #63aaf66 Drop adds the scaled income, accumulate adds the bucket too, the bucket ends empty, and max money follows.
  * @evidence ./step.ts#exactAmountSign Gives the exact sign the fixed-step reward test uses.
  * @evidenceReview ./step.ts#exactAmountSign #c8eab59 Positive, zero, and negative amounts give 1, 0, and -1.
  * @evidence ./simulator.ts#runScenario Runs the scenario with run.advance omitted and enabled.
- * @evidenceReview ./simulator.ts#runScenario #6a28430 Exact chunks record one observation sample per reference step on the summed clock through onStep, the wallet, goals, stats, and reward gap equal fixed-step, and the reported capability reads the constraints the gate reads.
+ * @evidenceReview ./simulator.ts#runScenario #6e1ee34 Exact chunks record one observation sample per reference step on the summed clock through onStep, the wallet, goals, stats, and reward gap equal fixed-step, and the reported capability reads the constraints the gate reads. Re-read the changed validation: an enabled non-finite or non-positive chunkSec throws before recording the start; a disabled advance does not validate chunkSec.
  * @evidence ./offline.ts#applyOfflineSeconds Runs the offline credit with run.advance omitted and enabled.
- * @evidenceReview ./offline.ts#applyOfflineSeconds #e3f6599 Without a strategy the offline credit takes exact chunks, its wallet and stats equal fixed-step, and its reported capability reads the scenario constraints.
+ * @evidenceReview ./offline.ts#applyOfflineSeconds #1cc4ba1 Without a strategy the offline credit takes exact chunks, its wallet and stats equal fixed-step, and its reported capability reads the scenario constraints. Re-read the changed validation: an enabled non-finite or non-positive chunkSec throws before creating the recorder.
  */
 export function matchesReferenceWalletAndGoal(): void {
   expect(fixture.seed).toBe("16");
@@ -513,6 +513,54 @@ export function measuresLongHorizons(): void {
 }
 
 describe("guarded analytic advance", () => {
+  it("calls a stop callback once at each reference boundary", () => {
+    const online = (advance: boolean, chunkSec: number) => {
+      const compiled = scenario({ advance, chunkSec, until: false, durationSec: 10 });
+      const calls: number[] = [];
+      const until = (current: SimState<number, UnitCode, Vars>) => { calls.push(current.t); return calls.length >= 3; };
+      return { run: runScenario({ ...compiled, run: { ...compiled.run, until } }), calls };
+    };
+    const offline = (advance: boolean, chunkSec: number) => {
+      const calls: number[] = [];
+      const run = applyOfflineSeconds({
+        scenario: scenario({ advance, chunkSec, until: false }),
+        seconds: 10,
+        options: { until: (current) => { calls.push(current.t); return calls.length >= 3; } },
+      });
+      return { run, calls };
+    };
+    for (const execute of [online, offline]) {
+      const reference = execute(false, 1);
+      expect(reference.calls).toEqual([0, 1, 2]);
+      for (const chunkSec of [1, 10, 100]) {
+        const exact = execute(true, chunkSec);
+        expect(exact.calls).toEqual(reference.calls);
+        expect(exact.run.end).toEqual(reference.run.end);
+        expect(exact.run.stats).toEqual(reference.run.stats);
+      }
+    }
+  });
+  it("rejects invalid enabled chunk sizes before simulating", () => {
+    for (const chunkSec of [0, -1, NaN, Infinity, -Infinity]) {
+      const base = scenario({ chunkSec });
+      let observed = false;
+      const compiled = { ...base, run: { ...base.run, observer: { onStep: () => { observed = true; } } } };
+      expect(() => runScenario(compiled)).toThrow("advance.chunkSec");
+      expect(observed).toBe(false);
+      expect(() => applyOfflineSeconds({ scenario: compiled, seconds: 2 })).toThrow("advance.chunkSec");
+      expect(observed).toBe(false);
+    }
+    expect(() => runScenario(scenario({ chunkSec: -1, advance: false }))).not.toThrow();
+  });
+  it("validates nonnegative integer report counters without a uint32 ceiling", () => {
+    const report = runScenario(scenario({ chunkSec: 4 })).advance!;
+    for (const field of ["exactSteps", "fallbackSteps", "chunks"] as const) {
+      for (const invalid of [-1, 0.5, NaN, Infinity]) {
+        expect(validateAdvanceReport({ ...report, [field]: invalid }).success).toBe(false);
+      }
+      expect(validateAdvanceReport({ ...report, [field]: 4294967296 }).success).toBe(true);
+    }
+  });
   it("matches the reference wallet and goal", matchesReferenceWalletAndGoal);
   it("falls back on an unclear boundary", fallsBackOnUnclearBoundaries);
   it("refuses a policy threshold", refusesPolicyThresholds);
