@@ -3,7 +3,7 @@ import ttsc from "@ttsc/unplugin/bun";
 import { mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join, resolve } from "path";
-import { fileURLToPath } from "url";
+import { fileURLToPath, pathToFileURL } from "url";
 import {
   addDecimalStrings,
   analysisTaskSeed,
@@ -19,6 +19,7 @@ import { sha256Hex } from "../../runtime/bun";
 import { checkTrialParity } from "../../../../core/src/testkit/conformance";
 import { runWorkerPool, workerEntryUrl, workerPoolParity, type WorkerLike } from "./pool";
 import { analysisTrialScenario, runAnalysisTrial, trialPluginBoundary } from "./trial";
+import { PluginTrustError } from "../../plugin/trust-error";
 
 /** Real workers under the dev preload start slowly, most of all several at once on Windows. */
 const REAL_WORKER_TIMEOUT_MS = 180_000;
@@ -111,9 +112,9 @@ class FakeWorker implements WorkerLike {
  * @evidence ./pool.ts#runWorkerPool Runs the tasks on an explicit number of workers.
  * @evidenceReview ./pool.ts#runWorkerPool #dfb8b33 Re-read the event-driven pool: one, two, and four real workers return the local digests, end money, and seeds in logical order.
  * @evidence ./pool.ts#workerEntryUrl Names the worker module the pool spawns.
- * @evidenceReview ./pool.ts#workerEntryUrl #62d3255 The URL is entry.ts next to the pool module.
+ * @evidenceReview ./pool.ts#workerEntryUrl #9e78f00 This host sees source entry.ts next to pool.ts; a JS bundle resolves runtime/workers/entry.js.
  * @evidence ./trial.ts#runAnalysisTrial Runs one trial and returns its digest and end money.
- * @evidenceReview ./trial.ts#runAnalysisTrial #9fe8a84 Re-read the trial after the step-budget check: each of the four local trials runs on the built-in registries without a loader and is ok with a digest, and the worker run matches it.
+ * @evidenceReview ./trial.ts#runAnalysisTrial #c1d66e5 Re-read the trial after the step-budget check: each of the four local trials runs on the built-in registries without a loader and is ok with a digest, and the worker run matches it.
  * @evidence ./trial.ts#analysisTrialScenario Builds the trial scenario from the payload.
  * @evidenceReview ./trial.ts#analysisTrialScenario #1eb1d48 The payload step, horizon, and income reach the scenario clock and model params.
  */
@@ -214,7 +215,7 @@ export function reversesCompletionOrder(): Promise<void> {
  * @evidence ./pool.ts#runWorkerPool Bounds each task by its own timer, retries posted failures, and shuts down without leftovers.
  * @evidenceReview ./pool.ts#runWorkerPool #dfb8b33 Re-read start, dispatch, feed, and finish: state is keyed by position, the count is checked against maxWorkers, close routes to the crash path, a throwing spawn stops spawning, a clone error on post fails only its task, any other post failure is a crash on a retired slot, queue-bound is incomplete, the batch runs a JSON snapshot, a plugin trial retires its slot, the budget is a frozen copy checked before any spawn, an abort counts the in-flight attempt, admission precedes the snapshot, a pre-abort cancels every task before the queue bound, only a marked outcome envelope settles a task, and finish clears timers and detaches handlers.
  * @evidence ./trial.ts#runAnalysisTrial Reports a step-budget stop as incomplete.
- * @evidenceReview ./trial.ts#runAnalysisTrial #9fe8a84 A budget of two steps on a three-second horizon is incomplete step-budget with no end money, three steps is ok, a throwing trusted model is trial-failed, and a refusing loader is plugin-trust.
+ * @evidenceReview ./trial.ts#runAnalysisTrial #c1d66e5 A budget of two steps on a three-second horizon is incomplete step-budget with no end money, three steps is ok, a throwing trusted model is trial-failed, and a refusing loader is plugin-trust.
  * @evidence ./pool.ts#workerPoolParity Reads the parity marker.
  * @evidenceReview ./pool.ts#workerPoolParity #f3f1470 The declaration is same-logical-digest.
  * @evidence ./pool.ts#WorkerLike.onerror The pool reads a worker crash from this handler.
@@ -584,7 +585,7 @@ export function boundsPoolFailures(): Promise<void> {
     }));
     expect(throwing).toMatchObject({ status: "failed", reason: "trial-failed" });
     const refused = await runAnalysisTrial(plugged, async () => {
-      throw new Error("loader said no");
+      throw new PluginTrustError("loader said no");
     });
     expect(refused).toMatchObject({ status: "failed", reason: "plugin-trust" });
 
@@ -602,7 +603,7 @@ export function boundsPoolFailures(): Promise<void> {
  * @evidence ./trial.ts#trialPluginBoundary Reads the trust marker.
  * @evidenceReview ./trial.ts#trialPluginBoundary #9e0eb13 The declaration is plugin-policy-not-widened.
  * @evidence ./trial.ts#runAnalysisTrial Refuses plugin paths it cannot check.
- * @evidenceReview ./trial.ts#runAnalysisTrial #9fe8a84 An empty root list and plugin paths without a loader fail closed, and in a worker the CLI loader refuses an outside path and a wrong digest.
+ * @evidenceReview ./trial.ts#runAnalysisTrial #c1d66e5 An empty root list and plugin paths without a loader fail closed, and in a worker the CLI loader refuses an outside path and a wrong digest.
  */
 export function refusesUntrustedPlugins(): Promise<void> {
   return (async () => {
@@ -725,6 +726,45 @@ export function packsWorkerAsset(): Promise<void> {
 }
 
 describe("worker execution backend", () => {
+  it("runs the packaged default worker without compiler dependencies", async () => {
+    const output = resolve(".test-bundle/worker-probe");
+    const build = Bun.spawnSync(["bun", "scripts/cli-bundle.ts", "--entry", "src/worker-pool.fixture.ts", "--outdir", ".test-bundle/worker-probe"], { stdout: "pipe", stderr: "pipe" });
+    if (build.exitCode !== 0) throw new Error(build.stderr.toString());
+    const consumer = await import("../../testkit/bun").then(({ createTempDir }) => createTempDir("idlekit-worker-consumer"));
+    try {
+      mkdirSync(join(consumer, "runtime/workers"), { recursive: true });
+      writeFileSync(join(consumer, "probe.js"), readFileSync(join(output, "worker-pool.fixture.js")));
+      writeFileSync(join(consumer, "runtime/workers/entry.js"), readFileSync(join(output, "runtime/workers/entry.js")));
+      writeFileSync(join(consumer, "bunfig.toml"), "preload = []\n");
+      const invoke = (plugins: object = {}) => {
+        const result = Bun.spawnSync(["bun", "probe.js", JSON.stringify(plugins)], { cwd: consumer, stdout: "pipe", stderr: "pipe" });
+        if (result.exitCode !== 0) throw new Error(result.stderr.toString());
+        return JSON.parse(result.stdout.toString());
+      };
+      const builtin = invoke();
+      expect(builtin.entry).toBe(pathToFileURL(join(consumer, "runtime/workers/entry.js")).href);
+      expect(builtin.batch.fullDistribution).toBe(true);
+      expect(builtin.batch.outcomes[0]).toMatchObject({ status: "ok", attempts: 1 });
+      const plugin = join(consumer, "throws.mjs");
+      writeFileSync(plugin, 'throw new Error("initialization failed");');
+      const digest = sha256Hex(readFileSync(plugin));
+      const admitted = invoke({ pluginPaths: [plugin], pluginRoots: [consumer], pluginDigests: { [plugin]: digest } });
+      expect(admitted.batch.outcomes[0]).toMatchObject({ status: "failed", reason: "trial-failed", attempts: 2 });
+      const refused = invoke({ pluginPaths: [plugin], pluginRoots: [consumer], pluginDigests: { [plugin]: "0".repeat(64) } });
+      expect(refused.batch.outcomes[0]).toMatchObject({ status: "failed", reason: "plugin-trust", attempts: 1 });
+    } finally { rmSync(consumer, { recursive: true, force: true }); }
+  }, 360_000);
+  it("classifies an admitted plugin module evaluation error as a trial failure", async () => {
+    const { loadRegistries } = await import("../../plugin/load");
+    const { createTempDir } = await import("../../testkit/bun");
+    const root = await createTempDir("idlekit-admitted-plugin");
+    try {
+      const plugin = join(root, "throws.mjs");
+      writeFileSync(plugin, 'throw new Error("initialization failed");');
+      const task = { ...trial(0), pluginPaths: [plugin], pluginRoots: [root], pluginDigests: { [plugin]: sha256Hex(readFileSync(plugin)) } };
+      expect(await runAnalysisTrial(task, loadRegistries)).toMatchObject({ status: "failed", reason: "trial-failed" });
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
   it("revalidates synthetic JSON snapshots within each task boundary", async () => {
     for (const replacement of [() => ({ ...trial(0), stepBudget: defaultExecutionBudget.stepBudget + 1 }),
       () => { throw new Error("synthetic-json"); }]) {
