@@ -45,7 +45,7 @@ function expectValid(report: FlowReportV1): void {
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-flow-adapter The observer hook is optional and three fixtures share it.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-flow-adapter #0e3f60a Re-read the section, then ran this function: onFlow records one sample, the three skins agree, and exponent spellings parse while unreadable amounts are rejected.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-flow-adapter #3c616c8 Re-read the section, then ran this function: onFlow records one sample, the three skins agree, and exponent spellings, true zero spellings, and a positive representable subnormal parse while unreadable amounts and nonzero decimals that become Number zero are rejected.
  * @evidence ./flow.ts#flowOptionalAdapter Reads the optional-adapter marker.
  * @evidenceReview ./flow.ts#flowOptionalAdapter #d29de61 The declaration is observer-not-required-model.
  * @evidence ./flow.ts#validateFlowReport Reads the published validator.

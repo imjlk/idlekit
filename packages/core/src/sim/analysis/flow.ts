@@ -10,7 +10,7 @@ const FLOW_ALGORITHM_VERSION = "flow-observation-1" as const;
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-flow-adapter The published schema id is the flow report.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-flow-adapter #0e3f60a Re-read the section: the id is the flow v1 schema.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-flow-adapter #3c616c8 Re-read the section: the id is the flow v1 schema.
  */
 export function flowSchemaId(): typeof FLOW_SCHEMA_ID {
   return FLOW_SCHEMA_ID;
@@ -18,7 +18,7 @@ export function flowSchemaId(): typeof FLOW_SCHEMA_ID {
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-flow-adapter The algorithm version is flow-observation-1.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-flow-adapter #0e3f60a Re-read the section: the version string is flow-observation-1.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-flow-adapter #3c616c8 Re-read the section: the version string is flow-observation-1.
  */
 export function flowAlgorithmVersion(): typeof FLOW_ALGORITHM_VERSION {
   return FLOW_ALGORITHM_VERSION;
@@ -125,7 +125,7 @@ export type FlowReportV1 = Readonly<{
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-flow-adapter Flow samples are optional. Model gains no required method.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-flow-adapter #0e3f60a Re-read the section: the observer hook is optional and resource names stay in the fixture.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-flow-adapter #3c616c8 Re-read the section: the observer hook is optional and resource names stay in the fixture.
  */
 export const flowOptionalAdapter = "observer-not-required-model" as const;
 
@@ -162,7 +162,7 @@ let validateObservationValidator: ((input: unknown) => IValidation<FlowObservati
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-flow-adapter The published validator is createValidate of the flow report.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-flow-adapter #0e3f60a Re-read the section: the structural document is FlowReportV1.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-flow-adapter #3c616c8 Re-read the section: the structural document is FlowReportV1.
  */
 export const validateFlowReport = (input: unknown): IValidation<FlowReportV1> =>
   (validateFlowReportValidator ??= typia.createValidate<FlowReportV1>())(input);
@@ -175,7 +175,7 @@ let flowJsonSchemaUnit: ReturnType<typeof buildFlowJsonSchema> | undefined;
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-flow-adapter The structural schema is OpenAPI 3.1 from typia.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-flow-adapter #0e3f60a Re-read the section: schema version is 3.1 and the contract id is idlekit.flow.v1.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-flow-adapter #3c616c8 Re-read the section: schema version is 3.1 and the contract id is idlekit.flow.v1.
  */
 export function flowJsonSchema(): ReturnType<typeof buildFlowJsonSchema> {
   flowJsonSchemaUnit ??= buildFlowJsonSchema();
@@ -187,7 +187,7 @@ const validateObservation = (input: unknown): IValidation<FlowObservationV1> =>
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-flow-adapter A flow observation is validated as data.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-flow-adapter #0e3f60a Re-read the section: the observation contract is idlekit.flow.observation.v1, and an amount outside the finite non-negative decimal wire spelling, a duplicate sample key, a duplicate edge, a zero denominator, and a loss above 1 are rejected while parsing.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-flow-adapter #3c616c8 Re-read the section: the observation contract is idlekit.flow.observation.v1, and nonzero decimals that become Number zero are rejected while true zero spellings and positive representable subnormals are accepted; invalid finite non-negative decimal spellings, duplicate sample keys or edges, zero denominators, losses above 1, and losses that round to 1 without exactly spelling 1 are rejected while parsing.
  */
 export function parseFlowObservation(
   input: unknown,
