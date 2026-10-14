@@ -3,6 +3,7 @@ import lockfile from "proper-lockfile";
 import { basename, dirname, resolve } from "path";
 import {
   jevAlgorithmVersion,
+  judgeArtifact,
   toObservation,
   validateJevAdvisory,
   type AnalysisArtifactV1,
@@ -56,7 +57,7 @@ type JevTransportRequest = Readonly<{
   signal: AbortSignal;
 }>;
 
-export type JevTransport = (request: JevTransportRequest) => Promise<{ status: number; body: string }>;
+export type JevTransport = (request: JevTransportRequest) => Promise<{ status: number; body: string; retryAfterMs?: number }>;
 
 type JevProjection = Readonly<{
   state: Readonly<Record<string, unknown>>;
@@ -161,6 +162,9 @@ export function projectJevState(
     return true;
   });
   const coverage = artifact.observationCoverage;
+  // Compare the original identities before redaction can collapse different values to the same marker.
+  const judged = judgeArtifact(artifact, rubric);
+  const verdicts = new Map(judged.ok ? judged.report.numerical.results.map((result) => [result.id, result.verdict] as const) : []);
   const withheld = coverage === "incomplete" || coverage === "unknown" || coverage === "disabled" || artifact.capabilities.metrics !== "statically-known";
   const metrics = firstReadings.flatMap((metric) => rubric.rules.filter((rule) => rule.metricId === metric.metricId).map((rule) => {
     const { observation } = toObservation(artifact, metric, rule);
@@ -183,6 +187,7 @@ export function projectJevState(
     };
   }));
   const rules = rubric.rules.map((rule) => ({
+    numericalVerdict: verdicts.get(rule.id) ?? "inconclusive",
     definition: rule.definition,
     id: rule.id,
     method: rule.method,
@@ -212,7 +217,7 @@ export function projectJevState(
       {
         type: "noul",
         instructions:
-          "Take the rubric rule whose id is this question's id and the projected reading whose ruleId is that id. Does this reading fail the rule? Check identity first: definition, method, and unit must match, and every non-null scenarioVersion, specVersion, engineId, pluginVersion, seed, and algorithmVersion constraint must match. An identity mismatch or observationStatus unknown or unsupported is inconclusive: answer 0.5. A missing observation follows missingPolicy: fail means 1; inconclusive and unsupported mean 0.5. If a between rule lacks ordered finite bounds, answer 0.5. For a measured observation, answer whether its recorded value fails the operator, threshold, and upper threshold. Use only the recorded observation; do not infer a value from a withheld sign or amount, or compute a new ETA, growth rate, or steady state.",
+          "Take the rubric rule whose id is this question's id and the projected reading whose ruleId is that id. Does this reading fail the rule? If the rule's numericalVerdict is inconclusive or unsupported, answer 0.5: it was compared before redaction. Check identity first: definition, method, and unit must match, and every non-null scenarioVersion, specVersion, engineId, pluginVersion, seed, and algorithmVersion constraint must match. An identity mismatch or observationStatus unknown or unsupported is inconclusive: answer 0.5. A missing observation follows missingPolicy: fail means 1; inconclusive and unsupported mean 0.5. If a between rule lacks ordered finite bounds, answer 0.5. For a measured observation, answer whether its recorded value fails the operator, threshold, and upper threshold. Use only the recorded observation; do not infer a value from a withheld sign or amount, or compute a new ETA, growth rate, or steady state.",
         criteria: {
           true: "The recorded reading fails the rule",
           false: "The recorded reading satisfies the rule",
@@ -241,9 +246,28 @@ type JevFetch = (
     body: string;
     signal: AbortSignal;
   },
-) => Promise<{ status: number; body: ReadableStream<Uint8Array> | null }>;
+) => Promise<{ status: number; body: ReadableStream<Uint8Array> | null; headers?: Pick<Headers, "get"> }>;
 
 const MAX_JEV_RESPONSE_BYTES = 1_048_576;
+
+function retryHint(headers: Pick<Headers, "get"> | undefined): number | undefined {
+  const milliseconds = headers?.get("retry-after-ms");
+  if (milliseconds != null && milliseconds.trim() !== "") {
+    const value = Number(milliseconds);
+    if (Number.isFinite(value) && value >= 0) return value;
+  }
+  const raw = headers?.get("retry-after");
+  if (raw == null || raw.trim() === "") return undefined;
+  const seconds = Number(raw);
+  if (Number.isFinite(seconds)) return seconds >= 0 ? seconds * 1000 : undefined;
+  const date = Date.parse(raw);
+  return Number.isFinite(date) ? Math.max(0, date - Date.now()) : undefined;
+}
+
+function retryDelay(attempt: number, hint?: number): number {
+  if (hint !== undefined && Number.isFinite(hint) && hint >= 0 && hint <= 60_000) return hint;
+  return Math.min(500 * 2 ** attempt, 5_000);
+}
 
 /**
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-opt-in-live The fetch transport posts only the body the caller already built.
@@ -260,7 +284,7 @@ export function createFetchTransport(fetchImpl: JevFetch = (input, init) => glob
     // Error status is enough to classify the response; its untrusted body is never buffered.
     if (response.status !== 200) {
       try { await response.body?.cancel(); } catch { /* Keep the original HTTP status. */ }
-      return { status: response.status, body: "" };
+      return { status: response.status, body: "", retryAfterMs: retryHint(response.headers) };
     }
     if (!response.body) return { status: response.status, body: "" };
     const reader = response.body.getReader();
@@ -342,8 +366,8 @@ export function jevAnswerDisposition(
   if (answer.type === "noul") {
     // The band is closed, so a rounded 0.4 or 0.6 is uncertain on both sides instead of slipping to ok.
     if (answer.noul >= 0.4 && answer.noul <= 0.6) return "abstain";
-    // An inconclusive or unsupported rule has no pass or fail for the answer to disagree with.
-    if (numericalFail === null) return "ok";
+    // A confident provider answer cannot establish a verdict when the numerical check decided neither.
+    if (numericalFail === null) return "abstain";
     if (numericalFail && answer.noul < 0.4) return "advisory-warning";
     if (!numericalFail && answer.noul > 0.6) return "advisory-warning";
     return "ok";
@@ -667,7 +691,8 @@ export async function adviseWithJev(args: Readonly<{
         if (retryable(response.status)) {
           lastReason = response.status === 429 || response.status === 529 ? "rate-limit" : "upstream";
           if (attempt < maxRetries) {
-            await sleep(50 * 2 ** attempt);
+            clearTimeout(timer);
+            await sleep(retryDelay(attempt, response.retryAfterMs));
             continue;
           }
           return blank({ ...base, status: "unavailable", reason: lastReason, cache: "miss", attempts: attempt + 1 });
@@ -731,7 +756,8 @@ export async function adviseWithJev(args: Readonly<{
         }
         lastReason = "upstream";
         if (attempt < maxRetries) {
-          await sleep(50 * 2 ** attempt);
+          clearTimeout(timer);
+          await sleep(retryDelay(attempt));
           continue;
         }
         return blank({ ...base, status: "unavailable", reason: lastReason, cache: "miss", attempts: attempt + 1 });
