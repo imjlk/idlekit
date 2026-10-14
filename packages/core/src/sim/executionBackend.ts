@@ -35,13 +35,13 @@ export const executionFailureBoundary = "not-a-partial-distribution" as const;
  * @evidence docs/requirements/active/worker-execution-backend.md#req-dx05-local-default The local budget keeps maxWorkers at 0 and records spawn cost on the batch.
  * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-local-default #db57164 Re-read the section: a small batch does not choose a worker count.
  */
-export const defaultExecutionBudget = {
+export const defaultExecutionBudget = Object.freeze({
   maxWorkers: 0,
   queueBound: 64,
   taskTimeoutMs: 30_000,
   stepBudget: 100_000,
   maxRetries: 0,
-} as const;
+} as const);
 
 export type ExecutionBudgetV1 = Readonly<{
   maxWorkers: number;

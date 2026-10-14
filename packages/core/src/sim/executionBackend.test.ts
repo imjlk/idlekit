@@ -61,13 +61,16 @@ function echo(value: AnalysisTrialTaskV1, endMoney: string): AnalysisTrialOutcom
  * @evidence ./executionBackend.ts#executionLocalDefault Reads the local marker.
  * @evidenceReview ./executionBackend.ts#executionLocalDefault #ed034ff The declaration is local-default.
  * @evidence ./executionBackend.ts#defaultExecutionBudget Reads the budget.
- * @evidenceReview ./executionBackend.ts#defaultExecutionBudget #4df9ea6 maxWorkers is 0.
+ * @evidenceReview ./executionBackend.ts#defaultExecutionBudget #0dc2e47 Re-read the frozen defaults: maxWorkers is 0, and a reflective write cannot raise maxRetries from 0.
  * @evidence ./executionBackend.ts#runLocalBatch Runs the batch in this process.
  * @evidenceReview ./executionBackend.ts#runLocalBatch #6cb78c5 Re-read runLocalBatch after the per-task window and the validate-first cost: two tasks run locally with no spawn cost, record UTF-8 serialized bytes, and form a full distribution.
  */
 export function keepsLocalDefault(): void {
   expect(executionLocalDefault).toBe("local-default");
   expect(defaultExecutionBudget.maxWorkers).toBe(0);
+  expect(Object.isFrozen(defaultExecutionBudget)).toBe(true);
+  expect(Reflect.set(defaultExecutionBudget, "maxRetries", 1_000)).toBe(false);
+  expect(defaultExecutionBudget.maxRetries).toBe(0);
   const source = readFileSync(new URL("./executionBackend.ts", import.meta.url), "utf8");
   expect(source.includes("Bun.Worker")).toBe(false);
   expect(source.includes("worker_threads")).toBe(false);
