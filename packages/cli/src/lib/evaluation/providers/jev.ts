@@ -580,7 +580,7 @@ export async function adviseWithJev(args: Readonly<{
         stored.rubricVersion === args.rubric.rubricVersion &&
         stored.requestedModel === args.requestedModel &&
         stored.resolvedModel === found.resolvedModel &&
-        stored.resolvedModel !== null && stored.resolvedModel.trim().length > 0 &&
+        stored.resolvedModel !== null && stored.resolvedModel.trim().length > 0 && stored.resolvedModel === stored.resolvedModel.trim() &&
         stored.endpoint === JEV_ENDPOINT && stored.aliasPolicy === aliasPolicy(args.requestedModel) &&
         JSON.stringify(redact(stored, key)) === JSON.stringify(stored) &&
         stored.answers.length === args.rubric.rules.length &&
@@ -685,7 +685,7 @@ export async function adviseWithJev(args: Readonly<{
         const answeredModel = wire.response.model;
         const modelOk = aliasPolicy(args.requestedModel) === "pinned"
           ? answeredModel === args.requestedModel
-          : answeredModel.trim().length > 0 && aliasPolicy(answeredModel) === "pinned";
+          : answeredModel.trim().length > 0 && answeredModel === answeredModel.trim() && aliasPolicy(answeredModel) === "pinned";
         if (!modelOk) {
           return blank({ ...base, status: "failed", reason: "model-mismatch", cache: "miss", attempts: attempt + 1 });
         }
