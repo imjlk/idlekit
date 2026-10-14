@@ -10,6 +10,8 @@
 
 모델명은 양끝 공백을 제거하고, 비어 있으면 요청 계획과 전송 전에 거부한다. 유한한 경계가 순서대로 주어지지 않은 `between` rule은 판단 유보를 요청한다. cache hit는 현재 질문의 id와 답변 타입이 정확히 일치하고, disposition과 보고서 요약이 기록된 수치 결과에 맞아야 한다.
 
+저장된 cache는 provider endpoint와 모델 정책이 일치하고 secret·로컬 경로 검사도 통과해야 한다. advisory 보고서에 정의되지 않은 필드가 있으면 miss로 처리한다.
+
 2026-10-02에 TypeSafe System One 문서를 다시 확인했다. 호출은 POST `https://api.typesafe.ai/v1/systemone`이고 헤더는 `Authorization: Bearer`와 `Content-Type: application/json`이다. 환경 변수 이름은 `TYPESAFE_API_KEY`다. 요청의 model 필드는 필수다. 문서 예시 요청 모델은 `jev-latest`이고, 문서 예시로 확인된 응답 모델은 `jev-1.13.0`이다. Choice와 Score 답은 `probabilities`와 `confidence`를 가진다. Noul 답은 `noul`만 가진다. 이 모양을 하나의 confidence 필드로 합치지 않는다. `confidence`는 확률 분포의 통계이고 0에서 1 사이다. 게임 밸런스가 맞을 보정된 확률이 아니다. Noul에는 confidence 필드가 없다. 확인한 페이지에 단가가 없어서 이 provider는 가격을 만들지 않는다. 응답이 오면 `usage.input_tokens`와 `usage.output_tokens`를 보고한다.
 
 projection은 metric id, version, meaning, domain, unit, method, reading, status, value, assumptions, 그리고 rubric rule의 operator, threshold, upper threshold, unit, method, definition, recommendation id를 남긴다. 원본 소스, plugin 코드, artifact 전체, secret처럼 보이는 키는 뺀다. amount 읽기는 decimal과 sign을 가진다. 문자열 어디에 있든 로컬 경로는 바꾼다. 깊이와 상관없는 POSIX 절대 경로, `~/`, Windows 드라이브, UNC, `file:` 형태가 그렇고, 공백이 든 이름은 그 경로가 가리키는 파일까지 바꾼다. 웹 URL은 남는다. rule id는 질문 이름으로 보내지므로 경로나 키가 든 id는 요청 전에 거부한다. 키는 요청 헤더를 위해 프로세스 환경에서만 읽고 cache, 보고서, 오류 문장에는 쓰지 않는다.
