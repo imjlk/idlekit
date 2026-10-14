@@ -104,7 +104,7 @@ function compile<N>(engine: Engine<N>, input: ScenarioV1, model: ModelFactory) {
 
 /**
  * @evidence docs/requirements/active/analysis-integration-release-gates.md#req-pr20-integration-matrix The matrix matches the hand formulas and leaves breakEternity unsupported.
- * @evidenceReview docs/requirements/active/analysis-integration-release-gates.md#req-pr20-integration-matrix #84f17c2 Re-read the section, then ran this function: linear, budget, goal, bulk, reset, logs, offline, and fresh cursors matched, the declared partial-final-tick relation held on the fixture case, equal reset wallets spelled differently were refused, and breakEternity threw.
+ * @evidenceReview docs/requirements/active/analysis-integration-release-gates.md#req-pr20-integration-matrix #91abfb0 Re-read the section, then ran this function: linear, budget, goal, bulk, reset, logs, offline, and fresh cursors matched, the declared partial-final-tick relation held on the fixture case, equal reset wallets spelled differently were refused, and breakEternity threw.
  * @evidence ./integrationMatrix.ts#integrationReleaseScope Reads the scope marker.
  * @evidenceReview ./integrationMatrix.ts#integrationReleaseScope #01b8e4c The declaration is selected-optional-tracks.
  * @evidence ./integrationMatrix.ts#integrationUnsupportedEngine Reads the unsupported engine marker.

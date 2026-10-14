@@ -2321,9 +2321,9 @@ const partialFixture = (
 
 /**
  * @evidence docs/requirements/active/analysis-integration-release-gates.md#req-pr20-integration-matrix Runs the partial-final-tick relation over the seed corpus: integer income, steps, and horizons on and off the step grid.
- * @evidenceReview docs/requirements/active/analysis-integration-release-gates.md#req-pr20-integration-matrix #84f17c2 Re-read the section, then ran this function on the short and extended corpus: every case ended at the hand answer after ceil(duration / step) ticks, and an undeclared case does not apply.
+ * @evidenceReview docs/requirements/active/analysis-integration-release-gates.md#req-pr20-integration-matrix #91abfb0 Re-read the section, then ran this function on the short and extended corpus: every case ended at the hand answer after ceil(duration / step) ticks, and an undeclared case does not apply.
  * @evidence ./conformance.ts#checkPartialFinalTick The seed corpus asks the harness to run each partial-final-tick case.
- * @evidenceReview ./conformance.ts#checkPartialFinalTick #8d55224 Re-read checkPartialFinalTick: it runs a constant-income model to the horizon and compares the end wallet, the stop, the end time, and the tick count with the hand answer.
+ * @evidenceReview ./conformance.ts#checkPartialFinalTick #b46e7c8 Re-read checkPartialFinalTick: it runs a constant-income model to the horizon and compares the end wallet, the stop, the end time, and the tick count with the hand answer.
  */
 export function replaysPartialFinalTickAcrossTheSeedCorpus(): void {
   expectProperty({
@@ -2425,6 +2425,15 @@ export function keepsTrialParityAcrossTheSeedCorpus(): void {
 }
 
 describe("PR-20 partial final tick relation", () => {
+  it("declines partial final tick runs beyond ten thousand ticks", () => {
+    const base = { initial: "0", incomePerSec: "0", stepSec: 1, durationSec: 10_001 };
+    for (const durationSec of [10_001, 1_000_000_000, Number.MAX_SAFE_INTEGER]) {
+      expect(checkPartialFinalTick(true, { ...base, durationSec })).toMatchObject({ applicable: false, ok: true });
+    }
+    expect(checkPartialFinalTick(true, { ...base, stepSec: 2, durationSec: 20_001 }).applicable).toBe(false);
+    expect(checkPartialFinalTick(true, { ...base, durationSec: 10_000 })).toMatchObject({ applicable: true, ok: true });
+    expect(checkPartialFinalTick(true, { ...base, stepSec: 2, durationSec: 19_999 })).toMatchObject({ applicable: true, ok: true });
+  });
   it("declines integer cases outside the Number engine's exact safe range", () => {
     const base = { initial: "0", incomePerSec: "1", stepSec: 6, durationSec: 10 };
     for (const value of [

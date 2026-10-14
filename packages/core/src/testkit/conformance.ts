@@ -479,14 +479,16 @@ type PartialFinalTickCase = Readonly<{
  * and requires the run to stop on duration at the horizon after ceil(duration / step) ticks.
  *
  * @evidence docs/requirements/active/analysis-integration-release-gates.md#req-pr20-integration-matrix The partial final tick is a declared conformance relation against the integer hand answer.
- * @evidenceReview docs/requirements/active/analysis-integration-release-gates.md#req-pr20-integration-matrix #84f17c2 Re-read the section: the run covers every second through a shorter final tick, and an undeclared case does not apply.
+ * @evidenceReview docs/requirements/active/analysis-integration-release-gates.md#req-pr20-integration-matrix #91abfb0 Re-read the section: safe Number cases cover every second through a shorter final tick within 10,000 ticks; longer and undeclared cases do not apply.
  */
 export function checkPartialFinalTick(declared: boolean, value: PartialFinalTickCase): RelationCheck {
   if (!declared) return { ok: true, applicable: false, summary: "partial final tick relation is not declared" };
-  const unsupported = { ok: true, applicable: false, summary: "partial final tick requires safe Number integer inputs, gains, and results" };
+  const unsupported = { ok: true, applicable: false, summary: "partial final tick requires safe Number integer inputs, gains, and results within 10000 ticks" };
   if (!Number.isSafeInteger(value.stepSec) || value.stepSec <= 0 ||
       !Number.isSafeInteger(value.durationSec) || value.durationSec < 0 ||
       !/^-?\d+$/.test(value.initial) || !/^-?\d+$/.test(value.incomePerSec)) return unsupported;
+  const ticks = Math.ceil(value.durationSec / value.stepSec);
+  if (ticks > 10_000) return unsupported;
   const initialInteger = BigInt(value.initial);
   const incomeInteger = BigInt(value.incomePerSec);
   const gainedInteger = incomeInteger * BigInt(value.durationSec);
@@ -516,7 +518,6 @@ export function checkPartialFinalTick(declared: boolean, value: PartialFinalTick
   });
   const expected = expectedLinearEnd(value);
   const actual = engine.toString(run.end.wallet.money.amount);
-  const ticks = Math.ceil(value.durationSec / value.stepSec);
   const ok = actual === expected && run.stop?.reason === "duration" && run.end.t === value.durationSec && run.stop?.steps === ticks;
   return {
     ok,
