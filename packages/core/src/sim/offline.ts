@@ -102,6 +102,10 @@ export function applyOfflineSeconds<N, U extends string, Vars>(args: {
   const stepSec = opts?.stepSec ?? scenario.run.stepSec;
   const maxSteps = opts?.maxSteps;
   assertSimulationClock("offline", { stepSec, maxSteps });
+  if (scenario.run.advance?.enabled && scenario.run.advance.chunkSec !== undefined &&
+      (!Number.isFinite(scenario.run.advance.chunkSec) || scenario.run.advance.chunkSec <= 0)) {
+    throw new Error("offline advance.chunkSec must be a finite number > 0");
+  }
 
   const capPolicy = opts?.policy ?? scenario.run.offline;
   const resolvedPolicy = resolveOfflineActionPolicy({

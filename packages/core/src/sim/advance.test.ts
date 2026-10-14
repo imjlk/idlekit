@@ -513,6 +513,54 @@ export function measuresLongHorizons(): void {
 }
 
 describe("guarded analytic advance", () => {
+  it("calls a stop callback once at each reference boundary", () => {
+    const online = (advance: boolean, chunkSec: number) => {
+      const compiled = scenario({ advance, chunkSec, until: false, durationSec: 10 });
+      const calls: number[] = [];
+      compiled.run.until = (current) => { calls.push(current.t); return calls.length >= 3; };
+      return { run: runScenario(compiled), calls };
+    };
+    const offline = (advance: boolean, chunkSec: number) => {
+      const calls: number[] = [];
+      const run = applyOfflineSeconds({
+        scenario: scenario({ advance, chunkSec, until: false }),
+        seconds: 10,
+        options: { until: (current) => { calls.push(current.t); return calls.length >= 3; } },
+      });
+      return { run, calls };
+    };
+    for (const execute of [online, offline]) {
+      const reference = execute(false, 1);
+      expect(reference.calls).toEqual([0, 1, 2]);
+      for (const chunkSec of [1, 10, 100]) {
+        const exact = execute(true, chunkSec);
+        expect(exact.calls).toEqual(reference.calls);
+        expect(exact.run.end).toEqual(reference.run.end);
+        expect(exact.run.stats).toEqual(reference.run.stats);
+      }
+    }
+  });
+  it("rejects invalid enabled chunk sizes before simulating", () => {
+    for (const chunkSec of [0, -1, NaN, Infinity, -Infinity]) {
+      const compiled = scenario({ chunkSec });
+      let observed = false;
+      compiled.run.observer = { onStep: () => { observed = true; } };
+      expect(() => runScenario(compiled)).toThrow("advance.chunkSec");
+      expect(observed).toBe(false);
+      expect(() => applyOfflineSeconds({ scenario: compiled, seconds: 2 })).toThrow("advance.chunkSec");
+      expect(observed).toBe(false);
+    }
+    expect(() => runScenario(scenario({ chunkSec: -1, advance: false }))).not.toThrow();
+  });
+  it("validates nonnegative integer report counters without a uint32 ceiling", () => {
+    const report = runScenario(scenario({ chunkSec: 4 })).advance!;
+    for (const field of ["exactSteps", "fallbackSteps", "chunks"] as const) {
+      for (const invalid of [-1, 0.5, NaN, Infinity]) {
+        expect(validateAdvanceReport({ ...report, [field]: invalid }).success).toBe(false);
+      }
+      expect(validateAdvanceReport({ ...report, [field]: 4294967296 }).success).toBe(true);
+    }
+  });
   it("matches the reference wallet and goal", matchesReferenceWalletAndGoal);
   it("falls back on an unclear boundary", fallsBackOnUnclearBoundaries);
   it("refuses a policy threshold", refusesPolicyThresholds);
