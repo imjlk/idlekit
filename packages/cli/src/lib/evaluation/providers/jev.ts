@@ -210,7 +210,7 @@ export function projectJevState(
       {
         type: "noul",
         instructions:
-          "Take the rubric rule whose id is this question's id and the projected reading whose ruleId is that id. Does this reading fail the rule? Check identity first: definition, method, and unit must match, and every non-null scenarioVersion, specVersion, engineId, pluginVersion, seed, and algorithmVersion constraint must match. An identity mismatch or observationStatus unknown or unsupported is inconclusive: answer 0.5. A missing observation follows missingPolicy: fail means 1, pass means 0, inconclusive means 0.5. For a measured observation, answer whether its recorded value fails the operator, threshold, and upper threshold. Use only the recorded observation; do not infer a value from a withheld sign or amount, or compute a new ETA, growth rate, or steady state.",
+          "Take the rubric rule whose id is this question's id and the projected reading whose ruleId is that id. Does this reading fail the rule? Check identity first: definition, method, and unit must match, and every non-null scenarioVersion, specVersion, engineId, pluginVersion, seed, and algorithmVersion constraint must match. An identity mismatch or observationStatus unknown or unsupported is inconclusive: answer 0.5. A missing observation follows missingPolicy: fail means 1; inconclusive and unsupported mean 0.5. If a between rule lacks ordered finite bounds, answer 0.5. For a measured observation, answer whether its recorded value fails the operator, threshold, and upper threshold. Use only the recorded observation; do not infer a value from a withheld sign or amount, or compute a new ETA, growth rate, or steady state.",
         criteria: {
           true: "The recorded reading fails the rule",
           false: "The recorded reading satisfies the rule",
@@ -239,7 +239,9 @@ type JevFetch = (
     body: string;
     signal: AbortSignal;
   },
-) => Promise<{ status: number; text: () => Promise<string> }>;
+) => Promise<{ status: number; body: ReadableStream<Uint8Array> | null }>;
+
+const MAX_JEV_RESPONSE_BYTES = 1_048_576;
 
 /**
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-opt-in-live The fetch transport posts only the body the caller already built.
@@ -253,7 +255,34 @@ export function createFetchTransport(fetchImpl: JevFetch = (input, init) => glob
       body: request.body,
       signal: request.signal,
     });
-    return { status: response.status, body: await response.text() };
+    // Error status is enough to classify the response; its untrusted body is never buffered.
+    if (response.status !== 200) {
+      try { await response.body?.cancel(); } catch { /* Keep the original HTTP status. */ }
+      return { status: response.status, body: "" };
+    }
+    if (!response.body) return { status: response.status, body: "" };
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    const chunks: string[] = [];
+    let bytes = 0;
+    try {
+      for (;;) {
+        const chunk = await reader.read();
+        if (chunk.done) break;
+        bytes += chunk.value.byteLength;
+        if (bytes > MAX_JEV_RESPONSE_BYTES) {
+          const error = new Error("Jev response exceeds the byte budget");
+          error.name = "JevResponseTooLargeError";
+          throw error;
+        }
+        chunks.push(decoder.decode(chunk.value, { stream: true }));
+      }
+      chunks.push(decoder.decode());
+      return { status: response.status, body: chunks.join("") };
+    } finally {
+      try { await reader.cancel(); } catch { /* Preserve the transport error or completed response. */ }
+      reader.releaseLock();
+    }
   };
 }
 
@@ -401,7 +430,7 @@ function cacheTarget(path: string, depth = 0): string {
     }
     const absolute = resolve(path);
     const parent = dirname(absolute);
-    return parent === absolute ? absolute : resolve(cacheTarget(parent, depth + 1), basename(absolute));
+    return parent === absolute ? absolute : resolve(cacheTarget(parent, depth), basename(absolute));
   }
 }
 
@@ -466,6 +495,7 @@ export async function adviseWithJev(args: Readonly<{
   nowMs?: number;
   sleep?: (ms: number) => Promise<void>;
 }>): Promise<JevAdvisoryV1> {
+  args = { ...args, requestedModel: args.requestedModel.trim() };
   const env = args.env ?? process.env;
   const key = env.TYPESAFE_API_KEY?.trim() ?? "";
   const projection = projectJevState(args.artifact, args.rubric, key);
@@ -485,6 +515,9 @@ export async function adviseWithJev(args: Readonly<{
     dryRun: args.dryRun,
     plannedRequests,
   };
+  if (args.requestedModel.length === 0) {
+    return blank({ ...base, plannedRequests: 0, status: "failed", reason: "invalid-model", cache: "bypass", attempts: 0 });
+  }
   // The rubric version is copied into the report, the numerical digest, and the cache. One that carries the key or a
   // path is refused, and the report shows both only as redacted.
   if (redactString(args.rubric.rubricVersion, key) !== args.rubric.rubricVersion) {
@@ -539,7 +572,20 @@ export async function adviseWithJev(args: Readonly<{
         stored.numericalDigest === numericalDigest &&
         stored.rubricVersion === args.rubric.rubricVersion &&
         stored.requestedModel === args.requestedModel &&
-        stored.resolvedModel === found.resolvedModel;
+        stored.resolvedModel === found.resolvedModel &&
+        stored.answers.length === args.rubric.rules.length &&
+        new Set(stored.answers.map((answer) => answer.id)).size === stored.answers.length &&
+        stored.answers.every((answer) => {
+          const question = projection.questions[answer.id];
+          if (!question || question.type !== answer.type) return false;
+          const disposition = answer.type === "noul"
+            ? jevAnswerDisposition({ type: "noul", noul: answer.noul }, numericalStances(args.numerical).get(answer.id) ?? null)
+            : answer.confidence < 0.5 ? "abstain" : "ok";
+          return answer.disposition === disposition;
+        }) &&
+        stored.status === reportStatus(stored.answers) &&
+        stored.reason === (stored.status === "ok" ? "advisory" : stored.status) &&
+        stored.dryRun === false;
       cached = matches ? stored : null;
     }
     return cached;
@@ -667,6 +713,9 @@ export async function adviseWithJev(args: Readonly<{
         return advisory;
       } catch (error) {
         const name = error instanceof Error ? error.name : "";
+        if (name === "JevResponseTooLargeError") {
+          return blank({ ...base, status: "failed", reason: "response-too-large", cache: "miss", attempts: attempt + 1 });
+        }
         if (name === "AbortError") {
           return blank({ ...base, status: "unavailable", reason: "timeout", cache: "miss", attempts: attempt + 1 });
         }
