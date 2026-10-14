@@ -74,8 +74,8 @@ const wireResponse = z.object({
   model: z.string().min(1),
   answers: z.record(z.string(), wireAnswer),
   usage: z.object({
-    input_tokens: z.number().int().nonnegative(),
-    output_tokens: z.number().int().nonnegative(),
+    input_tokens: z.number().int().nonnegative().max(4294967295),
+    output_tokens: z.number().int().nonnegative().max(4294967295),
   }).strict(),
 }).strict();
 
@@ -122,6 +122,7 @@ export function readJevWire(
     const answer = result.data.answers[id];
     if (!answer || answer.type !== question.type) return { ok: false, reason: "shape" };
     if (answer.type === "choice" && question.type === "choice") {
+      if (!Object.hasOwn(question.criteria, answer.choice)) return { ok: false, reason: "shape" };
       const shape = probabilityShape(answer.probabilities, Object.keys(question.criteria));
       if (shape) return { ok: false, reason: "shape" };
       if (!Number.isFinite(answer.confidence) || answer.confidence < 0 || answer.confidence > 1) {
