@@ -517,8 +517,8 @@ describe("guarded analytic advance", () => {
     const online = (advance: boolean, chunkSec: number) => {
       const compiled = scenario({ advance, chunkSec, until: false, durationSec: 10 });
       const calls: number[] = [];
-      compiled.run.until = (current) => { calls.push(current.t); return calls.length >= 3; };
-      return { run: runScenario(compiled), calls };
+      const until = (current: SimState<number, UnitCode, Vars>) => { calls.push(current.t); return calls.length >= 3; };
+      return { run: runScenario({ ...compiled, run: { ...compiled.run, until } }), calls };
     };
     const offline = (advance: boolean, chunkSec: number) => {
       const calls: number[] = [];
@@ -542,9 +542,9 @@ describe("guarded analytic advance", () => {
   });
   it("rejects invalid enabled chunk sizes before simulating", () => {
     for (const chunkSec of [0, -1, NaN, Infinity, -Infinity]) {
-      const compiled = scenario({ chunkSec });
+      const base = scenario({ chunkSec });
       let observed = false;
-      compiled.run.observer = { onStep: () => { observed = true; } };
+      const compiled = { ...base, run: { ...base.run, observer: { onStep: () => { observed = true; } } } };
       expect(() => runScenario(compiled)).toThrow("advance.chunkSec");
       expect(observed).toBe(false);
       expect(() => applyOfflineSeconds({ scenario: compiled, seconds: 2 })).toThrow("advance.chunkSec");

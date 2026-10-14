@@ -322,8 +322,8 @@ export function consumeExactChunk<N, U extends string, Vars>(args: Readonly<{
         steps,
         stepSec: args.stepSec,
         durationSec: args.durationSec,
-        untilMet: args.until?.(cursor) ?? false,
-        hasUntil: args.until !== undefined,
+        untilMet: false,
+        hasUntil: false,
         maxSteps: args.maxSteps,
       });
       if (decision.kind !== "step") break;
