@@ -2321,9 +2321,9 @@ const partialFixture = (
 
 /**
  * @evidence docs/requirements/active/analysis-integration-release-gates.md#req-pr20-integration-matrix Runs the partial-final-tick relation over the seed corpus: integer income, steps, and horizons on and off the step grid.
- * @evidenceReview docs/requirements/active/analysis-integration-release-gates.md#req-pr20-integration-matrix #d001f4e Re-read the section, then ran this function on the short and extended corpus: every case ended at the hand answer after ceil(duration / step) ticks, and an undeclared case does not apply.
+ * @evidenceReview docs/requirements/active/analysis-integration-release-gates.md#req-pr20-integration-matrix #84f17c2 Re-read the section, then ran this function on the short and extended corpus: every case ended at the hand answer after ceil(duration / step) ticks, and an undeclared case does not apply.
  * @evidence ./conformance.ts#checkPartialFinalTick The seed corpus asks the harness to run each partial-final-tick case.
- * @evidenceReview ./conformance.ts#checkPartialFinalTick #8c554e0 Re-read checkPartialFinalTick: it runs a constant-income model to the horizon and compares the end wallet, the stop, the end time, and the tick count with the hand answer.
+ * @evidenceReview ./conformance.ts#checkPartialFinalTick #8d55224 Re-read checkPartialFinalTick: it runs a constant-income model to the horizon and compares the end wallet, the stop, the end time, and the tick count with the hand answer.
  */
 export function replaysPartialFinalTickAcrossTheSeedCorpus(): void {
   expectProperty({
@@ -2425,6 +2425,19 @@ export function keepsTrialParityAcrossTheSeedCorpus(): void {
 }
 
 describe("PR-20 partial final tick relation", () => {
+  it("declines integer cases outside the Number engine's exact safe range", () => {
+    const base = { initial: "0", incomePerSec: "1", stepSec: 6, durationSec: 10 };
+    for (const value of [
+      { ...base, initial: "9007199254740993", incomePerSec: "0" },
+      { ...base, incomePerSec: "9007199254740993", durationSec: 0 },
+      { ...base, initial: String(Number.MAX_SAFE_INTEGER), durationSec: 1 },
+      { ...base, incomePerSec: String(Number.MAX_SAFE_INTEGER), durationSec: 2 },
+      { ...base, stepSec: Number.MAX_SAFE_INTEGER + 1 },
+      { ...base, durationSec: Number.MAX_SAFE_INTEGER + 1 },
+    ]) expect(checkPartialFinalTick(true, value).applicable).toBe(false);
+    expect(checkPartialFinalTick(true, { ...base, initial: String(Number.MAX_SAFE_INTEGER), incomePerSec: "0" })).toMatchObject({ applicable: true, ok: true });
+    expect(checkPartialFinalTick(true, { ...base, initial: String(-Number.MAX_SAFE_INTEGER), incomePerSec: "0" })).toMatchObject({ applicable: true, ok: true });
+  });
   it("replays the partial final tick against the hand answer across the seed corpus", replaysPartialFinalTickAcrossTheSeedCorpus);
 });
 

@@ -46,7 +46,6 @@ type TrialPayload = Readonly<{
   durationSec?: number;
   incomePerSec?: string;
   initialAmount?: string;
-  fault?: "crash" | "hang";
 }>;
 
 function payloadOf(task: AnalysisTrialTaskV1): TrialPayload {
@@ -104,8 +103,6 @@ export async function runAnalysisTrial(
   loadPlugins?: TrialPluginLoader,
 ): Promise<AnalysisTrialOutcomeV1> {
   const payload = payloadOf(task);
-  if (payload.fault === "crash") process.exit(1);
-  if (payload.fault === "hang") await new Promise(() => {});
   if (task.pluginPaths.length > 0 && task.pluginRoots.length === 0) return failed(task, "plugin-trust");
   // Plugin paths without a loader fail closed. They are never skipped onto the built-ins.
   if (task.pluginPaths.length > 0 && !loadPlugins) return failed(task, "plugin-trust");

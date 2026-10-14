@@ -479,10 +479,19 @@ type PartialFinalTickCase = Readonly<{
  * and requires the run to stop on duration at the horizon after ceil(duration / step) ticks.
  *
  * @evidence docs/requirements/active/analysis-integration-release-gates.md#req-pr20-integration-matrix The partial final tick is a declared conformance relation against the integer hand answer.
- * @evidenceReview docs/requirements/active/analysis-integration-release-gates.md#req-pr20-integration-matrix #d001f4e Re-read the section: the run covers every second through a shorter final tick, and an undeclared case does not apply.
+ * @evidenceReview docs/requirements/active/analysis-integration-release-gates.md#req-pr20-integration-matrix #84f17c2 Re-read the section: the run covers every second through a shorter final tick, and an undeclared case does not apply.
  */
 export function checkPartialFinalTick(declared: boolean, value: PartialFinalTickCase): RelationCheck {
   if (!declared) return { ok: true, applicable: false, summary: "partial final tick relation is not declared" };
+  const unsupported = { ok: true, applicable: false, summary: "partial final tick requires safe Number integer inputs, gains, and results" };
+  if (!Number.isSafeInteger(value.stepSec) || value.stepSec <= 0 ||
+      !Number.isSafeInteger(value.durationSec) || value.durationSec < 0 ||
+      !/^-?\d+$/.test(value.initial) || !/^-?\d+$/.test(value.incomePerSec)) return unsupported;
+  const initialInteger = BigInt(value.initial);
+  const incomeInteger = BigInt(value.incomePerSec);
+  const gainedInteger = incomeInteger * BigInt(value.durationSec);
+  const limit = BigInt(Number.MAX_SAFE_INTEGER);
+  if ([initialInteger, incomeInteger, gainedInteger, initialInteger + gainedInteger].some((amount) => amount < -limit || amount > limit)) return unsupported;
   const engine = createNumberEngine();
   const unit = { code: "COIN" as const };
   const income = engine.from(value.incomePerSec);

@@ -14,6 +14,7 @@ import {
   finalizeBatch,
   runLocalBatch,
   prepareTrialTask,
+  prepareTrialTasks,
   readTrialOutcome,
   semanticDigest,
   serializedTaskBytes,
@@ -62,7 +63,7 @@ function echo(value: AnalysisTrialTaskV1, endMoney: string): AnalysisTrialOutcom
  * @evidence ./executionBackend.ts#defaultExecutionBudget Reads the budget.
  * @evidenceReview ./executionBackend.ts#defaultExecutionBudget #4df9ea6 maxWorkers is 0.
  * @evidence ./executionBackend.ts#runLocalBatch Runs the batch in this process.
- * @evidenceReview ./executionBackend.ts#runLocalBatch #4e2342d Re-read runLocalBatch after the per-task window and the validate-first cost: two tasks run locally with no spawn cost, record UTF-8 serialized bytes, and form a full distribution.
+ * @evidenceReview ./executionBackend.ts#runLocalBatch #6cb78c5 Re-read runLocalBatch after the per-task window and the validate-first cost: two tasks run locally with no spawn cost, record UTF-8 serialized bytes, and form a full distribution.
  */
 export function keepsLocalDefault(): void {
   expect(executionLocalDefault).toBe("local-default");
@@ -88,8 +89,10 @@ export function keepsLocalDefault(): void {
  * @evidence ./executionBackend.ts#serializedTaskBytes Measures one task as UTF-8 bytes of its JSON.
  * @evidenceReview ./executionBackend.ts#serializedTaskBytes #06012ad A Hangul task id counts more bytes than UTF-16 units, and the batch cost equals the measured bytes.
  * @evidence ./executionBackend.ts#taskRefusals Checks every task before the batch measures or runs any.
- * @evidenceReview ./executionBackend.ts#taskRefusals #cd96e4d Re-read the per-task preparation delegation: original and actual JSON snapshots are checked before cost or dispatch, refused tasks retain their isolated reason, and valid siblings return null and run.
+ * @evidenceReview ./executionBackend.ts#taskRefusals #b6cf82a Re-read the per-task preparation delegation: original and actual JSON snapshots are checked before cost or dispatch, refused tasks retain their isolated reason, and valid siblings return null and run.
  * @evidence ./executionBackend.ts#prepareTrialTask Validates and freezes the exact task snapshot a backend admits.
+ * @evidence ./executionBackend.ts#prepareTrialTasks Refuses all descriptors that repeat a logical identity before either backend runs them.
+ * @evidenceReview ./executionBackend.ts#prepareTrialTasks #84c3685 Re-read dense Array.from admission and the duplicate identity grouping: repeated logical-index/task-id pairs are all refused. This host directly checks duplicate refusal; separate backend tests also check sparse slots, valid siblings, and zero attempts without runner calls.
  * @evidenceReview ./executionBackend.ts#prepareTrialTask #91a5d6d Re-read original validation, snapshot parsing/revalidation and both budget checks inside one refusal boundary; synthetic JSON hooks cannot raise the admitted step budget or throw out valid siblings, and ordinary snapshots are frozen.
  * @evidence ./executionBackend.ts#executionSerializableTask Reads the descriptor marker.
  * @evidenceReview ./executionBackend.ts#executionSerializableTask #c7343dd The declaration is json-descriptor.
@@ -99,6 +102,7 @@ export function keepsLocalDefault(): void {
  * @evidenceReview ./executionBackend.ts#assertSerializableTask #aa7a550 Re-read descriptor and array validation: uint32 seeds and canonical array indices are required, inherited array serialization and extra named indices are refused, cycles and non-JSON values fail, and plain tasks with shared acyclic references pass.
  */
 export function keepsSerializableTasks(): void {
+  expect(prepareTrialTasks([task(0), task(0)]).every((item) => !item.ok && item.reason === "duplicate-task-identity")).toBe(true);
   const prepared = prepareTrialTask(task(0));
   expect(prepared.ok).toBe(true);
   if (prepared.ok) expect(Object.isFrozen(prepared.task)).toBe(true);
@@ -285,7 +289,7 @@ export function reducesInLogicalOrder(): void {
  * @evidence ./executionBackend.ts#runLocalBatch Bounds each task by its own window and turns a thrown runner into a failed outcome.
  * @evidence ./executionBackend.ts#readTrialOutcome Applies the same valid-success contract to local and worker results.
  * @evidenceReview ./executionBackend.ts#readTrialOutcome #11c2975 Re-read captured own data fields: identity must match, status and attempt counts are checked, and successful outcomes require a digest and decimal money; malformed local successes and revoked proxies fail alone and valid sibling outcomes still run.
- * @evidenceReview ./executionBackend.ts#runLocalBatch #4e2342d Re-read admission ahead of measuring, the pre-abort check ahead of the queue bound, and the loop: an oversized batch reports no bytes, the runner sees a frozen budget and a frozen task snapshot, no batch deadline remains, the window applies to every attempt before its status, a 2 ms task under a 5 ms budget is ok in third place, a throw is trial-failed with attempts counted, and a slow failure stops at one attempt.
+ * @evidenceReview ./executionBackend.ts#runLocalBatch #6cb78c5 Re-read admission ahead of measuring, the pre-abort check ahead of the queue bound, and the loop: an oversized batch reports no bytes, the runner sees a frozen budget and a frozen task snapshot, no batch deadline remains, the window applies to every attempt before its status, a 2 ms task under a 5 ms budget is ok in third place, a throw is trial-failed with attempts counted, and a slow failure stops at one attempt.
  * @evidence ./executionBackend.ts#executionFailureBoundary Reads the boundary marker.
  * @evidenceReview ./executionBackend.ts#executionFailureBoundary #5e9d9f9 The declaration is not-a-partial-distribution.
  * @evidence ./executionBackend.ts#createLocalExecutionBackend Submits a batch that cancel or an aborted signal stops.
@@ -483,6 +487,23 @@ export function boundsFailures(): void {
 }
 
 describe("execution backend", () => {
+  it("refuses sparse slots and duplicate identities without phantom attempts", () => {
+    const sparse = new Array<AnalysisTrialTaskV1>(2);
+    sparse[1] = task(1);
+    let calls = 0;
+    const batch = runLocalBatch(sparse, (item) => { calls += 1; return echo(item, "1"); });
+    expect(batch.outcomes).toHaveLength(2);
+    expect(batch.outcomes.find((item) => item.status === "failed")?.attempts).toBe(0);
+    expect(calls).toBe(1);
+    const duplicates = [task(0), { ...task(0), seed: 42, payload: { changed: true } }];
+    for (const submitted of [duplicates, [...duplicates].reverse()]) {
+      const result = runLocalBatch(submitted, () => { throw new Error("duplicates must not execute"); });
+      expect(result.outcomes.every((item) => item.reason === "duplicate-task-identity" && item.attempts === 0)).toBe(true);
+      expect(result.fullDistribution).toBe(false);
+    }
+    const invalid = runLocalBatch([task(0, { stepBudget: defaultExecutionBudget.stepBudget + 1 })], () => { throw new Error("must not run"); });
+    expect(invalid.outcomes[0]?.attempts).toBe(0);
+  });
   it("keeps the selected local signal when the caller replaces its options", () => {
     const original = new AbortController();
     const options = { signal: original.signal };
