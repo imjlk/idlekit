@@ -212,6 +212,16 @@ function parseDecimal(text: string): number | null {
   return value === 0 ? 0 : value;
 }
 
+/** Exact total loss is a wire property; a near-one decimal can round to 1 as a number. */
+function isExactOne(text: string): boolean {
+  const [mantissa, exponent = "0"] = text.toLowerCase().split("e");
+  const base = mantissa!;
+  const dot = base.indexOf(".");
+  const fractionDigits = dot < 0 ? 0 : base.length - dot - 1;
+  const digits = base.replace(/^\+/, "").replace(".", "").replace(/^0+/, "");
+  return /^10*$/.test(digits) && BigInt(exponent) - BigInt(fractionDigits) + BigInt(digits.length - 1) === 0n;
+}
+
 /** An amount the diagnosis could not read is rejected here, not dropped later. */
 function decimalIssues(observation: FlowObservationV1): string[] {
   const issues: string[] = [];
@@ -244,6 +254,7 @@ function decimalIssues(observation: FlowObservationV1): string[] {
     if (parseDecimal(edge.denominator) === 0) issues.push(`$input.edges[${index}].denominator > 0`);
     const loss = parseDecimal(edge.loss);
     if (loss !== null && loss > 1) issues.push(`$input.edges[${index}].loss <= 1`);
+    if (loss === 1 && !isExactOne(edge.loss)) issues.push(`$input.edges[${index}].loss must not round a remaining fraction to total loss`);
   });
   if (observation.littles) {
     check("$input.littles.inventory", observation.littles.inventory);
@@ -390,6 +401,7 @@ function convert(amount: number, edge: FlowEdgeV1): number | null {
   const denominator = parseDecimal(edge.denominator);
   const loss = parseDecimal(edge.loss);
   if (numerator === null || denominator === null || loss === null || denominator === 0 || loss > 1) return null;
+  if (loss === 1 && !isExactOne(edge.loss)) return null;
   const converted = (amount * numerator) / denominator * (1 - loss);
   if (converted === 0 && amount !== 0 && numerator !== 0 && loss !== 1) return null;
   return Number.isFinite(converted) ? converted : null;

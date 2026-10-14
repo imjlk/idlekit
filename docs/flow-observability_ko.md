@@ -18,6 +18,8 @@
 
 Flow 계산은 JavaScript number를 사용한다. `1e-400`처럼 0이 아닌 와이어 값이 0으로 반올림되면 거부하며, 실제 0 표기와 표현 가능한 비정규 수는 허용한다. 0이 아닌 간선 변환이나 리틀의 법칙 곱이 언더플로로 0이 되면 보존식이나 일관성의 증거로 쓰지 않는다.
 
+손실률이 숫자 1로 반올림되면 와이어 표기도 정확히 1이어야 한다. `0.99999999999999999`처럼 1에 가까운 값은 잔여 비율이 잘못된 전량 손실 보존식으로 바뀌지 않도록 거부하며, 정확한 `1.00`이나 `100e-2` 표기는 허용한다.
+
 구조 계약은 `idlekit.flow.v1`이고 경로는 [docs/schemas/flow.v1.schema.json](./schemas/flow.v1.schema.json)이다. 생성기는 [docs/schemas/generated/flow.v1.schema.json](./schemas/generated/flow.v1.schema.json)도 쓴다. 이것은 `ScenarioV1`이나 화폐 지표를 바꾸지 않는다.
 
 Node.js와 browser 런타임은 v1 호환 계약에 포함되지 않는다.

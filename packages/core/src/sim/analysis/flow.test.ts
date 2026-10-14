@@ -711,6 +711,25 @@ export function separatesFactsFromCauses(): void {
 }
 
 describe("flow observability", () => {
+  it("does not turn an almost-total wire loss into a zero conservation proof", () => {
+    const observation = load("conversion");
+    for (const loss of ["0.99999999999999999", "1.00000000000000001"]) {
+      const rounded = { ...observation,
+        samples: observation.samples.map((sample) => sample.kind === "inflow" ? sample : { ...sample, amount: "0" }),
+        edges: observation.edges.map((edge) => ({ ...edge, loss })),
+      };
+      expect(parseFlowObservation(rounded).ok).toBe(false);
+      expect(diagnoseFlow(rounded).facts.some((item) => item.kind === "conservation")).toBe(false);
+    }
+    for (const loss of ["1", "+1.00", "0.1e1", "100e-2"]) {
+      const total = { ...observation,
+        samples: observation.samples.map((sample) => sample.kind === "inflow" ? sample : { ...sample, amount: "0" }),
+        edges: observation.edges.map((edge) => ({ ...edge, loss })),
+      };
+      expect(parseFlowObservation(total).ok).toBe(true);
+      expect(diagnoseFlow(total).facts.some((item) => item.kind === "conservation")).toBe(true);
+    }
+  });
   it("keeps an underflowed Little's law product inconclusive", () => {
     const observation = load("steadyLittles");
     const littles = { ...observation.littles!, inventory: "0", arrivalPerSec: "1e-200", waitSec: "1e-200" };
