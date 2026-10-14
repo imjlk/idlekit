@@ -11,9 +11,10 @@
     "advisory": { "$ref": "https://idlekit.dev/schemas/jev.advisory.v1.schema.json" },
     "_meta": {
       "type": "object",
-      "required": ["command", "contractVersion", "schemaRef", "cliVersion", "gitSha", "pluginDigest"],
+      "required": ["command", "generatedAt", "contractVersion", "schemaRef", "cliVersion", "gitSha", "pluginDigest"],
       "properties": {
         "command": { "const": "judge" },
+        "generatedAt": { "type": "string" },
         "contractVersion": { "type": "string" },
         "schemaRef": { "const": "docs/schemas/jev.judge.output.schema.json" },
         "cliVersion": { "type": "string" },

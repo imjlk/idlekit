@@ -1198,6 +1198,46 @@ export function staysOptIn(): Promise<void> {
 }
 
 describe("jev judge provider", () => {
+  it("rejects a Choice winner below another requested option", () => {
+    const questions = { choice: { type: "choice" as const, instructions: "Choose", criteria: { yes: "yes", no: "no" } } };
+    const body = { model: "jev-1.13.0", answers: { choice: { type: "choice", choice: "no", confidence: 0.7, probabilities: { yes: 0.9, no: 0.1 } } }, usage: { input_tokens: 1, output_tokens: 1 } };
+    expect(readJevWire(JSON.stringify(body), questions).ok).toBe(false);
+    body.answers.choice.choice = "yes";
+    expect(readJevWire(JSON.stringify(body), questions).ok).toBe(true);
+    body.answers.choice.probabilities = { yes: 0.5, no: 0.5 };
+    expect(readJevWire(JSON.stringify(body), questions).ok).toBe(true);
+  });
+  it("rejects newline-joined probability keys as separate requested options", () => {
+    const questions = { choice: { type: "choice" as const, instructions: "Choose", criteria: { yes: "yes", no: "no" } } };
+    const body = { model: "jev-1.13.0", answers: { choice: { type: "choice", choice: "yes", confidence: 0.7, probabilities: { "no\nyes": 1 } } }, usage: { input_tokens: 1, output_tokens: 1 } };
+    expect(readJevWire(JSON.stringify(body), questions).ok).toBe(false);
+  });
+  it("refuses blank question IDs before live or planned transport", async () => {
+    for (const id of ["", " ", "\t\n"]) {
+      const input = parsed(3, "blank-id", "seed-19", [rule({ id })]);
+      for (const dryRun of [false, true]) {
+        const fake = transportOf(() => ({ status: 200, body: noulBody(0.9) }));
+        const result = await adviseWithJev({ ...input, numerical: evaluateRules(input), env: { TYPESAFE_API_KEY: SECRET }, requestedModel: "jev-1.13.0", dryRun, transport: fake.transport });
+        expect(result.reason).toBe("unsafe-question-id");
+        expect(result.plannedRequests).toBe(0);
+        expect(result.attempts).toBe(0);
+        expect(fake.calls).toBe(0);
+      }
+    }
+  });
+  it("binds Score legends and weighted values to the requested criteria", () => {
+    const questions = { rating: { type: "score" as const, instructions: "Rate", criteria: ["low", "medium", "high"] } };
+    const answer = { type: "score", score: 1.7, confidence: 0.6, legend: { "0": "low", "1": "medium", "2": "high" }, probabilities: { "0": 0.1, "1": 0.1, "2": 0.8 } };
+    const read = (change: Record<string, unknown>) => readJevWire(JSON.stringify({ model: "jev-1.13.0", answers: { rating: { ...answer, ...change } }, usage: { input_tokens: 1, output_tokens: 1 } }), questions);
+    expect(read({}).ok).toBe(true);
+    expect(read({ score: 1.699999999 }).ok).toBe(true);
+    expect(read({ score: 1.71 }).ok).toBe(true);
+    for (const change of [
+      { legend: { "0": "high", "1": "medium", "2": "low" } },
+      { legend: { "1": "low", "2": "medium", "3": "high" }, probabilities: { "1": 0.1, "2": 0.1, "3": 0.8 } },
+      { score: 0.5 }, { score: -0.1 }, { score: 2.1 }, { score: 1.731 },
+    ]) expect(read(change).ok).toBe(false);
+  });
   it("redacts absolute paths after punctuation while preserving web URL punctuation", () => {
     for (const delimiter of ["->", ")", "]", "!", "?", "_", "#", "&", "+", "|", "*"]) {
       const input = parsed(3, "punctuation", `report${delimiter}/home/alice/key.json`);
