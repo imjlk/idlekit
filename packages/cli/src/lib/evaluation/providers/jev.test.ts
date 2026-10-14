@@ -453,7 +453,7 @@ export function boundsHttpFailures(): Promise<void> {
 
 /**
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity A pinned model hits. An alias expires. A rubric change misses.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity #ab8045b Re-read the updated section, then ran this function: an echoed alias hits only inside the TTL, another alias misses, jev-latest was fetched again after the TTL, a changed between upper bound missed, invalid or mismatched stored advisories missed, a warm cache planned zero requests, and an unwritable cache kept the advisory. Separate tests verify echoed-alias advice and eviction of expired aliases with the 256-entry limit.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity #467d10f Re-read the updated section, then ran this function: an echoed alias hits only inside the TTL, another alias misses, jev-latest was fetched again after the TTL, a changed between upper bound missed, invalid or mismatched stored advisories missed, a warm cache planned zero requests, and an unwritable cache kept the advisory. Separate tests verify echoed-alias advice and eviction of expired aliases with the 256-entry limit.
  * @evidence ./jev.ts#adviseWithJev Writes the cache after a valid answer and fails open when it cannot.
  * @evidenceReview ./jev.ts#adviseWithJev #018a20b Re-read adviseWithJev and writeCache: invalid or mismatched entries miss, a hit sends nothing and clears current-call usage, dry-run plans zero without a key, writes merge entries under a filesystem lock, and an unwritable path keeps the advisory without resending. An echoed requested alias now uses the same TTL; separate tests verify expiry and the 256-entry write bound.
  * @evidence ./jev.schema.ts#jevCacheIdentity Reads the cache marker.
@@ -1123,14 +1123,16 @@ export function staysOptIn(): Promise<void> {
   expect(bundleSchema.required).toEqual(["numericalReport", "advisory", "_meta"]);
   // Markdown shows the dry-run plan, as json does.
   const printed: string[] = [];
-  const originalLog = console.log;
-  console.log = (...items: unknown[]) => {
-    printed.push(items.map(String).join(" "));
-  };
+  const originalWrite = process.stdout.write;
+  process.stdout.write = ((body: string, callback: (error?: Error) => void) => {
+    printed.push(body);
+    callback();
+    return true;
+  }) as typeof process.stdout.write;
   try {
     await runJudge({ rubric: rubricPath, provider: "jev", format: "md", "dry-run": true }, analysis, { env: {} });
   } finally {
-    console.log = originalLog;
+    process.stdout.write = originalWrite;
   }
   expect(printed.some((line) => line.includes(`- Endpoint: ${JEV_ENDPOINT}`))).toBe(true);
   expect(printed.some((line) => line.includes("- Planned requests: 0"))).toBe(true);
@@ -1242,6 +1244,68 @@ describe("jev judge provider", () => {
       });
       expect(result.status).toBe("ok");
       expect(waits).toEqual([expected]);
+    }
+  });
+  it("rejects non-file cache and output targets before calling Jev", async () => {
+    const dir = await createTempDir("jev-invalid-target-");
+    try {
+      const analysis = resolve(dir, "analysis.json");
+      const rubricPath = resolve(dir, "rubric.json");
+      const parentFile = resolve(dir, "parent-file");
+      await Bun.write(analysis, artifact(3));
+      await Bun.write(rubricPath, rubric());
+      await Bun.write(parentFile, "keep");
+      const mock = transportOf(() => ({ status: 200, body: noulBody(0.9) }));
+      for (const target of [dir, resolve(parentFile, "child.json")]) {
+        for (const flag of ["cache", "out"] as const) {
+          await expect(runJudge({ rubric: rubricPath, provider: "jev", format: "json", [flag]: target }, analysis,
+            { env: { TYPESAFE_API_KEY: SECRET }, transport: mock.transport })).rejects.toThrow(`--${flag}`);
+        }
+      }
+      expect(mock.calls).toBe(0);
+      expect(await readText(parentFile)).toBe("keep");
+    } finally { await removePath(dir); }
+  });
+  it("waits for a large Jev Markdown write callback under backpressure", async () => {
+    const dir = await createTempDir("jev-markdown-pipe-");
+    const originalWrite = process.stdout.write;
+    const originalLog = console.log;
+    let releaseWrite: (() => void) | undefined;
+    let captured = "";
+    let announced!: () => void;
+    const started = new Promise<void>((resolve) => { announced = resolve; });
+    process.stdout.write = ((body: string, callback: (error?: Error) => void) => {
+      captured = body;
+      releaseWrite = () => callback();
+      announced();
+      return false;
+    }) as typeof process.stdout.write;
+    console.log = () => { announced(); };
+    try {
+      const analysis = resolve(dir, "analysis.json");
+      const rubricPath = resolve(dir, "rubric.json");
+      const base = JSON.parse(rubric());
+      base.rules = Array.from({ length: 4000 }, (_, index) => ({ ...base.rules[0], id: `rule-${index}` }));
+      await Bun.write(analysis, artifact(3));
+      await Bun.write(rubricPath, JSON.stringify(base));
+      let finished = false;
+      const writing = runJudge({ rubric: rubricPath, provider: "jev", format: "md", "dry-run": true }, analysis,
+        { env: {} }).then(() => { finished = true; });
+      await started;
+      expect(releaseWrite).toBeDefined();
+      expect(finished).toBe(false);
+      expect(captured.length).toBeGreaterThan(260_000);
+      expect(captured).toContain("# Rules judge");
+      expect(captured).toContain("- Planned requests: 0");
+      expect(captured.endsWith("None.\n")).toBe(true);
+      releaseWrite!();
+      await writing;
+      expect(finished).toBe(true);
+    } finally {
+      releaseWrite?.();
+      process.stdout.write = originalWrite;
+      console.log = originalLog;
+      await removePath(dir);
     }
   });
   it("accepts an alias-valued response and caches it only inside the alias TTL", async () => {

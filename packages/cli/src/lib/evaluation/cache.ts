@@ -2,7 +2,7 @@ import { hashContent, stableStringify } from "../../io/outputMeta";
 
 /**
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity An alias entry expires after one day.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity #ab8045b Re-read the updated section: echoed and concrete alias responses use the same 24-hour TTL.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity #467d10f Re-read the updated section: echoed and concrete alias responses use the same 24-hour TTL.
  */
 export const JEV_ALIAS_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -17,7 +17,7 @@ export type JevCacheEntry = Readonly<{
 
 /**
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity The cache key binds the projection, the rubric, and the requested model.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity #ab8045b Re-read the updated section: a different rubric or requested model misses.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity #467d10f Re-read the updated section: a different rubric or requested model misses.
  */
 export function jevCacheKey(parts: Readonly<{
   projection: unknown;
@@ -38,7 +38,7 @@ export function jevCacheKey(parts: Readonly<{
 
 /**
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity An alias is revalidated after one day. A pinned id must match the stored model.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity #ab8045b Re-read the updated section: an echoed alias is accepted within the TTL, another alias is refused, and jev-latest is not a permanent response.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity #467d10f Re-read the updated section: an echoed alias is accepted within the TTL, another alias is refused, and jev-latest is not a permanent response.
  */
 export function jevCacheHit(
   entry: JevCacheEntry | undefined,
@@ -67,7 +67,7 @@ export function serializeJevCache(entries: readonly JevCacheEntry[]): string {
 
 /**
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity A cache file is read back only as stored entries.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity #ab8045b Re-read the updated section: missing fields are dropped and an absent entry is a miss.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity #467d10f Re-read the updated section: missing fields are dropped and an absent entry is a miss.
  */
 export function parseJevCache(text: string): JevCacheEntry[] {
   const parsed = JSON.parse(text) as { entries?: unknown[] };

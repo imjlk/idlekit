@@ -6,7 +6,7 @@ import { buildOutputMeta, outputSchemaRefForCommand } from "../io/outputMeta";
 import { writeOutput } from "../io/writeOutput";
 import { closeSync, lstatSync, openSync, readlinkSync, realpathSync, statSync, unlinkSync } from "fs";
 import { basename, dirname, resolve } from "path";
-import { readJsonFile, writeTextFile } from "../runtime/bun";
+import { readJsonFile, writeStdout, writeTextFile } from "../runtime/bun";
 import { readJudgeInputs } from "../lib/evaluation/input";
 import { evaluateRules } from "../lib/evaluation/rules";
 // Type only. main.ts registers this command for every invocation, so the opt-in provider loads after --provider jev.
@@ -93,6 +93,28 @@ function ancestorFile(parent: string, child: string): boolean {
     const next = dirname(directory);
     if (next === directory) return false;
     directory = next;
+  }
+}
+
+/** Reject targets whose file kind already makes a write impossible, before a paid request. */
+function requireFileTarget(path: string, flag: "cache" | "out"): void {
+  const target = canonical(path);
+  let current = target;
+  for (;;) {
+    let stat;
+    try { stat = statSync(current); } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+        throw usageError(`--${flag} requires a regular file target with directory parents.`);
+      }
+    }
+    if (stat) {
+      const valid = current === target ? stat.isFile() : stat.isDirectory();
+      if (!valid) throw usageError(`--${flag} requires a regular file target with directory parents.`);
+      return;
+    }
+    const parent = dirname(current);
+    if (parent === current) throw usageError(`--${flag} has no usable parent directory.`);
+    current = parent;
   }
 }
 
@@ -185,6 +207,10 @@ export async function runJudge(flags: {
       throw usageError("--cache names an input file. Give the Jev cache its own path.");
     }
   }
+  if (flags.provider === "jev") {
+    if (flags.cache) requireFileTarget(flags.cache, "cache");
+    if (flags.out) requireFileTarget(flags.out, "out");
+  }
   // An unreadable or non-JSON input is a usage error, like a structurally invalid one.
   let artifactRaw: unknown;
   let rubricRaw: unknown;
@@ -257,7 +283,7 @@ export async function runJudge(flags: {
       await writeTextFile(outPath, `${markdown}\n`);
       console.log(`Wrote md output to ${outPath}`);
     } else {
-      console.log(markdown);
+      await writeStdout(`${markdown}\n`);
     }
     return bundle;
   }
