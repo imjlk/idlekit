@@ -62,7 +62,7 @@ function echo(value: AnalysisTrialTaskV1, endMoney: string): AnalysisTrialOutcom
  * @evidence ./executionBackend.ts#defaultExecutionBudget Reads the budget.
  * @evidenceReview ./executionBackend.ts#defaultExecutionBudget #4df9ea6 maxWorkers is 0.
  * @evidence ./executionBackend.ts#runLocalBatch Runs the batch in this process.
- * @evidenceReview ./executionBackend.ts#runLocalBatch #7bfe65f Re-read runLocalBatch after the per-task window and the validate-first cost: two tasks run locally with no spawn cost, record UTF-8 serialized bytes, and form a full distribution.
+ * @evidenceReview ./executionBackend.ts#runLocalBatch #4e2342d Re-read runLocalBatch after the per-task window and the validate-first cost: two tasks run locally with no spawn cost, record UTF-8 serialized bytes, and form a full distribution.
  */
 export function keepsLocalDefault(): void {
   expect(executionLocalDefault).toBe("local-default");
@@ -285,11 +285,11 @@ export function reducesInLogicalOrder(): void {
  * @evidence ./executionBackend.ts#runLocalBatch Bounds each task by its own window and turns a thrown runner into a failed outcome.
  * @evidence ./executionBackend.ts#readTrialOutcome Applies the same valid-success contract to local and worker results.
  * @evidenceReview ./executionBackend.ts#readTrialOutcome #11c2975 Re-read captured own data fields: identity must match, status and attempt counts are checked, and successful outcomes require a digest and decimal money; malformed local successes and revoked proxies fail alone and valid sibling outcomes still run.
- * @evidenceReview ./executionBackend.ts#runLocalBatch #7bfe65f Re-read admission ahead of measuring, the pre-abort check ahead of the queue bound, and the loop: an oversized batch reports no bytes, the runner sees a frozen budget and a frozen task snapshot, no batch deadline remains, the window applies to every attempt before its status, a 2 ms task under a 5 ms budget is ok in third place, a throw is trial-failed with attempts counted, and a slow failure stops at one attempt.
+ * @evidenceReview ./executionBackend.ts#runLocalBatch #4e2342d Re-read admission ahead of measuring, the pre-abort check ahead of the queue bound, and the loop: an oversized batch reports no bytes, the runner sees a frozen budget and a frozen task snapshot, no batch deadline remains, the window applies to every attempt before its status, a 2 ms task under a 5 ms budget is ok in third place, a throw is trial-failed with attempts counted, and a slow failure stops at one attempt.
  * @evidence ./executionBackend.ts#executionFailureBoundary Reads the boundary marker.
  * @evidenceReview ./executionBackend.ts#executionFailureBoundary #5e9d9f9 The declaration is not-a-partial-distribution.
  * @evidence ./executionBackend.ts#createLocalExecutionBackend Submits a batch that cancel or an aborted signal stops.
- * @evidenceReview ./executionBackend.ts#createLocalExecutionBackend #495ab3a Cancel during the first task cancels the second, and a signal aborted before submit runs nothing.
+ * @evidenceReview ./executionBackend.ts#createLocalExecutionBackend #415b3fa Cancel during the first task cancels the second, and a signal aborted before submit runs nothing.
  */
 export function boundsFailures(): void {
   expect(readTrialOutcome(echo(task(0), "1"), task(0))).toEqual(echo(task(0), "1"));
@@ -483,6 +483,40 @@ export function boundsFailures(): void {
 }
 
 describe("execution backend", () => {
+  it("keeps the selected local signal when the caller replaces its options", () => {
+    const original = new AbortController();
+    const options = { signal: original.signal };
+    const batch = runLocalBatch([task(0), task(1)], (item, ctx) => {
+      expect(ctx.signal).toBe(original.signal);
+      original.abort();
+      options.signal = new AbortController().signal;
+      return echo(item, "1");
+    }, options);
+    expect(batch.outcomes.map((item) => item.status)).toEqual(["ok", "cancelled"]);
+  });
+  it("owns a validated frozen backend budget from construction", () => {
+    const supplied = { ...defaultExecutionBudget, maxRetries: 1 };
+    const backend = createLocalExecutionBackend((item) => ({ ...echo(item, "1"), status: "failed", reason: "trial-failed" }), supplied);
+    supplied.maxRetries = 8;
+    expect(backend.budget().maxRetries).toBe(1);
+    expect(Object.isFrozen(backend.budget())).toBe(true);
+    expect(backend.submit([task(0)]).outcomes[0]!.attempts).toBe(2);
+    expect(() => createLocalExecutionBackend((item) => echo(item, "1"), { ...defaultExecutionBudget, maxRetries: -1 })).toThrow();
+  });
+  it("expires a local result at an exact or zero deadline", () => {
+    for (const [limit, elapsed, status] of [[0, 0, "incomplete"], [10, 10, "incomplete"], [10, 9, "ok"]] as const) {
+      let reads = 0;
+      const batch = runLocalBatch([task(0)], (item) => echo(item, "1"), {
+        budget: { ...defaultExecutionBudget, taskTimeoutMs: limit }, clock: { now: () => reads++ === 0 ? 0 : elapsed },
+      });
+      expect(batch.outcomes[0]!.status).toBe(status);
+    }
+  });
+  it("isolates a refused first-task identity through the local backend factory", () => {
+    const refused = Object.defineProperty(task(0), "taskId", { get() { throw new Error("task-id"); } });
+    const batch = createLocalExecutionBackend((item) => echo(item, "1")).submit([refused, task(1)]);
+    expect(batch.outcomes.map((item) => item.status)).toEqual(["failed", "ok"]);
+  });
   it("refuses unsafe logical indices without running or rounding their identity", () => {
     const rounded = JSON.parse("9007199254740993") as number;
     expect(rounded).toBe(9007199254740992);

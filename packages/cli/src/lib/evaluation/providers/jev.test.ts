@@ -356,7 +356,7 @@ export function validatesWireShapes(): void {
  * @evidence ./jev.schema.ts#jevHttpBudget Reads the budget marker.
  * @evidenceReview ./jev.schema.ts#jevHttpBudget #fe6ed61 The declaration is bounded-retry.
  * @evidence ./jev.ts#adviseWithJev Runs the injected transport inside the retry budget.
- * @evidenceReview ./jev.ts#adviseWithJev #ab948b2 Re-read adviseWithJev with the serialized fail-open cache write and zero plan on a hit or missing key: oversized streamed responses fail once and the retry loop remains bounded; 401 and 403 send once, 429 stops after three attempts, 500 twice then 200 recovers, and an abort is a timeout.
+ * @evidenceReview ./jev.ts#adviseWithJev #f34b855 Re-read adviseWithJev with the serialized fail-open cache write and zero plan on a hit or missing key: oversized streamed responses fail once and the retry loop remains bounded; 401 and 403 send once, 429 stops after three attempts, 500 twice then 200 recovers, and an abort is a timeout.
  */
 export function boundsHttpFailures(): Promise<void> {
   return (async (): Promise<void> => {
@@ -455,7 +455,7 @@ export function boundsHttpFailures(): Promise<void> {
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity A pinned model hits. An alias expires. A rubric change misses.
  * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity #125a09d Re-read the section, then ran this function: jev-latest was fetched again after the TTL, a changed between upper bound missed, a truncated stored advisory and one naming another digest were misses that sent again, a warm cache planned zero requests, and an unwritable cache path sent once and kept the advisory.
  * @evidence ./jev.ts#adviseWithJev Writes the cache after a valid answer and fails open when it cannot.
- * @evidenceReview ./jev.ts#adviseWithJev #ab948b2 Re-read adviseWithJev and writeCache: invalid or mismatched entries miss, a hit sends nothing and clears current-call usage, dry-run plans zero without a key, writes merge entries under a filesystem lock, and an unwritable path keeps the advisory without resending.
+ * @evidenceReview ./jev.ts#adviseWithJev #f34b855 Re-read adviseWithJev and writeCache: invalid or mismatched entries miss, a hit sends nothing and clears current-call usage, dry-run plans zero without a key, writes merge entries under a filesystem lock, and an unwritable path keeps the advisory without resending.
  * @evidence ./jev.schema.ts#jevCacheIdentity Reads the cache marker.
  * @evidenceReview ./jev.schema.ts#jevCacheIdentity #75b32a2 The declaration is alias-is-not-pinned.
  * @evidence ../cache.ts#JEV_ALIAS_TTL_MS Reads the alias TTL.
@@ -883,7 +883,7 @@ export function keepsSecretsOutOfRecords(): Promise<void> {
  * @evidence ./jev.ts#jevAnswerDisposition Maps one answer to ok, abstain, or an advisory warning.
  * @evidenceReview ./jev.ts#jevAnswerDisposition #0d071be Re-read jevAnswerDisposition with the closed abstain band: Choice confidence 0.2, Noul 0.5, and Noul 0.4 and 0.6 on either verdict abstain, 0.399 and 0.601 warn, a Noul of 0.05 against a failing rule is a warning, and the same Noul with no rule verdict is ok.
  * @evidence ./jev.ts#adviseWithJev Compares each answer with its own rule and refuses a rubric whose ids cannot stay separate questions.
- * @evidenceReview ./jev.ts#adviseWithJev #ab948b2 Re-read adviseWithJev, summarize, and reportStatus after the cache changes: in a mixed rubric a low Noul warns only on the failing rule, the warning outranks an abstention, and a repeated id, __proto__, or an id holding a path or the key fails before any send.
+ * @evidenceReview ./jev.ts#adviseWithJev #f34b855 Re-read adviseWithJev, summarize, and reportStatus after the cache changes: in a mixed rubric a low Noul warns only on the failing rule, the warning outranks an abstention, and a repeated id, __proto__, or an id holding a path or the key fails before any send.
  */
 export function keepsNumericalVerdicts(): Promise<void> {
   return (async (): Promise<void> => {
@@ -1198,6 +1198,53 @@ export function staysOptIn(): Promise<void> {
 }
 
 describe("jev judge provider", () => {
+  it("redacts absolute paths after punctuation while preserving web URL punctuation", () => {
+    for (const delimiter of ["->", ")", "]", "!", "?", "_", "#", "&", "+", "|", "*"]) {
+      const input = parsed(3, "punctuation", `report${delimiter}/home/alice/key.json`);
+      expect(JSON.stringify(projectJevState(input.artifact, input.rubric, SECRET).state)).not.toContain("/home/alice/key.json");
+      expect(isSafeJevReport(evaluateRules(input), SECRET)).toBe(false);
+    }
+    for (const url of ["https://example.com/a)/b?next=/reference", "https://[::1]/path", "https://example.com/a!/_b"]) {
+      const input = parsed(3, "url", url);
+      expect(JSON.stringify(projectJevState(input.artifact, input.rubric, SECRET).state)).toContain(url);
+      expect(isSafeJevReport(evaluateRules(input), SECRET)).toBe(true);
+    }
+  });
+  it("misses a legacy state-only cache and binds question wording", async () => {
+    const dir = await createTempDir("j");
+    try {
+      const input = parsed();
+      const numerical = evaluateRules(input);
+      const projection = projectJevState(input.artifact, input.rubric, SECRET);
+      const common = { numericalDigest: numerical.advisoryDigest, rubricVersion: input.rubric.rubricVersion,
+        requestedModel: "jev-1.13.0", adapterVersion: jevAlgorithmVersion() };
+      const cachePath = resolve(dir, "cache.json");
+      const mock = transportOf(() => ({ status: 200, body: noulBody(0.9) }));
+      const args = { ...input, numerical, requestedModel: common.requestedModel, dryRun: false, cachePath,
+        transport: mock.transport, env: { TYPESAFE_API_KEY: SECRET } };
+      await adviseWithJev(args);
+      const entry = parseJevCache(await readText(cachePath))[0]!;
+      await Bun.write(cachePath, serializeJevCache([{ ...entry, key: jevCacheKey({ ...common, projection: projection.state }) }]));
+      expect((await adviseWithJev(args)).cache).toBe("miss");
+      expect(mock.calls).toBe(2);
+      const key = jevCacheKey({ ...common, projection: { state: projection.state, questions: projection.questions } });
+      expect(parseJevCache(await readText(cachePath)).some((item) => item.key === key)).toBe(true);
+      const changed = { ...projection.questions, "first-reset": { ...projection.questions["first-reset"]!, instructions: "changed question" } };
+      expect(jevCacheKey({ ...common, projection: { state: projection.state, questions: changed } })).not.toBe(key);
+      expect((await adviseWithJev(args)).cache).toBe("hit");
+    } finally { await removePath(dir); }
+  });
+  it("retains validated paid usage when a resolved model is rejected", async () => {
+    const input = parsed();
+    for (const model of ["another-model", SECRET, "/home/alice/model"]) {
+      const mock = transportOf(() => ({ status: 200, body: noulBody(0.9, model) }));
+      const result = await adviseWithJev({ ...input, numerical: evaluateRules(input), requestedModel: "jev-1.13.0", dryRun: false,
+        transport: mock.transport, env: { TYPESAFE_API_KEY: SECRET } });
+      expect(result).toMatchObject({ status: "failed", resolvedModel: null, usage: { inputTokens: 11, outputTokens: 3 } });
+      expect(JSON.stringify(result)).not.toContain(model);
+      expect(mock.calls).toBe(1);
+    }
+  });
   it("redacts forward-slash UNC paths while preserving full web URLs", () => {
     for (const path of ["//server/share/secret.json", "See //server/share/secret.json for input", "//secret.json", "///tmp/secret.json", "FILE:///home/alice/secret.json"]) {
       const input = parsed(3, "unc", path);
