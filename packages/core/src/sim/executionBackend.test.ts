@@ -473,6 +473,41 @@ export function boundsFailures(): void {
 }
 
 describe("execution backend", () => {
+  it("admits only uint32 seeds and reports finite refused identities", () => {
+    for (const seed of [-1, 1.5, 4294967296, NaN, Infinity]) {
+      expect(taskRefusals([task(0, { seed })])[0]).not.toBeNull();
+      expect(taskIdentity(task(0, { logicalIndex: NaN, seed })).logicalIndex).toBe(-1);
+      expect(taskIdentity(task(0, { seed })).seed).toBe(0);
+    }
+    for (const seed of [0, 4294967295]) expect(taskRefusals([task(0, { seed })])).toEqual([null]);
+    const batch = runLocalBatch([task(0, { logicalIndex: NaN, seed: Infinity }), task(1)], (item) => echo(item, "1"));
+    expect(batch.outcomes[0]!.logicalIndex).toBe(-1);
+    expect(batch.outcomes[0]!.seed).toBe(0);
+    expect(batch.outcomes[1]!.status).toBe("ok");
+    expect(JSON.stringify(batch)).not.toContain('"logicalIndex":null');
+    expect(JSON.stringify(batch)).not.toContain('"seed":null');
+  });
+  it("keeps an empty thrown message a task refusal", () => {
+    const refused = task(0);
+    Object.defineProperty(refused, "schemaVersion", { enumerable: true, get() { throw new Error(""); } });
+    const ran: string[] = [];
+    const batch = runLocalBatch([refused, task(1)], (item) => { ran.push(item.taskId); return echo(item, "1"); });
+    expect(ran).toEqual(["trial-1"]);
+    expect(batch.outcomes[0]!.reason).toBe("invalid-task");
+    expect(batch.fullDistribution).toBe(false);
+  });
+  it("refuses non-index array properties and inherited serialization", () => {
+    for (const key of ["4294967295", "9007199254740991"]) {
+      const list: unknown[] = [];
+      Object.defineProperty(list, key, { enumerable: true, value: () => 1 });
+      expect(taskRefusals([task(0, { payload: { list } })])[0]).not.toBeNull();
+    }
+    let serialized = false;
+    class HiddenJson extends Array<unknown> { toJSON() { serialized = true; return { swapped: true }; } }
+    const batch = runLocalBatch([task(0, { payload: { list: new HiddenJson() } }), task(1)], (item) => echo(item, "1"));
+    expect(serialized).toBe(false);
+    expect(batch.outcomes.map((item) => item.status)).toEqual(["failed", "ok"]);
+  });
   it("keeps the local backend as the default", keepsLocalDefault);
   it("keeps tasks serializable", keepsSerializableTasks);
   it("reduces in logical order", reducesInLogicalOrder);

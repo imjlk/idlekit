@@ -650,9 +650,9 @@ export function refusesUntrustedPlugins(): Promise<void> {
     const validOutside = join(outside, "valid.ts");
     writeFileSync(validInside, "export default { models: [] };\n");
     writeFileSync(validOutside, "export default { models: [] };\n");
-    const link = join(root, "linked.ts");
-    rmSync(link, { force: true });
-    symlinkSync(validOutside, link);
+    const alias = join(root, "linked-directory");
+    symlinkSync(outside, alias, process.platform === "win32" ? "junction" : "dir");
+    const link = join(alias, "valid.ts");
     const linked = await runWorkerPool({
       tasks: [
         { ...trial(2), taskId: "inside", pluginPaths: [validInside], pluginRoots: [root], pluginDigests: {} },
@@ -725,10 +725,51 @@ export function packsWorkerAsset(): Promise<void> {
 }
 
 describe("worker execution backend", () => {
+  it("terminates a worker returned after synchronous spawn cancellation", async () => {
+    const controller = new AbortController();
+    const worker = new FakeWorker("hang", []);
+    const batch = await runWorkerPool({ tasks: [trial(0)], workers: 1, signal: controller.signal,
+      spawn() { controller.abort(); return worker; } });
+    expect(batch.outcomes[0]!.status).toBe("cancelled");
+    expect(worker.terminated).toBe(true);
+  });
+  it("retires and retries malformed marked outcomes within the budget", async () => {
+    const item = trial(0);
+    const malformed: unknown[] = [undefined, { ...echo(item), taskId: "wrong" },
+      { ...echo(item), logicalIndex: 1 }, { ...echo(item), seed: item.seed + 1 },
+      { ...echo(item), status: "unknown" }, { ...echo(item), reason: 1 },
+      { ...echo(item), semanticDigest: 1 }, { ...echo(item), endMoney: "garbage" },
+      { ...echo(item), attempts: NaN }];
+    for (const outcome of malformed) {
+      let spawned = 0;
+      let terminated = 0;
+      const batch = await runWorkerPool({ tasks: [item], workers: 1,
+        budget: { ...defaultExecutionBudget, maxWorkers: 1, maxRetries: 1 },
+        spawn() {
+          spawned += 1;
+          const result = spawned === 1 ? outcome : echo(item);
+          return { onmessage: null, onerror: null, terminate() { terminated += 1; },
+            postMessage() { queueMicrotask(() => this.onmessage?.({ data: { type: "outcome", marker: "idlekit-worker-entry", outcome: result } })); } };
+        } });
+      expect(spawned).toBe(2);
+      expect(terminated).toBe(2);
+      expect(batch.outcomes[0]!.status).toBe("ok");
+      expect(batch.outcomes[0]!.attempts).toBe(2);
+    }
+  });
+  it("settles empty-message refusals without losing valid siblings", async () => {
+    const refused = trial(0);
+    Object.defineProperty(refused, "schemaVersion", { enumerable: true, get() { throw new Error(""); } });
+    const single = await runWorkerPool({ tasks: [refused], workers: 1 });
+    expect(single.outcomes[0]!.reason).toBe("invalid-task");
+    const siblings = await runWorkerPool({ tasks: [refused, trial(1)], workers: 1, spawn: () => new FakeWorker("slow", [], 1) });
+    expect(siblings.outcomes.map((item) => item.status)).toEqual(["failed", "ok"]);
+  });
   it("matches worker digests", matchesWorkerDigests, 400_000);
   it("reverses completion order", reversesCompletionOrder);
   it("bounds pool failures", boundsPoolFailures);
-  it("refuses untrusted plugins", refusesUntrustedPlugins);
+  // Four plugin trials each start a fresh dev worker and retain their own bounded task window.
+  it("refuses untrusted plugins", refusesUntrustedPlugins, REAL_WORKER_TIMEOUT_MS * 4 + 1000);
   it("round-trips break infinity", roundTripsBreakInfinity);
   it("packs the worker asset", packsWorkerAsset);
 });

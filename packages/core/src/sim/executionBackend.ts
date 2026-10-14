@@ -158,9 +158,10 @@ function assertPlain(value: unknown, seen: WeakSet<object>): void {
   seen.add(value);
   try {
     if (Array.isArray(value)) {
+      if (Object.getPrototypeOf(value) !== Array.prototype) throw new Error("not a plain array");
       // An array carries indexed items only. A named property such as an own toJSON is refused.
       for (const key of Object.keys(value)) {
-        if (!/^(0|[1-9]\d*)$/.test(key)) throw new Error("not serializable");
+        if (!/^(0|[1-9]\d*)$/.test(key) || Number(key) >= 4294967295) throw new Error("not serializable");
       }
       for (const item of value) assertPlain(item, seen);
       return;
@@ -178,7 +179,7 @@ export function assertSerializableTask(task: AnalysisTrialTaskV1): void {
   }
   if (task.kind !== "analysis-trial") throw new Error("unsupported task kind");
   if (!Number.isInteger(task.logicalIndex) || task.logicalIndex < 0) throw new Error("logical index");
-  if (typeof task.seed !== "number" || !Number.isFinite(task.seed)) throw new Error("seed");
+  if (!Number.isInteger(task.seed) || task.seed < 0 || task.seed > 4294967295) throw new Error("seed");
   if (typeof task.taskId !== "string" || task.taskId.length === 0) throw new Error("task id");
   if (!Number.isSafeInteger(task.stepBudget) || task.stepBudget < 0) throw new Error("step budget");
   assertPlain(task.payload, new WeakSet());
@@ -290,7 +291,7 @@ export function taskRefusals(
       if (task.stepBudget > budget.stepBudget) return "step budget exceeds the execution budget";
       return null;
     } catch (error) {
-      return error instanceof Error ? error.message : "invalid-task";
+      return error instanceof Error && error.message.length > 0 ? error.message : "invalid-task";
     }
   });
 }
@@ -314,8 +315,8 @@ export function taskIdentity(task: AnalysisTrialTaskV1): Readonly<{ taskId: stri
   const seed = ownData(task, "seed");
   return {
     taskId: typeof taskId === "string" ? taskId : "",
-    logicalIndex: typeof logicalIndex === "number" ? logicalIndex : -1,
-    seed: typeof seed === "number" ? seed : 0,
+    logicalIndex: typeof logicalIndex === "number" && Number.isInteger(logicalIndex) && logicalIndex >= 0 ? logicalIndex : -1,
+    seed: typeof seed === "number" && Number.isInteger(seed) && seed >= 0 && seed <= 4294967295 ? seed : 0,
   };
 }
 
