@@ -1,0 +1,14 @@
+{
+  "contract": "idlekit.bench-end-money",
+  "schemaVersion": 1,
+  "note": "End money each bench scenario returns from `idk simulate --format json`, recorded from the source CLI at the PR #224 review fix. bench-sim compares every run with this exact string. A change that moves a total updates this file in the same commit, with the reason.",
+  "endMoney": {
+    "examples/bench/representative.json": "20.999352265310826",
+    "examples/bench/30m-linear.json": "5897.115400829897",
+    "examples/bench/2h-linear.json": "8412.589090289006",
+    "examples/bench/24h-linear.json": "371833.11933819717",
+    "examples/bench/7d-linear.json": "4916011.676789201",
+    "examples/bench/30d-linear.json": "25946042.91209305",
+    "examples/bench/90d-linear.json": "568710842.912093"
+  }
+}

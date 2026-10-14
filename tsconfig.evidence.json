@@ -37,6 +37,7 @@
     "packages/core/src/sim/analysis/flow.test.ts",
     "packages/core/src/sim/advance.ts",
     "packages/core/src/sim/advance.test.ts",
+    "packages/core/src/sim/analysis/jevAdvisory.ts",
     "packages/core/src/sim/analysis/analyzers.ts",
     "packages/core/src/sim/analysis/analyzers.test.ts",
     "packages/core/src/sim/analysis/inspect.ts",
@@ -57,6 +58,10 @@
     "packages/core/src/sim/session.test.ts",
     "packages/cli/src/lib/runConfiguration.ts",
     "packages/cli/src/lib/runConfiguration.test.ts",
+    "packages/cli/src/lib/evaluation/providers/jev.ts",
+    "packages/cli/src/lib/evaluation/providers/jev.schema.ts",
+    "packages/cli/src/lib/evaluation/cache.ts",
+    "packages/cli/src/lib/evaluation/providers/jev.test.ts",
     "packages/core/src/sim/simulator.ts",
     "packages/core/src/sim/offline.ts",
     "packages/core/src/sim/random.ts",
@@ -69,6 +74,14 @@
     "packages/money/src/testkit/compareAmounts.ts",
     "packages/money/src/testkit/compareAmounts.test.ts",
     "tools/conformance.ts",
-    "tools/conformance.negative.test.ts"
+    "tools/conformance.negative.test.ts",
+    "packages/core/src/sim/executionBackend.ts",
+    "packages/core/src/sim/executionBackend.test.ts",
+    "packages/cli/src/runtime/workers/pool.ts",
+    "packages/cli/src/runtime/workers/trial.ts",
+    "packages/cli/src/runtime/workers/entry.ts",
+    "packages/cli/src/runtime/workers/pool.test.ts",
+    "packages/core/src/sim/integrationMatrix.ts",
+    "packages/core/src/sim/integrationMatrix.test.ts"
   ]
 }

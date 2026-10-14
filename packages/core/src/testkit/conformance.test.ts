@@ -6,6 +6,7 @@ import type { Engine } from "../engine/types";
 import { etaAnalytic, etaSimulate } from "../sim/analysis/eta";
 import { fitGrowth } from "../sim/analysis/growthFit";
 import { analyzeMilestones } from "../sim/analysis/milestones";
+import { analysisTaskSeed, runLocalBatch, type AnalysisTrialOutcomeV1, type AnalysisTrialTaskV1 } from "../sim/executionBackend";
 import { runScenario } from "../sim/simulator";
 import { createScriptedStrategy } from "../sim/strategy/scripted";
 import type { Action, CompiledScenario, Model, SimState } from "../sim/types";
@@ -18,6 +19,8 @@ import {
   checkDurationBoundary,
   checkGrowthShapes,
   checkGuardedAdvance,
+  checkPartialFinalTick,
+  checkTrialParity,
   checkJsonRoundTrip,
   checkMilestoneRetention,
   checkNonNegative,
@@ -2309,6 +2312,125 @@ export function replaysGuardedAdvanceAcrossTheSeedCorpus(): void {
     }),
   });
 }
+
+const partialFixture = (
+  JSON.parse(readFileSync(join(import.meta.dir, "../../../../examples/analysis/integration-matrix.json"), "utf8")) as {
+    partial: { initial: string; incomePerSec: string; stepSec: number; durationSec: number };
+  }
+).partial;
+
+/**
+ * @evidence docs/requirements/active/analysis-integration-release-gates.md#req-pr20-integration-matrix Runs the partial-final-tick relation over the seed corpus: integer income, steps, and horizons on and off the step grid.
+ * @evidenceReview docs/requirements/active/analysis-integration-release-gates.md#req-pr20-integration-matrix #d001f4e Re-read the section, then ran this function on the short and extended corpus: every case ended at the hand answer after ceil(duration / step) ticks, and an undeclared case does not apply.
+ * @evidence ./conformance.ts#checkPartialFinalTick The seed corpus asks the harness to run each partial-final-tick case.
+ * @evidenceReview ./conformance.ts#checkPartialFinalTick #8c554e0 Re-read checkPartialFinalTick: it runs a constant-income model to the horizon and compares the end wallet, the stop, the end time, and the tick count with the hand answer.
+ */
+export function replaysPartialFinalTickAcrossTheSeedCorpus(): void {
+  expectProperty({
+    predicateId: "declared-partial-final-tick",
+    testSeed: 0x2020,
+    cases: conformanceCaseCount(),
+    generate: (index, rng) => {
+      // The fixture case: 2 coin per second, step 6, horizon 10, so the second tick is 4 seconds.
+      if (index === 0) return partialFixture;
+      const stepSec = rng.int(1, 9);
+      return {
+        initial: String(rng.int(0, 1_000)),
+        incomePerSec: String(rng.int(-5, 50)),
+        stepSec,
+        durationSec: stepSec * rng.int(0, 20) + rng.int(0, stepSec - 1),
+      };
+    },
+    shrink: (value) => (value.durationSec > 0 ? [{ ...value, durationSec: value.durationSec - 1 }] : []),
+    predicate: (value) => {
+      expectApplicable(checkPartialFinalTick(true, value));
+      expect(checkPartialFinalTick(false, value).applicable).toBe(false);
+      return true;
+    },
+    describeCase: (value) => ({
+      gameSeed: null,
+      engineId: "number",
+      modelId: "conformance-partial-final-tick",
+      strategyId: null,
+      tickSchedule: { stepSec: value.stepSec, durationSec: value.durationSec },
+    }),
+  });
+}
+
+/**
+ * @evidence docs/requirements/active/worker-execution-backend.md#req-dx05-worker-parity Runs the trial-parity relation over the seed corpus: the same logical trials submitted in another order agree per logical index.
+ * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-worker-parity #60a7be1 Re-read the section, then ran this function on the short and extended corpus: every shuffled submission agreed with the ordered one, a changed digest did not, and an undeclared case does not apply.
+ * @evidence ./conformance.ts#checkTrialParity The seed corpus asks the harness to compare each pair of batches.
+ * @evidenceReview ./conformance.ts#checkTrialParity #d6b01f7 Re-read checkTrialParity: it compares the full-distribution flag, the reduction, and each outcome's index, seed, status, digest, and end money.
+ */
+export function keepsTrialParityAcrossTheSeedCorpus(): void {
+  expectProperty({
+    predicateId: "declared-trial-parity",
+    testSeed: 0xd0c5,
+    cases: conformanceCaseCount(),
+    generate: (_index, rng) => {
+      const count = rng.int(1, 8);
+      const order = Array.from({ length: count }, (_, logicalIndex) => logicalIndex);
+      for (let i = order.length - 1; i > 0; i -= 1) {
+        const j = rng.int(0, i);
+        [order[i], order[j]] = [order[j]!, order[i]!];
+      }
+      return { baseSeed: rng.int(1, 1_000), order };
+    },
+    shrink: (value) => (value.order.length > 1 ? [{ ...value, order: value.order.filter((index) => index !== Math.max(...value.order)) }] : []),
+    predicate: (value) => {
+      const trial = (logicalIndex: number): AnalysisTrialTaskV1 => ({
+        schemaVersion: 1,
+        contract: "idlekit.execution-task.v1",
+        taskId: `trial-${logicalIndex}`,
+        logicalIndex,
+        seed: analysisTaskSeed(value.baseSeed, logicalIndex),
+        stepBudget: 1,
+        kind: "analysis-trial",
+        payload: {},
+        pluginPaths: [],
+        pluginRoots: [],
+        pluginDigests: {},
+      });
+      // A deterministic trial: its digest and end money depend on the logical index and the seed only.
+      const runner = (task: AnalysisTrialTaskV1): AnalysisTrialOutcomeV1 => ({
+        taskId: task.taskId,
+        logicalIndex: task.logicalIndex,
+        seed: task.seed,
+        status: "ok",
+        reason: "ok",
+        attempts: 1,
+        semanticDigest: `${task.logicalIndex}:${task.seed}`,
+        endMoney: String(task.seed % 97),
+      });
+      const ordered = runLocalBatch([...value.order].sort((a, b) => a - b).map(trial), runner);
+      const shuffled = runLocalBatch(value.order.map(trial), runner);
+      expectApplicable(checkTrialParity(true, ordered, shuffled));
+      expect(checkTrialParity(false, ordered, shuffled).applicable).toBe(false);
+      const tampered = {
+        ...shuffled,
+        outcomes: shuffled.outcomes.map((outcome, index) => (index === 0 ? { ...outcome, semanticDigest: "other" } : outcome)),
+      };
+      expect(checkTrialParity(true, ordered, tampered).ok).toBe(false);
+      return true;
+    },
+    describeCase: (value) => ({
+      gameSeed: value.baseSeed,
+      engineId: null,
+      modelId: null,
+      strategyId: null,
+      tickSchedule: null,
+    }),
+  });
+}
+
+describe("PR-20 partial final tick relation", () => {
+  it("replays the partial final tick against the hand answer across the seed corpus", replaysPartialFinalTickAcrossTheSeedCorpus);
+});
+
+describe("DX-05 trial parity relation", () => {
+  it("keeps trial parity across the seed corpus", keepsTrialParityAcrossTheSeedCorpus);
+});
 
 describe("PR-16 guarded advance relation", () => {
   it("replays guarded advance against fixed-step across the seed corpus", replaysGuardedAdvanceAcrossTheSeedCorpus);

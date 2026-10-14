@@ -139,3 +139,33 @@ The conformance unit tests and the shrink replay exited 0. That commit's `test:c
 `conformanceGeneratorVersion` lookup on project `tsconfig.graph.json` returned `packages/core/src/testkit/conformance.ts:10`. Reverse trace reached `replaysConstantIncomeAndShrinksGap` at `packages/core/src/testkit/conformance.test.ts:191`. `compareAmounts` is declared at line 36 in both testkits. Built `dist/` does not contain `testkit`. The shrink fixture's minimal value is `1`.
 
 Shared meanings for later analysis work are in [Analysis contracts](./adr/analysis-contracts.md).
+
+## Integration matrix
+
+`examples/analysis/integration-matrix.json` is the PR-20 hand fixture. Seed label is `19`. `packages/core/src/sim/integrationMatrix.ts` computes constant-income, session-budget, quoted-bulk, and reset-carry answers without calling the simulator. The off-grid horizon is the declared `checkPartialFinalTick` relation in `packages/core/src/testkit/conformance.ts`, which the seed corpus also runs. `packages/core/src/sim/integrationMatrix.test.ts` runs Number and breakInfinity, a stateful scripted cursor, event log off/capped/full, recorded offline policy against the same fixed-step total, an unreached goal, and the unsupported `breakEternity` placeholder. Flow diagnosis, guarded analytic advance, the Jev judge, and the explicit worker pool are included optional capabilities. They are not the default command path. They are optional at run time, not optional in the release check: `tools/publish-gate.ts` runs the repository-wide `typecheck`, `test`, and `build`, which include their sources and tests, so a failure in any of them blocks publication. `createBreakEternityEngine` stays an unimplemented placeholder. Orbital Foundry and the tutorials stay the worked examples. CI `bun run test` already includes this file. The quality job also runs toolchain smoke, typecheck, contracts, doctor completions, runtime, conformance, build, release dry-run, `bench:sim:check`, templates, install smoke, readme smoke, compat, public, replay, `kpi:report`, and `kpi:regress`. `bench:sim:suite:check`, `tune:regress`, `review:smoke`, and full `docs:verify` stay outside that push job. `bench:sim:suite:check` stays on `.github/workflows/performance-corpus.yml`. A fast wrong total is not a pass: `bench:sim` compares every run's `endMoney` with [examples/bench/end-money.json](../examples/bench/end-money.json), and under `--assert` a mismatch or an unrecorded scenario fails. This change does not publish to npm.
+
+Host for this run: macOS arm64, Bun `1.4.2` (`744846f84`), `packageManager` `bun@1.4.2`, ttsc `0.30.4`. With the worker entry in the JS bundle, the bundle root is `src`, so the CLI bundle stays at `dist/main.js` and the worker is `dist/runtime/workers/entry.js`. `bench:sim:check` times `packages/cli/dist/main.js` from the repo root so the sample is the shipped simulate, not the CLI ttsc preload. `bench:sim:suite:check`, `tune:regress`, `review:smoke`, `install:smoke`, and `readme:smoke` were not rerun for this re-land. This change does not publish to npm.
+
+| Command | Exit |
+|---|---|
+| `bun install --frozen-lockfile` | 0 |
+| `bun test src/sim/integrationMatrix.test.ts` (from `packages/core`) | 0 |
+| `bun run typecheck` | 0 |
+| `bun run test` | 0 |
+| `bun run test:conformance` | 0 |
+| `bun run contracts:check` | 0 |
+| `bun run build` | 0 |
+| `bun run runtime:check` | 0 |
+| `bun run compat:check` | 0 |
+| `bun run replay:verify` | 0 |
+| `bun run docs:verify:quick` | 0 |
+| `bun run docs:verify` | 0 |
+| `bun run templates:check` | 0 |
+| `bun run public:check` | 0 |
+| `bun run graph:check` | 0 |
+| `bun run --cwd packages/cli generate:check` | 0 |
+| `bun run --cwd packages/cli doctor:completions` | 0 |
+| `bun run bench:sim:check` | 0 |
+| `bun run kpi:report` | 0 |
+| `bun run kpi:regress` | 0 |
+| `bun run toolchain:smoke` | 0 |
