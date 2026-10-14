@@ -36,7 +36,9 @@ PR #223 review 수정으로 요구 파일 sha256은 `9ea2fb7348d2d06130092635188
 
 ## Graph
 
-`ttsc-graph` 0.30.4, protocol `2025-11-25`, generation identifier 없음, shutdown 0으로 조회했다. Lookup은 `runLocalBatch`를 `packages/core/src/sim/executionBackend.ts:241`, `finalizeBatch`를 `packages/core/src/sim/executionBackend.ts:198`, `runWorkerPool`을 `packages/cli/src/runtime/workers/pool.ts:46`, `runAnalysisTrial`을 `packages/cli/src/runtime/workers/trial.ts:101`에 둔다. `runWorkerPool`의 reverse execution trace (`maxDepth` 2, `maxNodes` 32)는 `pool.test.ts`의 pool host를 가리킨다. `finalizeBatch`의 같은 trace는 `runLocalBatch`와 `runWorkerPool`을 가리킨다. `graph:check`는 `ok unobserved createPlannerStrategy -> stepOnce (call is PlannerDeps.stepOnce; path hops=0; source default { stepOnce })`를 보고했다. forward trace (`maxDepth` 2, `maxNodes` 12)는 두 선언을 나열했고 call edge를 더하지 않았다. hops 0은 conformance가 아니다.
+조회한 커밋은 `e13b5cf2c0f6ba35831e1e6d0a1c7afa27096667`이며 `ttsc-graph` 0.30.4, protocol `2025-11-25`를 사용했다. 저장소 root에서 `packages/core/tsconfig.json`을 확장하고 `packages/core/src/sim/executionBackend.ts`를 root file로 둔 focused program과, `packages/cli/tsconfig.json`을 확장하고 `packages/cli/src/runtime/workers/pool.ts`를 root file로 둔 focused program을 조회했다. generation identifier는 반환되지 않았다.
+
+컴파일러 details는 `runLocalBatch`를 `packages/core/src/sim/executionBackend.ts:462–563`, `finalizeBatch`를 `packages/core/src/sim/executionBackend.ts:419–456`, `runWorkerPool`을 `packages/cli/src/runtime/workers/pool.ts:73–309`에 둔다. 제한된 impact trace (`maxDepth: 1`)는 485행의 local `finalizeBatch` 호출, 101행의 pool 호출, 126행의 finalization callback 호출을 찾았다. 두 trace 모두 `truncated: true`였으므로 다른 caller는 이 조회에서 관찰되지 않았다. 이 소스 위치는 읽을 곳을 안내하며 Evidence와 conformance는 별도 테스트 gate로 검증한다.
 
 JS 번들은 runtime/workers/entry.js를 찾아 TypeScript preload 없이 실행한다. 개발 소스는 entry.ts와 compiler preload를 유지한다. 패키지 회귀 테스트는 compiler 의존성이 없는 별도 소비자 디렉터리에서 실행한다. 보안 승인 오류만 PluginTrustError로 구분해 재시도하지 않는 plugin-trust로 남긴다. 승인 후 모듈 평가와 등록 실패는 trial-failed로 처리해 기존의 제한된 재시도를 따른다. 사용자 정의 loader의 정책 거부에는 명시적 오류 타입을 사용한다.
 
