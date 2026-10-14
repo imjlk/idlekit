@@ -14,6 +14,7 @@ import type { ScenarioV1 } from "./types";
  * PR-18 appends the rules judge report.
  * PR-15 appends the flow report.
  * PR-16 appends the guarded advance report.
+ * PR-19 appends the Jev advisory report.
  * The registry does not migrate every existing DTO.
  */
 
@@ -114,6 +115,12 @@ const contractRegistry = [
     kind: "advance" as const,
     typeName: "AdvanceReportV1",
     source: "packages/core/src/sim/advance.ts",
+  },
+  {
+    id: "idlekit.jev.advisory.v1" as const,
+    kind: "jev-advisory" as const,
+    typeName: "JevAdvisoryV1",
+    source: "packages/core/src/sim/analysis/jevAdvisory.ts",
   },
 ] as const;
 

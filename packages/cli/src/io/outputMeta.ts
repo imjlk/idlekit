@@ -21,6 +21,7 @@ const OUTPUT_SCHEMA_REF: Readonly<Record<string, string>> = {
   compare: "docs/schemas/compare.output.schema.json",
   doctor: "docs/schemas/doctor.output.schema.json",
   evaluate: "docs/schemas/evaluate.output.schema.json",
+  "judge.jev": "docs/schemas/jev.judge.output.schema.json",
   experience: "docs/schemas/experience.output.schema.json",
   "setup.completions": "docs/schemas/setup.output.schema.json",
   "setup.plugin-trust": "docs/schemas/setup.output.schema.json",
@@ -134,6 +135,7 @@ export function buildOutputMeta(args: {
   tuneSpec?: unknown;
   telemetry?: unknown;
   pluginDigest?: Readonly<Record<string, string>>;
+  schemaRef?: string;
   effectiveRunHash?: string;
   effectiveEngine?: string;
   stageScope?: OutputMeta["stageScope"];
@@ -154,7 +156,7 @@ export function buildOutputMeta(args: {
     command: args.command,
     generatedAt: new Date().toISOString(),
     contractVersion: OUTPUT_CONTRACT_VERSION,
-    schemaRef: outputSchemaRefForCommand(args.command),
+    schemaRef: args.schemaRef ?? outputSchemaRefForCommand(args.command),
     cliVersion,
     gitSha: resolveGitSha(),
     runId: args.runId,

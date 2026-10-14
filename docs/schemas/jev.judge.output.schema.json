@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://idlekit.dev/schemas/jev.judge.output.schema.json",
+  "title": "idk judge --provider jev output",
+  "description": "The rules report and the Jev advisory side by side. Each part keeps its generated contract.",
+  "type": "object",
+  "required": ["numericalReport", "advisory", "_meta"],
+  "additionalProperties": false,
+  "properties": {
+    "numericalReport": { "$ref": "https://idlekit.dev/schemas/judge.output.schema.json" },
+    "advisory": { "$ref": "https://idlekit.dev/schemas/jev.advisory.v1.schema.json" },
+    "_meta": {
+      "type": "object",
+      "required": ["command", "generatedAt", "contractVersion", "schemaRef", "cliVersion", "gitSha", "pluginDigest"],
+      "properties": {
+        "command": { "const": "judge" },
+        "generatedAt": { "type": "string" },
+        "contractVersion": { "type": "string" },
+        "schemaRef": { "const": "docs/schemas/jev.judge.output.schema.json" },
+        "cliVersion": { "type": "string" },
+        "gitSha": { "type": "string" },
+        "pluginDigest": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        }
+      }
+    }
+  }
+}

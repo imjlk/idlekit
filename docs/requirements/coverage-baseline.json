@@ -87,7 +87,14 @@
     "REQ-PR16-POLICY-BOUNDARY",
     "REQ-PR16-STOCHASTIC",
     "REQ-PR16-OBSERVATION-FACTS",
-    "REQ-PR16-MEASURED-BENCH"
+    "REQ-PR16-MEASURED-BENCH",
+    "REQ-PR19-NO-DEFAULT-FETCH",
+    "REQ-PR19-WIRE-SHAPES",
+    "REQ-PR19-HTTP-BUDGET",
+    "REQ-PR19-CACHE-IDENTITY",
+    "REQ-PR19-SECRET-BOUNDARY",
+    "REQ-PR19-NUMERICAL-UNCHANGED",
+    "REQ-PR19-OPT-IN-LIVE"
   ],
   "protectedFiles": [
     "docs/requirements/active/typia-transform.md",
@@ -184,6 +191,13 @@
     "docs/requirements/active/guarded-analytic-advance.md",
     "packages/core/src/sim/advance.ts",
     "packages/core/src/sim/advance.test.ts",
-    "examples/analysis/advance-constant.json"
+    "examples/analysis/advance-constant.json",
+    "docs/requirements/active/jev-judge-provider.md",
+    "packages/cli/src/lib/evaluation/providers/jev.ts",
+    "packages/cli/src/lib/evaluation/providers/jev.schema.ts",
+    "packages/core/src/sim/analysis/jevAdvisory.ts",
+    "packages/cli/src/lib/evaluation/cache.ts",
+    "packages/cli/src/lib/evaluation/providers/jev.test.ts",
+    "examples/analysis/jev-wire.json"
   ]
 }

@@ -1721,6 +1721,141 @@
           "args": ["test", "--timeout", "120000", "src/sim/advance.test.ts"]
         }
       ]
+    },
+    {
+      "id": "REQ-PR19-NO-DEFAULT-FETCH",
+      "pr": "PR-19",
+      "anchor": "req-pr19-no-default-fetch",
+      "doc": "docs/requirements/active/jev-judge-provider.md",
+      "production": [
+        "packages/cli/src/lib/evaluation/providers/jev.schema.ts",
+        "packages/cli/src/lib/evaluation/providers/jev.ts"
+      ],
+      "tests": [
+        {
+          "file": "packages/cli/src/lib/evaluation/providers/jev.test.ts",
+          "exportName": "keepsDefaultCommandsOffNetwork",
+          "registeredAs": "jev judge provider > keeps default commands off the network",
+          "cwd": "packages/cli",
+          "args": ["test", "--timeout", "90000", "src/lib/evaluation/providers/jev.test.ts"]
+        }
+      ]
+    },
+    {
+      "id": "REQ-PR19-WIRE-SHAPES",
+      "pr": "PR-19",
+      "anchor": "req-pr19-wire-shapes",
+      "doc": "docs/requirements/active/jev-judge-provider.md",
+      "production": [
+        "packages/cli/src/lib/evaluation/providers/jev.schema.ts",
+        "packages/core/src/sim/analysis/jevAdvisory.ts"
+      ],
+      "tests": [
+        {
+          "file": "packages/cli/src/lib/evaluation/providers/jev.test.ts",
+          "exportName": "validatesWireShapes",
+          "registeredAs": "jev judge provider > validates wire shapes",
+          "cwd": "packages/cli",
+          "args": ["test", "--timeout", "90000", "src/lib/evaluation/providers/jev.test.ts"]
+        }
+      ]
+    },
+    {
+      "id": "REQ-PR19-HTTP-BUDGET",
+      "pr": "PR-19",
+      "anchor": "req-pr19-http-budget",
+      "doc": "docs/requirements/active/jev-judge-provider.md",
+      "production": [
+        "packages/cli/src/lib/evaluation/providers/jev.schema.ts",
+        "packages/cli/src/lib/evaluation/providers/jev.ts"
+      ],
+      "tests": [
+        {
+          "file": "packages/cli/src/lib/evaluation/providers/jev.test.ts",
+          "exportName": "boundsHttpFailures",
+          "registeredAs": "jev judge provider > bounds http failures",
+          "cwd": "packages/cli",
+          "args": ["test", "--timeout", "90000", "src/lib/evaluation/providers/jev.test.ts"]
+        }
+      ]
+    },
+    {
+      "id": "REQ-PR19-CACHE-IDENTITY",
+      "pr": "PR-19",
+      "anchor": "req-pr19-cache-identity",
+      "doc": "docs/requirements/active/jev-judge-provider.md",
+      "production": [
+        "packages/cli/src/lib/evaluation/cache.ts",
+        "packages/cli/src/lib/evaluation/providers/jev.schema.ts",
+        "packages/cli/src/lib/evaluation/providers/jev.ts"
+      ],
+      "tests": [
+        {
+          "file": "packages/cli/src/lib/evaluation/providers/jev.test.ts",
+          "exportName": "separatesCacheIdentity",
+          "registeredAs": "jev judge provider > separates cache identity",
+          "cwd": "packages/cli",
+          "args": ["test", "--timeout", "90000", "src/lib/evaluation/providers/jev.test.ts"]
+        }
+      ]
+    },
+    {
+      "id": "REQ-PR19-SECRET-BOUNDARY",
+      "pr": "PR-19",
+      "anchor": "req-pr19-secret-boundary",
+      "doc": "docs/requirements/active/jev-judge-provider.md",
+      "production": [
+        "packages/cli/src/lib/evaluation/providers/jev.ts",
+        "packages/cli/src/lib/evaluation/providers/jev.schema.ts",
+        "packages/cli/src/lib/evaluation/cache.ts"
+      ],
+      "tests": [
+        {
+          "file": "packages/cli/src/lib/evaluation/providers/jev.test.ts",
+          "exportName": "keepsSecretsOutOfRecords",
+          "registeredAs": "jev judge provider > keeps secrets out of records",
+          "cwd": "packages/cli",
+          "args": ["test", "--timeout", "90000", "src/lib/evaluation/providers/jev.test.ts"]
+        }
+      ]
+    },
+    {
+      "id": "REQ-PR19-NUMERICAL-UNCHANGED",
+      "pr": "PR-19",
+      "anchor": "req-pr19-numerical-unchanged",
+      "doc": "docs/requirements/active/jev-judge-provider.md",
+      "production": [
+        "packages/cli/src/lib/evaluation/providers/jev.ts",
+        "packages/cli/src/lib/evaluation/providers/jev.schema.ts"
+      ],
+      "tests": [
+        {
+          "file": "packages/cli/src/lib/evaluation/providers/jev.test.ts",
+          "exportName": "keepsNumericalVerdicts",
+          "registeredAs": "jev judge provider > keeps numerical verdicts",
+          "cwd": "packages/cli",
+          "args": ["test", "--timeout", "90000", "src/lib/evaluation/providers/jev.test.ts"]
+        }
+      ]
+    },
+    {
+      "id": "REQ-PR19-OPT-IN-LIVE",
+      "pr": "PR-19",
+      "anchor": "req-pr19-opt-in-live",
+      "doc": "docs/requirements/active/jev-judge-provider.md",
+      "production": [
+        "packages/cli/src/lib/evaluation/providers/jev.ts",
+        "packages/cli/src/lib/evaluation/providers/jev.schema.ts"
+      ],
+      "tests": [
+        {
+          "file": "packages/cli/src/lib/evaluation/providers/jev.test.ts",
+          "exportName": "staysOptIn",
+          "registeredAs": "jev judge provider > stays opt-in",
+          "cwd": "packages/cli",
+          "args": ["test", "--timeout", "90000", "src/lib/evaluation/providers/jev.test.ts"]
+        }
+      ]
     }
   ]
 }
