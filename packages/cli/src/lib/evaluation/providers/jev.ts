@@ -77,7 +77,7 @@ export const jevLiveTransport = "injected-or-fetch" as const;
  * and stays.
  */
 const LOCAL_PATH_START =
-  /file:\/\/[^\s"'`()<>[\]{},;|]*|(?<![A-Za-z0-9+.-]:)(?<=^|[\s"'`(=,:;[{<])\/{2,}[^\s"'`()<>[\]{},;|/][^\s"'`()<>[\]{},;|]*|(?<=^|[\s"'`(=,:;[{<])(?:~\/[^\s"'`()<>[\]{},;|]*|\/[^\s"'`()<>[\]{},;|/][^\s"'`()<>[\]{},;|]*|[A-Za-z]:[\\/][^\s"'`()<>[\]{},;|]*|\\\\[^\s\\]+\\[^\s"'`()<>[\]{},;|]*)/gi;
+  /https?:\/\/[^\s"'`<>|]*|file:\/\/[^\s"'`()<>[\]{},;|]*|(?<=^|[\s\p{P}\p{S}])(?:~\/[^\s"'`()<>[\]{},;|]*|\/+[^\s"'`()<>[\]{},;|/][^\s"'`()<>[\]{},;|]*|[A-Za-z]:[\\/][^\s"'`()<>[\]{},;|]*|\\\\[^\s\\]+\\[^\s"'`()<>[\]{},;|]*)/giu;
 /** A last path component that names a file, such as `save.json`. */
 const FILE_COMPONENT = /(?:^|[\\/])[^\\/]*\.[A-Za-z0-9]{1,8}$/;
 /** A quote, bracket, or pipe closes the text a path can run through. */
@@ -108,6 +108,8 @@ function redactPaths(value: string): string {
   let out = "";
   let cursor = 0;
   for (const match of value.matchAll(LOCAL_PATH_START)) {
+    // Consume the whole web URL so punctuation inside it cannot start a local-path match.
+    if (/^https?:\/\//i.test(match[0])) continue;
     const start = match.index ?? 0;
     if (start < cursor) continue;
     out += `${value.slice(cursor, start)}[redacted]`;
@@ -508,7 +510,7 @@ export async function adviseWithJev(args: Readonly<{
   const projection = projectJevState(args.artifact, args.rubric, key);
   const numericalDigest = args.numerical.advisoryDigest;
   const keyMaterial = jevCacheKey({
-    projection: projection.state,
+    projection: { state: projection.state, questions: projection.questions },
     numericalDigest,
     rubricVersion: args.rubric.rubricVersion,
     requestedModel: args.requestedModel,
@@ -677,9 +679,10 @@ export async function adviseWithJev(args: Readonly<{
         if (!wire.ok) {
           return blank({ ...base, status: "failed", reason: wire.reason, cache: "miss", attempts: attempt + 1 });
         }
+        const usage = { inputTokens: wire.response.usage.input_tokens, outputTokens: wire.response.usage.output_tokens };
         // The provider chooses the model string. One that carries the key or a local path is refused, not copied or cached.
         if (redactString(wire.response.model, key) !== wire.response.model) {
-          return blank({ ...base, status: "failed", reason: "unsafe-model", cache: "miss", attempts: attempt + 1 });
+          return blank({ ...base, status: "failed", reason: "unsafe-model", cache: "miss", attempts: attempt + 1, usage });
         }
         // A pinned request accepts only that model. An alias must come back resolved to a concrete id.
         const answeredModel = wire.response.model;
@@ -687,7 +690,7 @@ export async function adviseWithJev(args: Readonly<{
           ? answeredModel === args.requestedModel
           : answeredModel.trim().length > 0 && answeredModel === answeredModel.trim() && aliasPolicy(answeredModel) === "pinned";
         if (!modelOk) {
-          return blank({ ...base, status: "failed", reason: "model-mismatch", cache: "miss", attempts: attempt + 1 });
+          return blank({ ...base, status: "failed", reason: "model-mismatch", cache: "miss", attempts: attempt + 1, usage });
         }
         const answers = summarize(wire.response, args.rubric, args.numerical);
         const status = reportStatus(answers);
@@ -698,10 +701,7 @@ export async function adviseWithJev(args: Readonly<{
           cache: "miss",
           attempts: attempt + 1,
           resolvedModel: wire.response.model,
-          usage: {
-            inputTokens: wire.response.usage.input_tokens,
-            outputTokens: wire.response.usage.output_tokens,
-          },
+          usage,
           answers,
         });
         if (args.cachePath && !compromised) {

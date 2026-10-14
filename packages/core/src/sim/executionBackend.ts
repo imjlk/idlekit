@@ -450,6 +450,7 @@ export function runLocalBatch(
   }>,
 ): ExecutionBatchV1 {
   const budget = budgetOf(options?.budget);
+  const signal = options?.signal;
   const batchId = options?.batchId ?? `local-${tasks.length}`;
   const clock = options?.clock ?? { now: () => performance.now() };
   const header = {
@@ -462,7 +463,7 @@ export function runLocalBatch(
   // Admission comes first, as in the worker pool: an aborted or oversized batch is answered before any measuring.
   if (tasks.length === 0) return finalizeBatch([], header);
   // An abort before submit outranks every other outcome, the queue bound included.
-  if (options?.signal?.aborted) return finalizeBatch(tasks.map((task) => outcomeOf(task, "cancelled", "abort", 0)), header);
+  if (signal?.aborted) return finalizeBatch(tasks.map((task) => outcomeOf(task, "cancelled", "abort", 0)), header);
   if (tasks.length > budget.queueBound) {
     return finalizeBatch(
       tasks.map((task) => outcomeOf(task, "incomplete", "queue-bound", 0)),
@@ -480,7 +481,7 @@ export function runLocalBatch(
   // taskTimeoutMs bounds each task on its own, as in the worker pool. There is no batch-wide window.
   const outcomes: AnalysisTrialOutcomeV1[] = [];
   for (const task of orderedTasks(prepared)) {
-    if (options?.signal?.aborted) {
+    if (signal?.aborted) {
       outcomes.push(outcomeOf(task, "cancelled", "abort", 0));
       continue;
     }
@@ -492,14 +493,14 @@ export function runLocalBatch(
     let attempt = 0;
     let outcome: AnalysisTrialOutcomeV1 | null = null;
     while (outcome === null) {
-      if (options?.signal?.aborted) {
+      if (signal?.aborted) {
         outcome = outcomeOf(task, "cancelled", "abort", attempt);
         break;
       }
       const started = clock.now();
       let raw: AnalysisTrialOutcomeV1;
       try {
-        raw = runner(task, { signal: options?.signal ?? new AbortController().signal, attempt, budget });
+        raw = runner(task, { signal: signal ?? new AbortController().signal, attempt, budget });
       } catch {
         // A thrown trial is a retryable failure of that task, as a crashed worker is. The batch keeps going.
         raw = outcomeOf(task, "failed", "trial-failed", attempt + 1);
@@ -525,7 +526,7 @@ export function runLocalBatch(
         attempts: attempt + 1,
       };
       // Every attempt is bounded, whatever it returned. A worker attempt is cut at the same window.
-      if (elapsed > budget.taskTimeoutMs) {
+      if (elapsed >= budget.taskTimeoutMs) {
         outcome = outcomeOf(task, "incomplete", "timeout", attempt + 1);
         break;
       }
@@ -541,10 +542,11 @@ export function runLocalBatch(
 }
 
 export function createLocalExecutionBackend(runner: TrialRunner, budget: ExecutionBudgetV1 = defaultExecutionBudget) {
+  const ownedBudget = budgetOf(budget);
   const inflight = new Map<string, AbortController>();
   return {
     kind: executionLocalDefault,
-    budget: () => budget,
+    budget: () => ownedBudget,
     cancel(batchId: string): void {
       inflight.get(batchId)?.abort();
     },
@@ -552,7 +554,8 @@ export function createLocalExecutionBackend(runner: TrialRunner, budget: Executi
       tasks: readonly AnalysisTrialTaskV1[],
       options?: Readonly<{ signal?: AbortSignal; batchId?: string; clock?: Readonly<{ now(): number }> }>,
     ): ExecutionBatchV1 {
-      const batchId = options?.batchId ?? `local-${tasks.length}-${tasks[0]?.taskId ?? "empty"}`;
+      const first = tasks[0];
+      const batchId = options?.batchId ?? `local-${tasks.length}-${first ? taskIdentity(first).taskId || "empty" : "empty"}`;
       const controller = new AbortController();
       const parent = options?.signal;
       const onAbort = () => controller.abort();
@@ -561,7 +564,7 @@ export function createLocalExecutionBackend(runner: TrialRunner, budget: Executi
       else parent?.addEventListener("abort", onAbort);
       inflight.set(batchId, controller);
       try {
-        return runLocalBatch(tasks, runner, { budget, signal: controller.signal, batchId, clock: options?.clock });
+        return runLocalBatch(tasks, runner, { budget: ownedBudget, signal: controller.signal, batchId, clock: options?.clock });
       } finally {
         inflight.delete(batchId);
         parent?.removeEventListener("abort", onAbort);
