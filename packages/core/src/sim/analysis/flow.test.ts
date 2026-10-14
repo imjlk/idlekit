@@ -45,7 +45,7 @@ function expectValid(report: FlowReportV1): void {
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-flow-adapter The observer hook is optional and three fixtures share it.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-flow-adapter #3c616c8 Re-read the section, then ran this function: onFlow records one sample, the three skins agree, and exponent spellings, true zero spellings, and a positive representable subnormal parse while unreadable amounts and nonzero decimals that become Number zero are rejected.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-flow-adapter #3c616c8 Re-read the section, then ran this function: onFlow records one sample, the three skins agree, and exponent spellings, true zero spellings, and a positive representable subnormal parse while unreadable amounts and nonzero decimals that become Number zero are rejected; losses that round to 1 without exactly spelling 1 are rejected and cannot conserve an empty stock, while exact-one spellings parse and conserve that stock.
  * @evidence ./flow.ts#flowOptionalAdapter Reads the optional-adapter marker.
  * @evidenceReview ./flow.ts#flowOptionalAdapter #d29de61 The declaration is observer-not-required-model.
  * @evidence ./flow.ts#validateFlowReport Reads the published validator.
@@ -166,6 +166,23 @@ export function declaresFlowAdapter(): void {
     expect(report.hypotheses[0]?.processId).toBe(processId);
     expect(fact(report, "final-throughput")?.amount).toBe("20");
     expect(fact(report, "final-throughput")?.unit).toBe(unit);
+  }
+  const observation = load("conversion");
+  for (const loss of ["0.99999999999999999", "1.00000000000000001"]) {
+    const rounded = { ...observation,
+      samples: observation.samples.map((sample) => sample.kind === "inflow" ? sample : { ...sample, amount: "0" }),
+      edges: observation.edges.map((edge) => ({ ...edge, loss })),
+    };
+    expect(parseFlowObservation(rounded).ok).toBe(false);
+    expect(diagnoseFlow(rounded).facts.some((item) => item.kind === "conservation")).toBe(false);
+  }
+  for (const loss of ["1", "+1.00", "0.1e1", "100e-2"]) {
+    const total = { ...observation,
+      samples: observation.samples.map((sample) => sample.kind === "inflow" ? sample : { ...sample, amount: "0" }),
+      edges: observation.edges.map((edge) => ({ ...edge, loss })),
+    };
+    expect(parseFlowObservation(total).ok).toBe(true);
+    expect(diagnoseFlow(total).facts.some((item) => item.kind === "conservation")).toBe(true);
   }
 }
 
@@ -727,25 +744,6 @@ export function separatesFactsFromCauses(): void {
 }
 
 describe("flow observability", () => {
-  it("does not turn an almost-total wire loss into a zero conservation proof", () => {
-    const observation = load("conversion");
-    for (const loss of ["0.99999999999999999", "1.00000000000000001"]) {
-      const rounded = { ...observation,
-        samples: observation.samples.map((sample) => sample.kind === "inflow" ? sample : { ...sample, amount: "0" }),
-        edges: observation.edges.map((edge) => ({ ...edge, loss })),
-      };
-      expect(parseFlowObservation(rounded).ok).toBe(false);
-      expect(diagnoseFlow(rounded).facts.some((item) => item.kind === "conservation")).toBe(false);
-    }
-    for (const loss of ["1", "+1.00", "0.1e1", "100e-2"]) {
-      const total = { ...observation,
-        samples: observation.samples.map((sample) => sample.kind === "inflow" ? sample : { ...sample, amount: "0" }),
-        edges: observation.edges.map((edge) => ({ ...edge, loss })),
-      };
-      expect(parseFlowObservation(total).ok).toBe(true);
-      expect(diagnoseFlow(total).facts.some((item) => item.kind === "conservation")).toBe(true);
-    }
-  });
   it("declares an optional flow adapter", declaresFlowAdapter);
   it("diagnoses a steady pipeline", diagnosesSteadyPipeline);
   it("checks flow conservation", checksFlowConservation);
