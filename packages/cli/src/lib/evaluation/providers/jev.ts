@@ -1,5 +1,6 @@
-import { mkdirSync, readFileSync, writeFileSync } from "fs";
-import { dirname } from "path";
+import { closeSync, lstatSync, mkdirSync, openSync, readFileSync, readlinkSync, realpathSync, renameSync, unlinkSync, writeFileSync } from "fs";
+import lockfile from "proper-lockfile";
+import { dirname, resolve } from "path";
 import {
   jevAlgorithmVersion,
   validateJevAdvisory,
@@ -151,22 +152,25 @@ export function projectJevState(
     seenMetricIds.add(metric.metricId);
     return true;
   });
-  const metrics = firstReadings.map((metric) => ({
+  const coverage = artifact.observationCoverage;
+  const withheld = coverage === "incomplete" || coverage === "unknown" || coverage === "disabled" || artifact.capabilities.metrics !== "statically-known";
+  const metrics = firstReadings.flatMap((metric) => rubric.rules.filter((rule) => rule.metricId === metric.metricId).map((rule) => ({
     // An amount reading is stored as a decimal string, not as `value`.
-    amount: metric.amount ? { decimal: metric.amount.decimal, unit: metric.amount.unit } : null,
+    amount: !withheld && metric.amount ? { decimal: metric.amount.decimal, unit: metric.amount.unit } : null,
     domain: metric.domain,
     meaning: metric.meaning,
-    method: metric.method ?? null,
+    method: metric.method ?? rule.method,
     metricId: metric.metricId,
     metricVersion: metric.metricVersion,
+    ruleId: rule.id,
     reading: metric.reading,
     sign: metric.sign ?? null,
     status: metric.status,
-    unit: metric.domain === "amount" ? (metric.amount?.unit ?? "amount") : metric.domain,
+    unit: metric.amount?.unit ?? rule.unit,
     // Only an observed reading with status ok is a value the numerical judge measures. Any other reading is missing to it,
     // so Jev gets no value either.
-    value: metric.reading === "observed" && metric.status === "ok" && "value" in metric ? metric.value : null,
-  }));
+    value: !withheld && metric.domain !== "amount" && metric.reading === "observed" && metric.status === "ok" && typeof metric.value === "number" && Number.isFinite(metric.value) ? metric.value : null,
+  })));
   const rules = rubric.rules.map((rule) => ({
     definition: rule.definition,
     id: rule.id,
@@ -197,7 +201,7 @@ export function projectJevState(
       {
         type: "noul",
         instructions:
-          "Take the rubric rule whose id is this question's id and the recorded reading of its metric. Does that reading fail the rule, judged by its operator, threshold, upper threshold, unit, and definition? When the reading has no usable value, the rule's missingPolicy decides: fail means it fails, and anything else means it does not. Use the recorded reading as given. Do not compute a new ETA, growth rate, or steady state.",
+          "Take the rubric rule whose id is this question's id and the projected reading whose ruleId is that id. Does that reading fail the rule, judged by its operator, threshold, upper threshold, unit, and definition? When the reading has no usable value, the rule's missingPolicy decides: fail means it fails, and anything else means it does not. Use the recorded reading as given. Do not compute a new ETA, growth rate, or steady state.",
         criteria: {
           true: "The recorded reading fails the rule",
           false: "The recorded reading satisfies the rule",
@@ -378,9 +382,46 @@ function readCachedAdvisory(text: string): JevAdvisoryV1 | null {
   }
 }
 
-function writeCache(path: string, entries: readonly JevCacheEntry[]): void {
+function cacheTarget(path: string, depth = 0): string {
+  if (depth >= 32) throw new Error("cyclic cache symlink");
+  try { return realpathSync(path); } catch {
+    try {
+      if (lstatSync(path).isSymbolicLink()) return cacheTarget(resolve(dirname(path), readlinkSync(path)), depth + 1);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+    return resolve(path);
+  }
+}
+
+async function writeCache(requestedPath: string, entry: JevCacheEntry): Promise<void> {
+  const path = cacheTarget(requestedPath);
   mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, serializeJevCache(entries));
+  let compromised: Error | undefined;
+  // Heartbeats distinguish a live owner from a lock left by a terminated process. Acquisition remains bounded.
+  const release = await lockfile.lock(path, {
+    realpath: false,
+    stale: 60_000,
+    update: 10_000,
+    retries: { retries: 100, factor: 1, minTimeout: 10, maxTimeout: 10, randomize: false },
+    onCompromised(error) { compromised = error; },
+  });
+  const temporary = `${path}.${crypto.randomUUID()}.tmp`;
+  let created = false;
+  try {
+    if (compromised) throw compromised;
+    // Read inside the lock: entries read before the HTTP await may already be stale.
+    const entries = readCache(path).filter((cached) => cached.key !== entry.key);
+    entries.push(entry);
+    const fd = openSync(temporary, "wx");
+    created = true;
+    try { writeFileSync(fd, serializeJevCache(entries)); } finally { closeSync(fd); }
+    renameSync(temporary, path);
+  } finally {
+    try { if (created) unlinkSync(temporary); } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    } finally { await release(); }
+  }
 }
 
 function retryable(status: number): boolean {
@@ -493,7 +534,7 @@ export async function adviseWithJev(args: Readonly<{
   if (args.dryRun) {
     return blank({
       ...base,
-      plannedRequests: cached ? 0 : plannedRequests,
+      plannedRequests: cached || key.length === 0 ? 0 : plannedRequests,
       status: "skipped",
       reason: "dry-run",
       cache: "bypass",
@@ -501,7 +542,7 @@ export async function adviseWithJev(args: Readonly<{
     });
   }
   // A hit and a missing key both end here without a request, so neither plans one.
-  if (cached) return { ...cached, cache: "hit", attempts: 0, plannedRequests: 0, dryRun: false };
+  if (cached) return { ...cached, cache: "hit", attempts: 0, plannedRequests: 0, dryRun: false, usage: null };
   if (key.length === 0) {
     return blank({ ...base, plannedRequests: 0, status: "unavailable", reason: "missing-api-key", cache: "miss", attempts: 0 });
   }
@@ -570,18 +611,17 @@ export async function adviseWithJev(args: Readonly<{
         answers,
       });
       if (args.cachePath) {
-        const next = entries.filter((entry) => entry.key !== keyMaterial);
-        next.push({
+        const entry: JevCacheEntry = {
           key: keyMaterial,
           requestedModel: args.requestedModel,
           resolvedModel: wire.response.model,
           rubricVersion: args.rubric.rubricVersion,
           storedAtMs: nowMs,
           advisoryJson: JSON.stringify(advisory),
-        });
+        };
         // A cache that cannot be written fails open. It is not an upstream failure and does not resend the paid request.
         try {
-          writeCache(args.cachePath, next);
+          await writeCache(args.cachePath, entry);
         } catch {
           // The advisory still stands. The next run misses and asks again.
         }

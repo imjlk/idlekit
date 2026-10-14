@@ -1,4 +1,4 @@
-import typia, { type IValidation } from "typia";
+import typia, { type IValidation, type tags } from "typia";
 import type { Engine } from "../engine/types";
 import type { Money } from "../money/types";
 import { exactAmountSign } from "./step";
@@ -39,9 +39,9 @@ export type AdvanceReportV1 = Readonly<{
   status: "exact" | "fallback";
   reason: string;
   tolerance: string | null;
-  exactSteps: number;
-  fallbackSteps: number;
-  chunks: number;
+  exactSteps: number & tags.Type<"uint64">;
+  fallbackSteps: number & tags.Type<"uint64">;
+  chunks: number & tags.Type<"uint64">;
   observation: "equivalent" | "degraded";
   seedSchedule: "unchanged";
   externalProvider: false;
@@ -314,13 +314,16 @@ export function consumeExactChunk<N, U extends string, Vars>(args: Readonly<{
   let dt = args.firstDt;
   for (;;) {
     if (taken > 0) {
+      // The runner owns stop callbacks. Return after one tick so a stateful until is
+      // read once per reference boundary, including when a chunk or a guard ends.
+      if (args.until) break;
       const decision = nextBoundary({
         elapsedSec,
         steps,
         stepSec: args.stepSec,
         durationSec: args.durationSec,
-        untilMet: args.until?.(cursor) ?? false,
-        hasUntil: args.until !== undefined,
+        untilMet: false,
+        hasUntil: false,
         maxSteps: args.maxSteps,
       });
       if (decision.kind !== "step") break;

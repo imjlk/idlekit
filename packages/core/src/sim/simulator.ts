@@ -74,6 +74,10 @@ export function runScenario<N, U extends string, Vars>(
   }
 
   assertSimulationClock("runScenario", { stepSec, durationSec, maxSteps, startT: start.t });
+  if (sc.run.advance?.enabled && sc.run.advance.chunkSec !== undefined &&
+      (!Number.isFinite(sc.run.advance.chunkSec) || sc.run.advance.chunkSec <= 0)) {
+    throw new Error("runScenario advance.chunkSec must be a finite number > 0");
+  }
   if (maxEvents !== undefined && (!Number.isInteger(maxEvents) || maxEvents < 0)) {
     throw new Error("runScenario eventLog.maxEvents must be an integer >= 0");
   }
