@@ -41,3 +41,5 @@ PR #223 review 수정으로 요구 파일 sha256은 `9ea2fb7348d2d06130092635188
 JS 번들은 runtime/workers/entry.js를 찾아 TypeScript preload 없이 실행한다. 개발 소스는 entry.ts와 compiler preload를 유지한다. 패키지 회귀 테스트는 compiler 의존성이 없는 별도 소비자 디렉터리에서 실행한다. 보안 승인 오류만 PluginTrustError로 구분해 재시도하지 않는 plugin-trust로 남긴다. 승인 후 모듈 평가와 등록 실패는 trial-failed로 처리해 기존의 제한된 재시도를 따른다. 사용자 정의 loader의 정책 거부에는 명시적 오류 타입을 사용한다.
 
 batch 배열의 빈 슬롯은 개별 거부로 처리한다. 같은 logical index·task id 쌍은 실행 전에 모두 거부하며, logical index가 다른 같은 task id는 허용한다. admission 거부의 시도 횟수는 0이다. 운영 trial payload에는 crash·hang 제어가 없으며, fault 주입은 별도 테스트 worker entry에서만 수행한다.
+
+Worker task는 `loadRegistries(...).pluginDigest`를 `pluginDigests`에 복사한다. Loader는 plugin 실행 전에 진입 파일과 로컬 import 전체의 해시를 다시 계산해 검증하고, 변경된 helper는 `plugin-trust`로 거부한다. 기존 `--plugin-sha256`과 trust-file의 진입 파일 해시 검증은 같은 의미를 유지한다. 로컬 import가 없는 plugin은 진입 파일 해시와 전체 해시가 같다.

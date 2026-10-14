@@ -139,6 +139,8 @@ export function parsePluginSha256(input: unknown): Record<string, string> {
 export type PluginSecurityOptions = Readonly<{
   allowedRoots?: readonly string[];
   requiredSha256?: Readonly<Record<string, string>>;
+  /** A parent loader's pluginDigest pins the entry and its local import closure. */
+  requiredClosureSha256?: Readonly<Record<string, string>>;
   trustFile?: string;
 }>;
 
@@ -239,12 +241,15 @@ export async function loadRegistries(
   const analyzerFailures: AnalyzerLoadFailure[] = [];
   let allowedRoots: string[];
   let requiredSha256: Record<string, string>;
+  let requiredClosureSha256: Record<string, string>;
   try {
     allowedRoots = (securityOptions.allowedRoots ?? []).map((x) => resolve(x));
     const trustFileSha256 = securityOptions.trustFile !== undefined ? await loadPluginTrustFile(securityOptions.trustFile) : {};
     requiredSha256 = mergeShaPolicies(trustFileSha256, securityOptions.requiredSha256 ?? {});
+    requiredClosureSha256 = mergeShaPolicies({}, securityOptions.requiredClosureSha256 ?? {});
   } catch (error) { throw asPluginTrustError(error); }
   const hasShaPolicy = Object.keys(requiredSha256).length > 0;
+  const hasClosurePolicy = Object.keys(requiredClosureSha256).length > 0;
   const pluginDigest: Record<string, string> = {};
   const pluginModelIds: string[] = [];
   const pluginStrategyIds: string[] = [];
@@ -268,9 +273,17 @@ export async function loadRegistries(
           throw new Error(`Plugin sha256 mismatch for '${p}'. expected=${expected} actual=${actualDigest}`);
         }
       }
+      const closureDigest = await pluginClosureDigest(abs, actualDigest);
+      if (hasClosurePolicy) {
+        const expected = requiredClosureSha256[abs];
+        if (!expected) throw new Error(`Missing closure sha256 for plugin path '${p}'`);
+        if (closureDigest !== expected) {
+          throw new Error(`Plugin closure sha256 mismatch for '${p}'. expected=${expected} actual=${closureDigest}`);
+        }
+      }
       // A repeated path loads last again, so its digest moves to the end.
       delete pluginDigest[abs];
-      pluginDigest[abs] = await pluginClosureDigest(abs, actualDigest);
+      pluginDigest[abs] = closureDigest;
     } catch (error) { throw asPluginTrustError(error); }
     // Bun names the module by its realpath anyway. Importing through a symlinked directory can
     // miss a file created after Bun cached that directory (Bun 1.4.2), so import the realpath.
