@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, spyOn } from "bun:test";
 import { readFileSync } from "fs";
 import {
   addDecimalStrings,
@@ -13,6 +13,8 @@ import {
   executionStableReduction,
   finalizeBatch,
   runLocalBatch,
+  prepareTrialTask,
+  readTrialOutcome,
   semanticDigest,
   serializedTaskBytes,
   taskIdentity,
@@ -60,7 +62,7 @@ function echo(value: AnalysisTrialTaskV1, endMoney: string): AnalysisTrialOutcom
  * @evidence ./executionBackend.ts#defaultExecutionBudget Reads the budget.
  * @evidenceReview ./executionBackend.ts#defaultExecutionBudget #4df9ea6 maxWorkers is 0.
  * @evidence ./executionBackend.ts#runLocalBatch Runs the batch in this process.
- * @evidenceReview ./executionBackend.ts#runLocalBatch #b9ef4bd Re-read runLocalBatch after the per-task window and the validate-first cost: two tasks run locally with no spawn cost, record UTF-8 serialized bytes, and form a full distribution.
+ * @evidenceReview ./executionBackend.ts#runLocalBatch #7bfe65f Re-read runLocalBatch after the per-task window and the validate-first cost: two tasks run locally with no spawn cost, record UTF-8 serialized bytes, and form a full distribution.
  */
 export function keepsLocalDefault(): void {
   expect(executionLocalDefault).toBe("local-default");
@@ -86,7 +88,9 @@ export function keepsLocalDefault(): void {
  * @evidence ./executionBackend.ts#serializedTaskBytes Measures one task as UTF-8 bytes of its JSON.
  * @evidenceReview ./executionBackend.ts#serializedTaskBytes #06012ad A Hangul task id counts more bytes than UTF-16 units, and the batch cost equals the measured bytes.
  * @evidence ./executionBackend.ts#taskRefusals Checks every task before the batch measures or runs any.
- * @evidenceReview ./executionBackend.ts#taskRefusals #3110912 Re-read both catch boundaries: empty, null, missing, or throwing error messages become invalid-task, reflection errors remain per-task refusals, the budget ceiling stays enforced, and valid siblings return null and run.
+ * @evidenceReview ./executionBackend.ts#taskRefusals #cd96e4d Re-read the per-task preparation delegation: original and actual JSON snapshots are checked before cost or dispatch, refused tasks retain their isolated reason, and valid siblings return null and run.
+ * @evidence ./executionBackend.ts#prepareTrialTask Validates and freezes the exact task snapshot a backend admits.
+ * @evidenceReview ./executionBackend.ts#prepareTrialTask #91a5d6d Re-read original validation, snapshot parsing/revalidation and both budget checks inside one refusal boundary; synthetic JSON hooks cannot raise the admitted step budget or throw out valid siblings, and ordinary snapshots are frozen.
  * @evidence ./executionBackend.ts#executionSerializableTask Reads the descriptor marker.
  * @evidenceReview ./executionBackend.ts#executionSerializableTask #c7343dd The declaration is json-descriptor.
  * @evidence ./executionBackend.ts#analysisTaskSeed Derives the seed from the logical index.
@@ -95,6 +99,9 @@ export function keepsLocalDefault(): void {
  * @evidenceReview ./executionBackend.ts#assertSerializableTask #113838d Re-read descriptor and array validation: uint32 seeds and canonical array indices are required, inherited array serialization and extra named indices are refused, cycles and non-JSON values fail, and plain tasks with shared acyclic references pass.
  */
 export function keepsSerializableTasks(): void {
+  const prepared = prepareTrialTask(task(0));
+  expect(prepared.ok).toBe(true);
+  if (prepared.ok) expect(Object.isFrozen(prepared.task)).toBe(true);
   expect(executionSerializableTask).toBe("json-descriptor");
   const forward = [task(0), task(1), task(2)];
   const reversed = [...forward].reverse();
@@ -276,13 +283,16 @@ export function reducesInLogicalOrder(): void {
  * @evidence ./executionBackend.ts#assertExecutionBudget Refuses a budget field that is not a finite non-negative integer.
  * @evidenceReview ./executionBackend.ts#assertExecutionBudget #4672303 Infinite maxRetries, NaN stepBudget, a negative queueBound, and a 3000000000 ms timeout throw, and the default budget passes.
  * @evidence ./executionBackend.ts#runLocalBatch Bounds each task by its own window and turns a thrown runner into a failed outcome.
- * @evidenceReview ./executionBackend.ts#runLocalBatch #b9ef4bd Re-read admission ahead of measuring, the pre-abort check ahead of the queue bound, and the loop: an oversized batch reports no bytes, the runner sees a frozen budget and a frozen task snapshot, no batch deadline remains, the window applies to every attempt before its status, a 2 ms task under a 5 ms budget is ok in third place, a throw is trial-failed with attempts counted, and a slow failure stops at one attempt.
+ * @evidence ./executionBackend.ts#readTrialOutcome Applies the same valid-success contract to local and worker results.
+ * @evidenceReview ./executionBackend.ts#readTrialOutcome #11c2975 Re-read captured own data fields: identity must match, status and attempt counts are checked, and successful outcomes require a digest and decimal money; malformed local successes and revoked proxies fail alone and valid sibling outcomes still run.
+ * @evidenceReview ./executionBackend.ts#runLocalBatch #7bfe65f Re-read admission ahead of measuring, the pre-abort check ahead of the queue bound, and the loop: an oversized batch reports no bytes, the runner sees a frozen budget and a frozen task snapshot, no batch deadline remains, the window applies to every attempt before its status, a 2 ms task under a 5 ms budget is ok in third place, a throw is trial-failed with attempts counted, and a slow failure stops at one attempt.
  * @evidence ./executionBackend.ts#executionFailureBoundary Reads the boundary marker.
  * @evidenceReview ./executionBackend.ts#executionFailureBoundary #5e9d9f9 The declaration is not-a-partial-distribution.
  * @evidence ./executionBackend.ts#createLocalExecutionBackend Submits a batch that cancel or an aborted signal stops.
  * @evidenceReview ./executionBackend.ts#createLocalExecutionBackend #495ab3a Cancel during the first task cancels the second, and a signal aborted before submit runs nothing.
  */
 export function boundsFailures(): void {
+  expect(readTrialOutcome(echo(task(0), "1"), task(0))).toEqual(echo(task(0), "1"));
   expect(executionFailureBoundary).toBe("not-a-partial-distribution");
   const holder: { backend?: ReturnType<typeof createLocalExecutionBackend> } = {};
   holder.backend = createLocalExecutionBackend(
@@ -473,6 +483,53 @@ export function boundsFailures(): void {
 }
 
 describe("execution backend", () => {
+  it("isolates revoked proxies and throwing then getters returned by local runners", () => {
+    const revoked = Proxy.revocable(echo(task(0), "1"), {});
+    revoked.revoke();
+    const throwingThen = Object.defineProperty(echo(task(0), "1"), "then", { get() { throw new Error("then-getter"); } });
+    for (const malformed of [revoked.proxy, throwingThen]) {
+      const batch = runLocalBatch([task(0), task(1)], (item) => item.logicalIndex === 0 ? malformed : echo(item, "1"),
+        { budget: { ...defaultExecutionBudget, maxRetries: 1 } });
+      expect(batch.outcomes.map((item) => item.status)).toEqual(["failed", "ok"]);
+      expect(batch.outcomes[0]!.attempts).toBe(2);
+      expect(batch.fullDistribution).toBe(false);
+    }
+    expect(readTrialOutcome(revoked.proxy, task(0))).toBeNull();
+  });
+  it("revalidates synthetic JSON snapshots within each task boundary", () => {
+    for (const replacement of [() => ({ ...task(0), stepBudget: defaultExecutionBudget.stepBudget + 1 }),
+      () => { throw new Error("synthetic-json"); }]) {
+      const synthetic = new Proxy(task(0), { get(target, key, receiver) {
+        return key === "toJSON" ? replacement : Reflect.get(target, key, receiver);
+      } });
+      const ran: string[] = [];
+      const batch = runLocalBatch([synthetic, task(1)], (item) => { ran.push(item.taskId); return echo(item, "1"); });
+      expect(batch.outcomes.map((item) => item.status)).toEqual(["failed", "ok"]);
+      expect(ran).toEqual(["trial-1"]);
+      expect(batch.fullDistribution).toBe(false);
+    }
+  });
+  it("isolates malformed local successes just like worker outcomes", () => {
+    for (const malformed of [{ ...echo(task(0), "1"), endMoney: null }, { ...echo(task(0), "bad") },
+      { ...echo(task(0), "1"), semanticDigest: null }]) {
+      const batch = runLocalBatch([task(0), task(1)], (item) => item.logicalIndex === 0 ? malformed : echo(item, "1"),
+        { budget: { ...defaultExecutionBudget, maxRetries: 1 } });
+      expect(batch.outcomes.map((item) => item.status)).toEqual(["failed", "ok"]);
+      expect(batch.outcomes[0]!.attempts).toBe(2);
+      expect(batch.fullDistribution).toBe(false);
+    }
+  });
+  it("uses monotonic local deadlines despite wall-clock jumps", () => {
+    for (const [monoEnd, wallEnd, status] of [[100, -1000, "incomplete"], [11, 100_000, "ok"]] as const) {
+      const mono = spyOn(performance, "now").mockReturnValueOnce(10).mockReturnValueOnce(monoEnd);
+      const wall = spyOn(Date, "now").mockReturnValueOnce(10).mockReturnValueOnce(wallEnd);
+      try {
+        const batch = runLocalBatch([task(0)], (item) => echo(item, "1"),
+          { budget: { ...defaultExecutionBudget, taskTimeoutMs: 10 } });
+        expect(batch.outcomes[0]!.status).toBe(status);
+      } finally { mono.mockRestore(); wall.mockRestore(); }
+    }
+  });
   it("isolates malformed thrown errors and reflection traps", () => {
     for (const kind of ["null", "undefined", "getter", "reflection"]) {
       let refused = task(0);

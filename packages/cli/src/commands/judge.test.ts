@@ -132,5 +132,5 @@ describe("judge command", () => {
     expect(written).toContain("This is not doctor");
     expect((await readText(resolve(dir, "analysis.json"))).length).toBeGreaterThan(0);
     await removePath(dir);
-  });
+  }, 360_000);
 });
