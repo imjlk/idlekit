@@ -1856,6 +1856,133 @@
           "args": ["test", "--timeout", "90000", "src/lib/evaluation/providers/jev.test.ts"]
         }
       ]
+    },
+    {
+      "id": "REQ-DX05-LOCAL-DEFAULT",
+      "pr": "DX-05",
+      "anchor": "req-dx05-local-default",
+      "doc": "docs/requirements/active/worker-execution-backend.md",
+      "production": ["packages/core/src/sim/executionBackend.ts"],
+      "tests": [
+        {
+          "file": "packages/core/src/sim/executionBackend.test.ts",
+          "exportName": "keepsLocalDefault",
+          "registeredAs": "execution backend > keeps the local backend as the default",
+          "cwd": "packages/core",
+          "args": ["test", "src/sim/executionBackend.test.ts"]
+        }
+      ]
+    },
+    {
+      "id": "REQ-DX05-SERIALIZABLE-TASK",
+      "pr": "DX-05",
+      "anchor": "req-dx05-serializable-task",
+      "doc": "docs/requirements/active/worker-execution-backend.md",
+      "production": ["packages/core/src/sim/executionBackend.ts"],
+      "tests": [
+        {
+          "file": "packages/core/src/sim/executionBackend.test.ts",
+          "exportName": "keepsSerializableTasks",
+          "registeredAs": "execution backend > keeps tasks serializable",
+          "cwd": "packages/core",
+          "args": ["test", "src/sim/executionBackend.test.ts"]
+        }
+      ]
+    },
+    {
+      "id": "REQ-DX05-STABLE-REDUCTION",
+      "pr": "DX-05",
+      "anchor": "req-dx05-stable-reduction",
+      "doc": "docs/requirements/active/worker-execution-backend.md",
+      "production": ["packages/core/src/sim/executionBackend.ts"],
+      "tests": [
+        {
+          "file": "packages/core/src/sim/executionBackend.test.ts",
+          "exportName": "reducesInLogicalOrder",
+          "registeredAs": "execution backend > reduces in logical order",
+          "cwd": "packages/core",
+          "args": ["test", "src/sim/executionBackend.test.ts"]
+        }
+      ]
+    },
+    {
+      "id": "REQ-DX05-FAILURE-BOUNDARY",
+      "pr": "DX-05",
+      "anchor": "req-dx05-failure-boundary",
+      "doc": "docs/requirements/active/worker-execution-backend.md",
+      "production": ["packages/core/src/sim/executionBackend.ts"],
+      "tests": [
+        {
+          "file": "packages/core/src/sim/executionBackend.test.ts",
+          "exportName": "boundsFailures",
+          "registeredAs": "execution backend > bounds failures",
+          "cwd": "packages/core",
+          "args": ["test", "src/sim/executionBackend.test.ts"]
+        }
+      ]
+    },
+    {
+      "id": "REQ-DX05-WORKER-PARITY",
+      "pr": "DX-05",
+      "anchor": "req-dx05-worker-parity",
+      "doc": "docs/requirements/active/worker-execution-backend.md",
+      "production": [
+        "packages/cli/src/runtime/workers/pool.ts",
+        "packages/cli/src/runtime/workers/trial.ts",
+        "packages/cli/src/runtime/workers/entry.ts",
+        "packages/core/src/testkit/conformance.ts"
+      ],
+      "tests": [
+        {
+          "file": "packages/core/src/testkit/conformance.test.ts",
+          "exportName": "keepsTrialParityAcrossTheSeedCorpus",
+          "registeredAs": "DX-05 trial parity relation > keeps trial parity across the seed corpus",
+          "cwd": "packages/core",
+          "args": ["test", "src/testkit/conformance.test.ts"]
+        },
+        {
+          "file": "packages/cli/src/runtime/workers/pool.test.ts",
+          "exportName": "matchesWorkerDigests",
+          "registeredAs": "worker execution backend > matches worker digests",
+          "cwd": "packages/cli",
+          "args": ["test", "--timeout", "90000", "src/runtime/workers/pool.test.ts"]
+        },
+        {
+          "file": "packages/cli/src/runtime/workers/pool.test.ts",
+          "exportName": "reversesCompletionOrder",
+          "registeredAs": "worker execution backend > reverses completion order",
+          "cwd": "packages/cli",
+          "args": ["test", "--timeout", "90000", "src/runtime/workers/pool.test.ts"]
+        },
+        {
+          "file": "packages/cli/src/runtime/workers/pool.test.ts",
+          "exportName": "boundsPoolFailures",
+          "registeredAs": "worker execution backend > bounds pool failures",
+          "cwd": "packages/cli",
+          "args": ["test", "--timeout", "90000", "src/runtime/workers/pool.test.ts"]
+        },
+        {
+          "file": "packages/cli/src/runtime/workers/pool.test.ts",
+          "exportName": "refusesUntrustedPlugins",
+          "registeredAs": "worker execution backend > refuses untrusted plugins",
+          "cwd": "packages/cli",
+          "args": ["test", "--timeout", "90000", "src/runtime/workers/pool.test.ts"]
+        },
+        {
+          "file": "packages/cli/src/runtime/workers/pool.test.ts",
+          "exportName": "roundTripsBreakInfinity",
+          "registeredAs": "worker execution backend > round-trips break infinity",
+          "cwd": "packages/cli",
+          "args": ["test", "--timeout", "90000", "src/runtime/workers/pool.test.ts"]
+        },
+        {
+          "file": "packages/cli/src/runtime/workers/pool.test.ts",
+          "exportName": "packsWorkerAsset",
+          "registeredAs": "worker execution backend > packs the worker asset",
+          "cwd": "packages/cli",
+          "args": ["test", "--timeout", "90000", "src/runtime/workers/pool.test.ts"]
+        }
+      ]
     }
   ]
 }

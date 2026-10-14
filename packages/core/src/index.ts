@@ -33,6 +33,7 @@ export * from "./sim/offline";
 export * from "./sim/random";
 export * from "./sim/session";
 export * from "./sim/monteCarlo";
+export * from "./sim/executionBackend";
 export * from "./sim/runFactory";
 export * from "./sim/constraints";
 export * from "./sim/observation";

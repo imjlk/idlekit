@@ -1,0 +1,599 @@
+import { canonicalJson, sha256Text } from "../scenario/scenarioContract";
+import { logicalDrawSeed } from "./random";
+
+/**
+ * Local execution backend.
+ * This module does not start a worker, open a file, or call the network.
+ * A Bun pool is a CLI adapter. The default batch is local.
+ */
+
+/**
+ * @evidence docs/requirements/active/worker-execution-backend.md#req-dx05-local-default The default backend is local. Worker count is not selected here.
+ * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-local-default #db57164 Re-read the section: maxWorkers 0 is the local default and there is no automatic worker selection.
+ */
+export const executionLocalDefault = "local-default" as const;
+
+/**
+ * @evidence docs/requirements/active/worker-execution-backend.md#req-dx05-serializable-task A task is a plain JSON descriptor. The seed is the logical draw seed.
+ * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-serializable-task #a0e348b Re-read the section: functions, class instances, cyclic payloads, and a bad step budget are refused before cost is measured, a shared reference is allowed, and the seed does not read a worker slot.
+ */
+export const executionSerializableTask = "json-descriptor" as const;
+
+/**
+ * @evidence docs/requirements/active/worker-execution-backend.md#req-dx05-stable-reduction Outcomes are ordered by logical index. The money total is a decimal-string sum.
+ * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-stable-reduction #855174a Re-read the section: completion order is not the addition order, Number() is not the sum, and a scientific amount is summed exactly.
+ */
+export const executionStableReduction = "logical-index" as const;
+
+/**
+ * @evidence docs/requirements/active/worker-execution-backend.md#req-dx05-failure-boundary Failure, cancellation, and incomplete stays are distinct. A partial batch is not a full distribution.
+ * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-failure-boundary #2262fcb Re-read the section: timeout and abort do not become a successful distribution, a retry keeps the same id and seed, the timeout is per task and per attempt, and a thrown runner is a failed task.
+ */
+export const executionFailureBoundary = "not-a-partial-distribution" as const;
+
+/**
+ * @evidence docs/requirements/active/worker-execution-backend.md#req-dx05-local-default The local budget keeps maxWorkers at 0 and records spawn cost on the batch.
+ * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-local-default #db57164 Re-read the section: a small batch does not choose a worker count.
+ */
+export const defaultExecutionBudget = Object.freeze({
+  maxWorkers: 0,
+  queueBound: 64,
+  taskTimeoutMs: 30_000,
+  stepBudget: 100_000,
+  maxRetries: 0,
+} as const);
+
+export type ExecutionBudgetV1 = Readonly<{
+  maxWorkers: number;
+  queueBound: number;
+  taskTimeoutMs: number;
+  stepBudget: number;
+  maxRetries: number;
+}>;
+
+export type AnalysisTrialTaskV1 = Readonly<{
+  schemaVersion: 1;
+  contract: "idlekit.execution-task.v1";
+  taskId: string;
+  logicalIndex: number;
+  seed: number;
+  stepBudget: number;
+  kind: "analysis-trial";
+  payload: unknown;
+  pluginPaths: readonly string[];
+  pluginRoots: readonly string[];
+  pluginDigests: Readonly<Record<string, string>>;
+}>;
+
+export type AnalysisTrialStatus = "ok" | "failed" | "cancelled" | "incomplete";
+
+export type AnalysisTrialOutcomeV1 = Readonly<{
+  taskId: string;
+  logicalIndex: number;
+  seed: number;
+  status: AnalysisTrialStatus;
+  reason: string;
+  attempts: number;
+  semanticDigest: string | null;
+  endMoney: string | null;
+}>;
+
+export type ExecutionBatchV1 = Readonly<{
+  schemaVersion: 1;
+  contract: "idlekit.execution-batch.v1";
+  batchId: string;
+  backend: "local" | "worker";
+  selection: "local-default" | "explicit-worker";
+  complete: boolean;
+  fullDistribution: boolean;
+  outcomes: readonly AnalysisTrialOutcomeV1[];
+  reduction: Readonly<{
+    order: "logical-index";
+    endMoney: string | null;
+  }>;
+  cost: Readonly<{
+    workerSpawnMs: number;
+    serializedBytes: number;
+  }>;
+}>;
+
+export type TrialContext = Readonly<{
+  signal: AbortSignal;
+  attempt: number;
+  budget: ExecutionBudgetV1;
+}>;
+
+export type TrialRunner = (task: AnalysisTrialTaskV1, ctx: TrialContext) => AnalysisTrialOutcomeV1;
+
+const DECIMAL = /^(-?)(\d+)(?:\.(\d+))?(?:[eE]([+-]?\d+))?$/;
+/*
+ * Two amounts whose exponents differ by more than this many digits are not summed exactly.
+ * Break-infinity end money such as 1e+400 sits well inside it.
+ */
+const MAX_EXPONENT_SPAN = 100_000;
+/** The largest delay a setTimeout honors. */
+const MAX_TIMER_MS = 2_147_483_647;
+
+function budgetOf(budget: ExecutionBudgetV1 | undefined): ExecutionBudgetV1 {
+  // A frozen copy: a runner receives it as ctx.budget and cannot raise maxRetries after the check.
+  const chosen: ExecutionBudgetV1 = Object.freeze({ ...(budget ?? defaultExecutionBudget) });
+  assertExecutionBudget(chosen);
+  return chosen;
+}
+
+/**
+ * Every budget field is a finite, non-negative integer, so a retry loop, a queue bound, or a step ceiling cannot be
+ * made endless or skipped by NaN or Infinity. Both backends check it before running anything.
+ *
+ * @evidence docs/requirements/active/worker-execution-backend.md#req-dx05-failure-boundary A budget with a non-finite or negative field is refused before any task runs.
+ * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-failure-boundary #2262fcb Re-read the section: retries stop at maxRetries, which must therefore be finite.
+ */
+export function assertExecutionBudget(budget: ExecutionBudgetV1): void {
+  for (const field of ["maxWorkers", "queueBound", "taskTimeoutMs", "stepBudget", "maxRetries"] as const) {
+    const value = budget[field];
+    if (!Number.isSafeInteger(value) || value < 0) throw new Error(`execution budget ${field} must be a finite integer >= 0`);
+  }
+  // A worker timer past this range fires after 1 ms instead, so a longer window is refused in both backends.
+  if (budget.taskTimeoutMs > MAX_TIMER_MS) throw new Error(`execution budget taskTimeoutMs must be <= ${MAX_TIMER_MS}`);
+}
+
+function assertPlain(value: unknown, seen: WeakSet<object>): void {
+  if (value === null || typeof value === "string" || typeof value === "boolean") return;
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) throw new Error("non-finite number");
+    return;
+  }
+  if (typeof value !== "object") throw new Error("not serializable");
+  // `seen` holds only the objects on the current path. A shared, acyclic reference serializes fine.
+  if (seen.has(value)) throw new Error("cycle");
+  // Every own property must be plain data. A hidden toJSON, a getter, or a symbol key would let serialization
+  // differ from what was checked, so any of them is refused.
+  for (const key of Reflect.ownKeys(value)) {
+    if (Array.isArray(value) && key === "length") continue;
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (typeof key !== "string" || !descriptor || !("value" in descriptor) || !descriptor.enumerable) {
+      throw new Error("not serializable");
+    }
+  }
+  seen.add(value);
+  try {
+    if (Array.isArray(value)) {
+      if (Object.getPrototypeOf(value) !== Array.prototype) throw new Error("not a plain array");
+      // An array carries indexed items only. A named property such as an own toJSON is refused.
+      for (const key of Object.keys(value)) {
+        if (!/^(0|[1-9]\d*)$/.test(key) || Number(key) >= 4294967295) throw new Error("not serializable");
+      }
+      for (const item of value) assertPlain(item, seen);
+      return;
+    }
+    if (Object.getPrototypeOf(value) !== Object.prototype) throw new Error("not a plain object");
+    for (const entry of Object.values(value)) assertPlain(entry, seen);
+  } finally {
+    seen.delete(value);
+  }
+}
+
+export function assertSerializableTask(task: AnalysisTrialTaskV1): void {
+  if (task.schemaVersion !== 1 || task.contract !== "idlekit.execution-task.v1") {
+    throw new Error("unsupported task contract");
+  }
+  if (task.kind !== "analysis-trial") throw new Error("unsupported task kind");
+  if (!Number.isSafeInteger(task.logicalIndex) || task.logicalIndex < 0) throw new Error("logical index");
+  if (!Number.isInteger(task.seed) || task.seed < 0 || task.seed > 4294967295) throw new Error("seed");
+  if (typeof task.taskId !== "string" || task.taskId.length === 0) throw new Error("task id");
+  if (!Number.isSafeInteger(task.stepBudget) || task.stepBudget < 0) throw new Error("step budget");
+  assertPlain(task.payload, new WeakSet());
+  // The plugin containers keep their declared shapes. A string spread into characters is not a path list.
+  if (!Array.isArray(task.pluginPaths) || !task.pluginPaths.every((item) => typeof item === "string")) {
+    throw new Error("plugin paths");
+  }
+  if (!Array.isArray(task.pluginRoots) || !task.pluginRoots.every((item) => typeof item === "string")) {
+    throw new Error("plugin roots");
+  }
+  const digests: unknown = task.pluginDigests;
+  if (
+    digests === null ||
+    typeof digests !== "object" ||
+    Array.isArray(digests) ||
+    Object.getPrototypeOf(digests) !== Object.prototype ||
+    !Object.values(digests).every((item) => typeof item === "string")
+  ) {
+    throw new Error("plugin digests");
+  }
+  // The descriptor itself is posted, so an extra own property such as a function is refused here too.
+  assertPlain(task, new WeakSet());
+}
+
+/** Logical draw seed. Worker count and completion order are not arguments. */
+export function analysisTaskSeed(baseSeed: number, logicalIndex: number): number {
+  return logicalDrawSeed(baseSeed, logicalIndex);
+}
+
+/**
+ * value = digits * 10^exponent. `scientific` records that the input carried an exponent.
+ * The exponent is a bigint: break-infinity can serialize an exponent past Number's safe range.
+ */
+type ScaledDecimal = Readonly<{ digits: bigint; exponent: bigint; scientific: boolean }>;
+
+function parseDecimal(value: string): ScaledDecimal {
+  const match = DECIMAL.exec(value);
+  if (!match) throw new Error("decimal required");
+  const [, sign = "", whole = "0", frac = "", exponentText] = match;
+  const exponent = exponentText === undefined ? 0n : BigInt(exponentText);
+  const magnitude = BigInt(`${whole}${frac}`);
+  return {
+    digits: sign === "-" ? -magnitude : magnitude,
+    exponent: exponent - BigInt(frac.length),
+    scientific: exponentText !== undefined,
+  };
+}
+
+function renderPlain(sum: bigint, scale: number): string {
+  const negative = sum < 0n;
+  const abs = (negative ? -sum : sum).toString().padStart(scale + 1, "0");
+  const whole = scale === 0 ? abs : abs.slice(0, abs.length - scale);
+  const frac = scale === 0 ? "" : abs.slice(abs.length - scale).replace(/0+$/, "");
+  const text = frac.length > 0 ? `${whole}.${frac}` : whole.replace(/^0+(?=\d)/, "");
+  if (text === "0") return "0";
+  return negative ? `-${text}` : text;
+}
+
+/** Exact scientific form: every significant digit stays, so no rounding happens here. */
+function renderScientific(sum: bigint, exponent: bigint): string {
+  if (sum === 0n) return "0";
+  const negative = sum < 0n;
+  let digits = negative ? -sum : sum;
+  let power = exponent;
+  while (digits % 10n === 0n) {
+    digits /= 10n;
+    power += 1n;
+  }
+  const text = digits.toString();
+  const scientificExponent = power + BigInt(text.length - 1);
+  const mantissa = text.length > 1 ? `${text[0]}.${text.slice(1)}` : text;
+  return `${negative ? "-" : ""}${mantissa}e${scientificExponent >= 0n ? "+" : ""}${scientificExponent}`;
+}
+
+export function addDecimalStrings(left: string, right: string): string {
+  const a = parseDecimal(left);
+  const b = parseDecimal(right);
+  const scientific = a.scientific || b.scientific;
+  // A zero term has no exponent to align, so a far exponent on zero does not widen the sum.
+  if (a.digits === 0n || b.digits === 0n) {
+    const only = a.digits === 0n ? b : a;
+    if (scientific) return renderScientific(only.digits, only.exponent);
+    return renderPlain(only.digits, Number(only.exponent < 0n ? -only.exponent : 0n));
+  }
+  const low = a.exponent < b.exponent ? a.exponent : b.exponent;
+  const high = a.exponent < b.exponent ? b.exponent : a.exponent;
+  // Only the gap between the two exponents is expanded, so a huge exponent on both sides is still exact.
+  if (high - low > BigInt(MAX_EXPONENT_SPAN)) throw new Error("exponent span too wide for an exact sum");
+  const sum = a.digits * 10n ** (a.exponent - low) + b.digits * 10n ** (b.exponent - low);
+  // Plain inputs have exponent <= 0, so the plain form keeps the earlier output exactly.
+  if (scientific) return renderScientific(sum, low);
+  return renderPlain(sum, Number(-low));
+}
+
+/** UTF-8 bytes of the JSON message that carries one task. JSON.stringify().length counts UTF-16 units instead. */
+export function serializedTaskBytes(task: AnalysisTrialTaskV1): number {
+  return new TextEncoder().encode(JSON.stringify(task)).byteLength;
+}
+
+/** The refusal reason for each task, in input order, or null for a task that may run. */
+export function taskRefusals(
+  tasks: readonly AnalysisTrialTaskV1[],
+  budget: ExecutionBudgetV1 = defaultExecutionBudget,
+): (string | null)[] {
+  return prepareTrialTasks(tasks, budget).map((prepared) => {
+    return prepared.ok ? null : prepared.reason;
+  });
+}
+
+/** Dense admission results; every repeated logical identity is refused before either backend runs it. */
+export function prepareTrialTasks(
+  tasks: readonly AnalysisTrialTaskV1[],
+  budget: ExecutionBudgetV1 = defaultExecutionBudget,
+): ReturnType<typeof prepareTrialTask>[] {
+  const prepared = Array.from(tasks, (task) => prepareTrialTask(task, budget));
+  const identities = new Map<string, number[]>();
+  prepared.forEach((snapshot, index) => {
+    if (!snapshot.ok) return;
+    const key = JSON.stringify([snapshot.task.logicalIndex, snapshot.task.taskId]);
+    const indices = identities.get(key) ?? [];
+    indices.push(index);
+    identities.set(key, indices);
+  });
+  for (const indices of identities.values()) {
+    if (indices.length < 2) continue;
+    for (const index of indices) prepared[index] = { ok: false, reason: "duplicate-task-identity" };
+  }
+  return prepared;
+}
+
+/** Validate the actual JSON snapshot inside the per-task refusal boundary. */
+export function prepareTrialTask(
+  task: AnalysisTrialTaskV1,
+  budget: ExecutionBudgetV1 = defaultExecutionBudget,
+): { ok: true; task: AnalysisTrialTaskV1 } | { ok: false; reason: string } {
+  try {
+    assertSerializableTask(task);
+    if (task.stepBudget > budget.stepBudget) return { ok: false, reason: "step budget exceeds the execution budget" };
+    const snapshot = JSON.parse(JSON.stringify(task)) as AnalysisTrialTaskV1;
+    assertSerializableTask(snapshot);
+    // The budget's step limit is a ceiling on every task, so a larger request is refused, not run.
+    if (snapshot.stepBudget > budget.stepBudget) return { ok: false, reason: "step budget exceeds the execution budget" };
+    return { ok: true, task: deepFreeze(snapshot) };
+  } catch (error) {
+    // Thrown objects can have a missing, non-string, or throwing message property.
+    try {
+      const message = error instanceof Error ? error.message : undefined;
+      return { ok: false, reason: typeof message === "string" && message.length > 0 ? message : "invalid-task" };
+    } catch {
+      return { ok: false, reason: "invalid-task" };
+    }
+  }
+}
+
+function ownData(value: object, key: string): unknown {
+  try {
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    return descriptor && "value" in descriptor ? descriptor.value : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Apply the same success contract in both backends, without invoking outcome accessors. */
+export function readTrialOutcome(value: unknown, task: AnalysisTrialTaskV1): AnalysisTrialOutcomeV1 | null {
+  // Even Array.isArray throws for a revoked proxy; malformed outcomes stay inside their trial boundary.
+  try { if (value === null || typeof value !== "object" || Array.isArray(value)) return null; } catch { return null; }
+  if (ownData(value, "taskId") !== task.taskId || ownData(value, "logicalIndex") !== task.logicalIndex || ownData(value, "seed") !== task.seed) return null;
+  const status = ownData(value, "status");
+  const reason = ownData(value, "reason");
+  const attempts = ownData(value, "attempts");
+  const semanticDigest = ownData(value, "semanticDigest");
+  const endMoney = ownData(value, "endMoney");
+  if (status !== "ok" && status !== "failed" && status !== "cancelled" && status !== "incomplete") return null;
+  if (typeof reason !== "string" || typeof attempts !== "number" || !Number.isSafeInteger(attempts) || attempts < 0) return null;
+  if (semanticDigest !== null && typeof semanticDigest !== "string") return null;
+  if (endMoney !== null && typeof endMoney !== "string") return null;
+  if (status === "ok" && (semanticDigest === null || endMoney === null)) return null;
+  try { if (endMoney !== null) addDecimalStrings("0", endMoney); } catch { return null; }
+  return { taskId: task.taskId, logicalIndex: task.logicalIndex, seed: task.seed, status, reason, attempts, semanticDigest, endMoney };
+}
+
+/**
+ * The identity an outcome reports, read from own data properties only. A refused descriptor may carry getters;
+ * reading them again could throw, so a field that is not plain data falls back to "", -1, or 0.
+ *
+ * @evidence docs/requirements/active/worker-execution-backend.md#req-dx05-serializable-task A refused task is reported without invoking its accessors.
+ * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-serializable-task #a0e348b Re-read the section: a refused task fails alone and its siblings still run.
+ */
+export function taskIdentity(task: AnalysisTrialTaskV1): Readonly<{ taskId: string; logicalIndex: number; seed: number }> {
+  if (task === null || typeof task !== "object") return { taskId: "", logicalIndex: -1, seed: 0 };
+  const taskId = ownData(task, "taskId");
+  const logicalIndex = ownData(task, "logicalIndex");
+  const seed = ownData(task, "seed");
+  return {
+    taskId: typeof taskId === "string" ? taskId : "",
+    logicalIndex: typeof logicalIndex === "number" && Number.isSafeInteger(logicalIndex) && logicalIndex >= 0 ? logicalIndex : -1,
+    seed: typeof seed === "number" && Number.isInteger(seed) && seed >= 0 && seed <= 4294967295 ? seed : 0,
+  };
+}
+
+function deepFreeze<T>(value: T): T {
+  if (value !== null && typeof value === "object" && !Object.isFrozen(value)) {
+    Object.freeze(value);
+    for (const item of Object.values(value)) deepFreeze(item);
+  }
+  return value;
+}
+
+function outcomeOf(
+  task: AnalysisTrialTaskV1,
+  status: AnalysisTrialStatus,
+  reason: string,
+  attempts: number,
+): AnalysisTrialOutcomeV1 {
+  const identity = taskIdentity(task);
+  return {
+    taskId: identity.taskId,
+    logicalIndex: identity.logicalIndex,
+    seed: identity.seed,
+    status,
+    reason,
+    attempts,
+    semanticDigest: null,
+    endMoney: null,
+  };
+}
+
+function orderedTasks(tasks: readonly AnalysisTrialTaskV1[]): AnalysisTrialTaskV1[] {
+  return [...tasks].sort((leftTask, rightTask) => {
+    const left = taskIdentity(leftTask);
+    const right = taskIdentity(rightTask);
+    return left.logicalIndex - right.logicalIndex || (left.taskId < right.taskId ? -1 : left.taskId > right.taskId ? 1 : 0);
+  });
+}
+
+export function finalizeBatch(
+  outcomes: readonly AnalysisTrialOutcomeV1[],
+  cost: Readonly<{
+    batchId: string;
+    backend: "local" | "worker";
+    selection: "local-default" | "explicit-worker";
+    workerSpawnMs: number;
+    serializedBytes: number;
+  }>,
+): ExecutionBatchV1 {
+  const sorted = [...outcomes].sort(
+    (left, right) => left.logicalIndex - right.logicalIndex || (left.taskId < right.taskId ? -1 : left.taskId > right.taskId ? 1 : 0),
+  );
+  const full = sorted.length > 0 && sorted.every((outcome) => outcome.status === "ok");
+  let endMoney: string | null = null;
+  if (full) {
+    try {
+      endMoney = sorted.reduce<string | null>((sum, outcome) => {
+        if (sum === null || outcome.endMoney === null) return null;
+        return addDecimalStrings(sum, outcome.endMoney);
+      }, "0");
+    } catch {
+      endMoney = null;
+    }
+  }
+  return {
+    schemaVersion: 1,
+    contract: "idlekit.execution-batch.v1",
+    batchId: cost.batchId,
+    backend: cost.backend,
+    selection: cost.selection,
+    complete: true,
+    fullDistribution: full,
+    outcomes: sorted,
+    reduction: { order: "logical-index", endMoney },
+    cost: { workerSpawnMs: cost.workerSpawnMs, serializedBytes: cost.serializedBytes },
+  };
+}
+
+function isPromise(value: unknown): value is Promise<unknown> {
+  return typeof value === "object" && value !== null && typeof (value as { then?: unknown }).then === "function";
+}
+
+export function runLocalBatch(
+  submittedTasks: readonly AnalysisTrialTaskV1[],
+  runner: TrialRunner,
+  options?: Readonly<{
+    budget?: ExecutionBudgetV1;
+    signal?: AbortSignal;
+    batchId?: string;
+    clock?: Readonly<{ now(): number }>;
+  }>,
+): ExecutionBatchV1 {
+  const budget = budgetOf(options?.budget);
+  const tasks = Array.from(submittedTasks);
+  const signal = options?.signal;
+  const batchId = options?.batchId ?? `local-${tasks.length}`;
+  const clock = options?.clock ?? { now: () => performance.now() };
+  const header = {
+    batchId,
+    backend: "local" as const,
+    selection: "local-default" as const,
+    workerSpawnMs: 0,
+    serializedBytes: 0,
+  };
+  // Admission comes first, as in the worker pool: an aborted or oversized batch is answered before any measuring.
+  if (tasks.length === 0) return finalizeBatch([], header);
+  // An abort before submit outranks every other outcome, the queue bound included.
+  if (signal?.aborted) return finalizeBatch(tasks.map((task) => outcomeOf(task, "cancelled", "abort", 0)), header);
+  if (tasks.length > budget.queueBound) {
+    return finalizeBatch(
+      tasks.map((task) => outcomeOf(task, "incomplete", "queue-bound", 0)),
+      header,
+    );
+  }
+  // Validate before measuring, so a cyclic payload fails its own task instead of throwing out of the batch.
+  const snapshots = prepareTrialTasks(tasks, budget);
+  const reasons = snapshots.map((snapshot) => snapshot.ok ? null : snapshot.reason);
+  // A valid task runs from a frozen snapshot, so a runner cannot change its id, seed, or budget for a retry,
+  // and a later change to the caller's object cannot reach it.
+  const prepared = tasks.map((task, index) => { const snapshot = snapshots[index]!; return snapshot.ok ? snapshot.task : task; });
+  const refusals = new Map(prepared.map((task, index) => [task, reasons[index] ?? null] as const));
+  header.serializedBytes = prepared.reduce((sum, task) => (refusals.get(task) === null ? sum + serializedTaskBytes(task) : sum), 0);
+  // taskTimeoutMs bounds each task on its own, as in the worker pool. There is no batch-wide window.
+  const outcomes: AnalysisTrialOutcomeV1[] = [];
+  for (const task of orderedTasks(prepared)) {
+    if (signal?.aborted) {
+      outcomes.push(outcomeOf(task, "cancelled", "abort", 0));
+      continue;
+    }
+    const invalid = refusals.get(task) ?? null;
+    if (invalid) {
+      outcomes.push(outcomeOf(task, "failed", invalid, 0));
+      continue;
+    }
+    let attempt = 0;
+    let outcome: AnalysisTrialOutcomeV1 | null = null;
+    while (outcome === null) {
+      if (signal?.aborted) {
+        outcome = outcomeOf(task, "cancelled", "abort", attempt);
+        break;
+      }
+      const started = clock.now();
+      let raw: AnalysisTrialOutcomeV1;
+      try {
+        raw = runner(task, { signal: signal ?? new AbortController().signal, attempt, budget });
+      } catch {
+        // A thrown trial is a retryable failure of that task, as a crashed worker is. The batch keeps going.
+        raw = outcomeOf(task, "failed", "trial-failed", attempt + 1);
+      }
+      let asynchronous = false;
+      let checked: AnalysisTrialOutcomeV1 | null = null;
+      try {
+        asynchronous = isPromise(raw);
+        if (!asynchronous) checked = readTrialOutcome(raw, task);
+      } catch {
+        // Reflection or a throwing then getter is a malformed result of this task.
+      }
+      if (asynchronous) {
+        throw new Error("local execution runner must be synchronous");
+      }
+      checked ??= outcomeOf(task, "failed", "trial-failed", attempt + 1);
+      const elapsed = clock.now() - started;
+      const next: AnalysisTrialOutcomeV1 = {
+        ...checked,
+        taskId: task.taskId,
+        logicalIndex: task.logicalIndex,
+        seed: task.seed,
+        attempts: attempt + 1,
+      };
+      // Every attempt is bounded, whatever it returned. A worker attempt is cut at the same window.
+      if (elapsed >= budget.taskTimeoutMs) {
+        outcome = outcomeOf(task, "incomplete", "timeout", attempt + 1);
+        break;
+      }
+      if (next.status === "failed" && next.reason !== "plugin-trust" && attempt < budget.maxRetries) {
+        attempt += 1;
+        continue;
+      }
+      outcome = next;
+    }
+    outcomes.push(outcome);
+  }
+  return finalizeBatch(outcomes, header);
+}
+
+export function createLocalExecutionBackend(runner: TrialRunner, budget: ExecutionBudgetV1 = defaultExecutionBudget) {
+  const ownedBudget = budgetOf(budget);
+  const inflight = new Map<string, AbortController>();
+  return {
+    kind: executionLocalDefault,
+    budget: () => ownedBudget,
+    cancel(batchId: string): void {
+      inflight.get(batchId)?.abort();
+    },
+    submit(
+      tasks: readonly AnalysisTrialTaskV1[],
+      options?: Readonly<{ signal?: AbortSignal; batchId?: string; clock?: Readonly<{ now(): number }> }>,
+    ): ExecutionBatchV1 {
+      const first = tasks[0];
+      const batchId = options?.batchId ?? `local-${tasks.length}-${first ? taskIdentity(first).taskId || "empty" : "empty"}`;
+      const controller = new AbortController();
+      const parent = options?.signal;
+      const onAbort = () => controller.abort();
+      // A signal that was aborted before submit fires no event, so carry it over now.
+      if (parent?.aborted) controller.abort();
+      else parent?.addEventListener("abort", onAbort);
+      inflight.set(batchId, controller);
+      try {
+        return runLocalBatch(tasks, runner, { budget: ownedBudget, signal: controller.signal, batchId, clock: options?.clock });
+      } finally {
+        inflight.delete(batchId);
+        parent?.removeEventListener("abort", onAbort);
+      }
+    },
+  };
+}
+
+export function semanticDigest(value: unknown): string {
+  return sha256Text(canonicalJson(value));
+}

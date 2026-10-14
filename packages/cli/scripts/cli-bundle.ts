@@ -38,8 +38,12 @@ await Bun.$`rm -rf ${outdirAbs}`.quiet();
 await Bun.$`mkdir -p ${outdirAbs}`.quiet();
 
 {
+  const workerEntry = resolve(cliRoot, "src/runtime/workers/entry.ts");
   const result = await Bun.build({
-    entrypoints: [entry],
+    // Native compile stays a single entry. The JS bundle also emits the worker entry.
+    entrypoints: targets === "native" ? [entry] : [entry, workerEntry],
+    // Keep paths relative to src, so dist/main.js stays the bin and the worker lands at dist/runtime/workers/entry.js.
+    root: resolve(cliRoot, "src"),
     outdir,
     target: "bun",
     format: "esm",
