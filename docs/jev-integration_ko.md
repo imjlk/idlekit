@@ -12,6 +12,7 @@
 
 저장된 cache는 provider endpoint와 모델 정책이 일치하고 secret·로컬 경로 검사도 통과해야 한다. advisory 보고서에 정의되지 않은 필드가 있으면 miss로 처리한다.
 응답과 cache 재생의 resolved model id는 비어 있거나 양끝에 공백이 있으면 거부한다.
+alias 요청은 응답에 같은 alias가 돌아와도 동일한 24시간 TTL로 받아들인다. cache 저장 시 만료된 alias 기록을 버리고 최근 저장한 256개 항목까지만 유지한다. 확률 합계와 가중 점수의 0.02 반올림 허용치 경계는 부동소수점 epsilon을 포함해 판정한다.
 
 cache 키는 projection의 상태와 질문 문구를 함께 묶는다. provider 응답의 모델명이 거부돼도 검증된 토큰 사용량은 실패 advisory에 남긴다. 구두점 뒤의 절대 경로도 가리며, 완전한 웹 URL은 보존한다.
 

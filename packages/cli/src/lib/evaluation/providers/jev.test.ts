@@ -247,7 +247,7 @@ export function keepsDefaultCommandsOffNetwork(): Promise<void> {
  * @evidence ../../../../../core/src/sim/analysis/jevAdvisory.ts#jevAlgorithmVersion Reads the algorithm version.
  * @evidenceReview ../../../../../core/src/sim/analysis/jevAdvisory.ts#jevAlgorithmVersion #3a63e24 The version is jev-advisory-1.
  * @evidence ./jev.schema.ts#readJevWire Accepts an answer only when it matches its question type.
- * @evidenceReview ./jev.schema.ts#readJevWire #6c09940 Re-read the request-bound validator and wire schema: Choice winners and probability keys match the requested options, Score legends and weighted values match the zero-based criteria, and usage fits uint32. This host revalidated the three matching fixture shapes and Noul 0 and 1, and rejects invalid confidence, an unknown id, a bad probability set, and malformed JSON.
+ * @evidenceReview ./jev.schema.ts#readJevWire #1100598 Re-read the request-bound validator and its epsilon-aware tolerance helper: Choice winners and probability keys match the requested options, Score legends and weighted values match the zero-based criteria, and usage fits uint32. This host revalidated the three matching fixture shapes and Noul 0 and 1, and rejects invalid confidence, an unknown id, a bad probability set, and malformed JSON. Separate boundary tests accept rounded sums and weighted scores at 0.02 and reject values beyond the tolerance.
  */
 export function validatesWireShapes(): void {
   expect(jevWireShapes).toBe("distinct-answer-types");
@@ -356,7 +356,7 @@ export function validatesWireShapes(): void {
  * @evidence ./jev.schema.ts#jevHttpBudget Reads the budget marker.
  * @evidenceReview ./jev.schema.ts#jevHttpBudget #fe6ed61 The declaration is bounded-retry.
  * @evidence ./jev.ts#adviseWithJev Runs the injected transport inside the retry budget.
- * @evidenceReview ./jev.ts#adviseWithJev #e8e2574 Re-read adviseWithJev with the serialized fail-open cache write and zero plan on a hit or missing key: oversized streamed responses fail once and the retry loop remains bounded; 401 and 403 send once, 429 stops after three attempts, 500 twice then 200 recovers, and an abort is a timeout.
+ * @evidenceReview ./jev.ts#adviseWithJev #018a20b Re-read adviseWithJev after accepting an echoed requested alias under the TTL and bounding cache writes: oversized streamed responses fail once and the retry loop remains bounded; 401 and 403 send once, 429 stops after three attempts, 500 twice then 200 recovers, and an abort is a timeout.
  */
 export function boundsHttpFailures(): Promise<void> {
   return (async (): Promise<void> => {
@@ -455,7 +455,7 @@ export function boundsHttpFailures(): Promise<void> {
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity A pinned model hits. An alias expires. A rubric change misses.
  * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity #125a09d Re-read the section, then ran this function: jev-latest was fetched again after the TTL, a changed between upper bound missed, a truncated stored advisory and one naming another digest were misses that sent again, a warm cache planned zero requests, and an unwritable cache path sent once and kept the advisory.
  * @evidence ./jev.ts#adviseWithJev Writes the cache after a valid answer and fails open when it cannot.
- * @evidenceReview ./jev.ts#adviseWithJev #e8e2574 Re-read adviseWithJev and writeCache: invalid or mismatched entries miss, a hit sends nothing and clears current-call usage, dry-run plans zero without a key, writes merge entries under a filesystem lock, and an unwritable path keeps the advisory without resending.
+ * @evidenceReview ./jev.ts#adviseWithJev #018a20b Re-read adviseWithJev and writeCache: invalid or mismatched entries miss, a hit sends nothing and clears current-call usage, dry-run plans zero without a key, writes merge entries under a filesystem lock, and an unwritable path keeps the advisory without resending. An echoed requested alias now uses the same TTL; separate tests verify expiry and the 256-entry write bound.
  * @evidence ./jev.schema.ts#jevCacheIdentity Reads the cache marker.
  * @evidenceReview ./jev.schema.ts#jevCacheIdentity #75b32a2 The declaration is alias-is-not-pinned.
  * @evidence ../cache.ts#JEV_ALIAS_TTL_MS Reads the alias TTL.
@@ -463,7 +463,7 @@ export function boundsHttpFailures(): Promise<void> {
  * @evidence ../cache.ts#jevCacheKey Binds the projection, numerical digest, rubric, model, and adapter.
  * @evidenceReview ../cache.ts#jevCacheKey #8b24520 The same parts give the same key, and a different rubric or model gives a different one.
  * @evidence ../cache.ts#jevCacheHit Decides a hit for a pinned id or an alias inside the TTL.
- * @evidenceReview ../cache.ts#jevCacheHit #fe9d7e3 Re-read the age check: a pinned id hits only its stored model, an alias hits inside one day, an alias stored as an alias misses, and an entry stored in the future misses.
+ * @evidenceReview ../cache.ts#jevCacheHit #b3d9039 Re-read the age check: a pinned id hits only its stored model; an alias hits inside one day whether resolved to a pinned id or echoed unchanged. A different alias and an entry stored in the future miss.
  * @evidence ../cache.ts#serializeJevCache Writes the stored entries.
  * @evidenceReview ../cache.ts#serializeJevCache #07d024a The serialized entries read back unchanged.
  * @evidence ../cache.ts#parseJevCache Reads back only well-formed entries.
@@ -482,7 +482,8 @@ export function separatesCacheIdentity(): Promise<void> {
   expect(jevCacheHit(entry, "jev-1.14.0", 0)).toBe(false);
   expect(jevCacheHit(entry, "jev-latest", JEV_ALIAS_TTL_MS - 1)).toBe(true);
   expect(jevCacheHit(entry, "jev-latest", JEV_ALIAS_TTL_MS)).toBe(false);
-  expect(jevCacheHit({ ...entry, resolvedModel: "jev-latest" }, "jev-latest", 0)).toBe(false);
+  expect(jevCacheHit({ ...entry, resolvedModel: "jev-latest" }, "jev-latest", 0)).toBe(true);
+  expect(jevCacheHit({ ...entry, resolvedModel: "other-latest" }, "jev-latest", 0)).toBe(false);
   expect(jevCacheHit(undefined, "jev-1.13.0", 0)).toBe(false);
   // A stored time in the future is not fresh for an alias.
   expect(jevCacheHit({ ...entry, storedAtMs: 10_000 }, "jev-latest", 0)).toBe(false);
@@ -846,8 +847,8 @@ export function keepsSecretsOutOfRecords(): Promise<void> {
     expect(refusedVersion).toMatchObject({ status: "failed", reason: "unsafe-rubric-version", rubricVersion: "[redacted]" });
     expect(JSON.stringify(refusedVersion).includes(version)).toBe(false);
   }
-  // A pinned request answered by another model, or an alias answered by an alias, is not used.
-  for (const [requested, answered] of [["jev-1.13.0", "jev-1.14.0"], ["jev-latest", "jev-latest"]] as const) {
+  // A pinned request answered by another model, or an alias answered by another alias, is not used.
+  for (const [requested, answered] of [["jev-1.13.0", "jev-1.14.0"], ["jev-latest", "other-latest"]] as const) {
     const swapped = await adviseWithJev({
       ...input,
       numerical,
@@ -883,7 +884,7 @@ export function keepsSecretsOutOfRecords(): Promise<void> {
  * @evidence ./jev.ts#jevAnswerDisposition Maps one answer to ok, abstain, or an advisory warning.
  * @evidenceReview ./jev.ts#jevAnswerDisposition #7d6cee6 Re-read jevAnswerDisposition with the closed abstain band: Choice confidence 0.2, Noul 0.5, and Noul 0.4 and 0.6 on either verdict abstain, 0.399 and 0.601 warn, a Noul of 0.05 against a failing rule is a warning, and the same Noul with no rule verdict abstains.
  * @evidence ./jev.ts#adviseWithJev Compares each answer with its own rule and refuses a rubric whose ids cannot stay separate questions.
- * @evidenceReview ./jev.ts#adviseWithJev #e8e2574 Re-read adviseWithJev, summarize, and reportStatus after the cache changes: in a mixed rubric a low Noul warns only on the failing rule, the warning outranks an abstention, and a repeated id, __proto__, or an id holding a path or the key fails before any send.
+ * @evidenceReview ./jev.ts#adviseWithJev #018a20b Re-read adviseWithJev, summarize, and reportStatus after the alias acceptance and bounded cache changes: in a mixed rubric a low Noul warns only on the failing rule, the warning outranks an abstention, and a repeated id, __proto__, or an id holding a path or the key fails before any send.
  */
 export function keepsNumericalVerdicts(): Promise<void> {
   return (async (): Promise<void> => {
@@ -1242,6 +1243,57 @@ describe("jev judge provider", () => {
       expect(result.status).toBe("ok");
       expect(waits).toEqual([expected]);
     }
+  });
+  it("accepts an alias-valued response and caches it only inside the alias TTL", async () => {
+    const dir = await createTempDir("jev-alias-response-");
+    try {
+      const input = parsed(3);
+      const transport = transportOf(() => ({ status: 200, body: noulBody(0.9, "jev-latest") }));
+      const args = { ...input, numerical: evaluateRules(input), requestedModel: "jev-latest", dryRun: false,
+        cachePath: resolve(dir, "cache.json"), env: { TYPESAFE_API_KEY: SECRET }, transport: transport.transport };
+      const first = await adviseWithJev({ ...args, nowMs: 0 });
+      expect(first).toMatchObject({ status: "ok", resolvedModel: "jev-latest", cache: "miss", aliasPolicy: "ttl-24h" });
+      expect((await adviseWithJev({ ...args, nowMs: JEV_ALIAS_TTL_MS - 1 })).cache).toBe("hit");
+      expect((await adviseWithJev({ ...args, nowMs: JEV_ALIAS_TTL_MS })).cache).toBe("miss");
+      expect(transport.calls).toBe(2);
+    } finally { await removePath(dir); }
+  });
+  it("includes probability and weighted-score tolerance boundaries", () => {
+    const questions = { choice: { type: "choice" as const, instructions: "Choose", criteria: { yes: "yes", no: "no" } } };
+    for (const p of [0.49, 0.51]) {
+      const body = { model: "jev-latest", answers: { choice: { type: "choice", choice: "yes", confidence: 0.7, probabilities: { yes: p, no: p } } }, usage: { input_tokens: 1, output_tokens: 1 } };
+      expect(readJevWire(JSON.stringify(body), questions).ok).toBe(true);
+      body.answers.choice.probabilities = { yes: p + 0.001, no: p + 0.001 };
+      expect(readJevWire(JSON.stringify(body), questions).ok).toBe(p < 0.5);
+    }
+    const scoreQuestion = { score: { type: "score" as const, instructions: "Rate", criteria: ["low", "high"] } };
+    const body = { model: "jev-latest", answers: { score: { type: "score", score: 0.52, confidence: 0.7, legend: { "0": "low", "1": "high" }, probabilities: { "0": 0.5, "1": 0.5 } } }, usage: { input_tokens: 1, output_tokens: 1 } };
+    expect(readJevWire(JSON.stringify(body), scoreQuestion).ok).toBe(true);
+    body.answers.score.score = 0.48;
+    expect(readJevWire(JSON.stringify(body), scoreQuestion).ok).toBe(true);
+    body.answers.score.score = 0.479;
+    expect(readJevWire(JSON.stringify(body), scoreQuestion).ok).toBe(false);
+  });
+  it("evicts expired aliases and bounds persisted cache entries", async () => {
+    const dir = await createTempDir("jev-cache-bound-");
+    try {
+      const path = resolve(dir, "cache.json");
+      const entries: JevCacheEntry[] = Array.from({ length: 260 }, (_, index) => ({ key: `pinned-${index}`,
+        requestedModel: "jev-1.13.0", resolvedModel: "jev-1.13.0", rubricVersion: "r1", storedAtMs: index, advisoryJson: "{}" }));
+      entries.push({ ...entries[0]!, key: "expired-alias", requestedModel: "jev-latest", resolvedModel: "jev-latest", storedAtMs: 0 });
+      await Bun.write(path, serializeJevCache(entries));
+      const input = parsed(3);
+      const result = await adviseWithJev({ ...input, numerical: evaluateRules(input), requestedModel: "jev-1.13.0", dryRun: false,
+        cachePath: path, nowMs: JEV_ALIAS_TTL_MS, env: { TYPESAFE_API_KEY: SECRET },
+        transport: async () => ({ status: 200, body: noulBody(0.9) }) });
+      expect(result.status).toBe("ok");
+      const stored = parseJevCache(await readText(path));
+      expect(stored).toHaveLength(256);
+      expect(stored.some((entry) => entry.key === "expired-alias")).toBe(false);
+      expect(stored.some((entry) => entry.key === "pinned-0")).toBe(false);
+      expect(stored.some((entry) => entry.key === "pinned-259")).toBe(true);
+      expect(stored.at(-1)?.advisoryJson).toBe(JSON.stringify(result));
+    } finally { await removePath(dir); }
   });
   it("rejects a Choice winner below another requested option", () => {
     const questions = { choice: { type: "choice" as const, instructions: "Choose", criteria: { yes: "yes", no: "no" } } };
