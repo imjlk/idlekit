@@ -356,7 +356,7 @@ export function validatesWireShapes(): void {
  * @evidence ./jev.schema.ts#jevHttpBudget Reads the budget marker.
  * @evidenceReview ./jev.schema.ts#jevHttpBudget #fe6ed61 The declaration is bounded-retry.
  * @evidence ./jev.ts#adviseWithJev Runs the injected transport inside the retry budget.
- * @evidenceReview ./jev.ts#adviseWithJev #f34b855 Re-read adviseWithJev with the serialized fail-open cache write and zero plan on a hit or missing key: oversized streamed responses fail once and the retry loop remains bounded; 401 and 403 send once, 429 stops after three attempts, 500 twice then 200 recovers, and an abort is a timeout.
+ * @evidenceReview ./jev.ts#adviseWithJev #e8e2574 Re-read adviseWithJev with the serialized fail-open cache write and zero plan on a hit or missing key: oversized streamed responses fail once and the retry loop remains bounded; 401 and 403 send once, 429 stops after three attempts, 500 twice then 200 recovers, and an abort is a timeout.
  */
 export function boundsHttpFailures(): Promise<void> {
   return (async (): Promise<void> => {
@@ -455,7 +455,7 @@ export function boundsHttpFailures(): Promise<void> {
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity A pinned model hits. An alias expires. A rubric change misses.
  * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity #125a09d Re-read the section, then ran this function: jev-latest was fetched again after the TTL, a changed between upper bound missed, a truncated stored advisory and one naming another digest were misses that sent again, a warm cache planned zero requests, and an unwritable cache path sent once and kept the advisory.
  * @evidence ./jev.ts#adviseWithJev Writes the cache after a valid answer and fails open when it cannot.
- * @evidenceReview ./jev.ts#adviseWithJev #f34b855 Re-read adviseWithJev and writeCache: invalid or mismatched entries miss, a hit sends nothing and clears current-call usage, dry-run plans zero without a key, writes merge entries under a filesystem lock, and an unwritable path keeps the advisory without resending.
+ * @evidenceReview ./jev.ts#adviseWithJev #e8e2574 Re-read adviseWithJev and writeCache: invalid or mismatched entries miss, a hit sends nothing and clears current-call usage, dry-run plans zero without a key, writes merge entries under a filesystem lock, and an unwritable path keeps the advisory without resending.
  * @evidence ./jev.schema.ts#jevCacheIdentity Reads the cache marker.
  * @evidenceReview ./jev.schema.ts#jevCacheIdentity #75b32a2 The declaration is alias-is-not-pinned.
  * @evidence ../cache.ts#JEV_ALIAS_TTL_MS Reads the alias TTL.
@@ -692,7 +692,7 @@ export function separatesCacheIdentity(): Promise<void> {
  * @evidence ./jev.schema.ts#jevSecretBoundary Reads the redaction marker.
  * @evidenceReview ./jev.schema.ts#jevSecretBoundary #fe921f9 The declaration is redacted-projection.
  * @evidence ./jev.ts#projectJevState Projects metrics, assumptions, and rules without the key or a local path.
- * @evidenceReview ./jev.ts#projectJevState #9b6da9c Re-read projectJevState and the shared Core observation mapper: each rule receives its effective identity and observation status, only measured readings retain a point and sign, amount decimal context remains unsupported, and questions abstain on identity mismatches or unknown observations before using the threshold or valid missing policy, where inconclusive and unsupported both abstain. Secrets and local paths in the request projection are redacted.
+ * @evidenceReview ./jev.ts#projectJevState #ee54760 Re-read projectJevState and the shared Core observation mapper: each rule receives its effective identity and observation status, only measured readings retain a point and sign, amount decimal context remains unsupported, and questions abstain on identity mismatches or unknown observations before using the threshold or valid missing policy, where inconclusive and unsupported both abstain. Secrets and local paths in the request projection are redacted.
  * @evidence ./jev.ts#isSafeJevReport Refuses unsafe metadata in the unchanged sibling numerical report before emitting a Jev bundle.
  * @evidenceReview ./jev.ts#isSafeJevReport #001fec4 Re-read the complete recursive report comparison: the original report with a key-bearing assumption is unsafe, a safe assumption passes, and the CLI rejects unsafe versions and assumptions before transport or output.
  */
@@ -881,9 +881,9 @@ export function keepsSecretsOutOfRecords(): Promise<void> {
  * @evidence ./jev.schema.ts#jevNumericalUnchanged Reads the verdict marker.
  * @evidenceReview ./jev.schema.ts#jevNumericalUnchanged #1105bbe The declaration is verdict-stays.
  * @evidence ./jev.ts#jevAnswerDisposition Maps one answer to ok, abstain, or an advisory warning.
- * @evidenceReview ./jev.ts#jevAnswerDisposition #0d071be Re-read jevAnswerDisposition with the closed abstain band: Choice confidence 0.2, Noul 0.5, and Noul 0.4 and 0.6 on either verdict abstain, 0.399 and 0.601 warn, a Noul of 0.05 against a failing rule is a warning, and the same Noul with no rule verdict is ok.
+ * @evidenceReview ./jev.ts#jevAnswerDisposition #7d6cee6 Re-read jevAnswerDisposition with the closed abstain band: Choice confidence 0.2, Noul 0.5, and Noul 0.4 and 0.6 on either verdict abstain, 0.399 and 0.601 warn, a Noul of 0.05 against a failing rule is a warning, and the same Noul with no rule verdict abstains.
  * @evidence ./jev.ts#adviseWithJev Compares each answer with its own rule and refuses a rubric whose ids cannot stay separate questions.
- * @evidenceReview ./jev.ts#adviseWithJev #f34b855 Re-read adviseWithJev, summarize, and reportStatus after the cache changes: in a mixed rubric a low Noul warns only on the failing rule, the warning outranks an abstention, and a repeated id, __proto__, or an id holding a path or the key fails before any send.
+ * @evidenceReview ./jev.ts#adviseWithJev #e8e2574 Re-read adviseWithJev, summarize, and reportStatus after the cache changes: in a mixed rubric a low Noul warns only on the failing rule, the warning outranks an abstention, and a repeated id, __proto__, or an id holding a path or the key fails before any send.
  */
 export function keepsNumericalVerdicts(): Promise<void> {
   return (async (): Promise<void> => {
@@ -918,7 +918,7 @@ export function keepsNumericalVerdicts(): Promise<void> {
   expect(unsure.status).toBe("abstain");
   expect(unsure.status === "ok").toBe(false);
   expect(numerical.numerical.pass).toBe(false);
-  expect(jevAnswerDisposition({ type: "noul", noul: 0.05 }, null)).toBe("ok");
+  expect(jevAnswerDisposition({ type: "noul", noul: 0.05 }, null)).toBe("abstain");
   // The abstain band is closed: rounded boundary values are uncertain, not ok.
   expect(jevAnswerDisposition({ type: "noul", noul: 0.4 }, true)).toBe("abstain");
   expect(jevAnswerDisposition({ type: "noul", noul: 0.6 }, false)).toBe("abstain");
@@ -1009,7 +1009,7 @@ export function keepsNumericalVerdicts(): Promise<void> {
  * @evidence ./jev.ts#jevLiveTransport Reads the transport marker.
  * @evidenceReview ./jev.ts#jevLiveTransport #7e44d88 The declaration is injected-or-fetch.
  * @evidence ./jev.ts#createFetchTransport Posts the built body to the endpoint through the given fetch.
- * @evidenceReview ./jev.ts#createFetchTransport #47dc7f0 Re-read the streamed fetch transport: the mock sees the endpoint and bearer header, successful bodies stay within 1 MiB, oversized bodies are cancelled without retry, and error bodies are discarded before buffering.
+ * @evidenceReview ./jev.ts#createFetchTransport #79a6fde Re-read the streamed fetch transport: the mock sees the endpoint and bearer header, successful bodies stay within 1 MiB, oversized bodies are cancelled without retry, and error bodies are discarded before buffering.
  */
 export function staysOptIn(): Promise<void> {
   return (async (): Promise<void> => {
@@ -1198,6 +1198,51 @@ export function staysOptIn(): Promise<void> {
 }
 
 describe("jev judge provider", () => {
+  it("keeps raw numerical verdicts when redaction collapses different identities", async () => {
+    const base = parsed();
+    for (const definition of ["/private/b.json", "/private/a.json"]) {
+      const input = {
+        ...base,
+        artifact: { ...base.artifact, metrics: base.artifact.metrics.map((metric) => ({ ...metric, meaning: "/private/a.json" })) },
+        rubric: { ...base.rubric, rules: base.rubric.rules.map((item) => ({ ...item, definition })) },
+      };
+      const numerical = evaluateRules(input);
+      const verdict = definition.endsWith("b.json") ? "inconclusive" : "fail";
+      expect(numerical.numerical.results[0]!.verdict).toBe(verdict);
+      const projection = projectJevState(input.artifact, input.rubric, SECRET);
+      expect((projection.state.rules as { numericalVerdict: string }[])[0]!.numericalVerdict).toBe(verdict);
+      expect(JSON.stringify(projection)).not.toContain("/private/");
+      const fake = transportOf(() => ({ status: 200, body: noulBody(0.9) }));
+      const result = await adviseWithJev({ ...input, numerical, requestedModel: "jev-1.13.0", dryRun: false, env: { TYPESAFE_API_KEY: SECRET }, transport: fake.transport });
+      expect(result.status).toBe(verdict === "inconclusive" ? "abstain" : "ok");
+    }
+  });
+  it("retains provider retry delays and uses bounded SDK backoff", async () => {
+    const input = parsed();
+    const future = new Date(Date.now() + 4000).toUTCString();
+    for (const [headers, expected] of [
+      [new Headers({ "Retry-After": "2" }), 2000],
+      [new Headers({ "retry-after-ms": "1250", "Retry-After": "5" }), 1250],
+      [new Headers({ "Retry-After": "Wed, 21 Oct 2015 07:28:00 GMT" }), 0],
+      [new Headers({ "Retry-After": "bad" }), undefined],
+    ] as const) {
+      const response = await createFetchTransport(async () => new Response("discarded", { status: 429, headers }))({ url: JEV_ENDPOINT, body: "{}", headers: {}, signal: new AbortController().signal });
+      expect((response as { retryAfterMs?: number }).retryAfterMs).toBe(expected);
+    }
+    const dated = await createFetchTransport(async () => new Response("", { status: 503, headers: { "Retry-After": future } }))({ url: JEV_ENDPOINT, body: "{}", headers: {}, signal: new AbortController().signal });
+    expect((dated as { retryAfterMs?: number }).retryAfterMs).toBeGreaterThanOrEqual(2000);
+    expect((dated as { retryAfterMs?: number }).retryAfterMs).toBeLessThanOrEqual(4000);
+    for (const [hint, expected] of [[1250, 1250], [0, 0], [60000, 60000], [60001, 500], [-1, 500], [NaN, 500], [undefined, 500]] as const) {
+      let calls = 0;
+      const waits: number[] = [];
+      const result = await adviseWithJev({ ...input, numerical: evaluateRules(input), requestedModel: "jev-1.13.0", dryRun: false, maxRetries: 1, env: { TYPESAFE_API_KEY: SECRET },
+        transport: async () => ++calls === 1 ? { status: 429, body: "", retryAfterMs: hint } : { status: 200, body: noulBody(0.9) },
+        sleep: async (ms) => { waits.push(ms); },
+      });
+      expect(result.status).toBe("ok");
+      expect(waits).toEqual([expected]);
+    }
+  });
   it("rejects a Choice winner below another requested option", () => {
     const questions = { choice: { type: "choice" as const, instructions: "Choose", criteria: { yes: "yes", no: "no" } } };
     const body = { model: "jev-1.13.0", answers: { choice: { type: "choice", choice: "no", confidence: 0.7, probabilities: { yes: 0.9, no: 0.1 } } }, usage: { input_tokens: 1, output_tokens: 1 } };
