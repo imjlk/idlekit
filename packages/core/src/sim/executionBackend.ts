@@ -178,7 +178,7 @@ export function assertSerializableTask(task: AnalysisTrialTaskV1): void {
     throw new Error("unsupported task contract");
   }
   if (task.kind !== "analysis-trial") throw new Error("unsupported task kind");
-  if (!Number.isInteger(task.logicalIndex) || task.logicalIndex < 0) throw new Error("logical index");
+  if (!Number.isSafeInteger(task.logicalIndex) || task.logicalIndex < 0) throw new Error("logical index");
   if (!Number.isInteger(task.seed) || task.seed < 0 || task.seed > 4294967295) throw new Error("seed");
   if (typeof task.taskId !== "string" || task.taskId.length === 0) throw new Error("task id");
   if (!Number.isSafeInteger(task.stepBudget) || task.stepBudget < 0) throw new Error("step budget");
@@ -356,7 +356,7 @@ export function taskIdentity(task: AnalysisTrialTaskV1): Readonly<{ taskId: stri
   const seed = ownData(task, "seed");
   return {
     taskId: typeof taskId === "string" ? taskId : "",
-    logicalIndex: typeof logicalIndex === "number" && Number.isInteger(logicalIndex) && logicalIndex >= 0 ? logicalIndex : -1,
+    logicalIndex: typeof logicalIndex === "number" && Number.isSafeInteger(logicalIndex) && logicalIndex >= 0 ? logicalIndex : -1,
     seed: typeof seed === "number" && Number.isInteger(seed) && seed >= 0 && seed <= 4294967295 ? seed : 0,
   };
 }

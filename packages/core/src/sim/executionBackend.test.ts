@@ -84,7 +84,7 @@ export function keepsLocalDefault(): void {
  * @evidence docs/requirements/active/worker-execution-backend.md#req-dx05-serializable-task A function payload is refused. The seed follows the logical index.
  * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-serializable-task #a0e348b Re-read the section, then ran this function: reversing the input kept the same seed, a function payload failed, a cyclic payload, a bigint step budget, a step budget above the execution budget, and a throwing taskId getter each failed alone while the sibling ran, a named array property was refused, a runner could not change its frozen task's seed,
  * @evidence ./executionBackend.ts#taskIdentity Reads a refused task's identity from own data fields only.
- * @evidenceReview ./executionBackend.ts#taskIdentity #390c155 Re-read the own-data identity fallback: accessor values are not invoked, reflection failures fall back to finite identity sentinels, invalid indices and seeds become finite sentinels, and valid sibling identities stay unchanged.
+ * @evidenceReview ./executionBackend.ts#taskIdentity #9f16b52 Re-read the own-data identity fallback: accessor values are not invoked, reflection failures fall back to finite identity sentinels, invalid indices and seeds become finite sentinels, and valid sibling identities stay unchanged.
  * @evidence ./executionBackend.ts#serializedTaskBytes Measures one task as UTF-8 bytes of its JSON.
  * @evidenceReview ./executionBackend.ts#serializedTaskBytes #06012ad A Hangul task id counts more bytes than UTF-16 units, and the batch cost equals the measured bytes.
  * @evidence ./executionBackend.ts#taskRefusals Checks every task before the batch measures or runs any.
@@ -96,7 +96,7 @@ export function keepsLocalDefault(): void {
  * @evidence ./executionBackend.ts#analysisTaskSeed Derives the seed from the logical index.
  * @evidenceReview ./executionBackend.ts#analysisTaskSeed #2b85c09 The seed is logicalDrawSeed of the base seed and index, so input order does not move it.
  * @evidence ./executionBackend.ts#assertSerializableTask Refuses a task that is not plain JSON.
- * @evidenceReview ./executionBackend.ts#assertSerializableTask #113838d Re-read descriptor and array validation: uint32 seeds and canonical array indices are required, inherited array serialization and extra named indices are refused, cycles and non-JSON values fail, and plain tasks with shared acyclic references pass.
+ * @evidenceReview ./executionBackend.ts#assertSerializableTask #aa7a550 Re-read descriptor and array validation: uint32 seeds and canonical array indices are required, inherited array serialization and extra named indices are refused, cycles and non-JSON values fail, and plain tasks with shared acyclic references pass.
  */
 export function keepsSerializableTasks(): void {
   const prepared = prepareTrialTask(task(0));
@@ -483,6 +483,19 @@ export function boundsFailures(): void {
 }
 
 describe("execution backend", () => {
+  it("refuses unsafe logical indices without running or rounding their identity", () => {
+    const rounded = JSON.parse("9007199254740993") as number;
+    expect(rounded).toBe(9007199254740992);
+    for (const logicalIndex of [rounded, Number.MAX_SAFE_INTEGER + 1, 1.5, -1]) {
+      expect(taskRefusals([task(0, { logicalIndex })])[0]).not.toBeNull();
+      expect(taskIdentity(task(0, { logicalIndex })).logicalIndex).toBe(-1);
+    }
+    expect(taskRefusals([task(0, { logicalIndex: Number.MAX_SAFE_INTEGER })])).toEqual([null]);
+    const ran: string[] = [];
+    const batch = runLocalBatch([task(0, { logicalIndex: rounded }), task(1)], (item) => { ran.push(item.taskId); return echo(item, "1"); });
+    expect(ran).toEqual(["trial-1"]);
+    expect(batch.outcomes.map((item) => [item.logicalIndex, item.status])).toEqual([[-1, "failed"], [1, "ok"]]);
+  });
   it("isolates revoked proxies and throwing then getters returned by local runners", () => {
     const revoked = Proxy.revocable(echo(task(0), "1"), {});
     revoked.revoke();
