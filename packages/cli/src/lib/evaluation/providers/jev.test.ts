@@ -453,7 +453,7 @@ export function boundsHttpFailures(): Promise<void> {
 
 /**
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity A pinned model hits. An alias expires. A rubric change misses.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity #125a09d Re-read the section, then ran this function: jev-latest was fetched again after the TTL, a changed between upper bound missed, a truncated stored advisory and one naming another digest were misses that sent again, a warm cache planned zero requests, and an unwritable cache path sent once and kept the advisory.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity #ab8045b Re-read the updated section, then ran this function: an echoed alias hits only inside the TTL, another alias misses, jev-latest was fetched again after the TTL, a changed between upper bound missed, invalid or mismatched stored advisories missed, a warm cache planned zero requests, and an unwritable cache kept the advisory. Separate tests verify echoed-alias advice and eviction of expired aliases with the 256-entry limit.
  * @evidence ./jev.ts#adviseWithJev Writes the cache after a valid answer and fails open when it cannot.
  * @evidenceReview ./jev.ts#adviseWithJev #018a20b Re-read adviseWithJev and writeCache: invalid or mismatched entries miss, a hit sends nothing and clears current-call usage, dry-run plans zero without a key, writes merge entries under a filesystem lock, and an unwritable path keeps the advisory without resending. An echoed requested alias now uses the same TTL; separate tests verify expiry and the 256-entry write bound.
  * @evidence ./jev.schema.ts#jevCacheIdentity Reads the cache marker.
