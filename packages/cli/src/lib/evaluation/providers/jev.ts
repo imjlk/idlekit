@@ -484,7 +484,9 @@ async function writeCache(requestedPath: string, entry: JevCacheEntry): Promise<
   try {
     if (compromised) throw compromised;
     // Read inside the lock: entries read before the HTTP await may already be stale.
-    const entries = readCache(path).filter((cached) => cached.key !== entry.key);
+    // Keep the most recently written records and evict expired aliases before the atomic rewrite.
+    const entries = readCache(path).filter((cached) => cached.key !== entry.key &&
+      jevCacheHit(cached, cached.requestedModel, entry.storedAtMs)).slice(-255);
     entries.push(entry);
     const fd = openSync(temporary, "wx");
     created = true;
@@ -709,11 +711,12 @@ export async function adviseWithJev(args: Readonly<{
         if (redactString(wire.response.model, key) !== wire.response.model) {
           return blank({ ...base, status: "failed", reason: "unsafe-model", cache: "miss", attempts: attempt + 1, usage });
         }
-        // A pinned request accepts only that model. An alias must come back resolved to a concrete id.
+        // An alias can be echoed by the API or resolved to a concrete id; it still uses the alias TTL.
         const answeredModel = wire.response.model;
         const modelOk = aliasPolicy(args.requestedModel) === "pinned"
           ? answeredModel === args.requestedModel
-          : answeredModel.trim().length > 0 && answeredModel === answeredModel.trim() && aliasPolicy(answeredModel) === "pinned";
+          : answeredModel.trim().length > 0 && answeredModel === answeredModel.trim() &&
+            (answeredModel === args.requestedModel || aliasPolicy(answeredModel) === "pinned");
         if (!modelOk) {
           return blank({ ...base, status: "failed", reason: "model-mismatch", cache: "miss", attempts: attempt + 1, usage });
         }
