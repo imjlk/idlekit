@@ -77,7 +77,7 @@ export const jevLiveTransport = "injected-or-fetch" as const;
  * and stays.
  */
 const LOCAL_PATH_START =
-  /file:\/\/[^\s"'`()<>[\]{},;|]*|(?<=^|[\s"'`(=,:;[{<])(?:~\/[^\s"'`()<>[\]{},;|]*|\/[^\s"'`()<>[\]{},;|/][^\s"'`()<>[\]{},;|]*|[A-Za-z]:[\\/][^\s"'`()<>[\]{},;|]*|\\\\[^\s\\]+\\[^\s"'`()<>[\]{},;|]*)/g;
+  /file:\/\/[^\s"'`()<>[\]{},;|]*|(?<![A-Za-z0-9+.-]:)(?<=^|[\s"'`(=,:;[{<])\/{2,}[^\s"'`()<>[\]{},;|/][^\s"'`()<>[\]{},;|]*|(?<=^|[\s"'`(=,:;[{<])(?:~\/[^\s"'`()<>[\]{},;|]*|\/[^\s"'`()<>[\]{},;|/][^\s"'`()<>[\]{},;|]*|[A-Za-z]:[\\/][^\s"'`()<>[\]{},;|]*|\\\\[^\s\\]+\\[^\s"'`()<>[\]{},;|]*)/gi;
 /** A last path component that names a file, such as `save.json`. */
 const FILE_COMPONENT = /(?:^|[\\/])[^\\/]*\.[A-Za-z0-9]{1,8}$/;
 /** A quote, bracket, or pipe closes the text a path can run through. */
