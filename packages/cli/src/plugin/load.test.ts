@@ -206,8 +206,12 @@ describe("plugin load", () => {
       const a = await plugin("a", "one");
       const before = await run(a);
       expect(before.digest).not.toBe(sha256Hex(entry));
+      expect((await loadRegistries([a], { requiredSha256: { [a]: sha256Hex(entry) }, requiredClosureSha256: { [a]: before.digest } })).pluginDigest[a]).toBe(before.digest);
+      await expect(loadRegistries([a], { requiredSha256: { [a]: "0".repeat(64) }, requiredClosureSha256: { [a]: before.digest } })).rejects.toThrow("Plugin sha256 mismatch");
       await writeText(resolve(dir, "a", "lib/index.mjs"), `export const tag = "two";\n`);
       const after = await run(a);
+      await expect(loadRegistries([a], { requiredClosureSha256: { [a]: before.digest } })).rejects.toThrow("Plugin closure sha256 mismatch");
+      expect((await loadRegistries([a], { requiredClosureSha256: { [a]: after.digest } })).pluginDigest[a]).toBe(after.digest);
       // Only the helper changed, so the entry file sha256 is the same.
       expect(after.digest).not.toBe(before.digest);
       expect(after.hash).not.toBe(before.hash);
