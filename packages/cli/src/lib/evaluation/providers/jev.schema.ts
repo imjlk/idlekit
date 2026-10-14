@@ -89,7 +89,9 @@ type JevQuestion =
 function probabilityShape(value: Record<string, number>, expectedKeys: readonly string[]): string | null {
   const keys = Object.keys(value).sort();
   const expected = [...expectedKeys].sort();
-  if (keys.join("\n") !== expected.join("\n")) return "probability keys do not match the question";
+  if (keys.length !== expected.length || keys.some((key, index) => key !== expected[index])) {
+    return "probability keys do not match the question";
+  }
   let sum = 0;
   for (const item of Object.values(value)) {
     if (!Number.isFinite(item) || item < 0 || item > 1) return "probability is outside 0..1";
@@ -125,14 +127,24 @@ export function readJevWire(
       if (!Object.hasOwn(question.criteria, answer.choice)) return { ok: false, reason: "shape" };
       const shape = probabilityShape(answer.probabilities, Object.keys(question.criteria));
       if (shape) return { ok: false, reason: "shape" };
+      if (answer.probabilities[answer.choice] !== Math.max(...Object.values(answer.probabilities))) {
+        return { ok: false, reason: "shape" };
+      }
       if (!Number.isFinite(answer.confidence) || answer.confidence < 0 || answer.confidence > 1) {
         return { ok: false, reason: "shape" };
       }
     }
     if (answer.type === "score" && question.type === "score") {
-      const shape = probabilityShape(answer.probabilities, Object.keys(answer.legend));
+      const levels = question.criteria.map((_, index) => String(index));
+      const shape = probabilityShape(answer.probabilities, levels);
       if (shape) return { ok: false, reason: "shape" };
-      if (Object.keys(answer.legend).length !== question.criteria.length) return { ok: false, reason: "shape" };
+      if (Object.keys(answer.legend).length !== levels.length ||
+          levels.some((level, index) => answer.legend[level] !== question.criteria[index])) return { ok: false, reason: "shape" };
+      const weighted = levels.reduce((sum, level, index) => sum + index * answer.probabilities[level]!, 0);
+      // As with probability sums, tolerate small model rounding while requiring the requested score range.
+      if (answer.score < 0 || answer.score > levels.length - 1 || Math.abs(answer.score - weighted) > 0.02) {
+        return { ok: false, reason: "shape" };
+      }
       if (!Number.isFinite(answer.confidence) || answer.confidence < 0 || answer.confidence > 1) {
         return { ok: false, reason: "shape" };
       }
