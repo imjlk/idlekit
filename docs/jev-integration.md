@@ -13,6 +13,7 @@ Model names are trimmed and must be nonempty before a request is planned or sent
 Cached records must preserve the provider endpoint and model policy, pass the secret and local-path checks, and contain only the advisory report fields.
 Resolved model IDs must be nonempty and have no leading or trailing whitespace, in both responses and cache replay.
 An alias request also accepts a response that echoes that alias, under the same 24-hour TTL. Cache writes discard expired alias records and retain at most the 256 most recently written entries. Probability sums and weighted scores include the 0.02 rounding tolerance boundary with floating-point epsilon.
+Before a provider call, the CLI rejects existing directories or other non-regular files as cache/output targets, and targets beneath a non-directory parent. Markdown written to stdout waits for the stream callback, including when the pipe applies backpressure.
 
 The cache identity includes the question text as well as the projected state. Validated token counts remain in failed advisories when a provider response is rejected for its model identifier. Absolute paths after punctuation are redacted while complete web URLs are preserved.
 
