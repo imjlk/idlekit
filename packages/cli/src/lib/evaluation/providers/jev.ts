@@ -210,7 +210,7 @@ export function projectJevState(
       {
         type: "noul",
         instructions:
-          "Take the rubric rule whose id is this question's id and the projected reading whose ruleId is that id. Does this reading fail the rule? Check identity first: definition, method, and unit must match, and every non-null scenarioVersion, specVersion, engineId, pluginVersion, seed, and algorithmVersion constraint must match. An identity mismatch or observationStatus unknown or unsupported is inconclusive: answer 0.5. A missing observation follows missingPolicy: fail means 1; inconclusive and unsupported mean 0.5. For a measured observation, answer whether its recorded value fails the operator, threshold, and upper threshold. Use only the recorded observation; do not infer a value from a withheld sign or amount, or compute a new ETA, growth rate, or steady state.",
+          "Take the rubric rule whose id is this question's id and the projected reading whose ruleId is that id. Does this reading fail the rule? Check identity first: definition, method, and unit must match, and every non-null scenarioVersion, specVersion, engineId, pluginVersion, seed, and algorithmVersion constraint must match. An identity mismatch or observationStatus unknown or unsupported is inconclusive: answer 0.5. A missing observation follows missingPolicy: fail means 1; inconclusive and unsupported mean 0.5. If a between rule lacks ordered finite bounds, answer 0.5. For a measured observation, answer whether its recorded value fails the operator, threshold, and upper threshold. Use only the recorded observation; do not infer a value from a withheld sign or amount, or compute a new ETA, growth rate, or steady state.",
         criteria: {
           true: "The recorded reading fails the rule",
           false: "The recorded reading satisfies the rule",
@@ -495,6 +495,7 @@ export async function adviseWithJev(args: Readonly<{
   nowMs?: number;
   sleep?: (ms: number) => Promise<void>;
 }>): Promise<JevAdvisoryV1> {
+  args = { ...args, requestedModel: args.requestedModel.trim() };
   const env = args.env ?? process.env;
   const key = env.TYPESAFE_API_KEY?.trim() ?? "";
   const projection = projectJevState(args.artifact, args.rubric, key);
@@ -514,6 +515,9 @@ export async function adviseWithJev(args: Readonly<{
     dryRun: args.dryRun,
     plannedRequests,
   };
+  if (args.requestedModel.length === 0) {
+    return blank({ ...base, plannedRequests: 0, status: "failed", reason: "invalid-model", cache: "bypass", attempts: 0 });
+  }
   // The rubric version is copied into the report, the numerical digest, and the cache. One that carries the key or a
   // path is refused, and the report shows both only as redacted.
   if (redactString(args.rubric.rubricVersion, key) !== args.rubric.rubricVersion) {
@@ -568,7 +572,20 @@ export async function adviseWithJev(args: Readonly<{
         stored.numericalDigest === numericalDigest &&
         stored.rubricVersion === args.rubric.rubricVersion &&
         stored.requestedModel === args.requestedModel &&
-        stored.resolvedModel === found.resolvedModel;
+        stored.resolvedModel === found.resolvedModel &&
+        stored.answers.length === args.rubric.rules.length &&
+        new Set(stored.answers.map((answer) => answer.id)).size === stored.answers.length &&
+        stored.answers.every((answer) => {
+          const question = projection.questions[answer.id];
+          if (!question || question.type !== answer.type) return false;
+          const disposition = answer.type === "noul"
+            ? jevAnswerDisposition({ type: "noul", noul: answer.noul }, numericalStances(args.numerical).get(answer.id) ?? null)
+            : answer.confidence < 0.5 ? "abstain" : "ok";
+          return answer.disposition === disposition;
+        }) &&
+        stored.status === reportStatus(stored.answers) &&
+        stored.reason === (stored.status === "ok" ? "advisory" : stored.status) &&
+        stored.dryRun === false;
       cached = matches ? stored : null;
     }
     return cached;
