@@ -16,6 +16,14 @@
 
 양은 부호와 지수를 허용하는 십진 와이어 표기(`1e2` 등)를 쓴다. `parseFlowObservation`은 유한한 음이 아닌 십진수가 아닌 양, 간선 비율, 리틀의 법칙 입력, `endSec`가 `startSec`보다 앞선 샘플, 중복된 샘플 키, 중복된 간선, 0인 분모, 1보다 큰 손실을 거부한다.
 
+Flow 계산은 JavaScript number를 사용한다. `1e-400`처럼 0이 아닌 와이어 값이 0으로 반올림되면 거부하며, 실제 0 표기와 표현 가능한 비정규 수는 허용한다. 0이 아닌 간선 변환이나 리틀의 법칙 곱이 언더플로로 0이 되면 보존식이나 일관성의 증거로 쓰지 않는다.
+
+손실률이 숫자 1로 반올림되면 와이어 표기도 정확히 1이어야 한다. `0.99999999999999999`처럼 1에 가까운 값은 잔여 비율이 잘못된 전량 손실 보존식으로 바뀌지 않도록 거부하며, 정확한 `1.00`이나 `100e-2` 표기는 허용한다.
+
 구조 계약은 `idlekit.flow.v1`이고 경로는 [docs/schemas/flow.v1.schema.json](./schemas/flow.v1.schema.json)이다. 생성기는 [docs/schemas/generated/flow.v1.schema.json](./schemas/generated/flow.v1.schema.json)도 쓴다. 이것은 `ScenarioV1`이나 화폐 지표를 바꾸지 않는다.
 
 Node.js와 browser 런타임은 v1 호환 계약에 포함되지 않는다.
+
+## Graph
+
+커밋 `023d2bf78831584b33404e5fa1092e34e2a69e91`을 `ttsc-graph` 0.30.4, 프로토콜 `2025-11-25`로 조회했다. `packages/core/tsconfig.json`을 확장하고 `packages/core/src/sim/analysis/flow.ts`, `packages/core/src/sim/analysis/flow.test.ts`, `packages/core/src/sim/observation.ts`를 루트로 삼은 프로그램이다. generation 식별자는 반환되지 않았다. `diagnoseFlow`는 `packages/core/src/sim/analysis/flow.ts:414–762`, `parseFlowObservation`은 같은 파일의 `192–201`, `recordFlowSample`은 `packages/core/src/sim/observation.ts:132–135`에 있다. 깊이 1의 `diagnoseFlow` 영향 추적은 `declaresFlowAdapter`, `diagnosesSteadyPipeline`, `checksFlowConservation`, `leavesUnknownModelsUnsupported`, `separatesFactsFromCauses`를 가리키며 잘린 결과다. `recordFlowSample`의 깊이 1 영향 추적은 `packages/core/src/sim/analysis/flow.test.ts:144`의 호출을 통해 `declaresFlowAdapter`에 도달하며 잘리지 않았다. 이들은 해당 프로그램에서 컴파일러가 확인한 호출자다. JSON 픽스처 `examples/analysis/flow-pipeline.json`은 Graph 밖이므로 직접 읽었다.

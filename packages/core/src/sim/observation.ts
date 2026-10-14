@@ -127,7 +127,7 @@ export function emitActionFacts<N>(observer: RunObserver | undefined, t: number,
  * A missing callback is a no-op. This does not start a simulator loop.
  *
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-flow-adapter Flow samples use the existing observer and add no model method.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-flow-adapter #0e3f60a Re-read the section: onFlow is optional and resource names stay in the fixture.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-flow-adapter #3c616c8 Re-read the section: onFlow is optional and resource names stay in the fixture.
  */
 export function recordFlowSample(observer: RunObserver | undefined, sample: FlowSampleV1): void {
   if (!observer?.onFlow) return;

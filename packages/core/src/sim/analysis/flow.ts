@@ -10,7 +10,7 @@ const FLOW_ALGORITHM_VERSION = "flow-observation-1" as const;
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-flow-adapter The published schema id is the flow report.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-flow-adapter #0e3f60a Re-read the section: the id is the flow v1 schema.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-flow-adapter #3c616c8 Re-read the section: the id is the flow v1 schema.
  */
 export function flowSchemaId(): typeof FLOW_SCHEMA_ID {
   return FLOW_SCHEMA_ID;
@@ -18,7 +18,7 @@ export function flowSchemaId(): typeof FLOW_SCHEMA_ID {
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-flow-adapter The algorithm version is flow-observation-1.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-flow-adapter #0e3f60a Re-read the section: the version string is flow-observation-1.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-flow-adapter #3c616c8 Re-read the section: the version string is flow-observation-1.
  */
 export function flowAlgorithmVersion(): typeof FLOW_ALGORITHM_VERSION {
   return FLOW_ALGORITHM_VERSION;
@@ -125,7 +125,7 @@ export type FlowReportV1 = Readonly<{
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-flow-adapter Flow samples are optional. Model gains no required method.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-flow-adapter #0e3f60a Re-read the section: the observer hook is optional and resource names stay in the fixture.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-flow-adapter #3c616c8 Re-read the section: the observer hook is optional and resource names stay in the fixture.
  */
 export const flowOptionalAdapter = "observer-not-required-model" as const;
 
@@ -137,7 +137,7 @@ export const flowPipelineConstraint = "process-throughput-20" as const;
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-conservation Conversion, loss, and inventory stay in their own units.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-conservation #5cc4b0e Re-read the section: the source unit and the destination unit are not added, queue and unretained are read for the destination resource in the source window, every source window is tried with the latest conserving one kept, the stock must match an observed destination throughput unit and the fact cites it, conservation compares per-window rates, edges into one stock are summed, and zero matches only zero.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-conservation #514285c Re-read the section: the source unit and the destination unit are not added, queue and unretained are read for the destination resource in the source window, every source window is tried with the latest conserving one kept, the stock must match an observed destination throughput unit and the fact cites it, conservation compares per-window rates, edges into one stock are summed, a positive conversion underflowing to zero cannot establish conservation, genuine zero operands or exactly total loss retain a valid zero conversion, and zero matches only zero.
  */
 export const flowConservation = "converted-units-stay-apart" as const;
 
@@ -149,7 +149,7 @@ export const flowUnsupportedModel = "no-invented-stall" as const;
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-suspected Missing demand and capacity observations stay unresolved.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-suspected #883c943 Re-read the section: facts and hypotheses are separate, starved and blocked time in seconds are judged per process from their latest window, where every resource in that window counts and a latest zero clears an older wait and is cited, with mixed waits unresolved, and a ramp-up observation or window skips Little's law.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-suspected #f4956d5 Re-read the section: facts and hypotheses are separate, starved and blocked time in seconds are judged per process from their latest window, where every resource in that window counts and a latest zero clears an older wait and is cited, with mixed waits unresolved, a Little's law product of positive representable operands that underflows to zero is insufficient-data while a genuinely zero arrival or wait keeps a valid zero product, and a ramp-up observation or window skips Little's law.
  */
 export const flowSuspectedCause = "facts-apart-from-cause" as const;
 
@@ -162,7 +162,7 @@ let validateObservationValidator: ((input: unknown) => IValidation<FlowObservati
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-flow-adapter The published validator is createValidate of the flow report.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-flow-adapter #0e3f60a Re-read the section: the structural document is FlowReportV1.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-flow-adapter #3c616c8 Re-read the section: the structural document is FlowReportV1.
  */
 export const validateFlowReport = (input: unknown): IValidation<FlowReportV1> =>
   (validateFlowReportValidator ??= typia.createValidate<FlowReportV1>())(input);
@@ -175,7 +175,7 @@ let flowJsonSchemaUnit: ReturnType<typeof buildFlowJsonSchema> | undefined;
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-flow-adapter The structural schema is OpenAPI 3.1 from typia.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-flow-adapter #0e3f60a Re-read the section: schema version is 3.1 and the contract id is idlekit.flow.v1.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-flow-adapter #3c616c8 Re-read the section: schema version is 3.1 and the contract id is idlekit.flow.v1.
  */
 export function flowJsonSchema(): ReturnType<typeof buildFlowJsonSchema> {
   flowJsonSchemaUnit ??= buildFlowJsonSchema();
@@ -187,7 +187,7 @@ const validateObservation = (input: unknown): IValidation<FlowObservationV1> =>
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-flow-adapter A flow observation is validated as data.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-flow-adapter #0e3f60a Re-read the section: the observation contract is idlekit.flow.observation.v1, and an amount outside the finite non-negative decimal wire spelling, a duplicate sample key, a duplicate edge, a zero denominator, and a loss above 1 are rejected while parsing.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-flow-adapter #3c616c8 Re-read the section: the observation contract is idlekit.flow.observation.v1, and nonzero decimals that become Number zero are rejected while true zero spellings and positive representable subnormals are accepted; invalid finite non-negative decimal spellings, duplicate sample keys or edges, zero denominators, losses above 1, and losses that round to 1 without exactly spelling 1 are rejected while parsing.
  */
 export function parseFlowObservation(
   input: unknown,
@@ -203,19 +203,30 @@ export function parseFlowObservation(
 /** The decimal wire spelling engines print: optional sign, fraction, and exponent. */
 const DECIMAL_WIRE = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?$/i;
 
-/** A finite, non-negative amount in the decimal wire spelling. Anything else is null. */
+/** A finite, non-negative amount representable without rounding a nonzero wire value to zero. */
 function parseDecimal(text: string): number | null {
   if (!DECIMAL_WIRE.test(text)) return null;
   const value = Number(text);
   if (!Number.isFinite(value) || value < 0) return null;
+  if (value === 0 && /[1-9]/.test(text.split(/[eE]/, 1)[0]!)) return null;
   return value === 0 ? 0 : value;
+}
+
+/** Exact total loss is a wire property; a near-one decimal can round to 1 as a number. */
+function isExactOne(text: string): boolean {
+  const [mantissa, exponent = "0"] = text.toLowerCase().split("e");
+  const base = mantissa!;
+  const dot = base.indexOf(".");
+  const fractionDigits = dot < 0 ? 0 : base.length - dot - 1;
+  const digits = base.replace(/^\+/, "").replace(".", "").replace(/^0+/, "");
+  return /^10*$/.test(digits) && BigInt(exponent) - BigInt(fractionDigits) + BigInt(digits.length - 1) === 0n;
 }
 
 /** An amount the diagnosis could not read is rejected here, not dropped later. */
 function decimalIssues(observation: FlowObservationV1): string[] {
   const issues: string[] = [];
   const check = (path: string, text: string): void => {
-    if (parseDecimal(text) === null) issues.push(`${path} finite non-negative decimal`);
+    if (parseDecimal(text) === null) issues.push(`${path} finite non-negative decimal representable without underflow to Number zero`);
   };
   // One process, resource, kind, and window names one sample. A second one would make the reading order-dependent.
   const keys = new Map<string, number>();
@@ -243,6 +254,7 @@ function decimalIssues(observation: FlowObservationV1): string[] {
     if (parseDecimal(edge.denominator) === 0) issues.push(`$input.edges[${index}].denominator > 0`);
     const loss = parseDecimal(edge.loss);
     if (loss !== null && loss > 1) issues.push(`$input.edges[${index}].loss <= 1`);
+    if (loss === 1 && !isExactOne(edge.loss)) issues.push(`$input.edges[${index}].loss must not round a remaining fraction to total loss`);
   });
   if (observation.littles) {
     check("$input.littles.inventory", observation.littles.inventory);
@@ -321,6 +333,9 @@ function littlesOf(
   if (!Number.isFinite(expected)) {
     return { status: "insufficient-data", assumption: "Little's law inputs overflow a finite product" };
   }
+  if (expected === 0 && arrival !== 0 && wait !== 0) {
+    return { status: "insufficient-data", assumption: "Little's law inputs underflow a finite product" };
+  }
   return {
     status: nearly(inventory, expected) ? "consistent" : "inconsistent",
     assumption: "steady window and a defined work flow",
@@ -386,7 +401,9 @@ function convert(amount: number, edge: FlowEdgeV1): number | null {
   const denominator = parseDecimal(edge.denominator);
   const loss = parseDecimal(edge.loss);
   if (numerator === null || denominator === null || loss === null || denominator === 0 || loss > 1) return null;
+  if (loss === 1 && !isExactOne(edge.loss)) return null;
   const converted = (amount * numerator) / denominator * (1 - loss);
+  if (converted === 0 && amount !== 0 && numerator !== 0 && loss !== 1) return null;
   return Number.isFinite(converted) ? converted : null;
 }
 
