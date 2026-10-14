@@ -110,11 +110,11 @@ class FakeWorker implements WorkerLike {
  * @evidence ./entry.ts#workerEntryMarker Reads the packed entry marker.
  * @evidenceReview ./entry.ts#workerEntryMarker #f670bfc The declaration is idlekit-worker-entry.
  * @evidence ./pool.ts#runWorkerPool Runs the tasks on an explicit number of workers.
- * @evidenceReview ./pool.ts#runWorkerPool #dfb8b33 Re-read the event-driven pool: one, two, and four real workers return the local digests, end money, and seeds in logical order.
+ * @evidenceReview ./pool.ts#runWorkerPool #ab395d9 Re-read the event-driven pool: one, two, and four real workers return the local digests, end money, and seeds in logical order.
  * @evidence ./pool.ts#workerEntryUrl Names the worker module the pool spawns.
  * @evidenceReview ./pool.ts#workerEntryUrl #9e78f00 This host sees source entry.ts next to pool.ts; a JS bundle resolves runtime/workers/entry.js.
  * @evidence ./trial.ts#runAnalysisTrial Runs one trial and returns its digest and end money.
- * @evidenceReview ./trial.ts#runAnalysisTrial #c1d66e5 Re-read the trial after the step-budget check: each of the four local trials runs on the built-in registries without a loader and is ok with a digest, and the worker run matches it.
+ * @evidenceReview ./trial.ts#runAnalysisTrial #fa672f5 Re-read the trial after the step-budget check: each of the four local trials runs on the built-in registries without a loader and is ok with a digest, and the worker run matches it.
  * @evidence ./trial.ts#analysisTrialScenario Builds the trial scenario from the payload.
  * @evidenceReview ./trial.ts#analysisTrialScenario #1eb1d48 The payload step, horizon, and income reach the scenario clock and model params.
  */
@@ -162,9 +162,10 @@ export function matchesWorkerDigests(): Promise<void> {
     // A real worker whose trial calls process.exit is a crash at once, not a timeout after the long window.
     const exitStarted = performance.now();
     const exiting = await runWorkerPool({
-      tasks: [trial(0, { fault: "crash" }), trial(1)],
+      tasks: [trial(0, { testFault: "crash" }), trial(1)],
       workers: 1,
       budget: { ...defaultExecutionBudget, maxWorkers: 1, taskTimeoutMs: REAL_WORKER_TIMEOUT_MS },
+      spawn: () => new Worker(new URL("./fault.fixture.ts", import.meta.url), { preload: ["@ttsc/unplugin/bun-register"] }) as unknown as WorkerLike,
     });
     expect(exiting.outcomes.map((outcome) => [outcome.status, outcome.reason])).toEqual([
       ["failed", "worker-crash"],
@@ -213,9 +214,9 @@ export function reversesCompletionOrder(): Promise<void> {
  * @evidence ./pool.ts#WorkerLike.addEventListener The pool hears a worker that exits on its own through the close event.
  * @evidenceReview ./pool.ts#WorkerLike.addEventListener #e8b001c A fake worker that only fires close made its task a worker-crash and was retried once.
  * @evidence ./pool.ts#runWorkerPool Bounds each task by its own timer, retries posted failures, and shuts down without leftovers.
- * @evidenceReview ./pool.ts#runWorkerPool #dfb8b33 Re-read start, dispatch, feed, and finish: state is keyed by position, the count is checked against maxWorkers, close routes to the crash path, a throwing spawn stops spawning, a clone error on post fails only its task, any other post failure is a crash on a retired slot, queue-bound is incomplete, the batch runs a JSON snapshot, a plugin trial retires its slot, the budget is a frozen copy checked before any spawn, an abort counts the in-flight attempt, admission precedes the snapshot, a pre-abort cancels every task before the queue bound, only a marked outcome envelope settles a task, and finish clears timers and detaches handlers.
+ * @evidenceReview ./pool.ts#runWorkerPool #ab395d9 Re-read start, dispatch, feed, and finish: state is keyed by position, the count is checked against maxWorkers, close routes to the crash path, a throwing spawn stops spawning, a clone error on post fails only its task, any other post failure is a crash on a retired slot, queue-bound is incomplete, the batch runs a JSON snapshot, a plugin trial retires its slot, the budget is a frozen copy checked before any spawn, an abort counts the in-flight attempt, admission precedes the snapshot, a pre-abort cancels every task before the queue bound, only a marked outcome envelope settles a task, and finish clears timers and detaches handlers.
  * @evidence ./trial.ts#runAnalysisTrial Reports a step-budget stop as incomplete.
- * @evidenceReview ./trial.ts#runAnalysisTrial #c1d66e5 A budget of two steps on a three-second horizon is incomplete step-budget with no end money, three steps is ok, a throwing trusted model is trial-failed, and a refusing loader is plugin-trust.
+ * @evidenceReview ./trial.ts#runAnalysisTrial #fa672f5 A budget of two steps on a three-second horizon is incomplete step-budget with no end money, three steps is ok, a throwing trusted model is trial-failed, and a refusing loader is plugin-trust.
  * @evidence ./pool.ts#workerPoolParity Reads the parity marker.
  * @evidenceReview ./pool.ts#workerPoolParity #f3f1470 The declaration is same-logical-digest.
  * @evidence ./pool.ts#WorkerLike.onerror The pool reads a worker crash from this handler.
@@ -603,7 +604,7 @@ export function boundsPoolFailures(): Promise<void> {
  * @evidence ./trial.ts#trialPluginBoundary Reads the trust marker.
  * @evidenceReview ./trial.ts#trialPluginBoundary #9e0eb13 The declaration is plugin-policy-not-widened.
  * @evidence ./trial.ts#runAnalysisTrial Refuses plugin paths it cannot check.
- * @evidenceReview ./trial.ts#runAnalysisTrial #c1d66e5 An empty root list and plugin paths without a loader fail closed, and in a worker the CLI loader refuses an outside path and a wrong digest.
+ * @evidenceReview ./trial.ts#runAnalysisTrial #fa672f5 An empty root list and plugin paths without a loader fail closed, and in a worker the CLI loader refuses an outside path and a wrong digest.
  */
 export function refusesUntrustedPlugins(): Promise<void> {
   return (async () => {
@@ -726,6 +727,34 @@ export function packsWorkerAsset(): Promise<void> {
 }
 
 describe("worker execution backend", () => {
+  it("refuses sparse slots and duplicate identities before worker dispatch", async () => {
+    const sparse = new Array<AnalysisTrialTaskV1>(2);
+    sparse[1] = trial(1);
+    let spawned = 0;
+    const batch = await runWorkerPool({ tasks: sparse, workers: 1, spawn: () => { spawned += 1; return new FakeWorker("slow", [], 1); } });
+    expect(batch.outcomes).toHaveLength(2);
+    expect(batch.outcomes.find((item) => item.status === "failed")?.attempts).toBe(0);
+    expect(spawned).toBe(1);
+    const duplicates = [trial(0), { ...trial(0), seed: 42, payload: { changed: true } }];
+    for (const submitted of [duplicates, [...duplicates].reverse()]) {
+      const result = await runWorkerPool({ tasks: submitted, workers: 1, spawn: () => { throw new Error("duplicates must not spawn"); } });
+      expect(result.outcomes.every((item) => item.reason === "duplicate-task-identity" && item.attempts === 0)).toBe(true);
+      expect(result.fullDistribution).toBe(false);
+    }
+    const invalid = await runWorkerPool({ tasks: [{ ...trial(0), stepBudget: defaultExecutionBudget.stepBudget + 1 }], workers: 1 });
+    expect(invalid.outcomes[0]?.attempts).toBe(0);
+  });
+  it("ignores crash and hang fault fields in production trial payloads", async () => {
+    const originalExit = process.exit;
+    let exits = 0;
+    process.exit = (() => { exits += 1; throw new Error("unexpected process exit"); }) as typeof process.exit;
+    try {
+      expect((await runAnalysisTrial(trial(0, { fault: "crash" }))).status).toBe("ok");
+      const result = await Promise.race([runAnalysisTrial(trial(0, { fault: "hang" })), new Promise<null>((resolve) => setTimeout(() => resolve(null), 250))]);
+      expect(result?.status).toBe("ok");
+      expect(exits).toBe(0);
+    } finally { process.exit = originalExit; }
+  });
   it("runs the packaged default worker without compiler dependencies", async () => {
     const output = resolve(".test-bundle/worker-probe");
     const build = Bun.spawnSync(["bun", "scripts/cli-bundle.ts", "--entry", "src/worker-pool.fixture.ts", "--outdir", ".test-bundle/worker-probe"], { stdout: "pipe", stderr: "pipe" });

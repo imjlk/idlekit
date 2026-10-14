@@ -4,7 +4,7 @@ import {
   finalizeBatch,
   serializedTaskBytes,
   taskIdentity,
-  prepareTrialTask,
+  prepareTrialTasks,
   readTrialOutcome,
   type AnalysisTrialOutcomeV1,
   type AnalysisTrialTaskV1,
@@ -88,7 +88,8 @@ export async function runWorkerPool(args: Readonly<{
   if (workers > budget.maxWorkers) {
     throw new Error(`worker pool count ${workers} exceeds budget maxWorkers ${budget.maxWorkers}`);
   }
-  const batchId = `worker-${workers}-${args.tasks.length}`;
+  const submitted = Array.from(args.tasks);
+  const batchId = `worker-${workers}-${submitted.length}`;
   const header = {
     batchId,
     backend: "worker" as const,
@@ -97,25 +98,25 @@ export async function runWorkerPool(args: Readonly<{
     serializedBytes: 0,
   };
   // Admission comes first: an aborted or oversized batch is answered before any descriptor is copied or measured.
-  if (args.tasks.length === 0) return finalizeBatch([], header);
+  if (submitted.length === 0) return finalizeBatch([], header);
   // An abort before submit cancels every task, refused or over the queue bound, as the local backend does.
-  if (signal?.aborted) return finalizeBatch(args.tasks.map((task) => failed(task, "abort", 0)), header);
-  if (args.tasks.length > budget.queueBound) {
+  if (signal?.aborted) return finalizeBatch(submitted.map((task) => failed(task, "abort", 0)), header);
+  if (submitted.length > budget.queueBound) {
     return finalizeBatch(
-      args.tasks.map((task) => failed(task, "queue-bound", 0)),
+      submitted.map((task) => failed(task, "queue-bound", 0)),
       header,
     );
   }
   // Validate before measuring, as the local backend does. A refused task fails alone and posts nothing.
-  const snapshots = args.tasks.map((task) => prepareTrialTask(task, budget));
+  const snapshots = prepareTrialTasks(submitted, budget);
   const refusals = snapshots.map((snapshot) => snapshot.ok ? null : snapshot.reason);
   // Dispatch is asynchronous, so the pool works on a snapshot: a later change to the caller's array or
   // descriptors cannot slip past the checks above. A valid descriptor is plain JSON, so the copy is exact.
-  const tasks: readonly AnalysisTrialTaskV1[] = args.tasks.map((task, index) => { const snapshot = snapshots[index]!; return snapshot.ok ? snapshot.task : task; });
+  const tasks: readonly AnalysisTrialTaskV1[] = submitted.map((task, index) => { const snapshot = snapshots[index]!; return snapshot.ok ? snapshot.task : task; });
   header.serializedBytes = tasks.reduce((sum, task, index) => (refusals[index] === null ? sum + serializedTaskBytes(task) : sum), 0);
   const results: (AnalysisTrialOutcomeV1 | undefined)[] = tasks.map((task, index) => {
     const refusal = refusals[index];
-    return refusal ? failed(task, refusal, 1) : undefined;
+    return refusal ? failed(task, refusal, 0) : undefined;
   });
   const attempts = tasks.map(() => 0);
   // Tasks posted and not yet settled. An abort counts their running attempt.
