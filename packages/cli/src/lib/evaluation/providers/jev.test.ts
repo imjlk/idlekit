@@ -247,7 +247,7 @@ export function keepsDefaultCommandsOffNetwork(): Promise<void> {
  * @evidence ../../../../../core/src/sim/analysis/jevAdvisory.ts#jevAlgorithmVersion Reads the algorithm version.
  * @evidenceReview ../../../../../core/src/sim/analysis/jevAdvisory.ts#jevAlgorithmVersion #3a63e24 The version is jev-advisory-1.
  * @evidence ./jev.schema.ts#readJevWire Accepts an answer only when it matches its question type.
- * @evidenceReview ./jev.schema.ts#readJevWire #1d2a88e Re-read readJevWire and the wire response schema: Choice names must belong to the question and usage counts fit uint32; the existing three fixture shapes and Noul 0 and 1 pass, while invalid confidence, an unknown id, a bad probability set, and malformed JSON fail.
+ * @evidenceReview ./jev.schema.ts#readJevWire #6c09940 Re-read the request-bound validator and wire schema: Choice winners and probability keys match the requested options, Score legends and weighted values match the zero-based criteria, and usage fits uint32. This host revalidated the three matching fixture shapes and Noul 0 and 1, and rejects invalid confidence, an unknown id, a bad probability set, and malformed JSON.
  */
 export function validatesWireShapes(): void {
   expect(jevWireShapes).toBe("distinct-answer-types");
