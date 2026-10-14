@@ -1,8 +1,9 @@
 import { closeSync, lstatSync, mkdirSync, openSync, readFileSync, readlinkSync, realpathSync, renameSync, unlinkSync, writeFileSync } from "fs";
 import lockfile from "proper-lockfile";
-import { dirname, resolve } from "path";
+import { basename, dirname, resolve } from "path";
 import {
   jevAlgorithmVersion,
+  toObservation,
   validateJevAdvisory,
   type AnalysisArtifactV1,
   type JevAdvisoryV1,
@@ -64,7 +65,7 @@ type JevProjection = Readonly<{
 
 /**
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-opt-in-live The default transport is fetch. Tests inject a mock.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-opt-in-live #7fc28bd Re-read the section: the ordinary test does not call the live API.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-opt-in-live #7fc28bd Re-read the updated section: the ordinary test does not call the live API.
  */
 export const jevLiveTransport = "injected-or-fetch" as const;
 
@@ -133,9 +134,14 @@ function redact(value: unknown, keyMaterial: string): unknown {
   return out;
 }
 
+/** A numerical report is emitted unchanged beside the advisory, so unsafe metadata must be refused first. */
+export function isSafeJevReport(report: JudgeReportV1, keyMaterial: string): boolean {
+  return JSON.stringify(redact(report, keyMaterial)) === JSON.stringify(report);
+}
+
 /**
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-secret-boundary The projection keeps metrics, assumptions, and rubric intent.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-secret-boundary #e64d47d Re-read the section: raw source and secrets are dropped, and a local path in any host layout is replaced in place.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-secret-boundary #2f2eef3 Re-read the updated section: raw source and secrets are dropped, and a local path in any host layout is replaced in place.
  */
 export function projectJevState(
   artifact: AnalysisArtifactV1,
@@ -154,23 +160,26 @@ export function projectJevState(
   });
   const coverage = artifact.observationCoverage;
   const withheld = coverage === "incomplete" || coverage === "unknown" || coverage === "disabled" || artifact.capabilities.metrics !== "statically-known";
-  const metrics = firstReadings.flatMap((metric) => rubric.rules.filter((rule) => rule.metricId === metric.metricId).map((rule) => ({
-    // An amount reading is stored as a decimal string, not as `value`.
-    amount: !withheld && metric.amount ? { decimal: metric.amount.decimal, unit: metric.amount.unit } : null,
-    domain: metric.domain,
-    meaning: metric.meaning,
-    method: metric.method ?? rule.method,
-    metricId: metric.metricId,
-    metricVersion: metric.metricVersion,
-    ruleId: rule.id,
-    reading: metric.reading,
-    sign: metric.sign ?? null,
-    status: metric.status,
-    unit: metric.amount?.unit ?? rule.unit,
-    // Only an observed reading with status ok is a value the numerical judge measures. Any other reading is missing to it,
-    // so Jev gets no value either.
-    value: !withheld && metric.domain !== "amount" && metric.reading === "observed" && metric.status === "ok" && typeof metric.value === "number" && Number.isFinite(metric.value) ? metric.value : null,
-  })));
+  const metrics = firstReadings.flatMap((metric) => rubric.rules.filter((rule) => rule.metricId === metric.metricId).map((rule) => {
+    const { observation } = toObservation(artifact, metric, rule);
+    return {
+      ...observation.identity,
+      // An amount reading is stored as a decimal string, not as `value`.
+      amount: !withheld && metric.amount ? { decimal: metric.amount.decimal, unit: metric.amount.unit } : null,
+      domain: metric.domain,
+      meaning: metric.meaning,
+      metricId: metric.metricId,
+      metricVersion: metric.metricVersion,
+      ruleId: rule.id,
+      reading: metric.reading,
+      sign: observation.status === "measured" ? metric.sign ?? null : null,
+      status: metric.status,
+      observationStatus: observation.status,
+      // Only an observed reading with status ok is a value the numerical judge measures. Any other reading is missing to it,
+      // so Jev gets no value either.
+      value: observation.value,
+    };
+  }));
   const rules = rubric.rules.map((rule) => ({
     definition: rule.definition,
     id: rule.id,
@@ -201,7 +210,7 @@ export function projectJevState(
       {
         type: "noul",
         instructions:
-          "Take the rubric rule whose id is this question's id and the projected reading whose ruleId is that id. Does that reading fail the rule, judged by its operator, threshold, upper threshold, unit, and definition? When the reading has no usable value, the rule's missingPolicy decides: fail means it fails, and anything else means it does not. Use the recorded reading as given. Do not compute a new ETA, growth rate, or steady state.",
+          "Take the rubric rule whose id is this question's id and the projected reading whose ruleId is that id. Does this reading fail the rule? Check identity first: definition, method, and unit must match, and every non-null scenarioVersion, specVersion, engineId, pluginVersion, seed, and algorithmVersion constraint must match. An identity mismatch or observationStatus unknown or unsupported is inconclusive: answer 0.5. A missing observation follows missingPolicy: fail means 1, pass means 0, inconclusive means 0.5. For a measured observation, answer whether its recorded value fails the operator, threshold, and upper threshold. Use only the recorded observation; do not infer a value from a withheld sign or amount, or compute a new ETA, growth rate, or steady state.",
         criteria: {
           true: "The recorded reading fails the rule",
           false: "The recorded reading satisfies the rule",
@@ -234,7 +243,7 @@ type JevFetch = (
 
 /**
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-opt-in-live The fetch transport posts only the body the caller already built.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-opt-in-live #7fc28bd Re-read the section: the URL is the documented System One endpoint.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-opt-in-live #7fc28bd Re-read the updated section: the URL is the documented System One endpoint.
  */
 export function createFetchTransport(fetchImpl: JevFetch = (input, init) => globalThis.fetch(input, init)): JevTransport {
   return async (request) => {
@@ -293,7 +302,7 @@ function blank(args: {
 
 /**
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-numerical-unchanged Low confidence abstains. A conflict is a warning, not a new verdict.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-numerical-unchanged #5f86d87 Re-read the section: confidence is not a game-correctness probability.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-numerical-unchanged #5f86d87 Re-read the updated section: confidence is not a game-correctness probability.
  */
 export function jevAnswerDisposition(
   answer: JevWireAnswer,
@@ -390,7 +399,9 @@ function cacheTarget(path: string, depth = 0): string {
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     }
-    return resolve(path);
+    const absolute = resolve(path);
+    const parent = dirname(absolute);
+    return parent === absolute ? absolute : resolve(cacheTarget(parent, depth + 1), basename(absolute));
   }
 }
 
@@ -430,15 +441,15 @@ function retryable(status: number): boolean {
 
 /**
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-opt-in-live The live transport runs only when the caller asks for Jev.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-opt-in-live #7fc28bd Re-read the section: dry-run and a missing key do not send the request.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-opt-in-live #7fc28bd Re-read the updated section: dry-run and a missing key do not send the request.
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-http-budget Retry stays inside the attempt budget.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-http-budget #84d6272 Re-read the section: timeout becomes unavailable and authentication is not retried.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-http-budget #84d6272 Re-read the updated section: timeout becomes unavailable and authentication is not retried.
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-numerical-unchanged The numerical digest is copied, not recomputed by the model.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-numerical-unchanged #5f86d87 Re-read the section: the advisory cannot change the recorded verdict.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-numerical-unchanged #5f86d87 Re-read the updated section: the advisory cannot change the recorded verdict.
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-no-default-fetch Only judge with provider jev reaches this transport. The rules provider returns before it.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-no-default-fetch #e8a02f1 Re-read the section: provider rules does not call the Jev transport, even with TYPESAFE_API_KEY set.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-no-default-fetch #e8a02f1 Re-read the updated section: provider rules does not call the Jev transport, even with TYPESAFE_API_KEY set.
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity The cache key is built from the projection here, and a cache that cannot be written fails open.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity #e9a0d70 Re-read the section: the key takes the projection with the upper bound, and a failed write keeps the advisory without resending.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity #125a09d Re-read the updated section: the key takes the projection with the upper bound, and a failed write keeps the advisory without resending.
  */
 export async function adviseWithJev(args: Readonly<{
   artifact: AnalysisArtifactV1;
@@ -514,22 +525,26 @@ export async function adviseWithJev(args: Readonly<{
   if (body.length > (args.maxInputChars ?? 8000)) {
     return blank({ ...base, plannedRequests: 0, status: "failed", reason: "input-too-large", cache: "bypass", attempts: 0 });
   }
-  const entries = readCache(args.cachePath);
-  const found = entries.find((entry) => entry.key === keyMaterial);
-  const nowMs = args.nowMs ?? Date.now();
-  let cached: JevAdvisoryV1 | null = null;
-  if (jevCacheHit(found, args.requestedModel, nowMs)) {
-    // A stored advisory that does not parse, does not validate, or names another request is a miss.
-    // The request runs and rewrites the entry.
-    const stored = readCachedAdvisory(found.advisoryJson);
-    const matches =
-      stored !== null &&
-      stored.numericalDigest === numericalDigest &&
-      stored.rubricVersion === args.rubric.rubricVersion &&
-      stored.requestedModel === args.requestedModel &&
-      stored.resolvedModel === found.resolvedModel;
-    cached = matches ? stored : null;
-  }
+  const cachedForRequest = (): JevAdvisoryV1 | null => {
+    const entries = readCache(args.cachePath);
+    const found = entries.find((entry) => entry.key === keyMaterial);
+    const nowMs = args.nowMs ?? Date.now();
+    let cached: JevAdvisoryV1 | null = null;
+    if (jevCacheHit(found, args.requestedModel, nowMs)) {
+      // A stored advisory that does not parse, does not validate, or names another request is a miss.
+      // The request runs and rewrites the entry.
+      const stored = readCachedAdvisory(found.advisoryJson);
+      const matches =
+        stored !== null &&
+        stored.numericalDigest === numericalDigest &&
+        stored.rubricVersion === args.rubric.rubricVersion &&
+        stored.requestedModel === args.requestedModel &&
+        stored.resolvedModel === found.resolvedModel;
+      cached = matches ? stored : null;
+    }
+    return cached;
+  };
+  const cached = cachedForRequest();
   // A dry run plans what a live run would send: nothing when the cache already answers.
   if (args.dryRun) {
     return blank({
@@ -546,101 +561,128 @@ export async function adviseWithJev(args: Readonly<{
   if (key.length === 0) {
     return blank({ ...base, plannedRequests: 0, status: "unavailable", reason: "missing-api-key", cache: "miss", attempts: 0 });
   }
-  const transport = args.transport ?? createFetchTransport();
-  const sleep = args.sleep ?? ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)));
-  const maxRetries = args.maxRetries ?? 2;
-  const timeoutMs = args.timeoutMs ?? 10_000;
-  let lastReason = "upstream";
-  for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
+  let releaseRequest: (() => Promise<void>) | undefined;
+  let compromised = false;
+  if (args.cachePath) {
     try {
-      const response = await transport({
-        url: JEV_ENDPOINT,
-        body,
-        headers: {
-          Authorization: `Bearer ${key}`,
-          "Content-Type": "application/json",
-          Accept: "application/json",
-        },
-        signal: controller.signal,
+      const target = cacheTarget(args.cachePath);
+      mkdirSync(dirname(target), { recursive: true });
+      // Serialize only identical requests. Other cache keys can still use the transport concurrently.
+      releaseRequest = await lockfile.lock(`${target}.${keyMaterial}.request`, {
+        realpath: false, stale: 60_000, update: 10_000,
+        retries: { retries: 1000, factor: 1, minTimeout: 50, maxTimeout: 50, randomize: false },
+        onCompromised() { compromised = true; },
       });
-      if (response.status === 401 || response.status === 403) {
-        return blank({ ...base, status: "failed", reason: "authentication", cache: "miss", attempts: attempt + 1 });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ELOCKED") {
+        return blank({ ...base, plannedRequests: 0, status: "unavailable", reason: "cache-busy", cache: "miss", attempts: 0 });
       }
-      if (retryable(response.status)) {
-        lastReason = response.status === 429 || response.status === 529 ? "rate-limit" : "upstream";
+      // An unwritable cache still permits one paid request, as it did before request coalescing.
+    }
+  }
+  try {
+    // Another process may have filled this key while this request waited for its lease.
+    const filled = cachedForRequest();
+    if (filled) return { ...filled, cache: "hit", attempts: 0, plannedRequests: 0, dryRun: false, usage: null };
+    const transport = args.transport ?? createFetchTransport();
+    const sleep = args.sleep ?? ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)));
+    const maxRetries = args.maxRetries ?? 2;
+    const timeoutMs = args.timeoutMs ?? 10_000;
+    let lastReason = "upstream";
+    for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        const response = await transport({
+          url: JEV_ENDPOINT,
+          body,
+          headers: {
+            Authorization: `Bearer ${key}`,
+            "Content-Type": "application/json",
+            Accept: "application/json",
+          },
+          signal: controller.signal,
+        });
+        if (response.status === 401 || response.status === 403) {
+          return blank({ ...base, status: "failed", reason: "authentication", cache: "miss", attempts: attempt + 1 });
+        }
+        if (retryable(response.status)) {
+          lastReason = response.status === 429 || response.status === 529 ? "rate-limit" : "upstream";
+          if (attempt < maxRetries) {
+            await sleep(50 * 2 ** attempt);
+            continue;
+          }
+          return blank({ ...base, status: "unavailable", reason: lastReason, cache: "miss", attempts: attempt + 1 });
+        }
+        if (response.status !== 200) {
+          return blank({ ...base, status: "failed", reason: "upstream", cache: "miss", attempts: attempt + 1 });
+        }
+        const wire = readJevWire(response.body, projection.questions);
+        if (!wire.ok) {
+          return blank({ ...base, status: "failed", reason: wire.reason, cache: "miss", attempts: attempt + 1 });
+        }
+        // The provider chooses the model string. One that carries the key or a local path is refused, not copied or cached.
+        if (redactString(wire.response.model, key) !== wire.response.model) {
+          return blank({ ...base, status: "failed", reason: "unsafe-model", cache: "miss", attempts: attempt + 1 });
+        }
+        // A pinned request accepts only that model. An alias must come back resolved to a concrete id.
+        const answeredModel = wire.response.model;
+        const modelOk = aliasPolicy(args.requestedModel) === "pinned"
+          ? answeredModel === args.requestedModel
+          : aliasPolicy(answeredModel) === "pinned";
+        if (!modelOk) {
+          return blank({ ...base, status: "failed", reason: "model-mismatch", cache: "miss", attempts: attempt + 1 });
+        }
+        const answers = summarize(wire.response, args.rubric, args.numerical);
+        const status = reportStatus(answers);
+        const advisory = blank({
+          ...base,
+          status,
+          reason: status === "ok" ? "advisory" : status,
+          cache: "miss",
+          attempts: attempt + 1,
+          resolvedModel: wire.response.model,
+          usage: {
+            inputTokens: wire.response.usage.input_tokens,
+            outputTokens: wire.response.usage.output_tokens,
+          },
+          answers,
+        });
+        if (args.cachePath && !compromised) {
+          const entry: JevCacheEntry = {
+            key: keyMaterial,
+            requestedModel: args.requestedModel,
+            resolvedModel: wire.response.model,
+            rubricVersion: args.rubric.rubricVersion,
+            storedAtMs: args.nowMs ?? Date.now(),
+            advisoryJson: JSON.stringify(advisory),
+          };
+          // A cache that cannot be written fails open. It is not an upstream failure and does not resend the paid request.
+          try {
+            await writeCache(args.cachePath, entry);
+          } catch {
+            // The advisory still stands. The next run misses and asks again.
+          }
+        }
+        return advisory;
+      } catch (error) {
+        const name = error instanceof Error ? error.name : "";
+        if (name === "AbortError") {
+          return blank({ ...base, status: "unavailable", reason: "timeout", cache: "miss", attempts: attempt + 1 });
+        }
+        lastReason = "upstream";
         if (attempt < maxRetries) {
           await sleep(50 * 2 ** attempt);
           continue;
         }
         return blank({ ...base, status: "unavailable", reason: lastReason, cache: "miss", attempts: attempt + 1 });
+      } finally {
+        clearTimeout(timer);
       }
-      if (response.status !== 200) {
-        return blank({ ...base, status: "failed", reason: "upstream", cache: "miss", attempts: attempt + 1 });
-      }
-      const wire = readJevWire(response.body, projection.questions);
-      if (!wire.ok) {
-        return blank({ ...base, status: "failed", reason: wire.reason, cache: "miss", attempts: attempt + 1 });
-      }
-      // The provider chooses the model string. One that carries the key or a local path is refused, not copied or cached.
-      if (redactString(wire.response.model, key) !== wire.response.model) {
-        return blank({ ...base, status: "failed", reason: "unsafe-model", cache: "miss", attempts: attempt + 1 });
-      }
-      // A pinned request accepts only that model. An alias must come back resolved to a concrete id.
-      const answeredModel = wire.response.model;
-      const modelOk = aliasPolicy(args.requestedModel) === "pinned"
-        ? answeredModel === args.requestedModel
-        : aliasPolicy(answeredModel) === "pinned";
-      if (!modelOk) {
-        return blank({ ...base, status: "failed", reason: "model-mismatch", cache: "miss", attempts: attempt + 1 });
-      }
-      const answers = summarize(wire.response, args.rubric, args.numerical);
-      const status = reportStatus(answers);
-      const advisory = blank({
-        ...base,
-        status,
-        reason: status === "ok" ? "advisory" : status,
-        cache: "miss",
-        attempts: attempt + 1,
-        resolvedModel: wire.response.model,
-        usage: {
-          inputTokens: wire.response.usage.input_tokens,
-          outputTokens: wire.response.usage.output_tokens,
-        },
-        answers,
-      });
-      if (args.cachePath) {
-        const entry: JevCacheEntry = {
-          key: keyMaterial,
-          requestedModel: args.requestedModel,
-          resolvedModel: wire.response.model,
-          rubricVersion: args.rubric.rubricVersion,
-          storedAtMs: nowMs,
-          advisoryJson: JSON.stringify(advisory),
-        };
-        // A cache that cannot be written fails open. It is not an upstream failure and does not resend the paid request.
-        try {
-          await writeCache(args.cachePath, entry);
-        } catch {
-          // The advisory still stands. The next run misses and asks again.
-        }
-      }
-      return advisory;
-    } catch (error) {
-      const name = error instanceof Error ? error.name : "";
-      if (name === "AbortError") {
-        return blank({ ...base, status: "unavailable", reason: "timeout", cache: "miss", attempts: attempt + 1 });
-      }
-      lastReason = "upstream";
-      if (attempt < maxRetries) {
-        await sleep(50 * 2 ** attempt);
-        continue;
-      }
-      return blank({ ...base, status: "unavailable", reason: lastReason, cache: "miss", attempts: attempt + 1 });
-    } finally {
-      clearTimeout(timer);
     }
+    return blank({ ...base, status: "unavailable", reason: lastReason, cache: "miss", attempts: maxRetries + 1 });
+  } finally {
+    // A lost lease must not turn a valid paid response into an upstream retry.
+    try { await releaseRequest?.(); } catch { /* Cache availability does not change the advisory. */ }
   }
-  return blank({ ...base, status: "unavailable", reason: lastReason, cache: "miss", attempts: maxRetries + 1 });
 }

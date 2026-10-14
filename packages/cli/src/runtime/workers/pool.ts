@@ -1,4 +1,5 @@
 import {
+  addDecimalStrings,
   assertExecutionBudget,
   defaultExecutionBudget,
   finalizeBatch,
@@ -37,6 +38,20 @@ const WORKER_OUTCOME_MARKER = "idlekit-worker-entry";
 
 function defaultSpawn(): WorkerLike {
   return new Worker(workerEntryUrl(), { preload: [...workerDevPreload] }) as unknown as WorkerLike;
+}
+
+/** A marked message is still a wire boundary: a malformed result cannot become a full distribution. */
+function matchesOutcome(value: unknown, task: AnalysisTrialTaskV1): value is AnalysisTrialOutcomeV1 {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+  const outcome = value as Partial<AnalysisTrialOutcomeV1>;
+  if (outcome.taskId !== task.taskId || outcome.logicalIndex !== task.logicalIndex || outcome.seed !== task.seed) return false;
+  if (!["ok", "failed", "cancelled", "incomplete"].includes(outcome.status ?? "")) return false;
+  if (typeof outcome.reason !== "string" || typeof outcome.attempts !== "number" || !Number.isSafeInteger(outcome.attempts) || outcome.attempts < 0) return false;
+  if (outcome.semanticDigest !== null && typeof outcome.semanticDigest !== "string") return false;
+  if (outcome.endMoney !== null && typeof outcome.endMoney !== "string") return false;
+  if (outcome.status === "ok" && (outcome.semanticDigest === null || outcome.endMoney === null)) return false;
+  try { if (outcome.endMoney !== null) addDecimalStrings("0", outcome.endMoney); } catch { return false; }
+  return true;
 }
 
 function failed(task: AnalysisTrialTaskV1, reason: string, attempts: number): AnalysisTrialOutcomeV1 {
@@ -196,15 +211,20 @@ export async function runWorkerPool(args: Readonly<{
         feed();
       }, budget.taskTimeoutMs);
       timers.add(timer);
+      const crash = (): void => {
+        if (!settle()) return;
+        if (!requeue(index, attempt)) results[index] = failed(task, "worker-crash", attempt + 1);
+        retire(worker);
+        feed();
+      };
       worker.onmessage = (event) => {
-        const envelope = event.data as { type?: unknown; marker?: unknown; outcome?: AnalysisTrialOutcomeV1 } | null;
+        const envelope = event.data as { type?: unknown; marker?: unknown; outcome?: unknown } | null;
         // Only the entry's marked outcome envelope ends a task. A plugin may post its own messages from the worker.
         if (envelope?.type !== "outcome" || envelope.marker !== WORKER_OUTCOME_MARKER) return;
-        if (!settle()) return;
         const outcome = envelope.outcome;
-        if (!outcome || outcome.taskId !== task.taskId) {
-          results[index] = failed(task, "worker-crash", attempt + 1);
-        } else if (outcome.status === "failed" && outcome.reason !== "plugin-trust" && requeue(index, attempt)) {
+        if (!matchesOutcome(outcome, task)) { crash(); return; }
+        if (!settle()) return;
+        if (outcome.status === "failed" && outcome.reason !== "plugin-trust" && requeue(index, attempt)) {
           // A posted failure retries like a crash and like the local backend. plugin-trust does not.
         } else {
           results[index] = {
@@ -225,12 +245,7 @@ export async function runWorkerPool(args: Readonly<{
         }
         feed();
       };
-      worker.onerror = () => {
-        if (!settle()) return;
-        if (!requeue(index, attempt)) results[index] = failed(task, "worker-crash", attempt + 1);
-        retire(worker);
-        feed();
-      };
+      worker.onerror = crash;
       inFlight.add(index);
       try {
         worker.postMessage({ type: "run", task });
@@ -265,6 +280,8 @@ export async function runWorkerPool(args: Readonly<{
       }
       header.workerSpawnMs += performance.now() - before;
       spawned += 1;
+      // A user-supplied spawn may synchronously abort before its returned slot joins live.
+      if (closed) { detach(worker); worker.terminate(); return; }
       live.add(worker);
       worker.addEventListener?.("close", () => {
         // A slot the pool retired is no longer live, so its own terminate is ignored here.

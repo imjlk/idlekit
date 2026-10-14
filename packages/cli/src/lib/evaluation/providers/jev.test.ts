@@ -14,9 +14,10 @@ import {
   jevAnswerDisposition,
   jevLiveTransport,
   projectJevState,
+  isSafeJevReport,
   type JevTransport,
 } from "./jev";
-import { jevAlgorithmVersion, jevJsonSchema, jevSchemaId, validateJevAdvisory } from "@idlekit/core";
+import { jevAlgorithmVersion, jevJsonSchema, jevSchemaId, toObservation, validateJevAdvisory } from "@idlekit/core";
 import {
   JEV_ENDPOINT,
   jevCacheIdentity,
@@ -355,7 +356,7 @@ export function validatesWireShapes(): void {
  * @evidence ./jev.schema.ts#jevHttpBudget Reads the budget marker.
  * @evidenceReview ./jev.schema.ts#jevHttpBudget #fe6ed61 The declaration is bounded-retry.
  * @evidence ./jev.ts#adviseWithJev Runs the injected transport inside the retry budget.
- * @evidenceReview ./jev.ts#adviseWithJev #866de2a Re-read adviseWithJev with the serialized fail-open cache write and zero plan on a hit or missing key: the retry loop remains bounded; 401 and 403 send once, 429 stops after three attempts, 500 twice then 200 recovers, and an abort is a timeout.
+ * @evidenceReview ./jev.ts#adviseWithJev #8c73f17 Re-read adviseWithJev with the serialized fail-open cache write and zero plan on a hit or missing key: the retry loop remains bounded; 401 and 403 send once, 429 stops after three attempts, 500 twice then 200 recovers, and an abort is a timeout.
  */
 export function boundsHttpFailures(): Promise<void> {
   return (async (): Promise<void> => {
@@ -452,9 +453,9 @@ export function boundsHttpFailures(): Promise<void> {
 
 /**
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity A pinned model hits. An alias expires. A rubric change misses.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity #e9a0d70 Re-read the section, then ran this function: jev-latest was fetched again after the TTL, a changed between upper bound missed, a truncated stored advisory and one naming another digest were misses that sent again, a warm cache planned zero requests, and an unwritable cache path sent once and kept the advisory.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity #125a09d Re-read the section, then ran this function: jev-latest was fetched again after the TTL, a changed between upper bound missed, a truncated stored advisory and one naming another digest were misses that sent again, a warm cache planned zero requests, and an unwritable cache path sent once and kept the advisory.
  * @evidence ./jev.ts#adviseWithJev Writes the cache after a valid answer and fails open when it cannot.
- * @evidenceReview ./jev.ts#adviseWithJev #866de2a Re-read adviseWithJev and writeCache: invalid or mismatched entries miss, a hit sends nothing and clears current-call usage, dry-run plans zero without a key, writes merge entries under a filesystem lock, and an unwritable path keeps the advisory without resending.
+ * @evidenceReview ./jev.ts#adviseWithJev #8c73f17 Re-read adviseWithJev and writeCache: invalid or mismatched entries miss, a hit sends nothing and clears current-call usage, dry-run plans zero without a key, writes merge entries under a filesystem lock, and an unwritable path keeps the advisory without resending.
  * @evidence ./jev.schema.ts#jevCacheIdentity Reads the cache marker.
  * @evidenceReview ./jev.schema.ts#jevCacheIdentity #75b32a2 The declaration is alias-is-not-pinned.
  * @evidence ../cache.ts#JEV_ALIAS_TTL_MS Reads the alias TTL.
@@ -687,11 +688,15 @@ export function separatesCacheIdentity(): Promise<void> {
 
 /**
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-secret-boundary The request, cache, and report omit the key and the raw marker.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-secret-boundary #e64d47d Re-read the section, then ran this function: the secret and each local path form were absent, including a file name with a space and a root-level path, the metric meaning and an amount decimal reached the projection, a rule carried its missing policy, and a repeated metric id projected only its first reading, an estimate and an observed error reading projected no value, a reading no rule names was left out, a path- or key-bearing rubric version was refused unsent, a response or requested model carrying the key was refused, not cached, and not echoed, and a pinned or alias request answered by the wrong model was model-mismatch.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-secret-boundary #2f2eef3 Re-read the section, then ran this function: the secret and each local path form were absent, including a file name with a space and a root-level path, the metric meaning and an amount decimal reached the projection, a rule carried its missing policy, and a repeated metric id projected only its first reading, an estimate and an observed error reading projected no value, a reading no rule names was left out, a path- or key-bearing rubric version was refused unsent, a response or requested model carrying the key was refused, not cached, and not echoed, and a pinned or alias request answered by the wrong model was model-mismatch.
  * @evidence ./jev.schema.ts#jevSecretBoundary Reads the redaction marker.
  * @evidenceReview ./jev.schema.ts#jevSecretBoundary #fe921f9 The declaration is redacted-projection.
  * @evidence ./jev.ts#projectJevState Projects metrics, assumptions, and rules without the key or a local path.
- * @evidenceReview ./jev.ts#projectJevState #77a102c Re-read projectJevState, redactPaths, and pathEnd: secrets and local paths are redacted while web URLs stay; each rule receives the first referenced reading with its ruleId and effective rule unit and method, amount readings retain decimal text without a numeric point, withheld coverage removes values, and only observed ok numerical readings carry a value. Rules retain identity constraints and each question selects its own ruleId and missing policy.
+ * @evidenceReview ./jev.ts#projectJevState #e7b977b Re-read projectJevState and the shared Core observation mapper: each rule receives its effective identity and observation status, only measured readings retain a point and sign, amount decimal context remains unsupported, and questions abstain on identity mismatches or unknown observations before using the threshold or missing policy. Secrets and local paths in the request projection are redacted.
+ * @evidence ./jev.ts#isSafeJevReport Refuses unsafe metadata in the unchanged sibling numerical report before emitting a Jev bundle.
+ * @evidenceReview ./jev.ts#isSafeJevReport #001fec4 Re-read the complete recursive report comparison: the original report with a key-bearing assumption is unsafe, a safe assumption passes, and the CLI rejects unsafe versions and assumptions before transport or output.
+ * @evidence ../../../../../core/src/sim/analysis/judge.ts#toObservation Uses the same observation identity and availability rules as the numerical judge.
+ * @evidenceReview ../../../../../core/src/sim/analysis/judge.ts#toObservation #4a4fe85 Re-read the mapper: a measured time reading has the rule method and unit, unspecified provenance fields, the artifact algorithm version, and the recorded value; amount, estimates, and withheld coverage never provide a measured numerical point.
  */
 export function keepsSecretsOutOfRecords(): Promise<void> {
   return (async (): Promise<void> => {
@@ -699,6 +704,11 @@ export function keepsSecretsOutOfRecords(): Promise<void> {
   const assumption = `${SECRET} /Users/secret/plugin.ts`;
   const input = parsed(3, "rubric-19", assumption);
   const numerical = evaluateRules(input);
+  expect(isSafeJevReport(numerical, SECRET)).toBe(false);
+  expect(isSafeJevReport(evaluateRules(parsed()), SECRET)).toBe(true);
+  expect(toObservation(input.artifact, input.artifact.metrics[0]!, input.rubric.rules[0]!).observation).toMatchObject({
+    status: "measured", value: 3, identity: { method: "exact", unit: "time", engineId: "unspecified", algorithmVersion: "analysis-artifact-v1" },
+  });
   const seen = transportOf(() => ({ status: 200, body: noulBody(0.9) }));
   const dir = await createTempDir("idlekit-jev-secret");
   const cachePath = resolve(dir, "cache.json");
@@ -864,7 +874,7 @@ export function keepsSecretsOutOfRecords(): Promise<void> {
     metrics: [{ ...firstMetric, domain: "amount" as const, sign: "positive" as const, amount: { unit: "COIN", decimal: "12.5" } }],
   };
   const amounts = projectJevState(amountArtifact, input.rubric, SECRET).state as { metrics: readonly Record<string, unknown>[] };
-  expect(amounts.metrics[0]).toMatchObject({ amount: { decimal: "12.5", unit: "COIN" }, sign: "positive", unit: "COIN" });
+  expect(amounts.metrics[0]).toMatchObject({ amount: { decimal: "12.5", unit: "COIN" }, sign: null, unit: "COIN", observationStatus: "unsupported" });
   expect(amounts.metrics[0]?.value).toBeNull();
   await removePath(dir);
 })();
@@ -878,7 +888,7 @@ export function keepsSecretsOutOfRecords(): Promise<void> {
  * @evidence ./jev.ts#jevAnswerDisposition Maps one answer to ok, abstain, or an advisory warning.
  * @evidenceReview ./jev.ts#jevAnswerDisposition #0d071be Re-read jevAnswerDisposition with the closed abstain band: Choice confidence 0.2, Noul 0.5, and Noul 0.4 and 0.6 on either verdict abstain, 0.399 and 0.601 warn, a Noul of 0.05 against a failing rule is a warning, and the same Noul with no rule verdict is ok.
  * @evidence ./jev.ts#adviseWithJev Compares each answer with its own rule and refuses a rubric whose ids cannot stay separate questions.
- * @evidenceReview ./jev.ts#adviseWithJev #866de2a Re-read adviseWithJev, summarize, and reportStatus after the cache changes: in a mixed rubric a low Noul warns only on the failing rule, the warning outranks an abstention, and a repeated id, __proto__, or an id holding a path or the key fails before any send.
+ * @evidenceReview ./jev.ts#adviseWithJev #8c73f17 Re-read adviseWithJev, summarize, and reportStatus after the cache changes: in a mixed rubric a low Noul warns only on the failing rule, the warning outranks an abstention, and a repeated id, __proto__, or an id holding a path or the key fails before any send.
  */
 export function keepsNumericalVerdicts(): Promise<void> {
   return (async (): Promise<void> => {
@@ -1193,6 +1203,71 @@ export function staysOptIn(): Promise<void> {
 }
 
 describe("jev judge provider", () => {
+  it("withholds signs and records the effective numerical identity", () => {
+    const input = parsed(1, "identity", "seed-19", [rule({ engineId: "number", algorithmVersion: "other" })]);
+    for (const observed of [
+      { ...input.artifact, observationCoverage: "incomplete" as const },
+      { ...input.artifact, metrics: input.artifact.metrics.map((metric) => ({ ...metric, reading: "estimated" as const, sign: "positive" as const })) },
+    ]) {
+      const projection = projectJevState(observed, input.rubric, SECRET);
+      const row = (projection.state as { metrics: readonly Record<string, unknown>[] }).metrics[0]!;
+      expect(row.sign).toBeNull();
+      expect(row).toMatchObject({ engineId: "unspecified", scenarioVersion: "unspecified", specVersion: "unspecified",
+        pluginVersion: "unspecified", seed: "unspecified", algorithmVersion: "analysis-artifact-v1" });
+      expect(projection.questions["first-reset"]!.instructions).toContain("identity");
+      expect(projection.questions["first-reset"]!.instructions).toContain("0.5");
+    }
+  });
+  it("rejects unsafe numerical bundle metadata before transport or output", async () => {
+    const dir = await createTempDir("idlekit-jev-bundle-secret");
+    try {
+      const analysis = resolve(dir, "analysis.json");
+      const rubricPath = resolve(dir, "rubric.json");
+      const out = resolve(dir, "answer.json");
+      const cache = resolve(dir, "cache.json");
+      const mock = transportOf(() => ({ status: 200, body: noulBody(0.9) }));
+      for (const [version, assumption] of [[SECRET, "seed-19"], ["/home/private/rubric.json", "seed-19"], ["rubric-19", SECRET], ["rubric-19", "C:\\private\\input.json"]]) {
+        await Bun.write(analysis, artifact(3, assumption));
+        await Bun.write(rubricPath, rubric(version));
+        await expect(runJudge({ rubric: rubricPath, provider: "jev", format: "json", out, cache }, analysis,
+          { env: { TYPESAFE_API_KEY: SECRET }, transport: mock.transport })).rejects.toThrow("Unsafe Jev numerical report");
+        expect(existsSync(out)).toBe(false);
+        expect(existsSync(cache)).toBe(false);
+      }
+      expect(mock.calls).toBe(0);
+    } finally { await removePath(dir); }
+  });
+  it("coalesces identical cold-cache requests", async () => {
+    const dir = await createTempDir("idlekit-jev-same-key");
+    try {
+      const input = parsed();
+      const mock = transportOf(async () => { await Bun.sleep(25); return { status: 200, body: noulBody(0.9) }; });
+      const args = { ...input, numerical: evaluateRules(input), requestedModel: "jev-1.13.0", dryRun: false,
+        cachePath: resolve(dir, "cache.json"), transport: mock.transport, env: { TYPESAFE_API_KEY: SECRET } };
+      const results = await Promise.all([adviseWithJev(args), adviseWithJev(args)]);
+      expect(mock.calls).toBe(1);
+      expect(results.map((item) => item.cache).sort()).toEqual(["hit", "miss"]);
+      expect(results.find((item) => item.cache === "hit")).toMatchObject({ attempts: 0, plannedRequests: 0, usage: null });
+    } finally { await removePath(dir); }
+  });
+  it("rejects nested cache and output targets before transport", async () => {
+    const dir = await createTempDir("idlekit-jev-nested-target");
+    try {
+      const analysis = resolve(dir, "analysis.json");
+      const rubricPath = resolve(dir, "rubric.json");
+      await Bun.write(analysis, artifact(3));
+      await Bun.write(rubricPath, rubric());
+      const mock = transportOf(() => ({ status: 200, body: noulBody(0.9) }));
+      const parent = resolve(dir, "result");
+      const child = resolve(parent, "report.json");
+      for (const [cache, out] of [[parent, child], [child, parent]]) {
+        await expect(runJudge({ rubric: rubricPath, provider: "jev", format: "json", cache, out }, analysis,
+          { env: { TYPESAFE_API_KEY: SECRET }, transport: mock.transport })).rejects.toThrow("ancestor");
+        expect(existsSync(parent)).toBe(false);
+      }
+      expect(mock.calls).toBe(0);
+    } finally { await removePath(dir); }
+  });
   it("projects the numerical effective method for every rule", () => {
     const input = parsed(1.5, "shared-method", "seed-19", [rule({ id: "exact", method: "exact" }), rule({ id: "analytic", method: "analytic" })]);
     const observed = { ...input.artifact, metrics: input.artifact.metrics.map((metric) => ({ ...metric, method: undefined })) };
