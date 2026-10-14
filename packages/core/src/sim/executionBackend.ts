@@ -325,7 +325,8 @@ function ownData(value: object, key: string): unknown {
 
 /** Apply the same success contract in both backends, without invoking outcome accessors. */
 export function readTrialOutcome(value: unknown, task: AnalysisTrialTaskV1): AnalysisTrialOutcomeV1 | null {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) return null;
+  // Even Array.isArray throws for a revoked proxy; malformed outcomes stay inside their trial boundary.
+  try { if (value === null || typeof value !== "object" || Array.isArray(value)) return null; } catch { return null; }
   if (ownData(value, "taskId") !== task.taskId || ownData(value, "logicalIndex") !== task.logicalIndex || ownData(value, "seed") !== task.seed) return null;
   const status = ownData(value, "status");
   const reason = ownData(value, "reason");
@@ -503,10 +504,18 @@ export function runLocalBatch(
         // A thrown trial is a retryable failure of that task, as a crashed worker is. The batch keeps going.
         raw = outcomeOf(task, "failed", "trial-failed", attempt + 1);
       }
-      if (isPromise(raw)) {
+      let asynchronous = false;
+      let checked: AnalysisTrialOutcomeV1 | null = null;
+      try {
+        asynchronous = isPromise(raw);
+        if (!asynchronous) checked = readTrialOutcome(raw, task);
+      } catch {
+        // Reflection or a throwing then getter is a malformed result of this task.
+      }
+      if (asynchronous) {
         throw new Error("local execution runner must be synchronous");
       }
-      const checked = readTrialOutcome(raw, task) ?? outcomeOf(task, "failed", "trial-failed", attempt + 1);
+      checked ??= outcomeOf(task, "failed", "trial-failed", attempt + 1);
       const elapsed = clock.now() - started;
       const next: AnalysisTrialOutcomeV1 = {
         ...checked,
