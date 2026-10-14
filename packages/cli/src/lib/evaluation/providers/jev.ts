@@ -388,7 +388,7 @@ function summarize(
 function questionIdIssue(rubric: JudgeRubricV1, keyMaterial: string): string | null {
   const seen = new Set<string>();
   for (const rule of rubric.rules) {
-    if (rule.id === "__proto__") return "unsafe-question-id";
+    if (rule.id.trim().length === 0 || rule.id === "__proto__") return "unsafe-question-id";
     // A question id is a property name in the request and is not redacted there, so an id that redaction would change is refused.
     if (redactString(rule.id, keyMaterial) !== rule.id) return "unsafe-question-id";
     if (seen.has(rule.id)) return "duplicate-question-id";

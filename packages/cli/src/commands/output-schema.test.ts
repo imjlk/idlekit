@@ -238,6 +238,9 @@ describe("output schema contracts", () => {
       expect(planned._meta.schemaRef).toBe("docs/schemas/jev.judge.output.schema.json");
       expect(planned.advisory.status).toBe("skipped");
       validate(planned, "dry-run");
+      const { generatedAt: _timestamp, ...withoutTimestamp } = planned._meta;
+      expect(() => validate({ ...planned, _meta: withoutTimestamp }, "no generatedAt")).toThrow();
+      expect(() => validate({ ...planned, _meta: { ...planned._meta, generatedAt: 42 } }, "non-string generatedAt")).toThrow();
       const outPath = resolve(dir, "advised.json");
       await runJudge(
         { rubric: rubricPath, provider: "jev", format: "json", model: "jev-1.13.0", out: outPath },
