@@ -114,7 +114,7 @@ class FakeWorker implements WorkerLike {
  * @evidence ./pool.ts#workerEntryUrl Names the worker module the pool spawns.
  * @evidenceReview ./pool.ts#workerEntryUrl #9e78f00 This host sees source entry.ts next to pool.ts; a JS bundle resolves runtime/workers/entry.js.
  * @evidence ./trial.ts#runAnalysisTrial Runs one trial and returns its digest and end money.
- * @evidenceReview ./trial.ts#runAnalysisTrial #fa672f5 Re-read the trial after the step-budget check: each of the four local trials runs on the built-in registries without a loader and is ok with a digest, and the worker run matches it.
+ * @evidenceReview ./trial.ts#runAnalysisTrial #6a4f9c8 Re-read the trial after the step-budget check: each of the four local trials runs on the built-in registries without a loader and is ok with a digest, and the worker run matches it.
  * @evidence ./trial.ts#analysisTrialScenario Builds the trial scenario from the payload.
  * @evidenceReview ./trial.ts#analysisTrialScenario #1eb1d48 The payload step, horizon, and income reach the scenario clock and model params.
  */
@@ -216,7 +216,7 @@ export function reversesCompletionOrder(): Promise<void> {
  * @evidence ./pool.ts#runWorkerPool Bounds each task by its own timer, retries posted failures, and shuts down without leftovers.
  * @evidenceReview ./pool.ts#runWorkerPool #ab395d9 Re-read start, dispatch, feed, and finish: state is keyed by position, the count is checked against maxWorkers, close routes to the crash path, a throwing spawn stops spawning, a clone error on post fails only its task, any other post failure is a crash on a retired slot, queue-bound is incomplete, the batch runs a JSON snapshot, a plugin trial retires its slot, the budget is a frozen copy checked before any spawn, an abort counts the in-flight attempt, admission precedes the snapshot, a pre-abort cancels every task before the queue bound, only a marked outcome envelope settles a task, and finish clears timers and detaches handlers.
  * @evidence ./trial.ts#runAnalysisTrial Reports a step-budget stop as incomplete.
- * @evidenceReview ./trial.ts#runAnalysisTrial #fa672f5 A budget of two steps on a three-second horizon is incomplete step-budget with no end money, three steps is ok, a throwing trusted model is trial-failed, and a refusing loader is plugin-trust.
+ * @evidenceReview ./trial.ts#runAnalysisTrial #6a4f9c8 A budget of two steps on a three-second horizon is incomplete step-budget with no end money, three steps is ok, a throwing trusted model is trial-failed, and a refusing loader is plugin-trust.
  * @evidence ./pool.ts#workerPoolParity Reads the parity marker.
  * @evidenceReview ./pool.ts#workerPoolParity #f3f1470 The declaration is same-logical-digest.
  * @evidence ./pool.ts#WorkerLike.onerror The pool reads a worker crash from this handler.
@@ -604,7 +604,7 @@ export function boundsPoolFailures(): Promise<void> {
  * @evidence ./trial.ts#trialPluginBoundary Reads the trust marker.
  * @evidenceReview ./trial.ts#trialPluginBoundary #9e0eb13 The declaration is plugin-policy-not-widened.
  * @evidence ./trial.ts#runAnalysisTrial Refuses plugin paths it cannot check.
- * @evidenceReview ./trial.ts#runAnalysisTrial #fa672f5 An empty root list and plugin paths without a loader fail closed, and in a worker the CLI loader refuses an outside path and a wrong digest.
+ * @evidenceReview ./trial.ts#runAnalysisTrial #6a4f9c8 An empty root list and plugin paths without a loader fail closed, and in a worker the CLI loader refuses an outside path and a wrong digest.
  */
 export function refusesUntrustedPlugins(): Promise<void> {
   return (async () => {
@@ -775,6 +775,16 @@ describe("worker execution backend", () => {
       expect(builtin.entry).toBe(pathToFileURL(join(consumer, "runtime/workers/entry.js")).href);
       expect(builtin.batch.fullDistribution).toBe(true);
       expect(builtin.batch.outcomes[0]).toMatchObject({ status: "ok", attempts: 1 });
+      const { loadRegistries } = await import("../../plugin/load");
+      const closurePlugin = join(consumer, "closure.mjs");
+      const closureHelper = join(consumer, "helper.mjs");
+      writeFileSync(closureHelper, 'export const tag = "one";');
+      writeFileSync(closurePlugin, 'import { tag } from "./helper.mjs"; export const strategies = []; export { tag };');
+      const parent = await loadRegistries([closurePlugin], { allowedRoots: [consumer] });
+      const closurePolicy = { pluginPaths: [closurePlugin], pluginRoots: [consumer], pluginDigests: parent.pluginDigest };
+      expect(invoke(closurePolicy).batch.outcomes[0]).toMatchObject({ status: "ok", attempts: 1 });
+      writeFileSync(closureHelper, 'throw new Error("changed helper must not be evaluated");');
+      expect(invoke(closurePolicy).batch.outcomes[0]).toMatchObject({ status: "failed", reason: "plugin-trust", attempts: 1 });
       const plugin = join(consumer, "throws.mjs");
       writeFileSync(plugin, 'throw new Error("initialization failed");');
       const digest = sha256Hex(readFileSync(plugin));
@@ -793,6 +803,24 @@ describe("worker execution backend", () => {
       writeFileSync(plugin, 'throw new Error("initialization failed");');
       const task = { ...trial(0), pluginPaths: [plugin], pluginRoots: [root], pluginDigests: { [plugin]: sha256Hex(readFileSync(plugin)) } };
       expect(await runAnalysisTrial(task, loadRegistries)).toMatchObject({ status: "failed", reason: "trial-failed" });
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+  it("accepts the parent's recorded plugin closure and refuses changed helpers", async () => {
+    const { loadRegistries } = await import("../../plugin/load");
+    const { createTempDir } = await import("../../testkit/bun");
+    const root = await createTempDir("idlekit-worker-closure");
+    try {
+      const plugin = join(root, "plugin.mjs");
+      const helper = join(root, "helper.mjs");
+      writeFileSync(helper, 'export const tag = "one";');
+      writeFileSync(plugin, 'import { tag } from "./helper.mjs"; export const strategies = []; export { tag };');
+      const parent = await loadRegistries([plugin], { allowedRoots: [root] });
+      expect(parent.pluginDigest[plugin]).not.toBe(sha256Hex(readFileSync(plugin)));
+      const task = { ...trial(0), pluginPaths: [plugin], pluginRoots: [root], pluginDigests: parent.pluginDigest };
+      expect(await runAnalysisTrial(task, loadRegistries)).toMatchObject({ status: "ok", attempts: 1 });
+      writeFileSync(helper, 'throw new Error("changed helper must not be evaluated");');
+      expect(await runAnalysisTrial(task, loadRegistries)).toMatchObject({ status: "failed", reason: "plugin-trust", attempts: 1 });
+      expect(await runAnalysisTrial({ ...task, pluginDigests: { [plugin]: sha256Hex(readFileSync(plugin)) } }, loadRegistries)).toMatchObject({ status: "failed", reason: "plugin-trust" });
     } finally { rmSync(root, { recursive: true, force: true }); }
   });
   it("revalidates synthetic JSON snapshots within each task boundary", async () => {

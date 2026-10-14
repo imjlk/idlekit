@@ -23,7 +23,7 @@ export type TrialRegistries = Readonly<{ modelRegistry: ModelRegistry; strategyR
 /** The plugin loader a trial with plugin paths needs. The worker entry passes the CLI loader. */
 export type TrialPluginLoader = (
   pluginPaths: string[],
-  policy: Readonly<{ allowedRoots: string[]; requiredSha256: Record<string, string> }>,
+  policy: Readonly<{ allowedRoots: string[]; requiredClosureSha256: Record<string, string> }>,
 ) => Promise<TrialRegistries>;
 
 /** The built-in registries the plugin loader starts from. A trial without plugin paths needs nothing else. */
@@ -117,7 +117,7 @@ export async function runAnalysisTrial(
       task.pluginPaths.length > 0 && loadPlugins
         ? await loadPlugins([...task.pluginPaths], {
             allowedRoots: [...task.pluginRoots],
-            requiredSha256: { ...task.pluginDigests },
+            requiredClosureSha256: { ...task.pluginDigests },
           })
         : builtinRegistries();
   } catch (error) {
