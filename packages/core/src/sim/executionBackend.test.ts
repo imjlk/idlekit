@@ -82,7 +82,7 @@ export function keepsLocalDefault(): void {
  * @evidence docs/requirements/active/worker-execution-backend.md#req-dx05-serializable-task A function payload is refused. The seed follows the logical index.
  * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-serializable-task #a0e348b Re-read the section, then ran this function: reversing the input kept the same seed, a function payload failed, a cyclic payload, a bigint step budget, a step budget above the execution budget, and a throwing taskId getter each failed alone while the sibling ran, a named array property was refused, a runner could not change its frozen task's seed,
  * @evidence ./executionBackend.ts#taskIdentity Reads a refused task's identity from own data fields only.
- * @evidenceReview ./executionBackend.ts#taskIdentity #390c155 Re-read the own-data identity fallback: accessors and reflection traps are not re-invoked, invalid indices and seeds become finite sentinels, and valid sibling identities stay unchanged.
+ * @evidenceReview ./executionBackend.ts#taskIdentity #390c155 Re-read the own-data identity fallback: accessor values are not invoked, reflection failures fall back to finite identity sentinels, invalid indices and seeds become finite sentinels, and valid sibling identities stay unchanged.
  * @evidence ./executionBackend.ts#serializedTaskBytes Measures one task as UTF-8 bytes of its JSON.
  * @evidenceReview ./executionBackend.ts#serializedTaskBytes #06012ad A Hangul task id counts more bytes than UTF-16 units, and the batch cost equals the measured bytes.
  * @evidence ./executionBackend.ts#taskRefusals Checks every task before the batch measures or runs any.
