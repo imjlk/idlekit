@@ -48,7 +48,8 @@ export function jevCacheHit(
   if (!entry) return false;
   const alias = requestedModel === "jev-latest" || requestedModel.endsWith("-latest");
   if (alias) {
-    if (entry.resolvedModel === requestedModel || entry.resolvedModel.endsWith("-latest")) return false;
+    // The API may echo the requested alias; another alias does not identify this request.
+    if (entry.resolvedModel !== requestedModel && entry.resolvedModel.endsWith("-latest")) return false;
     // A stored time in the future is not fresh: the age must be known and inside the TTL.
     const age = nowMs - entry.storedAtMs;
     return age >= 0 && age < JEV_ALIAS_TTL_MS;
