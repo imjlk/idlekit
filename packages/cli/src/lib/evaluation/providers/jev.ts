@@ -414,7 +414,14 @@ function readCache(path: string | undefined): JevCacheEntry[] {
 function readCachedAdvisory(text: string): JevAdvisoryV1 | null {
   try {
     const validated = validateJevAdvisory(JSON.parse(text));
-    return validated.success ? validated.data : null;
+    if (!validated.success) return null;
+    const advisory = validated.data;
+    // Structural validators may accept extra properties; persisted records cannot replay raw state beside the DTO.
+    const fields = new Set(Object.keys(blank(advisory)));
+    const answerFields = new Set(["id", "type", "confidence", "noul", "choice", "score", "disposition"]);
+    if (Object.keys(advisory).some((field) => !fields.has(field))) return null;
+    if (advisory.answers.some((answer) => Object.keys(answer).some((field) => !answerFields.has(field)))) return null;
+    return advisory;
   } catch {
     return null;
   }
@@ -573,6 +580,9 @@ export async function adviseWithJev(args: Readonly<{
         stored.rubricVersion === args.rubric.rubricVersion &&
         stored.requestedModel === args.requestedModel &&
         stored.resolvedModel === found.resolvedModel &&
+        stored.resolvedModel !== null && stored.resolvedModel.trim().length > 0 &&
+        stored.endpoint === JEV_ENDPOINT && stored.aliasPolicy === aliasPolicy(args.requestedModel) &&
+        JSON.stringify(redact(stored, key)) === JSON.stringify(stored) &&
         stored.answers.length === args.rubric.rules.length &&
         new Set(stored.answers.map((answer) => answer.id)).size === stored.answers.length &&
         stored.answers.every((answer) => {
@@ -675,7 +685,7 @@ export async function adviseWithJev(args: Readonly<{
         const answeredModel = wire.response.model;
         const modelOk = aliasPolicy(args.requestedModel) === "pinned"
           ? answeredModel === args.requestedModel
-          : aliasPolicy(answeredModel) === "pinned";
+          : answeredModel.trim().length > 0 && aliasPolicy(answeredModel) === "pinned";
         if (!modelOk) {
           return blank({ ...base, status: "failed", reason: "model-mismatch", cache: "miss", attempts: attempt + 1 });
         }
