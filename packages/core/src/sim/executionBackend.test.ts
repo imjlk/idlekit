@@ -82,17 +82,17 @@ export function keepsLocalDefault(): void {
  * @evidence docs/requirements/active/worker-execution-backend.md#req-dx05-serializable-task A function payload is refused. The seed follows the logical index.
  * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-serializable-task #a0e348b Re-read the section, then ran this function: reversing the input kept the same seed, a function payload failed, a cyclic payload, a bigint step budget, a step budget above the execution budget, and a throwing taskId getter each failed alone while the sibling ran, a named array property was refused, a runner could not change its frozen task's seed,
  * @evidence ./executionBackend.ts#taskIdentity Reads a refused task's identity from own data fields only.
- * @evidenceReview ./executionBackend.ts#taskIdentity #0abc580 A throwing taskId getter reads as an empty id while the index and seed data stay, a shared reference passed, and the cost counted UTF-8 bytes of the valid task.
+ * @evidenceReview ./executionBackend.ts#taskIdentity #390c155 Re-read the own-data identity fallback: accessors and reflection traps are not re-invoked, invalid indices and seeds become finite sentinels, and valid sibling identities stay unchanged.
  * @evidence ./executionBackend.ts#serializedTaskBytes Measures one task as UTF-8 bytes of its JSON.
  * @evidenceReview ./executionBackend.ts#serializedTaskBytes #06012ad A Hangul task id counts more bytes than UTF-16 units, and the batch cost equals the measured bytes.
  * @evidence ./executionBackend.ts#taskRefusals Checks every task before the batch measures or runs any.
- * @evidenceReview ./executionBackend.ts#taskRefusals #16e5be6 Re-read the budget ceiling: a cyclic payload is refused as cycle, a step budget above the execution budget is refused, and a plain task is null.
+ * @evidenceReview ./executionBackend.ts#taskRefusals #3110912 Re-read both catch boundaries: empty, null, missing, or throwing error messages become invalid-task, reflection errors remain per-task refusals, the budget ceiling stays enforced, and valid siblings return null and run.
  * @evidence ./executionBackend.ts#executionSerializableTask Reads the descriptor marker.
  * @evidenceReview ./executionBackend.ts#executionSerializableTask #c7343dd The declaration is json-descriptor.
  * @evidence ./executionBackend.ts#analysisTaskSeed Derives the seed from the logical index.
  * @evidenceReview ./executionBackend.ts#analysisTaskSeed #2b85c09 The seed is logicalDrawSeed of the base seed and index, so input order does not move it.
  * @evidence ./executionBackend.ts#assertSerializableTask Refuses a task that is not plain JSON.
- * @evidenceReview ./executionBackend.ts#assertSerializableTask #094620f Re-read the path-only cycle check, the step budget check, the plugin container shapes, and the whole-descriptor check: a hidden toJSON, a getter, a string path list, a non-string root, an array or non-string digest record, an extra own function on the task, a function payload, a class instance, a non-finite number, a negative index, and a bigint step budget throw; a plain task and a shared acyclic reference pass.
+ * @evidenceReview ./executionBackend.ts#assertSerializableTask #113838d Re-read descriptor and array validation: uint32 seeds and canonical array indices are required, inherited array serialization and extra named indices are refused, cycles and non-JSON values fail, and plain tasks with shared acyclic references pass.
  */
 export function keepsSerializableTasks(): void {
   expect(executionSerializableTask).toBe("json-descriptor");
@@ -473,6 +473,28 @@ export function boundsFailures(): void {
 }
 
 describe("execution backend", () => {
+  it("isolates malformed thrown errors and reflection traps", () => {
+    for (const kind of ["null", "undefined", "getter", "reflection"]) {
+      let refused = task(0);
+      if (kind === "reflection") {
+        refused = new Proxy(refused, { getOwnPropertyDescriptor() { throw new Error("reflection"); } });
+      } else {
+        const error = new Error("bad");
+        Object.defineProperty(error, "message", kind === "getter"
+          ? { get() { throw new Error("message getter"); } }
+          : { value: kind === "null" ? null : undefined });
+        Object.defineProperty(refused, "schemaVersion", { enumerable: true, get() { throw error; } });
+      }
+      const ran: string[] = [];
+      const batch = runLocalBatch([refused, task(1)], (item) => { ran.push(item.taskId); return echo(item, "1"); });
+      expect(batch.outcomes.map((item) => item.status).sort()).toEqual(["failed", "ok"]);
+      expect(ran).toEqual(["trial-1"]);
+      const failure = batch.outcomes.find((item) => item.status === "failed")!;
+      expect(failure.reason).toBe(kind === "reflection" ? "reflection" : "invalid-task");
+      expect(Number.isFinite(failure.logicalIndex)).toBe(true);
+      expect(Number.isFinite(failure.seed)).toBe(true);
+    }
+  });
   it("admits only uint32 seeds and reports finite refused identities", () => {
     for (const seed of [-1, 1.5, 4294967296, NaN, Infinity]) {
       expect(taskRefusals([task(0, { seed })])[0]).not.toBeNull();

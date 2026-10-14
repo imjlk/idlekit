@@ -291,14 +291,24 @@ export function taskRefusals(
       if (task.stepBudget > budget.stepBudget) return "step budget exceeds the execution budget";
       return null;
     } catch (error) {
-      return error instanceof Error && error.message.length > 0 ? error.message : "invalid-task";
+      // Thrown objects can have a missing, non-string, or throwing message property.
+      try {
+        const message = error instanceof Error ? error.message : undefined;
+        return typeof message === "string" && message.length > 0 ? message : "invalid-task";
+      } catch {
+        return "invalid-task";
+      }
     }
   });
 }
 
 function ownData(value: object, key: string): unknown {
-  const descriptor = Object.getOwnPropertyDescriptor(value, key);
-  return descriptor && "value" in descriptor ? descriptor.value : undefined;
+  try {
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    return descriptor && "value" in descriptor ? descriptor.value : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /**
