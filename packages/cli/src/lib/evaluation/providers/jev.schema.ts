@@ -86,6 +86,11 @@ type JevQuestion =
   | Readonly<{ type: "choice"; instructions: string; criteria: Readonly<Record<string, string>> }>
   | Readonly<{ type: "score"; instructions: string; criteria: readonly string[] }>;
 
+function outsideRoundingTolerance(actual: number, expected: number): boolean {
+  const epsilon = Number.EPSILON * Math.max(1, Math.abs(actual), Math.abs(expected)) * 8;
+  return Math.abs(actual - expected) > 0.02 + epsilon;
+}
+
 function probabilityShape(value: Record<string, number>, expectedKeys: readonly string[]): string | null {
   const keys = Object.keys(value).sort();
   const expected = [...expectedKeys].sort();
@@ -97,7 +102,7 @@ function probabilityShape(value: Record<string, number>, expectedKeys: readonly 
     if (!Number.isFinite(item) || item < 0 || item > 1) return "probability is outside 0..1";
     sum += item;
   }
-  if (Math.abs(sum - 1) > 0.02) return "probabilities do not sum to 1";
+  if (outsideRoundingTolerance(sum, 1)) return "probabilities do not sum to 1";
   return null;
 }
 
@@ -142,7 +147,7 @@ export function readJevWire(
           levels.some((level, index) => answer.legend[level] !== question.criteria[index])) return { ok: false, reason: "shape" };
       const weighted = levels.reduce((sum, level, index) => sum + index * answer.probabilities[level]!, 0);
       // As with probability sums, tolerate small model rounding while requiring the requested score range.
-      if (answer.score < 0 || answer.score > levels.length - 1 || Math.abs(answer.score - weighted) > 0.02) {
+      if (answer.score < 0 || answer.score > levels.length - 1 || outsideRoundingTolerance(answer.score, weighted)) {
         return { ok: false, reason: "shape" };
       }
       if (!Number.isFinite(answer.confidence) || answer.confidence < 0 || answer.confidence > 1) {
