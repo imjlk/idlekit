@@ -1198,6 +1198,20 @@ export function staysOptIn(): Promise<void> {
 }
 
 describe("jev judge provider", () => {
+  it("redacts forward-slash UNC paths while preserving full web URLs", () => {
+    for (const path of ["//server/share/secret.json", "See //server/share/secret.json for input", "//secret.json", "///tmp/secret.json", "FILE:///home/alice/secret.json"]) {
+      const input = parsed(3, "unc", path);
+      const projection = JSON.stringify(projectJevState(input.artifact, input.rubric, SECRET).state);
+      expect(projection).not.toContain(path);
+      expect(projection).toContain("[redacted]");
+      expect(isSafeJevReport(evaluateRules(input), SECRET)).toBe(false);
+    }
+    for (const url of ["https://example.com/share/report.json", "http://example.com/share/report.json", "HTTPS://example.com/share/report.json"]) {
+      const input = parsed(3, "web", url);
+      expect(JSON.stringify(projectJevState(input.artifact, input.rubric, SECRET).state)).toContain(url);
+      expect(isSafeJevReport(evaluateRules(input), SECRET)).toBe(true);
+    }
+  });
   it("refuses padded resolved model identifiers before saving an alias response", async () => {
     const input = parsed();
     for (const model of [" jev-latest ", " jev-1.13.0 ", "   "]) {
