@@ -26,7 +26,7 @@ export const jevHttpBudget = "bounded-retry" as const;
 
 /**
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity A pinned model can hit. An alias is not a permanent id.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity #125a09d Re-read the updated section: jev-latest is revalidated and a rubric change misses.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity #ab8045b Re-read the updated section: echoed alias responses expire after 24 hours, jev-latest is revalidated, and a rubric change misses.
  */
 export const jevCacheIdentity = "alias-is-not-pinned" as const;
 

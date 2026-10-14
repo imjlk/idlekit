@@ -513,7 +513,7 @@ function retryable(status: number): boolean {
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-no-default-fetch Only judge with provider jev reaches this transport. The rules provider returns before it.
  * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-no-default-fetch #e8a02f1 Re-read the updated section: provider rules does not call the Jev transport, even with TYPESAFE_API_KEY set.
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity The cache key is built from the projection here, and a cache that cannot be written fails open.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity #125a09d Re-read the updated section: the key takes the projection with the upper bound, and a failed write keeps the advisory without resending.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-cache-identity #ab8045b Re-read the updated section: echoed aliases use the TTL, cache writes evict expired aliases and retain at most 256 recent records, the key includes the upper bound, and failed writes keep the advisory without resending.
  */
 export async function adviseWithJev(args: Readonly<{
   artifact: AnalysisArtifactV1;
