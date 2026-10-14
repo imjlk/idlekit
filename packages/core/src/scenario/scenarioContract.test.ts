@@ -124,6 +124,7 @@ export function keepsTypedContractSingleSource(): void {
     "idlekit.balance-checks.v1",
     "idlekit.judge.v1",
     "idlekit.flow.v1",
+    "idlekit.advance.v1",
   ]);
   // Each registry entry names a type its source declares. The balance entry names the
   // document union the schema publishes, so the error variant is part of the registered type.
@@ -458,5 +459,6 @@ describe("TC-05 typed contract", () => {
   it("keeps semantic validation", keepsSemanticValidation);
   it("runs the published scenario validator", runsPublishedScenarioValidator, 180000);
   it("keeps independent CLI contract generations stable", keepsGeneratedContractsStable, 180000);
-  it("checks stale, CRLF, and tracked contracts through the CLI", checksTrackedContractCli, 180000);
+  // Four transformed CLI children run in series; use twice the two-generation test's budget.
+  it("checks stale, CRLF, and tracked contracts through the CLI", checksTrackedContractCli, 360000);
 });

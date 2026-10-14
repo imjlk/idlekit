@@ -1612,6 +1612,115 @@
           "args": ["test", "--timeout", "120000", "src/sim/analysis/flow.test.ts"]
         }
       ]
+    },
+    {
+      "id": "REQ-PR16-GUARDED-FALLBACK",
+      "pr": "PR-16",
+      "anchor": "req-pr16-guarded-fallback",
+      "doc": "docs/requirements/active/guarded-analytic-advance.md",
+      "production": ["packages/core/src/sim/advance.ts"],
+      "tests": [
+        {
+          "file": "packages/core/src/sim/advance.test.ts",
+          "exportName": "fallsBackOnUnclearBoundaries",
+          "registeredAs": "guarded analytic advance > falls back on an unclear boundary",
+          "cwd": "packages/core",
+          "args": ["test", "--timeout", "120000", "src/sim/advance.test.ts"]
+        }
+      ]
+    },
+    {
+      "id": "REQ-PR16-EXACT-MATCH",
+      "pr": "PR-16",
+      "anchor": "req-pr16-exact-match",
+      "doc": "docs/requirements/active/guarded-analytic-advance.md",
+      "production": [
+        "packages/core/src/sim/advance.ts",
+        "packages/core/src/sim/simulator.ts",
+        "packages/core/src/sim/offline.ts",
+        "packages/core/src/sim/step.ts",
+        "packages/core/src/testkit/conformance.ts"
+      ],
+      "tests": [
+        {
+          "file": "packages/core/src/sim/advance.test.ts",
+          "exportName": "matchesReferenceWalletAndGoal",
+          "registeredAs": "guarded analytic advance > matches the reference wallet and goal",
+          "cwd": "packages/core",
+          "args": ["test", "--timeout", "120000", "src/sim/advance.test.ts"]
+        },
+        {
+          "file": "packages/core/src/testkit/conformance.test.ts",
+          "exportName": "replaysGuardedAdvanceAcrossTheSeedCorpus",
+          "registeredAs": "PR-16 guarded advance relation > replays guarded advance against fixed-step across the seed corpus",
+          "cwd": "packages/core",
+          "args": ["test", "src/testkit/conformance.test.ts"]
+        }
+      ]
+    },
+    {
+      "id": "REQ-PR16-POLICY-BOUNDARY",
+      "pr": "PR-16",
+      "anchor": "req-pr16-policy-boundary",
+      "doc": "docs/requirements/active/guarded-analytic-advance.md",
+      "production": ["packages/core/src/sim/advance.ts"],
+      "tests": [
+        {
+          "file": "packages/core/src/sim/advance.test.ts",
+          "exportName": "refusesPolicyThresholds",
+          "registeredAs": "guarded analytic advance > refuses a policy threshold",
+          "cwd": "packages/core",
+          "args": ["test", "--timeout", "120000", "src/sim/advance.test.ts"]
+        }
+      ]
+    },
+    {
+      "id": "REQ-PR16-STOCHASTIC",
+      "pr": "PR-16",
+      "anchor": "req-pr16-stochastic",
+      "doc": "docs/requirements/active/guarded-analytic-advance.md",
+      "production": ["packages/core/src/sim/advance.ts"],
+      "tests": [
+        {
+          "file": "packages/core/src/sim/advance.test.ts",
+          "exportName": "keepsSeededModelsOnFixedStep",
+          "registeredAs": "guarded analytic advance > keeps a seeded model on fixed-step",
+          "cwd": "packages/core",
+          "args": ["test", "--timeout", "120000", "src/sim/advance.test.ts"]
+        }
+      ]
+    },
+    {
+      "id": "REQ-PR16-OBSERVATION-FACTS",
+      "pr": "PR-16",
+      "anchor": "req-pr16-observation-facts",
+      "doc": "docs/requirements/active/guarded-analytic-advance.md",
+      "production": ["packages/core/src/sim/advance.ts"],
+      "tests": [
+        {
+          "file": "packages/core/src/sim/advance.test.ts",
+          "exportName": "keepsFactsWhenEventsAreOmitted",
+          "registeredAs": "guarded analytic advance > keeps facts when events are omitted",
+          "cwd": "packages/core",
+          "args": ["test", "--timeout", "120000", "src/sim/advance.test.ts"]
+        }
+      ]
+    },
+    {
+      "id": "REQ-PR16-MEASURED-BENCH",
+      "pr": "PR-16",
+      "anchor": "req-pr16-measured-bench",
+      "doc": "docs/requirements/active/guarded-analytic-advance.md",
+      "production": ["packages/core/src/sim/advance.ts"],
+      "tests": [
+        {
+          "file": "packages/core/src/sim/advance.test.ts",
+          "exportName": "measuresLongHorizons",
+          "registeredAs": "guarded analytic advance > measures long horizons",
+          "cwd": "packages/core",
+          "args": ["test", "--timeout", "120000", "src/sim/advance.test.ts"]
+        }
+      ]
     }
   ]
 }

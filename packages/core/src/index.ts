@@ -26,6 +26,7 @@ export * from "./scenario/compile";
 
 export * from "./sim/types";
 export * from "./sim/simulator";
+export * from "./sim/advance";
 export * from "./sim/step";
 export * from "./sim/stepTypes";
 export * from "./sim/offline";

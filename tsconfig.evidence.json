@@ -35,6 +35,8 @@
     "packages/core/src/sim/analysis/judge.test.ts",
     "packages/core/src/sim/analysis/flow.ts",
     "packages/core/src/sim/analysis/flow.test.ts",
+    "packages/core/src/sim/advance.ts",
+    "packages/core/src/sim/advance.test.ts",
     "packages/core/src/sim/analysis/analyzers.ts",
     "packages/core/src/sim/analysis/analyzers.test.ts",
     "packages/core/src/sim/analysis/inspect.ts",

@@ -81,7 +81,13 @@
     "REQ-PR15-PIPELINE",
     "REQ-PR15-CONSERVATION",
     "REQ-PR15-UNSUPPORTED",
-    "REQ-PR15-SUSPECTED"
+    "REQ-PR15-SUSPECTED",
+    "REQ-PR16-GUARDED-FALLBACK",
+    "REQ-PR16-EXACT-MATCH",
+    "REQ-PR16-POLICY-BOUNDARY",
+    "REQ-PR16-STOCHASTIC",
+    "REQ-PR16-OBSERVATION-FACTS",
+    "REQ-PR16-MEASURED-BENCH"
   ],
   "protectedFiles": [
     "docs/requirements/active/typia-transform.md",
@@ -174,6 +180,10 @@
     "docs/requirements/active/flow-observability.md",
     "packages/core/src/sim/analysis/flow.ts",
     "packages/core/src/sim/analysis/flow.test.ts",
-    "examples/analysis/flow-pipeline.json"
+    "examples/analysis/flow-pipeline.json",
+    "docs/requirements/active/guarded-analytic-advance.md",
+    "packages/core/src/sim/advance.ts",
+    "packages/core/src/sim/advance.test.ts",
+    "examples/analysis/advance-constant.json"
   ]
 }

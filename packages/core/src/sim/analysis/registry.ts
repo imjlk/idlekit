@@ -5,7 +5,8 @@ import type { GoalDefinition, MetricDefinition } from "./metrics";
 /**
  * What one model version can explain.
  * AnalyzerRegistry, which chooses an analysis method, is DX-02 and is not this type.
- * Flow diagnosis is diagnoseFlow and needs observations. Advance stays in a later PR.
+ * Flow diagnosis is diagnoseFlow and needs observations.
+ * Advance execution is consumeExactChunk and refuses an uncertified interval.
  */
 export type ModelAnalysisAdapter<N, U extends string, Vars> = Readonly<{
   modelId: string;
@@ -66,6 +67,24 @@ export function flowResult(knowledge: CapabilityKnowledge): Readonly<{
     };
   }
   return { capability: "flow", knowledge: "unsupported", status: "unsupported" };
+}
+
+export function advanceResult(knowledge: CapabilityKnowledge): Readonly<{
+  capability: "advance";
+  knowledge: CapabilityKnowledge;
+  status: "unsupported" | "insufficient-data";
+  reason?: string;
+}> {
+  if (knowledge === "unknown") return { capability: "advance", knowledge, status: "insufficient-data" };
+  if (knowledge === "statically-known") {
+    return {
+      capability: "advance",
+      knowledge,
+      status: "insufficient-data",
+      reason: "advance observations were not supplied",
+    };
+  }
+  return { capability: "advance", knowledge: "unsupported", status: "unsupported" };
 }
 
 export function resetResult(knowledge: CapabilityKnowledge): Readonly<{

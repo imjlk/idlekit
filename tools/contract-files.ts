@@ -44,6 +44,7 @@ import {
 } from "../packages/core/src/sim/analysis/resetCycle";
 import { judgeAlgorithmVersion, judgeJsonSchema, judgeSchemaId } from "../packages/core/src/sim/analysis/judge";
 import { flowAlgorithmVersion, flowJsonSchema, flowSchemaId } from "../packages/core/src/sim/analysis/flow";
+import { advanceAlgorithmVersion, advanceJsonSchema, advanceSchemaId } from "../packages/core/src/sim/advance";
 import {
   buildContractDocument,
   buildFieldMetadata,
@@ -82,6 +83,9 @@ export const judgePublicSchema = "docs/schemas/judge.output.schema.json";
 export const flowSchemaName = "flow.v1.schema.json";
 export const flowFieldsName = "flow.v1.fields.json";
 export const flowPublicSchema = "docs/schemas/flow.v1.schema.json";
+export const advanceSchemaName = "advance.v1.schema.json";
+export const advanceFieldsName = "advance.v1.fields.json";
+export const advancePublicSchema = "docs/schemas/advance.v1.schema.json";
 
 const inputs = [
   "packages/core/src/scenario/offlinePolicy.ts",
@@ -110,6 +114,8 @@ const balanceInputs = ["packages/core/src/sim/analysis/checks.ts"];
 const judgeInputs = ["packages/core/src/sim/analysis/checks.ts", "packages/core/src/sim/analysis/judge.ts"];
 
 const flowInputs = ["packages/core/src/sim/analysis/flow.ts"];
+
+const advanceInputs = ["packages/core/src/sim/advance.ts"];
 
 /** Digest each source with LF line endings, so a CRLF checkout matches the tracked contract. */
 export function digestSources(paths: readonly string[], base = root): SourceDigest[] {
@@ -161,6 +167,10 @@ export function judgeSourceDigests(base = root): SourceDigest[] {
 
 export function flowSourceDigests(base = root): SourceDigest[] {
   return digestSources(flowInputs, base);
+}
+
+export function advanceSourceDigests(base = root): SourceDigest[] {
+  return digestSources(advanceInputs, base);
 }
 
 export function buildEtaContractDocument(sources: readonly SourceDigest[]) {
@@ -424,6 +434,35 @@ export function buildFlowContractDocument(sources: readonly SourceDigest[]) {
   });
 }
 
+export function buildAdvanceContractDocument(sources: readonly SourceDigest[]) {
+  const ordered = [...sources].sort((left, right) => (left.path < right.path ? -1 : left.path > right.path ? 1 : 0));
+  const sourceHash = sha256Text(
+    canonicalJson({
+      algorithmVersion: advanceAlgorithmVersion(),
+      contractId: "idlekit.advance.v1",
+      dialect: "openapi-3.1",
+      exportApi: "typia.json.schema",
+      generator: "idlekit.contract-generator",
+      generatorVersion: 1,
+      schemaId: advanceSchemaId(),
+      sources: ordered,
+      typia: "14.0.6",
+    }),
+  );
+  return rootSchemaDocument(advanceSchemaId(), advanceJsonSchema(), {
+    generator: "idlekit.contract-generator" as const,
+    generatorVersion: 1 as const,
+    exportApi: "typia.json.schema" as const,
+    dialect: "openapi-3.1" as const,
+    typia: "14.0.6" as const,
+    schemaId: advanceSchemaId(),
+    contractId: "idlekit.advance.v1",
+    algorithmVersion: advanceAlgorithmVersion(),
+    sourceHash,
+    sources: ordered,
+  });
+}
+
 export function buildAnalysisContractDocument(sources: readonly SourceDigest[]) {
   const ordered = [...sources].sort((left, right) => (left.path < right.path ? -1 : left.path > right.path ? 1 : 0));
   const sourceHash = sha256Text(
@@ -476,6 +515,8 @@ export function renderedContracts(base = root): {
   judgeFields: string;
   flowSchema: string;
   flowFields: string;
+  advanceSchema: string;
+  advanceFields: string;
 } {
   const sources = sourceDigests(base);
   const analysisSources = analysisSourceDigests(base);
@@ -488,6 +529,7 @@ export function renderedContracts(base = root): {
   const balanceSources = balanceSourceDigests(base);
   const judgeSources = judgeSourceDigests(base);
   const flowSources = flowSourceDigests(base);
+  const advanceSources = advanceSourceDigests(base);
   const analysisDocument = buildAnalysisContractDocument(analysisSources);
   const etaDocument = buildEtaContractDocument(etaSources);
   const resetDocument = buildResetContractDocument(resetSources);
@@ -500,6 +542,8 @@ export function renderedContracts(base = root): {
   const judgeFieldsMeta = structuralFieldMetadata(judgeJsonSchema());
   const flowDocument = buildFlowContractDocument(flowSources);
   const flowFieldsMeta = structuralFieldMetadata(flowJsonSchema());
+  const advanceDocument = buildAdvanceContractDocument(advanceSources);
+  const advanceFieldsMeta = structuralFieldMetadata(advanceJsonSchema());
   const analysisFields = structuralFieldMetadata(analysisArtifactJsonSchema());
   const etaFields = structuralFieldMetadata(etaEstimateJsonSchema());
   const resetFields = structuralFieldMetadata(resetCycleJsonSchema());
@@ -631,6 +675,18 @@ export function renderedContracts(base = root): {
       enums: flowFieldsMeta.enums,
       comments: flowFieldsMeta.comments,
     })}\n`,
+    advanceSchema: `${analysisCanonicalJson(advanceDocument)}\n`,
+    advanceFields: `${analysisCanonicalJson({
+      idlekitContract: {
+        kind: "structural-metadata",
+        schemaId: advanceSchemaId(),
+        sourceHash: advanceDocument.idlekitContract.sourceHash,
+        note: "Names, enum values, and schema descriptions only. No design intent, example balances, or translations.",
+      },
+      properties: advanceFieldsMeta.properties,
+      enums: advanceFieldsMeta.enums,
+      comments: advanceFieldsMeta.comments,
+    })}\n`,
   };
 }
 
@@ -659,12 +715,15 @@ export function writeContracts(dir: string, base = root): void {
   writeFileSync(join(dir, judgeFieldsName), rendered.judgeFields);
   writeFileSync(join(dir, flowSchemaName), rendered.flowSchema);
   writeFileSync(join(dir, flowFieldsName), rendered.flowFields);
+  writeFileSync(join(dir, advanceSchemaName), rendered.advanceSchema);
+  writeFileSync(join(dir, advanceFieldsName), rendered.advanceFields);
   // Only a generation into the tracked directory refreshes the tracked public copies.
   // A --dest generation stays inside its own directory.
   if (resolve(dir) === resolve(base, "docs/schemas/generated")) {
     writeFileSync(join(base, balancePublicSchema), rendered.balanceSchema);
     writeFileSync(join(base, judgePublicSchema), rendered.judgeSchema);
     writeFileSync(join(base, flowPublicSchema), rendered.flowSchema);
+    writeFileSync(join(base, advancePublicSchema), rendered.advanceSchema);
   }
 }
 
@@ -694,6 +753,8 @@ export function compareContracts(dir: string, base = root): string[] {
     [judgeFieldsName, rendered.judgeFields],
     [flowSchemaName, rendered.flowSchema],
     [flowFieldsName, rendered.flowFields],
+    [advanceSchemaName, rendered.advanceSchema],
+    [advanceFieldsName, rendered.advanceFields],
   ] as const) {
     const path = join(dir, name);
     let current = "";
@@ -727,6 +788,16 @@ export function compareContracts(dir: string, base = root): string[] {
     if (current !== next) failures.push(`drift ${publicName}`);
   }
   for (const [publicName, next] of [[flowPublicSchema, rendered.flowSchema]] as const) {
+    let current = "";
+    try {
+      current = readFileSync(join(base, publicName), "utf8").replace(/\r\n/g, "\n");
+    } catch {
+      failures.push(`missing ${publicName}`);
+      continue;
+    }
+    if (current !== next) failures.push(`drift ${publicName}`);
+  }
+  for (const [publicName, next] of [[advancePublicSchema, rendered.advanceSchema]] as const) {
     let current = "";
     try {
       current = readFileSync(join(base, publicName), "utf8").replace(/\r\n/g, "\n");
