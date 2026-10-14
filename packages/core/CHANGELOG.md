@@ -1,5 +1,51 @@
 # @idlekit/core
 
+## 0.4.0 — 2026-10-14
+
+### Minor changes
+
+- [d2af4ce](https://github.com/imjlk/idlekit/commit/d2af4ce319d8af57ab85080dfc36f75d3f6ce82f) Aggregate analysis trials in logical order.
+  
+  - the default backend stays local and records worker spawn cost as zero
+  - a Bun worker pool is explicit, serializes plain task JSON, and sorts results by logical index; no command selects it yet
+  - a plugin root or digest is not widened, and a partial batch is not a full distribution — Thanks @imjlk!
+- [1a720d5](https://github.com/imjlk/idlekit/commit/1a720d5750657283aec5d3b4668c2b1242dc241e) Keep Jev advice off the numerical verdict.
+  
+  - an opt-in provider posts an allowlisted projection and keeps Choice, Score, and Noul distinct
+  - a provider failure, abstain, or warning stays beside the numerical report
+  - the rules judge remains the default and does not call the network — Thanks @imjlk!
+- [5d2e719](https://github.com/imjlk/idlekit/commit/5d2e7194c5f6dff7edc455eadacc9eab54c71d8f) Judge scenario metrics with a balance check file.
+  
+  - `idk evaluate --checks` compares a registered metric, operator, threshold, and unit
+  - a missing or unknown metric does not pass as zero, and a mismatch is not rewritten into the baseline
+  - `idk kpi regress` keeps its flags and maps the same rows through that check — Thanks @imjlk!
+- [16a07ce](https://github.com/imjlk/idlekit/commit/16a07ce54e7244d35bc08f808094fe79759bbe69) Diagnose flow from observed throughput and capacity.
+  
+  - an optional observer sample records throughput, capacity, queue, and wait
+  - a confirmed bottleneck needs a causal model or experiment that names the saturated process
+  - a model without flow observations stays unsupported, and a growth stall is not a cause — Thanks @imjlk!
+- [3770995](https://github.com/imjlk/idlekit/commit/37709952510cf47afacedc5c8be5ed867751ef61) Advise on a finished analysis artifact with a rules rubric.
+  
+  - `idk judge --provider rules` reads an analysis artifact and a versioned rubric
+  - numeric thresholds stay on the balance-check engine and are not rewritten
+  - an estimate or a missing metric does not become a measured pass — Thanks @imjlk!
+- [c216a19](https://github.com/imjlk/idlekit/commit/c216a1914e7e16ac96588f5bd973fe3d03a978d2) Skip only an interval whose income integral matches fixed-step.
+  
+  - opt-in advance keeps fixed-step as the reference runner
+  - a threshold, purchase, seed, or capacity boundary falls back and reports why
+  - an approximation request is not applied — Thanks @imjlk!
+
+### Patch changes
+
+- [78c4ca0](https://github.com/imjlk/idlekit/commit/78c4ca0deb266345b0e6dd5f18208054a0b09d7b) Reject nonzero flow amounts that underflow to zero, and keep underflowed conversions and Little's law products inconclusive.
+  
+  Losses that round to Number 1 must also spell exactly 1 as a decimal. For example, `0.99999999999999999` was accepted and could turn a positive remaining flow into a total-loss conservation result; it is now rejected, while exact-one spellings such as `1.00` remain accepted. Decimal validation issues now describe the Number representability boundary, including conversion-to-zero underflow. — Thanks @imjlk!
+- [539ca70](https://github.com/imjlk/idlekit/commit/539ca70947424ea271cbfbe058ed48ff123730cf) Record the selected integration scope and check small answers by hand.
+  
+  - flow, guarded advance, Jev, and worker execution stay optional capabilities
+  - breakEternity stays unsupported
+  - this change does not publish to npm — Thanks @imjlk!
+
 ## 0.3.1 — 2026-10-13
 
 ### Patch changes
