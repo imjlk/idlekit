@@ -221,6 +221,15 @@ export async function runJudge(flags: {
       `- Jev: ${advisory.status} ${advisory.reason}`,
       `- Endpoint: ${advisory.endpoint}`,
       `- Planned requests: ${advisory.plannedRequests}`,
+      "",
+      "## Jev answers",
+      "",
+      ...advisory.answers.map((answer) => {
+        const value = answer.noul ?? answer.choice ?? answer.score ?? "none";
+        const confidence = answer.confidence === null ? "" : `; confidence=${answer.confidence}`;
+        return `- ${answer.id}: ${answer.type}=${value}${confidence}; ${answer.disposition}`;
+      }),
+      ...(advisory.answers.length === 0 ? ["None."] : []),
     ].join("\n");
     if (flags.out) {
       const outPath = resolve(flags.out);

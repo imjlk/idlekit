@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
-import { existsSync, linkSync, mkdirSync, readFileSync, symlinkSync } from "fs";
+import { existsSync, linkSync, mkdirSync, readFileSync, symlinkSync, utimesSync } from "fs";
+import lockfile from "proper-lockfile";
 import { dirname, resolve } from "path";
 import { fileURLToPath } from "url";
 import { createTempDir, readText, removePath } from "../../../testkit/bun";
@@ -690,7 +691,7 @@ export function separatesCacheIdentity(): Promise<void> {
  * @evidence ./jev.schema.ts#jevSecretBoundary Reads the redaction marker.
  * @evidenceReview ./jev.schema.ts#jevSecretBoundary #fe921f9 The declaration is redacted-projection.
  * @evidence ./jev.ts#projectJevState Projects metrics, assumptions, and rules without the key or a local path.
- * @evidenceReview ./jev.ts#projectJevState #f8388b5 Re-read projectJevState, redactPaths, and pathEnd: secrets and local paths are redacted while web URLs stay; each rule receives the first referenced reading with its ruleId and rule unit, amount readings retain decimal text without a numeric point, withheld coverage removes values, and only observed ok numerical readings carry a value. Rules retain identity constraints and each question selects its own ruleId and missing policy.
+ * @evidenceReview ./jev.ts#projectJevState #77a102c Re-read projectJevState, redactPaths, and pathEnd: secrets and local paths are redacted while web URLs stay; each rule receives the first referenced reading with its ruleId and effective rule unit and method, amount readings retain decimal text without a numeric point, withheld coverage removes values, and only observed ok numerical readings carry a value. Rules retain identity constraints and each question selects its own ruleId and missing policy.
  */
 export function keepsSecretsOutOfRecords(): Promise<void> {
   return (async (): Promise<void> => {
@@ -1192,6 +1193,56 @@ export function staysOptIn(): Promise<void> {
 }
 
 describe("jev judge provider", () => {
+  it("projects the numerical effective method for every rule", () => {
+    const input = parsed(1.5, "shared-method", "seed-19", [rule({ id: "exact", method: "exact" }), rule({ id: "analytic", method: "analytic" })]);
+    const observed = { ...input.artifact, metrics: input.artifact.metrics.map((metric) => ({ ...metric, method: undefined })) };
+    const numerical = evaluateRules({ ...input, artifact: observed });
+    const state = projectJevState(observed, input.rubric, SECRET).state as { metrics: readonly Record<string, unknown>[] };
+    for (const check of numerical.numerical.results) {
+      expect(check.verdict).toBe("pass");
+      expect(state.metrics.find((metric) => metric.ruleId === check.id)?.method).toBe(input.rubric.rules.find((rule) => rule.id === check.id)?.method);
+    }
+  });
+  it("recovers an orphaned cache lock and preserves a live lock", async () => {
+    const dir = await createTempDir("idlekit-jev-stale-lock");
+    const cachePath = resolve(dir, "cache.json");
+    const lockPath = `${cachePath}.lock`;
+    const input = parsed();
+    const mock = transportOf(() => ({ status: 200, body: noulBody(0.9) }));
+    const args = { ...input, numerical: evaluateRules(input), requestedModel: "jev-1.13.0", dryRun: false,
+      cachePath, transport: mock.transport, env: { TYPESAFE_API_KEY: SECRET } };
+    try {
+      mkdirSync(lockPath);
+      const old = new Date(Date.now() - 120_000);
+      utimesSync(lockPath, old, old);
+      expect((await adviseWithJev(args)).status).toBe("ok");
+      expect(parseJevCache(await readText(cachePath))).toHaveLength(1);
+      const release = await lockfile.lock(cachePath, { realpath: false, stale: 60_000, update: 10_000 });
+      try {
+        const other = parsed(3, "live-lock");
+        expect((await adviseWithJev({ ...args, ...other, numerical: evaluateRules(other) })).status).toBe("ok");
+        expect(existsSync(lockPath)).toBe(true);
+        expect(parseJevCache(await readText(cachePath))).toHaveLength(1);
+      } finally { await release(); }
+      expect(mock.calls).toBe(2);
+    } finally { await removePath(dir); }
+  }, 10_000);
+  it("renders per-rule Jev answers after a live Markdown request", async () => {
+    const dir = await createTempDir("idlekit-jev-live-md");
+    try {
+      const analysis = resolve(dir, "analysis.json");
+      const rubricPath = resolve(dir, "rubric.json");
+      const out = resolve(dir, "answer.md");
+      await Bun.write(analysis, artifact(3));
+      await Bun.write(rubricPath, rubric());
+      const mock = transportOf(() => ({ status: 200, body: noulBody(0.1) }));
+      await runJudge({ rubric: rubricPath, provider: "jev", format: "md", out }, analysis,
+        { env: { TYPESAFE_API_KEY: SECRET }, transport: mock.transport });
+      const markdown = await readText(out);
+      expect(markdown).toContain("first-reset: noul=0.1; advisory-warning");
+      expect(mock.calls).toBe(1);
+    } finally { await removePath(dir); }
+  });
   it("checks case aliases for missing outputs using the actual directory", async () => {
     const dir = await createTempDir("idlekit-jev-case");
     try {

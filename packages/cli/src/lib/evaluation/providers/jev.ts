@@ -1,4 +1,5 @@
-import { closeSync, lstatSync, mkdirSync, openSync, readFileSync, readlinkSync, realpathSync, renameSync, rmdirSync, unlinkSync, writeFileSync } from "fs";
+import { closeSync, lstatSync, mkdirSync, openSync, readFileSync, readlinkSync, realpathSync, renameSync, unlinkSync, writeFileSync } from "fs";
+import lockfile from "proper-lockfile";
 import { dirname, resolve } from "path";
 import {
   jevAlgorithmVersion,
@@ -158,7 +159,7 @@ export function projectJevState(
     amount: !withheld && metric.amount ? { decimal: metric.amount.decimal, unit: metric.amount.unit } : null,
     domain: metric.domain,
     meaning: metric.meaning,
-    method: metric.method ?? null,
+    method: metric.method ?? rule.method,
     metricId: metric.metricId,
     metricVersion: metric.metricVersion,
     ruleId: rule.id,
@@ -396,18 +397,19 @@ function cacheTarget(path: string, depth = 0): string {
 async function writeCache(requestedPath: string, entry: JevCacheEntry): Promise<void> {
   const path = cacheTarget(requestedPath);
   mkdirSync(dirname(path), { recursive: true });
-  const lock = `${path}.lock`;
-  const started = Date.now();
-  for (;;) {
-    try { mkdirSync(lock); break; } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-    }
-    if (Date.now() - started >= 1000) throw new Error("cache write lock unavailable");
-    await new Promise((done) => setTimeout(done, 10));
-  }
+  let compromised: Error | undefined;
+  // Heartbeats distinguish a live owner from a lock left by a terminated process. Acquisition remains bounded.
+  const release = await lockfile.lock(path, {
+    realpath: false,
+    stale: 60_000,
+    update: 10_000,
+    retries: { retries: 100, factor: 1, minTimeout: 10, maxTimeout: 10, randomize: false },
+    onCompromised(error) { compromised = error; },
+  });
   const temporary = `${path}.${crypto.randomUUID()}.tmp`;
   let created = false;
   try {
+    if (compromised) throw compromised;
     // Read inside the lock: entries read before the HTTP await may already be stale.
     const entries = readCache(path).filter((cached) => cached.key !== entry.key);
     entries.push(entry);
@@ -418,7 +420,7 @@ async function writeCache(requestedPath: string, entry: JevCacheEntry): Promise<
   } finally {
     try { if (created) unlinkSync(temporary); } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-    } finally { rmdirSync(lock); }
+    } finally { await release(); }
   }
 }
 
