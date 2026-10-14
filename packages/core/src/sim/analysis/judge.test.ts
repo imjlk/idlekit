@@ -13,6 +13,7 @@ import {
   judgeSchemaId,
   judgeSeparatedReport,
   parseJudgeRubric,
+  toObservation,
   validateJudgeReport,
   type JudgeRubricV1,
   type JudgeRuleV1,
@@ -144,9 +145,15 @@ export function acceptsRulesProvider(): void {
  * @evidenceReview ./judge.ts#judgeCheckReuse #6aa2e90 The declaration is checks-not-recomputed.
  * @evidence ./judge.ts#judgeArtifact Maps artifact readings into balance checks and builds the report.
  * @evidenceReview ./judge.ts#judgeArtifact #c85ec46 Re-read the function, toObservation, checkFor, and evaluateGroups: it rejects a nonfinite threshold in a typed rubric, judges each observation group separately so a rule mismatches only against its own stand-ins in either rule order, and checks keep the rubric method and unit, the observation takes the rule's method when the reading records none and its unit when an unavailable amount records none, observations are shared per distinct identity, and it rejects a semantically invalid artifact and a metric id that matches two readings, maps each metric to one observation, the numerical block equals a direct evaluateBalanceChecks call for 3h, an observed or estimated amount reading is unsupported with no value and no estimate entry, and two rules on one metric both pass.
+ * @evidence ./judge.ts#toObservation Maps a validated reading into the numerical judge's effective identity and availability.
+ * @evidenceReview ./judge.ts#toObservation #4a4fe85 Re-read the mapper: a measured time reading has the rule method and unit, unspecified provenance fields, the artifact algorithm version, and the recorded value; amounts, estimates, and withheld coverage never provide a measured numerical point.
  */
 export function reusesBalanceChecks(): void {
   expect(judgeCheckReuse).toBe("checks-not-recomputed");
+  const measured = reading({ reading: "observed", status: "ok", value: 3 });
+  expect(toObservation(artifact([measured]), measured, rule()).observation).toMatchObject({
+    status: "measured", value: 3, identity: { method: "exact", unit: "time", engineId: "unspecified", algorithmVersion: analysisAlgorithmVersion() },
+  });
   const pass = judgeArtifact(artifact([reading({ reading: "observed", status: "ok", value: 1.5 })]), rubric());
   expect(pass.ok).toBe(true);
   if (!pass.ok) return;
