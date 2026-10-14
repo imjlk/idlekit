@@ -57,13 +57,11 @@ export function expectedBudgetEnd(args: {
   stepSec: number;
   maxSteps: number;
 }): string {
+  assertStep(args.stepSec);
   if (!Number.isInteger(args.maxSteps) || args.maxSteps < 0) throw new Error("maxSteps must be an integer >= 0");
-  return expectedLinearEnd({
-    initial: args.initial,
-    incomePerSec: args.incomePerSec,
-    stepSec: args.stepSec,
-    durationSec: args.stepSec * args.maxSteps,
-  });
+  // Even individually exact Number operands can have an inexact product. Keep the hand answer in integer arithmetic.
+  const gained = integer(args.incomePerSec, "incomePerSec") * BigInt(args.stepSec) * BigInt(args.maxSteps);
+  return (integer(args.initial, "initial") + gained).toString();
 }
 
 /** Wallet after one quoted bulk payment. The quote total is not `unitCost * size`. */

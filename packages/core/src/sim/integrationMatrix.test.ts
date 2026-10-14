@@ -114,7 +114,7 @@ function compile<N>(engine: Engine<N>, input: ScenarioV1, model: ModelFactory) {
  * @evidence ./integrationMatrix.ts#expectedLinearEnd Computes the constant-income end wallet with integers.
  * @evidenceReview ./integrationMatrix.ts#expectedLinearEnd #7379d25 Re-read the helper without the step-grid check: 0 plus 2 per second for 5 seconds is 10, a fractional duration throws, and 6-second steps over 10 seconds end at income times 10 seconds, as the run does.
  * @evidence ./integrationMatrix.ts#expectedBudgetEnd Computes the end wallet when maxSteps stops first.
- * @evidenceReview ./integrationMatrix.ts#expectedBudgetEnd #6d3152f Three steps of 2 per second end at 6, not the 100-second answer.
+ * @evidenceReview ./integrationMatrix.ts#expectedBudgetEnd #edecc0c Re-read the integer step validation and BigInt gain: the ordinary budget fixture still matches the run, and MAX_SAFE_INTEGER seconds times three steps gives 27021597764222973 exactly; zero steps preserve the normalized initial wallet and a zero step is refused.
  * @evidence ./integrationMatrix.ts#expectedQuotedWallet Subtracts one quoted bulk total.
  * @evidenceReview ./integrationMatrix.ts#expectedQuotedWallet #ffd7c24 50 minus the quote 20 is 30, not 50 minus 3 times 10.
  * @evidence ./integrationMatrix.ts#expectedResetCarry Returns the declared gain and carry wallet.
@@ -313,5 +313,11 @@ function buyAction<N>(engine: Engine<N>, unitCost: string, quoteSize: number, qu
 }
 
 describe("analysis integration matrix", () => {
+  it("keeps budget products exact beyond the Number integer range", () => {
+    expect(expectedBudgetEnd({ initial: "0", incomePerSec: "1", stepSec: Number.MAX_SAFE_INTEGER, maxSteps: 3 })).toBe("27021597764222973");
+    expect(expectedBudgetEnd({ initial: "7", incomePerSec: "2", stepSec: Number.MAX_SAFE_INTEGER, maxSteps: 3 })).toBe("54043195528445953");
+    expect(expectedBudgetEnd({ initial: "007", incomePerSec: "2", stepSec: 3, maxSteps: 0 })).toBe("7");
+    expect(() => expectedBudgetEnd({ initial: "0", incomePerSec: "1", stepSec: 0, maxSteps: 0 })).toThrow("stepSec");
+  });
   it("checks the integration matrix", checksIntegrationMatrix);
 });

@@ -24,7 +24,11 @@ describe("bench-sim end money", () => {
     }).scripts;
     const named = Object.entries(scripts)
       .filter(([name]) => name.startsWith("bench:sim"))
-      .flatMap(([, command]) => [...command.matchAll(/examples\/bench\/[\w.-]+\.json/g)].map((match) => match[0]));
+      .flatMap(([, command]) => {
+        // Baseline files are benchmark inputs too, but only scenario operands describe simulated end money.
+        const selected = [...command.matchAll(/(?:^|\s)--scenarios?\s+([^\s]+)/g)].flatMap((match) => match[1]!.split(","));
+        return selected.length > 0 ? selected : ["examples/bench/representative.json"];
+      });
     expect(named.length).toBeGreaterThan(0);
     for (const path of named) expect(recorded[path]).toBeDefined();
   });
