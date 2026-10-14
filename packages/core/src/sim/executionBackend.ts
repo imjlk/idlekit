@@ -284,10 +284,30 @@ export function taskRefusals(
   tasks: readonly AnalysisTrialTaskV1[],
   budget: ExecutionBudgetV1 = defaultExecutionBudget,
 ): (string | null)[] {
-  return tasks.map((task) => {
-    const prepared = prepareTrialTask(task, budget);
+  return prepareTrialTasks(tasks, budget).map((prepared) => {
     return prepared.ok ? null : prepared.reason;
   });
+}
+
+/** Dense admission results; every repeated logical identity is refused before either backend runs it. */
+export function prepareTrialTasks(
+  tasks: readonly AnalysisTrialTaskV1[],
+  budget: ExecutionBudgetV1 = defaultExecutionBudget,
+): ReturnType<typeof prepareTrialTask>[] {
+  const prepared = Array.from(tasks, (task) => prepareTrialTask(task, budget));
+  const identities = new Map<string, number[]>();
+  prepared.forEach((snapshot, index) => {
+    if (!snapshot.ok) return;
+    const key = JSON.stringify([snapshot.task.logicalIndex, snapshot.task.taskId]);
+    const indices = identities.get(key) ?? [];
+    indices.push(index);
+    identities.set(key, indices);
+  });
+  for (const indices of identities.values()) {
+    if (indices.length < 2) continue;
+    for (const index of indices) prepared[index] = { ok: false, reason: "duplicate-task-identity" };
+  }
+  return prepared;
 }
 
 /** Validate the actual JSON snapshot inside the per-task refusal boundary. */
@@ -440,7 +460,7 @@ function isPromise(value: unknown): value is Promise<unknown> {
 }
 
 export function runLocalBatch(
-  tasks: readonly AnalysisTrialTaskV1[],
+  submittedTasks: readonly AnalysisTrialTaskV1[],
   runner: TrialRunner,
   options?: Readonly<{
     budget?: ExecutionBudgetV1;
@@ -450,6 +470,7 @@ export function runLocalBatch(
   }>,
 ): ExecutionBatchV1 {
   const budget = budgetOf(options?.budget);
+  const tasks = Array.from(submittedTasks);
   const signal = options?.signal;
   const batchId = options?.batchId ?? `local-${tasks.length}`;
   const clock = options?.clock ?? { now: () => performance.now() };
@@ -471,7 +492,7 @@ export function runLocalBatch(
     );
   }
   // Validate before measuring, so a cyclic payload fails its own task instead of throwing out of the batch.
-  const snapshots = tasks.map((task) => prepareTrialTask(task, budget));
+  const snapshots = prepareTrialTasks(tasks, budget);
   const reasons = snapshots.map((snapshot) => snapshot.ok ? null : snapshot.reason);
   // A valid task runs from a frozen snapshot, so a runner cannot change its id, seed, or budget for a retry,
   // and a later change to the caller's object cannot reach it.
@@ -487,7 +508,7 @@ export function runLocalBatch(
     }
     const invalid = refusals.get(task) ?? null;
     if (invalid) {
-      outcomes.push(outcomeOf(task, "failed", invalid, 1));
+      outcomes.push(outcomeOf(task, "failed", invalid, 0));
       continue;
     }
     let attempt = 0;
