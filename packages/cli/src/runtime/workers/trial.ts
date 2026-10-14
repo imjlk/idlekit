@@ -16,6 +16,7 @@ import {
 } from "@idlekit/core";
 import { resolveEffectiveEngine } from "../../lib/runConfiguration";
 import { createLinearFactory } from "../../plugin/linearModel";
+import { PluginTrustError } from "../../plugin/trust-error";
 
 export type TrialRegistries = Readonly<{ modelRegistry: ModelRegistry; strategyRegistry: StrategyRegistry }>;
 
@@ -122,8 +123,10 @@ export async function runAnalysisTrial(
             requiredSha256: { ...task.pluginDigests },
           })
         : builtinRegistries();
-  } catch {
-    return failed(task, "plugin-trust");
+  } catch (error) {
+    let refused = false;
+    try { refused = error instanceof PluginTrustError; } catch { /* Treat opaque thrown values as execution failures. */ }
+    return failed(task, refused ? "plugin-trust" : "trial-failed");
   }
   try {
     const resolved = resolveEffectiveEngine({ requested: payload.engineId ?? "number" });

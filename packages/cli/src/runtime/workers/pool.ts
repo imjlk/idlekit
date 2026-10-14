@@ -28,7 +28,8 @@ export interface WorkerLike {
 }
 
 export function workerEntryUrl(): URL {
-  return new URL("./entry.ts", import.meta.url);
+  const source = new URL(import.meta.url).pathname.endsWith(".ts");
+  return new URL(source ? "./entry.ts" : "./runtime/workers/entry.js", import.meta.url);
 }
 
 const workerDevPreload = ["@ttsc/unplugin/bun-register"] as const;
@@ -37,7 +38,8 @@ const workerDevPreload = ["@ttsc/unplugin/bun-register"] as const;
 const WORKER_OUTCOME_MARKER = "idlekit-worker-entry";
 
 function defaultSpawn(): WorkerLike {
-  return new Worker(workerEntryUrl(), { preload: [...workerDevPreload] }) as unknown as WorkerLike;
+  const entry = workerEntryUrl();
+  return new Worker(entry, { preload: entry.pathname.endsWith(".ts") ? [...workerDevPreload] : [] }) as unknown as WorkerLike;
 }
 
 function failed(task: AnalysisTrialTaskV1, reason: string, attempts: number): AnalysisTrialOutcomeV1 {

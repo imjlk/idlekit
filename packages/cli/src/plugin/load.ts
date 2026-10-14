@@ -22,6 +22,7 @@ import type { EconPluginModule } from "./types";
 import { fileExists, readTextFile, sha256Hex } from "../runtime/bun";
 import { designObjectiveFactories } from "../lib/designObjectives";
 import { createLinearFactory } from "./linearModel";
+import { asPluginTrustError } from "./trust-error";
 
 const ALLOWED_PLUGIN_EXTENSIONS = new Set([".js", ".mjs", ".cjs", ".ts", ".mts", ".cts"]);
 // Files whose imports the digest follows. Bun lets a .js file hold JSX, so JS scans as jsx.
@@ -236,12 +237,13 @@ export async function loadRegistries(
   const objectiveFactories: ObjectiveFactory[] = [...builtinObjectiveFactories, ...designObjectiveFactories];
   const analyzerRegistry = createBuiltinAnalyzerRegistry();
   const analyzerFailures: AnalyzerLoadFailure[] = [];
-  const allowedRoots = (securityOptions.allowedRoots ?? []).map((x) => resolve(x));
-  const trustFileSha256 =
-    securityOptions.trustFile !== undefined
-      ? await loadPluginTrustFile(securityOptions.trustFile)
-      : {};
-  const requiredSha256 = mergeShaPolicies(trustFileSha256, securityOptions.requiredSha256 ?? {});
+  let allowedRoots: string[];
+  let requiredSha256: Record<string, string>;
+  try {
+    allowedRoots = (securityOptions.allowedRoots ?? []).map((x) => resolve(x));
+    const trustFileSha256 = securityOptions.trustFile !== undefined ? await loadPluginTrustFile(securityOptions.trustFile) : {};
+    requiredSha256 = mergeShaPolicies(trustFileSha256, securityOptions.requiredSha256 ?? {});
+  } catch (error) { throw asPluginTrustError(error); }
   const hasShaPolicy = Object.keys(requiredSha256).length > 0;
   const pluginDigest: Record<string, string> = {};
   const pluginModelIds: string[] = [];
@@ -250,22 +252,26 @@ export async function loadRegistries(
   const pluginObjectiveIds: string[] = [];
 
   for (const p of pluginPaths) {
-    const abs = await resolveAndValidatePluginPath(p, allowedRoots);
-    const actualDigest = await sha256File(abs);
-    if (hasShaPolicy) {
-      const expected = requiredSha256[abs];
-      if (!expected) {
-        throw new Error(
-          `Missing sha256 for plugin path '${p}'. Add it via --plugin-sha256 '${p}=<sha256>'`,
-        );
+    let abs: string;
+    let actualDigest: string;
+    try {
+      abs = await resolveAndValidatePluginPath(p, allowedRoots);
+      actualDigest = await sha256File(abs);
+      if (hasShaPolicy) {
+        const expected = requiredSha256[abs];
+        if (!expected) {
+          throw new Error(
+            `Missing sha256 for plugin path '${p}'. Add it via --plugin-sha256 '${p}=<sha256>'`,
+          );
+        }
+        if (actualDigest !== expected) {
+          throw new Error(`Plugin sha256 mismatch for '${p}'. expected=${expected} actual=${actualDigest}`);
+        }
       }
-      if (actualDigest !== expected) {
-        throw new Error(`Plugin sha256 mismatch for '${p}'. expected=${expected} actual=${actualDigest}`);
-      }
-    }
-    // A repeated path loads last again, so its digest moves to the end.
-    delete pluginDigest[abs];
-    pluginDigest[abs] = await pluginClosureDigest(abs, actualDigest);
+      // A repeated path loads last again, so its digest moves to the end.
+      delete pluginDigest[abs];
+      pluginDigest[abs] = await pluginClosureDigest(abs, actualDigest);
+    } catch (error) { throw asPluginTrustError(error); }
     // Bun names the module by its realpath anyway. Importing through a symlinked directory can
     // miss a file created after Bun cached that directory (Bun 1.4.2), so import the realpath.
     const mod = (await import(realpathSync(abs))) as PluginModule;
