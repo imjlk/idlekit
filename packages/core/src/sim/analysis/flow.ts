@@ -226,7 +226,7 @@ function isExactOne(text: string): boolean {
 function decimalIssues(observation: FlowObservationV1): string[] {
   const issues: string[] = [];
   const check = (path: string, text: string): void => {
-    if (parseDecimal(text) === null) issues.push(`${path} finite non-negative decimal`);
+    if (parseDecimal(text) === null) issues.push(`${path} finite non-negative decimal representable without underflow to Number zero`);
   };
   // One process, resource, kind, and window names one sample. A second one would make the reading order-dependent.
   const keys = new Map<string, number>();

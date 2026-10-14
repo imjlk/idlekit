@@ -94,7 +94,7 @@ export function declaresFlowAdapter(): void {
       samples: steadyCase.samples.map((sample, index) => (index === 1 ? { ...sample, amount } : sample)),
     });
     expect(unreadable.ok).toBe(false);
-    if (!unreadable.ok) expect(unreadable.issues).toEqual(["$input.samples[1].amount finite non-negative decimal"]);
+    if (!unreadable.ok) expect(unreadable.issues).toEqual(["$input.samples[1].amount finite non-negative decimal representable without underflow to Number zero"]);
   }
   // True zero spellings remain zero, and a representable subnormal is not rejected as underflow.
   for (const amount of ["0e-400", "-0e-400", "5e-324"]) {

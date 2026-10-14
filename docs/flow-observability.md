@@ -26,26 +26,18 @@ Node.js and browser runtimes are not part of the v1 compatibility contract.
 
 ## Verification
 
-Commands below were run from this worktree on macOS arm64 with Bun 1.4.2 and ttsc 0.30.4. Requirement file sha256 `86198871b23d64bb6334e18e3e6dfce4f1520c81cefaf20e91ac6ad3de48d6fc`. `build`, `compat:check`, and `replay:verify` are unrun.
+The decimal-boundary corrections were checked on Windows x64 with Bun 1.4.2 and ttsc 0.30.4. The active requirement file has SHA-256 `e7021c99a99543b5b1301c8e18c2737f5eeab96edfb07836ab5a2a879e6acea3`, normalized to LF line endings. The targeted suite executes all three boundary conditions inside their registered Evidence hosts and passed 14 tests with 353 assertions.
 
-| Command | Exit |
+| Check | Exit |
 |---|---|
 | `bun install --frozen-lockfile` | 0 |
-| `bun test --timeout 120000 src/sim/analysis/flow.test.ts src/sim/analysis/analysisContract.test.ts` (from `packages/core`) | 0 |
-| `bun test --timeout 120000 src/scenario/scenarioContract.test.ts` (from `packages/core`) | 0 |
-| `bun --preload @ttsc/unplugin/bun-register tools/generate-contracts.ts` | 0 |
+| `bun test --preload @ttsc/unplugin/bun-register packages/core/src/sim/analysis/flow.test.ts packages/core/src/sim/analysis/contractValidity.test.ts` | 0 |
+| Evidence compiler via `tools/evidence-host.ts` `runTtsc(["-p", "tsconfig.evidence.json", "--noEmit"], process.cwd())` | 0 |
+| `bun run contracts:generate` | 0 |
 | `bun run contracts:check` | 0 |
-| `bun run runtime:check` | 0 |
-| `bun run evidence:check` | 0 |
-| `bun run format:check` | 0 |
-| `bun run graph:check` | 0 |
-| `bun run public:check` | 0 |
-| `bun run typecheck` | 0 |
-| `bun run test` (with `TMPDIR` resolved through `realpath`) | 0 |
-| `bun run test:conformance` | 0 |
-| `bun run docs:verify` | 0 |
+| `bun run docs:verify:quick` | 0 |
 
-The first two `evidence:check` runs exited 2 on placeholder reviews. The rerun after those reviews exited 0. `graph:check` left `createPlannerStrategy` to `stepOnce` unobserved at hops 0.
+The Evidence compiler check verifies citations and review fingerprints; the full executed-test inventory and broader repository gates run in CI. The historical PR-15 checks predated these decimal-boundary changes and are not evidence for the current requirement.
 
 ## Graph
 
