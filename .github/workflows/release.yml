@@ -65,7 +65,7 @@ jobs:
       # release is nonpublishing; auto can publish.
       - name: Prepare versions and changelogs
         if: steps.changesets.outputs.pending == 'true'
-        uses: bruits/sampo/crates/sampo-github-action@e976f8a2089ffe94ee9bf508c0b6f1df5e0f108e # action 0.19.0, core 0.17.0
+        uses: bruits/sampo/crates/sampo-github-action@11306bad0caaa58c8a36fa203695c5f2cacc4344 # action 0.20.0, core 0.18.0
         with:
           command: release
         env:
@@ -183,7 +183,7 @@ jobs:
           bun-version: "1.4.2"
 
       - name: Setup Node (publish only)
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "26.11.1"
           registry-url: "https://registry.npmjs.org"
@@ -223,7 +223,7 @@ jobs:
         run: bun tools/package-manifest.ts hold
 
       - name: Publish merged versions
-        uses: bruits/sampo/crates/sampo-github-action@e976f8a2089ffe94ee9bf508c0b6f1df5e0f108e # action 0.19.0, core 0.17.0
+        uses: bruits/sampo/crates/sampo-github-action@11306bad0caaa58c8a36fa203695c5f2cacc4344 # action 0.20.0, core 0.18.0
         with:
           command: publish
           create-github-release: "true"

@@ -399,7 +399,8 @@ export function readDirectCallback(
   return { value: ident.value, at, end };
 }
 
-export function stringSpans(body: string): Array<[number, number]> {
+/** JSDoc stays visible to citation readers unless the caller includes it. */
+export function stringSpans(body: string, includeJsDoc = false): Array<[number, number]> {
   const spans: Array<[number, number]> = [];
   let index = 0;
   while (index < body.length) {
@@ -415,7 +416,7 @@ export function stringSpans(body: string): Array<[number, number]> {
       const next = body.indexOf("*/", index + 2);
       const end = next < 0 ? body.length : next + 2;
       // `/*` is one comment. A nested `/**` inside it is not a JSDoc block.
-      if (body[index + 2] !== "*") spans.push([index, end]);
+      if (includeJsDoc || body[index + 2] !== "*") spans.push([index, end]);
       index = end;
       continue;
     }
@@ -472,8 +473,10 @@ export function stringSpans(body: string): Array<[number, number]> {
               continue;
             }
             if (nested === "/" && body[index + 1] === "*") {
+              const commentStart = index;
               const next = body.indexOf("*/", index + 2);
               index = next < 0 ? body.length : next + 2;
+              if (includeJsDoc) spans.push([commentStart, index]);
               continue;
             }
             if (nested === "{") depth += 1;

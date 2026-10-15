@@ -39,7 +39,7 @@ export function observeCohort(rows: readonly TelemetryRow[], observedThroughDay:
     if (!user.days.has(0)) throw new Error("Observed cohort requires a day 0 install record for every user, including inactive users");
   }
   const n = users.size;
-  return {
+  const observation: CohortObservation = {
     observedThroughDay,
     users: n,
     retention: RETENTION_DAYS.map(day => {
@@ -54,6 +54,32 @@ export function observeCohort(rows: readonly TelemetryRow[], observedThroughDay:
       return { day, status: "observed", users: n, activeUsers, rate, interval95: { min: activeUsers === 0 ? 0 : Math.max(0, center - radius), max: activeUsers === n ? 1 : Math.min(1, center + radius) } };
     }),
   };
+  assertCohortObservation(observation);
+  return observation;
+}
+
+/** Cross-field invariants that portable JSON Schema cannot express. */
+export function assertCohortObservation(observation: CohortObservation): void {
+  if (!Number.isSafeInteger(observation.users) || observation.users < 1 || !Number.isSafeInteger(observation.observedThroughDay) || observation.observedThroughDay < 0) {
+    throw new Error("Invalid cohort population or observation cutoff");
+  }
+  if (observation.retention.length !== RETENTION_DAYS.length) throw new Error("Cohort retention must contain D1, D7, D30 and D90");
+  for (const [index, point] of observation.retention.entries()) {
+    if (point.day !== RETENTION_DAYS[index] || point.users !== observation.users) throw new Error("Cohort retention days and population must match the observation");
+    const observed = point.day <= observation.observedThroughDay;
+    if (point.status !== (observed ? "observed" : "not-observed")) throw new Error("Cohort retention status must match the observation cutoff");
+    if (!observed) {
+      if (point.activeUsers !== null || point.rate !== null || point.interval95 !== null) throw new Error("Future retention must remain unobserved");
+      continue;
+    }
+    if (point.activeUsers === null || !Number.isSafeInteger(point.activeUsers) || point.activeUsers < 0 || point.activeUsers > point.users || point.rate !== point.activeUsers / point.users) {
+      throw new Error("Retained users and retention rate must match the installed population");
+    }
+    const interval = point.interval95;
+    if (point.rate === null || !interval || !Number.isFinite(interval.min) || !Number.isFinite(interval.max) || interval.min < 0 || interval.max > 1 || interval.min > point.rate || interval.max < point.rate) {
+      throw new Error("Retention confidence interval must be finite and contain the observed rate");
+    }
+  }
 }
 
 export function observedRetentionRates(observation: CohortObservation): RetentionAssumptions {

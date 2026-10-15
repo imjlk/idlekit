@@ -1,19 +1,21 @@
 /**
  * PR-00 inventory gate.
  *
- * Confirms the source-audit paths exist and the planned toolchain names do not.
- * TC-01 updates the host pins in this file when it changes Bun, TypeScript, or typia.
+ * Confirms current source-audit paths and host pins from fixtures/toolchain/pins.json.
+ * Historical PR-00 tables stay in the source audit; implemented commands are required.
  * TC-02 requires package check and money/core emit to call ttsc, not tsc.
  * toolchain:doctor and toolchain:prepare are real after that pin.
  * Evidence and Graph repository gates arrived in TC-03 and TC-04.
  * DX-01 adds test:conformance. TC-05 adds contracts:generate and contracts:check.
  */
+import { existsSync } from "fs";
 import { resolve } from "path";
+import type { PinFile } from "./toolchain-host";
 
 const root = resolve(import.meta.dir, "..");
 
 function entryExists(path: string): boolean {
-  return Bun.spawnSync(["test", "-e", path], { stdout: "ignore", stderr: "ignore" }).exitCode === 0;
+  return existsSync(path);
 }
 
 const mustExist = [
@@ -79,9 +81,7 @@ const mustBeAbsent = [
   "tsconfig.json",
 ];
 
-const absentRootScripts: string[] = [];
-
-const cliCommandFiles = [
+const implementedCommandFiles = [
   "inspect.ts",
   "analyze.ts",
 ];
@@ -108,36 +108,24 @@ for (const rel of mustBeAbsent) {
   if (entryExists(resolve(root, rel))) fail(`planned or unexpected path is present: ${rel}`);
 }
 
-for (const name of cliCommandFiles) {
+for (const name of implementedCommandFiles) {
   const rel = `packages/cli/src/commands/${name}`;
-  if (entryExists(resolve(root, rel))) fail(`planned CLI command file is present: ${rel}`);
+  if (!entryExists(resolve(root, rel))) fail(`implemented CLI command file is missing: ${rel}`);
 }
 
 const rootPkg = await readJson(resolve(root, "package.json"));
-if (rootPkg.packageManager !== "bun@1.3.10") {
-  fail(`root packageManager is ${String(rootPkg.packageManager)}, baseline is bun@1.3.10`);
+const pins: PinFile = await Bun.file(resolve(root, "fixtures/toolchain/pins.json")).json();
+if (rootPkg.packageManager !== `bun@${pins.bun}`) {
+  fail(`root packageManager is ${String(rootPkg.packageManager)}, pin is bun@${pins.bun}`);
 }
 const rootDev = (rootPkg.devDependencies ?? {}) as Record<string, string>;
-const pinnedDev: Record<string, string> = {
-  ttsc: "0.30.4",
-  "@ttsc/lint": "0.30.4",
-  "@ttsc/evidence": "0.30.4",
-  "@ttsc/graph": "0.30.4",
-  "@ttsc/unplugin": "0.30.4",
-  typescript: "7.0.2",
-  typia: "14.0.6",
-};
-for (const [name, version] of Object.entries(pinnedDev)) {
+for (const [name, { version }] of Object.entries(pins.packages)) {
   if (rootDev[name] !== version) fail(`root ${name} is ${String(rootDev[name])}, pin is ${version}`);
 }
-if (rootDev["@types/node"] !== "^26.1.2") {
-  fail(`root @types/node is ${String(rootDev["@types/node"])}, pin is ^26.1.2`);
-}
+// Type package ranges are resolved by the frozen workspace lockfile.
+if (!rootDev["@types/node"]) fail("root @types/node devDependency is missing");
 
 const scripts = (rootPkg.scripts ?? {}) as Record<string, string>;
-for (const name of absentRootScripts) {
-  if (name in scripts) fail(`planned script is already defined: ${name}`);
-}
 for (const name of ["evidence:check", "evidence:smoke", "format:check"]) {
   if (!(name in scripts)) fail(`TC-03 script is missing: ${name}`);
 }
@@ -196,8 +184,8 @@ if (!entryExists(resolve(root, "lint.config.ts")) || !entryExists(resolve(root, 
 
 const corePkg = await readJson(resolve(root, "packages/core/package.json"));
 const coreDeps = (corePkg.dependencies ?? {}) as Record<string, string>;
-if (coreDeps.typia !== "14.0.6") {
-  fail(`@idlekit/core typia is ${String(coreDeps.typia)}, pin is 14.0.6`);
+if (coreDeps.typia !== pins.packages.typia?.version) {
+  fail(`@idlekit/core typia is ${String(coreDeps.typia)}, pin is ${pins.packages.typia?.version}`);
 }
 
 for (const rel of ["packages/money/package.json", "packages/core/package.json", "packages/cli/package.json"]) {
@@ -243,6 +231,8 @@ if (!scenarioTypes.includes("schemaVersion: 1")) fail("ScenarioV1 schemaVersion 
 
 const main = await readText(resolve(root, "packages/cli/src/main.ts"));
 for (const token of [
+  "inspectCommand",
+  "analyzeCommand",
   "validateCommand",
   "simulateCommand",
   "etaCommand",
@@ -259,14 +249,10 @@ for (const token of [
 ]) {
   if (!main.includes(token)) fail(`CLI registration is missing ${token}`);
 }
-if (main.includes("inspectCommand") || main.includes("analyzeCommand")) {
-  fail("planned inspect/analyze command is registered");
-}
 
 for (const workflow of ["ci.yml", "codeql.yml", "docs-verify.yml", "release.yml"]) {
   const text = await readText(resolve(root, ".github/workflows", workflow));
-  if (!text.includes('bun-version: "1.3.10"')) fail(`${workflow} does not pin Bun 1.3.10`);
-  if (text.includes('bun-version: "1.3.9"')) fail(`${workflow} still pins Bun 1.3.9`);
+  if (!text.includes(`bun-version: "${pins.bun}"`)) fail(`${workflow} does not pin Bun ${pins.bun}`);
 }
 
 const head = Bun.spawnSync(["git", "rev-parse", "HEAD"], { cwd: root, stdout: "pipe", stderr: "pipe" });

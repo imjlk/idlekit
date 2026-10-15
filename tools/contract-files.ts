@@ -195,7 +195,7 @@ export function buildEtaContractDocument(sources: readonly SourceDigest[]) {
       generatorVersion: 1,
       schemaId: etaEstimateSchemaId(),
       sources: ordered,
-      typia: "14.0.6",
+      typia: "15.1.0",
     }),
   );
   return rootSchemaDocument(etaEstimateSchemaId(), etaEstimateJsonSchema(), {
@@ -203,7 +203,7 @@ export function buildEtaContractDocument(sources: readonly SourceDigest[]) {
     generatorVersion: 1 as const,
     exportApi: "typia.json.schema" as const,
     dialect: "openapi-3.1" as const,
-    typia: "14.0.6" as const,
+    typia: "15.1.0" as const,
     schemaId: etaEstimateSchemaId(),
     contractId: "idlekit.eta.estimate.v1",
     algorithmVersion: etaEstimateAlgorithmVersion(),
@@ -224,7 +224,7 @@ export function buildResetContractDocument(sources: readonly SourceDigest[]) {
       generatorVersion: 1,
       schemaId: resetCycleSchemaId(),
       sources: ordered,
-      typia: "14.0.6",
+      typia: "15.1.0",
     }),
   );
   return rootSchemaDocument(resetCycleSchemaId(), resetCycleJsonSchema(), {
@@ -232,7 +232,7 @@ export function buildResetContractDocument(sources: readonly SourceDigest[]) {
     generatorVersion: 1 as const,
     exportApi: "typia.json.schema" as const,
     dialect: "openapi-3.1" as const,
-    typia: "14.0.6" as const,
+    typia: "15.1.0" as const,
     schemaId: resetCycleSchemaId(),
     contractId: "idlekit.reset-cycle.v1",
     algorithmVersion: resetCycleAlgorithmVersion(),
@@ -253,7 +253,7 @@ export function buildGrowthContractDocument(sources: readonly SourceDigest[]) {
       generatorVersion: 1,
       schemaId: growthFitSchemaId(),
       sources: ordered,
-      typia: "14.0.6",
+      typia: "15.1.0",
     }),
   );
   return rootSchemaDocument(growthFitSchemaId(), growthFitJsonSchema(), {
@@ -261,7 +261,7 @@ export function buildGrowthContractDocument(sources: readonly SourceDigest[]) {
     generatorVersion: 1 as const,
     exportApi: "typia.json.schema" as const,
     dialect: "openapi-3.1" as const,
-    typia: "14.0.6" as const,
+    typia: "15.1.0" as const,
     schemaId: growthFitSchemaId(),
     contractId: "idlekit.growth-fit.v1",
     algorithmVersion: growthFitAlgorithmVersion(),
@@ -282,7 +282,7 @@ export function buildExperimentContractDocument(sources: readonly SourceDigest[]
       generatorVersion: 1,
       schemaId: experimentSchemaId(),
       sources: ordered,
-      typia: "14.0.6",
+      typia: "15.1.0",
     }),
   );
   return rootSchemaDocument(experimentSchemaId(), experimentJsonSchema(), {
@@ -290,7 +290,7 @@ export function buildExperimentContractDocument(sources: readonly SourceDigest[]
     generatorVersion: 1 as const,
     exportApi: "typia.json.schema" as const,
     dialect: "openapi-3.1" as const,
-    typia: "14.0.6" as const,
+    typia: "15.1.0" as const,
     schemaId: experimentSchemaId(),
     contractId: "idlekit.experiment.v1",
     algorithmVersion: experimentAlgorithmVersion(),
@@ -311,7 +311,7 @@ export function buildDistributionContractDocument(sources: readonly SourceDigest
       generatorVersion: 1,
       schemaId: distributionSchemaId(),
       sources: ordered,
-      typia: "14.0.6",
+      typia: "15.1.0",
     }),
   );
   return rootSchemaDocument(distributionSchemaId(), distributionJsonSchema(), {
@@ -319,7 +319,7 @@ export function buildDistributionContractDocument(sources: readonly SourceDigest
     generatorVersion: 1 as const,
     exportApi: "typia.json.schema" as const,
     dialect: "openapi-3.1" as const,
-    typia: "14.0.6" as const,
+    typia: "15.1.0" as const,
     schemaId: distributionSchemaId(),
     contractId: "idlekit.distribution.v1",
     algorithmVersion: distributionAlgorithmVersion(),
@@ -340,7 +340,7 @@ export function buildPolicyContractDocument(sources: readonly SourceDigest[]) {
       generatorVersion: 1,
       schemaId: resetPolicySchemaId(),
       sources: ordered,
-      typia: "14.0.6",
+      typia: "15.1.0",
     }),
   );
   return rootSchemaDocument(resetPolicySchemaId(), resetPolicyJsonSchema(), {
@@ -348,7 +348,7 @@ export function buildPolicyContractDocument(sources: readonly SourceDigest[]) {
     generatorVersion: 1 as const,
     exportApi: "typia.json.schema" as const,
     dialect: "openapi-3.1" as const,
-    typia: "14.0.6" as const,
+    typia: "15.1.0" as const,
     schemaId: resetPolicySchemaId(),
     contractId: "idlekit.reset-policy.v1",
     algorithmVersion: resetPolicyAlgorithmVersion(),
@@ -369,7 +369,7 @@ export function buildBalanceContractDocument(sources: readonly SourceDigest[]) {
       generatorVersion: 1,
       schemaId: balanceChecksSchemaId(),
       sources: ordered,
-      typia: "14.0.6",
+      typia: "15.1.0",
     }),
   );
   return rootSchemaDocument(balanceChecksSchemaId(), balanceChecksJsonSchema(), {
@@ -377,7 +377,7 @@ export function buildBalanceContractDocument(sources: readonly SourceDigest[]) {
     generatorVersion: 1 as const,
     exportApi: "typia.json.schema" as const,
     dialect: "openapi-3.1" as const,
-    typia: "14.0.6" as const,
+    typia: "15.1.0" as const,
     schemaId: balanceChecksSchemaId(),
     contractId: "idlekit.balance-checks.v1",
     algorithmVersion: balanceChecksAlgorithmVersion(),
@@ -398,7 +398,7 @@ export function buildJudgeContractDocument(sources: readonly SourceDigest[]) {
       generatorVersion: 1,
       schemaId: judgeSchemaId(),
       sources: ordered,
-      typia: "14.0.6",
+      typia: "15.1.0",
     }),
   );
   return rootSchemaDocument(judgeSchemaId(), judgeJsonSchema(), {
@@ -406,7 +406,7 @@ export function buildJudgeContractDocument(sources: readonly SourceDigest[]) {
     generatorVersion: 1 as const,
     exportApi: "typia.json.schema" as const,
     dialect: "openapi-3.1" as const,
-    typia: "14.0.6" as const,
+    typia: "15.1.0" as const,
     schemaId: judgeSchemaId(),
     contractId: "idlekit.judge.v1",
     algorithmVersion: judgeAlgorithmVersion(),
@@ -427,7 +427,7 @@ export function buildFlowContractDocument(sources: readonly SourceDigest[]) {
       generatorVersion: 1,
       schemaId: flowSchemaId(),
       sources: ordered,
-      typia: "14.0.6",
+      typia: "15.1.0",
     }),
   );
   return rootSchemaDocument(flowSchemaId(), flowJsonSchema(), {
@@ -435,7 +435,7 @@ export function buildFlowContractDocument(sources: readonly SourceDigest[]) {
     generatorVersion: 1 as const,
     exportApi: "typia.json.schema" as const,
     dialect: "openapi-3.1" as const,
-    typia: "14.0.6" as const,
+    typia: "15.1.0" as const,
     schemaId: flowSchemaId(),
     contractId: "idlekit.flow.v1",
     algorithmVersion: flowAlgorithmVersion(),
@@ -456,7 +456,7 @@ export function buildAdvanceContractDocument(sources: readonly SourceDigest[]) {
       generatorVersion: 1,
       schemaId: advanceSchemaId(),
       sources: ordered,
-      typia: "14.0.6",
+      typia: "15.1.0",
     }),
   );
   return rootSchemaDocument(advanceSchemaId(), advanceJsonSchema(), {
@@ -464,7 +464,7 @@ export function buildAdvanceContractDocument(sources: readonly SourceDigest[]) {
     generatorVersion: 1 as const,
     exportApi: "typia.json.schema" as const,
     dialect: "openapi-3.1" as const,
-    typia: "14.0.6" as const,
+    typia: "15.1.0" as const,
     schemaId: advanceSchemaId(),
     contractId: "idlekit.advance.v1",
     algorithmVersion: advanceAlgorithmVersion(),
@@ -485,7 +485,7 @@ export function buildJevContractDocument(sources: readonly SourceDigest[]) {
       generatorVersion: 1,
       schemaId: jevSchemaId(),
       sources: ordered,
-      typia: "14.0.6",
+      typia: "15.1.0",
     }),
   );
   return rootSchemaDocument(jevSchemaId(), jevJsonSchema(), {
@@ -493,7 +493,7 @@ export function buildJevContractDocument(sources: readonly SourceDigest[]) {
     generatorVersion: 1 as const,
     exportApi: "typia.json.schema" as const,
     dialect: "openapi-3.1" as const,
-    typia: "14.0.6" as const,
+    typia: "15.1.0" as const,
     schemaId: jevSchemaId(),
     contractId: "idlekit.jev.advisory.v1",
     algorithmVersion: jevAlgorithmVersion(),
@@ -514,7 +514,7 @@ export function buildAnalysisContractDocument(sources: readonly SourceDigest[]) 
       generatorVersion: 1,
       schemaId: analysisSchemaId(),
       sources: ordered,
-      typia: "14.0.6",
+      typia: "15.1.0",
     }),
   );
   return rootSchemaDocument(analysisSchemaId(), analysisArtifactJsonSchema(), {
@@ -522,7 +522,7 @@ export function buildAnalysisContractDocument(sources: readonly SourceDigest[]) 
     generatorVersion: 1 as const,
     exportApi: "typia.json.schema" as const,
     dialect: "openapi-3.1" as const,
-    typia: "14.0.6" as const,
+    typia: "15.1.0" as const,
     schemaId: analysisSchemaId(),
     contractId: analysisArtifactContract,
     algorithmVersion: analysisAlgorithmVersion(),

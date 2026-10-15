@@ -245,6 +245,7 @@ export default defineCommand({
     await writeOutput({
       format: flags.format,
       outPath: flags.out,
+      protectedInputs: [abs, ...(flags.scenario ? [resolve(flags.scenario)] : [])],
       data:
         flags.format === "json"
           ? {
@@ -265,6 +266,8 @@ export default defineCommand({
             }
           : observation ? flags.format === "md" ? renderCohortMarkdown(observation, comparison, patch!) : observation.retention.map((row, index) => ({
               day: row.day, users: row.users, activeUsers: row.activeUsers, observedRate: row.rate,
+              interval95Min: row.interval95?.min ?? null,
+              interval95Max: row.interval95?.max ?? null,
               assumption: comparison?.[index]?.assumption ?? null,
               differencePercentagePoints: comparison?.[index]?.differencePercentagePoints ?? null,
               status: comparison?.[index]?.status ?? row.status,

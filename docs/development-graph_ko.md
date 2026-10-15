@@ -2,7 +2,7 @@
 
 영어 버전: [development-graph.md](./development-graph.md)
 
-`TC-04`는 pin된 `@ttsc/graph` `0.30.4` 서버를 이 저장소에 연결한다. bin은 `node_modules/.bin/ttsc-graph`다. 서버는 로컬 stdio 프로세스다. 소스를 원격 그래프 서비스로 올리지 않는다. `@ttsc/graph`는 root devDependency로 남는다. `@idlekit/money`, `@idlekit/core`, `@idlekit/cli`는 여기에 의존하지 않고, `idk` 번들도 이것을 import하지 않는다.
+`TC-04`는 pin된 `@ttsc/graph` `0.32.1` 서버를 이 저장소에 연결한다. bin은 `node_modules/.bin/ttsc-graph`다. 서버는 로컬 stdio 프로세스다. 소스를 원격 그래프 서비스로 올리지 않는다. `@ttsc/graph`는 root devDependency로 남는다. `@idlekit/money`, `@idlekit/core`, `@idlekit/cli`는 여기에 의존하지 않고, `idk` 번들도 이것을 import하지 않는다.
 
 ## 조회 재현
 

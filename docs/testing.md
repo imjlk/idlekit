@@ -89,7 +89,7 @@ Compatibility fixtures live under `fixtures/compat/v1/`.
 
 At `265c6ed` the repository compiler was `tsc`, tests ran with `bun test`, and the CLI bundle was Bunli. Root Bun was `1.3.10` and CI pinned Bun `1.3.9`. `TC-01` moves CI to Bun `1.3.10` and pins ttsc. `TC-02` runs package check and money/core emit through `ttsc`, with the same transform on Bun source, `bun test`, the CLI bundle, and the packed artifact. The live pins are in [Toolchain pins](./toolchain.md).
 
-`bun tools/analysis-baseline-check.ts` checks the paths cited by the [source audit](./implementation/source-audit.md) and the current host pins.
+`bun tools/analysis-baseline-check.ts` checks the current paths cited by the [source audit](./implementation/source-audit.md), package scripts, and host pins from `fixtures/toolchain/pins.json`. CI runs it on Linux and Windows; the dated source-audit tables remain historical records.
 
 `evidence:check`, `evidence:smoke`, and `format:check` are repository commands after `TC-03`. `graph:check` is the `TC-04` command. `test:conformance` is the `DX-01` command. `contracts:generate` and `contracts:check` are the `TC-05` commands. Check compares a fresh generation with `docs/schemas/generated/` and does not write it. `toolchain:doctor` and `toolchain:prepare` are the `TC-01` host commands.
 

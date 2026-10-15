@@ -35,7 +35,7 @@ jobs:
           bun-version: "1.4.2"
 
       - name: Setup Node (ttsc launcher)
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "26.11.1"
 
@@ -44,6 +44,9 @@ jobs:
 
       - name: Setup npm for release smoke
         run: npm install -g npm@12.2.0
+
+      - name: Source audit check
+        run: bun tools/analysis-baseline-check.ts
 
       - name: Cache ttsc plugins
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -70,7 +73,7 @@ jobs:
 
       - name: Toolchain smoke
         run: |
-          bun test tools/_bun.test.ts tools/compiler-bin.test.ts tools/evidence/program.test.ts tools/evidence/source-lock.test.ts
+          bun test tools/_bun.test.ts tools/compiler-bin.test.ts tools/toolchain-host.test.ts tools/evidence/program.test.ts tools/evidence/source-lock.test.ts tools/evidence/source-graph.test.ts
           bun test tools/release-workflow.test.ts tools/release-lockfile.test.ts tools/npm-pack.test.ts tools/tarball-check.test.ts tools/package-manifest.test.ts tools/release-registry.test.ts
           bun run toolchain:smoke
 
@@ -153,7 +156,7 @@ jobs:
           bun-version: "1.4.2"
 
       - name: Setup Node (ttsc launcher)
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "26.11.1"
 
@@ -164,7 +167,9 @@ jobs:
         run: |
           bun run toolchain:doctor
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          bun test tools/_bun.test.ts tools/compiler-bin.test.ts tools/evidence/program.test.ts tools/tarball-check.test.ts
+          bun tools/analysis-baseline-check.ts
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          bun test tools/_bun.test.ts tools/compiler-bin.test.ts tools/toolchain-host.test.ts tools/evidence/program.test.ts tools/evidence/source-graph.test.ts tools/tarball-check.test.ts
 
       - name: Build CLI
         run: bun run --cwd packages/cli build
@@ -237,7 +242,7 @@ jobs:
           bun-version: "1.4.2"
 
       - name: Setup Node (ttsc launcher)
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "26.11.1"
 
