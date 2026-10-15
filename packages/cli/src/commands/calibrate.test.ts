@@ -59,6 +59,10 @@ describe("calibrate command", () => {
       expect(result.scenarioPatch.monetization.retention).toEqual({});
       expect(result.patchWarnings[0]).toContain("D7");
       expect(runCli([...args, "--format", "md"]).stdout).toContain("requires-review");
+      const unspecified = runCliJson<any>(["calibrate", path, "--observed-through-day", "1"]);
+      expect(unspecified.patchStatus).toBe("requires-review");
+      expect(unspecified.scenarioPatch.monetization.retention).toEqual({});
+      expect(unspecified.patchWarnings.join(" ")).toContain("Unobserved D7");
     } finally { await removePath(dir); }
   });
 
@@ -68,7 +72,7 @@ describe("calibrate command", () => {
       const path = resolve(dir, "cohort.csv");
       await writeText(path, "user_id,day,revenue,ad_revenue,active\na,0,0,0,true\nb,0,0,0,true\na,1,0,0,true\n");
       const scenario = resolve(dir, "scenario.json");
-      await writeText(scenario, JSON.stringify({ schemaVersion: 1, monetization: { retention: { d1: 0.8, d7: 0.4 } } }));
+      await writeText(scenario, JSON.stringify({ schemaVersion: 1, monetization: { retention: { d1: 0.8, d7: 0.4, d30: 0.2, d90: 0.1 } } }));
       const args = ["calibrate", path, "--observed-through-day", "1", "--scenario", scenario];
       const output = runCliJson<any>(args);
       expect(output.observation.retention[0]).toMatchObject({ day: 1, status: "observed", users: 2, activeUsers: 1, rate: 0.5 });

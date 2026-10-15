@@ -72,6 +72,9 @@ export function planRetentionPatch(observation: CohortObservation, assumptions: 
   if (Object.keys(rates).length === 0) return { status: "unavailable", retention: {}, warnings: ["No retention day has been fully observed."] };
   const merged = { ...assumptions, ...rates };
   const warnings: string[] = [];
+  for (const day of RETENTION_DAYS) {
+    if (merged[`d${day}`] === undefined) warnings.push(`Unobserved D${day} has no explicit retained assumption. An LTV default could conflict with the observations; supply this assumption in --scenario or observe this day before applying a patch.`);
+  }
   let previous: { day: number; rate: number } | undefined;
   for (const day of RETENTION_DAYS) {
     const rate = merged[`d${day}`];

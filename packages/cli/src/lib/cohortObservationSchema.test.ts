@@ -1,15 +1,16 @@
 import { expect, it } from "bun:test";
 import Ajv2020 from "ajv/dist/2020";
 import schema from "../../../../docs/schemas/calibrate.output.schema.json" with { type: "json" };
-import { compareRetention, observeCohort } from "./cohortObservation";
+import { compareRetention, observeCohort, planRetentionPatch } from "./cohortObservation";
 
 const validate = new Ajv2020({ allErrors: true, strict: true }).compile(schema);
 function document() {
   const observation = observeCohort([{ userId: "a", day: 0, iapRevenue: 0, adRevenue: 0 }, { userId: "a", day: 1, iapRevenue: 0, adRevenue: 0 }], 7);
+  const patch = planRetentionPatch(observation, { d1: 0.8 });
   return {
     ok: true, source: "cohort.csv", sample: { rows: 2, users: 1 },
     monetization: { retention: {}, revenue: {}, acquisition: {}, uncertainty: { correlation: {} } },
-    scenarioPatch: {}, patchStatus: "ready", patchWarnings: [], observation,
+    scenarioPatch: { monetization: { retention: patch.retention } }, patchStatus: patch.status, patchWarnings: [...patch.warnings], observation,
     comparison: compareRetention(observation, { d1: 0.8 }),
     _meta: { command: "calibrate", contractVersion: "1.4.0", schemaRef: "docs/schemas/calibrate.output.schema.json", cliVersion: "0.4.0", gitSha: "test", telemetryHash: "test", pluginDigest: {} },
   };

@@ -58,11 +58,14 @@ hashes in `_meta`. The observation cutoff participates in the telemetry hash.
 retained explicit assumption, cannot be applied to the LTV model's monotonic
 curve. In that case the retention patch is empty and `patchWarnings` explains
 the conflict; the raw observations and comparison remain intact. Review and fit
-the curve explicitly instead of clipping the observations.
+the curve explicitly instead of clipping the observations. Unobserved days with
+unspecified assumptions also require review: the LTV defaults could conflict with
+the observations. Provide an explicit assumption for every unobserved target day
+to obtain a ready short-horizon patch.
 Only merge a ready patch into a **copy** of the scenario's retention object;
 preserve unobserved points, cohort-size assumptions, revenue, fees, and uncertainty.
-Validate the merged scenario before running LTV. Unspecified future assumptions
-still need review even when the available points are compatible.
+Validate the merged scenario before running LTV. Defaults are not treated as
+measured or explicitly reviewed assumptions.
 An observation window shorter than one day produces an empty retention patch.
 The other `monetization` estimates remain suggestions, including assumed defaults;
 the bounded patch deliberately excludes them.

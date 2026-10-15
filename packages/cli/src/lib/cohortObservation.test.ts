@@ -43,6 +43,16 @@ it("checks retained future assumptions before offering a patch and leaves the in
   expect(planRetentionPatch(ready, assumptions)).toEqual({ status: "ready", retention: { d1: 0.5 }, warnings: [] });
 });
 
+it("withholds patches when unobserved points would use unspecified LTV defaults", () => {
+  const rows = Array.from({ length: 10 }, (_, index) => row(String(index), 0));
+  rows.push(row("0", 1));
+  const observation = observeCohort(rows, 1);
+  expect(observedRetentionRates(observation)).toEqual({ d1: 0.1 });
+  expect(planRetentionPatch(observation)).toMatchObject({ status: "requires-review", retention: {} });
+  expect(planRetentionPatch(observation, { d7: 0.05 }).warnings.join(" ")).toContain("D30");
+  expect(planRetentionPatch(observation, { d7: 0.05, d30: 0.02, d90: 0.01 })).toEqual({ status: "ready", retention: { d1: 0.1 }, warnings: [] });
+});
+
 it("rejects absent installs, duplicate daily rows, invalid amounts, and invalid observation clocks", () => {
   expect(() => observeCohort([row("a", 1)], 7)).toThrow("day 0");
   expect(() => observeCohort([row("a", 0), row("a", 0)], 7)).toThrow("aggregated");
