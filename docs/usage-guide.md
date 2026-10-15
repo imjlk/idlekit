@@ -135,4 +135,8 @@ The shipped analysis scope includes flow diagnosis, guarded analytic advance, th
 
 `evaluate --format md` labels end net worth in the scenario's game unit and displays the requested horizons alongside modeled LTV per user. Game wealth can be an input to a revenue estimate. Connecting it to actual sales requires an explicit exchange rate or conversion model, a revenue model, a currency, retention assumptions, and a horizon. State those assumptions and calibrate them against telemetry; the configured or default monetization parameters are estimates, rather than measured sales. The JSON output keeps the economy values and monetization fields available for your own conversion workflow.
 
+Use [`calibrate --observed-through-day N --scenario scenario.json`](./player-telemetry.md)
+to compare a fully observed install cohort with the scenario's explicit retention
+assumptions. It keeps future days unobserved and emits a retention-only patch.
+
 Use `idk <command> --help` or `idk init scenario --help` to discover the installed options. An unwritable output file reports `OUTPUT_WRITE_FAILED` with the destination path and a writable-path hint.

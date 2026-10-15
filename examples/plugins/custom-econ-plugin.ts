@@ -5,7 +5,7 @@ import {
   type ObjectiveFactory,
   type StandardSchema,
   type StrategyFactory,
-} from "../../packages/core/src/index";
+} from "@idlekit/core";
 
 type PluginModelParams = {
   baseIncome?: string;

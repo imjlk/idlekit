@@ -283,14 +283,14 @@ idk tune examples/tutorials/11-my-game-v1.json \
 
 - 명령 흐름을 더 익히기: [tutorial-step-by-step.md](./tutorial-step-by-step.md)
 - 재화/액션/KPI를 설계 언어로 정리하기: [virtual-scenario-design.md](./virtual-scenario-design.md)
-- 플러그인 기반 worked example 보기: [05-idle-design-v1.json](../examples/tutorials/05-idle-design-v1.json), [06-idle-design-balance-b.json](../examples/tutorials/06-idle-design-balance-b.json), [07-idle-design-tune.json](../examples/tutorials/07-idle-design-tune.json)
+- 플러그인 기반 worked example 보기: [14-orbital-foundry-v1.json](../examples/tutorials/14-orbital-foundry-v1.json), [15-orbital-foundry-compare-b.json](../examples/tutorials/15-orbital-foundry-compare-b.json), [16-orbital-foundry-tune.json](../examples/tutorials/16-orbital-foundry-tune.json)
 
 추천 분기:
 
 - 아직 장르를 못 정했다: `11`과 `12`를 계속 수정
-- 세션형 게임을 원한다: [09-idle-design-loot-camp.json](../examples/tutorials/09-idle-design-loot-camp.json)
-- 장기 성장형을 원한다: [08-idle-design-city-factory.json](../examples/tutorials/08-idle-design-city-factory.json)
-- 초장기 고성장을 원한다: [10-idle-design-space-port.json](../examples/tutorials/10-idle-design-space-port.json)
+- 세션형 게임을 원한다: [17-session-arcade-v1.json](../examples/tutorials/17-session-arcade-v1.json)
+- 장기 성장형을 원한다: [20-longrun-colony-v1.json](../examples/tutorials/20-longrun-colony-v1.json)
+- 프레스티지 반복을 원한다: [23-prestige-reactor-v1.json](../examples/tutorials/23-prestige-reactor-v1.json)
 
 ## 9. 실전 worked example로 이동
 

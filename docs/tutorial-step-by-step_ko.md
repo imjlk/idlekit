@@ -349,15 +349,15 @@ bun run --cwd packages/cli dev -- kpi regress \
 
 아래 3개 파일은 "아이들 게임 초기 기획(재화/요소/액션)"을 바로 실험하기 위한 세트입니다.
 
-- `examples/tutorials/05-idle-design-v1.json`
-- `examples/tutorials/06-idle-design-balance-b.json`
-- `examples/tutorials/07-idle-design-tune.json`
+- `examples/tutorials/14-orbital-foundry-v1.json`
+- `examples/tutorials/15-orbital-foundry-compare-b.json`
+- `examples/tutorials/16-orbital-foundry-tune.json`
 
 설계 의도:
 
 - 재화
-  - `COIN`: 기본 결제/수입 재화
-  - `GEM`: 장기 가치 재화(`vars.gems`)
+  - `CREDIT`: 기본 결제/수입 재화
+  - 회수 코어: 장기 가치 재화(`vars.gems`)
 - 요소
   - `producers`: 기본 생산력
   - `upgrades`: 배율 강화
@@ -369,25 +369,25 @@ bun run --cwd packages/cli dev -- kpi regress \
 실행 순서:
 
 ```bash
-bun run --cwd packages/cli dev -- validate ../../examples/tutorials/05-idle-design-v1.json \
+bun run --cwd packages/cli dev -- validate ../../examples/tutorials/14-orbital-foundry-v1.json \
   --plugin ../../examples/plugins/custom-econ-plugin.ts \
   --allow-plugin true
 
-bun run --cwd packages/cli dev -- simulate ../../examples/tutorials/05-idle-design-v1.json \
+bun run --cwd packages/cli dev -- simulate ../../examples/tutorials/14-orbital-foundry-v1.json \
   --plugin ../../examples/plugins/custom-econ-plugin.ts \
   --allow-plugin true \
   --format json
 
 bun run --cwd packages/cli dev -- compare \
-  ../../examples/tutorials/05-idle-design-v1.json \
-  ../../examples/tutorials/06-idle-design-balance-b.json \
+  ../../examples/tutorials/14-orbital-foundry-v1.json \
+  ../../examples/tutorials/15-orbital-foundry-compare-b.json \
   --metric endNetWorth \
   --plugin ../../examples/plugins/custom-econ-plugin.ts \
   --allow-plugin true \
   --format json
 
-bun run --cwd packages/cli dev -- tune ../../examples/tutorials/05-idle-design-v1.json \
-  --tune ../../examples/tutorials/07-idle-design-tune.json \
+bun run --cwd packages/cli dev -- tune ../../examples/tutorials/14-orbital-foundry-v1.json \
+  --tune ../../examples/tutorials/16-orbital-foundry-tune.json \
   --plugin ../../examples/plugins/custom-econ-plugin.ts \
   --allow-plugin true \
   --format json
@@ -400,7 +400,7 @@ bun run --cwd packages/cli dev -- tune ../../examples/tutorials/05-idle-design-v
 LTV 구간 스냅샷(30m/2h/24h/7d/30d/90d):
 
 ```bash
-bun run --cwd packages/cli dev -- ltv ../../examples/tutorials/05-idle-design-v1.json \
+bun run --cwd packages/cli dev -- ltv ../../examples/tutorials/14-orbital-foundry-v1.json \
   --horizons 30m,2h,24h,7d,30d,90d \
   --step 600 \
   --fast true \

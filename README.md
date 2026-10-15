@@ -25,6 +25,7 @@ Use it when you want to:
 - evaluate pacing, milestones, perceived progression, and session patterns
 - compare balance variants with measured simulation results
 - tune strategy parameters and replay deterministic runs
+- catch declared balance-target failures from CSV changes and compare player retention with model assumptions
 
 ## Quick start
 
@@ -101,7 +102,7 @@ Recommended interactive sequence:
 4. `review compare`
 5. `tune --wizard`
 
-Worked real-game example:
+Worked plugin economy (synthetic):
 
 ```bash
 bun run --cwd packages/cli dev -- validate ../../examples/tutorials/14-orbital-foundry-v1.json \
@@ -114,6 +115,9 @@ bun run --cwd packages/cli dev -- experience ../../examples/tutorials/14-orbital
   --days 7 \
   --format json
 ```
+
+For the complete edit, measure, and recheck loop, see the [CSV balance walkthrough](./examples/balance/linear/README.md).
+For observations from actual players, see [retention assumption validation](./docs/player-telemetry.md).
 
 ## Try a local package build
 

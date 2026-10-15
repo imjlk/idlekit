@@ -1,109 +1,46 @@
-# Tutorials Example Set
+# 튜토리얼 예제
 
-이 디렉터리는 idlekit 문서에서 쓰는 예제 시나리오 모음입니다.
+개인용 초안, 대표 플러그인, 특수한 플레이 패턴 순으로 실행한다.
+모두 가상 게임이며 실제 유저의 재미·리텐션·매출을 입증하는 데이터는 포함하지 않는다.
 
-## Start Here
+## 내 게임 시작
 
-- scaffold 생성:
-  - `bun run --cwd packages/cli dev -- init scenario --track personal --preset builder --out ../../tmp/my-game-v1.json`
-  - `bun run --cwd packages/cli dev -- init scenario --track personal --preset builder --out ../../tmp/my-game-v1.json --name "Space Miner"`
-  - `bun run --cwd packages/cli dev -- init scenario --track personal --preset session --out ../../tmp/my-session-game.json`
-  - `bun run --cwd packages/cli dev -- init scenario --track personal --preset longrun --out ../../tmp/my-longrun-game.json`
-- `11-my-game-v1.json`
-  - 자기 게임 V1을 바로 시작하는 개인용 기본형
-  - 플러그인 없이 `validate -> simulate -> ltv`가 바로 동작
-  - 먼저 바꿀 값: `unit`, `model.params`, `clock.durationSec`
-- `12-my-game-compare-b.json`
-  - `11`과 바로 비교하는 개인용 대조군
-  - `compare --metric endNetWorth` 첫 실험용
-- `13-my-game-tune.json`
-  - `11`을 대상으로 한 개인용 TuneSpec
-  - `tune`로 greedy preview 파라미터 탐색 시작점
+- `11-my-game-v1.json`: 플러그인 없이 실행하는 선형 기본형
+- `12-my-game-compare-b.json`: 비용과 성장률을 바꾼 비교안
+- `13-my-game-tune.json`: 전략 파라미터 탐색용 TuneSpec
 
-## Learn Commands
+```sh
+bun run --cwd packages/cli dev -- init scenario --track personal --preset builder --out ../../tmp/my-game-v1.json
+```
 
-Reset cycle checkpoint를 저장하고 재개하여 연속 실행과 비교하려면
-[저장·재개 예제](../reset-cycle/README_ko.md)를 실행한다.
+`tune`은 정해진 후보와 조건 안에서만 탐색한다. 최상위 점수가 같으면 개선을
+확인하지 못한 것이다. 같은 horizon과 seed로 원래 전략의 점수도 비교한다.
 
-linear 기본형은 결정론적이다. seed에 따른 변화, 검열 표본, 전체 p95 미확정 결과는
-[피드백 예제](../experience/README_ko.md)에서 실행해볼 수 있다.
+## 대표 플러그인: Orbital Foundry
 
-- `01-cafe-baseline.json`
-  - `validate`, `simulate`, `eta`, `report` 체험용
-- `02-cafe-fast.json`
-  - `sim.fast=true`와 step/duration 차이 확인용
-- `03-cafe-compare-b.json`
-  - `compare` 체험용 대조군
-- `04-cafe-tune.json`
-  - `tune` 체험용 baseline 튜닝 스펙
+- `14-orbital-foundry-v1.json`: CREDIT, 생산기, 자동화, 회수 코어를 가진 가상 경제
+- `15-orbital-foundry-compare-b.json`: 비용·성장률을 바꾼 비교안
+- `16-orbital-foundry-tune.json`: 플레이 패턴을 반영하는 전략 튜닝
 
-## Worked Design Example
+같은 조건에서 자산 가치, 사용 가능한 현금, 마일스톤 시간을 함께 읽는다.
+한 지표의 우위가 모든 조건에서의 우위를 뜻하지 않는다. 플러그인 설치와 실행은
+[플러그인 예제](../plugins/README_ko.md)를 따른다.
 
-- `14-orbital-foundry-v1.json`
-  - canonical 실전 worked example baseline
-  - 장기 가치와 7d/30d/90d worth를 더 강하게 가져가는 안
-- `15-orbital-foundry-compare-b.json`
-  - canonical A/B variant
-  - 첫 업그레이드 milestone을 조금 더 빨리 여는 안
-- `16-orbital-foundry-tune.json`
-  - Orbital Foundry용 design-oriented TuneSpec
-- `05-idle-design-v1.json`
-  - 플러그인 기반 설계 예시 본편
-  - `COIN`, `GEM`, `producers`, `upgrades`, `exchange.gem`이 들어간 worked example
-- `06-idle-design-balance-b.json`
-  - `05`의 대조군 밸런스 프로파일
-- `07-idle-design-tune.json`
-  - `05`를 대상으로 한 전략 파라미터 탐색 스펙
+## 플레이 패턴별 예제
 
-## Design Library Families
+- `17/18/19 Session Arcade`: 짧은 세션과 잦은 진행 변화
+- `20/21/22 Longrun Colony`: 오프라인 보상과 장기 성장
+- `23/24/25 Prestige Reactor`: 프레스티지 리셋과 배율 유지
 
-- `17-session-arcade-v1.json`
-  - session-heavy family baseline
-  - 짧은 세션에서 빠른 체감과 잦은 숫자 변화를 보는 예제
-- `18-session-arcade-compare-b.json`
-  - opening 감각은 더 빠르지만 장기 가치가 약한 대조군
-- `19-session-arcade-tune.json`
-  - session-heavy family 튜닝 스펙
-- `20-longrun-colony-v1.json`
-  - longrun family baseline
-  - offline-heavy / 30d / 90d worth를 보는 예제
-- `21-longrun-colony-compare-b.json`
-  - 초반은 더 빠르지만 장기 colony scale은 약한 대조군
-- `22-longrun-colony-tune.json`
-  - longrun family 튜닝 스펙
-- `23-prestige-reactor-v1.json`
-  - prestige-heavy family baseline
-  - reset / multiplier carryover / first prestige timing을 보는 예제
-- `24-prestige-reactor-compare-b.json`
-  - 더 빠른 prestige 진입 대신 carryover가 약한 대조군
-- `25-prestige-reactor-tune.json`
-  - prestige-heavy family 튜닝 스펙
+각 세트는 baseline, 비교안, TuneSpec 순서다. 목적에 맞는 세트 하나부터 고른다.
+구형 설계·장르 예제 `05`~`10`은 위 세트로 통합했다. 남은 파일의 번호는 유지한다.
 
-## Genre Templates
+## 개별 명령 익히기
 
-- `08-idle-design-city-factory.json`
-  - 장기 성장형(인프라 확장)
-- `09-idle-design-loot-camp.json`
-  - 세션 반복형(30m/2h 중심)
-- `10-idle-design-space-port.json`
-  - 초장기 고성장형(7d/30d/90d 중심)
+- `01-cafe-baseline.json`: validate, simulate, eta, report
+- `02-cafe-fast.json`: fast와 step 차이
+- `03-cafe-compare-b.json`: compare
+- `04-cafe-tune.json`: tune
 
-## Recommended Order
-
-1. 내 게임을 바로 만들기: `11 -> 12 -> 13`
-2. canonical 실전 예제 보기: `14 -> 15 -> 16`
-3. session-heavy family 보기: `17 -> 18 -> 19`
-4. longrun family 보기: `20 -> 21 -> 22`
-5. prestige-heavy family 보기: `23 -> 24 -> 25`
-6. 명령만 익히기: `01 -> 03 -> 04`
-7. 설계 예시 이해: `05 -> 06 -> 07`
-8. 장르 분기 찾기: `08/09/10`
-
-## What To Look At
-
-- `11`: 재화 이름과 성장 곡선만 바꿔도 자기 게임 초안이 바로 돌아가는지
-- `12`: cost/growth를 조금 바꿨을 때 compare 결과가 어떻게 달라지는지
-- `13`: greedy preview horizon/bulk 설정을 바꿨을 때 best params가 어떻게 나오는지
-- `01/03/04`: `simulate`, `compare`, `tune`의 기본 출력이 어떻게 생기는지
-- `05/06/07`: 재화/요소/액션 변경이 KPI와 objective에 어떤 차이를 만드는지
-- `08/09/10`: 30m/2h/24h/7d/30d/90d 지표 곡선이 장르별로 어떻게 달라지는지
+seed에 따른 변화와 검열 표본은 [피드백 예제](../experience/README_ko.md),
+checkpoint 재개는 [저장·재개 예제](../reset-cycle/README_ko.md)를 실행한다.

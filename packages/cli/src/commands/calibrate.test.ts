@@ -1,9 +1,21 @@
 import { describe, expect, it } from "bun:test";
 import { resolve } from "path";
-import { parseCsvTelemetry } from "./calibrate";
-import { createTempDir, removePath, runCliJson, writeText } from "../testkit/bun";
+import { parseCsvTelemetry, parseJsonTelemetry } from "./calibrate";
+import { createTempDir, removePath, runCli, runCliJson, writeText } from "../testkit/bun";
 
 describe("calibrate csv parser", () => {
+  it("strict cohort inputs preserve inactive users and reject invented IDs, days and activity", () => {
+    const rows = [{ userId: "a", day: 0, active: "false" }];
+    expect(parseJsonTelemetry(JSON.stringify(rows), true)[0]?.active).toBe(false);
+    expect(parseCsvTelemetry("user_id,day,active\na,0,false", true)[0]?.active).toBe(false);
+    for (const csv of ["day\n0", "user_id,day\na,", "user_id,day,active\na,0,maybe", "user_id,day,day\na,0,1"]) {
+      expect(() => parseCsvTelemetry(csv, true)).toThrow();
+    }
+    for (const input of [[{ day: 0 }], [{ userId: "a", day: null }], [{ userId: "a", day: 0, revenue: "" }]]) {
+      expect(() => parseJsonTelemetry(JSON.stringify(input), true)).toThrow();
+    }
+  });
+
   it("parses quoted commas, escaped quotes, and multiline cells", () => {
     const csv = [
       "user_id,day,revenue,ad_revenue,acquisition_cost,active",
@@ -32,6 +44,53 @@ describe("calibrate csv parser", () => {
 });
 
 describe("calibrate command", () => {
+  it("withholds a retention patch that conflicts with the remaining LTV assumptions", async () => {
+    const dir = await createTempDir("idlekit-cohort-patch-conflict");
+    try {
+      const path = resolve(dir, "cohort.json");
+      await writeText(path, JSON.stringify([{ userId: "a", day: 0, active: true }]));
+      const scenario = resolve(dir, "scenario.json");
+      await writeText(scenario, JSON.stringify({ schemaVersion: 1, monetization: { retention: { d1: 0.8, d7: 0.4, d30: 0.2, d90: 0.1 } } }));
+      const args = ["calibrate", path, "--observed-through-day", "1", "--scenario", scenario];
+      const result = runCliJson<any>(args);
+      expect(result.observation.retention[0].rate).toBe(0);
+      expect(result.comparison[0].observed).toBe(0);
+      expect(result.patchStatus).toBe("requires-review");
+      expect(result.scenarioPatch.monetization.retention).toEqual({});
+      expect(result.patchWarnings[0]).toContain("D7");
+      expect(runCli([...args, "--format", "md"]).stdout).toContain("requires-review");
+      const unspecified = runCliJson<any>(["calibrate", path, "--observed-through-day", "1"]);
+      expect(unspecified.patchStatus).toBe("requires-review");
+      expect(unspecified.scenarioPatch.monetization.retention).toEqual({});
+      expect(unspecified.patchWarnings.join(" ")).toContain("Unobserved D7");
+    } finally { await removePath(dir); }
+  });
+
+  it("compares mature retention with explicit assumptions and keeps future days unobserved", async () => {
+    const dir = await createTempDir("idlekit-observed-cohort");
+    try {
+      const path = resolve(dir, "cohort.csv");
+      await writeText(path, "user_id,day,revenue,ad_revenue,active\na,0,0,0,true\nb,0,0,0,true\na,1,0,0,true\n");
+      const scenario = resolve(dir, "scenario.json");
+      await writeText(scenario, JSON.stringify({ schemaVersion: 1, monetization: { retention: { d1: 0.8, d7: 0.4, d30: 0.2, d90: 0.1 } } }));
+      const args = ["calibrate", path, "--observed-through-day", "1", "--scenario", scenario];
+      const output = runCliJson<any>(args);
+      expect(output.observation.retention[0]).toMatchObject({ day: 1, status: "observed", users: 2, activeUsers: 1, rate: 0.5 });
+      expect(output.observation.retention[1]).toMatchObject({ day: 7, status: "not-observed", rate: null });
+      expect(output.comparison[0].differencePercentagePoints).toBeCloseTo(-30);
+      expect(output.scenarioPatch).toEqual({ monetization: { retention: { d1: 0.5 } } });
+      expect(output.monetization.retention.d7).toBeUndefined();
+      expect(typeof output._meta.scenarioHash).toBe("string");
+      const human = runCli([...args, "--format", "md"]).stdout;
+      expect(human).toContain("Observed player retention");
+      expect(human).toContain("not-observed");
+      expect(human).toContain("causal");
+      const invalid = runCli(["calibrate", path, "--scenario", scenario], { check: false });
+      expect(invalid.exitCode).not.toBe(0);
+      expect(invalid.stderr).toContain("observed-through-day");
+    } finally { await removePath(dir); }
+  });
+
   it("returns estimated correlation in monetization uncertainty", async () => {
     const dir = await createTempDir("idlekit-calibrate");
     try {

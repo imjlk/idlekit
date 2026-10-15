@@ -19,6 +19,27 @@ Only `buyCostGrowth` is a numeric model parameter here. String-valued money inpu
 such as `incomePerSec`, `buyCostBase`, and `buyIncomeDelta` stay unchanged in the
 scenario template; the numeric CSV schema cannot edit them.
 
+## What a failing target means
+
+Work in a copy of this directory. In `workflow.json`, set the `worth` target's
+`min` to `400` and set `pacing.sensitivity` to `[]` to check just the CSV baseline.
+Then run `idk balance <your-copy>/workflow.json --format md`.
+
+With `buyCostGrowth=1.12`, the model finishes the declared **60 seconds** with
+approximately **454.5 COIN of net worth** and passes the chosen minimum of 400.
+Change the CSV growth to `1.25` and rerun: purchases become more expensive with
+each buy, and the same strategy finishes with **339 COIN of net worth**. It misses
+the target by **61 COIN**, so the command exits **1** while saving the result bundle.
+Restore `1.12` and rerun to pass again. Seeds 7 and 11 agree because this model is
+deterministic. This is a synthetic design constraint chosen for the demonstration,
+not an industry benchmark or a prediction of retention.
+
+Net worth is the model's asset valuation, including owned producers, rather than
+the spendable wallet balance. The check catches a change that violates your stated
+progression goal before release; it does not prove the game is fun. In CI, run the
+refresh command and use its exit code. `--check` only detects stale/missing results
+and is not a replacement for evaluating targets.
+
 ## Refresh and inspect the export
 
 Run these commands from the repository root with an installed `idk`. For a source

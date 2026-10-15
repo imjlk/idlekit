@@ -1,4 +1,8 @@
 {
   "name": "idlekit-example-plugin",
-  "private": true
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@idlekit/core": "^0.4.0"
+  }
 }

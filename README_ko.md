@@ -84,10 +84,12 @@ idk setup plugin-trust --plugin ../../examples/plugins/custom-econ-plugin.ts --o
 - 개인용 A/B 루프: [12-my-game-compare-b.json](./examples/tutorials/12-my-game-compare-b.json), [13-my-game-tune.json](./examples/tutorials/13-my-game-tune.json)
 - canonical 실전 예제: [14-orbital-foundry-v1.json](./examples/tutorials/14-orbital-foundry-v1.json), [15-orbital-foundry-compare-b.json](./examples/tutorials/15-orbital-foundry-compare-b.json), [16-orbital-foundry-tune.json](./examples/tutorials/16-orbital-foundry-tune.json)
 - 명령 체험용: [01-cafe-baseline.json](./examples/tutorials/01-cafe-baseline.json)
-- 설계 예시용: [05-idle-design-v1.json](./examples/tutorials/05-idle-design-v1.json), [06-idle-design-balance-b.json](./examples/tutorials/06-idle-design-balance-b.json), [07-idle-design-tune.json](./examples/tutorials/07-idle-design-tune.json)
-- 장르 분기 템플릿: [08-idle-design-city-factory.json](./examples/tutorials/08-idle-design-city-factory.json), [09-idle-design-loot-camp.json](./examples/tutorials/09-idle-design-loot-camp.json), [10-idle-design-space-port.json](./examples/tutorials/10-idle-design-space-port.json)
+- 플레이 패턴별 예제: [Session Arcade](./examples/tutorials/17-session-arcade-v1.json), [Longrun Colony](./examples/tutorials/20-longrun-colony-v1.json), [Prestige Reactor](./examples/tutorials/23-prestige-reactor-v1.json)
 
 ## 기여자/운영자 체크
+
+CSV 변경에서 목표 위반을 잡고 수정하는 흐름은 [밸런스 예제](./examples/balance/linear/README.md),
+실제 플레이 데이터로 가정을 검증하는 방법은 [리텐션 검증](./docs/player-telemetry_ko.md)을 따른다.
 
 저장소 품질 게이트와 운영 확인은 아래 순서로 돌리면 됩니다.
 
