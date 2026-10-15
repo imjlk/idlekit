@@ -209,12 +209,7 @@ if (installed.exitCode !== 0) {
 expectExit("consumer-install", installed.command, installed.exitCode, 0);
 await Bun.write(
   join(consumerDir, "run.ts"),
-  `import { validateConcreteQuota } from "@idlekit/core";
-const accepted = validateConcreteQuota({ count: 2 });
-const rejected = validateConcreteQuota({ count: "no" });
-if (!accepted.success || rejected.success || accepted.data.count !== 2) throw new Error("published validator mismatch");
-console.log("published-ok");
-`,
+  Bun.file(resolve(root, "tools/fixtures/consumers/concrete-runtime.ts")),
 );
 run(
   "published-run",
@@ -225,11 +220,7 @@ run(
 );
 await Bun.write(
   join(consumerDir, "types.ts"),
-  `import { validateConcreteQuota } from "@idlekit/core";
-const accepted = validateConcreteQuota({ count: 2 });
-if (!accepted.success) throw new Error("types");
-export const count: number = accepted.data.count;
-`,
+  Bun.file(resolve(root, "tools/fixtures/consumers/concrete-types.ts")),
 );
 await Bun.write(
   join(consumerDir, "tsconfig.json"),

@@ -18,8 +18,9 @@
   },
   "scripts": {
     "build": "bun run --cwd packages/money build && bun run --cwd packages/core build && bun run --cwd packages/cli build",
-    "typecheck": "bun run --cwd packages/money typecheck && bun run --cwd packages/core typecheck && bun run --cwd packages/cli typecheck && bun run typecheck:tools && bun tools/tsconfig-program-check.ts && bun tools/evidence-check.ts && bun tools/format-check.ts",
+    "typecheck": "bun run --cwd packages/money typecheck && bun run --cwd packages/core typecheck && bun run --cwd packages/cli typecheck && bun run typecheck:tools && bun run typecheck:examples && bun tools/tsconfig-program-check.ts && bun tools/evidence-check.ts && bun tools/format-check.ts",
     "typecheck:tools": "ttsc -p tsconfig.tools.json --noEmit",
+    "typecheck:examples": "ttsc -p tsconfig.examples.json --noEmit && ttsc -p examples/plugins/tsconfig.json --noEmit",
     "evidence:check": "bun tools/evidence-check.ts",
     "evidence:smoke": "bun tools/evidence-smoke.ts",
     "format:check": "bun tools/format-check.ts",
@@ -67,6 +68,7 @@
   "devDependencies": {
     "@babel/parser": "8.0.7",
     "@idlekit/core": "workspace:*",
+    "@idlekit/money": "workspace:*",
     "@ttsc/evidence": "0.32.1",
     "@ttsc/graph": "0.32.1",
     "@ttsc/lint": "0.32.1",

@@ -1,16 +1,24 @@
-import assert from "node:assert/strict";
-import { readFileSync, realpathSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import assert from "assert/strict";
+import { realpathSync } from "fs";
+import { fileURLToPath } from "url";
 import {
   builtinStrategyFactories, compileScenario, createModelRegistry, createNumberEngine,
-  createStrategyRegistry, runElapsedSec, runScenario,
+  createStrategyRegistry, defineModelFactory, runElapsedSec, runScenario, validateScenarioStructure,
 } from "@idlekit/core";
-import { createBreakInfinityEngine } from "@idlekit/money";
+import { createBreakInfinityEngine, type Engine } from "@idlekit/money";
+import matrix from "../../../fixtures/regressions/time-boundaries.json";
 
-const matrix = JSON.parse(readFileSync(new URL("./time-boundaries.json", import.meta.url), "utf8"));
 const moneyEngine = createBreakInfinityEngine();
 const coreEngine = createNumberEngine();
-let boundaryChecks = 0;
+const parsedScenario = validateScenarioStructure(matrix.scenario);
+assert.ok(parsedScenario.success, "shared scenario must match the public contract");
+const scenario = parsedScenario.data;
+
+export type LibrarySmokeResult = Readonly<{
+  money: string;
+  core: string;
+  boundaryChecks: number;
+}>;
 
 // Run the installed compiled exports under the supported Bun runtime without compiler preload.
 for (const name of ["core", "money"]) {
@@ -18,31 +26,33 @@ for (const name of ["core", "money"]) {
   const installed = fileURLToPath(new URL(`./node_modules/@idlekit/${name}/dist/index.js`, import.meta.url));
   assert.equal(realpathSync(resolved), realpathSync(installed), `compiled installed ${name} entry`);
 }
-for (const E of [coreEngine, moneyEngine]) {
+function checkBoundaries<N>(E: Engine<N>): number {
   for (const boundary of matrix.cases) {
-    const execute = () => runScenario(compileScenario({
+    const execute = () => runScenario(compileScenario<N, "COIN", unknown>({
       E,
       scenario: {
-        ...structuredClone(matrix.scenario),
-        initial: { ...matrix.scenario.initial, t: boundary.initialT },
+        ...structuredClone(scenario),
+        initial: { ...scenario.initial, t: boundary.initialT },
         clock: boundary.clock,
       },
-      registry: createModelRegistry([{
+      registry: createModelRegistry([defineModelFactory<N, "COIN", unknown>({
         id: "linear", version: 1,
         create: () => ({
           id: "linear", version: 1,
           income: (ctx) => ({ unit: ctx.unit, amount: ctx.E.from(1) }),
           actions: () => [],
         }),
-      }]),
+      })]),
       strategyRegistry: createStrategyRegistry(builtinStrategyFactories),
       unitFactory: () => ({ code: "COIN" }),
     }));
     if (boundary.error) {
-      assert.throws(execute, (error) => error instanceof Error && error.message.includes(boundary.error), boundary.id);
+      const message = boundary.error;
+      assert.throws(execute, (error: unknown) => error instanceof Error && error.message.includes(message), boundary.id);
     } else {
       const run = execute();
       const expected = boundary.expected;
+      assert.ok(expected, `${boundary.id} must declare an expected result`);
       assert.equal(runElapsedSec(run), expected.elapsedSec, boundary.id);
       assert.equal(run.stop?.steps, expected.steps, boundary.id);
       assert.equal(run.stop?.reason, expected.reason, boundary.id);
@@ -50,13 +60,15 @@ for (const E of [coreEngine, moneyEngine]) {
       assert.equal(run.end.t !== run.start.t, expected.timestampChanged, boundary.id);
       if (expected.timestampDelta !== undefined) assert.equal(run.end.t - run.start.t, expected.timestampDelta, boundary.id);
     }
-    boundaryChecks++;
   }
+  return matrix.cases.length;
 }
 
+const boundaryChecks = checkBoundaries(coreEngine) + checkBoundaries(moneyEngine);
 assert.equal(boundaryChecks, 26, "all 13 shared cases must run under both engines");
-console.log(JSON.stringify({
+const result: LibrarySmokeResult = {
   money: moneyEngine.toString(moneyEngine.from("1e6")),
   core: coreEngine.toString(coreEngine.add(2, 3)),
   boundaryChecks,
-}));
+};
+console.log(JSON.stringify(result));

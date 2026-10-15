@@ -33,6 +33,8 @@ bun run tune:regress --baseline ./tmp/tune-baseline.json --current ./tmp/tune-la
 bun tools/analysis-baseline-check.ts
 ```
 
+`bun run typecheck`는 패키지·도구·예제·플러그인 프로젝트를 검사합니다. 예제와 플러그인만 확인하려면 `bun run typecheck:examples`를 실행합니다. 소비자 검증 코드는 `tools/fixtures/consumers/*.ts`에 두고 도구 프로젝트에서 타입 검사한 뒤 npm 소비자 환경으로 복사하거나 출력합니다. 설치 스모크는 시간 경계 검증을 ESM으로 출력하면서 패키지 import를 외부에 남겨, 컴파일러 preload 없이 설치된 컴파일 결과를 검증합니다.
+
 패키지별:
 
 ```bash
