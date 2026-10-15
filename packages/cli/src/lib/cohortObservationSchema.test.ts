@@ -1,7 +1,7 @@
 import { expect, it } from "bun:test";
 import Ajv2020 from "ajv/dist/2020";
 import schema from "../../../../docs/schemas/calibrate.output.schema.json" with { type: "json" };
-import { compareRetention, observeCohort, planRetentionPatch } from "./cohortObservation";
+import { assertCohortObservation, compareRetention, observeCohort, planRetentionPatch } from "./cohortObservation";
 
 const validate = new Ajv2020({ allErrors: true, strict: true }).compile(schema);
 function document() {
@@ -18,6 +18,16 @@ function document() {
 
 it("accepts observed, unconfigured and future points in a real cohort report", () => {
   expect(validate(document())).toBe(true);
+  const ready = document();
+  const patch = planRetentionPatch(ready.observation, { d30: 0, d90: 0 });
+  ready.patchStatus = patch.status;
+  ready.patchWarnings = [...patch.warnings];
+  ready.scenarioPatch.monetization.retention = patch.retention;
+  ready.comparison = compareRetention(ready.observation, { d30: 0, d90: 0 });
+  expect(ready.patchStatus).toBe("ready");
+  expect(validate(ready)).toBe(true);
+  ready.scenarioPatch.monetization.retention = {};
+  expect(validate(ready)).toBe(false);
 });
 
 it("rejects contradictory observation and comparison states", () => {
@@ -38,6 +48,11 @@ it("rejects contradictory observation and comparison states", () => {
   mutate(value => { value.comparison[1].differencePercentagePoints = 0; });
   mutate(value => { value.comparison[2].observed = 0; });
   mutate(value => { delete value.patchStatus; });
+  mutate(value => { value.observation.retention[1].day = 1; });
+  mutate(value => { value.comparison[1].day = 1; });
+  mutate(value => { value.scenarioPatch.monetization.retention = { d1: 0.5 }; });
+  mutate(value => { delete value.observation; delete value.comparison; });
+  mutate(value => { value.scenarioPatch.monetization.revenue = {}; });
 });
 
 it("keeps confidence intervals ordered around observed rates including both endpoints", () => {
@@ -50,4 +65,18 @@ it("keeps confidence intervals ordered around observed rates including both endp
     expect(point.interval95!.max).toBeGreaterThanOrEqual(point.rate!);
     expect(point.interval95!.max).toBeLessThanOrEqual(1);
   }
+});
+
+it("rejects impossible counts and inconsistent intervals at the semantic output boundary", () => {
+  const mutate = (change: (value: any) => void) => {
+    const value = structuredClone(document().observation);
+    change(value);
+    expect(() => assertCohortObservation(value)).toThrow();
+  };
+  mutate(value => { value.retention[0].activeUsers = 999; });
+  mutate(value => { value.retention[0].rate = 0.25; });
+  mutate(value => { value.retention[0].users = 2; });
+  mutate(value => { value.retention[0].interval95 = { min: 0.8, max: 0.2 }; });
+  mutate(value => { value.retention[0].interval95.min = NaN; });
+  mutate(value => { value.observedThroughDay = 0; });
 });

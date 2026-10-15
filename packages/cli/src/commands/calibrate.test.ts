@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { resolve } from "path";
+import { link, readFile, symlink } from "node:fs/promises";
 import { parseCsvTelemetry, parseJsonTelemetry } from "./calibrate";
 import { createTempDir, removePath, runCli, runCliJson, writeText } from "../testkit/bun";
 
@@ -44,6 +45,66 @@ describe("calibrate csv parser", () => {
 });
 
 describe("calibrate command", () => {
+  it("refuses to overwrite telemetry in both exploratory and observed modes", async () => {
+    const dir = await createTempDir("idlekit-calibrate-input-protection");
+    try {
+      for (const extension of ["csv", "json"]) for (const observed of [false, true]) {
+        const path = resolve(dir, `cohort.${extension}`);
+        const source = extension === "csv" ? "user_id,day\na,0\n" : JSON.stringify([{ userId: "a", day: 0 }]);
+        await writeText(path, source);
+        const output = runCli(["calibrate", path, ...(observed ? ["--observed-through-day", "1"] : []), "--out", path], { check: false });
+        expect(output.exitCode).not.toBe(0);
+        expect(output.stderr).toContain("CLI_USAGE");
+        expect(await readFile(path, "utf8")).toBe(source);
+      }
+    } finally { await removePath(dir); }
+  });
+
+  it("protects the scenario and telemetry aliases from output writes", async () => {
+    const dir = await createTempDir("idlekit-calibrate-alias-protection");
+    try {
+      const input = resolve(dir, "cohort.csv");
+      const source = "user_id,day\na,0\n";
+      await writeText(input, source);
+      const scenario = resolve(dir, "scenario.json");
+      const assumptions = JSON.stringify({ schemaVersion: 1, monetization: { retention: { d1: 0.8, d7: 0.4, d30: 0.2, d90: 0.1 } } });
+      await writeText(scenario, assumptions);
+      const hardLink = resolve(dir, "cohort-copy.csv");
+      await link(input, hardLink);
+      const directoryAlias = resolve(dir, "directory-alias");
+      await symlink(dir, directoryAlias, process.platform === "win32" ? "junction" : "dir");
+      for (const out of [scenario, hardLink, resolve(directoryAlias, "cohort.csv")]) {
+        const result = runCli(["calibrate", input, "--observed-through-day", "1", "--scenario", scenario, "--out", out], { check: false });
+        expect(result.exitCode).not.toBe(0);
+        expect(result.stderr).toContain("CLI_USAGE");
+        expect(await readFile(input, "utf8")).toBe(source);
+        expect(await readFile(scenario, "utf8")).toBe(assumptions);
+      }
+      const report = resolve(dir, "report.json");
+      expect(runCli(["calibrate", input, "--observed-through-day", "1", "--scenario", scenario, "--out", report]).exitCode).toBe(0);
+      expect(JSON.parse(await readFile(report, "utf8")).ok).toBe(true);
+    } finally { await removePath(dir); }
+  });
+
+  it("includes Wilson intervals in CSV and leaves future intervals unavailable", async () => {
+    const dir = await createTempDir("idlekit-cohort-csv-intervals");
+    try {
+      const path = resolve(dir, "cohort.csv");
+      await writeText(path, "user_id,day\na,0\nb,0\na,1\n");
+      const args = ["calibrate", path, "--observed-through-day", "1"];
+      const json = runCliJson<any>(args);
+      const lines = runCli([...args, "--format", "csv"]).stdout.trim().split(/\r?\n/).map(line => line.split(","));
+      const min = lines[0]!.indexOf("interval95Min");
+      const max = lines[0]!.indexOf("interval95Max");
+      expect(min).toBeGreaterThanOrEqual(0);
+      expect(max).toBeGreaterThanOrEqual(0);
+      expect(Number(lines[1]![min])).toBe(json.observation.retention[0].interval95.min);
+      expect(Number(lines[1]![max])).toBe(json.observation.retention[0].interval95.max);
+      expect(lines[2]![min]).toBe("null");
+      expect(lines[2]![max]).toBe("null");
+    } finally { await removePath(dir); }
+  });
+
   it("withholds a retention patch that conflicts with the remaining LTV assumptions", async () => {
     const dir = await createTempDir("idlekit-cohort-patch-conflict");
     try {

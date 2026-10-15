@@ -5,8 +5,61 @@
   "required": ["ok", "source", "sample", "monetization", "scenarioPatch", "_meta"],
   "dependentRequired": {
     "observation": ["patchStatus", "patchWarnings"],
-    "comparison": ["observation"]
+    "comparison": ["observation"],
+    "patchStatus": ["observation", "patchWarnings"],
+    "patchWarnings": ["observation", "patchStatus"]
   },
+  "$comment": "Counts, rates, cutoff consistency and interval containment are checked by assertCohortObservation before CLI output; portable JSON Schema cannot compare sibling numeric values.",
+  "$defs": {
+    "retentionDayOrder": {
+      "type": "array", "minItems": 4, "maxItems": 4,
+      "prefixItems": [
+        { "type": "object", "properties": { "day": { "const": 1 } } },
+        { "type": "object", "properties": { "day": { "const": 7 } } },
+        { "type": "object", "properties": { "day": { "const": 30 } } },
+        { "type": "object", "properties": { "day": { "const": 90 } } }
+      ],
+      "items": false
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "observation": {} }, "required": ["observation"] },
+      "then": { "properties": {
+        "scenarioPatch": {
+          "type": "object", "required": ["monetization"], "additionalProperties": false,
+          "properties": { "monetization": {
+            "type": "object", "required": ["retention"], "additionalProperties": false,
+            "properties": { "retention": {
+              "type": "object", "additionalProperties": false,
+              "properties": {
+                "d1": { "type": "number", "minimum": 0, "maximum": 1 },
+                "d7": { "type": "number", "minimum": 0, "maximum": 1 },
+                "d30": { "type": "number", "minimum": 0, "maximum": 1 },
+                "d90": { "type": "number", "minimum": 0, "maximum": 1 }
+              }
+            } }
+          } }
+        }
+      } }
+    },
+    {
+      "if": { "required": ["patchStatus"], "properties": { "patchStatus": { "enum": ["unavailable", "requires-review"] } } },
+      "then": { "properties": { "scenarioPatch": {
+        "type": "object", "properties": { "monetization": {
+          "type": "object", "properties": { "retention": { "type": "object", "maxProperties": 0 } }
+        } }
+      } } }
+    },
+    {
+      "if": { "required": ["patchStatus"], "properties": { "patchStatus": { "const": "ready" } } },
+      "then": { "properties": { "scenarioPatch": {
+        "type": "object", "properties": { "monetization": {
+          "type": "object", "properties": { "retention": { "type": "object", "minProperties": 1 } }
+        } }
+      } } }
+    }
+  ],
   "properties": {
     "ok": { "const": true },
     "source": { "type": "string" },
@@ -45,6 +98,7 @@
         "users": { "type": "integer", "minimum": 1 },
         "retention": {
           "type": "array", "minItems": 4, "maxItems": 4,
+          "allOf": [{ "$ref": "#/$defs/retentionDayOrder" }],
           "items": {
             "type": "object",
             "required": ["day", "status", "users", "activeUsers", "rate", "interval95"],
@@ -88,6 +142,7 @@
     },
     "comparison": {
       "type": "array", "minItems": 4, "maxItems": 4,
+      "allOf": [{ "$ref": "#/$defs/retentionDayOrder" }],
       "items": {
         "type": "object",
         "required": ["day", "assumption", "observed", "differencePercentagePoints", "status"],

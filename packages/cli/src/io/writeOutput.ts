@@ -1,4 +1,6 @@
 import { resolve } from "path";
+import { realpath, stat } from "node:fs/promises";
+import { usageError } from "../errors";
 import type { OutputMeta } from "./outputMeta";
 import { writeStdout, writeTextFile } from "../runtime/bun";
 
@@ -73,6 +75,7 @@ export async function writeOutput(args: {
   data: unknown;
   outPath?: string;
   meta?: OutputMeta;
+  protectedInputs?: readonly string[];
 }): Promise<void> {
   const dataWithMeta =
     args.meta &&
@@ -93,6 +96,22 @@ export async function writeOutput(args: {
   }
 
   const abs = resolve(args.outPath);
+  for (const input of args.protectedInputs ?? []) {
+    const source = resolve(input);
+    let same = source === abs;
+    if (!same) {
+      try {
+        const [outputReal, inputReal, outputStat, inputStat] = await Promise.all([
+          realpath(abs), realpath(source), stat(abs, { bigint: true }), stat(source, { bigint: true }),
+        ]);
+        same = outputReal === inputReal || (outputStat.ino !== 0n && outputStat.dev === inputStat.dev && outputStat.ino === inputStat.ino);
+      } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code;
+        if (code !== "ENOENT" && code !== "ENOTDIR") throw error;
+      }
+    }
+    if (same) throw usageError(`Output path must not overwrite an input file: ${input}`);
+  }
   await writeTextFile(abs, body);
   console.log(`Wrote ${args.format} output to ${abs}`);
 }

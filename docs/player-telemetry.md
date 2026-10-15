@@ -83,3 +83,10 @@ read as evidence of mature retention; use the explicit cohort mode for validatio
 `--scenario` therefore requires `--observed-through-day`. The command reports
 differences; it does not automatically declare a game good or fail CI by a retention
 threshold.
+
+CSV reports include `interval95Min` and `interval95Max`, using fractions from 0 to 1;
+future days retain `null`. JSON Schema checks the D1/D7/D30/D90 order and requires
+withheld patches to stay empty. The CLI also checks cross-field counts, rates,
+observation cutoffs, and confidence intervals before output.
+An `--out` path that aliases the telemetry or scenario input is rejected, including
+hardlinks and directory aliases. Choose a separate report path.
