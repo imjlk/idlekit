@@ -3,6 +3,10 @@
   "$id": "idlekit/calibrate-output-v1",
   "type": "object",
   "required": ["ok", "source", "sample", "monetization", "scenarioPatch", "_meta"],
+  "dependentRequired": {
+    "observation": ["patchStatus", "patchWarnings"],
+    "comparison": ["observation"]
+  },
   "properties": {
     "ok": { "const": true },
     "source": { "type": "string" },
@@ -53,13 +57,31 @@
               "interval95": {
                 "anyOf": [
                   { "type": "null" },
-                  { "type": "object", "required": ["min", "max"], "properties": {
+                  { "type": "object", "required": ["min", "max"], "additionalProperties": false, "properties": {
                     "min": { "type": "number", "minimum": 0, "maximum": 1 },
                     "max": { "type": "number", "minimum": 0, "maximum": 1 }
                   } }
                 ]
               }
-            }
+            },
+            "allOf": [
+              {
+                "if": { "properties": { "status": { "const": "observed" } } },
+                "then": { "properties": {
+                  "activeUsers": { "type": "integer" },
+                  "rate": { "type": "number" },
+                  "interval95": { "type": "object" }
+                } }
+              },
+              {
+                "if": { "properties": { "status": { "const": "not-observed" } } },
+                "then": { "properties": {
+                  "activeUsers": { "type": "null" },
+                  "rate": { "type": "null" },
+                  "interval95": { "type": "null" }
+                } }
+              }
+            ]
           }
         }
       }
@@ -75,7 +97,32 @@
           "observed": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
           "differencePercentagePoints": { "type": ["number", "null"], "minimum": -100, "maximum": 100 },
           "status": { "enum": ["compared", "not-observed", "unconfigured"] }
-        }
+        },
+        "allOf": [
+          {
+            "if": { "properties": { "status": { "const": "compared" } } },
+            "then": { "properties": {
+              "assumption": { "type": "number" },
+              "observed": { "type": "number" },
+              "differencePercentagePoints": { "type": "number" }
+            } }
+          },
+          {
+            "if": { "properties": { "status": { "const": "not-observed" } } },
+            "then": { "properties": {
+              "observed": { "type": "null" },
+              "differencePercentagePoints": { "type": "null" }
+            } }
+          },
+          {
+            "if": { "properties": { "status": { "const": "unconfigured" } } },
+            "then": { "properties": {
+              "assumption": { "type": "null" },
+              "observed": { "type": "number" },
+              "differencePercentagePoints": { "type": "null" }
+            } }
+          }
+        ]
       }
     },
     "_meta": {

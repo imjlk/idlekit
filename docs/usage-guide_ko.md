@@ -423,6 +423,9 @@ bun run --cwd packages/cli dev -- ltv ../../examples/tutorials/14-orbital-foundr
 [플레이 데이터 검증 가이드](./player-telemetry_ko.md)를 따른다. 설치자 전체를
 분모로 쓰고 미관측 일수는 0으로 채우지 않는다.
 
+아래 명령은 관측 기간을 명시하지 않은 **탐색용 추정**이다. 코호트 검증에는 위
+가이드의 `--observed-through-day`와 `--scenario`를 함께 쓴다.
+
 ```bash
 bun run --cwd packages/cli dev -- calibrate ../../tmp/telemetry.csv \
   --input-format csv \
