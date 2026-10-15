@@ -1,5 +1,5 @@
 import { resolve } from "path";
-import { realpath, stat } from "node:fs/promises";
+import { realpath, stat } from "fs/promises";
 import { usageError } from "../errors";
 import type { OutputMeta } from "./outputMeta";
 import { writeStdout, writeTextFile } from "../runtime/bun";
