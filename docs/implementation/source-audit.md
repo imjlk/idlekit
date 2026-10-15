@@ -6,7 +6,7 @@ Policy: [analysis contracts](../adr/analysis-contracts.md).
 
 Baseline commit: `265c6ed1dad56e474a9b8acd847be42aaa3faa51` (`main`, 2026-09-30). The commit date recorded by git is 2026-04-12. This file separates what this session read in source from risks that still need a runtime fixture. It does not record a `bun test` result. Planned files and commands below are absent on purpose.
 
-`bun tools/analysis-baseline-check.ts` checks that the cited paths exist. The table below is the `PR-00` snapshot at `265c6ed`. Live pins after `TC-01` are in [Toolchain pins](../toolchain.md). `TC-01` updates the host pins in the check when it unifies them. `TC-02` switches package check and money/core emit to `ttsc`; the snapshot table stays at `265c6ed`.
+`bun tools/analysis-baseline-check.ts` checks current source paths, package scripts, and manifests/workflows against `fixtures/toolchain/pins.json`. It runs on Windows and POSIX hosts. Implemented `inspect` and `analyze` commands must be present. The tables and planned paths below describe the `PR-00` snapshot at `265c6ed`; their historical values stay unchanged. Current versions are in [Toolchain pins](../toolchain.md).
 
 ## What already exists
 

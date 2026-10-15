@@ -135,7 +135,7 @@ CI(`.github/workflows/ci.yml`)는 typecheck/runtime import check/test/build + re
 
 `265c6ed`에서 저장소 compiler는 `tsc`였고, 테스트는 `bun test`였으며, CLI 번들은 Bunli였다. Root Bun은 `1.3.10`이었고 CI는 Bun `1.3.9`를 pin했다. `TC-01`이 CI를 Bun `1.3.10`으로 맞추고 ttsc를 pin한다. `TC-02`는 패키지 check와 money/core emit을 `ttsc`로 실행하고, 같은 변환을 Bun source, `bun test`, CLI bundle, packed artifact에 적용한다. 현재 pin은 [툴체인 pin](./toolchain_ko.md)에 있다.
 
-`bun tools/analysis-baseline-check.ts`는 [소스 감사](./implementation/source-audit_ko.md)가 인용한 경로와 현재 host pin을 확인한다.
+`bun tools/analysis-baseline-check.ts`는 [소스 감사](./implementation/source-audit_ko.md)의 현재 경로, 패키지 스크립트, `fixtures/toolchain/pins.json`의 host pin을 확인한다. CI는 Linux와 Windows에서 실행하며 날짜가 기록된 감사 표는 당시 기록으로 보존한다.
 
 `evidence:check`, `evidence:smoke`, `format:check`는 `TC-03` 이후의 저장소 명령이다. `graph:check`는 `TC-04` 명령이다. `test:conformance`는 `DX-01` 명령이다. `contracts:generate`와 `contracts:check`는 `TC-05` 명령이다. check는 새로 생성한 결과와 `docs/schemas/generated/`를 비교하고 그 디렉터리를 쓰지 않는다. `toolchain:doctor`와 `toolchain:prepare`는 `TC-01` host 명령이다.
 

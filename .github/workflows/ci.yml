@@ -45,6 +45,9 @@ jobs:
       - name: Setup npm for release smoke
         run: npm install -g npm@12.2.0
 
+      - name: Source audit check
+        run: bun tools/analysis-baseline-check.ts
+
       - name: Cache ttsc plugins
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -163,6 +166,8 @@ jobs:
       - name: Windows toolchain
         run: |
           bun run toolchain:doctor
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          bun tools/analysis-baseline-check.ts
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           bun test tools/_bun.test.ts tools/compiler-bin.test.ts tools/toolchain-host.test.ts tools/evidence/program.test.ts tools/evidence/source-graph.test.ts tools/tarball-check.test.ts
 
