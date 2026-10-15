@@ -31,6 +31,8 @@
       }
     },
     "scenarioPatch": { "type": "object" },
+    "patchStatus": { "enum": ["ready", "unavailable", "requires-review"] },
+    "patchWarnings": { "type": "array", "items": { "type": "string" } },
     "observation": {
       "type": "object",
       "required": ["observedThroughDay", "users", "retention"],

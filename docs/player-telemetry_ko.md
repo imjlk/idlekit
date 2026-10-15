@@ -41,8 +41,14 @@ D7에 돌아올 수 있으므로 원시 관측률을 단조 감소시키지 않�
 
 JSON에는 `observation`, 선택적인 `comparison`, `_meta`의 데이터·시나리오 해시가
 포함된다. 관측 종료일도 데이터 해시에 포함된다.
-`scenarioPatch.monetization.retention`의 관측된 필드만 시나리오 **사본**의 기존
-retention 객체에 병합한다. 미관측 일수의 가정, 모집단 규모, 수익·수수료·불확실성은
+`patchStatus`는 `ready`, 관측 일수가 부족한 `unavailable`, 곡선을 검토해야 하는
+`requires-review`다. 원시 관측률이 뒤의 날짜에 상승하거나 보존할 명시 가정과
+충돌하면 LTV 모델의 단조 감소 조건을 만족하지 못하므로 패치를 비우고
+`patchWarnings`에 이유를 남긴다. 원시 관측과 비교는 보존한다. 관측값을 임의로
+깎지 말고 곡선 가정을 검토한다.
+ready일 때만 `scenarioPatch.monetization.retention`의 관측된 필드를 시나리오
+**사본**의 기존 retention 객체에 병합하고 `validate`한다.
+명시하지 않은 미래 일수의 가정도 별도로 검토한다. 미관측 일수의 가정, 모집단 규모, 수익·수수료·불확실성은
 보존한다. 하루 미만의 관측 창은 빈 패치를 만든다. 나머지 `monetization` 추정치에는
 기본 가정이 섞여 있어 이 패치에 자동으로 포함하지 않는다.
 

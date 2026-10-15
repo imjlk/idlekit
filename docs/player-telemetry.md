@@ -53,8 +53,16 @@ or running a simulation. `unconfigured` and `not-observed` rows have no differen
 JSON includes `observation`, optional `comparison`, and the scenario and telemetry
 hashes in `_meta`. The observation cutoff participates in the telemetry hash.
 `scenarioPatch.monetization.retention` contains only observed retention points.
-Merge those individual fields into a **copy** of the scenario's retention object;
+`patchStatus` is `ready`, `unavailable` (no mature retention day), or
+`requires-review`. A rise in observed exact-day retention, or a conflict with a
+retained explicit assumption, cannot be applied to the LTV model's monotonic
+curve. In that case the retention patch is empty and `patchWarnings` explains
+the conflict; the raw observations and comparison remain intact. Review and fit
+the curve explicitly instead of clipping the observations.
+Only merge a ready patch into a **copy** of the scenario's retention object;
 preserve unobserved points, cohort-size assumptions, revenue, fees, and uncertainty.
+Validate the merged scenario before running LTV. Unspecified future assumptions
+still need review even when the available points are compatible.
 An observation window shorter than one day produces an empty retention patch.
 The other `monetization` estimates remain suggestions, including assumed defaults;
 the bounded patch deliberately excludes them.

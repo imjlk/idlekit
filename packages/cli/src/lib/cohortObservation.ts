@@ -56,8 +56,30 @@ export function observeCohort(rows: readonly TelemetryRow[], observedThroughDay:
   };
 }
 
-export function observedRetentionPatch(observation: CohortObservation): RetentionAssumptions {
+export function observedRetentionRates(observation: CohortObservation): RetentionAssumptions {
   return Object.fromEntries(observation.retention.filter(row => row.rate !== null).map(row => [`d${row.day}`, row.rate]));
+}
+
+export type RetentionPatchPlan = Readonly<{
+  status: "ready" | "unavailable" | "requires-review";
+  retention: RetentionAssumptions;
+  warnings: readonly string[];
+}>;
+
+/** Keep exact observations separate from the monotonic curve the LTV model accepts. */
+export function planRetentionPatch(observation: CohortObservation, assumptions: RetentionAssumptions = {}): RetentionPatchPlan {
+  const rates = observedRetentionRates(observation);
+  if (Object.keys(rates).length === 0) return { status: "unavailable", retention: {}, warnings: ["No retention day has been fully observed."] };
+  const merged = { ...assumptions, ...rates };
+  const warnings: string[] = [];
+  let previous: { day: number; rate: number } | undefined;
+  for (const day of RETENTION_DAYS) {
+    const rate = merged[`d${day}`];
+    if (rate === undefined) continue;
+    if (previous && previous.rate < rate) warnings.push(`D${previous.day}=${previous.rate} is below D${day}=${rate}. LTV requires d1 >= d7 >= d30 >= d90; review observations and retained assumptions before applying a patch.`);
+    previous = { day, rate };
+  }
+  return warnings.length ? { status: "requires-review", retention: {}, warnings } : { status: "ready", retention: rates, warnings };
 }
 
 export function compareRetention(observation: CohortObservation, assumptions: RetentionAssumptions) {
@@ -73,7 +95,7 @@ export function compareRetention(observation: CohortObservation, assumptions: Re
   });
 }
 
-export function renderCohortMarkdown(observation: CohortObservation, comparison?: ReturnType<typeof compareRetention>): string {
+export function renderCohortMarkdown(observation: CohortObservation, comparison: ReturnType<typeof compareRetention> | undefined, patch: RetentionPatchPlan): string {
   const percent = (value: number | null) => value === null ? "unavailable" : `${(value * 100).toFixed(2)}%`;
   const lines = [
     "# Observed player retention",
@@ -87,6 +109,6 @@ export function renderCohortMarkdown(observation: CohortObservation, comparison?
     const match = comparison?.[index];
     lines.push(`| D${row.day} | ${row.activeUsers === null ? "unavailable" : `${row.activeUsers} / ${row.users}`} | ${percent(row.rate)} | ${row.interval95 ? `${percent(row.interval95.min)} to ${percent(row.interval95.max)}` : "unavailable"} | ${percent(match?.assumption ?? null)} | ${match?.differencePercentagePoints == null ? "unavailable" : match.differencePercentagePoints.toFixed(2)} | ${match?.status ?? row.status} |`);
   }
-  lines.push("", "Positive differences mean observed retention exceeds the configured assumption. Unobserved days are omitted from scenarioPatch; merge its retention fields into the scenario and preserve the remaining assumptions.", "", "Use a separate held-out cohort to validate a fitted model. These observations and intervals describe this cohort; they do not establish fun, causal improvement, or future revenue. Mixed install ages, missing activity exports, and omitted nonreturning users invalidate this comparison.");
+  lines.push("", `Retention patch: **${patch.status}**.`, "", ...patch.warnings.map(warning => `- ${warning}`), "", "Positive differences mean observed retention exceeds the configured assumption. Only apply a ready patch. Unobserved days are omitted from scenarioPatch; merge its retention fields into the scenario and preserve the remaining assumptions.", "", "Use a separate held-out cohort to validate a fitted model. These observations and intervals describe this cohort; they do not establish fun, causal improvement, or future revenue. Mixed install ages, missing activity exports, and omitted nonreturning users invalidate this comparison.");
   return lines.join("\n");
 }

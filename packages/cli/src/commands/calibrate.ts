@@ -6,7 +6,7 @@ import { buildOutputMeta } from "../io/outputMeta";
 import { writeOutput } from "../io/writeOutput";
 import { readScenarioFile } from "../io/readScenario";
 import { calibrateMonetization, type TelemetryRow } from "../lib/ltvModel";
-import { compareRetention, observeCohort, observedRetentionPatch, renderCohortMarkdown } from "../lib/cohortObservation";
+import { compareRetention, observeCohort, observedRetentionRates, planRetentionPatch, renderCohortMarkdown } from "../lib/cohortObservation";
 import { readTextFile } from "../runtime/bun";
 
 function parseCsvRows(raw: string): string[][] {
@@ -222,11 +222,7 @@ export default defineCommand({
       catch (error) { throw usageError(error instanceof Error ? error.message : String(error)); }
     }
     const calibrated = calibrateMonetization(rows);
-    const retentionPatch = observation ? observedRetentionPatch(observation) : undefined;
-    const monetization = observation ? {
-      ...calibrated.monetization,
-      retention: { longTailDailyDecay: calibrated.monetization?.retention?.longTailDailyDecay, ...retentionPatch },
-    } : calibrated.monetization;
+    const retentionRates = observation ? observedRetentionRates(observation) : undefined;
     const scenario = flags.scenario ? await readScenarioFile(flags.scenario) : undefined;
     const rate = z.number().min(0).max(1).optional();
     const parsedScenario = scenario === undefined ? undefined : z.object({
@@ -235,6 +231,11 @@ export default defineCommand({
     }).passthrough().safeParse(scenario);
     if (parsedScenario && !parsedScenario.success) throw usageError(`Invalid scenario retention assumptions: ${parsedScenario.error.message}`);
     const comparison = observation && parsedScenario?.success ? compareRetention(observation, parsedScenario.data.monetization?.retention ?? {}) : undefined;
+    const patch = observation ? planRetentionPatch(observation, parsedScenario?.success ? parsedScenario.data.monetization?.retention : undefined) : undefined;
+    const monetization = observation ? {
+      ...calibrated.monetization,
+      retention: { longTailDailyDecay: calibrated.monetization?.retention?.longTailDailyDecay, ...patch?.retention },
+    } : calibrated.monetization;
     const outputMeta = buildOutputMeta({
       command: "calibrate",
       telemetry: observation ? { rows, observedThroughDay: observation.observedThroughDay } : rows,
@@ -254,18 +255,21 @@ export default defineCommand({
                 users: calibrated.diagnostics.users,
               },
               monetization,
-              diagnostics: observation ? { ...calibrated.diagnostics, retention: retentionPatch, observedThroughDay: observation.observedThroughDay } : calibrated.diagnostics,
+              diagnostics: observation ? { ...calibrated.diagnostics, retention: retentionRates, observedThroughDay: observation.observedThroughDay } : calibrated.diagnostics,
               ...(observation ? { observation } : {}),
               ...(comparison ? { comparison } : {}),
-              scenarioPatch: observation ? { monetization: { retention: retentionPatch } } : {
+              ...(patch ? { patchStatus: patch.status, patchWarnings: patch.warnings } : {}),
+              scenarioPatch: observation ? { monetization: { retention: patch!.retention } } : {
                 monetization: calibrated.monetization,
               },
             }
-          : observation ? flags.format === "md" ? renderCohortMarkdown(observation, comparison) : observation.retention.map((row, index) => ({
+          : observation ? flags.format === "md" ? renderCohortMarkdown(observation, comparison, patch!) : observation.retention.map((row, index) => ({
               day: row.day, users: row.users, activeUsers: row.activeUsers, observedRate: row.rate,
               assumption: comparison?.[index]?.assumption ?? null,
               differencePercentagePoints: comparison?.[index]?.differencePercentagePoints ?? null,
               status: comparison?.[index]?.status ?? row.status,
+              patchStatus: patch!.status,
+              patchWarnings: patch!.warnings.join(" "),
             })) : [
               {
                 source: abs,

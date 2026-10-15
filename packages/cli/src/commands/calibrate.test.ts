@@ -44,6 +44,24 @@ describe("calibrate csv parser", () => {
 });
 
 describe("calibrate command", () => {
+  it("withholds a retention patch that conflicts with the remaining LTV assumptions", async () => {
+    const dir = await createTempDir("idlekit-cohort-patch-conflict");
+    try {
+      const path = resolve(dir, "cohort.json");
+      await writeText(path, JSON.stringify([{ userId: "a", day: 0, active: true }]));
+      const scenario = resolve(dir, "scenario.json");
+      await writeText(scenario, JSON.stringify({ schemaVersion: 1, monetization: { retention: { d1: 0.8, d7: 0.4, d30: 0.2, d90: 0.1 } } }));
+      const args = ["calibrate", path, "--observed-through-day", "1", "--scenario", scenario];
+      const result = runCliJson<any>(args);
+      expect(result.observation.retention[0].rate).toBe(0);
+      expect(result.comparison[0].observed).toBe(0);
+      expect(result.patchStatus).toBe("requires-review");
+      expect(result.scenarioPatch.monetization.retention).toEqual({});
+      expect(result.patchWarnings[0]).toContain("D7");
+      expect(runCli([...args, "--format", "md"]).stdout).toContain("requires-review");
+    } finally { await removePath(dir); }
+  });
+
   it("compares mature retention with explicit assumptions and keeps future days unobserved", async () => {
     const dir = await createTempDir("idlekit-observed-cohort");
     try {
