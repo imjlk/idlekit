@@ -1725,7 +1725,7 @@ const parsedByBody = new Map<string, ParsedSpecifiers>();
 function parsedSpecifiers(body: string): ParsedSpecifiers {
   const cached = parsedByBody.get(body);
   if (cached) return cached;
-  const hidden = stringSpans(body);
+  const hidden = stringSpans(body, true);
   const parsed: ParsedSpecifiers = {
     staticImports: staticImportSpecifiers(body, hidden)
       .filter((imported) => !typeOnlyImport(body, imported.at))
