@@ -129,7 +129,7 @@ function samePath(left: string, right: string): boolean {
 
 function inspectOverride(
   name: "TTSC_GRAPH_BINARY" | "TTSC_GO_BINARY",
-  pinned: string,
+  pinned: string | null,
   failures: string[],
 ): { set: boolean; origin?: string; path?: string } {
   const value = process.env[name];
@@ -138,6 +138,7 @@ function inspectOverride(
     failures.push(`${name} is set to a non-absolute path`);
     return { set: true, origin: "external", path: value };
   }
+  if (pinned === null) return { set: true, origin: "unavailable", path: value };
   const origin = samePath(value, pinned) ? "pinned-platform-package" : "external";
   if (origin !== "pinned-platform-package") {
     failures.push(`${name} points outside its pinned platform package`);
@@ -231,7 +232,7 @@ export function inspectToolchain(): DoctorReport {
   const cacheValue = process.env.TTSC_CACHE_DIR;
   // Resolve the installed Graph package independently of an environment override.
   const graphBinary = resolveGraphBinary({});
-  if (!graphBinary) throw new Error("Pinned native Graph package is missing; run bun install");
+  if (!graphBinary) failures.push("Pinned native Graph package is missing; run bun install");
   const graphBinaryEnv = inspectOverride("TTSC_GRAPH_BINARY", graphBinary, failures);
   const goBinaryEnv = inspectOverride("TTSC_GO_BINARY", goBinary, failures);
 
