@@ -4,7 +4,9 @@ import { z } from "zod";
 import { cliError, usageError } from "../errors";
 import { buildOutputMeta } from "../io/outputMeta";
 import { writeOutput } from "../io/writeOutput";
+import { readScenarioFile } from "../io/readScenario";
 import { calibrateMonetization, type TelemetryRow } from "../lib/ltvModel";
+import { compareRetention, observeCohort, observedRetentionPatch, renderCohortMarkdown } from "../lib/cohortObservation";
 import { readTextFile } from "../runtime/bun";
 
 function parseCsvRows(raw: string): string[][] {
@@ -81,26 +83,41 @@ function parseNumeric(raw: string, row: number, field: string, opts?: { allowEmp
   return n;
 }
 
-export function parseCsvTelemetry(raw: string): TelemetryRow[] {
+function parseActive(value: unknown, strict: boolean): boolean {
+  if (value === undefined) return true;
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number" && (value === 0 || value === 1)) return value === 1;
+  if (typeof value === "string") {
+    if (/^(1|true|yes|y)$/i.test(value)) return true;
+    if (/^(0|false|no|n)$/i.test(value)) return false;
+  }
+  if (strict) throw usageError("Observed cohort active must be true/false, yes/no, or 1/0");
+  return typeof value === "string" ? /^(1|true|yes|y)$/i.test(value) : Boolean(value);
+}
+
+export function parseCsvTelemetry(raw: string, strictCohort = false): TelemetryRow[] {
   const rows2d = parseCsvRows(raw);
   if (rows2d.length < 2) {
     throw cliError("CLI_USAGE", "CSV telemetry requires a header and at least one data row");
   }
 
   const headers = (rows2d[0] ?? []).map(normalizeHeader);
+  if (strictCohort && new Set(headers).size !== headers.length) throw usageError("Observed cohort CSV has duplicate headers");
   const rows: TelemetryRow[] = [];
 
   for (let i = 1; i < rows2d.length; i++) {
     const cols = rows2d[i] ?? [];
+    if (strictCohort && cols.length !== headers.length) throw usageError(`Observed cohort CSV row ${i + 1} has the wrong number of columns`);
     const rec: Record<string, string> = {};
     headers.forEach((h, idx) => {
       rec[h] = cols[idx] ?? "";
     });
 
-    const userId =
-      pick(rec, ["user_id", "userid", "user", "id"]) ??
-      `anon-${i}`;
-    const dayRaw = pick(rec, ["day", "day_index", "days_since_install"]) ?? "0";
+    const userInput = pick(rec, ["user_id", "userid", "user", "id"]);
+    const dayInput = pick(rec, ["day", "day_index", "days_since_install"]);
+    if (strictCohort && (!userInput?.trim() || !dayInput?.trim())) throw usageError("Observed cohort requires explicit user_id and day fields");
+    const userId = userInput ?? `anon-${i}`;
+    const dayRaw = dayInput ?? "0";
     const iapRaw = pick(rec, ["iap_revenue", "revenue", "iap", "purchase_revenue"]) ?? "0";
     const adRaw = pick(rec, ["ad_revenue", "adrevenue", "ads"]) ?? "0";
     const activeRaw = pick(rec, ["active", "is_active"]);
@@ -110,10 +127,7 @@ export function parseCsvTelemetry(raw: string): TelemetryRow[] {
     const iapRevenue = parseNumeric(iapRaw, i + 1, "revenue")!;
     const adRevenue = parseNumeric(adRaw, i + 1, "ad_revenue")!;
     const acquisitionCost = acqRaw !== undefined ? parseNumeric(acqRaw, i + 1, "acquisition_cost", { allowEmpty: true }) : undefined;
-    const active =
-      activeRaw === undefined
-        ? true
-        : /^(1|true|yes|y)$/i.test(activeRaw);
+    const active = parseActive(activeRaw, strictCohort);
 
     rows.push({
       userId,
@@ -128,7 +142,7 @@ export function parseCsvTelemetry(raw: string): TelemetryRow[] {
   return rows;
 }
 
-function parseJsonTelemetry(raw: string): TelemetryRow[] {
+export function parseJsonTelemetry(raw: string, strictCohort = false): TelemetryRow[] {
   const parsed = JSON.parse(raw) as unknown;
   if (!Array.isArray(parsed)) {
     throw cliError("CLI_USAGE", "JSON telemetry must be an array");
@@ -140,15 +154,21 @@ function parseJsonTelemetry(raw: string): TelemetryRow[] {
       throw cliError("CLI_USAGE", `JSON telemetry row ${idx} must be an object`);
     }
     const r = row as Record<string, unknown>;
-    const userId = String(r.userId ?? r.user_id ?? r.user ?? r.id ?? `anon-${idx}`);
-    const day = Number(r.day ?? r.dayIndex ?? r.daysSinceInstall ?? 0);
+    const userInput = r.userId ?? r.user_id ?? r.user ?? r.id;
+    const dayInput = r.day ?? r.dayIndex ?? r.daysSinceInstall;
+    if (strictCohort && (typeof userInput !== "string" || !userInput.trim() || typeof dayInput !== "number")) throw usageError("Observed cohort JSON requires explicit string userId and numeric day fields");
+    if (strictCohort) for (const key of ["iapRevenue", "iap_revenue", "revenue", "adRevenue", "ad_revenue", "acquisitionCost", "acquisition_cost", "cpi"]) {
+      if (r[key] !== undefined && typeof r[key] !== "number") throw usageError(`Observed cohort JSON ${key} must be numeric`);
+    }
+    const userId = String(userInput ?? `anon-${idx}`);
+    const day = Number(dayInput ?? 0);
     const iapRevenue = Number(r.iapRevenue ?? r.iap_revenue ?? r.revenue ?? 0);
     const adRevenue = Number(r.adRevenue ?? r.ad_revenue ?? 0);
     const acquisitionCost =
       r.acquisitionCost !== undefined || r.acquisition_cost !== undefined || r.cpi !== undefined
         ? Number(r.acquisitionCost ?? r.acquisition_cost ?? r.cpi)
         : undefined;
-    const active = r.active === undefined ? true : Boolean(r.active);
+    const active = parseActive(r.active, strictCohort);
 
     if (!Number.isFinite(day) || !Number.isFinite(iapRevenue) || !Number.isFinite(adRevenue)) {
       throw cliError("CLI_USAGE", `Invalid numeric value in json row ${idx}`);
@@ -174,27 +194,52 @@ export default defineCommand({
     "input-format": option(z.enum(["auto", "csv", "json"]).default("auto"), {
       description: "Telemetry file format",
     }),
+    "observed-through-day": option(z.coerce.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(), {
+      description: "Complete activity cutoff for one install cohort; requires day 0 records for every installed user",
+    }),
+    scenario: option(z.string().optional(), { description: "Compare observed retention with this scenario's explicit assumptions (requires --observed-through-day)" }),
     out: option(z.string().optional(), { description: "Output path" }),
     format: option(z.enum(["json", "md", "csv"]).default("json"), { description: "Output format" }),
   },
   async handler({ flags, positional }) {
     const telemetryPath = positional[0];
-    if (!telemetryPath) {
+    if (!telemetryPath || positional.length !== 1) {
       throw usageError("Usage: idk calibrate <telemetry.csv|json> [--input-format auto|csv|json]");
     }
+    if (flags.scenario && flags["observed-through-day"] === undefined) throw usageError("--scenario requires --observed-through-day for a mature cohort comparison");
 
     const abs = resolve(process.cwd(), telemetryPath);
     const raw = await readTextFile(abs);
     const format = flags["input-format"] === "auto" ? extname(abs).toLowerCase() : flags["input-format"];
     const rows =
       format === ".csv" || format === "csv"
-        ? parseCsvTelemetry(raw)
-        : parseJsonTelemetry(raw);
+        ? parseCsvTelemetry(raw, flags["observed-through-day"] !== undefined)
+        : parseJsonTelemetry(raw, flags["observed-through-day"] !== undefined);
 
+    let observation: ReturnType<typeof observeCohort> | undefined;
+    if (flags["observed-through-day"] !== undefined) {
+      try { observation = observeCohort(rows, flags["observed-through-day"]); }
+      catch (error) { throw usageError(error instanceof Error ? error.message : String(error)); }
+    }
     const calibrated = calibrateMonetization(rows);
+    const retentionPatch = observation ? observedRetentionPatch(observation) : undefined;
+    const monetization = observation ? {
+      ...calibrated.monetization,
+      retention: { longTailDailyDecay: calibrated.monetization?.retention?.longTailDailyDecay, ...retentionPatch },
+    } : calibrated.monetization;
+    const scenario = flags.scenario ? await readScenarioFile(flags.scenario) : undefined;
+    const rate = z.number().min(0).max(1).optional();
+    const parsedScenario = scenario === undefined ? undefined : z.object({
+      schemaVersion: z.literal(1),
+      monetization: z.object({ retention: z.object({ d1: rate, d7: rate, d30: rate, d90: rate }).passthrough().optional() }).passthrough().optional(),
+    }).passthrough().safeParse(scenario);
+    if (parsedScenario && !parsedScenario.success) throw usageError(`Invalid scenario retention assumptions: ${parsedScenario.error.message}`);
+    const comparison = observation && parsedScenario?.success ? compareRetention(observation, parsedScenario.data.monetization?.retention ?? {}) : undefined;
     const outputMeta = buildOutputMeta({
       command: "calibrate",
-      telemetry: rows,
+      telemetry: observation ? { rows, observedThroughDay: observation.observedThroughDay } : rows,
+      scenario,
+      scenarioPath: flags.scenario ? resolve(flags.scenario) : undefined,
     });
     await writeOutput({
       format: flags.format,
@@ -208,13 +253,20 @@ export default defineCommand({
                 rows: rows.length,
                 users: calibrated.diagnostics.users,
               },
-              monetization: calibrated.monetization,
-              diagnostics: calibrated.diagnostics,
-              scenarioPatch: {
+              monetization,
+              diagnostics: observation ? { ...calibrated.diagnostics, retention: retentionPatch, observedThroughDay: observation.observedThroughDay } : calibrated.diagnostics,
+              ...(observation ? { observation } : {}),
+              ...(comparison ? { comparison } : {}),
+              scenarioPatch: observation ? { monetization: { retention: retentionPatch } } : {
                 monetization: calibrated.monetization,
               },
             }
-          : [
+          : observation ? flags.format === "md" ? renderCohortMarkdown(observation, comparison) : observation.retention.map((row, index) => ({
+              day: row.day, users: row.users, activeUsers: row.activeUsers, observedRate: row.rate,
+              assumption: comparison?.[index]?.assumption ?? null,
+              differencePercentagePoints: comparison?.[index]?.differencePercentagePoints ?? null,
+              status: comparison?.[index]?.status ?? row.status,
+            })) : [
               {
                 source: abs,
                 rows: rows.length,

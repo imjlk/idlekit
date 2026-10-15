@@ -108,9 +108,9 @@ idk setup plugin-trust --plugin ../../examples/plugins/custom-econ-plugin.ts --o
 - 개인용 대조군 비교: `examples/tutorials/12-my-game-compare-b.json`
 - 개인용 튜닝 시작점: `examples/tutorials/13-my-game-tune.json`
 - 명령 체험: `examples/tutorials/01-cafe-baseline.json`
-- 설계 예시 분석: `examples/tutorials/05-idle-design-v1.json`
-- 대조군 비교: `examples/tutorials/06-idle-design-balance-b.json`
-- 전략 파라미터 탐색: `examples/tutorials/07-idle-design-tune.json`
+- 설계 예시 분석: `examples/tutorials/14-orbital-foundry-v1.json`
+- 대조군 비교: `examples/tutorials/15-orbital-foundry-compare-b.json`
+- 전략 파라미터 탐색: `examples/tutorials/16-orbital-foundry-tune.json`
 - 설명 문서: [start-here-cli-designer.md](./start-here-cli-designer.md), [virtual-scenario-design.md](./virtual-scenario-design.md)
 
 ### 3.1 시나리오 검증
@@ -382,7 +382,7 @@ bun run tune:regress --baseline ../../tmp/tune-baseline.json --current ../../tmp
 요청 구간(30m/2h/24h/7d/30d/90d) KPI를 한 번에 계산:
 
 ```bash
-bun run --cwd packages/cli dev -- ltv ../../examples/tutorials/05-idle-design-v1.json \
+bun run --cwd packages/cli dev -- ltv ../../examples/tutorials/14-orbital-foundry-v1.json \
   --horizons 30m,2h,24h,7d,30d,90d \
   --step 600 \
   --fast true \
@@ -395,7 +395,7 @@ bun run --cwd packages/cli dev -- ltv ../../examples/tutorials/05-idle-design-v1
 artifact 저장:
 
 ```bash
-bun run --cwd packages/cli dev -- ltv ../../examples/tutorials/05-idle-design-v1.json \
+bun run --cwd packages/cli dev -- ltv ../../examples/tutorials/14-orbital-foundry-v1.json \
   --horizons 30m,2h,24h,7d,30d,90d \
   --step 600 \
   --fast true \
@@ -418,6 +418,10 @@ bun run --cwd packages/cli dev -- ltv ../../examples/tutorials/05-idle-design-v1
 - `horizons[].guardrails.growthLog10PerDay`
 
 ### 3.10 실데이터 캘리브레이션
+
+관측 종료일을 명시한 코호트와 시나리오 가정을 비교하는 방법은
+[플레이 데이터 검증 가이드](./player-telemetry_ko.md)를 따른다. 설치자 전체를
+분모로 쓰고 미관측 일수는 0으로 채우지 않는다.
 
 ```bash
 bun run --cwd packages/cli dev -- calibrate ../../tmp/telemetry.csv \

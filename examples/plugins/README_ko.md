@@ -27,6 +27,22 @@
 
 ## 1) 목록 확인
 
+저장소 밖에서도 원본 플러그인을 그대로 쓸 수 있다. 새 폴더에서 아래 패키지를 설치하고
+`custom-econ-plugin.ts`, `14-orbital-foundry-v1.json`, `15-orbital-foundry-compare-b.json`,
+`16-orbital-foundry-tune.json`을 복사한다. Bun 1.4.2 이상이 필요하다.
+
+```sh
+npm init -y
+npm install @idlekit/core@^0.4.0 @idlekit/cli@^0.4.0
+bun node_modules/@idlekit/cli/dist/main.js validate 14-orbital-foundry-v1.json --plugin ./custom-econ-plugin.ts --plugin-root . --allow-plugin true
+bun node_modules/@idlekit/cli/dist/main.js review compare 14-orbital-foundry-v1.json 15-orbital-foundry-compare-b.json --bundle full --days 1 --draws 1 --seed 19 --plugin ./custom-econ-plugin.ts --plugin-root . --allow-plugin true
+```
+
+공개 `@idlekit/core`를 import하므로 소스 경로나 컴파일러 hook을 고칠 필요가 없다.
+플러그인 허용 옵션은 로컬 코드를 실행하므로 먼저 내용을 검토한다. 예제는 가상 게임이며
+실제 리텐션·매출을 입증하지 않는다. `bun run install:smoke`는 이 원본을 패키지 소비자
+폴더에 그대로 복사해 배포용 Core·CLI와 함께 시뮬레이션한다.
+
 루트에서 실행:
 
 ```bash

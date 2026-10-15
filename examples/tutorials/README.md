@@ -25,12 +25,9 @@ For checkpoint persistence and resume equivalence across reset cycles, run the
 
 ## Worked design example
 
-- `14-orbital-foundry-v1.json`: canonical real-game worked example baseline, optimized for stronger long-run value
-- `15-orbital-foundry-compare-b.json`: canonical A/B variant, optimized for earlier first-upgrade timing
+- `14-orbital-foundry-v1.json`: synthetic manufacturing economy with producers, upgrades, and recovered cores
+- `15-orbital-foundry-compare-b.json`: alternate costs and growth; measure worth, available cash, and milestone timing under matched conditions
 - `16-orbital-foundry-tune.json`: canonical design-oriented tune spec
-- `05-idle-design-v1.json`
-- `06-idle-design-balance-b.json`
-- `07-idle-design-tune.json`
 
 ## Design library families
 
@@ -44,19 +41,14 @@ For checkpoint persistence and resume equivalence across reset cycles, run the
 - `24-prestige-reactor-compare-b.json`: earlier-prestige prestige variant with weaker carryover
 - `25-prestige-reactor-tune.json`: prestige-heavy tune spec
 
-## Genre templates
-
-- `08-idle-design-city-factory.json`: builder / long-growth profile
-- `09-idle-design-loot-camp.json`: short session loop
-- `10-idle-design-space-port.json`: long-run profile
-
 ## Recommended order
 
-1. `11 -> 12 -> 13`
-2. `14 -> 15 -> 16`
-3. `17 -> 18 -> 19`
-4. `20 -> 21 -> 22`
-5. `23 -> 24 -> 25`
-6. `01 -> 03 -> 04`
-7. `05 -> 06 -> 07`
-8. `08 / 09 / 10`
+1. `11 -> 12 -> 13`: create your own scenario and compare strategies.
+2. `14 -> 15 -> 16`: adapt a plugin economy and examine tradeoffs.
+3. Choose one family above for session, longrun, or prestige behavior.
+4. `01 -> 03 -> 04`: inspect individual command outputs.
+
+The older `05` through `10` examples have been consolidated into Orbital Foundry,
+Session Arcade, and Longrun Colony. Numbers stay stable so existing references to
+the retained examples keep working. These are synthetic models, with no measured
+player retention or revenue attached.

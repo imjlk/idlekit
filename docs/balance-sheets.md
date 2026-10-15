@@ -22,6 +22,7 @@ Run the workflow from the directory where the CLI is installed:
 
 ```sh
 idk balance ./my-balance/workflow.json
+idk balance ./my-balance/workflow.json --format md
 idk balance ./my-balance/workflow.json --check true
 ```
 
@@ -34,6 +35,11 @@ idk balance ./my-balance/workflow.json \
 
 From a repository checkout, build with `bun run build` and substitute
 `bun packages/cli/dist/main.js` for `idk`.
+
+`--format md` explains the simulated horizon, strategy, seeds, each measured value,
+inclusive target, and failure reason. JSON remains the default manifest. The human
+output uses the same saved report and exit status. `--check --format md` describes
+freshness only; a current bundle may still contain a failed target.
 
 Open the CSV in Excel or import it into a Google Sheets tab, edit `value`, export
 that tab as UTF-8 comma-separated CSV, and rerun the same command. Use a separate

@@ -1,5 +1,6 @@
 import { $ } from "bun";
 import { dirname, resolve } from "path";
+import { copyFile } from "fs/promises";
 import { withFileLock } from "./_bun";
 import { parseNpmPackEntries } from "./npm-pack";
 import { inspectTarballListing, type TarballCheck } from "./tarball-check";
@@ -72,14 +73,23 @@ async function runLibrarySmoke(): Promise<Readonly<{ money: string; core: string
   return JSON.parse(raw.trim()) as { money: string; core: string; boundaryChecks: number };
 }
 
-async function runCliSmoke(): Promise<Readonly<{ helpHasIdk: boolean; validateOk: boolean }>> {
+async function runCliSmoke(): Promise<Readonly<{ helpHasIdk: boolean; validateOk: boolean; pluginOk: boolean }>> {
   const help = await $`${packageBinPath()} --help`.cwd(CONSUMER_DIR).text();
   const validateRaw =
     await $`${packageBinPath()} validate ${resolve(ROOT, "examples", "tutorials", "11-my-game-v1.json")}`.cwd(CONSUMER_DIR).text();
+  // Copy the original example unchanged: repository-relative imports must not leak into consumer examples.
+  const plugin = resolve(CONSUMER_DIR, "custom-econ-plugin.ts");
+  const scenario = resolve(CONSUMER_DIR, "orbital-foundry.json");
+  await copyFile(resolve(ROOT, "examples/plugins/custom-econ-plugin.ts"), plugin);
+  await copyFile(resolve(ROOT, "examples/tutorials/14-orbital-foundry-v1.json"), scenario);
+  const pluginRaw = await $`${packageBinPath()} simulate ${scenario} --duration 30 --seed 19 --plugin ${plugin} --plugin-root ${CONSUMER_DIR} --allow-plugin true --format json`.cwd(CONSUMER_DIR).text();
+  const pluginResult = JSON.parse(pluginRaw) as { endNetWorth?: unknown };
+  if (typeof pluginResult.endNetWorth !== "string" || !Number.isFinite(Number(pluginResult.endNetWorth))) throw new Error("Consumer plugin did not simulate finite net worth");
 
   return {
     helpHasIdk: help.includes("idk"),
     validateOk: validateRaw.includes("OK:"),
+    pluginOk: true,
   };
 }
 

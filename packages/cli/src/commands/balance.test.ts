@@ -9,6 +9,31 @@ import { REPO_ROOT, runCli, runCliJson } from "../testkit/bun";
 const roots: string[] = [];
 afterEach(async () => { for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true }); });
 
+it("human balance output explains a measured target breach and separates freshness", async () => {
+  const root = await mkdtemp(resolve(tmpdir(), "idlekit-balance-explain-"));
+  roots.push(root);
+  await cp(resolve(REPO_ROOT, "examples/balance/linear"), root, { recursive: true });
+  const workflowPath = resolve(root, "workflow.json");
+  const workflow = JSON.parse(await readFile(workflowPath, "utf8"));
+  workflow.pacing.targets[0].min = 400;
+  workflow.pacing.sensitivity = [];
+  await writeFile(workflowPath, JSON.stringify(workflow));
+  const baseline = runCli(["balance", workflowPath, "--format", "md"]);
+  expect(baseline.stdout).toContain("within the inclusive target bounds");
+  await writeFile(resolve(root, "parameters.csv"), "id,value,unit\nbuyCostGrowth,1.25,ratio\n");
+  const breached = runCli(["balance", workflowPath, "--format", "md"], { check: false });
+  expect(breached.exitCode).toBe(1);
+  expect(breached.stdout).toContain("60 seconds");
+  expect(breached.stdout).toContain("400 COIN");
+  expect(breached.stdout).toContain("339 COIN");
+  expect(breached.stdout).toContain("below the minimum");
+  const current = runCli(["balance", workflowPath, "--check", "true", "--format", "md"]);
+  expect(current.exitCode).toBe(0);
+  expect(current.stdout).toContain("does not check target success");
+  await writeFile(resolve(root, "parameters.csv"), "id,value,unit\nbuyCostGrowth,1.12,ratio\n");
+  expect(runCli(["balance", workflowPath, "--format", "md"]).stdout).toContain("All declared targets passed");
+}, 90_000);
+
 it("seeded synthetic rewards replay every exported variant without sharing random state across trials", async () => {
   const root = await mkdtemp(resolve(tmpdir(), "idlekit-balance-seeded-"));
   roots.push(root);

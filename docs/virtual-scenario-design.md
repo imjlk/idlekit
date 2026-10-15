@@ -12,14 +12,10 @@ This guide maps early idle-game design decisions into runnable `idlekit` scenari
 - [../examples/tutorials/14-orbital-foundry-v1.json](../examples/tutorials/14-orbital-foundry-v1.json)
 - [../examples/tutorials/15-orbital-foundry-compare-b.json](../examples/tutorials/15-orbital-foundry-compare-b.json)
 - [../examples/tutorials/16-orbital-foundry-tune.json](../examples/tutorials/16-orbital-foundry-tune.json)
-- [../examples/tutorials/05-idle-design-v1.json](../examples/tutorials/05-idle-design-v1.json)
-- [../examples/tutorials/08-idle-design-city-factory.json](../examples/tutorials/08-idle-design-city-factory.json)
-- [../examples/tutorials/09-idle-design-loot-camp.json](../examples/tutorials/09-idle-design-loot-camp.json)
-- [../examples/tutorials/10-idle-design-space-port.json](../examples/tutorials/10-idle-design-space-port.json)
 
 ## Canonical worked example: Orbital Foundry
 
-`Orbital Foundry` is the repo's main publish-facing design example.
+`Orbital Foundry` is the main synthetic plugin example; it has no measured player dataset.
 
 Concept mapping:
 
@@ -36,10 +32,10 @@ Use it when you want to see the full decision loop on a richer economy:
 4. tune the producer-first strategy with a design-oriented objective
 5. run `ltv` and `kpi:report` for long-horizon viability
 
-The intended tradeoff in this pair is:
-
-- baseline (`14`): better long-run worth and long-horizon value
-- compare-b (`15`): faster first-upgrade timing
+Compare available cash, modeled asset value, and milestone timing under the same
+horizon, session pattern, and seed policy. Results can favor different scenarios
+on different metrics, and milestones can tie at zero. Choose the metric that
+matches the decision instead of assuming that either file is always better.
 
 ## Design library families
 

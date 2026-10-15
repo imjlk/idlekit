@@ -19,12 +19,6 @@
 - `examples/tutorials/23-prestige-reactor-v1.json` - prestige-heavy family baseline
 - `examples/tutorials/24-prestige-reactor-compare-b.json` - prestige-heavy family compare
 - `examples/tutorials/25-prestige-reactor-tune.json` - prestige-heavy family tune
-- `examples/tutorials/05-idle-design-v1.json` - worked example
-- `examples/tutorials/06-idle-design-balance-b.json` - worked example 대조군
-- `examples/tutorials/07-idle-design-tune.json` - worked example 튜닝
-- `examples/tutorials/08-idle-design-city-factory.json`
-- `examples/tutorials/09-idle-design-loot-camp.json`
-- `examples/tutorials/10-idle-design-space-port.json`
 
 빠르게 scaffold부터 만들려면:
 
@@ -38,7 +32,7 @@ bun run --cwd packages/cli dev -- init scenario --track personal --preset longru
 
 시나리오 JSON을 바로 수정하기 전에 아래 5칸을 먼저 채우면 설계 의도가 흔들리지 않습니다.
 
-- 재화: `COIN`(결제), `GEM`(장기가치)처럼 역할을 분리
+- 재화: `CREDIT`(결제), `CORE`(장기가치)처럼 역할을 분리
 - 생산 루프: 어떤 액션이 분당/시간당 수입을 키우는지
 - 소비 싱크: 어떤 액션이 지출 압력을 만들고 선택을 강제하는지
 - 액션 우선순위: 초반/중반/후반에 무엇을 먼저 사게 만들지
@@ -46,8 +40,8 @@ bun run --cwd packages/cli dev -- init scenario --track personal --preset longru
 
 권장 매핑 템플릿:
 
-- 재화 `COIN`: `unit.code`, `wallet.money`, 단건은 `Action.cost`, 견적 벌크는 `BulkQuote.cost`
-- 재화 `GEM`: `vars.gems`, `exchange.gem` 결과, objective 가중치
+- 재화 `CREDIT`: `unit.code`, `wallet.money`, 단건은 `Action.cost`, 견적 벌크는 `BulkQuote.cost`
+- 재화 `CORE`: `vars.gems`, `exchange.gem` 결과, objective 가중치
 - 생산 요소: `vars.producers`
 - 배율 요소: `vars.upgrades`
 - 희귀 요소: `vars.gems`
@@ -56,8 +50,8 @@ bun run --cwd packages/cli dev -- init scenario --track personal --preset longru
 
 V1 목표:
 
-- 40분 플레이 구간에서 `producer -> upgrade -> gem` 선택 압력이 생긴다.
-- 단일 주 재화(`COIN`)로 결제하면서도, 2차 재화(`GEM`)를 가치 축으로 반영한다.
+- 60분 플레이 구간에서 `producer -> upgrade -> gem` 선택 압력이 생긴다.
+- 단일 주 재화(`CREDIT`)로 결제하면서도, 2차 재화(`CORE`)를 가치 축으로 반영한다.
 - 비교/튜닝으로 밸런스 변경 효과를 측정할 수 있다.
 
 ## 2. 재화 종류 결정 방법
@@ -69,10 +63,10 @@ V1 목표:
 
 예제 반영:
 
-- `COIN`:
+- `CREDIT`:
   - Scenario `unit.code`
   - 단건은 `Action.cost()`, 견적 벌크는 `BulkQuote.cost`로 지불하는 재화
-- `GEM`:
+- `CORE`:
   - `initial.vars.gems`, `exchange.gem` 액션 결과
   - Objective `plugin.gemsAndWorthLog10`에서 가치 보정에 사용
 
@@ -97,15 +91,15 @@ V1 목표:
 예제 액션:
 
 - `buy.producer`
-  - 비용: COIN
+  - 비용: CREDIT
   - 효과: `producers +1` (bulk 지원)
   - 이유: baseline 성장
 - `buy.upgrade`
-  - 비용: COIN
+  - 비용: CREDIT
   - 효과: `upgrades +1`
   - 이유: mid-game 배율 가속
 - `exchange.gem`
-  - 비용: COIN
+  - 비용: CREDIT
   - 효과: `gems +1`
   - 이유: long-term 가치 축
 
@@ -168,19 +162,17 @@ bun run --cwd packages/cli dev -- simulate ../../examples/tutorials/11-my-game-v
 - `23/24/25 Prestige Reactor`
   - prestige reset, multiplier carryover, first prestige timing을 보고 싶은 경우
 
-`05/06/07`은 그보다 더 단순한 plugin worked example입니다.
-
-`06-idle-design-balance-b.json`은 V1 대비 다음을 변경:
-
-- producer 계열은 더 비싸고 증가폭은 약하게
-- upgrade/gem 계열은 상대적으로 빠르게 접근 가능하게
+구형 `05`~`10` 예제는 위 세트로 통합했다. 모든 예제는 가상 게임이다.
+같은 horizon·세션 패턴·seed 조건에서 현금, 모델 자산 가치, 마일스톤을
+비교한다. 첫 마일스톤이 양쪽 모두 0초일 수도 있으며, 모든 지표가 같은
+안을 선택한다고 가정하지 않는다.
 
 비교 실행:
 
 ```bash
 bun run --cwd packages/cli dev -- compare \
-  ../../examples/tutorials/05-idle-design-v1.json \
-  ../../examples/tutorials/06-idle-design-balance-b.json \
+  ../../examples/tutorials/14-orbital-foundry-v1.json \
+  ../../examples/tutorials/15-orbital-foundry-compare-b.json \
   --metric endNetWorth \
   --plugin ../../examples/plugins/custom-econ-plugin.ts \
   --allow-plugin true \
@@ -189,16 +181,16 @@ bun run --cwd packages/cli dev -- compare \
 
 ## 7. worked example 튜닝
 
-`07-idle-design-tune.json`은 `plugin.producerFirst`의 임계값 탐색:
+`16-orbital-foundry-tune.json`은 `plugin.producerFirst`의 임계값 탐색:
 
 - `allowUpgrade: bool`
-- `preferUpgradeAtProducers: 4..20`
+- `preferUpgradeAtProducers: 3..12`
 
 튜닝 실행:
 
 ```bash
-bun run --cwd packages/cli dev -- tune ../../examples/tutorials/05-idle-design-v1.json \
-  --tune ../../examples/tutorials/07-idle-design-tune.json \
+bun run --cwd packages/cli dev -- tune ../../examples/tutorials/14-orbital-foundry-v1.json \
+  --tune ../../examples/tutorials/16-orbital-foundry-tune.json \
   --plugin ../../examples/plugins/custom-econ-plugin.ts \
   --allow-plugin true \
   --format json
@@ -226,9 +218,9 @@ KPI 추천:
 
 장르 분기 템플릿:
 
-- City/Factory(장기형): `08-idle-design-city-factory.json`
-- Loot/Camp(세션형): `09-idle-design-loot-camp.json`
-- Space/Port(초장기형): `10-idle-design-space-port.json`
+- City/Factory(장기형): `20-longrun-colony-v1.json`
+- Loot/Camp(세션형): `17-session-arcade-v1.json`
+- Prestige Reactor(리셋 반복형): `23-prestige-reactor-v1.json`
 - 바로 개인용 초안 시작: `11-my-game-v1.json`
 - 개인용 대조군 시작: `12-my-game-compare-b.json`
 - 개인용 튜닝 시작: `13-my-game-tune.json`
@@ -246,16 +238,16 @@ KPI 추천:
   - `simulate`
   - `ltv --horizons 30m,2h,24h,7d,30d,90d`
 - 이후 분기:
-  - 세션형이면 `09` 쪽으로 이동
-  - 장기 인프라형이면 `08` 쪽으로 이동
-  - 초장기 고성장이면 `10` 쪽으로 이동
+  - 세션형이면 `17` 쪽으로 이동
+  - 장기 인프라형이면 `20` 쪽으로 이동
+  - 리셋 반복형이면 `23` 쪽으로 이동
 
 ## 9. LTV용 장기 구간 스냅샷(30m/2h/24h/7d/30d/90d)
 
 `idk ltv` 명령으로 요청 구간을 한 번에 계산할 수 있습니다.
 
 ```bash
-bun run --cwd packages/cli dev -- ltv ../../examples/tutorials/05-idle-design-v1.json \
+bun run --cwd packages/cli dev -- ltv ../../examples/tutorials/14-orbital-foundry-v1.json \
   --horizons 30m,2h,24h,7d,30d,90d \
   --step 600 \
   --fast true \
@@ -295,6 +287,9 @@ bun run --cwd packages/cli dev -- calibrate ../../tmp/telemetry.csv \
 
 출력의 `scenarioPatch.monetization`을 시나리오에 붙인 뒤 `idk ltv`를 재실행하면
 실데이터 기반 LTV 추정치로 바로 갱신됩니다.
+
+관측 기간이 명시된 검증은 [플레이 데이터 가이드](./player-telemetry_ko.md)를 따른다.
+보정용 코호트와 검증용 코호트를 분리하고 미관측 날짜를 실제 이탈로 세지 않는다.
 
 캘리브레이션 기본 출력에는 `uncertainty.correlation` 기본값도 포함되므로,
 초기에는 그대로 사용하고 데이터가 쌓이면 상관계수를 교정하는 방식이 안전합니다.

@@ -31,6 +31,51 @@
       }
     },
     "scenarioPatch": { "type": "object" },
+    "observation": {
+      "type": "object",
+      "required": ["observedThroughDay", "users", "retention"],
+      "properties": {
+        "observedThroughDay": { "type": "integer", "minimum": 0 },
+        "users": { "type": "integer", "minimum": 1 },
+        "retention": {
+          "type": "array", "minItems": 4, "maxItems": 4,
+          "items": {
+            "type": "object",
+            "required": ["day", "status", "users", "activeUsers", "rate", "interval95"],
+            "properties": {
+              "day": { "enum": [1, 7, 30, 90] },
+              "status": { "enum": ["observed", "not-observed"] },
+              "users": { "type": "integer", "minimum": 1 },
+              "activeUsers": { "type": ["integer", "null"], "minimum": 0 },
+              "rate": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+              "interval95": {
+                "anyOf": [
+                  { "type": "null" },
+                  { "type": "object", "required": ["min", "max"], "properties": {
+                    "min": { "type": "number", "minimum": 0, "maximum": 1 },
+                    "max": { "type": "number", "minimum": 0, "maximum": 1 }
+                  } }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "comparison": {
+      "type": "array", "minItems": 4, "maxItems": 4,
+      "items": {
+        "type": "object",
+        "required": ["day", "assumption", "observed", "differencePercentagePoints", "status"],
+        "properties": {
+          "day": { "enum": [1, 7, 30, 90] },
+          "assumption": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+          "observed": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+          "differencePercentagePoints": { "type": ["number", "null"], "minimum": -100, "maximum": 100 },
+          "status": { "enum": ["compared", "not-observed", "unconfigured"] }
+        }
+      }
+    },
     "_meta": {
       "type": "object",
       "required": ["command", "contractVersion", "schemaRef", "cliVersion", "gitSha", "telemetryHash", "pluginDigest"],

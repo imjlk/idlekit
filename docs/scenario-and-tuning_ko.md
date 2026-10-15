@@ -170,12 +170,12 @@ bun run --cwd packages/cli dev -- init scenario --track personal --preset longru
 
 설계 우선 가상 시나리오 트랙:
 
-- `examples/tutorials/05-idle-design-v1.json`
-- `examples/tutorials/06-idle-design-balance-b.json`
-- `examples/tutorials/07-idle-design-tune.json`
-- `examples/tutorials/08-idle-design-city-factory.json`
-- `examples/tutorials/09-idle-design-loot-camp.json`
-- `examples/tutorials/10-idle-design-space-port.json`
+- `examples/tutorials/14-orbital-foundry-v1.json`
+- `examples/tutorials/15-orbital-foundry-compare-b.json`
+- `examples/tutorials/16-orbital-foundry-tune.json`
+- `examples/tutorials/20-longrun-colony-v1.json`
+- `examples/tutorials/17-session-arcade-v1.json`
+- `examples/tutorials/23-prestige-reactor-v1.json`
 - `examples/tutorials/11-my-game-v1.json`
 - `examples/tutorials/12-my-game-compare-b.json`
 - `examples/tutorials/13-my-game-tune.json`
