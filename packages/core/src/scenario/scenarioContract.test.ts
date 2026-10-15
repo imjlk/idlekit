@@ -88,7 +88,7 @@ function spawnContract(args: string[], preload = true): { exitCode: number; stdo
 
 /**
  * @evidence docs/requirements/active/typed-contract-generation.md#req-tc05-typed-contract-single-source Two generations match, a type field changes the schema, and the digest has no directory.
- * @evidenceReview docs/requirements/active/typed-contract-generation.md#req-tc05-typed-contract-single-source #4326433 Re-read the section, then checked the registry, the 3.1 schema id, and the directory-free hash.
+ * @evidenceReview docs/requirements/active/typed-contract-generation.md#req-tc05-typed-contract-single-source #041479e Re-read the typia 15.1.0 section, then checked the registry, the 3.1 schema id, and the directory-free hash.
  * @evidence ./scenarioContract.ts#typedContractSingleSource Reads the scenario registration id.
  * @evidenceReview ./scenarioContract.ts#typedContractSingleSource #fff2b70 The declaration is idlekit.scenario.v1.
  * @evidence ./scenarioContract.ts#registeredContracts Reads the registry ids.
@@ -375,7 +375,7 @@ export function runsPublishedScenarioValidator(): void {
 
 /**
  * @evidence docs/requirements/active/typed-contract-generation.md#req-tc05-typed-contract-single-source Independent CLI generations produce identical canonical files without volatile metadata.
- * @evidenceReview docs/requirements/active/typed-contract-generation.md#req-tc05-typed-contract-single-source #4326433 Re-read the section: both CLI generations are compared for every generated contract; the scenario JSON is canonical and contains no generation time or absolute directory.
+ * @evidenceReview docs/requirements/active/typed-contract-generation.md#req-tc05-typed-contract-single-source #041479e Re-read the typia 15.1.0 section and ran both CLI generations: all generated contracts match, and the scenario JSON is canonical without generation time or absolute directory.
  * @evidence ./scenarioContract.ts#canonicalJson Canonicalizes the independently generated scenario document for a byte-stable round-trip comparison.
  * @evidenceReview ./scenarioContract.ts#canonicalJson #c5c90d7 Re-read canonicalJson and ran both independent CLI generations: it delegates to renderCanonical with a fresh set, and this registration compares its output to the generated scenario JSON as well as every file from the two generations.
  */

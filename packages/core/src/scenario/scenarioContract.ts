@@ -22,12 +22,12 @@ const CONTRACT_GENERATOR = "idlekit.contract-generator" as const;
 const CONTRACT_GENERATOR_VERSION = 1 as const;
 const JSON_SCHEMA_EXPORT = "typia.json.schema" as const;
 const JSON_SCHEMA_DIALECT = "openapi-3.1" as const;
-const TYPIA_VERSION = "14.0.6" as const;
+const TYPIA_VERSION = "15.1.0" as const;
 const SCENARIO_SCHEMA_ID = "https://idlekit.dev/schemas/scenario.v1.schema.json" as const;
 
 /**
  * @evidence docs/requirements/active/typed-contract-generation.md#req-tc05-typed-contract-single-source ScenarioV1 is the generated structural contract. The registry starts with that id.
- * @evidenceReview docs/requirements/active/typed-contract-generation.md#req-tc05-typed-contract-single-source #4326433 Re-read the section: the id is idlekit.scenario.v1 and the export is typia.json.schema 3.1. PR-08 appends the analysis artifact id.
+ * @evidenceReview docs/requirements/active/typed-contract-generation.md#req-tc05-typed-contract-single-source #041479e Re-read the section against typia 15.1.0: the id is idlekit.scenario.v1 and the export is typia.json.schema 3.1. Regenerated contracts preserve their structural schemas.
  */
 export const typedContractSingleSource = "idlekit.scenario.v1" as const;
 

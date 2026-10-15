@@ -4,7 +4,7 @@
 
 Requirement `REQ-TC05-TYPED-CONTRACT-SINGLE-SOURCE`. `TC-05` owns it.
 
-`typedContractSingleSource` is `idlekit.scenario.v1`. The canonical structural type is `ScenarioV1`. `typia` `14.0.6` exports `typia.json.schema`. The call is `typia.json.schema<ScenarioV1, "3.1">()`. The dialect label is `openapi-3.1`. `$id` is `https://idlekit.dev/schemas/scenario.v1.schema.json`.
+`typedContractSingleSource` is `idlekit.scenario.v1`. The canonical structural type is `ScenarioV1`. `typia` `15.1.0` exports `typia.json.schema`. The call is `typia.json.schema<ScenarioV1, "3.1">()`. The dialect label is `openapi-3.1`. `$id` is `https://idlekit.dev/schemas/scenario.v1.schema.json`.
 
 `contracts:check` generates in memory and compares bytes with `docs/schemas/generated/`. It does not write that directory. `contracts:generate` is the writer. Two generations are byte-identical. Adding a type field changes the schema bytes. A stale tracked file makes `contracts:check` exit 1.
 

@@ -362,7 +362,7 @@ async function main(): Promise<void> {
     console.log(`sha256 ${rel} ${createHash("sha256").update(bytes).digest("hex")}`);
   }
 
-  if (dev["@ttsc/graph"] !== "0.30.4") fail(`root @ttsc/graph is ${String(dev["@ttsc/graph"])}`);
+  if (dev["@ttsc/graph"] !== "0.32.1") fail(`root @ttsc/graph is ${String(dev["@ttsc/graph"])}`);
   for (const rel of ["packages/money/package.json", "packages/core/package.json", "packages/cli/package.json"]) {
     const pkg = await readJson(join(root, rel));
     const names = [

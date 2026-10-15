@@ -1,5 +1,6 @@
 import { readFileSync, realpathSync } from "fs";
 import { isAbsolute, join, resolve } from "path";
+import { resolveGraphBinary } from "@ttsc/graph";
 import { sha256Hex } from "./_bun";
 import { installedCompilerBin } from "./compiler-bin";
 
@@ -139,7 +140,7 @@ function inspectOverride(
   }
   const origin = samePath(value, pinned) ? "pinned-platform-package" : "external";
   if (origin !== "pinned-platform-package") {
-    failures.push(`${name} points outside the pinned ${platformPackage()} package`);
+    failures.push(`${name} points outside its pinned platform package`);
   }
   return { set: true, origin, path: value };
 }
@@ -228,7 +229,9 @@ export function inspectToolchain(): DoctorReport {
   if (go.exitCode !== 0) failures.push(`bundled Go failed: ${go.stderr || go.stdout}`);
   const lockfileSha256 = sha256Hex(readFileSync(join(root, "bun.lock")));
   const cacheValue = process.env.TTSC_CACHE_DIR;
-  const graphBinary = resolvePlatformBinary(process.platform === "win32" ? "ttscgraph.exe" : "ttscgraph");
+  // Resolve the installed Graph package independently of an environment override.
+  const graphBinary = resolveGraphBinary({});
+  if (!graphBinary) throw new Error("Pinned native Graph package is missing; run bun install");
   const graphBinaryEnv = inspectOverride("TTSC_GRAPH_BINARY", graphBinary, failures);
   const goBinaryEnv = inspectOverride("TTSC_GO_BINARY", goBinary, failures);
 
