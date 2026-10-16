@@ -1,5 +1,11 @@
 # @idlekit/money
 
+## 0.3.2 — 2026-10-16
+
+### Patch changes
+
+- [81a6e50](https://github.com/imjlk/idlekit/commit/81a6e50b52260eb50170ec6d35c6f42cc06b863d) Rebuild the packages with ttsc 0.32.1 and align its lint, Evidence, Graph, and bundler plugins. Update typia to 15.1.0 and refresh generated contract metadata and toolchain integrity pins. Support the separate native Graph packages in toolchain diagnostics. — Thanks @imjlk!
+
 ## 0.3.1 — 2026-10-13
 
 ### Patch changes

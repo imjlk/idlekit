@@ -1,5 +1,19 @@
 # @idlekit/cli
 
+## 0.5.0 — 2026-10-16
+
+### Minor changes
+
+- [c5b7ef2](https://github.com/imjlk/idlekit/commit/c5b7ef2edb78fea448b85f363c1bc4f70bf5ec05) Explain balance targets with `balance --format md`, including measured values, bounds, conditions, and failure reasons. Add explicit observation windows and scenario assumption comparisons to `calibrate`, with installed-user denominators, unobserved retention points, Wilson intervals, and retention-only patches. Withhold patches that conflict with the LTV retention curve and explain what needs review. Make the plugin example portable to npm consumers and consolidate redundant tutorial economies. — Thanks @imjlk!
+
+### Patch changes
+
+- [81a6e50](https://github.com/imjlk/idlekit/commit/81a6e50b52260eb50170ec6d35c6f42cc06b863d) Rebuild the packages with ttsc 0.32.1 and align its lint, Evidence, Graph, and bundler plugins. Update typia to 15.1.0 and refresh generated contract metadata and toolchain integrity pins. Support the separate native Graph packages in toolchain diagnostics. — Thanks @imjlk!
+- [e5bdaf0](https://github.com/imjlk/idlekit/commit/e5bdaf0086bd1f573ca9be7fa1b8f0305c91c6c3) Keep exploratory calibration retention curves nonincreasing while preserving raw observations. Reject numeric overflow in calibration estimates and diagnostics before writing a report. — Thanks @imjlk!
+- [dcb359e](https://github.com/imjlk/idlekit/commit/dcb359e00a1f183c5053a81c11effea742463043) Protect telemetry and scenario inputs from calibration output writes, including filesystem aliases. Preserve Wilson confidence intervals in cohort CSV reports and enforce retention report ordering, cross-field consistency, and withheld-patch contracts. — Thanks @imjlk!
+- [f335ca3](https://github.com/imjlk/idlekit/commit/f335ca3bcc6a77deb2e6f0f2ce50f63fe0126f31) Reject KPI regression output paths that overwrite the baseline or current report, including hardlinks and directory aliases. Preserve separate report and stdout output. — Thanks @imjlk!
+- Updated dependencies: @idlekit/core@0.4.1
+
 ## 0.4.0 — 2026-10-14
 
 ### Minor changes
