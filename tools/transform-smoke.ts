@@ -119,6 +119,10 @@ if (compilerCallLeft(concreteJs)) {
   throw new Error("concrete emit still contains typia.createValidate");
 }
 record("generic-vs-concrete-emit", "read tmp/tc02-typia-generic/concrete.js", 0);
+const namedJs = await Bun.file(join(genericOut, "named.js")).text();
+if (compilerCallLeft(namedJs)) throw new Error("named emit still contains an executable typia factory reference");
+run("named-factory-emit", [process.execPath, join(genericOut, "named.js")], genericDir, 0,
+  stdout => stdout.includes("named-probe-ok") ? undefined : "named validator did not validate the concrete type");
 
 const bundleDir = resolve(root, "tmp/tc02-bundle");
 await Bun.$`rm -rf ${bundleDir}`.quiet();
