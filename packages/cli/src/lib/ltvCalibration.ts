@@ -1,6 +1,15 @@
 import type { ScenarioV1 } from "@idlekit/core";
 import type { TelemetryRow } from "./ltvTypes";
 
+function assertFiniteNumbers(value: unknown, path: string): void {
+  if (typeof value === "number" && !Number.isFinite(value)) {
+    throw new RangeError(`Calibration requires finite numbers; numeric overflow at ${path}`);
+  }
+  if (typeof value === "object" && value !== null) {
+    for (const [key, child] of Object.entries(value)) assertFiniteNumbers(child, `${path}.${key}`);
+  }
+}
+
 function clamp01(v: number): number {
   if (v < 0) return 0;
   if (v > 1) return 1;
@@ -82,7 +91,7 @@ function estimateCorrelation(x: readonly number[], y: readonly number[]): Correl
     };
   }
 
-  const raw = clampCorrelation(cov / Math.sqrt(vx * vy));
+  const raw = clampCorrelation(cov / Math.sqrt(vx) / Math.sqrt(vy));
   const ci95 = 1.96 / Math.sqrt(Math.max(1, n - 3));
   const sampleConfidence = clamp01(1 - ci95);
   const varianceConfidenceX = varianceX / (varianceX + 0.01);
@@ -215,7 +224,7 @@ export function calibrateMonetization(rows: readonly TelemetryRow[]): Readonly<{
     arppuAd: estimatedCorrelationPair.arppuAd.confidence,
   } as const;
 
-  return {
+  const result: ReturnType<typeof calibrateMonetization> = {
     monetization: {
       cohorts: {
         baseUsers: cohortSize,
@@ -223,8 +232,8 @@ export function calibrateMonetization(rows: readonly TelemetryRow[]): Readonly<{
       retention: {
         d1: clamp01(d1),
         d7: clamp01(Math.min(d1, d7)),
-        d30: clamp01(Math.min(d7, d30)),
-        d90: clamp01(Math.min(d30, d90)),
+        d30: clamp01(Math.min(d1, d7, d30)),
+        d90: clamp01(Math.min(d1, d7, d30, d90)),
         longTailDailyDecay: 0.02,
       },
       revenue: {
@@ -283,4 +292,6 @@ export function calibrateMonetization(rows: readonly TelemetryRow[]): Readonly<{
       correlationDiagnostics: estimatedCorrelationPair,
     },
   };
+  assertFiniteNumbers(result, "calibration");
+  return result;
 }

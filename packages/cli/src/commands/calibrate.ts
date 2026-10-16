@@ -221,7 +221,12 @@ export default defineCommand({
       try { observation = observeCohort(rows, flags["observed-through-day"]); }
       catch (error) { throw usageError(error instanceof Error ? error.message : String(error)); }
     }
-    const calibrated = calibrateMonetization(rows);
+    let calibrated: ReturnType<typeof calibrateMonetization>;
+    try { calibrated = calibrateMonetization(rows); }
+    catch (error) {
+      if (error instanceof RangeError) throw usageError(error.message);
+      throw error;
+    }
     const retentionRates = observation ? observedRetentionRates(observation) : undefined;
     const scenario = flags.scenario ? await readScenarioFile(flags.scenario) : undefined;
     const rate = z.number().min(0).max(1).optional();
