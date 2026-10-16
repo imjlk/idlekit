@@ -1,6 +1,6 @@
 {
   "name": "@idlekit/money",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Bun-first money primitives, notation, policies, and serialization for idle game economies.",
   "license": "MIT",
   "type": "module",
