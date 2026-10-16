@@ -159,8 +159,11 @@ export function makeUncertainConfig(base: MonetizationConfig, rng: Random): Mone
 }
 
 export function quantile(values: number[], q: number): number {
-  if (values.length === 0) return 0;
-  const sorted = [...values].sort((a, b) => a - b);
+  return quantileFromSorted([...values].sort((a, b) => a - b), q);
+}
+
+function quantileFromSorted(sorted: readonly number[], q: number): number {
+  if (sorted.length === 0) return 0;
   const idx = Math.max(0, Math.min(sorted.length - 1, Math.floor((sorted.length - 1) * q)));
   return sorted[idx] ?? 0;
 }
@@ -195,9 +198,11 @@ export function estimateLtvDistribution(args: {
   }
 
   const avg = (arr: number[]) => arr.reduce((a, b) => a + b, 0) / Math.max(1, arr.length);
+  // Keep the original sample order for the mean's floating-point sum.
+  const sortedLtv = [...ltvSamples].sort((a, b) => a - b);
   const byQuantile: Record<string, number> = {};
   for (const q of args.quantiles) {
-    byQuantile[`q${Math.round(q * 100)}`] = quantile(ltvSamples, q);
+    byQuantile[`q${Math.round(q * 100)}`] = quantileFromSorted(sortedLtv, q);
   }
 
   return {

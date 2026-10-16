@@ -14,6 +14,25 @@ const scenario: ScenarioV1 = {
   },
 };
 
+test("seeded distribution preserves means and order statistics regardless of requested quantile order", () => {
+  const { monetization: _monetization, ...defaults } = scenario;
+  const config = deriveMonetizationConfig(defaults);
+  const before = JSON.stringify(config);
+  const args = { config, horizonDays: 1, progression: 0.5, draws: 201,
+    quantiles: [0, 0.25, 0.5, 0.75, 1], seed: 42 };
+  const result = estimateLtvDistribution(args);
+  expect(result.mean.cumulativeGrossRevenuePerUser).toBeCloseTo(0.020102538563678444, 14);
+  expect(result.mean.cumulativeNetRevenuePerUser).toBeCloseTo(0.012946034835008913, 14);
+  expect(result.mean.cumulativeLtvPerUser).toBeCloseTo(0.012946034835008913, 14);
+  const expected = { q0: 0.007886059107683056, q25: 0.011187321956212616,
+    q50: 0.012737782225222585, q75: 0.014683236966927925, q100: 0.020739397626289197 };
+  for (const [key, value] of Object.entries(expected)) {
+    expect(result.quantiles[key]).toBeCloseTo(value, 14);
+  }
+  expect(estimateLtvDistribution({ ...args, quantiles: [...args.quantiles].reverse() })).toEqual(result);
+  expect(JSON.stringify(config)).toBe(before);
+});
+
 test("public LTV API accounts for fractional days, fees, margin and acquisition cost", () => {
   const config = deriveMonetizationConfig(scenario);
   const args = { config, horizonDays: 1.5, progression: 0 };
