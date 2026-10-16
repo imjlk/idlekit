@@ -36,6 +36,7 @@ export async function runKpiRegression(flags: {
   await writeOutput({
     format: flags.format,
     outPath: flags.out,
+    protectedInputs: [baselinePath, currentPath],
     data: output,
     meta: buildOutputMeta({ command: "kpi.regress" }),
   });
