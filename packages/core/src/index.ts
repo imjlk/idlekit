@@ -83,3 +83,4 @@ export * from "./report/timeline";
 export * from "./report/compare";
 
 export * from "./utils/deepClone";
+export * from "./ltv/public";
