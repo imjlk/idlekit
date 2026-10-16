@@ -1,8 +1,9 @@
 import ttscPlugin from "@ttsc/unplugin/bun";
-import { mkdirSync, readFileSync, writeFileSync } from "fs";
+import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join, resolve } from "path";
 import { runCommand, ttscBin } from "./toolchain-host";
+import { compilerCallLeft } from "./compiler-call-check";
 
 const root = resolve(import.meta.dir, "..");
 const probe = resolve(root, "packages/core/src/scenario/scenarioContract.probe.ts");
@@ -12,16 +13,6 @@ function fail(message: string, stdout = "", stderr = ""): never {
   if (stdout) console.error(stdout);
   if (stderr) console.error(stderr);
   throw new Error(message);
-}
-
-function compilerCallLeft(source: string): boolean {
-  const code = source
-    .replace(/"(?:\\.|[^"\\])*"/g, "\"\"")
-    .replace(/'(?:\\.|[^'\\])*'/g, "''")
-    .replace(/`(?:\\.|[^`\\])*`/g, "``")
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .replace(/\/\/.*$/gm, "");
-  return /typia\.createValidate\s*[<(]/.test(code) || /typia\.json\.schema\s*[<(]/.test(code) || code.includes("@ttsc/");
 }
 
 function source(): void {
@@ -94,47 +85,17 @@ function pack(): void {
     { cwd: consumerDir },
   );
   if (installed.exitCode !== 0) fail("consumer install failed", installed.stdout, installed.stderr);
-  writeFileSync(
+  copyFileSync(
+    join(root, "tools/fixtures/consumers/scenario-runtime.ts"),
     join(consumerDir, "run.ts"),
-    `import { validateScenarioStructure } from "@idlekit/core";
-const accepted = validateScenarioStructure({
-  schemaVersion: 1,
-  unit: { code: "COIN" },
-  policy: { mode: "drop" },
-  model: { id: "m", version: 1 },
-  initial: { wallet: { unit: "COIN", amount: "1e400" } },
-  clock: { stepSec: 1, durationSec: 1 },
-});
-const rejected = validateScenarioStructure({
-  schemaVersion: 1,
-  unit: { code: "COIN" },
-  policy: { mode: "nope" },
-  model: { id: "m", version: 1 },
-  initial: { wallet: { unit: "COIN", amount: "1" } },
-  clock: { stepSec: 1, durationSec: 1 },
-});
-if (!accepted.success || rejected.success) throw new Error("published validator mismatch");
-console.log("published-ok");
-`,
   );
   const ran = runCommand([process.execPath, "run.ts"], { cwd: consumerDir });
   if (ran.exitCode !== 0 || !ran.stdout.includes("published-ok")) {
     fail("published consumer failed", ran.stdout, ran.stderr);
   }
-  writeFileSync(
+  copyFileSync(
+    join(root, "tools/fixtures/consumers/scenario-types.ts"),
     join(consumerDir, "types.ts"),
-    `import { validateScenarioStructure } from "@idlekit/core";
-const accepted = validateScenarioStructure({
-  schemaVersion: 1,
-  unit: { code: "COIN" },
-  policy: { mode: "drop" },
-  model: { id: "m", version: 1 },
-  initial: { wallet: { unit: "COIN", amount: "1" } },
-  clock: { stepSec: 1, durationSec: 1 },
-});
-if (!accepted.success) throw new Error("types");
-export const code: string = accepted.data.unit.code;
-`,
   );
   writeFileSync(
     join(consumerDir, "tsconfig.json"),

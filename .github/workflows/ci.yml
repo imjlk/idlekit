@@ -73,7 +73,7 @@ jobs:
 
       - name: Toolchain smoke
         run: |
-          bun test tools/_bun.test.ts tools/compiler-bin.test.ts tools/toolchain-host.test.ts tools/evidence/program.test.ts tools/evidence/source-lock.test.ts tools/evidence/source-graph.test.ts
+          bun test tools/_bun.test.ts tools/compiler-bin.test.ts tools/compiler-call-check.test.ts tools/toolchain-host.test.ts tools/evidence/program.test.ts tools/evidence/source-lock.test.ts tools/evidence/source-graph.test.ts
           bun test tools/release-workflow.test.ts tools/release-lockfile.test.ts tools/npm-pack.test.ts tools/tarball-check.test.ts tools/package-manifest.test.ts tools/release-registry.test.ts
           bun run toolchain:smoke
 
@@ -169,7 +169,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           bun tools/analysis-baseline-check.ts
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          bun test tools/_bun.test.ts tools/compiler-bin.test.ts tools/toolchain-host.test.ts tools/evidence/program.test.ts tools/evidence/source-graph.test.ts tools/tarball-check.test.ts
+          bun test tools/_bun.test.ts tools/compiler-bin.test.ts tools/compiler-call-check.test.ts tools/toolchain-host.test.ts tools/evidence/program.test.ts tools/evidence/source-graph.test.ts tools/tarball-check.test.ts
 
       - name: Build CLI
         run: bun run --cwd packages/cli build

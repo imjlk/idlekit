@@ -36,6 +36,8 @@ bun run tune:regress --baseline ./tmp/tune-baseline.json --current ./tmp/tune-la
 bun tools/analysis-baseline-check.ts
 ```
 
+`bun run typecheck` checks the package, tools, example and plugin projects. Use `bun run typecheck:examples` to check only examples and plugins. Consumer probes live in `tools/fixtures/consumers/*.ts` and are checked with the tools project before being copied or emitted into npm consumer environments. Install smoke emits the time-boundary probe as ESM with package imports left external, so it still exercises installed compiled exports without a compiler preload.
+
 ## Performance budgets
 
 `bench:sim:check` scores the short representative scenario with trace off. The mean and p95 are runtime samples. Compiler prepare is a separate phase and is not steps/sec. A gate failure needs enough repeats, a relative slowdown, and an absolute median floor. The comparison baseline is `examples/bench/perf-baseline.json`. A failure does not rewrite the baseline. The long corpus is `bench:sim:suite:check` on the scheduled workflow `.github/workflows/performance-corpus.yml`. `kpi:report` and `kpi:regress` stay the economic gate. See [Performance budgets](./performance-budget.md).

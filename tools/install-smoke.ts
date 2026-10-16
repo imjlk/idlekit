@@ -4,6 +4,7 @@ import { copyFile } from "fs/promises";
 import { withFileLock } from "./_bun";
 import { parseNpmPackEntries } from "./npm-pack";
 import { inspectTarballListing, type TarballCheck } from "./tarball-check";
+import type { LibrarySmokeResult } from "./fixtures/consumers/time-boundaries-smoke";
 
 type PackEntry = {
   filename: string;
@@ -62,15 +63,28 @@ async function writeConsumerPackageJson(): Promise<void> {
   );
 }
 
-async function runLibrarySmoke(): Promise<Readonly<{ money: string; core: string; boundaryChecks: number }>> {
-  const script = resolve(CONSUMER_DIR, "time-boundaries-smoke.mjs");
-  await Bun.write(script, Bun.file(resolve(ROOT, "fixtures/regressions/time-boundaries-smoke.mjs")));
-  await Bun.write(
-    resolve(CONSUMER_DIR, "time-boundaries.json"),
-    Bun.file(resolve(ROOT, "fixtures/regressions/time-boundaries.json")),
-  );
+async function runLibrarySmoke(): Promise<LibrarySmokeResult> {
+  // Typecheck the source in the tools project, then exercise installed exports as plain ESM.
+  const built = await Bun.build({
+    entrypoints: [resolve(ROOT, "tools/fixtures/consumers/time-boundaries-smoke.ts")],
+    outdir: CONSUMER_DIR,
+    naming: "time-boundaries-smoke.mjs",
+    target: "bun",
+    format: "esm",
+    packages: "external",
+  });
+  if (!built.success) throw new Error(built.logs.map(String).join("\n"));
+  const script = built.outputs.find((output) => output.path.endsWith(".mjs"))?.path;
+  if (!script) throw new Error("Consumer smoke build did not emit JavaScript");
   const raw = await $`bun --config=${resolve(ROOT, "tools/bundled-cli-bunfig.toml")} ${script}`.cwd(CONSUMER_DIR).text();
-  return JSON.parse(raw.trim()) as { money: string; core: string; boundaryChecks: number };
+  const report: unknown = JSON.parse(raw.trim());
+  if (typeof report !== "object" || report === null
+    || !("money" in report) || report.money !== "1000000"
+    || !("core" in report) || report.core !== "5"
+    || !("boundaryChecks" in report) || report.boundaryChecks !== 26) {
+    throw new Error("Consumer smoke returned an invalid report");
+  }
+  return { money: report.money, core: report.core, boundaryChecks: report.boundaryChecks };
 }
 
 async function runCliSmoke(): Promise<Readonly<{ helpHasIdk: boolean; validateOk: boolean; pluginOk: boolean }>> {

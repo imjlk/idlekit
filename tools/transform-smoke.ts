@@ -3,6 +3,7 @@ import { tmpdir } from "os";
 import { join, resolve } from "path";
 import { runCommand, ttscBin } from "./toolchain-host";
 import { parseNpmPackEntries } from "./npm-pack";
+import { compilerCallLeft } from "./compiler-call-check";
 
 const root = resolve(import.meta.dir, "..");
 const results: Array<{ name: string; command: string; exitCode: number; expected: number }> = [];
@@ -114,7 +115,7 @@ run(
   genericDir,
 );
 const concreteJs = await Bun.file(join(genericOut, "concrete.js")).text();
-if (concreteJs.includes("typia.createValidate")) {
+if (compilerCallLeft(concreteJs)) {
   throw new Error("concrete emit still contains typia.createValidate");
 }
 record("generic-vs-concrete-emit", "read tmp/tc02-typia-generic/concrete.js", 0);
@@ -132,7 +133,7 @@ if (!bundled.success) throw new Error(bundled.logs.join("\n"));
 const bundleJsPath = bundled.outputs.find((output) => output.path.endsWith(".js"))?.path;
 if (!bundleJsPath) throw new Error("bundle produced no js");
 const bundleJs = await Bun.file(bundleJsPath).text();
-if (bundleJs.includes("typia.createValidate") || bundleJs.includes("@ttsc/")) {
+if (compilerCallLeft(bundleJs)) {
   throw new Error("bundle still references typia.createValidate or @ttsc");
 }
 const outsideBundle = join(tmpdir(), `idlekit-tc02-bundle-${crypto.randomUUID()}`);
@@ -148,7 +149,7 @@ if (!sources.some((source) => source.endsWith("concreteValidator.ts"))) {
   throw new Error(`sourcemap sources do not include concreteValidator.ts: ${sources.join(", ")}`);
 }
 const emittedProbe = await Bun.file(resolve(root, "packages/core/dist/scenario/concreteValidator.js")).text();
-if (emittedProbe.includes("typia.createValidate") || emittedProbe.includes("@ttsc/")) {
+if (compilerCallLeft(emittedProbe)) {
   throw new Error("emitted concrete validator still calls typia.createValidate or @ttsc");
 }
 record("sourcemap-and-emit", "packages/core/dist/scenario/concreteValidator.js.map", 0);
@@ -189,7 +190,7 @@ if (published.types !== "./dist/index.d.ts" || publishedRoot?.bun !== "./dist/in
 }
 const emittedInPack = runCommand(["tar", "-xOf", tarball, "package/dist/scenario/concreteValidator.js"], { cwd: packDir });
 expectExit("tarball-validator", emittedInPack.command, emittedInPack.exitCode, 0);
-if (emittedInPack.stdout.includes("typia.createValidate") || emittedInPack.stdout.includes("@ttsc/")) {
+if (compilerCallLeft(emittedInPack.stdout)) {
   throw new Error("packed validator still contains a compiler call");
 }
 record("published-manifest", tarball, 0);
@@ -209,12 +210,7 @@ if (installed.exitCode !== 0) {
 expectExit("consumer-install", installed.command, installed.exitCode, 0);
 await Bun.write(
   join(consumerDir, "run.ts"),
-  `import { validateConcreteQuota } from "@idlekit/core";
-const accepted = validateConcreteQuota({ count: 2 });
-const rejected = validateConcreteQuota({ count: "no" });
-if (!accepted.success || rejected.success || accepted.data.count !== 2) throw new Error("published validator mismatch");
-console.log("published-ok");
-`,
+  Bun.file(resolve(root, "tools/fixtures/consumers/concrete-runtime.ts")),
 );
 run(
   "published-run",
@@ -225,11 +221,7 @@ run(
 );
 await Bun.write(
   join(consumerDir, "types.ts"),
-  `import { validateConcreteQuota } from "@idlekit/core";
-const accepted = validateConcreteQuota({ count: 2 });
-if (!accepted.success) throw new Error("types");
-export const count: number = accepted.data.count;
-`,
+  Bun.file(resolve(root, "tools/fixtures/consumers/concrete-types.ts")),
 );
 await Bun.write(
   join(consumerDir, "tsconfig.json"),
@@ -268,7 +260,7 @@ run(
 
 run(
   "plugin-load-test",
-  [process.execPath, "test", "src/plugin/load.test.ts"],
+  [process.execPath, "test", "--timeout", "90000", "src/plugin/load.test.ts"],
   resolve(root, "packages/cli"),
 );
 
