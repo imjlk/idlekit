@@ -37,6 +37,13 @@ percent keys (`q50`, `q90`). Invalid inputs, colliding keys and numeric overflow
 `RangeError`. Sampling shrinks inconsistent correlation matrices toward independence.
 Calibration of a complete observed cohort remains available through the public `idk calibrate` CLI.
 
+Partial scenario retention overrides keep the CLI's independent defaults. For example,
+`d1: 0.1` alone retains the default `d7: 0.2`; estimates preserve that existing interpolation.
+Explicit complete scenario curves still follow scenario ordering validation. Direct estimate
+configs validate each rate's range without adding an ordering constraint to completed defaults.
+Sampling retains its existing clamp of later retention anchors to the preceding anchor,
+so this partial-input case can differ from the point projection even with zero uncertainty.
+
 ## Quick example
 
 <!-- snippet: snippets/readme/core-quick-example.ts -->
