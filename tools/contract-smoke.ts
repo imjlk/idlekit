@@ -3,6 +3,7 @@ import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join, resolve } from "path";
 import { runCommand, ttscBin } from "./toolchain-host";
+import { compilerCallLeft } from "./compiler-call-check";
 
 const root = resolve(import.meta.dir, "..");
 const probe = resolve(root, "packages/core/src/scenario/scenarioContract.probe.ts");
@@ -12,16 +13,6 @@ function fail(message: string, stdout = "", stderr = ""): never {
   if (stdout) console.error(stdout);
   if (stderr) console.error(stderr);
   throw new Error(message);
-}
-
-function compilerCallLeft(source: string): boolean {
-  const code = source
-    .replace(/"(?:\\.|[^"\\])*"/g, "\"\"")
-    .replace(/'(?:\\.|[^'\\])*'/g, "''")
-    .replace(/`(?:\\.|[^`\\])*`/g, "``")
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .replace(/\/\/.*$/gm, "");
-  return /typia\.createValidate\s*[<(]/.test(code) || /typia\.json\.schema\s*[<(]/.test(code) || code.includes("@ttsc/");
 }
 
 function source(): void {

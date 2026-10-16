@@ -6,6 +6,7 @@
       "name": "idlekit",
       "devDependencies": {
         "@babel/parser": "8.0.7",
+        "@babel/types": "8.0.6",
         "@idlekit/core": "workspace:*",
         "@idlekit/money": "workspace:*",
         "@ttsc/evidence": "0.32.1",
