@@ -5,6 +5,28 @@ import { parseCsvTelemetry, parseJsonTelemetry } from "./calibrate";
 import { createTempDir, removePath, runCli, runCliJson, writeText } from "../testkit/bun";
 
 describe("calibrate csv parser", () => {
+  it("rejects overflow before writing reports in exploratory and cohort modes", async () => {
+    const dir = await createTempDir("idlekit-calibrate-overflow");
+    try {
+      const input = resolve(dir, "telemetry.json");
+      const report = resolve(dir, "report.json");
+      const source = JSON.stringify(["a", "b"].map(userId => ({ userId, day: 0, iapRevenue: 1e308, adRevenue: 0 })));
+      await writeText(input, source);
+      await writeText(report, "existing report\n");
+      for (const mode of [[], ["--observed-through-day", "0"]]) {
+        for (const format of ["json", "md", "csv"]) {
+          const result = runCli(["calibrate", input, ...mode, "--format", format, "--out", report], { check: false });
+          expect(result.exitCode).not.toBe(0);
+          expect(result.stderr).toContain("CLI_USAGE");
+          expect(result.stderr).toContain("finite");
+          expect(result.stdout).toBe("");
+          expect(await readFile(report, "utf8")).toBe("existing report\n");
+          expect(await readFile(input, "utf8")).toBe(source);
+        }
+      }
+    } finally { await removePath(dir); }
+  });
+
   it("strict cohort inputs preserve inactive users and reject invented IDs, days and activity", () => {
     const rows = [{ userId: "a", day: 0, active: "false" }];
     expect(parseJsonTelemetry(JSON.stringify(rows), true)[0]?.active).toBe(false);
@@ -45,6 +67,26 @@ describe("calibrate csv parser", () => {
 });
 
 describe("calibrate command", () => {
+  it("only smooths exploratory patches and leaves nonmonotone cohort observations for review", async () => {
+    const dir = await createTempDir("idlekit-calibrate-retention");
+    try {
+      const input = resolve(dir, "telemetry.json");
+      const rows = ["a", "b", "c", "d"].map(userId => ({ userId, day: 0 }));
+      for (const [day, users] of [[1, "a"], [7, "abcd"], [30, "abc"], [90, "ab"]] as const) {
+        for (const userId of users) rows.push({ userId, day });
+      }
+      await writeText(input, JSON.stringify(rows));
+      type Report = { scenarioPatch: { monetization: { retention: Record<string, number> } }; diagnostics: { retention: Record<string, number> }; patchStatus?: string };
+      const exploratory = runCliJson<Report>(["calibrate", input]);
+      expect(exploratory.scenarioPatch.monetization.retention).toMatchObject({ d1: 0.25, d7: 0.25, d30: 0.25, d90: 0.25 });
+      expect(exploratory.diagnostics.retention).toEqual({ d1: 0.25, d7: 1, d30: 0.75, d90: 0.5 });
+      const cohort = runCliJson<Report>(["calibrate", input, "--observed-through-day", "90"]);
+      expect(cohort.patchStatus).toBe("requires-review");
+      expect(cohort.scenarioPatch.monetization.retention).toEqual({});
+      expect(cohort.diagnostics.retention).toEqual({ d1: 0.25, d7: 1, d30: 0.75, d90: 0.5 });
+    } finally { await removePath(dir); }
+  });
+
   it("refuses to overwrite telemetry in both exploratory and observed modes", async () => {
     const dir = await createTempDir("idlekit-calibrate-input-protection");
     try {
