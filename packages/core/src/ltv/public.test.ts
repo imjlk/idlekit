@@ -64,3 +64,21 @@ test("partial retention keeps the CLI's independent defaults while explicit inva
   } })).toThrow(/d1 >= d7/);
   expect(() => estimateLtvPerUser({ ...args, config: { ...config, retention: { ...config.retention, d1: NaN } } })).toThrow(/retention.d1/);
 });
+
+test("public config and distribution quantiles both accept endpoints", () => {
+  const base = deriveMonetizationConfig(scenario);
+  const config = { ...base, uncertainty: { ...base.uncertainty, quantiles: [0, 1] } };
+  const args = { config, horizonDays: 1.5, progression: 0 };
+  const point = estimateLtvPerUser(args);
+  const result = estimateLtvDistribution({ ...args, draws: 2, seed: 42, quantiles: [0, 1] });
+  expect(result.quantiles.q0).toBeCloseTo(point.cumulativeLtvPerUser);
+  expect(result.quantiles.q100).toBeCloseTo(point.cumulativeLtvPerUser);
+  // Config quantiles are metadata; only explicit distribution args own output keys.
+  expect(estimateLtvPerUser({ ...args, config: { ...config, uncertainty: {
+    ...config.uncertainty, quantiles: [0.5, 0.504],
+  } } })).toEqual(point);
+  expect(() => estimateLtvPerUser({ ...args, config: { ...config, uncertainty: {
+    ...config.uncertainty, quantiles: new Array<number>(1),
+  } } })).toThrow(/quantiles/);
+  expect(() => estimateLtvDistribution({ ...args, draws: 1, seed: 42, quantiles: new Array<number>(102) })).toThrow(/101/);
+});

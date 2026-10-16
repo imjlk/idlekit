@@ -36,6 +36,9 @@ one work unit per draw). Quantiles must be nonempty values in 0..1 with distinct
 percent keys (`q50`, `q90`). Invalid inputs, colliding keys and numeric overflow throw
 `RangeError`. Sampling shrinks inconsistent correlation matrices toward independence.
 Calibration of a complete observed cohort remains available through the public `idk calibrate` CLI.
+Public estimate configs accept quantile endpoints too. Distribution output keys use its
+explicit `quantiles` argument, not config metadata. `ScenarioV1` authored quantiles retain
+their existing `(0, 1)` schema when passed to `deriveMonetizationConfig`.
 
 Partial scenario retention overrides keep the CLI's independent defaults. For example,
 `d1: 0.1` alone retains the default `d7: 0.2`; estimates preserve that existing interpolation.

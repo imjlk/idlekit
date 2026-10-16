@@ -17,6 +17,14 @@ function assertMonetization(monetization: NonNullable<ScenarioV1["monetization"]
   if (!valid.ok) throw new RangeError(valid.issues.map((issue) => issue.message).join("; "));
 }
 
+function assertQuantileValues(quantiles: readonly number[]): void {
+  if (quantiles.length === 0) throw new RangeError("quantiles must be nonempty and in 0..1");
+  // Iteration visits sparse slots as undefined, unlike Array.every/map.
+  for (const q of quantiles) {
+    if (!Number.isFinite(q) || q < 0 || q > 1) throw new RangeError("quantiles must be nonempty and in 0..1");
+  }
+}
+
 function assertConfig(config: MonetizationConfig): void {
   const { retention, ...other } = config;
   // Partial scenario retention has historically used independent defaults. Do not
@@ -29,7 +37,11 @@ function assertConfig(config: MonetizationConfig): void {
   if (!Number.isFinite(retention.longTailDailyDecay) || retention.longTailDailyDecay < 0) {
     throw new RangeError("retention.longTailDailyDecay must be finite and >= 0");
   }
-  assertMonetization(other);
+  const { quantiles, ...uncertainty } = other.uncertainty;
+  assertQuantileValues(quantiles);
+  // The public estimator permits endpoints; ScenarioV1's authored quantile
+  // schema is narrower. Output keys come from the explicit distribution args.
+  assertMonetization({ ...other, uncertainty });
 }
 
 /** Complete a scenario's hypothetical assumptions; this does not fit observed player data. */
@@ -68,8 +80,9 @@ export function estimateLtvDistribution(args: Parameters<typeof distribution>[0]
     throw new RangeError("draws must be 1..100000 and draws × ceil(horizonDays) at most 10000000");
   }
   if (!Number.isFinite(args.seed)) throw new RangeError("seed must be finite");
-  if (args.quantiles.length === 0 || !Array.from(args.quantiles).every((q) => Number.isFinite(q) && q >= 0 && q <= 1)
-    || new Set(args.quantiles.map((q) => Math.round(q * 100))).size !== args.quantiles.length) {
+  if (args.quantiles.length > 101) throw new RangeError("quantiles exceed the 101 distinct percent keys");
+  assertQuantileValues(args.quantiles);
+  if (new Set(args.quantiles.map((q) => Math.round(q * 100))).size !== args.quantiles.length) {
     throw new RangeError("quantiles must be nonempty, in 0..1 and have distinct rounded percent keys");
   }
   const result = distribution(args);
