@@ -8,8 +8,4 @@ export {
 } from "./ltvProjection";
 export {
   estimateLtvDistribution,
-  makeUncertainConfig,
-  mulberry32,
-  quantile,
-  type Random,
 } from "./ltvUncertainty";

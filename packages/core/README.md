@@ -16,6 +16,36 @@ Use this package when you need:
 - simulation loop and `stepOnce`
 - built-in strategies and tuning primitives
 - growth, milestone, session-pattern, and Monte Carlo analysis
+- hypothetical LTV estimates via `deriveMonetizationConfig`, `estimateLtvPerUser` and `estimateLtvDistribution`
+
+## LTV estimates
+
+Import the three LTV functions and the `MonetizationConfig` / `LtvPointEstimate` types from
+`@idlekit/core`. Pass a `ScenarioV1` to `deriveMonetizationConfig`; pass the returned config,
+`horizonDays` and `progression` to `estimateLtvPerUser`. `estimateLtvDistribution` additionally
+takes `draws`, `quantiles` and `seed`. The CLI uses the same implementation.
+
+Inputs are hypothetical assumptions, in one caller-chosen currency per installed user.
+Defaults are not observed retention or measured revenue. Net revenue applies platform fees
+and gross margin; LTV then subtracts CPI, including at a zero-day horizon. Fractional days
+are prorated. Finite progression is clamped to 0..1. Quantile bands describe sensitivity to
+assumptions, not fitted confidence intervals or evidence of enjoyment/retention.
+
+Synchronous limits: 0..36500 days, 1..100000 draws and at most 10000000 draw-days (at least
+one work unit per draw). Quantiles must be nonempty values in 0..1 with distinct rounded
+percent keys (`q50`, `q90`). Invalid inputs, colliding keys and numeric overflow throw
+`RangeError`. Sampling shrinks inconsistent correlation matrices toward independence.
+Calibration of a complete observed cohort remains available through the public `idk calibrate` CLI.
+Public estimate configs accept quantile endpoints too. Distribution output keys use its
+explicit `quantiles` argument, not config metadata. `ScenarioV1` authored quantiles retain
+their existing `(0, 1)` schema when passed to `deriveMonetizationConfig`.
+
+Partial scenario retention overrides keep the CLI's independent defaults. For example,
+`d1: 0.1` alone retains the default `d7: 0.2`; estimates preserve that existing interpolation.
+Explicit complete scenario curves still follow scenario ordering validation. Direct estimate
+configs validate each rate's range without adding an ordering constraint to completed defaults.
+Sampling retains its existing clamp of later retention anchors to the preceding anchor,
+so this partial-input case can differ from the point projection even with zero uncertainty.
 
 ## Quick example
 

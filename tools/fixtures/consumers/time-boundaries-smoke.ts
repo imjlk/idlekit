@@ -4,6 +4,7 @@ import { fileURLToPath } from "url";
 import {
   builtinStrategyFactories, compileScenario, createModelRegistry, createNumberEngine,
   createStrategyRegistry, defineModelFactory, runElapsedSec, runScenario, validateScenarioStructure,
+  deriveMonetizationConfig, estimateLtvPerUser, estimateLtvDistribution,
 } from "@idlekit/core";
 import { createBreakInfinityEngine, type Engine } from "@idlekit/money";
 import matrix from "../../../fixtures/regressions/time-boundaries.json";
@@ -13,6 +14,12 @@ const coreEngine = createNumberEngine();
 const parsedScenario = validateScenarioStructure(matrix.scenario);
 assert.ok(parsedScenario.success, "shared scenario must match the public contract");
 const scenario = parsedScenario.data;
+const ltvArgs = { config: deriveMonetizationConfig(scenario), horizonDays: 1.5, progression: 0 };
+const ltv = estimateLtvPerUser(ltvArgs);
+assert.ok(Number.isFinite(ltv.cumulativeLtvPerUser), 'public installed LTV point API');
+const ltvSample = { ...ltvArgs, draws: 10, quantiles: [0.5, 0.9], seed: 42 };
+assert.deepEqual(estimateLtvDistribution(ltvSample), estimateLtvDistribution(ltvSample),
+  'installed distribution API is seeded and standalone');
 
 export type LibrarySmokeResult = Readonly<{
   money: string;
