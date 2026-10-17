@@ -1,9 +1,9 @@
-import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
-import { createRequire } from "node:module";
-import { resolve } from "node:path";
-import { pathToFileURL } from "node:url";
-import { readFile } from "node:fs/promises";
+import assert from "assert/strict";
+import { execFileSync } from "child_process";
+import { createRequire } from "module";
+import { resolve } from "path";
+import { pathToFileURL } from "url";
+import { readFile } from "fs/promises";
 import type { CompiledScenario } from "@idlekit/core";
 import { resolveCaptureOutput, writeCaptureOutput } from "./capture-output";
 

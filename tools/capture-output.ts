@@ -1,7 +1,7 @@
-import { lstatSync, realpathSync } from "node:fs";
-import { open, rename, rm } from "node:fs/promises";
-import { randomUUID } from "node:crypto";
-import { basename, dirname, extname, isAbsolute, relative, resolve, sep } from "node:path";
+import { lstatSync, realpathSync } from "fs";
+import { open, rename, rm } from "fs/promises";
+import { randomUUID } from "crypto";
+import { basename, dirname, extname, isAbsolute, relative, resolve, sep } from "path";
 
 /** Refuse source-checkout writes, including directory aliases and linked output files. */
 export function resolveCaptureOutput(checkout: string, output: string): string {

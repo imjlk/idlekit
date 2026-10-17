@@ -1,4 +1,4 @@
-import assert from "node:assert/strict";
+import assert from "assert/strict";
 import { applyRetentionPatch, observeCohort, planRetentionPatch, simulateSessionPattern,
   type CompiledScenario, type SimState, type ScenarioV1 } from "@idlekit/core";
 import { createBreakInfinityEngine } from "@idlekit/money";
