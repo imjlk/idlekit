@@ -62,12 +62,16 @@ function makeScenario(): CompiledScenario<number, "COIN", Bag> {
 }
 
 describe("runCandidateAndScore", () => {
-  function scoreWith(scenario: ReturnType<typeof makeScenario>, value: number) {
+  function scoreWith(scenario: ReturnType<typeof makeScenario>, value: number, seeds: readonly number[] = [1, 2]) {
     return runCandidateAndScore({ baseScenario: scenario, params: {}, strategyId: "wait", objectiveId: "fixed",
-      seeds: [1, 2], strategyRegistry: createStrategyRegistry([{ id: "wait", create: () => ({ id: "wait", decide: () => [] }) }]),
+      seeds, strategyRegistry: createStrategyRegistry([{ id: "wait", create: () => ({ id: "wait", decide: () => [] }) }]),
       objectiveRegistry: createObjectiveRegistry([{ id: "fixed", create: () => ({ id: "fixed", score: () => value }) }]),
     });
   }
+
+  it("refuses an unevaluated candidate with no seeds", () => {
+    expect(() => scoreWith(makeScenario(), 1, [])).toThrow(/at least one seed/);
+  });
 
   for (const value of [Infinity, -Infinity, NaN]) {
     it(`refuses a custom objective score of ${value}`, () => {

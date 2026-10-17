@@ -17,9 +17,11 @@ function decimalParts(input: string) {
   if (!match) throw new RangeError("Static monetary comparison requires decimal amounts");
   const fraction = match[3] ?? match[4] ?? "";
   const digits = `${match[2] ?? ""}${fraction}`.replace(/^0+/, "");
+  let end = digits.length;
+  while (end > 0 && digits[end - 1] === "0") end--;
   return {
     sign: digits.length === 0 ? 0 : match[1] === "-" ? -1 : 1,
-    digits: digits.replace(/0+$/, ""),
+    digits: digits.slice(0, end),
     magnitude: BigInt(match[5] ?? "0") - BigInt(fraction.length) + BigInt(digits.length),
   };
 }

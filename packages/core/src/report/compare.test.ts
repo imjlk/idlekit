@@ -16,6 +16,10 @@ function scenario(amount: string): ScenarioV1 {
 }
 
 describe("compareScenarios", () => {
+  it("preserves long significant decimal strings with interior and trailing zero runs", () => {
+    const stem = `1${"0".repeat(40_000)}`;
+    expect(compareScenarios({ a: scenario(`${stem}1`), b: scenario(`${stem}0`), metric: "endMoney" }).better).toBe("a");
+  });
   for (const [a, b, better] of [
     ["1e400", "1e300", "a"],
     ["-1e400", "-1e300", "b"],

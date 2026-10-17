@@ -3,9 +3,9 @@ import { execFileSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import type { CompiledScenario } from "@idlekit/core";
-import { resolveCaptureOutput } from "./capture-output";
+import { resolveCaptureOutput, writeCaptureOutput } from "./capture-output";
 
 // Optional cross-repository capture. CI replays the committed data without this checkout.
 const repository = process.argv[2];
@@ -15,7 +15,8 @@ const gameRequire = createRequire(resolve(gameRoot, "package.json"));
 const git = (...args: string[]) => execFileSync("git", ["-C", repository, ...args], { encoding: "utf8" }).trim();
 assert.equal(git("status", "--porcelain", "--", "games/idle-arcane-tower"), "", "capture requires a clean game source");
 const sourceCommit = git("rev-parse", "HEAD");
-const output = resolveCaptureOutput(git("rev-parse", "--show-toplevel"), process.argv[3] ?? "fixtures/regressions/research-tower.json");
+const referenceCheckout = git("rev-parse", "--show-toplevel");
+const output = resolveCaptureOutput(referenceCheckout, process.argv[3] ?? "fixtures/regressions/research-tower.json");
 const load = (file: string) => import(pathToFileURL(resolve(gameRoot, file)).href);
 const { buildResearchScenario, packResearchState, idlekitVersion } = await load("tools/research-scenario.ts");
 const { applyResearchAbsence } = await load("tools/research-offline.ts");
@@ -104,7 +105,7 @@ for (const name of ["default-dreamcatcher", "owl", "extended-cap", "silva-return
   cases.push({ name, initial, segments, expected: { elapsedSec: 86400,
     activeSec: 1200, offlineCreditedSec: credited, lostRewardSec: 85200 - credited } });
 }
-await writeFile(output, `${JSON.stringify({ schemaVersion: 1, source: {
+await writeCaptureOutput(referenceCheckout, output, `${JSON.stringify({ schemaVersion: 1, source: {
   repository: "https://github.com/imjlk/mpgd-games", commit: sourceCommit, referenceCoreVersion: idlekitVersion,
   game: "games/idle-arcane-tower", seed: 61973,
 }, cohort, cases }, null, 2)}\n`);

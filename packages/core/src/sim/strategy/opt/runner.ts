@@ -33,6 +33,7 @@ export function runCandidateAndScore(args: {
   seedScores: readonly number[];
   seedResults: readonly TuneSeedResult[];
 }> {
+  if (args.seeds.length === 0) throw new RangeError("Tuning requires at least one seed");
   const stratFactory = args.strategyRegistry.get(args.strategyId);
   if (!stratFactory) throw new Error(`Unknown strategy: ${args.strategyId}`);
 
