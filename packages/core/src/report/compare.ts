@@ -13,7 +13,7 @@ export type MeasuredCompareMetrics = Readonly<Partial<Record<CompareMetric, numb
 export type MeasuredDecision = "a" | "b" | "tie";
 
 function decimalParts(input: string) {
-  const match = /^([+-]?)(?:(\d+)(?:\.(\d*))?|\.(\d+))(?:e([+-]?\d+))?([a-z]{2,})?$/i.exec(input.trim());
+  const match = /^([+-]?)(?:(\d+)(?:\.(\d+))?|\.(\d+))(?:e([+-]?\d+))?([a-z]{2,})?$/i.exec(input.trim());
   if (!match) throw new RangeError("Static monetary comparison requires decimal amounts");
   let suffixExponent = 0n;
   if (match[6]) {

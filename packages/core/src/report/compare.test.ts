@@ -64,7 +64,7 @@ describe("compareScenarios", () => {
     }
   }
 
-  for (const amount of ["NaN", "Infinity", "1e", "", "0x10", "1a", "1aa COIN"]) {
+  for (const amount of ["NaN", "Infinity", "1e", "", "0x10", "1a", "1aa COIN", "1.", "1.e3", "1.aa"]) {
     it(`rejects invalid static monetary input ${JSON.stringify(amount)}`, () => {
       expect(() => compareScenarios({ a: scenario(amount), b: scenario("1"), metric: "endMoney" }))
         .toThrow(/decimal/i);
