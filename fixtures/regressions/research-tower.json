@@ -1,0 +1,6948 @@
+{
+  "schemaVersion": 1,
+  "source": {
+    "repository": "https://github.com/imjlk/mpgd-games",
+    "commit": "bb90017fb94f58790d673222ae2392b81fd767d4",
+    "referenceCoreVersion": "0.5.0",
+    "game": "games/idle-arcane-tower",
+    "seed": 61973
+  },
+  "cohort": {
+    "input": {
+      "schemaVersion": 1,
+      "gameId": "idle-arcane-tower",
+      "cohortDate": "2026-10-01",
+      "buildTarget": "web",
+      "observedThroughDay": 7,
+      "exportedAt": "2026-10-10T00:00:00.000Z",
+      "completeInstalls": true,
+      "completeActivity": true,
+      "installs": [
+        {
+          "anonymousInstall": "anon-00000000-0000-4000-8000-000000000001",
+          "installedAt": "2026-10-01T12:00:00.000Z"
+        },
+        {
+          "anonymousInstall": "anon-00000000-0000-4000-8000-000000000002",
+          "installedAt": "2026-10-01T12:00:00.000Z"
+        },
+        {
+          "anonymousInstall": "anon-00000000-0000-4000-8000-000000000003",
+          "installedAt": "2026-10-01T12:00:00.000Z"
+        }
+      ],
+      "events": [
+        {
+          "name": "game_started",
+          "target": "browser",
+          "sessionId": "fixture-session",
+          "occurredAt": "2026-10-01T12:00:00.000Z",
+          "properties": {
+            "schemaVersion": 1,
+            "gameId": "idle-arcane-tower",
+            "appVersion": "0.13.3",
+            "buildId": "fixture",
+            "sourceGitSha": "fixture",
+            "buildTarget": "web",
+            "runtimeTarget": "browser",
+            "configTarget": "web",
+            "anonymousInstall": "anon-00000000-0000-4000-8000-000000000001",
+            "eventId": "a0",
+            "gameEvent": "app_ready"
+          }
+        },
+        {
+          "name": "stage_finished",
+          "target": "browser",
+          "sessionId": "fixture-session",
+          "occurredAt": "2026-10-02T12:00:00.000Z",
+          "properties": {
+            "schemaVersion": 1,
+            "gameId": "idle-arcane-tower",
+            "appVersion": "0.13.3",
+            "buildId": "fixture",
+            "sourceGitSha": "fixture",
+            "buildTarget": "web",
+            "runtimeTarget": "browser",
+            "configTarget": "web",
+            "anonymousInstall": "anon-00000000-0000-4000-8000-000000000001",
+            "eventId": "a1",
+            "gameEvent": "first_collect"
+          }
+        },
+        {
+          "name": "game_started",
+          "target": "browser",
+          "sessionId": "fixture-session",
+          "occurredAt": "2026-10-08T12:00:00.000Z",
+          "properties": {
+            "schemaVersion": 1,
+            "gameId": "idle-arcane-tower",
+            "appVersion": "0.13.3",
+            "buildId": "fixture",
+            "sourceGitSha": "fixture",
+            "buildTarget": "web",
+            "runtimeTarget": "browser",
+            "configTarget": "web",
+            "anonymousInstall": "anon-00000000-0000-4000-8000-000000000001",
+            "eventId": "a7",
+            "gameEvent": "app_ready"
+          }
+        },
+        {
+          "name": "stage_finished",
+          "target": "browser",
+          "sessionId": "fixture-session",
+          "occurredAt": "2026-10-02T12:00:00.000Z",
+          "properties": {
+            "schemaVersion": 1,
+            "gameId": "idle-arcane-tower",
+            "appVersion": "0.13.3",
+            "buildId": "fixture",
+            "sourceGitSha": "fixture",
+            "buildTarget": "web",
+            "runtimeTarget": "browser",
+            "configTarget": "web",
+            "anonymousInstall": "anon-00000000-0000-4000-8000-000000000001",
+            "eventId": "a1",
+            "gameEvent": "first_collect"
+          }
+        },
+        {
+          "name": "game_started",
+          "target": "browser",
+          "sessionId": "fixture-session",
+          "occurredAt": "2026-10-01T12:00:00.000Z",
+          "properties": {
+            "schemaVersion": 1,
+            "gameId": "idle-arcane-tower",
+            "appVersion": "0.13.3",
+            "buildId": "fixture",
+            "sourceGitSha": "fixture",
+            "buildTarget": "web",
+            "runtimeTarget": "browser",
+            "configTarget": "web",
+            "anonymousInstall": "anon-00000000-0000-4000-8000-000000000002",
+            "eventId": "b0",
+            "gameEvent": "app_ready"
+          }
+        },
+        {
+          "name": "stage_finished",
+          "target": "browser",
+          "sessionId": "fixture-session",
+          "occurredAt": "2026-10-02T12:00:00.000Z",
+          "properties": {
+            "schemaVersion": 1,
+            "gameId": "idle-arcane-tower",
+            "appVersion": "0.13.3",
+            "buildId": "fixture",
+            "sourceGitSha": "fixture",
+            "buildTarget": "web",
+            "runtimeTarget": "browser",
+            "configTarget": "web",
+            "anonymousInstall": "anon-00000000-0000-4000-8000-000000000003",
+            "eventId": "c1",
+            "gameEvent": "art_load_failed"
+          }
+        },
+        {
+          "name": "game_started",
+          "target": "browser",
+          "sessionId": "fixture-session",
+          "occurredAt": "2026-10-09T12:00:00.000Z",
+          "properties": {
+            "schemaVersion": 1,
+            "gameId": "idle-arcane-tower",
+            "appVersion": "0.13.3",
+            "buildId": "fixture",
+            "sourceGitSha": "fixture",
+            "buildTarget": "web",
+            "runtimeTarget": "browser",
+            "configTarget": "web",
+            "anonymousInstall": "anon-00000000-0000-4000-8000-000000000001",
+            "eventId": "a8",
+            "gameEvent": "app_ready"
+          }
+        }
+      ]
+    },
+    "rows": [
+      {
+        "userId": "anon-00000000-0000-4000-8000-000000000001",
+        "day": 0,
+        "active": true
+      },
+      {
+        "userId": "anon-00000000-0000-4000-8000-000000000001",
+        "day": 1,
+        "active": true
+      },
+      {
+        "userId": "anon-00000000-0000-4000-8000-000000000001",
+        "day": 7,
+        "active": true
+      },
+      {
+        "userId": "anon-00000000-0000-4000-8000-000000000002",
+        "day": 0,
+        "active": true
+      },
+      {
+        "userId": "anon-00000000-0000-4000-8000-000000000003",
+        "day": 0,
+        "active": false
+      }
+    ],
+    "observedThroughDay": 7,
+    "revenue": "not-collected",
+    "scenario": {
+      "schemaVersion": 1,
+      "unit": {
+        "code": "USD"
+      },
+      "policy": {
+        "mode": "drop"
+      },
+      "model": {
+        "id": "research-ltv-assumptions",
+        "version": 1
+      },
+      "initial": {
+        "wallet": {
+          "unit": "USD",
+          "amount": "0"
+        }
+      },
+      "clock": {
+        "stepSec": 1,
+        "durationSec": 1
+      },
+      "monetization": {
+        "cohorts": {
+          "baseUsers": 1
+        },
+        "retention": {
+          "d1": 0.42,
+          "d7": 0.2,
+          "d30": 0.09,
+          "d90": 0.04,
+          "longTailDailyDecay": 0.02
+        },
+        "revenue": {
+          "payerConversion": 0.04,
+          "adArpDau": 0,
+          "platformFeeRate": 0.3,
+          "grossMarginRate": 0.92,
+          "progressionRevenueLift": 0.4,
+          "progressionLogSpan": 6,
+          "arppuDaily": 0
+        },
+        "acquisition": {
+          "cpi": 0
+        },
+        "uncertainty": {
+          "enabled": true,
+          "draws": 2000,
+          "seed": 20261012,
+          "quantiles": [
+            0.1,
+            0.5,
+            0.9
+          ],
+          "sigma": {
+            "retention": 0.08,
+            "conversion": 0.12,
+            "arppu": 0.2,
+            "ad": 0.15
+          },
+          "correlation": {
+            "retentionConversion": 0,
+            "retentionArppu": 0,
+            "retentionAd": 0,
+            "conversionArppu": 0,
+            "conversionAd": 0,
+            "arppuAd": 0
+          }
+        }
+      }
+    }
+  },
+  "cases": [
+    {
+      "name": "default-dreamcatcher",
+      "initial": {
+        "t": 0,
+        "money": "100",
+        "bucket": "0",
+        "maxMoneyEver": "100",
+        "prestige": {
+          "count": 0,
+          "points": "0",
+          "multiplier": "1"
+        },
+        "vars": {
+          "version": 1,
+          "research": {
+            "version": 1,
+            "layout": "lab",
+            "staff": [],
+            "assignments": [
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null
+            ],
+            "assistants": [
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null
+            ],
+            "manualCollections": 0,
+            "folioCycles": 0,
+            "invitations": 0,
+            "notes": 5,
+            "draws": 0,
+            "pity": 0,
+            "seed": 61973,
+            "claimed": [],
+            "event": null,
+            "nextEvent": 180,
+            "eventsResolved": 0,
+            "boosts": [
+              {
+                "cycles": 0,
+                "multiplier": 1
+              },
+              {
+                "cycles": 0,
+                "multiplier": 1
+              },
+              {
+                "cycles": 0,
+                "multiplier": 1
+              },
+              {
+                "cycles": 0,
+                "multiplier": 1
+              },
+              {
+                "cycles": 0,
+                "multiplier": 1
+              },
+              {
+                "cycles": 0,
+                "multiplier": 1
+              },
+              {
+                "cycles": 0,
+                "multiplier": 1
+              },
+              {
+                "cycles": 0,
+                "multiplier": 1
+              },
+              {
+                "cycles": 0,
+                "multiplier": 1
+              },
+              {
+                "cycles": 0,
+                "multiplier": 1
+              }
+            ],
+            "discoveries": {
+              "picks": [],
+              "pending": 0
+            }
+          },
+          "economy": {
+            "version": 1,
+            "crystals": 0,
+            "earned": 0,
+            "claimed": [],
+            "freeSpeed": 1,
+            "boost": null,
+            "boostEnabled": false,
+            "tutorialStep": 0,
+            "tutorialDismissed": false
+          },
+          "contentVersion": "candidate-v3-seed7",
+          "tower": 0,
+          "legacyCurve": 2,
+          "stateVersion": 1,
+          "gold": "1e2",
+          "elapsed": 0,
+          "floors": [
+            {
+              "id": "m005",
+              "level": 0,
+              "progress": 0,
+              "serial": 0
+            },
+            {
+              "id": "m004",
+              "level": 0,
+              "progress": 0,
+              "serial": 0
+            },
+            {
+              "id": "m012",
+              "level": 0,
+              "progress": 0,
+              "serial": 0
+            },
+            {
+              "id": "m013",
+              "level": 0,
+              "progress": 0,
+              "serial": 0
+            },
+            {
+              "id": "m024",
+              "level": 0,
+              "progress": 0,
+              "serial": 0
+            },
+            {
+              "id": "m023",
+              "level": 0,
+              "progress": 0,
+              "serial": 0
+            },
+            {
+              "id": "m029",
+              "level": 0,
+              "progress": 0,
+              "serial": 0
+            },
+            {
+              "id": "m028",
+              "level": 0,
+              "progress": 0,
+              "serial": 0
+            },
+            {
+              "id": "m038",
+              "level": 0,
+              "progress": 0,
+              "serial": 0
+            },
+            {
+              "id": "boss1",
+              "level": 0,
+              "progress": 0,
+              "serial": 0
+            }
+          ],
+          "discovered": [],
+          "best": {},
+          "trophies": [],
+          "done": false
+        }
+      },
+      "segments": [
+        {
+          "kind": "active",
+          "wallStart": 0,
+          "wallEnd": 600,
+          "after": {
+            "t": 600,
+            "money": "335387.782012545",
+            "bucket": "0",
+            "maxMoneyEver": "675878.562700387",
+            "prestige": {
+              "count": 0,
+              "points": "0",
+              "multiplier": "1"
+            },
+            "vars": {
+              "version": 1,
+              "research": {
+                "version": 1,
+                "layout": "lab",
+                "staff": [],
+                "assignments": [
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null
+                ],
+                "assistants": [
+                  "rune",
+                  "rune",
+                  "rune",
+                  "rune",
+                  "rune",
+                  "rune",
+                  "rune",
+                  "rune",
+                  null,
+                  null
+                ],
+                "manualCollections": 1,
+                "folioCycles": 0,
+                "invitations": 0,
+                "notes": 13,
+                "draws": 0,
+                "pity": 0,
+                "seed": 61973,
+                "claimed": [
+                  "0:2",
+                  "0:5"
+                ],
+                "event": null,
+                "nextEvent": 720,
+                "eventsResolved": 3,
+                "boosts": [
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  }
+                ],
+                "discoveries": {
+                  "picks": [
+                    "familiar",
+                    "dreamcatcher",
+                    "survey",
+                    "mentor",
+                    "thrift"
+                  ],
+                  "pending": 0
+                }
+              },
+              "economy": {
+                "version": 1,
+                "crystals": 0,
+                "earned": 0,
+                "claimed": [],
+                "freeSpeed": 1,
+                "boost": null,
+                "boostEnabled": false,
+                "tutorialStep": 0,
+                "tutorialDismissed": false
+              },
+              "contentVersion": "candidate-v3-seed7",
+              "tower": 0,
+              "legacyCurve": 2,
+              "stateVersion": 1,
+              "gold": "3.35387782012545e5",
+              "elapsed": 600,
+              "floors": [
+                {
+                  "id": "m005",
+                  "level": 18,
+                  "progress": 0,
+                  "serial": 100,
+                  "pendingMana": "0"
+                },
+                {
+                  "id": "m004",
+                  "level": 17,
+                  "progress": 0,
+                  "serial": 43
+                },
+                {
+                  "id": "m012",
+                  "level": 13,
+                  "progress": 6,
+                  "serial": 37
+                },
+                {
+                  "id": "m013",
+                  "level": 8,
+                  "progress": 0,
+                  "serial": 68
+                },
+                {
+                  "id": "m024",
+                  "level": 7,
+                  "progress": 6,
+                  "serial": 28
+                },
+                {
+                  "id": "m023",
+                  "level": 5,
+                  "progress": 4,
+                  "serial": 26
+                },
+                {
+                  "id": "m029",
+                  "level": 3,
+                  "progress": 0,
+                  "serial": 29
+                },
+                {
+                  "id": "m028",
+                  "level": 1,
+                  "progress": 0,
+                  "serial": 4
+                },
+                {
+                  "id": "m038",
+                  "level": 0,
+                  "progress": 0,
+                  "serial": 0
+                },
+                {
+                  "id": "boss1",
+                  "level": 0,
+                  "progress": 0,
+                  "serial": 0
+                }
+              ],
+              "discovered": [
+                "m005",
+                "m004",
+                "m012",
+                "m013",
+                "m024",
+                "m023",
+                "m029",
+                "m028"
+              ],
+              "best": {
+                "m005": 18,
+                "m004": 17,
+                "m012": 13,
+                "m013": 8,
+                "m024": 7,
+                "m023": 5,
+                "m029": 3,
+                "m028": 1
+              },
+              "trophies": [],
+              "done": false
+            }
+          }
+        },
+        {
+          "kind": "offline",
+          "wallStart": 600,
+          "wallEnd": 45000,
+          "cap": 28800,
+          "credited": 28800,
+          "reward": "6.94362240000001e8",
+          "after": {
+            "t": 29400,
+            "money": "694697627.7820129",
+            "bucket": "0",
+            "maxMoneyEver": "694697627.7820129",
+            "prestige": {
+              "count": 0,
+              "points": "0",
+              "multiplier": "1"
+            },
+            "vars": {
+              "version": 1,
+              "research": {
+                "version": 1,
+                "layout": "lab",
+                "staff": [],
+                "assignments": [
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null
+                ],
+                "assistants": [
+                  "rune",
+                  "rune",
+                  "rune",
+                  "rune",
+                  "rune",
+                  "rune",
+                  "rune",
+                  "rune",
+                  null,
+                  null
+                ],
+                "manualCollections": 1,
+                "folioCycles": 0,
+                "invitations": 0,
+                "notes": 13,
+                "draws": 0,
+                "pity": 0,
+                "seed": 61973,
+                "claimed": [
+                  "0:2",
+                  "0:5"
+                ],
+                "event": {
+                  "kind": 2,
+                  "floor": 0
+                },
+                "nextEvent": 720,
+                "eventsResolved": 3,
+                "boosts": [
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  }
+                ],
+                "discoveries": {
+                  "picks": [
+                    "familiar",
+                    "dreamcatcher",
+                    "survey",
+                    "mentor",
+                    "thrift"
+                  ],
+                  "pending": 0
+                }
+              },
+              "economy": {
+                "version": 1,
+                "crystals": 0,
+                "earned": 0,
+                "claimed": [],
+                "freeSpeed": 1,
+                "boost": null,
+                "boostEnabled": false,
+                "tutorialStep": 0,
+                "tutorialDismissed": false
+              },
+              "contentVersion": "candidate-v3-seed7",
+              "tower": 0,
+              "legacyCurve": 2,
+              "stateVersion": 1,
+              "gold": "6.94697627782013e8",
+              "elapsed": 29400,
+              "floors": [
+                {
+                  "id": "m005",
+                  "level": 18,
+                  "progress": 0,
+                  "serial": 4900,
+                  "pendingMana": "0"
+                },
+                {
+                  "id": "m004",
+                  "level": 17,
+                  "progress": 0,
+                  "serial": 2443
+                },
+                {
+                  "id": "m012",
+                  "level": 13,
+                  "progress": 6,
+                  "serial": 2437
+                },
+                {
+                  "id": "m013",
+                  "level": 8,
+                  "progress": 0,
+                  "serial": 4868
+                },
+                {
+                  "id": "m024",
+                  "level": 7,
+                  "progress": 6,
+                  "serial": 2428
+                },
+                {
+                  "id": "m023",
+                  "level": 5,
+                  "progress": 4,
+                  "serial": 2906
+                },
+                {
+                  "id": "m029",
+                  "level": 3,
+                  "progress": 0,
+                  "serial": 4829
+                },
+                {
+                  "id": "m028",
+                  "level": 1,
+                  "progress": 0,
+                  "serial": 2404
+                },
+                {
+                  "id": "m038",
+                  "level": 0,
+                  "progress": 0,
+                  "serial": 0
+                },
+                {
+                  "id": "boss1",
+                  "level": 0,
+                  "progress": 0,
+                  "serial": 0
+                }
+              ],
+              "discovered": [
+                "m005",
+                "m004",
+                "m012",
+                "m013",
+                "m024",
+                "m023",
+                "m029",
+                "m028"
+              ],
+              "best": {
+                "m005": 18,
+                "m004": 17,
+                "m012": 13,
+                "m013": 8,
+                "m024": 7,
+                "m023": 5,
+                "m029": 3,
+                "m028": 1
+              },
+              "trophies": [],
+              "done": false
+            }
+          }
+        },
+        {
+          "kind": "active",
+          "wallStart": 45000,
+          "wallEnd": 45600,
+          "after": {
+            "t": 30000,
+            "money": "28490.4120346257",
+            "bucket": "0",
+            "maxMoneyEver": "694697627.7820129",
+            "prestige": {
+              "count": 1,
+              "points": "1",
+              "multiplier": "1.3563537051363141"
+            },
+            "vars": {
+              "version": 1,
+              "research": {
+                "version": 1,
+                "layout": "lab",
+                "staff": [],
+                "assignments": [
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null
+                ],
+                "assistants": [
+                  "rune",
+                  "rune",
+                  "rune",
+                  "rune",
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null
+                ],
+                "manualCollections": 1,
+                "folioCycles": 0,
+                "invitations": 0,
+                "notes": 27,
+                "draws": 0,
+                "pity": 0,
+                "seed": 61973,
+                "claimed": [
+                  "0:2",
+                  "0:5",
+                  "0:8",
+                  "1:2"
+                ],
+                "event": null,
+                "nextEvent": 30022,
+                "eventsResolved": 6,
+                "boosts": [
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  }
+                ],
+                "discoveries": {
+                  "picks": [
+                    "mentor",
+                    "resonance",
+                    "observatory"
+                  ],
+                  "pending": 0
+                }
+              },
+              "economy": {
+                "version": 1,
+                "crystals": 0,
+                "earned": 0,
+                "claimed": [],
+                "freeSpeed": 1,
+                "boost": null,
+                "boostEnabled": false,
+                "tutorialStep": 0,
+                "tutorialDismissed": false
+              },
+              "contentVersion": "candidate-v3-seed7",
+              "tower": 1,
+              "legacyCurve": 2,
+              "stateVersion": 1,
+              "gold": "2.84904120346257e4",
+              "elapsed": 30000,
+              "floors": [
+                {
+                  "id": "m006",
+                  "level": 6,
+                  "progress": 5,
+                  "serial": 64
+                },
+                {
+                  "id": "m001",
+                  "level": 5,
+                  "progress": 5,
+                  "serial": 56
+                },
+                {
+                  "id": "m002",
+                  "level": 4,
+                  "progress": 5,
+                  "serial": 30
+                },
+                {
+                  "id": "m003",
+                  "level": 2,
+                  "progress": 9,
+                  "serial": 10
+                },
+                {
+                  "id": "m008",
+                  "level": 0,
+                  "progress": 0,
+                  "serial": 0
+                },
+                {
+                  "id": "m011",
+                  "level": 0,
+                  "progress": 0,
+                  "serial": 0
+                },
+                {
+                  "id": "m009",
+                  "level": 0,
+                  "progress": 0,
+                  "serial": 0
+                },
+                {
+                  "id": "m017",
+                  "level": 0,
+                  "progress": 0,
+                  "serial": 0
+                },
+                {
+                  "id": "m022",
+                  "level": 0,
+                  "progress": 0,
+                  "serial": 0
+                },
+                {
+                  "id": "m030",
+                  "level": 0,
+                  "progress": 0,
+                  "serial": 0
+                },
+                {
+                  "id": "m028",
+                  "level": 0,
+                  "progress": 0,
+                  "serial": 0
+                },
+                {
+                  "id": "m038",
+                  "level": 0,
+                  "progress": 0,
+                  "serial": 0
+                },
+                {
+                  "id": "boss1",
+                  "level": 0,
+                  "progress": 0,
+                  "serial": 0
+                }
+              ],
+              "discovered": [
+                "m005",
+                "m004",
+                "m012",
+                "m013",
+                "m024",
+                "m023",
+                "m029",
+                "m028",
+                "m038",
+                "boss1",
+                "m006",
+                "m001",
+                "m002",
+                "m003"
+              ],
+              "best": {
+                "m005": 23,
+                "m004": 22,
+                "m012": 18,
+                "m013": 17,
+                "m024": 17,
+                "m023": 16,
+                "m029": 15,
+                "m028": 14,
+                "m038": 10,
+                "boss1": 1,
+                "m006": 6,
+                "m001": 5,
+                "m002": 4,
+                "m003": 2
+              },
+              "trophies": [
+                "tower-1"
+              ],
+              "done": false,
+              "legacy": 120,
+              "stars": {
+                "shards": 1,
+                "nodes": {}
+              },
+              "series": "ancient",
+              "depths": {
+                "ancient": 0
+              }
+            }
+          }
+        },
+        {
+          "kind": "offline",
+          "wallStart": 45600,
+          "wallEnd": 86400,
+          "cap": 28800,
+          "credited": 28800,
+          "reward": "1.09700585571868e7",
+          "after": {
+            "t": 58800,
+            "money": "10998548.96922145",
+            "bucket": "0",
+            "maxMoneyEver": "694697627.7820129",
+            "prestige": {
+              "count": 1,
+              "points": "1",
+              "multiplier": "1.3563537051363141"
+            },
+            "vars": {
+              "version": 1,
+              "research": {
+                "version": 1,
+                "layout": "lab",
+                "staff": [],
+                "assignments": [
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null
+                ],
+                "assistants": [
+                  "rune",
+                  "rune",
+                  "rune",
+                  "rune",
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null
+                ],
+                "manualCollections": 1,
+                "folioCycles": 0,
+                "invitations": 0,
+                "notes": 27,
+                "draws": 0,
+                "pity": 0,
+                "seed": 61973,
+                "claimed": [
+                  "0:2",
+                  "0:5",
+                  "0:8",
+                  "1:2"
+                ],
+                "event": {
+                  "kind": 2,
+                  "floor": 2
+                },
+                "nextEvent": 30022,
+                "eventsResolved": 6,
+                "boosts": [
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  }
+                ],
+                "discoveries": {
+                  "picks": [
+                    "mentor",
+                    "resonance",
+                    "observatory"
+                  ],
+                  "pending": 0
+                }
+              },
+              "economy": {
+                "version": 1,
+                "crystals": 0,
+                "earned": 0,
+                "claimed": [],
+                "freeSpeed": 1,
+                "boost": null,
+                "boostEnabled": false,
+                "tutorialStep": 0,
+                "tutorialDismissed": false
+              },
+              "contentVersion": "candidate-v3-seed7",
+              "tower": 1,
+              "legacyCurve": 2,
+              "stateVersion": 1,
+              "gold": "1.099854896922145e7",
+              "elapsed": 58800,
+              "floors": [
+                {
+                  "id": "m006",
+                  "level": 6,
+                  "progress": 5,
+                  "serial": 3664
+                },
+                {
+                  "id": "m001",
+                  "level": 5,
+                  "progress": 5,
+                  "serial": 4856
+                },
+                {
+                  "id": "m002",
+                  "level": 4,
+                  "progress": 5,
+                  "serial": 3630
+                },
+                {
+                  "id": "m003",
+                  "level": 2,
+                  "progress": 9,
+                  "serial": 2890
+                },
+                {
+                  "id": "m008",
+                  "level": 0,
+                  "progress": 0,
+                  "serial": 0
+                },
+                {
+                  "id": "m011",
+                  "level": 0,
+                  "progress": 0,
+                  "serial": 0
+                },
+                {
+                  "id": "m009",
+                  "level": 0,
+                  "progress": 0,
+                  "serial": 0
+                },
+                {
+                  "id": "m017",
+                  "level": 0,
+                  "progress": 0,
+                  "serial": 0
+                },
+                {
+                  "id": "m022",
+                  "level": 0,
+                  "progress": 0,
+                  "serial": 0
+                },
+                {
+                  "id": "m030",
+                  "level": 0,
+                  "progress": 0,
+                  "serial": 0
+                },
+                {
+                  "id": "m028",
+                  "level": 0,
+                  "progress": 0,
+                  "serial": 0
+                },
+                {
+                  "id": "m038",
+                  "level": 0,
+                  "progress": 0,
+                  "serial": 0
+                },
+                {
+                  "id": "boss1",
+                  "level": 0,
+                  "progress": 0,
+                  "serial": 0
+                }
+              ],
+              "discovered": [
+                "m005",
+                "m004",
+                "m012",
+                "m013",
+                "m024",
+                "m023",
+                "m029",
+                "m028",
+                "m038",
+                "boss1",
+                "m006",
+                "m001",
+                "m002",
+                "m003"
+              ],
+              "best": {
+                "m005": 23,
+                "m004": 22,
+                "m012": 18,
+                "m013": 17,
+                "m024": 17,
+                "m023": 16,
+                "m029": 15,
+                "m028": 14,
+                "m038": 10,
+                "boss1": 1,
+                "m006": 6,
+                "m001": 5,
+                "m002": 4,
+                "m003": 2
+              },
+              "trophies": [
+                "tower-1"
+              ],
+              "done": false,
+              "legacy": 120,
+              "stars": {
+                "shards": 1,
+                "nodes": {}
+              },
+              "series": "ancient",
+              "depths": {
+                "ancient": 0
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "elapsedSec": 86400,
+        "activeSec": 1200,
+        "offlineCreditedSec": 57600,
+        "lostRewardSec": 27600
+      }
+    },
+    {
+      "name": "owl",
+      "initial": {
+        "t": 0,
+        "money": "0",
+        "bucket": "0",
+        "maxMoneyEver": "100",
+        "prestige": {
+          "count": 0,
+          "points": "0",
+          "multiplier": "1"
+        },
+        "vars": {
+          "version": 1,
+          "research": {
+            "version": 1,
+            "layout": "lab",
+            "staff": [],
+            "assignments": [
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null
+            ],
+            "assistants": [
+              "owl",
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null
+            ],
+            "manualCollections": 1,
+            "folioCycles": 0,
+            "invitations": 0,
+            "notes": 5,
+            "draws": 0,
+            "pity": 0,
+            "seed": 61973,
+            "claimed": [],
+            "event": null,
+            "nextEvent": 180,
+            "eventsResolved": 0,
+            "boosts": [
+              {
+                "cycles": 0,
+                "multiplier": 1
+              },
+              {
+                "cycles": 0,
+                "multiplier": 1
+              },
+              {
+                "cycles": 0,
+                "multiplier": 1
+              },
+              {
+                "cycles": 0,
+                "multiplier": 1
+              },
+              {
+                "cycles": 0,
+                "multiplier": 1
+              },
+              {
+                "cycles": 0,
+                "multiplier": 1
+              },
+              {
+                "cycles": 0,
+                "multiplier": 1
+              },
+              {
+                "cycles": 0,
+                "multiplier": 1
+              },
+              {
+                "cycles": 0,
+                "multiplier": 1
+              },
+              {
+                "cycles": 0,
+                "multiplier": 1
+              }
+            ],
+            "discoveries": {
+              "picks": [],
+              "pending": 0
+            }
+          },
+          "economy": {
+            "version": 1,
+            "crystals": 0,
+            "earned": 0,
+            "claimed": [],
+            "freeSpeed": 1,
+            "boost": null,
+            "boostEnabled": false,
+            "tutorialStep": 0,
+            "tutorialDismissed": false
+          },
+          "contentVersion": "candidate-v3-seed7",
+          "tower": 0,
+          "legacyCurve": 2,
+          "stateVersion": 1,
+          "gold": "0",
+          "elapsed": 0,
+          "floors": [
+            {
+              "id": "m005",
+              "level": 1,
+              "progress": 0,
+              "serial": 0
+            },
+            {
+              "id": "m004",
+              "level": 0,
+              "progress": 0,
+              "serial": 0
+            },
+            {
+              "id": "m012",
+              "level": 0,
+              "progress": 0,
+              "serial": 0
+            },
+            {
+              "id": "m013",
+              "level": 0,
+              "progress": 0,
+              "serial": 0
+            },
+            {
+              "id": "m024",
+              "level": 0,
+              "progress": 0,
+              "serial": 0
+            },
+            {
+              "id": "m023",
+              "level": 0,
+              "progress": 0,
+              "serial": 0
+            },
+            {
+              "id": "m029",
+              "level": 0,
+              "progress": 0,
+              "serial": 0
+            },
+            {
+              "id": "m028",
+              "level": 0,
+              "progress": 0,
+              "serial": 0
+            },
+            {
+              "id": "m038",
+              "level": 0,
+              "progress": 0,
+              "serial": 0
+            },
+            {
+              "id": "boss1",
+              "level": 0,
+              "progress": 0,
+              "serial": 0
+            }
+          ],
+          "discovered": [
+            "m005"
+          ],
+          "best": {
+            "m005": 1
+          },
+          "trophies": [],
+          "done": false
+        }
+      },
+      "segments": [
+        {
+          "kind": "active",
+          "wallStart": 0,
+          "wallEnd": 600,
+          "after": {
+            "t": 600,
+            "money": "32975.5677796942",
+            "bucket": "0",
+            "maxMoneyEver": "71502.0825891901",
+            "prestige": {
+              "count": 0,
+              "points": "0",
+              "multiplier": "1"
+            },
+            "vars": {
+              "version": 1,
+              "research": {
+                "version": 1,
+                "layout": "lab",
+                "staff": [],
+                "assignments": [
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null
+                ],
+                "assistants": [
+                  "owl",
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null
+                ],
+                "manualCollections": 158,
+                "folioCycles": 0,
+                "invitations": 0,
+                "notes": 9,
+                "draws": 0,
+                "pity": 0,
+                "seed": 61973,
+                "claimed": [
+                  "0:2",
+                  "0:5"
+                ],
+                "event": {
+                  "kind": 7,
+                  "floor": 0
+                },
+                "nextEvent": 180,
+                "eventsResolved": 0,
+                "boosts": [
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  }
+                ],
+                "discoveries": {
+                  "picks": [],
+                  "pending": 3
+                }
+              },
+              "economy": {
+                "version": 1,
+                "crystals": 0,
+                "earned": 0,
+                "claimed": [],
+                "freeSpeed": 1,
+                "boost": null,
+                "boostEnabled": false,
+                "tutorialStep": 0,
+                "tutorialDismissed": false
+              },
+              "contentVersion": "candidate-v3-seed7",
+              "tower": 0,
+              "legacyCurve": 2,
+              "stateVersion": 1,
+              "gold": "3.29755677796942e4",
+              "elapsed": 600,
+              "floors": [
+                {
+                  "id": "m005",
+                  "level": 16,
+                  "progress": 0,
+                  "serial": 100
+                },
+                {
+                  "id": "m004",
+                  "level": 14,
+                  "progress": 6,
+                  "serial": 42,
+                  "pendingMana": "0"
+                },
+                {
+                  "id": "m012",
+                  "level": 6,
+                  "progress": 5,
+                  "serial": 35,
+                  "pendingMana": "0"
+                },
+                {
+                  "id": "m013",
+                  "level": 4,
+                  "progress": 4,
+                  "serial": 56,
+                  "pendingMana": "0"
+                },
+                {
+                  "id": "m024",
+                  "level": 3,
+                  "progress": 3,
+                  "serial": 18,
+                  "pendingMana": "0"
+                },
+                {
+                  "id": "m023",
+                  "level": 2,
+                  "progress": 2,
+                  "serial": 6,
+                  "pendingMana": "0"
+                },
+                {
+                  "id": "m029",
+                  "level": 0,
+                  "progress": 0,
+                  "serial": 0
+                },
+                {
+                  "id": "m028",
+                  "level": 0,
+                  "progress": 0,
+                  "serial": 0
+                },
+                {
+                  "id": "m038",
+                  "level": 0,
+                  "progress": 0,
+                  "serial": 0
+                },
+                {
+                  "id": "boss1",
+                  "level": 0,
+                  "progress": 0,
+                  "serial": 0
+                }
+              ],
+              "discovered": [
+                "m005",
+                "m004",
+                "m012",
+                "m013",
+                "m024",
+                "m023"
+              ],
+              "best": {
+                "m005": 16,
+                "m004": 14,
+                "m012": 6,
+                "m013": 4,
+                "m024": 3,
+                "m023": 2
+              },
+              "trophies": [],
+              "done": false
+            }
+          }
+        },
+        {
+          "kind": "offline",
+          "wallStart": 600,
+          "wallEnd": 45000,
+          "cap": 28800,
+          "credited": 28800,
+          "reward": "2.304e6",
+          "after": {
+            "t": 29400,
+            "money": "2336975.56777969",
+            "bucket": "0",
+            "maxMoneyEver": "2336975.56777969",
+            "prestige": {
+              "count": 0,
+              "points": "0",
+              "multiplier": "1"
+            },
+            "vars": {
+              "version": 1,
+              "research": {
+                "version": 1,
+                "layout": "lab",
+                "staff": [],
+                "assignments": [
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null
+                ],
+                "assistants": [
+                  "owl",
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null
+                ],
+                "manualCollections": 158,
+                "folioCycles": 0,
+                "invitations": 0,
+                "notes": 9,
+                "draws": 0,
+                "pity": 0,
+                "seed": 61973,
+                "claimed": [
+                  "0:2",
+                  "0:5"
+                ],
+                "event": {
+                  "kind": 7,
+                  "floor": 0
+                },
+                "nextEvent": 180,
+                "eventsResolved": 0,
+                "boosts": [
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  }
+                ],
+                "discoveries": {
+                  "picks": [],
+                  "pending": 3
+                }
+              },
+              "economy": {
+                "version": 1,
+                "crystals": 0,
+                "earned": 0,
+                "claimed": [],
+                "freeSpeed": 1,
+                "boost": null,
+                "boostEnabled": false,
+                "tutorialStep": 0,
+                "tutorialDismissed": false
+              },
+              "contentVersion": "candidate-v3-seed7",
+              "tower": 0,
+              "legacyCurve": 2,
+              "stateVersion": 1,
+              "gold": "2.33697556777969e6",
+              "elapsed": 29400,
+              "floors": [
+                {
+                  "id": "m005",
+                  "level": 16,
+                  "progress": 0,
+                  "serial": 4900
+                },
+                {
+                  "id": "m004",
+                  "level": 14,
+                  "progress": 0,
+                  "serial": 42,
+                  "pendingMana": "2.016e3"
+                },
+                {
+                  "id": "m012",
+                  "level": 6,
+                  "progress": 0,
+                  "serial": 35,
+                  "pendingMana": "1.296e3"
+                },
+                {
+                  "id": "m013",
+                  "level": 4,
+                  "progress": 0,
+                  "serial": 56,
+                  "pendingMana": "1.296e3"
+                },
+                {
+                  "id": "m024",
+                  "level": 3,
+                  "progress": 0,
+                  "serial": 18,
+                  "pendingMana": "5.832000000000001e3"
+                },
+                {
+                  "id": "m023",
+                  "level": 2,
+                  "progress": 0,
+                  "serial": 6,
+                  "pendingMana": "9.72e3"
+                },
+                {
+                  "id": "m029",
+                  "level": 0,
+                  "progress": 0,
+                  "serial": 0
+                },
+                {
+                  "id": "m028",
+                  "level": 0,
+                  "progress": 0,
+                  "serial": 0
+                },
+                {
+                  "id": "m038",
+                  "level": 0,
+                  "progress": 0,
+                  "serial": 0
+                },
+                {
+                  "id": "boss1",
+                  "level": 0,
+                  "progress": 0,
+                  "serial": 0
+                }
+              ],
+              "discovered": [
+                "m005",
+                "m004",
+                "m012",
+                "m013",
+                "m024",
+                "m023"
+              ],
+              "best": {
+                "m005": 16,
+                "m004": 14,
+                "m012": 6,
+                "m013": 4,
+                "m024": 3,
+                "m023": 2
+              },
+              "trophies": [],
+              "done": false
+            }
+          }
+        },
+        {
+          "kind": "active",
+          "wallStart": 45000,
+          "wallEnd": 45600,
+          "after": {
+            "t": 30000,
+            "money": "6945434.82459528",
+            "bucket": "0",
+            "maxMoneyEver": "10045252.402004302",
+            "prestige": {
+              "count": 0,
+              "points": "0",
+              "multiplier": "1"
+            },
+            "vars": {
+              "version": 1,
+              "research": {
+                "version": 1,
+                "layout": "lab",
+                "staff": [],
+                "assignments": [
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null
+                ],
+                "assistants": [
+                  "owl",
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null
+                ],
+                "manualCollections": 641,
+                "folioCycles": 0,
+                "invitations": 0,
+                "notes": 11,
+                "draws": 0,
+                "pity": 0,
+                "seed": 61973,
+                "claimed": [
+                  "0:2",
+                  "0:5",
+                  "0:8"
+                ],
+                "event": {
+                  "kind": 7,
+                  "floor": 0
+                },
+                "nextEvent": 180,
+                "eventsResolved": 0,
+                "boosts": [
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  }
+                ],
+                "discoveries": {
+                  "picks": [],
+                  "pending": 4
+                }
+              },
+              "economy": {
+                "version": 1,
+                "crystals": 0,
+                "earned": 0,
+                "claimed": [],
+                "freeSpeed": 1,
+                "boost": null,
+                "boostEnabled": false,
+                "tutorialStep": 0,
+                "tutorialDismissed": false
+              },
+              "contentVersion": "candidate-v3-seed7",
+              "tower": 0,
+              "legacyCurve": 2,
+              "stateVersion": 1,
+              "gold": "6.94543482459528e6",
+              "elapsed": 30000,
+              "floors": [
+                {
+                  "id": "m005",
+                  "level": 21,
+                  "progress": 0,
+                  "serial": 5000
+                },
+                {
+                  "id": "m004",
+                  "level": 20,
+                  "progress": 0,
+                  "serial": 92,
+                  "pendingMana": "2.88e3"
+                },
+                {
+                  "id": "m012",
+                  "level": 16,
+                  "progress": 11,
+                  "serial": 85,
+                  "pendingMana": "0"
+                },
+                {
+                  "id": "m013",
+                  "level": 15,
+                  "progress": 4,
+                  "serial": 156,
+                  "pendingMana": "0"
+                },
+                {
+                  "id": "m024",
+                  "level": 15,
+                  "progress": 9,
+                  "serial": 68,
+                  "pendingMana": "0"
+                },
+                {
+                  "id": "m023",
+                  "level": 14,
+                  "progress": 8,
+                  "serial": 56,
+                  "pendingMana": "0"
+                },
+                {
+                  "id": "m029",
+                  "level": 8,
+                  "progress": 1,
+                  "serial": 99,
+                  "pendingMana": "0"
+                },
+                {
+                  "id": "m028",
+                  "level": 7,
+                  "progress": 6,
+                  "serial": 49,
+                  "pendingMana": "0"
+                },
+                {
+                  "id": "m038",
+                  "level": 7,
+                  "progress": 5,
+                  "serial": 35,
+                  "pendingMana": "0"
+                },
+                {
+                  "id": "boss1",
+                  "level": 0,
+                  "progress": 0,
+                  "serial": 0
+                }
+              ],
+              "discovered": [
+                "m005",
+                "m004",
+                "m012",
+                "m013",
+                "m024",
+                "m023",
+                "m029",
+                "m028",
+                "m038"
+              ],
+              "best": {
+                "m005": 21,
+                "m004": 20,
+                "m012": 16,
+                "m013": 15,
+                "m024": 15,
+                "m023": 14,
+                "m029": 8,
+                "m028": 7,
+                "m038": 7
+              },
+              "trophies": [],
+              "done": false
+            }
+          }
+        },
+        {
+          "kind": "offline",
+          "wallStart": 45600,
+          "wallEnd": 86400,
+          "cap": 28800,
+          "credited": 28800,
+          "reward": "3.024e6",
+          "after": {
+            "t": 58800,
+            "money": "9969434.82459528",
+            "bucket": "0",
+            "maxMoneyEver": "10045252.402004302",
+            "prestige": {
+              "count": 0,
+              "points": "0",
+              "multiplier": "1"
+            },
+            "vars": {
+              "version": 1,
+              "research": {
+                "version": 1,
+                "layout": "lab",
+                "staff": [],
+                "assignments": [
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null
+                ],
+                "assistants": [
+                  "owl",
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null
+                ],
+                "manualCollections": 641,
+                "folioCycles": 0,
+                "invitations": 0,
+                "notes": 11,
+                "draws": 0,
+                "pity": 0,
+                "seed": 61973,
+                "claimed": [
+                  "0:2",
+                  "0:5",
+                  "0:8"
+                ],
+                "event": {
+                  "kind": 7,
+                  "floor": 0
+                },
+                "nextEvent": 180,
+                "eventsResolved": 0,
+                "boosts": [
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  }
+                ],
+                "discoveries": {
+                  "picks": [],
+                  "pending": 4
+                }
+              },
+              "economy": {
+                "version": 1,
+                "crystals": 0,
+                "earned": 0,
+                "claimed": [],
+                "freeSpeed": 1,
+                "boost": null,
+                "boostEnabled": false,
+                "tutorialStep": 0,
+                "tutorialDismissed": false
+              },
+              "contentVersion": "candidate-v3-seed7",
+              "tower": 0,
+              "legacyCurve": 2,
+              "stateVersion": 1,
+              "gold": "9.96943482459528e6",
+              "elapsed": 58800,
+              "floors": [
+                {
+                  "id": "m005",
+                  "level": 21,
+                  "progress": 0,
+                  "serial": 9800
+                },
+                {
+                  "id": "m004",
+                  "level": 20,
+                  "progress": 0,
+                  "serial": 92,
+                  "pendingMana": "2.88e3"
+                },
+                {
+                  "id": "m012",
+                  "level": 16,
+                  "progress": 0,
+                  "serial": 85,
+                  "pendingMana": "6.912000000000001e3"
+                },
+                {
+                  "id": "m013",
+                  "level": 15,
+                  "progress": 0,
+                  "serial": 156,
+                  "pendingMana": "9.72e3"
+                },
+                {
+                  "id": "m024",
+                  "level": 15,
+                  "progress": 0,
+                  "serial": 68,
+                  "pendingMana": "5.832000000000001e4"
+                },
+                {
+                  "id": "m023",
+                  "level": 14,
+                  "progress": 0,
+                  "serial": 56,
+                  "pendingMana": "1.3608e5"
+                },
+                {
+                  "id": "m029",
+                  "level": 8,
+                  "progress": 0,
+                  "serial": 99,
+                  "pendingMana": "6.9984e4"
+                },
+                {
+                  "id": "m028",
+                  "level": 7,
+                  "progress": 0,
+                  "serial": 49,
+                  "pendingMana": "3.6741599999999996e5"
+                },
+                {
+                  "id": "m038",
+                  "level": 7,
+                  "progress": 0,
+                  "serial": 35,
+                  "pendingMana": "7.348319999999999e5"
+                },
+                {
+                  "id": "boss1",
+                  "level": 0,
+                  "progress": 0,
+                  "serial": 0
+                }
+              ],
+              "discovered": [
+                "m005",
+                "m004",
+                "m012",
+                "m013",
+                "m024",
+                "m023",
+                "m029",
+                "m028",
+                "m038"
+              ],
+              "best": {
+                "m005": 21,
+                "m004": 20,
+                "m012": 16,
+                "m013": 15,
+                "m024": 15,
+                "m023": 14,
+                "m029": 8,
+                "m028": 7,
+                "m038": 7
+              },
+              "trophies": [],
+              "done": false
+            }
+          }
+        }
+      ],
+      "expected": {
+        "elapsedSec": 86400,
+        "activeSec": 1200,
+        "offlineCreditedSec": 57600,
+        "lostRewardSec": 27600
+      }
+    },
+    {
+      "name": "extended-cap",
+      "initial": {
+        "t": 0,
+        "money": "0",
+        "bucket": "0",
+        "maxMoneyEver": "100",
+        "prestige": {
+          "count": 0,
+          "points": "0",
+          "multiplier": "1"
+        },
+        "vars": {
+          "version": 1,
+          "research": {
+            "version": 1,
+            "layout": "lab",
+            "staff": [],
+            "assignments": [
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null
+            ],
+            "assistants": [
+              "rune",
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null
+            ],
+            "manualCollections": 1,
+            "folioCycles": 0,
+            "invitations": 0,
+            "notes": 5,
+            "draws": 0,
+            "pity": 0,
+            "seed": 61973,
+            "claimed": [],
+            "event": null,
+            "nextEvent": 180,
+            "eventsResolved": 0,
+            "boosts": [
+              {
+                "cycles": 0,
+                "multiplier": 1
+              },
+              {
+                "cycles": 0,
+                "multiplier": 1
+              },
+              {
+                "cycles": 0,
+                "multiplier": 1
+              },
+              {
+                "cycles": 0,
+                "multiplier": 1
+              },
+              {
+                "cycles": 0,
+                "multiplier": 1
+              },
+              {
+                "cycles": 0,
+                "multiplier": 1
+              },
+              {
+                "cycles": 0,
+                "multiplier": 1
+              },
+              {
+                "cycles": 0,
+                "multiplier": 1
+              },
+              {
+                "cycles": 0,
+                "multiplier": 1
+              },
+              {
+                "cycles": 0,
+                "multiplier": 1
+              }
+            ],
+            "discoveries": {
+              "picks": [],
+              "pending": 0
+            },
+            "pacts": {
+              "mana": 0,
+              "offline": 1
+            }
+          },
+          "economy": {
+            "version": 1,
+            "crystals": 0,
+            "earned": 0,
+            "claimed": [],
+            "freeSpeed": 1,
+            "boost": null,
+            "boostEnabled": false,
+            "tutorialStep": 0,
+            "tutorialDismissed": false
+          },
+          "contentVersion": "candidate-v3-seed7",
+          "tower": 0,
+          "legacyCurve": 2,
+          "stateVersion": 1,
+          "gold": "0",
+          "elapsed": 0,
+          "floors": [
+            {
+              "id": "m005",
+              "level": 1,
+              "progress": 0,
+              "serial": 0
+            },
+            {
+              "id": "m004",
+              "level": 0,
+              "progress": 0,
+              "serial": 0
+            },
+            {
+              "id": "m012",
+              "level": 0,
+              "progress": 0,
+              "serial": 0
+            },
+            {
+              "id": "m013",
+              "level": 0,
+              "progress": 0,
+              "serial": 0
+            },
+            {
+              "id": "m024",
+              "level": 0,
+              "progress": 0,
+              "serial": 0
+            },
+            {
+              "id": "m023",
+              "level": 0,
+              "progress": 0,
+              "serial": 0
+            },
+            {
+              "id": "m029",
+              "level": 0,
+              "progress": 0,
+              "serial": 0
+            },
+            {
+              "id": "m028",
+              "level": 0,
+              "progress": 0,
+              "serial": 0
+            },
+            {
+              "id": "m038",
+              "level": 0,
+              "progress": 0,
+              "serial": 0
+            },
+            {
+              "id": "boss1",
+              "level": 0,
+              "progress": 0,
+              "serial": 0
+            }
+          ],
+          "discovered": [
+            "m005"
+          ],
+          "best": {
+            "m005": 1
+          },
+          "trophies": [],
+          "done": false,
+          "stars": {
+            "shards": 0,
+            "nodes": {
+              "vigil": 1
+            }
+          }
+        }
+      },
+      "segments": [
+        {
+          "kind": "active",
+          "wallStart": 0,
+          "wallEnd": 600,
+          "after": {
+            "t": 600,
+            "money": "82713.31995564539",
+            "bucket": "0",
+            "maxMoneyEver": "82713.31995564539",
+            "prestige": {
+              "count": 0,
+              "points": "0",
+              "multiplier": "1"
+            },
+            "vars": {
+              "version": 1,
+              "research": {
+                "version": 1,
+                "layout": "lab",
+                "staff": [],
+                "assignments": [
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null
+                ],
+                "assistants": [
+                  "rune",
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null
+                ],
+                "manualCollections": 163,
+                "folioCycles": 0,
+                "invitations": 0,
+                "notes": 9,
+                "draws": 0,
+                "pity": 0,
+                "seed": 61973,
+                "claimed": [
+                  "0:2",
+                  "0:5"
+                ],
+                "event": {
+                  "kind": 7,
+                  "floor": 0
+                },
+                "nextEvent": 180,
+                "eventsResolved": 0,
+                "boosts": [
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  }
+                ],
+                "discoveries": {
+                  "picks": [],
+                  "pending": 3
+                },
+                "pacts": {
+                  "mana": 0,
+                  "offline": 1
+                }
+              },
+              "economy": {
+                "version": 1,
+                "crystals": 0,
+                "earned": 0,
+                "claimed": [],
+                "freeSpeed": 1,
+                "boost": null,
+                "boostEnabled": false,
+                "tutorialStep": 0,
+                "tutorialDismissed": false
+              },
+              "contentVersion": "candidate-v3-seed7",
+              "tower": 0,
+              "legacyCurve": 2,
+              "stateVersion": 1,
+              "gold": "8.27133199556454e4",
+              "elapsed": 600,
+              "floors": [
+                {
+                  "id": "m005",
+                  "level": 17,
+                  "progress": 0,
+                  "serial": 100
+                },
+                {
+                  "id": "m004",
+                  "level": 15,
+                  "progress": 0,
+                  "serial": 42,
+                  "pendingMana": "2.16e3"
+                },
+                {
+                  "id": "m012",
+                  "level": 7,
+                  "progress": 6,
+                  "serial": 36,
+                  "pendingMana": "0"
+                },
+                {
+                  "id": "m013",
+                  "level": 5,
+                  "progress": 5,
+                  "serial": 58,
+                  "pendingMana": "0"
+                },
+                {
+                  "id": "m024",
+                  "level": 3,
+                  "progress": 10,
+                  "serial": 19,
+                  "pendingMana": "0"
+                },
+                {
+                  "id": "m023",
+                  "level": 1,
+                  "progress": 9,
+                  "serial": 7,
+                  "pendingMana": "0"
+                },
+                {
+                  "id": "m029",
+                  "level": 0,
+                  "progress": 0,
+                  "serial": 0
+                },
+                {
+                  "id": "m028",
+                  "level": 0,
+                  "progress": 0,
+                  "serial": 0
+                },
+                {
+                  "id": "m038",
+                  "level": 0,
+                  "progress": 0,
+                  "serial": 0
+                },
+                {
+                  "id": "boss1",
+                  "level": 0,
+                  "progress": 0,
+                  "serial": 0
+                }
+              ],
+              "discovered": [
+                "m005",
+                "m004",
+                "m012",
+                "m013",
+                "m024",
+                "m023"
+              ],
+              "best": {
+                "m005": 17,
+                "m004": 15,
+                "m012": 7,
+                "m013": 5,
+                "m024": 3,
+                "m023": 1
+              },
+              "trophies": [],
+              "done": false,
+              "stars": {
+                "shards": 0,
+                "nodes": {
+                  "vigil": 1
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "offline",
+          "wallStart": 600,
+          "wallEnd": 45000,
+          "cap": 39600,
+          "credited": 39600,
+          "reward": "2.96208e6",
+          "after": {
+            "t": 40200,
+            "money": "3044793.31995565",
+            "bucket": "0",
+            "maxMoneyEver": "3044793.31995565",
+            "prestige": {
+              "count": 0,
+              "points": "0",
+              "multiplier": "1"
+            },
+            "vars": {
+              "version": 1,
+              "research": {
+                "version": 1,
+                "layout": "lab",
+                "staff": [],
+                "assignments": [
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null
+                ],
+                "assistants": [
+                  "rune",
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null
+                ],
+                "manualCollections": 163,
+                "folioCycles": 0,
+                "invitations": 0,
+                "notes": 9,
+                "draws": 0,
+                "pity": 0,
+                "seed": 61973,
+                "claimed": [
+                  "0:2",
+                  "0:5"
+                ],
+                "event": {
+                  "kind": 7,
+                  "floor": 0
+                },
+                "nextEvent": 180,
+                "eventsResolved": 0,
+                "boosts": [
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  }
+                ],
+                "discoveries": {
+                  "picks": [],
+                  "pending": 3
+                },
+                "pacts": {
+                  "mana": 0,
+                  "offline": 1
+                }
+              },
+              "economy": {
+                "version": 1,
+                "crystals": 0,
+                "earned": 0,
+                "claimed": [],
+                "freeSpeed": 1,
+                "boost": null,
+                "boostEnabled": false,
+                "tutorialStep": 0,
+                "tutorialDismissed": false
+              },
+              "contentVersion": "candidate-v3-seed7",
+              "tower": 0,
+              "legacyCurve": 2,
+              "stateVersion": 1,
+              "gold": "3.04479331995565e6",
+              "elapsed": 40200,
+              "floors": [
+                {
+                  "id": "m005",
+                  "level": 17,
+                  "progress": 0,
+                  "serial": 6700
+                },
+                {
+                  "id": "m004",
+                  "level": 15,
+                  "progress": 0,
+                  "serial": 42,
+                  "pendingMana": "2.16e3"
+                },
+                {
+                  "id": "m012",
+                  "level": 7,
+                  "progress": 0,
+                  "serial": 36,
+                  "pendingMana": "1.512e3"
+                },
+                {
+                  "id": "m013",
+                  "level": 5,
+                  "progress": 0,
+                  "serial": 58,
+                  "pendingMana": "1.6200000000000003e3"
+                },
+                {
+                  "id": "m024",
+                  "level": 3,
+                  "progress": 0,
+                  "serial": 19,
+                  "pendingMana": "5.832000000000001e3"
+                },
+                {
+                  "id": "m023",
+                  "level": 1,
+                  "progress": 0,
+                  "serial": 7,
+                  "pendingMana": "4.86e3"
+                },
+                {
+                  "id": "m029",
+                  "level": 0,
+                  "progress": 0,
+                  "serial": 0
+                },
+                {
+                  "id": "m028",
+                  "level": 0,
+                  "progress": 0,
+                  "serial": 0
+                },
+                {
+                  "id": "m038",
+                  "level": 0,
+                  "progress": 0,
+                  "serial": 0
+                },
+                {
+                  "id": "boss1",
+                  "level": 0,
+                  "progress": 0,
+                  "serial": 0
+                }
+              ],
+              "discovered": [
+                "m005",
+                "m004",
+                "m012",
+                "m013",
+                "m024",
+                "m023"
+              ],
+              "best": {
+                "m005": 17,
+                "m004": 15,
+                "m012": 7,
+                "m013": 5,
+                "m024": 3,
+                "m023": 1
+              },
+              "trophies": [],
+              "done": false,
+              "stars": {
+                "shards": 0,
+                "nodes": {
+                  "vigil": 1
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "active",
+          "wallStart": 45000,
+          "wallEnd": 45600,
+          "after": {
+            "t": 40800,
+            "money": "11156511.843661701",
+            "bucket": "0",
+            "maxMoneyEver": "11172232.8038814",
+            "prestige": {
+              "count": 0,
+              "points": "0",
+              "multiplier": "1"
+            },
+            "vars": {
+              "version": 1,
+              "research": {
+                "version": 1,
+                "layout": "lab",
+                "staff": [],
+                "assignments": [
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null
+                ],
+                "assistants": [
+                  "rune",
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null
+                ],
+                "manualCollections": 652,
+                "folioCycles": 0,
+                "invitations": 0,
+                "notes": 11,
+                "draws": 0,
+                "pity": 0,
+                "seed": 61973,
+                "claimed": [
+                  "0:2",
+                  "0:5",
+                  "0:8"
+                ],
+                "event": {
+                  "kind": 7,
+                  "floor": 0
+                },
+                "nextEvent": 180,
+                "eventsResolved": 0,
+                "boosts": [
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  }
+                ],
+                "discoveries": {
+                  "picks": [],
+                  "pending": 4
+                },
+                "pacts": {
+                  "mana": 0,
+                  "offline": 1
+                }
+              },
+              "economy": {
+                "version": 1,
+                "crystals": 0,
+                "earned": 0,
+                "claimed": [],
+                "freeSpeed": 1,
+                "boost": null,
+                "boostEnabled": false,
+                "tutorialStep": 0,
+                "tutorialDismissed": false
+              },
+              "contentVersion": "candidate-v3-seed7",
+              "tower": 0,
+              "legacyCurve": 2,
+              "stateVersion": 1,
+              "gold": "1.11565118436617e7",
+              "elapsed": 40800,
+              "floors": [
+                {
+                  "id": "m005",
+                  "level": 22,
+                  "progress": 0,
+                  "serial": 6800
+                },
+                {
+                  "id": "m004",
+                  "level": 21,
+                  "progress": 0,
+                  "serial": 92,
+                  "pendingMana": "3.024e3"
+                },
+                {
+                  "id": "m012",
+                  "level": 17,
+                  "progress": 11,
+                  "serial": 86,
+                  "pendingMana": "0"
+                },
+                {
+                  "id": "m013",
+                  "level": 16,
+                  "progress": 4,
+                  "serial": 158,
+                  "pendingMana": "0"
+                },
+                {
+                  "id": "m024",
+                  "level": 15,
+                  "progress": 9,
+                  "serial": 69,
+                  "pendingMana": "0"
+                },
+                {
+                  "id": "m023",
+                  "level": 15,
+                  "progress": 8,
+                  "serial": 57,
+                  "pendingMana": "0"
+                },
+                {
+                  "id": "m029",
+                  "level": 14,
+                  "progress": 1,
+                  "serial": 99,
+                  "pendingMana": "0"
+                },
+                {
+                  "id": "m028",
+                  "level": 8,
+                  "progress": 6,
+                  "serial": 49,
+                  "pendingMana": "0"
+                },
+                {
+                  "id": "m038",
+                  "level": 7,
+                  "progress": 5,
+                  "serial": 41,
+                  "pendingMana": "0"
+                },
+                {
+                  "id": "boss1",
+                  "level": 0,
+                  "progress": 0,
+                  "serial": 0
+                }
+              ],
+              "discovered": [
+                "m005",
+                "m004",
+                "m012",
+                "m013",
+                "m024",
+                "m023",
+                "m029",
+                "m028",
+                "m038"
+              ],
+              "best": {
+                "m005": 22,
+                "m004": 21,
+                "m012": 17,
+                "m013": 16,
+                "m024": 15,
+                "m023": 15,
+                "m029": 14,
+                "m028": 8,
+                "m038": 7
+              },
+              "trophies": [],
+              "done": false,
+              "stars": {
+                "shards": 0,
+                "nodes": {
+                  "vigil": 1
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "offline",
+          "wallStart": 45600,
+          "wallEnd": 86400,
+          "cap": 39600,
+          "credited": 39600,
+          "reward": "3.83328e6",
+          "after": {
+            "t": 80400,
+            "money": "14989791.8436617",
+            "bucket": "0",
+            "maxMoneyEver": "14989791.8436617",
+            "prestige": {
+              "count": 0,
+              "points": "0",
+              "multiplier": "1"
+            },
+            "vars": {
+              "version": 1,
+              "research": {
+                "version": 1,
+                "layout": "lab",
+                "staff": [],
+                "assignments": [
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null
+                ],
+                "assistants": [
+                  "rune",
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null
+                ],
+                "manualCollections": 652,
+                "folioCycles": 0,
+                "invitations": 0,
+                "notes": 11,
+                "draws": 0,
+                "pity": 0,
+                "seed": 61973,
+                "claimed": [
+                  "0:2",
+                  "0:5",
+                  "0:8"
+                ],
+                "event": {
+                  "kind": 7,
+                  "floor": 0
+                },
+                "nextEvent": 180,
+                "eventsResolved": 0,
+                "boosts": [
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  }
+                ],
+                "discoveries": {
+                  "picks": [],
+                  "pending": 4
+                },
+                "pacts": {
+                  "mana": 0,
+                  "offline": 1
+                }
+              },
+              "economy": {
+                "version": 1,
+                "crystals": 0,
+                "earned": 0,
+                "claimed": [],
+                "freeSpeed": 1,
+                "boost": null,
+                "boostEnabled": false,
+                "tutorialStep": 0,
+                "tutorialDismissed": false
+              },
+              "contentVersion": "candidate-v3-seed7",
+              "tower": 0,
+              "legacyCurve": 2,
+              "stateVersion": 1,
+              "gold": "1.49897918436617e7",
+              "elapsed": 80400,
+              "floors": [
+                {
+                  "id": "m005",
+                  "level": 22,
+                  "progress": 0,
+                  "serial": 13400
+                },
+                {
+                  "id": "m004",
+                  "level": 21,
+                  "progress": 0,
+                  "serial": 92,
+                  "pendingMana": "3.024e3"
+                },
+                {
+                  "id": "m012",
+                  "level": 17,
+                  "progress": 0,
+                  "serial": 86,
+                  "pendingMana": "7.343999999999999e3"
+                },
+                {
+                  "id": "m013",
+                  "level": 16,
+                  "progress": 0,
+                  "serial": 158,
+                  "pendingMana": "1.0368e4"
+                },
+                {
+                  "id": "m024",
+                  "level": 15,
+                  "progress": 0,
+                  "serial": 69,
+                  "pendingMana": "5.832000000000001e4"
+                },
+                {
+                  "id": "m023",
+                  "level": 15,
+                  "progress": 0,
+                  "serial": 57,
+                  "pendingMana": "1.458e5"
+                },
+                {
+                  "id": "m029",
+                  "level": 14,
+                  "progress": 0,
+                  "serial": 99,
+                  "pendingMana": "2.44944e5"
+                },
+                {
+                  "id": "m028",
+                  "level": 8,
+                  "progress": 0,
+                  "serial": 49,
+                  "pendingMana": "4.19904e5"
+                },
+                {
+                  "id": "m038",
+                  "level": 7,
+                  "progress": 0,
+                  "serial": 41,
+                  "pendingMana": "7.348319999999999e5"
+                },
+                {
+                  "id": "boss1",
+                  "level": 0,
+                  "progress": 0,
+                  "serial": 0
+                }
+              ],
+              "discovered": [
+                "m005",
+                "m004",
+                "m012",
+                "m013",
+                "m024",
+                "m023",
+                "m029",
+                "m028",
+                "m038"
+              ],
+              "best": {
+                "m005": 22,
+                "m004": 21,
+                "m012": 17,
+                "m013": 16,
+                "m024": 15,
+                "m023": 15,
+                "m029": 14,
+                "m028": 8,
+                "m038": 7
+              },
+              "trophies": [],
+              "done": false,
+              "stars": {
+                "shards": 0,
+                "nodes": {
+                  "vigil": 1
+                }
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "elapsedSec": 86400,
+        "activeSec": 1200,
+        "offlineCreditedSec": 79200,
+        "lostRewardSec": 6000
+      }
+    },
+    {
+      "name": "silva-return",
+      "initial": {
+        "t": 0,
+        "money": "0",
+        "bucket": "0",
+        "maxMoneyEver": "100",
+        "prestige": {
+          "count": 0,
+          "points": "0",
+          "multiplier": "1"
+        },
+        "vars": {
+          "version": 1,
+          "research": {
+            "version": 1,
+            "layout": "lab",
+            "staff": [
+              {
+                "id": "silva",
+                "level": 1,
+                "copies": 0
+              }
+            ],
+            "assignments": [
+              "silva",
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null
+            ],
+            "assistants": [
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null
+            ],
+            "manualCollections": 1,
+            "folioCycles": 0,
+            "invitations": 0,
+            "notes": 5,
+            "draws": 0,
+            "pity": 0,
+            "seed": 61973,
+            "claimed": [],
+            "event": null,
+            "nextEvent": 180,
+            "eventsResolved": 0,
+            "boosts": [
+              {
+                "cycles": 0,
+                "multiplier": 1
+              },
+              {
+                "cycles": 0,
+                "multiplier": 1
+              },
+              {
+                "cycles": 0,
+                "multiplier": 1
+              },
+              {
+                "cycles": 0,
+                "multiplier": 1
+              },
+              {
+                "cycles": 0,
+                "multiplier": 1
+              },
+              {
+                "cycles": 0,
+                "multiplier": 1
+              },
+              {
+                "cycles": 0,
+                "multiplier": 1
+              },
+              {
+                "cycles": 0,
+                "multiplier": 1
+              },
+              {
+                "cycles": 0,
+                "multiplier": 1
+              },
+              {
+                "cycles": 0,
+                "multiplier": 1
+              }
+            ],
+            "discoveries": {
+              "picks": [],
+              "pending": 0
+            }
+          },
+          "economy": {
+            "version": 1,
+            "crystals": 0,
+            "earned": 0,
+            "claimed": [],
+            "freeSpeed": 1,
+            "boost": null,
+            "boostEnabled": false,
+            "tutorialStep": 0,
+            "tutorialDismissed": false
+          },
+          "contentVersion": "candidate-v3-seed7",
+          "tower": 0,
+          "legacyCurve": 2,
+          "stateVersion": 1,
+          "gold": "0",
+          "elapsed": 0,
+          "floors": [
+            {
+              "id": "m005",
+              "level": 1,
+              "progress": 0,
+              "serial": 0
+            },
+            {
+              "id": "m004",
+              "level": 0,
+              "progress": 0,
+              "serial": 0
+            },
+            {
+              "id": "m012",
+              "level": 0,
+              "progress": 0,
+              "serial": 0
+            },
+            {
+              "id": "m013",
+              "level": 0,
+              "progress": 0,
+              "serial": 0
+            },
+            {
+              "id": "m024",
+              "level": 0,
+              "progress": 0,
+              "serial": 0
+            },
+            {
+              "id": "m023",
+              "level": 0,
+              "progress": 0,
+              "serial": 0
+            },
+            {
+              "id": "m029",
+              "level": 0,
+              "progress": 0,
+              "serial": 0
+            },
+            {
+              "id": "m028",
+              "level": 0,
+              "progress": 0,
+              "serial": 0
+            },
+            {
+              "id": "m038",
+              "level": 0,
+              "progress": 0,
+              "serial": 0
+            },
+            {
+              "id": "boss1",
+              "level": 0,
+              "progress": 0,
+              "serial": 0
+            }
+          ],
+          "discovered": [
+            "m005"
+          ],
+          "best": {
+            "m005": 1
+          },
+          "trophies": [],
+          "done": false
+        }
+      },
+      "segments": [
+        {
+          "kind": "active",
+          "wallStart": 0,
+          "wallEnd": 600,
+          "after": {
+            "t": 600,
+            "money": "102225.105946179",
+            "bucket": "0",
+            "maxMoneyEver": "102225.105946179",
+            "prestige": {
+              "count": 0,
+              "points": "0",
+              "multiplier": "1"
+            },
+            "vars": {
+              "version": 1,
+              "research": {
+                "version": 1,
+                "layout": "lab",
+                "staff": [
+                  {
+                    "id": "silva",
+                    "level": 1,
+                    "copies": 0
+                  }
+                ],
+                "assignments": [
+                  "silva",
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null
+                ],
+                "assistants": [
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null
+                ],
+                "manualCollections": 165,
+                "folioCycles": 0,
+                "invitations": 0,
+                "notes": 9,
+                "draws": 0,
+                "pity": 0,
+                "seed": 61973,
+                "claimed": [
+                  "0:2",
+                  "0:5"
+                ],
+                "event": {
+                  "kind": 7,
+                  "floor": 0
+                },
+                "nextEvent": 180,
+                "eventsResolved": 0,
+                "boosts": [
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  }
+                ],
+                "discoveries": {
+                  "picks": [],
+                  "pending": 3
+                }
+              },
+              "economy": {
+                "version": 1,
+                "crystals": 0,
+                "earned": 0,
+                "claimed": [],
+                "freeSpeed": 1,
+                "boost": null,
+                "boostEnabled": false,
+                "tutorialStep": 0,
+                "tutorialDismissed": false
+              },
+              "contentVersion": "candidate-v3-seed7",
+              "tower": 0,
+              "legacyCurve": 2,
+              "stateVersion": 1,
+              "gold": "1.02225105946179e5",
+              "elapsed": 600,
+              "floors": [
+                {
+                  "id": "m005",
+                  "level": 17,
+                  "progress": 0,
+                  "serial": 100
+                },
+                {
+                  "id": "m004",
+                  "level": 15,
+                  "progress": 6,
+                  "serial": 42,
+                  "pendingMana": "0"
+                },
+                {
+                  "id": "m012",
+                  "level": 6,
+                  "progress": 5,
+                  "serial": 36,
+                  "pendingMana": "0"
+                },
+                {
+                  "id": "m013",
+                  "level": 4,
+                  "progress": 4,
+                  "serial": 58,
+                  "pendingMana": "0"
+                },
+                {
+                  "id": "m024",
+                  "level": 3,
+                  "progress": 3,
+                  "serial": 20,
+                  "pendingMana": "0"
+                },
+                {
+                  "id": "m023",
+                  "level": 1,
+                  "progress": 2,
+                  "serial": 8,
+                  "pendingMana": "0"
+                },
+                {
+                  "id": "m029",
+                  "level": 0,
+                  "progress": 0,
+                  "serial": 0
+                },
+                {
+                  "id": "m028",
+                  "level": 0,
+                  "progress": 0,
+                  "serial": 0
+                },
+                {
+                  "id": "m038",
+                  "level": 0,
+                  "progress": 0,
+                  "serial": 0
+                },
+                {
+                  "id": "boss1",
+                  "level": 0,
+                  "progress": 0,
+                  "serial": 0
+                }
+              ],
+              "discovered": [
+                "m005",
+                "m004",
+                "m012",
+                "m013",
+                "m024",
+                "m023"
+              ],
+              "best": {
+                "m005": 17,
+                "m004": 15,
+                "m012": 6,
+                "m013": 4,
+                "m024": 3,
+                "m023": 1
+              },
+              "trophies": [],
+              "done": false
+            }
+          }
+        },
+        {
+          "kind": "offline",
+          "wallStart": 600,
+          "wallEnd": 45000,
+          "cap": 28800,
+          "credited": 28800,
+          "reward": "2.193408e6",
+          "after": {
+            "t": 29400,
+            "money": "2295633.10594618",
+            "bucket": "0",
+            "maxMoneyEver": "2295633.10594618",
+            "prestige": {
+              "count": 0,
+              "points": "0",
+              "multiplier": "1"
+            },
+            "vars": {
+              "version": 1,
+              "research": {
+                "version": 1,
+                "layout": "lab",
+                "staff": [
+                  {
+                    "id": "silva",
+                    "level": 1,
+                    "copies": 0
+                  }
+                ],
+                "assignments": [
+                  "silva",
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null
+                ],
+                "assistants": [
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null
+                ],
+                "manualCollections": 165,
+                "folioCycles": 0,
+                "invitations": 0,
+                "notes": 9,
+                "draws": 0,
+                "pity": 0,
+                "seed": 61973,
+                "claimed": [
+                  "0:2",
+                  "0:5"
+                ],
+                "event": {
+                  "kind": 7,
+                  "floor": 0
+                },
+                "nextEvent": 180,
+                "eventsResolved": 0,
+                "boosts": [
+                  {
+                    "cycles": 3,
+                    "multiplier": 1.25
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  }
+                ],
+                "discoveries": {
+                  "picks": [],
+                  "pending": 3
+                }
+              },
+              "economy": {
+                "version": 1,
+                "crystals": 0,
+                "earned": 0,
+                "claimed": [],
+                "freeSpeed": 1,
+                "boost": null,
+                "boostEnabled": false,
+                "tutorialStep": 0,
+                "tutorialDismissed": false
+              },
+              "contentVersion": "candidate-v3-seed7",
+              "tower": 0,
+              "legacyCurve": 2,
+              "stateVersion": 1,
+              "gold": "2.29563310594618e6",
+              "elapsed": 29400,
+              "floors": [
+                {
+                  "id": "m005",
+                  "level": 17,
+                  "progress": 0,
+                  "serial": 4900
+                },
+                {
+                  "id": "m004",
+                  "level": 15,
+                  "progress": 0,
+                  "serial": 42,
+                  "pendingMana": "2.16e3"
+                },
+                {
+                  "id": "m012",
+                  "level": 6,
+                  "progress": 0,
+                  "serial": 36,
+                  "pendingMana": "1.296e3"
+                },
+                {
+                  "id": "m013",
+                  "level": 4,
+                  "progress": 0,
+                  "serial": 58,
+                  "pendingMana": "1.296e3"
+                },
+                {
+                  "id": "m024",
+                  "level": 3,
+                  "progress": 0,
+                  "serial": 20,
+                  "pendingMana": "5.832000000000001e3"
+                },
+                {
+                  "id": "m023",
+                  "level": 1,
+                  "progress": 0,
+                  "serial": 8,
+                  "pendingMana": "4.86e3"
+                },
+                {
+                  "id": "m029",
+                  "level": 0,
+                  "progress": 0,
+                  "serial": 0
+                },
+                {
+                  "id": "m028",
+                  "level": 0,
+                  "progress": 0,
+                  "serial": 0
+                },
+                {
+                  "id": "m038",
+                  "level": 0,
+                  "progress": 0,
+                  "serial": 0
+                },
+                {
+                  "id": "boss1",
+                  "level": 0,
+                  "progress": 0,
+                  "serial": 0
+                }
+              ],
+              "discovered": [
+                "m005",
+                "m004",
+                "m012",
+                "m013",
+                "m024",
+                "m023"
+              ],
+              "best": {
+                "m005": 17,
+                "m004": 15,
+                "m012": 6,
+                "m013": 4,
+                "m024": 3,
+                "m023": 1
+              },
+              "trophies": [],
+              "done": false
+            }
+          }
+        },
+        {
+          "kind": "active",
+          "wallStart": 45000,
+          "wallEnd": 45600,
+          "after": {
+            "t": 30000,
+            "money": "6252318.4952387",
+            "bucket": "0",
+            "maxMoneyEver": "8891807.72212675",
+            "prestige": {
+              "count": 0,
+              "points": "0",
+              "multiplier": "1"
+            },
+            "vars": {
+              "version": 1,
+              "research": {
+                "version": 1,
+                "layout": "lab",
+                "staff": [
+                  {
+                    "id": "silva",
+                    "level": 1,
+                    "copies": 0
+                  }
+                ],
+                "assignments": [
+                  "silva",
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null
+                ],
+                "assistants": [
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null
+                ],
+                "manualCollections": 648,
+                "folioCycles": 0,
+                "invitations": 0,
+                "notes": 11,
+                "draws": 0,
+                "pity": 0,
+                "seed": 61973,
+                "claimed": [
+                  "0:2",
+                  "0:5",
+                  "0:8"
+                ],
+                "event": {
+                  "kind": 7,
+                  "floor": 0
+                },
+                "nextEvent": 180,
+                "eventsResolved": 0,
+                "boosts": [
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  }
+                ],
+                "discoveries": {
+                  "picks": [],
+                  "pending": 4
+                }
+              },
+              "economy": {
+                "version": 1,
+                "crystals": 0,
+                "earned": 0,
+                "claimed": [],
+                "freeSpeed": 1,
+                "boost": null,
+                "boostEnabled": false,
+                "tutorialStep": 0,
+                "tutorialDismissed": false
+              },
+              "contentVersion": "candidate-v3-seed7",
+              "tower": 0,
+              "legacyCurve": 2,
+              "stateVersion": 1,
+              "gold": "6.2523184952387e6",
+              "elapsed": 30000,
+              "floors": [
+                {
+                  "id": "m005",
+                  "level": 22,
+                  "progress": 0,
+                  "serial": 5000
+                },
+                {
+                  "id": "m004",
+                  "level": 20,
+                  "progress": 0,
+                  "serial": 92,
+                  "pendingMana": "2.88e3"
+                },
+                {
+                  "id": "m012",
+                  "level": 16,
+                  "progress": 11,
+                  "serial": 86,
+                  "pendingMana": "0"
+                },
+                {
+                  "id": "m013",
+                  "level": 16,
+                  "progress": 4,
+                  "serial": 158,
+                  "pendingMana": "0"
+                },
+                {
+                  "id": "m024",
+                  "level": 15,
+                  "progress": 9,
+                  "serial": 70,
+                  "pendingMana": "0"
+                },
+                {
+                  "id": "m023",
+                  "level": 14,
+                  "progress": 8,
+                  "serial": 58,
+                  "pendingMana": "0"
+                },
+                {
+                  "id": "m029",
+                  "level": 8,
+                  "progress": 1,
+                  "serial": 99,
+                  "pendingMana": "0"
+                },
+                {
+                  "id": "m028",
+                  "level": 8,
+                  "progress": 6,
+                  "serial": 49,
+                  "pendingMana": "0"
+                },
+                {
+                  "id": "m038",
+                  "level": 7,
+                  "progress": 5,
+                  "serial": 35,
+                  "pendingMana": "0"
+                },
+                {
+                  "id": "boss1",
+                  "level": 0,
+                  "progress": 0,
+                  "serial": 0
+                }
+              ],
+              "discovered": [
+                "m005",
+                "m004",
+                "m012",
+                "m013",
+                "m024",
+                "m023",
+                "m029",
+                "m028",
+                "m038"
+              ],
+              "best": {
+                "m005": 22,
+                "m004": 20,
+                "m012": 16,
+                "m013": 16,
+                "m024": 15,
+                "m023": 14,
+                "m029": 8,
+                "m028": 8,
+                "m038": 7
+              },
+              "trophies": [],
+              "done": false
+            }
+          }
+        },
+        {
+          "kind": "offline",
+          "wallStart": 45600,
+          "wallEnd": 86400,
+          "cap": 28800,
+          "credited": 28800,
+          "reward": "2.838528e6",
+          "after": {
+            "t": 58800,
+            "money": "9090846.4952387",
+            "bucket": "0",
+            "maxMoneyEver": "9090846.4952387",
+            "prestige": {
+              "count": 0,
+              "points": "0",
+              "multiplier": "1"
+            },
+            "vars": {
+              "version": 1,
+              "research": {
+                "version": 1,
+                "layout": "lab",
+                "staff": [
+                  {
+                    "id": "silva",
+                    "level": 1,
+                    "copies": 0
+                  }
+                ],
+                "assignments": [
+                  "silva",
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null
+                ],
+                "assistants": [
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null
+                ],
+                "manualCollections": 648,
+                "folioCycles": 0,
+                "invitations": 0,
+                "notes": 11,
+                "draws": 0,
+                "pity": 0,
+                "seed": 61973,
+                "claimed": [
+                  "0:2",
+                  "0:5",
+                  "0:8"
+                ],
+                "event": {
+                  "kind": 7,
+                  "floor": 0
+                },
+                "nextEvent": 180,
+                "eventsResolved": 0,
+                "boosts": [
+                  {
+                    "cycles": 3,
+                    "multiplier": 1.25
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  }
+                ],
+                "discoveries": {
+                  "picks": [],
+                  "pending": 4
+                }
+              },
+              "economy": {
+                "version": 1,
+                "crystals": 0,
+                "earned": 0,
+                "claimed": [],
+                "freeSpeed": 1,
+                "boost": null,
+                "boostEnabled": false,
+                "tutorialStep": 0,
+                "tutorialDismissed": false
+              },
+              "contentVersion": "candidate-v3-seed7",
+              "tower": 0,
+              "legacyCurve": 2,
+              "stateVersion": 1,
+              "gold": "9.0908464952387e6",
+              "elapsed": 58800,
+              "floors": [
+                {
+                  "id": "m005",
+                  "level": 22,
+                  "progress": 0,
+                  "serial": 9800
+                },
+                {
+                  "id": "m004",
+                  "level": 20,
+                  "progress": 0,
+                  "serial": 92,
+                  "pendingMana": "2.88e3"
+                },
+                {
+                  "id": "m012",
+                  "level": 16,
+                  "progress": 0,
+                  "serial": 86,
+                  "pendingMana": "6.912000000000001e3"
+                },
+                {
+                  "id": "m013",
+                  "level": 16,
+                  "progress": 0,
+                  "serial": 158,
+                  "pendingMana": "1.0368e4"
+                },
+                {
+                  "id": "m024",
+                  "level": 15,
+                  "progress": 0,
+                  "serial": 70,
+                  "pendingMana": "5.832000000000001e4"
+                },
+                {
+                  "id": "m023",
+                  "level": 14,
+                  "progress": 0,
+                  "serial": 58,
+                  "pendingMana": "1.3608e5"
+                },
+                {
+                  "id": "m029",
+                  "level": 8,
+                  "progress": 0,
+                  "serial": 99,
+                  "pendingMana": "6.9984e4"
+                },
+                {
+                  "id": "m028",
+                  "level": 8,
+                  "progress": 0,
+                  "serial": 49,
+                  "pendingMana": "4.19904e5"
+                },
+                {
+                  "id": "m038",
+                  "level": 7,
+                  "progress": 0,
+                  "serial": 35,
+                  "pendingMana": "7.348319999999999e5"
+                },
+                {
+                  "id": "boss1",
+                  "level": 0,
+                  "progress": 0,
+                  "serial": 0
+                }
+              ],
+              "discovered": [
+                "m005",
+                "m004",
+                "m012",
+                "m013",
+                "m024",
+                "m023",
+                "m029",
+                "m028",
+                "m038"
+              ],
+              "best": {
+                "m005": 22,
+                "m004": 20,
+                "m012": 16,
+                "m013": 16,
+                "m024": 15,
+                "m023": 14,
+                "m029": 8,
+                "m028": 8,
+                "m038": 7
+              },
+              "trophies": [],
+              "done": false
+            }
+          }
+        }
+      ],
+      "expected": {
+        "elapsedSec": 86400,
+        "activeSec": 1200,
+        "offlineCreditedSec": 57600,
+        "lostRewardSec": 27600
+      }
+    },
+    {
+      "name": "manual",
+      "initial": {
+        "t": 0,
+        "money": "0",
+        "bucket": "0",
+        "maxMoneyEver": "100",
+        "prestige": {
+          "count": 0,
+          "points": "0",
+          "multiplier": "1"
+        },
+        "vars": {
+          "version": 1,
+          "research": {
+            "version": 1,
+            "layout": "lab",
+            "staff": [],
+            "assignments": [
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null
+            ],
+            "assistants": [
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null
+            ],
+            "manualCollections": 1,
+            "folioCycles": 0,
+            "invitations": 0,
+            "notes": 5,
+            "draws": 0,
+            "pity": 0,
+            "seed": 61973,
+            "claimed": [],
+            "event": null,
+            "nextEvent": 180,
+            "eventsResolved": 0,
+            "boosts": [
+              {
+                "cycles": 0,
+                "multiplier": 1
+              },
+              {
+                "cycles": 0,
+                "multiplier": 1
+              },
+              {
+                "cycles": 0,
+                "multiplier": 1
+              },
+              {
+                "cycles": 0,
+                "multiplier": 1
+              },
+              {
+                "cycles": 0,
+                "multiplier": 1
+              },
+              {
+                "cycles": 0,
+                "multiplier": 1
+              },
+              {
+                "cycles": 0,
+                "multiplier": 1
+              },
+              {
+                "cycles": 0,
+                "multiplier": 1
+              },
+              {
+                "cycles": 0,
+                "multiplier": 1
+              },
+              {
+                "cycles": 0,
+                "multiplier": 1
+              }
+            ],
+            "discoveries": {
+              "picks": [],
+              "pending": 0
+            }
+          },
+          "economy": {
+            "version": 1,
+            "crystals": 0,
+            "earned": 0,
+            "claimed": [],
+            "freeSpeed": 1,
+            "boost": null,
+            "boostEnabled": false,
+            "tutorialStep": 0,
+            "tutorialDismissed": false
+          },
+          "contentVersion": "candidate-v3-seed7",
+          "tower": 0,
+          "legacyCurve": 2,
+          "stateVersion": 1,
+          "gold": "0",
+          "elapsed": 0,
+          "floors": [
+            {
+              "id": "m005",
+              "level": 1,
+              "progress": 0,
+              "serial": 0
+            },
+            {
+              "id": "m004",
+              "level": 0,
+              "progress": 0,
+              "serial": 0
+            },
+            {
+              "id": "m012",
+              "level": 0,
+              "progress": 0,
+              "serial": 0
+            },
+            {
+              "id": "m013",
+              "level": 0,
+              "progress": 0,
+              "serial": 0
+            },
+            {
+              "id": "m024",
+              "level": 0,
+              "progress": 0,
+              "serial": 0
+            },
+            {
+              "id": "m023",
+              "level": 0,
+              "progress": 0,
+              "serial": 0
+            },
+            {
+              "id": "m029",
+              "level": 0,
+              "progress": 0,
+              "serial": 0
+            },
+            {
+              "id": "m028",
+              "level": 0,
+              "progress": 0,
+              "serial": 0
+            },
+            {
+              "id": "m038",
+              "level": 0,
+              "progress": 0,
+              "serial": 0
+            },
+            {
+              "id": "boss1",
+              "level": 0,
+              "progress": 0,
+              "serial": 0
+            }
+          ],
+          "discovered": [
+            "m005"
+          ],
+          "best": {
+            "m005": 1
+          },
+          "trophies": [],
+          "done": false
+        }
+      },
+      "segments": [
+        {
+          "kind": "active",
+          "wallStart": 0,
+          "wallEnd": 600,
+          "after": {
+            "t": 600,
+            "money": "31903.9247937802",
+            "bucket": "0",
+            "maxMoneyEver": "71646.0825891901",
+            "prestige": {
+              "count": 0,
+              "points": "0",
+              "multiplier": "1"
+            },
+            "vars": {
+              "version": 1,
+              "research": {
+                "version": 1,
+                "layout": "lab",
+                "staff": [],
+                "assignments": [
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null
+                ],
+                "assistants": [
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null
+                ],
+                "manualCollections": 257,
+                "folioCycles": 0,
+                "invitations": 0,
+                "notes": 9,
+                "draws": 0,
+                "pity": 0,
+                "seed": 61973,
+                "claimed": [
+                  "0:2",
+                  "0:5"
+                ],
+                "event": {
+                  "kind": 7,
+                  "floor": 0
+                },
+                "nextEvent": 180,
+                "eventsResolved": 0,
+                "boosts": [
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  }
+                ],
+                "discoveries": {
+                  "picks": [],
+                  "pending": 3
+                }
+              },
+              "economy": {
+                "version": 1,
+                "crystals": 0,
+                "earned": 0,
+                "claimed": [],
+                "freeSpeed": 1,
+                "boost": null,
+                "boostEnabled": false,
+                "tutorialStep": 0,
+                "tutorialDismissed": false
+              },
+              "contentVersion": "candidate-v3-seed7",
+              "tower": 0,
+              "legacyCurve": 2,
+              "stateVersion": 1,
+              "gold": "3.19039247937802e4",
+              "elapsed": 600,
+              "floors": [
+                {
+                  "id": "m005",
+                  "level": 16,
+                  "progress": 0,
+                  "serial": 99,
+                  "pendingMana": "3.8400000000000007e2"
+                },
+                {
+                  "id": "m004",
+                  "level": 15,
+                  "progress": 5,
+                  "serial": 42,
+                  "pendingMana": "0"
+                },
+                {
+                  "id": "m012",
+                  "level": 6,
+                  "progress": 4,
+                  "serial": 35,
+                  "pendingMana": "0"
+                },
+                {
+                  "id": "m013",
+                  "level": 4,
+                  "progress": 3,
+                  "serial": 56,
+                  "pendingMana": "0"
+                },
+                {
+                  "id": "m024",
+                  "level": 3,
+                  "progress": 2,
+                  "serial": 18,
+                  "pendingMana": "0"
+                },
+                {
+                  "id": "m023",
+                  "level": 2,
+                  "progress": 1,
+                  "serial": 6,
+                  "pendingMana": "0"
+                },
+                {
+                  "id": "m029",
+                  "level": 0,
+                  "progress": 0,
+                  "serial": 0
+                },
+                {
+                  "id": "m028",
+                  "level": 0,
+                  "progress": 0,
+                  "serial": 0
+                },
+                {
+                  "id": "m038",
+                  "level": 0,
+                  "progress": 0,
+                  "serial": 0
+                },
+                {
+                  "id": "boss1",
+                  "level": 0,
+                  "progress": 0,
+                  "serial": 0
+                }
+              ],
+              "discovered": [
+                "m005",
+                "m004",
+                "m012",
+                "m013",
+                "m024",
+                "m023"
+              ],
+              "best": {
+                "m005": 16,
+                "m004": 15,
+                "m012": 6,
+                "m013": 4,
+                "m024": 3,
+                "m023": 2
+              },
+              "trophies": [],
+              "done": false
+            }
+          }
+        },
+        {
+          "kind": "offline",
+          "wallStart": 600,
+          "wallEnd": 45000,
+          "cap": 28800,
+          "credited": 28800,
+          "reward": "0",
+          "after": {
+            "t": 29400,
+            "money": "31903.9247937802",
+            "bucket": "0",
+            "maxMoneyEver": "71646.0825891901",
+            "prestige": {
+              "count": 0,
+              "points": "0",
+              "multiplier": "1"
+            },
+            "vars": {
+              "version": 1,
+              "research": {
+                "version": 1,
+                "layout": "lab",
+                "staff": [],
+                "assignments": [
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null
+                ],
+                "assistants": [
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null
+                ],
+                "manualCollections": 257,
+                "folioCycles": 0,
+                "invitations": 0,
+                "notes": 9,
+                "draws": 0,
+                "pity": 0,
+                "seed": 61973,
+                "claimed": [
+                  "0:2",
+                  "0:5"
+                ],
+                "event": {
+                  "kind": 7,
+                  "floor": 0
+                },
+                "nextEvent": 180,
+                "eventsResolved": 0,
+                "boosts": [
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  }
+                ],
+                "discoveries": {
+                  "picks": [],
+                  "pending": 3
+                }
+              },
+              "economy": {
+                "version": 1,
+                "crystals": 0,
+                "earned": 0,
+                "claimed": [],
+                "freeSpeed": 1,
+                "boost": null,
+                "boostEnabled": false,
+                "tutorialStep": 0,
+                "tutorialDismissed": false
+              },
+              "contentVersion": "candidate-v3-seed7",
+              "tower": 0,
+              "legacyCurve": 2,
+              "stateVersion": 1,
+              "gold": "3.19039247937802e4",
+              "elapsed": 29400,
+              "floors": [
+                {
+                  "id": "m005",
+                  "level": 16,
+                  "progress": 0,
+                  "serial": 99,
+                  "pendingMana": "3.8400000000000007e2"
+                },
+                {
+                  "id": "m004",
+                  "level": 15,
+                  "progress": 0,
+                  "serial": 42,
+                  "pendingMana": "2.16e3"
+                },
+                {
+                  "id": "m012",
+                  "level": 6,
+                  "progress": 0,
+                  "serial": 35,
+                  "pendingMana": "1.296e3"
+                },
+                {
+                  "id": "m013",
+                  "level": 4,
+                  "progress": 0,
+                  "serial": 56,
+                  "pendingMana": "1.296e3"
+                },
+                {
+                  "id": "m024",
+                  "level": 3,
+                  "progress": 0,
+                  "serial": 18,
+                  "pendingMana": "5.832000000000001e3"
+                },
+                {
+                  "id": "m023",
+                  "level": 2,
+                  "progress": 0,
+                  "serial": 6,
+                  "pendingMana": "9.72e3"
+                },
+                {
+                  "id": "m029",
+                  "level": 0,
+                  "progress": 0,
+                  "serial": 0
+                },
+                {
+                  "id": "m028",
+                  "level": 0,
+                  "progress": 0,
+                  "serial": 0
+                },
+                {
+                  "id": "m038",
+                  "level": 0,
+                  "progress": 0,
+                  "serial": 0
+                },
+                {
+                  "id": "boss1",
+                  "level": 0,
+                  "progress": 0,
+                  "serial": 0
+                }
+              ],
+              "discovered": [
+                "m005",
+                "m004",
+                "m012",
+                "m013",
+                "m024",
+                "m023"
+              ],
+              "best": {
+                "m005": 16,
+                "m004": 15,
+                "m012": 6,
+                "m013": 4,
+                "m024": 3,
+                "m023": 2
+              },
+              "trophies": [],
+              "done": false
+            }
+          }
+        },
+        {
+          "kind": "active",
+          "wallStart": 45000,
+          "wallEnd": 45600,
+          "after": {
+            "t": 30000,
+            "money": "2298805.06426026",
+            "bucket": "0",
+            "maxMoneyEver": "2298805.06426026",
+            "prestige": {
+              "count": 0,
+              "points": "0",
+              "multiplier": "1"
+            },
+            "vars": {
+              "version": 1,
+              "research": {
+                "version": 1,
+                "layout": "lab",
+                "staff": [],
+                "assignments": [
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null
+                ],
+                "assistants": [
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null
+                ],
+                "manualCollections": 717,
+                "folioCycles": 0,
+                "invitations": 0,
+                "notes": 9,
+                "draws": 0,
+                "pity": 0,
+                "seed": 61973,
+                "claimed": [
+                  "0:2",
+                  "0:5"
+                ],
+                "event": {
+                  "kind": 7,
+                  "floor": 0
+                },
+                "nextEvent": 180,
+                "eventsResolved": 0,
+                "boosts": [
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  }
+                ],
+                "discoveries": {
+                  "picks": [],
+                  "pending": 4
+                }
+              },
+              "economy": {
+                "version": 1,
+                "crystals": 0,
+                "earned": 0,
+                "claimed": [],
+                "freeSpeed": 1,
+                "boost": null,
+                "boostEnabled": false,
+                "tutorialStep": 0,
+                "tutorialDismissed": false
+              },
+              "contentVersion": "candidate-v3-seed7",
+              "tower": 0,
+              "legacyCurve": 2,
+              "stateVersion": 1,
+              "gold": "2.29880506426026e6",
+              "elapsed": 30000,
+              "floors": [
+                {
+                  "id": "m005",
+                  "level": 17,
+                  "progress": 0,
+                  "serial": 199,
+                  "pendingMana": "4.08e2"
+                },
+                {
+                  "id": "m004",
+                  "level": 16,
+                  "progress": 11,
+                  "serial": 92,
+                  "pendingMana": "0"
+                },
+                {
+                  "id": "m012",
+                  "level": 8,
+                  "progress": 10,
+                  "serial": 85,
+                  "pendingMana": "0"
+                },
+                {
+                  "id": "m013",
+                  "level": 7,
+                  "progress": 3,
+                  "serial": 156,
+                  "pendingMana": "0"
+                },
+                {
+                  "id": "m024",
+                  "level": 6,
+                  "progress": 8,
+                  "serial": 68,
+                  "pendingMana": "0"
+                },
+                {
+                  "id": "m023",
+                  "level": 6,
+                  "progress": 7,
+                  "serial": 56,
+                  "pendingMana": "0"
+                },
+                {
+                  "id": "m029",
+                  "level": 3,
+                  "progress": 5,
+                  "serial": 41,
+                  "pendingMana": "0"
+                },
+                {
+                  "id": "m028",
+                  "level": 2,
+                  "progress": 4,
+                  "serial": 19,
+                  "pendingMana": "0"
+                },
+                {
+                  "id": "m038",
+                  "level": 0,
+                  "progress": 0,
+                  "serial": 0
+                },
+                {
+                  "id": "boss1",
+                  "level": 0,
+                  "progress": 0,
+                  "serial": 0
+                }
+              ],
+              "discovered": [
+                "m005",
+                "m004",
+                "m012",
+                "m013",
+                "m024",
+                "m023",
+                "m029",
+                "m028"
+              ],
+              "best": {
+                "m005": 17,
+                "m004": 16,
+                "m012": 8,
+                "m013": 7,
+                "m024": 6,
+                "m023": 6,
+                "m029": 3,
+                "m028": 2
+              },
+              "trophies": [],
+              "done": false
+            }
+          }
+        },
+        {
+          "kind": "offline",
+          "wallStart": 45600,
+          "wallEnd": 86400,
+          "cap": 28800,
+          "credited": 28800,
+          "reward": "0",
+          "after": {
+            "t": 58800,
+            "money": "2298805.06426026",
+            "bucket": "0",
+            "maxMoneyEver": "2298805.06426026",
+            "prestige": {
+              "count": 0,
+              "points": "0",
+              "multiplier": "1"
+            },
+            "vars": {
+              "version": 1,
+              "research": {
+                "version": 1,
+                "layout": "lab",
+                "staff": [],
+                "assignments": [
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null
+                ],
+                "assistants": [
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null
+                ],
+                "manualCollections": 717,
+                "folioCycles": 0,
+                "invitations": 0,
+                "notes": 9,
+                "draws": 0,
+                "pity": 0,
+                "seed": 61973,
+                "claimed": [
+                  "0:2",
+                  "0:5"
+                ],
+                "event": {
+                  "kind": 7,
+                  "floor": 0
+                },
+                "nextEvent": 180,
+                "eventsResolved": 0,
+                "boosts": [
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  }
+                ],
+                "discoveries": {
+                  "picks": [],
+                  "pending": 4
+                }
+              },
+              "economy": {
+                "version": 1,
+                "crystals": 0,
+                "earned": 0,
+                "claimed": [],
+                "freeSpeed": 1,
+                "boost": null,
+                "boostEnabled": false,
+                "tutorialStep": 0,
+                "tutorialDismissed": false
+              },
+              "contentVersion": "candidate-v3-seed7",
+              "tower": 0,
+              "legacyCurve": 2,
+              "stateVersion": 1,
+              "gold": "2.29880506426026e6",
+              "elapsed": 58800,
+              "floors": [
+                {
+                  "id": "m005",
+                  "level": 17,
+                  "progress": 0,
+                  "serial": 199,
+                  "pendingMana": "4.08e2"
+                },
+                {
+                  "id": "m004",
+                  "level": 16,
+                  "progress": 0,
+                  "serial": 92,
+                  "pendingMana": "2.304e3"
+                },
+                {
+                  "id": "m012",
+                  "level": 8,
+                  "progress": 0,
+                  "serial": 85,
+                  "pendingMana": "1.7280000000000002e3"
+                },
+                {
+                  "id": "m013",
+                  "level": 7,
+                  "progress": 0,
+                  "serial": 156,
+                  "pendingMana": "2.268e3"
+                },
+                {
+                  "id": "m024",
+                  "level": 6,
+                  "progress": 0,
+                  "serial": 68,
+                  "pendingMana": "1.1664e4"
+                },
+                {
+                  "id": "m023",
+                  "level": 6,
+                  "progress": 0,
+                  "serial": 56,
+                  "pendingMana": "2.916e4"
+                },
+                {
+                  "id": "m029",
+                  "level": 3,
+                  "progress": 0,
+                  "serial": 41,
+                  "pendingMana": "2.6244e4"
+                },
+                {
+                  "id": "m028",
+                  "level": 2,
+                  "progress": 0,
+                  "serial": 19,
+                  "pendingMana": "1.04976e5"
+                },
+                {
+                  "id": "m038",
+                  "level": 0,
+                  "progress": 0,
+                  "serial": 0
+                },
+                {
+                  "id": "boss1",
+                  "level": 0,
+                  "progress": 0,
+                  "serial": 0
+                }
+              ],
+              "discovered": [
+                "m005",
+                "m004",
+                "m012",
+                "m013",
+                "m024",
+                "m023",
+                "m029",
+                "m028"
+              ],
+              "best": {
+                "m005": 17,
+                "m004": 16,
+                "m012": 8,
+                "m013": 7,
+                "m024": 6,
+                "m023": 6,
+                "m029": 3,
+                "m028": 2
+              },
+              "trophies": [],
+              "done": false
+            }
+          }
+        }
+      ],
+      "expected": {
+        "elapsedSec": 86400,
+        "activeSec": 1200,
+        "offlineCreditedSec": 57600,
+        "lostRewardSec": 27600
+      }
+    },
+    {
+      "name": "huge-mana",
+      "initial": {
+        "t": 0,
+        "money": "1e+400",
+        "bucket": "0",
+        "maxMoneyEver": "100",
+        "prestige": {
+          "count": 0,
+          "points": "0",
+          "multiplier": "1"
+        },
+        "vars": {
+          "version": 1,
+          "research": {
+            "version": 1,
+            "layout": "lab",
+            "staff": [],
+            "assignments": [
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null
+            ],
+            "assistants": [
+              "folio",
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null,
+              null
+            ],
+            "manualCollections": 1,
+            "folioCycles": 0,
+            "invitations": 0,
+            "notes": 5,
+            "draws": 0,
+            "pity": 0,
+            "seed": 61973,
+            "claimed": [],
+            "event": null,
+            "nextEvent": 180,
+            "eventsResolved": 0,
+            "boosts": [
+              {
+                "cycles": 0,
+                "multiplier": 1
+              },
+              {
+                "cycles": 0,
+                "multiplier": 1
+              },
+              {
+                "cycles": 0,
+                "multiplier": 1
+              },
+              {
+                "cycles": 0,
+                "multiplier": 1
+              },
+              {
+                "cycles": 0,
+                "multiplier": 1
+              },
+              {
+                "cycles": 0,
+                "multiplier": 1
+              },
+              {
+                "cycles": 0,
+                "multiplier": 1
+              },
+              {
+                "cycles": 0,
+                "multiplier": 1
+              },
+              {
+                "cycles": 0,
+                "multiplier": 1
+              },
+              {
+                "cycles": 0,
+                "multiplier": 1
+              }
+            ],
+            "discoveries": {
+              "picks": [],
+              "pending": 0
+            }
+          },
+          "economy": {
+            "version": 1,
+            "crystals": 0,
+            "earned": 0,
+            "claimed": [],
+            "freeSpeed": 1,
+            "boost": null,
+            "boostEnabled": false,
+            "tutorialStep": 0,
+            "tutorialDismissed": false
+          },
+          "contentVersion": "candidate-v3-seed7",
+          "tower": 0,
+          "legacyCurve": 2,
+          "stateVersion": 1,
+          "gold": "1e400",
+          "elapsed": 0,
+          "floors": [
+            {
+              "id": "m005",
+              "level": 1,
+              "progress": 0,
+              "serial": 0
+            },
+            {
+              "id": "m004",
+              "level": 0,
+              "progress": 0,
+              "serial": 0
+            },
+            {
+              "id": "m012",
+              "level": 0,
+              "progress": 0,
+              "serial": 0
+            },
+            {
+              "id": "m013",
+              "level": 0,
+              "progress": 0,
+              "serial": 0
+            },
+            {
+              "id": "m024",
+              "level": 0,
+              "progress": 0,
+              "serial": 0
+            },
+            {
+              "id": "m023",
+              "level": 0,
+              "progress": 0,
+              "serial": 0
+            },
+            {
+              "id": "m029",
+              "level": 0,
+              "progress": 0,
+              "serial": 0
+            },
+            {
+              "id": "m028",
+              "level": 0,
+              "progress": 0,
+              "serial": 0
+            },
+            {
+              "id": "m038",
+              "level": 0,
+              "progress": 0,
+              "serial": 0
+            },
+            {
+              "id": "boss1",
+              "level": 0,
+              "progress": 0,
+              "serial": 0
+            }
+          ],
+          "discovered": [
+            "m005"
+          ],
+          "best": {
+            "m005": 1
+          },
+          "trophies": [],
+          "done": false,
+          "series": "verdant"
+        }
+      },
+      "segments": [
+        {
+          "kind": "active",
+          "wallStart": 0,
+          "wallEnd": 600,
+          "after": {
+            "t": 600,
+            "money": "1e+400",
+            "bucket": "0",
+            "maxMoneyEver": "1e+400",
+            "prestige": {
+              "count": 0,
+              "points": "0",
+              "multiplier": "1"
+            },
+            "vars": {
+              "version": 1,
+              "research": {
+                "version": 1,
+                "layout": "lab",
+                "staff": [],
+                "assignments": [
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null
+                ],
+                "assistants": [
+                  "folio",
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null
+                ],
+                "manualCollections": 493,
+                "folioCycles": 40,
+                "invitations": 0,
+                "notes": 12,
+                "draws": 0,
+                "pity": 0,
+                "seed": 61973,
+                "claimed": [
+                  "0:2",
+                  "0:5",
+                  "0:8"
+                ],
+                "event": {
+                  "kind": 7,
+                  "floor": 6
+                },
+                "nextEvent": 180,
+                "eventsResolved": 0,
+                "boosts": [
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  }
+                ],
+                "discoveries": {
+                  "picks": [],
+                  "pending": 4
+                }
+              },
+              "economy": {
+                "version": 1,
+                "crystals": 0,
+                "earned": 0,
+                "claimed": [],
+                "freeSpeed": 1,
+                "boost": null,
+                "boostEnabled": false,
+                "tutorialStep": 0,
+                "tutorialDismissed": false
+              },
+              "contentVersion": "candidate-v3-seed7",
+              "tower": 0,
+              "legacyCurve": 2,
+              "stateVersion": 1,
+              "gold": "1e400",
+              "elapsed": 600,
+              "floors": [
+                {
+                  "id": "m005",
+                  "level": 20,
+                  "progress": 0,
+                  "serial": 100
+                },
+                {
+                  "id": "m004",
+                  "level": 19,
+                  "progress": 0,
+                  "serial": 49,
+                  "pendingMana": "2.7359999999999998e3"
+                },
+                {
+                  "id": "m012",
+                  "level": 15,
+                  "progress": 11,
+                  "serial": 49,
+                  "pendingMana": "0"
+                },
+                {
+                  "id": "m013",
+                  "level": 14,
+                  "progress": 4,
+                  "serial": 99,
+                  "pendingMana": "0"
+                },
+                {
+                  "id": "m024",
+                  "level": 14,
+                  "progress": 9,
+                  "serial": 49,
+                  "pendingMana": "0"
+                },
+                {
+                  "id": "m023",
+                  "level": 8,
+                  "progress": 8,
+                  "serial": 49,
+                  "pendingMana": "0"
+                },
+                {
+                  "id": "m029",
+                  "level": 7,
+                  "progress": 1,
+                  "serial": 99,
+                  "pendingMana": "0"
+                },
+                {
+                  "id": "m028",
+                  "level": 6,
+                  "progress": 6,
+                  "serial": 49,
+                  "pendingMana": "0"
+                },
+                {
+                  "id": "m038",
+                  "level": 6,
+                  "progress": 5,
+                  "serial": 49,
+                  "pendingMana": "0"
+                },
+                {
+                  "id": "boss1",
+                  "level": 0,
+                  "progress": 0,
+                  "serial": 0
+                }
+              ],
+              "discovered": [
+                "m005",
+                "m004",
+                "m012",
+                "m013",
+                "m024",
+                "m023",
+                "m029",
+                "m028",
+                "m038"
+              ],
+              "best": {
+                "m005": 20,
+                "m004": 19,
+                "m012": 15,
+                "m013": 14,
+                "m024": 14,
+                "m023": 8,
+                "m029": 7,
+                "m028": 6,
+                "m038": 6
+              },
+              "trophies": [],
+              "done": false,
+              "series": "verdant"
+            }
+          }
+        },
+        {
+          "kind": "offline",
+          "wallStart": 600,
+          "wallEnd": 45000,
+          "cap": 28800,
+          "credited": 28800,
+          "reward": "0",
+          "after": {
+            "t": 29400,
+            "money": "1e+400",
+            "bucket": "0",
+            "maxMoneyEver": "1e+400",
+            "prestige": {
+              "count": 0,
+              "points": "0",
+              "multiplier": "1"
+            },
+            "vars": {
+              "version": 1,
+              "research": {
+                "version": 1,
+                "layout": "lab",
+                "staff": [],
+                "assignments": [
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null
+                ],
+                "assistants": [
+                  "folio",
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null
+                ],
+                "manualCollections": 493,
+                "folioCycles": 40,
+                "invitations": 0,
+                "notes": 92,
+                "draws": 0,
+                "pity": 0,
+                "seed": 61973,
+                "claimed": [
+                  "0:2",
+                  "0:5",
+                  "0:8"
+                ],
+                "event": {
+                  "kind": 7,
+                  "floor": 6
+                },
+                "nextEvent": 180,
+                "eventsResolved": 0,
+                "boosts": [
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  }
+                ],
+                "discoveries": {
+                  "picks": [],
+                  "pending": 4
+                }
+              },
+              "economy": {
+                "version": 1,
+                "crystals": 0,
+                "earned": 0,
+                "claimed": [],
+                "freeSpeed": 1,
+                "boost": null,
+                "boostEnabled": false,
+                "tutorialStep": 0,
+                "tutorialDismissed": false
+              },
+              "contentVersion": "candidate-v3-seed7",
+              "tower": 0,
+              "legacyCurve": 2,
+              "stateVersion": 1,
+              "gold": "1e400",
+              "elapsed": 29400,
+              "floors": [
+                {
+                  "id": "m005",
+                  "level": 20,
+                  "progress": 0,
+                  "serial": 4900
+                },
+                {
+                  "id": "m004",
+                  "level": 19,
+                  "progress": 0,
+                  "serial": 49,
+                  "pendingMana": "2.7359999999999998e3"
+                },
+                {
+                  "id": "m012",
+                  "level": 15,
+                  "progress": 0,
+                  "serial": 49,
+                  "pendingMana": "6.480000000000001e3"
+                },
+                {
+                  "id": "m013",
+                  "level": 14,
+                  "progress": 0,
+                  "serial": 99,
+                  "pendingMana": "9.072e3"
+                },
+                {
+                  "id": "m024",
+                  "level": 14,
+                  "progress": 0,
+                  "serial": 49,
+                  "pendingMana": "5.443199999999999e4"
+                },
+                {
+                  "id": "m023",
+                  "level": 8,
+                  "progress": 0,
+                  "serial": 49,
+                  "pendingMana": "3.8879999999999995e4"
+                },
+                {
+                  "id": "m029",
+                  "level": 7,
+                  "progress": 0,
+                  "serial": 99,
+                  "pendingMana": "6.1236e4"
+                },
+                {
+                  "id": "m028",
+                  "level": 6,
+                  "progress": 0,
+                  "serial": 49,
+                  "pendingMana": "3.14928e5"
+                },
+                {
+                  "id": "m038",
+                  "level": 6,
+                  "progress": 0,
+                  "serial": 49,
+                  "pendingMana": "6.29856e5"
+                },
+                {
+                  "id": "boss1",
+                  "level": 0,
+                  "progress": 0,
+                  "serial": 0
+                }
+              ],
+              "discovered": [
+                "m005",
+                "m004",
+                "m012",
+                "m013",
+                "m024",
+                "m023",
+                "m029",
+                "m028",
+                "m038"
+              ],
+              "best": {
+                "m005": 20,
+                "m004": 19,
+                "m012": 15,
+                "m013": 14,
+                "m024": 14,
+                "m023": 8,
+                "m029": 7,
+                "m028": 6,
+                "m038": 6
+              },
+              "trophies": [],
+              "done": false,
+              "series": "verdant"
+            }
+          }
+        },
+        {
+          "kind": "active",
+          "wallStart": 45000,
+          "wallEnd": 45600,
+          "after": {
+            "t": 30000,
+            "money": "1e+400",
+            "bucket": "0",
+            "maxMoneyEver": "1e+400",
+            "prestige": {
+              "count": 0,
+              "points": "0",
+              "multiplier": "1"
+            },
+            "vars": {
+              "version": 1,
+              "research": {
+                "version": 1,
+                "layout": "lab",
+                "staff": [],
+                "assignments": [
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null
+                ],
+                "assistants": [
+                  "folio",
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null
+                ],
+                "manualCollections": 832,
+                "folioCycles": 20,
+                "invitations": 0,
+                "notes": 94,
+                "draws": 0,
+                "pity": 0,
+                "seed": 61973,
+                "claimed": [
+                  "0:2",
+                  "0:5",
+                  "0:8"
+                ],
+                "event": {
+                  "kind": 7,
+                  "floor": 6
+                },
+                "nextEvent": 180,
+                "eventsResolved": 0,
+                "boosts": [
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  }
+                ],
+                "discoveries": {
+                  "picks": [],
+                  "pending": 4
+                }
+              },
+              "economy": {
+                "version": 1,
+                "crystals": 0,
+                "earned": 0,
+                "claimed": [],
+                "freeSpeed": 1,
+                "boost": null,
+                "boostEnabled": false,
+                "tutorialStep": 0,
+                "tutorialDismissed": false
+              },
+              "contentVersion": "candidate-v3-seed7",
+              "tower": 0,
+              "legacyCurve": 2,
+              "stateVersion": 1,
+              "gold": "1e400",
+              "elapsed": 30000,
+              "floors": [
+                {
+                  "id": "m005",
+                  "level": 30,
+                  "progress": 0,
+                  "serial": 5000
+                },
+                {
+                  "id": "m004",
+                  "level": 23,
+                  "progress": 0,
+                  "serial": 83,
+                  "pendingMana": "3.312e3"
+                },
+                {
+                  "id": "m012",
+                  "level": 20,
+                  "progress": 0,
+                  "serial": 83,
+                  "pendingMana": "8.64e3"
+                },
+                {
+                  "id": "m013",
+                  "level": 19,
+                  "progress": 0,
+                  "serial": 167,
+                  "pendingMana": "1.2312e4"
+                },
+                {
+                  "id": "m024",
+                  "level": 18,
+                  "progress": 0,
+                  "serial": 83,
+                  "pendingMana": "6.998399999999999e4"
+                },
+                {
+                  "id": "m023",
+                  "level": 17,
+                  "progress": 0,
+                  "serial": 83,
+                  "pendingMana": "1.6524e5"
+                },
+                {
+                  "id": "m029",
+                  "level": 17,
+                  "progress": 0,
+                  "serial": 166,
+                  "pendingMana": "2.97432e5"
+                },
+                {
+                  "id": "m028",
+                  "level": 16,
+                  "progress": 0,
+                  "serial": 83,
+                  "pendingMana": "1.679616e6"
+                },
+                {
+                  "id": "m038",
+                  "level": 15,
+                  "progress": 0,
+                  "serial": 83,
+                  "pendingMana": "3.14928e6"
+                },
+                {
+                  "id": "boss1",
+                  "level": 1,
+                  "progress": 0,
+                  "serial": 0
+                }
+              ],
+              "discovered": [
+                "m005",
+                "m004",
+                "m012",
+                "m013",
+                "m024",
+                "m023",
+                "m029",
+                "m028",
+                "m038",
+                "boss1"
+              ],
+              "best": {
+                "m005": 30,
+                "m004": 23,
+                "m012": 20,
+                "m013": 19,
+                "m024": 18,
+                "m023": 17,
+                "m029": 17,
+                "m028": 16,
+                "m038": 15,
+                "boss1": 1
+              },
+              "trophies": [
+                "tower-1"
+              ],
+              "done": true,
+              "series": "verdant"
+            }
+          }
+        },
+        {
+          "kind": "offline",
+          "wallStart": 45600,
+          "wallEnd": 86400,
+          "cap": 28800,
+          "credited": 28800,
+          "reward": "0",
+          "after": {
+            "t": 58800,
+            "money": "1e+400",
+            "bucket": "0",
+            "maxMoneyEver": "1e+400",
+            "prestige": {
+              "count": 0,
+              "points": "0",
+              "multiplier": "1"
+            },
+            "vars": {
+              "version": 1,
+              "research": {
+                "version": 1,
+                "layout": "lab",
+                "staff": [],
+                "assignments": [
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null
+                ],
+                "assistants": [
+                  "folio",
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null
+                ],
+                "manualCollections": 832,
+                "folioCycles": 20,
+                "invitations": 0,
+                "notes": 174,
+                "draws": 0,
+                "pity": 0,
+                "seed": 61973,
+                "claimed": [
+                  "0:2",
+                  "0:5",
+                  "0:8"
+                ],
+                "event": {
+                  "kind": 7,
+                  "floor": 6
+                },
+                "nextEvent": 180,
+                "eventsResolved": 0,
+                "boosts": [
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  },
+                  {
+                    "cycles": 0,
+                    "multiplier": 1
+                  }
+                ],
+                "discoveries": {
+                  "picks": [],
+                  "pending": 4
+                }
+              },
+              "economy": {
+                "version": 1,
+                "crystals": 0,
+                "earned": 0,
+                "claimed": [],
+                "freeSpeed": 1,
+                "boost": null,
+                "boostEnabled": false,
+                "tutorialStep": 0,
+                "tutorialDismissed": false
+              },
+              "contentVersion": "candidate-v3-seed7",
+              "tower": 0,
+              "legacyCurve": 2,
+              "stateVersion": 1,
+              "gold": "1e400",
+              "elapsed": 58800,
+              "floors": [
+                {
+                  "id": "m005",
+                  "level": 30,
+                  "progress": 0,
+                  "serial": 9800
+                },
+                {
+                  "id": "m004",
+                  "level": 23,
+                  "progress": 0,
+                  "serial": 83,
+                  "pendingMana": "3.312e3"
+                },
+                {
+                  "id": "m012",
+                  "level": 20,
+                  "progress": 0,
+                  "serial": 83,
+                  "pendingMana": "8.64e3"
+                },
+                {
+                  "id": "m013",
+                  "level": 19,
+                  "progress": 0,
+                  "serial": 167,
+                  "pendingMana": "1.2312e4"
+                },
+                {
+                  "id": "m024",
+                  "level": 18,
+                  "progress": 0,
+                  "serial": 83,
+                  "pendingMana": "6.998399999999999e4"
+                },
+                {
+                  "id": "m023",
+                  "level": 17,
+                  "progress": 0,
+                  "serial": 83,
+                  "pendingMana": "1.6524e5"
+                },
+                {
+                  "id": "m029",
+                  "level": 17,
+                  "progress": 0,
+                  "serial": 166,
+                  "pendingMana": "2.97432e5"
+                },
+                {
+                  "id": "m028",
+                  "level": 16,
+                  "progress": 0,
+                  "serial": 83,
+                  "pendingMana": "1.679616e6"
+                },
+                {
+                  "id": "m038",
+                  "level": 15,
+                  "progress": 0,
+                  "serial": 83,
+                  "pendingMana": "3.14928e6"
+                },
+                {
+                  "id": "boss1",
+                  "level": 1,
+                  "progress": 0,
+                  "serial": 0
+                }
+              ],
+              "discovered": [
+                "m005",
+                "m004",
+                "m012",
+                "m013",
+                "m024",
+                "m023",
+                "m029",
+                "m028",
+                "m038",
+                "boss1"
+              ],
+              "best": {
+                "m005": 30,
+                "m004": 23,
+                "m012": 20,
+                "m013": 19,
+                "m024": 18,
+                "m023": 17,
+                "m029": 17,
+                "m028": 16,
+                "m038": 15,
+                "boss1": 1
+              },
+              "trophies": [
+                "tower-1"
+              ],
+              "done": true,
+              "series": "verdant"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "elapsedSec": 86400,
+        "activeSec": 1200,
+        "offlineCreditedSec": 57600,
+        "lostRewardSec": 27600
+      }
+    }
+  ]
+}

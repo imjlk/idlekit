@@ -151,6 +151,14 @@ DX-01 검증은 macOS arm64, Bun `1.3.10`, `ttsc 0.30.4 (Version 7.0.2)`, commit
 
 이후 분석 작업의 공유 의미는 [분석 계약](./adr/analysis-contracts_ko.md)에 있다.
 
+## 연구탑 소비자 회귀 검사
+
+`bun run install:smoke`는 설치된 tarball을 대상으로 `tools/fixtures/consumers/research-tower-smoke.ts`도 실행한다. [연구탑 fixture](../fixtures/regressions/research-tower.json)는 `source`에 기록된 `imjlk/mpgd-games` 커밋과 기준 SDK에서 추출한 꿈잡이, 부엉이, 확장 상한, 실바 귀환, 수동 생산, `1e400` 마나 여섯 사례다. 두 접속과 두 부재에서 포장된 지갑·환생·게임 상태, 보상 시계와 실제 시간, 보상 상한과 손실 시간, 귀환당 한 번 정산, 입력 보존을 검사한다. 기록된 십진수 보상 재구성에는 상대 오차 `1e-12`를 허용하고 최종 포장 상태는 정확히 일치해야 한다. 게임 변환기로 만든 합성 전체 설치 코호트로 분모, D1/D7 보정, 미관측 유지율·매출 가정 보존, 검토 필요 시 적용 거부도 검사한다.
+
+기록된 게임/SDK 경계 계약 검사이며 온라인 결정과 정산 결과는 재생한다. 이후 게임 계산식 변경을 자동으로 검증하는 검사는 아니다. CI에는 게임 체크아웃이나 개인 경로가 필요 없다. 갱신하려면 IdleKit 루트에서 `bun tools/capture-tower-regression.ts <mpgd-games-checkout>`을 실행하고 출처 커밋과 기대값 변경을 검토한 뒤 `bun run install:smoke`를 실행한다. 생성기는 깨끗한 게임 소스의 실제 `settleAbsence`와 게임에 설치된 SDK 어댑터 결과를 대조한다. 게임 설치나 파일 변경은 하지 않는다.
+
+`packages/cli/src/commands/nonfinite-money.test.ts`는 실제 compare/ETA/tune 명령에서 플러그인 오버플로를 검사한다. Number는 실패하고 breakInfinity의 유한한 `1e400`은 성공하며 미도달 ETA는 정상 결과로 유지한다. `big-number-engines.test.ts`는 선택한 엔진을 사용하는 artifact replay를 별도로 검사한다.
+
 ## 통합 행렬
 
 `examples/analysis/integration-matrix.json`은 PR-20 손계산 fixture다. 시드 라벨은 `19`다. `packages/core/src/sim/integrationMatrix.ts`는 시뮬레이터를 호출하지 않고 상수 수입, 세션 예산, 견적 bulk, reset carry를 계산한다. step 격자 밖 horizon은 `packages/core/src/testkit/conformance.ts`의 선언된 `checkPartialFinalTick` relation이고 seed corpus도 그것을 실행한다. 테스트는 Number와 breakInfinity, scripted cursor, 이벤트 로그 끔/상한/전체, 기록된 offline 정책, 미달 목표, 그리고 미구현 `breakEternity` placeholder를 확인한다. flow 진단, 가드된 해석 전진, Jev judge, 명시적 worker pool은 포함된 선택 기능이다. 기본 명령 경로가 아니다. 실행 시에는 선택이지만 릴리스 검사에서는 선택이 아니다. `tools/publish-gate.ts`가 저장소 전체 `typecheck`, `test`, `build`를 실행하고 그 안에 이들의 소스와 테스트가 들어 있으므로, 어느 하나가 실패해도 게시가 막힌다. `createBreakEternityEngine`은 지원하지 않는다. Orbital Foundry와 튜토리얼은 그대로 작업 예시다. CI `bun run test`가 이 파일을 포함한다. `bench:sim:suite:check`, `tune:regress`, `review:smoke`, 전체 `docs:verify`는 push quality job 밖에 있다. 빠르지만 틀린 합계는 통과가 아니다. `bench:sim`은 매 실행의 `endMoney`를 [examples/bench/end-money.json](../examples/bench/end-money.json)과 비교하고, `--assert`에서는 불일치나 기록 없는 시나리오가 실패한다. 이 변경은 npm에 게시하지 않는다. Node.js와 browser 런타임은 v1 호환 계약에 포함되지 않는다.

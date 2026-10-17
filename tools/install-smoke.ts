@@ -81,10 +81,11 @@ async function runLibrarySmoke(): Promise<LibrarySmokeResult> {
   if (typeof report !== "object" || report === null
     || !("money" in report) || report.money !== "1000000"
     || !("core" in report) || report.core !== "5"
-    || !("boundaryChecks" in report) || report.boundaryChecks !== 26) {
+    || !("boundaryChecks" in report) || report.boundaryChecks !== 26
+    || !("towerChecks" in report) || report.towerChecks !== 6) {
     throw new Error("Consumer smoke returned an invalid report");
   }
-  return { money: report.money, core: report.core, boundaryChecks: report.boundaryChecks };
+  return { money: report.money, core: report.core, boundaryChecks: report.boundaryChecks, towerChecks: report.towerChecks };
 }
 
 async function runCliSmoke(): Promise<Readonly<{ helpHasIdk: boolean; validateOk: boolean; pluginOk: boolean }>> {

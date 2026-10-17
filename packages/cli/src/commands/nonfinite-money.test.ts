@@ -40,7 +40,7 @@ test("ETA rejects overflow encountered only in its longer measurement", () => {
     "--max-duration", "3"]).stderr).toMatch(/finite/i);
   const result = runCliJson(["compare", b, b, ...flags, "--metric", "etaToTargetWorth", "--target-worth", "1e200", "--max-duration", "3"]);
   expect(result.better).toBe("tie");
-  expect(result.measured.a.etaToTargetWorth).toBe("unreachable");
+  expect(result.measured.a.etaToTargetWorth).toBe("unreached");
 }, 180_000);
 
 test("tune rejects overflow instead of reporting a successful -300 score", () => {
