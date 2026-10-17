@@ -62,6 +62,28 @@ function makeScenario(): CompiledScenario<number, "COIN", Bag> {
 }
 
 describe("runCandidateAndScore", () => {
+  function scoreWith(scenario: ReturnType<typeof makeScenario>, value: number) {
+    return runCandidateAndScore({ baseScenario: scenario, params: {}, strategyId: "wait", objectiveId: "fixed",
+      seeds: [1, 2], strategyRegistry: createStrategyRegistry([{ id: "wait", create: () => ({ id: "wait", decide: () => [] }) }]),
+      objectiveRegistry: createObjectiveRegistry([{ id: "fixed", create: () => ({ id: "fixed", score: () => value }) }]),
+    });
+  }
+
+  for (const value of [Infinity, -Infinity, NaN]) {
+    it(`refuses a custom objective score of ${value}`, () => {
+      expect(() => scoreWith(makeScenario(), value)).toThrow(/finite/i);
+    });
+    it(`refuses non-finite worth even when the objective returns a finite score (${value})`, () => {
+      const sc = makeScenario();
+      expect(() => scoreWith({ ...sc, model: { ...sc.model, netWorth: () => ({ unit: sc.ctx.unit, amount: value }) } }, 1))
+        .toThrow(/finite/i);
+    });
+  }
+
+  it("averages large finite scores without overflowing the sum", () => {
+    expect(scoreWith(makeScenario(), Number.MAX_VALUE).score).toBe(Number.MAX_VALUE);
+  });
+
   it("injects seed into ctx for each run", () => {
     const scenario = makeScenario();
     const strategyRegistry = createStrategyRegistry([

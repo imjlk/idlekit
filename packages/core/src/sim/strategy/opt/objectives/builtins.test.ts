@@ -40,6 +40,22 @@ function makeScenarioAndRun() {
 }
 
 describe("builtinObjectiveFactories", () => {
+  for (const id of ["endMoneyLog10", "endNetWorthLog10", "netWorthPerHourLog10", "growthLog10PerHour", "pacingBalancedLog10", "etaToTargetWorthNegSec"]) {
+    for (const amount of [Infinity, -Infinity, NaN]) {
+      it(`${id} refuses non-finite money ${amount}`, () => {
+        const args = makeScenarioAndRun();
+        args.run.end.wallet.money.amount = amount;
+        expect(() => getFactory(id).create({}).score(args)).toThrow(/finite/i);
+      });
+    }
+  }
+
+  it("keeps the documented zero-money floor", () => {
+    const args = makeScenarioAndRun();
+    args.run.end.wallet.money.amount = 0;
+    expect(getFactory("endMoneyLog10").create({}).score(args)).toBe(-300);
+  });
+
   it("includes new level-design KPI objectives", () => {
     const ids = new Set(builtinObjectiveFactories.map((x) => x.id));
     expect(ids.has("growthLog10PerHour")).toBeTrue();

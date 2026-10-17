@@ -7,6 +7,7 @@ import type { TuneSeedResult } from "./tuner";
 import type { ModelRegistry } from "../../../scenario/registry";
 import { modelCreateParams, strategyCreateParams } from "../../../scenario/compile";
 import { RunIsolationError, type RunBindOptions } from "../../runFactory";
+import { finiteAmountLog10 } from "./finiteAmountLog10";
 
 export function runCandidateAndScore(args: {
   baseScenario: CompiledScenario<any, any, any>;
@@ -81,24 +82,30 @@ export function runCandidateAndScore(args: {
     const run = runScenario(sc);
     // Candidates are ranked on the horizon. A budget stop would score a shorter run.
     assertHorizonReached(run, "runCandidateAndScore");
+    const worth = sc.model.netWorth?.(sc.ctx as any, run.end as any) ?? run.end.wallet.money;
+    const endMoneyLog10 = finiteAmountLog10(sc.ctx.E, run.end.wallet.money.amount);
+    const endNetWorthLog10 = finiteAmountLog10(sc.ctx.E, worth.amount);
     const s = objective.score({ scenario: sc, run, evaluation: {
       open: openScenario,
       registries: { models: args.modelRegistry, strategies: args.strategyRegistry },
       isolation: { model: args.model, statefulModel: args.statefulModel, strategy: { id: args.strategyId, params: candidateParams } },
     } });
+    if (!Number.isFinite(s)) throw new RangeError(`Objective ${args.objectiveId} must return a finite score (seed ${seed})`);
     seedScores.push(s);
-    const worth = sc.model.netWorth?.(sc.ctx as any, run.end as any) ?? run.end.wallet.money;
     seedResults.push({
       seed,
       score: s,
       durationSec: Math.max(0, runElapsedSec(run)),
-      endMoneyLog10: sc.ctx.E.absLog10(run.end.wallet.money.amount),
-      endNetWorthLog10: sc.ctx.E.absLog10(worth.amount),
+      endMoneyLog10,
+      endNetWorthLog10,
       droppedRate: run.stats?.money.droppedRate ?? null,
       actionsApplied: run.stats && run.stats.actions.status === "observed" ? run.stats.actions.applied : null,
     });
   }
 
-  const score = seedScores.reduce((a, b) => a + b, 0) / Math.max(1, seedScores.length);
+  // Scale before summing: even finite scores can overflow a direct sum.
+  const scale = seedScores.reduce((max, value) => Math.max(max, Math.abs(value)), 0);
+  const normalized = scale === 0 ? 0 : seedScores.reduce((sum, value) => sum + value / scale, 0) / seedScores.length;
+  const score = Math.max(-1, Math.min(1, normalized)) * scale;
   return { score, seedScores, seedResults };
 }

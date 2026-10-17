@@ -214,9 +214,15 @@ function measureScenario<N>(args: {
   targetWorth?: string;
   maxDuration: number;
 }) {
+  const requireFinite = (amount: N, label: string): N => {
+    if (!args.E.isFinite(amount)) throw new RangeError(`compare ${label} must be finite in the selected engine`);
+    return amount;
+  };
   const runInput = args.compiled.fresh("economy");
   const run = runScenario(runInput);
   const endWorth = runInput.model.netWorth?.(runInput.ctx, run.end) ?? run.end.wallet.money;
+  requireFinite(run.end.wallet.money.amount, "end money");
+  requireFinite(endWorth.amount, "end net worth");
 
   let etaSeconds: number | undefined;
   let etaReached: boolean | undefined;
@@ -226,9 +232,13 @@ function measureScenario<N>(args: {
       unit: etaInput.ctx.unit,
       suffix: { kind: "alphaInfinite", minLen: 2 },
     }).amount;
+    requireFinite(target, "ETA target");
 
-    const reachedFn = (s: typeof run.end) =>
-      args.E.cmp((etaInput.model.netWorth?.(etaInput.ctx, s) ?? s.wallet.money).amount, target) >= 0;
+    const reachedFn = (s: typeof run.end) => {
+      requireFinite(s.wallet.money.amount, "ETA money");
+      const worth = etaInput.model.netWorth?.(etaInput.ctx, s) ?? s.wallet.money;
+      return args.E.cmp(requireFinite(worth.amount, "ETA net worth"), target) >= 0;
+    };
 
     const etaRun = runScenario({
       ...etaInput,
