@@ -99,6 +99,7 @@ export function assertCohortObservation(observation: unknown): asserts observati
   }
 }
 
+/** Return only the fully observed anchors; future days remain absent. */
 export function observedRetentionRates(observation: CohortObservation): RetentionAssumptions {
   assertCohortObservation(observation);
   const rates: RetentionAssumptions = {};
@@ -132,7 +133,7 @@ export function planRetentionPatch(observation: CohortObservation, assumptions: 
   const merged = { ...assumptions, ...rates };
   const warnings: string[] = [];
   for (const day of RETENTION_DAYS) {
-    if (merged[`d${day}`] === undefined) warnings.push(`Unobserved D${day} has no explicit retained assumption. An LTV default could conflict with the observations; supply this assumption in --scenario or observe this day before applying a patch.`);
+    if (merged[`d${day}`] === undefined) warnings.push(`Unobserved D${day} has no explicit retained assumption. An LTV default could conflict with the observations; supply monetization.retention.d${day} in the scenario or observe this day before applying a patch.`);
   }
   let previous: { day: number; rate: number } | undefined;
   for (const day of RETENTION_DAYS) {
@@ -144,7 +145,16 @@ export function planRetentionPatch(observation: CohortObservation, assumptions: 
   return warnings.length ? { status: "requires-review", retention: {}, warnings } : { status: "ready", retention: rates, warnings };
 }
 
-export function compareRetention(observation: CohortObservation, assumptions: RetentionAssumptions) {
+export type RetentionComparison = Readonly<{
+  day: number;
+  assumption: number | null;
+  observed: number | null;
+  differencePercentagePoints: number | null;
+  status: "not-observed" | "unconfigured" | "compared";
+}>;
+
+/** Compare observed anchors with explicit assumptions, preserving unobserved states. */
+export function compareRetention(observation: CohortObservation, assumptions: RetentionAssumptions): RetentionComparison[] {
   assertCohortObservation(observation);
   assertRetentionAssumptions(assumptions);
   return observation.retention.map(row => {
