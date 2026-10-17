@@ -12,6 +12,32 @@ idk calibrate examples/telemetry/cohort.csv --observed-through-day 7 --scenario 
 소스 환경에서는 `bun run build` 후 `idk` 대신 `bun packages/cli/dist/main.js`를 쓴다.
 가정만 읽으므로 시나리오의 플러그인은 실행하지 않는다.
 
+## core API 사용
+
+CLI와 같은 관측·패치 계획을 `@idlekit/core`에서 직접 사용할 수 있다:
+`observeCohort`, `assertCohortObservation`, `observedRetentionRates`, `compareRetention`,
+`planRetentionPatch`, `applyRetentionPatch`. 공개 `CohortActivityRow`는 `userId`와 정수
+`day`를 요구하고 `active`의 기본값은 true다. 수익·획득 비용은 선택 필드이며 입력한 경우
+유한한 음수 아닌 값인지 검사한다. 필드 생략은 수익 0의 관측이 아니다.
+
+[SDK 실행 예제](../examples/telemetry/cohort-sdk.ts)는 가상 코호트를 직접 처리하므로 임시 CSV나
+CLI 하위 프로세스가 필요 없다. 소스 체크아웃에서는 다음 명령으로 실행한다.
+
+```sh
+bun --preload @ttsc/unplugin/bun-register examples/telemetry/cohort-sdk.ts
+```
+
+`observeCohort(rows, observedThroughDay)`로 관측하고
+`planRetentionPatch(observation, scenario.monetization?.retention)`으로 적용 가능 여부를 확인한다.
+`applyRetentionPatch({ scenario, observation })`는 현재 시나리오에 맞춰 계획을 다시 계산하고
+검증한 복사본을 반환한다. `unavailable`·`requires-review`는 예외로 거부하며, 외부의 임의 패치나
+다른 시나리오에서 만든 오래된 계획을 그대로 적용하지 않는다. 관측된 잔존율만 바꾸고 미관측
+잔존율·수익·수수료·획득 비용·불확실성·코호트 규모 가정을 보존한다. 공개 관측 소비 함수들은
+직렬화된 관측의 인원수·비율·관측 종료일·구간 일관성도 검사한다.
+
+SDK도 아래의 완전한 export를 전제로 한다. 데이터 수집이나 미수집 수익 적합은 수행하지 않으며,
+export의 완전성 확인과 별도 검증 코호트는 호출자 책임이다.
+
 ## 데이터 준비
 
 - 설치 날짜와 관측 종료 시점이 같은 코호트를 고른다. `--observed-through-day`는
