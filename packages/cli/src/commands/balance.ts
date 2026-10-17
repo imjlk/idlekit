@@ -13,6 +13,7 @@ export default defineCommand({
   description: "Refresh a typed CSV balance sheet into scenario, pacing checks, and result sheets",
   options: {
     ...pluginOptions(),
+    engine: option(z.string().min(1).optional(), { description: "Numeric engine (default: number; explicit: breakInfinity)" }),
     check: option(z.coerce.boolean().default(false), { description: "Check result freshness without rerunning simulations" }),
     format: option(z.enum(["json", "md"]).default("json"), { description: "JSON manifest or human-readable target explanations" }),
   },

@@ -24,6 +24,59 @@ async function fixture() {
 }
 
 describe("typed sheet -> scenario -> pacing -> result sheet", () => {
+  it("retains huge wallet and net-worth values and engine-specific bundle freshness", async () => {
+    const f = await fixture();
+    await writeFile(resolve(f.directory, "plugin.ts"), `export const models = [{ id: "sheet-fixture", version: 1,
+      create(p) { return { id: "sheet-fixture", version: 1,
+        income: ctx => ({ unit: ctx.unit, amount: ctx.E.from(p.rate) }),
+        netWorth: (ctx, state) => ({ unit: ctx.unit, amount: ctx.E.mul(state.wallet.money.amount, 2) }),
+        actions: () => [] }; } }];
+      export const strategies = [{ id: "fixture.buy", create: () => ({ id: "fixture.buy", decide: () => [] }) }];`);
+    f.template.initial.wallet.amount = "1e400";
+    await writeFile(resolve(f.directory, "scenario-template.json"), JSON.stringify(f.template));
+    await writeFile(f.configPath, JSON.stringify({ ...f.config, exportVariants: true,
+      bindings: f.config.bindings.filter(binding => binding.path !== "initial.wallet.amount"),
+      pacing: { ...f.config.pacing, sensitivity: [{ path: "rate", values: [4] }], targets: [
+        { metric: "wallet", unit: "TOKEN", min: "1e400", max: "1e400" },
+        { metric: "worth", unit: "TOKEN", min: "2e400", max: "2e400" },
+      ] }, metrics: [{ id: "wallet", kind: "endWallet" }, { id: "worth", kind: "endNetWorth" }],
+    }));
+    const flags = { ...f.flags, engine: "breakInfinity" };
+    const output = await refreshBalanceWorkflow(f.configPath, flags);
+    expect(output.outcome.status).toBe("pass");
+    const report = JSON.parse(await readFile(resolve(output.generationPath, "results.json"), "utf8"));
+    expect(report.runs).toHaveLength(2);
+    expect(report.runs[0].results.map((row: { value: string }) => row.value)).toEqual(["1e+400", "2e+400"]);
+    const csv = await readFile(resolve(output.generationPath, "results.csv"), "utf8");
+    expect(csv).toContain("1e+400");
+    expect(csv).not.toContain("Infinity");
+    const provenance = JSON.parse(await readFile(resolve(output.generationPath, "provenance.json"), "utf8"));
+    const variants = JSON.parse(await readFile(resolve(output.generationPath, "variants.json"), "utf8"));
+    expect(provenance.context.engine).toBe("breakInfinity");
+    expect(variants.engine).toBe("breakInfinity");
+    expect((await refreshBalanceWorkflow(f.configPath, flags, true)).state).toBe("current");
+    expect((await refreshBalanceWorkflow(f.configPath, f.flags, true)).state).toBe("stale");
+    const overflowed = await refreshBalanceWorkflow(f.configPath, f.flags);
+    expect(overflowed.outcome.status).toBe("error");
+    const failed = JSON.parse(await readFile(resolve(overflowed.generationPath, "results.json"), "utf8"));
+    expect(failed.runs[0].results[0]).toMatchObject({ status: "error", value: null });
+  }, 90_000);
+
+  it("keeps time and count bounds numeric even when money uses a big-number engine", async () => {
+    const f = await fixture();
+    for (const metric of [
+      { id: "first", kind: "firstAction", actionId: "buy.machine", unit: "seconds" },
+      { id: "count", kind: "actionCount", unit: "count" },
+    ]) {
+      const { unit, ...definition } = metric;
+      await writeFile(f.configPath, JSON.stringify({ ...f.config, metrics: [definition],
+        pacing: { ...f.config.pacing, targets: [{ metric: metric.id, unit, min: "1" }] },
+      }));
+      await expect(refreshBalanceWorkflow(f.configPath, { ...f.flags, engine: "breakInfinity" }))
+        .rejects.toThrow("finite numeric time or count bounds");
+    }
+  }, 90_000);
+
   it("exports opt-in sensitivity scenarios with stable IDs and verifies their freshness", async () => {
     const f = await fixture();
     f.config.pacing.sensitivity = [{ path: "machine.alpha.cost", values: [12, 6, 3] }];

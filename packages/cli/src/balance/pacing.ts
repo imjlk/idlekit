@@ -1,3 +1,5 @@
+import { comparePacingValues, pacingValue, type PacingValue } from "./pacingAmount";
+
 /** Hard safety ceilings. A plan may lower these limits, but cannot raise them. */
 export const PACING_LIMITS = Object.freeze({
   maxRuns: 1_000,
@@ -16,8 +18,8 @@ export type PacingStatus = "pass" | "breach" | "unreached" | "error";
 export type PacingTarget = Readonly<{
   metric: string;
   unit: string;
-  min?: number;
-  max?: number;
+  min?: PacingValue;
+  max?: PacingValue;
 }>;
 
 export type PacingConfig = Readonly<{
@@ -68,10 +70,10 @@ export type PacingPlan = Readonly<{
 export type PacingEvaluator = (
   run: PacingRunDescriptor,
   patches: Readonly<Record<string, number>>,
-) => Readonly<Record<string, number | null>> | Promise<Readonly<Record<string, number | null>>>;
+) => Readonly<Record<string, PacingValue | null>> | Promise<Readonly<Record<string, PacingValue | null>>>;
 
 export type PacingTargetResult = PacingTarget & Readonly<{
-  value: number | null;
+  value: PacingValue | null;
   status: PacingStatus;
   message?: string;
 }>;
@@ -137,6 +139,12 @@ function finite(value: unknown, label: string): number {
   return Object.is(value, -0) ? 0 : value;
 }
 
+function bound(value: unknown, label: string): PacingValue {
+  const parsed = pacingValue(value);
+  if (parsed === undefined) invalid(`${label} must be finite or decimal text of at most 200 characters`);
+  return parsed;
+}
+
 function limit(value: unknown, maximum: number, label: string): number {
   if (value === undefined) return maximum;
   const parsed = finite(value, label);
@@ -200,10 +208,10 @@ export function planPacingRuns(input: unknown): PacingPlan {
     const unit = text(raw.unit, `targets[${index}].unit`);
     if (metrics.has(metric)) invalid(`duplicate target metric ${metric}`);
     metrics.add(metric);
-    const min = raw.min === undefined ? undefined : finite(raw.min, `targets[${index}].min`);
-    const max = raw.max === undefined ? undefined : finite(raw.max, `targets[${index}].max`);
+    const min = raw.min === undefined ? undefined : bound(raw.min, `targets[${index}].min`);
+    const max = raw.max === undefined ? undefined : bound(raw.max, `targets[${index}].max`);
     if (min === undefined && max === undefined) invalid(`target ${metric} needs min or max`);
-    if (min !== undefined && max !== undefined && min > max) invalid(`target ${metric} min exceeds max`);
+    if (min !== undefined && max !== undefined && comparePacingValues(min, max) > 0) invalid(`target ${metric} min exceeds max`);
     return Object.freeze({ metric, unit, ...(min !== undefined ? { min } : {}), ...(max !== undefined ? { max } : {}) });
   }).sort((left, right) => compareText(left.metric, right.metric));
 
@@ -275,11 +283,13 @@ function checkTarget(target: PacingTarget, metrics: Readonly<Record<string, unkn
   }
   const value = metrics[target.metric];
   if (value === null) return { ...target, value, status: "unreached", message: "Metric not reached within the run horizon" };
-  if (typeof value !== "number" || !Number.isFinite(value)) {
-    return { ...target, value: null, status: "error", message: "Evaluator metric must be a finite number or null" };
+  const parsed = pacingValue(value);
+  if (parsed === undefined) {
+    return { ...target, value: null, status: "error", message: "Evaluator metric must be a finite number, bounded decimal text or null" };
   }
-  const breached = (target.min !== undefined && value < target.min) || (target.max !== undefined && value > target.max);
-  return { ...target, value: Object.is(value, -0) ? 0 : value, status: breached ? "breach" : "pass" };
+  const breached = (target.min !== undefined && comparePacingValues(parsed, target.min) < 0)
+    || (target.max !== undefined && comparePacingValues(parsed, target.max) > 0);
+  return { ...target, value: parsed, status: breached ? "breach" : "pass" };
 }
 
 /**

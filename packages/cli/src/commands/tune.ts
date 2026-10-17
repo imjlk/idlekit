@@ -1,7 +1,6 @@
 import { defineCommand, option } from "../runtime/command";
 import {
   compileScenario,
-  createNumberEngine,
   RandomSearchTunerV1,
   runCandidateAndScore,
   validateScenarioV1,
@@ -20,6 +19,7 @@ import { writeCommandReplayArtifact } from "../io/replayPolicy";
 import { readScenarioFile } from "../io/readScenario";
 import { writeOutput } from "../io/writeOutput";
 import { runTuneWizard } from "../lib/tuneWizard";
+import { resolveEffectiveEngine } from "../lib/runConfiguration";
 import { readJsonFile } from "../runtime/bun";
 
 type TuneRegression = Readonly<{
@@ -117,8 +117,8 @@ function flattenParams(
   return out;
 }
 
-export async function cmdTune(args: {
-  E: Engine<any>;
+export async function cmdTune<N>(args: {
+  E: Engine<N>;
 
   scenarioInput: unknown;
   tuneSpecInput: unknown;
@@ -177,6 +177,7 @@ export default defineCommand({
   description: "Tune strategy parameters with objective scoring",
   options: {
     ...pluginOptions(),
+    engine: option(z.string().min(1).optional(), { description: "Numeric engine (default: number; explicit: breakInfinity)" }),
     tune: option(z.string().optional(), { description: "TuneSpec file path (.json|.yaml)" }),
     wizard: option(z.coerce.boolean().default(false), {
       description: "Interactively generate a TuneSpec before tuning",
@@ -235,6 +236,9 @@ export default defineCommand({
     const tuneSpecInput = wizardResult?.tuneSpec ?? (await readScenarioFile(tunePath));
     const baselinePath = flags["baseline-artifact"] ? resolve(flags["baseline-artifact"]) : undefined;
     const baselineRaw = baselinePath ? await readJsonFile<unknown>(baselinePath) : undefined;
+    const engine = resolveEffectiveEngine({ requested: flags.engine });
+    // Preserve the previous default/explicit-Number identities.
+    const engineIdentity = engine.effectiveId === "number" ? {} : { engineId: engine.effectiveId };
     const seed =
       flags.seed ??
       deriveDeterministicSeed({
@@ -242,6 +246,7 @@ export default defineCommand({
         scenario: scenarioInput,
         tuneSpec: tuneSpecInput,
         options: {
+          ...engineIdentity,
           // The baseline it reads, not where it lies.
           baselineArtifact: baselineRaw === undefined ? undefined : hashContent(baselineRaw),
           regressionTolerance: flags["regression-tolerance"],
@@ -252,7 +257,7 @@ export default defineCommand({
       deriveDeterministicRunId({
         command: "tune",
         seed,
-        scope: { scenario: scenarioInput, tuneSpec: tuneSpecInput, pluginDigests: Object.values(loaded.pluginDigest) },
+        scope: { scenario: scenarioInput, tuneSpec: tuneSpecInput, pluginDigests: Object.values(loaded.pluginDigest), ...engineIdentity },
       });
     const outputMeta = buildOutputMeta({
       command: "tune",
@@ -265,7 +270,7 @@ export default defineCommand({
     });
 
     const result = await cmdTune({
-      E: createNumberEngine(),
+      E: engine.engine,
       scenarioInput,
       tuneSpecInput,
       modelRegistry: loaded.modelRegistry,

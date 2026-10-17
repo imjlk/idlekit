@@ -2,7 +2,6 @@ import { defineCommand, option } from "../runtime/command";
 import {
   compareScenarios,
   compileScenario,
-  createNumberEngine,
   createRunFactory,
   parseMoney,
   runElapsedSec,
@@ -10,6 +9,7 @@ import {
   validateScenarioV1,
   type RunBindOptions,
   type ScenarioV1,
+  type Engine,
 } from "@idlekit/core";
 import { resolve } from "path";
 import { z } from "zod";
@@ -26,7 +26,7 @@ import {
   resolveSessionPatternSpec,
   summarizeComparableExperienceMetric,
 } from "../lib/experience";
-import { defaultRunSeed, pluginDigestValues, resolveStrategySelection } from "../lib/runConfiguration";
+import { defaultRunSeed, pluginDigestValues, resolveEffectiveEngine, resolveStrategySelection } from "../lib/runConfiguration";
 import { scenarioInvalidError, usageError } from "../errors";
 import { buildOutputMeta, deriveDeterministicRunId } from "../io/outputMeta";
 import { writeCommandReplayArtifact } from "../io/replayPolicy";
@@ -59,9 +59,9 @@ function assertValidScenario(
   return valid.scenario;
 }
 
-function compileComparableScenario(args: {
+function compileComparableScenario<N>(args: {
   scenario: ScenarioV1;
-  E: ReturnType<typeof createNumberEngine>;
+  E: Engine<N>;
   loaded: Awaited<ReturnType<typeof loadRegistriesFromFlags>>;
   flags: {
     strategy?: string;
@@ -78,7 +78,7 @@ function compileComparableScenario(args: {
   });
   // The binding builds the selected strategy for every run. An override never builds the replaced one.
   const { strategy: _replaced, ...withoutStrategy } = args.scenario;
-  const compiled = compileScenario<number, string, Record<string, unknown>>({
+  const compiled = compileScenario<N, string, Record<string, unknown>>({
     E: args.E,
     scenario: withoutStrategy,
     registry: args.loaded.modelRegistry,
@@ -159,6 +159,7 @@ function compareIdentity(args: {
   scenarios: Readonly<{ a: ScenarioV1; b: ScenarioV1 }>;
   flags: CompareFlags;
   loaded: Awaited<ReturnType<typeof loadRegistriesFromFlags>>;
+  engineId?: string;
 }): Record<string, unknown> {
   const { flags } = args;
   const metrics = compareMetrics(flags);
@@ -198,6 +199,7 @@ function compareIdentity(args: {
   return {
     a: side(args.scenarios.a),
     b: side(args.scenarios.b),
+    ...(args.engineId && args.engineId !== "number" ? { engineId: args.engineId } : {}),
     pluginDigests: pluginDigestValues(args.loaded.pluginDigest),
     metrics,
     bundle: flags.bundle ?? null,
@@ -206,9 +208,9 @@ function compareIdentity(args: {
   };
 }
 
-function measureScenario(args: {
-  compiled: ReturnType<typeof compileComparableScenario>;
-  E: ReturnType<typeof createNumberEngine>;
+function measureScenario<N>(args: {
+  compiled: ReturnType<typeof compileComparableScenario<N>>;
+  E: Engine<N>;
   targetWorth?: string;
   maxDuration: number;
 }) {
@@ -252,8 +254,8 @@ function measureScenario(args: {
   };
 }
 
-function measureDesignMetric(args: {
-  compiled: ReturnType<typeof compileComparableScenario>;
+function measureDesignMetric<N>(args: {
+  compiled: ReturnType<typeof compileComparableScenario<N>>;
   metric: "timeToMilestone" | "visibleChangesPerMinute" | "maxNoRewardGapSec";
   sessionPatternId?: string;
   days?: number;
@@ -506,11 +508,11 @@ function bundleMetrics(bundle: CompareBundle): readonly CompareMetric[] {
   }
 }
 
-function compareDecisionForMetric(args: {
+function compareDecisionForMetric<N>(args: {
   metric: CompareMetric;
-  E: ReturnType<typeof createNumberEngine>;
-  ma: ReturnType<typeof measureScenario>;
-  mb: ReturnType<typeof measureScenario>;
+  E: Engine<N>;
+  ma: ReturnType<typeof measureScenario<N>>;
+  mb: ReturnType<typeof measureScenario<N>>;
   da?: ReturnType<typeof measureDesignMetric>;
   db?: ReturnType<typeof measureDesignMetric>;
   maxDuration: number;
@@ -540,13 +542,13 @@ function compareDecisionForMetric(args: {
   }
 }
 
-function buildSingleCompareOutput(args: {
+function buildSingleCompareOutput<N>(args: {
   metric: CompareMetric;
-  E: ReturnType<typeof createNumberEngine>;
-  aScenario: any;
-  bScenario: any;
-  ma: ReturnType<typeof measureScenario>;
-  mb: ReturnType<typeof measureScenario>;
+  E: Engine<N>;
+  aScenario: ScenarioV1;
+  bScenario: ScenarioV1;
+  ma: ReturnType<typeof measureScenario<N>>;
+  mb: ReturnType<typeof measureScenario<N>>;
   da?: ReturnType<typeof measureDesignMetric>;
   db?: ReturnType<typeof measureDesignMetric>;
   maxDuration: number;
@@ -640,6 +642,7 @@ export default defineCommand({
   description: "Compare two scenarios via measured simulation metrics",
   options: {
     ...pluginOptions(),
+    engine: option(z.string().min(1).optional(), { description: "Numeric engine (default: number; explicit: breakInfinity)" }),
     duration: option(z.coerce.number().optional(), { description: "Override durationSec" }),
     step: option(z.coerce.number().optional(), { description: "Override stepSec" }),
     strategy: option(strategySchema, { description: "Override strategy id (greedy|planner|scripted)" }),
@@ -706,7 +709,8 @@ export default defineCommand({
     }
 
     const scenarios = { a: aScenario, b: bScenario };
-    const identity = compareIdentity({ scenarios, flags, loaded });
+    const engine = resolveEffectiveEngine({ requested: flags.engine });
+    const identity = compareIdentity({ scenarios, flags, loaded, engineId: engine.effectiveId });
     const effectiveSeed =
       flags.seed ??
       defaultRunSeed({
@@ -729,10 +733,15 @@ export default defineCommand({
             milestoneKey: undefined,
           },
         },
-        runs: [{ identity, defaults: compareIdentity({ scenarios, flags: { "max-duration": DEFAULT_MAX_DURATION }, loaded }) }],
+        runs: [{ identity, defaults: {
+          ...compareIdentity({ scenarios, flags: { "max-duration": DEFAULT_MAX_DURATION }, loaded }),
+          // The legacy Number identity omits this key. Supply its comparison default
+          // without adding it to that identity or hashing an absent value.
+          engineId: "number",
+        } }],
       });
 
-    const E = createNumberEngine();
+    const E = engine.engine;
 
     const aCompiled = compileComparableScenario({
       scenario: aScenario,

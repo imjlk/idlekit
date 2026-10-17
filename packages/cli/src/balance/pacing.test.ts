@@ -96,7 +96,7 @@ describe("pacing plan", () => {
       { metric: "m", unit: "", max: 1 },
       { metric: "", unit: "s", max: 1 },
       { metric: "m", max: 1 },
-      { metric: "m", unit: "s", max: "1" },
+      { metric: "m", unit: "s", max: "1no" },
       { metric: "m", unit: "s", max: null },
       { metric: "m", unit: "s", max: 1, mx: 2 },
     ]) expect(() => planPacingRuns({ ...config(), targets: [target] })).toThrow();
@@ -186,7 +186,7 @@ describe("pacing evaluation", () => {
     expect(report.ok).toBe(false);
   });
 
-  test.each([NaN, Infinity, -Infinity, undefined, "0", false])("invalid result %s is an error", async (value) => {
+  test.each([NaN, Infinity, -Infinity, undefined, "0x0", false])("invalid result %s is an error", async (value) => {
     const report = await runPacingChecks(config(), (() => ({ unlock: value })) as PacingEvaluator);
     expect(report.summary.error).toBe(2);
     expect(report.runs[0]!.results[0]!.value).toBe(null);

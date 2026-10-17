@@ -87,8 +87,10 @@ describe("linear engine arithmetic", () => {
     try { runScenario(compile(createNumberEngine(), input(1, "e400"))); } catch (cause) { error = cause; }
     const cli = toCliError(error);
     expect(cli.code).toBe("SCENARIO_INVALID");
-    expect(cli.message).toContain("simulate/evaluate/experience/ltv");
+    expect(cli.message).toContain("simulate/evaluate/experience/ltv/compare/tune/balance");
     expect(cli.hint).toContain("number engine");
+    expect(cli.hint).toContain("report");
+    expect(cli.hint).not.toMatch(/compare|tune|balance/);
   });
   it("rejects overflow from bounded Number inputs rather than returning a successful Infinity result", () => {
     const raw = input(1); raw.initial.wallet.amount = "1e308";
