@@ -26,8 +26,8 @@ function ownedCount(state: { vars?: LinearVars } | undefined): number {
 
 function finiteLinearAmount<N>(E: Engine<N>, value: N, label: string): N {
   if (!E.isFinite(value)) {
-    throw cliError("SCENARIO_INVALID", `linear ${label} exceeds the selected engine's finite range. Use --engine breakInfinity with simulate/evaluate/experience/ltv for a large economy, or reduce the inputs.`, {
-      hint: "Other commands, including report/compare/tune, use the number engine; reduce their inputs.",
+    throw cliError("SCENARIO_INVALID", `linear ${label} exceeds the selected engine's finite range. Use --engine breakInfinity with simulate/evaluate/experience/ltv/compare/tune/balance for a large economy, or reduce the inputs.`, {
+      hint: "The report command uses the number engine; reduce its inputs.",
     });
   }
   return value;
