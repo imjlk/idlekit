@@ -16,6 +16,38 @@ function scenario(amount: string): ScenarioV1 {
 }
 
 describe("compareScenarios", () => {
+  for (const [a, b, better] of [
+    ["1e400", "1e300", "a"],
+    ["-1e400", "-1e300", "b"],
+    ["1e-400", "0", "a"],
+    ["9007199254740993", "9007199254740992", "a"],
+    ["1.0000000000000000001e400", "1e400", "a"],
+    [".01e402", "100e398", "tie"],
+    ["-0", "0e9999", "tie"],
+    ["1e9007199254740993", "1e9007199254740992", "a"],
+  ] as const) {
+    for (const metric of ["endMoney", "endNetWorth"] as const) {
+      it(`orders static ${metric}: ${a} against ${b}`, () => {
+        const left = scenario(metric === "endMoney" ? a : "0");
+        const right = scenario(metric === "endMoney" ? b : "0");
+        const out = compareScenarios({
+          a: { ...left, initial: { ...left.initial, maxMoneyEver: a } },
+          b: { ...right, initial: { ...right.initial, maxMoneyEver: b } }, metric,
+        });
+        expect(out.better).toBe(better);
+        expect(compareScenarios({ a: scenario(b), b: scenario(a), metric }).better)
+          .toBe(better === "tie" ? "tie" : better === "a" ? "b" : "a");
+      });
+    }
+  }
+
+  for (const amount of ["NaN", "Infinity", "1e", "", "0x10"]) {
+    it(`rejects invalid static monetary input ${JSON.stringify(amount)}`, () => {
+      expect(() => compareScenarios({ a: scenario(amount), b: scenario("1"), metric: "endMoney" }))
+        .toThrow(/decimal/i);
+    });
+  }
+
   it("uses measured metrics when provided", () => {
     const out = compareScenarios({
       a: scenario("1"),

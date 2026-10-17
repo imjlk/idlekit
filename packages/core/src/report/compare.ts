@@ -12,31 +12,35 @@ export type CompareMetric =
 export type MeasuredCompareMetrics = Readonly<Partial<Record<CompareMetric, number>>>;
 export type MeasuredDecision = "a" | "b" | "tie";
 
-function safeNum(input: unknown): number {
-  if (typeof input === "number") return input;
-  if (typeof input === "string") {
-    const n = Number(input);
-    if (Number.isFinite(n)) return n;
-
-    const m = /^\s*([+-]?\d+(?:\.\d+)?)e([+-]?\d+)\s*$/i.exec(input);
-    if (m) {
-      const mantissa = Number(m[1]);
-      const exp = Number(m[2]);
-      if (mantissa === 0) return 0;
-      if (Number.isFinite(mantissa) && Number.isFinite(exp)) {
-        return Math.log10(Math.abs(mantissa)) + exp;
-      }
-    }
-  }
-  return Number.NaN;
+function decimalParts(input: string) {
+  const match = /^([+-]?)(?:(\d+)(?:\.(\d*))?|\.(\d+))(?:e([+-]?\d+))?$/i.exec(input.trim());
+  if (!match) throw new RangeError("Static monetary comparison requires decimal amounts");
+  const fraction = match[3] ?? match[4] ?? "";
+  const digits = `${match[2] ?? ""}${fraction}`.replace(/^0+/, "");
+  return {
+    sign: digits.length === 0 ? 0 : match[1] === "-" ? -1 : 1,
+    digits: digits.replace(/0+$/, ""),
+    magnitude: BigInt(match[5] ?? "0") - BigInt(fraction.length) + BigInt(digits.length),
+  };
 }
 
-function score(s: ScenarioV1, metric: CompareMetric): number {
+/** Compare the decimal spellings without rounding, taking logs, or expanding powers of ten. */
+function compareStaticMoney(left: string, right: string): number {
+  const a = decimalParts(left), b = decimalParts(right);
+  if (a.sign !== b.sign) return a.sign < b.sign ? -1 : 1;
+  if (a.sign === 0) return 0;
+  if (a.magnitude !== b.magnitude) return (a.magnitude < b.magnitude ? -1 : 1) * a.sign;
+  const length = Math.max(a.digits.length, b.digits.length);
+  const ad = a.digits.padEnd(length, "0"), bd = b.digits.padEnd(length, "0");
+  return (ad < bd ? -1 : ad > bd ? 1 : 0) * a.sign;
+}
+
+function score(s: ScenarioV1, metric: CompareMetric): number | string {
   switch (metric) {
     case "endMoney":
-      return safeNum(s.initial.wallet.amount);
+      return s.initial.wallet.amount;
     case "endNetWorth":
-      return safeNum(s.initial.maxMoneyEver ?? s.initial.wallet.amount);
+      return s.initial.maxMoneyEver ?? s.initial.wallet.amount;
     case "droppedRate":
       return -(s.policy.maxLogGap ?? 0);
     case "etaToTargetWorth":
@@ -90,6 +94,14 @@ export function compareScenarios(args: {
 
   const aScore = useMeasured ? measuredA : score(args.a, args.metric);
   const bScore = useMeasured ? measuredB : score(args.b, args.metric);
+
+  if (!useMeasured && (args.metric === "endMoney" || args.metric === "endNetWorth")) {
+    const order = compareStaticMoney(String(aScore), String(bScore));
+    return {
+      better: order === 0 ? "tie" : order > 0 ? "a" : "b",
+      detail: { aScore, bScore, metric: args.metric, source: "static" },
+    };
+  }
 
   const higherBetter =
     args.metric === "endMoney" ||
