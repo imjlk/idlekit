@@ -91,12 +91,22 @@ describe("runCandidateAndScore", () => {
   });
 
   it("preserves a small residual across every seed order when huge scores cancel", () => {
-    const values = [Number.MAX_VALUE, 1, -Number.MAX_VALUE];
-    for (const seeds of [[0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0]]) {
-      const result = scoreWith(makeScenario(), seed => values[seed]!, seeds);
-      expect(result.score).toBeCloseTo(1 / 3, 12);
-      expect(result.seedScores).toEqual(seeds.map(seed => values[seed]!));
+    for (const residual of [1, 1e-16, 1e-300]) {
+      const values = [Number.MAX_VALUE, residual, -Number.MAX_VALUE];
+      for (const seeds of [[0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0]]) {
+        const result = scoreWith(makeScenario(), seed => values[seed]!, seeds);
+        expect(result.score).toBe(residual / 3);
+        expect(result.seedScores).toEqual(seeds.map(seed => values[seed]!));
+      }
     }
+  });
+
+  it("retains subnormal means and rounds halfway results to even", () => {
+    expect(scoreWith(makeScenario(), Number.MIN_VALUE).score).toBe(Number.MIN_VALUE);
+    expect(scoreWith(makeScenario(), seed => seed === 0 ? Number.MIN_VALUE : 0, [0, 1]).score).toBe(0);
+    expect(scoreWith(makeScenario(), seed => seed === 0 ? 3 * Number.MIN_VALUE : 0, [0, 1]).score)
+      .toBe(2 * Number.MIN_VALUE);
+    expect(scoreWith(makeScenario(), -Number.MAX_VALUE).score).toBe(-Number.MAX_VALUE);
   });
 
   it("injects seed into ctx for each run", () => {
