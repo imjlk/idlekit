@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { compareScenarios } from "./compare";
 import type { ScenarioV1 } from "../scenario/types";
+import { alphaInfiniteSuffix } from "../notation/suffixer";
 
 function scenario(amount: string): ScenarioV1 {
   return {
@@ -16,6 +17,13 @@ function scenario(amount: string): ScenarioV1 {
 }
 
 describe("compareScenarios", () => {
+  it("accepts the canonical alpha-infinite formatter's suffix mapping", () => {
+    for (const index of [1, 2, 26, 27, 676, 677, 17576, 18252, 18253, 1_000_000]) {
+      const amount = `1${alphaInfiniteSuffix(index)}`;
+      expect(compareScenarios({ a: scenario(amount), b: scenario(`1e${index * 3}`), metric: "endMoney" }).better)
+        .toBe("tie");
+    }
+  });
   it("preserves long significant decimal strings with interior and trailing zero runs", () => {
     const stem = `1${"0".repeat(40_000)}`;
     expect(compareScenarios({ a: scenario(`${stem}1`), b: scenario(`${stem}0`), metric: "endMoney" }).better).toBe("a");
@@ -29,6 +37,17 @@ describe("compareScenarios", () => {
     [".01e402", "100e398", "tie"],
     ["-0", "0e9999", "tie"],
     ["1e9007199254740993", "1e9007199254740992", "a"],
+    ["1aa", "1000", "tie"],
+    ["1ab", "1aa", "a"],
+    ["-1AA", "-999", "b"],
+    ["1az", "1e78", "tie"],
+    ["1ba", "1e81", "tie"],
+    ["1zz", "1e2028", "tie"],
+    ["1aaa", "1e2031", "tie"],
+    [".001aa", "1", "tie"],
+    ["1e-3aa", "1", "tie"],
+    ["1e400aa", "1e403", "tie"],
+    ["1e9007199254740993aa", "1e9007199254740996", "tie"],
   ] as const) {
     for (const metric of ["endMoney", "endNetWorth"] as const) {
       it(`orders static ${metric}: ${a} against ${b}`, () => {
@@ -45,7 +64,7 @@ describe("compareScenarios", () => {
     }
   }
 
-  for (const amount of ["NaN", "Infinity", "1e", "", "0x10"]) {
+  for (const amount of ["NaN", "Infinity", "1e", "", "0x10", "1a", "1aa COIN"]) {
     it(`rejects invalid static monetary input ${JSON.stringify(amount)}`, () => {
       expect(() => compareScenarios({ a: scenario(amount), b: scenario("1"), metric: "endMoney" }))
         .toThrow(/decimal/i);

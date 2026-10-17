@@ -13,8 +13,16 @@ export type MeasuredCompareMetrics = Readonly<Partial<Record<CompareMetric, numb
 export type MeasuredDecision = "a" | "b" | "tie";
 
 function decimalParts(input: string) {
-  const match = /^([+-]?)(?:(\d+)(?:\.(\d*))?|\.(\d+))(?:e([+-]?\d+))?$/i.exec(input.trim());
+  const match = /^([+-]?)(?:(\d+)(?:\.(\d*))?|\.(\d+))(?:e([+-]?\d+))?([a-z]{2,})?$/i.exec(input.trim());
   if (!match) throw new RangeError("Static monetary comparison requires decimal amounts");
+  let suffixExponent = 0n;
+  if (match[6]) {
+    // alphaInfinite minLen=2: aa=1, az=26, zz=676, aaa=677.
+    // Keep the suffix index exact instead of routing it through a number engine.
+    let index = 0n;
+    for (const ch of match[6].toLowerCase()) index = index * 26n + BigInt(ch.charCodeAt(0) - 96);
+    suffixExponent = (index - 26n) * 3n;
+  }
   const fraction = match[3] ?? match[4] ?? "";
   const digits = `${match[2] ?? ""}${fraction}`.replace(/^0+/, "");
   let end = digits.length;
@@ -22,7 +30,7 @@ function decimalParts(input: string) {
   return {
     sign: digits.length === 0 ? 0 : match[1] === "-" ? -1 : 1,
     digits: digits.slice(0, end),
-    magnitude: BigInt(match[5] ?? "0") - BigInt(fraction.length) + BigInt(digits.length),
+    magnitude: BigInt(match[5] ?? "0") + suffixExponent - BigInt(fraction.length) + BigInt(digits.length),
   };
 }
 
