@@ -106,7 +106,18 @@ export function runCandidateAndScore(args: {
 
   // Scale before summing: even finite scores can overflow a direct sum.
   const scale = seedScores.reduce((max, value) => Math.max(max, Math.abs(value)), 0);
-  const normalized = scale === 0 ? 0 : seedScores.reduce((sum, value) => sum + value / scale, 0) / seedScores.length;
+  let sum = 0;
+  let correction = 0;
+  if (scale !== 0) {
+    for (const score of seedScores) {
+      const value = score / scale;
+      const next = sum + value;
+      // Neumaier compensation retains small residuals when large opposite scores cancel.
+      correction += Math.abs(sum) >= Math.abs(value) ? (sum - next) + value : (value - next) + sum;
+      sum = next;
+    }
+  }
+  const normalized = (sum + correction) / seedScores.length;
   const score = Math.max(-1, Math.min(1, normalized)) * scale;
   return { score, seedScores, seedResults };
 }

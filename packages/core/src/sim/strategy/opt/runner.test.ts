@@ -62,10 +62,12 @@ function makeScenario(): CompiledScenario<number, "COIN", Bag> {
 }
 
 describe("runCandidateAndScore", () => {
-  function scoreWith(scenario: ReturnType<typeof makeScenario>, value: number, seeds: readonly number[] = [1, 2]) {
+  function scoreWith(scenario: ReturnType<typeof makeScenario>, value: number | ((seed: number) => number), seeds: readonly number[] = [1, 2]) {
     return runCandidateAndScore({ baseScenario: scenario, params: {}, strategyId: "wait", objectiveId: "fixed",
       seeds, strategyRegistry: createStrategyRegistry([{ id: "wait", create: () => ({ id: "wait", decide: () => [] }) }]),
-      objectiveRegistry: createObjectiveRegistry([{ id: "fixed", create: () => ({ id: "fixed", score: () => value }) }]),
+      objectiveRegistry: createObjectiveRegistry([{ id: "fixed", create: () => ({ id: "fixed",
+        score: ({ scenario }) => typeof value === "number" ? value : value(scenario.ctx.seed ?? 0),
+      }) }]),
     });
   }
 
@@ -86,6 +88,15 @@ describe("runCandidateAndScore", () => {
 
   it("averages large finite scores without overflowing the sum", () => {
     expect(scoreWith(makeScenario(), Number.MAX_VALUE).score).toBe(Number.MAX_VALUE);
+  });
+
+  it("preserves a small residual across every seed order when huge scores cancel", () => {
+    const values = [Number.MAX_VALUE, 1, -Number.MAX_VALUE];
+    for (const seeds of [[0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0]]) {
+      const result = scoreWith(makeScenario(), seed => values[seed]!, seeds);
+      expect(result.score).toBeCloseTo(1 / 3, 12);
+      expect(result.seedScores).toEqual(seeds.map(seed => values[seed]!));
+    }
   });
 
   it("injects seed into ctx for each run", () => {
