@@ -1,6 +1,6 @@
 {
   "name": "@idlekit/core",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "description": "Bun-first scenario compilation, simulation, analysis, and reporting for idle game economies.",
   "license": "MIT",
   "type": "module",
