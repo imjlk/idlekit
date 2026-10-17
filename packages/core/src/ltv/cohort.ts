@@ -28,6 +28,16 @@ export type CohortObservation = Readonly<{
   }>[];
 }>;
 
+function wilsonInterval(activeUsers: number, users: number): Readonly<{ min: number; max: number }> {
+  // Wilson score interval: finite bounds even for zero or complete retention.
+  const rate = activeUsers / users;
+  const z2 = 1.959963984540054 ** 2;
+  const denominator = 1 + z2 / users;
+  const center = (rate + z2 / (2 * users)) / denominator;
+  const radius = Math.sqrt(z2 * (rate * (1 - rate) / users + z2 / (4 * users * users))) / denominator;
+  return { min: activeUsers === 0 ? 0 : Math.max(0, center - radius), max: activeUsers === users ? 1 : Math.min(1, center + radius) };
+}
+
 /** Exact-day retention for one complete install cohort, with an explicit export cutoff. */
 export function observeCohort(rows: readonly CohortActivityRow[], observedThroughDay: number): CohortObservation {
   if (!Number.isSafeInteger(observedThroughDay) || observedThroughDay < 0) throw new Error("observed-through-day must be a nonnegative safe integer");
@@ -58,12 +68,7 @@ export function observeCohort(rows: readonly CohortActivityRow[], observedThroug
       if (day > observedThroughDay) return { day, status: "not-observed", users: n, activeUsers: null, rate: null, interval95: null };
       const activeUsers = [...users.values()].filter(user => user.active.has(day)).length;
       const rate = activeUsers / n;
-      // Wilson score interval: finite bounds even for zero or complete retention.
-      const z2 = 1.959963984540054 ** 2;
-      const denominator = 1 + z2 / n;
-      const center = (rate + z2 / (2 * n)) / denominator;
-      const radius = Math.sqrt(z2 * (rate * (1 - rate) / n + z2 / (4 * n * n))) / denominator;
-      return { day, status: "observed", users: n, activeUsers, rate, interval95: { min: activeUsers === 0 ? 0 : Math.max(0, center - radius), max: activeUsers === n ? 1 : Math.min(1, center + radius) } };
+      return { day, status: "observed", users: n, activeUsers, rate, interval95: wilsonInterval(activeUsers, n) };
     }),
   };
   assertCohortObservation(observation);
@@ -95,6 +100,10 @@ export function assertCohortObservation(observation: unknown): asserts observati
     const interval = point.interval95;
     if (typeof point.rate !== "number" || !object(interval) || typeof interval.min !== "number" || typeof interval.max !== "number" || !Number.isFinite(interval.min) || !Number.isFinite(interval.max) || interval.min < 0 || interval.max > 1 || interval.min > point.rate || interval.max < point.rate) {
       throw new Error("Retention confidence interval must be finite and contain the observed rate");
+    }
+    const expected = wilsonInterval(point.activeUsers, observation.users);
+    if (interval.min !== expected.min || interval.max !== expected.max) {
+      throw new Error("Retention confidence interval must match the Wilson 95% bounds for the observed population");
     }
   }
 }

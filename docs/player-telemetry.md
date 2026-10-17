@@ -64,7 +64,9 @@ with only observed retention anchors changed. It rejects `unavailable`/`requires
 plans. It never accepts an arbitrary patch object or reuses a plan computed for another
 scenario. Unobserved retention and all revenue, fee, acquisition, uncertainty and cohort
 size assumptions remain intact. Reading serialized observations through any public
-consumer also checks counts, rates, cutoff and interval consistency.
+consumer also checks counts, rates, cutoff and interval consistency. The 95% Wilson
+bounds are recomputed from installed and retained counts. Preserve the unrounded
+bounds when saving SDK observations as JSON; round only for display.
 
 Both SDK and CLI require the complete export described above. The SDK does not collect
 telemetry, fit missing revenue, prove completeness or replace held-out validation.

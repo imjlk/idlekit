@@ -64,6 +64,29 @@ test("public consumers reject malformed serialized observations and assumptions 
   }
 });
 
+test("serialized cohort intervals must match the Wilson bounds for their population", () => {
+  const installs = rows.filter(row => row.day === 0);
+  for (const activity of [
+    installs,
+    [...installs, { userId: "a", day: 1 }],
+    [...installs, ...installs.map(row => ({ userId: row.userId, day: 1 }))],
+  ]) {
+    const original = observeCohort(activity, 1);
+    const restored: unknown = JSON.parse(JSON.stringify(original));
+    assertCohortObservation(restored);
+    expect(restored).toEqual(original);
+    const corrupt = { ...restored, retention: restored.retention.map(point => point.day === 1
+      ? { ...point, interval95: { min: 0, max: 1 } } : point) };
+    for (const consume of [
+      () => assertCohortObservation(corrupt),
+      () => observedRetentionRates(corrupt),
+      () => planRetentionPatch(corrupt, scenario.monetization?.retention),
+      () => compareRetention(corrupt, {}),
+      () => applyRetentionPatch({ scenario, observation: corrupt }),
+    ]) expect(consume).toThrow("Wilson");
+  }
+});
+
 test("public cohort rows retain the complete population, unique daily rows and finite optional money guards", () => {
   expect(() => observeCohort([{ userId: "a", day: 1 }], 7)).toThrow("day 0");
   expect(() => observeCohort([...rows, rows[0]!], 7)).toThrow("aggregated");
