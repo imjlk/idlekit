@@ -1,5 +1,12 @@
 # @idlekit/cli
 
+## 0.5.1 — 2026-10-17
+
+### Patch changes
+
+- [8fd29af1](https://github.com/imjlk/idlekit/commit/8fd29af11b49bdf7efa5d196fb2f4956cb6a1d79) Expose typed LTV point and seeded uncertainty estimates from the public core SDK. The CLI shares that implementation, with finite input, quantile-key and synchronous work-budget checks. Consumers no longer need private CLI source imports. — Thanks @imjlk!
+- Updated dependencies: core@0.5.0
+
 ## 0.5.0 — 2026-10-16
 
 ### Minor changes
