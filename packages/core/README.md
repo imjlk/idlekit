@@ -68,6 +68,30 @@ cohort size or unobserved retention. `assertCohortObservation` validates seriali
 See [the complete SDK example](https://github.com/imjlk/idlekit/blob/main/examples/telemetry/cohort-sdk.ts)
 and [the cohort export guide](https://github.com/imjlk/idlekit/blob/main/docs/player-telemetry.md).
 
+## Game-specific offline settlement
+
+`simulateSessionPattern({ scenario, pattern, prepareOffline })` optionally calls a synchronous
+`SessionOfflinePreparer` once per nonempty absence. It receives `ctx`, `model`, a state snapshot,
+`seconds`, `wallStartT`, `wallEndT` and the current policy snapshot. Numeric prototypes are
+preserved in the snapshots; treat the shared engine, context and model as immutable.
+Use the explicit wall timestamps for expiry checks after earlier capped gaps.
+
+Return any of `model`, `stepSec` and `policy`. They apply only to this gap; omission inherits
+the scenario setting. `policy` replaces cap/decay, so `{}` removes both. The session's action
+policy stays in `scenario.run.offline.actions`; a callback cannot override it. A replacement
+model declares its own `clocks.respondsTo` needs. The SDK still performs reward ticks, goals,
+until checks, action filtering, observations and wall/reward accounting.
+
+A game with one atomic settlement can compute it on the snapshot and return a model that
+imports its result in one reward tick, with `stepSec` equal to its effective credited seconds
+(use a positive step when credit is zero). Stops are checked at tick boundaries; a one-tick
+settlement does not expose intermediate game states. Preparation itself must not grant an
+external reward: zero credit or an already-reached goal may execute no transition at all.
+For partial settlement or intra-gap goals, supply a model that evolves per smaller tick.
+
+This is an SDK callback, not a JSON scenario field. The default session path is unchanged.
+See [the big-number offline example](https://github.com/imjlk/idlekit/blob/main/examples/session/offline-preparation.ts).
+
 ## Quick example
 
 <!-- snippet: snippets/readme/core-quick-example.ts -->

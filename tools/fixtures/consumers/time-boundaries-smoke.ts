@@ -6,6 +6,7 @@ import {
   createStrategyRegistry, defineModelFactory, runElapsedSec, runScenario, validateScenarioStructure,
   deriveMonetizationConfig, estimateLtvPerUser, estimateLtvDistribution,
   observeCohort, compareRetention, planRetentionPatch, applyRetentionPatch,
+  simulateSessionPattern, type CompiledScenario, type SessionOfflinePreparer,
 } from "@idlekit/core";
 import { createBreakInfinityEngine, type Engine } from "@idlekit/money";
 import matrix from "../../../fixtures/regressions/time-boundaries.json";
@@ -89,6 +90,36 @@ function checkBoundaries<N>(E: Engine<N>): number {
   return matrix.cases.length;
 }
 
+function checkOfflinePreparation<N>(E: Engine<N>): void {
+  const unit = { code: "COIN" as const };
+  type Vars = { returns: number };
+  const prepared: CompiledScenario<N, "COIN", Vars> = {
+    ctx: { E, unit, tickPolicy: { mode: "drop" } },
+    model: { id: "active", version: 1, income: () => ({ unit, amount: E.from(1) }), actions: () => [] },
+    initial: { t: 0, vars: { returns: 0 },
+      wallet: { money: { unit, amount: E.zero() }, bucket: E.zero() },
+      maxMoneyEver: { unit, amount: E.zero() },
+      prestige: { count: 0, points: E.zero(), multiplier: E.from(1) } },
+    run: { stepSec: 1, offline: { actions: { mode: "none" } } },
+  };
+  const prepareOffline: SessionOfflinePreparer<N, "COIN", Vars> = ({ state, seconds, wallStartT, wallEndT }) => {
+    assert.deepEqual([seconds, wallStartT, wallEndT], [86399, 1, 86400]);
+    return { stepSec: 2, policy: { maxSec: 2 }, model: {
+      id: "away", version: 1, actions: () => [],
+      income: () => ({ unit, amount: E.from(3) }),
+      evolve: (_ctx, current) => ({ ...current, vars: { returns: state.vars.returns + 1 } }),
+    } };
+  };
+  const result = simulateSessionPattern({ scenario: prepared, prepareOffline,
+    pattern: { id: "offline-heavy", days: 1, schedule: [{ day: 0, startOffsetSec: 0, durationSec: 1 }] } });
+  assert.equal(E.toString(result.end.wallet.money.amount), "7");
+  assert.equal(result.end.vars.returns, 1);
+  assert.equal(result.summary.elapsedSec, 86400);
+  assert.equal(result.summary.offlineCreditedSec, 2);
+  assert.equal(prepared.initial.vars.returns, 0);
+}
+checkOfflinePreparation(coreEngine);
+checkOfflinePreparation(moneyEngine);
 const boundaryChecks = checkBoundaries(coreEngine) + checkBoundaries(moneyEngine);
 assert.equal(boundaryChecks, 26, "all 13 shared cases must run under both engines");
 const result: LibrarySmokeResult = {

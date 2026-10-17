@@ -12,8 +12,11 @@ import {
 } from "./observation";
 import { applyOfflineSeconds, type OfflineRunResult } from "./offline";
 import { offlineAbsenceForCredit, resolveOfflineSeconds } from "./offlineCredit";
+import { prepareOfflineSegment, type SessionOfflinePreparer } from "./sessionOffline";
 import { runScenario } from "./simulator";
 import { runElapsedSec, type CompiledScenario, type RunResult, type SimContext, type SimState } from "./types";
+
+export type { SessionOfflineCreditPolicy, SessionOfflinePreparation, SessionOfflinePreparer } from "./sessionOffline";
 
 /**
  * Session schedule contract. TC-05 has not registered this DTO.
@@ -254,7 +257,12 @@ export function simulateSessionPattern<N, U extends string, Vars>(args: {
   scenario: CompiledScenario<N, U, Vars>;
   pattern: SessionPatternSpec;
   seed?: number;
+  /** Select a model, step and credit policy for each absence while retaining session accounting. */
+  prepareOffline?: SessionOfflinePreparer<N, U, Vars>;
 }): SessionRunResult<N, U, Vars> {
+  if (args.prepareOffline !== undefined && typeof args.prepareOffline !== "function") {
+    throw new TypeError("prepareOffline must be a function");
+  }
   const sc = args.seed === undefined ? args.scenario : { ...args.scenario, ctx: { ...args.scenario.ctx, seed: args.seed } };
   const start = sc.initial;
   const horizonSec = args.pattern.days * 86400;
@@ -355,7 +363,14 @@ export function simulateSessionPattern<N, U extends string, Vars>(args: {
     if (stopReason !== "horizon" || !(wallT < wallEnd)) return;
     const requested = wallEnd - wallT;
     const wallStart = wallT;
-    const segment = segmentScenario(wallStart, wallEnd);
+    let segment = segmentScenario(wallStart, wallEnd);
+    const prepared = prepareOfflineSegment({ scenario: segment, state, seconds: requested,
+      wallStartT: wallStart, wallEndT: wallEnd, prepare: args.prepareOffline });
+    if (prepared.model !== segment.model) {
+      // A replacement declares its own clock needs; the active model's declaration must not leak.
+      const { clocks: _clocks, ...ctx } = segment.ctx;
+      segment = withClocks({ ...segment, ctx, model: prepared.model }, wallStart, wallEnd, state.t, activeSec);
+    }
     const offlineRun = applyOfflineSeconds({
       scenario: segment,
       seconds: requested,
@@ -367,7 +382,8 @@ export function simulateSessionPattern<N, U extends string, Vars>(args: {
           enabled: sc.run.eventLog?.enabled ?? true,
           maxEvents: sc.run.eventLog?.maxEvents,
         },
-        policy: sc.run.offline,
+        stepSec: prepared.stepSec,
+        policy: prepared.policy,
         ...(stopFn ? { until: stopFn } : {}),
       },
     });
@@ -376,10 +392,10 @@ export function simulateSessionPattern<N, U extends string, Vars>(args: {
     // Read the stop from the end state: a run that met it with no effective seconds left,
     // or none at all, reports duration first. A gap that does not stop keeps its wall end.
     const reason = classify();
-    const absence = reason ? offlineAbsenceForCredit(credited, requested, sc.run.offline) : requested;
+    const absence = reason ? offlineAbsenceForCredit(credited, requested, prepared.policy) : requested;
     const gapEnd = wallStart + absence;
     const effective =
-      absence === requested ? offlineRun.offline.effectiveSec : resolveOfflineSeconds(absence, sc.run.offline).effectiveSec;
+      absence === requested ? offlineRun.offline.effectiveSec : resolveOfflineSeconds(absence, prepared.policy).effectiveSec;
     const lost = Math.max(0, absence - effective);
     offlineElapsedSec += absence;
     offlineCreditedSec += credited;
