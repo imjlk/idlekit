@@ -35,7 +35,8 @@ Synchronous limits: 0..36500 days, 1..100000 draws and at most 10000000 draw-day
 one work unit per draw). Quantiles must be nonempty values in 0..1 with distinct rounded
 percent keys (`q50`, `q90`). Invalid inputs, colliding keys and numeric overflow throw
 `RangeError`. Sampling shrinks inconsistent correlation matrices toward independence.
-Calibration of a complete observed cohort remains available through the public `idk calibrate` CLI.
+Complete-cohort retention observation and safe patch application are available in core;
+the public `idk calibrate` CLI shares the observation and planning implementation.
 Public estimate configs accept quantile endpoints too. Distribution output keys use its
 explicit `quantiles` argument, not config metadata. `ScenarioV1` authored quantiles retain
 their existing `(0, 1)` schema when passed to `deriveMonetizationConfig`.
@@ -46,6 +47,26 @@ Explicit complete scenario curves still follow scenario ordering validation. Dir
 configs validate each rate's range without adding an ordering constraint to completed defaults.
 Sampling retains its existing clamp of later retention anchors to the preceding anchor,
 so this partial-input case can differ from the point projection even with zero uncertainty.
+
+## Observed cohort retention
+
+Import `observeCohort`, `compareRetention`, `planRetentionPatch` and `applyRetentionPatch`
+from `@idlekit/core`. `CohortActivityRow` requires `userId` and integer `day`; `active`
+defaults to true. Money fields are optional and are never fitted by these retention APIs.
+Every installed user needs a day-zero row, including nonreturners, and the caller must
+provide a complete activity export with a common, fully mature `observedThroughDay`.
+The API checks consistency; it cannot prove export completeness.
+
+`observeCohort(rows, cutoff)` preserves future rates/intervals as null. `planRetentionPatch`
+returns `ready`, `unavailable` or `requires-review`; every unobserved target day requires
+an explicit retained assumption. Observations that rise or conflict with retained values
+remain unchanged and cannot become an automatic patch. `applyRetentionPatch({ scenario,
+observation })` recomputes the plan, validates and returns an independent scenario copy.
+It throws if the patch is not ready and never replaces revenue, fees, CPI, uncertainty,
+cohort size or unobserved retention. `assertCohortObservation` validates serialized input.
+
+See [the complete SDK example](https://github.com/imjlk/idlekit/blob/main/examples/telemetry/cohort-sdk.ts)
+and [the cohort export guide](https://github.com/imjlk/idlekit/blob/main/docs/player-telemetry.md).
 
 ## Quick example
 

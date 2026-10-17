@@ -5,6 +5,7 @@ import {
   builtinStrategyFactories, compileScenario, createModelRegistry, createNumberEngine,
   createStrategyRegistry, defineModelFactory, runElapsedSec, runScenario, validateScenarioStructure,
   deriveMonetizationConfig, estimateLtvPerUser, estimateLtvDistribution,
+  observeCohort, compareRetention, planRetentionPatch, applyRetentionPatch,
 } from "@idlekit/core";
 import { createBreakInfinityEngine, type Engine } from "@idlekit/money";
 import matrix from "../../../fixtures/regressions/time-boundaries.json";
@@ -20,6 +21,23 @@ assert.ok(Number.isFinite(ltv.cumulativeLtvPerUser), 'public installed LTV point
 const ltvSample = { ...ltvArgs, draws: 10, quantiles: [0.5, 0.9], seed: 42 };
 assert.deepEqual(estimateLtvDistribution(ltvSample), estimateLtvDistribution(ltvSample),
   'installed distribution API is seeded and standalone');
+const observation = observeCohort([
+  { userId: "returning", day: 0 }, { userId: "inactive", day: 0, active: false },
+  { userId: "returning", day: 1 },
+], 1);
+const cohortScenario = { ...scenario, monetization: {
+  retention: { d1: 0.8, d7: 0.2, d30: 0.1, d90: 0.05 },
+  revenue: { payerConversion: 0.03 },
+} };
+assert.equal(planRetentionPatch(observation, cohortScenario.monetization.retention).status, "ready");
+assert.equal(compareRetention(observation, cohortScenario.monetization.retention)[0]?.observed, 0.5);
+const calibrated = applyRetentionPatch({ scenario: cohortScenario, observation });
+assert.equal(calibrated.monetization?.retention?.d1, 0.5, "installed public cohort API applies measured retention");
+assert.equal(calibrated.monetization?.retention?.d7, 0.2, "future retention remains an assumption");
+assert.deepEqual(calibrated.monetization?.revenue, cohortScenario.monetization.revenue);
+assert.equal(cohortScenario.monetization.retention.d1, 0.8, "consumer scenario is not mutated");
+assert.throws(() => applyRetentionPatch({ scenario: cohortScenario,
+  observation: observeCohort([{ userId: "inactive", day: 0 }], 1) }), /requires-review/);
 
 export type LibrarySmokeResult = Readonly<{
   money: string;

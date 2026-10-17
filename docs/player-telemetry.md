@@ -42,6 +42,35 @@ rate and interval. No zero, interpolation, or monotonic clamping is substituted.
 Exact-day return rates can rise when a player returns after missing an earlier day;
 they are not a survival curve. The LTV model may impose its own curve assumptions.
 
+## Use the core API
+
+The same observation and patch planning used by the CLI is exported by `@idlekit/core`:
+`observeCohort`, `assertCohortObservation`, `observedRetentionRates`, `compareRetention`,
+`planRetentionPatch` and `applyRetentionPatch`. The public `CohortActivityRow` type requires
+only `userId` and `day`; `active` is optional (default true), and optional revenue/cost
+fields are validated when supplied. Omission does not mean measured zero revenue.
+
+[The runnable SDK example](../examples/telemetry/cohort-sdk.ts) reads synthetic activity
+directly, without temporary CSV files or a CLI subprocess. From a source checkout:
+
+```sh
+bun --preload @ttsc/unplugin/bun-register examples/telemetry/cohort-sdk.ts
+```
+
+Call `observeCohort(rows, observedThroughDay)` and inspect `planRetentionPatch(observation,
+scenario.monetization?.retention)`. Then `applyRetentionPatch({ scenario, observation })`
+recomputes readiness against the current scenario, validates it and returns a deep copy
+with only observed retention anchors changed. It rejects `unavailable`/`requires-review`
+plans. It never accepts an arbitrary patch object or reuses a plan computed for another
+scenario. Unobserved retention and all revenue, fee, acquisition, uncertainty and cohort
+size assumptions remain intact. Reading serialized observations through any public
+consumer also checks counts, rates, cutoff and interval consistency. The 95% Wilson
+bounds are recomputed from installed and retained counts. Preserve the unrounded
+bounds when saving SDK observations as JSON; round only for display.
+
+Both SDK and CLI require the complete export described above. The SDK does not collect
+telemetry, fit missing revenue, prove completeness or replace held-out validation.
+
 ## Read and apply the result
 
 The human table states installed and retained counts, observed rate, interval,
