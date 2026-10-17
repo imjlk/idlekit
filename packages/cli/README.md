@@ -62,6 +62,11 @@ existing simulation commands. Number remains the default; `scenario.engine`
 does not choose the runtime. Use the explicit flag when scenario amounts exceed
 Number's range, and use engine operations in custom models and objectives.
 
+Construct plugin amounts with the supplied `ctx.E`. When adapting a game that
+uses its own Decimal library, convert amounts through decimal text with
+`ctx.E.from(text)` at the boundary, including costs, rewards and returned state.
+Separate game SDK and CLI bundles can contain different Decimal constructors.
+
 ```sh
 idk compare ./a.json ./b.json --engine breakInfinity --metric endNetWorth
 idk tune ./a.json --tune ./tune.json --engine breakInfinity
