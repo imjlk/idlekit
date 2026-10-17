@@ -1,5 +1,17 @@
 # @idlekit/cli
 
+## 0.6.0 — 2026-10-17
+
+### Minor changes
+
+- [16792e4](https://github.com/imjlk/idlekit/commit/16792e49e09e9f28b07081d1da3c2d954663b5cd) Support explicit breakInfinity engines in compare, tune and balance. Preserve monetary decimal text through balance targets, reports and CSV output, and retain the engine in deterministic identities, replay inputs and bundle provenance. Number remains the default with its existing identities and finite numeric parameter constraints. — Thanks @imjlk!
+
+### Patch changes
+
+- [965fd70](https://github.com/imjlk/idlekit/commit/965fd7087d8f44342e67f6080da4e62b5358efdb) Reject non-finite plugin money and net worth in comparison and tuning instead of reporting a winner or a successful floor score. Validate ETA measurements and custom objective scores, refuse empty tuning seed lists, and average finite seed scores with exact binary accumulation and final rounding to avoid overflow, cancellation loss, and seed-order dependence. Zero-money tuning diagnostics use the existing -300 scoring floor; unreachable ETA remains a valid outcome. Large finite amounts still work with breakInfinity. — Thanks @imjlk!
+- [925c646](https://github.com/imjlk/idlekit/commit/925c646d1de411dccebe562a769eedda27aa0ba7) Expose typed complete-cohort observation, retention comparison and patch planning through the public core API. Apply ready observed-retention patches to a validated scenario copy while preserving unobserved and non-retention assumptions. Retention-only input no longer needs invented zero revenue fields. The calibration CLI shares the same observation and planning implementation. — Thanks @imjlk!
+- Updated dependencies: @idlekit/core@0.6.0
+
 ## 0.5.1 — 2026-10-17
 
 ### Patch changes
