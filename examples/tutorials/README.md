@@ -41,6 +41,14 @@ For checkpoint persistence and resume equivalence across reset cycles, run the
 - `24-prestige-reactor-compare-b.json`: earlier-prestige prestige variant with weaker carryover
 - `25-prestige-reactor-tune.json`: prestige-heavy tune spec
 
+Prestige Reactor tuning can exceed JavaScript's finite `number` range through repeated
+resets. Select `--engine breakInfinity`; the plugin keeps prestige worth and reward
+calculations in that engine. From the repository root:
+
+```bash
+bun run --cwd packages/cli dev -- tune ../../examples/tutorials/23-prestige-reactor-v1.json --tune ../../examples/tutorials/25-prestige-reactor-tune.json --engine breakInfinity --plugin ../../examples/plugins/custom-econ-plugin.ts --allow-plugin true --format json
+```
+
 ## Recommended order
 
 1. `11 -> 12 -> 13`: create your own scenario and compare strategies.

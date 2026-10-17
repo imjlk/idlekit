@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { resolve } from "path";
-import { createNumberEngine, stepOnce } from "@idlekit/core";
+import { createBreakInfinityEngine, createNumberEngine, stepOnce } from "@idlekit/core";
 import type { Model, SimState } from "@idlekit/core";
 import { loadRegistries } from "./load";
 
@@ -17,6 +17,27 @@ function state(amount: number, vars: Vars): SimState<number, string, Vars> {
 }
 
 describe("builtin and plugin bulk settlement", () => {
+  it("keeps a huge finite prestige reward in the selected engine", async () => {
+    const loaded = await loadRegistries([resolve(process.cwd(), "../../examples/plugins/custom-econ-plugin.ts")]);
+    const E = createBreakInfinityEngine();
+    type N = ReturnType<typeof E.from>;
+    const ctx = { E, unit: { code: "COIN" }, tickPolicy: { mode: "drop" as const } };
+    const model = loaded.modelRegistry.get("plugin.generators", 1)!.create({
+      prestigeRequirement: "1000", prestigeMultiplierPerPoint: 0.2,
+    }) as Model<N, string, Vars>;
+    const initial: SimState<N, string, Vars> = {
+      t: 0, wallet: { money: { unit: ctx.unit, amount: E.from("1e400") }, bucket: E.zero() },
+      maxMoneyEver: { unit: ctx.unit, amount: E.from("1e400") },
+      prestige: { count: 0, points: E.zero(), multiplier: E.from(1) }, vars: {},
+    };
+    const action = model.actions(ctx, initial).find(candidate => candidate.id === "prestige.reboot")!;
+    expect(action.canApply(ctx, initial)).toBe(true);
+    const { next } = stepOnce({ ctx, model, state: initial, dt: 0, decisions: [{ action }] });
+    expect(E.isFinite(next.prestige.points)).toBe(true);
+    expect(E.toNumber(next.prestige.points)).toBe(398);
+    expect(E.toNumber(next.prestige.multiplier)).toBeCloseTo(80.6);
+    expect(E.toString(initial.wallet.money.amount)).toBe(E.toString(E.from("1e400")));
+  });
   it("pays the linear quote once and the plugin producer quote once", async () => {
     const pluginPath = resolve(process.cwd(), "../../examples/plugins/custom-econ-plugin.ts");
     const loaded = await loadRegistries([pluginPath]);
