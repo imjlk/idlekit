@@ -1,5 +1,6 @@
 import type { PacingReport, PacingTargetResult } from "./pacing";
 import type { SheetBundleStatus } from "./sheet";
+import { comparePacingValues } from "./pacingAmount";
 
 function cell(value: string | number): string {
   return String(value).replaceAll("|", "\\|").replace(/[\r\n]/g, " ");
@@ -7,8 +8,10 @@ function cell(value: string | number): string {
 
 function explain(result: PacingTargetResult): string {
   if (result.status === "breach" && result.value !== null) {
-    if (result.min !== undefined && result.value < result.min) return `below the minimum by ${result.min - result.value} ${result.unit}`;
-    if (result.max !== undefined && result.value > result.max) return `above the maximum by ${result.value - result.max} ${result.unit}`;
+    if (result.min !== undefined && comparePacingValues(result.value, result.min) < 0) return typeof result.min === "number" && typeof result.value === "number"
+      ? `below the minimum by ${result.min - result.value} ${result.unit}` : `below the minimum ${result.min} ${result.unit}`;
+    if (result.max !== undefined && comparePacingValues(result.value, result.max) > 0) return typeof result.max === "number" && typeof result.value === "number"
+      ? `above the maximum by ${result.value - result.max} ${result.unit}` : `above the maximum ${result.max} ${result.unit}`;
   }
   if (result.status === "pass") return "within the inclusive target bounds";
   return result.message ?? (result.status === "unreached" ? "not reached within the horizon" : "measurement unavailable");

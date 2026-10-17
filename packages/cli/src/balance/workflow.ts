@@ -4,9 +4,10 @@ import { stat } from "fs/promises";
 import { z } from "zod";
 import { CLI_VERSION } from "../cliMeta";
 import { loadRegistriesFromFlags, type PluginOptionFlags } from "../commands/_shared/plugin";
-import { prepareResolvedRun } from "../lib/runConfiguration";
+import { prepareResolvedRun, resolveEffectiveEngine } from "../lib/runConfiguration";
 import { readTextFile } from "../runtime/bun";
 import { planPacingRuns, runPacingChecks } from "./pacing";
+import type { PacingValue } from "./pacingAmount";
 import { applySheetCsv, exportSheetCsv, parseCsv, stringifyCsv, validateSheetSchema, refreshSheetBundle, readCurrentBundle, SHEET_LIMITS, type SheetSchema, type SheetBundleManifest, type SheetBundleStatus } from "./sheet";
 
 const id = z.string().regex(/^[A-Za-z][A-Za-z0-9_.-]{0,127}$/);
@@ -31,6 +32,7 @@ const workflowSchema = z.object({
 }).strict();
 
 export type BalanceWorkflow = z.infer<typeof workflowSchema>;
+type BalanceOptionFlags = PluginOptionFlags & Readonly<{ engine?: string }>;
 const MAX_STEPS_PER_RUN = 100_000;
 const MAX_TOTAL_STEPS = 1_000_000;
 
@@ -87,10 +89,10 @@ function normalizeRunDocument(document: unknown, strategy: string, horizon: numb
 }
 
 /** Explicit refresh only: no spreadsheet macros, formula execution, or background watcher. */
-export function refreshBalanceWorkflow(configPath: string, flags: PluginOptionFlags, check: true): Promise<SheetBundleStatus>;
-export function refreshBalanceWorkflow(configPath: string, flags: PluginOptionFlags, check?: false): Promise<SheetBundleManifest & { outcome: { ok: boolean; status: string } }>;
-export function refreshBalanceWorkflow(configPath: string, flags: PluginOptionFlags, check: boolean): Promise<SheetBundleStatus | (SheetBundleManifest & { outcome: { ok: boolean; status: string } })>;
-export async function refreshBalanceWorkflow(configPath: string, flags: PluginOptionFlags, check = false) {
+export function refreshBalanceWorkflow(configPath: string, flags: BalanceOptionFlags, check: true): Promise<SheetBundleStatus>;
+export function refreshBalanceWorkflow(configPath: string, flags: BalanceOptionFlags, check?: false): Promise<SheetBundleManifest & { outcome: { ok: boolean; status: string } }>;
+export function refreshBalanceWorkflow(configPath: string, flags: BalanceOptionFlags, check: boolean): Promise<SheetBundleStatus | (SheetBundleManifest & { outcome: { ok: boolean; status: string } })>;
+export async function refreshBalanceWorkflow(configPath: string, flags: BalanceOptionFlags, check = false) {
   const absoluteConfig = resolve(configPath);
   const configInfo = await stat(absoluteConfig);
   if (!configInfo.isFile() || configInfo.size > SHEET_LIMITS.maxInputBytes) throw new Error("Workflow config is not a bounded regular file");
@@ -106,7 +108,8 @@ export async function refreshBalanceWorkflow(configPath: string, flags: PluginOp
   if (flags["plugin-trust-file"]) inputFiles.pluginTrust = resolve(flags["plugin-trust-file"]);
   const loaded = await loadRegistriesFromFlags(flags);
   for (const [index, path] of Object.keys(loaded.pluginDigest).entries()) inputFiles[`plugin${index}`] = path;
-  const context = { cliVersion: CLI_VERSION, bunVersion: Bun.version, pluginDigests: JSON.stringify(loaded.pluginDigest), engine: "number" };
+  const engine = resolveEffectiveEngine({ requested: flags.engine });
+  const context = { cliVersion: CLI_VERSION, bunVersion: Bun.version, pluginDigests: JSON.stringify(loaded.pluginDigest), engine: engine.effectiveId };
   const outputDir = resolve(base, config.outputDir);
   if (check) return readCurrentBundle(outputDir, inputFiles, { context });
 
@@ -139,7 +142,7 @@ export async function refreshBalanceWorkflow(configPath: string, flags: PluginOp
       }
       const metricIds = new Set(config.metrics.map((metric) => metric.id));
       if (metricIds.size !== config.metrics.length) throw new Error("Metric IDs must be unique");
-      const targets = (config.pacing.targets as Array<{ metric: string }> | undefined) ?? [];
+      const targets = plan.targets;
       for (const target of targets) if (!metricIds.has(target.metric)) throw new Error(`Unknown target metric: ${target.metric}`);
       const step = (scenario as { clock?: { stepSec?: number } }).clock?.stepSec;
       const horizon = Number(config.pacing.horizonSec);
@@ -157,7 +160,11 @@ export async function refreshBalanceWorkflow(configPath: string, flags: PluginOp
         const metric = config.metrics.find((item) => item.id === target.metric)!;
         const unit = metric.kind === "firstAction" || metric.kind === "firstActionPrefix"
           ? "seconds" : metric.kind === "endWallet" || metric.kind === "endNetWorth" ? baselineDocument.unit.code : "count";
-        if ((target as { unit?: string }).unit !== unit) throw new Error(`Target ${target.metric} must use unit '${unit}'`);
+        if (target.unit !== unit) throw new Error(`Target ${target.metric} must use unit '${unit}'`);
+        if (metric.kind !== "endWallet" && metric.kind !== "endNetWorth"
+          && (typeof target.min === "string" || typeof target.max === "string")) {
+          throw new Error(`Target ${target.metric} requires finite numeric time or count bounds`);
+        }
       }
       const materialize = (patches: Readonly<Record<string, number>>) => {
         const candidate = applySheetCsv(template, schema, overlayCsv(canonicalCsv, patches));
@@ -174,7 +181,7 @@ export async function refreshBalanceWorkflow(configPath: string, flags: PluginOp
           modelRegistry: loaded.modelRegistry,
           strategyRegistry: loaded.strategyRegistry,
           pluginDigest: loaded.pluginDigest,
-          engineRequest: "number",
+          engineRequest: engine.effectiveId,
           seed: descriptor.seed,
         });
         // Match `idk simulate --seed N` and hold the initial RNG stream constant across variants.
@@ -194,7 +201,13 @@ export async function refreshBalanceWorkflow(configPath: string, flags: PluginOp
         if (run.stop?.reason === "budget") throw new Error("Simulation exhausted its step budget before the requested horizon");
         if ((run.actionsLogMeta?.dropped ?? 0) > 0) throw new Error("Action history exceeded the result budget; pacing cannot be inferred from truncated history");
         const actions = run.actionsLog ?? [];
-        const result: Record<string, number | null> = {};
+        const result: Record<string, PacingValue | null> = {};
+        const monetary = (amount: typeof run.end.wallet.money.amount): PacingValue => {
+          const E = opened.scenario.ctx.E;
+          if (!E.isFinite(amount)) throw new Error("Monetary metric overflowed the selected engine");
+          const decimal = E.toString(amount);
+          return engine.effectiveId === "number" ? Number(decimal) : decimal;
+        };
         for (const metric of config.metrics) {
           if (metric.kind === "firstAction" || metric.kind === "firstActionPrefix") {
             const action = actions.find((item) => metric.kind === "firstAction" ? item.actionId === metric.actionId : item.actionId.startsWith(metric.prefix));
@@ -202,11 +215,11 @@ export async function refreshBalanceWorkflow(configPath: string, flags: PluginOp
           }
           else if (metric.kind === "prestigeCount") result[metric.id] = run.end.prestige.count;
           else if (metric.kind === "actionCount") result[metric.id] = actions.length;
-          else if (metric.kind === "endWallet") result[metric.id] = Number(run.end.wallet.money.amount);
+          else if (metric.kind === "endWallet") result[metric.id] = monetary(run.end.wallet.money.amount);
           else {
             const worth = opened.scenario.model.netWorth?.(opened.scenario.ctx, run.end);
             if (!worth) throw new Error("endNetWorth requires model.netWorth; wallet is not a substitute");
-            result[metric.id] = Number(worth.amount);
+            result[metric.id] = monetary(worth.amount);
           }
         }
         return result;
@@ -250,7 +263,7 @@ export async function refreshBalanceWorkflow(configPath: string, flags: PluginOp
           addArtifact(name, JSON.stringify(candidate.document, null, 2) + "\n");
           return { id: variant.id, scenario: name };
         });
-        addArtifact("variants.json", JSON.stringify({ version: 1, engine: "number", seeds: plan.seeds, horizonSec: horizon, strategy: plan.strategy, variants }, null, 2) + "\n");
+        addArtifact("variants.json", JSON.stringify({ version: 1, engine: engine.effectiveId, seeds: plan.seeds, horizonSec: horizon, strategy: plan.strategy, variants }, null, 2) + "\n");
       }
       return artifacts;
     },

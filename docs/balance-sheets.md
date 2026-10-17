@@ -83,12 +83,35 @@ bindings derive commonly repeated initial values from a field:
 - `{"field":"yourCashField","path":"initial.wallet.amount"}` requires that field's unit to match both the scenario and wallet currency
 - `{"field":"yourCapField","path":"sim.offline.maxSec"}` requires `seconds`
 
-These bindings are assignments with unit checks, not expression strings or an
-arbitrary evaluation language. The command uses the Number engine; string-valued
-money and large-number model parameters are outside this CSV version's numeric
-schema. Keep those strings in the scenario template; unlisted values are retained
-unchanged. For example, the public linear sheet edits numeric `buyCostGrowth`,
-while `incomePerSec`, `buyCostBase`, and `buyIncomeDelta` remain strings.
+These bindings are assignments with unit checks. CSV parameters and sensitivity
+values remain finite Numbers. Keep string-valued money and large-number model
+parameters in the scenario template; unlisted values are retained unchanged.
+For example, the public linear sheet edits numeric `buyCostGrowth`, while
+`incomePerSec`, `buyCostBase`, and `buyIncomeDelta` remain strings.
+
+The runtime defaults to Number. Select `--engine breakInfinity` for amounts beyond
+its range, such as a template wallet of `"1e400"`. Use the same flag for refresh,
+freshness checks, and downstream `simulate`, `compare`, or `tune` commands:
+
+```sh
+idk balance ./my-balance/workflow.json --engine breakInfinity --format md
+idk balance ./my-balance/workflow.json --engine breakInfinity --check
+```
+
+Currency targets accept decimal strings, for example `{"metric":"wallet",
+"unit":"MANA","min":"1e400","max":"2e400"}` for an `endWallet` metric.
+Decimal strings are bounded to 200 characters and accept ordinary or scientific
+notation. They do not accept suffixes, whitespace, NaN, Infinity or hexadecimal.
+Bounds are compared inclusively against the reported decimal value without Number
+conversion or a comparison epsilon. Under breakInfinity, monetary results remain
+decimal strings in JSON, CSV and Markdown. Time and count bounds stay finite
+Numbers. Engine overflow is an error; an unavailable milestone remains unreached.
+The numeric engine still determines simulation precision; preserving decimal text
+does not restore digits already rounded during simulation.
+
+The selected engine is recorded in provenance and variant exports and participates
+in freshness checks. Checking a breakInfinity bundle without the flag reports it
+stale. `scenario.engine` remains descriptive metadata and does not select the runtime.
 
 An offline-cap binding preserves the declared cap in the materialized scenario.
 Pacing uses ordinary `runScenario`, so that offline cap is inactive during pacing

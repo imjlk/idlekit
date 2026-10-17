@@ -55,6 +55,26 @@ bun run --cwd packages/cli dev -- experience ../../examples/tutorials/14-orbital
   --format json
 ```
 
+## Large monetary values
+
+`compare`, `tune` and `balance` support `--engine breakInfinity`, alongside the
+existing simulation commands. Number remains the default; `scenario.engine`
+does not choose the runtime. Use the explicit flag when scenario amounts exceed
+Number's range, and use engine operations in custom models and objectives.
+
+```sh
+idk compare ./a.json ./b.json --engine breakInfinity --metric endNetWorth
+idk tune ./a.json --tune ./tune.json --engine breakInfinity
+idk balance ./workflow.json --engine breakInfinity --format md
+```
+
+Compare preserves monetary text, while tuning objectives such as
+`endNetWorthLog10` produce finite logarithmic scores. Replay artifacts retain the
+selected engine. Balance supports decimal-string currency targets and results;
+CSV parameter edits, time/count metrics and sensitivity knobs remain finite
+Numbers. See the [balance guide](https://github.com/imjlk/idlekit/blob/main/docs/balance-sheets.md)
+for target syntax and engine-specific freshness checks. breakEternity remains experimental.
+
 ## Runtime
 
 `@idlekit/cli` is maintained as a Bun-first CLI package.
