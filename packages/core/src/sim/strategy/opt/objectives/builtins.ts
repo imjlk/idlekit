@@ -1,6 +1,7 @@
 import type { ObjectiveFactory } from "../registry";
 import { parseMoney } from "../../../../notation/parseMoney";
 import { runElapsedSec } from "../../../types";
+import { finiteAmountLog10 as safeAbsLog10 } from "../finiteAmountLog10";
 import {
   ObjectiveEmptyObjectSchema,
   ObjectiveEtaToWorthParamsSchema,
@@ -8,11 +9,6 @@ import {
   type ObjectiveEtaToWorthParams,
   type ObjectivePacingParams,
 } from "./params";
-
-function safeAbsLog10<N>(E: { absLog10: (x: N) => number }, x: N): number {
-  const v = E.absLog10(x);
-  return Number.isFinite(v) ? v : -300;
-}
 
 export const builtinObjectiveFactories: readonly ObjectiveFactory[] = [
   {
@@ -106,6 +102,9 @@ export const builtinObjectiveFactories: readonly ObjectiveFactory[] = [
             suffix: { kind: "alphaInfinite", minLen: 2 },
           }).amount;
           const endWorth = scenario.model.netWorth?.(scenario.ctx as any, run.end as any) ?? run.end.wallet.money;
+          if (!E.isFinite(threshold) || !E.isFinite(endWorth.amount)) {
+            throw new RangeError("ETA objective requires finite target and net worth in the selected engine");
+          }
           const reached = E.cmp(endWorth.amount, threshold) >= 0;
           if (!reached) return -(params.unreachedPenaltySec ?? 1_000_000_000);
           return -runElapsedSec(run);

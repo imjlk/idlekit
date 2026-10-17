@@ -591,7 +591,7 @@ async function verifyPluginTrack(): Promise<void> {
   assert(asRecord(prestigeCompare.detail as JSONValue).source === "measured", "prestige compare must be measured");
 
   const prestigeTuneOut = asRecord(
-    runCliJson(["tune", prestigeV1, "--tune", prestigeTune, ...pluginFlags, "--format", "json"]),
+    runCliJson(["tune", prestigeV1, "--tune", prestigeTune, "--engine", "breakInfinity", ...pluginFlags, "--format", "json"]),
   );
   assert(prestigeTuneOut.ok === true, "prestige tune result must be ok=true");
 }

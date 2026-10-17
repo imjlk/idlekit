@@ -62,6 +62,53 @@ function makeScenario(): CompiledScenario<number, "COIN", Bag> {
 }
 
 describe("runCandidateAndScore", () => {
+  function scoreWith(scenario: ReturnType<typeof makeScenario>, value: number | ((seed: number) => number), seeds: readonly number[] = [1, 2]) {
+    return runCandidateAndScore({ baseScenario: scenario, params: {}, strategyId: "wait", objectiveId: "fixed",
+      seeds, strategyRegistry: createStrategyRegistry([{ id: "wait", create: () => ({ id: "wait", decide: () => [] }) }]),
+      objectiveRegistry: createObjectiveRegistry([{ id: "fixed", create: () => ({ id: "fixed",
+        score: ({ scenario }) => typeof value === "number" ? value : value(scenario.ctx.seed ?? 0),
+      }) }]),
+    });
+  }
+
+  it("refuses an unevaluated candidate with no seeds", () => {
+    expect(() => scoreWith(makeScenario(), 1, [])).toThrow(/at least one seed/);
+  });
+
+  for (const value of [Infinity, -Infinity, NaN]) {
+    it(`refuses a custom objective score of ${value}`, () => {
+      expect(() => scoreWith(makeScenario(), value)).toThrow(/finite/i);
+    });
+    it(`refuses non-finite worth even when the objective returns a finite score (${value})`, () => {
+      const sc = makeScenario();
+      expect(() => scoreWith({ ...sc, model: { ...sc.model, netWorth: () => ({ unit: sc.ctx.unit, amount: value }) } }, 1))
+        .toThrow(/finite/i);
+    });
+  }
+
+  it("averages large finite scores without overflowing the sum", () => {
+    expect(scoreWith(makeScenario(), Number.MAX_VALUE).score).toBe(Number.MAX_VALUE);
+  });
+
+  it("preserves a small residual across every seed order when huge scores cancel", () => {
+    for (const residual of [1, 1e-16, 1e-300]) {
+      const values = [Number.MAX_VALUE, residual, -Number.MAX_VALUE];
+      for (const seeds of [[0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0]]) {
+        const result = scoreWith(makeScenario(), seed => values[seed]!, seeds);
+        expect(result.score).toBe(residual / 3);
+        expect(result.seedScores).toEqual(seeds.map(seed => values[seed]!));
+      }
+    }
+  });
+
+  it("retains subnormal means and rounds halfway results to even", () => {
+    expect(scoreWith(makeScenario(), Number.MIN_VALUE).score).toBe(Number.MIN_VALUE);
+    expect(scoreWith(makeScenario(), seed => seed === 0 ? Number.MIN_VALUE : 0, [0, 1]).score).toBe(0);
+    expect(scoreWith(makeScenario(), seed => seed === 0 ? 3 * Number.MIN_VALUE : 0, [0, 1]).score)
+      .toBe(2 * Number.MIN_VALUE);
+    expect(scoreWith(makeScenario(), -Number.MAX_VALUE).score).toBe(-Number.MAX_VALUE);
+  });
+
   it("injects seed into ctx for each run", () => {
     const scenario = makeScenario();
     const strategyRegistry = createStrategyRegistry([

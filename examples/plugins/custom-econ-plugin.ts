@@ -5,6 +5,8 @@ import {
   type ObjectiveFactory,
   type StandardSchema,
   type StrategyFactory,
+  type Engine,
+  type SimState,
 } from "@idlekit/core";
 
 type PluginModelParams = {
@@ -198,7 +200,7 @@ function createPluginModelFactory(): ModelFactory {
         ...(rawParams ?? {}),
       };
 
-      const currentNetWorthNumber = (state: any): number => {
+      const currentNetWorth = <N>(ctx: { E: Engine<N> }, state: SimState<N, string, PluginVars>): N => {
         const vars = (state.vars ?? {}) as PluginVars;
         const producers = Number(vars.producers ?? 0);
         const upgrades = Number(vars.upgrades ?? 0);
@@ -216,7 +218,7 @@ function createPluginModelFactory(): ModelFactory {
           upgrades,
         );
         const gemValue = gems * Number(p.gemExchangeCost);
-        return Number(state.wallet.money.amount) + producerValue + upgradeValue + gemValue;
+        return ctx.E.add(state.wallet.money.amount, ctx.E.from(String(producerValue + upgradeValue + gemValue)));
       };
 
       return {
@@ -367,7 +369,7 @@ function createPluginModelFactory(): ModelFactory {
             kind: "prestige" as const,
             label: "Prestige Reactor",
             canApply(_ctx: any, currentState: any) {
-              return currentNetWorthNumber(currentState) >= prestigeRequirement;
+              return ctx.E.cmp(currentNetWorth(ctx, currentState), ctx.E.from(p.prestigeRequirement)) >= 0;
             },
             cost() {
               return null;
@@ -379,10 +381,11 @@ function createPluginModelFactory(): ModelFactory {
               };
             },
             apply(_ctx: any, nextState: any) {
-              const worth = currentNetWorthNumber(nextState);
+              const worthLog10 = ctx.E.absLog10(currentNetWorth(ctx, nextState));
+              const requirementLog10 = ctx.E.absLog10(ctx.E.from(p.prestigeRequirement));
               const gainedPoints = Math.max(
                 1,
-                Math.floor(Math.log10(Math.max(prestigeRequirement, worth)) - Math.log10(prestigeRequirement)) + 1,
+                Math.floor(Math.max(requirementLog10, worthLog10) - requirementLog10) + 1,
               );
               const multiplierGain = 1 + gainedPoints * p.prestigeMultiplierPerPoint;
               const nextPoints = ctx.E.add(nextState.prestige.points, ctx.E.from(String(gainedPoints)));

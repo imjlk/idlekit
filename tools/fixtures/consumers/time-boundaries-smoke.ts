@@ -10,6 +10,7 @@ import {
 } from "@idlekit/core";
 import { createBreakInfinityEngine, type Engine } from "@idlekit/money";
 import matrix from "../../../fixtures/regressions/time-boundaries.json";
+import { checkResearchTower } from "./research-tower-smoke";
 
 const moneyEngine = createBreakInfinityEngine();
 const coreEngine = createNumberEngine();
@@ -44,6 +45,7 @@ export type LibrarySmokeResult = Readonly<{
   money: string;
   core: string;
   boundaryChecks: number;
+  towerChecks: number;
 }>;
 
 // Run the installed compiled exports under the supported Bun runtime without compiler preload.
@@ -126,5 +128,6 @@ const result: LibrarySmokeResult = {
   money: moneyEngine.toString(moneyEngine.from("1e6")),
   core: coreEngine.toString(coreEngine.add(2, 3)),
   boundaryChecks,
+  towerChecks: checkResearchTower(),
 };
 console.log(JSON.stringify(result));

@@ -32,6 +32,14 @@ bun run --cwd packages/cli dev -- init scenario --track personal --preset builde
 - `20/21/22 Longrun Colony`: 오프라인 보상과 장기 성장
 - `23/24/25 Prestige Reactor`: 프레스티지 리셋과 배율 유지
 
+Prestige Reactor 튜닝은 반복 리셋으로 JavaScript `number`의 유한 범위를 넘을 수
+있다. `--engine breakInfinity`를 지정하면 플러그인의 환생 자산 판정과 보상 계산도
+선택한 엔진을 사용한다. 저장소 루트에서 실행한다.
+
+```bash
+bun run --cwd packages/cli dev -- tune ../../examples/tutorials/23-prestige-reactor-v1.json --tune ../../examples/tutorials/25-prestige-reactor-tune.json --engine breakInfinity --plugin ../../examples/plugins/custom-econ-plugin.ts --allow-plugin true --format json
+```
+
 각 세트는 baseline, 비교안, TuneSpec 순서다. 목적에 맞는 세트 하나부터 고른다.
 구형 설계·장르 예제 `05`~`10`은 위 세트로 통합했다. 남은 파일의 번호는 유지한다.
 
