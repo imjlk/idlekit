@@ -17,6 +17,9 @@ concurrency:
 jobs:
   docs-verify:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      TTSC_GO_CACHE_DIR: ${{ github.workspace }}/node_modules/.cache/ttsc/go-build
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -28,6 +31,17 @@ jobs:
 
       - name: Install
         run: bun install --frozen-lockfile
+
+      # CI's typecheck job saves this entry; the ttsc build of the CLI reuses its plugins.
+      - name: Restore ttsc plugins
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            node_modules/.cache/ttsc/plugins
+            node_modules/.cache/ttsc/go-build
+          key: ${{ runner.os }}-${{ runner.arch }}-ttsc-${{ hashFiles('fixtures/toolchain/pins.json') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-ttsc-
 
       - name: Verify Docs
         run: bun run docs:verify

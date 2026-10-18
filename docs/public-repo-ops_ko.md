@@ -17,9 +17,17 @@ English version: [public-repo-ops.md](./public-repo-ops.md)
 
 `main` required checks:
 
-- `quality`
+- `changesets`
+- `checks`
+- `typecheck`
+- `test`
+- `build`
+- `windows-cli`
+- `macos-cli`
 - `docs-verify`
 - `Analyze (javascript-typescript)`
+
+앞의 다섯 개는 `.github/workflows/ci.yml`의 병렬 Linux job이며, 예전의 단일 `quality` job을 대신합니다. `changesets`는 Release workflow가 고정한 Sampo action을 dry-run으로 실행하므로, 릴리즈가 거부할 changeset은 PR에서 실패합니다.
 
 `Release` workflow는 merge gate로 강제하지 않습니다.
 

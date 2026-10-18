@@ -124,6 +124,15 @@ PR을 자동 머지하지 않습니다. `GITHUB_TOKEN`으로 push한 브랜치�
 워크플로가 따로 수행합니다. `auto`는 배포로 이어질 수 있어 사용하지 않습니다.
 준비 job에는 npm 인증 정보와 OIDC 권한을 주지 않습니다.
 
+CI의 `changesets` job은 모든 pull request와 push에서 같은 고정 action(action 0.20.0,
+sampo-core 0.18.0)을 `release`, `dry-run: true`로 실행합니다. Sampo는 dry-run에서 멈추기 전에
+보류 중인 changeset을 모두 해석하므로, `.sampo/config.toml`에 `changesets.tags` 없이 쓴
+`minor (Added)`처럼 prepare job이 거부할 changeset은 다음 Release 실행이 아니라 PR에서 실패합니다.
+publish job은 `publish:gate`의 `release:plan` 단계를 위해 같은 sampo-core 0.18.0으로 빌드된
+`sampo@0.22.0` CLI를 설치합니다. 로컬 `bun run release:plan`도 이 CLI 버전을 사용합니다. 더 오래된
+CLI는 action과 다른 판정을 할 수 있습니다. CLI pin과 action core가 어긋나면
+`tools/ci-workflow.test.ts`가 실패합니다.
+
 릴리즈 PR을 머지하면 배포됩니다. `main`에 push될 때마다 `plan` job
 (`bun tools/release-registry.ts plan`)이 push한 커밋이 아직 `main`의 최신이고 npm에 없는
 패키지 버전이 있을 때만 배포를 결정합니다. 패키지 버전은 머지된 릴리즈 PR만 바꾸므로, 이후
@@ -137,7 +146,10 @@ PR을 자동 머지하지 않습니다. `GITHUB_TOKEN`으로 push한 브랜치�
 
 `publish` job만 Node/npm과 대응하는 Sampo CLI를 설치하고 `publish:gate`와
 `readme:smoke`를 거쳐 `publish` 단계에 OIDC 권한을 줍니다. preflight 전과 실제 배포
-직전에 커밋이 원격 `main`과 같은지 확인합니다. 배포 후 `bun tools/release-registry.ts verify`가
+직전에 커밋이 원격 `main`과 같은지 확인합니다. preflight는 CI와 같은 `TTSC_GO_CACHE_DIR`와
+ttsc plugin cache를 사용하므로, typecheck가 차가운 Go cache에서 모든 plugin을 다시 빌드하지
+않습니다. 이 job은 cache를 복원만 합니다. cache는 `main`에서 CI `typecheck` job이 쓰고, publish
+job은 항목을 저장하지 않습니다. 배포 후 `bun tools/release-registry.ts verify`가
 레지스트리에 새 버전이 보일 때까지 기다린 뒤, 레지스트리 메타데이터의 `workspace:` 지정자를
 거부하고, `PROVENANCE_EXEMPT`에 있는 로컬 첫 배포 버전을 제외한 모든 현재 버전의 provenance를
 확인하고, 현재 버전을 npm에서 설치해
@@ -181,7 +193,7 @@ NPM_CONFIG_USERCONFIG=$PWD/.npmrc.publish.local bun run release:publish:prefligh
 1. `publish:gate` 통과
 2. `readme:smoke` 통과
 3. `npm whoami`, `npm ping` 성공
-4. 새 버전이 하나 이상 있고, npm에 올라간 버전보다 낮은 패키지가 없는지 (이미 배포된 같은 버전은 건너뜀)
+4. 새 버전이 하나 이상 있고, 미배포 패키지 버전이 npm `latest`보다 낮지 않은지. npm이 어떤 dist-tag로든, 또는 tag 없이 이미 가진 버전은 건너뜁니다. `latest`만이 아니라 패키지의 전체 버전 목록을 읽습니다
 
 preflight, 배포, manifest 변환은 `tools/npm-publish-preflight.ts`, `tools/release-lockfile.ts`, `tools/package-manifest.ts`, `.github/workflows/release.yml` prepare job에 적힌 패키지만 다룹니다. 새 패키지는 먼저 이 목록에 추가합니다.
 
@@ -199,6 +211,8 @@ NPM_CONFIG_USERCONFIG=$PWD/.npmrc.publish.local NPM_CONFIG_PROVENANCE=false bun 
 - feature branch에서 릴리즈 계산을 보고 싶어서 `release:plan`은 `SAMPO_RELEASE_BRANCH=main`을 강제로 넣었습니다.
 - 릴리즈 PR을 머지한 `main` push가 배포합니다. 다른 push와 기본 수동 실행은 릴리즈 PR만 준비하고, `publish=true` 수동 실행은 실패한 배포의 재시도입니다.
 - npm 인증은 배포 job의 `publish` 단계에만 전달하며, 나머지 install/build/check는 Bun으로 실행합니다.
+- Sampo action은 `PATH`에 cargo-binstall이 없을 때만 설치하며, 그때 cargo-binstall `main` 브랜치의 설치 스크립트를 실행해 `releases/latest`를 내려받습니다. CI `changesets` job과 Release의 두 job은 먼저 `.github/actions/cargo-binstall`을 실행해 cargo-binstall 1.25.1을 내려받고 sha256을 확인하므로, 고정되지 않은 그 경로는 실행되지 않습니다. 버전과 두 digest는 그 파일에서 함께 올립니다.
+- 그다음 cargo-binstall이 action 자신의 버전에 해당하는 `sampo-github-action` 바이너리를 `bruits/sampo` GitHub release에서 내려받습니다. `BINSTALL_STRATEGIES=crate-meta-data`는 quick-install mirror와 소스 빌드 fallback을 막고, `BINSTALL_DISABLE_TELEMETRY`는 설치 통계를 끕니다. 이 바이너리는 저장소가 checksum으로 고정하지 않으며, publish job은 이를 `contents: write`, `id-token: write` 권한으로 실행합니다. Sampo action 버전 변경은 배포 바이너리 변경으로 검토합니다.
 
 ## 3) 릴리즈 전 체크리스트
 

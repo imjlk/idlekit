@@ -7,14 +7,42 @@ type PackageManifest = Readonly<{
   version: string;
 }>;
 
-type RegistryStatus = Readonly<{
+export type RegistryStatus = Readonly<{
   name: string;
   localVersion: string;
+  /** The registry's `latest` dist-tag, or null when npm has no such tag or no such package. */
   publishedVersion: string | null;
   publishable: boolean;
   /** The registry already has this exact version; Sampo skips it, so it does not block a publish. */
   alreadyPublished: boolean;
 }>;
+
+/** Every version npm lists for a package, tagged or not, and its `latest` dist-tag. */
+export type RegistryPackage = Readonly<{ versions: readonly string[]; latest: string | null }>;
+
+/**
+ * A version is already published when npm lists it at all, so one behind `latest` or under
+ * another tag is skipped rather than retried. A new version must be newer than `latest`,
+ * because npm tags a publish `latest` by default and would move it backward.
+ */
+export function registryStatus(pkg: PackageManifest, registry: RegistryPackage | null): RegistryStatus {
+  const alreadyPublished = registry?.versions.includes(pkg.version) ?? false;
+  const latest = registry?.latest ?? null;
+  return {
+    name: pkg.name,
+    localVersion: pkg.version,
+    publishedVersion: latest,
+    publishable: !alreadyPublished && (latest === null || compareSemver(pkg.version, latest) > 0),
+    alreadyPublished,
+  };
+}
+
+/** Parses `npm view <name> dist-tags versions --json`; npm prints a one-version list as a bare string. */
+export function parseRegistryView(stdout: string): RegistryPackage {
+  const view = JSON.parse(stdout) as { versions?: string | string[]; "dist-tags"?: { latest?: string } };
+  const versions = typeof view.versions === "string" ? [view.versions] : (view.versions ?? []);
+  return { versions, latest: view["dist-tags"]?.latest ?? null };
+}
 
 const PACKAGE_DIRS = ["packages/money", "packages/core", "packages/cli"] as const;
 
@@ -81,30 +109,17 @@ async function main(): Promise<void> {
 
   const statuses: RegistryStatus[] = [];
   for (const pkg of await loadPackages()) {
-    const view = runNpm(["view", pkg.name, "version", "--json", "--registry", "https://registry.npmjs.org/"]);
+    const view = runNpm(["view", pkg.name, "dist-tags", "versions", "--json", "--registry", "https://registry.npmjs.org/"]);
     if (!view.ok) {
       const missing = view.stderr.includes("E404") || view.stdout.includes("E404");
       if (missing) {
-        statuses.push({
-          name: pkg.name,
-          localVersion: pkg.version,
-          publishedVersion: null,
-          publishable: true,
-          alreadyPublished: false,
-        });
+        statuses.push(registryStatus(pkg, null));
         continue;
       }
       throw new Error(`npm view failed for ${pkg.name}.\n${view.stderr || view.stdout}`);
     }
 
-    const publishedVersion = JSON.parse(view.stdout) as string;
-    statuses.push({
-      name: pkg.name,
-      localVersion: pkg.version,
-      publishedVersion,
-      publishable: compareSemver(pkg.version, publishedVersion) > 0,
-      alreadyPublished: compareSemver(pkg.version, publishedVersion) === 0,
-    });
+    statuses.push(registryStatus(pkg, parseRegistryView(view.stdout)));
   }
 
   const blocked = statuses.filter((status) => !status.publishable && !status.alreadyPublished);
@@ -138,4 +153,4 @@ async function main(): Promise<void> {
   console.log(`npm publish preflight passed: ${outPath}`);
 }
 
-await main();
+if (import.meta.main) await main();
