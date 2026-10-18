@@ -26,6 +26,11 @@ import {
 
 const strategySchema = z.string().min(1).optional();
 
+/** Fold a finite run seed to the uint32 the sampler reads; a nonfinite seed is left for the estimator to reject. */
+function uint32Seed(seed: number): number {
+  return Number.isFinite(seed) ? seed >>> 0 : seed;
+}
+
 type HorizonPoint = Readonly<{
   label: string;
   seconds: number;
@@ -336,7 +341,9 @@ export function runLtvAnalysis(args: {
             progression,
             draws,
             quantiles: monetizationConfig.uncertainty.quantiles,
-            seed: (args.seed ?? monetizationConfig.uncertainty.seed ?? 1) + h.seconds,
+            // The sampler has always read its seed as uint32; wrap here, since the
+            // public estimator rejects seeds outside that range instead of folding them.
+            seed: uint32Seed((args.seed ?? monetizationConfig.uncertainty.seed ?? 1) + h.seconds),
           })
         : undefined;
 

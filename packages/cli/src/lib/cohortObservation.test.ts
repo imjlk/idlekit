@@ -24,6 +24,10 @@ it("allows a real later return without clamping exact-day observations to a surv
   expect(observedRetentionRates(observed)).toEqual({ d1: 0, d7: 1 });
   expect(observed.retention[1]?.interval95?.max).toBe(1);
   expect(planRetentionPatch(observed)).toMatchObject({ status: "requires-review", retention: {} });
+  // The rule is the scenario's curve rule; the LTV estimators themselves interpolate a rise.
+  const rise = planRetentionPatch(observed, { d30: 0, d90: 0 }).warnings.join(" ");
+  expect(rise).toContain("A complete scenario retention curve must satisfy d1 >= d7 >= d30 >= d90");
+  expect(rise).not.toContain("LTV requires");
 });
 
 it("does not equate a day-zero export with measured zero retention", () => {

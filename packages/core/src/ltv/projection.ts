@@ -1,5 +1,5 @@
 import type { ScenarioV1 } from "../scenario/types";
-import type { LtvPointEstimate, MonetizationConfig } from "./types";
+import type { LtvEstimateArgs, LtvPointEstimate, MonetizationConfig } from "./types";
 
 function clamp01(v: number): number {
   if (v < 0) return 0;
@@ -74,11 +74,12 @@ export function progressionFactor(startWorthLog10: number, endWorthLog10: number
   return clamp01((endWorthLog10 - startWorthLog10) / span);
 }
 
-export function estimateLtvPerUser(args: {
-  config: MonetizationConfig;
-  horizonDays: number;
-  progression: number;
-}): LtvPointEstimate {
+/**
+ * Undiscounted revenue over install days [0, horizonDays). Day 0 is the install day,
+ * active by definition, as telemetry and calibration index it. A fractional last day
+ * is prorated at that day's retention.
+ */
+export function estimateLtvPerUser(args: LtvEstimateArgs): LtvPointEstimate {
   const { config, horizonDays } = args;
   const progression = clamp01(args.progression);
 
@@ -90,12 +91,12 @@ export function estimateLtvPerUser(args: {
   const remainder = Math.max(0, horizonDays - fullDays);
 
   let gross = 0;
-  for (let day = 1; day <= fullDays; day++) {
+  for (let day = 0; day < fullDays; day++) {
     const active = retentionAtDay(config.retention, day);
     gross += active * (payerConversion * arppuDaily + adArpDau);
   }
   if (remainder > 0) {
-    const active = retentionAtDay(config.retention, fullDays + 1);
+    const active = retentionAtDay(config.retention, fullDays);
     gross += remainder * active * (payerConversion * arppuDaily + adArpDau);
   }
 

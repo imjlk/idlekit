@@ -1,5 +1,5 @@
 import { estimateLtvPerUser } from "./projection";
-import type { LtvPointEstimate, MonetizationConfig } from "./types";
+import type { LtvDistribution, LtvEstimateArgs, MonetizationConfig } from "./types";
 
 function clamp01(v: number): number {
   if (v < 0) return 0;
@@ -125,19 +125,15 @@ function applyLogNormalShock(mean: number, sigma: number, z: number): number {
 
 export function makeUncertainConfig(base: MonetizationConfig, rng: Random): MonetizationConfig {
   const shock = sampleCorrelatedNormals(rng, base.uncertainty.correlation);
-  const d1 = clamp01(applyLogNormalShock(base.retention.d1, base.uncertainty.sigma.retention, shock.retention));
-  const d7 = Math.min(
-    d1,
-    clamp01(applyLogNormalShock(base.retention.d7, base.uncertainty.sigma.retention, shock.retention)),
-  );
-  const d30 = Math.min(
-    d7,
-    clamp01(applyLogNormalShock(base.retention.d30, base.uncertainty.sigma.retention, shock.retention)),
-  );
-  const d90 = Math.min(
-    d30,
-    clamp01(applyLogNormalShock(base.retention.d90, base.uncertainty.sigma.retention, shock.retention)),
-  );
+  // One shared retention shock scales every anchor, so a decreasing curve stays
+  // decreasing. A rising curve (partial overrides over defaults) is interpolated as
+  // given, like the point estimate; clipping it here would bias the mean below it.
+  const retention = (anchor: number) =>
+    clamp01(applyLogNormalShock(anchor, base.uncertainty.sigma.retention, shock.retention));
+  const d1 = retention(base.retention.d1);
+  const d7 = retention(base.retention.d7);
+  const d30 = retention(base.retention.d30);
+  const d90 = retention(base.retention.d90);
   return {
     ...base,
     retention: {
@@ -168,17 +164,36 @@ function quantileFromSorted(sorted: readonly number[], q: number): number {
   return sorted[idx] ?? 0;
 }
 
-export function estimateLtvDistribution(args: {
-  config: MonetizationConfig;
-  horizonDays: number;
-  progression: number;
+/**
+ * Exact percent key of a quantile: the shortest round-trip decimal of `q`, shifted two
+ * places (0.5 -> q50, 0.025 -> q2.5, 0.124 -> q12.4). Distinct doubles get distinct keys.
+ */
+export function quantileKey(q: number): string {
+  const [mantissa = "0", exponent = "0"] = String(q).split("e");
+  const [whole = "0", fraction = ""] = mantissa.split(".");
+  const digits = whole + fraction;
+  const point = whole.length + Number(exponent) + 2;
+  const shifted = point <= 0
+    ? `0.${"0".repeat(-point)}${digits}`
+    : point >= digits.length
+      ? digits + "0".repeat(point - digits.length)
+      : `${digits.slice(0, point)}.${digits.slice(point)}`;
+  const [int = "0", frac = ""] = shifted.split(".");
+  // Index scans rather than regular expressions: linear in the digit count.
+  let start = 0;
+  while (start < int.length - 1 && int[start] === "0") start++;
+  let end = frac.length;
+  while (end > 0 && frac[end - 1] === "0") end--;
+  const trimmedInt = int.slice(start);
+  const trimmedFrac = frac.slice(0, end);
+  return `q${trimmedFrac ? `${trimmedInt}.${trimmedFrac}` : trimmedInt}`;
+}
+
+export function estimateLtvDistribution(args: LtvEstimateArgs & Readonly<{
   draws: number;
-  quantiles: number[];
+  quantiles: readonly number[];
   seed: number;
-}): Readonly<{
-  mean: LtvPointEstimate;
-  quantiles: Record<string, number>;
-}> {
+}>): LtvDistribution {
   const rng = mulberry32(args.seed);
   const grossSamples: number[] = [];
   const netSamples: number[] = [];
@@ -202,7 +217,7 @@ export function estimateLtvDistribution(args: {
   const sortedLtv = [...ltvSamples].sort((a, b) => a - b);
   const byQuantile: Record<string, number> = {};
   for (const q of args.quantiles) {
-    byQuantile[`q${Math.round(q * 100)}`] = quantileFromSorted(sortedLtv, q);
+    byQuantile[quantileKey(q)] = quantileFromSorted(sortedLtv, q);
   }
 
   return {

@@ -30,7 +30,15 @@ Reading assumptions does not load or execute the scenario's plugin.
 - CSV requires explicit `user_id` and `day`; JSON requires string `userId` and
   numeric `day`. Day is a nonnegative integer. Duplicate user/day rows, missing
   install records, rows after the cutoff, and negative/nonfinite amounts fail.
-  Revenue columns may be omitted when measuring retention only.
+  Revenue columns may be omitted when measuring retention only. An omitted column
+  is unmeasured, not zero, and `diagnostics.unmeasured` lists it. With both IAP and
+  ad revenue absent, JSON output has no `monetization.revenue`,
+  `monetization.uncertainty` or revenue totals. With one of them present, those
+  objects hold only the fields that source measures: IAP gives `payerConversion`,
+  `arppuDaily` and `totalIap`, ad revenue gives `adArpDau` and `totalAd`, and
+  `correlation` keeps only pairs whose sources were exported. Without an
+  acquisition cost column there is no `monetization.acquisition`. A JSON revenue
+  field must be on every row or none.
 - Use the same currency for revenue rows. Export refunds separately; this
   calibration input accepts nonnegative gross revenue. User IDs should be local
   pseudonymous identifiers; this command reads local files and sends no telemetry.
@@ -40,7 +48,8 @@ interval for the cohort proportion. A zero rate after a complete observation
 window is measured zero. D30 in a seven-day export is `not-observed`, with a null
 rate and interval. No zero, interpolation, or monotonic clamping is substituted.
 Exact-day return rates can rise when a player returns after missing an earlier day;
-they are not a survival curve. The LTV model may impose its own curve assumptions.
+they are not a survival curve. The LTV model interpolates linearly between the
+anchors it is given and does not clamp them, so a rise would be projected as is.
 
 ## Use the core API
 
@@ -84,8 +93,9 @@ hashes in `_meta`. The observation cutoff participates in the telemetry hash.
 `scenarioPatch.monetization.retention` contains only observed retention points.
 `patchStatus` is `ready`, `unavailable` (no mature retention day), or
 `requires-review`. A rise in observed exact-day retention, or a conflict with a
-retained explicit assumption, cannot be applied to the LTV model's monotonic
-curve. In that case the retention patch is empty and `patchWarnings` explains
+retained explicit assumption, breaks the scenario rule that a complete retention
+curve satisfies d1 >= d7 >= d30 >= d90; the LTV model would interpolate the rise
+as given. In that case the retention patch is empty and `patchWarnings` explains
 the conflict; the raw observations and comparison remain intact. Review and fit
 the curve explicitly instead of clipping the observations. Unobserved days with
 unspecified assumptions also require review: the LTV defaults could conflict with

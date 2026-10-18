@@ -20,33 +20,50 @@ Use this package when you need:
 
 ## LTV estimates
 
-Import the three LTV functions and the `MonetizationConfig` / `LtvPointEstimate` types from
-`@idlekit/core`. Pass a `ScenarioV1` to `deriveMonetizationConfig`; pass the returned config,
-`horizonDays` and `progression` to `estimateLtvPerUser`. `estimateLtvDistribution` additionally
-takes `draws`, `quantiles` and `seed`. The CLI uses the same implementation.
+Import the three LTV functions, the `retentionAtDay` / `progressionFactor` helpers and the
+`MonetizationConfig`, `LtvEstimateArgs`, `LtvDistributionArgs`, `LtvPointEstimate` and
+`LtvDistribution` types from `@idlekit/core`. Pass a `ScenarioV1` to `deriveMonetizationConfig`;
+pass the returned config, `horizonDays` and `progression` to `estimateLtvPerUser`.
+`estimateLtvDistribution` also reads `draws`, `quantiles` and `seed`; an omitted one falls back
+to `config.uncertainty`, and an explicit one wins. It always samples: `config.uncertainty.enabled`
+is the caller's switch for whether to call it, as in the CLI. The CLI uses the same implementation.
+
+LTV is undiscounted cumulative value. A horizon of `H` days covers install days `[0, H)`: day 0
+is the install day, active by definition, as in telemetry and `idk calibrate`. A fractional last
+day is prorated at that day's retention, so 0.5 days is half of the install day. Earlier releases
+covered days `[1, H]`, dropped install-day revenue and charged a 0.5-day horizon at D1
+retention. The same horizon now adds the install day and drops day `H`, so LTV values change
+and usually rise.
 
 Inputs are hypothetical assumptions, in one caller-chosen currency per installed user.
 Defaults are not observed retention or measured revenue. Net revenue applies platform fees
-and gross margin; LTV then subtracts CPI, including at a zero-day horizon. Fractional days
-are prorated. Finite progression is clamped to 0..1. Quantile bands describe sensitivity to
-assumptions, not fitted confidence intervals or evidence of enjoyment/retention.
+and gross margin; LTV then subtracts CPI, including at a zero-day horizon. Finite progression
+is clamped to 0..1. Quantile bands describe sensitivity to assumptions, not fitted confidence
+intervals or evidence of enjoyment/retention.
 
 Synchronous limits: 0..36500 days, 1..100000 draws and at most 10000000 draw-days (at least
-one work unit per draw). Quantiles must be nonempty values in 0..1 with distinct rounded
-percent keys (`q50`, `q90`). Invalid inputs, colliding keys and numeric overflow throw
-`RangeError`. Sampling shrinks inconsistent correlation matrices toward independence.
+one work unit per draw). Quantiles must be 1..101 distinct values in 0..1. Each output key is
+the exact percent (`q50`, `q90`, `q2.5` for 0.025, `q12.4` for 0.124), so keys never collide or
+round. The seed must be an integer in 0..4294967295; other seeds throw instead of being folded.
+`retentionAtDay` requires a finite day >= 0 and a valid curve (day 0 is 1, any day in (0, 1] reads
+D1, and anchors from D1 on are linear); `progressionFactor` rejects NaN
+logs and a span that is not finite and positive, and treats an infinite worth log (zero worth)
+as no progression. Invalid inputs and numeric overflow throw `RangeError`. Sampling shrinks
+inconsistent correlation matrices toward independence.
 Complete-cohort retention observation and safe patch application are available in core;
 the public `idk calibrate` CLI shares the observation and planning implementation.
-Public estimate configs accept quantile endpoints too. Distribution output keys use its
-explicit `quantiles` argument, not config metadata. `ScenarioV1` authored quantiles retain
+Public estimate configs accept quantile endpoints too. The point estimate validates the whole
+config, including the uncertainty defaults the distribution reads; key distinctness and the
+seed range are checked when the distribution uses them. `ScenarioV1` authored quantiles retain
 their existing `(0, 1)` schema when passed to `deriveMonetizationConfig`.
 
 Partial scenario retention overrides keep the CLI's independent defaults. For example,
 `d1: 0.1` alone retains the default `d7: 0.2`; estimates preserve that existing interpolation.
 Explicit complete scenario curves still follow scenario ordering validation. Direct estimate
 configs validate each rate's range without adding an ordering constraint to completed defaults.
-Sampling retains its existing clamp of later retention anchors to the preceding anchor,
-so this partial-input case can differ from the point projection even with zero uncertainty.
+The point projection and the distribution interpolate such a rising curve the same way: one
+shared retention shock scales every anchor, and sampling no longer clips a later anchor to the
+preceding one, so a zero-uncertainty distribution equals the point projection.
 
 ## Observed cohort retention
 

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { deriveMonetizationConfig, estimateLtvPerUser } from "@idlekit/core";
 import { calibrateMonetization } from "./ltvCalibration";
 import type { TelemetryRow } from "./ltvTypes";
 
@@ -40,5 +41,70 @@ describe("calibration result validity", () => {
     })));
     expect(result.diagnostics.estimatedCorrelationRaw).toMatchObject({ arppuAd: expect.closeTo(1, 12) });
     expect(result.monetization?.uncertainty?.correlation?.arppuAd).toBeGreaterThan(0);
+  });
+
+  it("computes correlation and variance when only the intermediate squares overflow", () => {
+    // Deviations near 1.5e154 square past Number.MAX_VALUE; the variance (7.5e307) does not.
+    const result = calibrateMonetization([0, 0, 0, 2e154].map((iapRevenue, i) => ({ userId: String(i), day: 0, iapRevenue, adRevenue: 0 })));
+    expect((result.diagnostics.estimatedCorrelationRaw as { conversionArppu: number }).conversionArppu).toBeCloseTo(1, 12);
+    const variance = (result.diagnostics.userFeatureVariance as { arppu: number }).arppu;
+    expect(variance / 7.5e307).toBeCloseTo(1, 12);
+    expect(JSON.stringify(result)).not.toContain("null");
+  });
+
+  it("omits unmeasured revenue and acquisition instead of fitting zeros", () => {
+    const rows: TelemetryRow[] = ["a", "b", "c", "d"].map(userId => ({ userId, day: 0 }));
+    rows.push({ userId: "a", day: 1 }, { userId: "b", day: 1 });
+    const result = calibrateMonetization(rows);
+    expect(Object.keys(result.monetization ?? {})).toEqual(["cohorts", "retention"]);
+    expect(result.diagnostics).toMatchObject({ unmeasured: ["iapRevenue", "adRevenue", "acquisitionCost"], activeUserDays: 6 });
+    for (const key of ["totalIap", "totalAd", "payerUsers", "payerDays", "estimatedCorrelation", "correlationDiagnostics"]) {
+      expect(result.diagnostics).not.toHaveProperty(key);
+    }
+    expect(result.diagnostics.userFeatureVariance).toEqual({ retention: expect.any(Number) });
+
+    const adOnly = calibrateMonetization(rows.map(row => ({ ...row, adRevenue: 0.1 })));
+    expect(Object.keys(adOnly.monetization?.revenue ?? {})).toEqual(["adArpDau", "platformFeeRate", "grossMarginRate"]);
+    expect(adOnly.monetization?.revenue?.adArpDau).toBeCloseTo(0.1, 12);
+    expect(Object.keys(adOnly.monetization?.uncertainty?.correlation ?? {})).toEqual(["retentionAd"]);
+    expect(adOnly.diagnostics.unmeasured).toEqual(["iapRevenue", "acquisitionCost"]);
+    expect(adOnly.diagnostics.totalAd as number).toBeCloseTo(0.6, 12);
+
+    expect(() => calibrateMonetization([{ userId: "a", day: 0, iapRevenue: 1 }, { userId: "a", day: 1 }])).toThrow(/iapRevenue/);
+  });
+
+  it("calibrates install-day revenue that the LTV horizon then counts", () => {
+    // Four users each pay 1.0 IAP and 0.1 ad revenue on day 0, then churn: 4.40 in total.
+    const result = calibrateMonetization(["a", "b", "c", "d"].map(userId => ({ userId, day: 0, iapRevenue: 1, adRevenue: 0.1 })));
+    // Bun's toMatchObject rewrites asymmetric matches into the received object, so check plainly.
+    expect(result.monetization?.revenue).toMatchObject({ payerConversion: 1, arppuDaily: 1 });
+    expect(result.monetization?.revenue?.adArpDau).toBeCloseTo(0.1, 12);
+    expect(result.monetization?.retention?.d1).toBe(0);
+    const config = deriveMonetizationConfig({
+      schemaVersion: 1, unit: { code: "USD" }, policy: { mode: "drop" }, model: { id: "linear", version: 1 },
+      initial: { wallet: { unit: "USD", amount: "0" } }, clock: { stepSec: 1, durationSec: 1 },
+      monetization: result.monetization,
+    });
+    for (const horizonDays of [1, 30]) {
+      const estimate = estimateLtvPerUser({ config, horizonDays, progression: 0 });
+      expect(estimate.cumulativeGrossRevenuePerUser * 4).toBeCloseTo(4.4, 12);
+    }
+    expect(estimateLtvPerUser({ config, horizonDays: 0.5, progression: 0 }).cumulativeGrossRevenuePerUser).toBeCloseTo(0.55, 12);
+  });
+
+  it("counts an inactive install-day row as day-0 exposure, as the LTV horizon does", () => {
+    // One install earns 1.00 in ads on day 0; the other is marked inactive and earns nothing.
+    const result = calibrateMonetization([
+      { userId: "a", day: 0, iapRevenue: 0, adRevenue: 1 },
+      { userId: "b", day: 0, iapRevenue: 0, adRevenue: 0, active: false },
+    ]);
+    expect(result.monetization?.revenue?.adArpDau).toBe(0.5);
+    expect(result.diagnostics.activeUserDays).toBe(2);
+    const config = deriveMonetizationConfig({
+      schemaVersion: 1, unit: { code: "USD" }, policy: { mode: "drop" }, model: { id: "linear", version: 1 },
+      initial: { wallet: { unit: "USD", amount: "0" } }, clock: { stepSec: 1, durationSec: 1 },
+      monetization: result.monetization,
+    });
+    expect(estimateLtvPerUser({ config, horizonDays: 1, progression: 0 }).cumulativeGrossRevenuePerUser).toBeCloseTo(0.5, 12);
   });
 });
