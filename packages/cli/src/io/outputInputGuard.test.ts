@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { link, readFile, symlink } from "fs/promises";
 import { createHash } from "crypto";
-import { resolve } from "path";
-import { createTempDir, pathExists, REPO_ROOT, removePath, runCli, writeText } from "../testkit/bun";
+import { relative, resolve } from "path";
+import { CLI_CWD, createTempDir, pathExists, REPO_ROOT, removePath, runCli, writeText } from "../testkit/bun";
 
 let dir = "";
 let scenario = "";
@@ -118,6 +118,42 @@ describe("output paths never replace an input", () => {
     // The replay reads the recorded scenario in a child process; that scenario is still an input of verify.
     await expectRefused(["replay", "verify", artifact, "--out", scenario], scenario, source);
   }, 120_000);
+
+  it("replay verify protects relative inputs from another directory and plugin imports", async () => {
+    const tune = resolve(dir, "tune.json");
+    const tuneBody = JSON.stringify({
+      schemaVersion: 1,
+      strategy: { id: "greedy", baseParams: { schemaVersion: 1, objective: "maximizeIncome" },
+        space: [{ path: "objective", space: { kind: "choice", values: ["maximizeIncome", "minPayback"] } }] },
+      objective: { id: "endNetWorthLog10" },
+      runner: { seeds: [1], budget: 2, overrideDurationSec: 30, topK: 1 },
+    });
+    await writeText(tune, tuneBody);
+    const tuned = resolve(dir, "tuned.json");
+    // Written from the CLI package directory with a relative --tune, then verified from the repository root.
+    expect(runCli(["tune", scenario, "--tune", relative(CLI_CWD, tune), "--artifact-out", tuned]).exitCode).toBe(0);
+    const fromRoot = runCli(["replay", "verify", tuned, "--out", tune], { cwd: REPO_ROOT, check: false });
+    expect(fromRoot.exitCode).not.toBe(0);
+    expect(fromRoot.stderr).toContain("must not overwrite an input file");
+    expect(await text(tune)).toBe(tuneBody);
+
+    const helper = resolve(dir, "replay-helper.mjs");
+    const helperBody = "export const strategies = [];\n";
+    await writeText(helper, helperBody);
+    const plugin = resolve(dir, "replay-plugin.mjs");
+    await writeText(plugin, 'export { strategies } from "./replay-helper.mjs";\n');
+    const pluginArtifact = resolve(dir, "plugin-artifact.json");
+    expect(runCli(["simulate", scenario, "--duration", "60", "--plugin", plugin, "--allow-plugin", "true",
+      "--artifact-out", pluginArtifact]).exitCode).toBe(0);
+    await expectRefused(["replay", "verify", pluginArtifact, "--out", helper], helper, helperBody);
+  }, 180_000);
+
+  it("setup plugin-trust --force never replaces a plugin it pins", async () => {
+    const plugin = resolve(dir, "trusted.mjs");
+    const body = "export const strategies = [];\n";
+    await writeText(plugin, body);
+    await expectRefused(["setup", "plugin-trust", "--plugin", plugin, "--out", plugin, "--force", "true"], plugin, body);
+  }, 60_000);
 });
 
 describe("judge output paths", () => {

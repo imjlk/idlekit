@@ -400,6 +400,18 @@ async function pluginClosureDigest(entryAbs: string, entryDigest: string): Promi
   return sha256Hex(listing.join("\n"));
 }
 
+/**
+ * Read a plugin's local import closure, without loading it, so the current command records every file in it as an
+ * input. A plugin that no longer resolves adds what it can; the replay that loads it reports the failure.
+ */
+export async function recordPluginClosureReads(entryAbs: string): Promise<void> {
+  try {
+    await pluginClosureDigest(entryAbs, await sha256File(entryAbs));
+  } catch {
+    // The files read before the failure are already recorded.
+  }
+}
+
 async function resolveAndValidatePluginPath(input: string, allowedRoots: readonly string[]): Promise<string> {
   if (input.includes("://")) {
     throw new Error(`Plugin path must be a local file path: ${input}`);

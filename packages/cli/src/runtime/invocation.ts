@@ -44,8 +44,9 @@ export function recordNestedInputs(base: string, positional: readonly string[], 
 }
 
 /**
- * Paths the current command may have read: every positional, every input flag, and every file read
- * through the CLI readers, such as a scenario named by an experiment spec or a plugin's local import.
+ * Paths the current command may have read: every input flag and every file read through the CLI readers,
+ * such as a positional scenario, the scenario an experiment spec names, or a plugin's local import.
+ * A positional is not listed by itself, because some are ids (`analyze growth`) rather than paths.
  * Output writers protect the ones that exist. `allow` names input flags the output may replace on purpose.
  */
 export function invocationInputCandidates(options: { allow?: readonly string[] } = {}): string[] {
@@ -53,7 +54,7 @@ export function invocationInputCandidates(options: { allow?: readonly string[] }
   if (!invocation) return [];
   const allow = new Set(options.allow ?? []);
   const allowed = new Set<string>();
-  const candidates = invocation.positional.filter((value) => value.length > 0);
+  const candidates: string[] = [];
   for (const [key, value] of Object.entries(invocation.flags)) {
     const paths = flagPaths(key, value);
     if (allow.has(key)) for (const path of paths) allowed.add(resolve(path));
