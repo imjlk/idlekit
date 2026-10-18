@@ -277,7 +277,8 @@ jobs:
 
   windows-cli:
     runs-on: windows-latest
-    timeout-minutes: 30
+    # Recent runs took 14-24 minutes; leave headroom for slow Windows runners.
+    timeout-minutes: 45
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -363,7 +364,7 @@ jobs:
   # macOS links TMPDIR through /var -> /private/var; Linux and Windows never exercise that path.
   macos-cli:
     runs-on: macos-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
