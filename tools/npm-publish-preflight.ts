@@ -37,10 +37,21 @@ export function registryStatus(pkg: PackageManifest, registry: RegistryPackage |
   };
 }
 
-/** Parses `npm view <name> dist-tags versions --json`; npm prints a one-version list as a bare string. */
+type RegistryView = { versions?: string | string[]; "dist-tags"?: { latest?: string } };
+
+/**
+ * Parses `npm view <name> dist-tags versions --json`. npm 12 wraps the fields in a one-element
+ * array, older npm prints the object, and a one-version list can be a bare string. Output without
+ * a version list fails, so an unrecognized shape never reads as "nothing published".
+ */
 export function parseRegistryView(stdout: string): RegistryPackage {
-  const view = JSON.parse(stdout) as { versions?: string | string[]; "dist-tags"?: { latest?: string } };
-  const versions = typeof view.versions === "string" ? [view.versions] : (view.versions ?? []);
+  const parsed = JSON.parse(stdout) as RegistryView | RegistryView[];
+  const views = Array.isArray(parsed) ? parsed : [parsed];
+  if (views.length !== 1 || views[0]?.versions === undefined) {
+    throw new Error(`unexpected npm view output: ${stdout.slice(0, 400)}`);
+  }
+  const [view] = views as [RegistryView];
+  const versions = typeof view.versions === "string" ? [view.versions] : view.versions!;
   return { versions, latest: view["dist-tags"]?.latest ?? null };
 }
 

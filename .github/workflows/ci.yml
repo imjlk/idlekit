@@ -159,6 +159,11 @@ jobs:
           TTSC_CACHE_DIR: ${{ runner.temp }}/idlekit-cold-typecheck
         run: bun run typecheck
 
+      # The cold run built its plugins in a temporary directory. Link them into the shared plugin
+      # directory from the warm Go cache, so the entry this job saves serves the other jobs.
+      - name: Prepare shared ttsc plugins
+        run: bun run toolchain:prepare
+
       - name: Graph check
         run: bun run graph:check
 

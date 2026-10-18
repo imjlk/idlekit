@@ -43,4 +43,16 @@ describe("npm publish preflight registry status", () => {
     });
     expect(parseRegistryView(JSON.stringify({ versions: ["0.0.0-stage"] }))).toEqual({ versions: ["0.0.0-stage"], latest: null });
   });
+
+  it("parses npm 12's array-wrapped output, which the publish job's pinned npm prints", () => {
+    const view = [{ "dist-tags": { latest: "0.6.0" }, versions: ["0.0.0-stage", "0.5.0", "0.6.0"] }];
+    expect(parseRegistryView(JSON.stringify(view))).toEqual({ versions: ["0.0.0-stage", "0.5.0", "0.6.0"], latest: "0.6.0" });
+    expect(registryStatus(pkg("0.6.0"), parseRegistryView(JSON.stringify(view)))).toMatchObject({ alreadyPublished: true });
+  });
+
+  it("fails on npm view output without a version list instead of treating it as unpublished", () => {
+    expect(() => parseRegistryView("[]")).toThrow("unexpected npm view output");
+    expect(() => parseRegistryView(JSON.stringify([{ versions: ["0.1.0"] }, { versions: ["0.2.0"] }]))).toThrow();
+    expect(() => parseRegistryView(JSON.stringify({ "dist-tags": { latest: "0.6.0" } }))).toThrow();
+  });
 });
