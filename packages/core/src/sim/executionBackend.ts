@@ -27,7 +27,7 @@ export const executionStableReduction = "logical-index" as const;
 
 /**
  * @evidence docs/requirements/active/worker-execution-backend.md#req-dx05-failure-boundary Failure, cancellation, and incomplete stays are distinct. A partial batch is not a full distribution.
- * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-failure-boundary #2262fcb Re-read the section: timeout and abort do not become a successful distribution, a retry keeps the same id and seed, the timeout is per task and per attempt, and a thrown runner is a failed task.
+ * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-failure-boundary #717cf23 Re-read the section: timeout and abort do not become a successful distribution, an abort raised during a local attempt cancels that attempt once the runner returns, a retry keeps the same id and seed, the timeout is per task and per attempt, and a thrown runner is a failed task.
  */
 export const executionFailureBoundary = "not-a-partial-distribution" as const;
 
@@ -126,7 +126,7 @@ function budgetOf(budget: ExecutionBudgetV1 | undefined): ExecutionBudgetV1 {
  * made endless or skipped by NaN or Infinity. Both backends check it before running anything.
  *
  * @evidence docs/requirements/active/worker-execution-backend.md#req-dx05-failure-boundary A budget with a non-finite or negative field is refused before any task runs.
- * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-failure-boundary #2262fcb Re-read the section: retries stop at maxRetries, which must therefore be finite.
+ * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-failure-boundary #717cf23 Re-read the section after the local abort recheck was added: retries stop at maxRetries, which must therefore be finite.
  */
 export function assertExecutionBudget(budget: ExecutionBudgetV1): void {
   for (const field of ["maxWorkers", "queueBound", "taskTimeoutMs", "stepBudget", "maxRetries"] as const) {
@@ -546,6 +546,12 @@ export function runLocalBatch(
         seed: task.seed,
         attempts: attempt + 1,
       };
+      // An abort that landed while the runner held the thread (a cancel from its own closure, say) cancels
+      // this attempt too, whatever it returned, as a mid-flight abort does in the worker pool.
+      if (signal?.aborted) {
+        outcome = outcomeOf(task, "cancelled", "abort", attempt + 1);
+        break;
+      }
       // Every attempt is bounded, whatever it returned. A worker attempt is cut at the same window.
       if (elapsed >= budget.taskTimeoutMs) {
         outcome = outcomeOf(task, "incomplete", "timeout", attempt + 1);
