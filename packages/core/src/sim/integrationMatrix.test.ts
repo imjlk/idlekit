@@ -17,6 +17,7 @@ import {
   integrationHandAnswer,
   integrationReleaseScope,
   integrationUnsupportedEngine,
+  linearCoveredSec,
 } from "./integrationMatrix";
 import { createRunFactory } from "./runFactory";
 import { builtinStrategyFactories } from "./strategy/builtins";
@@ -104,7 +105,7 @@ function compile<N>(engine: Engine<N>, input: ScenarioV1, model: ModelFactory) {
 
 /**
  * @evidence docs/requirements/active/analysis-integration-release-gates.md#req-pr20-integration-matrix The matrix matches the hand formulas and leaves breakEternity unsupported.
- * @evidenceReview docs/requirements/active/analysis-integration-release-gates.md#req-pr20-integration-matrix #91abfb0 Re-read the section, then ran this function: linear, budget, goal, bulk, reset, logs, offline, and fresh cursors matched, the declared partial-final-tick relation held on the fixture case, equal reset wallets spelled differently were refused, and breakEternity threw.
+ * @evidenceReview docs/requirements/active/analysis-integration-release-gates.md#req-pr20-integration-matrix #493a4ea Re-read the section, then ran this function: a 1e12-second horizon follows the runner's stop epsilon and horizons above MAX_SAFE_INTEGER throw, linear, budget, goal, bulk, reset, logs, offline, and fresh cursors matched, the declared partial-final-tick relation held on the fixture case, equal reset wallets spelled differently were refused, and breakEternity threw.
  * @evidence ./integrationMatrix.ts#integrationReleaseScope Reads the scope marker.
  * @evidenceReview ./integrationMatrix.ts#integrationReleaseScope #01b8e4c The declaration is selected-optional-tracks.
  * @evidence ./integrationMatrix.ts#integrationUnsupportedEngine Reads the unsupported engine marker.
@@ -112,7 +113,9 @@ function compile<N>(engine: Engine<N>, input: ScenarioV1, model: ModelFactory) {
  * @evidence ./integrationMatrix.ts#integrationHandAnswer Reads the hand-answer marker.
  * @evidenceReview ./integrationMatrix.ts#integrationHandAnswer #3b85260 The declaration is integer-income-times-duration.
  * @evidence ./integrationMatrix.ts#expectedLinearEnd Computes the constant-income end wallet with integers.
- * @evidenceReview ./integrationMatrix.ts#expectedLinearEnd #7379d25 Re-read the helper without the step-grid check: 0 plus 2 per second for 5 seconds is 10, a fractional duration throws, and 6-second steps over 10 seconds end at income times 10 seconds, as the run does.
+ * @evidenceReview ./integrationMatrix.ts#expectedLinearEnd #af7754c Re-read the helper over linearCoveredSec: 0 plus 2 per second for 5 seconds is 10, a fractional duration throws, 6-second steps over 10 seconds end at income times 10 seconds, as the run does, a 1e12-second horizon with 999999999999-second steps ends at 999999999999 as the runner's stop epsilon leaves the last second unticked, and a horizon above MAX_SAFE_INTEGER throws.
+ * @evidence ./integrationMatrix.ts#linearCoveredSec Computes the seconds a duration-limited run ticks.
+ * @evidenceReview ./integrationMatrix.ts#linearCoveredSec #91f6b75 Re-read the helper against nextBoundary and timeEpsilon: it returns the first step boundary at or above the ceiling of durationSec minus timeEpsilon(durationSec), capped at the horizon, so 999999999999-second steps over 1e12 seconds cover 999999999999 seconds while 6-second steps over 999999999999 seconds and a zero horizon cover all of it, and a step or horizon above MAX_SAFE_INTEGER throws.
  * @evidence ./integrationMatrix.ts#expectedBudgetEnd Computes the end wallet when maxSteps stops first.
  * @evidenceReview ./integrationMatrix.ts#expectedBudgetEnd #edecc0c Re-read the integer step validation and BigInt gain: the ordinary budget fixture still matches the run, and MAX_SAFE_INTEGER seconds times three steps gives 27021597764222973 exactly; zero steps preserve the normalized initial wallet and a zero step is refused.
  * @evidence ./integrationMatrix.ts#expectedQuotedWallet Subtracts one quoted bulk total.
@@ -131,6 +134,18 @@ export function checksIntegrationMatrix(): void {
 
   const linearAnswer = expectedLinearEnd(spec.linear);
   expect(() => expectedLinearEnd({ ...spec.linear, durationSec: spec.linear.stepSec * 3 + 0.5 })).toThrow();
+  // The hand answer follows the runner's stop epsilon: from a 1e12-second horizon a remainder within it is not ticked.
+  const epsilonCase = { initial: "0", incomePerSec: "1", stepSec: 999_999_999_999, durationSec: 1_000_000_000_000 };
+  expect(linearCoveredSec(epsilonCase)).toBe(999_999_999_999);
+  expect(expectedLinearEnd(epsilonCase)).toBe("999999999999");
+  expect(linearCoveredSec({ stepSec: 6, durationSec: 999_999_999_999 })).toBe(999_999_999_999);
+  expect(linearCoveredSec({ stepSec: 1, durationSec: 0 })).toBe(0);
+  // Horizons are bounded where the runner's elapsed sum of whole-second ticks is still exact.
+  expect(linearCoveredSec({ stepSec: Number.MAX_SAFE_INTEGER, durationSec: Number.MAX_SAFE_INTEGER })).toBe(Number.MAX_SAFE_INTEGER);
+  for (const durationSec of [Number.MAX_SAFE_INTEGER + 1, 1e300]) {
+    expect(() => expectedLinearEnd({ ...epsilonCase, durationSec })).toThrow("safe integer");
+  }
+  expect(() => expectedLinearEnd({ ...epsilonCase, stepSec: 2 ** 60 })).toThrow("safe integer");
   expect(() => expectedResetCarry({ ...spec.reset, carryWallet: spec.reset.initialWallet })).toThrow("carry wallet must differ");
   // Equal wallets spelled differently are still equal.
   expect(() => expectedResetCarry({ ...spec.reset, initialWallet: "1", carryWallet: "01" })).toThrow("carry wallet must differ");

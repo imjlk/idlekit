@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
-import { createNumberEngine } from "../../../../engine/breakInfinity";
+import { createBreakInfinityEngine, createNumberEngine } from "../../../../engine/breakInfinity";
+import { finiteAmountLog10 } from "../finiteAmountLog10";
 import { builtinObjectiveFactories } from "./builtins";
 
 function getFactory(id: string) {
@@ -54,6 +55,24 @@ describe("builtinObjectiveFactories", () => {
     const args = makeScenarioAndRun();
     args.run.end.wallet.money.amount = 0;
     expect(getFactory("endMoneyLog10").create({}).score(args)).toBe(-300);
+  });
+
+  it("never ranks zero money above a positive amount below the floor", () => {
+    const score = (E: Parameters<typeof finiteAmountLog10>[0], text: string) => finiteAmountLog10(E, (E as any).from(text));
+    for (const E of [createNumberEngine(), createBreakInfinityEngine()]) {
+      const zero = score(E, "0");
+      expect(zero).toBe(-300);
+      // 1e-310 is a Number subnormal; breakInfinity keeps 1e-400 and 1e-9000 as positive amounts.
+      const ladder = ["1e-310", "1e-301", "1e-300", "1e-299", "1", "1e300"].map((text) => score(E, text));
+      for (const value of ladder) expect(value).toBeGreaterThanOrEqual(zero);
+      for (let i = 1; i < ladder.length; i++) expect(ladder[i]).toBeGreaterThanOrEqual(ladder[i - 1]!);
+      expect(ladder[3]).toBeGreaterThan(zero);
+    }
+    const big = createBreakInfinityEngine();
+    expect(score(big, "1e-400")).toBe(-300);
+    expect(score(big, "1e-9000")).toBe(-300);
+    // The score reads magnitude only, so a negative amount scores as its absolute value.
+    expect(score(big, "-1e10")).toBe(10);
   });
 
   it("includes new level-design KPI objectives", () => {

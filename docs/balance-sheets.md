@@ -101,7 +101,8 @@ idk balance ./my-balance/workflow.json --engine breakInfinity --check
 Currency targets accept decimal strings, for example `{"metric":"wallet",
 "unit":"MANA","min":"1e400","max":"2e400"}` for an `endWallet` metric.
 Decimal strings are bounded to 200 characters and accept ordinary or scientific
-notation. They do not accept suffixes, whitespace, NaN, Infinity or hexadecimal.
+notation; a decimal point must be followed by digits (`1.` is rejected), as in
+scenario amounts. They do not accept suffixes, whitespace, NaN, Infinity or hexadecimal.
 Bounds are compared inclusively against the reported decimal value without Number
 conversion or a comparison epsilon. Under breakInfinity, monetary results remain
 decimal strings in JSON, CSV and Markdown. Time and count bounds stay finite

@@ -10,7 +10,7 @@ import { canonicalJson, sha256Text } from "../scenario/scenarioContract";
 import type { ScenarioV1 } from "../scenario/types";
 import { independentBernoulli } from "../sim/analysis/distribution";
 import { runExperiment } from "../sim/analysis/experiment";
-import { expectedLinearEnd } from "../sim/integrationMatrix";
+import { expectedLinearEnd, linearCoveredSec } from "../sim/integrationMatrix";
 import type { ExecutionBatchV1 } from "../sim/executionBackend";
 import type { GrowthFitArtifactV1 } from "../sim/analysis/growthFit";
 import type { MilestoneReport } from "../sim/analysis/milestones";
@@ -479,7 +479,7 @@ type PartialFinalTickCase = Readonly<{
  * and requires the run to stop on duration at the horizon after ceil(duration / step) ticks.
  *
  * @evidence docs/requirements/active/analysis-integration-release-gates.md#req-pr20-integration-matrix The partial final tick is a declared conformance relation against the integer hand answer.
- * @evidenceReview docs/requirements/active/analysis-integration-release-gates.md#req-pr20-integration-matrix #91abfb0 Re-read the section: safe Number cases cover every second through a shorter final tick within 10,000 ticks; longer and undeclared cases do not apply.
+ * @evidenceReview docs/requirements/active/analysis-integration-release-gates.md#req-pr20-integration-matrix #493a4ea Re-read the section: safe Number cases cover the seconds the runner ticks, through a shorter final tick or up to the stop epsilon from a 1e12-second horizon, within 10,000 ticks; longer and undeclared cases do not apply.
  */
 export function checkPartialFinalTick(declared: boolean, value: PartialFinalTickCase): RelationCheck {
   if (!declared) return { ok: true, applicable: false, summary: "partial final tick relation is not declared" };
@@ -487,11 +487,13 @@ export function checkPartialFinalTick(declared: boolean, value: PartialFinalTick
   if (!Number.isSafeInteger(value.stepSec) || value.stepSec <= 0 ||
       !Number.isSafeInteger(value.durationSec) || value.durationSec < 0 ||
       !/^-?\d+$/.test(value.initial) || !/^-?\d+$/.test(value.incomePerSec)) return unsupported;
-  const ticks = Math.ceil(value.durationSec / value.stepSec);
+  // From a 1e12-second horizon the runner's stop epsilon can leave a final remainder unticked.
+  const coveredSec = linearCoveredSec(value);
+  const ticks = Math.ceil(coveredSec / value.stepSec);
   if (ticks > 10_000) return unsupported;
   const initialInteger = BigInt(value.initial);
   const incomeInteger = BigInt(value.incomePerSec);
-  const gainedInteger = incomeInteger * BigInt(value.durationSec);
+  const gainedInteger = incomeInteger * BigInt(coveredSec);
   const limit = BigInt(Number.MAX_SAFE_INTEGER);
   if ([initialInteger, incomeInteger, gainedInteger, initialInteger + gainedInteger].some((amount) => amount < -limit || amount > limit)) return unsupported;
   const engine = createNumberEngine();
@@ -518,11 +520,11 @@ export function checkPartialFinalTick(declared: boolean, value: PartialFinalTick
   });
   const expected = expectedLinearEnd(value);
   const actual = engine.toString(run.end.wallet.money.amount);
-  const ok = actual === expected && run.stop?.reason === "duration" && run.end.t === value.durationSec && run.stop?.steps === ticks;
+  const ok = actual === expected && run.stop?.reason === "duration" && run.end.t === coveredSec && run.stop?.steps === ticks;
   return {
     ok,
     applicable: true,
-    summary: `income ${value.incomePerSec}, step ${value.stepSec}, horizon ${value.durationSec}: end ${actual} against ${expected}, ${run.stop?.steps} ticks for ${ticks}, stop ${run.stop?.reason} at t=${run.end.t}`,
+    summary: `income ${value.incomePerSec}, step ${value.stepSec}, horizon ${value.durationSec} (${coveredSec} ticked): end ${actual} against ${expected}, ${run.stop?.steps} ticks for ${ticks}, stop ${run.stop?.reason} at t=${run.end.t}`,
   };
 }
 
