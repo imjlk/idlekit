@@ -9,16 +9,15 @@ function parsePackOutput(raw: string): unknown {
   return parseNpmPackEntries(raw);
 }
 
-const results = await Promise.all(
-  packages.map(async (pkg) => {
-    const cwd = resolve(root, pkg);
-    const raw = await $`npm pack --json`.cwd(cwd).text();
-    return {
-      packageDir: cwd,
-      pack: parsePackOutput(raw),
-    };
-  }),
-);
+// Pack one package at a time. Each prepack rewrites its own package.json between build and
+// postpack, and the next package's ttsc build reads that manifest, so concurrent packs fail
+// with TtscUnstableGenerationError.
+const results: { packageDir: string; pack: unknown }[] = [];
+for (const pkg of packages) {
+  const cwd = resolve(root, pkg);
+  const raw = await $`npm pack --json`.cwd(cwd).text();
+  results.push({ packageDir: cwd, pack: parsePackOutput(raw) });
+}
 
 const out = {
   generatedAt: new Date().toISOString(),
