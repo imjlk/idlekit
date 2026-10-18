@@ -1,6 +1,7 @@
 import { basename, dirname, relative, resolve } from "path";
 import { cliError, usageError } from "../errors";
 import { fileExists, readTextFile, sha256Hex, writeTextFile } from "../runtime/bun";
+import { assertOutputNotInput } from "../io/writeOutput";
 import { runSelfCli } from "../runtime/selfCli";
 
 export type SupportedShell = "zsh" | "bash" | "fish" | "powershell";
@@ -182,7 +183,8 @@ export async function writePluginTrust(args: {
   if (args.plugins.length === 0) {
     throw usageError("setup plugin-trust requires at least one --plugin path.");
   }
-  const outPath = resolve(args.outPath);
+  // --force replaces an earlier trust file, never a plugin the new one pins.
+  const outPath = await assertOutputNotInput(args.outPath, { protectedInputs: args.plugins });
   if ((await fileExists(outPath)) && !args.force) {
     throw usageError(`Output file already exists: ${outPath}`, "Pass --force true to overwrite.");
   }

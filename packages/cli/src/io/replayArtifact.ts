@@ -1,7 +1,7 @@
-import { resolve } from "path";
 import { hashContent } from "./outputMeta";
 import type { OutputMeta } from "./outputMeta";
 import { writeTextFile } from "../runtime/bun";
+import { assertOutputNotInput } from "./writeOutput";
 
 export type ReplayArtifactV1 = Readonly<{
   v: 1;
@@ -111,7 +111,7 @@ export async function writeReplayArtifact(args: {
   meta: OutputMeta;
   extra?: Readonly<Record<string, unknown>>;
 }): Promise<string> {
-  const abs = resolve(args.outPath);
+  const abs = await assertOutputNotInput(args.outPath);
   const runId = args.meta.runId;
   const seed = args.meta.seed;
   const scenarioHash = args.meta.scenarioHash;

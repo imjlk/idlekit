@@ -2,14 +2,18 @@ import { $ } from "bun";
 import { realpath } from "fs/promises";
 import { dirname } from "path";
 import { cliError, errorDetail } from "../errors";
+import { recordInputRead } from "./invocation";
 
 const MAX_CAPTURE_BYTES = 8 * 1024 * 1024;
 
+// Each read is recorded so an output of the same command cannot replace it, even when another input named it.
 export async function readTextFile(path: string): Promise<string> {
+  recordInputRead(path);
   return Bun.file(path).text();
 }
 
 export async function readJsonFile<T>(path: string): Promise<T> {
+  recordInputRead(path);
   return Bun.file(path).json() as Promise<T>;
 }
 

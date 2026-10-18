@@ -20,6 +20,7 @@ import {
 } from "@idlekit/core";
 import type { EconPluginModule } from "./types";
 import { fileExists, readTextFile, sha256Hex } from "../runtime/bun";
+import { recordInputRead } from "../runtime/invocation";
 import { designObjectiveFactories } from "../lib/designObjectives";
 import { createLinearFactory } from "./linearModel";
 import { asPluginTrustError } from "./trust-error";
@@ -342,6 +343,7 @@ function isPathInsideRoot(pathAbs: string, rootAbs: string): boolean {
 }
 
 async function sha256File(pathAbs: string): Promise<string> {
+  recordInputRead(pathAbs);
   const buffer = await Bun.file(pathAbs).bytes();
   return sha256Hex(buffer);
 }
@@ -396,6 +398,18 @@ async function pluginClosureDigest(entryAbs: string, entryDigest: string): Promi
     .map(([file, digest]) => `${relative(baseDir, file).split(sep).join("/")}\0${digest}`)
     .sort();
   return sha256Hex(listing.join("\n"));
+}
+
+/**
+ * Read a plugin's local import closure, without loading it, so the current command records every file in it as an
+ * input. A plugin that no longer resolves adds what it can; the replay that loads it reports the failure.
+ */
+export async function recordPluginClosureReads(entryAbs: string): Promise<void> {
+  try {
+    await pluginClosureDigest(entryAbs, await sha256File(entryAbs));
+  } catch {
+    // The files read before the failure are already recorded.
+  }
 }
 
 async function resolveAndValidatePluginPath(input: string, allowedRoots: readonly string[]): Promise<string> {

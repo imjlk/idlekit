@@ -24,10 +24,17 @@ test("public cohort API accepts retention-only rows and preserves unobserved val
   const observation = observeCohort(rows, 7);
   expect(observedRetentionRates(observation)).toEqual({ d1: 1 / 3, d7: 1 / 3 });
   expect(observation.retention[2]).toMatchObject({ status: "not-observed", rate: null, interval95: null });
-  const comparisons = compareRetention(observation, { d1: 0.5 });
+  // D30 is configured but past the cutoff, so it stays not-observed rather than compared.
+  const comparisons = compareRetention(observation, { d1: 0.5, d30: 0.09 });
   const status: "not-observed" | "unconfigured" | "compared" = comparisons[0]!.status;
   expect(status).toBe("compared");
   expect(comparisons[0]?.differencePercentagePoints).toBeCloseTo(-100 / 6);
+  expect(comparisons).toEqual([
+    { day: 1, assumption: 0.5, observed: 1 / 3, differencePercentagePoints: comparisons[0]!.differencePercentagePoints, status: "compared" },
+    { day: 7, assumption: null, observed: 1 / 3, differencePercentagePoints: null, status: "unconfigured" },
+    { day: 30, assumption: 0.09, observed: null, differencePercentagePoints: null, status: "not-observed" },
+    { day: 90, assumption: null, observed: null, differencePercentagePoints: null, status: "not-observed" },
+  ]);
   const applied = applyRetentionPatch({ scenario, observation });
   expect(applied.monetization?.retention).toEqual({ ...scenario.monetization?.retention, d1: 1 / 3, d7: 1 / 3 });
   const { retention: _old, ...other } = scenario.monetization!;

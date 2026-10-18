@@ -5,6 +5,7 @@ import { suggestion } from "@gunshi/plugin-suggestion";
 import { z } from "zod";
 import { usageError } from "../errors";
 import { getTerminalInfo, prompt, type PromptApi, type TerminalInfo } from "./prompt";
+import { runWithInvocation } from "./invocation";
 export type { PromptApi, TerminalInfo } from "./prompt";
 
 export type Option<T = unknown> = Readonly<{ schema: z.ZodType<T>; description?: string }>;
@@ -119,9 +120,11 @@ export async function createCLI(config: { name: string; version: string; descrip
           if (!parsed.success) throw usageError(`Invalid --${key}: ${parsed.error.message}`);
           flags[key] = parsed.data;
         }
-        await selected.handler({ flags, positional: [...ctx.positionals.slice(ctx.commandPath.length), ...ctx.rest], terminal: getTerminalInfo(), prompt,
+        const positional = [...ctx.positionals.slice(ctx.commandPath.length), ...ctx.rest];
+        // Output writers read the parsed arguments so no --out can replace a file this command reads.
+        await runWithInvocation({ positional, flags }, () => selected.handler({ flags, positional, terminal: getTerminalInfo(), prompt,
           cwd: process.cwd(), runtime: { args: [...ctx._] },
-        });
+        }));
       },
     });
   };

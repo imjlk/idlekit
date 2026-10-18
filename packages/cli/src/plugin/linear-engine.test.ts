@@ -1,5 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { compileScenario, createBreakInfinityEngine, createNumberEngine, runCandidateAndScore, runScenario, type ScenarioV1 } from "@idlekit/core";
+import { resolve } from "path";
+import { NUMBER_ONLY_COMMANDS } from "./linearModel";
 import { loadRegistries } from "./load";
 import { toCliError } from "../errors";
 
@@ -89,8 +91,18 @@ describe("linear engine arithmetic", () => {
     expect(cli.code).toBe("SCENARIO_INVALID");
     expect(cli.message).toContain("simulate/evaluate/experience/ltv/compare/tune/balance");
     expect(cli.hint).toContain("number engine");
-    expect(cli.hint).toContain("report");
-    expect(cli.hint).not.toMatch(/compare|tune|balance/);
+    for (const command of ["report", "analyze", "eta", "growth", "prestige-cycle"]) expect(cli.hint).toContain(command);
+    expect(cli.hint).not.toMatch(/compare|tune|balance|simulate/);
+  });
+  it("lists every command that builds the number engine itself", async () => {
+    const hardCoded: string[] = [];
+    for await (const path of new Bun.Glob("*.ts").scan({ cwd: resolve(import.meta.dir, "../commands"), absolute: true })) {
+      if (path.endsWith(".test.ts")) continue;
+      const body = await Bun.file(path).text();
+      const name = /^\s+name: "([^"]+)"/m.exec(body)?.[1];
+      if (body.includes("createNumberEngine()") && name) hardCoded.push(name);
+    }
+    expect(hardCoded.sort()).toEqual([...NUMBER_ONLY_COMMANDS].sort());
   });
   it("rejects overflow from bounded Number inputs rather than returning a successful Infinity result", () => {
     const raw = input(1); raw.initial.wallet.amount = "1e308";

@@ -6,7 +6,7 @@ import { buildOutputMeta, outputSchemaRefForCommand } from "../io/outputMeta";
 import { writeOutput } from "../io/writeOutput";
 import { closeSync, lstatSync, openSync, readlinkSync, realpathSync, statSync, unlinkSync } from "fs";
 import { basename, dirname, resolve } from "path";
-import { readJsonFile, writeStdout, writeTextFile } from "../runtime/bun";
+import { readJsonFile } from "../runtime/bun";
 import { readJudgeInputs } from "../lib/evaluation/input";
 import { evaluateRules } from "../lib/evaluation/rules";
 // Type only. main.ts registers this command for every invocation, so the opt-in provider loads after --provider jev.
@@ -210,6 +210,9 @@ export async function runJudge(flags: {
   if (flags.provider === "jev" && flags.format === "csv") {
     throw usageError("--provider jev writes json or md. csv cannot hold the rules report and the advisory together.");
   }
+  // The report is written after the inputs are read, and a Jev run may already have paid for its request by then.
+  const overwritten = flags.out ? [analysisPath, flags.rubric].find((input) => sameFile(flags.out!, input)) : undefined;
+  if (overwritten) throw usageError(`Output path must not overwrite an input file: ${overwritten}`);
   // The cache is written after the inputs are read. Pointing it at an input would overwrite that input, and pointing
   // it at the output would let the bundle replace it, so the next run would pay for the request again.
   if (flags.provider === "jev" && flags.cache) {
@@ -254,6 +257,7 @@ export async function runJudge(flags: {
     await writeOutput({
       format: flags.format,
       outPath: flags.out,
+      protectedInputs: [analysisPath, flags.rubric],
       data:
         flags.format === "md" ? renderJudgeMarkdown(report) : flags.format === "csv" ? judgeCsvRows(report) : report,
     });
@@ -294,18 +298,13 @@ export async function runJudge(flags: {
       }),
       ...(advisory.answers.length === 0 ? ["None."] : []),
     ].join("\n");
-    if (flags.out) {
-      const outPath = resolve(flags.out);
-      await writeTextFile(outPath, `${markdown}\n`);
-      console.log(`Wrote md output to ${outPath}`);
-    } else {
-      await writeStdout(`${markdown}\n`);
-    }
+    await writeOutput({ format: "md", outPath: flags.out, data: markdown, protectedInputs: [analysisPath, flags.rubric] });
     return bundle;
   }
   await writeOutput({
     format: flags.format,
     outPath: flags.out,
+    protectedInputs: [analysisPath, flags.rubric],
     data: bundle,
     meta: buildOutputMeta({
       command: "judge",

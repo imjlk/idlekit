@@ -23,7 +23,7 @@ export type { SessionOfflineCreditPolicy, SessionOfflinePreparation, SessionOffl
  * `state.t` stays the reward clock. Wall time is only on the session report.
  *
  * @evidence docs/requirements/active/session-clock.md#req-pr06-session-clock Wall elapsed, reward time, and active time are separate fields. Cap and decay do not move the next block earlier.
- * @evidenceReview docs/requirements/active/session-clock.md#req-pr06-session-clock #6fee79f Re-read the section: a completed 12-hour absence with a 1-hour cap stays elapsed 43200 and credited 3600, a gap cut by a stop reports only the absence that earned its stepped reward, and state.t is not rewritten to wall time. The until-copy sentence is about simulateSessionPattern, not this name.
+ * @evidenceReview docs/requirements/active/session-clock.md#req-pr06-session-clock #8327a7b Re-read the section: a completed 12-hour absence with a 1-hour cap stays elapsed 43200 and credited 3600, a gap cut by a stop reports only the absence that earned its stepped reward, and state.t is not rewritten to wall time. The until-copy sentence and the prepareOffline paragraph are about simulateSessionPattern, not this name.
  */
 export const sessionClockContract = "idlekit.session-clock" as const;
 
@@ -251,7 +251,7 @@ function withClocks<N, U extends string, Vars>(
  * whose cap- and decay-adjusted reward reaches the stepped reward, not at the scheduled gap end.
  *
  * @evidence docs/requirements/active/session-clock.md#req-pr06-session-clock Schedules the next block on wall time and reports elapsed, credited, and active time separately.
- * @evidenceReview docs/requirements/active/session-clock.md#req-pr06-session-clock #6fee79f Re-read the section: cap and decay do not pull the next active block forward, policy none does not call decide, until is read once per committed state on a copy of it, goals stop only once every goal is reached, a stop inside an offline gap ends that gap at the smallest absence whose cap- and decay-adjusted reward reaches the stepped reward, and maxSteps is a per-block budget counted in budgetStops, after which wall time still reaches the planned block end without crediting the rest as offline time.
+ * @evidenceReview docs/requirements/active/session-clock.md#req-pr06-session-clock #8327a7b Re-read the section: prepareOffline runs through prepareOfflineSegment once per nonempty gap before applyOfflineSeconds, its model, stepSec and credit policy reach only that gap while the requested absence stays wallEnd minus the gap start, and credited and lost seconds come from the prepared policy; cap and decay do not pull the next active block forward, policy none does not call decide, until is read once per committed state on a copy of it, goals stop only once every goal is reached, a stop inside an offline gap ends that gap at the smallest absence whose cap- and decay-adjusted reward reaches the stepped reward, and maxSteps is a per-block budget counted in budgetStops, after which wall time still reaches the planned block end without crediting the rest as offline time.
  */
 export function simulateSessionPattern<N, U extends string, Vars>(args: {
   scenario: CompiledScenario<N, U, Vars>;
