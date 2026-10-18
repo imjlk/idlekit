@@ -63,7 +63,7 @@ function echo(value: AnalysisTrialTaskV1, endMoney: string): AnalysisTrialOutcom
  * @evidence ./executionBackend.ts#defaultExecutionBudget Reads the budget.
  * @evidenceReview ./executionBackend.ts#defaultExecutionBudget #0dc2e47 Re-read the frozen defaults: maxWorkers is 0, and a reflective write cannot raise maxRetries from 0.
  * @evidence ./executionBackend.ts#runLocalBatch Runs the batch in this process.
- * @evidenceReview ./executionBackend.ts#runLocalBatch #6cb78c5 Re-read runLocalBatch after the per-task window and the validate-first cost: two tasks run locally with no spawn cost, record UTF-8 serialized bytes, and form a full distribution.
+ * @evidenceReview ./executionBackend.ts#runLocalBatch #a93c3a0 Re-read runLocalBatch after the per-task window, the validate-first cost, and the abort recheck after each runner return: two tasks run locally with no spawn cost, record UTF-8 serialized bytes, and form a full distribution.
  */
 export function keepsLocalDefault(): void {
   expect(executionLocalDefault).toBe("local-default");
@@ -286,17 +286,17 @@ export function reducesInLogicalOrder(): void {
 
 /**
  * @evidence docs/requirements/active/worker-execution-backend.md#req-dx05-failure-boundary Abort, timeout, retry, and the queue bound stay distinct from a full distribution.
- * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-failure-boundary #2262fcb Re-read the section, then ran this function: the retry kept the same seed, the aborted batch was not full, three tasks each inside their own window all finished, a thrown trial retried and failed alone, a failed attempt past the window was a timeout with no retry, a pre-aborted batch over the queue bound was cancelled, and an infinite, NaN, or negative budget field threw before any task ran.
+ * @evidenceReview docs/requirements/active/worker-execution-backend.md#req-dx05-failure-boundary #717cf23 Re-read the section, then ran this function: the retry kept the same seed, the task whose runner cancelled the batch was cancelled with its one attempt counted, the aborted batch was not full, three tasks each inside their own window all finished, a thrown trial retried and failed alone, a failed attempt past the window was a timeout with no retry, a pre-aborted batch over the queue bound was cancelled, and an infinite, NaN, or negative budget field threw before any task ran.
  * @evidence ./executionBackend.ts#assertExecutionBudget Refuses a budget field that is not a finite non-negative integer.
  * @evidenceReview ./executionBackend.ts#assertExecutionBudget #4672303 Infinite maxRetries, NaN stepBudget, a negative queueBound, and a 3000000000 ms timeout throw, and the default budget passes.
  * @evidence ./executionBackend.ts#runLocalBatch Bounds each task by its own window and turns a thrown runner into a failed outcome.
  * @evidence ./executionBackend.ts#readTrialOutcome Applies the same valid-success contract to local and worker results.
  * @evidenceReview ./executionBackend.ts#readTrialOutcome #11c2975 Re-read captured own data fields: identity must match, status and attempt counts are checked, and successful outcomes require a digest and decimal money; malformed local successes and revoked proxies fail alone and valid sibling outcomes still run.
- * @evidenceReview ./executionBackend.ts#runLocalBatch #6cb78c5 Re-read admission ahead of measuring, the pre-abort check ahead of the queue bound, and the loop: an oversized batch reports no bytes, the runner sees a frozen budget and a frozen task snapshot, no batch deadline remains, the window applies to every attempt before its status, a 2 ms task under a 5 ms budget is ok in third place, a throw is trial-failed with attempts counted, and a slow failure stops at one attempt.
+ * @evidenceReview ./executionBackend.ts#runLocalBatch #a93c3a0 Re-read admission ahead of measuring, the pre-abort check ahead of the queue bound, and the loop, which reads the signal again after each runner returns or throws and ahead of the window: an oversized batch reports no bytes, the runner sees a frozen budget and a frozen task snapshot, no batch deadline remains, the window applies to every attempt before its status, a 2 ms task under a 5 ms budget is ok in third place, a throw is trial-failed with attempts counted, and a slow failure stops at one attempt.
  * @evidence ./executionBackend.ts#executionFailureBoundary Reads the boundary marker.
  * @evidenceReview ./executionBackend.ts#executionFailureBoundary #5e9d9f9 The declaration is not-a-partial-distribution.
  * @evidence ./executionBackend.ts#createLocalExecutionBackend Submits a batch that cancel or an aborted signal stops.
- * @evidenceReview ./executionBackend.ts#createLocalExecutionBackend #415b3fa Cancel during the first task cancels the second, and a signal aborted before submit runs nothing.
+ * @evidenceReview ./executionBackend.ts#createLocalExecutionBackend #415b3fa Cancel during the first task cancels that task with its attempt counted and the second without one, and a signal aborted before submit runs nothing.
  */
 export function boundsFailures(): void {
   expect(readTrialOutcome(echo(task(0), "1"), task(0))).toEqual(echo(task(0), "1"));
@@ -313,7 +313,9 @@ export function boundsFailures(): void {
     { ...defaultExecutionBudget, maxRetries: 1 },
   );
   const aborted = holder.backend.submit([task(0), task(1)], { batchId: "bounds" });
-  expect(aborted.outcomes[0]!.status).toBe("ok");
+  // The task whose runner cancelled the batch is cancelled too, with its running attempt counted.
+  expect(aborted.outcomes[0]!.status).toBe("cancelled");
+  expect(aborted.outcomes[0]!.attempts).toBe(1);
   expect(aborted.outcomes[1]!.status).toBe("cancelled");
   expect(aborted.outcomes[1]!.reason).toBe("abort");
   expect(aborted.fullDistribution).toBe(false);
@@ -516,7 +518,43 @@ describe("execution backend", () => {
       options.signal = new AbortController().signal;
       return echo(item, "1");
     }, options);
-    expect(batch.outcomes.map((item) => item.status)).toEqual(["ok", "cancelled"]);
+    expect(batch.outcomes.map((item) => item.status)).toEqual(["cancelled", "cancelled"]);
+  });
+  it("cancels the running attempt when the signal aborts before the runner returns", () => {
+    // A lone task: without the recheck its ok result would make a cancelled batch a full distribution.
+    const lone = new AbortController();
+    const single = runLocalBatch([task(0)], (item) => { lone.abort(); return echo(item, "1"); }, { signal: lone.signal });
+    expect(single.outcomes[0]).toMatchObject({ status: "cancelled", reason: "abort", attempts: 1, semanticDigest: null, endMoney: null });
+    expect(single.fullDistribution).toBe(false);
+    expect(single.reduction.endMoney).toBeNull();
+    // An abort during a retry counts both attempts and is not retried again.
+    const retrying = new AbortController();
+    let calls = 0;
+    const retried = runLocalBatch([task(0)], (item) => {
+      calls += 1;
+      if (calls === 1) return { ...echo(item, "1"), status: "failed", reason: "trial-failed", semanticDigest: null, endMoney: null };
+      retrying.abort();
+      return echo(item, "1");
+    }, { signal: retrying.signal, budget: { ...defaultExecutionBudget, maxRetries: 3 } });
+    expect(calls).toBe(2);
+    expect(retried.outcomes[0]).toMatchObject({ status: "cancelled", reason: "abort", attempts: 2 });
+    // A runner that aborts and then throws is cancelled, not a retryable trial failure.
+    const throwing = new AbortController();
+    let throwCalls = 0;
+    const thrown = runLocalBatch([task(0)], () => { throwCalls += 1; throwing.abort(); throw new Error("after abort"); }, {
+      signal: throwing.signal, budget: { ...defaultExecutionBudget, maxRetries: 2 },
+    });
+    expect(throwCalls).toBe(1);
+    expect(thrown.outcomes[0]).toMatchObject({ status: "cancelled", reason: "abort", attempts: 1 });
+    // backend.cancel from the last task's runner leaves no ok outcome for that task.
+    const holder: { backend?: ReturnType<typeof createLocalExecutionBackend> } = {};
+    holder.backend = createLocalExecutionBackend((item) => {
+      if (item.logicalIndex === 1) holder.backend?.cancel("last");
+      return echo(item, "1");
+    });
+    const last = holder.backend.submit([task(0), task(1)], { batchId: "last" });
+    expect(last.outcomes.map((item) => [item.status, item.attempts])).toEqual([["ok", 1], ["cancelled", 1]]);
+    expect(last.fullDistribution).toBe(false);
   });
   it("owns a validated frozen backend budget from construction", () => {
     const supplied = { ...defaultExecutionBudget, maxRetries: 1 };

@@ -6,7 +6,7 @@ Korean version: [optional-analysis-judge_ko.md](./optional-analysis-judge_ko.md)
 
 `idk judge <analysis.json> --rubric <rubric.json> --provider rules` is the command. `--provider` accepts `rules` only. `idk doctor` still diagnoses the local CLI. `idk evaluate` does not call this judge unless you run `judge` yourself.
 
-The rubric is data: schema version 1, contract `idlekit.judge.rubric.v1`, a rubric version, and rules. Each rule names a metric id, an operator, a threshold, a unit, a severity, and a missing policy. Unknown fields are rejected, and so is a nonfinite threshold or upper threshold. The command does not evaluate rubric strings as code.
+The rubric is data: schema version 1, contract `idlekit.judge.rubric.v1`, a rubric version, and rules. Each rule names a metric id, an operator, a threshold, a unit, a severity, and a missing policy. A rule may also pin `metricVersion`. A pinned rule reads only that version of its metric id, so a rubric calibrated for version 1 is not silently applied to version 2: an artifact that carries the metric only at another version is rejected as a missing ref. A rule without a pin (omitted or null, which keeps older rubrics valid) reads the metric id at any version. Either way the diagnostic's `evidenceRefs` are `metric:<id>` followed by `metric-version:<n>`, the version it read. The version is its own ref, so a metric id containing `@` or `:` cannot collide with it, and the report keeps the `idlekit.judge.v1` shape: no field is added. Unknown fields are rejected, and so is a nonfinite threshold or upper threshold. The command does not evaluate rubric strings as code.
 
 Numeric pass and fail come from the balance-check engine. A measured 1.5h first reset passes `lte` 2. A measured 3h fails inside `numerical` and is also a semantic `conflict`. The numerical object is not rewritten. `baselineRewrite` stays false. An amount decimal is not narrowed to a JavaScript number.
 
@@ -14,7 +14,7 @@ A rubric metric id that is not on the artifact is rejected, and so is one that m
 
 English and Korean sentences are templates selected by `recommendationId`. A rule's `recommendationId` selects the template for its own measured conflict. Pass, estimate, insufficient, and unsupported outcomes use their fixed templates. The advisory digest is `rules:<rubricVersion>:<recommendation ids>`. The same inputs produce the same digest. The path does not fetch.
 
-The structural contract is `idlekit.judge.v1` at [docs/schemas/judge.output.schema.json](./schemas/judge.output.schema.json). The generator also writes [docs/schemas/generated/judge.v1.schema.json](./schemas/generated/judge.v1.schema.json). This does not replace `ScenarioV1` or the balance-check document. JSON output is exactly that document and carries no `_meta` envelope. `--out` writes JSON, Markdown, and CSV alike. CSV has one row per rule with the numerical verdict, evidence, and diagnostic.
+The structural contract is `idlekit.judge.v1` at [docs/schemas/judge.output.schema.json](./schemas/judge.output.schema.json). The generator also writes [docs/schemas/generated/judge.v1.schema.json](./schemas/generated/judge.v1.schema.json). This does not replace `ScenarioV1` or the balance-check document. JSON output is exactly that document and carries no `_meta` envelope. `--out` writes JSON, Markdown, and CSV alike. CSV has one row per rule with the numerical verdict, evidence, diagnostic, and the metric version it read; Markdown names that version on each line.
 
 Reproduction label for the hour examples is `18`.
 
