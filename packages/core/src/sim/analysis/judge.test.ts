@@ -144,9 +144,9 @@ export function acceptsRulesProvider(): void {
  * @evidence ./judge.ts#judgeCheckReuse Reads the check-reuse marker.
  * @evidenceReview ./judge.ts#judgeCheckReuse #6aa2e90 The declaration is checks-not-recomputed.
  * @evidence ./judge.ts#judgeArtifact Maps artifact readings into balance checks and builds the report.
- * @evidenceReview ./judge.ts#judgeArtifact #c85ec46 Re-read the function, toObservation, checkFor, and evaluateGroups: it rejects a nonfinite threshold in a typed rubric, judges each observation group separately so a rule mismatches only against its own stand-ins in either rule order, and checks keep the rubric method and unit, the observation takes the rule's method when the reading records none and its unit when an unavailable amount records none, observations are shared per distinct identity, and it rejects a semantically invalid artifact and a metric id that matches two readings, maps each metric to one observation, the numerical block equals a direct evaluateBalanceChecks call for 3h, an observed or estimated amount reading is unsupported with no value and no estimate entry, and two rules on one metric both pass.
+ * @evidenceReview ./judge.ts#judgeArtifact #897f023 Re-read the function, ruleReadings, toObservation, checkFor, and evaluateGroups: it rejects a nonfinite threshold in a typed rubric, selects readings by metric id and pinned version, keys groups by the reading version too, records each diagnostic metricVersion, judges each observation group separately so a rule mismatches only against its own stand-ins in either rule order, and checks keep the rubric method and unit, the observation takes the rule's method when the reading records none and its unit when an unavailable amount records none, observations are shared per distinct identity, and it rejects a semantically invalid artifact and a metric id that matches two readings, maps each metric to one observation, the numerical block equals a direct evaluateBalanceChecks call for 3h, an observed or estimated amount reading is unsupported with no value and no estimate entry, and two rules on one metric both pass.
  * @evidence ./judge.ts#toObservation Maps a validated reading into the numerical judge's effective identity and availability.
- * @evidenceReview ./judge.ts#toObservation #4a4fe85 Re-read the mapper: a measured time reading has the rule method and unit, unspecified provenance fields, the artifact algorithm version, and the recorded value; amounts, estimates, and withheld coverage never provide a measured numerical point.
+ * @evidenceReview ./judge.ts#toObservation #86dd72d Re-read the mapper: an estimate entry carries the reading metricVersion, a measured time reading has the rule method and unit, unspecified provenance fields, the artifact algorithm version, and the recorded value; amounts, estimates, and withheld coverage never provide a measured numerical point.
  */
 export function reusesBalanceChecks(): void {
   expect(judgeCheckReuse).toBe("checks-not-recomputed");
@@ -255,11 +255,13 @@ export function reusesBalanceChecks(): void {
 
 /**
  * @evidence docs/requirements/active/optional-analysis-judge.md#req-pr18-evidence-refs Bad versions and a missing metric id are rejected.
- * @evidenceReview docs/requirements/active/optional-analysis-judge.md#req-pr18-evidence-refs #a078dea Re-read the section, then ran this function: extra fields and missing refs fail.
+ * @evidenceReview docs/requirements/active/optional-analysis-judge.md#req-pr18-evidence-refs #4a4460c Re-read the section, then ran this function: extra fields and missing refs fail, a rule pinned to metricVersion 1 is a missing ref against a lone version 2 reading, a pin selects its version out of two, and an unpinned rule reads version 2 and its diagnostic reports reading 2 with rubric null.
  * @evidence ./judge.ts#judgeEvidenceRefs Reads the evidence-ref marker.
  * @evidenceReview ./judge.ts#judgeEvidenceRefs #ad623a2 The declaration is existing-refs-only.
  * @evidence ./judge.ts#parseJudgeRubric Validates a rubric before it is used.
- * @evidenceReview ./judge.ts#parseJudgeRubric #4eeb18f Re-read the function and nonfiniteThresholds: a complete rubric is accepted, a bad version, an unknown root or rule field, an empty rule list, and a nonfinite threshold or upper threshold are rejected.
+ * @evidenceReview ./judge.ts#parseJudgeRubric #4eeb18f Re-read the function and nonfiniteThresholds: a complete rubric is accepted, a numeric or null metricVersion pin is accepted, a bad version, an unknown root or rule field, an empty rule list, a string metricVersion, and a nonfinite threshold, upper threshold, or metricVersion are rejected.
+ * @evidence ./judge.ts#ruleReadings Selects the readings a rule may judge by metric id and pinned version.
+ * @evidenceReview ./judge.ts#ruleReadings #bf0fb9d Re-read the filter: a pinned rule reads only its version, an unpinned rule reads any version of its metric id, and two pins on one metric each read their own reading.
  */
 export function rejectsBadRefs(): void {
   expect(judgeEvidenceRefs).toBe("existing-refs-only");
@@ -320,6 +322,48 @@ export function rejectsBadRefs(): void {
   );
   expect(duplicate.ok).toBe(false);
   if (!duplicate.ok) expect(duplicate.issues).toEqual(["ambiguous evidenceRef metric:first-reset matches 2 readings"]);
+  // metricVersion is optional: omitted and null leave the rule unpinned; a pin must be a finite number.
+  expect(parseJudgeRubric(rubric([rule({ metricVersion: 1 })])).ok).toBe(true);
+  expect(parseJudgeRubric(rubric([rule({ metricVersion: null })])).ok).toBe(true);
+  expect(parseJudgeRubric(rubric([{ ...rule(), metricVersion: "1" } as unknown as JudgeRuleV1])).ok).toBe(false);
+  const infiniteVersion = parseJudgeRubric(
+    JSON.parse(JSON.stringify(rubric([rule({ metricVersion: 1 })])).replace('"metricVersion":1', '"metricVersion":1e400')),
+  );
+  expect(infiniteVersion.ok).toBe(false);
+  if (!infiniteVersion.ok) expect(infiniteVersion.issues).toEqual(["$input.rules[0].metricVersion finite number or null"]);
+  // A rule pinned to version 1 does not judge a lone version 2 reading; the pinned ref is missing.
+  const v1 = reading({ reading: "observed", status: "ok", value: 1.5 });
+  const v2 = reading({ reading: "observed", status: "ok", value: 3, metricVersion: 2 });
+  const pinnedAway = judgeArtifact(artifact([v2]), rubric([rule({ metricVersion: 1 })]));
+  expect(pinnedAway.ok).toBe(false);
+  if (!pinnedAway.ok) {
+    expect(pinnedAway.issues).toEqual(["missing evidenceRef metric:first-reset@1 (artifact has metric:first-reset@2)"]);
+  }
+  // A pin picks its own version when the artifact carries both, so the pair is no longer ambiguous.
+  const pinnedBoth = judgeArtifact(artifact([v1, v2]), rubric([rule({ metricVersion: 2 })]));
+  expect(pinnedBoth.ok).toBe(true);
+  if (!pinnedBoth.ok) return;
+  expect(pinnedBoth.report.numerical.results[0]?.evidence.value).toBe(3);
+  expect(pinnedBoth.report.diagnostics[0]?.evidenceRefs).toEqual(["metric:first-reset@2"]);
+  expect(pinnedBoth.report.diagnostics[0]?.metricVersion).toEqual({ reading: 2, rubric: 2 });
+  // Two rules pinned to different versions of one metric are judged against their own readings.
+  const perVersion = judgeArtifact(
+    artifact([v1, v2]),
+    rubric([rule({ id: "v1", metricVersion: 1 }), rule({ id: "v2", metricVersion: 2 })]),
+  );
+  expect(perVersion.ok).toBe(true);
+  if (!perVersion.ok) return;
+  expect(perVersion.report.numerical.results.map((result) => [result.id, result.verdict, result.evidence.value])).toEqual([
+    ["v1", "pass", 1.5],
+    ["v2", "fail", 3],
+  ]);
+  // An unpinned rule reads any version and the diagnostic records the one it read.
+  const unpinned = judgeArtifact(artifact([v2]), rubric());
+  expect(unpinned.ok).toBe(true);
+  if (!unpinned.ok) return;
+  expect(unpinned.report.diagnostics[0]?.evidenceRefs).toEqual(["metric:first-reset"]);
+  expect(unpinned.report.diagnostics[0]?.metricVersion).toEqual({ reading: 2, rubric: null });
+  expect(validateJudgeReport(JSON.parse(JSON.stringify(unpinned.report))).success).toBe(true);
 }
 
 /**
@@ -414,7 +458,7 @@ export function withholdsHealthLabels(): void {
   expect(estimated.ok).toBe(true);
   if (!estimated.ok) return;
   expect(estimated.report.numerical.pass).toBe(false);
-  expect(estimated.report.estimatedObservations).toEqual([{ metricId: "first-reset", value: 1.5, reason: null }]);
+  expect(estimated.report.estimatedObservations).toEqual([{ metricId: "first-reset", metricVersion: 1, value: 1.5, reason: null }]);
   expect(estimated.report.diagnostics[0]?.category).toBe("estimate");
   expect(estimated.report.diagnostics[0]?.status).toBe("insufficient");
   // missingPolicy fail fails the numerical gate, but a missing reading is still insufficient, not a conflict.

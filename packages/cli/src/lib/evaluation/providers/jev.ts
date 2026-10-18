@@ -4,6 +4,7 @@ import { basename, dirname, resolve } from "path";
 import {
   jevAlgorithmVersion,
   judgeArtifact,
+  ruleReadings,
   toObservation,
   validateJevAdvisory,
   type AnalysisArtifactV1,
@@ -144,7 +145,7 @@ export function isSafeJevReport(report: JudgeReportV1, keyMaterial: string): boo
 
 /**
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-secret-boundary The projection keeps metrics, assumptions, and rubric intent.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-secret-boundary #2f2eef3 Re-read the updated section: raw source and secrets are dropped, and a local path in any host layout is replaced in place.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-secret-boundary #6f1c48d Re-read the section after the per-rule pinned metricVersion wording: each rule projects the reading the numerical judge reads, raw source and secrets are dropped, and a local path in any host layout is replaced in place.
  */
 export function projectJevState(
   artifact: AnalysisArtifactV1,
@@ -152,21 +153,21 @@ export function projectJevState(
   keyMaterial: string,
 ): JevProjection {
   // The numerical judge compares the recorded meaning, method, and unit with the rule. Jev sees the same identity.
-  // The numerical judge reads the first reading of each metric id. Jev sees that reading and no other.
+  // Each rule sees the first reading the numerical judge may read for it: its metric id, at its pinned
+  // metricVersion when it pins one. Jev sees that reading and no other.
   // Only metrics a rule names are projected, so readings no question asks about do not count against the size limit.
-  const referenced = new Set(rubric.rules.map((rule) => rule.metricId));
-  const seenMetricIds = new Set<string>();
-  const firstReadings = artifact.metrics.filter((metric) => {
-    if (!referenced.has(metric.metricId) || seenMetricIds.has(metric.metricId)) return false;
-    seenMetricIds.add(metric.metricId);
-    return true;
-  });
+  const rulesByReading = new Map<AnalysisArtifactV1["metrics"][number], JudgeRubricV1["rules"][number][]>();
+  for (const rule of rubric.rules) {
+    const selected = ruleReadings(artifact, rule)[0];
+    if (selected) rulesByReading.set(selected, [...(rulesByReading.get(selected) ?? []), rule]);
+  }
+  const firstReadings = artifact.metrics.filter((metric) => rulesByReading.has(metric));
   const coverage = artifact.observationCoverage;
   // Compare the original identities before redaction can collapse different values to the same marker.
   const judged = judgeArtifact(artifact, rubric);
   const verdicts = new Map(judged.ok ? judged.report.numerical.results.map((result) => [result.id, result.verdict] as const) : []);
   const withheld = coverage === "incomplete" || coverage === "unknown" || coverage === "disabled" || artifact.capabilities.metrics !== "statically-known";
-  const metrics = firstReadings.flatMap((metric) => rubric.rules.filter((rule) => rule.metricId === metric.metricId).map((rule) => {
+  const metrics = firstReadings.flatMap((metric) => (rulesByReading.get(metric) ?? []).map((rule) => {
     const { observation } = toObservation(artifact, metric, rule);
     return {
       ...observation.identity,

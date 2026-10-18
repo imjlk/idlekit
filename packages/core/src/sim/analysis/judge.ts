@@ -47,6 +47,11 @@ export type DiagnosticStatus = "conflict" | "insufficient" | "unsupported" | "no
 export type JudgeRuleV1 = Readonly<{
   id: string;
   metricId: string;
+  /**
+   * Pins the rule to one metric version, so a rule written for version 1 never judges a version 2 reading.
+   * Omitted or null reads the metric id at whatever version the artifact has, and the diagnostic records it.
+   */
+  metricVersion?: number | null;
   operator: CheckOperator;
   threshold: number;
   upperThreshold: number | null;
@@ -81,10 +86,13 @@ export type JudgeDiagnosticV1 = Readonly<{
   recommendationId: RecommendationId;
   status: DiagnosticStatus;
   text: Readonly<{ en: string; ko: string }>;
+  /** The version of the reading the rule judged, and the version the rule pinned (null when it pinned none). */
+  metricVersion?: Readonly<{ reading: number; rubric: number | null }>;
 }>;
 
 export type EstimatedObservationV1 = Readonly<{
   metricId: string;
+  metricVersion?: number;
   value: number | null;
   reason: string | null;
 }>;
@@ -117,7 +125,7 @@ export const judgeCheckReuse = "checks-not-recomputed" as const;
 
 /**
  * @evidence docs/requirements/active/optional-analysis-judge.md#req-pr18-evidence-refs A rubric ref must name a metric that exists on the artifact.
- * @evidenceReview docs/requirements/active/optional-analysis-judge.md#req-pr18-evidence-refs #a078dea Re-read the section: a bad version or a missing ref is rejected.
+ * @evidenceReview docs/requirements/active/optional-analysis-judge.md#req-pr18-evidence-refs #4a4460c Re-read the section: a bad version or a missing ref is rejected, a pinned metricVersion the artifact lacks is a missing ref, and an unpinned rule reads any version and reports it.
  */
 export const judgeEvidenceRefs = "existing-refs-only" as const;
 
@@ -206,13 +214,19 @@ export function parseJudgeRubric(
   return { ok: true, rubric: validated.data };
 }
 
-/** JSON parses 1e400 as Infinity. A nonfinite threshold cannot be compared and would serialize as null. */
+/**
+ * JSON parses 1e400 as Infinity. A nonfinite threshold cannot be compared and would serialize as null,
+ * and a nonfinite metric version pin names no reading (the artifact refuses a nonfinite version).
+ */
 function nonfiniteThresholds(rubric: JudgeRubricV1): string[] {
   const issues: string[] = [];
   rubric.rules.forEach((rule, index) => {
     if (!Number.isFinite(rule.threshold)) issues.push(`$input.rules[${index}].threshold finite number`);
     if (rule.upperThreshold !== null && !Number.isFinite(rule.upperThreshold)) {
       issues.push(`$input.rules[${index}].upperThreshold finite number or null`);
+    }
+    if (rule.metricVersion !== undefined && rule.metricVersion !== null && !Number.isFinite(rule.metricVersion)) {
+      issues.push(`$input.rules[${index}].metricVersion finite number or null`);
     }
   });
   return issues;
@@ -249,8 +263,20 @@ function evaluateGroups(
   return { ...first, results, pass, exitCode: pass ? 0 : 2 };
 }
 
-function findReadings(artifact: AnalysisArtifactV1, metricId: string): readonly MetricReadingV1[] {
-  return artifact.metrics.filter((reading) => reading.metricId === metricId);
+/**
+ * The readings a rule may judge. A rule that pins metricVersion reads only that version of its metric id;
+ * a rule that pins none reads the metric id at any version. The judge requires exactly one.
+ */
+export function ruleReadings(artifact: AnalysisArtifactV1, rule: JudgeRuleV1): readonly MetricReadingV1[] {
+  const pinned = rule.metricVersion ?? null;
+  return artifact.metrics.filter(
+    (reading) => reading.metricId === rule.metricId && (pinned === null || reading.metricVersion === pinned),
+  );
+}
+
+function evidenceRef(rule: JudgeRuleV1): string {
+  const pinned = rule.metricVersion ?? null;
+  return pinned === null ? `metric:${rule.metricId}` : `metric:${rule.metricId}@${pinned}`;
 }
 
 function isUnavailable(reading: MetricReadingV1): boolean {
@@ -309,6 +335,7 @@ export function toObservation(
       observation: { identity, status: "missing", value: null, lower: null, upper: null },
       estimated: {
         metricId: reading.metricId,
+        metricVersion: reading.metricVersion,
         value: typeof reading.value === "number" && Number.isFinite(reading.value) ? reading.value : null,
         reason: reading.reason ?? null,
       },
@@ -462,30 +489,52 @@ export function judgeArtifact(
   const issues: string[] = [];
   const groups = new Map<string, { observation: BalanceObservationV1; indices: number[] }>();
   const estimatedObservations: EstimatedObservationV1[] = [];
-  const prepared: Array<{ rule: JudgeRuleV1; estimated: EstimatedObservationV1 | null; ref: string }> = [];
+  const estimatedReadings = new Set<MetricReadingV1>();
+  const prepared: Array<{
+    rule: JudgeRuleV1;
+    estimated: EstimatedObservationV1 | null;
+    ref: string;
+    metricVersion: Readonly<{ reading: number; rubric: number | null }>;
+  }> = [];
   for (const rule of rubric.rules) {
-    const readings = findReadings(artifact, rule.metricId);
+    const ref = evidenceRef(rule);
+    const readings = ruleReadings(artifact, rule);
     const reading = readings[0];
     if (!reading) {
-      issues.push(`missing evidenceRef metric:${rule.metricId}`);
+      // A pinned version the artifact does not carry is a missing ref, not a reading of another version.
+      const others = artifact.metrics
+        .filter((item) => item.metricId === rule.metricId)
+        .map((item) => `metric:${item.metricId}@${item.metricVersion}`);
+      issues.push(others.length > 0 ? `missing evidenceRef ${ref} (artifact has ${others.join(", ")})` : `missing evidenceRef ${ref}`);
       continue;
     }
     // An evidence ref must name exactly one reading, so reading order cannot change a verdict.
     if (readings.length > 1) {
-      issues.push(`ambiguous evidenceRef metric:${rule.metricId} matches ${readings.length} readings`);
+      issues.push(`ambiguous evidenceRef ${ref} matches ${readings.length} readings`);
       continue;
     }
     const mapped = toObservation(artifact, reading, rule);
-    // One observation per distinct identity. Rules whose stand-in method and unit agree share it and
-    // are judged together; rules that differ get their own observation and their own group.
-    const key = JSON.stringify([reading.metricId, mapped.observation.identity.method, mapped.observation.identity.unit]);
+    // One observation per distinct identity. Rules whose reading, stand-in method, and unit agree share it
+    // and are judged together; rules that differ, a different pinned version included, get their own group.
+    const key = JSON.stringify([
+      reading.metricId,
+      reading.metricVersion,
+      mapped.observation.identity.method,
+      mapped.observation.identity.unit,
+    ]);
     const group = groups.get(key) ?? { observation: mapped.observation, indices: [] };
     group.indices.push(prepared.length);
     groups.set(key, group);
-    if (mapped.estimated && !estimatedObservations.some((item) => item.metricId === reading.metricId)) {
+    if (mapped.estimated && !estimatedReadings.has(reading)) {
+      estimatedReadings.add(reading);
       estimatedObservations.push(mapped.estimated);
     }
-    prepared.push({ rule, estimated: mapped.estimated, ref: `metric:${rule.metricId}` });
+    prepared.push({
+      rule,
+      estimated: mapped.estimated,
+      ref,
+      metricVersion: { reading: reading.metricVersion, rubric: rule.metricVersion ?? null },
+    });
   }
   if (issues.length > 0) return { ok: false, issues };
   const checks: BalanceCheckV1[] = prepared.map(({ rule }) => checkFor(rule));
@@ -502,6 +551,7 @@ export function judgeArtifact(
       recommendationId: outcome.recommendationId,
       status: outcome.status,
       text: fillTemplate(outcome.recommendationId, item.rule.metricId),
+      metricVersion: item.metricVersion,
     };
   });
   const advisoryDigest = `rules:${rubric.rubricVersion}:${diagnostics.map((item) => item.recommendationId).join(",")}`;
