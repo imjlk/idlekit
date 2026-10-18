@@ -127,6 +127,35 @@ describe("compareScenarios", () => {
     expect((out.detail as any).source).toBe("measured");
   });
 
+  for (const metric of ["endMoney", "endNetWorth", "droppedRate", "etaToTargetWorth", "visibleChangesPerMinute"] as const) {
+    for (const [a, b] of [[1, Number.NaN], [Number.NaN, 1], [1, Infinity], [-Infinity, 1], [Number.NaN, Number.NaN]] as const) {
+      it(`rejects non-finite measured ${metric} ${a} against ${b} without a decision`, () => {
+        expect(() => compareScenarios({
+          a: scenario("1"),
+          b: scenario("1"),
+          metric,
+          measured: { a: { [metric]: a }, b: { [metric]: b } },
+        })).toThrow(/finite/);
+      });
+    }
+    it(`rejects a non-finite measured ${metric} even when the other side is unmeasured`, () => {
+      expect(() => compareScenarios({ a: scenario("1"), b: scenario("1"), metric, measured: { a: { [metric]: Number.NaN } } }))
+        .toThrow(/finite/);
+    });
+  }
+
+  it("leaves non-finite measured detail to a decision callback", () => {
+    const out = compareScenarios({
+      a: scenario("0"),
+      b: scenario("1"),
+      metric: "endMoney",
+      measuredDecision: () => "b",
+      measured: { a: { endMoney: Number.NEGATIVE_INFINITY }, b: { endMoney: 0 } },
+    });
+    expect(out.better).toBe("b");
+    expect((out.detail as any).aScore).toBe(Number.NEGATIVE_INFINITY);
+  });
+
   it("compares huge scientific notation safely in static fallback", () => {
     const out = compareScenarios({
       a: scenario("1e10000"),

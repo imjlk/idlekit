@@ -1,7 +1,12 @@
 /** Finite metrics retain numbers; monetary metrics may retain bounded decimal text. */
 export type PacingValue = number | string;
 const MAX_DECIMAL_LENGTH = 200;
-const DECIMAL = /^([+-]?)(?:(\d+)(?:\.(\d*))?|\.(\d+))(?:[eE]([+-]?\d+))?$/;
+/**
+ * The suffix-free part of core's static monetary grammar (`compareScenarios`): digits after a present decimal point
+ * and an optional exponent in either case. Pacing text is neither trimmed nor suffixed, so a unit typo such as
+ * `5min` is rejected instead of read as an alpha-infinite amount.
+ */
+const DECIMAL = /^([+-]?)(?:(\d+)(?:\.(\d+))?|\.(\d+))(?:e([+-]?\d+))?$/i;
 
 export function pacingValue(value: unknown): PacingValue | undefined {
   if (typeof value === "number") return Number.isFinite(value) ? (Object.is(value, -0) ? 0 : value) : undefined;
