@@ -31,10 +31,14 @@ Reading assumptions does not load or execute the scenario's plugin.
   numeric `day`. Day is a nonnegative integer. Duplicate user/day rows, missing
   install records, rows after the cutoff, and negative/nonfinite amounts fail.
   Revenue columns may be omitted when measuring retention only. An omitted column
-  is unmeasured, not zero: JSON output then has no `monetization.revenue`,
-  `monetization.uncertainty` or revenue totals, and lists the source in
-  `diagnostics.unmeasured`. Without an acquisition cost column it has no
-  `monetization.acquisition`. A JSON revenue field must be on every row or none.
+  is unmeasured, not zero, and `diagnostics.unmeasured` lists it. With both IAP and
+  ad revenue absent, JSON output has no `monetization.revenue`,
+  `monetization.uncertainty` or revenue totals. With one of them present, those
+  objects hold only the fields that source measures: IAP gives `payerConversion`,
+  `arppuDaily` and `totalIap`, ad revenue gives `adArpDau` and `totalAd`, and
+  `correlation` keeps only pairs whose sources were exported. Without an
+  acquisition cost column there is no `monetization.acquisition`. A JSON revenue
+  field must be on every row or none.
 - Use the same currency for revenue rows. Export refunds separately; this
   calibration input accepts nonnegative gross revenue. User IDs should be local
   pseudonymous identifiers; this command reads local files and sends no telemetry.

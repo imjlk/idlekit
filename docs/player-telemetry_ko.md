@@ -52,10 +52,12 @@ export의 완전성 확인과 별도 검증 코호트는 호출자 책임이다.
 - CSV의 `user_id`, `day`와 JSON의 문자열 `userId`, 숫자 `day`를 명시한다.
   날짜는 0 이상의 정수다. 중복 유저·날짜, 설치 행 누락, 종료일 이후 행,
   음수·무한대 수익은 거부한다. 리텐션만 측정하면 수익 열은 생략할 수 있다.
-  생략한 열은 0이 아니라 미측정이다. JSON 출력에는 `monetization.revenue`,
-  `monetization.uncertainty`, 수익 합계가 없고 `diagnostics.unmeasured`에 그 출처를
-  적는다. 획득 비용 열이 없으면 `monetization.acquisition`도 없다. JSON의 수익
-  필드는 모든 행에 넣거나 모든 행에서 뺀다.
+  생략한 열은 0이 아니라 미측정이며 `diagnostics.unmeasured`에 적는다. IAP와 광고
+  수익이 모두 없으면 JSON 출력에 `monetization.revenue`, `monetization.uncertainty`,
+  수익 합계가 없다. 둘 중 하나만 있으면 그 출처가 측정한 필드만 남는다. IAP는
+  `payerConversion`, `arppuDaily`, `totalIap`을, 광고 수익은 `adArpDau`, `totalAd`를
+  채우고, `correlation`에는 출처를 모두 내보낸 쌍만 남는다. 획득 비용 열이 없으면
+  `monetization.acquisition`도 없다. JSON의 수익 필드는 모든 행에 넣거나 모든 행에서 뺀다.
 - 수익은 같은 통화의 환불 전 금액이다. 환불은 따로 내보낸다. 유저 식별자는
   로컬 가명 ID를 사용한다. 명령은 로컬 파일을 읽으며 외부로 데이터를 보내지 않는다.
 
