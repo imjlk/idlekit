@@ -6,21 +6,23 @@
 
 /**
  * @evidence docs/requirements/active/analysis-integration-release-gates.md#req-pr20-integration-matrix The selected release includes the optional tracks without making them the default.
- * @evidenceReview docs/requirements/active/analysis-integration-release-gates.md#req-pr20-integration-matrix #91abfb0 Re-read the section: flow, guarded advance, Jev, and workers are shipped as optional capabilities, and their tests still run in the publish preflight.
+ * @evidenceReview docs/requirements/active/analysis-integration-release-gates.md#req-pr20-integration-matrix #493a4ea Re-read the section: flow, guarded advance, Jev, and workers are shipped as optional capabilities, and their tests still run in the publish preflight.
  */
 export const integrationReleaseScope = "selected-optional-tracks" as const;
 
 /**
  * @evidence docs/requirements/active/analysis-integration-release-gates.md#req-pr20-integration-matrix breakEternity is not a supported engine in this release.
- * @evidenceReview docs/requirements/active/analysis-integration-release-gates.md#req-pr20-integration-matrix #91abfb0 Re-read the section: the placeholder engine is not advertised as ready.
+ * @evidenceReview docs/requirements/active/analysis-integration-release-gates.md#req-pr20-integration-matrix #493a4ea Re-read the section: the placeholder engine is not advertised as ready.
  */
 export const integrationUnsupportedEngine = "breakEternity" as const;
 
 /**
  * @evidence docs/requirements/active/analysis-integration-release-gates.md#req-pr20-integration-matrix Constant income uses integer seconds, not a stored simulator snapshot.
- * @evidenceReview docs/requirements/active/analysis-integration-release-gates.md#req-pr20-integration-matrix #91abfb0 Re-read the section: end money is initial plus income per second times duration.
+ * @evidenceReview docs/requirements/active/analysis-integration-release-gates.md#req-pr20-integration-matrix #493a4ea Re-read the section: end money is initial plus income per second times the seconds the runner ticks under its stop epsilon, for horizons up to MAX_SAFE_INTEGER.
  */
 export const integrationHandAnswer = "integer-income-times-duration" as const;
+
+import { timeEpsilon } from "./timeBoundary";
 
 const INTEGER = /^-?\d+$/;
 
@@ -34,9 +36,29 @@ function assertStep(stepSec: number): void {
 }
 
 /**
- * End wallet for constant per-second income.
- * A duration off the step grid ends on a shorter final tick, as `runScenario` does, so the
- * ticks still cover every second and the answer is income times the whole duration.
+ * Seconds a duration-limited run with integer steps actually ticks.
+ * `runScenario` stops once elapsed time is within `timeEpsilon(durationSec)` of the horizon, and otherwise ends
+ * on a shorter final tick. Below 1e12 seconds that epsilon is under one second, so every second runs; from there
+ * a remainder within it is not ticked. Horizons stop at `Number.MAX_SAFE_INTEGER`, where the runner's sum of
+ * whole-second ticks is still exact.
+ */
+export function linearCoveredSec(args: { stepSec: number; durationSec: number }): number {
+  assertStep(args.stepSec);
+  if (!Number.isSafeInteger(args.stepSec)) throw new Error("stepSec must be a safe integer");
+  if (!Number.isSafeInteger(args.durationSec) || args.durationSec < 0) throw new Error("durationSec must be a safe integer >= 0");
+  // The runner's stop test is `elapsed >= durationSec - timeEpsilon(durationSec)` in Number arithmetic. Elapsed
+  // stays an integer, so it passes from the first step boundary at or above the ceiling of that threshold.
+  const threshold = Math.ceil(args.durationSec - timeEpsilon(args.durationSec));
+  if (threshold <= 0) return 0;
+  const step = BigInt(args.stepSec);
+  const boundary = ((BigInt(threshold) + step - 1n) / step) * step;
+  return boundary < BigInt(args.durationSec) ? Number(boundary) : args.durationSec;
+}
+
+/**
+ * End wallet for constant per-second income over the seconds `linearCoveredSec` says the run ticks.
+ * A duration off the step grid ends on a shorter final tick, as `runScenario` does, so below 1e12 seconds the
+ * answer is income times the whole duration.
  */
 export function expectedLinearEnd(args: {
   initial: string;
@@ -44,9 +66,7 @@ export function expectedLinearEnd(args: {
   stepSec: number;
   durationSec: number;
 }): string {
-  assertStep(args.stepSec);
-  if (!Number.isInteger(args.durationSec) || args.durationSec < 0) throw new Error("durationSec must be an integer >= 0");
-  const gained = integer(args.incomePerSec, "incomePerSec") * BigInt(args.durationSec);
+  const gained = integer(args.incomePerSec, "incomePerSec") * BigInt(linearCoveredSec(args));
   return (integer(args.initial, "initial") + gained).toString();
 }
 

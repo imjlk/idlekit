@@ -2321,9 +2321,9 @@ const partialFixture = (
 
 /**
  * @evidence docs/requirements/active/analysis-integration-release-gates.md#req-pr20-integration-matrix Runs the partial-final-tick relation over the seed corpus: integer income, steps, and horizons on and off the step grid.
- * @evidenceReview docs/requirements/active/analysis-integration-release-gates.md#req-pr20-integration-matrix #91abfb0 Re-read the section, then ran this function on the short and extended corpus: every case ended at the hand answer after ceil(duration / step) ticks, and an undeclared case does not apply.
+ * @evidenceReview docs/requirements/active/analysis-integration-release-gates.md#req-pr20-integration-matrix #493a4ea Re-read the section, then ran this function on the short and extended corpus: every case ended at the hand answer after ceil(duration / step) ticks, and an undeclared case does not apply.
  * @evidence ./conformance.ts#checkPartialFinalTick The seed corpus asks the harness to run each partial-final-tick case.
- * @evidenceReview ./conformance.ts#checkPartialFinalTick #b46e7c8 Re-read checkPartialFinalTick: it runs a constant-income model to the horizon and compares the end wallet, the stop, the end time, and the tick count with the hand answer.
+ * @evidenceReview ./conformance.ts#checkPartialFinalTick #ee4bdd6 Re-read checkPartialFinalTick: it runs a constant-income model to the horizon and compares the end wallet, the stop, the end time, and the tick count with the hand answer over the seconds linearCoveredSec says the runner ticks.
  */
 export function replaysPartialFinalTickAcrossTheSeedCorpus(): void {
   expectProperty({
@@ -2433,6 +2433,14 @@ describe("PR-20 partial final tick relation", () => {
     expect(checkPartialFinalTick(true, { ...base, stepSec: 2, durationSec: 20_001 }).applicable).toBe(false);
     expect(checkPartialFinalTick(true, { ...base, durationSec: 10_000 })).toMatchObject({ applicable: true, ok: true });
     expect(checkPartialFinalTick(true, { ...base, stepSec: 2, durationSec: 19_999 })).toMatchObject({ applicable: true, ok: true });
+  });
+  it("follows the runner's duration-scaled stop epsilon on a 1e12-second horizon", () => {
+    // timeEpsilon(1e12) is 1 second, so the run stops after one 999999999999-second tick.
+    const value = { initial: "0", incomePerSec: "1", stepSec: 999_999_999_999, durationSec: 1_000_000_000_000 };
+    const check = checkPartialFinalTick(true, value);
+    expect(check).toMatchObject({ applicable: true, ok: true });
+    expect(check.summary).toContain("end 999999999999 against 999999999999, 1 ticks for 1");
+    expect(checkPartialFinalTick(true, { ...value, stepSec: 400_000_000_000 })).toMatchObject({ applicable: true, ok: true });
   });
   it("declines integer cases outside the Number engine's exact safe range", () => {
     const base = { initial: "0", incomePerSec: "1", stepSec: 6, durationSec: 10 };
