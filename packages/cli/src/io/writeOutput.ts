@@ -3,6 +3,7 @@ import { realpath, stat } from "fs/promises";
 import { usageError } from "../errors";
 import type { OutputMeta } from "./outputMeta";
 import { writeStdout, writeTextFile } from "../runtime/bun";
+import { invocationInputCandidates } from "../runtime/invocation";
 
 export type OutputFormat = "json" | "md" | "csv";
 
@@ -70,6 +71,47 @@ export function renderOutput(format: OutputFormat, data: unknown): string {
   return JSON.stringify(data, null, 2);
 }
 
+async function sameFile(output: string, input: string): Promise<boolean> {
+  try {
+    const [outputReal, inputReal, outputStat, inputStat] = await Promise.all([
+      realpath(output), realpath(input), stat(output, { bigint: true }), stat(input, { bigint: true }),
+    ]);
+    return outputReal === inputReal || (outputStat.ino !== 0n && outputStat.dev === inputStat.dev && outputStat.ino === inputStat.ino);
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code !== "ENOENT" && code !== "ENOTDIR") throw error;
+    return false;
+  }
+}
+
+// A flag value may be JSON, a number, or any other text that stat rejects for a reason other than ENOENT.
+async function exists(path: string): Promise<boolean> {
+  return stat(path).then(() => true, () => false);
+}
+
+/**
+ * Resolve an output path and refuse one that names an input file, through a symlink or a hard link too.
+ * `protectedInputs` are always protected. The command's positionals and non-output string flags are
+ * protected when they name an existing file, so a flag value that is not a path never blocks a write.
+ * `allowFlags` names input flags the output may replace on purpose.
+ */
+export async function assertOutputNotInput(
+  outPath: string,
+  options: { protectedInputs?: readonly string[]; allowFlags?: readonly string[] } = {},
+): Promise<string> {
+  const abs = resolve(outPath);
+  const explicit = (options.protectedInputs ?? []).map((input) => ({ input, required: true }));
+  const implicit = invocationInputCandidates({ allow: options.allowFlags }).map((input) => ({ input, required: false }));
+  for (const { input, required } of [...explicit, ...implicit]) {
+    const source = resolve(input);
+    if (!required && !(await exists(source))) continue;
+    if (source === abs || (await sameFile(abs, source))) {
+      throw usageError(`Output path must not overwrite an input file: ${input}`);
+    }
+  }
+  return abs;
+}
+
 export async function writeOutput(args: {
   format: OutputFormat;
   data: unknown;
@@ -95,23 +137,7 @@ export async function writeOutput(args: {
     return;
   }
 
-  const abs = resolve(args.outPath);
-  for (const input of args.protectedInputs ?? []) {
-    const source = resolve(input);
-    let same = source === abs;
-    if (!same) {
-      try {
-        const [outputReal, inputReal, outputStat, inputStat] = await Promise.all([
-          realpath(abs), realpath(source), stat(abs, { bigint: true }), stat(source, { bigint: true }),
-        ]);
-        same = outputReal === inputReal || (outputStat.ino !== 0n && outputStat.dev === inputStat.dev && outputStat.ino === inputStat.ino);
-      } catch (error) {
-        const code = (error as NodeJS.ErrnoException).code;
-        if (code !== "ENOENT" && code !== "ENOTDIR") throw error;
-      }
-    }
-    if (same) throw usageError(`Output path must not overwrite an input file: ${input}`);
-  }
+  const abs = await assertOutputNotInput(args.outPath, { protectedInputs: args.protectedInputs });
   await writeTextFile(abs, body);
   console.log(`Wrote ${args.format} output to ${abs}`);
 }

@@ -17,7 +17,7 @@ import { loadRegistriesFromFlags } from "./_shared/plugin";
 import { ltvStageInputs, runLtvAnalysis } from "./ltv";
 import { scenarioInvalidError, usageError } from "../errors";
 import { buildOutputMeta, deriveDeterministicRunId } from "../io/outputMeta";
-import { writeOutput } from "../io/writeOutput";
+import { assertOutputNotInput, writeOutput } from "../io/writeOutput";
 import {
   collectExperienceSnapshot,
   renderExperienceMarkdown,
@@ -433,6 +433,8 @@ export default defineCommand({
       files.ltv = resolve(outDir, "ltv.json");
       const summaryPath = resolve(process.cwd(), flags["out-dir"], flags.format === "md" ? "summary.md" : "summary.json");
       files.summary = summaryPath;
+      // Check every target before the first write, so a refused path leaves the directory as it was.
+      for (const path of [files.simulate, files.experience, files.ltv, summaryPath]) await assertOutputNotInput(path);
       await writeTextFile(files.simulate, `${JSON.stringify({ ...simulate, _meta: simulateMeta }, null, 2)}\n`);
       await writeTextFile(files.experience, `${JSON.stringify({ ...experience, _meta: experienceMeta }, null, 2)}\n`);
       await writeTextFile(files.ltv, `${JSON.stringify({ ...ltv, _meta: ltvMeta }, null, 2)}\n`);
