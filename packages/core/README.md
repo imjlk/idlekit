@@ -45,7 +45,8 @@ Synchronous limits: 0..36500 days, 1..100000 draws and at most 10000000 draw-day
 one work unit per draw). Quantiles must be 1..101 distinct values in 0..1. Each output key is
 the exact percent (`q50`, `q90`, `q2.5` for 0.025, `q12.4` for 0.124), so keys never collide or
 round. The seed must be an integer in 0..4294967295; other seeds throw instead of being folded.
-`retentionAtDay` requires a finite day >= 0 and a valid curve; `progressionFactor` rejects NaN
+`retentionAtDay` requires a finite day >= 0 and a valid curve (day 0 is 1, any day in (0, 1] reads
+D1, and anchors from D1 on are linear); `progressionFactor` rejects NaN
 logs and a span that is not finite and positive, and treats an infinite worth log (zero worth)
 as no progression. Invalid inputs and numeric overflow throw `RangeError`. Sampling shrinks
 inconsistent correlation matrices toward independence.

@@ -157,8 +157,12 @@ test("distribution quantile keys are exact percents and never collide", () => {
 test("exported curve helpers reject inputs they cannot evaluate", () => {
   const { retention } = deriveMonetizationConfig(scenario);
   expect(retentionAtDay(retention, 0)).toBe(1);
-  expect(retentionAtDay(retention, 0.5)).toBe(1);
-  expect(retentionAtDay(retention, 1)).toBe(1);
+  const curve = { ...retention, d1: 0.4, d7: 0.1 };
+  // Day 0 is the install day; any day in (0, 1] reads D1, with no ramp from day 0.
+  expect(retentionAtDay(curve, 0)).toBe(1);
+  expect(retentionAtDay(curve, 0.5)).toBe(0.4);
+  expect(retentionAtDay(curve, 1)).toBe(0.4);
+  expect(retentionAtDay(curve, 4)).toBeCloseTo(0.25);
   for (const day of [NaN, -1, Infinity]) expect(() => retentionAtDay(retention, day)).toThrow(/day/);
   expect(() => retentionAtDay({ ...retention, d7: NaN }, 3)).toThrow(/retention.d7/);
   expect(progressionFactor(0, 3, 6)).toBe(0.5);

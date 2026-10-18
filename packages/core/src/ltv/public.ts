@@ -74,7 +74,11 @@ export function deriveMonetizationConfig(scenario: ScenarioV1): MonetizationConf
   return config;
 }
 
-/** Retention on install day `day` (day 0 is 1); between anchors it is linear, after D90 it decays. */
+/**
+ * Retention on install-day index `day`. Day 0 is the install day (1) and any day in (0, 1]
+ * reads D1; there is no ramp from day 0. From D1 to D90 it is linear between the anchors,
+ * and after D90 it decays. The LTV estimators only read whole days.
+ */
 export function retentionAtDay(retention: MonetizationConfig["retention"], day: number): number {
   assertRetention(retention);
   if (!Number.isFinite(day) || day < 0) throw new RangeError("day must be finite and >= 0");
