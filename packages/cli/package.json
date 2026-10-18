@@ -1,6 +1,6 @@
 {
   "name": "@idlekit/cli",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "Bun-first idk CLI for idle game scenario validation, simulation, tuning, and reporting.",
   "license": "MIT",
   "type": "module",
