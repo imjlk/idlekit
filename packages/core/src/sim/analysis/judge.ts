@@ -49,7 +49,8 @@ export type JudgeRuleV1 = Readonly<{
   metricId: string;
   /**
    * Pins the rule to one metric version, so a rule written for version 1 never judges a version 2 reading.
-   * Omitted or null reads the metric id at whatever version the artifact has, and the diagnostic records it.
+   * Omitted or null reads the metric id at whatever version the artifact has. Either way the diagnostic
+   * carries a `metric-version:<n>` evidence ref for the version it read.
    */
   metricVersion?: number | null;
   operator: CheckOperator;
@@ -86,13 +87,10 @@ export type JudgeDiagnosticV1 = Readonly<{
   recommendationId: RecommendationId;
   status: DiagnosticStatus;
   text: Readonly<{ en: string; ko: string }>;
-  /** The version of the reading the rule judged, and the version the rule pinned (null when it pinned none). */
-  metricVersion?: Readonly<{ reading: number; rubric: number | null }>;
 }>;
 
 export type EstimatedObservationV1 = Readonly<{
   metricId: string;
-  metricVersion?: number;
   value: number | null;
   reason: string | null;
 }>;
@@ -125,7 +123,7 @@ export const judgeCheckReuse = "checks-not-recomputed" as const;
 
 /**
  * @evidence docs/requirements/active/optional-analysis-judge.md#req-pr18-evidence-refs A rubric ref must name a metric that exists on the artifact.
- * @evidenceReview docs/requirements/active/optional-analysis-judge.md#req-pr18-evidence-refs #4a4460c Re-read the section: a bad version or a missing ref is rejected, a pinned metricVersion the artifact lacks is a missing ref, and an unpinned rule reads any version and reports it.
+ * @evidenceReview docs/requirements/active/optional-analysis-judge.md#req-pr18-evidence-refs #f95dea6 Re-read the section: a bad version or a missing ref is rejected, a pinned metricVersion the artifact lacks is a missing ref, and an unpinned rule reads any version and names it in a metric-version ref.
  */
 export const judgeEvidenceRefs = "existing-refs-only" as const;
 
@@ -274,9 +272,18 @@ export function ruleReadings(artifact: AnalysisArtifactV1, rule: JudgeRuleV1): r
   );
 }
 
-function evidenceRef(rule: JudgeRuleV1): string {
+/**
+ * A metric id is any string, so the version is a ref of its own rather than a suffix that an id could
+ * already contain. The v1 diagnostic has no version field, and a closed v1 schema must keep accepting it.
+ */
+function metricVersionRef(version: number): string {
+  return `metric-version:${version}`;
+}
+
+/** How a rule's reading is named in an issue: its metric ref, and its pinned version ref when it pins one. */
+function ruleRefLabel(rule: JudgeRuleV1): string {
   const pinned = rule.metricVersion ?? null;
-  return pinned === null ? `metric:${rule.metricId}` : `metric:${rule.metricId}@${pinned}`;
+  return pinned === null ? `metric:${rule.metricId}` : `metric:${rule.metricId} ${metricVersionRef(pinned)}`;
 }
 
 function isUnavailable(reading: MetricReadingV1): boolean {
@@ -335,7 +342,6 @@ export function toObservation(
       observation: { identity, status: "missing", value: null, lower: null, upper: null },
       estimated: {
         metricId: reading.metricId,
-        metricVersion: reading.metricVersion,
         value: typeof reading.value === "number" && Number.isFinite(reading.value) ? reading.value : null,
         reason: reading.reason ?? null,
       },
@@ -493,24 +499,23 @@ export function judgeArtifact(
   const prepared: Array<{
     rule: JudgeRuleV1;
     estimated: EstimatedObservationV1 | null;
-    ref: string;
-    metricVersion: Readonly<{ reading: number; rubric: number | null }>;
+    refs: readonly string[];
   }> = [];
   for (const rule of rubric.rules) {
-    const ref = evidenceRef(rule);
+    const label = ruleRefLabel(rule);
     const readings = ruleReadings(artifact, rule);
     const reading = readings[0];
     if (!reading) {
       // A pinned version the artifact does not carry is a missing ref, not a reading of another version.
       const others = artifact.metrics
         .filter((item) => item.metricId === rule.metricId)
-        .map((item) => `metric:${item.metricId}@${item.metricVersion}`);
-      issues.push(others.length > 0 ? `missing evidenceRef ${ref} (artifact has ${others.join(", ")})` : `missing evidenceRef ${ref}`);
+        .map((item) => metricVersionRef(item.metricVersion));
+      issues.push(others.length > 0 ? `missing evidenceRef ${label} (artifact has ${others.join(", ")})` : `missing evidenceRef ${label}`);
       continue;
     }
     // An evidence ref must name exactly one reading, so reading order cannot change a verdict.
     if (readings.length > 1) {
-      issues.push(`ambiguous evidenceRef ${ref} matches ${readings.length} readings`);
+      issues.push(`ambiguous evidenceRef ${label} matches ${readings.length} readings`);
       continue;
     }
     const mapped = toObservation(artifact, reading, rule);
@@ -529,11 +534,12 @@ export function judgeArtifact(
       estimatedReadings.add(reading);
       estimatedObservations.push(mapped.estimated);
     }
+    // The metric ref is unchanged from before pinning existed. The version ref names the version actually
+    // read, pinned or not, so an unpinned rule that read another version still says so.
     prepared.push({
       rule,
       estimated: mapped.estimated,
-      ref,
-      metricVersion: { reading: reading.metricVersion, rubric: rule.metricVersion ?? null },
+      refs: [`metric:${rule.metricId}`, metricVersionRef(reading.metricVersion)],
     });
   }
   if (issues.length > 0) return { ok: false, issues };
@@ -546,12 +552,11 @@ export function judgeArtifact(
       id: item.rule.id,
       category: outcome.category,
       severity: outcome.severity,
-      evidenceRefs: [item.ref],
+      evidenceRefs: item.refs,
       assumptionRefs,
       recommendationId: outcome.recommendationId,
       status: outcome.status,
       text: fillTemplate(outcome.recommendationId, item.rule.metricId),
-      metricVersion: item.metricVersion,
     };
   });
   const advisoryDigest = `rules:${rubric.rubricVersion}:${diagnostics.map((item) => item.recommendationId).join(",")}`;
