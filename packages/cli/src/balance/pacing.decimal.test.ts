@@ -37,3 +37,17 @@ test("decimal targets are ordered before execution and malformed decimals remain
   expect((await runPacingChecks(config("1e400"), () => ({ money: null }))).status).toBe("unreached");
   expect((await runPacingChecks(config("1e400"), () => ({ money: Infinity }))).status).toBe("error");
 });
+
+test("number breach gaps are reported at the operands' precision", async () => {
+  for (const [amount, min, max, text] of [
+    [1, 1.2, undefined, "below the minimum by 0.2 MANA"],
+    [0.3, 0.1, 0.2, "above the maximum by 0.1 MANA"],
+    [1e-7, 3e-7, undefined, "below the minimum by 2e-7 MANA"],
+    [1.5, 2, undefined, "below the minimum by 0.5 MANA"],
+    [1e21, 0, 1, "above the maximum by 1e+21 MANA"],
+  ] as const) {
+    const report = await runPacingChecks(config(min, max), () => ({ money: amount }));
+    expect(report.status).toBe("breach");
+    expect(renderBalanceReport(report, "results")).toContain(text);
+  }
+});

@@ -6,12 +6,25 @@ function cell(value: string | number): string {
   return String(value).replaceAll("|", "\\|").replace(/[\r\n]/g, " ");
 }
 
+/** Decimal places in a number's shortest spelling, counting a negative exponent. */
+function decimals(value: number): number {
+  const [mantissa = "", exponent = "0"] = String(value).split("e");
+  return Math.max(0, (mantissa.split(".")[1]?.length ?? 0) - Number(exponent));
+}
+
+/** The gap at the operands' own precision, so 1.2 - 1 reads 0.2 rather than binary rounding noise. */
+function gap(larger: number, smaller: number): number {
+  const difference = larger - smaller;
+  if (!Number.isFinite(difference)) return difference;
+  return Number(difference.toFixed(Math.min(100, Math.max(decimals(larger), decimals(smaller)))));
+}
+
 function explain(result: PacingTargetResult): string {
   if (result.status === "breach" && result.value !== null) {
     if (result.min !== undefined && comparePacingValues(result.value, result.min) < 0) return typeof result.min === "number" && typeof result.value === "number"
-      ? `below the minimum by ${result.min - result.value} ${result.unit}` : `below the minimum ${result.min} ${result.unit}`;
+      ? `below the minimum by ${gap(result.min, result.value)} ${result.unit}` : `below the minimum ${result.min} ${result.unit}`;
     if (result.max !== undefined && comparePacingValues(result.value, result.max) > 0) return typeof result.max === "number" && typeof result.value === "number"
-      ? `above the maximum by ${result.value - result.max} ${result.unit}` : `above the maximum ${result.max} ${result.unit}`;
+      ? `above the maximum by ${gap(result.value, result.max)} ${result.unit}` : `above the maximum ${result.max} ${result.unit}`;
   }
   if (result.status === "pass") return "within the inclusive target bounds";
   return result.message ?? (result.status === "unreached" ? "not reached within the horizon" : "measurement unavailable");
