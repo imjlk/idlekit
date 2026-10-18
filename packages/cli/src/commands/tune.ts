@@ -48,6 +48,14 @@ function readBestScoreFromArtifact(x: unknown): number {
   return score;
 }
 
+// Artifacts from before `_meta.effectiveEngine` keep the requested engine in their input flags. Older ones only ran number.
+function readEngineFromArtifact(x: unknown): string {
+  const recorded = (x as any)?.meta?.effectiveEngine;
+  if (typeof recorded === "string" && recorded.trim()) return recorded.trim();
+  const requested = (x as any)?.input?.flags?.engine;
+  return typeof requested === "string" && requested.trim() ? requested.trim() : "number";
+}
+
 function buildTuneInsights(outputBase: Record<string, unknown>) {
   const report = (outputBase as any).report;
   const bestScore = readBestScoreFromTuneResult(outputBase);
@@ -237,6 +245,15 @@ export default defineCommand({
     const baselinePath = flags["baseline-artifact"] ? resolve(flags["baseline-artifact"]) : undefined;
     const baselineRaw = baselinePath ? await readJsonFile<unknown>(baselinePath) : undefined;
     const engine = resolveEffectiveEngine({ requested: flags.engine });
+    // Scores from another engine are not the same measurement, so the regression delta would compare unlike numbers.
+    if (baselineRaw !== undefined) {
+      const baselineEngine = readEngineFromArtifact(baselineRaw);
+      if (baselineEngine !== engine.effectiveId) {
+        throw cliError("CLI_USAGE", `Baseline artifact engine mismatch: expected ${engine.effectiveId}, got ${baselineEngine}`, {
+          hint: `Pass --engine ${baselineEngine} to compare against this baseline, or record a new baseline with --engine ${engine.effectiveId}.`,
+        });
+      }
+    }
     // Preserve the previous default/explicit-Number identities.
     const engineIdentity = engine.effectiveId === "number" ? {} : { engineId: engine.effectiveId };
     const seed =
@@ -267,6 +284,7 @@ export default defineCommand({
       runId,
       seed,
       pluginDigest: loaded.pluginDigest,
+      effectiveEngine: engine.effectiveId,
     });
 
     const result = await cmdTune({

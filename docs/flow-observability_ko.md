@@ -24,6 +24,21 @@ Flow 계산은 JavaScript number를 사용한다. `1e-400`처럼 0이 아닌 와
 
 Node.js와 browser 런타임은 v1 호환 계약에 포함되지 않는다.
 
+## Verification
+
+십진 경계 수정은 Windows x64에서 Bun 1.4.2와 ttsc 0.30.4로 확인했다. 활성 요구사항 파일의 SHA-256은 LF 줄바꿈으로 정규화한 기준 `e7021c99a99543b5b1301c8e18c2737f5eeab96edfb07836ab5a2a879e6acea3`이다. 대상 스위트는 세 경계 조건을 모두 등록된 Evidence host 안에서 실행했고 14개 테스트, 353개 assertion이 통과했다.
+
+| 검사 | 종료 코드 |
+|---|---|
+| `bun install --frozen-lockfile` | 0 |
+| `bun test --preload @ttsc/unplugin/bun-register packages/core/src/sim/analysis/flow.test.ts packages/core/src/sim/analysis/contractValidity.test.ts` | 0 |
+| `tools/evidence-host.ts`의 `runTtsc(["-p", "tsconfig.evidence.json", "--noEmit"], process.cwd())`로 실행한 Evidence 컴파일러 | 0 |
+| `bun run contracts:generate` | 0 |
+| `bun run contracts:check` | 0 |
+| `bun run docs:verify:quick` | 0 |
+
+Evidence 컴파일러 검사는 인용과 review fingerprint를 확인한다. 실행 테스트 전체 inventory와 더 넓은 저장소 gate는 CI에서 돈다. 이전 PR-15 검사는 이 십진 경계 변경보다 앞서므로 현재 요구사항의 증거가 아니다.
+
 ## Graph
 
 커밋 `023d2bf78831584b33404e5fa1092e34e2a69e91`을 `ttsc-graph` 0.30.4, 프로토콜 `2025-11-25`로 조회했다. `packages/core/tsconfig.json`을 확장하고 `packages/core/src/sim/analysis/flow.ts`, `packages/core/src/sim/analysis/flow.test.ts`, `packages/core/src/sim/observation.ts`를 루트로 삼은 프로그램이다. generation 식별자는 반환되지 않았다. `diagnoseFlow`는 `packages/core/src/sim/analysis/flow.ts:414–762`, `parseFlowObservation`은 같은 파일의 `192–201`, `recordFlowSample`은 `packages/core/src/sim/observation.ts:132–135`에 있다. 깊이 1의 `diagnoseFlow` 영향 추적은 `declaresFlowAdapter`, `diagnosesSteadyPipeline`, `checksFlowConservation`, `leavesUnknownModelsUnsupported`, `separatesFactsFromCauses`를 가리키며 잘린 결과다. `recordFlowSample`의 깊이 1 영향 추적은 `packages/core/src/sim/analysis/flow.test.ts:144`의 호출을 통해 `declaresFlowAdapter`에 도달하며 잘리지 않았다. 이들은 해당 프로그램에서 컴파일러가 확인한 호출자다. JSON 픽스처 `examples/analysis/flow-pipeline.json`은 Graph 밖이므로 직접 읽었다.

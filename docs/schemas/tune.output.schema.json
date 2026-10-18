@@ -65,6 +65,7 @@
         "seed": { "type": "number" },
         "scenarioHash": { "type": "string" },
         "tuneSpecHash": { "type": "string" },
+        "effectiveEngine": { "type": "string" },
         "pluginDigest": {
           "type": "object",
           "additionalProperties": { "type": "string" }

@@ -24,10 +24,13 @@ function ownedCount(state: { vars?: LinearVars } | undefined): number {
   return Number(state?.vars?.owned ?? 0);
 }
 
+/** Commands that build the number engine themselves and take no --engine flag. */
+export const NUMBER_ONLY_COMMANDS = ["report", "analyze", "eta", "growth", "prestige-cycle"] as const;
+
 function finiteLinearAmount<N>(E: Engine<N>, value: N, label: string): N {
   if (!E.isFinite(value)) {
     throw cliError("SCENARIO_INVALID", `linear ${label} exceeds the selected engine's finite range. Use --engine breakInfinity with simulate/evaluate/experience/ltv/compare/tune/balance for a large economy, or reduce the inputs.`, {
-      hint: "The report command uses the number engine; reduce its inputs.",
+      hint: `${NUMBER_ONLY_COMMANDS.join(", ")} run only the number engine; reduce their inputs.`,
     });
   }
   return value;

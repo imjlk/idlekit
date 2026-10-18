@@ -6,6 +6,8 @@ import { buildOutputMeta, stableStringify } from "../io/outputMeta";
 import { canonicalizeReplayResult, hashReplayResult, type ReplayArtifactV1 } from "../io/replayArtifact";
 import { writeOutput } from "../io/writeOutput";
 import { readJsonFile, runText } from "../runtime/bun";
+import { recordNestedInputs } from "../runtime/invocation";
+import { recordPluginClosureReads } from "../plugin/load";
 import { cliPackageRoot, isBundledCliProcess, selfCliCommand } from "../runtime/selfCli";
 
 function deepEqual(a: unknown, b: unknown): boolean {
@@ -28,6 +30,7 @@ function parseArtifact(input: unknown): ReplayArtifactV1 {
         flags: z.record(z.string(), z.unknown()),
       }),
       replay: z.object({
+        cwd: z.string().optional(),
         args: z.array(z.string()).min(1),
         commandLine: z.string(),
         verify: z.object({
@@ -89,6 +92,11 @@ export default defineCommand({
         throw replayArtifactInvalidError("Invalid replay artifact.", errorDetail(error), error);
       });
     const artifact = parseArtifact(raw);
+    // The replay runs in a child process, so its reads are not recorded here. Its recorded inputs, resolved from
+    // the directory the artifact was written in, and the scenario and plugin paths the replay reports stay
+    // protected from --out. Each plugin's local imports are read again here so they are protected too.
+    const recordedCwd = (artifact.replay as { cwd?: string }).cwd || process.cwd();
+    recordNestedInputs(recordedCwd, artifact.input.positional, artifact.input.flags);
 
     const requiredChecks = {
       runId: typeof artifact.replay.verify.runId === "string" && artifact.replay.verify.runId.length > 0,
@@ -115,6 +123,14 @@ export default defineCommand({
       replayOutput && typeof replayOutput === "object" && !Array.isArray(replayOutput)
         ? ((replayOutput as Record<string, unknown>)._meta as Record<string, unknown> | undefined)
         : undefined;
+    const replayScenarios = replayMeta?.scenarioPath;
+    const replayPlugins = replayMeta?.pluginDigest;
+    const pluginEntries = replayPlugins && typeof replayPlugins === "object" ? Object.keys(replayPlugins) : [];
+    recordNestedInputs(cliPackageRoot(), [
+      ...(typeof replayScenarios === "string" ? [replayScenarios] : Array.isArray(replayScenarios) ? replayScenarios.filter((path) => typeof path === "string") : []),
+      ...pluginEntries,
+    ], {});
+    for (const entry of pluginEntries) await recordPluginClosureReads(resolve(cliPackageRoot(), entry));
 
     const semanticChecks = {
       runId:
