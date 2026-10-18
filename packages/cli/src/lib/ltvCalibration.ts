@@ -200,7 +200,9 @@ export function calibrateMonetization(rows: readonly TelemetryRow[]): Readonly<{
   for (const row of rows) {
     const day = Math.max(0, Math.floor(row.day));
     const u = users.get(row.userId) ?? { days: new Set<number>(), iap: 0, ad: 0, acq: undefined };
-    if (row.active ?? true) u.days.add(day);
+    // The LTV model counts every install as active on day 0, so per-day rates do too;
+    // an inactive install-day row still adds that install's exposure to the denominator.
+    if ((row.active ?? true) || day === 0) u.days.add(day);
     u.iap += Math.max(0, row.iapRevenue ?? 0);
     u.ad += Math.max(0, row.adRevenue ?? 0);
     if (row.acquisitionCost !== undefined && Number.isFinite(row.acquisitionCost)) {

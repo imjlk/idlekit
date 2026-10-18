@@ -91,4 +91,20 @@ describe("calibration result validity", () => {
     }
     expect(estimateLtvPerUser({ config, horizonDays: 0.5, progression: 0 }).cumulativeGrossRevenuePerUser).toBeCloseTo(0.55, 12);
   });
+
+  it("counts an inactive install-day row as day-0 exposure, as the LTV horizon does", () => {
+    // One install earns 1.00 in ads on day 0; the other is marked inactive and earns nothing.
+    const result = calibrateMonetization([
+      { userId: "a", day: 0, iapRevenue: 0, adRevenue: 1 },
+      { userId: "b", day: 0, iapRevenue: 0, adRevenue: 0, active: false },
+    ]);
+    expect(result.monetization?.revenue?.adArpDau).toBe(0.5);
+    expect(result.diagnostics.activeUserDays).toBe(2);
+    const config = deriveMonetizationConfig({
+      schemaVersion: 1, unit: { code: "USD" }, policy: { mode: "drop" }, model: { id: "linear", version: 1 },
+      initial: { wallet: { unit: "USD", amount: "0" } }, clock: { stepSec: 1, durationSec: 1 },
+      monetization: result.monetization,
+    });
+    expect(estimateLtvPerUser({ config, horizonDays: 1, progression: 0 }).cumulativeGrossRevenuePerUser).toBeCloseTo(0.5, 12);
+  });
 });
