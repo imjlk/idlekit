@@ -111,7 +111,8 @@ function registryPath(name: string): string {
   return name.replaceAll("/", "%2f");
 }
 
-async function fetchPackage(name: string): Promise<{ versions: string[]; latest: string | null } | null> {
+/** Every version npm lists for a package and its `latest` dist-tag, read from the packument; null on 404. */
+export async function fetchPackage(name: string): Promise<{ versions: string[]; latest: string | null } | null> {
   const response = await fetch(`${REGISTRY}/${registryPath(name)}`, {
     headers: { accept: "application/vnd.npm.install-v1+json", "cache-control": "no-cache" },
   });

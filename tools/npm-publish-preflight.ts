@@ -1,6 +1,6 @@
 import { resolve } from "path";
 import { ROOT, pathExists, readJson, writeText } from "./_bun";
-import { compareSemver } from "./release-registry";
+import { compareSemver, fetchPackage } from "./release-registry";
 
 type PackageManifest = Readonly<{
   name: string;
@@ -35,24 +35,6 @@ export function registryStatus(pkg: PackageManifest, registry: RegistryPackage |
     publishable: !alreadyPublished && (latest === null || compareSemver(pkg.version, latest) > 0),
     alreadyPublished,
   };
-}
-
-type RegistryView = { versions?: string | string[]; "dist-tags"?: { latest?: string } };
-
-/**
- * Parses `npm view <name> dist-tags versions --json`. npm 12 wraps the fields in a one-element
- * array, older npm prints the object, and a one-version list can be a bare string. Output without
- * a version list fails, so an unrecognized shape never reads as "nothing published".
- */
-export function parseRegistryView(stdout: string): RegistryPackage {
-  const parsed = JSON.parse(stdout) as RegistryView | RegistryView[];
-  const views = Array.isArray(parsed) ? parsed : [parsed];
-  if (views.length !== 1 || views[0]?.versions === undefined) {
-    throw new Error(`unexpected npm view output: ${stdout.slice(0, 400)}`);
-  }
-  const [view] = views as [RegistryView];
-  const versions = typeof view.versions === "string" ? [view.versions] : view.versions!;
-  return { versions, latest: view["dist-tags"]?.latest ?? null };
 }
 
 const PACKAGE_DIRS = ["packages/money", "packages/core", "packages/cli"] as const;
@@ -120,17 +102,9 @@ async function main(): Promise<void> {
 
   const statuses: RegistryStatus[] = [];
   for (const pkg of await loadPackages()) {
-    const view = runNpm(["view", pkg.name, "dist-tags", "versions", "--json", "--registry", "https://registry.npmjs.org/"]);
-    if (!view.ok) {
-      const missing = view.stderr.includes("E404") || view.stdout.includes("E404");
-      if (missing) {
-        statuses.push(registryStatus(pkg, null));
-        continue;
-      }
-      throw new Error(`npm view failed for ${pkg.name}.\n${view.stderr || view.stdout}`);
-    }
-
-    statuses.push(registryStatus(pkg, parseRegistryView(view.stdout)));
+    // Read the packument, as the Release workflow does: `npm view` resolves through `latest`,
+    // prints nothing for a package without that tag, and npm 12 changes its JSON shape.
+    statuses.push(registryStatus(pkg, await fetchPackage(pkg.name)));
   }
 
   const blocked = statuses.filter((status) => !status.publishable && !status.alreadyPublished);
