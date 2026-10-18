@@ -841,6 +841,7 @@ export default defineCommand({
         b: bScenario,
       },
       pluginDigest: loaded.pluginDigest,
+      effectiveEngine: engine.effectiveId,
     });
     const markdownWarnings = new Set<string>();
     if (selectedMetrics.some((metric) => ["endMoney", "endNetWorth", "droppedRate"].includes(metric))) {
