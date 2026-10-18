@@ -24,7 +24,7 @@ import { buildOutputMeta, deriveDeterministicRunId, hashContent } from "../io/ou
 import { printNextSteps } from "../io/nextSteps";
 import { writeCommandReplayArtifact } from "../io/replayPolicy";
 import { readScenarioFile } from "../io/readScenario";
-import { writeOutput } from "../io/writeOutput";
+import { assertOutputNotInput, writeOutput } from "../io/writeOutput";
 import { prepareResolvedRun } from "../lib/runConfiguration";
 import { readJsonFile, writeTextFile } from "../runtime/bun";
 
@@ -341,7 +341,8 @@ export default defineCommand({
             }
           : undefined,
       });
-      await writeTextFile(stateOutPath, `${JSON.stringify(serialized, null, 2)}\n`);
+      // Saving over the state passed to --resume is a checkpoint in place. Any other input stays untouched.
+      await writeTextFile(await assertOutputNotInput(stateOutPath, { allowFlags: ["resume"] }), `${JSON.stringify(serialized, null, 2)}\n`);
     }
 
     const offlineSummary = buildOfflineSummary(offlineRun);

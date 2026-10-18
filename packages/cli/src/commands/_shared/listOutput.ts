@@ -1,5 +1,5 @@
-import { resolve } from "path";
 import { buildOutputMeta } from "../../io/outputMeta";
+import { assertOutputNotInput } from "../../io/writeOutput";
 import { writeTextFile } from "../../runtime/bun";
 
 export type ListFormat = "json" | "md" | "csv";
@@ -25,7 +25,7 @@ export async function writeListOutput<T extends Record<string, unknown>>(args: {
     return;
   }
 
-  const path = resolve(args.out);
+  const path = await assertOutputNotInput(args.out);
   await writeTextFile(path, body);
   console.log(`Wrote ${args.format} output to ${path}`);
 }

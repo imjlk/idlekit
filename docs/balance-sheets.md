@@ -204,8 +204,9 @@ before evaluation and transaction failures preserve the previous bundle.
 The exported baseline scenario uses the declared horizon and strategy, clears
 the template's `untilExpr`, and disables fast approximation. Parameters of the
 same strategy ID are preserved; selecting a different ID uses its defaults.
-Replay with `idk simulate <scenario.json> --engine number --seed <reported-seed>`
-and the same plugin options. Runtime caps and the `simulate:<seed>` trial scope
+Replay with `idk simulate <scenario.json> --engine <engine> --seed <reported-seed>`,
+where `<engine>` is the `engine` recorded in `variants.json` and provenance, and
+the same plugin options. Runtime caps and the `simulate:<seed>` trial scope
 are recorded in provenance. Custom plugins must respect the deterministic model
 and strategy contracts for reproducible results.
 
@@ -250,6 +251,7 @@ idk balance examples/balance/linear/workflow.json
 # Replace the placeholder with generationPath printed above.
 GEN='<printed generationPath>'
 cat "$GEN/variants.json"
+# Pass the engine recorded in variants.json; this workflow refreshes with number.
 idk simulate "$GEN/scenario.json" --engine number --seed 7 --format json
 ```
 
@@ -258,7 +260,8 @@ commands for comparing variants or earlier generations, tuning strategy
 parameters, and running one-day offline-heavy and Monte Carlo session analyses.
 `compare` uses each scenario's strategy unless `--strategy` overrides both sides;
 `tune` searches strategy parameters and does not mutate the CSV. Both commands
-use the Number engine and have no `--engine` flag. `experience` exercises offline
+accept `--engine`; pass the engine recorded in `variants.json` so they measure
+the generation as it was refreshed. `experience` exercises offline
 caps with its session horizon rather than the pacing horizon. Deterministic seed
 repeats do not establish uncertainty, and its missing-first-visible-change Monte
 Carlo fallback is not a pacing gate; see the walkthrough's reporting boundaries.

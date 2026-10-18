@@ -78,7 +78,8 @@ publication, and freshness verification cover all exported artifacts.
 
 ## Replay and compare
 
-`compare` and `tune` use the Number engine and do not accept `--engine`.
+Pass the engine recorded in `variants.json` (`number` here) to `simulate`,
+`compare`, and `tune`. All three accept `--engine`; omitting it runs `number`.
 
 ```sh
 for SEED in 7 11; do
