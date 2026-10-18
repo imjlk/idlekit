@@ -45,7 +45,7 @@ function expectValid(report: FlowReportV1): void {
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-flow-adapter The observer hook is optional and three fixtures share it.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-flow-adapter #3c616c8 Re-read the section, then ran this function: onFlow records one sample, the three skins agree, and exponent spellings, true zero spellings, and a positive representable subnormal parse while unreadable amounts and nonzero decimals that become Number zero are rejected; losses that round to 1 without exactly spelling 1 are rejected and cannot conserve an empty stock, while exact-one spellings parse and conserve that stock.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-flow-adapter #9a86206 Re-read the section, then ran this function: onFlow records one sample, the three skins agree, a window whose finite bounds overflow its length is rejected while parsing and yields no fact, and exponent spellings, true zero spellings, and a positive representable subnormal parse while unreadable amounts and nonzero decimals that become Number zero are rejected; losses that round to 1 without exactly spelling 1 are rejected and cannot conserve an empty stock, while exact-one spellings parse and conserve that stock.
  * @evidence ./flow.ts#flowOptionalAdapter Reads the optional-adapter marker.
  * @evidenceReview ./flow.ts#flowOptionalAdapter #d29de61 The declaration is observer-not-required-model.
  * @evidence ./flow.ts#validateFlowReport Reads the published validator.
@@ -116,6 +116,15 @@ export function declaresFlowAdapter(): void {
   const reversedReport = diagnoseFlow({ ...load("steady"), samples: reversed });
   expect(reversedReport.facts.some((item) => item.kind === "saturation-time")).toBe(false);
   expect(reversedReport.facts).toEqual([]);
+  // Finite bounds whose distance overflows give no finite duration, so the window is not evidence.
+  const unbounded = steadyCase.samples.map((sample) => ({ ...sample, startSec: -1e308, endSec: 1e308 }));
+  const unboundedParse = parseFlowObservation({ ...steadyCase, samples: unbounded });
+  expect(unboundedParse.ok).toBe(false);
+  if (!unboundedParse.ok) expect(unboundedParse.issues).toContain("$input.samples[1] window duration finite");
+  const unboundedReport = diagnoseFlow({ ...steadyCase, samples: unbounded });
+  expect(unboundedReport.facts).toEqual([]);
+  expect(JSON.stringify(unboundedReport)).not.toContain("Infinity");
+  expectValid(unboundedReport);
   // A second sample with the same process, resource, kind, and window is rejected instead of read by order.
   const duplicated = parseFlowObservation({
     ...steadyCase,
@@ -457,7 +466,7 @@ export function diagnosesSteadyPipeline(): void {
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-conservation Conversion keeps the destination unit.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-conservation #514285c Re-read the section, then ran this function: 100 becomes 45, the units are not added, a queue, unretained, or source sample of another resource or window does not conserve, a later conserving window is found, an overflowed conversion and a positive conversion that underflows to zero do not match, genuinely zero sources or numerators and exactly total losses conserve an empty stock, a 1e-7, 4.5e-13, or 4.5e-25 conversion is not equal to an empty stock, two conserving windows publish the latest in either order, a stock in another unit than the destination throughput does not conserve and a matching one cites that throughput, the conservation fact names its destination resource, two edges into one stock are summed to 90, and a conserved 1e-10 keeps its spelling instead of rounding to 0.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-conservation #d7684bc Re-read the section, then ran this function: 100 becomes 45, the units are not added, a queue, unretained, or source sample of another resource or window does not conserve, a later conserving window is found, an overflowed conversion and a positive conversion that underflows to zero do not match, total loss of an overflowing 1e308 times 10 conserves an empty stock, 1e200, 1e-200, and 1e308 through equal ratios of 1e200, 1e-200, and 1e10 conserve their own amount, genuinely zero sources or numerators and exactly total losses conserve an empty stock, a 1e-7, 4.5e-13, or 4.5e-25 conversion is not equal to an empty stock, two conserving windows publish the latest in either order, a stock in another unit than the destination throughput does not conserve and a matching one cites that throughput, the conservation fact names its destination resource, two edges into one stock are summed to 90, and a conserved 1e-10 keeps its spelling instead of rounding to 0.
  * @evidence ./flow.ts#flowConservation Reads the conservation marker.
  * @evidenceReview ./flow.ts#flowConservation #ca6486f The declaration is converted-units-stay-apart.
  */
@@ -510,6 +519,23 @@ export function checksFlowConservation(): void {
     edges: conversionCase.edges.map((edge) => ({ ...edge, numerator: "10", denominator: "1", loss: "0" })),
   });
   expect(overflow.facts.some((item) => item.kind === "conservation")).toBe(false);
+  // Exact total loss is a zero conversion even when the pre-loss product would overflow.
+  const totalLoss = diagnoseFlow({
+    ...conversionCase,
+    samples: conversionCase.samples.map((sample) => (sample.kind === "inflow" ? { ...sample, amount: "1e308" } : { ...sample, amount: "0" })),
+    edges: conversionCase.edges.map((edge) => ({ ...edge, numerator: "10", denominator: "1", loss: "1" })),
+  });
+  expect(fact(totalLoss, "conservation", "dest")?.amount).toBe("0");
+  // A ratio whose intermediate product leaves the finite range but whose result does not is still converted.
+  for (const [amount, ratio, held] of [["1e200", "1e200", "1e+200"], ["1e-200", "1e-200", "1e-200"], ["1e308", "1e10", "1e+308"]] as const) {
+    const cancelled = diagnoseFlow({
+      ...conversionCase,
+      samples: conversionCase.samples.map((sample) => (
+        sample.kind === "inflow" ? { ...sample, amount } : { ...sample, amount: sample.kind === "queue" ? held : "0" })),
+      edges: conversionCase.edges.map((edge) => ({ ...edge, numerator: ratio, denominator: ratio, loss: "0" })),
+    });
+    expect(fact(cancelled, "conservation", "dest")?.amount).toBe(held);
+  }
   const underflow = diagnoseFlow({
     ...conversionCase,
     samples: conversionCase.samples.map((sample) => ({ ...sample, amount: sample.kind === "inflow" ? "1e-200" : "0" })),
