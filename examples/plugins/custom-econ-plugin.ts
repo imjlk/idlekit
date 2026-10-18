@@ -422,30 +422,7 @@ function createPluginModelFactory(): ModelFactory {
           return [buyProducer, buyUpgrade, exchangeGem, prestigeReboot];
         },
         netWorth(ctx: any, state: any) {
-          const vars = (state.vars ?? {}) as PluginVars;
-          const producers = Number(vars.producers ?? 0);
-          const upgrades = Number(vars.upgrades ?? 0);
-          const gems = Number(vars.gems ?? 0);
-
-          const producerValue = geometricCost(
-            Number(p.producerBaseCost),
-            Number(p.producerCostGrowth),
-            0,
-            producers,
-          );
-          const upgradeValue = geometricCost(
-            Number(p.upgradeBaseCost),
-            Number(p.upgradeGrowth),
-            0,
-            upgrades,
-          );
-          const gemValue = gems * Number(p.gemExchangeCost);
-          const implied = producerValue + upgradeValue + gemValue;
-
-          return {
-            unit: ctx.unit,
-            amount: ctx.E.add(state.wallet.money.amount, ctx.E.from(String(implied))),
-          };
+          return { unit: ctx.unit, amount: currentNetWorth(ctx, state) };
         },
         milestones(_ctx: any, prev: any, next: any) {
           const before = (prev.vars ?? {}) as PluginVars;
@@ -535,6 +512,18 @@ const producerFirstStrategyFactory: StrategyFactory = {
   },
 };
 
+/**
+ * The guard the built-in log10 objectives use: a non-finite amount is refused instead of scored, and zero or an
+ * amount below 1e-300 scores -300, so zero never outranks a positive amount. Like `absLog10`, it reads magnitude.
+ */
+function finiteAmountLog10<N>(E: Engine<N>, amount: N): number {
+  if (!E.isFinite(amount)) throw new RangeError("plugin.gemsAndWorthLog10 requires a finite net worth in the selected engine");
+  const value = E.absLog10(amount);
+  if (value === Number.NEGATIVE_INFINITY) return -300;
+  if (!Number.isFinite(value)) throw new RangeError("plugin.gemsAndWorthLog10 requires a finite net worth logarithm");
+  return Math.max(-300, value);
+}
+
 const gemsAndWorthObjectiveFactory: ObjectiveFactory = {
   id: "plugin.gemsAndWorthLog10",
   defaultParams: {
@@ -554,7 +543,7 @@ const gemsAndWorthObjectiveFactory: ObjectiveFactory = {
         const worth = scenario.model.netWorth?.(scenario.ctx as any, run.end as any) ?? run.end.wallet.money;
         const gems = Number((run.end.vars as PluginVars | undefined)?.gems ?? 0);
         const bonus = Math.log10(Math.max(1, 1 + gems * (p.gemsWeight ?? 2)));
-        return E.absLog10(worth.amount) + bonus;
+        return finiteAmountLog10(E, worth.amount) + bonus;
       },
     };
   },

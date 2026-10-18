@@ -208,21 +208,23 @@ function compareIdentity(args: {
   };
 }
 
+function requireFiniteAmount<N>(E: Engine<N>, amount: N, label: string): N {
+  if (!E.isFinite(amount)) throw new RangeError(`compare ${label} must be finite in the selected engine`);
+  return amount;
+}
+
 function measureScenario<N>(args: {
   compiled: ReturnType<typeof compileComparableScenario<N>>;
   E: Engine<N>;
   targetWorth?: string;
   maxDuration: number;
 }) {
-  const requireFinite = (amount: N, label: string): N => {
-    if (!args.E.isFinite(amount)) throw new RangeError(`compare ${label} must be finite in the selected engine`);
-    return amount;
-  };
+  const requireFinite = (amount: N, label: string): N => requireFiniteAmount(args.E, amount, label);
+  // The full-duration economy run is checked where its end values are compared, not here, so an ETA or design
+  // metric that never reads them is not failed by a later overflow.
   const runInput = args.compiled.fresh("economy");
   const run = runScenario(runInput);
   const endWorth = runInput.model.netWorth?.(runInput.ctx, run.end) ?? run.end.wallet.money;
-  requireFinite(run.end.wallet.money.amount, "end money");
-  requireFinite(endWorth.amount, "end net worth");
 
   let etaSeconds: number | undefined;
   let etaReached: boolean | undefined;
@@ -529,9 +531,15 @@ function compareDecisionForMetric<N>(args: {
 }): "a" | "b" | "tie" | undefined {
   switch (args.metric) {
     case "endMoney":
-      return betterFromCmp(args.E.cmp(args.ma.endMoney, args.mb.endMoney));
+      return betterFromCmp(args.E.cmp(
+        requireFiniteAmount(args.E, args.ma.endMoney, "end money"),
+        requireFiniteAmount(args.E, args.mb.endMoney, "end money"),
+      ));
     case "endNetWorth":
-      return betterFromCmp(args.E.cmp(args.ma.endNetWorth, args.mb.endNetWorth));
+      return betterFromCmp(args.E.cmp(
+        requireFiniteAmount(args.E, args.ma.endNetWorth, "end net worth"),
+        requireFiniteAmount(args.E, args.mb.endNetWorth, "end net worth"),
+      ));
     case "droppedRate":
       return betterFromCmp(
         args.ma.droppedRate < args.mb.droppedRate ? 1 : args.ma.droppedRate > args.mb.droppedRate ? -1 : 0,
@@ -623,7 +631,10 @@ function buildSingleCompareOutput<N>(args: {
     },
     insights: buildCompareInsights({
       metric: args.metric,
-      endNetWorthWinner: betterFromCmp(args.E.cmp(args.ma.endNetWorth, args.mb.endNetWorth)),
+      // A net worth that left the engine's finite range ranks nothing, so it names no insight driver.
+      endNetWorthWinner: args.E.isFinite(args.ma.endNetWorth) && args.E.isFinite(args.mb.endNetWorth)
+        ? betterFromCmp(args.E.cmp(args.ma.endNetWorth, args.mb.endNetWorth))
+        : "tie",
       better: result.better,
       a: {
         endNetWorth: args.E.toString(args.ma.endNetWorth),
@@ -850,6 +861,10 @@ export default defineCommand({
       if (differentTimes(aElapsed, bElapsed)) {
         markdownWarnings.add(`Economy runs cover different elapsed durations (A: ${aElapsed}s, B: ${bElapsed}s); end values are not normalized to a common horizon.`);
       }
+    }
+    // A selected end-money or net-worth metric fails on a non-finite end below. Other metrics only report it.
+    if ([ma.endMoney, ma.endNetWorth, mb.endMoney, mb.endNetWorth].some((amount) => !E.isFinite(amount))) {
+      markdownWarnings.add("The full-duration economy run left the selected engine's finite range; its end values are reported but not ranked.");
     }
     const singleResults = selectedMetrics.map((metric) => {
       const design = getDesignPair(metric);
