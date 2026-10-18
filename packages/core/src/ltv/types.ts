@@ -49,3 +49,23 @@ export type LtvPointEstimate = Readonly<{
   cumulativeLtvPerUser: number;
 }>;
 
+
+/** Inputs of one point estimate. `horizonDays` H covers install days [0, H); day 0 is the install day. */
+export type LtvEstimateArgs = Readonly<{
+  config: MonetizationConfig;
+  horizonDays: number;
+  progression: number;
+}>;
+
+/** Distribution inputs. Omitted draws, quantiles and seed fall back to `config.uncertainty`. */
+export type LtvDistributionArgs = LtvEstimateArgs & Readonly<{
+  draws?: number;
+  quantiles?: readonly number[];
+  seed?: number;
+}>;
+
+/** Sample means and LTV order statistics keyed by exact percent (`q50`, `q2.5`). */
+export type LtvDistribution = Readonly<{
+  mean: LtvPointEstimate;
+  quantiles: Record<string, number>;
+}>;

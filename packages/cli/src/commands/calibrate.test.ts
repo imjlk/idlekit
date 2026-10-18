@@ -194,6 +194,26 @@ describe("calibrate command", () => {
     } finally { await removePath(dir); }
   });
 
+  it("reports absent cohort revenue and acquisition columns as unmeasured, not zero", async () => {
+    const out = runCliJson<any>(["calibrate", "../../examples/telemetry/cohort.csv", "--observed-through-day", "7", "--format", "json"]);
+    expect(out.monetization).toEqual({ cohorts: { baseUsers: 4 }, retention: { longTailDailyDecay: 0.02 } });
+    expect(out.diagnostics.unmeasured).toEqual(["iapRevenue", "adRevenue", "acquisitionCost"]);
+    for (const key of ["totalIap", "totalAd", "payerUsers", "payerDays", "estimatedCorrelation"]) expect(out.diagnostics).not.toHaveProperty(key);
+    expect(out.diagnostics.retention).toEqual({ d1: 0.5, d7: 0.25 });
+
+    const dir = await createTempDir("idlekit-calibrate-unmeasured");
+    try {
+      const partial = resolve(dir, "partial.json");
+      await writeText(partial, JSON.stringify([{ userId: "a", day: 0, iapRevenue: 1 }, { userId: "a", day: 1 }]));
+      const result = runCli(["calibrate", partial, "--observed-through-day", "1"], { check: false });
+      expect(result.exitCode).not.toBe(0);
+      expect(result.stderr).toContain("CLI_USAGE");
+      expect(result.stderr).toContain("iapRevenue must be supplied on every telemetry row");
+      // Exploratory mode keeps its existing zero default for missing revenue fields.
+      expect(runCliJson<any>(["calibrate", partial]).diagnostics.totalIap).toBe(1);
+    } finally { await removePath(dir); }
+  });
+
   it("returns estimated correlation in monetization uncertainty", async () => {
     const dir = await createTempDir("idlekit-calibrate");
     try {

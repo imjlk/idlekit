@@ -73,7 +73,9 @@
     },
     "monetization": {
       "type": "object",
-      "required": ["retention", "revenue", "acquisition", "uncertainty"],
+      "$comment": "revenue and uncertainty are omitted when no revenue source was exported, and acquisition when no acquisition cost was exported; an omitted field is unmeasured, not zero.",
+      "required": ["retention"],
+      "dependentRequired": { "revenue": ["uncertainty"], "uncertainty": ["revenue"] },
       "properties": {
         "retention": { "type": "object" },
         "revenue": { "type": "object" },

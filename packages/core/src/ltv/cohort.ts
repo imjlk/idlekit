@@ -134,7 +134,7 @@ export type RetentionPatchPlan = Readonly<{
   warnings: readonly string[];
 }>;
 
-/** Keep exact observations separate from the monotonic curve the LTV model accepts. */
+/** Keep exact observations separate from the non-increasing curve scenario validation requires. */
 export function planRetentionPatch(observation: CohortObservation, assumptions: RetentionAssumptions = {}): RetentionPatchPlan {
   assertRetentionAssumptions(assumptions);
   const rates = observedRetentionRates(observation);
@@ -148,7 +148,7 @@ export function planRetentionPatch(observation: CohortObservation, assumptions: 
   for (const day of RETENTION_DAYS) {
     const rate = merged[`d${day}`];
     if (rate === undefined) continue;
-    if (previous && previous.rate < rate) warnings.push(`D${previous.day}=${previous.rate} is below D${day}=${rate}. LTV requires d1 >= d7 >= d30 >= d90; review observations and retained assumptions before applying a patch.`);
+    if (previous && previous.rate < rate) warnings.push(`D${previous.day}=${previous.rate} is below D${day}=${rate}. A complete scenario retention curve must satisfy d1 >= d7 >= d30 >= d90, and the LTV model would interpolate a rise as given; review observations and retained assumptions before applying a patch.`);
     previous = { day, rate };
   }
   return warnings.length ? { status: "requires-review", retention: {}, warnings } : { status: "ready", retention: rates, warnings };

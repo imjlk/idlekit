@@ -137,6 +137,8 @@ The shipped analysis scope includes flow diagnosis, guarded analytic advance, th
 
 ## Interpreting evaluate value estimates
 
+Modeled LTV is undiscounted. A horizon of H days covers install days `[0, H)`: day 0 is the install day, as in telemetry and `calibrate`, and a fractional last day is prorated at that day's retention. Quantile keys are exact percents (`q50`, `q2.5`).
+
 `evaluate --format md` labels end net worth in the scenario's game unit and displays the requested horizons alongside modeled LTV per user. Game wealth can be an input to a revenue estimate. Connecting it to actual sales requires an explicit exchange rate or conversion model, a revenue model, a currency, retention assumptions, and a horizon. State those assumptions and calibrate them against telemetry; the configured or default monetization parameters are estimates, rather than measured sales. The JSON output keeps the economy values and monetization fields available for your own conversion workflow.
 
 Use [`calibrate --observed-through-day N --scenario scenario.json`](./player-telemetry.md)
