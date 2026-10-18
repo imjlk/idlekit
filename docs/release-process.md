@@ -67,6 +67,16 @@ the workflow creates the PR separately. Its `auto` command can fall through to
 publishing, so neither job uses it. The preparation job has no npm credentials
 or OIDC permission.
 
+CI's `changesets` job runs that same pinned action (action 0.20.0, sampo-core 0.18.0)
+as `release` with `dry-run: true` on every pull request and push. Sampo parses every
+pending changeset before the dry-run stop, so a changeset that the prepare job would
+reject, such as a `minor (Added)` bump without `changesets.tags` in `.sampo/config.toml`,
+fails the PR instead of the next Release run. The publish job installs the `sampo@0.22.0`
+CLI, which is built on the same sampo-core 0.18.0, for the `release:plan` step of
+`publish:gate`. Use that CLI version for a local `bun run release:plan`; an older CLI
+can accept or reject what the action does not. `tools/ci-workflow.test.ts` fails when the
+CLI pin and the action's core drift apart.
+
 Merging the release PR publishes. On every push to `main`, the `plan` job
 (`bun tools/release-registry.ts plan`) publishes only when the pushed commit is still the
 head of `main` and some package version is not on npm yet. Only a merged release PR changes
@@ -83,7 +93,10 @@ any missing tag or GitHub release by hand.
 Only the `publish` job sets up Node/npm, installs the matching Sampo CLI, runs
 `publish:gate` and `readme:smoke`, and gets the OIDC permission for the `publish` step.
 Its commit must still match remote `main` before preflight and immediately before
-publishing. After publishing, `bun tools/release-registry.ts verify` waits for the
+publishing. Preflight uses the same `TTSC_GO_CACHE_DIR` and ttsc plugin cache as CI, so
+its typecheck no longer rebuilds every plugin from a cold Go cache. The job only restores
+that cache: CI's `typecheck` job on `main` writes it, and the publish job never saves an
+entry. After publishing, `bun tools/release-registry.ts verify` waits for the
 new versions on the registry, rejects `workspace:` specs in their registry metadata,
 requires provenance for every current version except the locally bootstrapped ones in
 `PROVENANCE_EXEMPT`, installs every current version from npm, and checks `idk --version`.
@@ -128,7 +141,7 @@ What `release:publish:preflight` checks:
 1. `publish:gate` succeeds
 2. `readme:smoke` succeeds
 3. `npm whoami` and `npm ping` succeed
-4. at least one package version is new, and no package version is lower than the one on npm (a version that is already published is skipped)
+4. at least one package version is new, and no unpublished package version is lower than npm `latest`. A version npm already lists under any dist-tag, or none, is skipped; the check reads the package's full version list, not only `latest`
 
 The preflight, the publish, and the manifest rewrite only know the packages listed in `tools/npm-publish-preflight.ts`, `tools/release-lockfile.ts`, `tools/package-manifest.ts`, and the prepare job of `.github/workflows/release.yml`. Add a new package to those lists first.
 
@@ -167,6 +180,8 @@ bun run release:dry-run
 ## Public repo notes
 
 - The release workflow is pinned to commit SHAs for third-party GitHub Actions.
+- The Sampo action installs cargo-binstall only when none is on `PATH`, and then pipes an installer script from the cargo-binstall `main` branch that downloads `releases/latest`. The CI `changesets` job and both Release jobs run `.github/actions/cargo-binstall` first, which downloads cargo-binstall 1.25.1 and checks its sha256, so that unpinned path never runs. Bump the version and both digests there together.
+- cargo-binstall then downloads the `sampo-github-action` binary for the action's own version from the `bruits/sampo` GitHub release. `BINSTALL_STRATEGIES=crate-meta-data` stops the quick-install mirror and source-build fallbacks, and `BINSTALL_DISABLE_TELEMETRY` turns off its install statistics. That binary is not checksum-pinned by this repository, and the publish job runs it with `contents: write` and `id-token: write`. Review a Sampo action bump as a change to the publishing binary.
 - Protect `main` and review the release PR and its CI before merging it; merging publishes.
 - Other pushes and default manual runs only prepare a PR; `publish=true` retries a publication that failed.
 - The release workflow upgrades npm only inside GitHub Actions so local development can stay Bun-first.

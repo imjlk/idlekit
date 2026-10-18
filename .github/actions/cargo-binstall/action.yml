@@ -1,0 +1,33 @@
+name: Pinned cargo-binstall
+description: >-
+  Install a checksum-verified cargo-binstall before the Sampo action. The action installs
+  cargo-binstall only when none is on PATH, from an installer script on the cargo-binstall
+  main branch that downloads releases/latest.
+
+runs:
+  using: composite
+  steps:
+    - name: Install cargo-binstall 1.25.1
+      shell: bash
+      env:
+        BINSTALL_VERSION: "1.25.1"
+      # Digests are GitHub's sha256 for the v1.25.1 release assets.
+      run: |
+        set -euo pipefail
+        [[ "$(uname -s)" == Linux ]] || { echo "cargo-binstall pin covers Linux runners only" >&2; exit 1; }
+        case "$(uname -m)" in
+          x86_64) target=x86_64-unknown-linux-musl; sha256=8e06c41af972f9922f28c6ae467e41ffa9b0688d563d0aabd0dcbd5244ab849b ;;
+          aarch64) target=aarch64-unknown-linux-musl; sha256=87495c6a6e921e02dd9ccf4dc8cc0a9b3a8d7ae8a07681f7f99bbcf306f42fdd ;;
+          *) echo "cargo-binstall pin has no digest for $(uname -m)" >&2; exit 1 ;;
+        esac
+        dir="$RUNNER_TEMP/pinned-cargo-binstall"
+        mkdir -p -- "$dir"
+        archive="$dir/cargo-binstall.tgz"
+        curl --proto '=https' --tlsv1.2 -fsSL --retry 3 -o "$archive" \
+          "https://github.com/cargo-bins/cargo-binstall/releases/download/v${BINSTALL_VERSION}/cargo-binstall-${target}.tgz"
+        echo "${sha256}  ${archive}" | sha256sum -c -
+        tar -xzf "$archive" -C "$dir" cargo-binstall
+        rm -- "$archive"
+        version=$("$dir/cargo-binstall" -V)
+        [[ "$version" == *"$BINSTALL_VERSION"* ]] || { echo "unexpected cargo-binstall version: $version" >&2; exit 1; }
+        echo "$dir" >> "$GITHUB_PATH"

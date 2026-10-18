@@ -14,17 +14,44 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
+# The Linux jobs run in parallel. The ttsc cache key follows fixtures/toolchain/pins.json, which pins
+# every package that builds a ttsc plugin, so release merges that only bump workspace versions in
+# bun.lock reuse it. Only the typecheck job saves it; the other jobs restore it.
 jobs:
-  quality:
+  # Runs the same pinned Sampo action and core as the Release prepare job, so a changeset that
+  # prepare would reject fails here first.
+  changesets:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Install pinned cargo-binstall
+        uses: ./.github/actions/cargo-binstall
+
+      - name: Validate changesets with the release Sampo
+        uses: bruits/sampo/crates/sampo-github-action@11306bad0caaa58c8a36fa203695c5f2cacc4344 # action 0.20.0, core 0.18.0
+        with:
+          command: release
+          dry-run: "true"
+        env:
+          SAMPO_RELEASE_BRANCH: main
+          BINSTALL_STRATEGIES: crate-meta-data
+          BINSTALL_DISABLE_TELEMETRY: "true"
+
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
     env:
-      GITHUB_BEFORE: ${{ github.event.before }}
-      GITHUB_BASE_SHA: ${{ github.event.pull_request.base.sha }}
       # Smoke still uses a fresh plugin directory, so the cold/warm assertion stays.
       # The Go object cache is the part that otherwise recompiles for several minutes.
       TTSC_GO_CACHE_DIR: ${{ github.workspace }}/node_modules/.cache/ttsc/go-build
-      # After Build, replay and KPI run dist/main.js instead of rebuilding ttsc per command.
-      IDLEKIT_CLI_DIST: "1"
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -48,13 +75,71 @@ jobs:
       - name: Source audit check
         run: bun tools/analysis-baseline-check.ts
 
+      - name: Runtime Import Check
+        run: bun run runtime:check
+
+      - name: Restore ttsc plugins
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            node_modules/.cache/ttsc/plugins
+            node_modules/.cache/ttsc/go-build
+          key: ${{ runner.os }}-${{ runner.arch }}-ttsc-${{ hashFiles('fixtures/toolchain/pins.json') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-ttsc-
+
+      # Every tools test runs by directory, so a new one is picked up without editing this list.
+      # The negative conformance test is a protected inventory binding that evidence:check runs in
+      # the typecheck job; Windows runs it directly.
+      - name: Tools tests
+        run: bun test ./tools --path-ignore-patterns='tools/conformance.negative.test.ts'
+
+      - name: Toolchain smoke
+        run: bun run toolchain:smoke
+
+      - name: Contracts Check
+        run: bun run contracts:check
+
+      - name: Gunshi Command Check
+        run: bun run --cwd packages/cli generate:check
+
+      - name: Shell Completion Check
+        run: bun run --cwd packages/cli doctor:completions
+
+      - name: Template Governance Check
+        run: bun run templates:check
+
+  typecheck:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      GITHUB_BEFORE: ${{ github.event.before }}
+      GITHUB_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      TTSC_GO_CACHE_DIR: ${{ github.workspace }}/node_modules/.cache/ttsc/go-build
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: "1.4.2"
+
+      - name: Setup Node (ttsc launcher)
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "26.11.1"
+
+      - name: Install
+        run: bun install --frozen-lockfile
+
       - name: Cache ttsc plugins
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             node_modules/.cache/ttsc/plugins
             node_modules/.cache/ttsc/go-build
-          key: ${{ runner.os }}-${{ runner.arch }}-ttsc-${{ hashFiles('bun.lock') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-ttsc-${{ hashFiles('fixtures/toolchain/pins.json') }}
           restore-keys: |
             ${{ runner.os }}-${{ runner.arch }}-ttsc-
 
@@ -66,41 +151,56 @@ jobs:
         if: github.event_name == 'push' && github.event.before != '0000000000000000000000000000000000000000'
         run: git fetch --no-tags --depth=1 origin ${{ github.event.before }}
 
+      # A fresh plugin directory proves the protected typecheck builds its plugins from source.
+      # It is the only typecheck: a second run on the restored plugin directory repeated the
+      # ~9-minute evidence inventory without checking anything the cold run does not.
       - name: Cold protected typecheck
         env:
           TTSC_CACHE_DIR: ${{ runner.temp }}/idlekit-cold-typecheck
         run: bun run typecheck
 
-      - name: Toolchain smoke
-        run: |
-          bun test tools/capture-output.test.ts
-          bun test tools/_bun.test.ts tools/compiler-bin.test.ts tools/compiler-call-check.test.ts tools/toolchain-host.test.ts tools/evidence/program.test.ts tools/evidence/source-lock.test.ts tools/evidence/source-graph.test.ts
-          bun test tools/release-workflow.test.ts tools/release-lockfile.test.ts tools/npm-pack.test.ts tools/tarball-check.test.ts tools/package-manifest.test.ts tools/release-registry.test.ts
-          bun run toolchain:smoke
+      # The cold run built its plugins in a temporary directory. Link them into the shared plugin
+      # directory from the warm Go cache, so the entry this job saves serves the other jobs.
+      - name: Prepare shared ttsc plugins
+        run: bun run toolchain:prepare
 
       - name: Graph check
         run: bun run graph:check
 
-      - name: Typecheck
-        run: bun run typecheck
-
       - name: Evidence smoke
         run: bun run evidence:smoke
 
-      - name: Evidence runner regression tests
-        run: bun test tools/evidence/runner-registry.test.ts
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      TTSC_GO_CACHE_DIR: ${{ github.workspace }}/node_modules/.cache/ttsc/go-build
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Contracts Check
-        run: bun run contracts:check
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: "1.4.2"
 
-      - name: Gunshi Command Check
-        run: bun run --cwd packages/cli generate:check
+      - name: Setup Node (ttsc launcher)
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "26.11.1"
 
-      - name: Shell Completion Check
-        run: bun run --cwd packages/cli doctor:completions
+      - name: Install
+        run: bun install --frozen-lockfile
 
-      - name: Runtime Import Check
-        run: bun run runtime:check
+      - name: Restore ttsc plugins
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            node_modules/.cache/ttsc/plugins
+            node_modules/.cache/ttsc/go-build
+          key: ${{ runner.os }}-${{ runner.arch }}-ttsc-${{ hashFiles('fixtures/toolchain/pins.json') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-ttsc-
 
       - name: Test
         run: bun run test
@@ -108,20 +208,51 @@ jobs:
       - name: Conformance
         run: bun run test:conformance
 
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      TTSC_GO_CACHE_DIR: ${{ github.workspace }}/node_modules/.cache/ttsc/go-build
+      # After Build, replay and KPI run dist/main.js instead of rebuilding ttsc per command.
+      IDLEKIT_CLI_DIST: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: "1.4.2"
+
+      - name: Setup Node (ttsc launcher)
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "26.11.1"
+
+      - name: Install
+        run: bun install --frozen-lockfile
+
+      - name: Setup npm for release smoke
+        run: npm install -g npm@12.2.0
+
+      - name: Restore ttsc plugins
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            node_modules/.cache/ttsc/plugins
+            node_modules/.cache/ttsc/go-build
+          key: ${{ runner.os }}-${{ runner.arch }}-ttsc-${{ hashFiles('fixtures/toolchain/pins.json') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-ttsc-
+
       - name: Build
         run: bun run build
 
       - name: Release Dry Run
         run: bun run release:dry-run
 
-      - name: Performance budget tests
-        run: bun test tools/performanceBudget.test.ts tools/bench-sim.test.ts
-
       - name: Perf Check (representative benchmark)
         run: bun run bench:sim:check
-
-      - name: Template Governance Check
-        run: bun run templates:check
 
       - name: Install Smoke
         run: bun run install:smoke
@@ -146,7 +277,8 @@ jobs:
 
   windows-cli:
     runs-on: windows-latest
-    timeout-minutes: 30
+    # Recent runs took 14-24 minutes; leave headroom for slow Windows runners.
+    timeout-minutes: 45
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -232,7 +364,7 @@ jobs:
   # macOS links TMPDIR through /var -> /private/var; Linux and Windows never exercise that path.
   macos-cli:
     runs-on: macos-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

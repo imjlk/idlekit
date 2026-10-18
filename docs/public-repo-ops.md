@@ -17,9 +17,17 @@ Protect `main` with these defaults:
 
 Required checks on `main`:
 
-- `quality`
+- `changesets`
+- `checks`
+- `typecheck`
+- `test`
+- `build`
+- `windows-cli`
+- `macos-cli`
 - `docs-verify`
 - `Analyze (javascript-typescript)`
+
+The first five are the parallel Linux jobs of `.github/workflows/ci.yml`; together they replace the former single `quality` job. `changesets` dry-runs the Release workflow's pinned Sampo action, so a changeset the release would reject fails the PR.
 
 Do not require the `Release` workflow as a merge gate.
 
