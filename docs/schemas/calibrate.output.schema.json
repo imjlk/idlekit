@@ -9,7 +9,7 @@
     "patchStatus": ["observation", "patchWarnings"],
     "patchWarnings": ["observation", "patchStatus"]
   },
-  "$comment": "Counts, rates, cutoff consistency and interval containment are checked by assertCohortObservation before CLI output; portable JSON Schema cannot compare sibling numeric values.",
+  "$comment": "Counts, rates, cutoff consistency and exact Wilson 95% interval bounds for each observed rate are checked by assertCohortObservation before CLI output; portable JSON Schema cannot compare sibling numeric values.",
   "$defs": {
     "retentionDayOrder": {
       "type": "array", "minItems": 4, "maxItems": 4,
