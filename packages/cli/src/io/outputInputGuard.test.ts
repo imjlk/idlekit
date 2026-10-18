@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { link, readFile, symlink } from "fs/promises";
+import { createHash } from "crypto";
 import { resolve } from "path";
 import { createTempDir, pathExists, REPO_ROOT, removePath, runCli, writeText } from "../testkit/bun";
 
@@ -19,6 +20,16 @@ beforeAll(async () => {
 afterAll(async () => { await removePath(dir); });
 
 const text = (path: string) => readFile(path, "utf8");
+
+/** Sorted-key JSON, the text an experiment spec hashes for its scenario. */
+function canonical(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value) ?? "null";
+  if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
+  const entries = Object.entries(value as Record<string, unknown>)
+    .filter(([, entry]) => entry !== undefined)
+    .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0));
+  return `{${entries.map(([key, entry]) => `${JSON.stringify(key)}:${canonical(entry)}`).join(",")}}`;
+}
 
 async function expectRefused(args: string[], protectedPath: string, body: string): Promise<void> {
   const result = runCli(args, { check: false });
@@ -55,13 +66,40 @@ describe("output paths never replace an input", () => {
     }, 120_000);
   }
 
-  it("still writes a separate --out, including one named like a flag value", async () => {
-    const out = resolve(dir, "json");
-    const result = runCli(["simulate", scenario, "--duration", "60", "--format", "json", "--out", out], { cwd: dir });
-    expect(result.exitCode).toBe(0);
-    expect(JSON.parse(await text(out))).toMatchObject({ _meta: { command: "simulate" } });
+  it("rewrites an existing --out whose name equals a value of a flag that is not a path", async () => {
+    const out = resolve(dir, "run-id-output");
+    // The second run sees an existing file with the --run-id text as its name. --run-id is not an input path.
+    for (let run = 0; run < 2; run++) {
+      const result = runCli(["simulate", scenario, "--duration", "60", "--run-id", out, "--out", out]);
+      expect(result.exitCode).toBe(0);
+      expect(JSON.parse(await text(out))).toMatchObject({ _meta: { command: "simulate", runId: out } });
+    }
     await removePath(out);
   }, 60_000);
+
+  it("protects a scenario named inside an experiment spec and a plugin's local import", async () => {
+    const spec = resolve(dir, "spec.json");
+    const parsed = JSON.parse(source);
+    await writeText(spec, JSON.stringify({
+      schemaVersion: 1,
+      scenario: { ref: scenario, hash: createHash("sha256").update(canonical(parsed)).digest("hex") },
+      model: { id: parsed.model.id, version: parsed.model.version },
+      metricId: "endMoney",
+      dimensions: [{ id: "income", target: "model", path: "incomePerSec", space: { kind: "choice", values: ["1", "2"] }, baseline: "1", probes: ["2"] }],
+      budget: { candidates: 2, seeds: 1 }, seeds: [7], horizonSec: 30, stepSec: 1, session: { pattern: "always-on", days: 1 },
+    }));
+    expect(runCli(["experiment", spec]).exitCode).toBe(0);
+    await expectRefused(["experiment", spec, "--out", scenario], scenario, source);
+
+    const helper = resolve(dir, "helper.mjs");
+    const helperBody = "export const strategies = [];\n";
+    await writeText(helper, helperBody);
+    const plugin = resolve(dir, "plugin.mjs");
+    await writeText(plugin, 'export { strategies } from "./helper.mjs";\n');
+    const pluginArgs = ["simulate", scenario, "--duration", "60", "--plugin", plugin, "--allow-plugin", "true"];
+    expect(runCli(pluginArgs).exitCode).toBe(0);
+    await expectRefused([...pluginArgs, "--out", helper], helper, helperBody);
+  }, 120_000);
 
   it("guards --artifact-out, --state-out, and replay verify --out", async () => {
     await expectRefused(["simulate", scenario, "--duration", "60", "--artifact-out", scenario], scenario, source);
@@ -77,6 +115,8 @@ describe("output paths never replace an input", () => {
     expect(runCli(["simulate", scenario, "--duration", "60", "--artifact-out", artifact]).exitCode).toBe(0);
     const artifactBody = await text(artifact);
     await expectRefused(["replay", "verify", artifact, "--out", artifact], artifact, artifactBody);
+    // The replay reads the recorded scenario in a child process; that scenario is still an input of verify.
+    await expectRefused(["replay", "verify", artifact, "--out", scenario], scenario, source);
   }, 120_000);
 });
 

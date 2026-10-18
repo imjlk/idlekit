@@ -45,6 +45,8 @@ test("number breach gaps are reported at the operands' precision", async () => {
     [1e-7, 3e-7, undefined, "below the minimum by 2e-7 MANA"],
     [1.5, 2, undefined, "below the minimum by 0.5 MANA"],
     [1e21, 0, 1, "above the maximum by 1e+21 MANA"],
+    [1e-200, 2e-200, undefined, "below the minimum by 1e-200 MANA"],
+    [1.25e-150, 1.5e-150, undefined, "below the minimum by 2.5e-151 MANA"],
   ] as const) {
     const report = await runPacingChecks(config(min, max), () => ({ money: amount }));
     expect(report.status).toBe("breach");

@@ -20,6 +20,7 @@ import {
 } from "@idlekit/core";
 import type { EconPluginModule } from "./types";
 import { fileExists, readTextFile, sha256Hex } from "../runtime/bun";
+import { recordInputRead } from "../runtime/invocation";
 import { designObjectiveFactories } from "../lib/designObjectives";
 import { createLinearFactory } from "./linearModel";
 import { asPluginTrustError } from "./trust-error";
@@ -342,6 +343,7 @@ function isPathInsideRoot(pathAbs: string, rootAbs: string): boolean {
 }
 
 async function sha256File(pathAbs: string): Promise<string> {
+  recordInputRead(pathAbs);
   const buffer = await Bun.file(pathAbs).bytes();
   return sha256Hex(buffer);
 }

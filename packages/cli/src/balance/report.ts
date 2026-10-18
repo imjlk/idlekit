@@ -12,11 +12,16 @@ function decimals(value: number): number {
   return Math.max(0, (mantissa.split(".")[1]?.length ?? 0) - Number(exponent));
 }
 
-/** The gap at the operands' own precision, so 1.2 - 1 reads 0.2 rather than binary rounding noise. */
+/**
+ * The gap at the operands' own precision, so 1.2 - 1 reads 0.2 rather than binary rounding noise. The last
+ * decimal place becomes a count of significant digits, so a gap of 1e-200 keeps its exponent.
+ */
 function gap(larger: number, smaller: number): number {
   const difference = larger - smaller;
-  if (!Number.isFinite(difference)) return difference;
-  return Number(difference.toFixed(Math.min(100, Math.max(decimals(larger), decimals(smaller)))));
+  if (!Number.isFinite(difference) || difference === 0) return difference;
+  const lastPlace = Math.max(decimals(larger), decimals(smaller));
+  const digits = lastPlace + Math.floor(Math.log10(Math.abs(difference))) + 1;
+  return Number(difference.toPrecision(Math.min(17, Math.max(1, digits))));
 }
 
 function explain(result: PacingTargetResult): string {
