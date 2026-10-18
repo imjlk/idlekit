@@ -17,7 +17,7 @@ import {
   isSafeJevReport,
   type JevTransport,
 } from "./jev";
-import { jevAlgorithmVersion, jevJsonSchema, jevSchemaId, validateJevAdvisory, type JevAdvisoryV1 } from "@idlekit/core";
+import { jevAlgorithmVersion, jevJsonSchema, jevSchemaId, judgeArtifact, validateJevAdvisory, type JevAdvisoryV1 } from "@idlekit/core";
 import {
   JEV_ENDPOINT,
   jevCacheIdentity,
@@ -689,11 +689,11 @@ export function separatesCacheIdentity(): Promise<void> {
 
 /**
  * @evidence docs/requirements/active/jev-judge-provider.md#req-pr19-secret-boundary The request, cache, and report omit the key and the raw marker.
- * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-secret-boundary #2f2eef3 Re-read the section, then ran this function: the secret and each local path form were absent, including a file name with a space and a root-level path, the metric meaning and an amount decimal reached the projection, a rule carried its missing policy, and a repeated metric id projected only its first reading, an estimate and an observed error reading projected no value, a reading no rule names was left out, a path- or key-bearing rubric version was refused unsent, a response or requested model carrying the key was refused, not cached, and not echoed, and a pinned or alias request answered by the wrong model was model-mismatch.
+ * @evidenceReview docs/requirements/active/jev-judge-provider.md#req-pr19-secret-boundary #6f1c48d Re-read the section, then ran this function: the secret and each local path form were absent, including a file name with a space and a root-level path, the metric meaning and an amount decimal reached the projection, a rule carried its missing policy, a repeated metric id projected only its first reading, a rule pinned to metricVersion 2 projected the version 2 reading, an estimate and an observed error reading projected no value, a reading no rule names was left out, a path- or key-bearing rubric version was refused unsent, a response or requested model carrying the key was refused, not cached, and not echoed, and a pinned or alias request answered by the wrong model was model-mismatch.
  * @evidence ./jev.schema.ts#jevSecretBoundary Reads the redaction marker.
  * @evidenceReview ./jev.schema.ts#jevSecretBoundary #fe921f9 The declaration is redacted-projection.
  * @evidence ./jev.ts#projectJevState Projects metrics, assumptions, and rules without the key or a local path.
- * @evidenceReview ./jev.ts#projectJevState #ee54760 Re-read projectJevState and the shared Core observation mapper: each rule receives its effective identity and observation status, only measured readings retain a point and sign, amount decimal context remains unsupported, and questions abstain on identity mismatches or unknown observations before using the threshold or valid missing policy, where inconclusive and unsupported both abstain. Secrets and local paths in the request projection are redacted.
+ * @evidenceReview ./jev.ts#projectJevState #4386442 Re-read projectJevState, the shared Core reading selector, and the observation mapper: each rule projects the reading ruleReadings selects for it, receives its effective identity and observation status, only measured readings retain a point and sign, amount decimal context remains unsupported, and questions abstain on identity mismatches or unknown observations before using the threshold or valid missing policy, where inconclusive and unsupported both abstain. Secrets and local paths in the request projection are redacted.
  * @evidence ./jev.ts#isSafeJevReport Refuses unsafe metadata in the unchanged sibling numerical report before emitting a Jev bundle.
  * @evidenceReview ./jev.ts#isSafeJevReport #001fec4 Re-read the complete recursive report comparison: the original report with a key-bearing assumption is unsafe, a safe assumption passes, and the CLI rejects unsafe versions and assumptions before transport or output.
  */
@@ -781,6 +781,12 @@ export function keepsSecretsOutOfRecords(): Promise<void> {
   };
   const deduped = projectJevState(twice, input.rubric, SECRET).state as { metrics: readonly Record<string, unknown>[] };
   expect(deduped.metrics.map((metric) => metric.value)).toEqual([3]);
+  // A rule pinned to metricVersion 2 sees the version 2 reading the numerical judge reads, not the first one.
+  const versions = { ...input.artifact, metrics: [input.artifact.metrics[0]!, { ...input.artifact.metrics[0]!, metricVersion: 2, value: 7 }] };
+  const pinnedRubric = { ...input.rubric, rules: input.rubric.rules.map((item) => ({ ...item, metricVersion: 2 })) };
+  const pinnedState = projectJevState(versions, pinnedRubric, SECRET).state as { metrics: readonly Record<string, unknown>[] };
+  expect(pinnedState.metrics.map((metric) => [metric.metricVersion, metric.value])).toEqual([[2, 7]]);
+  expect(judgeArtifact(versions, pinnedRubric).ok).toBe(true);
   // An estimate is missing to the numerical judge, so its value is not projected as a recorded reading.
   const estimated = {
     ...input.artifact,

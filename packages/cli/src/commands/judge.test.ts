@@ -109,10 +109,12 @@ describe("judge command", () => {
     const csv = runCli(["judge", analysis, "--rubric", rubricPath, "--format", "csv"]);
     const csvLines = csv.stdout.trim().split("\n");
     expect(csvLines[0]).toBe(
-      "id,metricId,verdict,severity,evidenceStatus,value,unit,operator,threshold,upperThreshold,diagnosticStatus,recommendationId",
+      "id,metricId,verdict,severity,evidenceStatus,value,unit,operator,threshold,upperThreshold,diagnosticStatus,recommendationId,metricVersion",
     );
     expect(csvLines).toHaveLength(2);
-    expect(csvLines[1]?.split(",")).toHaveLength(12);
+    expect(csvLines[1]?.split(",")).toHaveLength(13);
+    expect(csvLines[1]?.endsWith(",1")).toBe(true);
+    expect(markdown.stdout).toContain("- first-reset (metric version 1):");
     expect(csvLines[1]).toContain("first-reset,first-reset,");
     const malformed = resolve(dir, "malformed.json");
     await writeText(malformed, "{ not json");

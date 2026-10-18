@@ -118,6 +118,19 @@ function requireFileTarget(path: string, flag: "cache" | "out"): void {
   }
 }
 
+/** The metric version a diagnostic read, from its `metric-version:<n>` evidence ref. */
+function readMetricVersion(diagnostic: JudgeReportV1["diagnostics"][number] | undefined): number | null {
+  const ref = diagnostic?.evidenceRefs.find((item) => item.startsWith("metric-version:"));
+  if (ref === undefined) return null;
+  const version = Number(ref.slice("metric-version:".length));
+  return Number.isFinite(version) ? version : null;
+}
+
+function versionLabel(diagnostic: JudgeReportV1["diagnostics"][number] | undefined): string {
+  const version = readMetricVersion(diagnostic);
+  return version === null ? "" : ` (metric version ${version})`;
+}
+
 function renderJudgeMarkdown(report: JudgeReportV1): string {
   const lines = [
     "# Rules judge",
@@ -131,9 +144,10 @@ function renderJudgeMarkdown(report: JudgeReportV1): string {
     "## Numerical",
     "",
   ];
-  for (const result of report.numerical.results) {
-    lines.push(`- ${result.metricId}: ${result.verdict} ${result.evidence.value ?? "none"} ${result.evidence.unit}`);
-  }
+  report.numerical.results.forEach((result, index) => {
+    const version = versionLabel(report.diagnostics[index]);
+    lines.push(`- ${result.metricId}${version}: ${result.verdict} ${result.evidence.value ?? "none"} ${result.evidence.unit}`);
+  });
   lines.push("", "## Estimates", "");
   if (report.estimatedObservations.length === 0) lines.push("None.");
   for (const estimate of report.estimatedObservations) {
@@ -141,7 +155,7 @@ function renderJudgeMarkdown(report: JudgeReportV1): string {
   }
   lines.push("", "## Semantic", "");
   for (const diagnostic of report.diagnostics) {
-    lines.push(`- ${diagnostic.status} ${diagnostic.recommendationId}: ${diagnostic.text.en}`);
+    lines.push(`- ${diagnostic.status} ${diagnostic.recommendationId}${versionLabel(diagnostic)}: ${diagnostic.text.en}`);
   }
   return lines.join("\n");
 }
@@ -168,6 +182,8 @@ function judgeCsvRows(report: JudgeReportV1): Array<Record<string, string | numb
       upperThreshold: result.evidence.upperThreshold,
       diagnosticStatus: diagnostic?.status ?? null,
       recommendationId: diagnostic?.recommendationId ?? null,
+      // The version of the reading this rule judged, pinned or not.
+      metricVersion: readMetricVersion(diagnostic),
     };
   });
 }
