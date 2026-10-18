@@ -33,17 +33,18 @@ mock.module(${JSON.stringify(graphModule)}, () => ({ resolveGraphBinary: () => n
 }
 
 describe("toolchain doctor missing native Graph package", () => {
+  // The first doctor run starts cold and can pass bun test's 5 s default; a timeout kills the child (exit null).
   it("returns a diagnostic report instead of throwing", () => {
     const report = missingGraphReport();
     expect(report.ok).toBeFalse();
     expect(report.failures).toContain("Pinned native Graph package is missing; run bun install");
     expect(report.graphBinaryEnv).toEqual({ set: false });
-  });
+  }, { timeout: 30_000 });
 
   it("does not accept an override when the pinned binary is unavailable", () => {
     const report = missingGraphReport(process.execPath);
     expect(report.ok).toBeFalse();
     expect(report.failures).toContain("Pinned native Graph package is missing; run bun install");
     expect(report.graphBinaryEnv).toEqual({ set: true, origin: "unavailable", path: process.execPath });
-  });
+  }, { timeout: 30_000 });
 });
