@@ -100,6 +100,13 @@ export function compareScenarios(args: {
 
   const measuredA = measuredScore(args.measured?.a, args.metric);
   const measuredB = measuredScore(args.measured?.b, args.metric);
+  // Without a decision callback the raw measured numbers are ranked, and NaN or an infinity has no order to give.
+  // A decision callback owns the ranking, so its detail may still carry a non-finite value such as log10(0).
+  for (const value of [measuredA, measuredB]) {
+    if (value !== undefined && !Number.isFinite(value)) {
+      throw new RangeError(`Measured ${args.metric} comparison requires finite values`);
+    }
+  }
   const useMeasured = measuredA !== undefined && measuredB !== undefined;
 
   const aScore = useMeasured ? measuredA : score(args.a, args.metric);

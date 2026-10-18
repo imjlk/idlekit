@@ -10,7 +10,7 @@ const FLOW_ALGORITHM_VERSION = "flow-observation-1" as const;
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-flow-adapter The published schema id is the flow report.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-flow-adapter #3c616c8 Re-read the section: the id is the flow v1 schema.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-flow-adapter #9a86206 Re-read the section: the id is the flow v1 schema.
  */
 export function flowSchemaId(): typeof FLOW_SCHEMA_ID {
   return FLOW_SCHEMA_ID;
@@ -18,7 +18,7 @@ export function flowSchemaId(): typeof FLOW_SCHEMA_ID {
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-flow-adapter The algorithm version is flow-observation-1.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-flow-adapter #3c616c8 Re-read the section: the version string is flow-observation-1.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-flow-adapter #9a86206 Re-read the section: the version string is flow-observation-1.
  */
 export function flowAlgorithmVersion(): typeof FLOW_ALGORITHM_VERSION {
   return FLOW_ALGORITHM_VERSION;
@@ -125,7 +125,7 @@ export type FlowReportV1 = Readonly<{
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-flow-adapter Flow samples are optional. Model gains no required method.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-flow-adapter #3c616c8 Re-read the section: the observer hook is optional and resource names stay in the fixture.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-flow-adapter #9a86206 Re-read the section: the observer hook is optional and resource names stay in the fixture.
  */
 export const flowOptionalAdapter = "observer-not-required-model" as const;
 
@@ -137,7 +137,7 @@ export const flowPipelineConstraint = "process-throughput-20" as const;
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-conservation Conversion, loss, and inventory stay in their own units.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-conservation #514285c Re-read the section: the source unit and the destination unit are not added, queue and unretained are read for the destination resource in the source window, every source window is tried with the latest conserving one kept, the stock must match an observed destination throughput unit and the fact cites it, conservation compares per-window rates, edges into one stock are summed, a positive conversion underflowing to zero cannot establish conservation, genuine zero operands or exactly total loss retain a valid zero conversion, and zero matches only zero.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-conservation #d7684bc Re-read the section: a conversion whose intermediate product leaves the finite range but whose result does not is still produced, exact total loss is zero before any arithmetic, the source unit and the destination unit are not added, queue and unretained are read for the destination resource in the source window, every source window is tried with the latest conserving one kept, the stock must match an observed destination throughput unit and the fact cites it, conservation compares per-window rates, edges into one stock are summed, a positive conversion underflowing to zero cannot establish conservation, genuine zero operands or exactly total loss retain a valid zero conversion, and zero matches only zero.
  */
 export const flowConservation = "converted-units-stay-apart" as const;
 
@@ -162,7 +162,7 @@ let validateObservationValidator: ((input: unknown) => IValidation<FlowObservati
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-flow-adapter The published validator is createValidate of the flow report.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-flow-adapter #3c616c8 Re-read the section: the structural document is FlowReportV1.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-flow-adapter #9a86206 Re-read the section: the structural document is FlowReportV1.
  */
 export const validateFlowReport = (input: unknown): IValidation<FlowReportV1> =>
   (validateFlowReportValidator ??= typia.createValidate<FlowReportV1>())(input);
@@ -175,7 +175,7 @@ let flowJsonSchemaUnit: ReturnType<typeof buildFlowJsonSchema> | undefined;
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-flow-adapter The structural schema is OpenAPI 3.1 from typia.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-flow-adapter #3c616c8 Re-read the section: schema version is 3.1 and the contract id is idlekit.flow.v1.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-flow-adapter #9a86206 Re-read the section: schema version is 3.1 and the contract id is idlekit.flow.v1.
  */
 export function flowJsonSchema(): ReturnType<typeof buildFlowJsonSchema> {
   flowJsonSchemaUnit ??= buildFlowJsonSchema();
@@ -187,7 +187,7 @@ const validateObservation = (input: unknown): IValidation<FlowObservationV1> =>
 
 /**
  * @evidence docs/requirements/active/flow-observability.md#req-pr15-flow-adapter A flow observation is validated as data.
- * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-flow-adapter #3c616c8 Re-read the section: the observation contract is idlekit.flow.observation.v1, and nonzero decimals that become Number zero are rejected while true zero spellings and positive representable subnormals are accepted; invalid finite non-negative decimal spellings, duplicate sample keys or edges, zero denominators, losses above 1, and losses that round to 1 without exactly spelling 1 are rejected while parsing.
+ * @evidenceReview docs/requirements/active/flow-observability.md#req-pr15-flow-adapter #9a86206 Re-read the section: the observation contract is idlekit.flow.observation.v1, a reversed window or one whose length overflows is rejected, and nonzero decimals that become Number zero are rejected while true zero spellings and positive representable subnormals are accepted; invalid finite non-negative decimal spellings, duplicate sample keys or edges, zero denominators, losses above 1, and losses that round to 1 without exactly spelling 1 are rejected while parsing.
  */
 export function parseFlowObservation(
   input: unknown,
@@ -233,6 +233,7 @@ function decimalIssues(observation: FlowObservationV1): string[] {
   observation.samples.forEach((sample, index) => {
     check(`$input.samples[${index}].amount`, sample.amount);
     if (!(sample.endSec >= sample.startSec)) issues.push(`$input.samples[${index}].endSec >= startSec`);
+    else if (!Number.isFinite(sample.endSec - sample.startSec)) issues.push(`$input.samples[${index}] window duration finite`);
     if ((sample.kind === "starved-time" || sample.kind === "blocked-time") && sample.unit !== "s") {
       issues.push(`$input.samples[${index}].unit "s" for a wait`);
     }
@@ -348,8 +349,11 @@ function rated(samples: readonly FlowSampleV1[]): Rated[] {
   const found: Rated[] = [];
   samples.forEach((sample, index) => {
     const value = parseDecimal(sample.amount);
-    // A reversed window has no duration, so its sample is not evidence.
-    if (value !== null && sample.endSec >= sample.startSec) found.push({ sample, index, value });
+    // A reversed window has no duration, and one whose length overflows has no finite duration to report, so
+    // neither sample is evidence.
+    if (value !== null && sample.endSec >= sample.startSec && Number.isFinite(sample.endSec - sample.startSec)) {
+      found.push({ sample, index, value });
+    }
   });
   return found;
 }
@@ -396,14 +400,49 @@ function preferredBind(candidate: Rated, held: Rated): boolean {
   return candidate.sample.resourceId < held.sample.resourceId;
 }
 
+/**
+ * `value * 2 ** exponent` in two halves, since 2 ** 1074 itself is not a finite Number. Each half is exact while its
+ * product stays a normal Number; only a result that leaves that range is rounded.
+ */
+function scaleBinary(value: number, exponent: number): number {
+  const half = Math.trunc(exponent / 2);
+  return value * 2 ** half * 2 ** (exponent - half);
+}
+
+/** A finite nonzero value as `mantissa * 2 ** exponent` with `1 <= |mantissa| < 2`. Both scalings are exact. */
+function binaryParts(value: number): { mantissa: number; exponent: number } {
+  let exponent = Math.floor(Math.log2(Math.abs(value)));
+  let mantissa = scaleBinary(value, -exponent);
+  // log2 can land one off at a power of two.
+  if (Math.abs(mantissa) >= 2) {
+    mantissa /= 2;
+    exponent += 1;
+  } else if (Math.abs(mantissa) < 1) {
+    mantissa *= 2;
+    exponent -= 1;
+  }
+  return { mantissa, exponent };
+}
+
+/**
+ * `amount * numerator / denominator * (1 - loss)`. Exact total loss is zero before any arithmetic, so an
+ * overflowing product never meets it as Infinity * 0. The rest runs on binary mantissas with the exponents
+ * summed apart: the same roundings as the direct expression whenever its intermediates stay normal, while a
+ * ratio such as 1e200 * 1e200 / 1e200 that cancels back into range is still produced. Only a result outside
+ * the finite range, or a positive result that underflows to zero, is unavailable.
+ */
 function convert(amount: number, edge: FlowEdgeV1): number | null {
   const numerator = parseDecimal(edge.numerator);
   const denominator = parseDecimal(edge.denominator);
   const loss = parseDecimal(edge.loss);
   if (numerator === null || denominator === null || loss === null || denominator === 0 || loss > 1) return null;
   if (loss === 1 && !isExactOne(edge.loss)) return null;
-  const converted = (amount * numerator) / denominator * (1 - loss);
-  if (converted === 0 && amount !== 0 && numerator !== 0 && loss !== 1) return null;
+  if (!Number.isFinite(amount)) return null;
+  if (loss === 1 || amount === 0 || numerator === 0) return 0;
+  const a = binaryParts(amount), n = binaryParts(numerator), d = binaryParts(denominator), keep = binaryParts(1 - loss);
+  const mantissa = (a.mantissa * n.mantissa) / d.mantissa * keep.mantissa;
+  const converted = scaleBinary(mantissa, a.exponent + n.exponent - d.exponent + keep.exponent);
+  if (converted === 0) return null;
   return Number.isFinite(converted) ? converted : null;
 }
 
