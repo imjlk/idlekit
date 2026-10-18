@@ -179,8 +179,13 @@ export function quantileKey(q: number): string {
       ? digits + "0".repeat(point - digits.length)
       : `${digits.slice(0, point)}.${digits.slice(point)}`;
   const [int = "0", frac = ""] = shifted.split(".");
-  const trimmedInt = int.replace(/^0+(?=\d)/, "");
-  const trimmedFrac = frac.replace(/0+$/, "");
+  // Index scans rather than regular expressions: linear in the digit count.
+  let start = 0;
+  while (start < int.length - 1 && int[start] === "0") start++;
+  let end = frac.length;
+  while (end > 0 && frac[end - 1] === "0") end--;
+  const trimmedInt = int.slice(start);
+  const trimmedFrac = frac.slice(0, end);
   return `q${trimmedFrac ? `${trimmedInt}.${trimmedFrac}` : trimmedInt}`;
 }
 
