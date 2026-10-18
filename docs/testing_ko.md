@@ -153,7 +153,7 @@ DX-01 검증은 macOS arm64, Bun `1.3.10`, `ttsc 0.30.4 (Version 7.0.2)`, commit
 
 ## 연구탑 소비자 회귀 검사
 
-`bun run install:smoke`는 설치된 tarball을 대상으로 `tools/fixtures/consumers/research-tower-smoke.ts`도 실행한다. [연구탑 fixture](../fixtures/regressions/research-tower.json)는 `source`에 기록된 `imjlk/mpgd-games` 커밋과 기준 SDK에서 추출한 꿈잡이, 부엉이, 확장 상한, 실바 귀환, 수동 생산, `1e400` 마나 여섯 사례다. 두 접속과 두 부재에서 포장된 지갑·환생·게임 상태, 보상 시계와 실제 시간, 보상 상한과 손실 시간, 귀환당 한 번 정산, 입력 보존을 검사한다. 기록된 십진수 보상 재구성에는 상대 오차 `1e-12`를 허용하고 최종 포장 상태는 정확히 일치해야 한다. 게임 변환기로 만든 합성 전체 설치 코호트로 분모, D1/D7 보정, 미관측 유지율·매출 가정 보존, 검토 필요 시 적용 거부도 검사한다.
+`bun run install:smoke`는 설치된 tarball을 대상으로 `tools/fixtures/consumers/research-tower-smoke.ts`도 실행한다. [연구탑 fixture](../fixtures/regressions/research-tower.json)는 `source`에 기록된 `imjlk/mpgd-games` 커밋과 기준 SDK에서 추출한 꿈잡이, 부엉이, 확장 상한, 실바 귀환, 수동 생산, `1e400` 마나 여섯 사례다. 두 접속과 두 부재에서 포장된 지갑·환생·게임 상태, 보상 시계와 실제 시간, 보상 상한과 손실 시간, 귀환당 한 번 정산, 입력 보존을 검사한다. 기록된 십진수 보상 재구성에는 상대 오차 `1e-12`를 허용하고 최종 포장 상태는 정확히 일치해야 한다. `1e400` 마나 사례는 두 부재 모두 보상이 0이므로, Number 범위를 넘는 지갑이 포장·접속·정산을 거쳐도 그대로 남는지 보는 왕복 검사다. 그 크기에서의 보상 계산은 검사하지 않는다. 게임 변환기로 만든 합성 전체 설치 코호트로 분모, D1/D7 보정, 미관측 유지율·매출 가정 보존, 검토 필요 시 적용 거부도 검사한다.
 
 기록된 게임/SDK 경계 계약 검사이며 온라인 결정과 정산 결과는 재생한다. 이후 게임 계산식 변경을 자동으로 검증하는 검사는 아니다. CI에는 게임 체크아웃이나 개인 경로가 필요 없다. 갱신하려면 IdleKit 루트에서 `bun tools/capture-tower-regression.ts <mpgd-games-checkout>`을 실행하고 출처 커밋과 기대값 변경을 검토한 뒤 `bun run install:smoke`를 실행한다. 생성기는 깨끗한 게임 소스의 실제 `settleAbsence`와 게임에 설치된 SDK 어댑터 결과를 대조한다. 게임 설치나 파일 변경은 하지 않는다.
 
