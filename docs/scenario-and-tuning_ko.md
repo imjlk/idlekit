@@ -243,7 +243,9 @@ bun run --cwd packages/cli dev -- init scenario --track personal --preset longru
   - `conversionAd`
   - `arppuAd`
 
+LTV는 할인하지 않은 누적값이며, H일 구간은 설치일(day 0)부터 `[0, H)` 일을 셉니다.
 불확실성이 켜져 있으면(`enabled=true`) Monte Carlo 결과로 `q50/q90` 같은 분위수 필드가 출력됩니다.
+분위수 키는 정확한 백분율입니다(0.025는 `q2.5`).
 `correlation`을 지정하면 retention/결제전환/ARPPU/광고수익이 독립이 아니라 함께 움직이도록 샘플링됩니다.
 `idk calibrate`는 telemetry 기반 상관 추정 시 샘플 수/분산 기반 confidence를 계산하고,
 데이터가 부족하면 correlation을 0 쪽으로 shrinkage한 값을 `monetization.uncertainty.correlation`에 채웁니다.

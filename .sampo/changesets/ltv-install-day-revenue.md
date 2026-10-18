@@ -1,0 +1,6 @@
+---
+npm/@idlekit/core: patch
+npm/@idlekit/cli: patch
+---
+
+LTV values change: an LTV horizon of H days now covers install days [0, H), so install-day (day 0) revenue is counted, as telemetry and `idk calibrate` index it. Earlier releases covered days 1..H, dropped day-0 revenue and charged a 0.5-day horizon at D1 retention; `estimateLtvPerUser`, `estimateLtvDistribution`, `idk ltv` and `idk evaluate` now report different, usually higher, values for the same inputs. LTV remains undiscounted. The distribution no longer clips a rising retention curve, so it agrees with the point estimate. `estimateLtvDistribution` uses `config.uncertainty` draws, quantiles and seed when they are omitted, labels quantiles with exact percent keys (`q2.5`, `q12.4`) instead of rounded ones that could collide, and rejects seeds outside the uint32 range. `retentionAtDay` and `progressionFactor` reject invalid inputs, and the argument and result types are exported (`LtvEstimateArgs`, `LtvDistributionArgs`, `LtvDistribution`). Cohort-mode `idk calibrate` omits revenue and uncertainty fields when the revenue columns are absent, and both calibration modes omit `monetization.acquisition` without an acquisition cost column, instead of reporting measured zeros. Calibration no longer rejects large finite revenue whose intermediate squares overflow.

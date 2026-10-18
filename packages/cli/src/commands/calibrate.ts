@@ -118,14 +118,16 @@ export function parseCsvTelemetry(raw: string, strictCohort = false): TelemetryR
     if (strictCohort && (!userInput?.trim() || !dayInput?.trim())) throw usageError("Observed cohort requires explicit user_id and day fields");
     const userId = userInput ?? `anon-${i}`;
     const dayRaw = dayInput ?? "0";
-    const iapRaw = pick(rec, ["iap_revenue", "revenue", "iap", "purchase_revenue"]) ?? "0";
-    const adRaw = pick(rec, ["ad_revenue", "adrevenue", "ads"]) ?? "0";
+    // A cohort export without a revenue column has unmeasured revenue, not zero.
+    const missingRevenue = strictCohort ? undefined : "0";
+    const iapRaw = pick(rec, ["iap_revenue", "revenue", "iap", "purchase_revenue"]) ?? missingRevenue;
+    const adRaw = pick(rec, ["ad_revenue", "adrevenue", "ads"]) ?? missingRevenue;
     const activeRaw = pick(rec, ["active", "is_active"]);
     const acqRaw = pick(rec, ["acquisition_cost", "ua_cost", "cpi"]);
 
     const day = parseNumeric(dayRaw, i + 1, "day")!;
-    const iapRevenue = parseNumeric(iapRaw, i + 1, "revenue")!;
-    const adRevenue = parseNumeric(adRaw, i + 1, "ad_revenue")!;
+    const iapRevenue = iapRaw === undefined ? undefined : parseNumeric(iapRaw, i + 1, "revenue")!;
+    const adRevenue = adRaw === undefined ? undefined : parseNumeric(adRaw, i + 1, "ad_revenue")!;
     const acquisitionCost = acqRaw !== undefined ? parseNumeric(acqRaw, i + 1, "acquisition_cost", { allowEmpty: true }) : undefined;
     const active = parseActive(activeRaw, strictCohort);
 
@@ -162,15 +164,19 @@ export function parseJsonTelemetry(raw: string, strictCohort = false): Telemetry
     }
     const userId = String(userInput ?? `anon-${idx}`);
     const day = Number(dayInput ?? 0);
-    const iapRevenue = Number(r.iapRevenue ?? r.iap_revenue ?? r.revenue ?? 0);
-    const adRevenue = Number(r.adRevenue ?? r.ad_revenue ?? 0);
+    // A cohort export without a revenue field has unmeasured revenue, not zero.
+    const missingRevenue = strictCohort ? undefined : 0;
+    const iapInput = r.iapRevenue ?? r.iap_revenue ?? r.revenue ?? missingRevenue;
+    const adInput = r.adRevenue ?? r.ad_revenue ?? missingRevenue;
+    const iapRevenue = iapInput === undefined ? undefined : Number(iapInput);
+    const adRevenue = adInput === undefined ? undefined : Number(adInput);
     const acquisitionCost =
       r.acquisitionCost !== undefined || r.acquisition_cost !== undefined || r.cpi !== undefined
         ? Number(r.acquisitionCost ?? r.acquisition_cost ?? r.cpi)
         : undefined;
     const active = parseActive(r.active, strictCohort);
 
-    if (!Number.isFinite(day) || !Number.isFinite(iapRevenue) || !Number.isFinite(adRevenue)) {
+    if (!Number.isFinite(day) || ![iapRevenue, adRevenue].every((v) => v === undefined || Number.isFinite(v))) {
       throw cliError("CLI_USAGE", `Invalid numeric value in json row ${idx}`);
     }
 
@@ -290,7 +296,8 @@ export default defineCommand({
                 payerConversion: (calibrated.monetization?.revenue?.payerConversion ?? 0).toFixed(4),
                 arppuDaily: (calibrated.monetization?.revenue?.arppuDaily ?? 0).toFixed(4),
                 adArpDau: (calibrated.monetization?.revenue?.adArpDau ?? 0).toFixed(4),
-                cpi: (calibrated.monetization?.acquisition?.cpi ?? 0).toFixed(4),
+                // Empty when no acquisition cost was exported; that is unmeasured, not zero.
+                cpi: calibrated.monetization?.acquisition?.cpi?.toFixed(4) ?? "",
               },
             ],
       meta: outputMeta,

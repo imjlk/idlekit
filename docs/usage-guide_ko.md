@@ -411,7 +411,10 @@ bun run --cwd packages/cli dev -- ltv ../../examples/tutorials/14-orbital-foundr
 주요 출력 필드:
 
 - `horizons[].monetization.cumulativeLtvPerUser`
-- `horizons[].monetization.cumulativeLtvQuantiles` (uncertainty 활성 시)
+- `horizons[].monetization.cumulativeLtvQuantiles` (uncertainty 활성 시, 키는 정확한 백분율: `q50`, `q2.5`)
+
+LTV는 할인하지 않은 누적값이다. H일 구간은 설치일(day 0)을 포함한 `[0, H)` 일을 센다.
+설치일은 telemetry와 `calibrate`처럼 day 0이며, 마지막 소수 일은 그날의 리텐션으로 나눠 센다.
 - `horizons[].guardrails.timeToFirstUpgradeSec`
 - `horizons[].guardrails.stallRatio`
 - `horizons[].guardrails.actionMix`

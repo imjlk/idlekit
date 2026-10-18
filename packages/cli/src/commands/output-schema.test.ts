@@ -205,6 +205,12 @@ describe("output schema contracts", () => {
     validateBySchema(await readSchema("calibrate.output.schema.json"), out, "calibrate.output.schema.json");
   });
 
+  it("calibrate cohort output without revenue columns follows schema", async () => {
+    const out = runCliJson(["calibrate", "../../examples/telemetry/cohort.csv", "--observed-through-day", "7", "--format", "json"]);
+    validateBySchema(await readSchema("calibrate.output.schema.json"), out, "calibrate.output.schema.json");
+    expect(Object.keys(out.monetization)).toEqual(["cohorts", "retention"]);
+  });
+
   it("kpi regress output follows schema", async () => {
     const out = runCliJson([
       "kpi",
