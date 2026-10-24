@@ -60,6 +60,37 @@ Common milestone key conventions:
 
 If a schema exists, params are validated before the strategy instance is created.
 
+## Model the game's purchase mode
+
+Many idle games expose single, fixed-batch and maximum-affordable purchases. Treat purchase mode
+as an explicit player-policy input before comparing decision frequency or changing prices.
+One decision that buys one level is not equivalent to one decision that buys every affordable level.
+
+The built-in greedy strategy supports:
+
+```json
+{
+  "schemaVersion": 1,
+  "objective": "minPayback",
+  "maxPicksPerStep": 1,
+  "bulk": { "mode": "maxAffordable" }
+}
+```
+
+`maxAffordable` chooses the largest affordable **offered quote**, not an unbounded quantity that
+the SDK calculates for the game. The model must provide `Action.bulk` quotes with the real total
+cost and level cap, including its current maximum-affordable quote. `Action.apply` receives the
+chosen `bulkSize`; apply exactly that quoted transaction. Reuse the game's purchase quotation and
+settlement functions so discounts, thresholds, insufficient funds and caps agree with the UI.
+Without bulk quotes, the strategy falls back to a single purchase. `bestQuote` optimizes its score
+among quotes and is not the same policy as selecting the maximum button.
+
+For fixed-batch UI controls, expose the actual quoted quantity (which may be reduced by a level
+cap). Record purchase mode, decision interval and actual quantities with the experiment. Keep the
+production time step separate from the player's decision interval. Compare progression milestones
+alongside held money: a player who has just bought upgrades or prestiged can have less cash while
+being further ahead.
+
 ## Tuning
 
 Use `TuneSpecV1` when you want to search strategy parameters against a scalar objective.

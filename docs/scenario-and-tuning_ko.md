@@ -74,6 +74,19 @@
 - `payback.capSec`, `payback.useEquivalentCost`
 - `netWorth.horizonSec`, `netWorth.series`
 
+구매 모드와 판단 간격을 별도 가정으로 둡니다. `maxPicksPerStep: 1`은 한 번의 판단에
+한 거래를 뜻하며, 그 거래의 수량이 반드시 1인 것은 아닙니다.
+
+`bulk.mode: "maxAffordable"`는 `Action.bulk`가 제공한 견적 중 감당할 수 있는 가장 큰
+수량을 고릅니다. SDK가 게임의 가격 곡선을 추측해 무한히 수량을 늘리는 기능은 아닙니다.
+모델은 현재 지갑과 레벨 상한을 반영한 최대 견적을 제공하고, `Action.apply`의 `bulkSize`를
+실제 게임의 견적/구매 함수로 정산해야 합니다. 견적이 없으면 단일 구매로 돌아갑니다.
+`bestQuote`는 점수가 좋은 견적을 고르므로 UI의 최대 구매 버튼과 다른 정책입니다.
+
+×1·×10·최대 모드를 구분해 기록하고, 수량·비용·상한·잔액 부족을 실제 UI와 대조합니다.
+생산 시간 간격을 늘려 느린 조작을 흉내 내기보다 판단 간격을 별도로 둡니다.
+보유 재화는 강화나 환생 직후 줄어들 수 있으므로 진행 마일스톤을 함께 비교합니다.
+
 ### 4.3 planner
 
 - `horizonSteps`

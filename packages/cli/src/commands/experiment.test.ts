@@ -146,4 +146,36 @@ describe("experiment command", () => {
     expect(output).toContain("EXPERIMENT_SPEC_INVALID");
     expect(output).toContain("scenario.ref");
   });
+
+  it("reports first milestone time from a plugin model", async () => {
+    const progressPlugin = resolve(dir, "progress-plugin.mjs");
+    await writeText(progressPlugin, `export const models = [{
+      id: "plugin.progress", version: 1, create: () => ({
+        id: "plugin.progress", version: 1,
+        income: ctx => ({ unit: ctx.unit, amount: ctx.E.from(1) }),
+        actions: () => [],
+        evolve: (_ctx, state) => ({ ...state, vars: { ...state.vars, steps: (state.vars.steps ?? 0) + 1 } }),
+        milestones: (_ctx, _prev, next) => next.vars.steps === 5 ? ["floor.unlocked"] : []
+      })
+    }];\n`);
+    const scenario = JSON.parse(await readText(BASELINE));
+    delete scenario.strategy;
+    scenario.model = { id: "plugin.progress", version: 1, params: {} };
+    const progressPath = resolve(dir, "progress.json");
+    await writeText(progressPath, JSON.stringify(scenario));
+    const progressSpecPath = resolve(dir, "progress-spec.json");
+    await writeText(progressSpecPath, JSON.stringify({
+      ...JSON.parse(await readText(bareSpecPath)),
+      scenario: { ref: progressPath, hash: createHash("sha256").update(canonical(scenario)).digest("hex") },
+      model: { id: "plugin.progress", version: 1 },
+      metricId: "timeToMilestone",
+      milestoneKey: "floor.unlocked",
+      dimensions: [],
+    }));
+    const report = runCliJson(["experiment", progressSpecPath, "--plugin", progressPlugin, "--allow-plugin", "true"]);
+    expect(report.milestoneKey).toBe("floor.unlocked");
+    expect(report.tasks).toHaveLength(1);
+    expect(report.tasks[0]).toMatchObject({ metricId: "timeToMilestone", status: "observed", value: "5" });
+    expect(Object.values(report._meta.pluginDigest)).toHaveLength(1);
+  });
 });

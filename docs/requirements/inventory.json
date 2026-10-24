@@ -886,6 +886,47 @@
       ]
     },
     {
+      "id": "REQ-PR14-MILESTONE-REACH",
+      "pr": "PR-14",
+      "anchor": "req-pr14-milestone-reach",
+      "doc": "docs/requirements/active/parameter-experiments.md",
+      "production": [
+        "packages/core/src/sim/analysis/experiment.ts"
+      ],
+      "tests": [
+        {
+          "file": "packages/core/src/sim/analysis/experiment.test.ts",
+          "exportName": "measuresFirstMilestoneAfterWalletReset",
+          "registeredAs": "parameter experiments > measures the first milestone after a wallet reset",
+          "cwd": "packages/core",
+          "args": [
+            "test",
+            "src/sim/analysis/experiment.test.ts"
+          ]
+        },
+        {
+          "file": "packages/core/src/sim/analysis/experiment.test.ts",
+          "exportName": "censorsUnreachedMilestones",
+          "registeredAs": "parameter experiments > censors unreached milestones",
+          "cwd": "packages/core",
+          "args": [
+            "test",
+            "src/sim/analysis/experiment.test.ts"
+          ]
+        },
+        {
+          "file": "packages/core/src/sim/analysis/experiment.test.ts",
+          "exportName": "rejectsMissingMilestoneKeyBeforeRun",
+          "registeredAs": "parameter experiments > rejects a missing milestone key before a run",
+          "cwd": "packages/core",
+          "args": [
+            "test",
+            "src/sim/analysis/experiment.test.ts"
+          ]
+        }
+      ]
+    },
+    {
       "id": "REQ-PR14-PARETO-UNKNOWN",
       "pr": "PR-14",
       "anchor": "req-pr14-pareto-unknown",

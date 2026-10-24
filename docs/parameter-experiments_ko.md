@@ -10,11 +10,31 @@
 
 각 후보는 `scenario.ref`가 가리키는 scenario에서 시작한다. wallet, unit, tick policy, model params, strategy params를 그대로 쓰고 할당된 경로만 바꾸며, raw params는 scenario 실행과 같이 `create`에 그대로 전달된다. spec model은 scenario model이어야 하고, scenario가 strategy를 지정하면 spec strategy도 그 strategy여야 한다. 각 후보는 같은 seed와 horizon에서 돈다. session 블록은 task마다 기록하지만 session 일정은 실행하지 않으므로 `session` dimension은 거부된다. 파라미터를 다시 두면 `createRunFactory`가 새 model과 새 strategy를 만든다. 입력 scenario 객체는 쓰지 않는다. 경로는 기존 ParamSpace 종류와 model 또는 strategy `paramsSchema`를 통과한 점 식별자다. schema가 지우는 경로는 거부된다. 값을 변환하는 schema는 검증만 한다. factory는 legacy-raw scenario 실행처럼 할당한 raw 값을 그대로 받고, task도 그 raw 값을 기록한다. 또한 schema가 없는 factory는 scenario params에 이미 있는 경로만 받으며, 한 target에서 경로가 같거나 겹치는 두 dimension도 거부된다. logical seed와 constraint id는 중복될 수 없고 constraint limit은 유한해야 한다. JSONPath, prototype 경로, eval 경로는 실행 전에 거부된다.
 
-모든 실행은 `horizonSec`까지 이어진다. 도달 시간은 도중에 읽으므로 `timeToMoney`를 함께 요청해도 end money와 `vars.benefit`은 horizon 값이다. 후보 지표는 모든 seed의 산술 평균이다. 실패한 seed가 하나면 실패이고 censored seed가 하나면 censored다. 돈은 effective engine의 금액으로 남는다. constraint, Pareto 순서, elasticity는 그 engine 안에서 비교하므로 double 범위를 넘는 `breakInfinity` 금액도 관측값이다.
+실행은 `horizonSec`까지 이어진다. 모든 지표가 `timeToMoney`인 경우에는 목표에 도달하면 멈출 수 있다. 도달 시간은 도중에 읽으므로 `timeToMoney`를 함께 요청해도 end money와 `vars.benefit`은 horizon 값이다. 후보 지표는 모든 seed의 산술 평균이다. 실패한 seed가 하나면 실패이고 censored seed가 하나면 censored다. 돈은 effective engine의 금액으로 남는다. constraint, Pareto 순서, elasticity는 그 engine 안에서 비교하므로 double 범위를 넘는 `breakInfinity` 금액도 관측값이다.
 
 상대 elasticity는 baseline `p`와 `y`가 유한하고 0보다 크며 `p`가 바뀔 때만 보고한다. 그 밖에는 절대 변화와 방향만 남기거나 unavailable이다. 목표에 닿지 못하면 censored다. 시간은 null이다. horizon으로 바꾸지 않고, 그 값으로 미분하지 않는다. 그 하한인 시뮬레이션 horizon은 `lte` 시간 constraint 위반을 증명할 때만 쓴다.
 
 기본 보고는 지표별 변화와 constraint violation id다. 가중 종합점수는 없다. 선택적 Pareto는 관측이 끝난 objective만 비교한다. censored이거나 실패한 objective는 `uncompared`이며 우월한 결과가 될 수 없다.
+
+## 진행 마일스톤
+
+도달 시간은 확정된 tick 길이를 누적하므로, 저장된 절대 시각이 커도 소수점 단위의 경과 시간을 반올림하지 않는다.
+
+`"metricId": "timeToMilestone"`와 `"milestoneKey": "tower:first-prestige"`를 지정하면 정확히 그 키가 처음 확정된 시점까지의 초를 비교한다. objective와 constraint에서도 쓸 수 있고, spec 하나는 마일스톤 키 하나를 선택한다. artifact에도 선택한 키가 기록된다. 모델의 `milestones`가 내보내는 키나 `prestige.first` 같은 실행기의 기본 키를 사용한다. 지갑 금액이나 시작 상태에서 임의로 도달을 추론하지 않는다.
+
+강화 구매나 환생으로 지갑이 비어도 진행 시간을 잴 수 있다. 같은 키가 반복되거나 이벤트·마일스톤 보관 한도가 차도 최초 도달 시간을 유지한다. 미도달은 시간값이 null인 censored다. 실행한 horizon은 기한 위반 판정에 사용하는 하한일 뿐 도달 시간으로 대체하지 않는다. baseline이 미도달이면 민감도도 unavailable이다. 이 지표가 포함된 실행은 horizon까지 계속하므로 최종 자금과 `vars.benefit`도 함께 비교할 수 있다.
+
+20분 이내 첫 환생을 요구하는 spec 일부는 다음과 같다.
+
+```json
+{
+  "metricId": "timeToMilestone",
+  "milestoneKey": "tower:first-prestige",
+  "constraints": [
+    { "id": "first-prestige-deadline", "metricId": "timeToMilestone", "op": "lte", "limit": 1200 }
+  ]
+}
+```
 
 ## 기준 예
 
