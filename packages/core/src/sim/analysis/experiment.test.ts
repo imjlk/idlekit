@@ -182,7 +182,7 @@ function runWith(scenario: ScenarioV1, spec: ExperimentSpecV1, creates: { count:
  * @evidence ./experiment.ts#experimentTaskDescriptor Reads the task descriptor contract.
  * @evidenceReview ./experiment.ts#experimentTaskDescriptor #03898ac The declaration is task-id-params-seed-version.
  * @evidence ./experiment.ts#runExperiment Runs the sweep and local sensitivity on a fixed spec.
- * @evidenceReview ./experiment.ts#runExperiment #9f9eb1a The function checks the scenario hash against the spec, rejects a timeToMoney metric without a finite goal, compiles the scenario once as the candidate base, runs each planned candidate per seed through a fresh binding to the horizon while reading the reach time, averages every seed, and reports local sensitivity only for completed horizons.
+ * @evidenceReview ./experiment.ts#runExperiment #a5ddc7b The function checks the scenario hash against the spec, rejects a timeToMoney metric without a finite goal, compiles the scenario once as the candidate base, runs each planned candidate per seed through a fresh binding to the horizon while reading the reach time, averages every seed, and reports local sensitivity only for completed horizons.
  * @evidence ./experiment.ts#experimentSchemaId Reads the experiment schema id.
  * @evidenceReview ./experiment.ts#experimentSchemaId #637335e The function returns the experiment.v1 schema URL constant.
  * @evidence ./experiment.ts#experimentAlgorithmVersion Reads the algorithm version.
@@ -1020,7 +1020,7 @@ export function matchesHandPareto(): void {
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-task-descriptor Candidates start from the referenced scenario and the candidate metric is the mean over every seed.
  * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-task-descriptor #10a3f42 Re-read the section, then ran this function: the GEM wallet starts at 100, maxPicks stays 3, the stripped note reaches create as kept, seeds 1 and 3 average to reach time 20 and end money 160, and probes 1 and "1" get distinct ids.
  * @evidence ./experiment.ts#runExperiment Runs every candidate from the compiled scenario and averages the seeds.
- * @evidenceReview ./experiment.ts#runExperiment #9f9eb1a The function compiles the request scenario once as the base, keeps its raw model and strategy params with a private copy per seed, and aggregates every seed row by its mean.
+ * @evidenceReview ./experiment.ts#runExperiment #a5ddc7b The function compiles the request scenario once as the base, keeps its raw model and strategy params with a private copy per seed, and aggregates every seed row by its mean.
  */
 export function startsCandidatesFromScenario(): void {
   const creates = { count: 0 };
@@ -1150,7 +1150,7 @@ export function startsCandidatesFromScenario(): void {
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown An amount past the double range stays an observed engine value for constraints, Pareto, and sensitivity.
  * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown #440698a Re-read the section, then ran this function: 1e400 and 1e401 are observed, both violate the cap, only the probe is non-dominated, 1e-10 to 1e400 keeps an engine elasticity near 2.44e409, and two seeds of benefit 1e308 or of the smallest subnormal, and a subnormal wallet, average to that value, and end money 1e308 to -1e308 keeps elasticity 1, and three seeds of the largest double average to it.
  * @evidence ./experiment.ts#runExperiment Compares engine amounts for constraints, Pareto, and elasticity.
- * @evidenceReview ./experiment.ts#runExperiment #9f9eb1a The function keeps money as engine amounts, checks constraints with the engine order, ranks each Pareto objective by that order, and divides money changes in the engine.
+ * @evidenceReview ./experiment.ts#runExperiment #a5ddc7b The function keeps money as engine amounts, checks constraints with the engine order, ranks each Pareto objective by that order, and divides money changes in the engine.
  */
 export function keepsLargeEngineAmounts(): void {
   const engine = createBreakInfinityEngine();
@@ -1303,6 +1303,126 @@ export function keepsLargeEngineAmounts(): void {
   expect(flipped.elasticities[0]).toMatchObject({ status: "observed", elasticity: "1", absoluteChange: null, direction: "lower" });
 }
 
+/** A reset empties the wallet, but its progress marker survives. Noise fills the sample cap first. */
+function milestoneExperiment(scenario: ScenarioV1, spec: ExperimentSpecV1, creates = { count: 0 }): ExperimentArtifactV1 {
+  const model = defineModelFactory({
+    id: fixture.modelId,
+    version: fixture.modelVersion,
+    paramsSchema: zodStandardSchema(z.object({ incomeRate: z.number().positive(), scaleBySeed: z.boolean().optional() })),
+    create(params: { incomeRate: number; scaleBySeed?: boolean }) {
+      creates.count += 1;
+      return {
+        id: fixture.modelId,
+        version: fixture.modelVersion,
+        income: (ctx: { unit: { code: string }; seed?: number }) => ({ unit: ctx.unit, amount: params.incomeRate * (params.scaleBySeed ? ctx.seed ?? 1 : 1) }),
+        actions: () => [],
+        evolve: (_ctx: unknown, state: SimState<number, string, Record<string, unknown>>) => state.wallet.money.amount < 10 ? state : ({
+          ...state,
+          wallet: { ...state.wallet, money: { ...state.wallet.money, amount: 0 } },
+          vars: { ...state.vars, resets: Number(state.vars.resets ?? 0) + 1 },
+        }),
+        milestones: (_ctx: unknown, prev: SimState<number, string, Record<string, unknown>>, next: SimState<number, string, Record<string, unknown>>) => [
+          ...Array.from({ length: 80 }, (_, i) => `noise:${i}`),
+          ...(next.vars.resets !== prev.vars.resets ? ["tower:first-prestige"] : []),
+        ],
+      };
+    },
+  });
+  return runExperiment({ spec, scenario, modelRegistry: createModelRegistry([model]), strategyRegistry: createStrategyRegistry([policyFactory()]),
+    engine: createNumberEngine(), engineId: "number", engineVersion: "1", effectiveRunHash: "milestone-progress" });
+}
+
+/**
+ * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-milestone-reach First committed progress survives wallet resets, repeated keys, a nonzero start clock, and full sample caps.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-milestone-reach #3ea5356 Re-read the contract and ran this test: starting at 100 measures first progress at 10 despite repeated resets and eighty earlier keys; money reaches 4 and ends at 2; both reach metrics measure 0.2 elapsed seconds at a large rounded clock.
+ * @evidence ./experiment.ts#runExperiment Runs the real sweep with milestone, money, and horizon metrics together.
+ * @evidenceReview ./experiment.ts#runExperiment #a5ddc7b Re-read the run function and ran this test against its observer capture, metric aggregation, and pre-create validation.
+ */
+export function measuresFirstMilestoneAfterWalletReset(): void {
+  const scenario = incomeScenario({ initial: { wallet: { unit: "COIN", amount: "0" }, t: 100 } });
+  const spec = specFor(scenario, {
+    metricId: "timeToMilestone", milestoneKey: "tower:first-prestige", goal: { target: 4 },
+    objectives: [{ id: "money", metricId: "timeToMoney", sense: "lower" }, { id: "progress", metricId: "timeToMilestone", sense: "lower" }],
+    constraints: [{ id: "wallet", metricId: "endMoney", op: "gte", limit: 0 }], horizonSec: 22,
+  });
+  const report = milestoneExperiment(scenario, spec);
+  expect(report.milestoneKey).toBe("tower:first-prestige");
+  const baseline = report.candidates.find((candidate) => candidate.id === "baseline")!;
+  expect(baseline.metrics).toContainEqual({ metricId: "timeToMilestone", status: "observed", value: "10" });
+  expect(baseline.metrics).toContainEqual({ metricId: "timeToMoney", status: "observed", value: "4" });
+  expect(baseline.metrics).toContainEqual({ metricId: "endMoney", status: "observed", value: "2" });
+  expect(report.tasks.find((task) => task.candidateId === "oat:incomeRate:2")).toMatchObject({ status: "observed", value: "5" });
+  expect(report.elasticities.find((row) => row.candidateId === "oat:incomeRate:2")).toMatchObject({ status: "observed", elasticity: "-0.5", direction: "lower" });
+  expect(validateExperimentArtifact(report).success).toBe(true);
+  // The state clock rounds this 0.2-second tick to 0.25; measured duration is still 0.2.
+  const fractional = incomeScenario({
+    initial: { wallet: { unit: "COIN", amount: "0" }, t: 2 ** 50 },
+    model: { id: fixture.modelId, version: fixture.modelVersion, params: { incomeRate: 50 } },
+  });
+  const fractionalReport = milestoneExperiment(fractional, specFor(fractional, {
+    metricId: "timeToMilestone", milestoneKey: "tower:first-prestige", goal: undefined,
+    dimensions: [], budget: { candidates: 1, seeds: 1 }, horizonSec: 0.2, stepSec: 0.2,
+  }));
+  expect(fractionalReport.tasks[0]?.value).toBe("0.2");
+  const moneyReport = runWith(fractional, specFor(fractional, {
+    metricId: "timeToMoney", goal: { target: 10 }, dimensions: [],
+    budget: { candidates: 1, seeds: 1 }, horizonSec: 0.2, stepSec: 0.2,
+  }));
+  expect(moneyReport.tasks[0]?.value).toBe("0.2");
+}
+
+/**
+ * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-milestone-reach Missing milestones are censored and only proven deadline violations are listed.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-milestone-reach #3ea5356 Re-read the contract and ran this test: missing keys stay null, the rate-two probe reaches at 5, and a mixed observed/censored seed mean has a strict bound at 7.
+ * @evidence ./experiment.ts#runExperiment Exercises the milestone lower bound and unavailable sensitivity.
+ * @evidenceReview ./experiment.ts#runExperiment #a5ddc7b Re-read the run function and ran this test against its observer capture, metric aggregation, and pre-create validation.
+ */
+export function censorsUnreachedMilestones(): void {
+  const scenario = incomeScenario();
+  const spec = specFor(scenario, {
+    metricId: "timeToMilestone", milestoneKey: "tower:first-prestige", goal: undefined, horizonSec: 9,
+    constraints: [{ id: "deadline", metricId: "timeToMilestone", op: "lte", limit: 9 }, { id: "later", metricId: "timeToMilestone", op: "lte", limit: 12 }],
+  });
+  const report = milestoneExperiment(scenario, spec);
+  expect(report.candidates.find((candidate) => candidate.id === "baseline")).toMatchObject({
+    metrics: [{ metricId: "timeToMilestone", status: "censored", value: null }], constraintViolations: ["deadline"],
+  });
+  expect(report.tasks.find((task) => task.candidateId === "oat:incomeRate:2")).toMatchObject({ status: "observed", value: "5" });
+  expect(report.elasticities.every((row) => row.status === "unavailable")).toBe(true);
+  const missing = milestoneExperiment(scenario, { ...spec, milestoneKey: "not-emitted" });
+  expect(missing.tasks.every((task) => task.status === "censored" && task.value === null)).toBe(true);
+
+  const seeded = incomeScenario({ model: { id: fixture.modelId, version: fixture.modelVersion, params: { incomeRate: 1, scaleBySeed: true } } });
+  const seededSpec = specFor(seeded, { ...spec, scenario: undefined, dimensions: [], seeds: [1, 2], budget: { candidates: 1, seeds: 2 } });
+  const mixed = milestoneExperiment(seeded, { ...seededSpec, constraints: [{ id: "mean-deadline", metricId: "timeToMilestone", op: "lte", limit: 7 }] });
+  expect(mixed.tasks.map((task) => [task.status, task.value])).toEqual([["censored", null], ["observed", "5"]]);
+  expect(mixed.candidates[0]?.constraintViolations).toEqual(["mean-deadline"]);
+  const reached = milestoneExperiment(seeded, { ...seededSpec, horizonSec: 10 });
+  expect(reached.candidates[0]?.metrics).toEqual([{ metricId: "timeToMilestone", status: "observed", value: "7.5" }]);
+}
+
+/**
+ * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-milestone-reach Missing or blank keys fail before model creation, including keys used only by objectives or constraints.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-milestone-reach #3ea5356 Re-read the contract and ran this test: absent, empty, and whitespace keys are rejected for primary metrics, objectives, and constraints; create remains at zero.
+ * @evidence ./experiment.ts#runExperiment Rejects malformed milestone selections before compilation.
+ * @evidenceReview ./experiment.ts#runExperiment #a5ddc7b Re-read the run function and ran this test against its observer capture, metric aggregation, and pre-create validation.
+ */
+export function rejectsMissingMilestoneKeyBeforeRun(): void {
+  const scenario = incomeScenario();
+  for (const metricLocation of ["primary", "objective", "constraint"]) {
+    for (const milestoneKey of [undefined, "", "   "]) {
+      const creates = { count: 0 };
+      const spec = specFor(scenario, {
+        metricId: metricLocation === "primary" ? "timeToMilestone" : "endMoney", milestoneKey,
+        ...(metricLocation === "objective" ? { objectives: [{ id: "progress", metricId: "timeToMilestone", sense: "lower" }] } : {}),
+        ...(metricLocation === "constraint" ? { constraints: [{ id: "deadline", metricId: "timeToMilestone", op: "lte", limit: 10 }] } : {}),
+      });
+      expect(() => milestoneExperiment(scenario, spec, creates)).toThrow("milestoneKey");
+      expect(creates.count).toBe(0);
+    }
+  }
+}
+
 describe("parameter experiments", () => {
   it("checks local elasticity direction", checksLocalElasticityDirection);
   it("keeps the strategy tune signature", keepsStrategyTuneSignature);
@@ -1312,4 +1432,7 @@ describe("parameter experiments", () => {
   it("matches the hand Pareto front", matchesHandPareto);
   it("starts candidates from the scenario", startsCandidatesFromScenario);
   it("keeps large engine amounts", keepsLargeEngineAmounts);
+  it("measures the first milestone after a wallet reset", measuresFirstMilestoneAfterWalletReset);
+  it("censors unreached milestones", censorsUnreachedMilestones);
+  it("rejects a missing milestone key before a run", rejectsMissingMilestoneKeyBeforeRun);
 });
