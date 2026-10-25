@@ -182,7 +182,7 @@ function runWith(scenario: ScenarioV1, spec: ExperimentSpecV1, creates: { count:
  * @evidence ./experiment.ts#experimentTaskDescriptor Reads the task descriptor contract.
  * @evidenceReview ./experiment.ts#experimentTaskDescriptor #03898ac The declaration is task-id-params-seed-version.
  * @evidence ./experiment.ts#runExperiment Runs the sweep and local sensitivity on a fixed spec.
- * @evidenceReview ./experiment.ts#runExperiment #87021ba The function checks the scenario hash against the spec, rejects a timeToMoney metric without a finite goal, compiles the scenario once as the candidate base, runs each planned candidate per seed through a fresh binding to the horizon while reading the reach time, averages every seed, and reports local sensitivity only for completed horizons.
+ * @evidenceReview ./experiment.ts#runExperiment #2d94ee8 The function checks the scenario hash against the spec, rejects a timeToMoney metric without a finite goal, compiles the scenario once as the candidate base, runs each planned candidate per seed through a fresh binding to the horizon while reading the reach time, averages every seed, and reports local sensitivity only for completed horizons.
  * @evidence ./experiment.ts#experimentSchemaId Reads the experiment schema id.
  * @evidenceReview ./experiment.ts#experimentSchemaId #637335e The function returns the experiment.v1 schema URL constant.
  * @evidence ./experiment.ts#experimentAlgorithmVersion Reads the algorithm version.
@@ -1020,7 +1020,7 @@ export function matchesHandPareto(): void {
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-task-descriptor Candidates start from the referenced scenario and the candidate metric is the mean over every seed.
  * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-task-descriptor #10a3f42 Re-read the section, then ran this function: the GEM wallet starts at 100, maxPicks stays 3, the stripped note reaches create as kept, seeds 1 and 3 average to reach time 20 and end money 160, and probes 1 and "1" get distinct ids.
  * @evidence ./experiment.ts#runExperiment Runs every candidate from the compiled scenario and averages the seeds.
- * @evidenceReview ./experiment.ts#runExperiment #87021ba The function compiles the request scenario once as the base, keeps its raw model and strategy params with a private copy per seed, and aggregates every seed row by its mean.
+ * @evidenceReview ./experiment.ts#runExperiment #2d94ee8 The function compiles the request scenario once as the base, keeps its raw model and strategy params with a private copy per seed, and aggregates every seed row by its mean.
  */
 export function startsCandidatesFromScenario(): void {
   const creates = { count: 0 };
@@ -1150,7 +1150,7 @@ export function startsCandidatesFromScenario(): void {
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown An amount past the double range stays an observed engine value for constraints, Pareto, and sensitivity.
  * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-pareto-unknown #440698a Re-read the section, then ran this function: 1e400 and 1e401 are observed, both violate the cap, only the probe is non-dominated, 1e-10 to 1e400 keeps an engine elasticity near 2.44e409, and two seeds of benefit 1e308 or of the smallest subnormal, and a subnormal wallet, average to that value, and end money 1e308 to -1e308 keeps elasticity 1, and three seeds of the largest double average to it.
  * @evidence ./experiment.ts#runExperiment Compares engine amounts for constraints, Pareto, and elasticity.
- * @evidenceReview ./experiment.ts#runExperiment #87021ba The function keeps money as engine amounts, checks constraints with the engine order, ranks each Pareto objective by that order, and divides money changes in the engine.
+ * @evidenceReview ./experiment.ts#runExperiment #2d94ee8 The function keeps money as engine amounts, checks constraints with the engine order, ranks each Pareto objective by that order, and divides money changes in the engine.
  */
 export function keepsLargeEngineAmounts(): void {
   const engine = createBreakInfinityEngine();
@@ -1334,9 +1334,9 @@ function milestoneExperiment(scenario: ScenarioV1, spec: ExperimentSpecV1, creat
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-milestone-reach First committed progress survives wallet resets, repeated keys, a nonzero start clock, and full sample caps.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-milestone-reach #ece0adc Re-read the contract and ran this test: starting at 100 measures first progress at 10 despite repeated resets and eighty earlier keys; money reaches 4 and ends at 2; both reach metrics measure 0.2 elapsed seconds at a large rounded clock.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-milestone-reach #f1a9561 Re-read the contract and ran this test: starting at 100 measures first progress at 10 despite repeated resets and eighty earlier keys; money reaches 4 and ends at 2; both reach metrics measure 0.2 elapsed seconds at a large rounded clock.
  * @evidence ./experiment.ts#runExperiment Runs the real sweep with milestone, money, and horizon metrics together.
- * @evidenceReview ./experiment.ts#runExperiment #87021ba Re-read the run function and ran this test against its observer capture, metric aggregation, and pre-create validation.
+ * @evidenceReview ./experiment.ts#runExperiment #2d94ee8 Re-read the run function and ran this test against its observer capture, metric aggregation, and pre-create validation.
  */
 export function measuresFirstMilestoneAfterWalletReset(): void {
   const scenario = incomeScenario({ initial: { wallet: { unit: "COIN", amount: "0" }, t: 100 } });
@@ -1373,9 +1373,9 @@ export function measuresFirstMilestoneAfterWalletReset(): void {
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-milestone-reach Missing milestones are censored and only proven deadline violations are listed.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-milestone-reach #ece0adc Re-read the contract and ran this test: missing keys stay null, the rate-two probe reaches at 5, and a mixed observed/censored seed mean has a strict bound at 7.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-milestone-reach #f1a9561 Re-read the contract and ran this test: missing keys stay null, the rate-two probe reaches at 5, and a mixed observed/censored seed mean has a strict bound at 7.
  * @evidence ./experiment.ts#runExperiment Exercises the milestone lower bound and unavailable sensitivity.
- * @evidenceReview ./experiment.ts#runExperiment #87021ba Re-read the run function and ran this test against its observer capture, metric aggregation, and pre-create validation.
+ * @evidenceReview ./experiment.ts#runExperiment #2d94ee8 Re-read the run function and ran this test against its observer capture, metric aggregation, and pre-create validation.
  */
 export function censorsUnreachedMilestones(): void {
   const scenario = incomeScenario();
@@ -1403,9 +1403,9 @@ export function censorsUnreachedMilestones(): void {
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-milestone-reach Missing or blank keys fail before model creation, including keys used only by objectives or constraints.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-milestone-reach #ece0adc Re-read the contract and ran this test: absent, empty, and whitespace keys are rejected for primary metrics, objectives, and constraints; create remains at zero.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-milestone-reach #f1a9561 Re-read the contract and ran this test: absent, empty, and whitespace keys are rejected for primary metrics, objectives, and constraints; create remains at zero.
  * @evidence ./experiment.ts#runExperiment Rejects malformed milestone selections before compilation.
- * @evidenceReview ./experiment.ts#runExperiment #87021ba Re-read the run function and ran this test against its observer capture, metric aggregation, and pre-create validation.
+ * @evidenceReview ./experiment.ts#runExperiment #2d94ee8 Re-read the run function and ran this test against its observer capture, metric aggregation, and pre-create validation.
  */
 export function rejectsMissingMilestoneKeyBeforeRun(): void {
   const scenario = incomeScenario();
@@ -1425,9 +1425,9 @@ export function rejectsMissingMilestoneKeyBeforeRun(): void {
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-milestone-reach Action receipts occur at tick start, while model and prestige milestones occur at tick end.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-milestone-reach #ece0adc Re-read the boundary clause and ran this test: initial actions reach at zero and satisfy lte zero, delayed actions reach at one, fractional actions at a large clock reach at 0.2, and model/prestige keys keep end-of-tick timing regardless of key prefix.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-milestone-reach #f1a9561 Re-read the boundary clause and ran this test: initial actions reach at zero and satisfy lte zero, delayed actions reach at one, fractional actions at a large clock reach at 0.2, and model/prestige keys keep end-of-tick timing regardless of key prefix. A final partial tick with identical absolute timestamps still reports action time 0.2 and model/prestige time 0.3, with the corresponding deadline results.
  * @evidence ./experiment.ts#runExperiment Measures committed action boundaries independently of absolute-clock rounding and key names.
- * @evidenceReview ./experiment.ts#runExperiment #87021ba Read the saved elapsed tick-start boundary and its exact t0 comparison, then ran the zero, delayed, fractional, model, and prestige regressions.
+ * @evidenceReview ./experiment.ts#runExperiment #2d94ee8 Read the saved elapsed tick-start boundary and committed milestone phase, then ran the zero, delayed, fractional, model, and prestige regressions including a final partial tick that does not advance the absolute clock.
  */
 export function keepsMilestoneStepBoundaries(): void {
   type Vars = { bought?: boolean };
@@ -1488,12 +1488,19 @@ export function keepsMilestoneStepBoundaries(): void {
     const fractional = run(key, { wallet: "0.9", startT: 2 ** 50, stepSec: 0.2, horizonSec: 0.4, deadline: 0.2 });
     expect(fractional.tasks[0]).toMatchObject({ status: "observed", value: "0.2" });
     expect(fractional.candidates[0]?.constraintViolations).toEqual([]);
+    const partial = run(key, { wallet: "0.9", startT: 2 ** 50, stepSec: 0.2, horizonSec: 0.3, deadline: 0.2 });
+    expect(partial.tasks[0]).toMatchObject({ status: "observed", value: "0.2" });
+    expect(partial.candidates[0]?.constraintViolations).toEqual([]);
   }
   for (const key of ["model.purchased", "action.named-by-model.firstApplied", "prestige.first"]) {
     const end = run(key, { kind: "prestige", deadline: 1 });
     expect(end.tasks[0]).toMatchObject({ status: "observed", value: "1" });
     expect(end.candidates[0]?.constraintViolations).toEqual([]);
     expect(run(key, { kind: "prestige" }).candidates[0]?.constraintViolations).toEqual(["deadline"]);
+    // The final 0.1-second tick does not move this absolute clock, but its income still commits.
+    const partial = run(key, { wallet: "0.9", kind: "prestige", startT: 2 ** 50, stepSec: 0.2, horizonSec: 0.3, deadline: 0.2 });
+    expect(partial.tasks[0]).toMatchObject({ status: "observed", value: "0.3" });
+    expect(partial.candidates[0]?.constraintViolations).toEqual(["deadline"]);
   }
 }
 

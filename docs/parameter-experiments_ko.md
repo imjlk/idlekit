@@ -18,7 +18,7 @@
 
 ## 진행 마일스톤
 
-도달 시간은 확정된 tick 길이를 누적하므로, 저장된 절대 시각이 커도 소수점 단위의 경과 시간을 반올림하지 않는다. `action.buy.firstApplied`, `progress.first-upgrade` 같은 행동 마일스톤은 tick 시작, 모델이 내보내는 마일스톤과 `prestige.first`는 tick 끝에 발생한다. 시작부터 구매 가능했다면 도달 시간은 0초이고 0초 기한도 충족한다.
+도달 시간은 확정된 tick 길이를 누적하므로, 저장된 절대 시각이 커도 소수점 단위의 경과 시간을 반올림하지 않는다. `action.buy.firstApplied`, `progress.first-upgrade` 같은 행동 마일스톤은 tick 시작, 모델이 내보내는 마일스톤과 `prestige.first`는 tick 끝에 발생한다. 시작부터 구매 가능했다면 도달 시간은 0초이고 0초 기한도 충족한다. `onMilestone` 관측값에는 `phase: "action-start" | "income-end"`가 포함되어, 마지막 부분 tick의 시작·종료 시각이 같은 값으로 반올림되어도 두 경계를 구분한다.
 
 `"metricId": "timeToMilestone"`와 `"milestoneKey": "tower:first-prestige"`를 지정하면 정확히 그 키가 처음 확정된 시점까지의 초를 비교한다. objective와 constraint에서도 쓸 수 있고, spec 하나는 마일스톤 키 하나를 선택한다. artifact에도 선택한 키가 기록된다. 모델의 `milestones`가 내보내는 키나 `prestige.first` 같은 실행기의 기본 키를 사용한다. 지갑 금액이나 시작 상태에서 임의로 도달을 추론하지 않는다.
 
