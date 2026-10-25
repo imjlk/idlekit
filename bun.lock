@@ -22,7 +22,7 @@
     },
     "packages/cli": {
       "name": "@idlekit/cli",
-      "version": "0.6.0",
+      "version": "0.7.0",
       "bin": {
         "idk": "dist/main.js",
       },
@@ -43,7 +43,7 @@
     },
     "packages/core": {
       "name": "@idlekit/core",
-      "version": "0.6.0",
+      "version": "0.7.0",
       "dependencies": {
         "@idlekit/money": "workspace:*",
         "typia": "15.1.0",
