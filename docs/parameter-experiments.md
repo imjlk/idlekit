@@ -10,11 +10,31 @@ The method is `fixed-sweep-and-one-at-a-time`. The estimator is `one-at-a-time-l
 
 Each candidate starts from the scenario named by `scenario.ref`: its wallet, unit, tick policy, model params, and strategy params. Only the assigned paths change, and the raw params reach `create` as they do in a scenario run. The spec model must be the scenario model, and a spec strategy must be the scenario strategy when the scenario names one. Each candidate runs on the same seeds and horizon. The session block is recorded on each task, but no session schedule is executed, so a `session` dimension is rejected. Resetting a parameter builds a fresh model and a fresh strategy through `createRunFactory`. The input scenario object is not written. Paths are dotted identifiers checked against the existing ParamSpace kinds and the model or strategy `paramsSchema`. A path the schema strips is rejected. A schema that transforms a value only validates it: the factory still receives the raw assigned value, as in a legacy-raw scenario run, and the task records that raw value. In addition, a factory without a schema accepts only paths already in the scenario params, and so are two dimensions on one target whose paths are equal or nested. Logical seeds and constraint ids must be unique, and a constraint limit must be finite. JSONPath, prototype paths, and eval paths are rejected before a run.
 
-Every run continues to `horizonSec`. The reach time is read on the way, so end money and `vars.benefit` are horizon values even when `timeToMoney` is also requested. A candidate metric is the arithmetic mean over every seed. One failed seed fails it and one censored seed censors it. Money stays an amount of the effective engine: constraints, Pareto order, and elasticity compare it in that engine, so a `breakInfinity` amount past the double range is still observed.
+Runs continue to `horizonSec`, except when every metric is `timeToMoney`, which can stop at its goal. The reach time is read on the way, so end money and `vars.benefit` are horizon values even when `timeToMoney` is also requested. A candidate metric is the arithmetic mean over every seed. One failed seed fails it and one censored seed censors it. Money stays an amount of the effective engine: constraints, Pareto order, and elasticity compare it in that engine, so a `breakInfinity` amount past the double range is still observed.
 
 Relative elasticity is reported only when baseline `p` and `y` are finite and greater than zero and `p` changes. Otherwise the row keeps an absolute change and a direction, or it is unavailable. A goal that is not reached stays censored. Its time is null. It is not replaced with the horizon, and it is not differentiated. Its lower bound, the simulated horizon, only proves an `lte` time constraint violated.
 
 The default report is per-metric change plus constraint violation ids. There is no weighted composite. Optional Pareto uses fully observed objectives only. A censored or failed objective is `uncompared` and cannot win.
+
+## Progress milestones
+
+Reach times use the sum of committed tick durations, so large absolute state clocks do not round a fractional duration. Action-derived keys such as `action.buy.firstApplied` and `progress.first-upgrade` occur at tick start; model-emitted and `prestige.first` milestones occur at tick end. An initially affordable purchase therefore measures zero seconds and satisfies a zero-second deadline. `onMilestone` facts include `phase: "action-start" | "income-end"`, so those boundaries remain distinct even when a final partial tick rounds its start and end timestamps to the same value.
+
+Use `"metricId": "timeToMilestone"` with `"milestoneKey": "tower:first-prestige"` to compare the first committed occurrence of that exact key. It also works in objectives and constraints; one spec selects one milestone key. The artifact records that key. Use a key emitted by model `milestones` or a runner key such as `prestige.first`; the experiment does not infer progress from money or the initial state.
+
+This measures progression even when buying upgrades or prestiging empties the wallet. The first occurrence wins, even when the key repeats or retained event and milestone samples are full. A missing key stays censored with a null value. Its elapsed horizon is only a lower bound for deadline constraints, not an achieved time. Sensitivity is unavailable when the baseline is censored. Runs using this metric continue to the horizon, so it can be compared with end money and `vars.benefit`.
+
+A spec fragment for reaching a first prestige within 20 minutes:
+
+```json
+{
+  "metricId": "timeToMilestone",
+  "milestoneKey": "tower:first-prestige",
+  "constraints": [
+    { "id": "first-prestige-deadline", "metricId": "timeToMilestone", "op": "lte", "limit": 1200 }
+  ]
+}
+```
 
 ## Canonical example
 

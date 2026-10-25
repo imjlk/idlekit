@@ -76,7 +76,8 @@ export type RunObservation = Readonly<{
 export type RunObserver = Readonly<{
   onStep?: (fact: Readonly<{ t0: number; t1: number; dt: number }>) => void;
   onAction?: (fact: Readonly<{ t: number; actionId: string; outcome: "applied" | "skipped"; reason?: string }>) => void;
-  onMilestone?: (fact: Readonly<{ t: number; key: string }>) => void;
+  /** Phase stays distinct even when a final partial tick rounds t1 to t0. */
+  onMilestone?: (fact: Readonly<{ t: number; key: string; phase: "action-start" | "income-end" }>) => void;
   onGoal?: (fact: Readonly<{ t: number; goalId: string }>) => void;
   /**
    * A committed reset action. A `prestige.count` change is not this fact.
@@ -358,7 +359,11 @@ export function createObservationRecorder<N, U extends string, Vars>(args: {
       milestones.push(sample);
     }
     if (args.observer?.onMilestone) {
-      notify(() => args.observer?.onMilestone?.({ t: sample.firstSeenT, key: sample.key }));
+      notify(() => args.observer?.onMilestone?.({
+        t: sample.firstSeenT,
+        key: sample.key,
+        phase: sample.source === "action" ? "action-start" : "income-end",
+      }));
     }
   };
 

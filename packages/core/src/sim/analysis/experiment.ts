@@ -124,7 +124,7 @@ export type ExperimentCandidateV1 = Readonly<{
   assignments: readonly ExperimentAssignmentV1[];
 }>;
 
-export type ExperimentMetricId = "timeToMoney" | "endMoney" | "varBenefit";
+export type ExperimentMetricId = "timeToMoney" | "timeToMilestone" | "endMoney" | "varBenefit";
 
 export type ExperimentObjectiveV1 = Readonly<{
   id: string;
@@ -146,6 +146,8 @@ export type ExperimentSpecV1 = Readonly<{
   strategy?: Readonly<{ id: string }>;
   metricId: ExperimentMetricId;
   goal?: Readonly<{ target: number }>;
+  /** Exact committed milestone key whose first occurrence is measured. */
+  milestoneKey?: string;
   objectives?: readonly ExperimentObjectiveV1[];
   constraints?: readonly ExperimentConstraintV1[];
   dimensions: readonly ExperimentDimensionV1[];
@@ -191,6 +193,8 @@ export type ExperimentArtifactV1 = Readonly<{
   originalSpecHash: string;
   effectiveSpecHash: string;
   effectiveRunHash: string;
+  /** The exact key used by timeToMilestone, when requested by any metric. */
+  milestoneKey?: string;
   budget: Readonly<{ candidates: number; seeds: number; usedCandidates: number; usedSeeds: number }>;
   tasks: readonly ExperimentTaskV1[];
   candidates: readonly Readonly<{
@@ -698,19 +702,19 @@ function observeMetrics<N>(
   E: Engine<N>,
   spec: ExperimentSpecV1,
   end: SimState<N, string, Record<string, unknown>>,
-  startT: number,
-  reachedAt: number | undefined,
+  moneyElapsedSec: number | undefined,
+  milestoneElapsedSec: number | undefined,
   /** The runner elapsed clock. A censored reach time is later than it. */
   elapsedSec: number,
 ): Reading<N>[] {
   const amount = end.wallet.money.amount;
   const benefit = readBenefit(end.vars);
   return metricIds(spec).map((metricId): Reading<N> => {
-    if (metricId === "timeToMoney") {
-      if (reachedAt === undefined) {
+    if (metricId === "timeToMoney" || metricId === "timeToMilestone") {
+      const elapsed = metricId === "timeToMoney" ? moneyElapsedSec : milestoneElapsedSec;
+      if (elapsed === undefined) {
         return { metricId, status: "censored", value: null, lowerBound: { sec: elapsedSec, strict: true } };
       }
-      const elapsed = reachedAt - startT;
       return { metricId, status: "observed", value: String(elapsed), num: elapsed };
     }
     if (metricId === "endMoney") {
@@ -738,7 +742,7 @@ function aggregate<N>(E: Engine<N>, rows: readonly { seed: number; metrics: read
   if (picked.some((metric) => metric!.status !== "observed" || metric!.value === null)) {
     // Every seed is either observed or censored with a known lower bound, so the mean has a lower bound too.
     const bounded = picked.every((metric) => metric!.num !== undefined || metric!.lowerBound !== undefined);
-    if (metricId !== "timeToMoney" || !bounded) return { metricId, status: "censored", value: null };
+    if ((metricId !== "timeToMoney" && metricId !== "timeToMilestone") || !bounded) return { metricId, status: "censored", value: null };
     const bounds = picked.map((metric) => metric!.num ?? metric!.lowerBound!.sec);
     const total = bounds.reduce((sum, bound) => sum + bound, 0);
     const sec = Number.isFinite(total) ? total / bounds.length : scaledMean(bounds);
@@ -856,6 +860,8 @@ function prepareExperiment(request: ExperimentCheckRequest) {
   // A JSON literal such as 1e400 parses to Infinity, and canonical JSON would hash it as null.
   if (spec.goal !== undefined && !Number.isFinite(spec.goal.target)) reject("goal target must be finite");
   if (metrics.includes("timeToMoney") && spec.goal === undefined) reject("timeToMoney requires a finite goal target");
+  if (spec.milestoneKey !== undefined && spec.milestoneKey.trim().length === 0) reject("milestoneKey must not be blank");
+  if (metrics.includes("timeToMilestone") && spec.milestoneKey === undefined) reject("timeToMilestone requires milestoneKey");
   // Every spec field the run reads must be one both spec hashes record.
   if (!isJsonData(request.spec, new Set(), true)) reject("spec must be JSON data, because the spec hashes record it as JSON");
   requireScenarioData(request.scenario);
@@ -889,9 +895,14 @@ export function checkExperimentSpec(request: ExperimentCheckRequest): void {
   prepareExperiment(request);
 }
 
+/**
+ * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-milestone-reach Reads the first matching committed milestone through the observer, independent of retained samples and wallet resets.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-milestone-reach #f1a9561 Re-read the milestone contract and ran the experiment tests: reset timing is 10 and 5, money timing is 4, horizon money is 2, missing milestones stay censored, mixed-seed bounds prove only known deadline violations, and a 0.2-second tick at absolute time 2 ** 50 is measured as 0.2 for both reach metrics. Milestone phases preserve tick-start actions and tick-end model/prestige facts even when a final partial tick has identical absolute timestamps.
+ */
 export function runExperiment<N>(request: ExperimentRunRequest<N>): ExperimentArtifactV1 {
   const { spec, metrics, base, prepared, specHashes } = prepareExperiment(request);
-  const measuresReach = metrics.includes("timeToMoney");
+  const measuresMoney = metrics.includes("timeToMoney");
+  const measuresMilestone = metrics.includes("timeToMilestone");
   const E = request.engine;
   // The plan builds the strategy, so compile does not build the scenario one.
   const { strategy: _scenarioStrategy, ...withoutStrategy } = request.scenario;
@@ -912,7 +923,7 @@ export function runExperiment<N>(request: ExperimentRunRequest<N>): ExperimentAr
     models: request.modelRegistry,
     strategies: request.strategyRegistry,
   });
-  const target = measuresReach && spec.goal !== undefined ? E.from(spec.goal.target) : undefined;
+  const target = measuresMoney && spec.goal !== undefined ? E.from(spec.goal.target) : undefined;
   // Stopping at the goal is safe only when no other metric reads the horizon state.
   const stopAtReach = metrics.every((metricId) => metricId === "timeToMoney");
   const tasks: ExperimentTaskV1[] = [];
@@ -940,22 +951,45 @@ export function runExperiment<N>(request: ExperimentRunRequest<N>): ExperimentAr
       try {
         const opened = binding.fresh({ trialId: taskId, seed, plan });
         const scenario = opened.scenario;
-        let reachedAt: number | undefined;
+        let moneyElapsedSec: number | undefined;
+        let milestoneElapsedSec: number | undefined;
+        let observedElapsedSec = 0;
+        let stepStartElapsedSec = 0;
         const result = runScenario({
           ...scenario,
           run: {
             ...scenario.run,
+            ...(measuresMoney || measuresMilestone ? {
+              // Read elapsed ticks, since subtracting large absolute clocks can round the duration.
+              // The observer still receives milestone facts when no samples are retained.
+              observation: { ...scenario.run.observation, enabled: true, ...(measuresMilestone ? { maxMilestones: 0 } : {}) },
+              observer: {
+                ...scenario.run.observer,
+                onStep: (fact: Readonly<{ t0: number; t1: number; dt: number }>) => {
+                  stepStartElapsedSec = observedElapsedSec;
+                  observedElapsedSec += fact.dt;
+                  scenario.run.observer?.onStep?.(fact);
+                },
+                onMilestone: (fact: Readonly<{ t: number; key: string; phase: "action-start" | "income-end" }>) => {
+                  if (measuresMilestone && milestoneElapsedSec === undefined && fact.key === spec.milestoneKey) {
+                    // A final partial tick may round t1 to t0, so use the committed phase.
+                    milestoneElapsedSec = fact.phase === "action-start" ? stepStartElapsedSec : observedElapsedSec;
+                  }
+                  scenario.run.observer?.onMilestone?.(fact);
+                },
+              },
+            } : {}),
             ...(target !== undefined
               ? {
                   until: (state: SimState<N, string, Record<string, unknown>>) => {
-                    if (reachedAt === undefined && E.cmp(state.wallet.money.amount, target) >= 0) reachedAt = state.t;
-                    return stopAtReach && reachedAt !== undefined;
+                    if (moneyElapsedSec === undefined && E.cmp(state.wallet.money.amount, target) >= 0) moneyElapsedSec = observedElapsedSec;
+                    return stopAtReach && moneyElapsedSec !== undefined;
                   },
                 }
               : {}),
           },
         });
-        readings = observeMetrics(E, spec, result.end, result.start.t, reachedAt, runElapsedSec(result));
+        readings = observeMetrics(E, spec, result.end, moneyElapsedSec, milestoneElapsedSec, runElapsedSec(result));
       } catch {
         readings = failedMetrics(spec);
       }
@@ -1066,6 +1100,7 @@ export function runExperiment<N>(request: ExperimentRunRequest<N>): ExperimentAr
     originalSpecHash: specHashes.original,
     effectiveSpecHash: specHashes.effective,
     effectiveRunHash: request.effectiveRunHash,
+    ...(measuresMilestone ? { milestoneKey: spec.milestoneKey } : {}),
     budget: {
       candidates: spec.budget.candidates,
       seeds: spec.budget.seeds,
