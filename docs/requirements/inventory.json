@@ -923,6 +923,16 @@
             "test",
             "src/sim/analysis/experiment.test.ts"
           ]
+        },
+        {
+          "file": "packages/core/src/sim/analysis/experiment.test.ts",
+          "exportName": "keepsMilestoneStepBoundaries",
+          "registeredAs": "parameter experiments > keeps action milestones at tick start and model milestones at tick end",
+          "cwd": "packages/core",
+          "args": [
+            "test",
+            "src/sim/analysis/experiment.test.ts"
+          ]
         }
       ]
     },

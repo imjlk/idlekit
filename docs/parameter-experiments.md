@@ -18,7 +18,7 @@ The default report is per-metric change plus constraint violation ids. There is 
 
 ## Progress milestones
 
-Reach times use the sum of committed tick durations, so large absolute state clocks do not round a fractional duration.
+Reach times use the sum of committed tick durations, so large absolute state clocks do not round a fractional duration. Action-derived keys such as `action.buy.firstApplied` and `progress.first-upgrade` occur at tick start; model-emitted and `prestige.first` milestones occur at tick end. An initially affordable purchase therefore measures zero seconds and satisfies a zero-second deadline.
 
 Use `"metricId": "timeToMilestone"` with `"milestoneKey": "tower:first-prestige"` to compare the first committed occurrence of that exact key. It also works in objectives and constraints; one spec selects one milestone key. The artifact records that key. Use a key emitted by model `milestones` or a runner key such as `prestige.first`; the experiment does not infer progress from money or the initial state.
 

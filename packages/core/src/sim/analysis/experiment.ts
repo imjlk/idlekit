@@ -897,7 +897,7 @@ export function checkExperimentSpec(request: ExperimentCheckRequest): void {
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-milestone-reach Reads the first matching committed milestone through the observer, independent of retained samples and wallet resets.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-milestone-reach #3ea5356 Re-read the milestone contract and ran the experiment tests: reset timing is 10 and 5, money timing is 4, horizon money is 2, missing milestones stay censored, mixed-seed bounds prove only known deadline violations, and a 0.2-second tick at absolute time 2 ** 50 is measured as 0.2 for both reach metrics.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-milestone-reach #ece0adc Re-read the milestone contract and ran the experiment tests: reset timing is 10 and 5, money timing is 4, horizon money is 2, missing milestones stay censored, mixed-seed bounds prove only known deadline violations, and a 0.2-second tick at absolute time 2 ** 50 is measured as 0.2 for both reach metrics.
  */
 export function runExperiment<N>(request: ExperimentRunRequest<N>): ExperimentArtifactV1 {
   const { spec, metrics, base, prepared, specHashes } = prepareExperiment(request);
@@ -954,6 +954,8 @@ export function runExperiment<N>(request: ExperimentRunRequest<N>): ExperimentAr
         let moneyElapsedSec: number | undefined;
         let milestoneElapsedSec: number | undefined;
         let observedElapsedSec = 0;
+        let stepStartT: number | undefined;
+        let stepStartElapsedSec = 0;
         const result = runScenario({
           ...scenario,
           run: {
@@ -965,11 +967,17 @@ export function runExperiment<N>(request: ExperimentRunRequest<N>): ExperimentAr
               observer: {
                 ...scenario.run.observer,
                 onStep: (fact: Readonly<{ t0: number; t1: number; dt: number }>) => {
+                  stepStartT = fact.t0;
+                  stepStartElapsedSec = observedElapsedSec;
                   observedElapsedSec += fact.dt;
                   scenario.run.observer?.onStep?.(fact);
                 },
                 onMilestone: (fact: Readonly<{ t: number; key: string }>) => {
-                  if (measuresMilestone && milestoneElapsedSec === undefined && fact.key === spec.milestoneKey) milestoneElapsedSec = observedElapsedSec;
+                  if (measuresMilestone && milestoneElapsedSec === undefined && fact.key === spec.milestoneKey) {
+                    // Action facts use t0; model and prestige facts use t1. Both use elapsed ticks,
+                    // so a rounded absolute state clock cannot change the measured duration.
+                    milestoneElapsedSec = fact.t === stepStartT ? stepStartElapsedSec : observedElapsedSec;
+                  }
                   scenario.run.observer?.onMilestone?.(fact);
                 },
               },
