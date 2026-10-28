@@ -36,7 +36,7 @@ jobs:
         uses: ./.github/actions/cargo-binstall
 
       - name: Validate changesets with the release Sampo
-        uses: bruits/sampo/crates/sampo-github-action@11306bad0caaa58c8a36fa203695c5f2cacc4344 # action 0.20.0, core 0.18.0
+        uses: bruits/sampo/crates/sampo-github-action@dc6c961af6a324651a92c419a49291246bdd0151 # action 0.20.0, core 0.18.0
         with:
           command: release
           dry-run: "true"
