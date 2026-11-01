@@ -67,12 +67,12 @@ the workflow creates the PR separately. Its `auto` command can fall through to
 publishing, so neither job uses it. The preparation job has no npm credentials
 or OIDC permission.
 
-CI's `changesets` job runs that same pinned action (action 0.20.0, sampo-core 0.18.0)
+CI's `changesets` job runs that same pinned action (action 0.21.0, sampo-core 0.19.0)
 as `release` with `dry-run: true` on every pull request and push. Sampo parses every
 pending changeset before the dry-run stop, so a changeset that the prepare job would
 reject, such as a `minor (Added)` bump without `changesets.tags` in `.sampo/config.toml`,
-fails the PR instead of the next Release run. The publish job installs the `sampo@0.22.0`
-CLI, which is built on the same sampo-core 0.18.0, for the `release:plan` step of
+fails the PR instead of the next Release run. The publish job installs the `sampo@0.23.0`
+CLI, which is built on the same sampo-core 0.19.0, for the `release:plan` step of
 `publish:gate`. Use that CLI version for a local `bun run release:plan`; an older CLI
 can accept or reject what the action does not. `tools/ci-workflow.test.ts` fails when the
 CLI pin and the action's core drift apart.

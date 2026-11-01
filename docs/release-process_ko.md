@@ -124,12 +124,12 @@ PR을 자동 머지하지 않습니다. `GITHUB_TOKEN`으로 push한 브랜치�
 워크플로가 따로 수행합니다. `auto`는 배포로 이어질 수 있어 사용하지 않습니다.
 준비 job에는 npm 인증 정보와 OIDC 권한을 주지 않습니다.
 
-CI의 `changesets` job은 모든 pull request와 push에서 같은 고정 action(action 0.20.0,
-sampo-core 0.18.0)을 `release`, `dry-run: true`로 실행합니다. Sampo는 dry-run에서 멈추기 전에
+CI의 `changesets` job은 모든 pull request와 push에서 같은 고정 action(action 0.21.0,
+sampo-core 0.19.0)을 `release`, `dry-run: true`로 실행합니다. Sampo는 dry-run에서 멈추기 전에
 보류 중인 changeset을 모두 해석하므로, `.sampo/config.toml`에 `changesets.tags` 없이 쓴
 `minor (Added)`처럼 prepare job이 거부할 changeset은 다음 Release 실행이 아니라 PR에서 실패합니다.
-publish job은 `publish:gate`의 `release:plan` 단계를 위해 같은 sampo-core 0.18.0으로 빌드된
-`sampo@0.22.0` CLI를 설치합니다. 로컬 `bun run release:plan`도 이 CLI 버전을 사용합니다. 더 오래된
+publish job은 `publish:gate`의 `release:plan` 단계를 위해 같은 sampo-core 0.19.0으로 빌드된
+`sampo@0.23.0` CLI를 설치합니다. 로컬 `bun run release:plan`도 이 CLI 버전을 사용합니다. 더 오래된
 CLI는 action과 다른 판정을 할 수 있습니다. CLI pin과 action core가 어긋나면
 `tools/ci-workflow.test.ts`가 실패합니다.
 

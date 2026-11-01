@@ -36,7 +36,11 @@ const ci = workflows["ci.yml"].jobs;
 const release = workflows["release.yml"].jobs;
 
 /** sampo CLI release -> the sampo-core it is built on (crates.io dependency metadata). */
-const SAMPO_CORE_BY_CLI: Record<string, string> = { "0.22.0": "0.18.0" };
+const SAMPO_CORE_BY_CLI: Record<string, string> = { "0.23.0": "0.19.0" };
+/** Pinned sampo-github-action commit -> the versions in its crates/sampo-github-action/Cargo.toml. */
+const SAMPO_ACTION_VERSIONS: Record<string, string> = {
+  dc6c961af6a324651a92c419a49291246bdd0151: "action 0.21.0, core 0.19.0",
+};
 const SAMPO_ACTION = /^bruits\/sampo\/crates\/sampo-github-action@[0-9a-f]{40}$/;
 const PINNED_BINSTALL = "./.github/actions/cargo-binstall";
 const TTSC_CACHE_PATHS = "node_modules/.cache/ttsc/plugins\nnode_modules/.cache/ttsc/go-build\n";
@@ -106,6 +110,12 @@ describe("CI and release workflow layout", () => {
     // publish:gate's release:plan runs the npm CLI; it must share the action's core.
     const releaseText = read(".github/workflows/release.yml");
     const cli = releaseText.match(/npm install -g [^\n]*\bsampo@(\d+\.\d+\.\d+)/)?.[1];
+    // A Dependabot bump changes the SHA but not the version comment, so the comment is checked against the SHA.
+    for (const text of [releaseText, read(".github/workflows/ci.yml")]) {
+      for (const [, sha, comment] of text.matchAll(/sampo-github-action@([0-9a-f]{40}) # (.*)/g)) {
+        expect({ sha, comment }).toEqual({ sha, comment: SAMPO_ACTION_VERSIONS[sha!] ?? "unknown pinned commit" });
+      }
+    }
     const cores = new Set([...releaseText.matchAll(/sampo-github-action@[0-9a-f]{40} # action [\d.]+, core ([\d.]+)/g)].map((m) => m[1]));
     expect(cores.size).toBe(1);
     expect(SAMPO_CORE_BY_CLI[cli ?? ""]).toBe([...cores][0]!);
