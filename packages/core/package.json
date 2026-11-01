@@ -54,7 +54,7 @@
   },
   "dependencies": {
     "@idlekit/money": "workspace:*",
-    "typia": "15.1.0",
+    "typia": "15.2.2",
     "zod": "^4.6.5"
   }
 }
