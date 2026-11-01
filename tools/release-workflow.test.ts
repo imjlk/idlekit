@@ -203,6 +203,19 @@ describe("release preparation and publishing", () => {
     }
   });
 
+  it("reuses main CI only in the preflight step, which alone sees the actions-read token", () => {
+    const publish = workflow.jobs.publish;
+    expect(publish.permissions).toEqual({ actions: "read", contents: "write", "id-token": "write" });
+    const steps = publish.steps;
+    const preflight = steps.findIndex((step) => step.name === "Release preflight");
+    expect(steps[preflight]?.run).toBe("bun run publish:gate --reuse-ci");
+    expect(steps[preflight]?.env).toEqual({ CI_EVIDENCE_TOKEN: "${{ github.token }}" });
+    expect(steps.filter((step) => JSON.stringify(step).includes("github.token"))).toEqual([steps[preflight]!]);
+    const readme = steps.findIndex((step) => step.run === "bun run readme:smoke");
+    expect(readme).toBeGreaterThan(preflight);
+    expect(readme).toBeLessThan(steps.findIndex((step) => step.name === "Recheck selected commit before publishing"));
+  });
+
   it("pins publication to the manual request and checks main on both sides of preflight", () => {
     const steps = workflow.jobs.publish.steps;
     expect(steps.find((step) => step.uses?.startsWith("actions/checkout@"))?.with?.ref).toBe("${{ github.sha }}");

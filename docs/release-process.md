@@ -91,12 +91,38 @@ but whose tags or GitHub releases failed, the retry only verifies the registry; 
 any missing tag or GitHub release by hand.
 
 Only the `publish` job sets up Node/npm, installs the matching Sampo CLI, runs
-`publish:gate` and `readme:smoke`, and gets the OIDC permission for the `publish` step.
+the publish gate and `readme:smoke`, and gets the OIDC permission for the `publish` step.
 Its commit must still match remote `main` before preflight and immediately before
 publishing. Preflight uses the same `TTSC_GO_CACHE_DIR` and ttsc plugin cache as CI, so
 its typecheck no longer rebuilds every plugin from a cold Go cache. The job only restores
 that cache: CI's `typecheck` job on `main` writes it, and the publish job never saves an
-entry. After publishing, `bun tools/release-registry.ts verify` waits for the
+entry.
+
+The publish job does not repeat the checks that CI already ran on the same commit.
+CI and Docs Verify start with Release on the push to `main`, so its preflight runs
+`bun run publish:gate --reuse-ci`. That first runs the steps that build and check the
+packages it publishes: `build`, `install:smoke`, `public:check`, `replay:verify`,
+`kpi:report`, `kpi:regress`, and `release:plan`. Then it waits up to 30 minutes
+(`CI_EVIDENCE_WAIT_SEC`) for the CI and Docs Verify runs of the selected commit. Only a
+`push` run on `main` for that exact SHA, from `.github/workflows/ci.yml` or
+`.github/workflows/docs-verify.yml` in this repository, counts; pull request,
+manual, other-branch, and other-commit runs are ignored. Each run must conclude `success`
+with the jobs that ran the reused steps (`checks`, `typecheck`, `test`, `docs-verify`)
+successful. Those runs then stand in for `typecheck`, `runtime:check`, `generate:check`,
+`doctor:completions`, `test`, `docs:verify`, and `templates:check`, each of which runs the
+same command without a condition there; `tools/ci-evidence.test.ts` fails when that
+mapping drifts. A failed or cancelled run, or any failed job in it, fails the publish
+job. The gate never retries that check locally, so a red `main` does not publish. When
+a run has not appeared five minutes into the wait, the deadline passes, the GitHub API
+keeps failing, or a required job is missing, the gate runs those checks itself, as
+`bun run publish:gate` without the flag always does. A newer push to `main` cancels the
+older CI run, and the older Release run fails; the newer run publishes. A manual
+`publish=true` retry follows the same rule for the current head of `main`, so re-run a
+failed or cancelled CI run first. CodeQL is not required, because no gate step maps to
+it. Only the preflight step gets the job's `actions: read` token, as `CI_EVIDENCE_TOKEN`,
+and the gate removes it from every command it runs. `readme:smoke` runs after it.
+
+After publishing, `bun tools/release-registry.ts verify` waits for the
 new versions on the registry, rejects `workspace:` specs in their registry metadata,
 requires provenance for every current version except the locally bootstrapped ones in
 `PROVENANCE_EXEMPT`, installs every current version from npm, and checks `idk --version`.

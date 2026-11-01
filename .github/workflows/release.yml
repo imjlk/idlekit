@@ -166,11 +166,14 @@ jobs:
     needs: plan
     if: needs.plan.outputs.publish == 'true'
     permissions:
+      # Reads main's CI runs for the selected commit; see Release preflight.
+      actions: read
       contents: write
       id-token: write
     runs-on: ubuntu-latest
-    # About 30 minutes of preflight, then publishing and up to 15 minutes of registry verification.
-    timeout-minutes: 75
+    # Up to 30 minutes waiting for main CI, about 30 minutes of local preflight when that CI
+    # cannot be reused, then publishing and up to 15 minutes of registry verification.
+    timeout-minutes: 90
     env:
       # Same Go object cache as CI; without it the preflight typecheck recompiles every plugin.
       TTSC_GO_CACHE_DIR: ${{ github.workspace }}/node_modules/.cache/ttsc/go-build
@@ -225,10 +228,16 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-${{ runner.arch }}-ttsc-
 
+      # CI and Docs Verify start on this commit's push to main with this run. The gate runs the
+      # steps that build and check the packages, then waits for those runs: success skips the
+      # checks they ran, a red or cancelled run fails, and no answer runs the full gate here.
       - name: Release preflight
-        run: |
-          bun run publish:gate
-          bun run readme:smoke
+        env:
+          CI_EVIDENCE_TOKEN: ${{ github.token }}
+        run: bun run publish:gate --reuse-ci
+
+      - name: README smoke
+        run: bun run readme:smoke
 
       - name: Recheck selected commit before publishing
         shell: bash

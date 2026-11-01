@@ -144,12 +144,36 @@ CLI는 action과 다른 판정을 할 수 있습니다. CLI pin과 action core�
 태그나 GitHub 릴리즈 생성이 실패한 경우처럼 npm에 모든 버전이 이미 있으면 재시도는 레지스트리
 확인만 합니다. 빠진 태그나 GitHub 릴리즈는 직접 만듭니다.
 
-`publish` job만 Node/npm과 대응하는 Sampo CLI를 설치하고 `publish:gate`와
+`publish` job만 Node/npm과 대응하는 Sampo CLI를 설치하고 publish 게이트와
 `readme:smoke`를 거쳐 `publish` 단계에 OIDC 권한을 줍니다. preflight 전과 실제 배포
 직전에 커밋이 원격 `main`과 같은지 확인합니다. preflight는 CI와 같은 `TTSC_GO_CACHE_DIR`와
 ttsc plugin cache를 사용하므로, typecheck가 차가운 Go cache에서 모든 plugin을 다시 빌드하지
 않습니다. 이 job은 cache를 복원만 합니다. cache는 `main`에서 CI `typecheck` job이 쓰고, publish
-job은 항목을 저장하지 않습니다. 배포 후 `bun tools/release-registry.ts verify`가
+job은 항목을 저장하지 않습니다.
+
+publish job은 같은 커밋에서 CI가 이미 실행한 검사를 반복하지 않습니다. CI와 Docs Verify는
+`main` push에서 Release와 함께 시작하므로 preflight는 `bun run publish:gate --reuse-ci`를
+실행합니다. 먼저 배포할 패키지를 만들고 확인하는 단계 `build`, `install:smoke`,
+`public:check`, `replay:verify`, `kpi:report`, `kpi:regress`, `release:plan`을 실행합니다.
+그다음 선택한 커밋의 CI와 Docs Verify 실행을 최대 30분(`CI_EVIDENCE_WAIT_SEC`) 기다립니다.
+이 저장소의 `.github/workflows/ci.yml` 또는 `.github/workflows/docs-verify.yml`에서 나온,
+정확히 그 SHA에 대한 `main`의 `push` 실행만 인정합니다. pull request, 수동 실행, 다른
+브랜치, 다른 커밋의 실행은 무시합니다. 각 실행은 `success`로 끝나야 하고, 재사용하는 단계를
+실행한 job(`checks`, `typecheck`, `test`, `docs-verify`)도 성공해야 합니다. 그러면 그 실행이
+`typecheck`, `runtime:check`, `generate:check`, `doctor:completions`, `test`,
+`docs:verify`, `templates:check`를 대신합니다. 각 단계는 그 job에서 조건 없이 같은 명령으로
+실행되며, 이 대응이 어긋나면 `tools/ci-evidence.test.ts`가 실패합니다. 실패하거나 취소된
+실행, 또는 그 안의 실패한 job은 publish job을 실패시킵니다. 게이트는 그 검사를 로컬에서 다시
+시도하지 않으므로 빨간 `main`은 배포되지 않습니다. 기다린 지 5분이 지나도 실행이 나타나지
+않거나, 기한이 지나거나, GitHub API가 계속 실패하거나, 필요한 job이 없으면 게이트가 그 검사를
+직접 실행합니다. 플래그 없는 `bun run publish:gate`는 항상 그렇게 합니다. `main`에 새 push가
+들어오면 이전 CI 실행이 취소되고 이전 Release 실행은 실패하며, 새 실행이 배포합니다.
+`publish=true` 수동 재시도도 현재 `main` 최신 커밋에 같은 규칙을 적용하므로, 실패하거나
+취소된 CI 실행을 먼저 다시 실행합니다. CodeQL은 대응하는 게이트 단계가 없으므로 요구하지
+않습니다. job의 `actions: read` 토큰은 preflight 단계에만 `CI_EVIDENCE_TOKEN`으로 전달되고,
+게이트는 실행하는 모든 명령에서 이를 제거합니다. `readme:smoke`는 그 뒤에 실행합니다.
+
+배포 후 `bun tools/release-registry.ts verify`가
 레지스트리에 새 버전이 보일 때까지 기다린 뒤, 레지스트리 메타데이터의 `workspace:` 지정자를
 거부하고, `PROVENANCE_EXEMPT`에 있는 로컬 첫 배포 버전을 제외한 모든 현재 버전의 provenance를
 확인하고, 현재 버전을 npm에서 설치해

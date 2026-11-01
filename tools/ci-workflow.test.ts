@@ -60,11 +60,15 @@ describe("CI and release workflow layout", () => {
 
   it("leaves every job that verifies the registry time to reach the verifier's own deadline", () => {
     const deadlineMinutes = Number(read("tools/release-registry.ts").match(/REGISTRY_WAIT_SEC \?\? (\d+)/)?.[1]) / 60;
+    const ciWaitMinutes = Number(read("tools/publish-gate.ts").match(/CI_EVIDENCE_WAIT_SEC \?\? (\d+)/)?.[1]) / 60;
     expect(deadlineMinutes).toBeGreaterThan(0);
+    expect(ciWaitMinutes).toBeGreaterThan(0);
     for (const [id, job] of Object.entries(release)) {
       if (!job.steps.some((step) => step.run === "bun tools/release-registry.ts verify")) continue;
-      // Setup and, in publish, the ~30-minute preflight come on top of the polling window.
-      expect({ id, fits: job["timeout-minutes"]! >= deadlineMinutes + (id === "publish" ? 45 : 10) }).toEqual({ id, fits: true });
+      // Setup and, in publish, the wait for main CI and the ~30-minute local preflight that
+      // follows when it cannot be reused come on top of the polling window.
+      const preflight = id === "publish" ? ciWaitMinutes + 45 : 10;
+      expect({ id, fits: job["timeout-minutes"]! >= deadlineMinutes + preflight }).toEqual({ id, fits: true });
     }
   });
 
