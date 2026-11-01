@@ -172,7 +172,37 @@ describe("main CI evidence for the publish gate", () => {
     await expect(
       waitForMainCi({ repository: REPO, sha: SHA, workflows: requiredWorkflows(), api, log: () => {}, sleep: async () => {}, deadlineMs: 60_000, appearMs: 60_000, pollMs: 1 }),
     ).rejects.toThrow(MainCiFailedError);
-    expect(calls).toBe(failing === "ci.yml" ? 3 : 2);
+    expect(calls).toBe(failing === "ci.yml" ? 2 : 1);
+  });
+
+  it("fails on a red run that the listing reports even when its jobs cannot be read", async () => {
+    const api = async (path: string): Promise<unknown> => {
+      if (path.includes("/jobs")) throw new Error("HTTP 503");
+      return { workflow_runs: [path.includes("ci.yml") ? run(1, CI, { conclusion: "cancelled" }) : run(2, DOCS)] };
+    };
+    await expect(
+      waitForMainCi({ repository: REPO, sha: SHA, workflows: requiredWorkflows(), api, log: () => {}, sleep: async () => {}, deadlineMs: 60_000, appearMs: 60_000, pollMs: 1 }),
+    ).rejects.toThrow(/run 1 concluded cancelled/);
+  });
+
+  it("keeps waiting for a pending run after another proves nothing, and fails if it turns red", async () => {
+    const renamed = jobs(CI_JOBS.filter((name) => name !== "test"));
+    const pending: Fixture = {
+      runs: { [CI]: [run(1, CI)], [DOCS]: [run(2, DOCS, { status: "in_progress", conclusion: null })] },
+      jobs: { 1: renamed, 2: jobs(["docs-verify"], null, "in_progress") },
+    };
+    const red: Fixture = { runs: { ...pending.runs, [DOCS]: [run(2, DOCS, { conclusion: "failure" })] }, jobs: { 1: renamed, 2: jobs(["docs-verify"], "failure") } };
+    const failing = harness([pending, pending, red]);
+    await expect(failing.wait()).rejects.toThrow(MainCiFailedError);
+    expect(failing.polls()).toBe(2);
+    const settled = harness([pending, { ...green, jobs: { ...green.jobs, 1: renamed } }]);
+    expect(await settled.wait()).toEqual({ kind: "unavailable", reason: `${CI} run 1: required job test is missing` });
+    expect(settled.polls()).toBe(1);
+  });
+
+  it("accepts a main run whose workflow path names the main ref", async () => {
+    const qualified: Fixture = { runs: { [CI]: [run(1, `${CI}@main`)], [DOCS]: [run(2, `${DOCS}@refs/heads/main`)] }, jobs: green.jobs };
+    expect((await harness([qualified]).wait()).kind).toBe("reused");
   });
 
   it("runs the full gate when a run never appears", async () => {

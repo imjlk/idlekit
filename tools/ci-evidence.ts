@@ -42,13 +42,16 @@ const MAIN = "main";
 /** Job conclusions that make the whole run fail; a run is not waited out once one appears. */
 const FAILED_JOB = new Set(["failure", "cancelled", "timed_out", "action_required", "startup_failure", "stale"]);
 
-/** Only a push to main for the selected commit, from this repository's own workflow file, counts. */
+/**
+ * Only a push to main for the selected commit, from this repository's own workflow file, counts.
+ * The API can qualify the path with the ref it ran from; only `main` is accepted.
+ */
 export function trustedRun(run: WorkflowRun, input: Readonly<{ repository: string; sha: string; path: string }>): boolean {
   return (
     run.event === "push" &&
     run.head_branch === MAIN &&
     run.head_sha === input.sha &&
-    run.path === input.path &&
+    [input.path, `${input.path}@${MAIN}`, `${input.path}@refs/heads/${MAIN}`].includes(run.path) &&
     run.repository?.full_name === input.repository &&
     run.head_repository?.full_name === input.repository
   );
@@ -146,11 +149,16 @@ export async function waitForMainCi(options: WaitOptions): Promise<CiEvidence> {
           else waiting.push(`${workflow.path} (not started)`);
           continue;
         }
+        // A run the listing already reports as red fails without its jobs: a jobs API error cannot hide it.
+        if (run.status === "completed" && run.conclusion !== "success") {
+          throw new MainCiFailedError(`main CI failed for ${options.sha}: ${run.path} run ${run.id} concluded ${run.conclusion ?? "without a conclusion"}`);
+        }
         const listedJobs = (await options.api(
           `/repos/${options.repository}/actions/runs/${run.id}/jobs?filter=latest&per_page=100`,
         )) as { jobs?: WorkflowJob[] };
         jobs = listedJobs.jobs ?? [];
       } catch (error) {
+        if (error instanceof MainCiFailedError) throw error;
         errors.push(`${workflow.path}: ${(error as Error).message}`);
         continue;
       }
@@ -167,9 +175,11 @@ export async function waitForMainCi(options: WaitOptions): Promise<CiEvidence> {
       if (apiErrors >= maxApiErrors) return { kind: "unavailable", reason: `GitHub API failed ${apiErrors} times` };
     } else {
       apiErrors = 0;
-      if (unproven.length > 0) return { kind: "unavailable", reason: unproven.join("; ") };
-      if (waiting.length === 0) return { kind: "reused", runs: reused };
-      const line = `waiting for ${waiting.join(", ")}`;
+      // A run that cannot be reused still waits for the others, so a later red run fails publication.
+      if (waiting.length === 0) {
+        return unproven.length > 0 ? { kind: "unavailable", reason: unproven.join("; ") } : { kind: "reused", runs: reused };
+      }
+      const line = `waiting for ${[...waiting, ...unproven.map((reason) => `(not reusable: ${reason})`)].join(", ")}`;
       if (line !== lastWait) log(line);
       lastWait = line;
     }

@@ -115,7 +115,8 @@ mapping drifts. A failed or cancelled run, or any failed job in it, fails the pu
 job. The gate never retries that check locally, so a red `main` does not publish. When
 a run has not appeared five minutes into the wait, the deadline passes, the GitHub API
 keeps failing, or a required job is missing, the gate runs those checks itself, as
-`bun run publish:gate` without the flag always does. A newer push to `main` cancels the
+`bun run publish:gate` without the flag always does. A run that cannot be reused still
+waits for the other runs before that, so one of them that turns red fails the job. A newer push to `main` cancels the
 older CI run, and the older Release run fails; the newer run publishes. A manual
 `publish=true` retry follows the same rule for the current head of `main`, so re-run a
 failed or cancelled CI run first. CodeQL is not required, because no gate step maps to
