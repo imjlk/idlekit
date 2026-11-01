@@ -126,44 +126,52 @@ export async function waitForMainCi(options: WaitOptions): Promise<CiEvidence> {
 
   while (true) {
     const elapsed = now() - startedAt;
-    try {
-      const reused: ReusedRun[] = [];
-      const waiting: string[] = [];
-      const unproven: string[] = [];
-      const failed: string[] = [];
-      for (const workflow of options.workflows) {
+    const reused: ReusedRun[] = [];
+    const waiting: string[] = [];
+    const unproven: string[] = [];
+    const errors: string[] = [];
+    // Every workflow is read on every poll, so an API error on one cannot hide a red run of another.
+    for (const workflow of options.workflows) {
+      let run: WorkflowRun | undefined;
+      let jobs: WorkflowJob[];
+      try {
         const file = workflow.path.split("/").pop()!;
         const query = new URLSearchParams({ head_sha: options.sha, event: "push", branch: MAIN, per_page: "100" });
         const listed = (await options.api(
           `/repos/${options.repository}/actions/workflows/${encodeURIComponent(file)}/runs?${query}`,
         )) as { workflow_runs?: WorkflowRun[] };
-        const run = selectRun(listed.workflow_runs ?? [], { repository: options.repository, sha: options.sha, path: workflow.path });
+        run = selectRun(listed.workflow_runs ?? [], { repository: options.repository, sha: options.sha, path: workflow.path });
         if (!run) {
           if (elapsed >= options.appearMs) unproven.push(`no push run of ${workflow.path} on ${MAIN} for ${options.sha}`);
           else waiting.push(`${workflow.path} (not started)`);
           continue;
         }
-        const jobs = (await options.api(
+        const listedJobs = (await options.api(
           `/repos/${options.repository}/actions/runs/${run.id}/jobs?filter=latest&per_page=100`,
         )) as { jobs?: WorkflowJob[] };
-        const verdict = judgeRun(run, jobs.jobs ?? [], workflow.jobs);
-        if (verdict.kind === "failed" || verdict.kind === "unproven") (verdict.kind === "failed" ? failed : unproven).push(verdict.reason);
-        else if (verdict.kind === "pending") waiting.push(`${workflow.path} run ${run.id} (${run.status})`);
-        else reused.push({ path: workflow.path, id: run.id, url: run.html_url ?? "" });
+        jobs = listedJobs.jobs ?? [];
+      } catch (error) {
+        errors.push(`${workflow.path}: ${(error as Error).message}`);
+        continue;
       }
+      const verdict = judgeRun(run, jobs, workflow.jobs);
+      // A red run fails publication at once: no API error or missing run elsewhere turns it into a fallback.
+      if (verdict.kind === "failed") throw new MainCiFailedError(`main CI failed for ${options.sha}: ${verdict.reason}`);
+      if (verdict.kind === "unproven") unproven.push(verdict.reason);
+      else if (verdict.kind === "pending") waiting.push(`${workflow.path} run ${run.id} (${run.status})`);
+      else reused.push({ path: workflow.path, id: run.id, url: run.html_url ?? "" });
+    }
+    if (errors.length > 0) {
+      apiErrors += 1;
+      log(`GitHub API error ${apiErrors}/${maxApiErrors}: ${errors.join("; ")}`);
+      if (apiErrors >= maxApiErrors) return { kind: "unavailable", reason: `GitHub API failed ${apiErrors} times` };
+    } else {
       apiErrors = 0;
-      // A red run anywhere fails publication, even when another workflow cannot be reused.
-      if (failed.length > 0) throw new MainCiFailedError(`main CI failed for ${options.sha}: ${failed.join("; ")}`);
       if (unproven.length > 0) return { kind: "unavailable", reason: unproven.join("; ") };
       if (waiting.length === 0) return { kind: "reused", runs: reused };
       const line = `waiting for ${waiting.join(", ")}`;
       if (line !== lastWait) log(line);
       lastWait = line;
-    } catch (error) {
-      if (error instanceof MainCiFailedError) throw error;
-      apiErrors += 1;
-      log(`GitHub API error ${apiErrors}/${maxApiErrors}: ${(error as Error).message}`);
-      if (apiErrors >= maxApiErrors) return { kind: "unavailable", reason: `GitHub API failed ${apiErrors} times` };
     }
     if (now() - startedAt + options.pollMs > options.deadlineMs) {
       return { kind: "unavailable", reason: `main CI did not finish within ${Math.round(options.deadlineMs / 60_000)} minutes` };

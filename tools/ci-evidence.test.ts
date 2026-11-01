@@ -38,17 +38,13 @@ const jobs = (names: readonly string[], conclusion: string | null = "success", s
   names.map((name) => ({ name, status, conclusion }));
 
 /** A fake clock and API; each `sleep` advances the clock and lets the scenario change state. */
-function harness(states: Fixture[], options: { appearMs?: number; deadlineMs?: number; failApi?: number } = {}) {
+function harness(states: Fixture[], options: { appearMs?: number; deadlineMs?: number; failPolls?: number } = {}) {
   let clock = 0;
   let poll = 0;
-  let apiFailures = options.failApi ?? 0;
   const paths: string[] = [];
   const api = async (path: string): Promise<unknown> => {
     paths.push(path);
-    if (apiFailures > 0) {
-      apiFailures -= 1;
-      throw new Error("HTTP 502");
-    }
+    if (poll < (options.failPolls ?? 0)) throw new Error("HTTP 502");
     const state = states[Math.min(poll, states.length - 1)]!;
     const listed = /\/actions\/workflows\/([^/]+)\/runs\?/.exec(path);
     if (listed) return { workflow_runs: state.runs[`.github/workflows/${decodeURIComponent(listed[1]!)}`] ?? [] };
@@ -162,6 +158,23 @@ describe("main CI evidence for the publish gate", () => {
     await expect(harness([red], { appearMs: 0 }).wait()).rejects.toThrow(MainCiFailedError);
   });
 
+  for (const failing of ["docs-verify", "ci.yml"]) it(`fails on a red run even when ${failing} API requests keep failing`, async () => {
+    const redPath = failing === "ci.yml" ? DOCS : CI;
+    const redId = redPath === CI ? 1 : 2;
+    const red: Fixture = { ...green, runs: { ...green.runs, [redPath]: [run(redId, redPath, { conclusion: "failure" })] } };
+    let calls = 0;
+    const api = async (path: string): Promise<unknown> => {
+      calls += 1;
+      if (path.includes(`workflows/${failing}`)) throw new Error("HTTP 503");
+      if (path.includes("/runs?")) return { workflow_runs: red.runs[redPath] };
+      return { jobs: red.jobs[redId] };
+    };
+    await expect(
+      waitForMainCi({ repository: REPO, sha: SHA, workflows: requiredWorkflows(), api, log: () => {}, sleep: async () => {}, deadlineMs: 60_000, appearMs: 60_000, pollMs: 1 }),
+    ).rejects.toThrow(MainCiFailedError);
+    expect(calls).toBe(failing === "ci.yml" ? 3 : 2);
+  });
+
   it("runs the full gate when a run never appears", async () => {
     const missing: Fixture = { runs: { [CI]: [run(1, CI)] }, jobs: green.jobs };
     const { wait, polls } = harness([missing]);
@@ -191,8 +204,8 @@ describe("main CI evidence for the publish gate", () => {
   });
 
   it("runs the full gate after repeated GitHub API failures, but retries a transient one", async () => {
-    expect(await harness([green], { failApi: 3 }).wait()).toEqual({ kind: "unavailable", reason: "GitHub API failed 3 times" });
-    expect((await harness([green], { failApi: 2 }).wait()).kind).toBe("reused");
+    expect(await harness([green], { failPolls: 3 }).wait()).toEqual({ kind: "unavailable", reason: "GitHub API failed 3 times" });
+    expect((await harness([green], { failPolls: 2 }).wait()).kind).toBe("reused");
   });
 
   it("ignores runs from another event, branch, commit, workflow file, or repository", async () => {
