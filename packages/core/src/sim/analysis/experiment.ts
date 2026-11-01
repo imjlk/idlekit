@@ -9,6 +9,7 @@ import { createRunFactory, type ExecutionPlan } from "../runFactory";
 import { runScenario } from "../simulator";
 import type { StrategyRegistry } from "../strategy/registry";
 import { runElapsedSec, type CompiledScenario, type SimRunOptions, type SimState } from "../types";
+import { mayRecordAtActionStart } from "../milestoneKeys";
 import {
   assignmentFitsParamSpace,
   elasticityFromChange,
@@ -291,7 +292,7 @@ type Reading<N> = MetricReading &
     amount?: N;
     num?: number;
     /**
-     * A censored reach time is later than this simulated time. It is never written as the value.
+     * A censored reach time is at or after this simulated time. It is never written as the value.
      * It only proves an `lte` constraint violation. `strict` marks that the reach time is strictly later.
      */
     lowerBound?: Readonly<{ sec: number; strict: boolean }>;
@@ -704,7 +705,7 @@ function observeMetrics<N>(
   end: SimState<N, string, Record<string, unknown>>,
   moneyElapsedSec: number | undefined,
   milestoneElapsedSec: number | undefined,
-  /** The runner elapsed clock. A censored reach time is later than it. */
+  /** The runner elapsed clock. A censored reach time is at or after it. */
   elapsedSec: number,
 ): Reading<N>[] {
   const amount = end.wallet.money.amount;
@@ -713,7 +714,10 @@ function observeMetrics<N>(
     if (metricId === "timeToMoney" || metricId === "timeToMilestone") {
       const elapsed = metricId === "timeToMoney" ? moneyElapsedSec : milestoneElapsedSec;
       if (elapsed === undefined) {
-        return { metricId, status: "censored", value: null, lowerBound: { sec: elapsedSec, strict: true } };
+        // Money is read at tick end, so a later reach is strictly after the horizon. An action key can still
+        // be recorded at the start of the next tick, which is exactly the horizon. Other keys are tick end.
+        const strict = metricId === "timeToMoney" || !mayRecordAtActionStart(spec.milestoneKey ?? "");
+        return { metricId, status: "censored", value: null, lowerBound: { sec: elapsedSec, strict } };
       }
       return { metricId, status: "observed", value: String(elapsed), num: elapsed };
     }
@@ -897,7 +901,7 @@ export function checkExperimentSpec(request: ExperimentCheckRequest): void {
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-milestone-reach Reads the first matching committed milestone through the observer, independent of retained samples and wallet resets.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-milestone-reach #f1a9561 Re-read the milestone contract and ran the experiment tests: reset timing is 10 and 5, money timing is 4, horizon money is 2, missing milestones stay censored, mixed-seed bounds prove only known deadline violations, and a 0.2-second tick at absolute time 2 ** 50 is measured as 0.2 for both reach metrics. Milestone phases preserve tick-start actions and tick-end model/prestige facts even when a final partial tick has identical absolute timestamps.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-milestone-reach #4bb99f4 Re-read the milestone contract and ran the experiment tests: reset timing is 10 and 5, money timing is 4, horizon money is 2, missing milestones stay censored, mixed-seed bounds prove only known deadline violations, a censored action key keeps a non-strict horizon bound so a purchase due exactly at the horizon does not prove an lte deadline equal to it while a model key does, and a 0.2-second tick at absolute time 2 ** 50 is measured as 0.2 for both reach metrics. Milestone phases preserve tick-start actions and tick-end model/prestige facts even when a final partial tick has identical absolute timestamps.
  */
 export function runExperiment<N>(request: ExperimentRunRequest<N>): ExperimentArtifactV1 {
   const { spec, metrics, base, prepared, specHashes } = prepareExperiment(request);
@@ -1023,7 +1027,8 @@ export function runExperiment<N>(request: ExperimentRunRequest<N>): ExperimentAr
     const constraintViolations = (spec.constraints ?? [])
       .filter((constraint) => {
         const reading = readings.find((metric) => metric.metricId === constraint.metricId);
-        // A censored reach time is later than its lower bound. That proves an lte violation once the bound passes the limit.
+        // A censored reach time is at or after its lower bound, strictly after when the bound is strict.
+        // That proves an lte violation once the bound passes the limit, or reaches it strictly.
         const bound = reading !== undefined && reading.status === "censored" ? reading.lowerBound : undefined;
         if (isObserved(reading)) return violates(E, reading, constraint);
         return constraint.op === "lte" && bound !== undefined && (bound.sec > constraint.limit || (bound.strict && bound.sec >= constraint.limit));

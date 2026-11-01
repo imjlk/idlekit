@@ -933,6 +933,16 @@
             "test",
             "src/sim/analysis/experiment.test.ts"
           ]
+        },
+        {
+          "file": "packages/core/src/sim/analysis/experiment.test.ts",
+          "exportName": "keepsCensoredActionMilestoneAtHorizon",
+          "registeredAs": "parameter experiments > does not prove a horizon deadline for a censored action milestone",
+          "cwd": "packages/core",
+          "args": [
+            "test",
+            "src/sim/analysis/experiment.test.ts"
+          ]
         }
       ]
     },

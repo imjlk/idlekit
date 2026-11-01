@@ -22,7 +22,7 @@
 
 `"metricId": "timeToMilestone"`와 `"milestoneKey": "tower:first-prestige"`를 지정하면 정확히 그 키가 처음 확정된 시점까지의 초를 비교한다. objective와 constraint에서도 쓸 수 있고, spec 하나는 마일스톤 키 하나를 선택한다. artifact에도 선택한 키가 기록된다. 모델의 `milestones`가 내보내는 키나 `prestige.first` 같은 실행기의 기본 키를 사용한다. 지갑 금액이나 시작 상태에서 임의로 도달을 추론하지 않는다.
 
-강화 구매나 환생으로 지갑이 비어도 진행 시간을 잴 수 있다. 같은 키가 반복되거나 이벤트·마일스톤 보관 한도가 차도 최초 도달 시간을 유지한다. 미도달은 시간값이 null인 censored다. 실행한 horizon은 기한 위반 판정에 사용하는 하한일 뿐 도달 시간으로 대체하지 않는다. baseline이 미도달이면 민감도도 unavailable이다. 이 지표가 포함된 실행은 horizon까지 계속하므로 최종 자금과 `vars.benefit`도 함께 비교할 수 있다.
+강화 구매나 환생으로 지갑이 비어도 진행 시간을 잴 수 있다. 같은 키가 반복되거나 이벤트·마일스톤 보관 한도가 차도 최초 도달 시간을 유지한다. 미도달은 시간값이 null인 censored다. 실행한 horizon은 기한 위반 판정에 사용하는 하한일 뿐 도달 시간으로 대체하지 않는다. 구매 키(`action.<id>.firstApplied`, `progress.first-upgrade`)는 다음 틱 시작, 곧 horizon 시점에도 도달할 수 있으므로 horizon과 같은 기한의 위반은 증명하지 않는다. 그 밖의 키는 틱 끝에 기록되므로 horizon과 같은 기한은 위반으로 증명된다. baseline이 미도달이면 민감도도 unavailable이다. 이 지표가 포함된 실행은 horizon까지 계속하므로 최종 자금과 `vars.benefit`도 함께 비교할 수 있다.
 
 20분 이내 첫 환생을 요구하는 spec 일부는 다음과 같다.
 
