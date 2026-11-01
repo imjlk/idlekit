@@ -1,6 +1,7 @@
 import type { FlowSampleV1 } from "./analysis/flow";
 import { assertLogBudget } from "./eventBuffer";
 import { createObservationLedger, readGoal, type ObservationLedger } from "./goalRead";
+import { actionMilestoneKeys } from "./milestoneKeys";
 import { simStatsFromCounters, type MetricStatus, type SimStats } from "./analysis/ux";
 import type { CommittedResetFact } from "./step";
 import type { SimEvent, SimState } from "./types";
@@ -426,8 +427,7 @@ export function createObservationRecorder<N, U extends string, Vars>(args: {
           if (args.observer?.onAction) {
             notify(() => args.observer?.onAction?.({ t: step.t0, actionId: event.actionId, outcome: "applied" }));
           }
-          rememberMilestone({ key: `action.${event.actionId}.firstApplied`, firstSeenT: step.t0, source: "action" });
-          rememberMilestone({ key: "progress.first-upgrade", firstSeenT: step.t0, source: "action" });
+          for (const key of actionMilestoneKeys(event.actionId)) rememberMilestone({ key, firstSeenT: step.t0, source: "action" });
         } else if (event.type === "action.skipped") {
           if (event.reason === "cannotApply") actions.skippedCannotApply += 1;
           if (event.reason === "insufficientFunds") actions.skippedInsufficientFunds += 1;
