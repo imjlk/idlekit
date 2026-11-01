@@ -1334,7 +1334,7 @@ function milestoneExperiment(scenario: ScenarioV1, spec: ExperimentSpecV1, creat
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-milestone-reach First committed progress survives wallet resets, repeated keys, a nonzero start clock, and full sample caps.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-milestone-reach #35f6b23 Re-read the contract and ran this test: starting at 100 measures first progress at 10 despite repeated resets and eighty earlier keys; money reaches 4 and ends at 2; both reach metrics measure 0.2 elapsed seconds at a large rounded clock.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-milestone-reach #4bb99f4 Re-read the contract and ran this test: starting at 100 measures first progress at 10 despite repeated resets and eighty earlier keys; money reaches 4 and ends at 2; both reach metrics measure 0.2 elapsed seconds at a large rounded clock.
  * @evidence ./experiment.ts#runExperiment Runs the real sweep with milestone, money, and horizon metrics together.
  * @evidenceReview ./experiment.ts#runExperiment #1598aeb Re-read the run function and ran this test against its observer capture, metric aggregation, and pre-create validation.
  */
@@ -1373,7 +1373,7 @@ export function measuresFirstMilestoneAfterWalletReset(): void {
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-milestone-reach Missing milestones are censored and only proven deadline violations are listed.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-milestone-reach #35f6b23 Re-read the contract, including the censored bound clause, and ran this test: missing keys stay null, the rate-two probe reaches at 5, and a mixed observed/censored seed mean of the model key has a strict bound at 7.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-milestone-reach #4bb99f4 Re-read the contract, including the censored bound clause, and ran this test: missing keys stay null, the rate-two probe reaches at 5, and a mixed observed/censored seed mean of the model key has a strict bound at 7.
  * @evidence ./experiment.ts#runExperiment Exercises the milestone lower bound and unavailable sensitivity.
  * @evidenceReview ./experiment.ts#runExperiment #1598aeb Re-read the run function and ran this test against its observer capture, metric aggregation, and pre-create validation.
  */
@@ -1403,7 +1403,7 @@ export function censorsUnreachedMilestones(): void {
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-milestone-reach Missing or blank keys fail before model creation, including keys used only by objectives or constraints.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-milestone-reach #35f6b23 Re-read the contract and ran this test: absent, empty, and whitespace keys are rejected for primary metrics, objectives, and constraints; create remains at zero.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-milestone-reach #4bb99f4 Re-read the contract and ran this test: absent, empty, and whitespace keys are rejected for primary metrics, objectives, and constraints; create remains at zero.
  * @evidence ./experiment.ts#runExperiment Rejects malformed milestone selections before compilation.
  * @evidenceReview ./experiment.ts#runExperiment #1598aeb Re-read the run function and ran this test against its observer capture, metric aggregation, and pre-create validation.
  */
@@ -1425,7 +1425,7 @@ export function rejectsMissingMilestoneKeyBeforeRun(): void {
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-milestone-reach Action receipts occur at tick start, while model and prestige milestones occur at tick end.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-milestone-reach #35f6b23 Re-read the boundary clause and ran this test: initial actions reach at zero and satisfy lte zero, delayed actions reach at one, fractional actions at a large clock reach at 0.2, and model/prestige keys keep end-of-tick timing regardless of key prefix. A final partial tick with identical absolute timestamps still reports action time 0.2 and model/prestige time 0.3, with the corresponding deadline results.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-milestone-reach #4bb99f4 Re-read the boundary clause and ran this test: initial actions reach at zero and satisfy lte zero, delayed actions reach at one, fractional actions at a large clock reach at 0.2, and model/prestige keys keep end-of-tick timing regardless of key prefix. A final partial tick with identical absolute timestamps still reports action time 0.2 and model/prestige time 0.3, with the corresponding deadline results.
  * @evidence ./experiment.ts#runExperiment Measures committed action boundaries independently of absolute-clock rounding and key names.
  * @evidenceReview ./experiment.ts#runExperiment #1598aeb Read the saved elapsed tick-start boundary and committed milestone phase, then ran the zero, delayed, fractional, model, and prestige regressions including a final partial tick that does not advance the absolute clock.
  */
@@ -1506,7 +1506,7 @@ export function keepsMilestoneStepBoundaries(): void {
 
 /**
  * @evidence docs/requirements/active/parameter-experiments.md#req-pr14-milestone-reach A censored action key can still arrive at the horizon, so it does not prove a deadline equal to the horizon.
- * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-milestone-reach #35f6b23 Re-read the censored bound clause and ran this test: both action keys measure 3 at horizon 4 and meet lte 3, are censored at horizon 3 without an lte 3 violation for one seed or two, still violate lte 2.5, and the model key measures 4 at horizon 4 and proves lte 3 violated at horizon 3.
+ * @evidenceReview docs/requirements/active/parameter-experiments.md#req-pr14-milestone-reach #4bb99f4 Re-read the censored bound clause and ran this test: both action keys measure 3 at horizon 4 and meet lte 3, are censored at horizon 3 without an lte 3 violation for one seed or two, still violate lte 2.5, and the model key measures 4 at horizon 4 and proves lte 3 violated at horizon 3, while a model-emitted action-shaped key measures 4 at horizon 4 and leaves lte 3 unproven at horizon 3.
  * @evidence ./experiment.ts#runExperiment Censors a purchase that becomes affordable exactly at the horizon and checks the deadline it can still meet.
  * @evidenceReview ./experiment.ts#runExperiment #1598aeb Read the censored reading in observeMetrics, the seed aggregate, and the lte bound check, then ran this test: an action key gets a non-strict horizon bound and a model key a strict one.
  */
@@ -1528,7 +1528,7 @@ export function keepsCensoredActionMilestoneAtHorizon(): void {
           cost: (ctx) => ({ unit: ctx.unit, amount: 3 }),
           apply: (_ctx, current) => ({ ...current, vars: { ...current.vars, bought: true } }),
         }],
-        milestones: (_ctx, prev, next) => !prev.vars.bought && next.vars.bought ? ["model.purchased"] : [],
+        milestones: (_ctx, prev, next) => !prev.vars.bought && next.vars.bought ? ["model.purchased", "action.named-by-model.firstApplied"] : [],
       };
     },
   });
@@ -1580,6 +1580,11 @@ export function keepsCensoredActionMilestoneAtHorizon(): void {
   const tickEnd = run("model.purchased", 3);
   expect(tickEnd.tasks[0]).toMatchObject({ status: "censored", value: null });
   expect(tickEnd.candidates[0]?.constraintViolations).toEqual(["deadline"]);
+  // A model-emitted action-shaped key keeps the non-strict bound, since the runner could still record that key at a tick start.
+  expect(run("action.named-by-model.firstApplied", 4).tasks[0]).toMatchObject({ status: "observed", value: "4" });
+  const modelAction = run("action.named-by-model.firstApplied", 3);
+  expect(modelAction.tasks[0]).toMatchObject({ status: "censored", value: null });
+  expect(modelAction.candidates[0]?.constraintViolations).toEqual([]);
 }
 
 describe("parameter experiments", () => {
