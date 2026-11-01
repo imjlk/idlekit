@@ -144,9 +144,16 @@ const LINUX_SEAL = [
   "  exec unshare --user --map-root-user --mount --propagation private \\",
   '    /bin/bash "$0" "$@"',
   "fi",
-  "if sudo -n -E true >/dev/null 2>&1; then",
+  // Root needs no sudo; re-entering sudo without the sealed flag would loop.
+  'if [ "$(id -u)" = "0" ]; then',
   "  export IDLEKIT_EVIDENCE_SEALED=1",
-  "  exec sudo -n -E unshare --mount --propagation private \\",
+  '  exec unshare --mount --propagation private /bin/bash "$0" "$@"',
+  "fi",
+  // sudo-rs (Ubuntu 26.04) ignores -E, so the environment crosses sudo as env(1) arguments.
+  "if sudo -n true >/dev/null 2>&1; then",
+  "  mapfile -d '' -t environment < <(env -0)",
+  '  exec sudo -n /usr/bin/env "${environment[@]}" IDLEKIT_EVIDENCE_SEALED=1 \\',
+  "    unshare --mount --propagation private \\",
   '    /bin/bash "$0" "$@"',
   "fi",
   'echo "evidence source lock could not sandbox the test" >&2',
