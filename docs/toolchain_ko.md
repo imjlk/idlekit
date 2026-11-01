@@ -6,15 +6,15 @@ English version: [toolchain.md](./toolchain.md)
 
 ## Pin
 
-2026-10-15에 registry metadata를 확인했다. 버전은 exact다. `ttsc` pin은 `0.32.1`이고 `@ttsc/graph`와 `@ttsc/unplugin`은 `ttsc@^0.32.1`을 peer로 둔다. `@ttsc/evidence`는 `@ttsc/lint@>=0.31.0`을 peer로 둔다.
+2026-11-01에 registry metadata를 확인했다. 버전은 exact다. `ttsc` pin은 `0.34.3`이고 `@ttsc/graph`, `@ttsc/lint`, `@ttsc/unplugin`은 `ttsc@^0.34.3`을 peer로 둔다. `@ttsc/evidence`는 `@ttsc/lint@>=0.31.0`을 peer로 둔다. `ttsc@0.34.3`의 peer는 `typescript@>=6.0.0 || >=7.1.0-0`이고 `7.0.2`가 이 범위를 만족한다.
 
 | 패키지 | Pin | 이유 |
 |---|---|---|
-| `ttsc`, `@ttsc/lint`, `@ttsc/evidence`, `@ttsc/graph`, `@ttsc/unplugin` | `0.32.1` | Graph와 unplugin peer에 맞춘 같은 release 버전이다. |
+| `ttsc`, `@ttsc/lint`, `@ttsc/evidence`, `@ttsc/graph`, `@ttsc/unplugin` | `0.34.3` | Graph와 unplugin peer에 맞춘 같은 release 버전이다. |
 | `typescript` | `7.0.2` | tooling용 npm `typescript`. `ttsc version`이 이 버전을 보고한다. 이 패키지를 설치해도 `ttsc`가 TypeScript 5 `tsc`로 돌아가지 않는다. |
-| `typia` | `15.1.0` | `@ttsc/graph@0.32.1`의 `typia@^15.1.0` 범위와 core runtime dependency에 맞춘다. |
+| `typia` | `15.2.2` | `@ttsc/graph@0.34.3`의 `typia@^15.1.0` 범위 안이다. typia `15.2`는 `ttsc@>=0.34.1`을 peer로 둔다. core runtime dependency이기도 하다. |
 | Bun | `1.4.2` | root `packageManager`. CI workflow도 같은 pin이다. |
-| Node launcher | `>=22.15.0` | `ttsc@0.32.1`의 `engines.node`. CI smoke는 `26.11.1`을 쓴다. |
+| Node launcher | `>=22.15.0` | `ttsc@0.34.3`의 `engines.node`. CI smoke는 `26.11.1`을 쓴다. |
 | Publish Node | `26.11.1` | release workflow. `publish:gate`와 패키지 prepack이 ttsc를 실행하므로 CI와 같은 Node다. |
 
 `fixtures/toolchain/baseline.json`은 `265c6ed`의 읽기 전용 스냅샷이다 (`typescript` `^5.8.3`, typia `^9.7.2`, CI Bun `1.3.9`, ttsc 없음). `fixtures/toolchain/pins.json`이 이번 pin이다. `ttsc` 설치 실패를 `tsc`나 `tsx`로 다시 시도하지 않는다.
@@ -53,7 +53,7 @@ root `tsconfig.json`은 없다. root project는 `@ttsc/lint`를 자동으로 붙
 
 CLI 실행, 하위 명령, 도움말, 자동완성, 오타 제안은 Gunshi를 사용한다. 위저드는 Clack을 사용하고 review 명령은 기본값이 Markdown인 보고서 alias다. Bunli, OpenTUI, React, 이미지 미리보기와 관련 override를 제거했다.
 
-해결되지 않은 `T`의 `typia.validate<T>()`는 `ttsc` 오류다 (`non-specified generic argument`). `typiaStandardSchema<T>()`는 deprecated이며 `TypiaTransformMissingError`를 던진다. `typia.createValidate<Concrete>()`로 만든 함수를 `standardSchemaFromValidate()`에 넘긴다. `ConcreteQuota`, `validateConcreteQuota`, `concreteQuotaSchema`가 concrete probe다. emit된 JS가 `typia`를 import하므로 `@idlekit/core`의 runtime dependency `typia` `15.1.0`은 유지한다. 배포 패키지는 `ttsc`나 `@ttsc/*`에 의존하지 않는다. workspace의 `bun` export는 `src/index.ts`를 가리킨다. `prepack`이 money와 core의 `types`와 `bun`을 `dist`로 바꾸고 `postpack`이 되돌린다. `npm pack`은 패키지 preload가 `tools/`를 변환하지 않도록 manifest tool을 repo root에서 실행한다.
+해결되지 않은 `T`의 `typia.validate<T>()`는 `ttsc` 오류다 (`non-specified generic argument`). `typiaStandardSchema<T>()`는 deprecated이며 `TypiaTransformMissingError`를 던진다. `typia.createValidate<Concrete>()`로 만든 함수를 `standardSchemaFromValidate()`에 넘긴다. `ConcreteQuota`, `validateConcreteQuota`, `concreteQuotaSchema`가 concrete probe다. emit된 JS가 `typia`를 import하므로 `@idlekit/core`의 runtime dependency `typia` `15.2.2`은 유지한다. 배포 패키지는 `ttsc`나 `@ttsc/*`에 의존하지 않는다. workspace의 `bun` export는 `src/index.ts`를 가리킨다. `prepack`이 money와 core의 `types`와 `bun`을 `dist`로 바꾸고 `postpack`이 되돌린다. `npm pack`은 패키지 preload가 `tools/`를 변환하지 않도록 manifest tool을 repo root에서 실행한다.
 
 Dependabot은 `ttsc`, `@ttsc/*`, `typia`, `@typia/*`를 한 그룹 PR로 연다. typia 버전 번호는 ttsc와 맞추지 않는다. npm 업데이트는 workspace lockfile이 있는 root만 봐서 패키지 디렉터리의 중복 PR을 만들지 않는다.
 
@@ -79,6 +79,8 @@ Evidence와 inventory는 속일 의도가 없는 작성자의 drift를 잡는다
 
 gate를 속이려고 작성한 테스트 코드에 대한 sandbox는 아니다. 테스트는 개발자 권한으로 실행된다. `node:vm`이나 `Reflect`로 코드를 평가하거나, detached process를 띄우거나, 자기 reporter 출력을 다시 쓸 수 있다. 이 경우는 테스트 소스 코드 리뷰가 담당한다. source lock은 최선 노력의 방어로 남기며 보안 경계가 아니다. 적대적인 테스트 코드를 전제로 한 지적은 `evidence:check`의 범위 밖이다.
 
+
+2026-11-01 업데이트: ttsc와 plugin은 `0.34.3`, typia와 transitive `@typia/*` 패키지는 `15.2.2`를 사용한다. TypeScript는 `7.0.2`를 유지한다. 7.1은 dev build만 있다. ttsc `0.34`는 설치된 TypeScript 계열에서 compiler target을 고르므로 이 저장소는 계속 7.0으로 빌드한다. `@ttsc/<platform>-<arch>`의 bundled Go는 go1.27이다 (darwin/arm64에서 `go1.27.3`). typia `15.2` native plugin이 이 버전을 요구한다. `@ttsc/lint`가 이제 `ttsc` peer를 선언한다. 다시 생성한 contract는 기록된 typia 버전과 source hash만 바뀐다. schema 본문은 byte 단위로 같다.
 
 2026-10-15 업데이트: ttsc와 plugin은 `0.32.1`, typia는 `15.1.0`을 사용하고 native Graph는 별도 `@ttsc/graph-<platform>-<arch>` 패키지에서 찾는다. 아래 날짜별 메모와 TC 검증 기록은 각 실행 당시 내용이다.
 

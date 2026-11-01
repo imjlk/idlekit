@@ -6,15 +6,15 @@ Korean version: [toolchain_ko.md](./toolchain_ko.md)
 
 ## Pins
 
-Registry metadata checked on 2026-10-15. Versions are exact. `ttsc` is pinned to `0.32.1`, and `@ttsc/graph` / `@ttsc/unplugin` peer on `ttsc@^0.32.1`. `@ttsc/evidence` peers on `@ttsc/lint@>=0.31.0`.
+Registry metadata checked on 2026-11-01. Versions are exact. `ttsc` is pinned to `0.34.3`, and `@ttsc/graph`, `@ttsc/lint`, and `@ttsc/unplugin` peer on `ttsc@^0.34.3`. `@ttsc/evidence` peers on `@ttsc/lint@>=0.31.0`. `ttsc@0.34.3` peers on `typescript@>=6.0.0 || >=7.1.0-0`, which `7.0.2` satisfies.
 
 | Package | Pin | Why this one |
 |---|---|---|
-| `ttsc`, `@ttsc/lint`, `@ttsc/evidence`, `@ttsc/graph`, `@ttsc/unplugin` | `0.32.1` | One release line compatible with Graph and unplugin peers. |
+| `ttsc`, `@ttsc/lint`, `@ttsc/evidence`, `@ttsc/graph`, `@ttsc/unplugin` | `0.34.3` | One release line compatible with Graph and unplugin peers. |
 | `typescript` | `7.0.2` | npm `typescript` package used by tooling and reported by `ttsc version`. Installing it does not turn `ttsc` back into TypeScript 5 `tsc`. |
-| `typia` | `15.1.0` | Matches `@ttsc/graph@0.32.1`'s `typia@^15.1.0` range and the core runtime dependency. |
+| `typia` | `15.2.2` | Inside `@ttsc/graph@0.34.3`'s `typia@^15.1.0` range. typia `15.2` peers on `ttsc@>=0.34.1`. Also the core runtime dependency. |
 | Bun | `1.4.2` | Root `packageManager`. CI workflows use the same pin. |
-| Node launcher | `>=22.15.0` | `ttsc@0.32.1` `engines.node`. CI smoke uses `26.11.1`. |
+| Node launcher | `>=22.15.0` | `ttsc@0.34.3` `engines.node`. CI smoke uses `26.11.1`. |
 | Publish Node | `26.11.1` | Release workflow. Same Node as CI, because `publish:gate` and package prepack run ttsc. |
 
 `fixtures/toolchain/baseline.json` is the read-only `265c6ed` snapshot (`typescript` `^5.8.3`, typia `^9.7.2`, CI Bun `1.3.9`, no ttsc). `fixtures/toolchain/pins.json` is the pin this change checks. A failed `ttsc` install is not retried with `tsc` or `tsx`.
@@ -55,7 +55,7 @@ There is no root `tsconfig.json`. A root project would auto-attach `@ttsc/lint`,
 
 Gunshi handles CLI dispatch, nested commands, help, completion, and typo suggestions. Wizards use Clack; review commands are report aliases defaulting to Markdown. Bunli, OpenTUI, React, image previews, and their overrides have been removed.
 
-`typia.validate<T>()` with an unresolved `T` is a `ttsc` error (`non-specified generic argument`). `typiaStandardSchema<T>()` is deprecated and throws `TypiaTransformMissingError`. Call `typia.createValidate<Concrete>()` and pass that function to `standardSchemaFromValidate()`. `ConcreteQuota`, `validateConcreteQuota`, and `concreteQuotaSchema` are the concrete probe. Emitted JS still imports `typia`, so `@idlekit/core` keeps `typia` `15.1.0` as a runtime dependency. Published packages do not depend on `ttsc` or `@ttsc/*`. Workspace `bun` exports point at `src/index.ts`; `prepack` rewrites money and core `types` and `bun` to `dist` and `postpack` restores them. `npm pack` runs the manifest tool from the repo root so the package preload does not transform `tools/`.
+`typia.validate<T>()` with an unresolved `T` is a `ttsc` error (`non-specified generic argument`). `typiaStandardSchema<T>()` is deprecated and throws `TypiaTransformMissingError`. Call `typia.createValidate<Concrete>()` and pass that function to `standardSchemaFromValidate()`. `ConcreteQuota`, `validateConcreteQuota`, and `concreteQuotaSchema` are the concrete probe. Emitted JS still imports `typia`, so `@idlekit/core` keeps `typia` `15.2.2` as a runtime dependency. Published packages do not depend on `ttsc` or `@ttsc/*`. Workspace `bun` exports point at `src/index.ts`; `prepack` rewrites money and core `types` and `bun` to `dist` and `postpack` restores them. `npm pack` runs the manifest tool from the repo root so the package preload does not transform `tools/`.
 
 Dependabot opens one grouped pull request for `ttsc`, `@ttsc/*`, `typia`, and `@typia/*`. typia stays on its own version line. npm updates are rooted at the workspace lockfile so package directories do not open a second pull request.
 
@@ -81,6 +81,8 @@ Evidence and the inventory catch drift by an author who is not trying to fool th
 
 They are not a sandbox for test code written to deceive the gate. A test runs with the developer's rights. It can evaluate code through `node:vm` or `Reflect`, start a detached process, or rewrite its own reporter output. Code review of the test source covers that case. The source lock stays as a best-effort guard, not a security boundary. A finding that needs adversarial test code is out of scope for `evidence:check`.
 
+
+2026-11-01 update: ttsc and its plugins use `0.34.3`, and typia and the transitive `@typia/*` packages use `15.2.2`. TypeScript stays `7.0.2`; only 7.1 dev builds exist. ttsc `0.34` picks its compiler target from the installed TypeScript line, so this repository still builds against 7.0. The bundled Go in `@ttsc/<platform>-<arch>` is now go1.27 (`go1.27.3` on darwin/arm64), which typia `15.2`'s native plugin requires. `@ttsc/lint` now declares a `ttsc` peer. Regenerated contracts change only the recorded typia version and source hashes. The schema bodies are byte-identical.
 
 2026-10-15 update: ttsc and its plugins use `0.32.1`, typia uses `15.1.0`, and native Graph binaries come from the separate `@ttsc/graph-<platform>-<arch>` packages. The following dated notes and TC verification records describe their original runs.
 
