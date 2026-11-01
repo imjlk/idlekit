@@ -2931,6 +2931,7 @@ try {
         'import { chmodSync, writeFileSync } from "fs";',
         'import { test } from "bun:test";',
         `const helper = ${JSON.stringify(lockedHelper)};`,
+        'console.error("sealed env " + (process.env.IDLEKIT_EVIDENCE_SMOKE_ENV ?? "missing"));',
         "chmodSync(helper, 0o644);",
         'writeFileSync(helper, "export const marker = 2;\\n");',
         'await import("./helper.ts");',
@@ -2950,10 +2951,16 @@ try {
           cwd: lockDir,
           stdout: "pipe",
           stderr: "pipe",
-          env: { ...plainTestEnv(), IDLEKIT_EVIDENCE_LOCK: lock.env },
+          env: {
+            ...plainTestEnv(),
+            IDLEKIT_EVIDENCE_LOCK: lock.env,
+            IDLEKIT_EVIDENCE_SMOKE_ENV: "kept",
+          },
         },
       );
       const output = `${proc.stdout.toString()}\n${proc.stderr.toString()}`;
+      // The test keeps the caller's environment through the sandbox. sudo-rs ignores -E.
+      const environmentKept = output.includes("sealed env kept");
       const intact = readFileSync(lockedHelper, "utf8").includes("marker = 1");
       const blocked =
         output.includes("EPERM") || output.includes("EROFS") || output.includes("read-only");
@@ -2966,6 +2973,7 @@ try {
         linuxLock[1]?.endsWith("source-lock-mount.sh") === true;
       sourceLock =
         (proc.exitCode ?? 1) !== 0 &&
+        environmentKept &&
         intact &&
         blocked &&
         windowsLock &&
