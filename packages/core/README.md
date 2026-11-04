@@ -181,6 +181,10 @@ console.log(
 );
 ```
 
+## Money primitives
+
+Engines, `Money`/`MoneyState`, `tickMoney`, notation, and money serde are implemented in `@idlekit/money`. `@idlekit/core` re-exports them for compatibility, so the example above can import `createNumberEngine` from core. These re-exports stay in v1 but are scheduled for deprecation; prefer `@idlekit/money` in new code that only needs money primitives. `breakEternityEngine` is a placeholder that throws on every call and is not implemented in v1.
+
 ## Runtime
 
 For the duration of an in-memory `runScenario` or `applyOfflineSeconds` result, import `runElapsedSec` from `@idlekit/core` and read `runElapsedSec(run)`. It uses `run.stop.elapsedSec`, the sum of tick seconds. `state.t` is the absolute reward timestamp; at a large starting timestamp, `run.end.t - run.start.t` can round differently. For example, ten 0.1-second ticks starting at `1e15` simulate about one second while the timestamps differ by 1.25 seconds. Results without a stop record fall back to that timestamp difference. A step-budget stop can shorten an individual run before the requested duration; check `run.stop?.reason` or use `assertHorizonReached(run, label)` when the full horizon is required.
