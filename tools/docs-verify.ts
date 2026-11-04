@@ -746,7 +746,7 @@ async function verifyEngineIntegrationExample(): Promise<void> {
   ];
   for (const [flags, path] of committed) {
     const generated = runCli(["export", "engine", scenario, ...flags, "--levels", "25"]);
-    assert(generated === (await readText(resolve(ROOT, path))), `${path} is stale; regenerate it with idk export engine ${flags.join(" ")} --levels 25`);
+    assert(generated === (await readText(resolve(ROOT, path))).replaceAll("\r\n", "\n"), `${path} is stale; regenerate it with idk export engine ${flags.join(" ")} --levels 25`);
   }
   for (const name of ["shop-levels.csv", "balance-sheet.json"]) {
     const base = name.replace(/\.(csv|json)$/, "");

@@ -17,6 +17,8 @@ const ajv = new Ajv2020({ allErrors: true, strict: true });
 const EXAMPLE = "../../examples/engine-integration";
 const SCENARIO = `${EXAMPLE}/scenario.json`;
 const PLUGIN = `${EXAMPLE}/ts-runtime/runtime-plugin.ts`;
+// Windows checkouts may convert committed text to CRLF; compare content, not line endings.
+const readLf = async (path: string) => (await readText(path)).replaceAll("\r\n", "\n");
 const PLUGIN_FLAGS = ["--plugin", PLUGIN, "--allow-plugin", "true"];
 
 async function expectSchema(name: string, value: unknown): Promise<void> {
@@ -49,11 +51,11 @@ describe("idk export engine", () => {
     const a = runCli(["export", "engine", SCENARIO, "--levels", "25"]).stdout;
     const b = runCli(["export", "engine", SCENARIO, "--levels", "25"]).stdout;
     expect(a).toBe(b);
-    expect(a).toBe(await readText(resolve(EXAMPLE, "cafe.engine-params.json")));
+    expect(a).toBe(await readLf(resolve(EXAMPLE, "cafe.engine-params.json")));
     const tres = runCli(["export", "engine", SCENARIO, "--target", "godot", "--levels", "25"]).stdout;
-    expect(tres).toBe(await readText(resolve(EXAMPLE, "godot/data/cafe_economy.tres")));
+    expect(tres).toBe(await readLf(resolve(EXAMPLE, "godot/data/cafe_economy.tres")));
     const unity = runCli(["export", "engine", SCENARIO, "--target", "unity", "--levels", "25"]).stdout;
-    expect(unity).toBe(await readText(resolve(EXAMPLE, "unity/cafe_economy.json")));
+    expect(unity).toBe(await readLf(resolve(EXAMPLE, "unity/cafe_economy.json")));
   });
 
   it("renders a Godot resource bound to the IdlekitEconomy script", () => {
