@@ -71,7 +71,10 @@ bun run --cwd packages/cli dev -- init scenario --track personal --preset builde
 bun run --cwd packages/cli dev -- init scenario --track personal --preset builder --out ../../tmp/my-game-v1.json --name "Space Miner"
 bun run --cwd packages/cli dev -- init scenario --track personal --preset session --out ../../tmp/my-session-game.json
 bun run --cwd packages/cli dev -- init scenario --track personal --preset longrun --out ../../tmp/my-longrun-game.json
+bun run --cwd packages/cli dev -- init scenario --preset cookie-clicker --out ../../tmp/my-clicker.json
 ```
+
+장르 프리셋(`cookie-clicker`, `tycoon`, `prestige-heavy`, `crafting`, `session-arcade`)은 내장 모델 위의 시나리오 하나를 쓴다. 튜토리얼은 [examples/genres](../examples/genres/README_ko.md)에 있다.
 
 preset 기본값:
 

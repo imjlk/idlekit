@@ -12,6 +12,7 @@ import {
   TEMPLATE_TRACKS,
   type GeneratedTemplateFile,
 } from "../templates/scenario";
+import { createGenreScenario, GENRE_PRESETS, isGenrePreset, type GenrePreset } from "../templates/genres";
 
 type Track = (typeof TEMPLATE_TRACKS)[number];
 type Preset = (typeof TEMPLATE_PRESETS)[number];
@@ -28,6 +29,40 @@ function describeBundle(files: readonly GeneratedTemplateFile[]): string[] {
   return files.map((file) => `- ${file.kind}: ${file.path}`);
 }
 
+async function writeGenreScenario(args: {
+  preset: GenrePreset;
+  outPath: string;
+  force: boolean;
+  wizard: boolean;
+  track: Track;
+  name?: string;
+  runtimeArgs: readonly string[];
+}): Promise<void> {
+  if (args.wizard) {
+    throw cliError("CLI_USAGE", `--wizard does not support the genre preset '${args.preset}'.`, {
+      hint: "Run --wizard with session, builder, or longrun, or edit the genre scenario after it is written.",
+    });
+  }
+  const trackGiven = args.runtimeArgs.some((arg) => arg === "--track" || arg.startsWith("--track="));
+  if (trackGiven && args.track !== "intro") {
+    throw cliError("CLI_USAGE", `Genre preset '${args.preset}' writes one scenario and supports only --track intro.`, {
+      hint: "Drop --track, or use session, builder, or longrun with the design or personal track.",
+    });
+  }
+  if (args.name) throw unsupportedFlagForTrackError("--name", "intro");
+  await ensureWritable(args.outPath, args.force);
+  await writeTextFile(args.outPath, serializeTemplate(createGenreScenario(args.preset)));
+  console.log(`Wrote genre scenario template (${args.preset}) to ${args.outPath}`);
+  printNextSteps({
+    steps: [
+      { label: "validate", command: `idk validate ${args.outPath}` },
+      { label: "simulate", command: `idk simulate ${args.outPath} --format json` },
+      { label: "experience", command: `idk experience ${args.outPath} --format md` },
+      { label: "evaluate", command: `idk evaluate ${args.outPath} --format md` },
+    ],
+  });
+}
+
 export default defineCommand({
   name: "scenario",
   description: "Generate a starter scenario template",
@@ -38,8 +73,8 @@ export default defineCommand({
     track: option(z.enum(TEMPLATE_TRACKS).default("intro"), {
       description: "Template track (intro|design|personal)",
     }),
-    preset: option(z.enum(TEMPLATE_PRESETS).optional(), {
-      description: "Template preset (session|builder|longrun)",
+    preset: option(z.enum([...TEMPLATE_PRESETS, ...GENRE_PRESETS]).optional(), {
+      description: `Template preset (session|builder|longrun) or genre preset (${GENRE_PRESETS.join("|")})`,
     }),
     name: option(z.string().optional(), {
       description: "Optional personal track name. Changes generated file stem + meta id/title.",
@@ -54,6 +89,18 @@ export default defineCommand({
   async handler({ flags, prompt, terminal, runtime }) {
     const outPath = resolve(process.cwd(), flags.out);
     const wizard = flags.wizard;
+    if (isGenrePreset(flags.preset)) {
+      await writeGenreScenario({
+        preset: flags.preset,
+        outPath,
+        force: flags.force,
+        wizard,
+        track: flags.track as Track,
+        name: flags.name,
+        runtimeArgs: runtime.args,
+      });
+      return;
+    }
     const wizardResult = wizard
       ? await runInitWizard({
           prompt,
