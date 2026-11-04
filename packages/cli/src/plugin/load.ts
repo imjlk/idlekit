@@ -15,6 +15,7 @@ import {
   type ModelRegistry,
   type ObjectiveFactory,
   type ObjectiveRegistry,
+  type RuntimeEconomyAdapter,
   type StrategyFactory,
   type StrategyRegistry,
 } from "@idlekit/core";
@@ -44,6 +45,7 @@ type PluginModule = {
   strategies?: StrategyFactory[];
   objectives?: ObjectiveFactory[];
   analyzers?: readonly AnalyzerDefinition[];
+  runtimes?: readonly RuntimeEconomyAdapter[];
   default?:
     | EconPluginModule
     | ModelFactory[]
@@ -52,6 +54,7 @@ type PluginModule = {
         strategies?: StrategyFactory[];
         objectives?: ObjectiveFactory[];
         analyzers?: readonly AnalyzerDefinition[];
+        runtimes?: readonly RuntimeEconomyAdapter[];
       };
 };
 
@@ -73,6 +76,7 @@ function parsePluginModule(mod: PluginModule): EconPluginModule {
     strategies: mod.strategies ?? fromDefault.strategies,
     objectives: mod.objectives ?? fromDefault.objectives,
     analyzers: mod.analyzers ?? fromDefault.analyzers,
+    runtimes: mod.runtimes ?? fromDefault.runtimes,
   };
 }
 
@@ -229,6 +233,8 @@ export type LoadedRegistries = Readonly<{
   pluginAnalyzerKeys?: readonly string[];
   /** Objective ids a plugin registered, in load order. */
   pluginObjectiveIds?: readonly string[];
+  /** Runtime verification adapters a plugin registered, in load order. A later id replaces an earlier one. */
+  runtimeAdapters?: readonly RuntimeEconomyAdapter[];
 }>;
 
 export async function loadRegistries(
@@ -256,6 +262,7 @@ export async function loadRegistries(
   const pluginStrategyIds: string[] = [];
   const pluginAnalyzerKeys: string[] = [];
   const pluginObjectiveIds: string[] = [];
+  const runtimeAdapters: RuntimeEconomyAdapter[] = [];
 
   for (const p of pluginPaths) {
     let abs: string;
@@ -303,6 +310,19 @@ export async function loadRegistries(
       objectiveFactories.push(...parsed.objectives);
       for (const factory of parsed.objectives) pluginObjectiveIds.push(factory.id);
     }
+    if (parsed.runtimes !== undefined && parsed.runtimes !== null) {
+      if (!Array.isArray(parsed.runtimes)) {
+        throw new Error(`Plugin '${p}' runtimes export must be an array of runtime adapters`);
+      }
+      for (const adapter of parsed.runtimes as readonly RuntimeEconomyAdapter[]) {
+        if (!adapter || typeof adapter.id !== "string" || typeof adapter.incomePerSec !== "function") {
+          throw new Error(`Plugin '${p}' runtime adapter needs a string id and an incomePerSec function`);
+        }
+        const existing = runtimeAdapters.findIndex((x) => x.id === adapter.id);
+        if (existing >= 0) runtimeAdapters.splice(existing, 1);
+        runtimeAdapters.push(adapter);
+      }
+    }
     // A plugin export is a runtime value: a non-array is one isolated failure, not a crash.
     if (parsed.analyzers !== undefined && parsed.analyzers !== null && !Array.isArray(parsed.analyzers)) {
       analyzerFailures.push({ path: abs, message: "plugin analyzers export must be an array" });
@@ -326,6 +346,7 @@ export async function loadRegistries(
     pluginStrategyIds,
     pluginAnalyzerKeys,
     pluginObjectiveIds,
+    runtimeAdapters,
   };
 }
 

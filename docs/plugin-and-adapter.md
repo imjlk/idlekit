@@ -4,7 +4,7 @@ Korean version: [plugin-and-adapter_ko.md](./plugin-and-adapter_ko.md)
 
 This guide covers two extension points:
 
-- CLI plugins that contribute models, strategies, and objectives
+- CLI plugins that contribute models, strategies, objectives, analyzers, and runtime adapters
 - `Engine<N>` adapters that let you plug in a custom numeric backend
 
 ## Plugin module shape
@@ -28,6 +28,8 @@ export default plugin;
 ```
 
 Named exports are also supported.
+
+A plugin can also export `runtimes`: `RuntimeEconomyAdapter` objects that wrap a game's own income and cost functions. `idk verify runtime` compares them with the idlekit model on the same simulated states. Each adapter needs a string `id` and an `incomePerSec` function; `init` and `actionCosts` are optional. See [Game engine integration](./engine-integration.md#runtime-verification) and [examples/engine-integration](../examples/engine-integration/README.md).
 
 ## Loading a plugin
 

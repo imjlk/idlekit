@@ -1,0 +1,337 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "idlekit/engine-params-v1",
+  "title": "idlekit engine parameter export v1",
+  "description": "Engine-neutral parameter document written by `idk export engine --target generic`. Godot and Unity files are rendered from this document.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "format",
+    "formatVersion",
+    "source",
+    "unit",
+    "model",
+    "clock",
+    "policy",
+    "initial",
+    "parameters",
+    "curves",
+    "notes"
+  ],
+  "$defs": {
+    "decimal": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Amount as written in the scenario (decimal, scientific, or suffix notation)."
+    },
+    "parameter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "key",
+        "type",
+        "value"
+      ],
+      "properties": {
+        "key": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "enum": [
+            "amount",
+            "number",
+            "integer",
+            "boolean",
+            "string"
+          ]
+        },
+        "value": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            }
+          ]
+        },
+        "role": {
+          "enum": [
+            "income",
+            "cost",
+            "growth",
+            "other"
+          ]
+        }
+      }
+    },
+    "curve": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind",
+        "variable",
+        "base",
+        "formula"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "enum": [
+            "geometric",
+            "linear"
+          ]
+        },
+        "variable": {
+          "type": "string",
+          "minLength": 1
+        },
+        "base": {
+          "$ref": "#/$defs/decimal"
+        },
+        "growth": {
+          "type": "number"
+        },
+        "perUnit": {
+          "$ref": "#/$defs/decimal"
+        },
+        "formula": {
+          "type": "string"
+        }
+      }
+    },
+    "levelRow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "level",
+        "cost",
+        "totalCost",
+        "incomePerSec"
+      ],
+      "properties": {
+        "level": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "cost": {
+          "$ref": "#/$defs/numberText"
+        },
+        "totalCost": {
+          "$ref": "#/$defs/numberText"
+        },
+        "incomePerSec": {
+          "$ref": "#/$defs/numberText"
+        }
+      }
+    },
+    "numberText": {
+      "type": "string",
+      "pattern": "^-?(?:\\d+(?:\\.\\d*)?|\\.\\d+)(?:[eE][+-]?\\d+)?$"
+    }
+  },
+  "properties": {
+    "format": {
+      "const": "idlekit.engine-params"
+    },
+    "formatVersion": {
+      "const": 1
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scenarioHash",
+        "cliVersion"
+      ],
+      "properties": {
+        "scenarioId": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "scenarioHash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "cliVersion": {
+          "type": "string"
+        }
+      }
+    },
+    "unit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code"
+      ],
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "symbol": {
+          "type": "string"
+        }
+      }
+    },
+    "model": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "clock": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "stepSec"
+      ],
+      "properties": {
+        "stepSec": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "durationSec": {
+          "type": "number"
+        }
+      }
+    },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode"
+      ],
+      "properties": {
+        "mode": {
+          "enum": [
+            "drop",
+            "accumulate"
+          ]
+        },
+        "maxLogGap": {
+          "type": "number"
+        }
+      }
+    },
+    "strategy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "params": {}
+      }
+    },
+    "initial": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "t",
+        "wallet",
+        "vars",
+        "prestige"
+      ],
+      "properties": {
+        "t": {
+          "type": "number"
+        },
+        "wallet": {
+          "$ref": "#/$defs/decimal"
+        },
+        "vars": {
+          "type": "object"
+        },
+        "prestige": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "count",
+            "points",
+            "multiplier"
+          ],
+          "properties": {
+            "count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "points": {
+              "$ref": "#/$defs/decimal"
+            },
+            "multiplier": {
+              "$ref": "#/$defs/decimal"
+            }
+          }
+        }
+      }
+    },
+    "parameters": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/parameter"
+      }
+    },
+    "curves": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/curve"
+      }
+    },
+    "levels": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "variable",
+        "actionId",
+        "rows"
+      ],
+      "properties": {
+        "variable": {
+          "type": "string"
+        },
+        "actionId": {
+          "type": "string"
+        },
+        "rows": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/levelRow"
+          }
+        }
+      }
+    },
+    "notes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

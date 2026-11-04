@@ -58,7 +58,12 @@ idk doctor --format md
 idk doctor --fix true --shell zsh
 idk completions zsh
 idk replay verify <artifact> --format json
+idk export engine <scenario> --target godot --out economy.tres
+idk import scenario <table.csv> --mapping <mapping.json> --out scenario.json
+idk verify runtime <scenario> --plugin ./runtime-plugin.ts --allow-plugin true --seed 7
 ```
+
+`export engine`, `import scenario`, and `verify runtime` connect scenarios to Godot, Unity, and game-side code. See [engine-integration.md](./engine-integration.md).
 
 ## Design evaluation commands
 
@@ -133,6 +138,7 @@ The shipped analysis scope includes flow diagnosis, guarded analytic advance, th
 
 - [scenario-and-tuning.md](./scenario-and-tuning.md)
 - [plugin-and-adapter.md](./plugin-and-adapter.md)
+- [engine-integration.md](./engine-integration.md)
 - [testing.md](./testing.md)
 
 ## Interpreting evaluate value estimates

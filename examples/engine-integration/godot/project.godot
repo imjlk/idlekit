@@ -1,0 +1,6 @@
+; Minimal Godot 4 project for the idlekit engine integration example.
+config_version=5
+
+[application]
+config/name="idlekit engine integration"
+config/features=PackedStringArray("4.3")

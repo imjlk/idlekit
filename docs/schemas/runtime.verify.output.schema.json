@@ -1,0 +1,270 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "idlekit/runtime-verify-output-v1",
+  "title": "idk verify runtime JSON output",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "ok",
+    "runtime",
+    "scenario",
+    "seed",
+    "tolerance",
+    "durationSec",
+    "traceEvery",
+    "samples",
+    "metrics",
+    "firstMismatch",
+    "mismatches",
+    "truncatedMismatches",
+    "_meta"
+  ],
+  "$defs": {
+    "row": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sample",
+        "t",
+        "metric",
+        "idlekit",
+        "runtime",
+        "absDiff",
+        "relDiff",
+        "vars"
+      ],
+      "properties": {
+        "sample": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "t": {
+          "type": "number"
+        },
+        "metric": {
+          "type": "string"
+        },
+        "idlekit": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "runtime": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "absDiff": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "relDiff": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "vars": {
+          "type": "object"
+        }
+      }
+    }
+  },
+  "properties": {
+    "ok": {
+      "type": "boolean"
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "version": {
+          "type": "number"
+        },
+        "description": {
+          "type": "string"
+        }
+      }
+    },
+    "scenario": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "model"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        }
+      }
+    },
+    "seed": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "tolerance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "relative",
+        "absolute"
+      ],
+      "properties": {
+        "relative": {
+          "type": "number",
+          "minimum": 0
+        },
+        "absolute": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "durationSec": {
+      "type": "number"
+    },
+    "traceEvery": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "samples": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "metrics": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "metric",
+          "compared",
+          "mismatches",
+          "skipped",
+          "maxAbsDiff",
+          "maxRelDiff"
+        ],
+        "properties": {
+          "metric": {
+            "type": "string"
+          },
+          "compared": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "mismatches": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "skipped": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "maxAbsDiff": {
+            "type": "number"
+          },
+          "maxRelDiff": {
+            "type": "number"
+          }
+        }
+      }
+    },
+    "firstMismatch": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/row"
+        }
+      ]
+    },
+    "mismatches": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/row"
+      }
+    },
+    "truncatedMismatches": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "_meta": {
+      "type": "object",
+      "required": [
+        "command",
+        "contractVersion",
+        "schemaRef",
+        "cliVersion",
+        "gitSha",
+        "pluginDigest",
+        "seed",
+        "scenarioHash"
+      ],
+      "properties": {
+        "command": {
+          "const": "verify.runtime"
+        },
+        "contractVersion": {
+          "type": "string"
+        },
+        "schemaRef": {
+          "const": "docs/schemas/runtime.verify.output.schema.json"
+        },
+        "cliVersion": {
+          "type": "string"
+        },
+        "gitSha": {
+          "type": "string"
+        },
+        "seed": {
+          "type": "integer"
+        },
+        "scenarioHash": {
+          "type": "string"
+        },
+        "pluginDigest": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

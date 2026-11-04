@@ -1,0 +1,45 @@
+[gd_resource type="Resource" script_class="IdlekitEconomy" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/idlekit/idlekit_economy.gd" id="1_idlekit"]
+
+[resource]
+script = ExtResource("1_idlekit")
+format_version = 1
+scenario_id = "engine-cafe"
+title = "Engine Integration Cafe"
+scenario_hash = "ff1b80ad7fe56c7cf948756c774f5fdfaa3393d973387318f80fae46353c42e1"
+unit_code = "COIN"
+unit_symbol = "C"
+model_id = "linear"
+model_version = 1
+step_sec = 1.0
+duration_sec = 1200.0
+initial_wallet = 0.0
+initial_vars = {
+"owned": 0
+}
+prestige_multiplier = 1.0
+parameters = {
+"incomePerSec": 1,
+"buyCostBase": 12,
+"buyCostGrowth": 1.11,
+"buyIncomeDelta": 1.35
+}
+curves = [{
+"id": "buy.generator.cost",
+"kind": "geometric",
+"variable": "owned",
+"base": "12",
+"growth": 1.11,
+"formula": "cost(n) = 12 * 1.11^n"
+}, {
+"id": "income",
+"kind": "linear",
+"variable": "owned",
+"base": "1",
+"perUnit": "1.35",
+"formula": "incomePerSec(n) = (1 + 1.35 * n) * prestigeMultiplier"
+}]
+level_variable = "owned"
+cost_table = PackedFloat64Array(12.0, 13.32, 14.7852, 16.411572, 18.21684492, 20.2206978612, 22.444974625932, 24.9139218347845, 27.6544532366108, 30.696443092638, 34.0730518328282, 37.8210875344393, 41.9814071632277, 46.5993619511827, 51.7252917658128, 57.4150738600522, 63.730731984658, 70.7411125029703, 78.5226348782971, 87.1601247149098, 96.7477384335498, 107.38998966124, 119.202888523977, 132.315206261614, 146.869878950392)
+income_table = PackedFloat64Array(1.0, 2.35, 3.7, 5.05, 6.4, 7.75, 9.1, 10.45, 11.8, 13.15, 14.5, 15.85, 17.2, 18.55, 19.9, 21.25, 22.6, 23.95, 25.3, 26.65, 28.0, 29.35, 30.7, 32.05, 33.4)
