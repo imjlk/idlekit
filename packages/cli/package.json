@@ -45,7 +45,7 @@
     "build": "bun scripts/cli-bundle.ts --outdir dist --sourcemap",
     "build:bin": "bun scripts/cli-bundle.ts --entry src/bin.ts --outdir dist/bin --targets native",
     "typecheck": "ttsc -p tsconfig.json --noEmit",
-    "test": "bun scripts/cli-bundle.ts --outdir .test-bundle && IDLEKIT_CLI_ENTRY=.test-bundle/main.js bun test --timeout 90000 src",
+    "test": "bun scripts/cli-bundle.ts --outdir .test-bundle && IDLEKIT_CLI_ENTRY=.test-bundle/main.js bun test --parallel --timings=test-timings.json --timeout 90000 src",
     "prepack": "bun run build && cd ../.. && bun tools/package-manifest.ts prepare packages/cli",
     "postpack": "cd ../.. && bun tools/package-manifest.ts restore packages/cli"
   },
