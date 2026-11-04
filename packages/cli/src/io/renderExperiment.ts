@@ -3,7 +3,7 @@ import { experimentDecisionHints, renderDecisionHints, type ExperimentHintInput 
 
 function cell(value: unknown): string {
   if (value === null || value === undefined) return "n/a";
-  return String(value).replace(/\|/g, "\\|").replace(/[\r\n]+/g, " ");
+  return String(value).replace(/\\/g, "\\\\").replace(/\|/g, "\\|").replace(/[\r\n]+/g, " ");
 }
 
 function code(value: string): string {
