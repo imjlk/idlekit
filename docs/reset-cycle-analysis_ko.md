@@ -15,7 +15,7 @@ English version: [reset-cycle-analysis.md](./reset-cycle-analysis.md)
 
 새 상태는 `insufficient-data`, `stable`, `drifting`, `non-stationary`, `oscillating`이다. `provedSteadyState`는 false다. window 안의 일치는 정상상태의 수학적 증명이 아니다. fixture와 값이 같다는 Evidence도 그 증명이 아니다.
 
-새 wire object는 `ResetPolicyArtifactV1`이고 schema는 `idlekit.reset-policy.v1`이다. `breakEvenSec`를 복사하지 않는다. legacy 출력의 부족한 근거를 숨기도록 변환하지 않는다. `idk prestige-cycle`은 계속 `analyzePrestigeCycle`을 호출한다.
+새 wire object는 `ResetPolicyArtifactV1`이고 schema는 `idlekit.reset-policy.v1`이다. `breakEvenSec`를 복사하지 않는다. legacy 출력의 부족한 근거를 숨기도록 변환하지 않는다. `idk prestige-cycle`은 계속 `analyzePrestigeCycle`을 호출한다. 그 `pointsPerHour`는 커밋한 포인트와 간격 끝에 가능한 리셋을 함께 센다. `idk reset-policy`는 CLI에서 `analyzeResetPolicies`를 실행하고 ROI, 타이밍 창, 안정성 insight를 더한다. [고급 분석](./advanced-analysis_ko.md#리셋-정책-idk-reset-policy)을 본다.
 
 `best`는 objective와 그 읽기(`flow`, `stock`, `time`), scan 범위, `scope: "scan-range"`, `globalOptimum: false`, session 가정, 관측 상태를 담는다. 순위는 `Engine.cmp`다. `toNumber`에서 같은 값이 `Engine.cmp`에서도 같은 값은 아니다. 승자는 scan한 후보 중 최선이지 전역 최적이 아니다.
 

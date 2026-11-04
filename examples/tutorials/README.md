@@ -57,6 +57,7 @@ These run without a plugin. See [Built-in models](../../docs/models/README.md).
 - `27-prestige-loop-v1.json`: `prestige` model with root-scaled points, an additive multiplier, a minimum run time, and kept levels
 - `28-twin-currency-v1.json`: `multi-currency` model with capped gems, a gem-paid generator, a fee market, and overflow auto-conversion
 - `29-factory-chain-v1.json`: `production-chain` model from ore to coins with batch times, level gates, a storage cap, and bottleneck quotes
+- `30-lucky-forge-v1.json`: `exponential` model with seeded crits, chest drops, and frenzy events, read through 16 Monte Carlo draws with confidence intervals
 
 ```bash
 bun run --cwd packages/cli dev -- simulate ../../examples/tutorials/26-exponential-forge-v1.json --format md

@@ -59,6 +59,94 @@
       "required": [
         "startsAt"
       ]
+    },
+    "stochastic": {
+      "type": "object",
+      "properties": {
+        "crit": {
+          "type": "object",
+          "properties": {
+            "chance": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "multiplier": {
+              "type": "number",
+              "minimum": 1
+            }
+          },
+          "required": [
+            "chance",
+            "multiplier"
+          ]
+        },
+        "drops": {
+          "default": [],
+          "maxItems": 16,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_-]{0,47}$"
+              },
+              "ratePerSec": {
+                "type": "number",
+                "exclusiveMinimum": 0
+              },
+              "rewardIncomeSec": {
+                "type": "number",
+                "exclusiveMinimum": 0
+              }
+            },
+            "required": [
+              "id",
+              "ratePerSec",
+              "rewardIncomeSec"
+            ]
+          }
+        },
+        "events": {
+          "default": [],
+          "maxItems": 16,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_-]{0,47}$"
+              },
+              "windowSec": {
+                "type": "number",
+                "exclusiveMinimum": 0
+              },
+              "chance": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "durationSec": {
+                "type": "number",
+                "exclusiveMinimum": 0
+              },
+              "incomeMultiplier": {
+                "type": "number",
+                "exclusiveMinimum": 0
+              }
+            },
+            "required": [
+              "id",
+              "windowSec",
+              "chance",
+              "durationSec",
+              "incomeMultiplier"
+            ]
+          }
+        }
+      }
     }
   }
 }

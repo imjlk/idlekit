@@ -51,6 +51,7 @@ bun run --cwd packages/cli dev -- tune ../../examples/tutorials/23-prestige-reac
 - `27-prestige-loop-v1.json`: 루트 스케일 포인트, 가산 배율, 최소 런 시간, 유지 레벨을 가진 `prestige` 모델
 - `28-twin-currency-v1.json`: 상한 있는 보석, 보석으로 사는 생산기, 수수료 시장, 넘침 자동 변환을 가진 `multi-currency` 모델
 - `29-factory-chain-v1.json`: 배치 시간, 레벨 게이트, 저장 상한, 병목 견적을 가진 광석→코인 `production-chain` 모델
+- `30-lucky-forge-v1.json`: 시드 고정 치명타, 상자 드롭, 프렌지 이벤트를 가진 `exponential` 모델. Monte Carlo draw 16개와 신뢰구간으로 읽는다
 
 ```bash
 bun run --cwd packages/cli dev -- simulate ../../examples/tutorials/26-exponential-forge-v1.json --format md

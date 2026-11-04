@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "parameters": [
+    { "path": "model.params.costGrowth", "min": 1.06, "max": 1.2 },
+    { "path": "model.params.growthRate", "min": 1.01, "max": 1.08 },
+    { "path": "model.params.costBase", "min": 5, "max": 60, "scale": "log" }
+  ],
+  "objectives": [
+    { "kind": "milestoneTime", "weight": 1 },
+    { "kind": "sessionPacing", "targetVisibleChangesPerMinute": 2, "maxNoRewardGapSec": 90, "weight": 1 },
+    { "kind": "endNetWorthLog10", "weight": 0.5 }
+  ],
+  "evaluation": { "sessionPattern": "short-bursts", "days": 1, "draws": 1 }
+}

@@ -34,6 +34,7 @@ One generator. Each level adds more income than the one before, and each level c
 | `softCap.kind` | `"pow"` | `pow`, `sqrt`, or `log` |
 | `softCap.startsAt` | required | Production above this is compressed |
 | `softCap.strength` | `0.5` | `(0, 1]`. Exponent for `pow`, slope for `log`. Ignored by `sqrt` |
+| `stochastic` | none | Seeded crits, drops, and timed events on top of income. See [Advanced analysis](../advanced-analysis.md#seeded-stochastic-events) |
 
 Vars: `level` (default `0`).
 
@@ -57,6 +58,7 @@ Large exponents are computed in log space, so `growthRate: 2` at level 2000 stay
 ## Analysis hooks
 
 - `analytic` reports `incomeKind: "linear"` with generator hints when `growthRate` is `1` and there is no soft cap, so the exact ETA can use the closed form. Otherwise it reports `incomeKind: "custom"` with `costExp` and the soft cap.
+- With an active `stochastic` block, `analytic` is `null` and the exact ETA simulates instead.
 - The model has no `evolve`, so the guarded advance and the exact ETA accept it.
 - `exponentialLevelIncrement(E, params, level)` returns the next level's raw increment for tables.
 

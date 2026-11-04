@@ -196,11 +196,11 @@ export function createPrestigeModel<N, U extends string = string>(
   return {
     id: PRESTIGE_MODEL_ID,
     version: 1,
-    income: (ctx, state) => core.income(ctx, state),
+    income: (ctx, state) => core.realizedIncome(ctx, state),
     actions: (ctx) => [core.buyAction(ctx), resetAction(ctx)],
     prestige: spec,
     netWorth: (ctx, state) => ({ unit: ctx.unit, amount: netWorth(ctx, state) }),
-    analytic: (ctx, state) => core.analytic(ctx, state),
+    analytic: (ctx, state) => (core.stochastic ? null : core.analytic(ctx, state)),
     milestones(ctx, prev, next) {
       const out = core.milestones(ctx, prev, next);
       if (next.prestige.count === prev.prestige.count && !ready(ctx, prev) && ready(ctx, next)) {

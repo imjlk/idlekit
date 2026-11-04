@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { Engine } from "../engine/types";
 import type { Money } from "../money/types";
 import { defineModelFactory, type ModelFactory } from "../scenario/registry";
+import { stochasticIncomeFactor, stochasticSpecActive, stochasticSpecSchema } from "../sim/stochastic";
 import type { Action, AnalyticHints, BulkQuote, Model, SimContext, SimState } from "../sim/types";
 import {
   amountOf,
@@ -25,6 +26,7 @@ export const EXPONENTIAL_MODEL_ID = "exponential" as const;
  * Level `L` of the generator produces `idleIncome + baseIncome * (1 + g + ... + g^(L-1))` per second, where
  * `g = growthRate`. `growthRate: 1` is the linear generator. The next level costs `costBase * costGrowth^L`.
  * `softCap` compresses production above `softCap.startsAt`. `maxLevel` stops further purchases.
+ * `stochastic` adds seeded critical ticks, drops, and timed events on top of that income (see `sim/stochastic`).
  */
 export const exponentialParamsSchema = z.object({
   idleIncome: nonNegativeAmount.default("1"),
@@ -34,6 +36,7 @@ export const exponentialParamsSchema = z.object({
   costGrowth: growthFactor.default(1.15),
   maxLevel: z.number().int().positive().optional(),
   softCap: softCapSchema.optional(),
+  stochastic: stochasticSpecSchema.optional(),
 });
 
 export type ExponentialParams = z.output<typeof exponentialParamsSchema>;
@@ -62,8 +65,15 @@ export type GeneratorCore = Readonly<{
   levelOf: (state: Readonly<{ vars?: unknown }>) => number;
   /** Production before the prestige multiplier, after the soft cap. */
   production: <N>(E: Engine<N>, level: number) => N;
-  /** Production times the state's prestige multiplier. */
+  /** Production times the state's prestige multiplier. Deterministic: purchase quotes read this. */
   income: <N, U extends string, Vars>(ctx: SimContext<N, U, Vars>, state: SimState<N, U, Vars>, level?: number) => Money<N, U>;
+  /**
+   * Income the runner credits: `income` times this tick's seeded stochastic factor, read from `ctx.seed` (0 when unset)
+   * and `state.t`. Without an active `stochastic` spec it is `income`.
+   */
+  realizedIncome: <N, U extends string, Vars>(ctx: SimContext<N, U, Vars>, state: SimState<N, U, Vars>) => Money<N, U>;
+  /** True when a `stochastic` spec can change a tick's income. */
+  stochastic: boolean;
   /** Price of `count` levels from `level`. */
   price: <N>(E: Engine<N>, level: number, count: number) => N;
   /** Every level's purchase price summed. */
@@ -101,6 +111,15 @@ export function createGeneratorCore(modelId: string, params: ExponentialParams):
     unit: ctx.unit,
     amount: finiteAmount(ctx.E, ctx.E.mulN(production(ctx.E, level), state.prestige.multiplier), modelId, "income"),
   });
+
+  const stochastic = stochasticSpecActive(p.stochastic);
+  const realizedIncome = <N, U extends string, Vars>(ctx: SimContext<N, U, Vars>, state: SimState<N, U, Vars>): Money<N, U> => {
+    const base = income(ctx, state);
+    if (!stochastic || !p.stochastic) return base;
+    const factor = stochasticIncomeFactor(p.stochastic, ctx.seed ?? 0, state.t, ctx.stepSec ?? 1);
+    if (factor === 1) return base;
+    return { unit: base.unit, amount: finiteAmount(ctx.E, ctx.E.mul(base.amount, factor), modelId, "income") };
+  };
 
   const price = <N>(E: Engine<N>, level: number, count: number): N => {
     const base = amountOf(E, p.costBase, modelId, "costBase");
@@ -201,7 +220,20 @@ export function createGeneratorCore(modelId: string, params: ExponentialParams):
     return { incomeKind: "custom", costExp, ...softcap };
   };
 
-  return { params: p, levelOf, production, income, price, investedValue, remainingLevels, buyAction, milestones, analytic };
+  return {
+    params: p,
+    levelOf,
+    production,
+    income,
+    realizedIncome,
+    stochastic,
+    price,
+    investedValue,
+    remainingLevels,
+    buyAction,
+    milestones,
+    analytic,
+  };
 }
 
 /** Next-level income increment `baseIncome * growthRate^level`, before the soft cap and multiplier. */
@@ -216,7 +248,7 @@ export function createExponentialModel<N, U extends string = string>(
   return {
     id: EXPONENTIAL_MODEL_ID,
     version: 1,
-    income: (ctx, state) => core.income(ctx, state),
+    income: (ctx, state) => core.realizedIncome(ctx, state),
     actions: (ctx) => [core.buyAction(ctx)],
     netWorth(ctx, state) {
       return {
@@ -229,7 +261,8 @@ export function createExponentialModel<N, U extends string = string>(
         ),
       };
     },
-    analytic: (ctx, state) => core.analytic(ctx, state),
+    // A seeded tick factor is not a closed-form income, so analytic ETA and advance get no hint.
+    analytic: (ctx, state) => (core.stochastic ? null : core.analytic(ctx, state)),
     milestones: (ctx, prev, next) => core.milestones(ctx, prev, next),
   };
 }
