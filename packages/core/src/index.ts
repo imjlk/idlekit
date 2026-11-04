@@ -79,6 +79,8 @@ export * from "./sim/analysis/judge";
 export * from "./sim/analysis/flow";
 export * from "./sim/analysis/jevAdvisory";
 
+export * from "./models/index";
+
 export * from "./report/timeline";
 export * from "./report/compare";
 

@@ -2,6 +2,7 @@ import { realpathSync } from "fs";
 import { dirname, extname, isAbsolute, relative, resolve, sep } from "path";
 import { fileURLToPath } from "url";
 import {
+  builtinModelFactories,
   builtinObjectiveFactories,
   builtinStrategyFactories,
   createBuiltinAnalyzerRegistry,
@@ -235,7 +236,7 @@ export async function loadRegistries(
   pluginPaths: string[] = [],
   securityOptions: PluginSecurityOptions = {},
 ): Promise<LoadedRegistries> {
-  const modelFactories: ModelFactory[] = [createLinearFactory()];
+  const modelFactories: ModelFactory[] = [createLinearFactory(), ...builtinModelFactories()];
   const strategyFactories: StrategyFactory[] = [...builtinStrategyFactories];
   const objectiveFactories: ObjectiveFactory[] = [...builtinObjectiveFactories, ...designObjectiveFactories];
   const analyzerRegistry = createBuiltinAnalyzerRegistry();

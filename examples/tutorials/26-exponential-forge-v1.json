@@ -1,0 +1,85 @@
+{
+  "schemaVersion": 1,
+  "meta": {
+    "id": "exponential-forge-v1",
+    "title": "Exponential Forge V1",
+    "description": "Built-in exponential model: one geometric generator whose income and cost both grow per level, with a level cap and a pow soft cap.",
+    "tags": [
+      "builtin-model",
+      "exponential",
+      "worked-example"
+    ]
+  },
+  "unit": {
+    "code": "ORE",
+    "symbol": "O"
+  },
+  "policy": {
+    "mode": "accumulate",
+    "maxLogGap": 14
+  },
+  "model": {
+    "id": "exponential",
+    "version": 1,
+    "params": {
+      "idleIncome": "1",
+      "baseIncome": "1.5",
+      "growthRate": 1.04,
+      "costBase": "15",
+      "costGrowth": 1.12,
+      "maxLevel": 150,
+      "softCap": {
+        "kind": "pow",
+        "startsAt": "2000",
+        "strength": 0.6
+      }
+    }
+  },
+  "initial": {
+    "t": 0,
+    "wallet": {
+      "unit": "ORE",
+      "amount": "0",
+      "bucket": "0"
+    },
+    "vars": {
+      "level": 0
+    },
+    "prestige": {
+      "count": 0,
+      "points": "0",
+      "multiplier": "1"
+    }
+  },
+  "clock": {
+    "stepSec": 1,
+    "durationSec": 3600
+  },
+  "strategy": {
+    "id": "greedy"
+  },
+  "analysis": {
+    "eta": {
+      "mode": "simulate"
+    },
+    "growth": {
+      "windowSec": 60
+    }
+  },
+  "outputs": {
+    "format": "json",
+    "report": {
+      "checkpointsSec": [
+        60,
+        300,
+        900,
+        1800,
+        3600
+      ],
+      "includeTrace": true,
+      "traceEverySteps": 10,
+      "includeGrowth": true,
+      "includeUX": true
+    }
+  }
+}
