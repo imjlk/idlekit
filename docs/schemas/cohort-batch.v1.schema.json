@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "idlekit/cohort-batch-v1",
+  "title": "idlekit cohort batch v1",
+  "description": "Input contract for idk telemetry and idk calibrate --cohort. Each cohort is one complete install cohort: a day 0 row for every install, at most one row per user and day, and no row after observedThroughDay. Structural rules are here; the observation rules are enforced by validateCohortBatch.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "cohorts"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "cohorts": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/cohort" }
+    }
+  },
+  "$defs": {
+    "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" },
+    "cohort": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "observedThroughDay", "rows"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id", "description": "Unique cohort id within the batch, e.g. an install week" },
+        "variant": { "$ref": "#/$defs/id", "description": "Optional experiment group or scenario variant label" },
+        "installDate": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$", "description": "Optional install calendar date (YYYY-MM-DD)" },
+        "observedThroughDay": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "rows": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/row" } }
+      }
+    },
+    "row": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["userId", "day"],
+      "properties": {
+        "userId": { "type": "string", "minLength": 1, "description": "Pseudonymous local id; never an email, device id or account id" },
+        "day": { "type": "integer", "minimum": 0, "description": "Whole days since install" },
+        "active": { "type": "boolean", "description": "Defaults to true; false records an inactive user-day" },
+        "iapRevenue": { "type": "number", "minimum": 0 },
+        "adRevenue": { "type": "number", "minimum": 0 },
+        "acquisitionCost": { "type": "number", "minimum": 0 }
+      }
+    }
+  }
+}

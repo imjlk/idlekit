@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "cohorts": [
+    {
+      "id": "2026-10-05",
+      "variant": "control",
+      "installDate": "2026-10-05",
+      "observedThroughDay": 7,
+      "rows": [
+        {"userId": "a0", "day": 0},
+        {"userId": "a0", "day": 1},
+        {"userId": "a0", "day": 7},
+        {"userId": "a1", "day": 0},
+        {"userId": "a1", "day": 1},
+        {"userId": "a1", "day": 7},
+        {"userId": "a2", "day": 0},
+        {"userId": "a2", "day": 1},
+        {"userId": "a3", "day": 0},
+        {"userId": "a3", "day": 1},
+        {"userId": "a4", "day": 0},
+        {"userId": "a5", "day": 0},
+        {"userId": "a6", "day": 0},
+        {"userId": "a7", "day": 0},
+        {"userId": "a8", "day": 0},
+        {"userId": "a9", "day": 0},
+        {"userId": "a9", "day": 3, "active": false}
+      ]
+    },
+    {
+      "id": "2026-10-06",
+      "variant": "control",
+      "installDate": "2026-10-06",
+      "observedThroughDay": 7,
+      "rows": [
+        {"userId": "b0", "day": 0},
+        {"userId": "b0", "day": 1},
+        {"userId": "b0", "day": 7},
+        {"userId": "b1", "day": 0},
+        {"userId": "b1", "day": 1},
+        {"userId": "b1", "day": 7},
+        {"userId": "b2", "day": 0},
+        {"userId": "b2", "day": 1},
+        {"userId": "b3", "day": 0},
+        {"userId": "b3", "day": 1},
+        {"userId": "b4", "day": 0},
+        {"userId": "b4", "day": 1},
+        {"userId": "b5", "day": 0},
+        {"userId": "b6", "day": 0},
+        {"userId": "b7", "day": 0},
+        {"userId": "b8", "day": 0},
+        {"userId": "b9", "day": 0},
+        {"userId": "b9", "day": 3, "active": false}
+      ]
+    }
+  ]
+}

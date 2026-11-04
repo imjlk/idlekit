@@ -144,5 +144,8 @@ Modeled LTV is undiscounted. A horizon of H days covers install days `[0, H)`: d
 Use [`calibrate --observed-through-day N --scenario scenario.json`](./player-telemetry.md)
 to compare a fully observed install cohort with the scenario's explicit retention
 assumptions. It keeps future days unobserved and emits a retention-only patch.
+For several cohorts, `idk telemetry` compares them, detects drift against the
+scenario, runs the patch → validate → re-run `ltv` loop with a before/after diff, and
+plans retention A/B experiments; see [the telemetry loop](./player-telemetry.md#the-telemetry-loop).
 
 Use `idk <command> --help` or `idk init scenario --help` to discover the installed options. An unwritable output file reports `OUTPUT_WRITE_FAILED` with the destination path and a writable-path hint.

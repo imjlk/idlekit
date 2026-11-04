@@ -31,6 +31,11 @@ const OUTPUT_SCHEMA_REF: Readonly<Record<string, string>> = {
   calibrate: "docs/schemas/calibrate.output.schema.json",
   "kpi.regress": "docs/schemas/kpi.regress.output.schema.json",
   "replay.verify": "docs/schemas/replay.verify.output.schema.json",
+  "telemetry.validate": "docs/player-telemetry.md",
+  "telemetry.compare": "docs/player-telemetry.md",
+  "telemetry.drift": "docs/player-telemetry.md",
+  "telemetry.patch": "docs/player-telemetry.md",
+  "telemetry.experiment": "docs/player-telemetry.md",
 } as const;
 
 export function stableStringify(value: unknown): string {

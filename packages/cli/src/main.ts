@@ -28,6 +28,7 @@ import replayGroup from "./commands/groups/replay";
 import reviewGroup from "./commands/groups/review";
 import setupGroup from "./commands/groups/setup";
 import strategiesGroup from "./commands/groups/strategies";
+import telemetryGroup from "./commands/groups/telemetry";
 import { CLI_DESCRIPTION, CLI_NAME, CLI_VERSION } from "./cliMeta";
 import { formatCliError, toCliError } from "./errors";
 
@@ -62,6 +63,7 @@ cli.command(reportCommand);
 cli.command(compareCommand);
 cli.command(tuneCommand);
 cli.command(calibrateCommand);
+cli.command(telemetryGroup);
 cli.command(balanceCommand);
 
 if (import.meta.main) {

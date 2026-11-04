@@ -96,11 +96,177 @@ LTV 예측과 나중의 실측을 다시 비교한다. 보정에 쓴 유저로�
 
 관측 종료일 없이 쓰는 기존 `calibrate`는 탐색용이다. 관측 기간이 명시되지 않은
 리텐션 비율을 성숙한 실측으로 해석하지 않는다. `--scenario`에는 따라서
-`--observed-through-day`가 필요하다. 차이를 보여주며 리텐션 임계치로 CI를 자동
-실패시키거나 게임의 좋고 나쁨을 판정하지는 않는다.
+`--observed-through-day`나 관측 종료일을 담은 코호트 배치가 필요하다. `calibrate`는
+차이를 보여줄 뿐 게임의 좋고 나쁨을 판정하거나 CI를 실패시키지 않는다. 임계치 경보는
+아래 `idk telemetry drift`에서 명시적으로 켠다.
 
 CSV에도 `interval95Min`, `interval95Max`를 0~1 비율로 기록하며 미관측 날짜는
 `null`로 남긴다. 스키마는 D1/D7/D30/D90 순서와 보류된 패치가 비어 있음을
 검사한다. CLI는 인원수·비율·관측 종료일·신뢰구간 사이의 일치 여부도 검사한다.
 `--out`이 텔레메트리나 시나리오 원본을 가리키면 하드링크와 디렉터리 별칭도
 거부한다. 보고서는 별도 경로로 저장한다.
+
+## 코호트 배치
+
+설치 주차·출시 버전·실험 그룹처럼 여러 완전한 설치 코호트를 하나의 **코호트 배치**로
+묶는다. 배치 안의 코호트는 각각 위의 데이터 준비 규칙을 따른다. JSON 형식은
+[`cohort-batch.v1.schema.json`](./schemas/cohort-batch.v1.schema.json)이다.
+
+```json
+{
+  "schemaVersion": 1,
+  "cohorts": [
+    {
+      "id": "2026-w40-control",
+      "variant": "control",
+      "installDate": "2026-10-05",
+      "observedThroughDay": 7,
+      "rows": [{ "userId": "p-7f3a", "day": 0 }, { "userId": "p-7f3a", "day": 1, "iapRevenue": 0.99 }]
+    }
+  ]
+}
+```
+
+CSV는 하나의 긴 표다. `cohort_id`, `observed_through_day`, `user_id`, `day`는 필수이고
+`variant`, `install_date`, `active`, `iap_revenue`, `ad_revenue`, `acquisition_cost`는
+선택이다. 코호트 단위 열은 코호트마다 값이 하나여야 한다. 알 수 없는 열은 거부하므로
+실수로 섞인 `email` 열은 그대로 실리지 않고 실패한다.
+
+```csv
+cohort_id,variant,install_date,observed_through_day,user_id,day,active
+2026-w40-control,control,2026-10-05,7,p-7f3a,0,true
+2026-w40-control,control,2026-10-05,7,p-7f3a,1,true
+```
+
+검증은 알 수 없는 필드, 중복·잘못된 id, 잘못된 설치일, 일부 행에만 있는 수익 필드,
+코호트별 관측 오류를 파일과 JSON 경로와 함께 한꺼번에 모아 보여준다. 한 명령에 준
+모든 파일에서 코호트 id는 고유해야 한다. 예제는 가상 데이터다.
+[`cohorts.csv`](../examples/telemetry/cohorts.csv)는 day 7까지 관측한 300명 코호트 3개,
+[`cohorts.json`](../examples/telemetry/cohorts.json)은 작은 코호트 2개다.
+
+`calibrate`도 배치를 읽는다. `--cohort <id>`로 코호트와 그 관측 종료일을 고르며,
+`--observed-through-day`를 함께 주면 값이 같아야 한다.
+
+```sh
+idk calibrate examples/telemetry/cohorts.csv --cohort 2026-w41-control --scenario examples/tutorials/11-my-game-v1.json --format md
+```
+
+## 텔레메트리 루프
+
+`idk telemetry`는 배치에 대해 관측·비교·패치·모니터링을 잇는다. 모든 하위 명령은
+배치 파일 여러 개, `--input-format auto|csv|json`, `--format json|md`, `--out`을 받는다.
+JSON에는 텔레메트리 해시를 담은 `_meta`가 붙는다.
+
+```sh
+idk telemetry validate examples/telemetry/cohorts.csv examples/telemetry/cohorts.json --format md
+idk telemetry compare examples/telemetry/cohorts.csv --baseline 2026-w40-control --scenario examples/tutorials/11-my-game-v1.json --format md
+idk telemetry drift examples/telemetry/cohorts.csv --scenario examples/tutorials/11-my-game-v1.json --threshold-pp 5 --fail-on-drift --format md
+idk telemetry patch examples/telemetry/cohorts.csv --cohort 2026-w41-control --scenario examples/tutorials/11-my-game-v1.json --scenario-out tmp/my-game-w41.json --format md
+idk telemetry experiment control=examples/tutorials/11-my-game-v1.json fast-start=examples/tutorials/12-my-game-compare-b.json --day 1 --mde-pp 5 --daily-installs 400 --format md
+```
+
+### 코호트 비교
+
+`compare`는 코호트마다 D1/D7/D30/D90의 인원수·비율·Wilson 95% 구간과 기준 코호트
+(`--baseline`, 기본값은 첫 코호트) 대비 차이, `--scenario`를 주면 명시 가정 대비 차이를
+나란히 보여준다. 기준이 아닌 칸에는 `--alpha`(기본 0.05)의 합동 두 비율 z 검정으로
+`significant`, `not-significant`, 기대 빈도가 5 미만이면 `insufficient-sample` 힌트를
+붙인다. 예제에서 코호트당 300명일 때 fast-start의 D1 +7퍼센트포인트는
+`not-significant`(p ≈ 0.08), 41주 차의 -8퍼센트포인트 하락은 `significant`(p ≈ 0.04)다.
+
+힌트는 힌트일 뿐이다. 설치가 독립이고 미리 정한 비교가 하나라는 가정에 기댄다.
+코호트·날짜가 많거나 결과를 여러 번 들여다보면 거짓 양성이 늘어난다. 표를 뒤지기보다
+`experiment`로 실험을 미리 설계한다.
+
+### 드리프트 감지
+
+`drift`는 각 코호트를 시나리오의 명시 가정과 비교한다. 절대 차이가 `--threshold-pp`
+(기본 5퍼센트포인트) 이상이고 **동시에** 가정이 코호트의 Wilson 95% 구간 밖에 있을 때
+그 날짜를 드리프트로 본다. 작은 코호트의 잡음으로는 경보가 울리지 않는다.
+`--no-require-interval`은 구간 조건을 끈다. 상태는 `drift`, `within-threshold`,
+`no-comparable-days`다. `--fail-on-drift`를 주면 보고서를 먼저 쓰고 드리프트일 때
+종료 코드 **2**로 끝난다. 다른 실패는 기존 CLI 종료 코드를 그대로 쓰므로 모니터가
+"리텐션이 움직였다"와 "export가 깨졌다"를 구분할 수 있다.
+
+드리프트는 곡선이 움직였다는 사실만 알려주고 원인은 설명하지 않는다. 패치 전에
+출시 버전, 유입 구성, export 완전성을 확인한다.
+
+### 패치와 재시뮬레이션
+
+`patch`는 한 코호트에 대해 전체 루프를 실행한다.
+
+1. 코호트를 관측한다(`observeCohort`).
+2. 시나리오에 대한 리텐션 패치를 계획한다(`planRetentionPatch`).
+3. 사본에 적용하고 패치된 시나리오를 검증한다.
+4. 원본과 패치본에 **같은 시드**로 `ltv`를 실행해 리텐션 가정만 다르게 한다.
+5. 가정 변경과 구간별 유저당 LTV·유저당 순수익·페이싱(`endNetWorth`, 첫 업그레이드
+   시간, 일일 성장)의 전후 표를 보고한다.
+
+원본 시나리오는 바꾸지 않는다. `--scenario-out`은 계획이 `ready`일 때만 패치본을
+쓴다. 그렇지 않으면 아무것도 쓰지 않고 경고를 보고서에 남긴 뒤 종료 코드 **3**으로
+끝난다. 리텐션은 경제 시뮬레이션이 아니라 LTV 예측에 들어가므로 페이싱은 그대로여야
+한다. 페이싱이 바뀌면 리텐션 외의 무언가가 바뀐 것이므로 보고서가 표시한다.
+`--horizons`, `--strategy`, `--seed`, 플러그인 옵션은 `ltv`와 같다. 패치본을 채택하기
+전에 별도 검증 코호트로 확인한다.
+
+### A/B 실험 설계
+
+`experiment`는 `<group>=<scenario.json>`으로 시나리오 변형을 그룹에 연결한다. 첫 그룹이
+대조군이다. 각 변형의 `--day`(1, 7, 30, 90) 가정을 읽어 다음을 돌려준다.
+
+- `--alpha`와 `--power`(기본 0.05, 0.8)의 양측 두 비율 검정에 필요한 그룹당 최소
+  표본 수. 처리군이 여럿이면 Bonferroni 보정을 한다. 최소 검출 효과는 `--mde-pp`이고,
+  생략하면 변형 사이의 가장 작은 가정 차이다. 가정이 같으면 `--mde-pp`가 필요하다.
+- 관측 기간. `--daily-installs`를 주면 등록 기간(최소 한 주)과, 등록된 모든 설치가
+  시험 날짜까지 온전히 관측되는 가장 이른 판독일을 계산한다.
+- 결정적 그룹 배정. `@idlekit/core`의 `assignExperimentGroup(userId, experimentId, groups)`는
+  가명 id를 FNV-1a로 해시하므로 서버 없이도 게임과 분석이 같은 그룹을 쓴다.
+
+예제는 D1 40% → 45%를 검출하려면 그룹당 1,534명이 필요하다고 답한다. 그룹마다
+`variant`를 단 별도 코호트로 내보내고 판독일 이후 `compare`로 읽는다. 지표와 판독일은
+출시 전에 고정하고 힌트를 보고 일찍 멈추지 않는다.
+
+## 모니터링
+
+[`monitor.sh`](../examples/telemetry/monitor.sh)는 export를 검증하고 `--fail-on-drift`로
+`drift`를 실행해 시각이 붙은 보고서를 남긴다. 드리프트가 없으면 0, 있으면 2로 끝나고
+다른 실패는 그대로 전달한다. crontab 예시는 다음과 같다.
+
+```sh
+0 9 * * 1 cd /srv/my-game && COHORTS=exports/cohorts.csv SCENARIO=scenarios/live.json ./examples/telemetry/monitor.sh
+```
+
+[`github-actions-monitor.yml`](../examples/telemetry/github-actions-monitor.yml)은 같은
+스크립트로 매주 실행하고 보고서를 아티팩트로 올리는 GitHub Actions 예제다. 각자의
+저장소에 복사해 쓰는 예제이며 idlekit에서 실행하지 않는다.
+
+## 배치용 core API
+
+`@idlekit/core`는 루프를 직접 쓸 수 있도록 `validateCohortBatch`, `observeCohortBatch`,
+`compareCohorts`, `twoProportionSignificance`, `detectRetentionDrift`,
+`planScenarioRetentionUpdate`, `planRetentionExperiment`, `assignExperimentGroup`을
+내보낸다. [`telemetry-loop-sdk.ts`](../examples/telemetry/telemetry-loop-sdk.ts)는 가상
+코호트로 이 함수들을 실행한다.
+
+```sh
+bun --preload @ttsc/unplugin/bun-register examples/telemetry/telemetry-loop-sdk.ts
+```
+
+## 개인정보와 익명화
+
+모든 명령은 로컬 파일을 읽고 로컬에 보고서를 쓴다. 아무것도 업로드하지 않으며 가정을
+읽을 때 시나리오 플러그인도 실행하지 않는다. 그래도 입력은 실제 플레이어를 나타내므로
+개인정보가 필요 없도록 export를 준비한다.
+
+- `userId`는 가명을 쓴다. 예를 들어 export 밖에 보관한 비밀 솔트로 내부 id의 HMAC을
+  만든다. 이메일·이름·기기 또는 광고 id·계정 id·IP 주소는 내보내지 않는다. 알 수 없는
+  열을 거부하는 이유도 이것이다.
+- 계약에 필요한 것만 내보낸다. 설치 후 경과 일수, 활동 여부, 선택적으로 일 단위로 집계한
+  수익과 획득 비용이다. 이벤트 로그, 위치, 하루보다 세밀한 시각은 내보내지 않는다.
+- 수익은 통화의 최소 단위로 반올림하고 자유 입력 필드는 지운다.
+- 코호트를 충분히 크게 유지한다. 몇 명뿐인 코호트는 개인을 특정할 수 있고, 리텐션도
+  너무 흔들려서 판단 근거가 되지 못한다.
+- export와 보고서는 원본 데이터와 같은 접근 통제 아래 보관한다. 경보에는 플레이어 행이
+  아니라 드리프트 보고서만 담는다.
+- 코호트를 시간에 걸쳐 연결할 필요가 없으면 export마다 솔트를 바꾸고, 한 실험 기간
+  동안에만 고정한다.
