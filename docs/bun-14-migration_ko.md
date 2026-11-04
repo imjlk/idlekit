@@ -8,7 +8,7 @@ English version: [bun-14-migration.md](./bun-14-migration.md)
 
 Bun 설치 방식에 맞게 업그레이드하세요. Bun 설치 스크립트로 설치했다면 `bun upgrade`, Homebrew라면 `brew upgrade bun`, Scoop이라면 `scoop update bun`을 사용합니다. 특정 버전 설치 방법은 [Bun 공식 설치 안내](https://bun.com/docs/installation#upgrading)에서 확인할 수 있습니다.
 
-Windows PATH를 변경했다면 새 터미널을 열고, 실제 애플리케이션을 시작하는 환경에서 `bun --version`을 실행하세요. 결과는 1.4.2 이상이어야 합니다. 버전 관리자와 CI의 pin도 함께 변경하세요. 이 저장소는 Linux와 Windows에서 Bun 1.4.2를 검증합니다.
+Windows PATH를 변경했다면 새 터미널을 열고, 실제 애플리케이션을 시작하는 환경에서 `bun --version`을 실행하세요. 결과는 1.4.2 이상이어야 합니다. 버전 관리자와 CI의 pin도 함께 변경하세요. 이 저장소는 Linux와 Windows에서 개발 pin인 Bun 1.4.4를 검증합니다.
 
 저장소에서 작업한다면 해당 런타임을 활성화한 뒤 실행하세요.
 
