@@ -81,6 +81,8 @@ export * from "./sim/analysis/jevAdvisory";
 
 export * from "./report/timeline";
 export * from "./report/compare";
+export * from "./report/chart";
+export * from "./report/chartSvg";
 
 export * from "./utils/deepClone";
 export * from "./ltv/public";

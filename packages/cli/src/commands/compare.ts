@@ -1,5 +1,7 @@
 import { defineCommand, option } from "../runtime/command";
 import {
+  buildCompareKpiRows,
+  type ProgressionChartData,
   compareScenarios,
   compileScenario,
   createRunFactory,
@@ -33,6 +35,15 @@ import { writeCommandReplayArtifact } from "../io/replayPolicy";
 import { readScenarioFile } from "../io/readScenario";
 import { writeOutput } from "../io/writeOutput";
 import { renderCompareMarkdown } from "../io/renderCompare";
+import {
+  chartMaxPoints,
+  chartOptions,
+  chartRequested,
+  chartTrace,
+  createChartData,
+  progressionChart,
+  writeChartArtifacts,
+} from "../lib/charts";
 
 const strategySchema = z.enum(["greedy", "planner", "scripted"]).optional();
 const compareMetricSchema = z.enum([
@@ -218,13 +229,38 @@ function measureScenario<N>(args: {
   E: Engine<N>;
   targetWorth?: string;
   maxDuration: number;
+  chartMaxPoints?: number;
 }) {
   const requireFinite = (amount: N, label: string): N => requireFiniteAmount(args.E, amount, label);
   // The full-duration economy run is checked where its end values are compared, not here, so an ETA or design
   // metric that never reads them is not failed by a later overflow.
   const runInput = args.compiled.fresh("economy");
-  const run = runScenario(runInput);
+  // A chart traces the economy run at a bounded interval. The trace records states only.
+  const charting = args.chartMaxPoints !== undefined
+    ? chartTrace({
+        durationSec: runInput.run.durationSec,
+        maxSteps: runInput.run.maxSteps,
+        stepSec: runInput.run.stepSec,
+        maxPoints: args.chartMaxPoints,
+      })
+    : undefined;
+  const run = runScenario(charting ? { ...runInput, run: { ...runInput.run, trace: charting.trace } } : runInput);
   const endWorth = runInput.model.netWorth?.(runInput.ctx, run.end) ?? run.end.wallet.money;
+  const valued = runInput.model.netWorth;
+  const progression: ProgressionChartData | undefined = charting && args.chartMaxPoints !== undefined
+    ? progressionChart({
+        E: args.E,
+        states: run.trace ?? [run.start, run.end],
+        startT: run.start.t,
+        unit: runInput.ctx.unit.code,
+        primarySeries: valued ? "netWorth" : "money",
+        netWorth: valued ? (state) => valued.call(runInput.model, runInput.ctx, state) : undefined,
+        milestones: (run.observation?.milestones ?? []).map((m) => ({ key: m.key, t: m.firstSeenT - run.start.t, source: m.source })),
+        droppedMilestones: run.observation?.droppedMilestones ?? 0,
+        maxPoints: args.chartMaxPoints,
+        traceEverySteps: charting.everySteps,
+      })
+    : undefined;
 
   let etaSeconds: number | undefined;
   let etaReached: boolean | undefined;
@@ -258,6 +294,7 @@ function measureScenario<N>(args: {
 
   return {
     run,
+    progression,
     endMoney: run.end.wallet.money.amount,
     endNetWorth: endWorth.amount,
     droppedRate: run.stats?.money.droppedRate ?? 0,
@@ -698,10 +735,12 @@ export default defineCommand({
     }),
     out: option(z.string().optional(), { description: "Output path" }),
     format: option(z.enum(["json", "md", "csv"]).default("json"), { description: "Output format" }),
+    ...chartOptions(),
   },
   async handler({ flags, positional }) {
     const aPath = positional[0];
     const bPath = positional[1];
+    const maxPoints = chartRequested(flags) ? chartMaxPoints(flags) : undefined;
     if (!aPath || !bPath) {
       throw usageError(
         "Usage: idk compare <A> <B> [--metric ...] [--plugin ...] [--target-worth <NumStr>]",
@@ -788,12 +827,14 @@ export default defineCommand({
       E,
       targetWorth: flags["target-worth"],
       maxDuration: flags["max-duration"],
+      chartMaxPoints: maxPoints,
     });
     const mb = measureScenario({
       compiled: bCompiled,
       E,
       targetWorth: flags["target-worth"],
       maxDuration: flags["max-duration"],
+      chartMaxPoints: maxPoints,
     });
     const designCache = new Map<
       CompareMetric,
@@ -925,6 +966,22 @@ export default defineCommand({
             },
           }
         : singleResults[0]!;
+
+    if (maxPoints !== undefined) {
+      await writeChartArtifacts(
+        flags,
+        createChartData({
+          kind: "compare",
+          title: `Compare: A vs B`,
+          source: { command: "compare", scenario: [aPath, bPath], seed, runId },
+          compare: {
+            labels: { a: aPath, b: bPath },
+            kpis: buildCompareKpiRows(singleResults),
+            ...(ma.progression && mb.progression ? { progression: { a: ma.progression, b: mb.progression } } : {}),
+          },
+        }),
+      );
+    }
 
     if (flags["artifact-out"]) {
       const aAbs = resolve(process.cwd(), aPath);

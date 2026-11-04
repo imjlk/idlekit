@@ -1,3 +1,5 @@
+import { buildCompareKpiRows } from "@idlekit/core";
+import { compareDecisionHints, renderDecisionHints } from "../lib/decisionHints";
 function record(value: unknown): Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
     ? value as Record<string, unknown> : {};
@@ -87,5 +89,12 @@ export function renderCompareMarkdown(args: {
     lines.push("- Resolve undetermined measurements or decisions before relying on those metrics.");
   }
   lines.push("- For a strategy comparison, use matching horizons, initial states, session patterns, and seed policies to interpret the measured differences.");
+  lines.push(
+    "",
+    ...renderDecisionHints(
+      compareDecisionHints({ rows: buildCompareKpiRows(args.results), warnings: args.warnings ?? [] }),
+      { verify: "Rerun the leading side with `idk experiment` to see which parameter drives the difference." },
+    ),
+  );
   return `${lines.join("\n")}\n`;
 }

@@ -10,6 +10,7 @@ import {
   validateScenarioV1,
   type BalanceCheckReportV1,
 } from "@idlekit/core";
+import { experienceDecisionHints, renderDecisionHints, type DecisionHints } from "../lib/decisionHints";
 import { resolve } from "path";
 import { z } from "zod";
 import { pluginOptions, type PluginOptionFlags } from "./_shared/plugin";
@@ -55,7 +56,7 @@ type EvaluateFlags = PluginOptionFlags &
     "fail-on": string;
   }>;
 
-function renderEvaluateMarkdown(output: Record<string, any>, unitCode: string): string {
+function renderEvaluateMarkdown(output: Record<string, any>, unitCode: string, hints?: DecisionHints): string {
   const sections = [
     "# Evaluate Report",
     "",
@@ -86,6 +87,15 @@ function renderEvaluateMarkdown(output: Record<string, any>, unitCode: string): 
     ...(output.ltv.horizons ?? []).map((point: any) =>
       `| ${point.horizon} | ${point.endNetWorth} | ${point.monetization?.cumulativeLtvPerUser ?? "n/a"} |`),
   ];
+
+  if (hints) {
+    sections.push(
+      "",
+      ...renderDecisionHints(hints, {
+        verify: "Confirm a direction with a matched `idk compare` or `idk experiment` run before changing the design.",
+      }),
+    );
+  }
 
   if (output.files) {
     sections.push("", "## Saved Files", "");
@@ -425,6 +435,18 @@ export default defineCommand({
         : {}),
     };
 
+    const hints = experienceDecisionHints({
+      intent: experience.design.intent,
+      perceived: snapshot.perceived,
+      growth: snapshot.growth,
+      milestones: snapshot.milestones,
+      session: snapshot.session,
+      endNetWorthLog10: snapshot.endNetWorthLog10,
+      monteCarlo,
+      uxFlags: simulate.uxFlags,
+      monetizationConfigured: valid.scenario.monetization !== undefined,
+    });
+
     if (flags["out-dir"]) {
       const outDir = resolve(process.cwd(), flags["out-dir"]);
       await ensureDir(outDir);
@@ -441,14 +463,14 @@ export default defineCommand({
       await writeTextFile(
         summaryPath,
         flags.format === "md"
-          ? `${renderEvaluateMarkdown(output, scenario.unit.code)}\n`
+          ? `${renderEvaluateMarkdown(output, scenario.unit.code, hints)}\n`
           : `${JSON.stringify({ ...output, _meta: evaluateMeta }, null, 2)}\n`,
       );
     }
 
     await writeOutput({
       format: flags.format,
-      data: flags.format === "md" ? renderEvaluateMarkdown(output, scenario.unit.code) : output,
+      data: flags.format === "md" ? renderEvaluateMarkdown(output, scenario.unit.code, hints) : output,
       meta: evaluateMeta,
     });
     if (balance?.exitCode === 2) process.exit(2);

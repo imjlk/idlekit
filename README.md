@@ -158,6 +158,7 @@ Continue with the installed CLI flow above. Packing runs the build and rewrites 
 - Editable balance sheets, pacing targets, and sensitivity: [docs/balance-sheets.md](./docs/balance-sheets.md)
 - Product roadmap: [docs/roadmap.md](./docs/roadmap.md)
 - Command reference: [docs/usage-guide.md](./docs/usage-guide.md)
+- Charts (SVG) and decision hints: [docs/chart-interpretation.md](./docs/chart-interpretation.md)
 - Money package guide: [docs/money-library.md](./docs/money-library.md)
 - Plugin and adapter guide: [docs/plugin-and-adapter.md](./docs/plugin-and-adapter.md)
 - Scenario and tuning spec: [docs/scenario-and-tuning.md](./docs/scenario-and-tuning.md)

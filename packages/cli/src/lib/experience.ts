@@ -21,6 +21,7 @@ import {
   type SimContext,
   type SimState,
 } from "@idlekit/core";
+import { experienceDecisionHints, renderDecisionHints } from "./decisionHints";
 
 export type ExperienceSeries = "money" | "netWorth";
 
@@ -155,7 +156,7 @@ function segmentScenario<N, U extends string, Vars>(
 }
 
 // The session trace joins every active block. Each point keeps the context of the block that traced it.
-function growthScenario<N, U extends string, Vars>(
+export function growthScenario<N, U extends string, Vars>(
   scenario: CompiledScenario<N, U, Vars>,
   session: SessionRunResult<N, U, Vars>,
 ): CompiledScenario<N, U, Vars> {
@@ -751,6 +752,21 @@ export function renderExperienceMarkdown(args: {
       checks.push("- Resolve failed or unsupported draws before relying on timing statistics for the full cohort.");
     }
   }
+  lines.push(
+    "",
+    ...renderDecisionHints(
+      experienceDecisionHints({
+        intent: args.intent,
+        perceived: snapshot.perceived,
+        growth: snapshot.growth,
+        milestones: snapshot.milestones,
+        session: snapshot.session,
+        endNetWorthLog10: snapshot.endNetWorthLog10,
+        monteCarlo,
+      }),
+      { verify: "Confirm a direction with a matched `idk compare` or `idk experiment` run before changing the design." },
+    ),
+  );
   lines.push("", "## Next checks", "", ...checks);
 
   return `${lines.join("\n")}\n`;

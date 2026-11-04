@@ -1,0 +1,6 @@
+---
+npm/@idlekit/core: minor
+npm/@idlekit/cli: minor
+---
+
+Charts and decision hints without a GUI. `simulate`, `experience`, and `compare` take `--chart-out <file.svg>`, `--chart-data-out <file.json>`, and `--chart-max-points <n>` (default 512). They write a dependency-free SVG of money, net worth, and growth rate with milestone markers, plus A/B KPI change bars on `compare`. `experiment` writes a local-sensitivity heatmap. The chart data follows the versioned `idlekit.chart-data.v1` contract in `docs/schemas/chart-data.v1.schema.json`. Charted runs sample the runner trace and downsample with LTTB, so memory stays bounded; stdout results, `--out`, replay artifacts, and run hashes are unchanged, and replay commands leave the chart flags out. `experience --format md`, `review evaluate`, `review compare`, and `experiment --format md` add a `## Decision hints` section with bottlenecks, an adjustment direction, and a risk summary computed from the same report. `experiment --format md` now renders an Experiment Report with candidate, sensitivity, and hint sections and keeps the full artifact JSON in a closing `<details>` block; `--format json` is unchanged. Core exports `buildProgressionChartData`, `buildCompareKpiRows`, `buildSensitivityChartData`, `downsampleLttb`, and `renderChartSvg`.
