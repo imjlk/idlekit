@@ -1,0 +1,180 @@
+{
+  "schemaVersion": 1,
+  "meta": {
+    "id": "factory-chain-v1",
+    "title": "Factory Chain V1",
+    "description": "Built-in production-chain model: ore to ingots to gears to coins, with build costs, batch times, level gates, a storage cap, and steady-state bottleneck quotes.",
+    "tags": [
+      "builtin-model",
+      "production-chain",
+      "worked-example"
+    ]
+  },
+  "unit": {
+    "code": "COIN",
+    "symbol": "C"
+  },
+  "policy": {
+    "mode": "accumulate",
+    "maxLogGap": 14
+  },
+  "model": {
+    "id": "production-chain",
+    "version": 1,
+    "params": {
+      "primary": {
+        "idleIncome": "2"
+      },
+      "resources": [
+        {
+          "id": "ore",
+          "valueInPrimary": 0.5
+        },
+        {
+          "id": "ingot",
+          "valueInPrimary": 2.5,
+          "cap": "200"
+        },
+        {
+          "id": "gear",
+          "valueInPrimary": 12
+        }
+      ],
+      "recipes": [
+        {
+          "id": "mine",
+          "outputs": {
+            "ore": "1"
+          },
+          "timeSec": 1,
+          "build": {
+            "currency": "primary",
+            "base": "10",
+            "growth": 1.12
+          }
+        },
+        {
+          "id": "smelter",
+          "inputs": {
+            "ore": "2"
+          },
+          "outputs": {
+            "ingot": "1"
+          },
+          "timeSec": 2,
+          "build": {
+            "currency": "primary",
+            "base": "40",
+            "growth": 1.15
+          },
+          "unlock": [
+            {
+              "recipe": "mine",
+              "level": 3
+            }
+          ]
+        },
+        {
+          "id": "assembler",
+          "inputs": {
+            "ingot": "3"
+          },
+          "outputs": {
+            "gear": "1"
+          },
+          "timeSec": 4,
+          "build": {
+            "currency": "primary",
+            "base": "150",
+            "growth": 1.18
+          },
+          "unlock": [
+            {
+              "recipe": "smelter",
+              "level": 2
+            }
+          ]
+        },
+        {
+          "id": "market",
+          "inputs": {
+            "gear": "1"
+          },
+          "outputs": {
+            "primary": "30"
+          },
+          "timeSec": 2,
+          "build": {
+            "currency": "primary",
+            "base": "400",
+            "growth": 1.2
+          },
+          "maxLevel": 20,
+          "unlock": [
+            {
+              "recipe": "assembler",
+              "level": 1
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "initial": {
+    "t": 0,
+    "wallet": {
+      "unit": "COIN",
+      "amount": "0",
+      "bucket": "0"
+    },
+    "vars": {
+      "levels": {
+        "mine": 0,
+        "smelter": 0,
+        "assembler": 0,
+        "market": 0
+      },
+      "stock": {
+        "ore": "0",
+        "ingot": "0",
+        "gear": "0"
+      }
+    },
+    "prestige": {
+      "count": 0,
+      "points": "0",
+      "multiplier": "1"
+    }
+  },
+  "clock": {
+    "stepSec": 1,
+    "durationSec": 3600
+  },
+  "strategy": {
+    "id": "greedy"
+  },
+  "analysis": {
+    "eta": {
+      "mode": "simulate"
+    },
+    "growth": {
+      "windowSec": 60
+    }
+  },
+  "outputs": {
+    "format": "json",
+    "report": {
+      "checkpointsSec": [
+        60,
+        300,
+        900,
+        1800,
+        3600
+      ],
+      "includeTrace": true,
+      "traceEverySteps": 10,
+      "includeGrowth": true,
+      "includeUX": true
+    }
+  }
+}

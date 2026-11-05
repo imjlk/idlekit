@@ -702,6 +702,25 @@ async function verifyCalibrationExamples(): Promise<void> {
   }
 }
 
+/** Built-in model tutorials: each must validate and simulate through the CLI with no plugin. */
+async function verifyBuiltinModelTutorials(): Promise<void> {
+  const tutorials = [
+    ["../../examples/tutorials/26-exponential-forge-v1.json", "exponential"],
+    ["../../examples/tutorials/27-prestige-loop-v1.json", "prestige"],
+    ["../../examples/tutorials/28-twin-currency-v1.json", "multi-currency"],
+    ["../../examples/tutorials/29-factory-chain-v1.json", "production-chain"],
+  ] as const;
+  const listed = asRecord(runCliJson(["models", "list", "--format", "json"]));
+  const ids = (listed.models as JSONValue[]).map((row) => asRecord(row).id);
+  for (const [path, model] of tutorials) {
+    assert(ids.includes(model), `models list must include the built-in '${model}' model`);
+    assert(runCli(["validate", path]).includes("OK:"), `${path} must validate`);
+    const simulated = asRecord(runCliJson(["simulate", path, "--duration", "600", "--format", "json"]));
+    const worth = Number(simulated.endNetWorth);
+    assert(Number.isFinite(worth) && worth > 0, `${path} must end with a finite positive net worth`);
+  }
+}
+
 async function verifyResetCycleExample(): Promise<void> {
   const command = "bun examples/reset-cycle/save-resume.ts";
   for (const doc of ["examples/reset-cycle/README.md", "examples/reset-cycle/README_ko.md"]) {
@@ -735,6 +754,7 @@ async function main(): Promise<void> {
   await verifyExperienceExamples();
   await verifyResetCycleExample();
   await verifyIntroTrack();
+  await verifyBuiltinModelTutorials();
   if (!isQuick) await verifyPluginTrack();
   console.log(`docs verification passed (${isQuick ? "quick" : "full"})`);
 }

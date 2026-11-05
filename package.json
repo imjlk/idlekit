@@ -64,6 +64,8 @@
     "toolchain:prepare": "bun tools/toolchain-prepare.ts",
     "toolchain:smoke": "bun tools/toolchain-smoke.ts",
     "contracts:generate": "bun --preload @ttsc/unplugin/bun-register tools/generate-contracts.ts",
+    "models:schemas": "bun tools/model-schemas.ts --write",
+    "models:schemas:check": "bun tools/model-schemas.ts",
     "contracts:check": "bun --preload @ttsc/unplugin/bun-register tools/contracts-check.ts"
   },
   "devDependencies": {

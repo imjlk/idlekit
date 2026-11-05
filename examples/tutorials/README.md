@@ -49,6 +49,19 @@ calculations in that engine. From the repository root:
 bun run --cwd packages/cli dev -- tune ../../examples/tutorials/23-prestige-reactor-v1.json --tune ../../examples/tutorials/25-prestige-reactor-tune.json --engine breakInfinity --plugin ../../examples/plugins/custom-econ-plugin.ts --allow-plugin true --format json
 ```
 
+## Built-in model examples
+
+These run without a plugin. See [Built-in models](../../docs/models/README.md).
+
+- `26-exponential-forge-v1.json`: `exponential` generator with geometric income and cost, a level cap, and a pow soft cap
+- `27-prestige-loop-v1.json`: `prestige` model with root-scaled points, an additive multiplier, a minimum run time, and kept levels
+- `28-twin-currency-v1.json`: `multi-currency` model with capped gems, a gem-paid generator, a fee market, and overflow auto-conversion
+- `29-factory-chain-v1.json`: `production-chain` model from ore to coins with batch times, level gates, a storage cap, and bottleneck quotes
+
+```bash
+bun run --cwd packages/cli dev -- simulate ../../examples/tutorials/26-exponential-forge-v1.json --format md
+```
+
 ## Recommended order
 
 1. `11 -> 12 -> 13`: create your own scenario and compare strategies.
