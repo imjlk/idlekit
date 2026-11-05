@@ -25,6 +25,10 @@ These are the canonical JSON output contracts for the CLI.
 
 `chart-data.v1.schema.json` is the `idlekit.chart-data.v1` chart data that `--chart-data-out` writes. It is not a stdout JSON output and carries no `_meta`. See [Charts and decision hints](../chart-interpretation.md).
 
+## Built-in model params
+
+`docs/schemas/models/<id>.params.v1.schema.json` is the structural schema of `scenario.model.params` for each built-in model: `exponential`, `prestige`, `multi-currency`, and `production-chain`. They are generated from the models' zod schemas with `bun run models:schemas` and checked with `bun run models:schemas:check` and a core unit test. `validateScenarioV1` still checks cross-references, duplicate ids, recipe cycles, and `> 0` amounts. See [Built-in models](../models/README.md).
+
 ## Notes
 
 - Schemas apply to `--format json` outputs

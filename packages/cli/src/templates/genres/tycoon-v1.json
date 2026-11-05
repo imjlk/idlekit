@@ -1,0 +1,161 @@
+{
+  "schemaVersion": 1,
+  "meta": {
+    "id": "tycoon-v1",
+    "title": "Tycoon Genre V1",
+    "description": "Genre preset: several businesses with rising income tiers, a capped premium currency from a slow investor line, and a gem market that converts overflow. Mid-length sessions.",
+    "tags": [
+      "genre",
+      "tycoon",
+      "multi-currency"
+    ]
+  },
+  "unit": {
+    "code": "CASH",
+    "symbol": "$"
+  },
+  "policy": {
+    "mode": "accumulate",
+    "maxLogGap": 14
+  },
+  "model": {
+    "id": "multi-currency",
+    "version": 1,
+    "params": {
+      "primary": {
+        "idleIncome": "1"
+      },
+      "currencies": [
+        {
+          "id": "gold",
+          "initial": "0",
+          "cap": "50",
+          "valueInPrimary": 25,
+          "idleIncome": "0.005"
+        }
+      ],
+      "generators": [
+        {
+          "id": "lemonade",
+          "produces": "primary",
+          "incomePerLevel": "1",
+          "costCurrency": "primary",
+          "costBase": "4",
+          "costGrowth": 1.07
+        },
+        {
+          "id": "newspaper",
+          "produces": "primary",
+          "incomePerLevel": "8",
+          "costCurrency": "primary",
+          "costBase": "60",
+          "costGrowth": 1.15
+        },
+        {
+          "id": "car-wash",
+          "produces": "primary",
+          "incomePerLevel": "45",
+          "costCurrency": "primary",
+          "costBase": "720",
+          "costGrowth": 1.14
+        },
+        {
+          "id": "investor",
+          "produces": "gold",
+          "incomePerLevel": "0.01",
+          "costCurrency": "primary",
+          "costBase": "500",
+          "costGrowth": 1.35,
+          "maxLevel": 20
+        },
+        {
+          "id": "bank",
+          "produces": "primary",
+          "incomePerLevel": "260",
+          "costCurrency": "gold",
+          "costBase": "8",
+          "costGrowth": 1.3
+        }
+      ],
+      "exchanges": [
+        {
+          "id": "sell-gold",
+          "from": "gold",
+          "to": "primary",
+          "rate": 20,
+          "fee": 0.15,
+          "lot": "1"
+        }
+      ],
+      "autoConvert": [
+        {
+          "exchange": "sell-gold",
+          "mode": "overflow"
+        }
+      ]
+    }
+  },
+  "initial": {
+    "t": 0,
+    "wallet": {
+      "unit": "CASH",
+      "amount": "0",
+      "bucket": "0"
+    },
+    "vars": {
+      "levels": {
+        "lemonade": 0,
+        "newspaper": 0,
+        "car-wash": 0,
+        "investor": 0,
+        "bank": 0
+      },
+      "balances": {
+        "gold": "0"
+      }
+    },
+    "prestige": {
+      "count": 0,
+      "points": "0",
+      "multiplier": "1"
+    }
+  },
+  "clock": {
+    "stepSec": 1,
+    "durationSec": 7200
+  },
+  "strategy": {
+    "id": "greedy"
+  },
+  "analysis": {
+    "eta": {
+      "mode": "simulate"
+    },
+    "growth": {
+      "windowSec": 60
+    }
+  },
+  "outputs": {
+    "format": "json",
+    "report": {
+      "checkpointsSec": [
+        300,
+        900,
+        1800,
+        3600,
+        7200
+      ],
+      "includeTrace": true,
+      "traceEverySteps": 10,
+      "includeGrowth": true,
+      "includeUX": true
+    }
+  },
+  "design": {
+    "intent": "scale-fantasy",
+    "sessionPattern": {
+      "id": "twice-daily",
+      "days": 1
+    }
+  }
+}

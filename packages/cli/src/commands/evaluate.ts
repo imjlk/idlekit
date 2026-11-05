@@ -13,6 +13,7 @@ import {
 import { experienceDecisionHints, renderDecisionHints, type DecisionHints } from "../lib/decisionHints";
 import { resolve } from "path";
 import { z } from "zod";
+import { seedOption } from "./_shared/seed";
 import { pluginOptions, type PluginOptionFlags } from "./_shared/plugin";
 import { loadRegistriesFromFlags } from "./_shared/plugin";
 import { ltvStageInputs, runLtvAnalysis } from "./ltv";
@@ -157,7 +158,7 @@ export default defineCommand({
     draws: option(z.coerce.number().int().positive().optional(), {
       description: "Monte Carlo draw count for experience",
     }),
-    seed: option(z.coerce.number().optional(), { description: "Deterministic seed override" }),
+    seed: seedOption("Deterministic seed override"),
     strategy: option(strategySchema, {
       description: "Registered strategy id. Builtins remain greedy, planner, and scripted. Unknown ids are rejected.",
     }),

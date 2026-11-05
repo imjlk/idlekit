@@ -4,6 +4,7 @@ import { usageError } from "../errors";
 import type { OutputMeta } from "./outputMeta";
 import { writeStdout, writeTextFile } from "../runtime/bun";
 import { invocationInputCandidates } from "../runtime/invocation";
+import { displayDecimals } from "./displayNumber";
 
 export type OutputFormat = "json" | "md" | "csv";
 
@@ -41,8 +42,10 @@ function toCsv(data: unknown): string {
   return rows.join("\n");
 }
 
-function toMarkdown(data: unknown): string {
-  if (typeof data === "string") return data;
+/** Markdown is human output: decimals follow the display policy in `displayNumber.ts`. */
+function toMarkdown(input: unknown): string {
+  if (typeof input === "string") return input;
+  const data = displayDecimals(input);
   if (!Array.isArray(data)) {
     return `\`\`\`json\n${JSON.stringify(data, null, 2)}\n\`\`\``;
   }

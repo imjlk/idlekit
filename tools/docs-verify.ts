@@ -702,6 +702,57 @@ async function verifyCalibrationExamples(): Promise<void> {
   }
 }
 
+/** Built-in model tutorials: each must validate and simulate through the CLI with no plugin. */
+async function verifyBuiltinModelTutorials(): Promise<void> {
+  const tutorials = [
+    ["../../examples/tutorials/26-exponential-forge-v1.json", "exponential"],
+    ["../../examples/tutorials/27-prestige-loop-v1.json", "prestige"],
+    ["../../examples/tutorials/28-twin-currency-v1.json", "multi-currency"],
+    ["../../examples/tutorials/29-factory-chain-v1.json", "production-chain"],
+    ["../../examples/tutorials/30-lucky-forge-v1.json", "exponential"],
+  ] as const;
+  const listed = asRecord(runCliJson(["models", "list", "--format", "json"]));
+  const ids = (listed.models as JSONValue[]).map((row) => asRecord(row).id);
+  for (const [path, model] of tutorials) {
+    assert(ids.includes(model), `models list must include the built-in '${model}' model`);
+    assert(runCli(["validate", path]).includes("OK:"), `${path} must validate`);
+    const simulated = asRecord(runCliJson(["simulate", path, "--duration", "600", "--format", "json"]));
+    const worth = Number(simulated.endNetWorth);
+    assert(Number.isFinite(worth) && worth > 0, `${path} must end with a finite positive net worth`);
+  }
+}
+
+/** Advanced analysis docs: both languages name the commands, and a small reset-policy scan reads a positive rate. */
+async function verifyAdvancedAnalysisDocs(): Promise<void> {
+  for (const doc of ["docs/advanced-analysis.md", "docs/advanced-analysis_ko.md"]) {
+    const text = await readText(resolve(ROOT, doc));
+    for (const command of ["idk sensitivity", "idk optimize", "idk reset-policy"]) {
+      assert(text.includes(command), `${doc} must document ${command}`);
+    }
+  }
+  const out = asRecord(
+    runCliJson([
+      "reset-policy",
+      "../../examples/tutorials/27-prestige-loop-v1.json",
+      "--scan",
+      "600..1200",
+      "--step",
+      "600",
+      "--horizon",
+      "3000",
+      "--format",
+      "json",
+    ]),
+  );
+  const insights = asRecord(out.insights as JSONValue);
+  const rows = insights.rows as JSONValue[];
+  assert(rows.length === 2, "reset-policy docs scan must read two intervals");
+  for (const row of rows) {
+    const rate = asRecord(row).rewardPerHour;
+    assert(typeof rate === "number" && rate > 0, "reset-policy docs scan must read a positive reward per hour");
+  }
+}
+
 async function verifyResetCycleExample(): Promise<void> {
   const command = "bun examples/reset-cycle/save-resume.ts";
   for (const doc of ["examples/reset-cycle/README.md", "examples/reset-cycle/README_ko.md"]) {
@@ -764,6 +815,8 @@ async function main(): Promise<void> {
   await verifyResetCycleExample();
   await verifyIntroTrack();
   await verifyChartExamples();
+  await verifyBuiltinModelTutorials();
+  await verifyAdvancedAnalysisDocs();
   if (!isQuick) await verifyPluginTrack();
   console.log(`docs verification passed (${isQuick ? "quick" : "full"})`);
 }

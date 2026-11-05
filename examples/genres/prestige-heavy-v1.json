@@ -1,0 +1,121 @@
+{
+  "schemaVersion": 1,
+  "meta": {
+    "id": "prestige-heavy-v1",
+    "title": "Prestige Heavy Genre V1",
+    "description": "Genre preset: short runs that reset often. The scripted strategy takes the reset as soon as it is offered and buys levels otherwise, so prestige points and the multiplier carry progress.",
+    "tags": [
+      "genre",
+      "prestige-heavy",
+      "prestige",
+      "reset-cycle"
+    ]
+  },
+  "unit": {
+    "code": "SOUL",
+    "symbol": "S"
+  },
+  "policy": {
+    "mode": "accumulate",
+    "maxLogGap": 14
+  },
+  "model": {
+    "id": "prestige",
+    "version": 1,
+    "params": {
+      "generator": {
+        "idleIncome": "1",
+        "baseIncome": "1",
+        "growthRate": 1.04,
+        "costBase": "10",
+        "costGrowth": 1.14
+      },
+      "prestige": {
+        "requirement": "5e3",
+        "formula": {
+          "kind": "root",
+          "scale": 1,
+          "exponent": 0.5
+        },
+        "multiplierPerPoint": 0.1,
+        "multiplierMode": "additive",
+        "minRunSec": 300,
+        "minGain": 2,
+        "starterCash": "25",
+        "keepLevels": 3
+      }
+    }
+  },
+  "initial": {
+    "t": 0,
+    "wallet": {
+      "unit": "SOUL",
+      "amount": "0",
+      "bucket": "0"
+    },
+    "vars": {
+      "level": 0,
+      "runStartT": 0
+    },
+    "prestige": {
+      "count": 0,
+      "points": "0",
+      "multiplier": "1"
+    }
+  },
+  "clock": {
+    "stepSec": 1,
+    "durationSec": 7200
+  },
+  "strategy": {
+    "id": "scripted",
+    "params": {
+      "schemaVersion": 1,
+      "program": [
+        {
+          "actionId": "prestige.reset"
+        },
+        {
+          "actionId": "buy.generator",
+          "bulkSize": 1
+        }
+      ],
+      "onCannotApply": "skip",
+      "loop": true
+    }
+  },
+  "analysis": {
+    "eta": {
+      "mode": "simulate"
+    },
+    "growth": {
+      "windowSec": 60
+    }
+  },
+  "outputs": {
+    "format": "json",
+    "report": {
+      "checkpointsSec": [
+        300,
+        900,
+        1800,
+        3600,
+        7200
+      ],
+      "includeTrace": true,
+      "traceEverySteps": 10,
+      "includeGrowth": true,
+      "includeUX": true
+    }
+  },
+  "constraints": {
+    "minPrestigeIntervalSec": 300
+  },
+  "design": {
+    "intent": "strategic-optimization",
+    "sessionPattern": {
+      "id": "always-on",
+      "days": 1
+    }
+  }
+}

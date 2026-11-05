@@ -1,0 +1,6 @@
+---
+npm/@idlekit/core: minor
+npm/@idlekit/cli: minor
+---
+
+Add advanced analysis. The `exponential` and `prestige` models take an optional seeded `stochastic` block (critical ticks, Poisson drops, timed events) that replays the same luck for a seed and varies it across Monte Carlo draws. `idk experience` Monte Carlo output adds `intervals` with mean and quantile confidence intervals (`summarizeSamples`). New `idk sensitivity` runs budgeted Morris or Sobol global sensitivity with a parameter importance ranking per objective, and `idk optimize` searches a design space by grid, random, or GA against milestone-time, session-pacing, net-worth, or LTV objectives with `--max-runs`, `--time-limit`, and a recorded seed; both read a design-study spec. New `idk reset-policy` wraps `analyzeResetPolicies` with reward-per-hour, ROI against never resetting, timing window, and stability insights, and core adds `analyzeResetLayers` as a multi-layer hook. `idk prestige-cycle` now counts the reset available at the end of each interval, so `pointsPerHour` no longer reads 0 when no reset is committed inside the interval. Tutorial `30-lucky-forge-v1.json` and `docs/advanced-analysis.md` show the new pieces.

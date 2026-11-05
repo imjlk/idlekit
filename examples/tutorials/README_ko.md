@@ -43,6 +43,20 @@ bun run --cwd packages/cli dev -- tune ../../examples/tutorials/23-prestige-reac
 각 세트는 baseline, 비교안, TuneSpec 순서다. 목적에 맞는 세트 하나부터 고른다.
 구형 설계·장르 예제 `05`~`10`은 위 세트로 통합했다. 남은 파일의 번호는 유지한다.
 
+## 빌트인 모델 예제
+
+플러그인 없이 실행된다. [빌트인 모델](../../docs/models/README_ko.md)을 참고한다.
+
+- `26-exponential-forge-v1.json`: 수입과 비용이 기하급수로 늘고 레벨 상한과 pow 소프트캡이 있는 `exponential` 생산기
+- `27-prestige-loop-v1.json`: 루트 스케일 포인트, 가산 배율, 최소 런 시간, 유지 레벨을 가진 `prestige` 모델
+- `28-twin-currency-v1.json`: 상한 있는 보석, 보석으로 사는 생산기, 수수료 시장, 넘침 자동 변환을 가진 `multi-currency` 모델
+- `29-factory-chain-v1.json`: 배치 시간, 레벨 게이트, 저장 상한, 병목 견적을 가진 광석→코인 `production-chain` 모델
+- `30-lucky-forge-v1.json`: 시드 고정 치명타, 상자 드롭, 프렌지 이벤트를 가진 `exponential` 모델. Monte Carlo draw 16개와 신뢰구간으로 읽는다
+
+```bash
+bun run --cwd packages/cli dev -- simulate ../../examples/tutorials/26-exponential-forge-v1.json --format md
+```
+
 ## 개별 명령 익히기
 
 - `01-cafe-baseline.json`: validate, simulate, eta, report

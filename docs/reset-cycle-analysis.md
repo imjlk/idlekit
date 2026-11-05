@@ -15,7 +15,7 @@ Korean version: [reset-cycle-analysis_ko.md](./reset-cycle-analysis_ko.md)
 
 The new statuses are `insufficient-data`, `stable`, `drifting`, `non-stationary`, and `oscillating`. `provedSteadyState` is false. Agreement inside a window is not a mathematical steady state. Evidence that this report matches a fixture is not that proof either.
 
-The new wire object is `ResetPolicyArtifactV1`, schema `idlekit.reset-policy.v1`. It does not copy `breakEvenSec`. Legacy output is not rewritten to hide those fields. `idk prestige-cycle` still calls `analyzePrestigeCycle`.
+The new wire object is `ResetPolicyArtifactV1`, schema `idlekit.reset-policy.v1`. It does not copy `breakEvenSec`. Legacy output is not rewritten to hide those fields. `idk prestige-cycle` still calls `analyzePrestigeCycle`. Its `pointsPerHour` counts committed points plus the reset available at the end of the interval. `idk reset-policy` runs `analyzeResetPolicies` from the CLI and adds ROI, timing-window, and stability insights; see [Advanced analysis](./advanced-analysis.md#reset-policy-idk-reset-policy).
 
 `best` carries the objective and its reading (`flow`, `stock`, or `time`), the scan range, `scope: "scan-range"`, `globalOptimum: false`, the session assumption, and the observation status. Ranking uses `Engine.cmp`. A tie under `toNumber` is not a tie under that compare. The winner is the best scanned candidate, not a global optimum.
 

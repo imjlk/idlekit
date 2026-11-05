@@ -15,6 +15,7 @@ import {
 } from "@idlekit/core";
 import { resolve } from "path";
 import { z } from "zod";
+import { seedOption } from "./_shared/seed";
 import { resolveFastMode } from "../lib/fastMode";
 import { betterFromCmp, formatEtaLabel, toComparableEta } from "./_shared/compareEval";
 import { loadRegistriesFromFlags, pluginOptions } from "./_shared/plugin";
@@ -724,7 +725,7 @@ export default defineCommand({
     "max-duration": option(z.coerce.number().default(86400), {
       description: "Max duration for etaToTargetWorth metric simulation",
     }),
-    seed: option(z.coerce.number().optional(), { description: "Deterministic seed passed to ctx.seed" }),
+    seed: seedOption("Deterministic seed passed to ctx.seed"),
     "run-id": option(z.string().optional(), {
       description: "Optional run identifier used in output metadata",
     }),

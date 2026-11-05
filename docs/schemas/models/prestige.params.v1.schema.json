@@ -1,0 +1,272 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://idlekit.dev/schemas/models/prestige.params.v1.schema.json",
+  "title": "Params of the built-in prestige@1 model.",
+  "type": "object",
+  "properties": {
+    "generator": {
+      "default": {
+        "idleIncome": "1",
+        "baseIncome": "1",
+        "growthRate": 1.07,
+        "costBase": "10",
+        "costGrowth": 1.15
+      },
+      "type": "object",
+      "properties": {
+        "idleIncome": {
+          "default": "1",
+          "type": "string",
+          "pattern": "^[+]?(?:\\d+(?:\\.\\d*)?|\\.\\d+)(?:[eE][+-]?\\d+)?$"
+        },
+        "baseIncome": {
+          "default": "1",
+          "type": "string",
+          "pattern": "^[+]?(?:\\d+(?:\\.\\d*)?|\\.\\d+)(?:[eE][+-]?\\d+)?$"
+        },
+        "growthRate": {
+          "default": 1.07,
+          "type": "number",
+          "minimum": 1
+        },
+        "costBase": {
+          "default": "10",
+          "type": "string",
+          "pattern": "^[+]?(?:\\d+(?:\\.\\d*)?|\\.\\d+)(?:[eE][+-]?\\d+)?$"
+        },
+        "costGrowth": {
+          "default": 1.15,
+          "type": "number",
+          "minimum": 1
+        },
+        "maxLevel": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "softCap": {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "default": "pow",
+              "type": "string",
+              "enum": [
+                "pow",
+                "sqrt",
+                "log"
+              ]
+            },
+            "startsAt": {
+              "type": "string",
+              "pattern": "^[+]?(?:\\d+(?:\\.\\d*)?|\\.\\d+)(?:[eE][+-]?\\d+)?$"
+            },
+            "strength": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 1
+            }
+          },
+          "required": [
+            "startsAt"
+          ]
+        },
+        "stochastic": {
+          "type": "object",
+          "properties": {
+            "crit": {
+              "type": "object",
+              "properties": {
+                "chance": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                },
+                "multiplier": {
+                  "type": "number",
+                  "minimum": 1
+                }
+              },
+              "required": [
+                "chance",
+                "multiplier"
+              ]
+            },
+            "drops": {
+              "default": [],
+              "maxItems": 16,
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9_-]{0,47}$"
+                  },
+                  "ratePerSec": {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  },
+                  "rewardIncomeSec": {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  }
+                },
+                "required": [
+                  "id",
+                  "ratePerSec",
+                  "rewardIncomeSec"
+                ]
+              }
+            },
+            "events": {
+              "default": [],
+              "maxItems": 16,
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9_-]{0,47}$"
+                  },
+                  "windowSec": {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  },
+                  "chance": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  },
+                  "durationSec": {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  },
+                  "incomeMultiplier": {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  }
+                },
+                "required": [
+                  "id",
+                  "windowSec",
+                  "chance",
+                  "durationSec",
+                  "incomeMultiplier"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "prestige": {
+      "default": {
+        "requirement": "1e6",
+        "formula": {
+          "kind": "root",
+          "scale": 1,
+          "exponent": 0.5
+        },
+        "multiplierPerPoint": 0.1,
+        "multiplierMode": "additive",
+        "minRunSec": 0,
+        "minGain": 1,
+        "starterCash": "0",
+        "keepLevels": 0
+      },
+      "type": "object",
+      "properties": {
+        "requirement": {
+          "default": "1e6",
+          "type": "string",
+          "pattern": "^[+]?(?:\\d+(?:\\.\\d*)?|\\.\\d+)(?:[eE][+-]?\\d+)?$"
+        },
+        "formula": {
+          "default": {
+            "kind": "root",
+            "scale": 1,
+            "exponent": 0.5
+          },
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "root"
+                },
+                "scale": {
+                  "default": 1,
+                  "type": "number",
+                  "exclusiveMinimum": 0
+                },
+                "exponent": {
+                  "default": 0.5,
+                  "type": "number",
+                  "exclusiveMinimum": 0,
+                  "maximum": 1
+                }
+              },
+              "required": [
+                "kind"
+              ]
+            },
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "log10"
+                },
+                "scale": {
+                  "default": 1,
+                  "type": "number",
+                  "exclusiveMinimum": 0
+                }
+              },
+              "required": [
+                "kind"
+              ]
+            }
+          ]
+        },
+        "multiplierPerPoint": {
+          "default": 0.1,
+          "type": "number",
+          "minimum": 0
+        },
+        "multiplierMode": {
+          "default": "additive",
+          "type": "string",
+          "enum": [
+            "additive",
+            "compound"
+          ]
+        },
+        "minRunSec": {
+          "default": 0,
+          "type": "number",
+          "minimum": 0
+        },
+        "minGain": {
+          "default": 1,
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "starterCash": {
+          "default": "0",
+          "type": "string",
+          "pattern": "^[+]?(?:\\d+(?:\\.\\d*)?|\\.\\d+)(?:[eE][+-]?\\d+)?$"
+        },
+        "keepLevels": {
+          "default": 0,
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
+    }
+  }
+}

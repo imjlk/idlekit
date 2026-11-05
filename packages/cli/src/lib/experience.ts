@@ -6,6 +6,7 @@ import {
   firstVisibleDistributionSample,
   quantileInclusiveFloor,
   simulateMonteCarlo,
+  summarizeSamples,
   simulateSessionPattern,
   VisibilityTracker,
   type CompiledScenario,
@@ -14,6 +15,7 @@ import {
   type MilestoneReport,
   type RunBindOptions,
   type RunFactoryDeps,
+  type SampleSummaryV1,
   type SessionPatternId,
   type SessionPatternSpec,
   type SessionRunResult,
@@ -79,6 +81,12 @@ export type ExperienceMonteCarloSummary = Readonly<{
   firstVisibleChangeSec: ExperienceNumericSummary | null;
   /** Population and conditional quantiles. A missing change stays censored. */
   firstVisible: DistributionArtifactV1;
+  /** Mean and quantile confidence intervals (95%) over the finite draws of each metric; null without one. */
+  intervals: Readonly<{
+    endNetWorthLog10: SampleSummaryV1 | null;
+    visibleChangesPerMinute: SampleSummaryV1 | null;
+    maxNoRewardGapSec: SampleSummaryV1 | null;
+  }>;
 }>;
 
 function quantile(values: number[], q: number): number | undefined {
@@ -477,7 +485,17 @@ export function summarizeExperienceMonteCarlo<N, U extends string, Vars>(args: {
       horizonSec: censoringHorizon(values),
       populationProbability: 0.95,
     }),
+    intervals: {
+      endNetWorthLog10: intervalSummary(values.map((x) => x.endNetWorthLog10), args.quantiles),
+      visibleChangesPerMinute: intervalSummary(values.map((x) => x.visibleChangesPerMinute), args.quantiles),
+      maxNoRewardGapSec: intervalSummary(values.map((x) => x.maxNoRewardGapSec), args.quantiles),
+    },
   };
+}
+
+function intervalSummary(values: readonly number[], quantiles: readonly number[]): SampleSummaryV1 | null {
+  const finite = values.filter((value) => Number.isFinite(value));
+  return finite.length === 0 ? null : summarizeSamples(finite, { quantiles: distinctQuantiles(quantiles) });
 }
 
 /**
@@ -594,6 +612,28 @@ function formatMetric(value: number | undefined, digits = 2): string {
   return Number(value.toFixed(digits)).toString();
 }
 
+function intervalLines(monteCarlo: ExperienceMonteCarloSummary): string[] {
+  const rows: string[] = [];
+  const range = (interval: { lower: number; upper: number } | null, digits: number) =>
+    interval ? `[${formatMetric(interval.lower, digits)}, ${formatMetric(interval.upper, digits)}]` : "n/a";
+  for (const [label, summary, digits] of [
+    ["Net worth log10", monteCarlo.intervals.endNetWorthLog10, 3],
+    ["Visible changes / minute", monteCarlo.intervals.visibleChangesPerMinute, 3],
+    ["No-reward gap (s)", monteCarlo.intervals.maxNoRewardGapSec, 2],
+  ] as const) {
+    if (!summary) {
+      rows.push(`- ${label} CI: n/a (no finite draws)`);
+      continue;
+    }
+    const median = summary.quantiles.find((entry) => entry.q === 0.5);
+    rows.push(
+      `- ${label} ${Math.round(summary.confidence * 100)}% CI: mean ${range(summary.meanInterval, digits)}` +
+        (median ? `, median ${formatMetric(median.value, digits)} ${range(median.interval, digits)}` : ""),
+    );
+  }
+  return rows;
+}
+
 export function renderExperienceMarkdown(args: {
   scenarioPath: string;
   intent?: string;
@@ -704,6 +744,7 @@ export function renderExperienceMarkdown(args: {
       `- Net worth log10 mean: ${formatMetric(monteCarlo.endNetWorthLog10.mean, 3)}`,
       `- Visible changes / minute mean: ${formatMetric(monteCarlo.visibleChangesPerMinute.mean, 3)}`,
       `- No-reward gap mean: ${formatMetric(monteCarlo.maxNoRewardGapSec.mean, 2)}s`,
+      ...intervalLines(monteCarlo),
       `- First visible completion: ${monteCarlo.firstVisible.accounting.completionRate ?? "unavailable"}`,
       `- First visible observed / right-censored / failed / unsupported: ${monteCarlo.firstVisible.accounting.observed} / ${monteCarlo.firstVisible.accounting.rightCensored} / ${monteCarlo.firstVisible.accounting.failed} / ${monteCarlo.firstVisible.accounting.unsupported}`,
       `- First visible population p95: ${

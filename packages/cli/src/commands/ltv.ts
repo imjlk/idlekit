@@ -9,6 +9,7 @@ import {
 } from "@idlekit/core";
 import { resolve } from "path";
 import { z } from "zod";
+import { seedOption } from "./_shared/seed";
 import { resolveFastMode } from "../lib/fastMode";
 import { loadRegistriesFromFlags, pluginOptions } from "./_shared/plugin";
 import { cliError, scenarioInvalidError, usageError } from "../errors";
@@ -210,9 +211,46 @@ export type LtvRow = Readonly<{
   };
 }>;
 
+/**
+ * Monetization inputs that drive the LTV number directly. When the scenario omits
+ * one, `deriveMonetizationConfig` fills a built-in placeholder (for example
+ * D1 retention 0.42, ARPPU 0.7/day), so the output would look like a real
+ * estimate while it is not based on the game's data.
+ */
+const VALUE_BEARING_ASSUMPTIONS = [
+  ["retention", "d1"],
+  ["retention", "d7"],
+  ["retention", "d30"],
+  ["retention", "d90"],
+  ["retention", "longTailDailyDecay"],
+  ["revenue", "payerConversion"],
+  ["revenue", "arppuDaily"],
+  ["revenue", "adArpDau"],
+] as const;
+
+export type LtvAssumptionReport = Readonly<{
+  /** `monetization.<group>.<key>` paths that used a built-in default. */
+  defaulted: readonly string[];
+  /** Human-readable warning, or null when every value-bearing input was authored. */
+  warning: string | null;
+}>;
+
+export function reportLtvAssumptions(scenario: ScenarioV1): LtvAssumptionReport {
+  const m = scenario.monetization as unknown as Record<string, Record<string, unknown> | undefined> | undefined;
+  const defaulted = VALUE_BEARING_ASSUMPTIONS
+    .filter(([group, key]) => m?.[group]?.[key] === undefined)
+    .map(([group, key]) => `monetization.${group}.${key}`);
+  const warning = defaulted.length === 0
+    ? null
+    : `LTV uses built-in placeholder assumptions for ${defaulted.join(", ")}. `
+      + "These are not derived from your game; set them in scenario.monetization before treating LTV values as estimates.";
+  return { defaulted, warning };
+}
+
 export type LtvAnalysisResult = Readonly<{
   monetization: {
     config: ReturnType<typeof deriveMonetizationConfig>;
+    assumptions: LtvAssumptionReport;
     uncertainty: {
       enabled: boolean;
       draws: number;
@@ -422,6 +460,7 @@ export function runLtvAnalysis(args: {
   return {
     monetization: {
       config: monetizationConfig,
+      assumptions: reportLtvAssumptions(args.scenario),
       uncertainty: {
         enabled: uncertainEnabled,
         draws: uncertainEnabled ? draws : 0,
@@ -464,7 +503,7 @@ export default defineCommand({
     fast: option(z.coerce.boolean().optional(), {
       description: "Override fast mode for long horizons (omitted: scenario setting)",
     }),
-    seed: option(z.coerce.number().optional(), { description: "Deterministic seed passed to ctx.seed" }),
+    seed: seedOption("Deterministic seed passed to ctx.seed"),
     "value-per-worth": option(z.coerce.number().nonnegative().optional(), {
       description: "Optional conversion factor from netWorth to business value",
     }),
@@ -538,6 +577,10 @@ export default defineCommand({
       valuePerWorth: flags["value-per-worth"],
       runId: flags["run-id"],
     });
+    if (analysis.monetization.assumptions.warning) {
+      // stderr keeps JSON/CSV stdout machine-readable.
+      console.warn(`[warning] ${analysis.monetization.assumptions.warning}`);
+    }
     const outputMeta = buildOutputMeta({
       command: "ltv",
       runId: analysis.run.id,

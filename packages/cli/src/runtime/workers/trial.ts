@@ -1,4 +1,5 @@
 import {
+  builtinModelFactories,
   builtinStrategyFactories,
   compileScenario,
   createModelRegistry,
@@ -29,7 +30,7 @@ export type TrialPluginLoader = (
 /** The built-in registries the plugin loader starts from. A trial without plugin paths needs nothing else. */
 function builtinRegistries(): TrialRegistries {
   return {
-    modelRegistry: createModelRegistry([createLinearFactory()]),
+    modelRegistry: createModelRegistry([createLinearFactory(), ...builtinModelFactories()]),
     strategyRegistry: createStrategyRegistry([...builtinStrategyFactories]),
   };
 }

@@ -10,6 +10,20 @@ export type BreakInfinityEngineOptions = Readonly<{
   epsilon?: DecimalSource;
 }>;
 
+/**
+ * `Number("")` and `Number(" ")` are 0 and `Number("abc")` is NaN, so a blank or corrupt
+ * string would load as a real balance. Reject both; the literal `"NaN"` is still accepted
+ * because `toString(NaN)` writes it.
+ */
+function parseNumberText(input: string): number {
+  const text = input.trim();
+  const value = Number(text);
+  if (text === "" || (Number.isNaN(value) && text !== "NaN")) {
+    throw new TypeError(`Invalid number string: ${JSON.stringify(input)}`);
+  }
+  return value;
+}
+
 export function createNumberEngine(opts?: NumberEngineOptions): Engine<number> {
   const epsilon = opts?.epsilon ?? 1e-12;
 
@@ -18,7 +32,7 @@ export function createNumberEngine(opts?: NumberEngineOptions): Engine<number> {
     zero: () => 0,
     from(input) {
       if (typeof input === "number") return input;
-      if (typeof input === "string") return Number(input);
+      if (typeof input === "string") return parseNumberText(input);
       return input;
     },
     add: (a, b) => a + b,
@@ -28,6 +42,8 @@ export function createNumberEngine(opts?: NumberEngineOptions): Engine<number> {
     mulN: (a, b) => a * b,
     divN: (a, b) => a / b,
     cmp(a, b) {
+      // Equal infinities subtract to NaN, which would otherwise read as "greater".
+      if (a === b) return 0;
       const d = a - b;
       if (Math.abs(d) <= epsilon) return 0;
       return d < 0 ? -1 : 1;

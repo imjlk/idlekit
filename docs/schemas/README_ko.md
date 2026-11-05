@@ -17,6 +17,8 @@
 
 `chart-data.v1.schema.json`은 `--chart-data-out`이 쓰는 `idlekit.chart-data.v1` 차트 데이터다. stdout JSON 출력이 아니므로 `_meta`가 없다. [차트와 의사결정 힌트](../chart-interpretation_ko.md)를 본다.
 
+빌트인 모델 params: `docs/schemas/models/<id>.params.v1.schema.json`은 빌트인 모델(`exponential`, `prestige`, `multi-currency`, `production-chain`)별 `scenario.model.params`의 구조 schema다. `bun run models:schemas`로 모델의 zod 스키마에서 생성하고 `bun run models:schemas:check`와 core 단위 테스트가 확인한다. 상호 참조, 중복 id, 레시피 순환, `> 0` 금액은 여전히 `validateScenarioV1`이 검사한다. [빌트인 모델](../models/README_ko.md)을 본다.
+
 주의:
 
 - 스키마는 JSON 출력(`--format json`) 기준입니다.

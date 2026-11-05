@@ -311,7 +311,8 @@ export function runsThreeCommittedResets(): void {
     cycles: 5,
     objective: "pointsPerHour",
   });
-  expect(legacy.warnings.length).toBe(3);
+  expect(legacy.warnings.length).toBe(4);
+  expect(legacy.warnings.some((warning) => warning.startsWith("pointsPerHour counts committed points"))).toBe(true);
   expect(legacy.rows[0]?.stability).toBe("stable");
   expect(legacy.rows[0]?.cycles).toBe(5);
 
