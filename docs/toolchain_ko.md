@@ -13,7 +13,7 @@ English version: [toolchain.md](./toolchain.md)
 | `ttsc`, `@ttsc/lint`, `@ttsc/evidence`, `@ttsc/graph`, `@ttsc/unplugin` | `0.34.3` | Graph와 unplugin peer에 맞춘 같은 release 버전이다. |
 | `typescript` | `7.0.2` | tooling용 npm `typescript`. `ttsc version`이 이 버전을 보고한다. 이 패키지를 설치해도 `ttsc`가 TypeScript 5 `tsc`로 돌아가지 않는다. |
 | `typia` | `15.2.2` | `@ttsc/graph@0.34.3`의 `typia@^15.1.0` 범위 안이다. typia `15.2`는 `ttsc@>=0.34.1`을 peer로 둔다. core runtime dependency이기도 하다. |
-| Bun | `1.4.2` | root `packageManager`. CI workflow도 같은 pin이다. |
+| Bun | `1.4.4` | root `packageManager`. CI workflow도 같은 pin이다. 개발용 pin일 뿐이며 배포 패키지의 `engines.bun`은 계속 `>=1.4.2`다. `1.4.4`에서는 아래에 설명한 `directory mismatch` stderr 잡음이 나오지 않는다. |
 | Node launcher | `>=22.15.0` | `ttsc@0.34.3`의 `engines.node`. CI smoke는 `26.11.1`을 쓴다. |
 | Publish Node | `26.11.1` | release workflow. `publish:gate`와 패키지 prepack이 ttsc를 실행하므로 CI와 같은 Node다. |
 
@@ -21,13 +21,13 @@ English version: [toolchain.md](./toolchain.md)
 
 `ttsc version`은 ttsc 패키지와 해석된 TypeScript-Go 버전을 함께 출력한다. native compiler와 묶인 Go는 `@ttsc/<platform>-<arch>`에 있다. Graph는 별도 native 패키지 `@ttsc/graph-<platform>-<arch>`에 있으며 `@ttsc/graph`의 공개 `resolveGraphBinary` API로 찾는다. `TTSC_GRAPH_BINARY`와 `TTSC_GO_BINARY`는 비어 있거나 각각의 pin된 native 패키지를 가리켜야 한다. `toolchain:doctor`는 다른 경로를 거절하고, native Graph 패키지 누락은 진단 결과의 실패로 보고한다. Smoke는 `TTSC_TTSX_BINARY`도 지운다.
 
-Bun `1.4.2`은 Node 호환 `process.version`을 보고하지만 `node:module.registerHooks`는 없다. `@ttsc/lint`는 경로가 `.js`로 끝나면 `process.execPath`로 `ttsx.js`를 실행해 `lint.config.ts`를 평가한다. `bun-register` 아래 그 실행 파일은 Bun이고 평가는 exit 1이다. `tools/ttsx-under-node`에는 `.js` 확장이 없어서 lint 패키지가 그 스크립트를 직접 실행하고, 스크립트는 실제 `node`로 `ttsc/lib/launcher/ttsx.js`를 `exec`한다. Windows에서는 `TTSC_TTSX_BINARY`에 Bun이 설치한 `node_modules/.bin/ttsx.exe` shim을 쓴다. Node가 직접 실행할 수 있는 파일이며, shell이 필요한 `.cmd` launcher의 직접 spawn 실패를 피한다. `bun-preload` fixture는 `TTSC_TTSX_BINARY`를 현재 플랫폼의 런처로 둔다. 제품 코드는 계속 Bun에서 돈다. 이것은 `tsc`나 `tsx` 폴백이 아니다.
+Bun `1.4.2`와 `1.4.4`는 Node 호환 `process.version`을 보고하지만 `node:module.registerHooks`는 없다. `@ttsc/lint`는 경로가 `.js`로 끝나면 `process.execPath`로 `ttsx.js`를 실행해 `lint.config.ts`를 평가한다. `bun-register` 아래 그 실행 파일은 Bun이고 평가는 exit 1이다. `tools/ttsx-under-node`에는 `.js` 확장이 없어서 lint 패키지가 그 스크립트를 직접 실행하고, 스크립트는 실제 `node`로 `ttsc/lib/launcher/ttsx.js`를 `exec`한다. Windows에서는 `TTSC_TTSX_BINARY`에 Bun이 설치한 `node_modules/.bin/ttsx.exe` shim을 쓴다. Node가 직접 실행할 수 있는 파일이며, shell이 필요한 `.cmd` launcher의 직접 spawn 실패를 피한다. `bun-preload` fixture는 `TTSC_TTSX_BINARY`를 현재 플랫폼의 런처로 둔다. 제품 코드는 계속 Bun에서 돈다. 이것은 `tsc`나 `tsx` 폴백이 아니다.
 
 ## 명령
 
 | Script | 실행 |
 |---|---|
-| `toolchain:doctor` | pin, Bun `1.4.2`, Node 하한, native binary, 묶인 Go, binary override |
+| `toolchain:doctor` | pin, Bun `1.4.4`, Node 하한, native binary, 묶인 Go, binary override |
 | `toolchain:prepare` | typia·evidence fixture에 대한 `ttsc prepare`, 이어서 `ttsc cache paths --json` |
 | `toolchain:smoke` | doctor와 아래 fixture 표 |
 
@@ -57,6 +57,27 @@ CLI 실행, 하위 명령, 도움말, 자동완성, 오타 제안은 Gunshi를 �
 
 Dependabot은 `ttsc`, `@ttsc/*`, `typia`, `@typia/*`를 한 그룹 PR로 연다. typia 버전 번호는 ttsc와 맞추지 않는다. npm 업데이트는 workspace lockfile이 있는 root만 봐서 패키지 디렉터리의 중복 PR을 만들지 않는다.
 
+## Bun `directory mismatch` 잡음
+
+Bun `1.4.2`에서는 패키지 프로세스가 처음 변환된 import를 읽을 때 명령은 성공하면서 stderr에 아래 줄이 자주 찍혔다.
+
+```text
+Internal error: directory mismatch for directory "<repo>/packages/core/tsconfig.json", fd 3. You don't need to do anything, but this indicates a bug.
+```
+
+원인: `@ttsc/unplugin/bun-register`가 typia plugin을 준비할 때 ttsc(`lib/plugin/internal/load/loadProjectPlugins.js`)는 plugin descriptor를 `process.execPath`, 즉 여기서는 Bun으로 띄운 자식 프로세스에서 평가하고 `--tsconfig-override=<패키지 tsconfig>`를 넘긴다. Bun `1.4.2`는 `--tsconfig-override` 값이 무엇이든 이 internal error를 출력한다. override 자체는 정상 적용된다. 자식의 stderr가 그대로 전달되므로 `bun test`, `bun run`, CLI testkit 출력에 이 줄이 보인다. ttsc `0.36.2`도 같은 flag를 넘긴다. idlekit 코드가 원인이 아니며, 배포 패키지는 preload 없이 실행되므로 npm 패키지 사용자에게는 나타나지 않는다.
+
+idlekit과 ttsc 없이 재현:
+
+```sh
+mkdir repro && cd repro
+echo '{}' > tsconfig.json
+echo 'console.log("hi")' > x.ts
+bun --tsconfig-override=./tsconfig.json x.ts   # 1.4.2: hi 출력 후 internal error
+```
+
+2026-11-04 Linux x64에서 확인한 결과, Bun `1.4.2`는 매번 이 줄을 출력했고 `1.4.3`과 `1.4.4`는 `hi`만 출력한다. `1.4.4`에서는 `packages/cli`의 `bun src/main.ts --version`도 깨끗하고, `bunx @idlekit/cli@0.7.0 --version`은 `1.4.2`에서도 깨끗하다. upstream 보고인 [oven-sh/bun#22023](https://github.com/oven-sh/bun/issues/22023)은 그날 기준 아직 열려 있다. 그래서 개발 pin을 `1.4.4`로 둔다. 지원 런타임 하한은 이 줄이 무해한 `>=1.4.2`로 유지한다. conformance runner는 여전히 이 줄을 변환 실패로 보지 않는다.
+
 ## Fixture
 
 `fixtures/toolchain/`은 게임 코드가 아니라 호환성 spike다.
@@ -79,6 +100,8 @@ Evidence와 inventory는 속일 의도가 없는 작성자의 drift를 잡는다
 
 gate를 속이려고 작성한 테스트 코드에 대한 sandbox는 아니다. 테스트는 개발자 권한으로 실행된다. `node:vm`이나 `Reflect`로 코드를 평가하거나, detached process를 띄우거나, 자기 reporter 출력을 다시 쓸 수 있다. 이 경우는 테스트 소스 코드 리뷰가 담당한다. source lock은 최선 노력의 방어로 남기며 보안 경계가 아니다. 적대적인 테스트 코드를 전제로 한 지적은 `evidence:check`의 범위 밖이다.
 
+
+2026-11-04 업데이트: `directory mismatch` stderr 줄을 없애려고 개발용 Bun pin을 `1.4.2`에서 `1.4.4`로 올린다. `engines.bun`은 `>=1.4.2`로 유지한다. `bench:sim:check`는 같은 Bun 버전의 baseline끼리만 비교하므로 `examples/bench/perf-baseline.json`에 Linux x64 Bun `1.4.4` 항목을 추가했다. macOS arm64 항목은 아직 Bun `1.4.2`이므로 그 호스트에서 `bun run bench:sim:baseline`으로 갱신해야 한다.
 
 2026-11-01 업데이트: ttsc와 plugin은 `0.34.3`, typia와 transitive `@typia/*` 패키지는 `15.2.2`를 사용한다. TypeScript는 `7.0.2`를 유지한다. 7.1은 dev build만 있다. ttsc `0.34`는 설치된 TypeScript 계열에서 compiler target을 고르므로 이 저장소는 계속 7.0으로 빌드한다. `@ttsc/<platform>-<arch>`의 bundled Go는 go1.27이다 (darwin/arm64에서 `go1.27.3`). typia `15.2` native plugin이 이 버전을 요구한다. `@ttsc/lint`가 이제 `ttsc` peer를 선언한다. 다시 생성한 contract는 기록된 typia 버전과 source hash만 바뀐다. schema 본문은 byte 단위로 같다.
 

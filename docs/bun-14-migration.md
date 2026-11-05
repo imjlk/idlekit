@@ -8,7 +8,7 @@ The next release requires Bun `>=1.4.2` for `@idlekit/money`, `@idlekit/core`, a
 
 Use the upgrade method for your Bun installation: `bun upgrade` for the Bun installer, `brew upgrade bun` for Homebrew, or `scoop update bun` for Scoop. The [official Bun installation guide](https://bun.com/docs/installation#upgrading) also explains how to install a specific version.
 
-Open a new terminal after updating Windows PATH, then run `bun --version` in the same environment that starts the application. It must report 1.4.2 or later. Update version-manager and CI pins too; this repository tests Bun 1.4.2 on Linux and Windows.
+Open a new terminal after updating Windows PATH, then run `bun --version` in the same environment that starts the application. It must report 1.4.2 or later. Update version-manager and CI pins too; this repository tests its development pin, Bun 1.4.4, on Linux and Windows.
 
 For a repository checkout, activate that runtime and run:
 
