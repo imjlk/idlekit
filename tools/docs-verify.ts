@@ -820,8 +820,10 @@ async function verifyEngineIntegrationExample(): Promise<void> {
     [["--target", "unity", "--file-format", "csv"], "examples/engine-integration/unity/cafe_levels.csv"],
   ];
   for (const [flags, path] of committed) {
-    const generated = runCli(["export", "engine", scenario, ...flags, "--levels", "25"]);
-    assert(generated === (await readText(resolve(ROOT, path))).replaceAll("\r\n", "\n"), `${path} is stale; regenerate it with idk export engine ${flags.join(" ")} --levels 25`);
+    // The CLI version is stamped into exports; ignore it so a release version bump does not make the examples stale.
+    const withoutCliVersion = (text: string): string => text.replace(/"cliVersion": "[^"]*"/g, '"cliVersion": "<version>"');
+    const generated = withoutCliVersion(runCli(["export", "engine", scenario, ...flags, "--levels", "25"]));
+    assert(generated === withoutCliVersion((await readText(resolve(ROOT, path))).replaceAll("\r\n", "\n")), `${path} is stale; regenerate it with idk export engine ${flags.join(" ")} --levels 25`);
   }
   for (const name of ["shop-levels.csv", "balance-sheet.json"]) {
     const base = name.replace(/\.(csv|json)$/, "");

@@ -51,7 +51,9 @@ describe("idk export engine", () => {
     const a = runCli(["export", "engine", SCENARIO, "--levels", "25"]).stdout;
     const b = runCli(["export", "engine", SCENARIO, "--levels", "25"]).stdout;
     expect(a).toBe(b);
-    expect(a).toBe(await readLf(resolve(EXAMPLE, "cafe.engine-params.json")));
+    // The CLI version is stamped into the export; ignore it so a release version bump does not fail this test.
+    const withoutCliVersion = (text: string) => text.replace(/"cliVersion": "[^"]*"/g, '"cliVersion": "<version>"');
+    expect(withoutCliVersion(a)).toBe(withoutCliVersion(await readLf(resolve(EXAMPLE, "cafe.engine-params.json"))));
     const tres = runCli(["export", "engine", SCENARIO, "--target", "godot", "--levels", "25"]).stdout;
     expect(tres).toBe(await readLf(resolve(EXAMPLE, "godot/data/cafe_economy.tres")));
     const unity = runCli(["export", "engine", SCENARIO, "--target", "unity", "--levels", "25"]).stdout;
