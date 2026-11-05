@@ -4,7 +4,7 @@
   "description": "Bun-first idle game economy simulator, money library, and idk CLI.",
   "license": "MIT",
   "type": "module",
-  "packageManager": "bun@1.4.2",
+  "packageManager": "bun@1.4.4",
   "workspaces": [
     "packages/*"
   ],
@@ -28,6 +28,7 @@
     "transform:smoke": "bun tools/transform-smoke.ts",
     "runtime:check": "bun tools/runtime-import-check.ts",
     "dev:cli": "bun run --cwd packages/cli dev",
+    "idk": "bun --preload @ttsc/unplugin/bun-register packages/cli/src/main.ts",
     "test": "bun run --cwd packages/money test && bun run --cwd packages/core test && bun run --cwd packages/cli test",
     "test:conformance": "bun test --preload @ttsc/unplugin/bun-register packages/core/src/testkit/conformance.test.ts packages/money/src/testkit/compareAmounts.test.ts && bun tools/conformance.ts replay fixtures/conformance/shrink-gap.json",
     "test:conformance:negative": "bun tools/conformance.ts negative",
@@ -63,6 +64,8 @@
     "toolchain:prepare": "bun tools/toolchain-prepare.ts",
     "toolchain:smoke": "bun tools/toolchain-smoke.ts",
     "contracts:generate": "bun --preload @ttsc/unplugin/bun-register tools/generate-contracts.ts",
+    "models:schemas": "bun tools/model-schemas.ts --write",
+    "models:schemas:check": "bun tools/model-schemas.ts",
     "contracts:check": "bun --preload @ttsc/unplugin/bun-register tools/contracts-check.ts"
   },
   "devDependencies": {

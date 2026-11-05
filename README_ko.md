@@ -4,29 +4,33 @@ Bun workspace 기반의 범용 경제 시뮬레이터입니다.
 v1 공식 지원 범위는 Bun `>=1.4.2`입니다. Node.js와 브라우저 런타임은 v1 호환성 계약에 포함하지 않습니다.
 업그레이드 안내: [Bun 1.4.2 및 Gunshi 마이그레이션](./docs/bun-14-migration_ko.md).
 
-- `@idlekit/core`: 엔진 어댑터, 시나리오 컴파일, 시뮬레이션, 분석, 리포트
-- `@idlekit/money`: 화폐/표기/정책/직렬화 전용 라이브러리
+- `@idlekit/money`: 숫자 엔진 어댑터, 화폐/표기/정책/직렬화 전용 라이브러리
+- `@idlekit/core`: 시나리오 컴파일, 시뮬레이션, 분석, 리포트 (화폐 기능은 money에서 re-export)
 - `@idlekit/cli`: `idk` CLI (`Gunshi` 기반)
 
 ## 3분 시작
 
 처음 저장소를 열었다면 `11-my-game-v1.json`부터 실행하면 됩니다. 그 다음 단계는 `12-my-game-compare-b.json`, `13-my-game-tune.json` 순서로 이어지고, 실전 worked example은 `14/15/16 Orbital Foundry` 세트입니다.
 
+Bun `>=1.4.2`가 필요합니다(`bun --version`으로 확인). 저장소 루트에서 `bun run idk <명령>`으로 소스의 CLI를 바로 실행하며, 경로는 루트 기준입니다.
+
 ```bash
 bun install
 
-bun run --cwd packages/cli dev -- validate ../../examples/tutorials/11-my-game-v1.json
-bun run --cwd packages/cli dev -- simulate ../../examples/tutorials/11-my-game-v1.json --format json
-bun run --cwd packages/cli dev -- ltv ../../examples/tutorials/11-my-game-v1.json \
+bun run idk validate examples/tutorials/11-my-game-v1.json
+bun run idk simulate examples/tutorials/11-my-game-v1.json --format json
+bun run idk ltv examples/tutorials/11-my-game-v1.json \
   --horizons 30m,2h,24h,7d,30d,90d \
   --step 600 \
   --fast true \
   --format json
 ```
 
+아래 문서에서 쓰는 `bun run --cwd packages/cli dev -- <명령>`도 같은 동작입니다. `packages/cli` 안에서 실행하므로 경로가 `../../`로 시작합니다.
+
 설치형 실행(선택):
 
-레지스트리 설치는 패키지가 배포되어 있어야 합니다. `@idlekit/*` 조회가 `404`이면 저장소 실행 또는 [로컬 패키지 설치](./README.md#try-a-local-package-build)를 사용하세요. Bun 1.3.10에서 세 tarball만 함께 설치하면 내부 의존성은 레지스트리에서 찾을 수 있으므로, 안내의 `overrides`도 설정해야 합니다. 로컬 pack 성공은 npm 배포를 의미하지 않습니다.
+레지스트리 설치는 패키지가 배포되어 있어야 합니다. `@idlekit/*` 조회가 `404`이면 저장소 실행 또는 [로컬 패키지 설치](./README.md#try-a-local-package-build)를 사용하세요. `overrides` 없이 세 tarball만 함께 설치하면 Bun이 내부 의존성(`@idlekit/core`, `@idlekit/money`)을 레지스트리에서 찾을 수 있으므로(Bun 1.3.10에서 처음 확인, 현재 지원 범위 `>=1.4.2`에서도 동일하게 설정 권장), 안내의 `overrides`도 설정해야 합니다. 로컬 pack 성공은 npm 배포를 의미하지 않습니다.
 
 ```bash
 bun link --cwd packages/cli
@@ -126,6 +130,7 @@ bun run release:dry-run
 - [CSV 밸런스 시트 갱신·목표 페이싱·민감도 검증](./docs/balance-sheets.md)
 - [로드맵](./docs/roadmap.md)
 - [사용 가이드](./docs/usage-guide.md)
+- [차트(SVG)와 의사결정 힌트](./docs/chart-interpretation_ko.md)
 - [시나리오/튜닝 명세 가이드](./docs/scenario-and-tuning.md)
 - [머니 라이브러리 가이드](./docs/money-library.md)
 - [플러그인/어댑터 패턴 가이드](./docs/plugin-and-adapter.md)

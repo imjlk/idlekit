@@ -12,6 +12,7 @@ import {
 } from "@idlekit/core";
 import { resolve } from "path";
 import { z } from "zod";
+import { seedOption } from "./_shared/seed";
 import { loadRegistriesFromFlags, pluginOptions } from "./_shared/plugin";
 import { cliError, scenarioInvalidError, tuneSpecInvalidError, usageError } from "../errors";
 import { buildOutputMeta, deriveDeterministicRunId, deriveDeterministicSeed, hashContent } from "../io/outputMeta";
@@ -196,9 +197,7 @@ export default defineCommand({
     force: option(z.coerce.boolean().default(false), {
       description: "Overwrite generated TuneSpec when --wizard is used",
     }),
-    seed: option(z.coerce.number().optional(), {
-      description: "Optional deterministic seed exposed in metadata/replay verification",
-    }),
+    seed: seedOption("Optional deterministic seed exposed in metadata/replay verification"),
     "artifact-out": option(z.string().optional(), { description: "Write tune artifact JSON to path" }),
     "baseline-artifact": option(z.string().optional(), {
       description: "Compare current best score against baseline artifact",

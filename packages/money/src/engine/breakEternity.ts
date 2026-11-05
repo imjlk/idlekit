@@ -7,6 +7,11 @@ function notImplemented(): never {
   throw new Error(BREAK_ETERNITY_EXPERIMENTAL_MESSAGE);
 }
 
+/**
+ * Placeholder, NOT implemented in idlekit v1: every method throws
+ * {@link BREAK_ETERNITY_EXPERIMENTAL_MESSAGE}. Exported only to keep the public
+ * surface stable. Use `createBreakInfinityEngine` or a custom `Engine` adapter.
+ */
 export function createBreakEternityEngine(): Engine<never> {
   return {
     zero: notImplemented,
@@ -25,5 +30,5 @@ export function createBreakEternityEngine(): Engine<never> {
   };
 }
 
-// Experimental placeholder kept only to preserve the public export.
+/** Placeholder, NOT implemented in idlekit v1. See {@link createBreakEternityEngine}. */
 export const breakEternityEngine = createBreakEternityEngine();

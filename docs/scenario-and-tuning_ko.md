@@ -19,7 +19,7 @@
 
 - `unit`: 기본 결제 화폐
 - `policy`: `drop | accumulate`, `maxLogGap`
-- `model`: 모델 식별자와 버전
+- `model`: 모델 식별자와 버전. `linear` 외에 빌트인 `exponential`, `prestige`, `multi-currency`, `production-chain` 모델은 플러그인 없이 쓸 수 있다. [빌트인 모델](./models/README_ko.md) 참고
 - `initial.wallet`: 시작 재화
 - `initial.vars`: 모델 상태(모델별 스키마). `compileScenario`가 `vars`를 복사하고 numeric prototype은 유지한다. 입력 객체가 실행 중 vars 객체는 아니다.
 - `clock.stepSec`: 틱 간격(초)

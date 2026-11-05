@@ -44,9 +44,9 @@ function has(obj: Record<string, JSONValue>, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(obj, key);
 }
 
-async function developmentExamples(doc: string, command: "calibrate" | "experience"): Promise<string[][]> {
+async function developmentExamples(doc: string, command: string): Promise<string[][]> {
   const text = (await readText(resolve(ROOT, doc))).replace(/\\\r?\n\s*/g, " ");
-  const pattern = new RegExp(`^bun run --cwd packages/cli dev -- (${command} .+)$`, "gm");
+  const pattern = new RegExp(`^bun run --cwd packages/cli dev -- ((?:${command}) .+)$`, "gm");
   return [...text.matchAll(pattern)].map((match) => match[1]!.trim().split(/\s+/));
 }
 
@@ -702,6 +702,57 @@ async function verifyCalibrationExamples(): Promise<void> {
   }
 }
 
+/** Built-in model tutorials: each must validate and simulate through the CLI with no plugin. */
+async function verifyBuiltinModelTutorials(): Promise<void> {
+  const tutorials = [
+    ["../../examples/tutorials/26-exponential-forge-v1.json", "exponential"],
+    ["../../examples/tutorials/27-prestige-loop-v1.json", "prestige"],
+    ["../../examples/tutorials/28-twin-currency-v1.json", "multi-currency"],
+    ["../../examples/tutorials/29-factory-chain-v1.json", "production-chain"],
+    ["../../examples/tutorials/30-lucky-forge-v1.json", "exponential"],
+  ] as const;
+  const listed = asRecord(runCliJson(["models", "list", "--format", "json"]));
+  const ids = (listed.models as JSONValue[]).map((row) => asRecord(row).id);
+  for (const [path, model] of tutorials) {
+    assert(ids.includes(model), `models list must include the built-in '${model}' model`);
+    assert(runCli(["validate", path]).includes("OK:"), `${path} must validate`);
+    const simulated = asRecord(runCliJson(["simulate", path, "--duration", "600", "--format", "json"]));
+    const worth = Number(simulated.endNetWorth);
+    assert(Number.isFinite(worth) && worth > 0, `${path} must end with a finite positive net worth`);
+  }
+}
+
+/** Advanced analysis docs: both languages name the commands, and a small reset-policy scan reads a positive rate. */
+async function verifyAdvancedAnalysisDocs(): Promise<void> {
+  for (const doc of ["docs/advanced-analysis.md", "docs/advanced-analysis_ko.md"]) {
+    const text = await readText(resolve(ROOT, doc));
+    for (const command of ["idk sensitivity", "idk optimize", "idk reset-policy"]) {
+      assert(text.includes(command), `${doc} must document ${command}`);
+    }
+  }
+  const out = asRecord(
+    runCliJson([
+      "reset-policy",
+      "../../examples/tutorials/27-prestige-loop-v1.json",
+      "--scan",
+      "600..1200",
+      "--step",
+      "600",
+      "--horizon",
+      "3000",
+      "--format",
+      "json",
+    ]),
+  );
+  const insights = asRecord(out.insights as JSONValue);
+  const rows = insights.rows as JSONValue[];
+  assert(rows.length === 2, "reset-policy docs scan must read two intervals");
+  for (const row of rows) {
+    const rate = asRecord(row).rewardPerHour;
+    assert(typeof rate === "number" && rate > 0, "reset-policy docs scan must read a positive reward per hour");
+  }
+}
+
 async function verifyResetCycleExample(): Promise<void> {
   const command = "bun examples/reset-cycle/save-resume.ts";
   for (const doc of ["examples/reset-cycle/README.md", "examples/reset-cycle/README_ko.md"]) {
@@ -769,6 +820,34 @@ async function verifyEngineIntegrationExample(): Promise<void> {
   assert(rounded.ok === false && rounded.firstMismatch !== null, "cafe.runtime must report its rounded prices");
 }
 
+async function verifyChartExamples(): Promise<void> {
+  const commands = await developmentExamples("docs/chart-interpretation.md", "simulate|experience|compare|experiment");
+  const korean = await developmentExamples("docs/chart-interpretation_ko.md", "simulate|experience|compare|experiment");
+  assert(commands.length === 4, "chart guide must provide four runnable examples");
+  assert(JSON.stringify(commands) === JSON.stringify(korean), "English and Korean chart commands must match");
+  const chartDir = resolve(ROOT, "tmp", "charts");
+  await removePath(chartDir);
+  await ensureDir(chartDir);
+  const kinds: Record<string, string> = { simulate: "progression", experience: "progression", compare: "compare", experiment: "sensitivity" };
+  for (const args of commands) {
+    runCli(args);
+    const flag = (name: string) => {
+      const index = args.indexOf(name);
+      assert(index >= 0 && args[index + 1], `chart example ${args[0]} must pass ${name}`);
+      return resolve(ROOT, "packages/cli", args[index + 1]!);
+    };
+    const svg = await readText(flag("--chart-out"));
+    assert(svg.startsWith("<svg") && svg.trimEnd().endsWith("</svg>"), `chart example ${args[0]} must write an SVG document`);
+    const data = asRecord(JSON.parse(await readText(flag("--chart-data-out"))) as JSONValue);
+    assert(data.contract === "idlekit.chart-data.v1" && data.schemaVersion === 1, `chart example ${args[0]} must write chart data v1`);
+    assert(data.kind === kinds[args[0]!], `chart example ${args[0]} must write ${kinds[args[0]!]} chart data`);
+    if (args.includes("md")) {
+      const md = await readText(flag("--out"));
+      assert(md.includes("## Decision hints"), `chart example ${args[0]} Markdown must include decision hints`);
+    }
+  }
+}
+
 async function main(): Promise<void> {
   await removePath(tmpDir);
   await ensureDir(tmpDir);
@@ -777,6 +856,9 @@ async function main(): Promise<void> {
   await verifyResetCycleExample();
   await verifyEngineIntegrationExample();
   await verifyIntroTrack();
+  await verifyChartExamples();
+  await verifyBuiltinModelTutorials();
+  await verifyAdvancedAnalysisDocs();
   if (!isQuick) await verifyPluginTrack();
   console.log(`docs verification passed (${isQuick ? "quick" : "full"})`);
 }

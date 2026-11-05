@@ -36,8 +36,17 @@ export function deserializeMoneyState<N, U extends string>(
     allowFutureVersions?: boolean;
   },
 ): MoneyState<N, U> {
+  if (typeof json !== "object" || json === null) {
+    throw new TypeError("Money state must be an object");
+  }
   if (json.v !== 1 && !opts?.allowFutureVersions) {
     throw new Error(`Unsupported money state version: ${json.v}`);
+  }
+  // Saved state is often read back from JSON on disk, so the types are not guaranteed.
+  for (const key of ["unit", "amount", "bucket"] as const) {
+    if (typeof json[key] !== "string") {
+      throw new TypeError(`Money state field "${key}" must be a string (received: ${typeof json[key]})`);
+    }
   }
 
   const unit = opts?.unitFactory
