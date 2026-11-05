@@ -1,0 +1,484 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://idlekit.dev/schemas/chart-data.v1.schema.json",
+  "title": "idlekit chart data v1",
+  "description": "Chart data written by --chart-data-out on simulate, experience, compare, and experiment. The SVG from --chart-out is rendered from this document. Time is seconds since the run start; amount series use log10 of the absolute value and keep the engine text in value.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract",
+    "schemaVersion",
+    "kind",
+    "title",
+    "source"
+  ],
+  "properties": {
+    "contract": {
+      "const": "idlekit.chart-data.v1"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "kind": {
+      "enum": [
+        "progression",
+        "compare",
+        "sensitivity"
+      ]
+    },
+    "title": {
+      "type": "string"
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "command"
+      ],
+      "properties": {
+        "command": {
+          "type": "string"
+        },
+        "scenario": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "seed": {
+          "type": "number"
+        },
+        "runId": {
+          "type": "string"
+        }
+      }
+    },
+    "progression": {
+      "$ref": "#/$defs/progression"
+    },
+    "compare": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "labels",
+        "kpis"
+      ],
+      "properties": {
+        "labels": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "a",
+            "b"
+          ],
+          "properties": {
+            "a": {
+              "type": "string"
+            },
+            "b": {
+              "type": "string"
+            }
+          }
+        },
+        "kpis": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/kpi"
+          }
+        },
+        "progression": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "a",
+            "b"
+          ],
+          "properties": {
+            "a": {
+              "$ref": "#/$defs/progression"
+            },
+            "b": {
+              "$ref": "#/$defs/progression"
+            }
+          }
+        }
+      }
+    },
+    "sensitivity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "method",
+        "globalSensitivity",
+        "sobol",
+        "rows",
+        "columns",
+        "cells"
+      ],
+      "properties": {
+        "method": {
+          "const": "one-at-a-time-local"
+        },
+        "globalSensitivity": {
+          "const": false
+        },
+        "sobol": {
+          "const": false
+        },
+        "rows": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "dimensionId",
+              "candidateId"
+            ],
+            "properties": {
+              "dimensionId": {
+                "type": "string"
+              },
+              "candidateId": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "columns": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "cells": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "dimensionId",
+              "candidateId",
+              "metricId",
+              "status",
+              "elasticity",
+              "elasticityText",
+              "direction"
+            ],
+            "properties": {
+              "dimensionId": {
+                "type": "string"
+              },
+              "candidateId": {
+                "type": "string"
+              },
+              "metricId": {
+                "type": "string"
+              },
+              "status": {
+                "enum": [
+                  "observed",
+                  "unavailable"
+                ]
+              },
+              "elasticity": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "elasticityText": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "direction": {
+                "enum": [
+                  "higher",
+                  "lower",
+                  "flat",
+                  "unavailable"
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "progression"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "progression": true
+        },
+        "required": [
+          "progression"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "compare"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "compare": true
+        },
+        "required": [
+          "compare"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "sensitivity"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "sensitivity": true
+        },
+        "required": [
+          "sensitivity"
+        ]
+      }
+    }
+  ],
+  "$defs": {
+    "point": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "t",
+        "y"
+      ],
+      "properties": {
+        "t": {
+          "type": "number",
+          "description": "Seconds since the run start."
+        },
+        "y": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Plotted value: log10 of the amount for log10 series, the value itself for linear series. Null for zero or a non-finite value."
+        },
+        "value": {
+          "type": "string",
+          "description": "Exact engine text of the amount, on amount series."
+        }
+      }
+    },
+    "series": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "label",
+        "yScale",
+        "unit",
+        "points"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "yScale": {
+          "enum": [
+            "log10",
+            "linear"
+          ]
+        },
+        "unit": {
+          "type": "string"
+        },
+        "points": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/point"
+          }
+        }
+      }
+    },
+    "progression": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "xUnit",
+        "primarySeries",
+        "series",
+        "milestones",
+        "droppedMilestones",
+        "sampling"
+      ],
+      "properties": {
+        "xUnit": {
+          "const": "sec"
+        },
+        "primarySeries": {
+          "enum": [
+            "money",
+            "netWorth"
+          ]
+        },
+        "series": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/series"
+          }
+        },
+        "milestones": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "key",
+              "t",
+              "source"
+            ],
+            "properties": {
+              "key": {
+                "type": "string"
+              },
+              "t": {
+                "type": "number"
+              },
+              "source": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "droppedMilestones": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sampling": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "method",
+            "maxPoints",
+            "sourcePoints",
+            "retainedPoints",
+            "traceEverySteps"
+          ],
+          "properties": {
+            "method": {
+              "enum": [
+                "lttb",
+                "none"
+              ]
+            },
+            "maxPoints": {
+              "type": "integer",
+              "minimum": 3,
+              "maximum": 10000
+            },
+            "sourcePoints": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "retainedPoints": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "traceEverySteps": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 1
+            }
+          }
+        }
+      }
+    },
+    "kpi": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "metric",
+        "a",
+        "b",
+        "preference",
+        "better",
+        "relativeChangePct",
+        "log10Delta"
+      ],
+      "properties": {
+        "metric": {
+          "type": "string"
+        },
+        "a": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "b": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "preference": {
+          "enum": [
+            "higher",
+            "lower",
+            "n/a"
+          ]
+        },
+        "better": {
+          "enum": [
+            "a",
+            "b",
+            "tie",
+            "undetermined"
+          ]
+        },
+        "relativeChangePct": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "(B - A) / |A| in percent, when both parse as finite numbers."
+        },
+        "log10Delta": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "log10|B| - log10|A|, for amounts beyond the double range."
+        }
+      }
+    }
+  }
+}

@@ -28,6 +28,15 @@ import { readScenarioFile } from "../io/readScenario";
 import { assertOutputNotInput, writeOutput } from "../io/writeOutput";
 import { prepareResolvedRun } from "../lib/runConfiguration";
 import { readJsonFile, writeTextFile } from "../runtime/bun";
+import {
+  chartMaxPoints,
+  chartOptions,
+  chartRequested,
+  chartTrace,
+  createChartData,
+  progressionChart,
+  writeChartArtifacts,
+} from "../lib/charts";
 
 const strategySchema = z.string().min(1).optional();
 
@@ -136,9 +145,12 @@ export default defineCommand({
     "run-id": option(z.string().optional(), { description: "Optional run identifier (auto-generated if omitted)" }),
     out: option(z.string().optional(), { description: "Output path" }),
     format: option(z.enum(["json", "md", "csv"]).default("json"), { description: "Output format" }),
+    ...chartOptions(),
   },
   async handler({ flags, positional }) {
     const scenarioPath = positional[0];
+    const charted = chartRequested(flags);
+    const maxPoints = charted ? chartMaxPoints(flags) : undefined;
     if (!scenarioPath) {
       throw usageError(
         "Usage: idk simulate <scenario> [--duration <sec>] [--step <sec>] [--offline-seconds <sec>] [--resume <state.json>]",
@@ -312,7 +324,19 @@ export default defineCommand({
         }
       : runScenarioInput;
 
-    const run = runScenario(effectiveScenario);
+    // A chart traces the online run at a bounded interval. The trace records states only, so the
+    // simulated result, its hash, and the JSON output stay the same with or without a chart.
+    const charting = maxPoints !== undefined
+      ? chartTrace({
+          durationSec: effectiveScenario.run.durationSec,
+          maxSteps: effectiveScenario.run.maxSteps,
+          stepSec: effectiveScenario.run.stepSec,
+          maxPoints,
+        })
+      : undefined;
+    const run = runScenario(
+      charting ? { ...effectiveScenario, run: { ...effectiveScenario.run, trace: charting.trace } } : effectiveScenario,
+    );
     const netWorth = effectiveScenario.model.netWorth?.(effectiveScenario.ctx, run.end) ?? run.end.wallet.money;
     const totalElapsedSec = priorElapsedSec + (offlineRun ? runElapsedSec(offlineRun) : 0) + runElapsedSec(run);
     const stateOutPath = flags["state-out"] ? resolve(process.cwd(), flags["state-out"]) : undefined;
@@ -386,6 +410,32 @@ export default defineCommand({
       uxFlags: run.uxFlags,
       eventLog: run.eventLog,
     };
+
+    if (charting && maxPoints !== undefined) {
+      const valued = effectiveScenario.model.netWorth;
+      const observation = run.observation;
+      const progression = progressionChart({
+        E,
+        states: run.trace ?? [run.start, run.end],
+        startT: run.start.t,
+        unit: effectiveScenario.ctx.unit.code,
+        primarySeries: valued ? "netWorth" : "money",
+        netWorth: valued ? (state) => valued.call(effectiveScenario.model, effectiveScenario.ctx, state) : undefined,
+        milestones: (observation?.milestones ?? []).map((m) => ({ key: m.key, t: m.firstSeenT - run.start.t, source: m.source })),
+        droppedMilestones: observation?.droppedMilestones ?? 0,
+        maxPoints,
+        traceEverySteps: charting.everySteps,
+      });
+      await writeChartArtifacts(
+        flags,
+        createChartData({
+          kind: "progression",
+          title: `Simulate: ${scenarioPath}`,
+          source: { command: "simulate", scenario: scenarioPath, seed, runId },
+          progression,
+        }),
+      );
+    }
 
     if (flags["artifact-out"]) {
       const scenarioAbs = resolve(process.cwd(), scenarioPath);

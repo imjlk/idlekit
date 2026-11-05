@@ -130,6 +130,7 @@ bun run release:dry-run
 - [CSV 밸런스 시트 갱신·목표 페이싱·민감도 검증](./docs/balance-sheets.md)
 - [로드맵](./docs/roadmap.md)
 - [사용 가이드](./docs/usage-guide.md)
+- [차트(SVG)와 의사결정 힌트](./docs/chart-interpretation_ko.md)
 - [시나리오/튜닝 명세 가이드](./docs/scenario-and-tuning.md)
 - [머니 라이브러리 가이드](./docs/money-library.md)
 - [플러그인/어댑터 패턴 가이드](./docs/plugin-and-adapter.md)

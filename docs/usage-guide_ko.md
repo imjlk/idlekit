@@ -549,6 +549,14 @@ CLI JSON 출력 계약은 아래 스키마를 기준으로 관리됩니다.
 - JSON, CSV, replay artifact, 저장 state는 이 무손실 문자열을 그대로 유지한다. resume, replay 검증, 실행 hash가 이 값에 의존한다.
 - `--format md`는 사람이 읽는 출력이라, 표와 블록의 일반 소수 값을 유효숫자 12자리로 반올림하고 끝의 0을 지운다(`81276.59999999998` → `81276.6`). 정수, 지수 표기나 엔진 고유 문자열(예: break_infinity `1.5e300`), 숫자가 아닌 문자열은 바꾸지 않는다.
 
+차트 옵션(`simulate`, `experience`, `compare`, `experiment`):
+
+- `--chart-out <file.svg>`: 의존성 없는 SVG 차트
+- `--chart-data-out <file.json>`: `idlekit.chart-data.v1` 차트 데이터
+- `--chart-max-points <n>`: 시리즈당 점 수(기본 512, `experiment` 제외)
+
+일반 출력은 그대로 유지된다. `experience --format md`, `review evaluate`, `review compare`, `experiment --format md`는 `## Decision hints` 섹션으로 끝난다. 읽는 법은 [차트와 의사결정 힌트](./chart-interpretation_ko.md)를 본다.
+
 예:
 
 ```bash

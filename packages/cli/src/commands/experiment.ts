@@ -1,5 +1,6 @@
 import { defineCommand, option } from "../runtime/command";
 import {
+  buildSensitivityChartData,
   checkExperimentSpec,
   runExperiment,
   validateExperimentSpec,
@@ -15,6 +16,8 @@ import { readScenarioFile } from "../io/readScenario";
 import { writeOutput } from "../io/writeOutput";
 import { prepareResolvedRun, type ResolvedEngine } from "../lib/runConfiguration";
 import { readJsonFile } from "../runtime/bun";
+import { renderExperimentMarkdown } from "../io/renderExperiment";
+import { chartRequested, createChartData, writeChartArtifacts } from "../lib/charts";
 
 /**
  * Version of the engine that ran, not the scenario's engine metadata.
@@ -32,6 +35,12 @@ export default defineCommand({
     engine: option(z.string().optional(), { description: "Effective engine id" }),
     out: option(z.string().optional(), { description: "Output path" }),
     format: option(z.enum(["json", "md"]).default("json"), { description: "Output format" }),
+    "chart-out": option(z.string().optional(), {
+      description: "Write the local sensitivity heatmap SVG to path",
+    }),
+    "chart-data-out": option(z.string().optional(), {
+      description: "Write the sensitivity chart data JSON (idlekit.chart-data.v1) to path",
+    }),
   },
   async handler({ flags, positional }) {
     const specPath = positional[0];
@@ -88,10 +97,21 @@ export default defineCommand({
       // The candidates vary the base simulate stage of this scenario; its digest names that run.
       effectiveRunHash: prepared.open("simulate", "experiment:base").hash,
     });
+    if (chartRequested(flags)) {
+      await writeChartArtifacts(
+        flags,
+        createChartData({
+          kind: "sensitivity",
+          title: `Local sensitivity: ${spec.scenario.ref}`,
+          source: { command: "experiment", scenario: spec.scenario.ref },
+          sensitivity: buildSensitivityChartData(artifact.elasticities),
+        }),
+      );
+    }
     await writeOutput({
       format: flags.format,
       outPath: flags.out,
-      data: artifact,
+      data: flags.format === "md" ? renderExperimentMarkdown(artifact, spec.objectives) : artifact,
       meta,
     });
   },

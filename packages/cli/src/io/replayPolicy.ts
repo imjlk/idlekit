@@ -1,18 +1,19 @@
 import { resolve } from "path";
 import type { OutputMeta } from "./outputMeta";
+import { CHART_FLAGS } from "../lib/charts";
 import { buildReplayArgs, type ReplayArtifactV1, writeReplayArtifact } from "./replayArtifact";
 
 type ReplayCommand = "simulate" | "compare" | "experience" | "ltv" | "tune";
 
 const REPLAY_POLICIES: Readonly<Record<ReplayCommand, { omitFlags: readonly string[] }>> = {
   simulate: {
-    omitFlags: ["out", "artifact-out", "state-out"],
+    omitFlags: ["out", "artifact-out", "state-out", ...CHART_FLAGS],
   },
   compare: {
-    omitFlags: ["out", "artifact-out"],
+    omitFlags: ["out", "artifact-out", ...CHART_FLAGS],
   },
   experience: {
-    omitFlags: ["out", "artifact-out"],
+    omitFlags: ["out", "artifact-out", ...CHART_FLAGS],
   },
   ltv: {
     omitFlags: ["out", "artifact-out"],

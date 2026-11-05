@@ -6,7 +6,16 @@ import { loadRegistriesFromFlags, pluginOptions } from "./_shared/plugin";
 import { scenarioInvalidError, usageError } from "../errors";
 import { prepareResolvedRun } from "../lib/runConfiguration";
 import {
+  chartMaxPoints,
+  chartOptions,
+  chartRequested,
+  createChartData,
+  progressionChart,
+  writeChartArtifacts,
+} from "../lib/charts";
+import {
   collectExperienceSnapshot,
+  growthScenario,
   renderExperienceMarkdown,
   resolveExperienceDraws,
   resolveExperienceQuantiles,
@@ -42,9 +51,11 @@ export default defineCommand({
     format: option(z.enum(["json", "md"]).default("json"), { description: "Output format" }),
     "run-id": option(z.string().optional(), { description: "Optional run identifier used in output metadata" }),
     "artifact-out": option(z.string().optional(), { description: "Write replay artifact JSON to path" }),
+    ...chartOptions(),
   },
   async handler({ flags, positional }) {
     const scenarioPath = positional[0];
+    const maxPoints = chartRequested(flags) ? chartMaxPoints(flags) : undefined;
     if (!scenarioPath) {
       throw usageError(
         "Usage: idk experience <scenario> [--session-pattern <id>] [--days <n>] [--draws <n>] [--seed <n>]",
@@ -170,6 +181,32 @@ export default defineCommand({
       scenario: valid.scenario,
       pluginDigest: loaded.pluginDigest,
     });
+
+    if (maxPoints !== undefined) {
+      // The session already traced every active step for the experience analysis. The chart reads that
+      // trace and keeps at most maxPoints per series, valued in each block's own context.
+      const valued = growthScenario(seededScenario, session);
+      const netWorth = valued.model.netWorth;
+      await writeChartArtifacts(
+        flags,
+        createChartData({
+          kind: "progression",
+          title: `Experience: ${scenarioPath} (${sessionPattern.id}, ${sessionPattern.days}d)`,
+          source: { command: "experience", scenario: scenarioPath, seed, runId },
+          progression: progressionChart({
+            E: seededScenario.ctx.E,
+            states: session.run.trace ?? [session.start, session.end],
+            startT: session.start.t,
+            unit: seededScenario.ctx.unit.code,
+            primarySeries: series,
+            netWorth: netWorth ? (state) => netWorth.call(valued.model, valued.ctx, state) : undefined,
+            milestones: snapshot.milestones.milestones.map((m) => ({ key: m.key, t: m.firstSeenT - session.start.t, source: m.source })),
+            maxPoints,
+            traceEverySteps: null,
+          }),
+        }),
+      );
+    }
 
     if (flags["artifact-out"]) {
       await writeCommandReplayArtifact({

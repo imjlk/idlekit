@@ -73,6 +73,8 @@ idk replay verify <artifact> --format json
 - `tune`: strategy search against economy or experience-oriented objectives
 - `ltv`: long-horizon monetization and value proxy estimation
 
+`simulate`, `experience`, `compare`, and `experiment` take `--chart-out <file.svg>` and `--chart-data-out <file.json>`; the first three also take `--chart-max-points <n>` (default 512). They write a dependency-free SVG and the `idlekit.chart-data.v1` chart data next to the normal output, which stays unchanged. `experience --format md`, `review evaluate`, `review compare`, and `experiment --format md` end with a `## Decision hints` section. See [Charts and decision hints](./chart-interpretation.md).
+
 ## Run configuration flags
 
 `validate` checks the selected model and strategy against the loaded registries, including strategy parameters and factory defaults. It validates schemas without constructing the strategy. Load a custom strategy plugin explicitly with `--plugin` and `--allow-plugin true`. The core `validateScenarioV1(input, modelRegistry?, strategyRegistry?)` API keeps registry checks optional.
@@ -139,6 +141,7 @@ The shipped analysis scope includes flow diagnosis, guarded analytic advance, th
 - [scenario-and-tuning.md](./scenario-and-tuning.md)
 - [plugin-and-adapter.md](./plugin-and-adapter.md)
 - [testing.md](./testing.md)
+- [chart-interpretation.md](./chart-interpretation.md)
 
 ## Interpreting evaluate value estimates
 

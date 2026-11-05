@@ -44,9 +44,9 @@ function has(obj: Record<string, JSONValue>, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(obj, key);
 }
 
-async function developmentExamples(doc: string, command: "calibrate" | "experience"): Promise<string[][]> {
+async function developmentExamples(doc: string, command: string): Promise<string[][]> {
   const text = (await readText(resolve(ROOT, doc))).replace(/\\\r?\n\s*/g, " ");
-  const pattern = new RegExp(`^bun run --cwd packages/cli dev -- (${command} .+)$`, "gm");
+  const pattern = new RegExp(`^bun run --cwd packages/cli dev -- ((?:${command}) .+)$`, "gm");
   return [...text.matchAll(pattern)].map((match) => match[1]!.trim().split(/\s+/));
 }
 
@@ -779,6 +779,34 @@ async function verifyResetCycleExample(): Promise<void> {
   );
 }
 
+async function verifyChartExamples(): Promise<void> {
+  const commands = await developmentExamples("docs/chart-interpretation.md", "simulate|experience|compare|experiment");
+  const korean = await developmentExamples("docs/chart-interpretation_ko.md", "simulate|experience|compare|experiment");
+  assert(commands.length === 4, "chart guide must provide four runnable examples");
+  assert(JSON.stringify(commands) === JSON.stringify(korean), "English and Korean chart commands must match");
+  const chartDir = resolve(ROOT, "tmp", "charts");
+  await removePath(chartDir);
+  await ensureDir(chartDir);
+  const kinds: Record<string, string> = { simulate: "progression", experience: "progression", compare: "compare", experiment: "sensitivity" };
+  for (const args of commands) {
+    runCli(args);
+    const flag = (name: string) => {
+      const index = args.indexOf(name);
+      assert(index >= 0 && args[index + 1], `chart example ${args[0]} must pass ${name}`);
+      return resolve(ROOT, "packages/cli", args[index + 1]!);
+    };
+    const svg = await readText(flag("--chart-out"));
+    assert(svg.startsWith("<svg") && svg.trimEnd().endsWith("</svg>"), `chart example ${args[0]} must write an SVG document`);
+    const data = asRecord(JSON.parse(await readText(flag("--chart-data-out"))) as JSONValue);
+    assert(data.contract === "idlekit.chart-data.v1" && data.schemaVersion === 1, `chart example ${args[0]} must write chart data v1`);
+    assert(data.kind === kinds[args[0]!], `chart example ${args[0]} must write ${kinds[args[0]!]} chart data`);
+    if (args.includes("md")) {
+      const md = await readText(flag("--out"));
+      assert(md.includes("## Decision hints"), `chart example ${args[0]} Markdown must include decision hints`);
+    }
+  }
+}
+
 async function main(): Promise<void> {
   await removePath(tmpDir);
   await ensureDir(tmpDir);
@@ -786,6 +814,7 @@ async function main(): Promise<void> {
   await verifyExperienceExamples();
   await verifyResetCycleExample();
   await verifyIntroTrack();
+  await verifyChartExamples();
   await verifyBuiltinModelTutorials();
   await verifyAdvancedAnalysisDocs();
   if (!isQuick) await verifyPluginTrack();

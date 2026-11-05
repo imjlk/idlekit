@@ -43,6 +43,7 @@ const DOCS_WITH_KO = [
   "docs/guarded-analytic-advance.md",
   "docs/jev-integration.md",
   "docs/worker-execution.md",
+  "docs/chart-interpretation.md",
   "docs/models/README.md",
   "docs/models/exponential.md",
   "docs/models/prestige.md",
