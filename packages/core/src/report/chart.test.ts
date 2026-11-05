@@ -132,6 +132,12 @@ describe("chart data helpers", () => {
     expect(data.sampling.traceEverySteps).toBeNull();
   });
 
+  it("leaves the percentage to log10Delta when decimals underflow the Number range", () => {
+    const [row] = buildCompareKpiRows([{ metric: "endMoney", better: "b", measured: { a: { endMoney: "1e-400" }, b: { endMoney: "2e-400" } } }]);
+    expect(row!.relativeChangePct).toBeNull();
+    expect(row!.log10Delta!).toBeCloseTo(Math.log10(2), 12);
+  });
+
   it("derives compare KPI rows from measured text", () => {
     const rows = buildCompareKpiRows([
       { metric: "endMoney", better: "b", measured: { a: { endMoney: "100" }, b: { endMoney: "150" } } },

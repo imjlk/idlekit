@@ -67,7 +67,7 @@ idk experience crafting-v1.json --format md
 ### `session-arcade`
 
 - Intent: `frequent-progression` in a 30-minute clock. Many small wins per session matter more than the long tail.
-- Key params: `clock.durationSec` 1800; cheap `costBase` 5 with `costGrowth` 1.1 and `maxLevel` 120; `softCap` `log` from 5000; `stochastic.crit` (10%, x3); the `bonus-round` event (50% per 3 min, 20s at x4); `design.sessionPattern` `short-bursts`.
+- Key params: `clock.durationSec` 1800; cheap `costBase` 5 with `costGrowth` 1.1 and `maxLevel` 120; `softCap` `log` from 1000; `stochastic.crit` (10%, x3); the `bonus-round` event (50% per 3 min, 20s at x4); `design.sessionPattern` `short-bursts`.
 - Recommended commands:
 
 ```bash

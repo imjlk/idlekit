@@ -89,7 +89,14 @@ export function geometricSeries<N>(E: Engine<N>, base: N, growth: number, start:
   if (growth === 1) return E.mul(base, count);
   const sumNumber = (Math.pow(growth, count) - 1) / (growth - 1);
   const sumFactor = Number.isFinite(sumNumber) ? E.from(sumNumber) : geometricFactors(E, growth, count).sum;
-  return E.mulN(E.mulN(base, geometricPower(E, growth, start)), sumFactor);
+  const direct = E.mulN(E.mulN(base, geometricPower(E, growth, start)), sumFactor);
+  const logBase = E.absLog10(base);
+  if (E.isFinite(direct) || !Number.isFinite(logBase)) return direct;
+  // An intermediate power or sum can overflow a Number engine while the scaled price fits.
+  // Combine the factors in log10 space so only the final amount has to be representable.
+  const logGrowth = Math.log10(growth);
+  const logSum = Number.isFinite(sumNumber) ? Math.log10(sumNumber) : count * logGrowth - Math.log10(growth - 1);
+  return pow10(E, logBase + start * logGrowth + logSum);
 }
 
 /** A non-negative integer count from vars. A missing or malformed value is 0. */

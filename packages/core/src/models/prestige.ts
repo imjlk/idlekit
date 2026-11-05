@@ -203,7 +203,11 @@ export function createPrestigeModel<N, U extends string = string>(
     analytic: (ctx, state) => (core.stochastic ? null : core.analytic(ctx, state)),
     milestones(ctx, prev, next) {
       const out = core.milestones(ctx, prev, next);
-      if (next.prestige.count === prev.prestige.count && !ready(ctx, prev) && ready(ctx, next)) {
+      // The step hook runs before `t` advances, so read `next` at the end of the tick; otherwise a
+      // time gate that opens on a tick boundary is ready in both states and the event is lost.
+      const dt = typeof ctx.stepSec === "number" && Number.isFinite(ctx.stepSec) && ctx.stepSec > 0 ? ctx.stepSec : 0;
+      const nextAtEnd = dt > 0 ? { ...next, t: next.t + dt } : next;
+      if (next.prestige.count === prev.prestige.count && !ready(ctx, prev) && ready(ctx, nextAtEnd)) {
         out.push("prestige.reset-available");
       }
       return out;

@@ -67,7 +67,7 @@ idk experience crafting-v1.json --format md
 ### `session-arcade`
 
 - 의도: 30분 clock 안의 `frequent-progression`. 긴 꼬리보다 세션당 작은 성취가 많은 것이 중요하다.
-- 주요 파라미터: `clock.durationSec` 1800. 싼 `costBase` 5와 `costGrowth` 1.1, `maxLevel` 120. 5000부터 `log` `softCap`. `stochastic.crit`(10%, x3). `bonus-round` 이벤트(3분마다 50%, 20초 동안 x4). `design.sessionPattern` `short-bursts`.
+- 주요 파라미터: `clock.durationSec` 1800. 싼 `costBase` 5와 `costGrowth` 1.1, `maxLevel` 120. 1000부터 `log` `softCap`. `stochastic.crit`(10%, x3). `bonus-round` 이벤트(3분마다 50%, 20초 동안 x4). `design.sessionPattern` `short-bursts`.
 - 권장 명령:
 
 ```bash

@@ -215,6 +215,11 @@
         },
         "durationSec": {
           "type": "number"
+        },
+        "untilExpr": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Early-stop expression copied from the scenario clock."
         }
       }
     },

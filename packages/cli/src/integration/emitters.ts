@@ -41,13 +41,14 @@ function godotFloat(value: number): string {
   if (Number.isNaN(value)) return "nan";
   if (!Number.isFinite(value)) return value > 0 ? "inf" : "-inf";
   const text = String(value);
+  // Godot parses literals without "." or exponent as int64, so integral values always get a decimal point.
   return /[.eE]/.test(text) ? text : `${text}.0`;
 }
 
 function godotValue(value: unknown): string {
   if (value === null || value === undefined) return "null";
   if (typeof value === "boolean") return value ? "true" : "false";
-  if (typeof value === "number") return Number.isInteger(value) ? String(value) : godotFloat(value);
+  if (typeof value === "number") return Number.isSafeInteger(value) ? String(value) : godotFloat(value);
   if (typeof value === "string") return godotString(value);
   if (Array.isArray(value)) return `[${value.map((x) => godotValue(x)).join(", ")}]`;
   const entries = Object.entries(value as Record<string, unknown>).filter(([, v]) => v !== undefined);

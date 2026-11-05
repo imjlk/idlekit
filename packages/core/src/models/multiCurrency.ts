@@ -319,7 +319,21 @@ export function createMultiCurrencyModel<N, U extends string = string>(
           next = ledger.write(E, next, exchange.from, keep).state;
         }
         if (E.cmp(amount, E.zero()) <= 0) continue;
-        next = ledger.write(E, next, exchange.to, E.add(ledger.read(E, next, exchange.to), convert(E, exchange, amount))).state;
+        let proceeds = E.add(ledger.read(E, next, exchange.to), convert(E, exchange, amount));
+        let spill = E.zero();
+        // The primary clamp already ran and the ledger exempts primary from caps, so cap proceeds here.
+        if (exchange.to === PRIMARY && p.primary.cap !== undefined) {
+          const limit = amountOf(E, p.primary.cap, id, "primary.cap");
+          if (E.cmp(proceeds, limit) > 0) {
+            spill = E.sub(proceeds, limit);
+            proceeds = limit;
+          }
+        }
+        const converted = ledger.write(E, next, exchange.to, proceeds);
+        next = converted.state;
+        spill = E.add(spill, converted.overflow);
+        // Overflow from conversion proceeds stays available to later overflow rules.
+        if (E.cmp(spill, E.zero()) > 0) overflow.set(exchange.to, E.add(overflow.get(exchange.to) ?? E.zero(), spill));
       }
       return next;
     },
