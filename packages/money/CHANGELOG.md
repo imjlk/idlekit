@@ -1,5 +1,12 @@
 # @idlekit/money
 
+## 0.3.3 — 2026-11-05
+
+### Patch changes
+
+- [312d7e4](https://github.com/imjlk/idlekit/commit/312d7e4432b67a89a90fb7df1a11c9ea2c303b7b) `--seed` on `simulate`, `experience`, `evaluate`, `compare`, `tune`, and `ltv` now accepts only integers in `0..4294967295`. Fractional, negative, or larger values were previously recorded in `_meta.seed` while the 32-bit RNG ran a different stream; they now fail with `CLI_USAGE`. `deriveDrawSeed` mixes the draw index with `Math.imul`, so draw indexes above about 3.4 million keep all 32 bits; seeds for smaller indexes are unchanged. `ltv` reports value-bearing monetization inputs that used built-in defaults in `monetization.assumptions` and warns on stderr. Markdown output rounds plain decimals to 12 significant digits for display, while JSON, CSV, artifacts, and state keep lossless values. Core money re-exports and the unimplemented `breakEternityEngine` placeholder are documented as such. — Thanks @imjlk!
+- [c874682](https://github.com/imjlk/idlekit/commit/c874682c384bb72b749e676101c9aa5196b31b61) `formatMoney` carries a mantissa that rounds to 1000 into the next suffix (`999.9` is `1aa`, not `1.00e+3`), keeps plain digits when `significantDigits` is smaller than the integer part, stays on the last `table` suffix instead of printing a wrong small value, keeps the sign of tiny negative values, trims exponent forms, and rejects `significantDigits` outside 1 to 100 or not an integer. `parseMoney` prefers an exact `table` suffix over a case-insensitive one. `createNumberEngine().from` rejects blank and non-numeric strings instead of returning 0 or `NaN`, and `cmp(Infinity, Infinity)` is 0. `deserializeMoneyState` checks that `unit`, `amount`, and `bucket` are strings. — Thanks @imjlk!
+
 ## 0.3.2 — 2026-10-16
 
 ### Patch changes
