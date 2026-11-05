@@ -95,4 +95,5 @@ export * from "./report/chartSvg";
 export * from "./utils/deepClone";
 export * from "./ltv/public";
 export * from "./ltv/cohort";
+export * from "./ltv/telemetryLoop";
 export * from "./adapters/runtime";

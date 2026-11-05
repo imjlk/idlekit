@@ -1,0 +1,36 @@
+# Example only: copy to .github/workflows/ in your game repository.
+# Weekly retention drift check against the scenario you ship with.
+# The cohort export is produced inside your own infrastructure; this job reads a file
+# already in the repository (or a private artifact) and never sends player rows anywhere.
+name: retention-drift
+
+on:
+  schedule:
+    - cron: "0 1 * * 1" # Mondays 01:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+      - run: bun add -g @idlekit/cli
+      - name: Check retention drift
+        env:
+          COHORTS: exports/cohorts.csv
+          SCENARIO: scenarios/live.json
+          THRESHOLD_PP: "5"
+          REPORT_DIR: drift-report
+        run: bash examples/telemetry/monitor.sh
+      - if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: retention-drift
+          path: drift-report/
+          retention-days: 14

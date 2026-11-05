@@ -8,55 +8,9 @@ import { readScenarioFile } from "../io/readScenario";
 import { calibrateMonetization, type TelemetryRow } from "../lib/ltvModel";
 import { compareRetention, observeCohort, observedRetentionRates, planRetentionPatch, renderCohortMarkdown } from "../lib/cohortObservation";
 import { readTextFile } from "../runtime/bun";
-
-function parseCsvRows(raw: string): string[][] {
-  const rows: string[][] = [];
-  let row: string[] = [];
-  let cell = "";
-  let inQuotes = false;
-
-  for (let i = 0; i < raw.length; i++) {
-    const ch = raw[i]!;
-    if (ch === '"') {
-      const next = raw[i + 1];
-      if (inQuotes && next === '"') {
-        cell += '"';
-        i += 1;
-        continue;
-      }
-      inQuotes = !inQuotes;
-      continue;
-    }
-
-    if (ch === "," && !inQuotes) {
-      row.push(cell.trim());
-      cell = "";
-      continue;
-    }
-
-    if ((ch === "\n" || ch === "\r") && !inQuotes) {
-      if (ch === "\r" && raw[i + 1] === "\n") i += 1;
-      row.push(cell.trim());
-      cell = "";
-      if (row.some((x) => x.length > 0)) rows.push(row);
-      row = [];
-      continue;
-    }
-
-    cell += ch;
-  }
-
-  if (inQuotes) {
-    throw cliError("CLI_USAGE", "CSV parse error: unterminated quoted field");
-  }
-
-  if (cell.length > 0 || row.length > 0) {
-    row.push(cell.trim());
-    if (row.some((x) => x.length > 0)) rows.push(row);
-  }
-
-  return rows;
-}
+import { parseCsvRows } from "../lib/csv";
+import { isCohortBatchDocument, parseCohortBatchCsv } from "../lib/cohortBatch";
+import { validateCohortBatch, type CohortBatch, type CohortBatchEntry } from "@idlekit/core";
 
 function normalizeHeader(s: string): string {
   return s.trim().toLowerCase();
@@ -193,6 +147,30 @@ export function parseJsonTelemetry(raw: string, strictCohort = false): Telemetry
   return rows;
 }
 
+/** Select one cohort when calibrate reads a cohort batch; undefined for a plain row export. */
+function calibrateBatchCohort(raw: string, csvInput: boolean, cohortId: string | undefined): CohortBatchEntry | undefined {
+  let document: unknown;
+  if (csvInput) {
+    const header = parseCsvRows(raw)[0]?.map(normalizeHeader) ?? [];
+    if (!header.includes("cohort_id")) document = undefined;
+    else document = parseCohortBatchCsv(raw);
+  } else {
+    try { document = JSON.parse(raw); } catch { document = undefined; }
+    if (!isCohortBatchDocument(document)) document = undefined;
+  }
+  if (document === undefined) {
+    if (cohortId !== undefined) throw usageError("--cohort requires a cohort batch input (schemaVersion 1 JSON with cohorts, or CSV with a cohort_id column)");
+    return undefined;
+  }
+  const result = validateCohortBatch(document);
+  if (!result.ok) throw usageError(`Invalid cohort batch: ${result.issues.map(issue => `${issue.path}: ${issue.message}`).join("; ")}`);
+  const cohorts = (document as CohortBatch).cohorts;
+  if (cohortId === undefined && cohorts.length !== 1) throw usageError(`--cohort is required when the batch has ${cohorts.length} cohorts (${cohorts.map(cohort => cohort.id).join(", ")})`);
+  const selected = cohortId === undefined ? cohorts[0] : cohorts.find(cohort => cohort.id === cohortId);
+  if (!selected) throw usageError(`Cohort ${cohortId} is not in the batch (${cohorts.map(cohort => cohort.id).join(", ")})`);
+  return selected;
+}
+
 export default defineCommand({
   name: "calibrate",
   description: "Calibrate monetization parameters from telemetry rows (CSV/JSON)",
@@ -203,7 +181,8 @@ export default defineCommand({
     "observed-through-day": option(z.coerce.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(), {
       description: "Complete activity cutoff for one install cohort; requires day 0 records for every installed user",
     }),
-    scenario: option(z.string().optional(), { description: "Compare observed retention with this scenario's explicit assumptions (requires --observed-through-day)" }),
+    scenario: option(z.string().optional(), { description: "Compare observed retention with this scenario's explicit assumptions (requires --observed-through-day or a cohort batch)" }),
+    cohort: option(z.string().min(1).optional(), { description: "Cohort id to read from a cohort batch file (schemaVersion 1 JSON or cohort_id CSV)" }),
     out: option(z.string().optional(), { description: "Output path" }),
     format: option(z.enum(["json", "md", "csv"]).default("json"), { description: "Output format" }),
   },
@@ -212,19 +191,26 @@ export default defineCommand({
     if (!telemetryPath || positional.length !== 1) {
       throw usageError("Usage: idk calibrate <telemetry.csv|json> [--input-format auto|csv|json]");
     }
-    if (flags.scenario && flags["observed-through-day"] === undefined) throw usageError("--scenario requires --observed-through-day for a mature cohort comparison");
-
     const abs = resolve(process.cwd(), telemetryPath);
     const raw = await readTextFile(abs);
     const format = flags["input-format"] === "auto" ? extname(abs).toLowerCase() : flags["input-format"];
-    const rows =
-      format === ".csv" || format === "csv"
-        ? parseCsvTelemetry(raw, flags["observed-through-day"] !== undefined)
-        : parseJsonTelemetry(raw, flags["observed-through-day"] !== undefined);
+    const csvInput = format === ".csv" || format === "csv";
+    // A cohort batch carries its own cutoff per cohort; --cohort picks one.
+    const batchCohort = calibrateBatchCohort(raw, csvInput, flags.cohort);
+    if (batchCohort && flags["observed-through-day"] !== undefined && flags["observed-through-day"] !== batchCohort.observedThroughDay) {
+      throw usageError(`--observed-through-day ${flags["observed-through-day"]} does not match cohort ${batchCohort.id} observedThroughDay ${batchCohort.observedThroughDay}`);
+    }
+    const cutoff = batchCohort?.observedThroughDay ?? flags["observed-through-day"];
+    if (flags.scenario && cutoff === undefined) throw usageError("--scenario requires --observed-through-day for a mature cohort comparison");
+    const rows: TelemetryRow[] = batchCohort
+      ? [...batchCohort.rows]
+      : csvInput
+        ? parseCsvTelemetry(raw, cutoff !== undefined)
+        : parseJsonTelemetry(raw, cutoff !== undefined);
 
     let observation: ReturnType<typeof observeCohort> | undefined;
-    if (flags["observed-through-day"] !== undefined) {
-      try { observation = observeCohort(rows, flags["observed-through-day"]); }
+    if (cutoff !== undefined) {
+      try { observation = observeCohort(rows, cutoff); }
       catch (error) { throw usageError(error instanceof Error ? error.message : String(error)); }
     }
     let calibrated: ReturnType<typeof calibrateMonetization>;

@@ -779,6 +779,30 @@ async function verifyResetCycleExample(): Promise<void> {
   );
 }
 
+async function verifyTelemetryLoopExamples(): Promise<void> {
+  const documented = [
+    "idk telemetry validate examples/telemetry/cohorts.csv examples/telemetry/cohorts.json --format md",
+    "idk telemetry drift examples/telemetry/cohorts.csv --scenario examples/tutorials/11-my-game-v1.json --threshold-pp 5 --fail-on-drift --format md",
+    "idk telemetry patch examples/telemetry/cohorts.csv --cohort 2026-w41-control --scenario examples/tutorials/11-my-game-v1.json --scenario-out tmp/my-game-w41.json --format md",
+  ];
+  for (const doc of ["docs/player-telemetry.md", "docs/player-telemetry_ko.md"]) {
+    const lines = (await readText(resolve(ROOT, doc))).split(/\r?\n/);
+    for (const command of documented) assert(lines.includes(command), `${doc} must document: ${command}`);
+  }
+  const csv = "../../examples/telemetry/cohorts.csv";
+  const scenario = "../../examples/tutorials/11-my-game-v1.json";
+  const validated = asRecord(runCliJson(["telemetry", "validate", csv, "../../examples/telemetry/cohorts.json"]));
+  assert(Array.isArray(validated.cohorts) && validated.cohorts.length === 5, "telemetry validate must read all example cohorts");
+  // Without --fail-on-drift the report exits 0, so the documented drift can be asserted here.
+  const drift = asRecord(runCliJson(["telemetry", "drift", csv, "--scenario", scenario]));
+  assert(drift.status === "drift", "the week 41 example cohort must drift from the tutorial scenario");
+  const patchedPath = resolve(tmpDir, "my-game-w41.json");
+  const patch = asRecord(runCliJson(["telemetry", "patch", csv, "--cohort", "2026-w41-control", "--scenario", scenario, "--scenario-out", patchedPath, "--horizons", "7d"]));
+  assert(patch.patchStatus === "ready" && (await pathExists(patchedPath)), "telemetry patch example must write a ready patched scenario");
+  const experiment = asRecord(runCliJson(["telemetry", "experiment", `control=${scenario}`, "fast-start=../../examples/tutorials/12-my-game-compare-b.json", "--day", "1", "--mde-pp", "5"]));
+  assert(asRecord(experiment.plan as JSONValue).usersPerGroup === 1534, "documented experiment must need 1534 installs per group");
+}
+
 async function verifyEngineIntegrationExample(): Promise<void> {
   const example = "../../examples/engine-integration";
   const scenario = `${example}/scenario.json`;
@@ -852,6 +876,7 @@ async function main(): Promise<void> {
   await removePath(tmpDir);
   await ensureDir(tmpDir);
   await verifyCalibrationExamples();
+  await verifyTelemetryLoopExamples();
   await verifyExperienceExamples();
   await verifyResetCycleExample();
   await verifyEngineIntegrationExample();
