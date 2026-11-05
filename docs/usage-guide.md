@@ -120,6 +120,10 @@ Recommended interactive order:
 - `idk setup completions`: install the managed completions block directly
 - `idk setup plugin-trust`: generate a sha256 trust file for plugin-based runs
 
+## Genre presets
+
+`idk init scenario --preset cookie-clicker|tycoon|prestige-heavy|crafting|session-arcade --out ./game.json` writes one genre scenario on a built-in model. See [examples/genres](../examples/genres/README.md) for the tutorial.
+
 ## Wizard flows
 
 - `idk init scenario --wizard`: interactive scenario scaffold generation

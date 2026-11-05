@@ -1,0 +1,216 @@
+{
+  "schemaVersion": 1,
+  "meta": {
+    "id": "crafting-v1",
+    "title": "Crafting Genre V1",
+    "description": "Genre preset: gather wood and stone, craft planks and tools, and sell tools. Multi-resource recipes with batch times, unlock gates, and a storage cap make the bottleneck move.",
+    "tags": [
+      "genre",
+      "crafting",
+      "multi-resource",
+      "production-chain"
+    ]
+  },
+  "unit": {
+    "code": "GOLD",
+    "symbol": "G"
+  },
+  "policy": {
+    "mode": "accumulate",
+    "maxLogGap": 14
+  },
+  "model": {
+    "id": "production-chain",
+    "version": 1,
+    "params": {
+      "primary": {
+        "idleIncome": "2"
+      },
+      "resources": [
+        {
+          "id": "wood",
+          "valueInPrimary": 0.4
+        },
+        {
+          "id": "stone",
+          "valueInPrimary": 0.6
+        },
+        {
+          "id": "plank",
+          "valueInPrimary": 2,
+          "cap": "150"
+        },
+        {
+          "id": "tool",
+          "valueInPrimary": 15
+        }
+      ],
+      "recipes": [
+        {
+          "id": "lumberjack",
+          "outputs": {
+            "wood": "1"
+          },
+          "timeSec": 1,
+          "build": {
+            "currency": "primary",
+            "base": "10",
+            "growth": 1.12
+          }
+        },
+        {
+          "id": "quarry",
+          "outputs": {
+            "stone": "1"
+          },
+          "timeSec": 2,
+          "build": {
+            "currency": "primary",
+            "base": "25",
+            "growth": 1.13
+          },
+          "unlock": [
+            {
+              "recipe": "lumberjack",
+              "level": 2
+            }
+          ]
+        },
+        {
+          "id": "sawmill",
+          "inputs": {
+            "wood": "3"
+          },
+          "outputs": {
+            "plank": "1"
+          },
+          "timeSec": 2,
+          "build": {
+            "currency": "primary",
+            "base": "60",
+            "growth": 1.15
+          },
+          "unlock": [
+            {
+              "recipe": "lumberjack",
+              "level": 3
+            }
+          ]
+        },
+        {
+          "id": "workshop",
+          "inputs": {
+            "plank": "2",
+            "stone": "2"
+          },
+          "outputs": {
+            "tool": "1"
+          },
+          "timeSec": 4,
+          "build": {
+            "currency": "primary",
+            "base": "200",
+            "growth": 1.18
+          },
+          "unlock": [
+            {
+              "recipe": "sawmill",
+              "level": 2
+            },
+            {
+              "recipe": "quarry",
+              "level": 2
+            }
+          ]
+        },
+        {
+          "id": "trader",
+          "inputs": {
+            "tool": "1"
+          },
+          "outputs": {
+            "primary": "35"
+          },
+          "timeSec": 2,
+          "build": {
+            "currency": "primary",
+            "base": "500",
+            "growth": 1.2
+          },
+          "maxLevel": 20,
+          "unlock": [
+            {
+              "recipe": "workshop",
+              "level": 1
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "initial": {
+    "t": 0,
+    "wallet": {
+      "unit": "GOLD",
+      "amount": "0",
+      "bucket": "0"
+    },
+    "vars": {
+      "levels": {
+        "lumberjack": 0,
+        "quarry": 0,
+        "sawmill": 0,
+        "workshop": 0,
+        "trader": 0
+      },
+      "stock": {
+        "wood": "0",
+        "stone": "0",
+        "plank": "0",
+        "tool": "0"
+      }
+    },
+    "prestige": {
+      "count": 0,
+      "points": "0",
+      "multiplier": "1"
+    }
+  },
+  "clock": {
+    "stepSec": 1,
+    "durationSec": 3600
+  },
+  "strategy": {
+    "id": "greedy"
+  },
+  "analysis": {
+    "eta": {
+      "mode": "simulate"
+    },
+    "growth": {
+      "windowSec": 60
+    }
+  },
+  "outputs": {
+    "format": "json",
+    "report": {
+      "checkpointsSec": [
+        300,
+        900,
+        1800,
+        3600
+      ],
+      "includeTrace": true,
+      "traceEverySteps": 10,
+      "includeGrowth": true,
+      "includeUX": true
+    }
+  },
+  "design": {
+    "intent": "strategic-optimization",
+    "sessionPattern": {
+      "id": "twice-daily",
+      "days": 1
+    }
+  }
+}

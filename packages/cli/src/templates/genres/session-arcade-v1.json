@@ -1,0 +1,117 @@
+{
+  "schemaVersion": 1,
+  "meta": {
+    "id": "session-arcade-v1",
+    "title": "Session Arcade Genre V1",
+    "description": "Genre preset: a fast arcade loop tuned for short sessions. Cheap early levels, quick milestones, frequent crits, and short bonus rounds; growth flattens under a log soft cap so a session ends with a visible goal.",
+    "tags": [
+      "genre",
+      "session-arcade",
+      "exponential",
+      "stochastic"
+    ]
+  },
+  "unit": {
+    "code": "PTS",
+    "symbol": "P"
+  },
+  "policy": {
+    "mode": "accumulate",
+    "maxLogGap": 14
+  },
+  "model": {
+    "id": "exponential",
+    "version": 1,
+    "params": {
+      "idleIncome": "2",
+      "baseIncome": "2",
+      "growthRate": 1.03,
+      "costBase": "5",
+      "costGrowth": 1.1,
+      "maxLevel": 120,
+      "softCap": {
+        "kind": "log",
+        "startsAt": "5000",
+        "strength": 0.8
+      },
+      "stochastic": {
+        "crit": {
+          "chance": 0.1,
+          "multiplier": 3
+        },
+        "drops": [],
+        "events": [
+          {
+            "id": "bonus-round",
+            "windowSec": 180,
+            "chance": 0.5,
+            "durationSec": 20,
+            "incomeMultiplier": 4
+          }
+        ]
+      }
+    }
+  },
+  "initial": {
+    "t": 0,
+    "wallet": {
+      "unit": "PTS",
+      "amount": "0",
+      "bucket": "0"
+    },
+    "vars": {
+      "level": 0
+    },
+    "prestige": {
+      "count": 0,
+      "points": "0",
+      "multiplier": "1"
+    }
+  },
+  "clock": {
+    "stepSec": 1,
+    "durationSec": 1800
+  },
+  "strategy": {
+    "id": "greedy"
+  },
+  "analysis": {
+    "eta": {
+      "mode": "simulate"
+    },
+    "growth": {
+      "windowSec": 60
+    },
+    "experience": {
+      "draws": 4,
+      "quantiles": [
+        0.1,
+        0.5,
+        0.9
+      ]
+    }
+  },
+  "outputs": {
+    "format": "json",
+    "report": {
+      "checkpointsSec": [
+        60,
+        180,
+        600,
+        1200,
+        1800
+      ],
+      "includeTrace": true,
+      "traceEverySteps": 10,
+      "includeGrowth": true,
+      "includeUX": true
+    }
+  },
+  "design": {
+    "intent": "frequent-progression",
+    "sessionPattern": {
+      "id": "short-bursts",
+      "days": 1
+    }
+  }
+}
