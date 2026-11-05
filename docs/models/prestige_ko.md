@@ -27,7 +27,7 @@ English version: [prestige.md](./prestige.md)
 
 ## Params
 
-`generator`는 [`exponential`](./exponential_ko.md)의 params를 모두 받는다. `prestige`:
+`generator`는 `stochastic`을 포함해 [`exponential`](./exponential_ko.md)의 params를 모두 받는다. `prestige`:
 
 | 필드 | 기본값 | 의미 |
 | --- | --- | --- |
@@ -76,13 +76,14 @@ const artifact = analyzeResetPolicies({
 });
 ```
 
-`idk prestige-cycle`은 레거시 간격 스캔이다. 간격마다 시나리오 전략을 돌릴 뿐 리셋하지 않으므로 이 모델에서는 `pointsPerHour`가 `0`이고 `netWorthPerHour`로 런 길이만 비교한다. `analyzeResetPolicies`용 CLI 명령은 이번 변경 범위가 아니다.
+`idk prestige-cycle`은 레거시 간격 스캔이다. 간격마다 시나리오 전략을 돌릴 뿐 리셋하지 않으므로, `pointsPerHour`는 커밋한 포인트에 각 간격 끝에서 가능한 리셋(`Model.prestige.pointsFrom`)을 더해 센다. `idk reset-policy`는 CLI에서 `analyzeResetPolicies`를 실행하고 리셋하지 않는 경우 대비 ROI, 타이밍 창, 안정성을 더한다. [고급 분석](../advanced-analysis_ko.md#리셋-정책-idk-reset-policy)을 본다.
 
 ## 실행해 보기
 
 ```bash
 bun run --cwd packages/cli dev -- simulate ../../examples/tutorials/27-prestige-loop-v1.json --format md
 bun run --cwd packages/cli dev -- prestige-cycle ../../examples/tutorials/27-prestige-loop-v1.json --scan 600..2400 --step 600 --horizon 7200 --format md
+bun run --cwd packages/cli dev -- reset-policy ../../examples/tutorials/27-prestige-loop-v1.json --scan 600..1800 --step 600 --horizon 5000 --format md
 ```
 
 Node.js and browser runtimes are not part of the v1 compatibility contract.

@@ -27,7 +27,7 @@ The [`exponential`](./exponential.md) generator plus a first-class reset. A rese
 
 ## Params
 
-`generator` takes every [`exponential`](./exponential.md) param. `prestige`:
+`generator` takes every [`exponential`](./exponential.md) param, `stochastic` included. `prestige`:
 
 | Field | Default | Meaning |
 | --- | --- | --- |
@@ -76,13 +76,14 @@ const artifact = analyzeResetPolicies({
 });
 ```
 
-`idk prestige-cycle` is the legacy interval scan. It runs the scenario's strategy for each interval and does not reset, so on this model its `pointsPerHour` stays `0` and only `netWorthPerHour` compares run lengths. A CLI command for `analyzeResetPolicies` is not part of this change.
+`idk prestige-cycle` is the legacy interval scan. It runs the scenario's strategy for each interval and does not reset, so its `pointsPerHour` counts the reset available at the end of each interval (`Model.prestige.pointsFrom`) on top of committed points. `idk reset-policy` runs `analyzeResetPolicies` from the CLI and adds ROI against never resetting, a timing window, and stability; see [Advanced analysis](../advanced-analysis.md#reset-policy-idk-reset-policy).
 
 ## Try it
 
 ```bash
 bun run --cwd packages/cli dev -- simulate ../../examples/tutorials/27-prestige-loop-v1.json --format md
 bun run --cwd packages/cli dev -- prestige-cycle ../../examples/tutorials/27-prestige-loop-v1.json --scan 600..2400 --step 600 --horizon 7200 --format md
+bun run --cwd packages/cli dev -- reset-policy ../../examples/tutorials/27-prestige-loop-v1.json --scan 600..1800 --step 600 --horizon 5000 --format md
 ```
 
 Node.js and browser runtimes are not part of the v1 compatibility contract.

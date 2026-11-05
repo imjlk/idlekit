@@ -34,6 +34,7 @@ English version: [exponential.md](./exponential.md)
 | `softCap.kind` | `"pow"` | `pow`, `sqrt`, `log` |
 | `softCap.startsAt` | 필수 | 이 값을 넘는 생산량을 압축한다 |
 | `softCap.strength` | `0.5` | `(0, 1]`. `pow`의 지수, `log`의 기울기. `sqrt`는 무시 |
+| `stochastic` | 없음 | 수입 위에 얹는 시드 고정 치명타, 드롭, 시간 이벤트. [고급 분석](../advanced-analysis_ko.md#시드-고정-확률-이벤트) 참고 |
 
 Vars: `level` (기본 `0`).
 
@@ -57,6 +58,7 @@ Vars: `level` (기본 `0`).
 ## 분석 훅
 
 - `growthRate`가 `1`이고 소프트캡이 없으면 `analytic`이 `incomeKind: "linear"`와 생산기 힌트를 보고하므로 exact ETA가 닫힌 해를 쓸 수 있다. 그 밖에는 `costExp`와 소프트캡을 담은 `incomeKind: "custom"`을 보고한다.
+- `stochastic` 블록이 켜져 있으면 `analytic`은 `null`이고 exact ETA는 시뮬레이션한다.
 - 모델에 `evolve`가 없어 guarded advance와 exact ETA가 받아들인다.
 - `exponentialLevelIncrement(E, params, level)`은 표 작성용으로 다음 레벨의 원 증가분을 돌려준다.
 

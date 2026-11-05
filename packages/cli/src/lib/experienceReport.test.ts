@@ -1,4 +1,4 @@
-import { analyzeDistribution, type DistributionSample } from "@idlekit/core";
+import { analyzeDistribution, summarizeSamples, type DistributionSample } from "@idlekit/core";
 import { describe, expect, it } from "bun:test";
 import { milestoneTime, renderExperienceMarkdown, type ExperienceMonteCarloSummary, type ExperienceSnapshot } from "./experience";
 
@@ -82,6 +82,11 @@ function monteCarlo(samples: readonly DistributionSample[]): ExperienceMonteCarl
     endNetWorthLog10: numeric, visibleChangesPerMinute: numeric, maxNoRewardGapSec: numeric,
     firstVisibleChangeSec: samples.some((sample) => sample.status === "observed") ? numeric : null,
     firstVisible: analyzeDistribution({ samples, quantiles: [0.5, 0.95], horizonSec: 120 }),
+    intervals: {
+      endNetWorthLog10: summarizeSamples([9, 10, 11], { quantiles: [0.5] }),
+      visibleChangesPerMinute: summarizeSamples([9, 10, 11], { quantiles: [0.5] }),
+      maxNoRewardGapSec: null,
+    },
   };
 }
 
