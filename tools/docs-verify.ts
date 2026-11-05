@@ -44,9 +44,9 @@ function has(obj: Record<string, JSONValue>, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(obj, key);
 }
 
-async function developmentExamples(doc: string, command: "calibrate" | "experience"): Promise<string[][]> {
+async function developmentExamples(doc: string, command: string): Promise<string[][]> {
   const text = (await readText(resolve(ROOT, doc))).replace(/\\\r?\n\s*/g, " ");
-  const pattern = new RegExp(`^bun run --cwd packages/cli dev -- (${command} .+)$`, "gm");
+  const pattern = new RegExp(`^bun run --cwd packages/cli dev -- ((?:${command}) .+)$`, "gm");
   return [...text.matchAll(pattern)].map((match) => match[1]!.trim().split(/\s+/));
 }
 
@@ -702,6 +702,57 @@ async function verifyCalibrationExamples(): Promise<void> {
   }
 }
 
+/** Built-in model tutorials: each must validate and simulate through the CLI with no plugin. */
+async function verifyBuiltinModelTutorials(): Promise<void> {
+  const tutorials = [
+    ["../../examples/tutorials/26-exponential-forge-v1.json", "exponential"],
+    ["../../examples/tutorials/27-prestige-loop-v1.json", "prestige"],
+    ["../../examples/tutorials/28-twin-currency-v1.json", "multi-currency"],
+    ["../../examples/tutorials/29-factory-chain-v1.json", "production-chain"],
+    ["../../examples/tutorials/30-lucky-forge-v1.json", "exponential"],
+  ] as const;
+  const listed = asRecord(runCliJson(["models", "list", "--format", "json"]));
+  const ids = (listed.models as JSONValue[]).map((row) => asRecord(row).id);
+  for (const [path, model] of tutorials) {
+    assert(ids.includes(model), `models list must include the built-in '${model}' model`);
+    assert(runCli(["validate", path]).includes("OK:"), `${path} must validate`);
+    const simulated = asRecord(runCliJson(["simulate", path, "--duration", "600", "--format", "json"]));
+    const worth = Number(simulated.endNetWorth);
+    assert(Number.isFinite(worth) && worth > 0, `${path} must end with a finite positive net worth`);
+  }
+}
+
+/** Advanced analysis docs: both languages name the commands, and a small reset-policy scan reads a positive rate. */
+async function verifyAdvancedAnalysisDocs(): Promise<void> {
+  for (const doc of ["docs/advanced-analysis.md", "docs/advanced-analysis_ko.md"]) {
+    const text = await readText(resolve(ROOT, doc));
+    for (const command of ["idk sensitivity", "idk optimize", "idk reset-policy"]) {
+      assert(text.includes(command), `${doc} must document ${command}`);
+    }
+  }
+  const out = asRecord(
+    runCliJson([
+      "reset-policy",
+      "../../examples/tutorials/27-prestige-loop-v1.json",
+      "--scan",
+      "600..1200",
+      "--step",
+      "600",
+      "--horizon",
+      "3000",
+      "--format",
+      "json",
+    ]),
+  );
+  const insights = asRecord(out.insights as JSONValue);
+  const rows = insights.rows as JSONValue[];
+  assert(rows.length === 2, "reset-policy docs scan must read two intervals");
+  for (const row of rows) {
+    const rate = asRecord(row).rewardPerHour;
+    assert(typeof rate === "number" && rate > 0, "reset-policy docs scan must read a positive reward per hour");
+  }
+}
+
 async function verifyResetCycleExample(): Promise<void> {
   const command = "bun examples/reset-cycle/save-resume.ts";
   for (const doc of ["examples/reset-cycle/README.md", "examples/reset-cycle/README_ko.md"]) {
@@ -752,6 +803,75 @@ async function verifyTelemetryLoopExamples(): Promise<void> {
   assert(asRecord(experiment.plan as JSONValue).usersPerGroup === 1534, "documented experiment must need 1534 installs per group");
 }
 
+async function verifyEngineIntegrationExample(): Promise<void> {
+  const example = "../../examples/engine-integration";
+  const scenario = `${example}/scenario.json`;
+  for (const doc of ["docs/engine-integration.md", "docs/engine-integration_ko.md"]) {
+    const text = await readText(resolve(ROOT, doc));
+    for (const command of ["idk export engine", "idk import scenario", "idk verify runtime"]) {
+      assert(text.includes(command), `${doc} must document ${command}`);
+    }
+  }
+  const committed: [string[], string][] = [
+    [["--target", "generic"], "examples/engine-integration/cafe.engine-params.json"],
+    [["--target", "godot"], "examples/engine-integration/godot/data/cafe_economy.tres"],
+    [["--target", "godot", "--file-format", "json"], "examples/engine-integration/godot/data/cafe_economy.json"],
+    [["--target", "unity"], "examples/engine-integration/unity/cafe_economy.json"],
+    [["--target", "unity", "--file-format", "csv"], "examples/engine-integration/unity/cafe_levels.csv"],
+  ];
+  for (const [flags, path] of committed) {
+    const generated = runCli(["export", "engine", scenario, ...flags, "--levels", "25"]);
+    assert(generated === (await readText(resolve(ROOT, path))).replaceAll("\r\n", "\n"), `${path} is stale; regenerate it with idk export engine ${flags.join(" ")} --levels 25`);
+  }
+  for (const name of ["shop-levels.csv", "balance-sheet.json"]) {
+    const base = name.replace(/\.(csv|json)$/, "");
+    const out = resolve(tmpDir, `engine-import-${base}.json`);
+    runCli(["import", "scenario", `${example}/import/${name}`, "--mapping", `${example}/import/${base}.mapping.json`, "--out", out]);
+    assert(runCli(["validate", out]).includes("OK"), `imported ${name} must pass idk validate`);
+  }
+  const roundTripParams = resolve(tmpDir, "engine-roundtrip.params.json");
+  const roundTripScenario = resolve(tmpDir, "engine-roundtrip.scenario.json");
+  runCli(["export", "engine", scenario, "--out", roundTripParams]);
+  runCli(["import", "scenario", roundTripParams, "--out", roundTripScenario]);
+  assert(runCli(["validate", roundTripScenario]).includes("OK"), "engine export round trip must pass idk validate");
+  const pluginFlags = ["--plugin", `${example}/ts-runtime/runtime-plugin.ts`, "--allow-plugin", "true", "--seed", "7", "--format", "json"];
+  const exact = asRecord(runCliJson(["verify", "runtime", scenario, ...pluginFlags, "--runtime", "cafe.runtime.exact"]));
+  assert(exact.ok === true, "cafe.runtime.exact must match the idlekit model");
+  assert(asRecord(exact._meta as JSONValue).schemaRef === "docs/schemas/runtime.verify.output.schema.json", "verify runtime must report its schemaRef");
+  const rounded = asRecord(
+    runCliJson(["verify", "runtime", scenario, ...pluginFlags, "--runtime", "cafe.runtime", "--fail-on-mismatch", "false"]),
+  );
+  assert(rounded.ok === false && rounded.firstMismatch !== null, "cafe.runtime must report its rounded prices");
+}
+
+async function verifyChartExamples(): Promise<void> {
+  const commands = await developmentExamples("docs/chart-interpretation.md", "simulate|experience|compare|experiment");
+  const korean = await developmentExamples("docs/chart-interpretation_ko.md", "simulate|experience|compare|experiment");
+  assert(commands.length === 4, "chart guide must provide four runnable examples");
+  assert(JSON.stringify(commands) === JSON.stringify(korean), "English and Korean chart commands must match");
+  const chartDir = resolve(ROOT, "tmp", "charts");
+  await removePath(chartDir);
+  await ensureDir(chartDir);
+  const kinds: Record<string, string> = { simulate: "progression", experience: "progression", compare: "compare", experiment: "sensitivity" };
+  for (const args of commands) {
+    runCli(args);
+    const flag = (name: string) => {
+      const index = args.indexOf(name);
+      assert(index >= 0 && args[index + 1], `chart example ${args[0]} must pass ${name}`);
+      return resolve(ROOT, "packages/cli", args[index + 1]!);
+    };
+    const svg = await readText(flag("--chart-out"));
+    assert(svg.startsWith("<svg") && svg.trimEnd().endsWith("</svg>"), `chart example ${args[0]} must write an SVG document`);
+    const data = asRecord(JSON.parse(await readText(flag("--chart-data-out"))) as JSONValue);
+    assert(data.contract === "idlekit.chart-data.v1" && data.schemaVersion === 1, `chart example ${args[0]} must write chart data v1`);
+    assert(data.kind === kinds[args[0]!], `chart example ${args[0]} must write ${kinds[args[0]!]} chart data`);
+    if (args.includes("md")) {
+      const md = await readText(flag("--out"));
+      assert(md.includes("## Decision hints"), `chart example ${args[0]} Markdown must include decision hints`);
+    }
+  }
+}
+
 async function main(): Promise<void> {
   await removePath(tmpDir);
   await ensureDir(tmpDir);
@@ -759,7 +879,11 @@ async function main(): Promise<void> {
   await verifyTelemetryLoopExamples();
   await verifyExperienceExamples();
   await verifyResetCycleExample();
+  await verifyEngineIntegrationExample();
   await verifyIntroTrack();
+  await verifyChartExamples();
+  await verifyBuiltinModelTutorials();
+  await verifyAdvancedAnalysisDocs();
   if (!isQuick) await verifyPluginTrack();
   console.log(`docs verification passed (${isQuick ? "quick" : "full"})`);
 }

@@ -1,0 +1,59 @@
+{
+  "$schema": "../../../docs/schemas/import-mapping.v1.schema.json",
+  "format": "idlekit.import-mapping",
+  "formatVersion": 1,
+  "source": {
+    "rows": "economies",
+    "where": {
+      "name": "mine"
+    }
+  },
+  "units": {
+    "timeUnit": "hour"
+  },
+  "scenario": {
+    "id": "imported-mine",
+    "title": "Mine economy from balance sheet",
+    "unit": {
+      "code": "GOLD",
+      "symbol": "G"
+    },
+    "clock": {
+      "stepSec": 1,
+      "durationSec": 3600
+    },
+    "policy": {
+      "mode": "accumulate",
+      "maxLogGap": 14
+    },
+    "strategy": {
+      "id": "greedy"
+    }
+  },
+  "model": {
+    "id": "linear",
+    "version": 1,
+    "params": {
+      "incomePerSec": {
+        "from": "production.perHour"
+      },
+      "buyIncomeDelta": {
+        "from": "production.perUpgradePerHour"
+      },
+      "buyCostBase": {
+        "from": "upgrade.baseCost"
+      },
+      "buyCostGrowth": {
+        "from": "upgrade.costMultiplier"
+      }
+    }
+  },
+  "initial": {
+    "wallet": {
+      "from": "start.gold"
+    },
+    "owned": {
+      "from": "start.lumberjacks"
+    }
+  }
+}

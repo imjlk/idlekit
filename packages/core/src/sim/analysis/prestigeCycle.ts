@@ -20,6 +20,7 @@ export const legacyPrestigeCycleWarnings = [
   "stability is cycles >= 5 and is not a measured steady state",
   "breakEvenSec is min(interval, horizon) and is not a committed reset",
   "cycles is copied onto each row and is not a count of committed resets",
+  "pointsPerHour counts committed points plus the reset available at the end of the interval",
 ] as const;
 
 function metric(row: PrestigeCycleRow, objective: PrestigeCycleObjective): number {
@@ -85,7 +86,12 @@ export function analyzePrestigeCycle<N, U extends string, Vars>(args: {
     const netWorthPerHour =
       args.scenario.ctx.E.toNumber(worth.amount) / Math.max(1 / 3600, interval / 3600);
 
-    const gainedPoints = args.scenario.ctx.E.sub(run.end.prestige.points, run.start.prestige.points);
+    // Points committed during the interval, plus the reset the interval ends with. A model whose reset only a
+    // policy commits (the built-in prestige model under greedy) would otherwise read 0 points per hour.
+    const E = args.scenario.ctx.E;
+    const committed = E.sub(run.end.prestige.points, run.start.prestige.points);
+    const pending = args.scenario.model.prestige?.pointsFrom(args.scenario.ctx, run.end) ?? E.zero();
+    const gainedPoints = E.isFinite(pending) && E.cmp(pending, E.zero()) > 0 ? E.add(committed, pending) : committed;
     const pointsPerHour =
       args.scenario.ctx.E.toNumber(gainedPoints) / Math.max(1 / 3600, interval / 3600);
 

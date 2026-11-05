@@ -1,0 +1,176 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://idlekit.dev/schemas/models/multi-currency.params.v1.schema.json",
+  "title": "Params of the built-in multi-currency@1 model.",
+  "type": "object",
+  "properties": {
+    "primary": {
+      "default": {
+        "idleIncome": "1"
+      },
+      "type": "object",
+      "properties": {
+        "idleIncome": {
+          "default": "1",
+          "type": "string",
+          "pattern": "^[+]?(?:\\d+(?:\\.\\d*)?|\\.\\d+)(?:[eE][+-]?\\d+)?$"
+        },
+        "cap": {
+          "type": "string",
+          "pattern": "^[+]?(?:\\d+(?:\\.\\d*)?|\\.\\d+)(?:[eE][+-]?\\d+)?$"
+        }
+      }
+    },
+    "currencies": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_-]{0,47}$"
+          },
+          "initial": {
+            "default": "0",
+            "type": "string",
+            "pattern": "^[+]?(?:\\d+(?:\\.\\d*)?|\\.\\d+)(?:[eE][+-]?\\d+)?$"
+          },
+          "cap": {
+            "type": "string",
+            "pattern": "^[+]?(?:\\d+(?:\\.\\d*)?|\\.\\d+)(?:[eE][+-]?\\d+)?$"
+          },
+          "valueInPrimary": {
+            "default": 1,
+            "type": "number",
+            "minimum": 0
+          },
+          "idleIncome": {
+            "default": "0",
+            "type": "string",
+            "pattern": "^[+]?(?:\\d+(?:\\.\\d*)?|\\.\\d+)(?:[eE][+-]?\\d+)?$"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      }
+    },
+    "generators": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_-]{0,47}$"
+          },
+          "produces": {
+            "default": "primary",
+            "type": "string"
+          },
+          "incomePerLevel": {
+            "default": "1",
+            "type": "string",
+            "pattern": "^[+]?(?:\\d+(?:\\.\\d*)?|\\.\\d+)(?:[eE][+-]?\\d+)?$"
+          },
+          "costCurrency": {
+            "default": "primary",
+            "type": "string"
+          },
+          "costBase": {
+            "default": "10",
+            "type": "string",
+            "pattern": "^[+]?(?:\\d+(?:\\.\\d*)?|\\.\\d+)(?:[eE][+-]?\\d+)?$"
+          },
+          "costGrowth": {
+            "default": 1.15,
+            "type": "number",
+            "minimum": 1
+          },
+          "maxLevel": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "id"
+        ]
+      }
+    },
+    "exchanges": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_-]{0,47}$"
+          },
+          "from": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          },
+          "rate": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          "fee": {
+            "default": 0,
+            "type": "number",
+            "minimum": 0,
+            "exclusiveMaximum": 1
+          },
+          "lot": {
+            "default": "1",
+            "type": "string",
+            "pattern": "^[+]?(?:\\d+(?:\\.\\d*)?|\\.\\d+)(?:[eE][+-]?\\d+)?$"
+          }
+        },
+        "required": [
+          "id",
+          "from",
+          "to",
+          "rate"
+        ]
+      }
+    },
+    "autoConvert": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "exchange": {
+            "type": "string"
+          },
+          "mode": {
+            "default": "overflow",
+            "type": "string",
+            "enum": [
+              "overflow",
+              "surplus"
+            ]
+          },
+          "keep": {
+            "default": "0",
+            "type": "string",
+            "pattern": "^[+]?(?:\\d+(?:\\.\\d*)?|\\.\\d+)(?:[eE][+-]?\\d+)?$"
+          }
+        },
+        "required": [
+          "exchange"
+        ]
+      }
+    }
+  },
+  "required": [
+    "currencies",
+    "generators"
+  ]
+}

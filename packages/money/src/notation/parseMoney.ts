@@ -16,8 +16,10 @@ function parseSuffixIndex(token: string | undefined, suffix: Suffixer | undefine
   }
 
   if (suffix.kind === "table") {
-    const idx = suffix.table.findIndex((x) => x.toLowerCase() === token.toLowerCase());
-    return idx >= 0 ? idx : -1;
+    // An exact match wins, so a table holding both "k" and "K" keeps them apart.
+    const exact = suffix.table.indexOf(token);
+    if (exact >= 0) return exact;
+    return suffix.table.findIndex((x) => x.toLowerCase() === token.toLowerCase());
   }
 
   return alphaInfiniteIndex(token, suffix.minLen ?? 2);

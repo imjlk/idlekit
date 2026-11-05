@@ -1,5 +1,6 @@
 import { resolve } from "path";
 import { stableStringify } from "../packages/cli/src/io/outputMeta";
+import { createGenreScenario, GENRE_PRESET_INFO, GENRE_PRESETS } from "../packages/cli/src/templates/genres";
 import { buildCanonicalPersonalBuilderExamples, buildInitTemplatePlan } from "../packages/cli/src/templates/scenario";
 
 function assertEqual(label: string, actual: unknown, expected: unknown): void {
@@ -65,4 +66,9 @@ if (namedTuneContent.meta?.id !== "space-miner-v1-tune") {
   throw new Error("Named personal bundle tune metadata mismatch");
 }
 
-console.log("OK: template fixtures and named personal bundle match canonical sources");
+for (const preset of GENRE_PRESETS) {
+  const example = GENRE_PRESET_INFO[preset].example;
+  assertEqual(example, await Bun.file(resolve(root, example)).json(), createGenreScenario(preset));
+}
+
+console.log("OK: template fixtures, genre presets, and named personal bundle match canonical sources");

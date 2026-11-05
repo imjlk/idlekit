@@ -1,0 +1,32 @@
+{
+  "$schema": "../../../docs/schemas/import-mapping.v1.schema.json",
+  "format": "idlekit.import-mapping",
+  "formatVersion": 1,
+  "scenario": {
+    "id": "imported-shop",
+    "title": "Imported shop level table",
+    "unit": {
+      "code": "COIN",
+      "symbol": "C"
+    },
+    "clock": {
+      "stepSec": 1,
+      "durationSec": 1800
+    }
+  },
+  "model": {
+    "id": "linear",
+    "version": 1
+  },
+  "curves": {
+    "level": "level",
+    "cost": "price",
+    "income": "income_per_min",
+    "timeUnit": "min"
+  },
+  "initial": {
+    "wallet": {
+      "value": "50"
+    }
+  }
+}

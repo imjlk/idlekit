@@ -15,7 +15,10 @@ import growthCommand from "./commands/growth";
 import initScenarioCommand from "./commands/initScenario";
 import kpiRegressCommand from "./commands/kpiRegress";
 import ltvCommand from "./commands/ltv";
+import optimizeCommand from "./commands/optimize";
 import prestigeCycleCommand from "./commands/prestigeCycle";
+import resetPolicyCommand from "./commands/resetPolicy";
+import sensitivityCommand from "./commands/sensitivity";
 import reportCommand from "./commands/report";
 import simulateCommand from "./commands/simulate";
 import tuneCommand from "./commands/tune";
@@ -29,6 +32,9 @@ import reviewGroup from "./commands/groups/review";
 import setupGroup from "./commands/groups/setup";
 import strategiesGroup from "./commands/groups/strategies";
 import telemetryGroup from "./commands/groups/telemetry";
+import exportGroup from "./commands/groups/export";
+import importGroup from "./commands/groups/import";
+import verifyGroup from "./commands/groups/verify";
 import { CLI_DESCRIPTION, CLI_NAME, CLI_VERSION } from "./cliMeta";
 import { formatCliError, toCliError } from "./errors";
 
@@ -57,6 +63,9 @@ cli.command(experienceCommand);
 cli.command(etaCommand);
 cli.command(experimentCommand);
 cli.command(prestigeCycleCommand);
+cli.command(resetPolicyCommand);
+cli.command(sensitivityCommand);
+cli.command(optimizeCommand);
 cli.command(growthCommand);
 cli.command(ltvCommand);
 cli.command(reportCommand);
@@ -65,6 +74,9 @@ cli.command(tuneCommand);
 cli.command(calibrateCommand);
 cli.command(telemetryGroup);
 cli.command(balanceCommand);
+cli.command(exportGroup);
+cli.command(importGroup);
+cli.command(verifyGroup);
 
 if (import.meta.main) {
   try {

@@ -1,0 +1,100 @@
+{
+  "schemaVersion": 1,
+  "meta": {
+    "id": "prestige-loop-v1",
+    "title": "Prestige Loop V1",
+    "description": "Built-in prestige model: the exponential generator plus a first-class reset with root-scaled points, an additive multiplier, a minimum run time, and kept levels.",
+    "tags": [
+      "builtin-model",
+      "prestige",
+      "reset-cycle",
+      "worked-example"
+    ]
+  },
+  "unit": {
+    "code": "STAR",
+    "symbol": "S"
+  },
+  "policy": {
+    "mode": "accumulate",
+    "maxLogGap": 14
+  },
+  "model": {
+    "id": "prestige",
+    "version": 1,
+    "params": {
+      "generator": {
+        "idleIncome": "1",
+        "baseIncome": "1",
+        "growthRate": 1.03,
+        "costBase": "12",
+        "costGrowth": 1.13
+      },
+      "prestige": {
+        "requirement": "2e4",
+        "formula": {
+          "kind": "root",
+          "scale": 1,
+          "exponent": 0.5
+        },
+        "multiplierPerPoint": 0.25,
+        "multiplierMode": "additive",
+        "minRunSec": 300,
+        "minGain": 1,
+        "starterCash": "10",
+        "keepLevels": 2
+      }
+    }
+  },
+  "initial": {
+    "t": 0,
+    "wallet": {
+      "unit": "STAR",
+      "amount": "0",
+      "bucket": "0"
+    },
+    "vars": {
+      "level": 0,
+      "runStartT": 0
+    },
+    "prestige": {
+      "count": 0,
+      "points": "0",
+      "multiplier": "1"
+    }
+  },
+  "clock": {
+    "stepSec": 1,
+    "durationSec": 7200
+  },
+  "strategy": {
+    "id": "greedy"
+  },
+  "analysis": {
+    "eta": {
+      "mode": "simulate"
+    },
+    "growth": {
+      "windowSec": 60
+    }
+  },
+  "outputs": {
+    "format": "json",
+    "report": {
+      "checkpointsSec": [
+        300,
+        900,
+        1800,
+        3600,
+        7200
+      ],
+      "includeTrace": true,
+      "traceEverySteps": 10,
+      "includeGrowth": true,
+      "includeUX": true
+    }
+  },
+  "constraints": {
+    "minPrestigeIntervalSec": 300
+  }
+}

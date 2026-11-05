@@ -25,7 +25,7 @@ function ownedCount(state: { vars?: LinearVars } | undefined): number {
 }
 
 /** Commands that build the number engine themselves and take no --engine flag. */
-export const NUMBER_ONLY_COMMANDS = ["report", "analyze", "eta", "growth", "prestige-cycle"] as const;
+export const NUMBER_ONLY_COMMANDS = ["report", "analyze", "eta", "growth", "prestige-cycle", "reset-policy"] as const;
 
 function finiteLinearAmount<N>(E: Engine<N>, value: N, label: string): N {
   if (!E.isFinite(value)) {

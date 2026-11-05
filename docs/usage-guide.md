@@ -58,7 +58,12 @@ idk doctor --format md
 idk doctor --fix true --shell zsh
 idk completions zsh
 idk replay verify <artifact> --format json
+idk export engine <scenario> --target godot --out economy.tres
+idk import scenario <table.csv> --mapping <mapping.json> --out scenario.json
+idk verify runtime <scenario> --plugin ./runtime-plugin.ts --allow-plugin true --seed 7
 ```
+
+`export engine`, `import scenario`, and `verify runtime` connect scenarios to Godot, Unity, and game-side code. See [engine-integration.md](./engine-integration.md).
 
 ## Design evaluation commands
 
@@ -72,6 +77,8 @@ idk replay verify <artifact> --format json
 - `review doctor`: Markdown setup-health report built on top of `doctor`
 - `tune`: strategy search against economy or experience-oriented objectives
 - `ltv`: long-horizon monetization and value proxy estimation
+
+`simulate`, `experience`, `compare`, and `experiment` take `--chart-out <file.svg>` and `--chart-data-out <file.json>`; the first three also take `--chart-max-points <n>` (default 512). They write a dependency-free SVG and the `idlekit.chart-data.v1` chart data next to the normal output, which stays unchanged. `experience --format md`, `review evaluate`, `review compare`, and `experiment --format md` end with a `## Decision hints` section. See [Charts and decision hints](./chart-interpretation.md).
 
 ## Run configuration flags
 
@@ -90,6 +97,7 @@ Programmatic candidate scoring may share stateless base models. Pass `model` and
 - `--step` and `--fast` apply to simulate and ltv. On `evaluate` they reach experience only with `--consistent-overrides true`. The standalone `experience` command does not take `--step` or `--fast`. Session pattern and `--days` stay on experience.
 - `scenarioHash` is still the original scenario object. `effectiveRunHash`, `effectiveEngine`, and `stageScope` are optional `_meta` fields. The hash ignores `generatedAt`, the working directory, and absolute paths. It keeps `--plugin` order, because a later plugin replaces an earlier one with the same model or strategy id. Each `pluginDigest` value covers the plugin file and the files it reaches through local imports (`./`, `../`, absolute paths, `file:` URLs), keyed by their path from the plugin directory. A plugin without local imports keeps its file sha256. Installed packages and other bare specifiers are not hashed. `--plugin-sha256` and the trust file pin the plugin file alone. `TC-05` registers `ScenarioV1` on the contract generator. `idlekit.resolved-run-configuration` stays a CLI plan id and is not a generated schema.
 - Amount goals such as `money >= 1aa` use `parseMoney` on the amount path for both the number engine and `breakInfinity`. `1e400` stays on `breakInfinity` and is not converted with `Number` first.
+- `--seed` on `simulate`, `experience`, `evaluate`, `compare`, `tune`, and `ltv` must be an integer in `0..4294967295` (an unsigned 32-bit value). The RNG reduces its seed to 32 bits, so a fractional, negative, or larger value used to be recorded in `_meta.seed` while a different stream ran. Such values now fail with `CLI_USAGE` before the run.
 - Strategy parameter checks default to legacy raw. The internal schema adapter is not the external Standard Schema package.
 
 `simulate.durationSec` counts online tick seconds. `totalElapsedSec` also includes credited offline tick seconds and elapsed time retained in a resumed save. New saves preserve this total in `meta.totalElapsedSec`; older saves fall back to their timestamp offset for the saved portion. Action-log `elapsedSec` counts tick seconds before the action (including prior credited session segments), while `t` remains the absolute timestamp. LTV uses that elapsed clock for `timeToFirstUpgradeSec`, so large initial timestamps do not round this KPI.
@@ -119,6 +127,10 @@ Recommended interactive order:
 - `idk setup completions`: install the managed completions block directly
 - `idk setup plugin-trust`: generate a sha256 trust file for plugin-based runs
 
+## Genre presets
+
+`idk init scenario --preset cookie-clicker|tycoon|prestige-heavy|crafting|session-arcade --out ./game.json` writes one genre scenario on a built-in model. See [examples/genres](../examples/genres/README.md) for the tutorial.
+
 ## Wizard flows
 
 - `idk init scenario --wizard`: interactive scenario scaffold generation
@@ -133,13 +145,23 @@ The shipped analysis scope includes flow diagnosis, guarded analytic advance, th
 
 - [scenario-and-tuning.md](./scenario-and-tuning.md)
 - [plugin-and-adapter.md](./plugin-and-adapter.md)
+- [engine-integration.md](./engine-integration.md)
 - [testing.md](./testing.md)
+- [chart-interpretation.md](./chart-interpretation.md)
 
 ## Interpreting evaluate value estimates
 
 Modeled LTV is undiscounted. A horizon of H days covers install days `[0, H)`: day 0 is the install day, as in telemetry and `calibrate`, and a fractional last day is prorated at that day's retention. Quantile keys are exact percents (`q50`, `q2.5`).
 
 `evaluate --format md` labels end net worth in the scenario's game unit and displays the requested horizons alongside modeled LTV per user. Game wealth can be an input to a revenue estimate. Connecting it to actual sales requires an explicit exchange rate or conversion model, a revenue model, a currency, retention assumptions, and a horizon. State those assumptions and calibrate them against telemetry; the configured or default monetization parameters are estimates, rather than measured sales. The JSON output keeps the economy values and monetization fields available for your own conversion workflow.
+
+`ltv` reports which value-bearing inputs fell back to built-in placeholders in `monetization.assumptions.defaulted` (for example `monetization.retention.d1` or `monetization.revenue.arppuDaily`) and prints the same list as a `[warning]` line on stderr. `monetization.assumptions.warning` is `null` when every retention anchor, `longTailDailyDecay`, `payerConversion`, `arppuDaily`, and `adArpDau` is authored in the scenario. Treat LTV values produced with defaults as placeholders, not estimates.
+
+## Number display in output
+
+The number engine writes amounts with `String(n)`, the shortest text that round-trips to the same double. JSON can therefore show a value such as `"81276.59999999998"`. That is the exact value the run produced. JSON, CSV, replay artifacts, and saved state keep this lossless text, because resume, replay verification, and run hashes depend on it.
+
+`--format md` is human output. Plain decimal values in Markdown tables and blocks are rounded to 12 significant digits with trailing zeros removed (`81276.59999999998` shows as `81276.6`). Integers, exponent or engine-specific text such as break_infinity `1.5e300`, and non-numeric strings are unchanged. Round in your own tooling if you need a different precision for JSON or CSV.
 
 Use [`calibrate --observed-through-day N --scenario scenario.json`](./player-telemetry.md)
 to compare a fully observed install cohort with the scenario's explicit retention

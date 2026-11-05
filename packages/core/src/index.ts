@@ -31,6 +31,7 @@ export * from "./sim/step";
 export * from "./sim/stepTypes";
 export * from "./sim/offline";
 export * from "./sim/random";
+export * from "./sim/stochastic";
 export * from "./sim/session";
 export * from "./sim/monteCarlo";
 export * from "./sim/executionBackend";
@@ -63,6 +64,11 @@ export * from "./sim/analysis/prestigeCycle";
 export * from "./sim/analysis/resetCycle";
 export * from "./sim/analysis/resetOptimization";
 export * from "./sim/analysis/distribution";
+export * from "./sim/analysis/sampleStats";
+export * from "./sim/analysis/designSpace";
+export * from "./sim/analysis/globalSensitivity";
+export * from "./sim/analysis/parameterSearch";
+export * from "./sim/analysis/resetInsights";
 export * from "./sim/analysis/experiment";
 export * from "./sim/analysis/sensitivity";
 export * from "./sim/analysis/growth";
@@ -79,10 +85,15 @@ export * from "./sim/analysis/judge";
 export * from "./sim/analysis/flow";
 export * from "./sim/analysis/jevAdvisory";
 
+export * from "./models/index";
+
 export * from "./report/timeline";
 export * from "./report/compare";
+export * from "./report/chart";
+export * from "./report/chartSvg";
 
 export * from "./utils/deepClone";
 export * from "./ltv/public";
 export * from "./ltv/cohort";
 export * from "./ltv/telemetryLoop";
+export * from "./adapters/runtime";

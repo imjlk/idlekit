@@ -1,0 +1,22 @@
+level,item,price,income_per_min
+0,Espresso Machine,25.00,30
+2,Espresso Machine,31.36,60
+4,Espresso Machine,39.34,90
+6,Espresso Machine,49.35,120
+8,Espresso Machine,61.90,150
+10,Espresso Machine,77.65,180
+12,Espresso Machine,97.40,210
+14,Espresso Machine,122.18,240
+16,Espresso Machine,153.26,270
+18,Espresso Machine,192.25,300
+20,Espresso Machine,241.16,330
+22,Espresso Machine,302.51,360
+24,Espresso Machine,379.47,390
+26,Espresso Machine,476.00,420
+28,Espresso Machine,597.10,450
+30,Espresso Machine,749.00,480
+32,Espresso Machine,939.54,510
+34,Espresso Machine,1.18K,540
+36,Espresso Machine,1.48K,570
+38,Espresso Machine,1.85K,600
+40,Espresso Machine,2.33K,630

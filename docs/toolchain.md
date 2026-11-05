@@ -13,7 +13,7 @@ Registry metadata checked on 2026-11-01. Versions are exact. `ttsc` is pinned to
 | `ttsc`, `@ttsc/lint`, `@ttsc/evidence`, `@ttsc/graph`, `@ttsc/unplugin` | `0.34.3` | One release line compatible with Graph and unplugin peers. |
 | `typescript` | `7.0.2` | npm `typescript` package used by tooling and reported by `ttsc version`. Installing it does not turn `ttsc` back into TypeScript 5 `tsc`. |
 | `typia` | `15.2.2` | Inside `@ttsc/graph@0.34.3`'s `typia@^15.1.0` range. typia `15.2` peers on `ttsc@>=0.34.1`. Also the core runtime dependency. |
-| Bun | `1.4.2` | Root `packageManager`. CI workflows use the same pin. |
+| Bun | `1.4.4` | Root `packageManager`. CI workflows use the same pin. Development pin only: the published packages still declare `engines.bun` `>=1.4.2`. `1.4.4` drops the `directory mismatch` stderr noise described below. |
 | Node launcher | `>=22.15.0` | `ttsc@0.34.3` `engines.node`. CI smoke uses `26.11.1`. |
 | Publish Node | `26.11.1` | Release workflow. Same Node as CI, because `publish:gate` and package prepack run ttsc. |
 
@@ -21,7 +21,7 @@ Registry metadata checked on 2026-11-01. Versions are exact. `ttsc` is pinned to
 
 `ttsc version` reports both the ttsc package and the resolved TypeScript-Go version. The native compiler and bundled Go live in `@ttsc/<platform>-<arch>`. Graph has its own native package, `@ttsc/graph-<platform>-<arch>`, resolved through `@ttsc/graph`'s public `resolveGraphBinary` API. `TTSC_GRAPH_BINARY` and `TTSC_GO_BINARY` must be unset or point at their respective pinned native packages. `toolchain:doctor` rejects other paths and reports a missing native Graph package as a diagnostic failure. Smoke also clears `TTSC_TTSX_BINARY`.
 
-Bun `1.4.2` reports a Node-compatible `process.version` but `node:module.registerHooks` is missing. `@ttsc/lint` evaluates `lint.config.ts` by spawning `ttsx.js` with `process.execPath` when that path ends in `.js`. Under `bun-register` that executable is Bun, and the evaluation exits 1. `tools/ttsx-under-node` has no `.js` extension, so the lint package spawns it directly and the script `exec`s real `node` on `ttsc/lib/launcher/ttsx.js`. On Windows, `TTSC_TTSX_BINARY` uses Bun’s installed `node_modules/.bin/ttsx.exe` shim. Node can spawn that executable directly; `.cmd` launchers require a shell and fail when spawned directly. The `bun-preload` fixture sets `TTSC_TTSX_BINARY` to the launcher for the current platform. Product code still runs on Bun. This is not a `tsc` or `tsx` fallback.
+Bun `1.4.2` and `1.4.4` report a Node-compatible `process.version` but `node:module.registerHooks` is missing. `@ttsc/lint` evaluates `lint.config.ts` by spawning `ttsx.js` with `process.execPath` when that path ends in `.js`. Under `bun-register` that executable is Bun, and the evaluation exits 1. `tools/ttsx-under-node` has no `.js` extension, so the lint package spawns it directly and the script `exec`s real `node` on `ttsc/lib/launcher/ttsx.js`. On Windows, `TTSC_TTSX_BINARY` uses Bun’s installed `node_modules/.bin/ttsx.exe` shim. Node can spawn that executable directly; `.cmd` launchers require a shell and fail when spawned directly. The `bun-preload` fixture sets `TTSC_TTSX_BINARY` to the launcher for the current platform. Product code still runs on Bun. This is not a `tsc` or `tsx` fallback.
 
 ## Commands
 
@@ -29,7 +29,7 @@ The `bun-preload` transform fixture owns a private package manifest with only th
 
 | Script | What it runs |
 |---|---|
-| `toolchain:doctor` | Pins, Bun `1.4.2`, Node floor, native binary, bundled Go, and binary overrides |
+| `toolchain:doctor` | Pins, Bun `1.4.4`, Node floor, native binary, bundled Go, and binary overrides |
 | `toolchain:prepare` | `ttsc prepare` for the typia and evidence fixtures, then `ttsc cache paths --json` |
 | `toolchain:smoke` | Doctor plus the fixture table below |
 
@@ -51,13 +51,34 @@ The `bun-preload` transform fixture owns a private package manifest with only th
 | graph | `tsconfig.graph.json` | `noEmit` program for money, core, CLI, and tools. `@ttsc/lint` is `enabled: false`. |
 | solution | `tsconfig.solution.json` | `files: []` plus references. Root `typecheck` must not pass this file to `ttsc`. |
 
-There is no root `tsconfig.json`. A root project would auto-attach `@ttsc/lint`, and that config is `TC-03`. Package directories carry `bunfig.toml` with `@ttsc/unplugin/bun-register` for both runtime and `bun test`. Preload follows the process cwd and does not walk upward, so a fixture `bunfig.toml` stays isolated. Root execution of a package source file passes `--preload @ttsc/unplugin/bun-register`. The CLI testkit and doctor’s source re-entry still pass that preload when the entry is TypeScript and the cwd is the repo root. `@idlekit/cli`'s `test` script bundles the CLI once with `ttsc` into `packages/cli/.test-bundle/` and sets `IDLEKIT_CLI_ENTRY`, so the suite runs that JavaScript instead of building a new program on every command. Direct `bun test` of a TypeScript entry still pays for the transform. The package timeout stays `90000`, and the multi-command cases still allow 180s. `replay:verify`, `kpi:report`, and `docs:verify` run `packages/cli/dist/main.js` when `IDLEKIT_CLI_DIST=1` and that file exists. Otherwise they reuse `.test-bundle/main.js`, building it on first use. The bundled process points `--config` at `tools/bundled-cli-bunfig.toml` so the package preload does not rebuild the program. `tools/ttsx-under-node` remains the Node launcher for `lint.config.ts` evaluation. Product runtime stays Bun.
+There is no root `tsconfig.json`. A root project would auto-attach `@ttsc/lint`, and that config is `TC-03`. Package directories carry `bunfig.toml` with `@ttsc/unplugin/bun-register` for both runtime and `bun test`. Preload follows the process cwd and does not walk upward, so a fixture `bunfig.toml` stays isolated. Root execution of a package source file passes `--preload @ttsc/unplugin/bun-register`. The CLI testkit and doctor’s source re-entry still pass that preload when the entry is TypeScript and the cwd is the repo root. `@idlekit/cli`'s `test` script bundles the CLI once with `ttsc` into `packages/cli/.test-bundle/` and sets `IDLEKIT_CLI_ENTRY`, so the suite runs that JavaScript instead of building a new program on every command. Direct `bun test` of a TypeScript entry still pays for the transform. The package timeout stays `90000`, and the multi-command cases still allow 180s. The script runs test files with `bun test --parallel`, one isolated worker per CPU core, and reads `packages/cli/test-timings.json` so the slowest files start first. Refresh that file with `--update-timings` when files are added or their cost changes a lot; a stale or missing entry only changes the start order. Most of the suite's time is simulation work inside the spawned CLI, not process startup (about 80 ms of each run), so the files run side by side instead of moving commands in process. The long `effectiveRunHash` cases are split across four `effective-run-hash*.test.ts` files so no single file holds the run back. `replay:verify`, `kpi:report`, and `docs:verify` run `packages/cli/dist/main.js` when `IDLEKIT_CLI_DIST=1` and that file exists. Otherwise they reuse `.test-bundle/main.js`, building it on first use. The bundled process points `--config` at `tools/bundled-cli-bunfig.toml` so the package preload does not rebuild the program. `tools/ttsx-under-node` remains the Node launcher for `lint.config.ts` evaluation. Product runtime stays Bun.
 
 Gunshi handles CLI dispatch, nested commands, help, completion, and typo suggestions. Wizards use Clack; review commands are report aliases defaulting to Markdown. Bunli, OpenTUI, React, image previews, and their overrides have been removed.
 
 `typia.validate<T>()` with an unresolved `T` is a `ttsc` error (`non-specified generic argument`). `typiaStandardSchema<T>()` is deprecated and throws `TypiaTransformMissingError`. Call `typia.createValidate<Concrete>()` and pass that function to `standardSchemaFromValidate()`. `ConcreteQuota`, `validateConcreteQuota`, and `concreteQuotaSchema` are the concrete probe. Emitted JS still imports `typia`, so `@idlekit/core` keeps `typia` `15.2.2` as a runtime dependency. Published packages do not depend on `ttsc` or `@ttsc/*`. Workspace `bun` exports point at `src/index.ts`; `prepack` rewrites money and core `types` and `bun` to `dist` and `postpack` restores them. `npm pack` runs the manifest tool from the repo root so the package preload does not transform `tools/`.
 
 Dependabot opens one grouped pull request for `ttsc`, `@ttsc/*`, `typia`, and `@typia/*`. typia stays on its own version line. npm updates are rooted at the workspace lockfile so package directories do not open a second pull request.
+
+## Bun `directory mismatch` noise
+
+Under Bun `1.4.2`, the first transformed import of a package process often printed this to stderr while the command still succeeded:
+
+```text
+Internal error: directory mismatch for directory "<repo>/packages/core/tsconfig.json", fd 3. You don't need to do anything, but this indicates a bug.
+```
+
+Cause: when `@ttsc/unplugin/bun-register` sets up the typia plugin, ttsc (`lib/plugin/internal/load/loadProjectPlugins.js`) evaluates the plugin descriptor in a child process started with `process.execPath`, which is Bun here, and passes `--tsconfig-override=<package tsconfig>`. Bun `1.4.2` prints that internal error for any `--tsconfig-override` value, even though the override itself still applies. The child's stderr is forwarded, so the line shows up in `bun test`, `bun run`, and the CLI testkit output. ttsc `0.36.2` still passes the flag. idlekit code does not cause it, and published packages run without the preload, so users of the npm packages never see it.
+
+Minimal reproduction without idlekit or ttsc:
+
+```sh
+mkdir repro && cd repro
+echo '{}' > tsconfig.json
+echo 'console.log("hi")' > x.ts
+bun --tsconfig-override=./tsconfig.json x.ts   # 1.4.2: prints hi, then the internal error
+```
+
+Checked on 2026-11-04 on Linux x64: Bun `1.4.2` printed the line on every run, while `1.4.3` and `1.4.4` print only `hi`. Under `1.4.4`, `bun src/main.ts --version` in `packages/cli` is clean as well, and `bunx @idlekit/cli@0.7.0 --version` is clean even on `1.4.2`. The upstream report, [oven-sh/bun#22023](https://github.com/oven-sh/bun/issues/22023), was still open on that date. The development pin is `1.4.4` for that reason. The supported runtime floor stays `>=1.4.2`, where the line is harmless. The conformance runner still does not treat the line as a failed transform.
 
 ## Fixture
 
@@ -81,6 +102,8 @@ Evidence and the inventory catch drift by an author who is not trying to fool th
 
 They are not a sandbox for test code written to deceive the gate. A test runs with the developer's rights. It can evaluate code through `node:vm` or `Reflect`, start a detached process, or rewrite its own reporter output. Code review of the test source covers that case. The source lock stays as a best-effort guard, not a security boundary. A finding that needs adversarial test code is out of scope for `evidence:check`.
 
+
+2026-11-04 update: the development Bun pin moves from `1.4.2` to `1.4.4` to drop the `directory mismatch` stderr line. `engines.bun` stays `>=1.4.2`. `bench:sim:check` compares baselines only on the same Bun version, so `examples/bench/perf-baseline.json` gains a Linux x64 Bun `1.4.4` entry. The macOS arm64 entry is still Bun `1.4.2`; refresh it with `bun run bench:sim:baseline` on that host.
 
 2026-11-01 update: ttsc and its plugins use `0.34.3`, and typia and the transitive `@typia/*` packages use `15.2.2`. TypeScript stays `7.0.2`; only 7.1 dev builds exist. ttsc `0.34` picks its compiler target from the installed TypeScript line, so this repository still builds against 7.0. The bundled Go in `@ttsc/<platform>-<arch>` is now go1.27 (`go1.27.3` on darwin/arm64), which typia `15.2`'s native plugin requires. `@ttsc/lint` now declares a `ttsc` peer. Regenerated contracts change only the recorded typia version and source hashes. The schema bodies are byte-identical.
 

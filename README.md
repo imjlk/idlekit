@@ -29,20 +29,22 @@ Use it when you want to:
 
 ## Quick start
 
-Repository examples:
+Requires Bun `>=1.4.2` (check with `bun --version`). From the repository root, `bun run idk <command>` runs the CLI from source, and paths are relative to the root:
 
 ```bash
 bun install
-bun run --cwd packages/cli dev -- validate ../../examples/tutorials/11-my-game-v1.json
-bun run --cwd packages/cli dev -- simulate ../../examples/tutorials/11-my-game-v1.json --format json
-bun run --cwd packages/cli dev -- experience ../../examples/tutorials/11-my-game-v1.json --format json
-bun run --cwd packages/cli dev -- evaluate ../../examples/tutorials/11-my-game-v1.json --format md
-bun run --cwd packages/cli dev -- ltv ../../examples/tutorials/11-my-game-v1.json \
+bun run idk validate examples/tutorials/11-my-game-v1.json
+bun run idk simulate examples/tutorials/11-my-game-v1.json --format json
+bun run idk experience examples/tutorials/11-my-game-v1.json --format json
+bun run idk evaluate examples/tutorials/11-my-game-v1.json --format md
+bun run idk ltv examples/tutorials/11-my-game-v1.json \
   --horizons 30m,2h,24h,7d,30d,90d \
   --step 600 \
   --fast true \
   --format json
 ```
+
+The longer form used in the rest of the docs, `bun run --cwd packages/cli dev -- <command>`, is equivalent; it runs inside `packages/cli`, so its paths start with `../../`.
 
 Installed CLI flow:
 
@@ -131,7 +133,7 @@ mkdir -p tmp/local-packs
 (cd packages/cli && npm pack --pack-destination ../../tmp/local-packs)
 ```
 
-In a separate empty consumer directory, point internal dependencies at the local packs too. Bun 1.3.10 otherwise looks up the versioned `@idlekit/core` and `@idlekit/money` dependencies on the registry, even when all three tarballs are passed to `bun add`. Replace the paths below with your pack directory and use the versions in its filenames:
+In a separate empty consumer directory, point internal dependencies at the local packs too. Without `overrides`, Bun can look up the versioned `@idlekit/core` and `@idlekit/money` dependencies on the registry even when all three tarballs are passed to `bun add` (first observed on Bun 1.3.10, before the `>=1.4.2` requirement), so keep the `overrides` on the supported Bun line as well. Replace the paths below with your pack directory and use the versions in its filenames:
 
 ```bash
 cat > package.json <<'JSON'
@@ -158,8 +160,10 @@ Continue with the installed CLI flow above. Packing runs the build and rewrites 
 - Editable balance sheets, pacing targets, and sensitivity: [docs/balance-sheets.md](./docs/balance-sheets.md)
 - Product roadmap: [docs/roadmap.md](./docs/roadmap.md)
 - Command reference: [docs/usage-guide.md](./docs/usage-guide.md)
+- Charts (SVG) and decision hints: [docs/chart-interpretation.md](./docs/chart-interpretation.md)
 - Money package guide: [docs/money-library.md](./docs/money-library.md)
 - Plugin and adapter guide: [docs/plugin-and-adapter.md](./docs/plugin-and-adapter.md)
+- Game engine integration (Godot, Unity, runtime verification): [docs/engine-integration.md](./docs/engine-integration.md)
 - Scenario and tuning spec: [docs/scenario-and-tuning.md](./docs/scenario-and-tuning.md)
 - Testing and release operations: [docs/testing.md](./docs/testing.md), [docs/release-process.md](./docs/release-process.md)
 - Output schemas: [docs/schemas/README.md](./docs/schemas/README.md)

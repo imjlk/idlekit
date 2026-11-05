@@ -71,7 +71,10 @@ bun run --cwd packages/cli dev -- init scenario --track personal --preset builde
 bun run --cwd packages/cli dev -- init scenario --track personal --preset builder --out ../../tmp/my-game-v1.json --name "Space Miner"
 bun run --cwd packages/cli dev -- init scenario --track personal --preset session --out ../../tmp/my-session-game.json
 bun run --cwd packages/cli dev -- init scenario --track personal --preset longrun --out ../../tmp/my-longrun-game.json
+bun run --cwd packages/cli dev -- init scenario --preset cookie-clicker --out ../../tmp/my-clicker.json
 ```
+
+장르 프리셋(`cookie-clicker`, `tycoon`, `prestige-heavy`, `crafting`, `session-arcade`)은 내장 모델 위의 시나리오 하나를 쓴다. 튜토리얼은 [examples/genres](../examples/genres/README_ko.md)에 있다.
 
 preset 기본값:
 
@@ -419,6 +422,7 @@ bun run --cwd packages/cli dev -- ltv ../../examples/tutorials/14-orbital-foundr
 
 LTV는 할인하지 않은 누적값이다. H일 구간은 설치일(day 0)을 포함한 `[0, H)` 일을 센다.
 설치일은 telemetry와 `calibrate`처럼 day 0이며, 마지막 소수 일은 그날의 리텐션으로 나눠 센다.
+- `monetization.assumptions.defaulted`: 시나리오에 없어 내장 placeholder 값을 쓴 입력 경로 목록(예: `monetization.retention.d1`, `monetization.revenue.arppuDaily`). 같은 목록을 stderr에 `[warning]` 한 줄로도 출력한다. 리텐션 앵커, `longTailDailyDecay`, `payerConversion`, `arppuDaily`, `adArpDau`를 모두 시나리오에 적으면 `monetization.assumptions.warning`은 `null`이다. 기본값으로 계산한 LTV는 추정치가 아니라 placeholder로 취급한다.
 - `horizons[].guardrails.timeToFirstUpgradeSec`
 - `horizons[].guardrails.stallRatio`
 - `horizons[].guardrails.actionMix`
@@ -539,6 +543,21 @@ CLI JSON 출력 계약은 아래 스키마를 기준으로 관리됩니다.
 
 - `--format json|md|csv`
 - `--out <path>`
+- `--seed <n>`(`simulate`, `experience`, `evaluate`, `compare`, `tune`, `ltv`): `0..4294967295` 범위의 정수만 받는다. 난수 생성기는 seed를 32비트로 줄이므로, 소수·음수·범위 밖 값은 `_meta.seed`에는 그대로 기록되면서 실제로는 다른 난수열로 실행되었다. 이제 이런 값은 실행 전에 `CLI_USAGE`로 실패한다.
+
+숫자 표시 정책:
+
+- number 엔진은 금액을 `String(n)`, 즉 같은 double로 되돌아가는 가장 짧은 문자열로 쓴다. 그래서 JSON에 `"81276.59999999998"` 같은 값이 보일 수 있고, 이것이 실행이 만든 정확한 값이다.
+- JSON, CSV, replay artifact, 저장 state는 이 무손실 문자열을 그대로 유지한다. resume, replay 검증, 실행 hash가 이 값에 의존한다.
+- `--format md`는 사람이 읽는 출력이라, 표와 블록의 일반 소수 값을 유효숫자 12자리로 반올림하고 끝의 0을 지운다(`81276.59999999998` → `81276.6`). 정수, 지수 표기나 엔진 고유 문자열(예: break_infinity `1.5e300`), 숫자가 아닌 문자열은 바꾸지 않는다.
+
+차트 옵션(`simulate`, `experience`, `compare`, `experiment`):
+
+- `--chart-out <file.svg>`: 의존성 없는 SVG 차트
+- `--chart-data-out <file.json>`: `idlekit.chart-data.v1` 차트 데이터
+- `--chart-max-points <n>`: 시리즈당 점 수(기본 512, `experiment` 제외)
+
+일반 출력은 그대로 유지된다. `experience --format md`, `review evaluate`, `review compare`, `experiment --format md`는 `## Decision hints` 섹션으로 끝난다. 읽는 법은 [차트와 의사결정 힌트](./chart-interpretation_ko.md)를 본다.
 
 예:
 
@@ -608,6 +627,16 @@ bun run --cwd packages/cli dev -- simulate ../../examples/plugins/plugin-scenari
   --plugin ../../examples/plugins/custom-econ-plugin.ts \
   --allow-plugin true \
   --format json
+```
+
+### 게임 엔진 연동
+
+`export engine`, `import scenario`, `verify runtime`은 시나리오를 Godot, Unity, 게임 쪽 코드와 연결합니다. 자세한 내용은 [engine-integration_ko.md](./engine-integration_ko.md)를 참고하세요.
+
+```bash
+idk export engine <scenario> --target godot --out economy.tres
+idk import scenario <table.csv> --mapping <mapping.json> --out scenario.json
+idk verify runtime <scenario> --plugin ./runtime-plugin.ts --allow-plugin true --seed 7
 ```
 
 ## 9. 화폐 라이브러리 단독 사용(@idlekit/money)

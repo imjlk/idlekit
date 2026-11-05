@@ -1,0 +1,242 @@
+{
+  "format": "idlekit.engine-params",
+  "formatVersion": 1,
+  "source": {
+    "scenarioId": "engine-cafe",
+    "title": "Engine Integration Cafe",
+    "scenarioHash": "ff1b80ad7fe56c7cf948756c774f5fdfaa3393d973387318f80fae46353c42e1",
+    "cliVersion": "0.7.0"
+  },
+  "unit": {
+    "code": "COIN",
+    "symbol": "C"
+  },
+  "model": {
+    "id": "linear",
+    "version": 1
+  },
+  "clock": {
+    "stepSec": 1,
+    "durationSec": 1200
+  },
+  "policy": {
+    "mode": "accumulate",
+    "maxLogGap": 14
+  },
+  "strategy": {
+    "id": "greedy"
+  },
+  "initial": {
+    "t": 0,
+    "wallet": "0",
+    "vars": {
+      "owned": 0
+    },
+    "prestige": {
+      "count": 0,
+      "points": "0",
+      "multiplier": "1"
+    }
+  },
+  "parameters": [
+    {
+      "key": "incomePerSec",
+      "type": "amount",
+      "role": "income",
+      "value": "1"
+    },
+    {
+      "key": "buyCostBase",
+      "type": "amount",
+      "role": "cost",
+      "value": "12"
+    },
+    {
+      "key": "buyCostGrowth",
+      "type": "number",
+      "role": "growth",
+      "value": 1.11
+    },
+    {
+      "key": "buyIncomeDelta",
+      "type": "amount",
+      "role": "income",
+      "value": "1.35"
+    }
+  ],
+  "curves": [
+    {
+      "id": "buy.generator.cost",
+      "kind": "geometric",
+      "variable": "owned",
+      "base": "12",
+      "growth": 1.11,
+      "formula": "cost(n) = 12 * 1.11^n"
+    },
+    {
+      "id": "income",
+      "kind": "linear",
+      "variable": "owned",
+      "base": "1",
+      "perUnit": "1.35",
+      "formula": "incomePerSec(n) = (1 + 1.35 * n) * prestigeMultiplier"
+    }
+  ],
+  "levels": {
+    "variable": "owned",
+    "actionId": "buy.generator",
+    "rows": [
+      {
+        "level": 0,
+        "cost": "12",
+        "totalCost": "0",
+        "incomePerSec": "1"
+      },
+      {
+        "level": 1,
+        "cost": "13.32",
+        "totalCost": "12",
+        "incomePerSec": "2.35"
+      },
+      {
+        "level": 2,
+        "cost": "14.7852",
+        "totalCost": "25.32",
+        "incomePerSec": "3.7"
+      },
+      {
+        "level": 3,
+        "cost": "16.411572",
+        "totalCost": "40.1052",
+        "incomePerSec": "5.05"
+      },
+      {
+        "level": 4,
+        "cost": "18.21684492",
+        "totalCost": "56.516772",
+        "incomePerSec": "6.4"
+      },
+      {
+        "level": 5,
+        "cost": "20.2206978612",
+        "totalCost": "74.73361692",
+        "incomePerSec": "7.75"
+      },
+      {
+        "level": 6,
+        "cost": "22.444974625932",
+        "totalCost": "94.9543147812",
+        "incomePerSec": "9.1"
+      },
+      {
+        "level": 7,
+        "cost": "24.9139218347845",
+        "totalCost": "117.399289407132",
+        "incomePerSec": "10.45"
+      },
+      {
+        "level": 8,
+        "cost": "27.6544532366108",
+        "totalCost": "142.313211241917",
+        "incomePerSec": "11.8"
+      },
+      {
+        "level": 9,
+        "cost": "30.696443092638",
+        "totalCost": "169.967664478527",
+        "incomePerSec": "13.15"
+      },
+      {
+        "level": 10,
+        "cost": "34.0730518328282",
+        "totalCost": "200.664107571165",
+        "incomePerSec": "14.5"
+      },
+      {
+        "level": 11,
+        "cost": "37.8210875344393",
+        "totalCost": "234.737159403994",
+        "incomePerSec": "15.85"
+      },
+      {
+        "level": 12,
+        "cost": "41.9814071632277",
+        "totalCost": "272.558246938433",
+        "incomePerSec": "17.2"
+      },
+      {
+        "level": 13,
+        "cost": "46.5993619511827",
+        "totalCost": "314.539654101661",
+        "incomePerSec": "18.55"
+      },
+      {
+        "level": 14,
+        "cost": "51.7252917658128",
+        "totalCost": "361.139016052843",
+        "incomePerSec": "19.9"
+      },
+      {
+        "level": 15,
+        "cost": "57.4150738600522",
+        "totalCost": "412.864307818656",
+        "incomePerSec": "21.25"
+      },
+      {
+        "level": 16,
+        "cost": "63.730731984658",
+        "totalCost": "470.279381678708",
+        "incomePerSec": "22.6"
+      },
+      {
+        "level": 17,
+        "cost": "70.7411125029703",
+        "totalCost": "534.010113663366",
+        "incomePerSec": "23.95"
+      },
+      {
+        "level": 18,
+        "cost": "78.5226348782971",
+        "totalCost": "604.751226166336",
+        "incomePerSec": "25.3"
+      },
+      {
+        "level": 19,
+        "cost": "87.1601247149098",
+        "totalCost": "683.273861044633",
+        "incomePerSec": "26.65"
+      },
+      {
+        "level": 20,
+        "cost": "96.7477384335498",
+        "totalCost": "770.433985759543",
+        "incomePerSec": "28"
+      },
+      {
+        "level": 21,
+        "cost": "107.38998966124",
+        "totalCost": "867.181724193093",
+        "incomePerSec": "29.35"
+      },
+      {
+        "level": 22,
+        "cost": "119.202888523977",
+        "totalCost": "974.571713854333",
+        "incomePerSec": "30.7"
+      },
+      {
+        "level": 23,
+        "cost": "132.315206261614",
+        "totalCost": "1093.77460237831",
+        "incomePerSec": "32.05"
+      },
+      {
+        "level": 24,
+        "cost": "146.869878950392",
+        "totalCost": "1226.08980863992",
+        "incomePerSec": "33.4"
+      }
+    ]
+  },
+  "notes": []
+}
