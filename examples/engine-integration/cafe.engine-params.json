@@ -5,7 +5,7 @@
     "scenarioId": "engine-cafe",
     "title": "Engine Integration Cafe",
     "scenarioHash": "ff1b80ad7fe56c7cf948756c774f5fdfaa3393d973387318f80fae46353c42e1",
-    "cliVersion": "0.7.0"
+    "cliVersion": "0.8.0"
   },
   "unit": {
     "code": "COIN",
