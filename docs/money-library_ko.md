@@ -91,6 +91,15 @@ console.log(tracker.observe(restored.money));
 - `options.collectFacts = true`를 함께 설정하면 이벤트를 보관하지 않아도 읽기 전용 `facts`의 `applied`, `dropped`, `queued`, `flushed`, `blocked` 카운트를 받습니다. 지갑과 bucket 결과는 동일합니다.
 - 해당 이벤트가 발생한 경우 `appliedDelta`는 실제 적용량, `flushedBucket`은 이전 bucket을 담습니다. 기본 결과 형태는 유지되며 facts 수집은 이벤트 수집과 독립적입니다. Core는 돈 이벤트 생략 시 이 정보로 카운터와 정확한 양수 보상 판정을 유지합니다.
 
+### 표기·파싱 경계 규칙
+
+- `formatMoney`는 `significantDigits`(1~100 정수, 기본 3, 그 외 값은 `RangeError`)로 반올림합니다. 반올림한 가수가 1000이 되면 다음 suffix로 넘어갑니다. `999.9`는 `1.00e+3`이 아니라 `1aa`입니다. 자릿수가 정수부보다 적어도 지수 표기 없이 출력합니다. `123`을 1자리로 표기하면 `100`입니다.
+- `table` suffixer는 마지막 항목에서 멈춥니다. 그보다 큰 값은 마지막 suffix에 큰 가수를 붙입니다. `["", "K", "M"]`에서 `1e12`는 잘못된 작은 수가 아니라 `1000000M`입니다.
+- 부호는 값 자체에서 읽습니다. `cmp`가 0과 같다고 보는 `-1e-13`도 `-1e-13`으로 출력합니다. 지수 표기도 일반 표기처럼 0을 정리합니다(`trimTrailingZeros`가 false가 아니면 `1.00e-7` 대신 `1e-7`).
+- `parseMoney`는 부호, 소수, 지수, suffix가 붙은 ASCII 숫자만 받습니다. 로케일 구분자(`1,000`, `1.000,5`), 전각 숫자, `1_000`, `0x10`, `5.`, `NaN`, `Infinity`는 거부합니다. 엔진 범위를 넘는 값은 엔진이 표현하는 그대로 돌려줍니다(Number 엔진의 `1e400`은 `Infinity`, underflow는 0). 그래서 `isFinite`로 확인해야 하며, core의 ETA와 compare는 이 값을 fail closed로 처리합니다. `table` suffixer는 대소문자를 무시한 일치보다 정확한 일치를 먼저 씁니다.
+- `createNumberEngine().from`은 빈 문자열과 숫자가 아닌 문자열을 0이나 `NaN`으로 바꾸지 않고 거부합니다. 자신의 `toString`이 쓰는 `NaN`, `Infinity`, `-Infinity`는 그대로 읽습니다. `cmp(Infinity, Infinity)`는 0입니다. `cmp`에는 `NaN`용 결과가 없으므로 `isFinite`로 먼저 걸러야 합니다.
+- `deserializeMoneyState`는 `unit`, `amount`, `bucket`이 문자열인지 확인합니다. Number 엔진은 `-0`을 `0`으로 씁니다.
+
 ## 4. 엔진 어댑터 패턴
 
 커스텀 숫자 타입(`bigint`, decimal, big-number)을 쓰려면 `Engine<N>`만 구현하면 됩니다.
