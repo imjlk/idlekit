@@ -106,9 +106,10 @@ bun examples/adapter-pattern/run.ts
 
 ## 5. core와의 관계
 
-- `@idlekit/core`는 money 관련 모듈을 `@idlekit/money`에서 re-export합니다.
-- 즉, 시뮬레이터를 쓰면 기존처럼 `@idlekit/core`만 써도 되고,
-- 화폐 처리만 독립 사용하려면 `@idlekit/money`만 바로 써도 됩니다.
+- 엔진, `Money`/`MoneyState`, `tickMoney`, 표기, 화폐 serde의 공식 import 경로는 `@idlekit/money`입니다. 구현도 `@idlekit/money`에만 있습니다.
+- `@idlekit/core`는 같은 심볼을 얇은 wrapper 모듈로 re-export합니다. 기존 시뮬레이터 코드는 그대로 동작합니다.
+- core의 re-export는 v1 호환성 계약에 포함되어 v1 안에서는 제거하지 않지만, deprecation 예정입니다. 화폐 기능만 쓰는 새 코드는 `@idlekit/money`에서 직접 import하세요.
+- `breakEternityEngine`과 `createBreakEternityEngine`은 v1에서 구현되지 않은 placeholder입니다. 모든 메서드가 `BREAK_ETERNITY_EXPERIMENTAL_MESSAGE` 오류를 던지며, 공개 API 형태를 유지하려고만 export합니다. 큰 수는 `breakInfinityEngine`(`createBreakInfinityEngine`)이나 직접 구현한 `Engine<N>` 어댑터를 쓰세요.
 
 ## 6. 프로덕션 체크리스트
 

@@ -1,6 +1,7 @@
 import { defineCommand, option } from "../runtime/command";
 import { validateScenarioV1 } from "@idlekit/core";
 import { z } from "zod";
+import { seedOption } from "./_shared/seed";
 import { loadRegistriesFromFlags, pluginOptions } from "./_shared/plugin";
 import { scenarioInvalidError, usageError } from "../errors";
 import { prepareResolvedRun } from "../lib/runConfiguration";
@@ -36,7 +37,7 @@ export default defineCommand({
     engine: option(z.string().min(1).optional(), {
       description: "Execution engine. Default number. scenario.engine is metadata. breakInfinity is explicit. breakEternity is unsupported.",
     }),
-    seed: option(z.coerce.number().optional(), { description: "Deterministic seed" }),
+    seed: seedOption("Deterministic seed"),
     out: option(z.string().optional(), { description: "Output path" }),
     format: option(z.enum(["json", "md"]).default("json"), { description: "Output format" }),
     "run-id": option(z.string().optional(), { description: "Optional run identifier used in output metadata" }),

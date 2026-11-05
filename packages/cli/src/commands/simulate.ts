@@ -11,6 +11,7 @@ import {
 } from "@idlekit/core";
 import { resolve } from "path";
 import { z } from "zod";
+import { seedOption } from "./_shared/seed";
 import { loadRegistriesFromFlags, pluginOptions } from "./_shared/plugin";
 import { buildOfflineSummary, eventLogStageInputs, resolveEventLog } from "./_shared/simulateView";
 import {
@@ -131,7 +132,7 @@ export default defineCommand({
     resume: option(z.string().optional(), { description: "Resume simulation from saved state json" }),
     "state-out": option(z.string().optional(), { description: "Write end simulation state json" }),
     "artifact-out": option(z.string().optional(), { description: "Write replay artifact JSON to path" }),
-    seed: option(z.coerce.number().optional(), { description: "Deterministic seed passed to ctx.seed" }),
+    seed: seedOption("Deterministic seed passed to ctx.seed"),
     "run-id": option(z.string().optional(), { description: "Optional run identifier (auto-generated if omitted)" }),
     out: option(z.string().optional(), { description: "Output path" }),
     format: option(z.enum(["json", "md", "csv"]).default("json"), { description: "Output format" }),

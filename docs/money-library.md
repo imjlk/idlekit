@@ -71,6 +71,12 @@ Use `@idlekit/money` without `@idlekit/core` when you only need:
 - serialization of money state
 - UI-facing visibility checks for small deltas
 
+## Relationship with @idlekit/core
+
+`@idlekit/money` is the canonical import path for engines, `Money`/`MoneyState`, `tickMoney`, notation, and money serde. `@idlekit/core` re-exports the same symbols from thin wrapper modules so existing simulator code keeps working; the implementation exists only in `@idlekit/money`. The core re-exports remain part of the v1 compatibility contract and are scheduled for deprecation, so new code that only needs money primitives should import from `@idlekit/money`.
+
+`breakEternityEngine` and `createBreakEternityEngine` are placeholders and are not implemented in v1: every method throws `BREAK_ETERNITY_EXPERIMENTAL_MESSAGE`. They are exported only to keep the public surface stable. Use `breakInfinityEngine` (or `createBreakInfinityEngine`) for large values, or implement a custom `Engine<N>` adapter.
+
 ## Examples
 
 - Money-only example: [../examples/money-package/README.md](../examples/money-package/README.md)

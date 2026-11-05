@@ -11,8 +11,17 @@ export function mulberry32(seed: number): Random {
   };
 }
 
+/**
+ * Seed for draw `drawIndex` derived from `baseSeed`.
+ *
+ * The index is mixed with a 32-bit multiply (`Math.imul`). A float multiply
+ * `(drawIndex + 1) * 0x9e3779b9` stays exact only while the product is below
+ * 2^53 (drawIndex < ~3.4M); past that the low 32 bits are lost and distinct
+ * indexes can collide. For every index where the float product was exact,
+ * `Math.imul` yields the same low 32 bits, so existing seeds are unchanged.
+ */
 export function deriveDrawSeed(baseSeed: number, drawIndex: number): number {
-  const rng = mulberry32((baseSeed ^ ((drawIndex + 1) * 0x9e3779b9)) >>> 0);
+  const rng = mulberry32((baseSeed ^ Math.imul(drawIndex + 1, 0x9e3779b9)) >>> 0);
   return Math.floor(rng() * 0xffffffff) >>> 0;
 }
 

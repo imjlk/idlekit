@@ -275,7 +275,7 @@ export function fixesQuantileRanksAndKeys(): void {
  * @evidence ../random.ts#mulberry32 Replays one stream from one seed.
  * @evidenceReview ../random.ts#mulberry32 #4d4aba0 The function returns a 32-bit mulberry generator whose outputs are in [0, 1) and repeat for the same seed.
  * @evidence ../random.ts#deriveDrawSeed Derives the seed of one draw.
- * @evidenceReview ../random.ts#deriveDrawSeed #f9d31a5 The function seeds mulberry32 with the base seed mixed with the draw index and returns one unsigned 32-bit integer.
+ * @evidenceReview ../random.ts#deriveDrawSeed #10bc349 Re-read after the Math.imul change: the function seeds mulberry32 with the base seed XOR a 32-bit Math.imul of (index + 1) and 0x9e3779b9, and returns one unsigned 32-bit integer; seeds are unchanged wherever the old float product was exact.
  * @evidence ../random.ts#logicalDrawSeed Checks its inputs and derives the logical draw seed.
  * @evidenceReview ../random.ts#logicalDrawSeed #d14b996 The function rejects a non-finite base and an index that is not an integer >= 0, then returns deriveDrawSeed.
  * @evidence ../random.ts#logicalDrawId Spells the logical draw id.
