@@ -48,7 +48,8 @@ export function createLedger(modelId: string, field: string, entries: readonly L
   };
   const read = <N, U extends string, Vars>(E: Engine<N>, state: SimState<N, U, Vars>, key: string): N => {
     if (key === PRIMARY) return state.wallet.money.amount;
-    const raw = bag(state)[key];
+    const balances = bag(state);
+    const raw = Object.prototype.hasOwnProperty.call(balances, key) ? balances[key] : undefined;
     if (raw === undefined) {
       const entry = map.get(key);
       return entry ? amountOf(E, entry.initial, modelId, `${key} initial`) : E.zero();

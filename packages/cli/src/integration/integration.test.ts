@@ -54,6 +54,16 @@ describe("engine params helpers", () => {
     expect(tres).toContain("duration_sec = 0.0");
   });
 
+  it("writes integral amounts beyond int64 as Godot float literals", () => {
+    const tres = emitGodotTres(doc({ parameters: [{ key: "buyCostBase", type: "amount", value: "100000000000000000000" }] }));
+    expect(tres).toContain('"buyCostBase": 100000000000000000000.0');
+  });
+
+  it("keeps a clock untilExpr through the engine-params import", () => {
+    const imported = importScenarioFromEngineParams(doc({ clock: { stepSec: 1, untilExpr: "t >= 10" } }));
+    expect(imported.scenario.clock).toEqual({ stepSec: 1, untilExpr: "t >= 10" });
+  });
+
   it("falls back to the parameter CSV when there is no level table", () => {
     expect(emitUnityCsv(doc())).toBe("key,type,role,value\nbaseIncome,amount,other,2\nupgrade.growth,number,other,1.5\nenabled,boolean,other,true\n");
     expect(() => emitUnityCsv(doc(), "levels")).toThrow("no level table");

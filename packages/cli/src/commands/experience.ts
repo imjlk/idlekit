@@ -195,7 +195,7 @@ export default defineCommand({
           source: { command: "experience", scenario: scenarioPath, seed, runId },
           progression: progressionChart({
             E: seededScenario.ctx.E,
-            states: session.run.trace ?? [session.start, session.end],
+            states: withSessionEnd(session.run.trace ?? [session.start], session.end),
             startT: session.start.t,
             unit: seededScenario.ctx.unit.code,
             primarySeries: series,
@@ -241,3 +241,12 @@ export default defineCommand({
     });
   },
 });
+
+/**
+ * The merged trace covers only active blocks; a session that ends with credited offline time advances
+ * `session.end` past the last traced state. Append the endpoint so the chart spans the whole session.
+ */
+function withSessionEnd<S extends Readonly<{ t: number }>>(states: readonly S[], end: S): S[] {
+  const last = states[states.length - 1];
+  return last !== undefined && last.t >= end.t ? [...states] : [...states, end];
+}

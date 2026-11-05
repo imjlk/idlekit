@@ -480,3 +480,55 @@ describe("model params JSON schemas", () => {
     }
   });
 });
+
+describe("codex follow-ups", () => {
+  const E = createNumberEngine();
+
+  it("prices a representable purchase whose unscaled geometric power overflows", () => {
+    const model = createExponentialModel<number, "C">({ costBase: "1e-300", costGrowth: 2 });
+    const ctx = ctxFor<number, { level?: number }>(E);
+    const state = stateFor({ level: 1100 });
+    const buy = model.actions(ctx, state).find((action) => action.id.startsWith("buy"))!;
+    const cost = buy.cost(ctx, state)!;
+    expect(Number.isFinite(cost.amount)).toBe(true);
+    expect(Math.log10(cost.amount)).toBeCloseTo(-300 + 1100 * Math.log10(2), 6);
+  });
+
+  it("emits prestige.reset-available when the time gate opens on a tick boundary", () => {
+    const model = createPrestigeModel<number, "C">({
+      generator: { costBase: "10" },
+      prestige: { requirement: "1e3", minRunSec: 100 },
+    });
+    const ctx = ctxFor<number, { level?: number; runStartT?: number }>(E);
+    const tick = (t: number) => stateFor({ level: 10, runStartT: 0 }, 1e5, t);
+    expect(model.milestones!(ctx, tick(99), tick(99))).toContain("prestige.reset-available");
+    expect(model.milestones!(ctx, tick(100), tick(100))).not.toContain("prestige.reset-available");
+  });
+
+  it("caps primary proceeds of automatic conversion and keeps the overflow for later rules", () => {
+    type V = { levels?: Record<string, number>; balances?: Record<string, string> };
+    const model = createMultiCurrencyModel<number, "C">({
+      primary: { idleIncome: "0", cap: "5" },
+      currencies: [{ id: "gem", valueInPrimary: 1 }, { id: "ore", valueInPrimary: 1 }],
+      generators: [{ id: "mine", produces: "primary", incomePerLevel: "1" }],
+      exchanges: [
+        { id: "sell", from: "gem", to: "primary", rate: 1 },
+        { id: "smelt", from: "primary", to: "ore", rate: 1 },
+      ],
+      autoConvert: [{ exchange: "sell", mode: "surplus", keep: "0" }, { exchange: "smelt", mode: "overflow" }],
+    });
+    const next = model.evolve!(ctxFor<number, V>(E), stateFor<V>({ balances: { gem: "10" } }), 1);
+    expect(next.wallet.money.amount).toBe(5);
+    expect(next.vars.balances?.ore).toBe("5");
+  });
+
+  it("reads an omitted `constructor` balance from its configured initial amount", () => {
+    type V = { levels?: Record<string, number>; balances?: Record<string, string> };
+    const model = createMultiCurrencyModel<number, "C">({
+      primary: { idleIncome: "0" },
+      currencies: [{ id: "constructor", initial: "100", valueInPrimary: 1 }],
+      generators: [{ id: "mine", produces: "primary", incomePerLevel: "1" }],
+    });
+    expect(model.netWorth!(ctxFor<number, V>(E), stateFor<V>({})).amount).toBe(100);
+  });
+});

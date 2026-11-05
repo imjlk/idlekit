@@ -341,7 +341,9 @@ export function buildCompareKpiRows(results: readonly Readonly<Record<string, un
     const b = side("b");
     const na = a === null ? Number.NaN : Number(a);
     const nb = b === null ? Number.NaN : Number(b);
-    const relative = Number.isFinite(na) && Number.isFinite(nb)
+    // A nonzero decimal that converts to 0 underflowed; leave the percentage to the log-delta fallback.
+    const underflow = (text: string | null, n: number) => text !== null && n === 0 && decimalLog10(text) !== null;
+    const relative = !underflow(a, na) && !underflow(b, nb) && Number.isFinite(na) && Number.isFinite(nb) && Number.isFinite(nb)
       ? na === nb ? 0 : na !== 0 ? ((nb - na) / Math.abs(na)) * 100 : null
       : null;
     const la = a === null ? null : decimalLog10(a);

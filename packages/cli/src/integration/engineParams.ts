@@ -57,7 +57,7 @@ export type EngineParamsV1 = Readonly<{
   }>;
   unit: Readonly<{ code: string; symbol?: string }>;
   model: Readonly<{ id: string; version: number }>;
-  clock: Readonly<{ stepSec: number; durationSec?: number }>;
+  clock: Readonly<{ stepSec: number; durationSec?: number; untilExpr?: string }>;
   /** idlekit money policy. Engines may ignore it; `idk import scenario` restores it. */
   policy: Readonly<{ mode: "drop" | "accumulate"; maxLogGap?: number }>;
   /** Strategy of the design-time run. Engines may ignore it; `idk import scenario` restores it. */
@@ -250,6 +250,7 @@ export function buildEngineParams(args: {
     clock: {
       stepSec: scenario.clock.stepSec,
       ...(scenario.clock.durationSec !== undefined ? { durationSec: scenario.clock.durationSec } : {}),
+      ...(scenario.clock.untilExpr !== undefined ? { untilExpr: scenario.clock.untilExpr } : {}),
     },
     policy: {
       mode: scenario.policy.mode,
