@@ -22,6 +22,8 @@ export default plugin;
 
 또는 named export (`models`, `strategies`, `objectives`)도 지원됩니다.
 
+플러그인은 `runtimes`도 export할 수 있습니다. 게임 자체의 수입/비용 함수를 감싼 `RuntimeEconomyAdapter` 객체이며, `idk verify runtime`이 같은 시뮬레이션 상태에서 idlekit 모델과 비교합니다. 어댑터마다 문자열 `id`와 `incomePerSec` 함수가 필요하고 `init`, `actionCosts`는 선택입니다. [게임 엔진 연동](./engine-integration_ko.md#런타임-검증)과 [examples/engine-integration](../examples/engine-integration/README_ko.md)을 참고하세요.
+
 로드:
 
 ```bash

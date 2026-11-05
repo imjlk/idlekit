@@ -627,6 +627,16 @@ bun run --cwd packages/cli dev -- simulate ../../examples/plugins/plugin-scenari
   --format json
 ```
 
+### 게임 엔진 연동
+
+`export engine`, `import scenario`, `verify runtime`은 시나리오를 Godot, Unity, 게임 쪽 코드와 연결합니다. 자세한 내용은 [engine-integration_ko.md](./engine-integration_ko.md)를 참고하세요.
+
+```bash
+idk export engine <scenario> --target godot --out economy.tres
+idk import scenario <table.csv> --mapping <mapping.json> --out scenario.json
+idk verify runtime <scenario> --plugin ./runtime-plugin.ts --allow-plugin true --seed 7
+```
+
 ## 9. 화폐 라이브러리 단독 사용(@idlekit/money)
 
 시뮬레이터(`@idlekit/core`)와 분리해서 화폐 처리만 사용할 수 있습니다.

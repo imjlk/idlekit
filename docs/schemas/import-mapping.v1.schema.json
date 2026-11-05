@@ -1,0 +1,298 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "idlekit/import-mapping-v1",
+  "title": "idlekit import mapping v1",
+  "description": "Mapping config for `idk import scenario --mapping`. It turns a game economy table (CSV, JSON, or YAML) into ScenarioV1.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "format",
+    "formatVersion",
+    "scenario"
+  ],
+  "$defs": {
+    "field": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "from"
+          ],
+          "properties": {
+            "from": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Column name, or a dotted path in a JSON or YAML row."
+            },
+            "timeUnit": {
+              "enum": [
+                "sec",
+                "min",
+                "hour",
+                "day"
+              ]
+            },
+            "scale": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "type": {
+              "enum": [
+                "amount",
+                "number",
+                "integer",
+                "boolean",
+                "string"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "value"
+          ],
+          "properties": {
+            "value": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "boolean"
+                }
+              ]
+            },
+            "type": {
+              "enum": [
+                "amount",
+                "number",
+                "integer",
+                "boolean",
+                "string"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "timeUnit": {
+      "enum": [
+        "sec",
+        "min",
+        "hour",
+        "day"
+      ]
+    }
+  },
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "format": {
+      "const": "idlekit.import-mapping"
+    },
+    "formatVersion": {
+      "const": 1
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "rows": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Dotted path to the row array in a JSON or YAML document."
+        },
+        "where": {
+          "type": "object",
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              }
+            ]
+          },
+          "description": "Keep rows whose fields equal these values."
+        }
+      }
+    },
+    "units": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "suffixes": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          "description": "Number suffixes such as K or M. Defaults: K, M, B, T."
+        },
+        "timeUnit": {
+          "$ref": "#/$defs/timeUnit",
+          "description": "Time unit of rate fields (income) in the table. Default sec."
+        }
+      }
+    },
+    "scenario": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "unit",
+        "clock"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "title": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "unit": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "code"
+          ],
+          "properties": {
+            "code": {
+              "type": "string",
+              "minLength": 1
+            },
+            "symbol": {
+              "type": "string"
+            }
+          }
+        },
+        "clock": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "stepSec"
+          ],
+          "properties": {
+            "stepSec": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "durationSec": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            }
+          }
+        },
+        "policy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode"
+          ],
+          "properties": {
+            "mode": {
+              "enum": [
+                "drop",
+                "accumulate"
+              ]
+            },
+            "maxLogGap": {
+              "type": "number"
+            }
+          }
+        },
+        "strategy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "params": {}
+          }
+        }
+      }
+    },
+    "model": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "default": "linear"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 1
+        },
+        "params": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/field"
+          }
+        }
+      }
+    },
+    "curves": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "level"
+      ],
+      "description": "Fit linear model parameters from a level table.",
+      "properties": {
+        "level": {
+          "type": "string",
+          "minLength": 1
+        },
+        "cost": {
+          "type": "string",
+          "minLength": 1
+        },
+        "income": {
+          "type": "string",
+          "minLength": 1
+        },
+        "timeUnit": {
+          "$ref": "#/$defs/timeUnit"
+        }
+      }
+    },
+    "initial": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "wallet": {
+          "$ref": "#/$defs/field"
+        },
+        "owned": {
+          "$ref": "#/$defs/field"
+        },
+        "prestigeMultiplier": {
+          "$ref": "#/$defs/field"
+        }
+      }
+    }
+  }
+}

@@ -134,6 +134,7 @@ bun run release:dry-run
 - [시나리오/튜닝 명세 가이드](./docs/scenario-and-tuning.md)
 - [머니 라이브러리 가이드](./docs/money-library.md)
 - [플러그인/어댑터 패턴 가이드](./docs/plugin-and-adapter.md)
+- [게임 엔진 연동 가이드(Godot, Unity, 런타임 검증)](./docs/engine-integration_ko.md)
 - [출력 JSON 스키마](./docs/schemas/)
 - [공개 저장소 운영 가이드](./docs/public-repo-ops.md)
 - [테스트 운영 가이드](./docs/testing.md)

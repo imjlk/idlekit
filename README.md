@@ -163,6 +163,7 @@ Continue with the installed CLI flow above. Packing runs the build and rewrites 
 - Charts (SVG) and decision hints: [docs/chart-interpretation.md](./docs/chart-interpretation.md)
 - Money package guide: [docs/money-library.md](./docs/money-library.md)
 - Plugin and adapter guide: [docs/plugin-and-adapter.md](./docs/plugin-and-adapter.md)
+- Game engine integration (Godot, Unity, runtime verification): [docs/engine-integration.md](./docs/engine-integration.md)
 - Scenario and tuning spec: [docs/scenario-and-tuning.md](./docs/scenario-and-tuning.md)
 - Testing and release operations: [docs/testing.md](./docs/testing.md), [docs/release-process.md](./docs/release-process.md)
 - Output schemas: [docs/schemas/README.md](./docs/schemas/README.md)

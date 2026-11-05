@@ -64,6 +64,23 @@ describe("plugin load", () => {
     );
   });
 
+  it("loads runtime adapters exported as runtimes", async () => {
+    const pluginPath = resolve(process.cwd(), "../../examples/engine-integration/ts-runtime/runtime-plugin.ts");
+    const loaded = await loadRegistries([pluginPath]);
+    expect(loaded.runtimeAdapters?.map((r) => r.id)).toEqual(["cafe.runtime", "cafe.runtime.exact"]);
+  });
+
+  it("rejects a runtime adapter without incomePerSec", async () => {
+    const dir = await createTempDir("idlekit-plugin-runtime");
+    try {
+      const pluginPath = resolve(dir, "bad-runtime.ts");
+      await writeText(pluginPath, 'export const runtimes = [{ id: "broken" }];\n');
+      await expect(loadRegistries([pluginPath])).rejects.toThrow("incomePerSec");
+    } finally {
+      await removePath(dir);
+    }
+  });
+
   it("accepts plugin under allowed roots", async () => {
     const pluginPath = resolve(process.cwd(), "../../examples/plugins/custom-econ-plugin.ts");
     const pluginRoot = resolve(process.cwd(), "../../examples/plugins");

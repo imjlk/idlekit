@@ -779,6 +779,47 @@ async function verifyResetCycleExample(): Promise<void> {
   );
 }
 
+async function verifyEngineIntegrationExample(): Promise<void> {
+  const example = "../../examples/engine-integration";
+  const scenario = `${example}/scenario.json`;
+  for (const doc of ["docs/engine-integration.md", "docs/engine-integration_ko.md"]) {
+    const text = await readText(resolve(ROOT, doc));
+    for (const command of ["idk export engine", "idk import scenario", "idk verify runtime"]) {
+      assert(text.includes(command), `${doc} must document ${command}`);
+    }
+  }
+  const committed: [string[], string][] = [
+    [["--target", "generic"], "examples/engine-integration/cafe.engine-params.json"],
+    [["--target", "godot"], "examples/engine-integration/godot/data/cafe_economy.tres"],
+    [["--target", "godot", "--file-format", "json"], "examples/engine-integration/godot/data/cafe_economy.json"],
+    [["--target", "unity"], "examples/engine-integration/unity/cafe_economy.json"],
+    [["--target", "unity", "--file-format", "csv"], "examples/engine-integration/unity/cafe_levels.csv"],
+  ];
+  for (const [flags, path] of committed) {
+    const generated = runCli(["export", "engine", scenario, ...flags, "--levels", "25"]);
+    assert(generated === (await readText(resolve(ROOT, path))).replaceAll("\r\n", "\n"), `${path} is stale; regenerate it with idk export engine ${flags.join(" ")} --levels 25`);
+  }
+  for (const name of ["shop-levels.csv", "balance-sheet.json"]) {
+    const base = name.replace(/\.(csv|json)$/, "");
+    const out = resolve(tmpDir, `engine-import-${base}.json`);
+    runCli(["import", "scenario", `${example}/import/${name}`, "--mapping", `${example}/import/${base}.mapping.json`, "--out", out]);
+    assert(runCli(["validate", out]).includes("OK"), `imported ${name} must pass idk validate`);
+  }
+  const roundTripParams = resolve(tmpDir, "engine-roundtrip.params.json");
+  const roundTripScenario = resolve(tmpDir, "engine-roundtrip.scenario.json");
+  runCli(["export", "engine", scenario, "--out", roundTripParams]);
+  runCli(["import", "scenario", roundTripParams, "--out", roundTripScenario]);
+  assert(runCli(["validate", roundTripScenario]).includes("OK"), "engine export round trip must pass idk validate");
+  const pluginFlags = ["--plugin", `${example}/ts-runtime/runtime-plugin.ts`, "--allow-plugin", "true", "--seed", "7", "--format", "json"];
+  const exact = asRecord(runCliJson(["verify", "runtime", scenario, ...pluginFlags, "--runtime", "cafe.runtime.exact"]));
+  assert(exact.ok === true, "cafe.runtime.exact must match the idlekit model");
+  assert(asRecord(exact._meta as JSONValue).schemaRef === "docs/schemas/runtime.verify.output.schema.json", "verify runtime must report its schemaRef");
+  const rounded = asRecord(
+    runCliJson(["verify", "runtime", scenario, ...pluginFlags, "--runtime", "cafe.runtime", "--fail-on-mismatch", "false"]),
+  );
+  assert(rounded.ok === false && rounded.firstMismatch !== null, "cafe.runtime must report its rounded prices");
+}
+
 async function verifyChartExamples(): Promise<void> {
   const commands = await developmentExamples("docs/chart-interpretation.md", "simulate|experience|compare|experiment");
   const korean = await developmentExamples("docs/chart-interpretation_ko.md", "simulate|experience|compare|experiment");
@@ -813,6 +854,7 @@ async function main(): Promise<void> {
   await verifyCalibrationExamples();
   await verifyExperienceExamples();
   await verifyResetCycleExample();
+  await verifyEngineIntegrationExample();
   await verifyIntroTrack();
   await verifyChartExamples();
   await verifyBuiltinModelTutorials();

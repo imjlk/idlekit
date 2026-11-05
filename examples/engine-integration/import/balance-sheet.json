@@ -1,0 +1,35 @@
+{
+  "version": 3,
+  "economies": [
+    {
+      "name": "forest",
+      "production": {
+        "perHour": "7.2K",
+        "perUpgradePerHour": "3.6K"
+      },
+      "upgrade": {
+        "baseCost": "1.5K",
+        "costMultiplier": 1.09
+      },
+      "start": {
+        "gold": "0",
+        "lumberjacks": 1
+      }
+    },
+    {
+      "name": "mine",
+      "production": {
+        "perHour": "18K",
+        "perUpgradePerHour": "9K"
+      },
+      "upgrade": {
+        "baseCost": "12K",
+        "costMultiplier": 1.14
+      },
+      "start": {
+        "gold": "2.5K",
+        "lumberjacks": 0
+      }
+    }
+  ]
+}
