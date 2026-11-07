@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import type { ScenarioV1 } from "@idlekit/core";
 import { resolve } from "path";
 import { readFile } from "node:fs/promises";
 import { REPO_ROOT, createTempDir, pathExists, readJson, removePath, runCli, runCliJson, writeText } from "../testkit/bun";
@@ -79,11 +80,16 @@ describe("idk telemetry", () => {
     const dir = await createTempDir("idlekit-telemetry-patch");
     try {
       const patched = resolve(dir, "patched.json");
-      const before = await readFile(SCENARIO, "utf8");
-      const out = runCliJson([
-        "telemetry", "patch", CSV, "--cohort", "2026-w41-control", "--scenario", SCENARIO,
-        "--scenario-out", patched, "--horizons", "30m,7d",
-      ]);
+      const scenario = resolve(dir, "source.json");
+      const tutorial = await readJson<ScenarioV1>(SCENARIO);
+      // Exercise the full seven-day retention workflow, not one-second economy accuracy.
+      // JSON and Markdown each simulate before/after; minute ticks bound that repeated work
+      // without shortening the D7 horizon, disabling uncertainty, or raising the test timeout.
+      const source = { ...tutorial, clock: { ...tutorial.clock, stepSec: 60 } };
+      await writeText(scenario, JSON.stringify(source));
+      const before = await readFile(scenario, "utf8");
+      const args = ["telemetry", "patch", CSV, "--cohort", "2026-w41-control", "--scenario", scenario, "--horizons", "30m,7d"];
+      const out = runCliJson([...args, "--scenario-out", patched]);
       expect(out._meta.command).toBe("telemetry.patch");
       expect(out.patchStatus).toBe("ready");
       expect(out.validation).toEqual({ ok: true });
@@ -92,17 +98,26 @@ describe("idk telemetry", () => {
         { key: "d7", before: 0.18, after: 0.13 },
       ]);
       expect(out.diff.map((row: { horizon: string }) => row.horizon)).toEqual(["30m", "7d"]);
+      expect(out.diff.map((row: { seconds: number }) => row.seconds)).toEqual([1800, 604800]);
       const week = out.diff[1];
       expect(week.ltvPerUser.delta).toBeLessThan(0);
       expect(week.pacing.changed).toBe(false);
-      expect(await readFile(SCENARIO, "utf8")).toBe(before);
+      expect(await readFile(scenario, "utf8")).toBe(before);
       const written = await readJson<any>(patched);
       expect(written.monetization.retention).toMatchObject({ d1: 0.32, d7: 0.13, d30: 0.08, d90: 0.035 });
+      expect(written).toEqual({
+        ...source,
+        monetization: { ...source.monetization, retention: { ...source.monetization?.retention, d1: 0.32, d7: 0.13 } },
+      });
       expect(runCli(["validate", patched]).exitCode).toBe(0);
+      const again = runCliJson(args);
+      expect(again.seed).toBe(out.seed);
+      expect(again.diff).toEqual(out.diff);
 
-      const md = runCli(["telemetry", "patch", CSV, "--cohort", "2026-w41-control", "--scenario", SCENARIO, "--horizons", "7d", "--format", "md"]).stdout;
+      const md = runCli(["telemetry", "patch", CSV, "--cohort", "2026-w41-control", "--scenario", scenario, "--horizons", "7d", "--format", "md"]).stdout;
       expect(md).toContain("## LTV and pacing before and after");
       expect(md).toContain("monetization.retention.d1");
+      expect(await readFile(scenario, "utf8")).toBe(before);
     } finally { await removePath(dir); }
   });
 
