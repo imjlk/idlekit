@@ -72,6 +72,46 @@ describe("ltv prestige cooldown", () => {
   });
 });
 
+describe("ltv horizon economy", () => {
+  it("integrates constant income through 30m and 7d, not the base duration", async () => {
+    const scenario = await Bun.file(resolve(process.cwd(), "../../examples/tutorials/01-cafe-baseline.json")).json();
+    scenario.clock = { ...scenario.clock, stepSec: 60, durationSec: 3600 };
+    const E = createNumberEngine();
+    const unit = { code: "COIN" };
+    const compiled: CompiledScenario<number, string, Record<string, unknown>> = {
+      ctx: { E, unit, tickPolicy: { mode: "accumulate" }, stepSec: 60 },
+      model: {
+        id: "ltv-duration-oracle",
+        version: 1,
+        income: () => ({ unit, amount: 1 }),
+        actions: () => [],
+      },
+      initial: {
+        t: 0,
+        wallet: { money: { unit, amount: 35 }, bucket: 0 },
+        maxMoneyEver: { unit, amount: 35 },
+        prestige: { count: 0, points: 0, multiplier: 1 },
+        vars: {},
+      },
+      run: { stepSec: 60, durationSec: 3600 },
+    };
+    const out = runLtvAnalysis({
+      scenario, effectiveRunHash: "ltv-duration-oracle.json", compiled, strategy: undefined,
+      horizonsRaw: "30m,7d", fast: false, seed: 1,
+    });
+    // One COIN/second with no spending: 35 + 1800 and 35 + 604800.
+    // Compare computed balances, not requested horizon labels or seconds.
+    const expected = [1835, 604835];
+    expect(out.horizons).toHaveLength(expected.length);
+    for (const [index, amount] of expected.entries()) {
+      const row = out.horizons[index]!;
+      expect(E.cmp(E.from(row.endMoney), E.from(amount))).toBe(0);
+      expect(E.cmp(E.from(row.endNetWorth), E.from(amount))).toBe(0);
+    }
+    expect(E.cmp(E.from(out.horizons[1]!.endMoney), E.from(out.horizons[0]!.endMoney))).toBe(1);
+  });
+});
+
 describe("ltv step budget", () => {
   it("rejects a horizon segment cut by maxSteps", async () => {
     const scenario = await Bun.file(resolve(process.cwd(), "../../examples/tutorials/01-cafe-baseline.json")).json();
