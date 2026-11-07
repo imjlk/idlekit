@@ -38,7 +38,7 @@ Core exports `summarizeSamples`, `quantileInterval`, and `normalQuantile` for ot
 
 `idk sensitivity` and `idk optimize` read the same spec (JSON or YAML), for example [`examples/design-study/forge-study.json`](../examples/design-study/forge-study.json):
 
-- `parameters`: 1 to 32 rows of `{ path, min, max, scale?: "linear" | "log", integer? }`. `path` is a dotted path into the scenario, such as `model.params.costGrowth`. The parent must exist. Prototype segments are refused. A string leaf stays a string.
+- `parameters`: 1 to 32 rows of `{ path, min, max, scale?: "linear" | "log", integer? }`. `path` is a dotted path into the scenario, such as `model.params.costGrowth`. The parent must exist. Prototype segments are refused. A numeric-string leaf stays a string.
 - `objectives`: 1 to 8 terms, each with a `weight`. The score is the weighted sum, lower is better:
   - `milestoneTime`: `log10(sec + 1)` to the first milestone, or to `milestoneKey`. A censored draw counts as horizon + 1.
   - `sessionPacing`: `|log10(pace / targetVisibleChangesPerMinute)| + max(0, gap / maxNoRewardGapSec - 1)`.
@@ -94,4 +94,4 @@ Node.js and browser runtimes are not part of the v1 compatibility contract.
 
 ### Array parameter paths
 
-Existing array elements may be addressed by canonical zero-based indexes, for example `model.params.recipes.0.timeSec` or `model.params.generators.0.incomePerLevel`. Arrays cannot be extended by a study; missing indexes, `length`, prototype segments and non-number/string leaves are rejected before evaluation. Numeric-string leaves stay strings.
+Existing array elements may be addressed by canonical zero-based indexes, for example `model.params.recipes.0.timeSec` or `model.params.generators.0.incomePerLevel`. Arrays cannot be extended by a study; missing indexes, `length`, prototype segments and nonnumeric leaves (including string identifiers) are rejected before evaluation. Numeric-string leaves stay strings; decimal, scientific and supported suffix notation are accepted.

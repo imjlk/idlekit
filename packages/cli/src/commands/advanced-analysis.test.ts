@@ -116,7 +116,7 @@ describe("advanced analysis commands", () => {
       expect(runCliJson(args).best).toEqual(out.best);
       const screened = runCliJson(["sensitivity", input, "--spec", study, "--method", "morris", "--max-runs", "4"]);
       expect(screened.failedCandidates).toBe(0);
-      expect(screened.score.parameters[0].effects).toBeGreaterThan(0);
+      expect(screened.score.parameters[0].muStar).toBeGreaterThan(0);
     }
   });
 
@@ -127,6 +127,16 @@ describe("advanced analysis commands", () => {
       const failed = runCliFailure([command, "../../examples/tutorials/29-factory-chain-v1.json", "--spec", study, "--max-runs", "2"]);
       expect(failed.exitCode).not.toBe(0);
       expect(failed.stderr).toContain("existing array index");
+    }
+  });
+
+  it("rejects string identifiers before either analysis spends its budget", async () => {
+    const study = resolve(dir, "string-identifier.json");
+    await writeText(study, JSON.stringify({ ...miniStudy, parameters: [{ path: "model.params.recipes.0.id", min: 1, max: 2 }] }));
+    for (const command of ["optimize", "sensitivity"]) {
+      const failed = runCliFailure([command, "../../examples/tutorials/29-factory-chain-v1.json", "--spec", study, "--max-runs", "2"]);
+      expect(failed.exitCode).not.toBe(0);
+      expect(failed.stderr).toContain("numeric string");
     }
   });
 

@@ -13,6 +13,7 @@ import {
   type SessionPatternId,
   type StrategyRegistry,
 } from "@idlekit/core";
+import { parseMoney } from "@idlekit/money";
 import { z } from "zod";
 import { usageError } from "../errors";
 import {
@@ -117,10 +118,20 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-/**
- * Copy of `scenario` with each path set. The parent object of every path must exist; a missing leaf is created.
- * A leaf that holds a decimal string stays a string, so `"15"` becomes `"18.5"`.
- */
+/** Recognize native numeric text and scenario money notation without imposing the Number engine's range. */
+function isNumericDesignString(value: string): boolean {
+  // Native numeric strings include trailing decimal points accepted by built-in model schemas.
+  const text = value.trim();
+  if (text !== "" && !Number.isNaN(Number(text)) && !["Infinity", "+Infinity", "-Infinity"].includes(text)) return true;
+  try {
+    parseMoney(createNumberEngine(), value, { unit: { code: "design" } });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Resolve a writable numeric leaf, allowing only existing canonical array indexes and own properties. */
 function designPathTarget(scenario: ScenarioV1, path: string): { parent: Record<string, unknown>; leaf: string } {
   const segments = path.split(".");
   if (segments.some(segment => forbiddenSegments.has(segment) || !pathSegment.test(segment))) throw usageError(`Refusing design path ${path}`);
@@ -136,7 +147,7 @@ function designPathTarget(scenario: ScenarioV1, path: string): { parent: Record<
     const parent = cursor as Record<string, unknown>;
     const current = Object.hasOwn(parent, segment) ? parent[segment] : undefined;
     if (index === segments.length - 1) {
-      if (current !== undefined && typeof current !== "number" && typeof current !== "string") {
+      if (current !== undefined && typeof current !== "number" && (typeof current !== "string" || !isNumericDesignString(current))) {
         throw usageError(`Design path ${path} is not a number or numeric string`);
       }
       return { parent, leaf: segment };
@@ -151,6 +162,10 @@ export function assertDesignParameterPaths(scenario: ScenarioV1, spec: DesignStu
   for (const parameter of spec.parameters) designPathTarget(scenario, parameter.path);
 }
 
+/**
+ * Copy `scenario` with each numeric path set. Parents must exist; missing object leaves may be created.
+ * A numeric-string leaf stays a string, so `"15"` becomes `"18.5"`.
+ */
 export function patchScenario(scenario: ScenarioV1, values: Readonly<Record<string, number>>): ScenarioV1 {
   const copy = structuredClone(scenario);
   for (const [path, value] of Object.entries(values)) {

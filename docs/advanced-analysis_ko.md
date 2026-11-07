@@ -38,7 +38,7 @@ core는 다른 보고서용으로 `summarizeSamples`, `quantileInterval`, `norma
 
 `idk sensitivity`와 `idk optimize`는 같은 spec(JSON 또는 YAML)을 읽는다. 예: [`examples/design-study/forge-study.json`](../examples/design-study/forge-study.json):
 
-- `parameters`: `{ path, min, max, scale?: "linear" | "log", integer? }` 1~32행. `path`는 `model.params.costGrowth` 같은 scenario 안 점 경로다. 부모가 있어야 한다. prototype 세그먼트는 거절한다. 문자열 leaf는 문자열로 남는다.
+- `parameters`: `{ path, min, max, scale?: "linear" | "log", integer? }` 1~32행. `path`는 `model.params.costGrowth` 같은 scenario 안 점 경로다. 부모가 있어야 한다. prototype 세그먼트는 거절한다. 숫자 문자열 leaf는 문자열로 남는다.
 - `objectives`: `weight`를 가진 항 1~8개. 점수는 가중합이고 낮을수록 좋다:
   - `milestoneTime`: 첫 마일스톤(또는 `milestoneKey`)까지 `log10(sec + 1)`. censored draw는 horizon + 1로 센다.
   - `sessionPacing`: `|log10(pace / targetVisibleChangesPerMinute)| + max(0, gap / maxNoRewardGapSec - 1)`.
@@ -94,4 +94,4 @@ Node.js와 브라우저 런타임은 v1 호환 계약에 포함되지 않는다.
 
 ### 배열 파라미터 경로
 
-`model.params.recipes.0.timeSec`, `model.params.generators.0.incomePerLevel`처럼 기존 배열 원소를 0부터 시작하는 정규 인덱스로 지정할 수 있다. 배열 확장은 허용하지 않으며, 없는 인덱스·`length`·프로토타입 경로·숫자·문자열 이외의 말단 값은 평가 전에 거부한다. 숫자 문자열의 타입은 유지한다.
+`model.params.recipes.0.timeSec`, `model.params.generators.0.incomePerLevel`처럼 기존 배열 원소를 0부터 시작하는 정규 인덱스로 지정할 수 있다. 배열 확장은 허용하지 않으며, 없는 인덱스·`length`·프로토타입 경로·문자열 식별자를 포함한 비수치 말단 값은 평가 전에 거부한다. 숫자 문자열의 타입은 유지하며, 십진수·과학적 표기법·지원하는 접미사 표기법을 허용한다.
