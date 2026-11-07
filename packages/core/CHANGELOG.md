@@ -1,5 +1,11 @@
 # @idlekit/core
 
+## 0.8.1 — 2026-11-07
+
+### Patch changes
+
+- [f0cd2ad](https://github.com/imjlk/idlekit/commit/f0cd2ad9f689270e6a8ed46c12c6e3b0ec42c51a) Size retention experiments using signed treatment assumptions and the most demanding equal-allocation budget. Explicit directionless MDEs conservatively cover both feasible directions. — Thanks @imjlk!
+
 ## 0.8.0 — 2026-11-05
 
 ### Minor changes
