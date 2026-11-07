@@ -799,6 +799,15 @@ async function verifyTelemetryLoopExamples(): Promise<void> {
   const patchedPath = resolve(tmpDir, "my-game-w41.json");
   const patch = asRecord(runCliJson(["telemetry", "patch", csv, "--cohort", "2026-w41-control", "--scenario", scenario, "--scenario-out", patchedPath, "--horizons", "7d"]));
   assert(patch.patchStatus === "ready" && (await pathExists(patchedPath)), "telemetry patch example must write a ready patched scenario");
+  assert(Array.isArray(patch.diff) && patch.diff.length === 1, "telemetry patch must return one LTV diff");
+  const week = asRecord(patch.diff[0] as JSONValue);
+  const ltv = asRecord(week.ltvPerUser as JSONValue);
+  assert(
+    week.horizon === "7d" && week.seconds === 604800
+      && typeof ltv.before === "number" && typeof ltv.after === "number"
+      && typeof ltv.delta === "number" && ltv.delta === ltv.after - ltv.before && ltv.delta < 0,
+    "telemetry patch must reduce seven-day LTV",
+  );
   const experiment = asRecord(runCliJson(["telemetry", "experiment", `control=${scenario}`, "fast-start=../../examples/tutorials/12-my-game-compare-b.json", "--day", "1", "--mde-pp", "5"]));
   assert(asRecord(experiment.plan as JSONValue).usersPerGroup === 1534, "documented experiment must need 1534 installs per group");
 }
