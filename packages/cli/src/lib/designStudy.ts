@@ -13,6 +13,7 @@ import {
   type SessionPatternId,
   type StrategyRegistry,
 } from "@idlekit/core";
+import { parseMoney } from "@idlekit/money";
 import { z } from "zod";
 import { usageError } from "../errors";
 import {
@@ -36,6 +37,8 @@ const sessionPatternIds = ["always-on", "short-bursts", "twice-daily", "offline-
 
 const pathSegment = /^[A-Za-z0-9_$-]+$/;
 const forbiddenSegments = new Set(["__proto__", "prototype", "constructor"]);
+// buildInitialState parses these leaves with parseMoney, not the model's numeric engine.
+const scenarioMoneyPaths = new Set(["initial.wallet.amount", "initial.wallet.bucket", "initial.maxMoneyEver", "initial.prestige.points", "initial.prestige.multiplier"]);
 
 const parameterSchema = z
   .object({
@@ -117,31 +120,61 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+/** Match initial-money leaves to money notation; retain native numeric syntax elsewhere without imposing engine range. */
+function isNumericDesignString(value: string, path: string): boolean {
+  // Native numeric strings include trailing decimal points accepted by built-in model schemas.
+  const text = value.trim();
+  if (!scenarioMoneyPaths.has(path) && text !== "" && !Number.isNaN(Number(text)) && !["Infinity", "+Infinity", "-Infinity"].includes(text)) return true;
+  try {
+    parseMoney(createNumberEngine(), value, { unit: { code: "design" } });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Resolve a writable numeric leaf, allowing only existing canonical array indexes and own properties. */
+function designPathTarget(scenario: ScenarioV1, path: string): { parent: Record<string, unknown>; leaf: string } {
+  const segments = path.split(".");
+  if (segments.some(segment => forbiddenSegments.has(segment) || !pathSegment.test(segment))) throw usageError(`Refusing design path ${path}`);
+  let cursor: unknown = scenario;
+  for (const [index, segment] of segments.entries()) {
+    if (Array.isArray(cursor)) {
+      if (!/^(0|[1-9]\d*)$/.test(segment) || !Number.isSafeInteger(Number(segment)) || Number(segment) >= cursor.length || !Object.hasOwn(cursor, segment)) {
+        throw usageError(`Design path ${path} requires an existing array index at ${segment}`);
+      }
+    } else if (!isRecord(cursor)) {
+      throw usageError(`Design path ${path} does not exist in the scenario (missing object at ${segments[index - 1]})`);
+    }
+    const parent = cursor as Record<string, unknown>;
+    const current = Object.hasOwn(parent, segment) ? parent[segment] : undefined;
+    if (index === segments.length - 1) {
+      if (current !== undefined && typeof current !== "number" && (typeof current !== "string" || !isNumericDesignString(current, path))) {
+        throw usageError(`Design path ${path} is not a number or numeric string`);
+      }
+      return { parent, leaf: segment };
+    }
+    cursor = current;
+  }
+  throw usageError(`Invalid design path ${path}`);
+}
+
+/** Validate paths once before spending a search or sensitivity budget. Missing object leaves remain supported. */
+export function assertDesignParameterPaths(scenario: ScenarioV1, spec: DesignStudySpec): void {
+  for (const parameter of spec.parameters) designPathTarget(scenario, parameter.path);
+}
+
 /**
- * Copy of `scenario` with each path set. The parent object of every path must exist; a missing leaf is created.
- * A leaf that holds a decimal string stays a string, so `"15"` becomes `"18.5"`.
+ * Copy `scenario` with each numeric path set. Parents must exist; missing object leaves may be created.
+ * A numeric-string leaf stays a string, so `"15"` becomes `"18.5"`.
  */
 export function patchScenario(scenario: ScenarioV1, values: Readonly<Record<string, number>>): ScenarioV1 {
-  const copy = structuredClone(scenario) as unknown as Record<string, unknown>;
+  const copy = structuredClone(scenario);
   for (const [path, value] of Object.entries(values)) {
-    const segments = path.split(".");
-    if (segments.some((segment) => forbiddenSegments.has(segment) || !pathSegment.test(segment))) {
-      throw usageError(`Refusing design path ${path}`);
-    }
-    let cursor: Record<string, unknown> = copy;
-    for (const segment of segments.slice(0, -1)) {
-      const next = Object.hasOwn(cursor, segment) ? cursor[segment] : undefined;
-      if (!isRecord(next)) throw usageError(`Design path ${path} does not exist in the scenario (missing object at ${segment})`);
-      cursor = next;
-    }
-    const leaf = segments.at(-1)!;
-    const current = Object.hasOwn(cursor, leaf) ? cursor[leaf] : undefined;
-    if (current !== undefined && typeof current !== "number" && typeof current !== "string") {
-      throw usageError(`Design path ${path} is not a number or numeric string`);
-    }
-    cursor[leaf] = typeof current === "string" ? String(value) : value;
+    const { parent, leaf } = designPathTarget(copy, path);
+    parent[leaf] = typeof parent[leaf] === "string" ? String(value) : value;
   }
-  return copy as unknown as ScenarioV1;
+  return copy;
 }
 
 export type DesignEvaluation = Readonly<{

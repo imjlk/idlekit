@@ -15,6 +15,7 @@ import { buildOutputMeta } from "../io/outputMeta";
 import { readScenarioFile } from "../io/readScenario";
 import { writeOutput } from "../io/writeOutput";
 import {
+  assertDesignParameterPaths,
   createDesignEvaluator,
   designParameters,
   formatNumber,
@@ -151,6 +152,7 @@ export default defineCommand({
     const valid = validateScenarioV1(input, loaded.modelRegistry, loaded.strategyRegistry);
     if (!valid.ok || !valid.scenario) throw scenarioInvalidError(valid.issues);
     const spec = await readDesignStudySpec(flags.spec);
+    assertDesignParameterPaths(valid.scenario, spec);
     const parameters = designParameters(spec);
     const k = parameters.length;
     const maxRuns = flags["max-runs"] ?? (flags.method === "morris" ? 10 * (k + 1) : 64 * (k + 2));

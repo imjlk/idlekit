@@ -14,6 +14,7 @@ import { readScenarioFile } from "../io/readScenario";
 import { assertOutputNotInput, writeOutput } from "../io/writeOutput";
 import { writeTextFile } from "../runtime/bun";
 import {
+  assertDesignParameterPaths,
   createDesignEvaluator,
   designParameters,
   formatNumber,
@@ -147,6 +148,7 @@ export default defineCommand({
     const valid = validateScenarioV1(input, loaded.modelRegistry, loaded.strategyRegistry);
     if (!valid.ok || !valid.scenario) throw scenarioInvalidError(valid.issues);
     const spec = await readDesignStudySpec(flags.spec);
+    assertDesignParameterPaths(valid.scenario, spec);
     const writeBest = flags["write-best"]
       ? await assertOutputNotInput(flags["write-best"], { protectedInputs: [scenarioPath, flags.spec] })
       : undefined;

@@ -97,6 +97,64 @@ describe("advanced analysis commands", () => {
     expect(failed.exitCode).not.toBe(0);
   });
 
+  it("optimizes and screens existing recipe and generator array parameters", async () => {
+    for (const [name, scenario, path] of [
+      ["factory", "../../examples/tutorials/29-factory-chain-v1.json", "model.params.recipes.0.timeSec"],
+      ["currency", "../../examples/tutorials/28-twin-currency-v1.json", "model.params.generators.0.incomePerLevel"],
+    ]) {
+      const study = resolve(dir, `${name}-arrays.json`);
+      const input = resolve(dir, `${name}-scenario.json`);
+      const document = await readJson<Record<string, any>>(scenario!);
+      // This regression checks indexed parameter plumbing, not fine-grained economy accuracy.
+      document.clock.stepSec = 60;
+      await writeText(input, JSON.stringify(document));
+      await writeText(study, JSON.stringify({ schemaVersion: 1, parameters: [{ path, min: 1, max: 2 }], objectives: [{ kind: "endNetWorthLog10" }], evaluation: { sessionPattern: "short-bursts", days: 1 } }));
+      const args = ["optimize", input, "--spec", study, "--method", "grid", "--max-runs", "2"];
+      const out = runCliJson(args);
+      expect(out.failedCandidates).toBe(0);
+      expect(out.best).not.toBeNull();
+      expect(runCliJson(args).best).toEqual(out.best);
+      const screened = runCliJson(["sensitivity", input, "--spec", study, "--method", "morris", "--max-runs", "4"]);
+      expect(screened.failedCandidates).toBe(0);
+      expect(screened.score.parameters[0].muStar).toBeGreaterThan(0);
+    }
+  });
+
+  it("rejects missing array indexes before either analysis spends its budget", async () => {
+    const study = resolve(dir, "missing-array.json");
+    await writeText(study, JSON.stringify({ ...miniStudy, parameters: [{ path: "model.params.recipes.99.timeSec", min: 1, max: 2 }] }));
+    for (const command of ["optimize", "sensitivity"]) {
+      const failed = runCliFailure([command, "../../examples/tutorials/29-factory-chain-v1.json", "--spec", study, "--max-runs", "2"]);
+      expect(failed.exitCode).not.toBe(0);
+      expect(failed.stderr).toContain("existing array index");
+    }
+  });
+
+  it("rejects string identifiers before either analysis spends its budget", async () => {
+    const study = resolve(dir, "string-identifier.json");
+    await writeText(study, JSON.stringify({ ...miniStudy, parameters: [{ path: "model.params.recipes.0.id", min: 1, max: 2 }] }));
+    for (const command of ["optimize", "sensitivity"]) {
+      const failed = runCliFailure([command, "../../examples/tutorials/29-factory-chain-v1.json", "--spec", study, "--max-runs", "2"]);
+      expect(failed.exitCode).not.toBe(0);
+      expect(failed.stderr).toContain("numeric string");
+    }
+  });
+
+  it("rejects invalid initial money notation before evaluating a baseline or candidates", async () => {
+    const study = resolve(dir, "hex-wallet-study.json");
+    const input = resolve(dir, "hex-wallet-scenario.json");
+    const document = await readJson<Record<string, any>>("../../examples/tutorials/29-factory-chain-v1.json");
+    document.clock.stepSec = 60;
+    document.initial.wallet.amount = "0x10";
+    await writeText(input, JSON.stringify(document));
+    await writeText(study, JSON.stringify({ ...miniStudy, parameters: [{ path: "initial.wallet.amount", min: 10, max: 20 }] }));
+    for (const command of ["optimize", "sensitivity"]) {
+      const failed = runCliFailure([command, input, "--spec", study, "--max-runs", "4"]);
+      expect(failed.exitCode).not.toBe(0);
+      expect(failed.stderr).toContain("Design path initial.wallet.amount is not a number or numeric string");
+    }
+  });
+
   it("reset-policy reports positive reward rates and ROI only when the horizon leaves a tail", () => {
     const out = runCliJson(["reset-policy", PRESTIGE, "--scan", "600..1800", "--step", "600", "--horizon", "5400", "--format", "json"]);
     expect(out.kind).toBe("reset-policy");
