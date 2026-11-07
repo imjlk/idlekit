@@ -94,4 +94,4 @@ Node.js and browser runtimes are not part of the v1 compatibility contract.
 
 ### Array parameter paths
 
-Existing array elements may be addressed by canonical zero-based indexes, for example `model.params.recipes.0.timeSec` or `model.params.generators.0.incomePerLevel`. Arrays cannot be extended by a study; missing indexes, `length`, prototype segments and nonnumeric leaves (including string identifiers) are rejected before evaluation. Numeric-string leaves stay strings; decimal, scientific and supported suffix notation are accepted.
+Existing array elements may be addressed by canonical zero-based indexes, for example `model.params.recipes.0.timeSec` or `model.params.generators.0.incomePerLevel`. Arrays cannot be extended by a study; missing indexes, `length`, prototype segments and nonnumeric leaves (including string identifiers) are rejected before evaluation. Numeric-string leaves stay strings; decimal, scientific and supported suffix notation are accepted. Initial money fields (such as `initial.wallet.amount`) must follow scenario money notation, while number-engine fields retain native numeric syntax.

@@ -37,6 +37,8 @@ const sessionPatternIds = ["always-on", "short-bursts", "twice-daily", "offline-
 
 const pathSegment = /^[A-Za-z0-9_$-]+$/;
 const forbiddenSegments = new Set(["__proto__", "prototype", "constructor"]);
+// buildInitialState parses these leaves with parseMoney, not the model's numeric engine.
+const scenarioMoneyPaths = new Set(["initial.wallet.amount", "initial.wallet.bucket", "initial.maxMoneyEver", "initial.prestige.points", "initial.prestige.multiplier"]);
 
 const parameterSchema = z
   .object({
@@ -118,11 +120,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-/** Recognize native numeric text and scenario money notation without imposing the Number engine's range. */
-function isNumericDesignString(value: string): boolean {
+/** Match initial-money leaves to money notation; retain native numeric syntax elsewhere without imposing engine range. */
+function isNumericDesignString(value: string, path: string): boolean {
   // Native numeric strings include trailing decimal points accepted by built-in model schemas.
   const text = value.trim();
-  if (text !== "" && !Number.isNaN(Number(text)) && !["Infinity", "+Infinity", "-Infinity"].includes(text)) return true;
+  if (!scenarioMoneyPaths.has(path) && text !== "" && !Number.isNaN(Number(text)) && !["Infinity", "+Infinity", "-Infinity"].includes(text)) return true;
   try {
     parseMoney(createNumberEngine(), value, { unit: { code: "design" } });
     return true;
@@ -147,7 +149,7 @@ function designPathTarget(scenario: ScenarioV1, path: string): { parent: Record<
     const parent = cursor as Record<string, unknown>;
     const current = Object.hasOwn(parent, segment) ? parent[segment] : undefined;
     if (index === segments.length - 1) {
-      if (current !== undefined && typeof current !== "number" && (typeof current !== "string" || !isNumericDesignString(current))) {
+      if (current !== undefined && typeof current !== "number" && (typeof current !== "string" || !isNumericDesignString(current, path))) {
         throw usageError(`Design path ${path} is not a number or numeric string`);
       }
       return { parent, leaf: segment };

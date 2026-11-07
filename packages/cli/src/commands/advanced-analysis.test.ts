@@ -140,6 +140,21 @@ describe("advanced analysis commands", () => {
     }
   });
 
+  it("rejects invalid initial money notation before evaluating a baseline or candidates", async () => {
+    const study = resolve(dir, "hex-wallet-study.json");
+    const input = resolve(dir, "hex-wallet-scenario.json");
+    const document = await readJson<Record<string, any>>("../../examples/tutorials/29-factory-chain-v1.json");
+    document.clock.stepSec = 60;
+    document.initial.wallet.amount = "0x10";
+    await writeText(input, JSON.stringify(document));
+    await writeText(study, JSON.stringify({ ...miniStudy, parameters: [{ path: "initial.wallet.amount", min: 10, max: 20 }] }));
+    for (const command of ["optimize", "sensitivity"]) {
+      const failed = runCliFailure([command, input, "--spec", study, "--max-runs", "4"]);
+      expect(failed.exitCode).not.toBe(0);
+      expect(failed.stderr).toContain("Design path initial.wallet.amount is not a number or numeric string");
+    }
+  });
+
   it("reset-policy reports positive reward rates and ROI only when the horizon leaves a tail", () => {
     const out = runCliJson(["reset-policy", PRESTIGE, "--scan", "600..1800", "--step", "600", "--horizon", "5400", "--format", "json"]);
     expect(out.kind).toBe("reset-policy");

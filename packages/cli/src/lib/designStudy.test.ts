@@ -23,11 +23,24 @@ describe("design study array paths", () => {
     }
   });
   it("preserves decimal, scientific, suffix and trailing-decimal numeric strings", () => {
-    for (const value of ["10", "  +.5  ", "-2.5", "1.", "1.e2", "1.e400", "1e30", "1e400", "1aa", "1e-3aa"]) {
+    for (const value of ["10", "  +.5  ", "-2.5", "1.", "1.e2", "1.e400", "1e30", "1e400", "1aa", "1e-3aa", "0x10", "0b10", "0o10"]) {
       const input = { model: { params: { value } } } as unknown as ScenarioV1;
       expect(() => assertDesignParameterPaths(input, spec("model.params.value"))).not.toThrow();
       expect(patchScenario(input, { "model.params.value": 4 }).model.params).toEqual({ value: "4" });
       expect(input.model.params).toEqual({ value });
+    }
+  });
+  it("uses the money parser for initial money fields while retaining native number syntax elsewhere", () => {
+    for (const path of ["initial.wallet.amount", "initial.wallet.bucket", "initial.maxMoneyEver", "initial.prestige.points", "initial.prestige.multiplier"]) {
+      for (const value of ["0x10", "0b10", "0o10", "1.", "1.e2"]) {
+        const input = { initial: { wallet: { amount: value, bucket: value }, maxMoneyEver: value, prestige: { points: value, multiplier: value } } } as unknown as ScenarioV1;
+        expect(() => assertDesignParameterPaths(input, spec(path))).toThrow("numeric string");
+      }
+      for (const value of ["10", "  +.5  ", "1e400", "1aa", "1e-3aa"]) {
+        const input = { initial: { wallet: { amount: value, bucket: value }, maxMoneyEver: value, prestige: { points: value, multiplier: value } } } as unknown as ScenarioV1;
+        expect(() => assertDesignParameterPaths(input, spec(path))).not.toThrow();
+        expect(() => patchScenario(input, { [path]: 4 })).not.toThrow();
+      }
     }
   });
   it("rejects missing or noncanonical indexes, array properties, non-number/string leaves and prototype traversal", () => {

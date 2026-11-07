@@ -94,4 +94,4 @@ Node.js와 브라우저 런타임은 v1 호환 계약에 포함되지 않는다.
 
 ### 배열 파라미터 경로
 
-`model.params.recipes.0.timeSec`, `model.params.generators.0.incomePerLevel`처럼 기존 배열 원소를 0부터 시작하는 정규 인덱스로 지정할 수 있다. 배열 확장은 허용하지 않으며, 없는 인덱스·`length`·프로토타입 경로·문자열 식별자를 포함한 비수치 말단 값은 평가 전에 거부한다. 숫자 문자열의 타입은 유지하며, 십진수·과학적 표기법·지원하는 접미사 표기법을 허용한다.
+`model.params.recipes.0.timeSec`, `model.params.generators.0.incomePerLevel`처럼 기존 배열 원소를 0부터 시작하는 정규 인덱스로 지정할 수 있다. 배열 확장은 허용하지 않으며, 없는 인덱스·`length`·프로토타입 경로·문자열 식별자를 포함한 비수치 말단 값은 평가 전에 거부한다. 숫자 문자열의 타입은 유지하며, 십진수·과학적 표기법·지원하는 접미사 표기법을 허용한다. `initial.wallet.amount` 같은 초기 금액 필드는 scenario money 표기법으로 검증하며, number engine 필드는 기존 네이티브 숫자 문법을 유지한다.
