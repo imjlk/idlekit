@@ -136,3 +136,34 @@ test("scenario retention update returns a validated copy and an explicit diff", 
   expect(review.scenario).toBeUndefined();
   expect(review.changes).toEqual([]);
 });
+
+
+test("experiment sizing preserves signed effects and budgets for the hardest treatment", () => {
+  const plan = (rates: number[], mde?: number) => planRetentionExperiment({
+    groups: rates.map((retention, index) => ({ id: `group-${index}`, retention })),
+    retentionDay: 1, minimumDetectableEffectPercentagePoints: mde,
+  });
+  const decrease = plan([0.8, 0.7]);
+  expect(decrease.targetRate).toBe(0.7);
+  expect(decrease.usersPerGroup).toBe(294);
+  expect(plan([0.8, 0.9]).usersPerGroup).toBe(199);
+  const mixed = plan([0.8, 0.9, 0.7]);
+  expect(mixed.targetRate).toBe(0.7);
+  expect(mixed.usersPerGroup).toBe(356); // Bonferroni: decrease needs 356, increase 242
+  expect(mixed.groups.every(group => group.requiredUsers === mixed.usersPerGroup)).toBe(true);
+  expect(plan([0.8, 0.7, 0.9]).usersPerGroup).toBe(mixed.usersPerGroup);
+  // An explicit MDE is directionless, even when variant assumptions are present.
+  expect(plan([0.8, 0.9], 10).usersPerGroup).toBe(294);
+  expect(plan([0.8, 0.9], 10).targetRate).toBeCloseTo(0.7);
+  const unspecified = planRetentionExperiment({ groups: [{ id: "a" }, { id: "b" }], retentionDay: 1, baselineRate: 0.8, minimumDetectableEffectPercentagePoints: 10 });
+  expect(unspecified.usersPerGroup).toBe(294);
+  for (const rates of [[0.99, 0.98], [0.01, 0.02], [0.9, 1], [0.1, 0]]) {
+    const result = plan(rates);
+    expect(result.targetRate).toBe(rates[1]!);
+    expect(Number.isFinite(result.usersPerGroup)).toBe(true);
+    expect(result.usersPerGroup).toBeGreaterThan(0);
+  }
+  expect(plan([0.99, 0.98], 5).targetRate).toBeCloseTo(0.94);
+  expect(plan([0.01, 0.02], 5).targetRate).toBeCloseTo(0.06);
+  expect(() => plan([0.5, 0.6], 90)).toThrow("outside [0, 1]");
+});

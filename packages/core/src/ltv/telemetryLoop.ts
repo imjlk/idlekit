@@ -395,15 +395,30 @@ export function planRetentionExperiment(args: Readonly<{
   }
   if (!(Number.isFinite(mde) && mde > 0 && mde < 100)) throw new RangeError("minimumDetectableEffectPercentagePoints must be in (0, 100)");
   const delta = mde / 100;
-  const targetRate = baselineRate + delta <= 1 ? baselineRate + delta : baselineRate - delta;
-  if (!(targetRate > 0 && targetRate < 1)) throw new RangeError("The minimum detectable effect moves the target rate outside (0, 1)");
+  // A directionless MDE must cover both feasible alternatives: variance, and thus
+  // required sample size, is not symmetric around a baseline other than 0.5.
+  const mdeTargets = [baselineRate - delta, baselineRate + delta].filter(rate => rate >= 0 && rate <= 1);
+  const targets = args.minimumDetectableEffectPercentagePoints !== undefined
+    ? mdeTargets
+    : args.groups.slice(1).flatMap(group => group.retention === undefined || group.retention === baselineRate ? mdeTargets : [group.retention]);
+  if (targets.length === 0) throw new RangeError("The minimum detectable effect moves the target rate outside [0, 1]");
   const comparisons = args.groups.length - 1;
   const adjustedAlpha = alpha / comparisons;
   const zAlpha = standardNormalQuantile(1 - adjustedAlpha / 2);
   const zBeta = standardNormalQuantile(power);
-  const mean = (baselineRate + targetRate) / 2;
-  const numerator = zAlpha * Math.sqrt(2 * mean * (1 - mean)) + zBeta * Math.sqrt(baselineRate * (1 - baselineRate) + targetRate * (1 - targetRate));
-  const usersPerGroup = Math.ceil((numerator * numerator) / (delta * delta));
+  const requiredUsers = (target: number): number => {
+    const effect = target - baselineRate;
+    const mean = (baselineRate + target) / 2;
+    const numerator = zAlpha * Math.sqrt(2 * mean * (1 - mean)) + zBeta * Math.sqrt(baselineRate * (1 - baselineRate) + target * (1 - target));
+    return Math.ceil((numerator * numerator) / (effect * effect));
+  };
+  // Keep equal allocation and report the alternative that determines its budget.
+  let targetRate = targets[0]!;
+  let usersPerGroup = requiredUsers(targetRate);
+  for (const target of targets.slice(1)) {
+    const users = requiredUsers(target);
+    if (users > usersPerGroup) { targetRate = target; usersPerGroup = users; }
+  }
   const totalUsers = usersPerGroup * args.groups.length;
   let enrollmentDays: number | null = null;
   if (args.dailyInstalls !== undefined) {
@@ -412,6 +427,9 @@ export function planRetentionExperiment(args: Readonly<{
   }
   const recommendations = [
     `Enroll at least ${usersPerGroup} new installs per group and read D${args.retentionDay} only after every enrolled install is fully observed through day ${args.retentionDay}.`,
+    args.minimumDetectableEffectPercentagePoints === undefined
+      ? "Sample size covers each signed assumed treatment effect; targetRate is the alternative requiring the largest equal-allocation budget."
+      : "The explicit MDE is directionless; sample size covers both feasible directions and targetRate is the more conservative alternative.",
     "Assign groups at install time with a stable hash of a local pseudonymous ID; never reassign a player between groups.",
     "Enroll for whole weeks (at least 7 days) so weekday and weekend installs appear in every group.",
     "Fix the readout day and metric before launch. Repeatedly peeking and stopping on a significant hint inflates false positives.",

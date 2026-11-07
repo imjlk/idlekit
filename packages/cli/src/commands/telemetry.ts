@@ -176,7 +176,7 @@ export const telemetryExperimentCommand = defineCommand({
   options: {
     day: option(z.coerce.number().int().default(7), { description: "Retention day to test (1, 7, 30 or 90)" }),
     "baseline-rate": option(z.coerce.number().gt(0).lt(1).optional(), { description: "Control retention (default: control scenario's assumption for --day)" }),
-    "mde-pp": option(z.coerce.number().gt(0).lt(100).optional(), { description: "Minimum detectable effect in percentage points (default: smallest assumed difference between variants)" }),
+    "mde-pp": option(z.coerce.number().gt(0).lt(100).optional(), { description: "Directionless minimum detectable effect in percentage points (default: signed variant effects; conservative equal-allocation budget)" }),
     alpha,
     power: option(z.coerce.number().gt(0).lt(1).default(0.8), { description: "Statistical power" }),
     "daily-installs": option(z.coerce.number().positive().optional(), { description: "Eligible new installs per day across all groups" }),

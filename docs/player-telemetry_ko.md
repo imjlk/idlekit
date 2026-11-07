@@ -216,7 +216,13 @@ idk telemetry experiment control=examples/tutorials/11-my-game-v1.json fast-star
 
 - `--alpha`와 `--power`(기본 0.05, 0.8)의 양측 두 비율 검정에 필요한 그룹당 최소
   표본 수. 처리군이 여럿이면 Bonferroni 보정을 한다. 최소 검출 효과는 `--mde-pp`이고,
-  생략하면 변형 사이의 가장 작은 가정 차이다. 가정이 같으면 `--mde-pp`가 필요하다.
+  생략하면 각 처리군의 가정 변화 방향을 유지해 표본 수를 계산하고 가장 큰 값을 모든 군에 동일하게 적용한다.
+  `minimumDetectableEffectPercentagePoints`는 0이 아닌 절대 변화 중 최솟값이고,
+  `targetRate`는 표본 수를 결정한 대안의 리텐션이다. 가정이 같으면 `--mde-pp`가 필요하다.
+  가정이 없거나 변화가 없는 처리군은 도출된 최소 효과의 가능한 양방향으로 계산한다.
+  명시적인 `--mde-pp`는 방향 없는 효과로 해석하며, 변형 가정과 관계없이 baseline ± 효과 중
+  [0, 1] 안에서 더 큰 표본 수를 쓰는 방향을 선택한다. alpha 0.05/power 0.8에서
+  0.8 → 0.7은 군당 294명, 0.8 → 0.9는 199명이며 baseline 0.8의 명시적 10 pp는 294명이다.
 - 관측 기간. `--daily-installs`를 주면 등록 기간(최소 한 주)과, 등록된 모든 설치가
   시험 날짜까지 온전히 관측되는 가장 이른 판독일을 계산한다.
 - 결정적 그룹 배정. `@idlekit/core`의 `assignExperimentGroup(userId, experimentId, groups)`는
