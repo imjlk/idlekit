@@ -124,6 +124,31 @@ describe("idk telemetry", () => {
     } finally { await removePath(dir); }
   });
 
+  it("sizes decreasing variants by their actual direction and treats explicit MDE as directionless", async () => {
+    const dir = await createTempDir("idlekit-signed-sizing");
+    try {
+      const source = await readJson<Record<string, any>>(SCENARIO);
+      const paths: string[] = [];
+      for (const [id, rate] of [["control", 0.8], ["decrease", 0.7], ["increase", 0.9]] as const) {
+        const path = resolve(dir, `${id}.json`);
+        const scenario = structuredClone(source);
+        scenario.monetization.retention.d1 = rate;
+        await writeText(path, JSON.stringify(scenario));
+        paths.push(`${id}=${path}`);
+      }
+      const decrease = runCliJson(["telemetry", "experiment", paths[0]!, paths[1]!, "--day", "1"]);
+      expect(decrease.plan.targetRate).toBe(0.7);
+      expect(decrease.plan.usersPerGroup).toBe(294);
+      const increase = runCliJson(["telemetry", "experiment", paths[0]!, paths[2]!, "--day", "1"]);
+      expect(increase.plan.usersPerGroup).toBe(199);
+      const explicit = runCliJson(["telemetry", "experiment", paths[0]!, paths[2]!, "--day", "1", "--mde-pp", "10"]);
+      expect(explicit.plan.usersPerGroup).toBe(294);
+      const mixed = runCliJson(["telemetry", "experiment", ...paths, "--day", "1"]);
+      expect(mixed.plan.targetRate).toBe(0.7);
+      expect(mixed.plan.usersPerGroup).toBe(356);
+    } finally { await removePath(dir); }
+  });
+
   it("experiment plans sample size, observation window and assignment for scenario variants", () => {
     const out = runCliJson([
       "telemetry", "experiment", `control=${SCENARIO}`, `fast-start=${VARIANT_B}`,

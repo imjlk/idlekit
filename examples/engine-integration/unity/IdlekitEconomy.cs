@@ -11,6 +11,8 @@ namespace Idlekit
     {
         public string key;
         public string type;
+        // "json" marks structured arrays/objects in text; empty means an ordinary scalar.
+        public string encoding;
         public string role;
         /// <summary>Exact value as text. Amounts can exceed double range.</summary>
         public string text;

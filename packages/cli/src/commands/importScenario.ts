@@ -74,7 +74,8 @@ export default defineCommand({
         throw cliError("CLI_USAGE", `Import failed: ${message(error)}`);
       }
     } else if (isEngineParamsDocument(table)) {
-      result = importScenarioFromEngineParams(table, { id: flags.id });
+      try { result = importScenarioFromEngineParams(table, { id: flags.id }); }
+      catch (error) { throw cliError("CLI_USAGE", `Import failed: ${message(error)}`); }
     } else {
       throw usageError("--mapping is required unless the input is an idlekit.engine-params document.");
     }

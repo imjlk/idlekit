@@ -96,6 +96,22 @@ describe("idk export engine", () => {
 });
 
 describe("idk import scenario", () => {
+  it("round-trips production-chain, multi-currency and scalar exponential parameters", async () => {
+    const dir = await createTempDir("idk-builtin-roundtrip");
+    try {
+      for (const name of ["29-factory-chain-v1", "28-twin-currency-v1", "26-exponential-forge-v1"]) {
+        const input = `../../examples/tutorials/${name}.json`;
+        const params = resolve(dir, `${name}.engine.json`);
+        const output = resolve(dir, `${name}.scenario.json`);
+        runCli(["export", "engine", input, "--out", params]);
+        await expectSchema("engine-params.v1.schema.json", await readJson(params));
+        runCli(["import", "scenario", params, "--out", output]);
+        runCli(["validate", output]);
+        expect((await readJson<Record<string, any>>(output)).model.params).toEqual((await readJson<Record<string, any>>(input)).model.params);
+      }
+    } finally { await removePath(dir); }
+  });
+
   it("round-trips an engine export back to a valid scenario", async () => {
     const dir = await createTempDir("idk-engine-roundtrip");
     try {
