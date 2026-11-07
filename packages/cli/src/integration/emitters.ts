@@ -1,4 +1,4 @@
-import type { EngineParameter, EngineParamsV1 } from "./engineParams";
+import { decodeEngineParameter, type EngineParameter, type EngineParamsV1 } from "./engineParams";
 
 export const ENGINE_TARGETS = ["generic", "godot", "unity"] as const;
 export type EngineTarget = (typeof ENGINE_TARGETS)[number];
@@ -58,6 +58,7 @@ function godotValue(value: unknown): string {
 
 /** Amount parameters become floats when they fit, so GDScript reads them without parsing. */
 function parameterValue(param: EngineParameter): unknown {
+  if (param.encoding === "json") return decodeEngineParameter(param);
   if (param.type === "amount") return toFloat(param.value) ?? String(param.value);
   if (param.type === "number") return toFloat(param.value) ?? param.value;
   return param.value;
@@ -160,6 +161,7 @@ export function emitUnityJson(doc: EngineParamsV1): string {
       key: param.key,
       type: param.type,
       role: param.role ?? "other",
+      ...(param.encoding ? { encoding: param.encoding } : {}),
       text: String(param.value),
       value: toFloat(param.value) ?? (param.value === true ? 1 : 0),
     })),
@@ -205,9 +207,10 @@ export function emitUnityCsv(doc: EngineParamsV1, table: CsvTable = "auto"): str
       ...doc.levels.rows.map((row) => [row.level, row.cost, row.totalCost, row.incomePerSec]),
     ]);
   }
+  const hasEncoding = doc.parameters.some(param => param.encoding !== undefined);
   return csvRows([
-    ["key", "type", "role", "value"],
-    ...doc.parameters.map((param) => [param.key, param.type, param.role ?? "other", param.value]),
+    ["key", "type", "role", "value", ...(hasEncoding ? ["encoding"] : [])],
+    ...doc.parameters.map((param) => [param.key, param.type, param.role ?? "other", param.value, ...(hasEncoding ? [param.encoding ?? ""] : [])]),
   ]);
 }
 

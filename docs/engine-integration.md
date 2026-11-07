@@ -196,3 +196,9 @@ The example game rounds prices up to whole coins. Its `cafe.runtime` adapter fai
 
 - [Plugin and adapter guide](./plugin-and-adapter.md)
 - [Output schemas](./schemas/README.md)
+
+### Structured parameters and v1 compatibility
+
+Generic `idlekit.engine-params` v1 parameters may carry optional `encoding: "json"` with `type: "string"`: the value is JSON for an array, empty object, or null. Other object properties remain dotted paths. Import decodes only this explicit marker, so a genuine string such as `[1,2]` or `{}` remains a string. Existing scalar exports are unchanged. Older untagged exports cannot distinguish arrays from real strings: re-export the original scenario rather than guessing their types. Consumers using the older strict schema must adopt the updated optional field.
+
+Godot JSON/TRES emits tagged values as native arrays/objects/null. Unity JSON keeps JSON in `text` and adds `encoding` for tagged parameters; the parameter CSV adds an `encoding` column only when needed (scalar CSV headers stay unchanged). Only the generic document is accepted by automatic scenario import. Unity/Godot consumers must handle structured data for their own game; no new recipes are generated in their example runtime.

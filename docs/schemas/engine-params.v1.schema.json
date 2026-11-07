@@ -66,8 +66,38 @@
             "growth",
             "other"
           ]
+        },
+        "encoding": {
+          "enum": [
+            "json"
+          ],
+          "description": "Explicitly tagged JSON array, object or null in the string value; never inferred from string contents."
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "required": [
+              "encoding"
+            ],
+            "properties": {
+              "encoding": {
+                "const": "json"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "type": {
+                "const": "string"
+              },
+              "value": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      ]
     },
     "curve": {
       "type": "object",
