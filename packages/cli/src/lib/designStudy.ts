@@ -121,27 +121,43 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * Copy of `scenario` with each path set. The parent object of every path must exist; a missing leaf is created.
  * A leaf that holds a decimal string stays a string, so `"15"` becomes `"18.5"`.
  */
-export function patchScenario(scenario: ScenarioV1, values: Readonly<Record<string, number>>): ScenarioV1 {
-  const copy = structuredClone(scenario) as unknown as Record<string, unknown>;
-  for (const [path, value] of Object.entries(values)) {
-    const segments = path.split(".");
-    if (segments.some((segment) => forbiddenSegments.has(segment) || !pathSegment.test(segment))) {
-      throw usageError(`Refusing design path ${path}`);
+function designPathTarget(scenario: ScenarioV1, path: string): { parent: Record<string, unknown>; leaf: string } {
+  const segments = path.split(".");
+  if (segments.some(segment => forbiddenSegments.has(segment) || !pathSegment.test(segment))) throw usageError(`Refusing design path ${path}`);
+  let cursor: unknown = scenario;
+  for (const [index, segment] of segments.entries()) {
+    if (Array.isArray(cursor)) {
+      if (!/^(0|[1-9]\d*)$/.test(segment) || !Number.isSafeInteger(Number(segment)) || Number(segment) >= cursor.length || !Object.hasOwn(cursor, segment)) {
+        throw usageError(`Design path ${path} requires an existing array index at ${segment}`);
+      }
+    } else if (!isRecord(cursor)) {
+      throw usageError(`Design path ${path} does not exist in the scenario (missing object at ${segments[index - 1]})`);
     }
-    let cursor: Record<string, unknown> = copy;
-    for (const segment of segments.slice(0, -1)) {
-      const next = Object.hasOwn(cursor, segment) ? cursor[segment] : undefined;
-      if (!isRecord(next)) throw usageError(`Design path ${path} does not exist in the scenario (missing object at ${segment})`);
-      cursor = next;
+    const parent = cursor as Record<string, unknown>;
+    const current = Object.hasOwn(parent, segment) ? parent[segment] : undefined;
+    if (index === segments.length - 1) {
+      if (current !== undefined && typeof current !== "number" && typeof current !== "string") {
+        throw usageError(`Design path ${path} is not a number or numeric string`);
+      }
+      return { parent, leaf: segment };
     }
-    const leaf = segments.at(-1)!;
-    const current = Object.hasOwn(cursor, leaf) ? cursor[leaf] : undefined;
-    if (current !== undefined && typeof current !== "number" && typeof current !== "string") {
-      throw usageError(`Design path ${path} is not a number or numeric string`);
-    }
-    cursor[leaf] = typeof current === "string" ? String(value) : value;
+    cursor = current;
   }
-  return copy as unknown as ScenarioV1;
+  throw usageError(`Invalid design path ${path}`);
+}
+
+/** Validate paths once before spending a search or sensitivity budget. Missing object leaves remain supported. */
+export function assertDesignParameterPaths(scenario: ScenarioV1, spec: DesignStudySpec): void {
+  for (const parameter of spec.parameters) designPathTarget(scenario, parameter.path);
+}
+
+export function patchScenario(scenario: ScenarioV1, values: Readonly<Record<string, number>>): ScenarioV1 {
+  const copy = structuredClone(scenario);
+  for (const [path, value] of Object.entries(values)) {
+    const { parent, leaf } = designPathTarget(copy, path);
+    parent[leaf] = typeof parent[leaf] === "string" ? String(value) : value;
+  }
+  return copy;
 }
 
 export type DesignEvaluation = Readonly<{

@@ -91,3 +91,7 @@ core의 `analyzeResetLayers`는 다층 훅이다: 층마다(1~8개, 고유 id) r
 `idk prestige-cycle`은 이제 각 간격 끝에 가능한 리셋을 `pointsPerHour`에 포함하므로, 간격 안에서 리셋을 커밋하지 않는 스캔이 더 이상 0으로 읽히지 않는다.
 
 Node.js와 브라우저 런타임은 v1 호환 계약에 포함되지 않는다.
+
+### 배열 파라미터 경로
+
+`model.params.recipes.0.timeSec`, `model.params.generators.0.incomePerLevel`처럼 기존 배열 원소를 0부터 시작하는 정규 인덱스로 지정할 수 있다. 배열 확장은 허용하지 않으며, 없는 인덱스·`length`·프로토타입 경로·숫자·문자열 이외의 말단 값은 평가 전에 거부한다. 숫자 문자열의 타입은 유지한다.

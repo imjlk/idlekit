@@ -91,3 +91,7 @@ This wraps `analyzeResetPolicies` (see [Reset policy analysis](./reset-cycle-ana
 `idk prestige-cycle` now counts the reset available at the end of each interval in `pointsPerHour`, so a scan where no reset is committed inside the interval no longer reads 0.
 
 Node.js and browser runtimes are not part of the v1 compatibility contract.
+
+### Array parameter paths
+
+Existing array elements may be addressed by canonical zero-based indexes, for example `model.params.recipes.0.timeSec` or `model.params.generators.0.incomePerLevel`. Arrays cannot be extended by a study; missing indexes, `length`, prototype segments and non-number/string leaves are rejected before evaluation. Numeric-string leaves stay strings.
