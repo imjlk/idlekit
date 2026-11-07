@@ -196,3 +196,9 @@ JSON 보고서는 [schemas/runtime.verify.output.schema.json](./schemas/runtime.
 
 - [플러그인과 어댑터 가이드](./plugin-and-adapter_ko.md)
 - [출력 schema](./schemas/README_ko.md)
+
+### 구조화 파라미터와 v1 호환성
+
+일반 `idlekit.engine-params` v1 파라미터에는 `type: "string"`과 함께 선택적인 `encoding: "json"`을 사용할 수 있다. 값은 배열·빈 객체·null의 JSON이며, 나머지 객체 속성은 점 경로로 유지한다. import는 이 표시가 있는 값만 복원하므로 `[1,2]`, `{}` 같은 실제 문자열은 문자열로 유지된다. 기존 스칼라 출력은 바뀌지 않는다. 예전의 표시 없는 출력은 배열과 실제 문자열을 구분할 수 없으므로 추측하여 변환하지 말고 원본 시나리오에서 다시 export한다. 예전 strict 스키마를 쓰는 소비자는 선택 필드가 추가된 스키마로 갱신해야 한다.
+
+Godot JSON/TRES는 표시된 값을 네이티브 배열·객체·null로 출력한다. Unity JSON은 `text`에 JSON을 보존하고 해당 파라미터에만 `encoding`을 추가한다. 파라미터 CSV도 필요할 때만 `encoding` 열을 추가하므로 스칼라 CSV 헤더는 유지된다. 자동 시나리오 import는 일반 문서만 받는다. Unity/Godot 소비자는 게임에 맞는 구조화 데이터 처리가 필요하며 예제 런타임에 새 제작 로직을 생성하지는 않는다.

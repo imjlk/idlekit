@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
-import type { ScenarioV1 } from "@idlekit/core";
-import { emitGodotTres, emitUnityCsv, supportedFileFormats } from "./emitters";
-import { ENGINE_PARAMS_FORMAT, formatEngineNumber, isEngineParamsDocument, type EngineParamsV1 } from "./engineParams";
+import { createModelRegistry, type ScenarioV1 } from "@idlekit/core";
+import { emitGodotJson, emitGodotTres, emitUnityJson, emitUnityCsv, supportedFileFormats } from "./emitters";
+import { buildEngineParams, decodeEngineParameter, ENGINE_PARAMS_FORMAT, formatEngineNumber, isEngineParamsDocument, type EngineParamsV1 } from "./engineParams";
 import { withinTolerance } from "./runtimeVerify";
 import {
   DEFAULT_SUFFIXES,
@@ -80,6 +80,26 @@ describe("engine params helpers", () => {
     } as ScenarioV1["model"]);
     expect(scenario.initial.wallet.amount).toBe("5");
   });
+  it("round-trips structured values without interpreting JSON-looking strings", () => {
+    const scenario = importScenarioFromEngineParams(doc()).scenario;
+    const params = { recipes: [{ timeSec: 1, nested: { enabled: true } }], empty: {}, nil: null, nested: { empty: {}, values: ["1", 2, false, null] }, label: '[{"timeSec":1}]', objectText: '{"enabled":true}', nullText: "null" };
+    const exported = buildEngineParams({ scenario: { ...scenario, model: { ...scenario.model, params } }, registry: createModelRegistry([]), scenarioHash: "0".repeat(64), cliVersion: "test", levels: 0 });
+    expect(importScenarioFromEngineParams(exported).scenario.model.params).toEqual(params);
+    expect(exported.parameters.find(p => p.key === "recipes")?.encoding).toBe("json");
+    expect(exported.parameters.find(p => p.key === "label")?.encoding).toBeUndefined();
+    const godot = JSON.parse(emitGodotJson(exported));
+    expect(godot.parameters.recipes).toEqual(params.recipes);
+    expect(godot.parameters.label).toBe(params.label);
+    expect(emitGodotTres(exported)).toContain('"recipes": [{');
+    const unity = JSON.parse(emitUnityJson(exported));
+    expect(unity.parameters.find((p: { key: string }) => p.key === "recipes").encoding).toBe("json");
+    expect(emitUnityCsv(exported).split("\n")[0]).toBe("key,type,role,value,encoding");
+    // Legacy string payloads are intentionally not guessed or parsed.
+    expect(decodeEngineParameter({ key: "x", type: "string", value: "[1]" })).toBe("[1]");
+    expect(() => decodeEngineParameter({ key: "x", type: "string", encoding: "json", value: "not json" })).toThrow("Invalid JSON payload");
+    expect(() => decodeEngineParameter({ key: "x", type: "string", encoding: "json", value: '"text"' })).toThrow("array, object or null");
+  });
+
 });
 
 describe("table parsing", () => {

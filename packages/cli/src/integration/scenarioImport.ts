@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { ScenarioV1 } from "@idlekit/core";
-import { formatEngineNumber, type EngineParamType, type EngineParamsV1 } from "./engineParams";
+import { decodeEngineParameter, formatEngineNumber, type EngineParamType, type EngineParamsV1 } from "./engineParams";
 
 export const IMPORT_MAPPING_FORMAT = "idlekit.import-mapping";
 export const IMPORT_MAPPING_SCHEMA_REF = "docs/schemas/import-mapping.v1.schema.json";
@@ -505,7 +505,7 @@ function setPath(target: Record<string, unknown>, path: string, value: unknown):
 /** Turn an exported `idlekit.engine-params` document back into a scenario. */
 export function importScenarioFromEngineParams(doc: EngineParamsV1, overrides: { id?: string } = {}): ImportResult {
   const params: Record<string, unknown> = {};
-  for (const param of doc.parameters) setPath(params, param.key, param.value);
+  for (const param of doc.parameters) setPath(params, param.key, decodeEngineParameter(param));
   const id = overrides.id ?? doc.source.scenarioId ?? "imported-engine-params";
   const scenario: ScenarioV1 = {
     schemaVersion: 1,

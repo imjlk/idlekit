@@ -18,6 +18,8 @@ export type EngineParameter = Readonly<{
   type: EngineParamType;
   /** Amounts stay decimal strings so a value past the float64 range survives the export. */
   value: string | number | boolean;
+  /** Explicit structured JSON payload; absent on genuine strings, including JSON-looking strings. */
+  encoding?: "json";
   role?: "income" | "cost" | "growth" | "other";
 }>;
 
@@ -116,15 +118,26 @@ function flattenParams(input: unknown, prefix = ""): EngineParameter[] {
   for (const key of keys) {
     const value = asRecord(input)[key];
     const path = prefix ? `${prefix}.${key}` : key;
-    if (value && typeof value === "object" && !Array.isArray(value)) {
+    if (value && typeof value === "object" && !Array.isArray(value) && Object.keys(value).length > 0) {
       out.push(...flattenParams(value, path));
     } else if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
       out.push({ key: path, type: inferType(value), value });
-    } else if (value !== undefined && value !== null) {
-      out.push({ key: path, type: "string", value: JSON.stringify(value) });
+    } else if (value !== undefined) {
+      out.push({ key: path, type: "string", encoding: "json", value: JSON.stringify(value) });
     }
   }
   return out;
+}
+
+/** Decode only explicitly tagged JSON. Legacy and JSON-looking string values stay strings. */
+export function decodeEngineParameter(param: EngineParameter): unknown {
+  if (param.encoding === undefined) return param.value;
+  if (param.encoding !== "json" || param.type !== "string" || typeof param.value !== "string") throw new Error(`Invalid JSON encoding for parameter ${param.key}`);
+  let value: unknown;
+  try { value = JSON.parse(param.value); }
+  catch { throw new Error(`Invalid JSON payload for parameter ${param.key}`); }
+  if (value !== null && typeof value !== "object") throw new Error(`JSON parameter ${param.key} must contain an array, object or null`);
+  return value;
 }
 
 function linearParameters(params: unknown): { resolved: typeof LINEAR_DEFAULTS; parameters: EngineParameter[] } {
@@ -231,7 +244,7 @@ export function buildEngineParams(args: {
   } else {
     parameters = flattenParams(scenario.model.params);
     notes.push(
-      `Model ${scenario.model.id}@${scenario.model.version} is not built in. Parameters are exported as declared; curves and level tables are not derived.`,
+      `Model ${scenario.model.id}@${scenario.model.version} has no derived engine curves. Parameters are exported as declared; curves and level tables are not derived.`,
     );
   }
 
