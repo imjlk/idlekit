@@ -251,8 +251,14 @@ and returns:
 
 - the minimum sample size per group for a two-sided two-proportion test at `--alpha`
   and `--power` (default 0.05 and 0.8), Bonferroni-adjusted when there are several
-  treatments. The minimum detectable effect is `--mde-pp`, or by default the smallest
-  assumed difference between variants; equal assumptions require `--mde-pp`;
+  treatments. Without `--mde-pp`, each treatment's signed assumed retention change is
+  sized separately and the largest required per-group budget is used for equal allocation.
+  `minimumDetectableEffectPercentagePoints` summarizes the smallest nonzero absolute change;
+  `targetRate` identifies the alternative determining the budget. Equal assumptions require
+  `--mde-pp`; missing/unchanged treatments use the derived minimum effect in both feasible directions.
+  An explicit `--mde-pp` is directionless and uses the more conservative of baseline minus/plus
+  that effect within [0, 1], regardless of variant assumptions. For alpha 0.05/power 0.8,
+  0.8 → 0.7 needs 294 per group, while 0.8 → 0.9 needs 199; explicit 10 pp at baseline 0.8 uses 294;
 - the observation window: with `--daily-installs`, enrollment days (at least one whole
   week) and the earliest readout day, which waits until every enrolled install is
   fully observed through the test day;
