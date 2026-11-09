@@ -1,5 +1,14 @@
 # @idlekit/cli
 
+## 0.8.1 — 2026-11-09
+
+### Patch changes
+
+- [f0cd2ad](https://github.com/imjlk/idlekit/commit/f0cd2ad9f689270e6a8ed46c12c6e3b0ec42c51a) Size retention experiments using signed treatment assumptions and the most demanding equal-allocation budget. Explicit directionless MDEs conservatively cover both feasible directions. — Thanks @imjlk!
+- [e496e1e](https://github.com/imjlk/idlekit/commit/e496e1ef532f30c89bf9863010eb386038e3e2b4) Preserve array, empty-object and null model parameters through engine export/import using explicit JSON encoding, without changing genuine string parameters. — Thanks @imjlk!
+- [a4ab602](https://github.com/imjlk/idlekit/commit/a4ab6025ca7f434778c1890fa85340214ce1d4d4) Support existing recipe and generator array indexes in optimize/sensitivity parameter paths, and reject invalid indexes before evaluation. — Thanks @imjlk!
+- Updated dependencies: @idlekit/core@0.8.1
+
 ## 0.8.0 — 2026-11-05
 
 ### Minor changes
